@@ -8,7 +8,6 @@ import { useProcessesForTarget } from '@src/components/entity-chat-panel/hooks/u
 import { WorkflowRunsPanel } from '@src/components/workflows-view/WorkflowRunsPanel';
 import type { ProcessEntry } from '@src/components/workflows-view/workflow-run-store';
 import { ConversationView } from './ConversationView';
-import { ConversationMode } from './conversation-mode';
 import { useProjectMappingGate } from './useProjectMappingGate';
 import { ChipsExcludeProvider } from './chips/ChipsExcludeContext';
 import { taskChipKeys } from './chips/keys';
@@ -31,8 +30,6 @@ interface ConversationPanelProps {
    * `default` matches the SharedTaskView layout.
    */
   variant?: 'default' | 'compact';
-  /** Approve & Execute backend; forwarded to ConversationView. */
-  mode?: ConversationMode;
   className?: string;
 }
 
@@ -71,7 +68,6 @@ export function ConversationPanel({
   senderName,
   headerLabel = 'Conversation',
   variant = 'default',
-  mode,
   className,
 }: ConversationPanelProps) {
   // One gate, two subject shapes. Remote provenance always lives on the
@@ -198,7 +194,6 @@ export function ConversationPanel({
                 task={task}
                 senderName={senderName}
                 ensureMapped={ensureMapped}
-                mode={mode}
                 selectedMessageId={selectedMessageId}
                 onSelectMessage={setSelectedMessageId}
                 onMostRecentMessageChange={setMostRecentMessageId}

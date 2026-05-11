@@ -13,7 +13,6 @@ import { ExpansionRequest } from '@sdk/FlowSync/query';
 import { sendReply } from '@sdk/entities/notifications';
 import { toast } from 'sonner';
 import { ConversationPanel } from '@src/components/conversation/ConversationPanel';
-import { ConversationMode } from '@src/components/conversation/conversation-mode';
 import { useLocalUser } from '@src/components/conversation/useLocalUser';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
 
@@ -129,7 +128,6 @@ export function SharedTaskView({ task, onClose }: SharedTaskViewProps) {
               task={task}
               conversationId={conversationTypeId.id}
               senderName={senderName}
-              mode={ConversationMode.HEADLESS}
             />
           ) : (
             <p className="px-4 py-4 text-xs italic text-muted-foreground/60">No conversation yet.</p>

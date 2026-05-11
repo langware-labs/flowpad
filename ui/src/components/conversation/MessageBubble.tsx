@@ -44,14 +44,11 @@ function formatTime(timestamp: string | undefined): string {
 }
 
 /**
- * Headless-run drafts come back wrapped as ``Prompt response: "<reply>"`` (see
- * ``flow_sdk/app/actions/headless_run.py:_wrap_as_claude_quote``). Detect that
- * exact shape and split it so the bubble can render the quoted middle in
- * ``<em>``. As soon as the user edits the draft and breaks the pattern, this
- * returns ``null`` and the message falls through to plain rendering — so the
- * italic styling only applies until the user has made the message their own.
- *
- * Returns ``null`` for any non-matching content.
+ * Approve & Execute drafts are wrapped as ``Prompt response: "<reply>"`` by the
+ * useApproveAndExecute hook so the bubble can render the quoted middle in
+ * ``<em>``. Once the user edits the draft and breaks the pattern, this returns
+ * ``null`` and the message falls through to plain rendering — the italic styling
+ * only applies until the user has made the message their own.
  */
 const AGENT_QUOTE_PREFIX = 'Prompt response: "';
 const AGENT_QUOTE_SUFFIX = '"';

@@ -1033,40 +1033,27 @@ async def _resolve_workdir_and_project_async(fm: FlowMessage) -> tuple[str, Opti
 
 
 async def handle_derive_task(fm_id: str, someone_typeid: str) -> ApiResponse:
-    """Pre-create a Task linked to this FM, then spawn a headless Claude run that refines it.
+    """Pre-create a Task linked to this FM, then run a headless Claude turn to refine it.
 
-    Pattern mirrors ``handle_create_task_bundle`` (Task built in Python, ``await
-    task.save()``) and ``run_scope`` (``_create_run`` + ``_run_turn_and_capture``
-    drive the Run-drawer lifecycle). Claude's job is reduced to refining the
-    pre-created Task's title/description — never creating it from scratch — so
-    the row appears immediately and a flaky Claude run still leaves a working
-    Task behind.
+    The Task is allocated up front with placeholder content so the row appears
+    immediately regardless of whether the run succeeds. Claude's job is only
+    to **update** the placeholder's title/description via the flow MCP — never
+    to create the Task from scratch.
     """
-    import asyncio
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
     from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli import ClaudeCliOptions
-    from flow_sdk.app.actions.headless_run import (
-        HeadlessRunScope,
-        _create_run,
-        _run_turn_and_capture,
-    )
 
     fm = await FlowMessage.get_one({"id": fm_id})
     if not fm:
         return ApiFailResponse(message=f"FlowMessage not found: {fm_id}")
 
     workdir, project_id = await _resolve_workdir_and_project_async(fm)
-    # Headless CLI driver requires a non-empty cwd (driver.py:103-104). For
-    # FMs not mapped to a project, fall back to $HOME — the run only needs a
-    # valid cwd; the flow MCP is mounted via add_dirs regardless of workdir.
     if not workdir:
         workdir = os.path.expanduser("~")
 
     fm_typeid = TypeId(type=BuiltinEntityType.FLOW_MESSAGE.value, id=fm.id)
     fm_typeid_str = str(fm_typeid)
 
-    # 1. Spawn the invisible AgenticProcess pinned to this FM. ``target_vfs_path``
-    #    surfaces it in Private Context / Runs queries.
     cli_opts = ClaudeCliOptions(
         print_mode=True,
         output_format="stream-json",
@@ -1084,9 +1071,6 @@ async def handle_derive_task(fm_id: str, someone_typeid: str) -> ApiResponse:
     await process.save(someone_typeid)
     process_typeid = TypeId(type=BuiltinEntityType.AGENTIC_PROCESS.value, id=process.id)
 
-    # 2. Pre-create the Task with placeholder content and the full linkage
-    #    (FM + Process). Frontend pairs the Process row to this Task via the
-    #    Process TypeId in ``context_entities``.
     fm_text = (fm.text or "").strip()
     placeholder_title = (fm_text[:80] + "…") if len(fm_text) > 80 else (fm_text or "Deriving task…")
     task = Task.model_validate({
@@ -1098,21 +1082,6 @@ async def handle_derive_task(fm_id: str, someone_typeid: str) -> ApiResponse:
     task.id = Task.allocate_id(task.model_dump())
     task = await task.save(someone_typeid)
     task_typeid_str = str(TypeId(type=BuiltinEntityType.TASK.value, id=task.id))
-
-    # 3. Open a Run row so the headless session shows up in the Runs drawer
-    #    with the standard RUNNING → STOPPED|FAILED lifecycle. ``conversation_id=""``
-    #    skips ``_save_draft_flow_message`` (we don't want a draft FM here —
-    #    the artifact is the Task, not a chat reply).
-    scope = HeadlessRunScope(
-        target_typeid=fm_typeid,
-        conversation_id="",
-        workdir=workdir,
-        project_id=project_id,
-        process_context=[fm_typeid],
-        draft_context=[fm_typeid],
-        source_flow_message_id=fm.id,
-        log_label="derive-task",
-    )
 
     instruction = (
         "A Task entity has been pre-created with id `" + task.id + "` "
@@ -1133,31 +1102,10 @@ async def handle_derive_task(fm_id: str, someone_typeid: str) -> ApiResponse:
         "3. Exit when done."
     )
 
-    run = await _create_run(
-        scope=scope,
-        process=process,
-        prompt_text=instruction,
-        someone_typeid=someone_typeid,
-    )
-
-    # Drive the headless turn in the background. ``_run_turn_and_capture`` owns
-    # the worker lifecycle plus the Run finalization (RUNNING → STOPPED|FAILED).
-    asyncio.create_task(
-        _run_turn_and_capture(
-            process=process,
-            prompt_text=instruction,
-            scope=scope,
-            run=run,
-            sender_id=None,
-            sender_name="",
-            someone_typeid=someone_typeid,
-        ),
-        name=f"derive-task-{process.id[:8]}",
-    )
+    await process.prompt(instruction)
 
     return ApiSuccessResponse(data={
         "process_id": process.id,
-        "run_id": run.id,
         "task_id": task.id,
     })
 
