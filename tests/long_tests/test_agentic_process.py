@@ -248,7 +248,9 @@ async def test_agentic_process_classify_with_agent(
     # category for the session".
     if "category" not in data:
         wrapped = data.get("classification")
-        if isinstance(wrapped, dict) and "category" in wrapped:
+        if isinstance(wrapped, dict):
+            # Promote the nested dict to top level — it may carry `category`
+            # directly, or a synonym handled by the next block.
             data = wrapped
         elif isinstance(wrapped, str) and wrapped:
             data = {"category": wrapped}
