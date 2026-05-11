@@ -566,7 +566,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * Use this when the user wants to attach to (or launch) the running PTY.
    */
   get terminalDockPointer(): DockPointerData {
-    return new DockPointerData(ViewType.SHELL, this.typeId?.toString());
+    return new DockPointerData(ViewType.SHELL, `${AgenticProcess.type}${TypeId.DELIMITER}${this.id}`);
   }
 
   openTerminalDock(extraOptions?: Record<string, string>): void {

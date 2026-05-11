@@ -242,8 +242,14 @@ async function routeProcessPointer(processId: string): Promise<void> {
       // eslint-disable-next-line @typescript-eslint/only-throw-error
       throw replace('/dock/shell');
     }
+    const fallbackPointer = loadedToPointer(next.loaded);
+    toast({
+      title: 'Opened a different terminal',
+      description: `Couldn't load ${processId.slice(0, 8)}… (${directCleanup.title}) — opened ${fallbackPointer} instead.`,
+      variant: 'destructive',
+    });
     // eslint-disable-next-line @typescript-eslint/only-throw-error
-    throw replace(`/dock/shell/${loadedToPointer(next.loaded)}`);
+    throw replace(`/dock/shell/${fallbackPointer}`);
   }
 }
 
@@ -280,8 +286,14 @@ async function routePlainShellPointer(pointer: string): Promise<void> {
       // eslint-disable-next-line @typescript-eslint/only-throw-error
       throw replace('/dock/shell');
     }
+    const fallbackPointer = loadedToPointer(next.loaded);
+    toast({
+      title: 'Opened a different terminal',
+      description: `Couldn't load ${shellId.slice(0, 8)}… (${directCleanup.title}) — opened ${fallbackPointer} instead.`,
+      variant: 'destructive',
+    });
     // eslint-disable-next-line @typescript-eslint/only-throw-error
-    throw replace(`/dock/shell/${loadedToPointer(next.loaded)}`);
+    throw replace(`/dock/shell/${fallbackPointer}`);
   }
 }
 

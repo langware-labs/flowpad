@@ -73,14 +73,22 @@ export function ProcessStatusLine({
   // Two distinct gates depending on worker mode:
   // - Interactive PTY (visible=true): clickable when the worker is ready for
   //   input — clicking just focuses the existing tab.
-  // - Headless (visible=false): clickable only after the run reached a
-  //   terminal lifecycle state (STOPPED/FAILED) — clicking spawns a fresh
-  //   PTY that resumes the saved session. While NEW/STARTING/RUNNING the
-  //   button stays disabled so the user can't try to attach to a print-mode
-  //   subprocess that has no PTY.
+  // - Headless (visible=false): clickable once the current turn is done so
+  //   the user can promote the AP to a visible PTY that resumes the saved
+  //   session. The print-mode driver keeps lifecycle ``status=RUNNING`` after
+  //   a turn (so ``isReadyForInput`` returns true for the next prompt) and
+  //   flips ``worker_status=COMPLETE`` instead — so we accept *either*
+  //   ``ready`` (RUNNING + worker terminal-ish) or a terminal lifecycle
+  //   (STOPPED/FAILED) from older code paths. While the worker is mid-turn
+  //   the button stays disabled — there is no PTY for a print-mode
+  //   subprocess to attach to.
   const canResume =
     !!process.session_id &&
-    (status === ProcessStatus.STOPPED || status === ProcessStatus.FAILED);
+    (
+      ready ||
+      status === ProcessStatus.STOPPED ||
+      status === ProcessStatus.FAILED
+    );
   const canOpenTerminal =
     mode === WorkerMode.Interactive ? ready : canResume;
 
