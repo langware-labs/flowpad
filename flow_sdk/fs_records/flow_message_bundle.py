@@ -397,7 +397,6 @@ async def unpack_bundle(
     from flow_sdk.builtin.spec import Spec
     from flow_sdk.builtin.task import Task
     from flow_sdk.builtin.user import User
-    from flow_sdk.fs_records.conversation_record import ConversationRecord
     from flow_sdk.fs_records.notification_scanner import (
         _create_conversation_from_disk,
         _create_spec_from_file,
@@ -526,7 +525,7 @@ async def unpack_bundle(
                         conv_header = _read_entity_header(entry_dir) or {}
                         bundle_remote_project_id = conv_header.get("project_id") or None
                         bundle_remote_project_name = conv_header.get("project_name") or None
-                        bundle_participants = conv_header.get("participants") or None
+                        bundle_participants = conv_header.get("participants") or []
                         # Copy conversation.jsonl to a permanent location before the
                         # temp dir is cleaned up — _create_conversation_from_disk
                         # stores data_path pointing at task_dir, so it must survive.
@@ -577,9 +576,6 @@ async def unpack_bundle(
         # FM, appends a typed Pointer to conversation.jsonl, projects
         # message_ids/message_count, and dispatches WS sync (FM CREATE then
         # Conversation UPDATE) — same sequence every other producer uses.
-        if top_fm_already_exists and not overwrite:
-            raise FlowMessageExistsError([{"type": BuiltinEntityType.FLOW_MESSAGE.value, "id": top_fm_id_check}])
-
         from flow_sdk.app.actions.materialize_flow_message import materialize_flow_message
 
         top_fm_id = msg_data.get("id") or FlowMessage.allocate_id(msg_data)
@@ -587,12 +583,13 @@ async def unpack_bundle(
         msg_data["id"] = top_fm_id
         if not msg_data.get("conversation_id") and conversation_id:
             msg_data["conversation_id"] = conversation_id
-
         target_conv_id = conversation_id or next(
             (TypeId(c).id for c in msg_data.get("context_entities", [])
              if TypeId(c).type == BuiltinEntityType.CONVERSATION.value),
             None,
         )
+        if top_fm_already_exists and not overwrite and not conversation_id:
+            raise FlowMessageExistsError([{"type": BuiltinEntityType.FLOW_MESSAGE.value, "id": top_fm_id_check}])
         if not target_conv_id:
             # Bundle has no conversation pointer — fall back to a bare save.
             top_fm = FlowMessage.model_validate(msg_data)

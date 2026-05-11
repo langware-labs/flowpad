@@ -204,6 +204,7 @@ export function ConversationView({
                   messageId={id}
                   timestamp={item.timestamp}
                   task={task}
+                  participants={conversation?.participants}
                   onApproveAndExecute={canApproveAndExecute ? runApprove : undefined}
                   isSelected={selectedMessageId === id}
                   onSelect={onSelectMessage ? () => onSelectMessage(id) : undefined}
@@ -219,6 +220,7 @@ export function ConversationView({
                   ? item.draft.created_date.toISOString()
                   : (item.draft.created_date ?? '')}
                 task={task}
+                participants={conversation?.participants}
                 isDraft
                 onDraftSent={() => void refetch()}
                 isSelected={selectedMessageId === id}

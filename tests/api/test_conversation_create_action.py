@@ -9,6 +9,7 @@ records-data location `<records_data_root>/conversation/conversation-@<id>/conve
 NOT inside the project's filesystem mount. These tests pin that contract.
 """
 
+import json
 from pathlib import Path
 
 import pytest
@@ -16,6 +17,37 @@ import pytest
 from flow_sdk.fs_records.conversation_record import ConversationRecord
 from flow_sdk.fs_store import RecordType
 from flow_sdk.fs_store.record import get_default_records_data_root, record_stem
+
+
+def _first_flow_message_id(message_ids) -> str:
+    if isinstance(message_ids, str):
+        message_ids = json.loads(message_ids)
+    assert message_ids
+    typeid = message_ids[0]
+    if isinstance(typeid, dict):
+        typeid = typeid["typeid"]
+    assert typeid.startswith("flow_message-")
+    return typeid.removeprefix("flow_message-")
+
+
+def _stub_bundle_hub(monkeypatch, *, email_error: str | None = None) -> None:
+    from flow_sdk.app.actions import notification_action
+    from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
+
+    async def fake_hub_post(entity_type, payload, *args, **kwargs):
+        assert entity_type == BuiltinEntityType.FLOW_MESSAGE
+        assert kwargs.get("action") == "send"
+        data = {"flow_message_id": payload["flow_message_id"]}
+        if email_error:
+            data["email_error"] = email_error
+        return data
+
+    async def fake_upload_bundle_to_hub(hub_flow_message_id, fm, task_title):
+        return None
+
+    monkeypatch.setattr(notification_action, "hub_base_url", lambda: "http://hub.test")
+    monkeypatch.setattr(notification_action, "hub_post", fake_hub_post)
+    monkeypatch.setattr(notification_action, "_upload_bundle_to_hub", fake_upload_bundle_to_hub)
 
 
 # ---------------------------------------------------------------------------
@@ -49,11 +81,13 @@ async def test_conversation_create_under_project_upserts_participants(bootstrapp
     conv_id = data["conversation_id"]
     assert conv_id
 
-    # Both participants now have a user_id (upserted as Users).
+    # Participants are stored exactly as the caller provided them. The address
+    # book may learn contacts, but it must not rewrite Conversation.participants.
     parts = data["participants"]
-    assert len(parts) == 2
-    assert all(p["user_id"] for p in parts)
-    assert {p["email"] for p in parts} == {"alice@example.com", "bob@example.com"}
+    assert parts == [
+        {"email": "alice@example.com", "name": "Alice"},
+        {"email": "bob@example.com"},
+    ]
 
     # The conversation row exists, has project_id, no task_id.
     conv_resp = await bootstrapped_client.get(f"/api/v1/graph/conversation/{conv_id}")
@@ -162,6 +196,175 @@ async def test_append_conversation_writes_into_records_data_jsonl(bootstrapped_c
 
     conv = (await bootstrapped_client.get(f"/api/v1/graph/conversation/{conv_id}")).json()["data"]
     assert conv["message_count"] == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_conversation_start_bundle_keeps_initial_message_as_flow_message(
+    bootstrapped_client,
+    monkeypatch,
+):
+    """Starting a cross-user conversation creates a FlowMessage, not a Notification."""
+    from flow_sdk.builtin.flow_message import FlowMessage
+    from flow_sdk.core.network.connection import Notification
+
+    _stub_bundle_hub(monkeypatch)
+
+    projects = (await bootstrapped_client.get("/api/v1/graph/project")).json()["data"]
+    project_id = next(p for p in projects if p.get("uname") == "local")["id"]
+    marker = "hi bob regression-success"
+
+    response = await bootstrapped_client.post(
+        "/api/v1/graph/conversation-start-bundle",
+        json={
+            "recipient_id": "bob@local.test",
+            "message": marker,
+            "project_id": project_id,
+            "sender_name": "Local Tester",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["status"] == "SUCCESS", body
+    data = body["data"]
+    assert data["conversation_id"]
+    assert data["notification_id"] is None
+
+    conv = (
+        await bootstrapped_client.get(
+            f"/api/v1/graph/conversation/{data['conversation_id']}"
+        )
+    ).json()["data"]
+    assert conv["message_count"] == 1
+    message_id = _first_flow_message_id(conv["message_ids"])
+
+    fm = await FlowMessage.get_one({"id": message_id})
+    assert fm is not None
+    assert fm.text == marker
+    assert fm.conversation_id == data["conversation_id"]
+
+    overwritten = await Notification.get_one({"id": message_id})
+    assert overwritten is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_conversation_start_bundle_uses_cloud_participant_ids(
+    bootstrapped_client,
+    monkeypatch,
+):
+    """Cross-user start uses cloud sender id and Participant[] ids."""
+    from flow_sdk.builtin.flow_message import FlowMessage
+    from flow_sdk.builtin.user import User
+
+    _stub_bundle_hub(monkeypatch)
+
+    async def fake_current_sender_participant(cls, override_name=None):
+        return {
+            "user_id": "11111111-1111-4111-8111-111111111111",
+            "name": "Alice",
+            "email": "alice@local.test",
+        }
+
+    monkeypatch.setattr(
+        User,
+        "current_sender_participant",
+        classmethod(fake_current_sender_participant),
+    )
+
+    marker = "hi bob participant ids"
+    response = await bootstrapped_client.post(
+        "/api/v1/graph/conversation-start-bundle",
+        json={
+            "participants": [
+                {
+                    "user_id": "22222222-2222-4222-8222-222222222222",
+                    "name": "Bob",
+                    "email": "bob@local.test",
+                }
+            ],
+            "message": marker,
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    conv = (
+        await bootstrapped_client.get(
+            f"/api/v1/graph/conversation/{data['conversation_id']}"
+        )
+    ).json()["data"]
+    participants = {p["user_id"]: p for p in conv["participants"]}
+    assert participants["11111111-1111-4111-8111-111111111111"]["name"] == "Alice"
+    assert participants["11111111-1111-4111-8111-111111111111"]["email"] == "alice@local.test"
+    assert participants["22222222-2222-4222-8222-222222222222"]["name"] == "Bob"
+    assert participants["22222222-2222-4222-8222-222222222222"]["email"] == "bob@local.test"
+
+    fm = await FlowMessage.get_one({"id": _first_flow_message_id(conv["message_ids"])})
+    assert fm is not None
+    assert fm.sender_id == "11111111-1111-4111-8111-111111111111"
+    assert fm.sender_name == "Alice"
+    assert fm.receiver_address == "22222222-2222-4222-8222-222222222222"
+    assert fm.receiver_address_type == "id"
+
+    bob = await User.get_one({"email": "bob@local.test"})
+    assert bob is not None
+    assert bob.name == "Bob"
+    assert bob.email == "bob@local.test"
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_conversation_start_bundle_email_failure_uses_fresh_notification_id(
+    bootstrapped_client,
+    monkeypatch,
+):
+    """Email failure creates a separate local Notification without overwriting the message."""
+    from flow_sdk.builtin.flow_message import FlowMessage
+    from flow_sdk.core.network.connection import Notification
+
+    _stub_bundle_hub(monkeypatch, email_error="smtp rejected recipient")
+
+    projects = (await bootstrapped_client.get("/api/v1/graph/project")).json()["data"]
+    project_id = next(p for p in projects if p.get("uname") == "local")["id"]
+    marker = "hi bob regression-email-failure"
+
+    response = await bootstrapped_client.post(
+        "/api/v1/graph/conversation-start-bundle",
+        json={
+            "recipient_id": "bob-failure@local.test",
+            "message": marker,
+            "project_id": project_id,
+            "sender_name": "Local Tester",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["status"] == "SUCCESS", body
+    data = body["data"]
+    assert data["email_error"] == "smtp rejected recipient"
+    assert data["notification_id"]
+
+    conv = (
+        await bootstrapped_client.get(
+            f"/api/v1/graph/conversation/{data['conversation_id']}"
+        )
+    ).json()["data"]
+    message_id = _first_flow_message_id(conv["message_ids"])
+    assert data["notification_id"] != message_id
+
+    fm = await FlowMessage.get_one({"id": message_id})
+    assert fm is not None
+    assert fm.text == marker
+
+    failure_notification = await Notification.get_one({"id": data["notification_id"]})
+    assert failure_notification is not None
+    assert failure_notification.metadata["email_error"] == "smtp rejected recipient"
+
+    overwritten = await Notification.get_one({"id": message_id})
+    assert overwritten is None
 
 
 @pytest.mark.asyncio

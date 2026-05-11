@@ -33,7 +33,7 @@ interface RawConversationPointer {
 
 export interface ConversationParticipant {
   user_id?: string | null;
-  email: string;
+  email?: string | null;
   name?: string | null;
 }
 
@@ -140,8 +140,10 @@ export async function createProjectConversation(
 // ---------------------------------------------------------------------------
 
 export interface StartBundleConversationParams {
-  /** Either the hub user id or an email address — the backend resolves both. */
-  recipient_id: string;
+  /** First remote participant. Kept for back-compat; prefer participants. */
+  recipient_id?: string;
+  /** Cross-user participants. user_id is the canonical key when known. */
+  participants?: ConversationParticipant[];
   /** First message text. */
   message?: string;
   /** Display title; defaults to a truncated message preview when blank. */

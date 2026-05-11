@@ -1108,11 +1108,7 @@ class SQLiteDBDriver(DBDriver):
 
             schema = result.scalar_one_or_none()
             if not schema:
-                # B1-probe: when get_by_id misses, also surface what IS in the table for that id
-                # (regardless of type) and whether the type has any rows at all. Helps tell
-                # type-mismatch from absent-row from wrong-DB-file.
-                if property_key == "id":
-                    import logging as _logging
+                if property_key == "id" and logger.isEnabledFor(logging.DEBUG):
                     by_id_only = await session.execute(
                         select(EntitySchema.id, EntitySchema.type).where(EntitySchema.id == property_value)
                     )
@@ -1121,8 +1117,8 @@ class SQLiteDBDriver(DBDriver):
                         select(EntitySchema.id).where(EntitySchema.type == entity_type).limit(3)
                     )
                     sample_ids = [r[0] for r in by_type_count.all()]
-                    _logging.warning(
-                        f"[B1-probe] sqlite.get_by_prop miss: query type={entity_type!r} id={property_value!r} → "
+                    logger.debug(
+                        f"sqlite.get_by_prop miss: query type={entity_type!r} id={property_value!r} → "
                         f"rows_with_this_id_any_type={[(r[0], r[1]) for r in rows_for_id]} "
                         f"sample_ids_for_this_type={sample_ids}"
                     )

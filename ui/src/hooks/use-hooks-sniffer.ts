@@ -287,7 +287,10 @@ export function useHooksSniffer() {
     if (isPaused) {
       pausedSnapshot.current = flowData;
     }
-  }, [flowData, isPaused]);
+    // Capture only on the rising edge of isPaused — keeping flowData in deps
+    // would re-sync the snapshot on every new event, defeating pause.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPaused]);
 
   const events = useMemo(() => {
     const items = isPaused ? pausedSnapshot.current : flowData;

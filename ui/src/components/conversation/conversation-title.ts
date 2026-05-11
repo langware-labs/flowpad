@@ -1,4 +1,5 @@
 import type { Conversation } from '@sdk';
+import { participantLabel } from './participant-display';
 
 /**
  * Derive a display title for a Conversation. Used wherever we render a
@@ -14,8 +15,7 @@ export function deriveConversationTitle(conv: Conversation | null | undefined): 
   const name = (conv as { name?: string | null }).name;
   if (typeof name === 'string' && name.trim()) return name.trim();
   const parts = (conv.participants ?? [])
-    .map((p) => (typeof p?.name === 'string' && p.name.trim()) || (typeof p?.email === 'string' && p.email))
-    .filter((s): s is string => !!s);
+    .map((p) => participantLabel(p));
   if (parts.length > 0) return parts.join(', ');
   if (conv.id) return `Conversation ${conv.id.slice(0, 8)}`;
   return 'Conversation';

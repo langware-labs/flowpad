@@ -62,19 +62,36 @@ export function ContactPicker({
 
   const isFull = typeof max === 'number' && value.length >= max;
 
-  const alreadyAdded = (email: string) =>
-    value.some((p) => p.email.toLowerCase() === email.toLowerCase());
+  const participantKey = (p: ConversationParticipant) =>
+    p.user_id || p.email?.toLowerCase() || '';
+
+  const alreadyAdded = (participant: ConversationParticipant) => {
+    const key = participantKey(participant);
+    return !!key && value.some((p) => participantKey(p) === key);
+  };
+
+  const participantFromContact = (u: User): ConversationParticipant => {
+    const participant: ConversationParticipant = {
+      email: u.email ?? null,
+      name: u.name ?? null,
+    };
+    if (u.remote && u.id) {
+      participant.user_id = u.id;
+    }
+    return participant;
+  };
 
   const addContact = (u: User) => {
-    if (!u.email || alreadyAdded(u.email) || isFull) return;
-    onChange([...value, { user_id: u.id, email: u.email!, name: u.name ?? null }]);
+    const participant = participantFromContact(u);
+    if ((!participant.user_id && !participant.email) || alreadyAdded(participant) || isFull) return;
+    onChange([...value, participant]);
     setFilterText('');
     setListOpen(false);
   };
 
   const addFreeFormEmail = () => {
     const v = filterText.trim();
-    if (!v || !EMAIL_RE.test(v) || alreadyAdded(v) || isFull) return;
+    if (!v || !EMAIL_RE.test(v) || alreadyAdded({ email: v }) || isFull) return;
     onChange([...value, { email: v, name: null }]);
     setFilterText('');
     setListOpen(false);
@@ -85,8 +102,9 @@ export function ContactPicker({
   const listSource = trimmed.length > 0 ? filteredContacts : contacts;
   const visibleContacts = listOpen && !trimmed ? listSource : listSource.slice(0, 8);
 
-  const removeParticipant = (email: string) => {
-    onChange(value.filter((p) => p.email !== email));
+  const removeParticipant = (participant: ConversationParticipant) => {
+    const key = participantKey(participant);
+    onChange(value.filter((p) => participantKey(p) !== key));
   };
 
   return (
@@ -95,15 +113,15 @@ export function ContactPicker({
         <div className="flex flex-wrap gap-1.5">
           {value.map((p) => (
             <span
-              key={p.email}
+              key={participantKey(p)}
               className="inline-flex items-center gap-1 rounded-full bg-muted px-2 py-0.5 text-xs"
             >
-              {p.name || p.email}
+              {p.name || p.email || 'unknown'}
               <button
                 type="button"
                 className="rounded-full p-0.5 hover:bg-muted-foreground/20"
-                onClick={() => removeParticipant(p.email)}
-                aria-label={`Remove ${p.email}`}
+                onClick={() => removeParticipant(p)}
+                aria-label={`Remove ${p.name || p.email || 'unknown'}`}
                 disabled={disabled}
               >
                 <X className="h-3 w-3" />
@@ -146,9 +164,9 @@ export function ContactPicker({
               type="button"
               className="flex w-full items-center justify-between gap-2 px-2 py-1.5 text-left text-sm hover:bg-muted disabled:opacity-50"
               onClick={() => addContact(u)}
-              disabled={!u.email || alreadyAdded(u.email) || disabled}
+              disabled={alreadyAdded(participantFromContact(u)) || disabled}
             >
-              <span className="truncate">{u.name || u.email}</span>
+              <span className="truncate">{u.name || u.email || 'unknown'}</span>
               {u.name && u.email && (
                 <span className="truncate text-xs text-muted-foreground">{u.email}</span>
               )}
@@ -161,7 +179,7 @@ export function ContactPicker({
         filterText.trim() &&
         filteredContacts.length === 0 &&
         EMAIL_RE.test(filterText.trim()) &&
-        !alreadyAdded(filterText.trim()) && (
+        !alreadyAdded({ email: filterText.trim() }) && (
           <button
             type="button"
             className="rounded-md border border-dashed border-border px-2 py-1.5 text-left text-sm text-muted-foreground hover:bg-muted disabled:opacity-50"

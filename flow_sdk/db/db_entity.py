@@ -307,8 +307,8 @@ class DBEntity(DBBaseRecord):
         else:
             entity = await cls._db.get_by_id(eid, e_type)
             if entity is None:
-                _logging.warning(
-                    f"[B1-probe] DBEntity.get_by_id miss: cls={cls.__name__} e_type={e_type!r} "
+                _logging.getLogger(__name__).debug(
+                    f"DBEntity.get_by_id miss: cls={cls.__name__} e_type={e_type!r} "
                     f"eid={eid!r} _db_id={id(cls._db):#x} _db_cls={type(cls._db).__name__}"
                 )
         return entity

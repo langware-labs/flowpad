@@ -1,4 +1,4 @@
-import { dataContext, dataManager, QueryRequest, User } from '@sdk';
+import { cloudManager, dataContext, dataManager, QueryRequest, User } from '@sdk';
 import { ActionInfo } from '@sdk/models/ActionInfo';
 import { useState, useEffect } from 'react';
 
@@ -17,7 +17,18 @@ function notify() {
   _listeners.forEach((cb) => cb(_current));
 }
 
+function cloudLocalUser(): LocalUser | null {
+  const cloudUser = cloudManager.currentUser;
+  if (!cloudManager.isLoggedIn || !cloudUser?.id) return null;
+  return {
+    id: cloudUser.id ?? '',
+    name: cloudUser.name ?? cloudUser.email ?? '',
+  };
+}
+
 async function fetchFromBackend(): Promise<LocalUser | null> {
+  const cloud = cloudLocalUser();
+  if (cloud) return cloud;
   // Match the backend convention: local user has uname === 'local'.
   // (User.isLocal checks the email domain, which doesn't match when git config sets a real email.)
   if (dataContext.user?.uname === 'local') {
@@ -34,6 +45,14 @@ async function fetchFromBackend(): Promise<LocalUser | null> {
 }
 
 function ensureLoaded(): Promise<LocalUser | null> {
+  const cloud = cloudLocalUser();
+  if (cloud) {
+    if (_current?.id !== cloud.id || _current?.name !== cloud.name) {
+      _current = cloud;
+      notify();
+    }
+    return Promise.resolve(_current);
+  }
   if (_current !== null) return Promise.resolve(_current);
   if (_loading) return _loading;
   _loading = fetchFromBackend().then((u) => {
@@ -49,9 +68,20 @@ export function useLocalUser(): { localUser: LocalUser | null; updateName: (name
   const [localUser, setLocalUser] = useState<LocalUser | null>(_current);
 
   useEffect(() => {
+    const refresh = () => {
+      _loading = null;
+      if (!cloudManager.isLoggedIn) _current = null;
+      void ensureLoaded();
+    };
     _listeners.add(setLocalUser);
     void ensureLoaded();
-    return () => { _listeners.delete(setLocalUser); };
+    cloudManager.on('login_complete', refresh);
+    cloudManager.on('logout_complete', refresh);
+    return () => {
+      _listeners.delete(setLocalUser);
+      cloudManager.off('login_complete', refresh);
+      cloudManager.off('logout_complete', refresh);
+    };
   }, []);
 
   const updateName = async (name: string) => {
