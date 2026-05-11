@@ -96,21 +96,13 @@ export function ConversationPanel({
   // panel always shows something useful.
   const contextMessageId = selectedMessageId ?? mostRecentMessageId;
 
-  // Runs tab target — backend stamps `target_vfs_path` on the AgenticProcess
-  // as either task.typeid (task-scoped scenarios A/B/C) or conversation.typeid
-  // (hub-direct). When this surface mounts us without a `task` prop but the
-  // underlying conversation IS task-bound (e.g. inbox view of a Scenario B
-  // help-task), fall back to the task linked from `conversation.context_entities`
-  // so the query still matches the backend-stamped target. Last fallback is
-  // the conversation's own typeid for genuinely task-less hub-direct convs.
-  const fallbackTaskTypeId = convEntity?.firstContextOfType?.('task') ?? null;
-  const targetStr = task?.typeId
-    ? task.typeId.toString()
-    : fallbackTaskTypeId
-      ? fallbackTaskTypeId.toString()
-      : convEntity?.typeId
-        ? convEntity.typeId.toString()
-        : '';
+  // Runs tab target — always the conversation typeid. Approve & Execute
+  // stamps every spawned AP with ``target_vfs_path = <conversation typeid>``,
+  // so sibling conversations under the same task get independent Runs lists.
+  // (Legacy task-scoped APs from before this refactor — Scenarios A/B/C —
+  // still exist in the DB stamped with task typeid; they no longer surface
+  // here and need to be cleaned up out of band if visibility is desired.)
+  const targetStr = convEntity?.typeId ? convEntity.typeId.toString() : '';
   const showRuns = !!targetStr;
   const { processes: runProcesses } = useProcessesForTarget(targetStr, {
     enabled: !!targetStr,

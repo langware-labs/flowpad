@@ -357,6 +357,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       workdir: options.workdir,
       visible: workerOptions?.visible,
       shell_mode: options.shellMode,
+      ...(options.targetVfsPath ? { target_vfs_path: options.targetVfsPath } : {}),
     }).save(options.scope ?? []);
 
     if (workerOptions?.headless) {
