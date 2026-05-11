@@ -51,13 +51,11 @@ export function DraftMessageComposer({
   const { localUser } = useLocalUser();
   const ensureCloudLogin = useCloudLoginGate();
 
-  // Match MessageComposer's rule:
-  //   - Task-bound: only non-initiators suggest prompts (the initiator owns
-  //     the fork and runs the agent themselves).
-  //   - Hub-direct (no task): both sides can suggest, since the conversation
-  //     itself anchors the headless run.
-  const isInitiator = !!(task && localUser?.id && task.shared_by_id && task.shared_by_id === localUser.id);
-  const canAddPrompt = task ? !isInitiator : !!conversationId;
+  // Anyone in a conversation can suggest a prompt — initiator-vs-recipient
+  // gating proved confusing and the initiator often wants to queue a prompt
+  // for their own next headless run too. Match MessageComposer.tsx, which
+  // only requires that we have a destination conversation.
+  const canAddPrompt = !!conversationId;
   const isBusy = sending || discarding;
 
   // Debounced auto-save: persists edits into the FlowMessage entity so a

@@ -13,7 +13,6 @@ import { uploadFlowMessage, type UploadConflict } from '@sdk/entities/flow-messa
 import { useEntitiesQuery, useEntity } from '@src/hooks/entity-hooks';
 import { NewConversationDialog } from '@src/components/new-conversation-dialog/NewConversationDialog';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { resolveConversationDockPointer } from '@src/navigation/conversation-route-resolver';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Archive, MailPlus, MessageSquare, Plus, RefreshCw, Upload } from 'lucide-react';
 import { useMemo, useRef, useState } from 'react';
@@ -120,10 +119,7 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
     try {
       const result = await uploadFlowMessage(file);
       if (result.conversation_id) {
-        navigation.openDock(resolveConversationDockPointer({
-          conversationId: result.conversation_id,
-          taskId: result.task_id,
-        }));
+        navigation.openDock(DockPointer.forConversation(result.conversation_id));
       } else if (result.task_id) {
         navigation.openDock(DockPointer.forTasks(result.task_id));
       }
@@ -148,10 +144,7 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
       setPendingFile(null);
       setUploadConflicts(null);
       if (result.conversation_id) {
-        navigation.openDock(resolveConversationDockPointer({
-          conversationId: result.conversation_id,
-          taskId: result.task_id,
-        }));
+        navigation.openDock(DockPointer.forConversation(result.conversation_id));
       } else if (result.task_id) {
         navigation.openDock(DockPointer.forTasks(result.task_id));
       }

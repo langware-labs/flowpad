@@ -17,12 +17,17 @@ import { ActionInfo } from '@sdk/models/ActionInfo';
 export function useRunHeadless(
   targetType: 'task' | 'conversation',
   targetId: string | null | undefined,
-): { run: (promptText: string) => Promise<string | undefined> } {
-  const run = async (promptText: string): Promise<string | undefined> => {
+): { run: (promptText: string, sourceFlowMessageId?: string | null) => Promise<string | undefined> } {
+  const run = async (
+    promptText: string,
+    sourceFlowMessageId?: string | null,
+  ): Promise<string | undefined> => {
     if (!targetId) return undefined;
     const action = new ActionInfo('run-headless', targetType, targetId, 'POST');
-    action.bodyParameters = { prompt: promptText };
-    const res = await dataManager.callAction<{ prompt: string }, { process_id: string }>(action);
+    const body: Record<string, string> = { prompt: promptText };
+    if (sourceFlowMessageId) body.source_flow_message_id = sourceFlowMessageId;
+    action.bodyParameters = body;
+    const res = await dataManager.callAction<Record<string, string>, { process_id: string }>(action);
     return res?.process_id;
   };
   return { run };

@@ -1,7 +1,6 @@
 /**
  * AskForAssistanceDialog - Send the current session to another user to ask for help.
- * Modelled on SendPlanNotificationDialog; uses spec_type='session' and pre-populates
- * content from the live session output.
+ * No-Spec task: context is delivered via the transcript-attachment checkbox, not a Spec body.
  */
 
 import { useEffect, useState } from 'react';
@@ -14,8 +13,9 @@ import { ActionInfo } from '@sdk/models/ActionInfo';
 import { AgenticProcess, ConversationParticipant, dataManager, oauthService, OAUTH_PROVIDERS, TypeId } from '@sdk';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
 import { loadOptionalTranscript } from '@src/components/conversation/transcript-attachment';
+import { generateIssueDocument } from '@src/components/conversation/generate-issue-doc';
 import { toast } from 'sonner';
-import { Mail, Download, Github, Pencil } from 'lucide-react';
+import { Mail, Download, Github, Pencil, Loader2 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import {
   Dialog,
@@ -42,7 +42,6 @@ interface AskForAssistanceDialogProps {
   open: boolean;
   onClose: () => void;
   sessionTitle: string;
-  sessionContent: string;
   /** Active AgenticProcess id — stamped onto the sender's task as my_process_id, and resolved internally to a session_id when the transcript checkbox is on. */
   processId?: string;
   /** Project / cwd of the active session — used by ClaudeSessionRecord.discover for O(1) lookup. */
@@ -53,7 +52,6 @@ export function AskForAssistanceDialog({
   open,
   onClose,
   sessionTitle,
-  sessionContent,
   processId,
   projectPath,
 }: AskForAssistanceDialogProps) {
@@ -62,7 +60,6 @@ export function AskForAssistanceDialog({
   const [mode, setMode] = useState<DeliveryMode>(DeliveryMode.EMAIL);
   const [recipients, setRecipients] = useState<ConversationParticipant[]>([]);
   const [title, setTitle] = useState('');
-  const [content, setContent] = useState('');
   const [message, setMessage] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [senderName, setSenderName] = useState('');
@@ -73,11 +70,14 @@ export function AskForAssistanceDialog({
   const [gitError, setGitError] = useState<string | null>(null);
   const [emailError, setEmailError] = useState<string | null>(null);
   const [attachTranscript, setAttachTranscript] = useState(true);
+  /** Confirmation dialog shown when the user unchecks "Attach transcript". */
+  const [showUncheckWarning, setShowUncheckWarning] = useState(false);
+  /** True while a headless Claude run is generating issue.md in the background. */
+  const [generatingDoc, setGeneratingDoc] = useState(false);
 
   useEffect(() => {
     if (open) {
       setTitle(sessionTitle);
-      setContent(sessionContent);
       setRecipients([]);
       setMessage('Hi,\nI need some help with this session.\nPlease take a look and let me know.\nThanks!');
       setFiles([]);
@@ -87,6 +87,8 @@ export function AskForAssistanceDialog({
       setEmailError(null);
       setEditingName(false);
       setAttachTranscript(true);
+      setShowUncheckWarning(false);
+      setGeneratingDoc(false);
     }
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -97,6 +99,57 @@ export function AskForAssistanceDialog({
   const handleClose = () => {
     if (busy) return;
     onClose();
+  };
+
+  /**
+   * Checkbox change: unchecking opens the warning dialog instead of taking
+   * effect immediately, so the user has to consciously confirm sending without
+   * context. Re-checking proceeds without confirmation.
+   */
+  const handleAttachTranscriptChange = (next: boolean) => {
+    if (next) {
+      setAttachTranscript(true);
+      return;
+    }
+    if (busy || generatingDoc) return;
+    setShowUncheckWarning(true);
+  };
+
+  /** Warning option 1: spawn a headless Claude that summarizes the issue. */
+  const handleGenerateDocument = async () => {
+    if (!processId || generatingDoc) return;
+    setGeneratingDoc(true);
+    try {
+      const proc = await dataManager.getByTypeId<AgenticProcess>(
+        new TypeId(AgenticProcess.type, processId),
+      );
+      if (!proc) throw new Error('Could not load active process');
+      const docFile = await generateIssueDocument({ proc, projectPath });
+      setFiles((prev) => {
+        const filtered = prev.filter((f) => f.name !== docFile.name);
+        return [...filtered, docFile];
+      });
+      setAttachTranscript(false);
+      setShowUncheckWarning(false);
+      toast.success('Generated issue.md from your session and attached it.');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to generate document.';
+      toast.error(`Could not generate document: ${msg}`);
+    } finally {
+      setGeneratingDoc(false);
+    }
+  };
+
+  /** Warning option 2: keep the transcript attached, dismiss the dialog. */
+  const handleKeepTranscript = () => {
+    setAttachTranscript(true);
+    setShowUncheckWarning(false);
+  };
+
+  /** Warning option 3: proceed without context. Just dismiss; user must still click Send. */
+  const handleSendAnyway = () => {
+    setAttachTranscript(false);
+    setShowUncheckWarning(false);
   };
 
   const handleEmail = async () => {
@@ -139,9 +192,9 @@ export function AskForAssistanceDialog({
 
       const result = await sendNotification({
         recipient_id: recipientId,
-        spec_title: title.trim(),
-        spec_content: content.trim(),
-        spec_type: 'session',
+        spec_title: '',
+        spec_content: '',
+        spec_type: 'request',
         task_title: title.trim(),
         task_id: null,
         message: message.trim() || null,
@@ -153,6 +206,10 @@ export function AskForAssistanceDialog({
         // Code" chip is wired immediately, no Start step required.
         sender_process_id: processId ?? null,
         forked_process_id: forkedProcessId,
+        // Scenario C is a share to a known collaborator (sender already inside a
+        // PTY working with this person) — skip the first-touch Invitation so the
+        // recipient gets the conversation directly with no Accept gate.
+        is_initial_share: false,
       });
       if (result.git_error) {
         setGitError(result.git_error);
@@ -180,8 +237,8 @@ export function AskForAssistanceDialog({
     setError(null);
     try {
       const result = await createTaskBundle({
-        spec_title: title.trim(),
-        spec_content: content.trim(),
+        spec_title: '',
+        spec_content: '',
         task_title: title.trim(),
         message: message.trim() || null,
         team_space_id: null,
@@ -217,6 +274,55 @@ export function AskForAssistanceDialog({
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogAction>OK</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={showUncheckWarning}
+        onOpenChange={(o) => {
+          if (generatingDoc) return;
+          if (!o) handleKeepTranscript();
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Send without context?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Without your Claude Code transcript, the recipient may not have enough information to help.
+              Pick one:
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-col gap-2 sm:flex-col sm:items-stretch sm:space-x-0">
+            <Button
+              type="button"
+              onClick={handleGenerateDocument}
+              disabled={generatingDoc || !processId}
+              className="w-full"
+            >
+              {generatingDoc ? (
+                <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Generating issue.md…</>
+              ) : (
+                'Generate a document describing the issue'
+              )}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleKeepTranscript}
+              disabled={generatingDoc}
+              className="w-full"
+            >
+              Attach the transcript
+            </Button>
+            <button
+              type="button"
+              onClick={handleSendAnyway}
+              disabled={generatingDoc}
+              className="w-full pt-1 text-xs text-muted-foreground/60 hover:text-muted-foreground transition-colors disabled:opacity-50"
+            >
+              Send anyway
+            </button>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -322,18 +428,6 @@ export function AskForAssistanceDialog({
               />
             </div>
 
-            {/* Session content */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground">Session content</label>
-              <textarea
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-                rows={6}
-                disabled={busy}
-                className="w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-              />
-            </div>
-
             {/* Message */}
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-muted-foreground">Message (optional)</label>
@@ -351,8 +445,8 @@ export function AskForAssistanceDialog({
                   <input
                     type="checkbox"
                     checked={attachTranscript}
-                    onChange={(e) => setAttachTranscript(e.target.checked)}
-                    disabled={busy}
+                    onChange={(e) => handleAttachTranscriptChange(e.target.checked)}
+                    disabled={busy || generatingDoc}
                     className="h-3.5 w-3.5 rounded border-input"
                   />
                   Attach my Claude Code transcript
