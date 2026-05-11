@@ -5,7 +5,6 @@
                                  (returns "started" + URL, completion via WS)
 * ``POST   /logout``           — clear keyring + user JSON; return cloud logout URL
 * ``GET    /logout_callback``  — cloud's redirect target after logout
-* ``POST   /refresh-token``    — local-dev stub
 
 The browser-mode login callback lives at ``/auth/login_callback`` — see
 ``flow_sdk/server/routes/auth.py``.
@@ -123,6 +122,7 @@ async def status():
         from flow_sdk.cli.app_config import get_user
         from flow_sdk.cli.auth.hub_login import is_logged_in
         from flow_sdk.cloud_client import ApiConfig
+        from flow_sdk.cloud_client.ws_client import hub_ws_manager
 
         logged_in = is_logged_in()
         user_info = get_user() if logged_in else None
@@ -132,9 +132,97 @@ async def status():
             "logged_in": logged_in,
             "user": user_info,
             "cloud_url": cloud_url,
+            **hub_ws_manager.status_payload(),
         })
     except Exception as e:
         return JSONResponse(content={"error": str(e)}, status_code=500)
+
+
+def _cloud_ws_error(message: str, status_code: int = 400):
+    from flow_sdk.cloud_client.ws_client import hub_ws_manager
+
+    return JSONResponse(
+        content=ApiFailResponse(
+            message=message,
+            data=hub_ws_manager.status_payload(),
+        ).model_dump(mode="json"),
+        status_code=status_code,
+    )
+
+
+@router.post("/ws/connect")
+async def connect_ws():
+    """Verify hub WS auth and start the background hub WebSocket listener."""
+    try:
+        from flow_sdk.cli.auth.hub_login import is_logged_in
+        from flow_sdk.cloud_client.ws_client import (
+            HubWebSocketAuthError,
+            HubWebSocketLoginRequiredError,
+            HubWebSocketVerificationError,
+            hub_ws_manager,
+        )
+
+        if not is_logged_in():
+            return _cloud_ws_error("Cloud login required before connecting hub WebSocket.", 401)
+
+        status_payload = await hub_ws_manager.restart(wait_connected=True)
+        if not status_payload.get("hub_ws_connected"):
+            return _cloud_ws_error(status_payload.get("hub_ws_error") or "Hub WebSocket did not connect.", 502)
+
+        verification = await hub_ws_manager.verify_current_user()
+        return ApiSuccessResponse(data={**hub_ws_manager.status_payload(), "verification": verification})
+    except HubWebSocketLoginRequiredError as e:
+        return _cloud_ws_error(str(e), 401)
+    except HubWebSocketAuthError as e:
+        return _cloud_ws_error(str(e), 401)
+    except HubWebSocketVerificationError as e:
+        try:
+            from flow_sdk.cloud_client.ws_client import hub_ws_manager
+
+            await hub_ws_manager.stop()
+        except Exception:
+            pass
+        return _cloud_ws_error(str(e), 409)
+    except Exception as e:
+        return _cloud_ws_error(str(e), 500)
+
+
+@router.post("/ws/disconnect")
+async def disconnect_ws():
+    """Stop the hub WebSocket listener without logging out."""
+    try:
+        from flow_sdk.cloud_client.ws_client import hub_ws_manager
+
+        return ApiSuccessResponse(data=await hub_ws_manager.stop())
+    except Exception as e:
+        return _cloud_ws_error(str(e), 500)
+
+
+@router.post("/ws/verify")
+async def verify_ws():
+    """Verify the current hub WebSocket credentials against the local cloud profile."""
+    try:
+        from flow_sdk.cli.auth.hub_login import is_logged_in
+        from flow_sdk.cloud_client.ws_client import (
+            HubWebSocketAuthError,
+            HubWebSocketLoginRequiredError,
+            HubWebSocketVerificationError,
+            hub_ws_manager,
+        )
+
+        if not is_logged_in():
+            return _cloud_ws_error("Cloud login required before verifying hub WebSocket.", 401)
+
+        verification = await hub_ws_manager.verify_current_user()
+        return ApiSuccessResponse(data={**hub_ws_manager.status_payload(), "verification": verification})
+    except HubWebSocketLoginRequiredError as e:
+        return _cloud_ws_error(str(e), 401)
+    except HubWebSocketAuthError as e:
+        return _cloud_ws_error(str(e), 401)
+    except HubWebSocketVerificationError as e:
+        return _cloud_ws_error(str(e), 409)
+    except Exception as e:
+        return _cloud_ws_error(str(e), 500)
 
 
 @router.post("/login")
@@ -177,12 +265,6 @@ async def logout():
     return ApiSuccessResponse(data={"cloud_logout_url": get_logout_url(callback_url)})
 
 
-@router.post("/refresh-token")
-async def refresh_token() -> ApiSuccessResponse[str]:
-    """Local-dev stub. Production would validate + reissue the JWT."""
-    return ApiSuccessResponse[str](data="local_dev_token_refresh")
-
-
 @router.get("/test_login", response_class=HTMLResponse)
 async def test_login():
     """Serve the test login HTML page (dev fixture for ``flow auth test``)."""
@@ -190,5 +272,3 @@ async def test_login():
     html_file = server_dir / "test_login.html"
     with open(html_file, "r") as f:
         return HTMLResponse(content=f.read())
-
-

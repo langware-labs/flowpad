@@ -199,3 +199,49 @@ class ServiceUrls:
 
 # Create with None config for now - minihub doesn't need complex URL config
 urls_service = ServiceUrls(default_service_config.service_urls_config if hasattr(default_service_config, 'service_urls_config') else None)
+
+
+def build_hub_url(
+    target,
+    *,
+    action: str | None = None,
+    subpath: str | None = None,
+    scope: list | None = None,
+) -> str:
+    """Build a hub graph URL.
+
+    target  : entity type string ("conversation") or a TypeId-like object
+              (has ``.type`` and ``.id``). When it carries an id, the URL
+              addresses that instance; otherwise it addresses the type root.
+    action  : optional action name appended after the entity/type root.
+    subpath : optional path tail appended after the action.
+    scope   : optional list of TypeId-like scope prefixes (rendered ahead of
+              the entity, matching the hub's ``@<type>-<id>`` scope syntax).
+    """
+    segments: list[str] = []
+    if scope:
+        for s in scope:
+            t = getattr(s, "type", None) or (s.split("-", 1)[0] if isinstance(s, str) and "-" in s else None)
+            i = getattr(s, "id", None) or (s.split("-", 1)[1] if isinstance(s, str) and "-" in s else None)
+            if t and i:
+                segments.append(f"@{t}-{i}")
+            else:
+                segments.append(f"@{s}")
+
+    etype = getattr(target, "type", None) or target if isinstance(target, str) else getattr(target, "type", None)
+    eid = getattr(target, "id", None)
+
+    if not isinstance(etype, str) or not etype:
+        raise ValueError(f"build_hub_url: target must have a 'type' string (got {target!r})")
+
+    segments.append(etype)
+    if eid:
+        segments.append(eid)
+    if action:
+        segments.append(action)
+    if subpath:
+        segments.append(subpath.lstrip("/"))
+
+    # Return a path relative to api_base_url (FlowpadClient prepends /api/v1
+    # itself), so the result starts with /graph/...
+    return f"{urls_service.api.graph_prefix}/" + "/".join(segments)

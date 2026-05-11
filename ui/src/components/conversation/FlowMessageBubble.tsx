@@ -29,6 +29,9 @@ interface FlowMessageBubbleProps {
   /** Click on the bubble fires this so the parent can mark this message selected. */
   onSelect?: () => void;
   participants?: ConversationParticipant[];
+  /** Parent conversation's `message_status_visible` flag — passed straight
+   *  through to the receipt indicator. Defaults to true. */
+  conversationStatusVisible?: boolean;
 }
 
 export function FlowMessageBubble({
@@ -41,6 +44,7 @@ export function FlowMessageBubble({
   isSelected,
   onSelect,
   participants,
+  conversationStatusVisible = true,
 }: FlowMessageBubbleProps) {
   const { data: fm } = useEntity<FlowMessage>(
     new TypeId(FlowMessage.type, messageId),
@@ -153,6 +157,7 @@ export function FlowMessageBubble({
       footer={footer}
       isSelected={isSelected}
       onSelect={onSelect}
+      conversationStatusVisible={conversationStatusVisible}
     />
   );
 }

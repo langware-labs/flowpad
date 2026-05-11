@@ -1299,6 +1299,110 @@ async def _send_reply_to_hub(
         logger.warning("[append_conversation] hub reply upload failed (non-fatal): %s", _hub_err, exc_info=True)
 
 
+async def _hub_knows_conversation(conv_id: str) -> bool:
+    """Quick HTTP probe to decide whether the hub knows this conversation."""
+    try:
+        import httpx
+        from flow_sdk.cli.auth.credentials import load_credentials
+        from flow_sdk.cloud_client.client import ApiConfig
+
+        creds = load_credentials()
+        if not creds or not creds.api_key:
+            return False
+        api = ApiConfig.from_env()
+        url = api._get_full_url(f"/graph/conversation/{conv_id}")
+        headers = {"Authorization": f"Bearer {creds.api_key}", "Accept": "application/json"}
+        async with httpx.AsyncClient(timeout=3.0) as h:
+            r = await h.get(url, headers=headers)
+            if r.status_code != 200:
+                return False
+            body = r.json()
+            return (body or {}).get("status") == "SUCCESS" and bool((body or {}).get("data"))
+    except Exception:
+        return False
+
+
+async def _try_send_reply_via_hub(
+    *,
+    conv_id: str,
+    text: str,
+    sender_name: str,
+    sender_id: Optional[str],
+    someone_typeid: str,
+) -> Optional[ApiResponse]:
+    """If ``conv_id`` is a hub-mirrored conversation, push the reply through
+    the hub bridge so the other party gets it via their own bridge. Returns
+    the API response on success, ``None`` to fall through to local-only.
+    """
+    try:
+        from flow_sdk.cloud_client.hub_bridge import hub_ws_bridge
+        from flow_sdk.cloud_client.ws_client import hub_ws_manager
+    except Exception:
+        return None
+
+    if not hub_ws_manager.is_connected:
+        return None
+
+    if not hub_ws_bridge.is_hub_conversation(conv_id):
+        # Bridge hasn't seen an inbound event for this conv this session
+        # (e.g., it landed on a previous run and the in-memory set didn't
+        # survive restart). Probe the hub directly — if the hub knows the
+        # conv, treat it as hub-mirrored and remember for the rest of this
+        # session.
+        if not await _hub_knows_conversation(conv_id):
+            return None
+        hub_ws_bridge.remember_hub_conversation(conv_id)
+
+    try:
+        resp = await hub_ws_bridge.add_message(
+            conversation_id=conv_id,
+            text=text,
+            sender_name=sender_name or None,
+        )
+    except Exception as e:
+        logger.warning("[append_conversation] hub add_message failed: %s", e, exc_info=True)
+        return None
+
+    fm_payload = (resp or {}).get("data") or {}
+    hub_fm_id = fm_payload.get("id")
+    if not hub_fm_id:
+        logger.warning("[append_conversation] hub add_message returned no id; falling through")
+        return None
+
+    # Materialize the hub-confirmed message into the local store. Sender side
+    # only — hub fanout skips the sender, so this is the local UI's source of
+    # truth for this row.
+    try:
+        from flow_sdk.app.actions.materialize_flow_message import materialize_flow_message
+
+        payload = dict(fm_payload)
+        payload["id"] = hub_fm_id
+        payload["text"] = text
+        if sender_id and not payload.get("sender_id"):
+            payload["sender_id"] = sender_id
+        if sender_name and not payload.get("sender_name"):
+            payload["sender_name"] = sender_name
+        await materialize_flow_message(
+            payload,
+            conversation_id=conv_id,
+            someone_typeid=someone_typeid,
+            notify=True,
+        )
+    except Exception as e:
+        logger.warning("[append_conversation] hub-side reply materialize failed: %s", e, exc_info=True)
+        # Hub got the message; local UI will pick it up on the next refetch.
+
+    conv_after = await Conversation.get_one({"id": conv_id})
+    message_count = conv_after.message_count if conv_after else 0
+    _notify_ui_conversation_updated(conv_id, "", hub_fm_id)
+    return ApiSuccessResponse(data={
+        "task_id": "",
+        "conversation_id": conv_id,
+        "message_count": message_count,
+        "flow_message_id": hub_fm_id,
+    })
+
+
 def _notify_ui_conversation_updated(conv_id: str, task_id: str, fm_id: str) -> None:
     """Fire-and-forget sync event so the UI refreshes the conversation panel."""
     try:
@@ -1371,6 +1475,27 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
     prompt_files = body.get("prompt_files") or []
     if not isinstance(prompt_files, list):
         prompt_files = [prompt_files]
+
+    # Hub-mirrored conversation: round-trip the reply through the hub so the
+    # other party receives it via their own bridge. Only when this is a plain
+    # text reply (no attachments / prompts / draft) — the hub action shape
+    # doesn't currently carry those, and the local-only path handles them.
+    if (
+        not task_id
+        and not is_draft
+        and not uploaded_files
+        and not prompt_text
+        and not prompt_files
+    ):
+        hub_response = await _try_send_reply_via_hub(
+            conv_id=conv.id,
+            text=message,
+            sender_name=sender_name,
+            sender_id=sender_id,
+            someone_typeid=someone_typeid,
+        )
+        if hub_response is not None:
+            return hub_response
 
     effective_task_id: Optional[str] = task.id if task else None
 

@@ -10,35 +10,30 @@ instances logged in as different cloud users don't overwrite each other's
 token.
 """
 
-import keyring
-
-
-SERVICE_NAME = "Flowpad.ai.app_secrets"
-
-
-def _api_key_name() -> str:
-    """Per-instance keyring username — see module docstring."""
-    from flow_sdk.instance_settings import get_instance_settings
-    name = get_instance_settings().instance_name
-    return "flowpad_api_key" if name == "prod" else f"flowpad_api_key:{name}"
+from flow_sdk.cli.auth.credentials import (
+    SERVICE_NAME,
+    UserHubCredentials,
+    _api_key_name,
+    clear_credentials,
+    load_credentials,
+    save_credentials,
+)
 
 
 def set_api_key(api_key: str) -> None:
     """Store the API key in the system keyring."""
-    keyring.set_password(SERVICE_NAME, _api_key_name(), api_key)
+    save_credentials(UserHubCredentials(api_key=api_key))
 
 
 def get_api_key() -> str | None:
     """Retrieve the API key from the system keyring."""
-    return keyring.get_password(SERVICE_NAME, _api_key_name())
+    creds = load_credentials()
+    return creds.api_key if creds else None
 
 
 def delete_api_key() -> None:
     """Delete the API key from the system keyring (idempotent)."""
-    try:
-        keyring.delete_password(SERVICE_NAME, _api_key_name())
-    except keyring.errors.PasswordDeleteError:
-        pass
+    clear_credentials()
 
 
 def is_logged_in() -> bool:
@@ -72,20 +67,10 @@ async def validate_api_key_async(api_key: str) -> dict:
     """
     from flow_sdk.cloud_client import FlowpadClient, ApiConfig
 
-    # Create API config from environment
     config = ApiConfig.from_env()
-
-    # Create client
-    async with FlowpadClient(config) as client:
-        # Set the API key
-        client.set_api_key(api_key)
-
-        # Call get_user() which validates the key
-        # This will raise an exception if the request fails (non-200)
-        # or if the response doesn't have an 'id' field
-        user_data = await client.get_user()
-
-        return user_data
+    async with FlowpadClient(config, api_key=api_key) as client:
+        # get_user() raises on non-200 or if the body is missing 'id'.
+        return await client.get_user()
 
 
 def validate_api_key(api_key: str) -> dict:

@@ -29,14 +29,78 @@ class Conversation(Entity):
     """
 
     type: str = APIField(default="conversation")
+    title: Optional[str] = APIField(default=None)
     remote_project_id: Optional[str] = APIField(None)
     remote_project_name: Optional[str] = APIField(None)
     message_count: int = APIField(0)
     message_ids: Optional[str] = APIField(None)  # JSON-encoded [{"typeid": ..., "ts": ...}]
     participants: list[dict] = APIField(default_factory=list)  # [{user_id, name, email?}]
+    # When False, hub suppresses delivery_status fan-out to the original
+    # sender (delivered/received UPDATE frames are filtered by hub-side
+    # Conversation._fanout_status_update). Co-recipients still see them.
+    message_status_visible: bool = APIField(default=True)
+    # True once ``share()`` succeeded — the conversation has a hub-side mirror
+    # with the same id, and future replies should route through the bridge.
+    remote: bool = APIField(default=False)
     # NOTE: task_id moved into ``context_entities``. Use
     # ``conv.first_context_of_type('task')`` to read it back.
     _api_visible: ClassVar[bool] = True
+
+    async def share(self) -> "Conversation":
+        """Create the conversation on the hub via the generic ``Entity.share()``,
+        then call the hub-side ``join`` action so the caller lands in
+        ``participants``.
+
+        Without this follow-up the hub's ``_fanout_message`` skips the
+        sender and notifies the (empty) remaining participants — fanout is
+        a no-op and the sender's bridge never sees inbound ``data_op_msg``
+        frames. Both calls go through the standard cloud client.
+        """
+        from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
+        from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
+        from flow_sdk.core.urls.service_urls import build_hub_url  # noqa: PLC0415
+
+        await super().share()
+
+        creds = load_credentials()
+        if not creds or not creds.api_key:
+            return self
+        join_path = build_hub_url(self, action="join")
+        async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
+            await client.post(join_path, {})
+        return self
+
+    async def add_message(self, text: str, *, echo: bool = False, sender_name: Optional[str] = None) -> dict:
+        """Post a message to this conversation via the hub WebSocket bridge.
+
+        Requires the conversation to be hub-mirrored (``self.remote`` /
+        ``share()``). When ``echo=True`` the hub also creates a
+        ``"Received: <text>"`` reply on the same conversation — useful for
+        single-user round-trip tests.
+
+        Returns the hub's response dict (typically the created FlowMessage).
+        """
+        from flow_sdk.cloud_client.hub_bridge import hub_ws_bridge  # noqa: PLC0415
+
+        if not self.id:
+            raise RuntimeError("Conversation.id is required")
+        body: dict = {"text": text}
+        if sender_name:
+            body["sender_name"] = sender_name
+        if echo:
+            body["echo"] = True
+        return await hub_ws_bridge.manager.send_request(
+            {
+                "message_type": "rest_api_msg",
+                "method": "POST",
+                "scope": [],
+                "target_typeid": {"type": "conversation", "id": self.id},
+                "action": "add_message",
+                "body": body,
+            },
+            timeout=10.0,
+        )
+
 
     @property
     def data_path(self) -> str:
