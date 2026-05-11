@@ -258,6 +258,12 @@ function SharedContextSection({
       // in the patch, leaving the FlowMessage linkage local-only.
       const fmTypeIdString = new TypeId(FlowMessage.type, messageId).toString();
       const cliConfig = new ClaudeCliOptions({ permission_mode: 'bypassPermissions' });
+      console.log('[handleStartSession] creating AgenticProcess with', {
+        fmTypeIdString,
+        workdir,
+        project_id: task.project_id,
+        visible: true,
+      });
       const proc = await new AgenticProcess({
         cli_config: cliConfig.toJson(),
         context_data: { project_id: task.project_id ?? undefined },
@@ -265,6 +271,12 @@ function SharedContextSection({
         visible: true,
         context_entities: [fmTypeIdString],
       }).save();
+      console.log('[handleStartSession] after save:', {
+        proc_id: proc.id,
+        visible: proc.visible,
+        contextEntities: proc.contextEntities?.map((t) => t.toString()),
+        contextEntitiesIncludesFM: proc.contextEntities?.some((t) => t.toString() === fmTypeIdString),
+      });
 
       // Nudge watched queries so `usePrivateContext` sees the new entity
       // without waiting for the backend WS UPDATE round-trip.
@@ -278,6 +290,14 @@ function SharedContextSection({
       await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 
       await proc.start({ instruction });
+      console.log('[handleStartSession] after start:', {
+        proc_id: proc.id,
+        status: proc.status,
+        session_id: proc.session_id,
+        shell_id: proc.shell_id,
+        contextEntities: proc.contextEntities?.map((t) => t.toString()),
+        contextEntitiesIncludesFM: proc.contextEntities?.some((t) => t.toString() === fmTypeIdString),
+      });
       proc.openTerminalDock();
     } catch (err) {
       console.error('[SharedContext] start session failed', err);
