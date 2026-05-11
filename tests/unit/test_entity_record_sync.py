@@ -67,8 +67,9 @@ class TestEntityAllocateId:
 
 
 class TestProjectAllocateId:
-    """Project.allocate_id always returns a fresh uuid4. Identity is opaque;
-    project dedup goes through ``find_by_cwd``, not via id derivation.
+    """Project.allocate_id derives a deterministic uuid5 from the canonical
+    ``fs_storage_mount_path``. Two Projects pointing at the same path get
+    the same id — id derivation is the dedup mechanism.
     """
 
     def test_project_allocate_id_returns_uuid(self):
@@ -78,13 +79,13 @@ class TestProjectAllocateId:
         parsed = uuid.UUID(result)
         assert str(parsed) == result
 
-    def test_project_allocate_id_random_per_call(self):
+    def test_project_allocate_id_deterministic_per_path(self):
         from flow_sdk.builtin.project import Project
         data = {"fs_storage_mount_path": "/tmp/myproject"}
         id1 = Project.allocate_id(data)
         id2 = Project.allocate_id(data)
-        # Same input → DIFFERENT ids (uuid4 is random; not derived from path).
-        assert id1 != id2
+        # Same path → SAME id (uuid5 over canonical path).
+        assert id1 == id2
 
     def test_project_allocate_id_returns_uuid_for_real_path(self):
         from flow_sdk.builtin.project import Project
@@ -101,12 +102,20 @@ class TestProjectAllocateId:
         uuid.UUID(id2)
         assert id1 != id2
 
-    def test_project_allocate_id_preserves_valid_provided_id(self):
-        """If the caller passes in a valid uuid, we keep it (e.g. round-trips
-        from the wire where the client minted a uuid4)."""
+    def test_project_allocate_id_path_wins_over_client_id(self):
+        """The canonical mount path is the natural key — a client-minted uuid4
+        (e.g. the TS SDK's optimistic id) is overridden by path derivation."""
         from flow_sdk.builtin.project import Project
         provided = str(uuid.uuid4())
         result = Project.allocate_id({"fs_storage_mount_path": "/tmp/x", "id": provided})
+        assert result == Project.derive_id_for_path("/tmp/x")
+        assert result != provided
+
+    def test_project_allocate_id_preserves_id_when_no_path(self):
+        """No path supplied → caller's uuid round-trips."""
+        from flow_sdk.builtin.project import Project
+        provided = str(uuid.uuid4())
+        result = Project.allocate_id({"id": provided})
         assert result == provided
 
 
