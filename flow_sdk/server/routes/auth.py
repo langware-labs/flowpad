@@ -12,13 +12,21 @@ The handler validates the api-key, finalizes the login, and either redirects to
 ``next`` (same-origin path only) or renders the success page.
 """
 
+import logging
+from urllib.parse import urlencode
+
 from fastapi import APIRouter, Query
 from fastapi.responses import HTMLResponse, RedirectResponse
+
+from flow_sdk.cli.auth.hub_login import SERVICE_NAME, _api_key_name
+from flow_sdk.cli.auth.secrets import is_secrets_enabled
 
 from .. import state
 from .cloud import _render_result_page
 
 router = APIRouter(prefix="/auth")
+
+logger = logging.getLogger(__name__)
 
 
 @router.get("/login_callback", response_class=HTMLResponse)
@@ -35,8 +43,24 @@ async def login_callback(
         from flow_sdk.cli.auth.cloud_login import _finalize_login
         from flow_sdk.cli.auth.hub_login import validate_api_key_async
 
+        secrets_enabled = is_secrets_enabled()
+        logger.info(
+            "login_callback: secrets_enabled=%s has_key=%s next=%r",
+            secrets_enabled,
+            bool(flowpad_api_key),
+            next,
+        )
+
         if not flowpad_api_key:
             raise ValueError("No API key provided. Expected 'flowpad-api-key' parameter.")
+
+        # Pre-flight the OS-keychain approval so the user sees Flowpad's friendly
+        # explanation dialog before keyring.set_password (in _finalize_login)
+        # triggers the raw OS prompt. The SPA route triggers
+        # secretApprovalGate.request() and then re-invokes this callback.
+        if not secrets_enabled:
+            qs = urlencode({"flowpad-api-key": flowpad_api_key, "next": next or ""})
+            return RedirectResponse(url=f"/electron/keychain-approval?{qs}", status_code=302)
 
         user_info = await validate_api_key_async(flowpad_api_key)
         await _finalize_login(flowpad_api_key, user_info)
@@ -45,7 +69,14 @@ async def login_callback(
             return RedirectResponse(url=next, status_code=302)
 
         user_id = user_info.get("id", "Unknown")
-        detail_html = f'<div class="detail-box"><strong>Account Details:</strong><br>User ID: {user_id}</div>'
+        detail_html = (
+            f'<div class="detail-box">'
+            f"<strong>Account Details:</strong><br>User ID: {user_id}<br>"
+            f"<strong>Keychain entry:</strong><br>"
+            f"service=<code>{SERVICE_NAME}</code><br>"
+            f"account=<code>{_api_key_name()}</code>"
+            f"</div>"
+        )
         return _render_result_page(
             title="Login Successful",
             heading="Login Successful!",
