@@ -23,6 +23,33 @@ from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 
 
+def _resolve_session_record(session_id: str, hint: str | None = None):
+    """Locate a session record on disk by id, auto-discovering worker_type.
+
+    With ``hint`` set to ``"claude"`` or ``"codex"``, only the matching
+    backend is probed. Without a hint, Claude is tried first, then Codex.
+
+    Returns ``(record, worker_type)`` on hit; ``(None, None)`` on miss.
+    Worker_type is the canonical query/api spelling — ``"claude"`` or ``"codex"``.
+    """
+    if hint not in (None, "claude", "codex"):
+        return None, None
+
+    if hint != "codex":
+        from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
+        rec = ClaudeSessionRecord.get(session_id)
+        if rec is not None:
+            return rec, "claude"
+
+    if hint != "claude":
+        from flow_sdk.fs_records.codex import CodexSessionRecord
+        rec = CodexSessionRecord.get(session_id)
+        if rec is not None:
+            return rec, "codex"
+
+    return None, None
+
+
 class ScanActionsMixin:
     async def _scan_resources(self) -> ApiResponse:
         """Scan specific resource type with optional time window filtering.
@@ -222,7 +249,7 @@ class ScanActionsMixin:
         from flow_sdk.builtin.agentic_process import AgenticProcess
         from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeCliOptions
         from flow_sdk.builtin.agentic_process.cli_drivers.codex import CodexCliOptions
-        from flow_sdk.flowpad_types.enums import WorkerType
+        from flow_sdk.flowpad_types.enums import ProcessType, WorkerType
 
         try:
             request_info = get_current_request_info()
@@ -246,6 +273,19 @@ class ScanActionsMixin:
             project_id = context_data.pop("project_id", None)
             # VFS path of the attached entity (trigger, markdown, …); stored on the process for the runs drawer / chat panel queries.
             target_vfs_path = context_data.pop("target_vfs_path", None)
+            # Lift `process_type` out of `context_data` so it lands on the
+            # top-level field declared in the AgenticProcess schema. The
+            # `useProcessesForTarget` filter on the chat-panel queries
+            # `match: { process_type: 'chat' }` against the top-level field;
+            # leaving it nested in `context_data.process_type` makes the chat
+            # toolbar's history dropdown show empty even when sessions exist.
+            process_type_raw = context_data.pop("process_type", None)
+            process_type: ProcessType | None = None
+            if process_type_raw:
+                try:
+                    process_type = ProcessType(process_type_raw)
+                except (ValueError, TypeError):
+                    process_type = None
 
             fork_session = bool(context_data.pop("fork_session", False))
             resume_session_id = context_data.pop("resume_session_id", None)
@@ -325,6 +365,7 @@ class ScanActionsMixin:
                 additional_dirs=additional_dirs,
                 project_id=project_id or None,
                 target_vfs_path=target_vfs_path or None,
+                process_type=process_type,
             )
             if resume_session_id and not fork_session:
                 process.session_id = resume_session_id
@@ -362,21 +403,27 @@ class ScanActionsMixin:
 
             logging.info(f"ComputeNode {self.id} created AgenticProcess {process.id}")
 
-            # Atomic: spawn the linked Shell + PTY before returning so the
-            # frontend gets a fully-attached row in one round-trip. Without
-            # this the tab strip races a Phase-B refresh and ends up empty.
-            try:
-                start_resp = await process.start(visible=visible)
-            except Exception as start_err:
-                logging.exception(
-                    f"ComputeNode {self.id} createProcess start error for {process.id}: {start_err}"
-                )
-                return ApiFailResponse(
-                    message=f"Process {process.id} created but failed to start: {start_err}"
-                )
+            # Visible (PTY) processes spawn the linked Shell here so the
+            # frontend gets a fully-attached row in one round-trip; otherwise
+            # the tab strip races a Phase-B refresh and ends up empty.
+            #
+            # Headless (visible=False) processes manage their lifecycle
+            # per-turn via ``run_print_turn`` — pre-spawning a PTY here would
+            # claim a session_id without ever writing a JSONL, leaving the
+            # next ``/prompt`` to land on a stale session and emit nothing.
+            if visible:
+                try:
+                    start_resp = await process.start_pty(visible=visible)
+                except Exception as start_err:
+                    logging.exception(
+                        f"ComputeNode {self.id} createProcess start error for {process.id}: {start_err}"
+                    )
+                    return ApiFailResponse(
+                        message=f"Process {process.id} created but failed to start: {start_err}"
+                    )
 
-            if isinstance(start_resp, ApiFailResponse):
-                return start_resp
+                if isinstance(start_resp, ApiFailResponse):
+                    return start_resp
 
             return ApiSuccessResponse(
                 data={
@@ -392,13 +439,11 @@ class ScanActionsMixin:
             return ApiFailResponse(message=str(e))
 
     async def _scan_upsert_session_process(self) -> ApiResponse:
-        """Find or create an AgenticProcess for a given session ID.
+        """Thin POST wrapper — reads body params and delegates to the shared impl.
 
-        Idempotent on ``session_id``: if a process already exists, returns it.
-        Otherwise creates a new AgenticProcess with ``session_id`` pre-set and
-        flips ``cli_config.resume=True`` when a transcript is found on disk.
-
-        Supports both Claude (default) and Codex via ``workerType``.
+        Idempotent on ``session_id``. Frontend callers are expected to use
+        ``terminals/get_by_worker_id/<id>`` (which auto-discovers worker_type);
+        this POST endpoint remains for backend-internal callers and tests.
 
         POST body (camelCase):
             sessionId:  str           — session/thread ID
@@ -406,52 +451,78 @@ class ScanActionsMixin:
             projectId:  str | None    — project ID for context
             workerType: str | None    — "claude" (default) or "codex"
 
-        Returns: { id, type, session_id, created, worker_type }
+        Returns: ApiSuccessResponse with the full AgenticProcess entity dict.
+        """
+        request_info = get_current_request_info()
+        if not request_info or not request_info.request:
+            return ApiFailResponse(message="No request info available")
+
+        body = await request_info.get_post_data()
+        if not isinstance(body, dict):
+            return ApiFailResponse(message="Invalid request body (expected JSON object)")
+
+        session_id = body.get("sessionId")
+        if not session_id:
+            return ApiFailResponse(message="sessionId is required")
+
+        return await self._upsert_session_process_impl(
+            session_id=session_id,
+            workdir=body.get("workdir"),
+            project_id=body.get("projectId"),
+            worker_type_raw=(body.get("workerType") or "claude").lower(),
+        )
+
+    async def _upsert_session_process_impl(
+        self,
+        session_id: str,
+        workdir: str | None,
+        project_id: str | None,
+        worker_type_raw: str,
+        *,
+        session_rec=None,
+    ) -> ApiResponse:
+        """Find or create an AgenticProcess for ``session_id``.
+
+        Resolves session record on disk (Claude or Codex), heals an existing
+        AgenticProcess if one matches ``session_id``, otherwise creates a new
+        one and atomically spawns its Shell + PTY. Returns the full entity
+        dict so callers can hydrate the frontend cache without a follow-up
+        ``getById``.
+
+        ``session_rec`` may be passed pre-resolved (e.g. from the worker-id
+        sub-path that already located it) to skip a redundant disk scan.
         """
         from flow_sdk.builtin.agentic_process import AgenticProcess
         from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter
         from flow_sdk.flowpad_types.enums import WorkerType
 
         request_info = get_current_request_info()
-        if not request_info or not request_info.request:
-            return ApiFailResponse(message="No request info available")
 
         try:
-            body = await request_info.get_post_data()
-            if not isinstance(body, dict):
-                return ApiFailResponse(message="Invalid request body (expected JSON object)")
-
-            session_id = body.get("sessionId")
-            if not session_id:
-                return ApiFailResponse(message="sessionId is required")
-
-            workdir = body.get("workdir")
-            project_id = body.get("projectId")
-            worker_type_raw = (body.get("workerType") or "claude").lower()
             is_codex = worker_type_raw in ("codex",)
             cli_factory_key = "codex" if is_codex else "claude"
             wt_enum = WorkerType.CODEX if is_codex else WorkerType.CLAUDE_CODE
 
-            # Resolve workdir + project from the session record before checking
-            # for an existing process. The transcript cwd is the authoritative
-            # restore location; project_id is derived from it so worktrees and
-            # nested checkouts do not collapse into the active dock project.
+            # Resolve workdir + project + project_encoded_name from the session record.
+            # Transcript cwd is the authoritative restore location; project_id is
+            # derived from it so worktrees / nested checkouts don't collapse into
+            # the active dock project.
+            project_encoded_name = None
             session_name: str | None = None
-            session_rec = None
             try:
                 from flow_sdk.builtin.project import Project
 
-                if is_codex:
-                    from flow_sdk.fs_records.codex import CodexSessionRecord
-                    session_rec = CodexSessionRecord.get(session_id)
-                else:
-                    from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
-                    session_rec = ClaudeSessionRecord.get(session_id)
+                if session_rec is None:
+                    session_rec, _ = _resolve_session_record(
+                        session_id,
+                        hint="codex" if is_codex else "claude",
+                    )
 
                 if session_rec:
                     rec_cwd = getattr(session_rec, "cwd", None)
                     if rec_cwd and not workdir:
                         workdir = rec_cwd
+                    project_encoded_name = getattr(session_rec, "project_encoded_name", None)
                     rec_name = getattr(session_rec, "name", None) or ""
                     if rec_name and rec_name != session_id:
                         session_name = rec_name
@@ -460,6 +531,11 @@ class ScanActionsMixin:
                     project = await Project.recover_by_path(workdir)
                     if project:
                         project_id = project.id
+                        project_encoded_name = project.project_encoded_name or project_encoded_name
+                elif project_id:
+                    project = await Project.get_by_id(project_id)
+                    if project and not project_encoded_name:
+                        project_encoded_name = project.project_encoded_name
             except Exception:
                 logging.debug(
                     "ComputeNode %s upsertSessionProcess session context resolve failed for %s",
@@ -488,6 +564,9 @@ class ScanActionsMixin:
                 if project_id and context_data.get("project_id") != project_id:
                     context_data["project_id"] = project_id
                     changed = True
+                if project_encoded_name and process.project_encoded_name != project_encoded_name:
+                    process.project_encoded_name = project_encoded_name
+                    changed = True
                 if session_name and not process.name:
                     process.name = session_name
                     changed = True
@@ -515,12 +594,10 @@ class ScanActionsMixin:
                             process.id,
                             exc_info=True,
                         )
-                # Heal pre-existing processes that were persisted before the
-                # atomic-start fix: ensure the linked Shell + PTY are attached
-                # and the process is visible so the tab strip will surface it.
+                # Reattach shell + flip visible so the tab strip surfaces the row.
                 if not process.shell_id or not process.visible:
                     try:
-                        start_resp = await process.start(visible=True)
+                        start_resp = await process.start_pty(visible=True)
                     except Exception as start_err:
                         logging.exception(
                             f"ComputeNode {self.id} upsertSessionProcess heal-start error for {process.id}: {start_err}"
@@ -530,17 +607,7 @@ class ScanActionsMixin:
                         )
                     if isinstance(start_resp, ApiFailResponse):
                         return start_resp
-                return ApiSuccessResponse(
-                    data={
-                        "id": process.id,
-                        "type": process.type,
-                        "session_id": process.session_id,
-                        "shell_id": process.shell_id,
-                        "pty_pid": getattr(process, "pty_pid", None),
-                        "worker_type": getattr(process.worker_type, "value", process.worker_type),
-                        "created": False,
-                    }
-                )
+                return ApiSuccessResponse(data=process.model_dump(mode="json"))
 
             # Create new process directly on this compute node
             owner = request_info.someone_typeid if request_info else None
@@ -557,6 +624,7 @@ class ScanActionsMixin:
                 use_worker_history=True,
                 context_data=context_data,
                 project_id=project_id or None,
+                project_encoded_name=project_encoded_name or None,
                 visible=True,
                 **({"name": session_name} if session_name else {}),
             )
@@ -592,7 +660,7 @@ class ScanActionsMixin:
             # AgenticProcess has no shell_id, is filtered out of the visible
             # tab strip, and the route loader silently snaps to a fallback.
             try:
-                start_resp = await process.start(visible=True)
+                start_resp = await process.start_pty(visible=True)
             except Exception as start_err:
                 logging.exception(
                     f"ComputeNode {self.id} upsertSessionProcess start error for {process.id}: {start_err}"
@@ -604,18 +672,141 @@ class ScanActionsMixin:
             if isinstance(start_resp, ApiFailResponse):
                 return start_resp
 
+            return ApiSuccessResponse(data=process.model_dump(mode="json"))
+
+        except Exception as e:
+            logging.exception(f"ComputeNode {self.id} upsertSessionProcess error: {e}")
+            return ApiFailResponse(message=str(e))
+
+    async def _scan_get_by_worker_id(self, worker_id: str) -> ApiResponse:
+        """Auto-discover worker_type, upsert, return ready-to-use AgenticProcess.
+
+        Single round-trip resolver: caller passes the worker/session/thread id
+        and optionally a ``worker_type`` query hint (``claude`` or ``codex``)
+        to skip the other backend's disk scan. On hit, delegates to the
+        shared upsert impl, forwarding the already-resolved record so the
+        impl doesn't re-scan.
+        """
+        request_info = get_current_request_info()
+        hint_raw = (
+            request_info.get_param("worker_type")
+            or request_info.get_param("workerType")
+            or ""
+        ) if request_info else ""
+        hint = hint_raw.lower() or None
+        if hint and hint not in ("claude", "codex"):
+            return ApiFailResponse(
+                message=f"worker_type must be 'claude' or 'codex' (got {hint_raw!r})",
+                status_code=400,
+            )
+
+        session_rec, worker_type = _resolve_session_record(worker_id, hint=hint)
+        if session_rec is None:
+            return ApiFailResponse(
+                message=f"Session {worker_id} not found in Claude or Codex history",
+                status_code=404,
+            )
+
+        return await self._upsert_session_process_impl(
+            session_id=worker_id,
+            workdir=None,
+            project_id=None,
+            worker_type_raw=worker_type,
+            session_rec=session_rec,
+        )
+
+    async def _scan_find_session(self) -> ApiResponse:
+        """Look up a session by id across Claude and Codex on-disk history.
+
+        Pure read-only resolver: returns the descriptor a caller needs to render
+        the transcript and open the session, without creating an AgenticProcess.
+
+        Query params (camelCase or snake_case both accepted via get_param):
+            session_id: required — UUID/thread id.
+            worker_type: optional — "claude" | "codex" to skip the other lookup.
+
+        Returns ApiSuccessResponse with:
+            session_id, worker_type, transcript_path, project_encoded_name
+            (claude only — None for codex), cwd, project_id, session_name.
+
+        Returns ApiFailResponse(status_code=404) when not found in either history.
+        """
+        from flow_sdk.builtin.project import Project
+
+        request_info = get_current_request_info()
+        if not request_info or not request_info.request:
+            return ApiFailResponse(message="No request info available")
+
+        session_id = request_info.get_param("session_id") or request_info.get_param("sessionId")
+        if not session_id:
+            return ApiFailResponse(message="session_id is required", status_code=400)
+
+        worker_hint_raw = (
+            request_info.get_param("worker_type")
+            or request_info.get_param("workerType")
+            or ""
+        )
+        worker_hint = worker_hint_raw.lower() or None
+        if worker_hint and worker_hint not in ("claude", "codex"):
+            return ApiFailResponse(
+                message=f"worker_type must be 'claude' or 'codex' (got {worker_hint_raw!r})",
+                status_code=400,
+            )
+
+        try:
+            rec, worker_type = _resolve_session_record(session_id, hint=worker_hint)
+            if rec is None:
+                return ApiFailResponse(
+                    message=f"Session {session_id} not found in Claude or Codex history",
+                    status_code=404,
+                )
+
+            cwd = getattr(rec, "cwd", None) or None
+            rec_name = getattr(rec, "name", None) or None
+            session_name = (
+                rec_name if rec_name and rec_name != session_id else None
+            )
+            transcript_path = (
+                getattr(rec, "jsonl_path", None)
+                or getattr(rec, "source_file", None)
+                or None
+            )
+            project_encoded_name = (
+                getattr(rec, "project_encoded_name", None) or None
+                if worker_type == "claude"
+                else None
+            )
+
+            project_id: str | None = None
+            if cwd:
+                try:
+                    project = await Project.recover_by_path(cwd)
+                    if project:
+                        project_id = project.id
+                        if worker_type == "claude":
+                            project_encoded_name = (
+                                project.project_encoded_name or project_encoded_name
+                            )
+                except Exception:
+                    logging.debug(
+                        "ComputeNode %s findSession project recover failed for %s",
+                        self.id,
+                        session_id,
+                        exc_info=True,
+                    )
+
             return ApiSuccessResponse(
                 data={
-                    "id": process.id,
-                    "type": process.type,
                     "session_id": session_id,
-                    "shell_id": process.shell_id,
-                    "pty_pid": getattr(process, "pty_pid", None),
-                    "worker_type": getattr(process.worker_type, "value", process.worker_type),
-                    "created": True,
+                    "worker_type": worker_type,
+                    "transcript_path": str(transcript_path) if transcript_path else None,
+                    "project_encoded_name": project_encoded_name,
+                    "cwd": cwd,
+                    "project_id": project_id,
+                    "session_name": session_name,
                 }
             )
 
         except Exception as e:
-            logging.exception(f"ComputeNode {self.id} upsertSessionProcess error: {e}")
+            logging.exception(f"ComputeNode {self.id} findSession error: {e}")
             return ApiFailResponse(message=str(e))

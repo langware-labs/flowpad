@@ -104,7 +104,7 @@ class Shell(Entity):
         binding hasn't been resolved yet AND we have no uname hint — purely to
         avoid breaking ephemeral sessions that still use a raw local id. For
         every other path (including sandbox shells) the real CN + provider are
-        used, so `Shell.start()` routes to the correct provider.
+        used, so `Shell.start_pty()` routes to the correct provider.
         """
         if self._bound_compute_node is not None:
             return self._bound_compute_node
@@ -275,15 +275,40 @@ class Shell(Entity):
 
     # ── Construction ──────────────────────────────────────────────────────────
 
+    async def save(self, *args, **kwargs):  # type: ignore[override]
+        """Persist this Shell, defaulting ``project_id`` to the bootstrap
+        ``@local`` Project when none was supplied.
+
+        Project consolidation (Path A, 2026-05-09) — every Shell carries a
+        real ``project_id`` so the tab strip, projects-counter chip, and
+        ``useProjectTerminals`` filter never see ``None`` for a tab's project.
+        Callers that want a specific project (per-project shell, sandbox-
+        scoped run, collaboration room) keep passing ``project_id`` explicitly;
+        callers that don't (CLI spawns, REST POSTs, legacy code paths,
+        tests) get the local default automatically.
+        """
+        if not self.project_id:
+            try:
+                from flow_sdk.builtin.project import Project  # noqa: PLC0415
+                local = await Project.get_by_prop("uname", "local", "project")
+                if local is not None and getattr(local, "id", None):
+                    self.project_id = local.id
+            except Exception:
+                # Never block save on the project lookup — fall through with
+                # ``project_id=None``. Phase 6 cleanup tolerates the legacy
+                # null path defensively.
+                pass
+        return await super().save(*args, **kwargs)
+
     @classmethod
     async def open(cls, workdir=None, **kwargs) -> "Shell":
         """Create + start PTY immediately. Returns a ready shell."""
         shell = cls(workdir=workdir, **kwargs)
-        await shell.start()
+        await shell.start_pty()
         return shell
 
     async def __aenter__(self) -> "Shell":
-        await self.start()
+        await self.start_pty()
         return self
 
     async def __aexit__(self, *_) -> None:
@@ -291,7 +316,7 @@ class Shell(Entity):
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
-    async def start(
+    async def start_pty(
         self,
         rows: int = 24,
         cols: int = 80,
@@ -355,6 +380,12 @@ class Shell(Entity):
         await self.save()
         return True
 
+    async def start(self, *args, **kwargs) -> bool:
+        """Back-compat alias for :meth:`start_pty`. Prefer ``start_pty`` —
+        ``start`` reads as a generic lifecycle word but this method only ever
+        spawns the PTY."""
+        return await self.start_pty(*args, **kwargs)
+
     async def stop(self) -> None:
         """Kill PTY but keep the Shell entity. Tab entry remains.
 
@@ -367,9 +398,9 @@ class Shell(Entity):
         await self.save()
 
     async def restart(self) -> None:
-        """stop() then start(). Preserves workdir, env, tab_order."""
+        """stop() then start_pty(). Preserves workdir, env, tab_order."""
         await self.stop()
-        await self.start()
+        await self.start_pty()
 
     async def terminate_worker(self) -> None:
         """Gracefully kill the Claude worker and wait for full reap.
@@ -442,7 +473,7 @@ class Shell(Entity):
         """
         pty_handle = self.compute_node.get_pty(self.id)
         if not pty_handle:
-            raise RuntimeError("No PTY session — call start() first")
+            raise RuntimeError("No PTY session — call start_pty() first")
         await self._wait_for_shell_ready()
         await pty_handle.write(f"{text}\r".encode())
 
@@ -454,7 +485,7 @@ class Shell(Entity):
         """
         pty_handle = self.compute_node.get_pty(self.id)
         if not pty_handle:
-            raise RuntimeError("No PTY session — call start() first")
+            raise RuntimeError("No PTY session — call start_pty() first")
         await pty_handle.write(data)
 
     async def read(self) -> bytes:
@@ -679,7 +710,8 @@ class Shell(Entity):
     async def active(cls, compute_node_typeid: str | None = None) -> list["Shell"]:
         """All non-closed shells ordered by tab_order."""
         all_shells = await cls.get_all()
-        shells = [s for s in all_shells if s.status != ShellStatus.CLOSED.value]
+        hidden_statuses = {ShellStatus.CLOSING.value, ShellStatus.CLOSED.value, ShellStatus.ERROR.value}
+        shells = [s for s in all_shells if s.status not in hidden_statuses]
         shells.sort(key=lambda s: s.tab_order)
         return shells
 
@@ -778,7 +810,7 @@ class Shell(Entity):
         if working_dir:
             self.workdir = working_dir
         try:
-            await self.start(
+            await self.start_pty(
                 rows=body.get("rows", 24),
                 cols=body.get("cols", 80),
                 connection_id=body.get("connection_id"),

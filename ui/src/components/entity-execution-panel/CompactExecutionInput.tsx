@@ -2,7 +2,7 @@ import { cn } from '@src/lib/utils';
 import { Send } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 
-interface CompactChatInputProps {
+interface CompactExecutionInputProps {
   onSend: (text: string) => void | Promise<void>;
   disabled?: boolean;
   placeholder?: string;
@@ -12,17 +12,17 @@ interface CompactChatInputProps {
 }
 
 /**
- * Compact textarea + send-button input for the entity-chat-panel.
+ * Compact textarea + send-button input for the entity-execution-panel.
  * Deliberately minimal — no uploads, tools panel, codebase connectors, or login flows.
  * Enter sends; Shift+Enter inserts a newline.
  */
-export function CompactChatInput({
+export function CompactExecutionInput({
   onSend,
   disabled = false,
   placeholder = 'Ask about this doc…',
   className,
   statusSlot,
-}: CompactChatInputProps) {
+}: CompactExecutionInputProps) {
   const [value, setValue] = useState('');
   const taRef = useRef<HTMLTextAreaElement>(null);
 
@@ -57,7 +57,7 @@ export function CompactChatInput({
         placeholder={placeholder}
         rows={1}
         className="min-h-[28px] flex-1 resize-none rounded border bg-transparent px-2 py-1 text-xs outline-none focus:border-primary disabled:opacity-50"
-        data-testid="entity-chat-input"
+        data-testid="entity-execution-input"
       />
       {statusSlot}
       <button
@@ -66,7 +66,7 @@ export function CompactChatInput({
         disabled={disabled || !value.trim()}
         title="Send"
         className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent"
-        data-testid="entity-chat-send"
+        data-testid="entity-execution-send"
       >
         <Send className="h-3.5 w-3.5" />
       </button>

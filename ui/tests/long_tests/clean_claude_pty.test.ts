@@ -7,8 +7,7 @@
  *    output to settle, render the Claude Code section of the PTY (everything
  *    after the second MODE ON ?2004 marker), and assert structural invariants:
  *      - a full-width separator row  (≥60 '─' chars)
- *      - the '❯' input-prompt glyph on its own line, empty except for Claude's
- *        built-in suggestion placeholder
+ *      - the '❯' input-prompt glyph on its own line, with nothing after it
  *      - the '⏵⏵' / 'bypass permissions' indicator
  *
  * 2. 49 more stress iterations: same check, collecting failures.
@@ -148,13 +147,14 @@ function extractInvariants(screenRows: string[]): Invariants {
   let promptContent = '';
   if (promptFound) {
     const after = screenRows[promptRowIdx].split('❯')[1] ?? '';
-    const visiblePromptText = after.replace(/[\u2580-\u259f\u2588\xa0]+/g, '').trim();
-    const isClaudeSuggestion = /^Try\s+["“].+["”]$/.test(visiblePromptText);
-    // Strip cursor blocks (█ and similar box-drawing), nbsp (\xa0), spaces.
-    // Claude's own "Try ..." placeholder is not typed prompt content.
-    promptContent = isClaudeSuggestion
-      ? ''
-      : visiblePromptText.replace(/[\u2580-\u259f\u2588\xa0 ]+/g, '').trim();
+    // Strip cursor blocks (█ and similar box-drawing), nbsp (\xa0), spaces
+    promptContent = after.replace(/[\u2580-\u259f\u2588\xa0 ]+/g, '').trim();
+    // Claude rotates a placeholder hint when the input is empty
+    // (e.g. `Try "edit <file> to..."`, `Try "refactor <file>"`). Treat any
+    // `Try "..."` placeholder as empty \u2014 only real leaked input matters.
+    if (/^Try\b.*"/.test(promptContent)) {
+      promptContent = '';
+    }
   }
 
   return { separatorFound, promptFound, bypassFound, promptContent };

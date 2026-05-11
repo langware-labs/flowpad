@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { useSystemTools } from '@src/hooks/use-system-tools';
 import { ActivityProgressModal } from './ActivityProgressModal';
-import type { SystemActivity, ActivityProgress } from '@sdk';
+import type { SystemActivity, IndexProgressTable } from '@sdk';
 
 function phaseLabel(activity: SystemActivity): string {
   switch (activity) {
@@ -14,19 +14,20 @@ function phaseLabel(activity: SystemActivity): string {
   }
 }
 
-function detailLabel(activity: SystemActivity, progress: ActivityProgress | null): string {
-  if (!progress) return phaseLabel(activity);
-  const typesDone = progress.jobDone ?? progress.done.length ?? 0;
-  const typesTotal = progress.jobTotal ?? progress.total ?? 0;
-  const typeSummary = typesTotal > 0 ? `${typesDone}/${typesTotal}` : '';
-  if (progress.current && progress.recordsTotal != null && progress.recordsDone != null) {
-    return `${phaseLabel(activity)} ${typeSummary} · ${progress.current} ${progress.recordsDone}/${progress.recordsTotal}`;
+function detailLabel(activity: SystemActivity, table: IndexProgressTable | null): string {
+  const phase = phaseLabel(activity);
+  if (!table) return phase;
+  const current = table.current ?? '…';
+  if (table.total > 0) {
+    const pct = Math.round((table.done / table.total) * 100);
+    return `${phase} ${table.done}/${table.total} (${pct}%) · ${current}`;
   }
-  return typeSummary ? `${phaseLabel(activity)} ${typeSummary}` : phaseLabel(activity);
+  // total=0 means scan (unknown total): show count only
+  return `${phase} ${table.done} · ${current}`;
 }
 
 export function IndexingIndicator() {
-  const { currentActivity, activityProgress } = useSystemTools();
+  const { currentActivity, progressTable } = useSystemTools();
   const [open, setOpen] = useState(false);
 
   if (!currentActivity) return null;
@@ -43,13 +44,13 @@ export function IndexingIndicator() {
       >
         <Loader2 className="h-3 w-3 shrink-0 animate-spin text-primary" />
         <span className="truncate max-w-[320px] tabular-nums">
-          {detailLabel(currentActivity, activityProgress)}
+          {detailLabel(currentActivity, progressTable)}
         </span>
       </button>
       <ActivityProgressModal
         open={open}
         onOpenChange={setOpen}
-        progress={activityProgress}
+        table={progressTable}
         title={phaseLabel(currentActivity)}
       />
     </>

@@ -1,7 +1,16 @@
+import { useMemo, useState } from 'react';
 import { MarkdownEditor } from './MarkdownEditor';
+import { AssetPickerPopover } from '@src/components/asset-manager/AssetPickerPopover';
+import { RunButton } from '@src/components/assets/editor/run/RunButton';
+import { useRunOnFile } from '@src/components/assets/editor/run/useRunOnFile';
+import type { ExtraSideTab } from '@src/components/milkdown-editor/EditorWithSidePanel';
+import { WorkflowRunsPanel } from '@src/components/workflows-view/WorkflowRunsPanel';
+import type { ProcessEntry } from '@src/components/workflows-view/workflow-run-store';
+import { useProcessesForTarget } from '@src/components/entity-execution-panel';
 import { useEntityByPath } from '@src/hooks/use-entity-by-path';
-import { dataContext, FrontMatterFsRef } from '@sdk';
+import { dataContext, FrontMatterFsRef, ProcessType } from '@sdk';
 import type { APIEntity, FSRef } from '@sdk';
+import { History } from 'lucide-react';
 
 interface PlainMarkdownAssetEditorProps {
   /** FSRef to the .md file. */
@@ -17,9 +26,10 @@ interface PlainMarkdownAssetEditorProps {
  * Resolves the backing entity by `asset_ref` so Chat + Backlinks tabs key
  * on the real TypeId (`"plan-<uuid>"`, …) instead of a path-based pseudo.
  *
- * Editor body is read from `entity.asset_ref` (the canonical user-owned path
- * stored on the entity) once the entity resolves; falls back to the URL-derived
- * fsRef while loading. Both resolve to the same file post mount-path fix.
+ * Adds a Run button that opens an asset picker (skills + agents). On pick,
+ * spawns an `AgenticProcess` with the asset attached and the file path
+ * referenced in the prompt; the live run streams into a "Runs" side tab
+ * (same panel used by the workflow editor).
  */
 export function PlainMarkdownAssetEditor({ fsRef, assetType }: PlainMarkdownAssetEditorProps) {
   const { entity } = useEntityByPath<APIEntity<APIEntity<any>>>(assetType, fsRef);
@@ -28,5 +38,74 @@ export function PlainMarkdownAssetEditor({ fsRef, assetType }: PlainMarkdownAsse
   const localTypeId = dataContext.computeNodeTypeId;
   const editorRef =
     assetRef && localTypeId ? new FrontMatterFsRef(assetRef, localTypeId) : fsRef;
-  return <MarkdownEditor fsRef={editorRef} chatTarget={chatTarget} />;
+
+  const [activeSideTab, setActiveSideTab] = useState<string>('editor');
+
+  const { runWithAsset, isStarting, processEntry, mcpModal } = useRunOnFile({
+    targetVfsPath: chatTarget,
+    filePath: assetRef ?? fsRef.path,
+    onActiveSideTabChange: setActiveSideTab,
+  });
+
+  const { processes: pastRunProcesses } = useProcessesForTarget(chatTarget ?? '', {
+    enabled: !!chatTarget,
+    processType: ProcessType.Execution,
+  });
+
+  const runHistory = useMemo<ProcessEntry[]>(() => {
+    const toMs = (d: unknown): number => {
+      if (d instanceof Date) return d.getTime();
+      if (typeof d === 'string') return new Date(d).getTime() || 0;
+      return 0;
+    };
+    const sorted = [...pastRunProcesses].sort(
+      (a, b) => toMs(b.created_date) - toMs(a.created_date),
+    );
+    const liveId = processEntry?.process.id;
+    return sorted.map((p) => (liveId && p.id === liveId ? processEntry! : { process: p }));
+  }, [pastRunProcesses, processEntry]);
+
+  const isRunning = !!processEntry;
+
+  const toolbar = (
+    <AssetPickerPopover
+      trigger={
+        <RunButton
+          isRunning={isRunning}
+          isStarting={isStarting}
+          disabled={!chatTarget}
+          title={!chatTarget ? 'No backing entity yet' : undefined}
+        />
+      }
+      onPick={(d) => void runWithAsset(d)}
+    />
+  );
+
+  const runsTab: ExtraSideTab = {
+    id: 'runs',
+    label: runHistory.length > 0 ? `Runs ${runHistory.length}` : 'Runs',
+    icon: History,
+    description: 'Runs on this file',
+    panel: (
+      <WorkflowRunsPanel
+        entries={runHistory}
+        currentEntry={processEntry}
+        computeNodeId={fsRef.typeId.id}
+      />
+    ),
+  };
+
+  return (
+    <>
+      <MarkdownEditor
+        fsRef={editorRef}
+        chatTarget={chatTarget}
+        toolbar={toolbar}
+        extraSideTabs={[runsTab]}
+        activeSideTab={activeSideTab}
+        onActiveSideTabChange={setActiveSideTab}
+      />
+      {mcpModal}
+    </>
+  );
 }

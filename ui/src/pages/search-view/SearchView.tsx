@@ -14,7 +14,7 @@ import { useIndexStatus } from '@src/hooks/use-index-status';
 import { useSystemTools } from '@src/hooks/use-system-tools';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { SystemActivity, ActivityProgress } from '@sdk';
+import { SystemActivity, IndexProgressTable } from '@sdk';
 import { AlertCircle, FileSearch, Loader2, Menu, PackageSearch, SlidersHorizontal } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 
@@ -32,17 +32,18 @@ function activityPhaseLabel(activity: SystemActivity): string {
   }
 }
 
-function activityLabel(activity: SystemActivity, progress: ActivityProgress | null): string {
-  const typesDone = progress?.jobDone ?? progress?.done.length ?? 0;
-  const typesTotal = progress?.jobTotal ?? progress?.total ?? 0;
+function activityLabel(activity: SystemActivity, table: IndexProgressTable | null): string {
+  const counts = table
+    ? (table.total > 0 ? `${table.done}/${table.total}` : `${table.done}`)
+    : null;
   switch (activity) {
     case 'archive': return 'Archiving…';
     case 'clear': return 'Clearing index…';
     case 'load_from_archive': return 'Restoring…';
     case 'scan':
-      return progress ? `Scanning… ${typesDone}/${typesTotal}` : 'Scanning…';
+      return counts ? `Scanning… ${counts}` : 'Scanning…';
     case 'index':
-      return progress ? `Indexing… ${typesDone}/${typesTotal}` : 'Indexing…';
+      return counts ? `Indexing… ${counts}` : 'Indexing…';
   }
 }
 
@@ -102,7 +103,7 @@ export function SearchView() {
   });
   const [calibration, setCalibration] = useState<SearchCalibration>(loadStoredCalibration);
 
-  const { currentActivity, activityProgress, busy, resetAndRescan } = useSystemTools();
+  const { currentActivity, progressTable, busy, resetAndRescan } = useSystemTools();
   const [progressOpen, setProgressOpen] = useState(false);
 
   // Re-seed progress state from backend after page refresh so the footer
@@ -282,40 +283,26 @@ export function SearchView() {
         >
           <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0 text-primary" />
           <span className="text-muted-foreground shrink-0">{activityPhaseLabel(currentActivity)}</span>
-          {activityProgress?.current && (
+          {progressTable?.current && (
             <span className="font-mono text-foreground truncate max-w-[180px]">
-              {activityProgress.current}
+              {progressTable.current}
             </span>
           )}
-          {activityProgress?.current && activityProgress.counts?.[activityProgress.current] !== undefined && (
-            <span className="text-muted-foreground shrink-0 tabular-nums">
-              {activityProgress.counts[activityProgress.current].toLocaleString()} recs
-            </span>
-          )}
-          {activityProgress?.recordsDone != null && activityProgress.recordsTotal != null && (
-            <span className="text-muted-foreground shrink-0 tabular-nums">
-              {activityProgress.recordsDone.toLocaleString()}/{activityProgress.recordsTotal.toLocaleString()} recs
-            </span>
-          )}
-          {activityProgress && (
+          {progressTable && (
             <>
               <span className="ml-auto text-muted-foreground shrink-0 tabular-nums">
-                {activityProgress.jobDone != null && activityProgress.jobTotal != null
-                  ? `${activityProgress.jobDone}/${activityProgress.jobTotal}`
-                  : `${activityProgress.done.length}/${activityProgress.total}`}
+                {progressTable.total > 0
+                  ? `${progressTable.done.toLocaleString()}/${progressTable.total.toLocaleString()}`
+                  : progressTable.done.toLocaleString()}
               </span>
-              <div className="h-1 w-20 rounded-full bg-muted overflow-hidden shrink-0">
-                <div
-                  className="h-full bg-primary rounded-full transition-all"
-                  style={{
-                    width: `${activityProgress.recordsDone != null && activityProgress.recordsTotal
-                      ? (activityProgress.recordsDone / activityProgress.recordsTotal) * 100
-                      : activityProgress.jobDone != null && activityProgress.jobTotal
-                      ? (activityProgress.jobDone / activityProgress.jobTotal) * 100
-                      : (activityProgress.done.length / activityProgress.total) * 100}%`
-                  }}
-                />
-              </div>
+              {progressTable.total > 0 && (
+                <div className="h-1 w-20 rounded-full bg-muted overflow-hidden shrink-0">
+                  <div
+                    className="h-full bg-primary rounded-full transition-all"
+                    style={{ width: `${(progressTable.done / progressTable.total) * 100}%` }}
+                  />
+                </div>
+              )}
             </>
           )}
         </button>
@@ -400,8 +387,8 @@ export function SearchView() {
       <ActivityProgressModal
         open={progressOpen}
         onOpenChange={setProgressOpen}
-        progress={activityProgress}
-        title={currentActivity ? activityLabel(currentActivity, activityProgress) : 'Activity'}
+        table={progressTable}
+        title={currentActivity ? activityLabel(currentActivity, progressTable) : 'Activity'}
       />
     </div>
   );

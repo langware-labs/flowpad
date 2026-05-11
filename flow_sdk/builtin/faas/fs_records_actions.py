@@ -229,8 +229,8 @@ class FsRecordsActionsMixin:
         from flow_sdk.fs_records.schema_record import SchemaRecord  # noqa: PLC0415
         from flow_sdk.fs_store.indexer import (  # noqa: PLC0415
             INDEXABLE_TYPES,
+            IndexProgressTable,
             IndexerOptions,
-            ProgressEvent,
             get_shared_indexer,
         )
         from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
@@ -267,59 +267,17 @@ class FsRecordsActionsMixin:
         elif limit_types is not None:
             types_filter = list(INDEXABLE_TYPES)[:limit_types]
 
-        # Activity tracking for duplicate-prevention + UI progress
-        total = 1 if filter_type else (
-            len(types_filter) if types_filter is not None else len(INDEXABLE_TYPES)
-        )
         try:
-            activity = self._start_activity("scan", total=total, timeout_seconds=600)
+            activity = self._start_activity("scan", timeout_seconds=600)
         except RuntimeError as e:
             return ApiFailResponse(message=str(e), status_code=409)
 
-        # Translate ProgressEvent → activity updates → WebSocket broadcast.
-        # Scaffolding types (USER_HOME_FOLDER, SYSTEM_ROOT, REAL_PROJECT_CWD,
-        # CWD_ROOT, PROJECT) are DFS waypoints the walker touches to reach the
-        # leaf record types; they should not show up in user-facing progress.
-        _SCAFFOLD_TYPES = {
-            RecordType.USER_HOME_FOLDER,
-            RecordType.SYSTEM_ROOT,
-            RecordType.REAL_PROJECT_CWD,
-            RecordType.CWD_ROOT,
-            RecordType.PROJECT,
-            RecordType.FOLDER,
-        }
-
-        async def emit(ev: ProgressEvent) -> None:
-            if ev.stage == "type_complete":
-                if ev.record_type in _SCAFFOLD_TYPES:
-                    return
-                if types_filter and ev.record_type not in types_filter:
-                    return
-                activity.sub_activity_name = str(ev.record_type)
-                activity.sub_done = ev.count
-                activity.sub_total = ev.count
-                activity.sub_skipped = 0
-                activity.sub_errors = ev.errors
-                await broadcast_progress(
-                    to_entity=str(self.typeid),
-                    flow_data=activity.make_flow_data(str(ev.record_type)),
-                )
-                activity.done = min(activity.done + 1, activity.total)
-                await broadcast_progress(
-                    to_entity=str(self.typeid),
-                    flow_data=activity.make_flow_data(None),
-                )
-            elif ev.stage == "scan_end":
-                # Authoritative scan-completion event; mirrors index_end.
-                activity.done = activity.total
-                activity.sub_activity_name = None
-                activity.sub_done = 0
-                activity.sub_total = 0
-                activity.text = "complete"
-                await broadcast_progress(
-                    to_entity=str(self.typeid),
-                    flow_data=activity.make_flow_data(None),
-                )
+        async def emit(table: IndexProgressTable) -> None:
+            activity.latest_table = table
+            await broadcast_progress(
+                to_entity=str(self.typeid),
+                flow_data=activity.make_flow_data(),
+            )
 
         try:
             t0 = time.perf_counter()
@@ -481,9 +439,9 @@ class FsRecordsActionsMixin:
         from flow_sdk.fs_records.schema_record import SchemaRecord  # noqa: PLC0415
         from flow_sdk.fs_store.indexer import (  # noqa: PLC0415
             INDEXABLE_TYPES,
+            IndexProgressTable,
             IndexerOptions,
             OrphanAction,
-            ProgressEvent,
             get_shared_indexer,
         )
         from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
@@ -553,86 +511,17 @@ class FsRecordsActionsMixin:
                 # already cleared matching FTS rows via delete_entities_by_type
                 await driver.fts_clear()
 
-        # Activity tracking for duplicate-prevention + UI progress
-        total = 1 if filter_type else (
-            len(types_filter) if types_filter is not None else len(INDEXABLE_TYPES)
-        )
         try:
-            activity = self._start_activity("index", total=total, timeout_seconds=600)
+            activity = self._start_activity("index", timeout_seconds=600)
         except RuntimeError as e:
             return ApiFailResponse(message=str(e), status_code=409)
 
-        # Scaffolding types the walker traverses but the user didn't request.
-        _SCAFFOLD_TYPES_IDX = {
-            RecordType.USER_HOME_FOLDER,
-            RecordType.SYSTEM_ROOT,
-            RecordType.REAL_PROJECT_CWD,
-            RecordType.CWD_ROOT,
-            RecordType.PROJECT,
-            RecordType.FOLDER,
-        }
-
-        def _skip(ev: ProgressEvent) -> bool:
-            if ev.record_type in _SCAFFOLD_TYPES_IDX:
-                return True
-            if types_filter and ev.record_type not in types_filter:
-                return True
-            return False
-
-        async def emit(ev: ProgressEvent) -> None:
-            if ev.stage == "type_start":
-                if _skip(ev):
-                    return
-                activity.sub_activity_name = str(ev.record_type)
-                activity.sub_done = 0
-                activity.sub_total = ev.sub_total
-                activity.sub_errors = 0
-                activity.sub_skipped = 0
-                await broadcast_progress(
-                    to_entity=str(self.typeid),
-                    flow_data=activity.make_flow_data(str(ev.record_type)),
-                )
-            elif ev.stage == "type_progress":
-                if _skip(ev):
-                    return
-                activity.sub_activity_name = str(ev.record_type)
-                activity.sub_done = ev.sub_done
-                activity.sub_total = ev.sub_total
-                activity.sub_errors = ev.errors
-                await broadcast_progress(
-                    to_entity=str(self.typeid),
-                    flow_data=activity.make_flow_data(str(ev.record_type)),
-                )
-            elif ev.stage == "type_complete":
-                if _skip(ev):
-                    return
-                activity.sub_activity_name = str(ev.record_type)
-                activity.sub_done = ev.sub_done or ev.indexed
-                activity.sub_total = ev.sub_total or ev.indexed
-                activity.sub_errors = ev.errors
-                activity.sub_skipped = 0
-                await broadcast_progress(
-                    to_entity=str(self.typeid),
-                    flow_data=activity.make_flow_data(str(ev.record_type)),
-                )
-                activity.done = min(activity.done + 1, activity.total)
-                await broadcast_progress(
-                    to_entity=str(self.typeid),
-                    flow_data=activity.make_flow_data(None),
-                )
-            elif ev.stage == "index_end":
-                # Authoritative job-completion: settles UI state regardless of
-                # how the per-type events landed. Frontend's done>=total path
-                # treats this as the definitive "I'm done" signal.
-                activity.done = activity.total
-                activity.sub_activity_name = None
-                activity.sub_done = 0
-                activity.sub_total = 0
-                activity.text = "complete"
-                await broadcast_progress(
-                    to_entity=str(self.typeid),
-                    flow_data=activity.make_flow_data(None),
-                )
+        async def emit(table: IndexProgressTable) -> None:
+            activity.latest_table = table
+            await broadcast_progress(
+                to_entity=str(self.typeid),
+                flow_data=activity.make_flow_data(),
+            )
 
         # Single-project shortcut: when narrowed to exactly one project,
         # also pass project_id so the indexer can short-circuit non-project
@@ -704,12 +593,161 @@ class FsRecordsActionsMixin:
             "duration_ms": result.duration_ms,
         })
 
+    async def _handle_fs_records_discover_by_path(
+        self,
+        record_type: str,
+        request_info,
+    ) -> ApiResponse:
+        """POST /fs-records/{type}/discover?path=<P>
+
+        Find-or-recover a single record by absolute path. Scans the file on
+        disk, syncs the resulting record to the entity DB, and returns its
+        metadata. Idempotent: a second call hits the cache.
+
+        Used by the frontend's `useEntityByPath` hook to recover a record
+        when the bulk list query misses (e.g. just-created workflow file).
+
+        Returns 404 if the file doesn't exist on disk OR doesn't match the
+        requested type's discovery rules.
+        """
+        import flow_sdk.fs_records  # noqa: F401 — trigger auto-registration
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry as _SR  # noqa: PLC0415
+        from flow_sdk.fs_store.record_list import RecordList  # noqa: PLC0415
+
+        qp = request_info.request.query_params
+        raw_path = (qp.get("path") or "").strip()
+        if not raw_path:
+            return ApiFailResponse(
+                message="Missing required 'path' query parameter",
+                status_code=400,
+            )
+
+        record_cls = _SR.get_record_cls(record_type)
+        if record_cls is None:
+            return ApiFailResponse(
+                message=f"Unknown record type '{record_type}'. Available: {_SR.get_all_record_types()}",
+                status_code=400,
+            )
+
+        # Expand ~ and resolve to a Path. Don't require the file to exist yet —
+        # we'll let the discovery layer decide.
+        expanded = str(Path(raw_path).expanduser())
+        target_norm = _normalize_asset_path(expanded)
+
+        # Inline match helper — looks up the record list by asset_ref
+        # equivalence. Returns the matched record even if its source is
+        # missing on disk: the caller now reads ``entity.orphan`` to
+        # distinguish stale-but-known-rows from never-existed paths.
+        # 404 is reserved for "no record at all"; orphans are SUCCESS.
+        def _find_in(record_list: "RecordList") -> "Record | None":  # type: ignore[name-defined]
+            for rec in record_list:
+                ref = getattr(rec, "asset_ref", None) or getattr(rec, "_asset_ref", None)
+                ref_path = getattr(ref, "path", None) if ref is not None else None
+                if ref_path is None:
+                    ref_path = str(ref) if ref else ""
+                if _normalize_asset_path(ref_path) == target_norm:
+                    return rec
+            return None
+
+        # Pass 1: try the existing index (shadow tree). Fast path.
+        record_list = RecordList(record_class=record_cls)
+        try:
+            found = _find_in(record_list)
+        except Exception as e:
+            return ApiFailResponse(
+                message=f"Failed to scan {record_type}: {e}",
+                status_code=500,
+            )
+
+        # Pass 2: on miss, force a fresh FSIndexer scan of the user's
+        # workflow / agent / skill / plan directories. The base
+        # ``Record.discover()`` walks ``records_root / <type> /`` (the
+        # **shadow** tree), so a brand-new file on disk is invisible
+        # until the indexer materialises it. This is the recovery path
+        # for ``useEntityByPath``: file exists on disk, isn't yet in
+        # the index → re-index this single type, then look again.
+        if found is None:
+            try:
+                from flow_sdk.fs_store.indexer import (  # noqa: PLC0415
+                    IndexerOptions,
+                    get_shared_indexer,
+                )
+                from flow_sdk.fs_store.record_types import RecordType as _RT  # noqa: PLC0415
+                rt = _RT(record_type)
+                indexer = get_shared_indexer()
+                await indexer.index(IndexerOptions(types=[rt]))
+            except Exception as e:
+                return ApiFailResponse(
+                    message=f"Re-index failed for {record_type}: {e}",
+                    status_code=500,
+                )
+            # Fresh RecordList — `RecordList(MUTABLE)` re-discovers per call,
+            # but instantiating a new one is the cleanest reset.
+            record_list = RecordList(record_class=record_cls)
+            try:
+                found = _find_in(record_list)
+            except Exception as e:
+                return ApiFailResponse(
+                    message=f"Failed to scan {record_type} after reindex: {e}",
+                    status_code=500,
+                )
+
+        if found is None:
+            return ApiFailResponse(
+                message=f"No {record_type} found at path: {raw_path}",
+                status_code=404,
+            )
+
+        # Sync to DB so future bulk queries pick it up. Idempotent.
+        # Skip when the source is missing on disk — `sync_to_db` rebuilds
+        # the entity row from the Record's fields, which would clobber the
+        # `orphan` / `orphan_since` flags the FSIndexer set on this row.
+        # Orphan state is the indexer's responsibility; discover just reads.
+        _ar_for_sync = getattr(found, "asset_ref", None)
+        _ar_path_for_sync = getattr(_ar_for_sync, "path", None) if _ar_for_sync is not None else None
+        _alive_on_disk = bool(_ar_path_for_sync and Path(str(_ar_path_for_sync)).expanduser().exists())
+        if _alive_on_disk:
+            try:
+                await found.sync_to_db()
+            except Exception as e:
+                # Log but don't fail — sync may legitimately fail for read-only sources.
+                logging.debug(f"[fs-records] sync_to_db on discover skipped for {record_type}: {e}")
+
+        data = found.meta_dict()
+        _ar = getattr(found, "asset_ref", None)
+        _ar_path = getattr(_ar, "path", None) if _ar is not None else None
+        if _ar_path:
+            data["asset_ref"] = _ar_path
+
+        # Merge entity-level fields the Record's meta_dict doesn't know about
+        # (orphan / orphan_since live on the Entity row, not the Record).
+        # The frontend's `<MissingAssetCard>` reads these to differentiate
+        # stale-but-known rows from never-existed paths.
+        try:
+            from flow_sdk.fs_store.schema_registry import SchemaRegistry as _SR  # noqa: PLC0415
+            _ent_cls = _SR.get_entity_cls(record_type)
+            if _ent_cls is not None:
+                _ent = await _ent_cls.get_by_id(found.id)  # type: ignore[attr-defined]
+                if _ent is not None:
+                    data["orphan"] = bool(getattr(_ent, "orphan", False))
+                    _since = getattr(_ent, "orphan_since", None)
+                    if _since is not None:
+                        # datetime → ISO 8601 string for the wire
+                        data["orphan_since"] = _since.isoformat() if hasattr(_since, "isoformat") else str(_since)
+                    else:
+                        data["orphan_since"] = None
+        except Exception as e:
+            logging.debug(f"[fs-records] merge entity orphan fields skipped for {record_type}: {e}")
+        return ApiSuccessResponse(data=data)
+
 
     async def _handle_fs_records_activity_status(self, request_info) -> ApiResponse:
         """Return the currently-running scan/index activity for this compute node, if any.
 
         Used by the UI to re-seed progress state after a page refresh so the
-        "Rebuild index" progress modal can reopen mid-job.
+        progress modal can reopen mid-job. Returns the latest
+        ``IndexProgressTable`` plus ``started_at`` metadata, or null when
+        no activity is running.
         """
         from flow_sdk.builtin.faas.compute_node import _COMPUTE_ACTIVITIES  # noqa: PLC0415
 
@@ -719,20 +757,9 @@ class FsRecordsActionsMixin:
                 continue
             if activity is None or activity.is_timed_out or activity.is_complete:
                 continue
-            return ApiSuccessResponse(data={
-                "job_name": activity.job_name,
-                "done": activity.done,
-                "skipped": activity.skipped,
-                "errors": activity.errors,
-                "total": activity.total,
-                "text": activity.text,
-                "sub_activity_name": activity.sub_activity_name,
-                "sub_done": activity.sub_done,
-                "sub_skipped": activity.sub_skipped,
-                "sub_errors": activity.sub_errors,
-                "sub_total": activity.sub_total,
-                "started_at": activity.started_at.isoformat(),
-            })
+            payload = activity.make_flow_data()["attributes"]
+            payload["started_at"] = activity.started_at.isoformat()
+            return ApiSuccessResponse(data=payload)
         return ApiSuccessResponse(data=None)
 
 
@@ -798,6 +825,13 @@ class FsRecordsActionsMixin:
 
         if not segments:
             return ApiFailResponse(message="Record type is required in URL path", status_code=400)
+
+        # Discover-or-recover by path: POST /fs-records/{type}/discover?path=...
+        if len(segments) == 2 and segments[1] == "discover" and method == "post":
+            return await self._handle_fs_records_discover_by_path(
+                record_type=segments[0],
+                request_info=request_info,
+            )
 
         record_type = segments[0]
         uid = segments[1] if len(segments) > 1 else None
@@ -895,7 +929,7 @@ class FsRecordsActionsMixin:
                 from flow_sdk.db import get_db_driver  # noqa: PLC0415
                 from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
 
-                entity = await Entity.get_one(QueryFilter.parse({"id": uid}))
+                entity = await Entity.get_one(QueryFilter.parse({"id": uid}, record_type))
                 if entity is not None:
                     driver = get_db_driver()
                     if hasattr(driver, "fts_delete"):
@@ -1157,3 +1191,13 @@ class FsRecordsActionsMixin:
         except Exception as e:
             logging.warning(f"[fs-records] Failed to broadcast DataOp: {e}")
 
+
+def _normalize_asset_path(p: str) -> str:
+    """Lower-precision path comparison. Strips trailing slash + leading slash
+    so file/folder shapes match consistently."""
+    if not p:
+        return ""
+    p = p.rstrip("/")
+    if p.startswith("/"):
+        p = p[1:]
+    return p

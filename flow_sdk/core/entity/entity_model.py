@@ -28,6 +28,7 @@ except ImportError:
             return decorator
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 
 from pydantic import Field, SerializationInfo, SerializeAsAny, TypeAdapter, ValidationError, model_serializer
@@ -75,6 +76,23 @@ class Entity(DBEntity):
     tags: List[str] = APIField(default_factory=list)
     system: bool = APIField(default=False, description="True when this entity belongs to an SDK-shipped system project")
     remote: bool = APIField(default=False, description="True when this entity has a hub counterpart at the same id; refreshable from the hub")
+    orphan: bool = APIField(
+        default=False,
+        description=(
+            "True when the entity's source asset (file/folder at asset_ref) is "
+            "missing on disk. Set by the FSIndexer's orphan-detection pass; "
+            "cleared automatically when the source reappears. Non-asset entities "
+            "(those without an asset_ref) are always False."
+        ),
+    )
+    orphan_since: datetime | None = APIField(
+        default=None,
+        description=(
+            "UTC timestamp of when the entity first transitioned to orphan=True. "
+            "Null when orphan=False. Preserved across rescans so 'how long has "
+            "this been missing' is answerable."
+        ),
+    )
 
     # Generic context-entity references — the unified container for "what
     # other entities is this one contextually related to." Persists as a list

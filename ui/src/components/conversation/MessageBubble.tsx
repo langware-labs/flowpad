@@ -23,9 +23,11 @@ interface MessageBubbleProps {
   isSelected?: boolean;
   /** Click on the bubble fires this so the parent can mark it selected. */
   onSelect?: () => void;
-  /** Parent conversation's `message_status_visible` flag. When false, the
-   *  receipt indicator is hidden on the sender side regardless of the
-   *  underlying ``delivery_status``. Defaults to true. */
+  /**
+   * Parent conversation's `message_status_visible` flag. When false, the
+   * receipt indicator is hidden on the sender side regardless of the
+   * underlying ``delivery_status``. Defaults to true.
+   */
   conversationStatusVisible?: boolean;
 }
 
@@ -34,6 +36,9 @@ interface MessageBubbleProps {
  *   created   → ✓        single check, muted
  *   delivered → ✓✓       double check, muted
  *   received  → ✓✓ blue  double check, accent color
+ *
+ * Renders nothing for incoming messages or when the parent conversation's
+ * `message_status_visible` flag is false.
  */
 function DeliveryReceipt({ status }: { status: DeliveryStatus | undefined }) {
   if (!status) return null;

@@ -40,7 +40,7 @@ async def test_clean_claude_pty(bootstrapped_client, tmp_path):
     await process.save([])
 
     try:
-        await process.start()
+        await process.start_pty()
 
         shell_id = process.shell_id
         assert shell_id, "process.start() did not set shell_id"

@@ -45,7 +45,10 @@ export interface IFlowMessage extends IEntity {
   conversation_id?: string | null;
   is_read?: boolean;
   is_archived?: boolean;
-  /** Receipt state — stamped by the hub on mark_delivered / mark_received. */
+  /** Receipt state — orthogonal to the local-only `is_read` flag. Set only
+   *  by the hub via mark_delivered / mark_received actions; flows back to
+   *  the sender as a data_op_msg(update) frame, subject to the parent
+   *  conversation's `message_status_visible` gate. */
   delivery_status?: DeliveryStatus;
   delivered_at?: string | null;
   received_at?: string | null;
@@ -89,8 +92,8 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.is_read = entity.is_read ?? false;
     this.is_archived = entity.is_archived ?? false;
     this.delivery_status = entity.delivery_status ?? 'created';
-    this.delivered_at = entity.delivered_at;
-    this.received_at = entity.received_at;
+    this.delivered_at = entity.delivered_at ?? null;
+    this.received_at = entity.received_at ?? null;
     this.is_draft = entity.is_draft ?? false;
   }
 
@@ -157,16 +160,20 @@ export async function createTaskBundle(params: CreateTaskBundleParams): Promise<
   return res!;
 }
 
-export interface MarkReceivedResult {
-  updated: string[];
+export interface MarkResult {
+  updated?: string[];
+  skipped?: Array<{ id: string; reason: string; current?: string }>;
 }
 
-/** Batch-mark FlowMessages as `received` on the hub. Idempotent / sender-skipping
- *  / monotonic — safe to call repeatedly with the same ids. */
-export async function markFlowMessagesReceived(ids: string[]): Promise<MarkReceivedResult> {
-  if (ids.length === 0) return { updated: [] };
+/**
+ * Batch read-ack: tells the local server (which forwards to the hub) that
+ * the listed FlowMessages have been seen by the current user. Hub flips
+ * their `delivery_status` to "received" and fans an UPDATE frame back to
+ * the sender (subject to the parent conversation's `message_status_visible`).
+ */
+export async function markFlowMessagesReceived(flow_message_ids: string[]): Promise<MarkResult | null> {
+  if (flow_message_ids.length === 0) return null;
   const action = new ActionInfo('mark_received', 'flow_message', null, 'POST');
-  action.bodyParameters = { flow_message_ids: ids };
-  const res = await dataManager.callAction<{ flow_message_ids: string[] }, MarkReceivedResult>(action);
-  return res ?? { updated: [] };
+  action.bodyParameters = { flow_message_ids };
+  return dataManager.callAction<{ flow_message_ids: string[] }, MarkResult>(action);
 }

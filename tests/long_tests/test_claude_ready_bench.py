@@ -74,7 +74,7 @@ async def test_agentic_process_ready_time_L2(local_project, local_compute_node):
     # Warm-up: one throwaway launch so imports, caches, disk touches don't pollute iter 1.
     warm = await AgenticProcess(worker_type=WorkerType.CLAUDE_CODE).save()
     try:
-        r = await warm.start()
+        r = await warm.start_pty()
         assert isinstance(r, ApiSuccessResponse)
         # Wait briefly for spawn to settle
         await asyncio.sleep(0.5)
@@ -92,7 +92,7 @@ async def test_agentic_process_ready_time_L2(local_project, local_compute_node):
         marker = None
         try:
             t0 = time.perf_counter()
-            result = await process.start()
+            result = await process.start_pty()
             t_start_returned = time.perf_counter()
 
             assert isinstance(result, ApiSuccessResponse), f"start() failed: {result}"
