@@ -1,6 +1,7 @@
 import {
   Conversation,
   ConversationParticipant,
+  cloudManager,
   createProjectConversation,
   getErrorMessagesFromAxios,
   startBundleConversation,
@@ -35,11 +36,12 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
   const { navigation } = useDockNavigation();
   const ctx = useDataContext();
   const { projects = [] } = useProjects();
-  const { localUser, updateName } = useLocalUser();
+  const { localUser } = useLocalUser();
   const ensureCloudLogin = useCloudLoginGate();
 
   const [projectId, setProjectId] = useState<string>('');
   const [participants, setParticipants] = useState<ConversationParticipant[]>([]);
+  const [cloudUser, setCloudUser] = useState(cloudManager.currentUser);
   const [initialMessage, setInitialMessage] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [senderName, setSenderName] = useState('');
@@ -58,28 +60,41 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
     setProjectId(ctx.project?.id ?? projects[0]?.id ?? '');
   }, [open, ctx.project?.id, projects]);
 
-  // Default sender name from git-synced local user. Mirror SendSpecNotificationDialog.
   useEffect(() => {
-    if (localUser?.name) setSenderName(localUser.name);
-  }, [localUser?.name]);
+    if (!open) return;
+    const syncCloudUser = () => setCloudUser(cloudManager.currentUser);
+    syncCloudUser();
+    cloudManager.on('login_complete', syncCloudUser);
+    cloudManager.on('logout_complete', syncCloudUser);
+    return () => {
+      cloudManager.off('login_complete', syncCloudUser);
+      cloudManager.off('logout_complete', syncCloudUser);
+    };
+  }, [open]);
 
-  // Cross-user mode: any participant addressed by email triggers the bundle
+  // Default sender name from the cloud user for cross-user communication.
+  useEffect(() => {
+    const name = cloudUser?.name || cloudUser?.email || localUser?.name || '';
+    if (name) setSenderName(name);
+  }, [cloudUser?.email, cloudUser?.name, localUser?.name]);
+
+  // Cross-user mode: any participant with a user id or email triggers the bundle
   // delivery flow (startBundleConversation). Otherwise we keep the
   // project-local-only path.
-  const hasEmailParticipant = participants.some(
-    (p) => !!p.email && p.email.includes('@'),
+  const hasRemoteParticipant = participants.some(
+    (p) => !!p.user_id || (!!p.email && p.email.includes('@')),
   );
 
   // Slack-style placeholder: "<my name>, <participant1>, ..."
-  const myLabel = ctx.user?.name || ctx.user?.email || 'You';
+  const myLabel = cloudUser?.name || cloudUser?.email || ctx.user?.name || ctx.user?.email || 'You';
   const placeholderTitle = useMemo(() => {
     if (participants.length === 0) return 'New conversation';
-    const others = participants.map((p) => p.name || p.email).join(', ');
+    const others = participants.map((p) => p.name || p.email || 'unknown').join(', ');
     return `${myLabel}, ${others}`;
   }, [participants, myLabel]);
 
   // Cross-user bundle conversations don't require a Project; local-only ones do.
-  const canCreate = !busy && (hasEmailParticipant || !!projectId) && participants.length > 0;
+  const canCreate = !busy && (hasRemoteParticipant || !!projectId) && participants.length > 0;
 
   const handleCreate = async () => {
     if (!canCreate) return;
@@ -91,7 +106,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
 
       let conversationId: string | null;
 
-      if (hasEmailParticipant) {
+      if (hasRemoteParticipant) {
         // Cross-user create routes through hub; require cloud login first so a
         // logged-out user is taken through OAuth and the create resumes on the
         // same click instead of failing silently.
@@ -104,12 +119,14 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
         // without a Task/Spec. Backend stamps project_id on the local
         // Conversation at create time and includes it as remote_project_id in
         // the bundle for the receiver's project-mapping flow.
-        const recipient = participants.find((p) => !!p.email)?.email || '';
+        const recipient = participants.find((p) => !!p.email || !!p.user_id);
+        const recipientId = recipient?.user_id || recipient?.email || '';
         // ``message`` is sent as the initial-message body when there are no
         // file attachments. With files, defer to the follow-up sendReply so
         // attachments ride a single FormData call.
         const result = await startBundleConversation({
-          recipient_id: recipient,
+          recipient_id: recipientId,
+          participants,
           message: hasFiles ? undefined : (message || undefined),
           project_id: projectId || null,
           sender_name: senderName.trim() || null,
@@ -156,7 +173,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
         </DialogHeader>
 
         <div className="flex flex-col gap-4 text-sm">
-          {hasEmailParticipant && (
+          {hasRemoteParticipant && (
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <span className="font-medium">From:</span>
               {editingName ? (
@@ -166,14 +183,11 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
                   onChange={(e) => setSenderName(e.target.value)}
                   onBlur={async () => {
                     setEditingName(false);
-                    if (senderName.trim() && senderName.trim() !== localUser?.name) {
-                      await updateName(senderName.trim());
-                    }
                   }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') e.currentTarget.blur();
                     if (e.key === 'Escape') {
-                      setSenderName(localUser?.name ?? '');
+                      setSenderName(cloudUser?.name || cloudUser?.email || localUser?.name || '');
                       setEditingName(false);
                     }
                   }}
@@ -201,11 +215,11 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
               and shipped as remote_project_id for the receiver's mapping). */}
           <div className="flex flex-col gap-1.5">
             <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
-              Project{hasEmailParticipant ? ' (optional)' : ''}
+              Project{hasRemoteParticipant ? ' (optional)' : ''}
             </label>
             <Select value={projectId} onValueChange={setProjectId}>
               <SelectTrigger>
-                <SelectValue placeholder={hasEmailParticipant ? 'No project' : 'Select a project'} />
+                <SelectValue placeholder={hasRemoteParticipant ? 'No project' : 'Select a project'} />
               </SelectTrigger>
               <SelectContent>
                 {projects.map((p) => (
@@ -225,7 +239,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
             <ContactPicker
               value={participants}
               onChange={setParticipants}
-              excludeUserId={ctx.user?.id}
+              excludeUserId={cloudUser?.id ?? ctx.user?.id}
               enabled={open}
               testId="participant-input"
             />
@@ -240,7 +254,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
               className="min-h-[80px] rounded-md border border-input bg-transparent px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               value={initialMessage}
               onChange={(e) => setInitialMessage(e.target.value)}
-              placeholder={hasEmailParticipant ? 'Say hi…' : 'Optional'}
+              placeholder={hasRemoteParticipant ? 'Say hi…' : 'Optional'}
               data-testid="initial-message-input"
             />
           </div>

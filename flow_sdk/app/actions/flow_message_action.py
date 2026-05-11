@@ -39,6 +39,24 @@ def _meaningful_name(title: str) -> str:
     return name[:60] or "untitled"
 
 
+def _participant_label(participant: dict) -> str:
+    if not isinstance(participant, dict):
+        return "unknown"
+    return participant.get("name") or participant.get("email") or "unknown"
+
+
+async def _learn_address_book(participants: list[dict]) -> None:
+    for participant in participants or []:
+        if not isinstance(participant, dict):
+            continue
+        email = participant.get("email")
+        if not isinstance(email, str) or not email.strip():
+            continue
+        name = participant.get("name")
+        name = name.strip() if isinstance(name, str) and name.strip() else None
+        await User.get_or_create_by_email(email.strip(), name=name)
+
+
 async def handle_upload_flow_message(file, overwrite: bool) -> ApiResponse:
     """Accept a .flowmsg zip upload and materialize entities."""
     local_user = await User.get_one({"uname": "local"})
@@ -350,17 +368,11 @@ async def handle_create_project_conversation(
     if not project:
         return ApiFailResponse(message=f"Project not found: {project_id}", status_code=404)
 
-    resolved: list[dict] = []
-    for p in participants or []:
-        email = (p.get("email") or "").strip()
-        if not email:
-            continue
-        name = (p.get("name") or "").strip() or None
-        user = await User.get_or_create_by_email(email, name=name)
-        resolved.append({"user_id": user.id, "email": user.email, "name": user.name})
+    resolved = list(participants or [])
+    await _learn_address_book(resolved)
 
     derived_name = (title or "").strip() or (
-        ", ".join(p.get("name") or p.get("email") for p in resolved if p.get("email")) or None
+        ", ".join(_participant_label(p) for p in resolved) or None
     )
 
     conv = Conversation.model_validate({
@@ -695,25 +707,35 @@ async def handle_send_draft(fm_id: str, someone_typeid: str) -> ApiResponse:
     fm = await fm.save(someone_typeid)
 
     if task:
-        local_user = await User.get_local()
-        # fm.sender_name takes precedence (set explicitly on the draft);
-        # otherwise fall back to the local-user chain via the shared helper.
-        if fm.sender_name:
-            sender_id = local_user.id if local_user else fm.sender_id
-            sender_name = fm.sender_name
-        else:
-            sender_id, sender_name = await User.local_sender_identity()
-            if not sender_id:
-                sender_id = fm.sender_id
-        recipient_email = _resolve_reply_recipient_email(task, local_user.id if local_user else "")
+        from flow_sdk.app.actions.notification_action import _resolve_reply_recipient_participant
+
+        sender_participant = await User.current_sender_participant(fm.sender_name)
+        sender_id = sender_participant.get("user_id") or None
+        if not sender_id:
+            sender_id = fm.sender_id
+        sender_name = sender_participant.get("name") or ""
+        sender_email = sender_participant.get("email") or ""
+        recipient_participant = _resolve_reply_recipient_participant(
+            task,
+            conv,
+            sender_email,
+            sender_id or "",
+        )
+        recipient_email = recipient_participant.get("email") or _resolve_reply_recipient_email(
+            task,
+            conv,
+            sender_email,
+            sender_id or "",
+        )
         await _send_reply_to_hub(
             reply_fm=fm,
             task=task,
-            task_id=task.id,
+            conv_title=(conv.name or "") if conv else "",
             message=fm.text or "",
             sender_id=sender_id,
             sender_name=sender_name,
             recipient_email=recipient_email,
+            participants=list(conv.participants or []),
         )
 
     _notify_ui_conversation_updated(conv.id, task.id if task else "", fm.id)

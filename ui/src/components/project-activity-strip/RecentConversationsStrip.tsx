@@ -12,6 +12,8 @@ import {
 import { uploadFlowMessage, type UploadConflict } from '@sdk/entities/flow-message';
 import { useEntitiesQuery, useEntity } from '@src/hooks/entity-hooks';
 import { NewConversationDialog } from '@src/components/new-conversation-dialog/NewConversationDialog';
+import { deriveConversationTitle } from '@src/components/conversation/conversation-title';
+import { participantLabelByUserId } from '@src/components/conversation/participant-display';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Archive, MailPlus, MessageSquare, Plus, RefreshCw, Upload } from 'lucide-react';
@@ -255,7 +257,7 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
               <MailPlus className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-violet-500" />
               <div className="min-w-0 flex-1">
                 <div className="truncate text-xs font-medium text-foreground">
-                  {inv.recipient_email || 'Invitation'}
+                  Invitation
                 </div>
                 {inv.message && (
                   <div className="truncate text-[11px] text-muted-foreground">
@@ -335,13 +337,15 @@ function ConversationRow({ conv }: { conv: Conversation }) {
   // button visibly empty the strip (mirrors ``InboxView``'s behaviour).
   if (latestMessage?.is_archived) return null;
 
-  const title = taskTypeId ? `Task ${taskTypeId.id.slice(0, 8)}` : 'Conversation';
   const messageCount = conv.message_count ?? 0;
   const projectLabel = project?.displayName ?? null;
   const taskTitle = task?.title?.trim() || null;
+  const title = taskTitle ?? deriveConversationTitle(conv);
   const taskFirstWord = taskTitle ? taskTitle.split(/\s+/)[0] : null;
   const previewText = latestMessage?.text?.trim().split('\n').find((l) => l.trim()) ?? null;
-  const fromName = latestMessage?.sender_name?.trim() || null;
+  const fromName = participantLabelByUserId(conv.participants, latestMessage?.sender_id)
+    ?? latestMessage?.sender_name?.trim()
+    ?? null;
 
   const handleClick = () => {
     navigation.openDock(conv.dockPointer);

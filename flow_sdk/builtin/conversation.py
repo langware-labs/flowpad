@@ -33,7 +33,7 @@ class Conversation(Entity):
     remote_project_name: Optional[str] = APIField(None)
     message_count: int = APIField(0)
     message_ids: Optional[str] = APIField(None)  # JSON-encoded [{"typeid": ..., "ts": ...}]
-    participants: list[dict] = APIField(default_factory=list)  # [{user_id, email, name}]
+    participants: list[dict] = APIField(default_factory=list)  # [{user_id, name, email?}]
     # NOTE: task_id moved into ``context_entities``. Use
     # ``conv.first_context_of_type('task')`` to read it back.
     _api_visible: ClassVar[bool] = True
