@@ -46,6 +46,7 @@ class ClaudeDriver:
     """Vendor glue for Claude Code. Implements the ``WorkerDriver`` Protocol."""
 
     name = "claude"
+    preassign_interactive_session_id = True
 
     # ── CLI shape ────────────────────────────────────────────────────────────
 
@@ -198,6 +199,20 @@ class ClaudeDriver:
 
         asyncio.create_task(_run_turn(), name=f"claude-{process.id[:8]}")
         return ApiSuccessResponse(data={"status": "started", "worker": self.name})
+
+    async def report_event(
+        self,
+        process: "AgenticProcess",
+        name,
+        data: dict,
+    ) -> dict:
+        return {
+            "handled": False,
+            "worker": self.name,
+            "event_name": getattr(name, "value", str(name)),
+            "session_id": process.session_id,
+            "reason": "unsupported_event",
+        }
 
     # ── Transcript discovery ─────────────────────────────────────────────────
 

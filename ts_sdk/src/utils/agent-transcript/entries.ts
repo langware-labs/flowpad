@@ -14,6 +14,14 @@ export type EntryKind =
   | 'assistant_message'
   | 'tool_use'
   | 'tool_result'
+  | 'file_write'
+  | 'file_edit'
+  | 'file_read'
+  | 'shell_command'
+  | 'search'
+  | 'web_fetch'
+  | 'todo_update'
+  | 'agent_spawn'
   | 'system'
   | 'summary'
   | 'meta'
@@ -94,7 +102,11 @@ export interface TokenUsageEntry extends BaseEntry {
   kind: 'token_usage';
   input_tokens: number | null;
   output_tokens: number | null;
+  /** Single-value cache field — read-preferred summary (legacy callers). */
   cached_input_tokens: number | null;
+  /** Disaggregated cache fields — Claude can populate both on the same turn. */
+  cache_read_tokens: number | null;
+  cache_creation_tokens: number | null;
   reasoning_output_tokens: number | null;
   total_input_tokens: number | null;
   total_output_tokens: number | null;
@@ -106,11 +118,109 @@ export interface UnknownEntry extends BaseEntry {
   raw_data: Record<string, unknown>;
 }
 
+// ── Semantic operation entries (worker-agnostic) ───────────────────────────
+//
+// Parsers fold worker-specific tool names onto these kinds so renderers
+// never sniff `tool_input.file_path` vs `tool_input.cmd` to figure out
+// what the agent did. ToolUseEntry remains the catch-all bucket for tools
+// that don't have a dedicated kind yet (MCP, bespoke).
+
+export interface FileWriteEntry extends BaseEntry {
+  kind: 'file_write';
+  path: string;
+  content: string | null;
+  bytes_count: number | null;
+  line_count: number | null;
+  is_new: boolean;
+  tool_name: string;
+  tool_use_id: string;
+}
+
+export interface FileEditEntry extends BaseEntry {
+  kind: 'file_edit';
+  path: string;
+  hunks: Array<{ old?: string; new?: string; replace_all?: boolean; header?: string; lines?: string[] }>;
+  change_summary: string | null;
+  tool_name: string;
+  tool_use_id: string;
+}
+
+export interface FileReadEntry extends BaseEntry {
+  kind: 'file_read';
+  path: string;
+  start_line: number | null;
+  end_line: number | null;
+  bytes_count: number | null;
+  content_preview: string | null;
+  tool_name: string;
+  tool_use_id: string;
+}
+
+export interface ShellCommandEntry extends BaseEntry {
+  kind: 'shell_command';
+  command: string;
+  cwd: string | null;
+  exit_code: number | null;
+  stdout_preview: string | null;
+  stderr_preview: string | null;
+  duration_ms: number | null;
+  timeout: number | null;
+  tool_name: string;
+  tool_use_id: string;
+}
+
+export interface SearchEntry extends BaseEntry {
+  kind: 'search';
+  search_kind: string; // 'glob' | 'grep' | 'find'
+  query: string;
+  path: string | null;
+  match_count: number | null;
+  results_preview: string | null;
+  tool_name: string;
+  tool_use_id: string;
+}
+
+export interface WebFetchEntry extends BaseEntry {
+  kind: 'web_fetch';
+  url: string | null;
+  query: string | null;
+  prompt: string | null;
+  bytes_count: number | null;
+  status_code: number | null;
+  result_preview: string | null;
+  tool_name: string;
+  tool_use_id: string;
+}
+
+export interface TodoUpdateEntry extends BaseEntry {
+  kind: 'todo_update';
+  items: Array<Record<string, unknown>>;
+  tool_name: string;
+  tool_use_id: string;
+}
+
+export interface AgentSpawnEntry extends BaseEntry {
+  kind: 'agent_spawn';
+  agent_type: string;
+  prompt: string | null;
+  description: string | null;
+  tool_name: string;
+  tool_use_id: string;
+}
+
 export type GenericEntry =
   | UserMessageEntry
   | AssistantMessageEntry
   | ToolUseEntry
   | ToolResultEntry
+  | FileWriteEntry
+  | FileEditEntry
+  | FileReadEntry
+  | ShellCommandEntry
+  | SearchEntry
+  | WebFetchEntry
+  | TodoUpdateEntry
+  | AgentSpawnEntry
   | SystemEntry
   | SummaryEntry
   | MetaEntry
@@ -123,11 +233,25 @@ export const isUserMessage = (e: GenericEntry): e is UserMessageEntry => e.kind 
 export const isAssistantMessage = (e: GenericEntry): e is AssistantMessageEntry => e.kind === 'assistant_message';
 export const isToolUse = (e: GenericEntry): e is ToolUseEntry => e.kind === 'tool_use';
 export const isToolResult = (e: GenericEntry): e is ToolResultEntry => e.kind === 'tool_result';
+export const isFileWrite = (e: GenericEntry): e is FileWriteEntry => e.kind === 'file_write';
+export const isFileEdit = (e: GenericEntry): e is FileEditEntry => e.kind === 'file_edit';
+export const isFileRead = (e: GenericEntry): e is FileReadEntry => e.kind === 'file_read';
+export const isShellCommand = (e: GenericEntry): e is ShellCommandEntry => e.kind === 'shell_command';
+export const isSearch = (e: GenericEntry): e is SearchEntry => e.kind === 'search';
+export const isWebFetch = (e: GenericEntry): e is WebFetchEntry => e.kind === 'web_fetch';
+export const isTodoUpdate = (e: GenericEntry): e is TodoUpdateEntry => e.kind === 'todo_update';
+export const isAgentSpawn = (e: GenericEntry): e is AgentSpawnEntry => e.kind === 'agent_spawn';
 export const isSystem = (e: GenericEntry): e is SystemEntry => e.kind === 'system';
 export const isSummary = (e: GenericEntry): e is SummaryEntry => e.kind === 'summary';
 export const isMeta = (e: GenericEntry): e is MetaEntry => e.kind === 'meta';
 export const isTokenUsage = (e: GenericEntry): e is TokenUsageEntry => e.kind === 'token_usage';
 export const isUnknown = (e: GenericEntry): e is UnknownEntry => e.kind === 'unknown';
+
+/** True for any kind that represents a discrete agent operation (file/shell/web/etc). */
+export const isOperation = (e: GenericEntry): boolean =>
+  e.kind === 'file_write' || e.kind === 'file_edit' || e.kind === 'file_read' ||
+  e.kind === 'shell_command' || e.kind === 'search' || e.kind === 'web_fetch' ||
+  e.kind === 'todo_update' || e.kind === 'agent_spawn' || e.kind === 'tool_use';
 
 // ── Header / response shape ─────────────────────────────────────────────────
 

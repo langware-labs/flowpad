@@ -11,6 +11,7 @@ import { ConversationParticipant } from '@sdk';
 import { sendNotification } from '@sdk/entities/notifications';
 import { useLocalUser } from '@src/components/conversation/useLocalUser';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
+import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
 import { Button } from '@src/components/ui/button';
 import {
   Dialog,
@@ -32,6 +33,7 @@ interface AskHelpDialogProps {
 
 export function AskHelpDialog({ open, onClose, projectPath }: AskHelpDialogProps) {
   const { localUser } = useLocalUser();
+  const ensureCloudLogin = useCloudLoginGate();
   const [recipients, setRecipients] = useState<ConversationParticipant[]>([]);
   const [taskTitle, setTaskTitle] = useState('');
   const [message, setMessage] = useState('');
@@ -55,6 +57,11 @@ export function AskHelpDialog({ open, onClose, projectPath }: AskHelpDialogProps
     setBusy(true);
     setError(null);
     try {
+      const gate = await ensureCloudLogin();
+      if (!gate.ok) {
+        setError(gate.error);
+        return;
+      }
       const result = await sendNotification({
         recipient_id: recipientEmail,
         // Empty Spec — backend skips the Spec entity when both fields are blank

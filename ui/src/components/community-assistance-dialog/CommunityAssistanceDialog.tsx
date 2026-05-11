@@ -101,9 +101,7 @@ export function CommunityAssistanceDialog({ open, onClose }: CommunityAssistance
         });
       }
 
-      navigation.openDock(
-        DockPointer.forProject(projectId, { conversationId: conv.conversation_id }),
-      );
+      navigation.openDock(DockPointer.forConversation(conv.conversation_id));
       onClose();
     } finally {
       setBusy(false);

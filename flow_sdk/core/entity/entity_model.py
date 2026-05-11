@@ -104,6 +104,9 @@ class Entity(DBEntity):
     # VFS path relative to a root entity (e.g., compute node)
     root_vfs_path: str | None = APIField(default=None, description="VFS path relative to a root entity")
 
+    scope: str | None = APIField(default=None, description="Discovery scope: 'user' | 'project' | 'system'. Stamped at index time from the FSRef walk.")
+    project_id: str | None = APIField(default=None, description="Owning project id, when applicable. Stamped at index time from the FSRef walk.")
+
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         if self.env_vars is None:
@@ -264,17 +267,29 @@ class Entity(DBEntity):
                     except Exception:
                         record_domain[k] = None
 
+        # Bridge the FSRef-derived scope/project_id from the Record onto the
+        # Entity. Both columns live on the base Entity, so every type inherits.
+        rec_scope = getattr(record, "scope", None)
+        rec_scope = rec_scope.value if hasattr(rec_scope, "value") else rec_scope
+        rec_pid = getattr(record, "project_id", None)
+        stamp: dict = {}
+        if rec_scope not in (None, ""):
+            stamp["scope"] = str(rec_scope)
+        if rec_pid not in (None, ""):
+            stamp["project_id"] = str(rec_pid)
+
         if entity is None:
             create_kwargs = {"id": entity_uuid, "type": record_type}
             create_kwargs.update({k: v for k, v in data.items() if k not in ("id", "type")})
             create_kwargs.update(record_domain)
+            create_kwargs.update(stamp)
             try:
                 entity = entity_cls(**create_kwargs)
             except Exception:
                 entity = Entity(**create_kwargs)
         else:
             entity.type = record_type
-            all_updates = {**data, **record_domain}
+            all_updates = {**data, **record_domain, **stamp}
             for k, v in all_updates.items():
                 if k in ("id",) or not hasattr(entity, k):
                     continue

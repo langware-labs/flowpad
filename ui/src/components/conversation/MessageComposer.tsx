@@ -3,11 +3,11 @@ import { File, MessageSquarePlus, Paperclip, Send, X } from 'lucide-react';
 import { sendReply } from '@sdk/entities/notifications';
 import { AttachmentType, type Attachment } from '@sdk/entities/flow-message';
 import type { ITask } from '@sdk/entities/task';
+import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
 import { cn } from '@src/lib/utils';
 import { MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_LABEL } from './constants';
 import { PromptComposerDialog, type QueuedPrompt } from './PromptComposerDialog';
 import { PromptApprovalRow } from './PromptApprovalRow';
-import { useLocalUser } from './useLocalUser';
 
 interface MessageComposerProps {
   /** Task-bound: triggers hub push + git commit on send. Project-scoped sends omit it. */
@@ -29,6 +29,7 @@ function formatSize(bytes: number): string {
 }
 
 export function MessageComposer({ task, conversationId, disabled, onSent, queuedPrompt, onQueuedPromptChange }: MessageComposerProps) {
+  const ensureCloudLogin = useCloudLoginGate();
   const [text, setText] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [sending, setSending] = useState(false);
@@ -37,18 +38,7 @@ export function MessageComposer({ task, conversationId, disabled, onSent, queued
   const [localPrompt, setLocalPrompt] = useState<QueuedPrompt | null>(null);
   const [showPromptDialog, setShowPromptDialog] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { localUser } = useLocalUser();
-  // The initiator approves prompts (they own my_process_id and the fork);
-  // recipients propose them. So Add prompt is recipient-only.
-  //
-  // Two surfaces:
-  //   - Task-bound: initiator = ``task.shared_by_id === local_user.id``.
-  //   - Hub-direct (no Task): the conversation itself anchors the run via
-  //     conversation/<id>/run-headless. Both participants can add a prompt,
-  //     since neither side owns a "shared_by_id" — the recipient suggests,
-  //     the other side approves and runs server-side.
-  const isInitiator = !!(task && localUser?.id && task.shared_by_id && task.shared_by_id === localUser.id);
-  const canAddPrompt = task ? !isInitiator : !!conversationId;
+  const canAddPrompt = !!conversationId;
 
   const activePrompt = queuedPrompt ?? localPrompt;
   const setActivePrompt = (p: QueuedPrompt | null) => {
@@ -111,6 +101,14 @@ export function MessageComposer({ task, conversationId, disabled, onSent, queued
     setSending(true);
     setError(null);
     try {
+      // Cloud reply needs an authenticated hub token; otherwise the hub POST
+      // returns 401 and the send fails silently. Route through OAuth first,
+      // then resume the send on the same click.
+      const gate = await ensureCloudLogin();
+      if (!gate.ok) {
+        setError(gate.error);
+        return;
+      }
       const extras = effectivePrompt
         ? {
             promptText: effectivePrompt.text || undefined,

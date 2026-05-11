@@ -25,7 +25,10 @@ logger = logging.getLogger(__name__)
 
 
 def _scope_from_conversation(
-    conv: Conversation, project_id: Optional[str], workdir: str,
+    conv: Conversation,
+    project_id: Optional[str],
+    workdir: str,
+    source_flow_message_id: Optional[str] = None,
 ) -> HeadlessRunScope:
     """Build a [conversation, project] scope. No task / spec slots."""
     process_ctx: list[TypeId] = [TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv.id)]
@@ -39,12 +42,16 @@ def _scope_from_conversation(
         process_context=process_ctx,
         draft_context=[TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv.id)],
         preferred_process_id=None,  # no shared_process_id stamp on conversations
+        source_flow_message_id=source_flow_message_id,
         log_label="run-headless conv",
     )
 
 
 async def handle_run_headless_on_conversation(
-    conv_id: str, prompt_text: str, someone_typeid: str,
+    conv_id: str,
+    prompt_text: str,
+    someone_typeid: str,
+    source_flow_message_id: Optional[str] = None,
 ) -> ApiResponse:
     """Run `prompt_text` headlessly scoped to a Conversation; result becomes a draft reply.
 
@@ -63,7 +70,7 @@ async def handle_run_headless_on_conversation(
         project = await Project.get_one({"id": project_id})
         workdir = (project.fs_storage_mount_path or "").strip() if project else ""
 
-    scope = _scope_from_conversation(conv, project_id, workdir)
+    scope = _scope_from_conversation(conv, project_id, workdir, source_flow_message_id)
     return await run_scope(scope, prompt_text, someone_typeid)
 
 
@@ -77,10 +84,12 @@ async def run_headless_on_conversation() -> ApiResponse:
             return ApiFailResponse(message="No authenticated user in request context")
         body = await request_info.get_post_data() or {}
         prompt_text = (body.get("prompt") or "").strip()
+        source_fm_id = (body.get("source_flow_message_id") or "").strip() or None
         return await handle_run_headless_on_conversation(
             conv_id=str(request_info.target_entity_typeid.id),
             prompt_text=prompt_text,
             someone_typeid=request_info.someone_typeid,
+            source_flow_message_id=source_fm_id,
         )
     except Exception as e:
         logger.error("[conversation_action] run-headless error: %s", e, exc_info=True)

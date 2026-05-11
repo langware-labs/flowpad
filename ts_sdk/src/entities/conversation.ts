@@ -81,20 +81,11 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
     return out;
   }
 
-  /**
-   * Deep-link to the dedicated conversation view at `/dock/conversation/<id>`.
-   *
-   * The previous "project-nested" form (`/dock/project/<projectId>/conversation/<id>`)
-   * broke for cross-user conversations: the receiver doesn't have the sender's
-   * Project entity locally, so the project loader 404s before the route
-   * renders. The standalone form resolves the task + project from the
-   * conversation itself and works on both sides.
-   */
+  /** Always open conversations in the conversation view — every entry point
+   *  (inbox, recent strip, chips, deep links) lands on the same URL. */
   override get dockPointer(): DockPointerData {
-    if (this.id) {
-      return new DockPointerData(ViewType.CONVERSATION, this.id);
-    }
-    return new DockPointerData(ViewType.INBOX);
+    if (!this.id) return new DockPointerData(ViewType.INBOX);
+    return new DockPointerData(ViewType.CONVERSATION, this.id);
   }
 
   get conversationMessageIds(): ConversationMessagePointer[] {

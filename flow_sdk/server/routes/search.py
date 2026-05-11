@@ -57,22 +57,36 @@ async def _entity_asset_ref(ent) -> str:
 
 
 def _apply_scope_filter(entities: list, scope: str | None, project_ids: str | None) -> list:
-    """Filter entities by scope and optional project IDs."""
+    """Filter entities by scope and optional project IDs.
+
+    `scope` may be a single value (`user` / `project` / `system`) or a
+    comma-separated set (`user,project`). Comma-separated form means union:
+    keep entities whose `scope` is in the listed set. When `project` is in the
+    set and `project_ids` is given, project-scoped entities are additionally
+    restricted to those project IDs; non-project-scoped entities are unaffected.
+
+    Entities without a populated `scope` field are dropped — by construction
+    the indexer stamps every record's scope from the FSRef walk, so an empty
+    value means an unindexed/legacy row that needs reindexing.
+    """
     if not scope:
         return entities
-    if scope == "user":
-        return [e for e in entities if (getattr(e, "scope", None) or "") == "user"]
-    if scope == "project":
-        pid_list = [p.strip() for p in project_ids.split(",") if p.strip()] if project_ids else []
-        if pid_list:
-            pid_set = set(pid_list)
-            return [
-                e for e in entities
-                if (getattr(e, "scope", None) or "") == "project"
-                and (getattr(e, "project_encoded", None) or getattr(e, "id", "")) in pid_set
-            ]
-        return [e for e in entities if (getattr(e, "scope", None) or "") == "project"]
-    return entities
+    scope_set = {s.strip() for s in scope.split(",") if s.strip()}
+    if not scope_set:
+        return entities
+
+    pid_list = [p.strip() for p in project_ids.split(",") if p.strip()] if project_ids else []
+    pid_set = set(pid_list)
+
+    def _keep(e) -> bool:
+        s = (getattr(e, "scope", None) or "")
+        if s not in scope_set:
+            return False
+        if s == "project" and pid_set and (getattr(e, "project_id", None) or "") not in pid_set:
+            return False
+        return True
+
+    return [e for e in entities if _keep(e)]
 
 
 def _apply_folder_filter(entities: list, parent_path: str | None, vault_root: str | None) -> list:
@@ -106,12 +120,13 @@ async def _entity_to_result(ent) -> dict:
         "snippet": getattr(ent, "_fts_snippet", None),
         "status": getattr(ent, "status", None) or "",
         "scope": getattr(ent, "scope", "") or "",
+        "project_id": getattr(ent, "project_id", None) or None,
         "asset_ref": await _entity_asset_ref(ent) or "",
         "created_at": str(getattr(ent, "created_date", "") or ""),
         "modified_at": str(getattr(ent, "updated_date", "") or ""),
     }
     # Extra fields for per-type column rendering
-    for field in ("uname", "title", "description", "file_path", "filename", "work_dir", "project_encoded", "project_encoded_name", "session_id", "asset_type", "parent_path", "vault_root"):
+    for field in ("uname", "title", "description", "file_path", "filename", "work_dir", "session_id", "asset_type", "parent_path", "vault_root"):
         val = getattr(ent, field, None)
         if val:
             result[field] = val
@@ -132,7 +147,7 @@ async def search_records(
     offset: int = Query(default=0, ge=0, description="Offset for pagination"),
     record_type: Optional[str] = Query(default=None, description="Filter by record type"),
     status: Optional[str] = Query(default=None, description="Filter by record status"),
-    scope: Optional[str] = Query(default=None, description="Filter by scope (user, project)"),
+    scope: Optional[str] = Query(default=None, description="Filter by scope. Single value (user|project) or comma-separated set (e.g. user,project) for a union."),
     tags: Optional[str] = Query(default=None, description="Comma-separated tags to filter by"),
     project_ids: Optional[str] = Query(default=None, description="Comma-separated project entity IDs (used when scope=project)"),
     parent_path: Optional[str] = Query(default=None, description="Filter to records whose parent_path is exactly this absolute path (direct children only)"),
@@ -239,6 +254,25 @@ async def search_records(
     entities = entities[offset:]
 
     results = [await _entity_to_result(e) for e in entities]
+
+    # Resolve project_name for each unique project_id in one batched read so
+    # the UI can label per-project tree groups without a second round-trip.
+    pid_set = {r.get("project_id") for r in results if r.get("project_id")}
+    if pid_set:
+        try:
+            from flow_sdk.builtin.project import Project  # noqa: PLC0415
+            from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
+            projs = await Project.get_all(QueryFilter(
+                match=ExpressionNode(op=QueryOp.IN, operands=["id", list(pid_set)]),
+                type="project",
+            ))
+            pid_to_name = {p.id: (getattr(p, "name", None) or p.id) for p in projs}
+            for r in results:
+                pid = r.get("project_id")
+                if pid and pid in pid_to_name:
+                    r["project_name"] = pid_to_name[pid]
+        except Exception:
+            logger.warning("project_name resolution failed", exc_info=True)
 
     return JSONResponse(content={
         "status": "SUCCESS",

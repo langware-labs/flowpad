@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AgenticProcess, ProcessStatus, isProcessActive, type Task } from '@sdk';
 import { useProcessState } from './use-process-state';
-import { useWorkflowProgressInfo } from '@src/components/live-workflow/hooks/useWorkflowProgressInfo';
+import { useWorkflowProgressInfo } from './use-workflow-progress-info';
 import { isActionTask, TaskType } from '@src/components/task-bar/task-utils';
 
 interface AnalysisTaskProgress {

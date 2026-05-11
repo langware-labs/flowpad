@@ -127,7 +127,7 @@ export function OpenInWorktreeButton({ process }: OpenInWorktreeButtonProps) {
         },
         { visible: true },
       );
-      navigation.openDock(newProcess.dockPointer);
+      navigation.openDock(newProcess.terminalDockPointer);
     } finally {
       setLoading(false);
     }

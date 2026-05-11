@@ -27,6 +27,10 @@ class AgentHookData(BaseModel):
     hook_entry_id: Optional[str] = None
     hook_metadata: Optional[dict] = None
     hook_file_path: Optional[str] = None
+    # Phase 9: typed conversational payload synthesized from `hook_data`.
+    # Populated by `synth_process_entry()` so consumers read a typed entry
+    # instead of walking the raw flat-bag hook fields.
+    process_entry: Optional[dict] = None
 
 
 class SkillNotification(BaseModel):

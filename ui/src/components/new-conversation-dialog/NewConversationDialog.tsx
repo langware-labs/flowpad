@@ -7,6 +7,7 @@ import {
 } from '@sdk';
 import { sendReply } from '@sdk/entities/notifications';
 import { useContext as useDataContext } from '@src/hooks/useContext';
+import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
 import { useProjects } from '@src/hooks/use-projects';
 import { Button } from '@src/components/ui/button';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
@@ -35,6 +36,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
   const ctx = useDataContext();
   const { projects = [] } = useProjects();
   const { localUser, updateName } = useLocalUser();
+  const ensureCloudLogin = useCloudLoginGate();
 
   const [projectId, setProjectId] = useState<string>('');
   const [participants, setParticipants] = useState<ConversationParticipant[]>([]);
@@ -88,9 +90,16 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
       const message = initialMessage.trim();
 
       let conversationId: string | null;
-      let projectIdForNav: string | null = null;
 
       if (hasEmailParticipant) {
+        // Cross-user create routes through hub; require cloud login first so a
+        // logged-out user is taken through OAuth and the create resumes on the
+        // same click instead of failing silently.
+        const gate = await ensureCloudLogin();
+        if (!gate.ok) {
+          setError(gate.error);
+          return;
+        }
         // Bundle delivery — same path as share_task / AskForAssistance, just
         // without a Task/Spec. Backend stamps project_id on the local
         // Conversation at create time and includes it as remote_project_id in
@@ -115,18 +124,13 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
           participants,
         });
         conversationId = result.conversation_id;
-        projectIdForNav = result.project_id;
       }
 
       if (hasFiles && conversationId) {
         await sendReply({ conversationId }, message, files);
       }
 
-      if (projectIdForNav && conversationId) {
-        navigation.openDock(
-          DockPointer.forProject(projectIdForNav, { conversationId }),
-        );
-      } else if (conversationId) {
+      if (conversationId) {
         navigation.openDock(DockPointer.forConversation(conversationId));
       }
       onClose();

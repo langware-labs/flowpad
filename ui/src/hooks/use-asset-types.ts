@@ -6,11 +6,18 @@ export interface AssetTypeVault {
   typeid: string;
   /** Path relative to the typeid. Empty string for the entity root itself. */
   relPath: string;
-  /** Human-readable label for the vault (e.g. "User docs", "Project docs (foo)"). */
+  /** Human-readable label: "User" for the user vault, the project name for
+   *  project vaults, or the folder name for env-supplied dirs. */
   label: string;
   /** Absolute filesystem path corresponding to (typeid, relPath). Primarily used
    *  for the parent_path filter when drilling into a folder. */
   absPath: string;
+  /** 'user' | 'project' | 'system' — same scope axis used by record filtering.
+   *  Used by the markdown tree to drop vaults outside the active filter. */
+  scope: string;
+  /** Synthetic project_id (uuid5 of the project mount) for project vaults; null
+   *  otherwise. Matches what indexed records under this vault carry. */
+  project_id: string | null;
 }
 
 export interface AssetTypeInfo {

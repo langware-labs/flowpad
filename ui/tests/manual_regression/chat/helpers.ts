@@ -45,8 +45,8 @@ export async function waitForLanding(page: Page) {
  * Type a message in the landing-page session input and press Enter.
  * The new landing page uses TerminalLineSessionInput which navigates to /dock/shell/<uuid>.
  *
- * NOTE: The old chat session model (/dock/session/) was replaced with a terminal-based
- * shell model (/dock/shell/). submitFromLanding now navigates to the shell terminal.
+ * NOTE: The old chat session model was replaced with a terminal-based shell model.
+ * submitFromLanding now navigates to the shell terminal.
  */
 export async function submitFromLanding(page: Page, message: string) {
   // Dismiss WelcomeModal if it's still blocking (AlertDialog sets aria-hidden on the page).
@@ -73,7 +73,7 @@ export async function submitFromLanding(page: Page, message: string) {
 /**
  * Wait for the shell terminal to be ready after navigating from landing.
  * The old ensureActiveSession / sendInstruction / waitForDone helpers targeted
- * the /dock/session/ chat UI which no longer exists.
+ * the old chat UI which no longer exists.
  *
  * This is a placeholder that waits for the shell tab to appear.
  */
@@ -90,7 +90,7 @@ export async function ensureShellReady(page: Page) {
 }
 
 /**
- * @deprecated The old chat session model (/dock/session/) no longer exists.
+ * @deprecated The old chat session model no longer exists.
  * Use ensureShellReady() instead.
  */
 export async function ensureActiveSession(page: Page) {
@@ -98,7 +98,7 @@ export async function ensureActiveSession(page: Page) {
 }
 
 /**
- * @deprecated sendInstruction targeted the old /dock/session/ chat UI.
+ * @deprecated sendInstruction targeted the old chat UI.
  * The new session model uses a shell terminal (xterm.js PTY).
  */
 export async function sendInstruction(page: Page, message: string) {

@@ -9,11 +9,11 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { FSRef } from '@sdk';
 import { downloadFile } from '@sdk/utils/utils';
 import Editor, { type OnMount } from '@monaco-editor/react';
-import { ChevronDown, ChevronRight, Download, Eye, ExternalLink, FileCode, MessageSquareDiff, Pencil, RefreshCw } from 'lucide-react';
+import { ChevronDown, ChevronRight, Download, Eye, ExternalLink, FileCode, GraduationCap, MessageSquareDiff, Pencil, RefreshCw } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-const EDITOR_MODES = ['view', 'review', 'editor', 'markdown'] as const;
+const EDITOR_MODES = ['view', 'review', 'editor', 'markdown', 'learning'] as const;
 type ViewMode = (typeof EDITOR_MODES)[number];
 
 const MODE_STORAGE_KEY = 'markdownEditor.mode';
@@ -34,6 +34,7 @@ const MODE_ICONS: Record<ViewMode, React.ComponentType<{ className?: string }>> 
   review: MessageSquareDiff,
   editor: Pencil,
   markdown: FileCode,
+  learning: GraduationCap,
 };
 
 interface MarkdownEditorProps {
@@ -54,6 +55,10 @@ interface MarkdownEditorProps {
   onActiveSideTabChange?: (id: string) => void;
   /** Forwarded to the Chat tab — runs once after its backing process is created. */
   chatOnProcessCreated?: (process: import('@sdk').AgenticProcess) => Promise<void> | void;
+  /** When true, the "Learning" view-mode chip appears in the header strip. */
+  showLearningMode?: boolean;
+  /** Body rendered when viewMode === 'learning'. Required when showLearningMode is true. */
+  learningPanel?: React.ReactNode;
 }
 
 /**
@@ -73,6 +78,8 @@ export function MarkdownEditor({
   activeSideTab,
   onActiveSideTabChange,
   chatOnProcessCreated,
+  showLearningMode,
+  learningPanel,
 }: MarkdownEditorProps) {
   return (
     <MarkdownEditorContent
@@ -84,8 +91,31 @@ export function MarkdownEditor({
       activeSideTab={activeSideTab}
       onActiveSideTabChange={onActiveSideTabChange}
       chatOnProcessCreated={chatOnProcessCreated}
+      showLearningMode={showLearningMode}
+      learningPanel={learningPanel}
     />
   );
+}
+
+// ── In-doc anchor links ───────────────────────────────────────────────────────
+// Milkdown's heading-id slugifier disagrees with the GFM slugs hand-authored
+// TOCs use (it keeps `.`, `/`, en-dashes), so getElementById usually misses.
+// We resolve the click against the rendered headings without touching the doc.
+
+function isSlugLink(href: string): string | null {
+  return href.startsWith('#') ? decodeURIComponent(href.slice(1)).toLowerCase() : null;
+}
+
+function gfmSlug(text: string): string {
+  return text.toLowerCase().replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '-').replace(/-+/g, '-');
+}
+
+function goToSlug(slug: string): void {
+  const direct = document.getElementById(slug);
+  const heading = direct ?? Array.from(
+    document.querySelectorAll<HTMLElement>('.ProseMirror :is(h1,h2,h3,h4,h5,h6)')
+  ).find((h) => gfmSlug(h.textContent ?? '') === slug);
+  heading?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
 // ── Editor content ────────────────────────────────────────────────────────────
@@ -99,6 +129,8 @@ function MarkdownEditorContent({
   activeSideTab,
   onActiveSideTabChange,
   chatOnProcessCreated,
+  showLearningMode,
+  learningPanel,
 }: {
   fsRef: FSRef;
   sourcePath: string;
@@ -108,9 +140,15 @@ function MarkdownEditorContent({
   activeSideTab?: string;
   onActiveSideTabChange?: (id: string) => void;
   chatOnProcessCreated?: MarkdownEditorProps['chatOnProcessCreated'];
+  showLearningMode?: boolean;
+  learningPanel?: React.ReactNode;
 }) {
   const { navigation, currentDock } = useDockNavigation();
   const [viewMode, setViewMode] = useState<ViewMode>(readStoredMode);
+  // Restore from a stale 'learning' selection when the chip is hidden for this doc.
+  useEffect(() => {
+    if (viewMode === 'learning' && !showLearningMode) setViewMode(DEFAULT_MODE);
+  }, [viewMode, showLearningMode]);
   // Imperative handle to the underlying Milkdown editor — driven by the
   // wiki toolbar to insert wikilinks at the cursor.
   const milkdownRef = useRef<MilkdownEditorInstance | null>(null);
@@ -168,6 +206,12 @@ function MarkdownEditorContent({
   }, [fsRef, fileName]);
 
   const handleLinkClick = useCallback((href: string) => {
+    const slug = isSlugLink(href);
+    if (slug !== null) {
+      goToSlug(slug);
+      return;
+    }
+
     // /dock/assets/wiki/<name> → keep the URL at the wiki form; the
     // wiki route view (WikiResolveView) does the name resolution.
     const wikiMatch = href.match(/\/dock\/assets\/wiki\/([^?#]+)/);
@@ -196,6 +240,7 @@ function MarkdownEditorContent({
           onOpenExternal={handleOpenExternal}
           onDownload={handleDownload}
           actions={toolbar}
+          showLearningMode={showLearningMode}
         />
         <div className="flex flex-1 items-center justify-center">
           <RefreshCw className="h-5 w-5 animate-spin text-muted-foreground" />
@@ -217,6 +262,7 @@ function MarkdownEditorContent({
           onOpenExternal={handleOpenExternal}
           onDownload={handleDownload}
           actions={toolbar}
+          showLearningMode={showLearningMode}
         />
         <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
           <p className="text-sm text-muted-foreground">{loadError.message}</p>
@@ -241,6 +287,7 @@ function MarkdownEditorContent({
         onOpenExternal={handleOpenExternal}
         onDownload={handleDownload}
         actions={toolbar}
+        showLearningMode={showLearningMode}
       />
 
       {hasFields && (
@@ -275,38 +322,42 @@ function MarkdownEditorContent({
       )}
 
       <div className="min-h-0 flex-1 overflow-hidden">
-        <EditorWithSidePanel
-          chatTarget={chatTarget}
-          extraTabs={extraSideTabs}
-          activeTab={activeSideTab}
-          onActiveTabChange={onActiveSideTabChange}
-          chatOnProcessCreated={chatOnProcessCreated}
-          cursorLine={cursorLine}
-        >
-          {viewMode === 'markdown' ? (
-            <MonacoMarkdownEditor
-              value={body}
-              onChange={handleBodyChange}
-              onCursorLineChange={handleEditorLineChange}
-              initialLine={initialBodyLine}
-            />
-          ) : (
-            <MilkdownEditor
-              content={body}
-              onChange={handleBodyChange}
-              onLinkClick={handleLinkClick}
-              editorMode={viewMode}
-              editorRef={milkdownRef}
-              onCursorLineChange={handleEditorLineChange}
-              initialLine={initialBodyLine}
-              toolbarRight={
-                viewMode === 'editor' ? (
-                  <WikiToolbar editorRef={milkdownRef} sourceTypeId={chatTarget} />
-                ) : undefined
-              }
-            />
-          )}
-        </EditorWithSidePanel>
+        {viewMode === 'learning' && learningPanel ? (
+          <div className="h-full overflow-hidden">{learningPanel}</div>
+        ) : (
+          <EditorWithSidePanel
+            chatTarget={chatTarget}
+            extraTabs={extraSideTabs}
+            activeTab={activeSideTab}
+            onActiveTabChange={onActiveSideTabChange}
+            chatOnProcessCreated={chatOnProcessCreated}
+            cursorLine={cursorLine}
+          >
+            {viewMode === 'markdown' ? (
+              <MonacoMarkdownEditor
+                value={body}
+                onChange={handleBodyChange}
+                onCursorLineChange={handleEditorLineChange}
+                initialLine={initialBodyLine}
+              />
+            ) : (
+              <MilkdownEditor
+                content={body}
+                onChange={handleBodyChange}
+                onLinkClick={handleLinkClick}
+                editorMode={viewMode === 'learning' ? 'view' : viewMode}
+                editorRef={milkdownRef}
+                onCursorLineChange={handleEditorLineChange}
+                initialLine={initialBodyLine}
+                toolbarRight={
+                  viewMode === 'editor' ? (
+                    <WikiToolbar editorRef={milkdownRef} sourceTypeId={chatTarget} />
+                  ) : undefined
+                }
+              />
+            )}
+          </EditorWithSidePanel>
+        )}
       </div>
     </div>
   );
@@ -387,9 +438,11 @@ interface EditorHeaderProps {
   onOpenExternal: () => void;
   onDownload?: () => void;
   actions?: React.ReactNode;
+  showLearningMode?: boolean;
 }
 
-function EditorHeader({ fileName, dirPath, dirty, viewMode, onViewModeChange, onOpenExternal, onDownload, actions }: EditorHeaderProps) {
+function EditorHeader({ fileName, dirPath, dirty, viewMode, onViewModeChange, onOpenExternal, onDownload, actions, showLearningMode }: EditorHeaderProps) {
+  const visibleModes = EDITOR_MODES.filter((m) => m !== 'learning' || showLearningMode);
   return (
     <div className="flex h-[52px] flex-shrink-0 items-center gap-2 border-b px-3">
       <div className="min-w-0 flex-1">
@@ -423,7 +476,7 @@ function EditorHeader({ fileName, dirPath, dirty, viewMode, onViewModeChange, on
       </div>
 
       <div className="flex flex-shrink-0 items-center rounded-md border bg-muted/40 p-0.5">
-        {EDITOR_MODES.map((mode) => {
+        {visibleModes.map((mode) => {
           const Icon = MODE_ICONS[mode];
           const active = viewMode === mode;
           return (

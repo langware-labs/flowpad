@@ -84,10 +84,10 @@ test('Start new chat from landing page', async ({ page }) => {
   const sendButton = page.locator('button[type="submit"], button:has(svg)').last();
   await sendButton.click();
 
-  console.log('Step 6: Wait for URL to change to session path');
-  // Wait for URL to change to session path (e.g., /dock/session/<id>)
+  console.log('Step 6: Wait for URL to change to shell path');
+  // Wait for URL to change to shell path (e.g., /dock/shell/<id>)
   try {
-    await page.waitForURL(/\/(dock\/session|flow)\/[a-zA-Z0-9_-]+/, { timeout: 10000 });
+    await page.waitForURL(/\/(dock\/shell|flow)\/[a-zA-Z0-9_-]+/, { timeout: 10000 });
   } catch (e) {
     console.warn('Navigation did not occur within timeout');
   }
@@ -160,8 +160,8 @@ test('Start new chat from landing page', async ({ page }) => {
   networkErrors.forEach(err => console.error(err));
 
   // Assertions (soft - we're diagnosing)
-  if (!urlAfterSend.match(/\/(dock\/session|flow)\/[a-zA-Z0-9_-]+/)) {
-    console.error('FAIL: URL did not change to session path');
+  if (!urlAfterSend.match(/\/(dock\/shell|flow)\/[a-zA-Z0-9_-]+/)) {
+    console.error('FAIL: URL did not change to shell path');
   }
   if (consoleErrors.length > 0) {
     console.error('FAIL: Console errors detected');

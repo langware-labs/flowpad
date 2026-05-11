@@ -1,4 +1,4 @@
-import { APIEntity, registerEntity } from '../APIEntity';
+import { APIEntity, isNonEmptyString, registerEntity } from '../APIEntity';
 import { IEntity } from '../IEntity';
 
 export const local_domain = 'local.machine';
@@ -32,8 +32,8 @@ export class User extends APIEntity<User> implements IUser {
    * ``user-04…2b``. Returns null to defer to the default chain otherwise.
    */
   override getDisplayName(): string | null {
-    if (this.name && this.name.trim()) return null;
-    if (this.email && this.email.trim()) return this.email;
+    if (isNonEmptyString(this.name)) return null;
+    if (isNonEmptyString(this.email)) return this.email;
     return null;
   }
 

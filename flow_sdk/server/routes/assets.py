@@ -18,11 +18,12 @@ router = APIRouter()
 def _markdown_vaults() -> list[dict]:
     """Enumerate markdown vault roots for the Wiki folder tree.
 
-    Each entry is a `(typeid, relPath, label, absPath)` tuple shape the UI
-    uses to render a top-level vault node under the Markdown root. typeid is
-    always `compute_node-@local` for v1 — every scan root is reachable via the
-    local compute node's VFS regardless of project scope.
+    Each entry carries (typeid, relPath, absPath, label, scope, project_id)
+    so the UI can filter vaults against the active scope/project filter the
+    same way records are filtered. typeid is always `compute_node-@local` —
+    every scan root is reachable via the local compute node's VFS.
     """
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
     from flow_sdk.fs_records.markdown_record import _doc_search_dirs  # noqa: PLC0415
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
 
@@ -39,42 +40,45 @@ def _markdown_vaults() -> list[dict]:
         seen.add(abs_path)
         p = Path(abs_path)
         rel_path = abs_path.lstrip("/")
-        label = _label_for_vault(p, home)
+        scope, project_id, label = _classify_vault(p, home)
         vaults.append({
             "typeid": "compute_node-@local",
             "relPath": rel_path,
             "label": label,
             "absPath": abs_path,
+            "scope": scope,
+            "project_id": project_id,
         })
     return vaults
 
 
-def _label_for_vault(p: Path, home: Path) -> str:
-    """Derive a human label for a vault root path."""
+def _classify_vault(p: Path, home: Path) -> tuple[str, str | None, str]:
+    """Return ``(scope, project_id, label)`` for a vault root path.
+
+    User vault → label "User". Project vault → label is the project's display
+    name (last segment of the project mount path), project_id is the synthetic
+    uuid5 that records under it carry. Other dirs (env-supplied) → label is
+    the dir's last segment, scope falls back to "user".
+    """
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
     name = p.name
     parent_name = p.parent.name if p.parent else ""
-    # .claude/docs pattern
+
     if name == "docs" and parent_name == ".claude":
-        # User-level: under $HOME
-        try:
-            p.relative_to(home)
-            if p.parent == home / ".claude":
-                return "User docs"
-        except ValueError:
-            pass
-        # Project-level: named after the grandparent directory
-        project_name = p.parent.parent.name if p.parent and p.parent.parent else ""
-        if project_name:
-            return f"Project docs ({project_name})"
-        return "Project docs"
-    # Generic docs/ directory
+        if p.parent == home / ".claude":
+            return ("user", None, "User")
+        project_mount = p.parent.parent if p.parent and p.parent.parent else None
+        if project_mount is not None:
+            project_name = project_mount.name or str(project_mount)
+            return ("project", Project.derive_id_for_path(str(project_mount)), project_name)
+
     if name == "docs":
-        project_name = p.parent.name if p.parent else ""
-        if project_name:
-            return f"{project_name}/docs"
-        return "docs"
-    # Extra dirs from FLOWPAD_DOC_DIRS
-    return name or str(p)
+        project_mount = p.parent if p.parent else None
+        if project_mount is not None:
+            return ("project", Project.derive_id_for_path(str(project_mount)), project_mount.name or "docs")
+
+    return ("user", None, name or str(p))
 
 
 @router.get("/api/v1/assets/types")

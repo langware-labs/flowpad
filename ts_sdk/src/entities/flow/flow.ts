@@ -1,5 +1,5 @@
 import { AxiosResponse } from 'axios';
-import { APIEntity, dataManager, registerEntity } from '../../APIEntity';
+import { APIEntity, dataManager, isNonEmptyString, registerEntity } from '../../APIEntity';
 import {
   FlowData,
   FlowDataFactory,
@@ -406,10 +406,10 @@ export class Flow extends APIEntity<Flow> {
 
         // Validate required artifact fields
         const errors: string[] = [];
-        if (!artifactJson.name || artifactJson.name.trim() === '') {
+        if (!isNonEmptyString(artifactJson.name)) {
           errors.push('name is required');
         }
-        if (!artifactJson.path || artifactJson.path.trim() === '') {
+        if (!isNonEmptyString(artifactJson.path)) {
           errors.push('path is required');
         }
         if (!artifactJson.ref_type) {

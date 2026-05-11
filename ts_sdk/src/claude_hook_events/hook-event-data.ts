@@ -14,6 +14,13 @@ export interface UsageInfo {
 /**
  * Provider-agnostic model for hook event data.
  * Covers all Claude Code hook event types.
+ *
+ * Phase 9: canonical conversational payload now lives on `process_entry`
+ * (typed). Variant-specific fields that used to be flat top-level optionals
+ * now live under `extra`. Legacy field declarations are kept so existing UI
+ * consumers (event-utils, event-summaries) compile; runtime values come
+ * through `extra` and may be undefined on the top-level declarations until
+ * consumers migrate.
  */
 export interface HookEventData {
   hook_event_name: string;
@@ -21,6 +28,14 @@ export interface HookEventData {
   transcript_path?: string;
   cwd?: string;
   permission_mode?: string;
+
+  // Phase 9 — typed conversational payload + raw spillover from the wire.
+  process_entry?: {
+    transcript_entry: Record<string, unknown>;
+    observation_kind: 'live' | 'hook_pre' | 'hook_post' | 'replay' | 'synthesized';
+    received_at: string;
+  };
+  extra?: Record<string, unknown>;
 
   // Tool events (PreToolUse, PostToolUse, PostToolUseFailure, PermissionRequest)
   tool_name?: string;

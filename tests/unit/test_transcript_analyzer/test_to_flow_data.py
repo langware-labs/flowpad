@@ -13,9 +13,9 @@ from flow_sdk.transcript_analyzer import (
     AgentTranscript,
     AssistantMessageEntry,
     MetaEntry,
+    ShellCommandEntry,
     SummaryEntry,
     SystemEntry,
-    ToolResultEntry,
     ToolUseEntry,
     UnknownEntry,
     UserMessageEntry,
@@ -59,13 +59,14 @@ def test_tool_use_emits_tool_call_flow_data(claude_jsonl):
     assert fds[0].attributes["tool-name"] == "Bash"
 
 
-def test_tool_result_emits_tool_result_flow_data(claude_jsonl):
+def test_folded_shell_command_emits_tool_call_flow_data(claude_jsonl):
     t = AgentTranscript("claude", claude_jsonl)
-    r = next(e for e in t.entries if isinstance(e, ToolResultEntry))
+    r = next(e for e in t.entries if isinstance(e, ShellCommandEntry))
     fds = r.to_flow_data()
     assert len(fds) == 1
-    assert fds[0].attributes["element-type"] == FlowElementType.TOOL_RESULT
-    assert "is_error" not in fds[0].attributes  # sanitized fixture has no error
+    assert fds[0].attributes["element-type"] == FlowElementType.TOOL_CALL
+    assert fds[0].attributes["tool-name"] == "Bash"
+    assert "ok" in (fds[0].flow_value.get("stdout") or "")
 
 
 def test_system_entry_emits_no_flow_data(claude_jsonl):

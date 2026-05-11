@@ -526,6 +526,8 @@ async def _process_single_hub_message(raw: dict) -> str | None:
     fm_id = (raw.get("id") or "").strip()
     if not fm_id:
         return None
+    if await FlowMessage.get_one({"id": fm_id}):
+        return fm_id
     attachment_filename = (raw.get("attachment_filename") or "").strip()
     if not attachment_filename:
         return None
@@ -985,3 +987,244 @@ async def invitation_accept() -> ApiResponse:
     except Exception as e:
         logger.error("[flow_message_action] invitation-accept error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Failed: {e}")
+
+
+# ---------------------------------------------------------------------------
+# Per-message Private Context actions
+#
+#   - `derive-task`: pre-creates a Task entity (placeholder title from FM text,
+#     `context_entities = [FM, AgenticProcess]`) and a Run row, then spawns an
+#     invisible Claude session whose only job is to **update** the Task's
+#     title/description via the flow MCP. Pre-creating in Python guarantees a
+#     real Task in the DB regardless of whether Claude succeeds at the MCP
+#     round-trip; the row appears immediately and the Run lifecycle drives the
+#     Open-button enable in the conversation drawer.
+#
+#   - `start-cc-from-transcript`: when the message has a `conversation.jsonl`
+#     FILE attachment, spawn a Claude session pre-loaded with that transcript
+#     path and ask for a brief analysis. The new AgenticProcess pins
+#     `target_vfs_path = <fm typeid>` so the frontend query picks it up.
+#
+# Both actions return immediately with `process_id`; the entity-query channel
+# delivers updates to the UI as the run progresses.
+# ---------------------------------------------------------------------------
+
+async def _resolve_workdir_and_project_async(fm: FlowMessage) -> tuple[str, Optional[str]]:
+    """Async variant — pulls task.project_root + project_id where available."""
+    project_id: Optional[str] = None
+    workdir = ""
+    conv_id = fm.conversation_id
+    if conv_id:
+        conv = await Conversation.get_one({"id": conv_id})
+        if conv:
+            project_id = conv.project_id or project_id
+            task_typeid = conv.first_context_of_type(BuiltinEntityType.TASK.value) if hasattr(conv, "first_context_of_type") else None
+            if task_typeid:
+                task = await Task.get_one({"id": task_typeid.id})
+                if task:
+                    project_id = task.project_id or project_id
+                    workdir = (task.project_root or "").strip() or workdir
+    if project_id and not workdir:
+        from flow_sdk.builtin.project import Project
+        project = await Project.get_one({"id": project_id})
+        if project:
+            workdir = (project.fs_storage_mount_path or "").strip() or workdir
+    return workdir, project_id
+
+
+async def handle_derive_task(fm_id: str, someone_typeid: str) -> ApiResponse:
+    """Pre-create a Task linked to this FM, then spawn a headless Claude run that refines it.
+
+    Pattern mirrors ``handle_create_task_bundle`` (Task built in Python, ``await
+    task.save()``) and ``run_scope`` (``_create_run`` + ``_run_turn_and_capture``
+    drive the Run-drawer lifecycle). Claude's job is reduced to refining the
+    pre-created Task's title/description — never creating it from scratch — so
+    the row appears immediately and a flaky Claude run still leaves a working
+    Task behind.
+    """
+    import asyncio
+    from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
+    from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli import ClaudeCliOptions
+    from flow_sdk.app.actions.headless_run import (
+        HeadlessRunScope,
+        _create_run,
+        _run_turn_and_capture,
+    )
+
+    fm = await FlowMessage.get_one({"id": fm_id})
+    if not fm:
+        return ApiFailResponse(message=f"FlowMessage not found: {fm_id}")
+
+    workdir, project_id = await _resolve_workdir_and_project_async(fm)
+    # Headless CLI driver requires a non-empty cwd (driver.py:103-104). For
+    # FMs not mapped to a project, fall back to $HOME — the run only needs a
+    # valid cwd; the flow MCP is mounted via add_dirs regardless of workdir.
+    if not workdir:
+        workdir = os.path.expanduser("~")
+
+    fm_typeid = TypeId(type=BuiltinEntityType.FLOW_MESSAGE.value, id=fm.id)
+    fm_typeid_str = str(fm_typeid)
+
+    # 1. Spawn the invisible AgenticProcess pinned to this FM. ``target_vfs_path``
+    #    surfaces it in Private Context / Runs queries.
+    cli_opts = ClaudeCliOptions(
+        print_mode=True,
+        output_format="stream-json",
+        verbose=True,
+        permission_mode="bypassPermissions",
+    )
+    process = AgenticProcess(
+        cli_config=cli_opts.to_json(),
+        workdir=workdir,
+        visible=False,
+        project_id=project_id,
+        target_vfs_path=fm_typeid_str,
+        context_entities=[fm_typeid],
+    )
+    await process.save(someone_typeid)
+    process_typeid = TypeId(type=BuiltinEntityType.AGENTIC_PROCESS.value, id=process.id)
+
+    # 2. Pre-create the Task with placeholder content and the full linkage
+    #    (FM + Process). Frontend pairs the Process row to this Task via the
+    #    Process TypeId in ``context_entities``.
+    fm_text = (fm.text or "").strip()
+    placeholder_title = (fm_text[:80] + "…") if len(fm_text) > 80 else (fm_text or "Deriving task…")
+    task = Task.model_validate({
+        "title": placeholder_title,
+        "description": fm_text or None,
+        "project_id": project_id,
+        "context_entities": [fm_typeid, process_typeid],
+    })
+    task.id = Task.allocate_id(task.model_dump())
+    task = await task.save(someone_typeid)
+    task_typeid_str = str(TypeId(type=BuiltinEntityType.TASK.value, id=task.id))
+
+    # 3. Open a Run row so the headless session shows up in the Runs drawer
+    #    with the standard RUNNING → STOPPED|FAILED lifecycle. ``conversation_id=""``
+    #    skips ``_save_draft_flow_message`` (we don't want a draft FM here —
+    #    the artifact is the Task, not a chat reply).
+    scope = HeadlessRunScope(
+        target_typeid=fm_typeid,
+        conversation_id="",
+        workdir=workdir,
+        project_id=project_id,
+        process_context=[fm_typeid],
+        draft_context=[fm_typeid],
+        source_flow_message_id=fm.id,
+        log_label="derive-task",
+    )
+
+    instruction = (
+        "A Task entity has been pre-created with id `" + task.id + "` "
+        "(typeid `" + task_typeid_str + "`). Its current title and description "
+        "are placeholder values sliced from the source FlowMessage text.\n\n"
+        "Your job: refine the Task by **updating** its `title` (concise one-line "
+        "summary) and `description` (the relevant details). Do NOT create a new "
+        "Task — update the existing one.\n\n"
+        "Steps:\n"
+        "1. Read the source FlowMessage with TypeId `" + fm_typeid_str + "` for "
+        "context. You can call the flow MCP:\n"
+        "   `mcp__plugin_skillit_flow_sdk__flow_entity_crud` with arguments\n"
+        "   `crud=\"read\"`, "
+        "`entity_json='{\"type\":\"flow_message\",\"id\":\"" + fm.id + "\"}'`.\n"
+        "2. Update the Task with the same MCP tool:\n"
+        "   `crud=\"update\"`, "
+        "`entity_json='{\"type\":\"task\",\"id\":\"" + task.id + "\",\"title\":\"<new title>\",\"description\":\"<new description>\"}'`.\n"
+        "3. Exit when done."
+    )
+
+    run = await _create_run(
+        scope=scope,
+        process=process,
+        prompt_text=instruction,
+        someone_typeid=someone_typeid,
+    )
+
+    # Drive the headless turn in the background. ``_run_turn_and_capture`` owns
+    # the worker lifecycle plus the Run finalization (RUNNING → STOPPED|FAILED).
+    asyncio.create_task(
+        _run_turn_and_capture(
+            process=process,
+            prompt_text=instruction,
+            scope=scope,
+            run=run,
+            sender_id=None,
+            sender_name="",
+            someone_typeid=someone_typeid,
+        ),
+        name=f"derive-task-{process.id[:8]}",
+    )
+
+    return ApiSuccessResponse(data={
+        "process_id": process.id,
+        "run_id": run.id,
+        "task_id": task.id,
+    })
+
+
+@action.post(action_name="derive-task", types=[BuiltinEntityType.FLOW_MESSAGE.value])
+async def derive_task() -> ApiResponse:
+    """Headless: derive a Task from this FlowMessage; result links via context_entities."""
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.target_entity_typeid:
+            return ApiFailResponse(message="No request info found")
+        if not request_info.someone_typeid:
+            return ApiFailResponse(message="Authentication required")
+        return await handle_derive_task(
+            fm_id=str(request_info.target_entity_typeid.id),
+            someone_typeid=request_info.someone_typeid,
+        )
+    except Exception as e:
+        logger.error("[flow_message_action] derive-task error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Derive task failed: {str(e)}")
+
+
+async def handle_start_cc_from_transcript(fm_id: str, someone_typeid: str) -> ApiResponse:
+    """Resolve transcript path + spawn info for a Claude session derived from this FM.
+
+    Spawning the AgenticProcess is intentionally left to the frontend
+    (mirrors `useMyProcess`'s pattern: ``AgenticProcess.spawn(..., { visible: true })``
+    + ``process.start({ instruction })``) so we get a real PTY-backed shell
+    the user can interact with — a backend-spawned ``visible=false`` worker
+    has no PTY to attach to and the dock's shell route falls back when
+    navigated to.
+    """
+    fm = await FlowMessage.get_one({"id": fm_id})
+    if not fm:
+        return ApiFailResponse(message=f"FlowMessage not found: {fm_id}")
+
+    transcript = None
+    for att in (fm.attachment or []):
+        if att.attachment_type == AttachmentType.FILE and att.data.endswith("conversation.jsonl"):
+            transcript = att
+            break
+    if not transcript:
+        return ApiFailResponse(message="No transcript attachment on this message")
+
+    transcript_path = transcript.local_path or transcript.data
+    workdir, project_id = await _resolve_workdir_and_project_async(fm)
+
+    return ApiSuccessResponse(data={
+        "transcript_path": transcript_path,
+        "workdir": workdir,
+        "project_id": project_id,
+    })
+
+
+@action.post(action_name="start-cc-from-transcript", types=[BuiltinEntityType.FLOW_MESSAGE.value])
+async def start_cc_from_transcript() -> ApiResponse:
+    """Headless: start a Claude session from this FM's transcript attachment."""
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.target_entity_typeid:
+            return ApiFailResponse(message="No request info found")
+        if not request_info.someone_typeid:
+            return ApiFailResponse(message="Authentication required")
+        return await handle_start_cc_from_transcript(
+            fm_id=str(request_info.target_entity_typeid.id),
+            someone_typeid=request_info.someone_typeid,
+        )
+    except Exception as e:
+        logger.error("[flow_message_action] start-cc-from-transcript error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Start CC failed: {str(e)}")

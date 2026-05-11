@@ -92,6 +92,8 @@ export const DirectoryTree = forwardRef<DirectoryTreeHandle, DirectoryTreeProps>
 
   // Sync external selected path and expand parent folders
   useEffect(() => {
+    tree.selectItem(selectedPath);
+
     // Only expand once per selectedPath to avoid infinite loops
     // Also require rootFolders to be populated before attempting expansion
     if (selectedPath && selectedPath !== hasExpandedRef.current && rootFolders.length > 0) {
@@ -131,7 +133,14 @@ export const DirectoryTree = forwardRef<DirectoryTreeHandle, DirectoryTreeProps>
    */
   const isRootFolder = useCallback(
     (item: FSItem) => {
-      return rootFolders.some((root) => root.vfsPath.equals(item.vfsPath));
+      return rootFolders.some((root) => {
+        const rootPath = root.vfsPath;
+        const itemPath = item.vfsPath;
+        if (rootPath && itemPath && typeof rootPath.equals === 'function') {
+          return rootPath.equals(itemPath);
+        }
+        return root.vfs_abs_path === item.vfs_abs_path;
+      });
     },
     [rootFolders],
   );
