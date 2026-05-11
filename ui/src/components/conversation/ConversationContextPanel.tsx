@@ -10,6 +10,7 @@ import {
   TypeId,
 } from '@sdk';
 import { ActionInfo } from '@sdk/models/ActionInfo';
+import { ClaudeCliOptions } from '@sdk/cli_workers/claude-cli';
 import { useEntity } from '@sdk/react/hooks';
 import { AttachmentType, type Attachment } from '@sdk/entities/flow-message';
 import {
@@ -218,16 +219,21 @@ function SharedContextSection({
 
   /**
    * Unified Start session handler used by both the spec row and the transcript
-   * row. Spawns a visible (PTY) AgenticProcess pre-loaded with the receiver
-   * context prompt (spec content, transcript path, conversation messages,
-   * attachment paths, and context-entity metadata paths — see
-   * `buildReceiverContextPrompt`), links it to the current FlowMessage via
-   * `context_entities` so `usePrivateContext` picks it up, and notifies the
-   * user to open it from Private Context.
+   * row. Basic primitive flow per `docs/agent-management/agentic-process.md`:
    *
-   * No navigation: same pattern as the legacy `start-cc-from-transcript` flow
-   * — the dock route loader race that bug-comment in the old handler refers to
-   * is avoided by letting the user click Open in Private Context.
+   *   1. `new AgenticProcess({ cli_config, context_data, workdir, visible:true })`
+   *   2. `.save()` — persists the entity so it has an id.
+   *   3. `addContextEntity(FlowMessage TypeId)` + `.save()` — this is the "add
+   *      to Private Context" step. `usePrivateContext` filters AgenticProcesses
+   *      by `contextEntities` containing the FlowMessage, so the row appears
+   *      below as soon as this save lands.
+   *   4. `dataManager.notifyEntityChanged(proc)` — nudges watched queries so
+   *      the new entity shows up in `useEntitiesQuery` without waiting for the
+   *      backend WS UPDATE round-trip (the reactivity gap the user hit).
+   *   5. `.start({ instruction })` — opens the PTY and injects the receiver
+   *      context prompt (spec content if present, transcript path, conversation
+   *      messages, attachment paths, context-entity metadata paths).
+   *   6. `.openTerminalDock()` — navigates to `/dock/shell/agentic_process-<id>`.
    */
   const handleStartSession = async () => {
     if (!messageId || startingCc || !task || !flowMessage) return;
@@ -239,17 +245,22 @@ function SharedContextSection({
     setStartingCc(true);
     try {
       const instruction = await buildReceiverContextPrompt(task, conversationId, senderName);
-      const { process } = await AgenticProcess.spawn(
-        {
-          permissionMode: 'bypassPermissions',
-          workdir,
-          projectId: task.project_id ?? undefined,
-        },
-        { instruction, visible: true },
-      );
-      process.addContextEntity(new TypeId(FlowMessage.type, messageId));
-      await process.save();
-      toast.success('Session started — open it from Private Context below.');
+
+      const cliConfig = new ClaudeCliOptions({ permission_mode: 'bypassPermissions' });
+      const proc = await new AgenticProcess({
+        cli_config: cliConfig.toJson(),
+        context_data: { project_id: task.project_id ?? undefined },
+        workdir,
+        visible: true,
+      }).save();
+
+      // Add to Private Context BEFORE start so the row appears immediately.
+      proc.addContextEntity(new TypeId(FlowMessage.type, messageId));
+      await proc.save();
+      dataManager.notifyEntityChanged(proc);
+
+      await proc.start({ instruction });
+      proc.openTerminalDock();
     } catch (err) {
       console.error('[SharedContext] start session failed', err);
       toast.error('Failed to start session');
@@ -454,7 +465,7 @@ function TranscriptRow({
 
   const handleView = () => {
     if (localPath) {
-      navigation.openLens('claude', 'transcript-path', encodeURIComponent(localPath));
+      navigation.openLens('claude', 'transcript', encodeURIComponent(localPath));
     } else {
       window.open(downloadUrl, '_blank', 'noopener,noreferrer');
     }
