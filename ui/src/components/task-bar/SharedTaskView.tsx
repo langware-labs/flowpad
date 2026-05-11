@@ -67,7 +67,10 @@ export function SharedTaskView({ task, conversationId, onClose }: SharedTaskView
         { task, conversationId: conversationTypeId.id },
         '',
         undefined,
-        { promptText: STATUS_REQUEST_PROMPT_TEXT },
+        {
+          promptText: STATUS_REQUEST_PROMPT_TEXT,
+          contextEntities: specTypeId ? [specTypeId.toString()] : [],
+        },
       );
       toast.success('Status request sent', {
         description: 'The recipient will see a PROMPT to approve.',
