@@ -140,16 +140,32 @@ class Project(Entity):
         return self
 
     @classmethod
-    def allocate_id(cls, data: dict) -> str:
-        """Always return a random UUID4.
+    def derive_id_for_path(cls, path: str) -> str | None:
+        """Canonical project_id for a mount path.
 
-        The Project entity's identity is opaque. The natural key — what makes
-        two Project rows "the same project" — is the canonical
-        ``fs_storage_mount_path`` (i.e., ``cwd``). Dedup happens via
-        :py:meth:`find_by_cwd`, NOT via id derivation. Callers that need to
-        find-or-create a Project for a given path go through
-        :py:meth:`from_record` (which dedupes) or query
-        ``find_by_cwd`` directly.
+        Single source of truth for the synthetic id used everywhere: indexer
+        FSRefs, transcript boundaries, and ``allocate_id``. ``None`` when no
+        path is given. Uses uuid5 over canonical posix path so callers can
+        stamp ``project_id`` on records BEFORE the Project entity exists;
+        ``from_record`` will then materialize the entity with the same id.
+        """
+        if not path:
+            return None
+        import uuid
+        from flow_sdk.fs_store.path_utils import canonical_posix_path
+        return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"project:{canonical_posix_path(path)}"))
+
+    @classmethod
+    def allocate_id(cls, data: dict) -> str:
+        """Return a stable id for this Project.
+
+        Order of precedence:
+          1. ``data['id']`` if it's a valid uuid (caller pre-assigned —
+             ``from_record`` uses this to inject ``derive_id_for_path`` so the
+             entity id matches indexer-stamped record references).
+          2. Random uuid4 fallback. Pure ``allocate_id({})`` calls are opaque
+             and per-call random; deterministic ids are an explicit
+             ``derive_id_for_path`` opt-in by the caller.
         """
         import uuid
         from flow_sdk.fs_store.identifier import is_valid_uuid
@@ -187,7 +203,9 @@ class Project(Entity):
 
         Phase 1 — exact-match an existing Project by canonical mount_path
                   (delegates to ``find_by_cwd``).
-        Phase 2 — construct a fresh Project from the path with a uuid4 id.
+        Phase 2 — construct a fresh Project from the path with a deterministic
+                  uuid5 id (``derive_id_for_path``) so any indexer-stamped
+                  ``project_id`` references on records resolve to the same row.
 
         Returns ``None`` only when ``path`` is empty/falsy.
         """
@@ -201,10 +219,12 @@ class Project(Entity):
         if existing is not None:
             return existing
 
-        # Phase 2: construct a fresh Project. Identity is a fresh uuid4
-        # — the dedup property comes from the canonical mount_path lookup
-        # above, not from id derivation.
+        # Phase 2: construct a fresh Project. Identity is derived from the
+        # canonical path so it matches what the indexer would have stamped
+        # on records via ``derive_id_for_path``.
+        derived_id = cls.derive_id_for_path(canonical)
         proj = cls.model_validate({
+            "id": derived_id,
             "fs_storage_mount_path": canonical,
             "name": os.path.basename(canonical.rstrip(os.sep)) or canonical,
         })
@@ -267,10 +287,16 @@ class Project(Entity):
             await existing.save(notify=notify)
             return existing
 
-        # Net-new project: fresh uuid4 id, canonical mount path.
+        # Net-new project: id is derived from the canonical mount path so it
+        # matches whatever the indexer already stamped on records (via
+        # ``derive_id_for_path``). Falls back to opaque uuid4 only when no
+        # path is available.
         create_kwargs = {k: v for k, v in data.items() if k != "id"}
         if canonical_mp:
             create_kwargs["fs_storage_mount_path"] = canonical_mp
+            derived_id = cls.derive_id_for_path(canonical_mp)
+            if derived_id:
+                create_kwargs["id"] = derived_id
         # Drop record-only fields the Project entity doesn't carry — provenance
         # flags stay on ProjectFsRecord (backend only). Only denormalized
         # activity hints surface on the entity.

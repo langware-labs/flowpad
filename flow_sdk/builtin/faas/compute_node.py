@@ -466,6 +466,13 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             return await self._scan_get_by_worker_id(worker_id)
         return ApiFailResponse(message=f"unknown terminals sub-path: {sub_path!r}", status_code=400)
 
+    @action.get(action_name="active-terminals")
+    async def _active_terminals_removed(self) -> ApiResponse:
+        """410 tombstone. Replaced by ``terminals/list`` in a27c4ab. Kept so
+        any stale callers get a clear hard-migration signal instead of a
+        silent 200 with empty data."""
+        return ApiFailResponse(message="active-terminals was removed; use terminals/list", status_code=410)
+
     async def _terminal_list(self) -> ApiResponse:
         """Single source of truth for the tab strip.
 

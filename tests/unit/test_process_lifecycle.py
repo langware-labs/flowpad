@@ -12,13 +12,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
-from flow_sdk.builtin.agentic_process.cli_drivers import get_driver
 from flow_sdk.builtin.shell import Shell
 
 
-def test_driver_preassign_interactive_session_id_flags():
-    assert get_driver("claude").preassign_interactive_session_id is True
-    assert get_driver("codex").preassign_interactive_session_id is False
+# NOTE: ``test_driver_preassign_interactive_session_id_flags`` was removed
+# when CodexDriver migrated to the TranscriptDescriptor-based session
+# discovery (see ``flow_sdk/builtin/agentic_process/cli_drivers/codex/
+# driver.py``). The ``preassign_interactive_session_id`` attribute no longer
+# exists — Codex now finds the rollout via ``find_latest_codex_session_jsonl``
+# (cwd + launch-time lookback) instead of pre-assigning the session id.
 
 
 # ---------------------------------------------------------------------------

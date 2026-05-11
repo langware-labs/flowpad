@@ -3,7 +3,10 @@ import { IEntity } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
 import { DockPointerData } from '../models/DockPointer';
 import { TypeId } from '../models/TypeId';
+import { ConnectionManager } from '../websocket';
+import { Callable } from '../types';
 import { ViewType } from '../utils/ui/view-types';
+import type { IFlowMessage } from './flow-message';
 
 export interface ConversationMessage {
   role: string;       // "sender" | "recipient" | "bot"
@@ -112,6 +115,71 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
       out.push({ type: p.typeid.slice(0, dash), id: p.typeid.slice(dash + 1), ts: p.ts });
     }
     return out;
+  }
+
+  /**
+   * Append a FlowMessage to this conversation. Hits the standard graph
+   * action ``POST /api/v1/graph/conversation/<id>/add_message``; the local
+   * backend forwards to the hub. Returns the persisted FlowMessage JSON.
+   */
+  async addMessage(text: string, opts: { sender_name?: string } = {}): Promise<IFlowMessage> {
+    const action = new ActionInfo('add_message', this.typeId.type, this.typeId.id, 'POST');
+    action.bodyParameters = {
+      text,
+      ...(opts.sender_name ? { sender_name: opts.sender_name } : {}),
+    };
+    const res = await dataManager.callAction<{ text: string; sender_name?: string }, IFlowMessage>(action);
+    return res!;
+  }
+
+  /**
+   * Reactive subscription to inbound FlowMessages on this conversation.
+   *
+   * Wraps APIEntity's event emitter so callers can write
+   *   ``conv.on('message', m => ...)``
+   * and receive a callback for every WS ``data_op_msg(create)`` whose
+   * ``to_entity`` is a ``flow_message`` and whose ``conversation_id``
+   * matches ``this.id``. The tap is installed lazily on first ``'message'``
+   * subscription and torn down when the last listener unregisters.
+   *
+   * Returns an unsubscribe function (compatible with the base ``on``).
+   */
+  override on(eventType: string | string[], callback: Callable): () => void {
+    const types = Array.isArray(eventType) ? eventType : [eventType];
+    if (types.includes('message')) {
+      this._ensureMessageTap();
+    }
+    const baseOff = super.on(eventType, callback);
+    return () => {
+      baseOff();
+      if (types.includes('message')) {
+        this._maybeTearDownMessageTap();
+      }
+    };
+  }
+
+  private _msgTapOff: (() => void) | null = null;
+
+  private _ensureMessageTap(): void {
+    if (this._msgTapOff) return;
+    const cm = ConnectionManager.getInstance();
+    const handler = (typeIdStr: string, op: string, data: any) => {
+      if (op !== 'create') return;
+      const dash = typeIdStr.indexOf('-');
+      if (dash <= 0) return;
+      if (typeIdStr.slice(0, dash) !== 'flow_message') return;
+      if (!data || data.conversation_id !== this.id) return;
+      this.emit('message', data as IFlowMessage);
+    };
+    cm.on('on_data_op', handler);
+    this._msgTapOff = () => cm.off('on_data_op', handler);
+  }
+
+  private _maybeTearDownMessageTap(): void {
+    const listeners = (this as any)._eventListeners as Map<string, Callable[]>;
+    if (listeners.get('message')?.length) return;
+    this._msgTapOff?.();
+    this._msgTapOff = null;
   }
 }
 
