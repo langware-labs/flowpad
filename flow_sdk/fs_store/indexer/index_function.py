@@ -334,9 +334,11 @@ class FSIndexer:
                 current_rt = ref.record_type
                 acc = per_type_counts[ref.record_type]
 
-                # Per-type cap: once we've indexed `limit_per_type` records of this
-                # type, skip further refs of the same type.
-                if opts.limit_per_type is not None and acc["indexed"] >= opts.limit_per_type:
+                # Per-type cap: once we've processed `limit_per_type` records of
+                # this type (parsed or skip-fresh), skip further refs of the same
+                # type. ``done`` in the progress table is ``indexed + skipped``,
+                # so the cap must include both to keep ``done <= limit_per_type``.
+                if opts.limit_per_type is not None and (acc["indexed"] + acc["skipped"]) >= opts.limit_per_type:
                     continue
 
                 # Track this id as "seen" before any skip/index decision so the
