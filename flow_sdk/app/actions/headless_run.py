@@ -182,14 +182,14 @@ def _extract_assistant_text(flow_data_items: list) -> str:
     return ""
 
 
-CLAUDE_QUOTE_PREFIX = 'Claude said: "'
-CLAUDE_QUOTE_SUFFIX = '"'
+AGENT_QUOTE_PREFIX = 'Prompt response: "'
+AGENT_QUOTE_SUFFIX = '"'
 
 
 def _wrap_as_claude_quote(text: str) -> str:
     """Wrap the agent's response so the bubble can italicize it as a quote.
 
-    Format: ``Claude said: "<text>"`` on one line. ``MessageBubble`` detects
+    Format: ``Prompt response: "<text>"`` on one line. ``MessageBubble`` detects
     this exact prefix/suffix and renders the quoted middle in ``<em>``. The
     user reviews this draft before sending; they can rewrite freely and the
     bubble falls back to plain rendering once the pattern is broken — so the
@@ -199,7 +199,7 @@ def _wrap_as_claude_quote(text: str) -> str:
     response with inline quotes doesn't terminate our wrapping early.
     """
     escaped = text.replace('\\', '\\\\').replace('"', '\\"')
-    return f'{CLAUDE_QUOTE_PREFIX}{escaped}{CLAUDE_QUOTE_SUFFIX}'
+    return f'{AGENT_QUOTE_PREFIX}{escaped}{AGENT_QUOTE_SUFFIX}'
 
 
 async def _save_draft_flow_message(

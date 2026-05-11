@@ -44,7 +44,7 @@ function formatTime(timestamp: string | undefined): string {
 }
 
 /**
- * Headless-run drafts come back wrapped as ``Claude said: "<reply>"`` (see
+ * Headless-run drafts come back wrapped as ``Prompt response: "<reply>"`` (see
  * ``flow_sdk/app/actions/headless_run.py:_wrap_as_claude_quote``). Detect that
  * exact shape and split it so the bubble can render the quoted middle in
  * ``<em>``. As soon as the user edits the draft and breaks the pattern, this
@@ -53,15 +53,15 @@ function formatTime(timestamp: string | undefined): string {
  *
  * Returns ``null`` for any non-matching content.
  */
-const CLAUDE_QUOTE_PREFIX = 'Claude said: "';
-const CLAUDE_QUOTE_SUFFIX = '"';
+const AGENT_QUOTE_PREFIX = 'Prompt response: "';
+const AGENT_QUOTE_SUFFIX = '"';
 
 function parseClaudeQuote(content: string): { prefix: string; quoted: string } | null {
-  if (!content.startsWith(CLAUDE_QUOTE_PREFIX) || !content.endsWith(CLAUDE_QUOTE_SUFFIX)) return null;
-  if (content.length <= CLAUDE_QUOTE_PREFIX.length + CLAUDE_QUOTE_SUFFIX.length) return null;
-  const inner = content.slice(CLAUDE_QUOTE_PREFIX.length, -CLAUDE_QUOTE_SUFFIX.length);
+  if (!content.startsWith(AGENT_QUOTE_PREFIX) || !content.endsWith(AGENT_QUOTE_SUFFIX)) return null;
+  if (content.length <= AGENT_QUOTE_PREFIX.length + AGENT_QUOTE_SUFFIX.length) return null;
+  const inner = content.slice(AGENT_QUOTE_PREFIX.length, -AGENT_QUOTE_SUFFIX.length);
   const unescaped = inner.replace(/\\"/g, '"').replace(/\\\\/g, '\\');
-  return { prefix: 'Claude said:', quoted: unescaped };
+  return { prefix: 'Prompt response:', quoted: unescaped };
 }
 
 export function MessageBubble({
