@@ -24,9 +24,12 @@ export function TasksViewer() {
   const pointer = currentDock?.pointer;
 
   // Load existing task if pointer is a valid typeId. Pointers may carry a
-  // sub-path (e.g. `<taskId>/conversation/<convId>`) so we parse the first
-  // segment as the task id and ignore the rest — the canonical anchor is
-  // the URL only; the view itself only renders the task.
+  // sub-path `<taskId>/conversation/<convId>` — we parse the first segment as
+  // the task id and the optional conversation tail as the canonical conv id
+  // to hand down to SharedTaskView. The URL is the source of truth here
+  // because `task.firstContextOfType('conversation')` can return null until
+  // the task entity is fully hydrated (cache-miss races on first navigation
+  // from another view leave the chip-loaded entity with empty context_entities).
   const taskTypeId = useMemo(() => {
     if (!pointer) return undefined;
     const head = pointer.split('/')[0];
@@ -36,6 +39,12 @@ export function TasksViewer() {
     } catch {
       return undefined;
     }
+  }, [pointer]);
+
+  const urlConversationId = useMemo(() => {
+    if (!pointer) return null;
+    const parts = pointer.split('/').filter(Boolean);
+    return parts.length >= 3 && parts[1] === 'conversation' ? parts[2] : null;
   }, [pointer]);
 
   const { data: existingTask, isLoading } = useEntity<Task>(taskTypeId ?? null, {
@@ -121,7 +130,13 @@ export function TasksViewer() {
   // Gate on shared_by_id (set by notification flow) rather than Spec presence — Scenarios B/C
   // create no-Spec tasks where the recipient drives the work via PROMPT replies.
   if (existingTask?.shared_by_id) {
-    return <SharedTaskView task={existingTask} onClose={() => navigation.goBack()} />;
+    return (
+      <SharedTaskView
+        task={existingTask}
+        conversationId={urlConversationId}
+        onClose={() => navigation.goBack()}
+      />
+    );
   }
 
   return (

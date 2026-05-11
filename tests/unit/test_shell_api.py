@@ -107,6 +107,34 @@ async def test_cleanup_stale_session_terminates_orphan_worker_without_pty():
 
 
 @pytest.mark.asyncio
+async def test_stop_terminates_worker():
+    """Shell.stop() greedily kills the worker before tearing down the PTY."""
+    shell = Shell(id=str(uuid.uuid4()), compute_node_id=None, worker_pid=12345)
+
+    with patch.object(Shell, "terminate_worker", new=AsyncMock()) as terminate_worker, \
+         patch.object(Shell, "save", new=AsyncMock()):
+        await shell.stop()
+
+    terminate_worker.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_close_terminates_worker():
+    """Shell.close() greedily kills the worker before deleting record/entity."""
+    shell = Shell(id=str(uuid.uuid4()), compute_node_id="local-node", worker_pid=12345)
+    fake_compute_node = MagicMock()
+    fake_compute_node.get_pty.return_value = None
+
+    with patch.object(Shell, "terminate_worker", new=AsyncMock()) as terminate_worker, \
+         patch.object(Shell, "compute_node", new_callable=PropertyMock, return_value=fake_compute_node), \
+         patch.object(Shell, "get_record", new=AsyncMock(return_value=None)), \
+         patch.object(Shell, "delete", new=AsyncMock()):
+        await shell.close()
+
+    terminate_worker.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_is_alive_true_after_start():
     """is_alive is True after start() spawns an OS PTY."""
     shell = _shell()
