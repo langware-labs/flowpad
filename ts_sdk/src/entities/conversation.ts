@@ -65,6 +65,10 @@ export interface IConversation extends IEntity {
    *  auto-revives when a FlowMessage newer than this stamp arrives. Inbox
    *  ignores this field. Null = not dismissed. */
   dismissed_at?: string | Date | null;
+  /** Conversation-level archive timestamp. Both Inbox and Recent strip hide
+   *  the row when set; auto-revives when a FlowMessage newer than this stamp
+   *  arrives. Per-message ``FlowMessage.is_read`` remains independent. */
+  archived_at?: string | Date | null;
   // NOTE: task_id moved into context_entities. Use conv.firstContextOfType('task').
   // NOTE: data_path is derived from the canonical records-data path on the
   // server — not exposed as a stored field anymore.
@@ -81,6 +85,7 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
   title?: string | null;
   message_status_visible?: boolean;
   dismissed_at?: string | Date | null;
+  archived_at?: string | Date | null;
   static type: string = 'conversation';
 
   constructor(entity: Partial<IConversation> = {}) {
@@ -94,6 +99,7 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
     this.title = entity.title;
     this.message_status_visible = entity.message_status_visible ?? true;
     this.dismissed_at = entity.dismissed_at ?? null;
+    this.archived_at = entity.archived_at ?? null;
   }
 
   /** Surface the project as a chip-projected direct field. */
@@ -334,6 +340,57 @@ export async function dismissConversation(
   const action = new ActionInfo('conversation-dismiss', null, null, 'POST');
   action.bodyParameters = params;
   const res = await dataManager.callAction<DismissConversationParams, DismissConversationResult>(action);
+  return res!;
+}
+
+export interface ArchiveConversationParams {
+  conversation_id: string;
+}
+
+export interface ArchiveConversationResult {
+  conversation_id: string;
+  archived_at: string | null;
+}
+
+export interface ArchiveAllConversationsResult {
+  archived: number;
+  scanned: number;
+  archived_at: string;
+}
+
+/** Conversation-level archive: stamps ``archived_at = now()``. Both Inbox
+ *  and Recent strip hide the row when set; auto-revives when a FlowMessage
+ *  newer than the stamp arrives. Per-message ``FlowMessage.is_read`` is
+ *  independent and not touched. */
+export async function archiveConversation(
+  params: ArchiveConversationParams,
+): Promise<ArchiveConversationResult> {
+  const action = new ActionInfo('conversation-archive', null, null, 'POST');
+  action.bodyParameters = params;
+  const res = await dataManager.callAction<ArchiveConversationParams, ArchiveConversationResult>(action);
+  return res!;
+}
+
+/** Archive every conversation that isn't already archived. Skips already-
+ *  archived rows server-side, so it stays cheap on repeat clicks. */
+export async function archiveAllConversations(): Promise<ArchiveAllConversationsResult> {
+  const action = new ActionInfo('conversation-archive-all', null, null, 'POST');
+  action.bodyParameters = {};
+  const res = await dataManager.callAction<Record<string, never>, ArchiveAllConversationsResult>(action);
+  return res!;
+}
+
+export interface DeleteArchivedConversationsResult {
+  deleted: number;
+  scanned: number;
+}
+
+/** Hard-delete every Conversation whose ``archived_at`` is set. Only the
+ *  inbox's "Archived view" should surface this action. */
+export async function deleteArchivedConversations(): Promise<DeleteArchivedConversationsResult> {
+  const action = new ActionInfo('conversation-delete-archived', null, null, 'POST');
+  action.bodyParameters = {};
+  const res = await dataManager.callAction<Record<string, never>, DeleteArchivedConversationsResult>(action);
   return res!;
 }
 

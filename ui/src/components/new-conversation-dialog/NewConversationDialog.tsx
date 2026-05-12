@@ -96,10 +96,11 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
   // sets the date once so the autofill is stable across re-renders within a session.
   const myLabel = cloudUser?.name || cloudUser?.email || ctx.user?.name || ctx.user?.email || 'You';
   const openedAt = useMemo(() => new Date(), [open]);
-  const dateSuffix = useMemo(
-    () => openedAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-    [openedAt],
-  );
+  const dateSuffix = useMemo(() => {
+    const day = openedAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const time = openedAt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+    return `${day} ${time}`;
+  }, [openedAt]);
   const autofillTitle = useMemo(() => {
     if (participants.length === 0) return `New conversation - ${dateSuffix}`;
     const others = participants.map((p) => p.name || p.email || 'unknown').join(', ');

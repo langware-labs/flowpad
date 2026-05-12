@@ -8,7 +8,11 @@ import {
   makeIconForType,
   parseTypeid,
 } from './asset-row-helpers';
+import { EntityTypeBar, type EntityTypeFilter } from './EntityTypeBar';
+import { ScopeBar, type ScopeBarOption } from '@src/components/ui/scope-bar';
 import { Boxes, Lock, Search, type LucideIcon } from 'lucide-react';
+
+type PickerScope = 'all' | 'user' | 'project';
 
 interface AssetPickerPopoverProps {
   /** Popover trigger (typically a Run button); passed to PopoverTrigger asChild. */
@@ -23,6 +27,13 @@ interface AssetPickerPopoverProps {
   filter?: (descriptor: AssetDescriptor) => boolean;
   /** Optional override for the placeholder text in the search input. */
   searchPlaceholder?: string;
+  /** Optional controlled open state. When provided, the parent drives the
+   *  popover (e.g. opening it programmatically from a dropdown menu item).
+   *  When omitted the component manages its own open state. */
+  open?: boolean;
+  /** Required when `open` is provided. Called when the popover should close
+   *  or open (e.g. user clicks outside, or after `onPick`). */
+  onOpenChange?: (open: boolean) => void;
 }
 
 const DEFAULT_FILTER = (d: AssetDescriptor): boolean =>
@@ -42,9 +53,22 @@ export function AssetPickerPopover({
   onPick,
   filter = DEFAULT_FILTER,
   searchPlaceholder = 'Search agents and skills…',
+  open: controlledOpen,
+  onOpenChange,
 }: AssetPickerPopoverProps) {
-  const [open, setOpen] = useState(false);
+  const isControlled = controlledOpen !== undefined;
+  const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
+  const open = isControlled ? controlledOpen : uncontrolledOpen;
+  const setOpen = useCallback(
+    (next: boolean) => {
+      if (isControlled) onOpenChange?.(next);
+      else setUncontrolledOpen(next);
+    },
+    [isControlled, onOpenChange],
+  );
   const [query, setQuery] = useState('');
+  const [typeFilter, setTypeFilter] = useState<EntityTypeFilter>('all');
+  const [scopeFilter, setScopeFilter] = useState<PickerScope>('all');
 
   // process: null → useProcessAssets returns the synthetic Agent + Skill list
   // pulled from the global entity queries. No process needs to exist yet.
@@ -59,30 +83,69 @@ export function AssetPickerPopover({
 
   const handleOpenChange = useCallback((next: boolean) => {
     setOpen(next);
-    if (!next) setQuery('');
-  }, []);
+    if (!next) {
+      setQuery('');
+      setTypeFilter('all');
+      setScopeFilter('all');
+    }
+  }, [setOpen]);
+
+  // Type counts respect the host-level ``filter`` so the chips reflect what
+  // could actually appear in the list (e.g. when the host restricts to
+  // executable assets only).
+  const typeCounts = useMemo(() => {
+    const counts: Partial<Record<EntityTypeFilter, number>> = { all: 0 };
+    for (const d of descriptors) {
+      if (!filter(d)) continue;
+      counts.all = (counts.all ?? 0) + 1;
+      const { type } = parseTypeid(d.typeid);
+      if (type === 'agent' || type === 'skill' || type === 'markdown' || type === 'spec') {
+        counts[type] = (counts[type] ?? 0) + 1;
+      }
+    }
+    return counts;
+  }, [descriptors, filter]);
 
   const rows = useMemo(() => {
-    const candidates = descriptors.filter(filter);
     const q = query.trim().toLowerCase();
-    if (!q) return candidates;
-    return candidates.filter((d) => {
-      const label = displayLabelForTypeid(d.typeid).toLowerCase();
-      return (
-        label.includes(q) ||
-        d.typeid.toLowerCase().includes(q) ||
-        (typeof d.posix_path === 'string' ? d.posix_path : '').toLowerCase().includes(q)
-      );
+    return descriptors.filter((d) => {
+      if (!filter(d)) return false;
+      if (typeFilter !== 'all') {
+        const { type } = parseTypeid(d.typeid);
+        if (type !== typeFilter) return false;
+      }
+      if (scopeFilter === 'user' && d.source !== 'user_dir') return false;
+      if (scopeFilter === 'project' && d.source !== 'project_dir') return false;
+      if (q) {
+        const label = displayLabelForTypeid(d.typeid).toLowerCase();
+        return (
+          label.includes(q) ||
+          d.typeid.toLowerCase().includes(q) ||
+          (typeof d.posix_path === 'string' ? d.posix_path : '').toLowerCase().includes(q)
+        );
+      }
+      return true;
     });
-  }, [descriptors, filter, query]);
+  }, [descriptors, filter, query, typeFilter, scopeFilter]);
+
+  const scopeOptions: ScopeBarOption<PickerScope>[] = useMemo(
+    () => [
+      { value: 'all', label: 'All' },
+      { value: 'user', label: 'User' },
+      { value: 'project', label: 'Project' },
+    ],
+    [],
+  );
 
   const handlePick = useCallback(
     (d: AssetDescriptor) => {
       onPick(d);
       setOpen(false);
       setQuery('');
+      setTypeFilter('all');
+      setScopeFilter('all');
     },
-    [onPick],
+    [onPick, setOpen],
   );
 
   return (
@@ -90,12 +153,26 @@ export function AssetPickerPopover({
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
       <PopoverContent
         align="end"
-        className="flex max-h-[calc(100vh-6rem)] w-96 flex-col p-0"
+        sideOffset={4}
+        collisionPadding={8}
+        className="flex max-h-[min(calc(100vh-6rem),var(--radix-popover-content-available-height))] w-96 flex-col p-0"
         data-testid="asset-picker-popover"
       >
         <div className="flex items-center gap-1.5 border-b px-3 py-2">
           <Boxes className="h-3.5 w-3.5 text-muted-foreground" />
           <span className="text-xs font-medium">Run with…</span>
+        </div>
+        <div
+          className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b px-3 py-2"
+          data-testid="asset-picker-type-bar"
+        >
+          <EntityTypeBar value={typeFilter} onChange={setTypeFilter} counts={typeCounts} />
+        </div>
+        <div
+          className="flex items-center border-b px-3 py-2"
+          data-testid="asset-picker-scope-bar"
+        >
+          <ScopeBar value={scopeFilter} options={scopeOptions} onChange={setScopeFilter} />
         </div>
         <div className="border-b px-3 py-2">
           <div className="flex items-center gap-1.5">

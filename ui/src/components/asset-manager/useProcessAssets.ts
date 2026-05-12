@@ -3,6 +3,8 @@ import {
   AgenticProcess,
   Agent,
   Skill,
+  Markdown,
+  Spec,
   QueryRequest,
   type AssetDescriptor,
 } from '@sdk';
@@ -30,13 +32,24 @@ export function useProcessAssets(
 ): UseProcessAssetsResult {
   const enabled = options?.enabled !== false;
 
-  // Pre-process fallback: list all globally-discoverable agents + skills.
+  // Pre-process fallback: list all globally-discoverable agents + skills +
+  // markdown documents + specs. The picker's type-filter UI hides the ones
+  // the user hasn't selected — but the queries always run so switching the
+  // type filter is instant (no re-fetch).
   const agentQuery = useMemo(() => new QueryRequest({ type: Agent.type }), []);
   const skillQuery = useMemo(() => new QueryRequest({ type: Skill.type }), []);
+  const markdownQuery = useMemo(() => new QueryRequest({ type: Markdown.type }), []);
+  const specQuery = useMemo(() => new QueryRequest({ type: Spec.type }), []);
   const { data: agents = [] } = useEntitiesQuery<Agent>(agentQuery, {
     enabled: enabled && !process,
   });
   const { data: skills = [] } = useEntitiesQuery<Skill>(skillQuery, {
+    enabled: enabled && !process,
+  });
+  const { data: markdowns = [] } = useEntitiesQuery<Markdown>(markdownQuery, {
+    enabled: enabled && !process,
+  });
+  const { data: specs = [] } = useEntitiesQuery<Spec>(specQuery, {
     enabled: enabled && !process,
   });
 
@@ -52,10 +65,14 @@ export function useProcessAssets(
   // backend on a 30+ Hz loop.
   const agentsRef = useRef(agents);
   const skillsRef = useRef(skills);
+  const markdownsRef = useRef(markdowns);
+  const specsRef = useRef(specs);
   useEffect(() => {
     agentsRef.current = agents;
     skillsRef.current = skills;
-  }, [agents, skills]);
+    markdownsRef.current = markdowns;
+    specsRef.current = specs;
+  }, [agents, skills, markdowns, specs]);
 
   const refresh = useCallback(async () => {
     if (!enabled) return;
@@ -77,6 +94,16 @@ export function useProcessAssets(
             typeid: `skill-${s.id}`,
             source: 'user_dir',
             posix_path: (s as { asset_ref?: string }).asset_ref ?? null,
+          })),
+          ...markdownsRef.current.map<AssetDescriptor>((m) => ({
+            typeid: `markdown-${m.id}`,
+            source: m.project_id ? 'project_dir' : 'user_dir',
+            posix_path: (m as { asset_ref?: string }).asset_ref ?? null,
+          })),
+          ...specsRef.current.map<AssetDescriptor>((s) => ({
+            typeid: `spec-${s.id}`,
+            source: 'user_dir',
+            posix_path: null,
           })),
         ];
         if (tickRef.current === tick) setDescriptors(synthetic);
@@ -102,7 +129,7 @@ export function useProcessAssets(
   useEffect(() => {
     if (!enabled || process) return;
     void refresh();
-  }, [enabled, process, agents.length, skills.length, refresh]);
+  }, [enabled, process, agents.length, skills.length, markdowns.length, specs.length, refresh]);
 
   return { descriptors, isLoading, refresh };
 }
