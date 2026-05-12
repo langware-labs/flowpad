@@ -24,13 +24,13 @@ test.describe('Wiki folder tree (asset browseable tree)', () => {
     await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
     await dismissWelcomeModalIfShown(page);
 
-    const chevron = page.locator('[data-testid="browseable-chevron-asset-type:markdown"]');
+    const chevron = page.locator('[data-testid^="browseable-chevron-asset-type:markdown"]');
     await expect(chevron).toBeVisible({ timeout: 10_000 });
     await chevron.click();
 
     // Probe the backend for markdown vaults to decide what to assert.
     const apiUrl = process.env.API_URL || 'http://localhost:9008';
-    const typesRes = await request.get(`${apiUrl}/api/v1/graph/compute_node/@local/asset-types`).catch(() => null);
+    const typesRes = await request.get(`${apiUrl}/api/v1/assets/types`).catch(() => null);
     let hasVaults = false;
     if (typesRes && typesRes.ok()) {
       const body = await typesRes.json().catch(() => null);
@@ -63,10 +63,10 @@ test.describe('Wiki folder tree (asset browseable tree)', () => {
     await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
     await dismissWelcomeModalIfShown(page);
 
-    await page.locator('[data-testid="browseable-chevron-asset-type:markdown"]').click();
+    await page.locator('[data-testid^="browseable-chevron-asset-type:markdown"]').click();
 
     const apiUrl = process.env.API_URL || 'http://localhost:9008';
-    const typesRes = await request.get(`${apiUrl}/api/v1/graph/compute_node/@local/asset-types`).catch(() => null);
+    const typesRes = await request.get(`${apiUrl}/api/v1/assets/types`).catch(() => null);
     let hasVaults = false;
     if (typesRes && typesRes.ok()) {
       const body = await typesRes.json().catch(() => null);
