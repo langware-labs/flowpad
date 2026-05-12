@@ -108,7 +108,7 @@ export function ConversationContextPanel({
   // Lift Private Context queries here so SharedContext can hide the
   // "Start session" button once a transcript-derived session exists.
   const projectIdLifted = task?.project_id ?? conversation?.project_id ?? null;
-  const { tasks: privateTasks, processes: privateProcesses } = usePrivateContext(
+  const { tasks: privateTasks, processes: privateProcesses, processesLoaded } = usePrivateContext(
     messageId || null,
     projectIdLifted,
   );
@@ -116,6 +116,7 @@ export function ConversationContextPanel({
   // worker processes (e.g. derive-task) live in Private Context too but should
   // not suppress the Shared Context "Start session" button.
   const hasTranscriptSession = privateProcesses.some((p) => p.visible);
+  const showStartSession = processesLoaded && !hasTranscriptSession;
 
   if (!flowMessage) {
     return (
@@ -159,7 +160,7 @@ export function ConversationContextPanel({
         transcriptAttachment={transcriptAttachment ?? null}
         messageId={messageId}
         conversationId={conversationId}
-        hasTranscriptSession={hasTranscriptSession}
+        showStartSession={showStartSession}
         task={task}
         flowMessage={flowMessage}
         senderName={task?.sender_name ?? undefined}
@@ -185,9 +186,10 @@ interface SharedContextSectionProps {
   transcriptAttachment: Attachment | null;
   messageId: string;
   conversationId: string;
-  /** When true, "Start session" is suppressed — a session already exists in
-   *  Private Context and the user opens it from there instead. */
-  hasTranscriptSession: boolean;
+  /** True only after the Private Context query has resolved AND there is no
+   *  existing PTY session. False both during the initial query and once a
+   *  session exists — either case must hide the button. */
+  showStartSession: boolean;
   task: Task | null;
   flowMessage: FlowMessage | null;
   senderName?: string;
@@ -199,7 +201,7 @@ function SharedContextSection({
   transcriptAttachment,
   messageId,
   conversationId,
-  hasTranscriptSession,
+  showStartSession,
   task,
   flowMessage,
   senderName,
@@ -227,15 +229,15 @@ function SharedContextSection({
    *      before any save runs).
    *   2. `.save()` — persists the entity *with* the FlowMessage linkage so
    *      `usePrivateContext`'s `contextEntities` filter immediately sees it.
-   *   3. `dataManager.notifyEntityChanged(proc)` — nudges watched queries so
-   *      the new entity shows up in `useEntitiesQuery` without waiting for the
-   *      backend WS UPDATE round-trip.
-   *   4. Wait one animation frame — gives React time to flush the new Private
-   *      Context row to the DOM before we change the dock route.
-   *   5. `.start({ instruction })` — opens the PTY and injects the receiver
+   *      The backend's WS create message subsequently re-runs watched queries
+   *      via the `store.ts:387-399` create handler, which is what makes the
+   *      new row appear in Private Context.
+   *   3. `.start({ instruction })` — opens the PTY and injects the receiver
    *      context prompt (spec content if present, transcript path, conversation
-   *      messages, attachment paths, context-entity metadata paths).
-   *   6. `.openTerminalDock()` — navigates to `/dock/shell/agentic_process-<id>`.
+   *      messages, attachment paths, context-entity metadata paths). This is a
+   *      ~hundreds-of-ms network round-trip, giving React plenty of time to
+   *      paint the new Private Context row before step 4.
+   *   4. `.openTerminalDock()` — navigates to `/dock/shell/agentic_process-<id>`.
    */
   const handleStartSession = async () => {
     if (!messageId || startingCc || !task || !flowMessage) return;
@@ -258,12 +260,6 @@ function SharedContextSection({
       // in the patch, leaving the FlowMessage linkage local-only.
       const fmTypeIdString = new TypeId(FlowMessage.type, messageId).toString();
       const cliConfig = new ClaudeCliOptions({ permission_mode: 'bypassPermissions' });
-      console.log('[handleStartSession] creating AgenticProcess with', {
-        fmTypeIdString,
-        workdir,
-        project_id: task.project_id,
-        visible: true,
-      });
       const proc = await new AgenticProcess({
         cli_config: cliConfig.toJson(),
         context_data: { project_id: task.project_id ?? undefined },
@@ -271,33 +267,8 @@ function SharedContextSection({
         visible: true,
         context_entities: [fmTypeIdString],
       }).save();
-      console.log('[handleStartSession] after save:', {
-        proc_id: proc.id,
-        visible: proc.visible,
-        contextEntities: proc.contextEntities?.map((t) => t.toString()),
-        contextEntitiesIncludesFM: proc.contextEntities?.some((t) => t.toString() === fmTypeIdString),
-      });
-
-      // Nudge watched queries so `usePrivateContext` sees the new entity
-      // without waiting for the backend WS UPDATE round-trip.
-      dataManager.notifyEntityChanged(proc);
-
-      // Wait one animation frame so React flushes the new Private Context
-      // row to the DOM before we change the dock route. Without this we race:
-      // `openTerminalDock` switches the main dock to /dock/shell/<proc-id>
-      // before the watched-query callback fires, and the user never sees
-      // "Open the existing session from Private Context" as the affordance.
-      await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
 
       await proc.start({ instruction });
-      console.log('[handleStartSession] after start:', {
-        proc_id: proc.id,
-        status: proc.status,
-        session_id: proc.session_id,
-        shell_id: proc.shell_id,
-        contextEntities: proc.contextEntities?.map((t) => t.toString()),
-        contextEntitiesIncludesFM: proc.contextEntities?.some((t) => t.toString() === fmTypeIdString),
-      });
       proc.openTerminalDock();
     } catch (err) {
       console.error('[SharedContext] start session failed', err);
@@ -388,7 +359,7 @@ function SharedContextSection({
             const isSpec = typeId.type === Spec.type;
             // Start session lives on the spec row when a spec is present.
             const handleStart =
-              isSpec && task && flowMessage && !hasTranscriptSession
+              isSpec && task && flowMessage && showStartSession
                 ? () => {
                     const action = () => handleStartSession();
                     if (ensureMapped) ensureMapped(action);
@@ -427,7 +398,7 @@ function SharedContextSection({
                         }
                       : handleStartCc)
               }
-              hasTranscriptSession={hasTranscriptSession}
+              showStartSession={showStartSession}
             />
           )}
         </ContextTable>
@@ -480,9 +451,9 @@ interface TranscriptRowProps {
   attachment: Attachment;
   startingCc: boolean;
   /** `null` suppresses the Start session button entirely (e.g. when a spec
-   *  row owns it instead). Otherwise rendered when `!hasTranscriptSession`. */
+   *  row owns it instead). Otherwise rendered when `showStartSession` is true. */
   onStartCc: (() => void) | null;
-  hasTranscriptSession: boolean;
+  showStartSession: boolean;
 }
 
 function TranscriptRow({
@@ -490,7 +461,7 @@ function TranscriptRow({
   attachment,
   startingCc,
   onStartCc,
-  hasTranscriptSession,
+  showStartSession,
 }: TranscriptRowProps) {
   const { navigation } = useDockNavigation();
   // ``attachment.local_path`` is synthesized at serialization time by
@@ -526,7 +497,7 @@ function TranscriptRow({
         <Eye className="h-3 w-3" />
         View
       </RowAction>
-      {!hasTranscriptSession && !startingCc && onStartCc && (
+      {showStartSession && !startingCc && onStartCc && (
         <RowAction
           onClick={onStartCc}
           title="Start a new Claude session pre-loaded with this transcript"
