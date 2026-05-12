@@ -413,6 +413,7 @@ class FsRecordsActionsMixin:
                 "stale": status.stale,
                 "default_types": status.default_types,
                 "per_type": [asdict(t) for t in status.per_type],
+                "total_orphans": status.total_orphans,
             }
         )
 
@@ -1298,4 +1299,6 @@ def _normalize_asset_path(p: str) -> str:
     if p.startswith("/"):
         p = p[1:]
     return p
+
+
 
