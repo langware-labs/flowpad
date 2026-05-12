@@ -5,6 +5,7 @@ import {
   createProjectConversation,
   getErrorMessagesFromAxios,
 } from '@sdk';
+import type { AssetDescriptor } from '@sdk';
 import { sendReply } from '@sdk/entities/notifications';
 import { useContext as useDataContext } from '@src/hooks/useContext';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
@@ -13,6 +14,8 @@ import { AutofillInput } from '@src/components/ui/autofill-input';
 import { Button } from '@src/components/ui/button';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
 import { FileAttachmentPicker } from '@src/components/conversation/FileAttachmentPicker';
+import { AttachMenu } from '@src/components/conversation/AttachMenu';
+import { MAX_FILE_SIZE_BYTES } from '@src/components/conversation/constants';
 import { useLocalUser } from '@src/components/conversation/useLocalUser';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import {
@@ -45,6 +48,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
   const [initialMessage, setInitialMessage] = useState('');
   const [title, setTitle] = useState('');
   const [files, setFiles] = useState<File[]>([]);
+  const [assetRefs, setAssetRefs] = useState<AssetDescriptor[]>([]);
   const [senderName, setSenderName] = useState('');
   const [editingName, setEditingName] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -57,6 +61,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
     setInitialMessage('');
     setTitle('');
     setFiles([]);
+    setAssetRefs([]);
     setError(null);
     setEditingName(false);
     setProjectId(ctx.project?.id ?? projects[0]?.id ?? '');
@@ -112,6 +117,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
     setError(null);
     try {
       const hasFiles = files.length > 0;
+      const hasAssetRefs = assetRefs.length > 0;
       const message = initialMessage.trim();
       const effectiveTitle = title.trim() || autofillTitle;
 
@@ -141,9 +147,11 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
         const conv = new Conversation({ title: effectiveTitle, participants });
         await conv.save();
         await conv.share(recipientEmails);
-        if (!hasFiles && message) {
+        if (!hasFiles && !hasAssetRefs && message) {
           // Initial message goes through the standard ``add_message`` path so
           // the hub fanouts the FlowMessage to invited (post-accept) participants.
+          // When there are files or asset refs we route via ``sendReply`` below
+          // (multipart path) instead — addMessage is text-only today.
           await conv.addMessage(message);
         }
         conversationId = conv.id;
@@ -156,8 +164,13 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
         conversationId = result.conversation_id;
       }
 
-      if (hasFiles && conversationId) {
-        await sendReply({ conversationId }, message, files);
+      if ((hasFiles || hasAssetRefs) && conversationId) {
+        await sendReply(
+          { conversationId },
+          message,
+          files,
+          hasAssetRefs ? { assetReferences: assetRefs.map((a) => a.typeid) } : undefined,
+        );
       }
 
       if (conversationId) {
@@ -287,11 +300,29 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
             />
           </div>
 
-          {/* Attachments */}
+          {/* Attachments — dropzone for file drag/drop + small menu for File/Asset */}
           <div className="flex flex-col gap-1.5">
-            <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
-              Attachments
-            </label>
+            <div className="flex items-center justify-between">
+              <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
+                Attachments
+              </label>
+              <AttachMenu
+                assetRefs={assetRefs}
+                onAssetRefsChange={setAssetRefs}
+                onFilesPicked={(picked) => {
+                  if (!picked) return;
+                  const next = [...files];
+                  for (const f of Array.from(picked)) {
+                    if (f.size > MAX_FILE_SIZE_BYTES) continue;
+                    if (!next.some((x) => x.name === f.name && x.size === f.size)) {
+                      next.push(f);
+                    }
+                  }
+                  setFiles(next);
+                }}
+                disabled={busy}
+              />
+            </div>
             <FileAttachmentPicker files={files} onChange={setFiles} disabled={busy} />
           </div>
 

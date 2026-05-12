@@ -245,8 +245,17 @@ class FSIndexer:
         # DB query each. Used for the skip-fresh check: if an asset's mtime is
         # <= the DB row's updated_date AND the row's scope/project_id already
         # match the FSRef walk, no re-parse needed.
+        #
+        # Also covers the orphan-detection set: even when the walker yields zero
+        # FSRefs for an opts.types-filtered type (e.g. all source files were
+        # deleted), the post-loop orphan block must still see the DB rows for
+        # that type. Without this, ``db_ids`` is empty and the orphan
+        # `id_sources[eid].in_db` is False, so `_apply_orphan_action` can't
+        # find the rows to delete on a sweep.
         driver = get_db_driver()
         type_names = {str(r.record_type) for r in targets if r.record_type is not None}
+        if opts.types is not None:
+            type_names.update(str(t) for t in opts.types)
         valid_map: dict[str, dict[str, tuple[float, str, str]]] = {}
         for tn in type_names:
             valid_map[tn] = await _load_entity_state_map(driver, tn)
@@ -544,11 +553,26 @@ class FSIndexer:
         - Otherwise check every type that either has DB rows OR has a records
           dir on disk — caller didn't filter so we sweep everything we can see.
         """
+        # Constrain orphan detection to types the indexer actually walks.
+        # Without this guard, runtime-only types like ``conversation``,
+        # ``flow_message``, ``annotation``, ``compute_node``, ``invitation``
+        # — all of which have DB rows but NO FSIndexer walker function —
+        # would be flagged as orphan en masse (since ``seen_ids`` for them
+        # is always empty). A subsequent IGNORE/DELETE sweep would wipe
+        # them. This is data loss: those rows have no Layer 1 source, so
+        # "source missing" doesn't apply.
+        from flow_sdk.fs_store.indexer.builtin import INDEXABLE_TYPES  # noqa: PLC0415
+        indexable = {str(t) for t in INDEXABLE_TYPES}
+
         if types:
-            return {str(t) for t in types}
+            requested = {str(t) for t in types}
+            # Intersect with INDEXABLE_TYPES so an explicit caller can't
+            # accidentally enable orphan detection on a non-indexable type.
+            return requested & indexable
 
         # Union of "types with DB rows" and "types with a records dir on disk"
         # so we never miss a records-dir orphan just because no DB row exists.
+        # Then intersect with INDEXABLE_TYPES — see comment above.
         from flow_sdk.fs_store.record import get_default_records_root  # noqa: PLC0415
 
         result: set[str] = set(valid_map.keys())
@@ -559,7 +583,7 @@ class FSIndexer:
                     result.add(child.name)
         except (FileNotFoundError, OSError):
             pass
-        return result
+        return result & indexable
 
     @staticmethod
     def _discover_records_dir_ids(type_names: set[str]) -> dict[str, set[str]]:
@@ -607,7 +631,13 @@ class FSIndexer:
 
         Non-destructive companion to ``_apply_orphan_action``: instead of
         deleting the row, mark it stale (or clear the mark when the source
-        has returned). Idempotent — skips rows already in the requested state.
+        has returned). Idempotent — only updates rows that need to change.
+
+        Delegates to ``driver.mark_orphans_by_type`` which does a bulk SQL
+        UPDATE on ``data.orphan`` and ``data.orphan_since`` in the JSON
+        blob. The ORM path used previously fell back to base ``Entity`` for
+        types without a registered subclass, which then scoped the lookup
+        to ``type='entity'`` and silently missed the actual row.
 
         Returns the count of rows that actually changed.
         """
@@ -615,43 +645,20 @@ class FSIndexer:
             return 0
 
         from datetime import datetime, timezone  # noqa: PLC0415
-        from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
-        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+        from flow_sdk.db import get_db_driver  # noqa: PLC0415
 
-        type_name = str(rt)
-        changed = 0
-        now = datetime.now(timezone.utc)
-
-        # Resolve the entity class so get_one filters by id+type (a base
-        # Entity.get_one would scope to type='entity' and miss the row).
-        entity_cls = SchemaRegistry.get_entity_cls(type_name) or Entity
-
-        for eid in ids:
-            try:
-                entity = await entity_cls.get_by_id(eid)
-                if entity is None:
-                    continue
-                current = bool(getattr(entity, "orphan", False))
-                if current == orphaned:
-                    continue  # already in desired state — nothing to do
-                entity.orphan = orphaned
-                if orphaned:
-                    # Preserve the original orphan_since on repeated False→True (shouldn't happen
-                    # because of the early-return above, but defensive).
-                    if getattr(entity, "orphan_since", None) is None:
-                        entity.orphan_since = now
-                else:
-                    entity.orphan_since = None
-                # Persist via the driver directly — entity.save() would re-run
-                # _store(), which calls record.upsert_main_ref and would re-create
-                # the source file we just decided is missing.
-                from flow_sdk.db.db_entity import DBEntity  # noqa: PLC0415
-                await DBEntity.save(entity, None)
-                changed += 1
-            except Exception as e:
-                import logging  # noqa: PLC0415
-                logging.debug(f"[FSIndexer] _mark_orphans_in_db skipped {type_name}:{eid}: {e}")
-                continue
+        driver = get_db_driver()
+        if not hasattr(driver, "mark_orphans_by_type"):
+            return 0
+        since_iso = datetime.now(timezone.utc).isoformat() if orphaned else None
+        try:
+            return await driver.mark_orphans_by_type(
+                str(rt), list(ids), orphaned, since_iso
+            )
+        except Exception as e:
+            import logging  # noqa: PLC0415
+            logging.debug(f"[FSIndexer] _mark_orphans_in_db {rt} failed: {e}")
+            return 0
 
         return changed
 
@@ -719,41 +726,26 @@ class FSIndexer:
                 pass
 
             if in_db:
-                cleaned = False
-                # Preferred path: load the Entity, call entity.delete(). This
-                # cascades through the standard caches the same way an API
-                # delete would.
+                # Type-scoped driver delete only. We deliberately do NOT go
+                # through ``Entity.get_one(...).delete()`` here because that
+                # path triggers relationship-cascade cleanup that can
+                # unintentionally affect bootstrap-required rows (e.g.
+                # deleting a "project" orphan via the typed-entity path can
+                # ripple through membership relationships and unbind the
+                # ``@local`` compute_node). Orphan sweeps want minimal,
+                # type-scoped row removal — anything beyond FTS belongs in
+                # the regular API delete path.
                 try:
-                    from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
-                    from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
-
-                    entity = await Entity.get_one(QueryFilter.parse({"id": eid}, type_name))
-                    if entity is not None:
-                        if hasattr(driver, "fts_delete"):
-                            try:
-                                await driver.fts_delete(eid)
-                            except Exception:
-                                pass
-                        await entity.delete()
+                    if hasattr(driver, "fts_delete"):
+                        try:
+                            await driver.fts_delete(eid)
+                        except Exception:
+                            pass
+                    if await driver.delete_by_id(eid, type_name):
                         db_removed += 1
-                        cleaned = True
-                except Exception:
-                    pass
-
-                # Fallback: row didn't load (already gone, or no Entity class
-                # registered for this type). Fall through to a raw driver delete
-                # so the bulk sweep still makes progress.
-                if not cleaned:
-                    try:
-                        if hasattr(driver, "fts_delete"):
-                            try:
-                                await driver.fts_delete(eid)
-                            except Exception:
-                                pass
-                        if await driver.delete_by_id(eid, type_name):
-                            db_removed += 1
-                    except Exception:
-                        pass
+                except Exception as e:
+                    import logging  # noqa: PLC0415
+                    logging.debug(f"[FSIndexer] driver.delete_by_id for {type_name}:{eid}: {e}")
 
             if action == OrphanAction.DELETE and on_disk:
                 try:
@@ -850,3 +842,6 @@ class FSIndexer:
 
         return visited
 
+
+
+# reload-trigger 1778603346.7940538

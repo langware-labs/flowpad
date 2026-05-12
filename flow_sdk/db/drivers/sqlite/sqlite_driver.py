@@ -706,6 +706,58 @@ class SQLiteDBDriver(DBDriver):
                 )
             return result.scalar() or 0
 
+    async def mark_orphans_by_type(
+        self,
+        type_name: str,
+        ids: list[str],
+        orphaned: bool,
+        orphan_since_iso: str | None = None,
+    ) -> int:
+        """Bulk-update the JSON `data.orphan` (and `data.orphan_since`) flag
+        on the given entity ids of a given type.
+
+        Direct SQL — bypasses the ORM's per-class `get_by_id` filter, which
+        otherwise misses rows for record types that have no typed entity
+        subclass registered (the typical case for fs_records like
+        `markdown`, `claude_session`, `skill`, etc.).
+
+        `orphan_since` is preserved if the row is already marked orphan; only
+        first-time orphans get the timestamp. When clearing the flag, both
+        the `orphan` boolean and the `orphan_since` key are removed/falsed.
+
+        Returns the number of rows actually changed.
+        """
+        if not ids or not self.session_factory:
+            return 0
+        placeholders = ",".join(f":id_{i}" for i in range(len(ids)))
+        bindings: dict[str, str | None] = {f"id_{i}": v for i, v in enumerate(ids)}
+        bindings["type"] = type_name
+        if orphaned:
+            bindings["since"] = orphan_since_iso
+            sql = (
+                "UPDATE entities "
+                "SET data = json_set("
+                "    json_set(data, '$.orphan', json('true')), "
+                "    '$.orphan_since', COALESCE(json_extract(data, '$.orphan_since'), :since)"
+                ") "
+                f"WHERE type = :type AND id IN ({placeholders}) "
+                "  AND (json_extract(data, '$.orphan') IS NULL "
+                "       OR json_extract(data, '$.orphan') != 1)"
+            )
+        else:
+            sql = (
+                "UPDATE entities "
+                "SET data = json_set("
+                "    json_remove(data, '$.orphan_since'), "
+                "    '$.orphan', json('false')"
+                ") "
+                f"WHERE type = :type AND id IN ({placeholders}) "
+                "  AND json_extract(data, '$.orphan') = 1"
+            )
+        async with self._session_ctx() as session:
+            r = await session.execute(text(sql), bindings)
+            return r.rowcount or 0
+
     async def delete_entities_by_type(self, type_name: str | None = None) -> int:
         """Delete entities (and their FTS rows) by type. None = all entities."""
         if not self.session_factory:

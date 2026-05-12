@@ -7,6 +7,8 @@ export interface SendReplyExtras {
   promptText?: string;
   /** Files to attach as PROMPT attachments (each stored under prompt/<filename>). */
   promptFiles?: File[];
+  /** TypeId strings (e.g. "skill-<uuid>") to attach as TYPE_ID attachments. */
+  assetReferences?: string[];
 }
 
 export interface SendReplyTarget {
@@ -32,7 +34,11 @@ export async function sendReply(
   const conversationId = t.conversationId ?? null;
 
   const action = new ActionInfo('append-conversation', 'notification', null, 'POST');
-  const hasFiles = (files && files.length > 0) || (extras?.promptFiles && extras.promptFiles.length > 0);
+  const hasAssetRefs = !!(extras?.assetReferences && extras.assetReferences.length > 0);
+  const hasFiles =
+    (files && files.length > 0) ||
+    (extras?.promptFiles && extras.promptFiles.length > 0) ||
+    hasAssetRefs;
   if (hasFiles) {
     const form = new FormData();
     if (taskId) form.append('task_id', taskId);
@@ -44,6 +50,9 @@ export async function sendReply(
     }
     for (const file of extras?.promptFiles ?? []) {
       form.append('prompt_files', file, file.name);
+    }
+    if (hasAssetRefs) {
+      form.append('asset_references', JSON.stringify(extras!.assetReferences));
     }
     action.bodyParameters = form;
   } else {

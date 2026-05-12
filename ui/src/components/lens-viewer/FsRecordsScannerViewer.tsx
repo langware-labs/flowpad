@@ -5,8 +5,9 @@ import { ActivityProgressBar, ActivityProgressModal } from '@src/components/sear
 import { useIndexStatus } from '@src/hooks/use-index-status';
 import { useSystemTools } from '@src/hooks/use-system-tools';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { RefreshCw, ChevronDown, ChevronRight, Search, Database, FileSearch, Trash2, ScanSearch } from 'lucide-react';
+import { RefreshCw, ChevronDown, ChevronRight, Search, Database, FileSearch, Trash2, ScanSearch, Ghost } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
+import { SweepOrphansDialog } from '@src/components/search-index/SweepOrphansDialog';
 import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
@@ -29,6 +30,7 @@ interface TypeRowData {
   count: number;
   last_indexed_at: string | null;
   stale: boolean;
+  orphan_count: number;
   error?: string;
 }
 
@@ -84,6 +86,7 @@ function TypeRow({
   loadingDetail,
   onIndex,
   onClear,
+  onSweepOrphans,
   indexing,
   clearing,
   indexedCount,
@@ -96,6 +99,7 @@ function TypeRow({
   loadingDetail: boolean;
   onIndex: (type: string) => void;
   onClear: (type: string) => void;
+  onSweepOrphans: (type: string) => void;
   indexing: boolean;
   clearing: boolean;
   indexedCount: number | null;
@@ -120,12 +124,24 @@ function TypeRow({
         </td>
         <td className="py-2 pr-4 font-mono text-sm">{row.type}</td>
         <td className="py-2 pr-4 text-right tabular-nums text-sm">{row.count}</td>
+        <td
+          className={`py-2 pr-4 text-right tabular-nums text-sm ${row.orphan_count > 0 ? 'text-amber-600 dark:text-amber-400 cursor-pointer hover:underline' : 'text-muted-foreground'}`}
+          onClick={(e) => {
+            e.stopPropagation();
+            if (row.orphan_count > 0) onSweepOrphans(row.type);
+          }}
+          title={row.orphan_count > 0 ? `Click to sweep ${row.orphan_count} ${row.type} orphans` : 'No orphans for this type'}
+        >
+          {row.orphan_count > 0 ? row.orphan_count : '—'}
+        </td>
         <td className="py-2 pr-4 text-right text-xs text-muted-foreground">
           {formatTimeAgo(row.last_indexed_at) ?? '—'}
         </td>
         <td className="py-2 pr-3 text-right text-xs text-muted-foreground">
           {row.error ? (
             <span className="text-destructive">error</span>
+          ) : row.orphan_count > 0 ? (
+            <span className="text-amber-600 dark:text-amber-400">{row.orphan_count} orphan{row.orphan_count === 1 ? '' : 's'}</span>
           ) : row.stale ? (
             <span className="text-amber-600 dark:text-amber-400">stale</span>
           ) : (
@@ -175,7 +191,7 @@ function TypeRow({
       </tr>
       {expanded && (
         <tr>
-          <td colSpan={6} className="bg-muted/30 px-4 py-2">
+          <td colSpan={7} className="bg-muted/30 px-4 py-2">
             {loadingDetail ? (
               <div className="flex items-center gap-2 py-3 text-xs text-muted-foreground">
                 <RefreshCw className="h-3 w-3 animate-spin" />
@@ -244,6 +260,7 @@ export function FsRecordsScannerViewer() {
       count: pt.entity_count,
       last_indexed_at: pt.last_indexed_at,
       stale: pt.stale,
+      orphan_count: pt.orphan_count,
     }));
   }, [indexStatus]);
 
@@ -256,6 +273,28 @@ export function FsRecordsScannerViewer() {
     }
     prevActivity.current = currentActivity;
   }, [currentActivity, refreshIndexStatus]);
+
+  // F2 — auto-detect orphans on page mount. The default INDEX action is a
+  // no-op for effect (counts + marks orphans, doesn't remove). Cheap on a
+  // fresh tree thanks to skip-fresh; surfaces "as of now" orphan counts
+  // without waiting for a manual Re-index click. Single-shot per mount.
+  const autoDetectedRef = useRef(false);
+  useEffect(() => {
+    if (autoDetectedRef.current) return;
+    if (indexStatus.phase !== 'ready') return;
+    autoDetectedRef.current = true;
+    void apiClient.post(`${BASE}/index?orphan_action=index`).catch(() => {
+      // ignore — WS progress + activity→idle hook will surface any issue
+    });
+  }, [indexStatus.phase]);
+
+  // F4/F5 — Scan Orphans dialog (toolbar + per-row click both open this).
+  const [sweepOpen, setSweepOpen] = useState(false);
+  const [sweepScopeType, setSweepScopeType] = useState<string | null>(null);
+  const openSweepDialog = useCallback((scope: string | null) => {
+    setSweepScopeType(scope);
+    setSweepOpen(true);
+  }, []);
 
   // Detail cache keyed by type. Loaded on row expand — /fs-records/scan?type=X
   // gives the size breakdown + per-record list, on demand.
@@ -426,6 +465,7 @@ export function FsRecordsScannerViewer() {
   );
 
   const grandTotal = useMemo(() => typeRows.reduce((s, r) => s + r.count, 0), [typeRows]);
+  const totalOrphans = indexStatus.phase === 'ready' ? indexStatus.status.total_orphans : 0;
 
   const filteredRows = useMemo(() => {
     let rows = typeRows;
@@ -484,6 +524,31 @@ export function FsRecordsScannerViewer() {
             </TooltipTrigger>
             <TooltipContent>
               Scan the filesystem and report per-type counts and sizes (no write)
+            </TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className={`h-7 gap-1.5 text-xs ${totalOrphans > 0 ? 'text-amber-600 hover:text-amber-700 dark:text-amber-400' : ''}`}
+                onClick={() => openSweepDialog(null)}
+                disabled={refreshing || clearing}
+                data-testid="toolbar-scan-orphans"
+              >
+                <Ghost className="h-3.5 w-3.5" />
+                Scan Orphans
+                {totalOrphans > 0 && (
+                  <span className="ml-1 rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-700 dark:text-amber-300">
+                    {totalOrphans}
+                  </span>
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {totalOrphans > 0
+                ? `${totalOrphans} orphan record${totalOrphans === 1 ? '' : 's'} — click to review and sweep`
+                : 'No orphans. Click to re-scan and confirm.'}
             </TooltipContent>
           </Tooltip>
           <AlertDialog>
@@ -548,6 +613,18 @@ export function FsRecordsScannerViewer() {
             <>
               {' · '}
               <span className="text-muted-foreground">last indexed {lastIndexedLabel}</span>
+            </>
+          )}
+          {totalOrphans > 0 && (
+            <>
+              {' · '}
+              <button
+                type="button"
+                onClick={() => openSweepDialog(null)}
+                className="text-amber-600 hover:underline dark:text-amber-400"
+              >
+                {totalOrphans} orphan{totalOrphans === 1 ? '' : 's'}
+              </button>
             </>
           )}
         </div>
@@ -643,7 +720,10 @@ export function FsRecordsScannerViewer() {
                   <tr>
                     <th className="w-6 py-2 pl-3 pr-2" />
                     <th className="py-2 pr-4 text-left font-medium">Type</th>
-                    <th className="py-2 pr-4 text-right font-medium">Count</th>
+                    <th className="py-2 pr-4 text-right font-medium">Records</th>
+                    <th className="py-2 pr-4 text-right font-medium" title="DB rows whose source file is gone. Click a non-zero count to sweep.">
+                      Orphans
+                    </th>
                     <th className="py-2 pr-4 text-right font-medium">Last Indexed</th>
                     <th className="py-2 pr-3 text-right font-medium">Status</th>
                     <th className="w-16 py-2 pr-2" />
@@ -660,6 +740,7 @@ export function FsRecordsScannerViewer() {
                       onExpand={handleExpand}
                       onIndex={handleIndexType}
                       onClear={handleClearType}
+                      onSweepOrphans={openSweepDialog}
                       indexing={indexingTypes.has(r.type)}
                       clearing={clearingTypes.has(r.type)}
                       indexedCount={indexedResults[r.type] ?? null}
@@ -692,6 +773,17 @@ export function FsRecordsScannerViewer() {
                 ? 'Clearing index'
                 : 'Activity'
         }
+      />
+
+      {/* Sweep Orphans dialog — explainer + per-type breakdown + sweep action.
+          Driven by the toolbar Scan Orphans button OR a row-cell click on a
+          non-zero Orphans count (scopeType set in that case). */}
+      <SweepOrphansDialog
+        open={sweepOpen}
+        onOpenChange={setSweepOpen}
+        scopeType={sweepScopeType}
+        perType={indexStatus.phase === 'ready' ? (indexStatus.status.per_type ?? []) : []}
+        totalOrphans={totalOrphans}
       />
 
       {/* Scan Stats modal — one-shot aggregate scan report. */}
