@@ -66,13 +66,16 @@ function FolderRow({
   depth: number;
   onOpen: (d: Markdown) => void;
 }) {
-  // Auto-expand chains where each level has a single folder child and no
-  // files of its own (e.g. ``.claude/docs`` containing only the system docs)
-  // so the docs surface without manual click-through. Folders with multiple
-  // children or files start at ``depth < 2`` (root + first level) like before
-  // — that keeps the menu from exploding on big real-world projects.
+  // Auto-expand:
+  //  - root + first level (depth < 2): preserves the existing UX.
+  //  - "thin chains": a folder whose only child is another folder. Lets
+  //    ``.claude/docs`` unfold so the system docs surface immediately.
+  //  - "leaf-with-few-files": a folder with no subfolders and ≤ 3 files.
+  //    Lets the final folder in a ``.claude/docs/`` chain show its file
+  //    rows without the user clicking through.
   const isThinChain = node.folders.size === 1 && node.files.length === 0;
-  const [open, setOpen] = useState<boolean>(depth < 2 || isThinChain);
+  const isShallowLeaf = node.folders.size === 0 && node.files.length > 0 && node.files.length <= 3;
+  const [open, setOpen] = useState<boolean>(depth < 2 || isThinChain || isShallowLeaf);
   const hasChildren = node.folders.size > 0 || node.files.length > 0;
   const indent = { paddingLeft: `${depth * 12}px` };
 
