@@ -160,8 +160,6 @@ function handleDeepLink(url) {
   // Ignore install/probe URLs.
   // These are only used by the browser to detect whether FlowPad
   // is installed and must never replace a real task/message deep link.
-  function handleDeepLink(url) {
-  log.info(`[deep-link] received: ${url}`);
 
   if (
     url === 'flowpad://__probe' ||
