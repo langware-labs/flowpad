@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from flow_sdk.fs_records.claude.claude_project import _TEMP_PATH_PREFIXES
+from flow_sdk.fs_records.claude.claude_project import ProjectFsRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
@@ -22,7 +22,7 @@ from flow_sdk.fs_store.record_types import RecordType
 def _is_temp_encoded(encoded: str) -> bool:
     """Mirror of ClaudeProjectFsRecord._is_valid_project_dir (inverted)."""
     decoded = "/" + encoded.lstrip("-").replace("-", "/")
-    return decoded.startswith(_TEMP_PATH_PREFIXES)
+    return not ProjectFsRecord._is_valid_cwd(decoded)
 
 
 async def claude_projects_fn(

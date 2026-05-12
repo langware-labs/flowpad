@@ -1,4 +1,6 @@
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
+import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
+import { CodexIcon } from '@src/components/icons/CodexIcon';
 import { useClaudeProjectList, getProjectDisplayName } from '@src/hooks/use-claude-projects';
 import {
   ContextEntitiesEnum,
@@ -234,6 +236,12 @@ function ProjectSelectList({
                 )}
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-1.5">
+                    {project.claude && (
+                      <ClaudeIcon className="h-3.5 w-3.5 shrink-0 text-orange-500" aria-label="Claude project" />
+                    )}
+                    {project.codex && (
+                      <CodexIcon className="h-3.5 w-3.5 shrink-0 text-emerald-500" aria-label="Codex project" />
+                    )}
                     <span className="truncate font-medium">{getProjectDisplayName(project)}</span>
                     {isSystem && (
                       <span className="flex shrink-0 items-center gap-0.5 rounded-full border border-border bg-muted px-1.5 py-px text-[10px] uppercase tracking-wide text-muted-foreground">
@@ -622,6 +630,11 @@ export function OpenProjectComponent({
         encoded_name: p.id,
         cwd: path,
         session_count: 0,
+        claude_session_count: 0,
+        codex_session_count: 0,
+        claude: false,
+        codex: false,
+        worker_types: [],
         modified_at: null,
       });
     }
@@ -636,6 +649,11 @@ export function OpenProjectComponent({
         encoded_name: p.id,
         cwd: path,
         session_count: 0,
+        claude_session_count: 0,
+        codex_session_count: 0,
+        claude: false,
+        codex: false,
+        worker_types: [],
         modified_at: null,
         system: true,
       });

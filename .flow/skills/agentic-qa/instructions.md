@@ -243,3 +243,11 @@ The interactive_tabs_project_filtering_matrix references `[data-testid="footer"]
 
 **`flowpad` CLI not on PATH in dev shell — 2026-05-08**
 Package `flowpad 0.2.8` is pip-installed but its console_script entry isn't on PATH. `which flowpad` → not found. Section F's CLI tests (X3-X5) classified test-issue. Either expose the entry or document the module-form fallback (`uv run -m flow_sdk.cli ...`) in the matrix and harness.
+
+## Learnings — 2026-05-12 (indexer + search validation)
+
+- **Parallel flowpad checkout pitfall**: `flowpad-app` (a sibling repo at `~/Documents/dev/flowpad-app`) often has its own backend bound to ports 9007/4097. Playwright tests under `ui/tests/e2e/index-search/` default to `API_URL=http://localhost:9007` and the playwright.config defaults `baseURL` to `VITE_PORT=4097`. Running with bare `npx playwright test` will silently target the wrong backend if both repos are active. ALWAYS pass `API_URL` and `VITE_PORT` explicitly when validating changes to flowpad-oss code — the env in `.env.local` (`LOCAL_SERVER_PORT=9008`, `VITE_PORT=4098`) must be forwarded into the playwright invocation. Two failures from this run (`scan_index_progress_events::aggregate scan response is coherent`, `search_filters_scope::GET /search?scope=user returns only user-scoped results`) were false positives caused by hitting the wrong backend.
+
+- **Pre-existing failures not caused by indexer/search work**: `search_filters_scope.md.ts:18` and `search_full_text.md.ts:156` look for testids (`search-tools-btn`, `search-results`) that exist in the UI (`RecordSearchBar.tsx`, `SearchView.tsx`) but aren't on the default `/` route the tests start from. `search_full_text.md.ts:58` expects a `text` property that neither `/api/v1/search` nor `/fs-records/search` returns. These tests need scenario updates, not backend fixes.
+
+- **Side note (low priority)**: When the indexer's skip-fresh re-stamps `scope`/`project_id`, it doesn't bump `updated_date`. If any downstream cache keys off `updated_date` to detect entity changes, a stale-scope re-stamp would be invisible to them. Captured here in case it shows up later.

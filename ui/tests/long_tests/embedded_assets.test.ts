@@ -64,7 +64,10 @@ You are a test agent.
     const proc = await new AgenticProcess({ workdir }).save([]);
 
     // Force a reindex of agents so the fixture file is picked up by /search.
-    const reindexResp = await fetch('http://localhost:9008/api/v1/search/reindex/agent', { method: 'POST' });
+    const reindexResp = await fetch(
+      'http://localhost:9008/api/v1/graph/compute_node/@local/fs-records/index?type=agent',
+      { method: 'POST' },
+    );
     expect(reindexResp.ok, `reindex failed: ${reindexResp.status}`).toBe(true);
 
     // Resolve the agent's uuid via /search so we use the same TypeId shape the UI sends.

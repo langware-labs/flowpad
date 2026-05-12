@@ -8,9 +8,6 @@ from flow_sdk.core.resource_management.scan.system_profile import (
     get_resource_summary as _get_resource_summary,
 )
 from flow_sdk.core.resource_management.scan.system_profile import (
-    list_projects_fast as _list_projects_fast,
-)
-from flow_sdk.core.resource_management.scan.system_profile import (
     scan_item as _scan_item,
 )
 from flow_sdk.core.resource_management.scan.system_profile import (
@@ -18,6 +15,9 @@ from flow_sdk.core.resource_management.scan.system_profile import (
 )
 from flow_sdk.core.resource_management.scan.system_profile import (
     scan_resources as _scan_resources,
+)
+from flow_sdk.builtin.faas.project_list import (
+    list_projects_from_indexer as _list_projects_from_indexer,
 )
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
@@ -181,17 +181,13 @@ class ScanActionsMixin:
             return ApiFailResponse(message=str(e))
 
     async def _scan_list_projects(self) -> ApiResponse:
-        """Fast project enumeration.
-
-        Ported from FlowPad: flowpad/hub/builtin/faas/compute_node.py
-        Desktop stub: returns empty project list.
+        """List projects from the indexed Claude/Codex project records.
 
         Returns:
             ApiResponse with projects list and total_count
         """
         try:
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(None, _list_projects_fast)
+            result = await _list_projects_from_indexer()
             return ApiSuccessResponse(data=result)
         except Exception as e:
             logging.exception(f"list-projects failed: {e}")

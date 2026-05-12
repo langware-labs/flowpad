@@ -120,12 +120,15 @@ class IndexerFunc(Protocol):
     ) -> list[FSRef]: ...
 
 
-async def _load_updated_map(driver: Any, type_name: str) -> dict[str, float]:
-    """Return `{id: updated_date_ts}` for every entity row of `type_name`.
+async def _load_entity_state_map(
+    driver: Any, type_name: str
+) -> dict[str, tuple[float, str, str]]:
+    """Return `{id: (updated_date_ts, scope, project_id)}` for every entity row of `type_name`.
 
     Single-query bulk preload used by `FSIndexer.index()` for the skip-fresh
     check. Rows with `updated_date is None` are dropped (they'd always fail
-    the freshness comparison anyway).
+    the freshness comparison anyway). `scope` and `project_id` are returned as
+    empty strings when NULL/missing in the DB so callers can do simple equality.
 
     SQLite stores `updated_date` as an ISO-like string ("YYYY-MM-DD HH:MM:SS[.µs]")
     written by the ORM from `datetime.now(UTC)`, so we parse as UTC to match
@@ -135,35 +138,48 @@ async def _load_updated_map(driver: Any, type_name: str) -> dict[str, float]:
 
     from sqlalchemy import text
 
+    # `scope` and `project_id` live inside the JSON `data` blob, not as their
+    # own columns — extract them server-side so we get the same per-row triple
+    # in one round trip. SQLite has json_extract built in; other drivers using
+    # this code path will need an equivalent.
     async with driver._session_ctx() as session:
         result = await session.execute(
-            text("SELECT id, updated_date FROM entities WHERE type = :t"),
+            text(
+                "SELECT id, updated_date, "
+                "json_extract(data, '$.scope'), "
+                "json_extract(data, '$.project_id') "
+                "FROM entities WHERE type = :t"
+            ),
             {"t": type_name},
         )
         rows = result.fetchall()
-    out: dict[str, float] = {}
+    out: dict[str, tuple[float, str, str]] = {}
     for r in rows:
         ud = r[1]
+        scope = r[2] or ""
+        pid = r[3] or ""
+        ts: float | None = None
         if ud is None:
             continue
         if hasattr(ud, "timestamp"):
-            # datetime object — honor its tzinfo, default to UTC if naive
             dt = ud if ud.tzinfo is not None else ud.replace(tzinfo=timezone.utc)
-            out[r[0]] = dt.timestamp()
-            continue
-        if isinstance(ud, str):
+            ts = dt.timestamp()
+        elif isinstance(ud, str):
             try:
                 dt = datetime.fromisoformat(ud.replace(" ", "T"))
             except ValueError:
                 continue
             if dt.tzinfo is None:
                 dt = dt.replace(tzinfo=timezone.utc)
-            out[r[0]] = dt.timestamp()
+            ts = dt.timestamp()
+        else:
+            try:
+                ts = float(ud)
+            except (TypeError, ValueError):
+                continue
+        if ts is None:
             continue
-        try:
-            out[r[0]] = float(ud)
-        except (TypeError, ValueError):
-            continue
+        out[r[0]] = (ts, scope, pid)
     return out
 
 
@@ -225,14 +241,15 @@ class FSIndexer:
         from flow_sdk.fs_store.schema_registry import SchemaRegistry
         from flow_sdk.db import get_db_driver, session as _db_session
 
-        # Bulk-preload {id: updated_date_ts} per type — one DB query each.
-        # Used for the skip-fresh check: if an asset's mtime is <= the DB
-        # row's updated_date, no re-parse needed.
+        # Bulk-preload {id: (updated_date_ts, scope, project_id)} per type — one
+        # DB query each. Used for the skip-fresh check: if an asset's mtime is
+        # <= the DB row's updated_date AND the row's scope/project_id already
+        # match the FSRef walk, no re-parse needed.
         driver = get_db_driver()
         type_names = {str(r.record_type) for r in targets if r.record_type is not None}
-        valid_map: dict[str, dict[str, float]] = {}
+        valid_map: dict[str, dict[str, tuple[float, str, str]]] = {}
         for tn in type_names:
-            valid_map[tn] = await _load_updated_map(driver, tn)
+            valid_map[tn] = await _load_entity_state_map(driver, tn)
 
         # Pre-flight per-type totals: known up front because scan() materialized
         # everything before we entered the per-record loop. Only counts types
@@ -348,12 +365,21 @@ class FSIndexer:
                     seen_ids.setdefault(ref.record_type, set()).add(ref_id)
 
                 # Skip-fresh: in-memory dict lookup, one stat(), no parse.
-                # Bypassed when `opts.force` is set (hard refresh).
+                # Bypassed when `opts.force` is set (hard refresh) OR when the
+                # DB row is missing the scope/project_id that the FSRef walk
+                # now provides — those are stamped from the parent chain at
+                # walk time, so a row with stale scope must be re-synced.
                 rt_name = str(ref.record_type)
-                last_ts = valid_map.get(rt_name, {}).get(ref_id)
-                if not opts.force and last_ts is not None:
+                state = valid_map.get(rt_name, {}).get(ref_id)
+                if not opts.force and state is not None:
+                    last_ts, db_scope, db_pid = state
                     asset_ts = info.record_cls.asset_hash_for_ref(ref)
-                    if asset_ts and asset_ts <= last_ts:
+                    fresh = bool(asset_ts) and asset_ts <= last_ts
+                    walk_scope = ref.scope or ""
+                    walk_pid = ref.project_id or ""
+                    scope_matches = (walk_scope == "" or db_scope == walk_scope)
+                    pid_matches = (walk_pid == "" or db_pid == walk_pid)
+                    if fresh and scope_matches and pid_matches:
                         acc["skipped"] += 1
                         # Even when skipping the parse, the file is alive on
                         # disk this pass. Add to seen_alive_ids so a previous
@@ -823,3 +849,4 @@ class FSIndexer:
             await on_progress(make_table(text="complete"))
 
         return visited
+

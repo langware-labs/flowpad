@@ -157,7 +157,10 @@ class ProjectFsRecord(Record):
         """Reject system/temp paths."""
         if not cwd or not cwd.startswith("/"):
             return False
-        if cwd.startswith(_TEMP_PATH_PREFIXES):
+        if cwd == "/":
+            return False
+        temp_roots = tuple(prefix.rstrip("/") for prefix in _TEMP_PATH_PREFIXES)
+        if cwd in temp_roots or cwd.startswith(_TEMP_PATH_PREFIXES):
             return False
         normalized = os.path.normpath(cwd) + os.sep
         return not normalized.startswith(_flow_records_norm_prefixes())
@@ -168,7 +171,7 @@ class ProjectFsRecord(Record):
         real = _decode_claude_encoded(d)
         if real is None:
             return False
-        return not real.startswith(_TEMP_PATH_PREFIXES)
+        return cls._is_valid_cwd(real)
 
     @classmethod
     def _is_valid_mount_path(cls, path: str) -> bool:

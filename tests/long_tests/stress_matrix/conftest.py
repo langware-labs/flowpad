@@ -149,6 +149,7 @@ def run_cell(
     timeout_seconds: float = 25.0,
     extra_mounts: list[tuple[Path, str]] | None = None,
     workdir_ro: bool = False,
+    extra_env: dict[str, str] | None = None,
 ) -> subprocess.CompletedProcess:
     """Invoke one matrix cell. Returns the CompletedProcess for assertion.
 
@@ -184,6 +185,8 @@ def run_cell(
     ]
     for src, dst in (extra_mounts or []):
         cmd.extend(["-v", f"{src}:{dst}:ro"])
+    for k, v in (extra_env or {}).items():
+        cmd.extend(["-e", f"{k}={v}"])
     cmd.extend([image, "/work", prompt])
     return subprocess.run(
         cmd,

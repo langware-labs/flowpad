@@ -37,6 +37,16 @@ case "$SCENARIO" in
         : # no-op
         ;;
 
+    migrate_recipe)
+        # End-to-end migration cell: skip runner_entrypoint.py entirely
+        # and invoke the actual `flow migrate run` CLI. Recipe path is
+        # controlled by FLOWPAD_MIGRATIONS_ROOT (set by the test); the
+        # version is passed via MIGRATION_VERSION. Status JSON lands
+        # under HOME/.flow/global/migrations (HOME=/work).
+        VERSION="${MIGRATION_VERSION:-v0.0.0-test}"
+        exec flow migrate run --version "$VERSION" --timeout 60
+        ;;
+
     db_corrupted)
         # Place garbage at the SQLite path BEFORE init_db. Either the open
         # call fails fast or schema-detection raises a clear sqlite error.

@@ -203,19 +203,32 @@ export function HomeLanding() {
   }, [scanInfo]);
   const firstName = user?.name?.split(' ')[0] || 'there';
 
-  const { checkLoginAndProceed, requiresLogin, showLoginDialog, closeLoginDialog } = useLoginRequired();
+  const {
+    checkLoginAndProceed,
+    requiresLogin,
+    showLoginDialog,
+    closeLoginDialog,
+    pendingAction,
+    clearPending,
+    isPostLogin,
+  } = useLoginRequired();
   const [showNewConversation, setShowNewConversation] = useState(false);
   const [showJoinConversation, setShowJoinConversation] = useState(false);
   const [showCommunityAssistance, setShowCommunityAssistance] = useState(false);
   const [draftPrompt, setDraftPrompt] = useState('');
   const handleStartConversation = () => {
-    if (requiresLogin && !checkLoginAndProceed(ActionType.SEND)) return;
+    if (!checkLoginAndProceed(ActionType.START_CONVERSATION, undefined, undefined, { forceLogin: true })) return;
     setShowNewConversation(true);
   };
   const handleJoinConversation = () => {
     if (requiresLogin && !checkLoginAndProceed(ActionType.SEND)) return;
     setShowJoinConversation(true);
   };
+  useEffect(() => {
+    if (!isPostLogin || pendingAction?.action !== ActionType.START_CONVERSATION) return;
+    setShowNewConversation(true);
+    clearPending();
+  }, [clearPending, isPostLogin, pendingAction?.action]);
 
   // Inbox state
   const { unreadCount, setUnreadCount } = useInboxStore();
