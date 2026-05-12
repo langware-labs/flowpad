@@ -1098,6 +1098,43 @@ async def _ensure_system_projects(desktop_user: Optional[Entity] = None) -> list
     return ensured
 
 
+async def _index_system_project_markdowns(projects: list[Project]) -> None:
+    """Seed Markdown entities for every .md file under each system project's
+    ``docs/`` and ``.claude/docs/`` subtree.
+
+    The async indexer is the canonical path, but it runs out-of-band — and
+    several scenarios (welcome favorite seed, Flowpad Assistant docs panel,
+    hello-flowpad spec) need the entities present on the very first bootstrap.
+    Walking a handful of system-shipped folders synchronously is cheap.
+    Idempotent: ``Entity.save()`` deduplicates by uuid5-derived id.
+    """
+    from pathlib import Path  # noqa: PLC0415
+    from flow_sdk.fs_records.markdown_record import MarkdownRecord  # noqa: PLC0415
+    from flow_sdk.core.entity import Entity  # noqa: PLC0415
+
+    for proj in projects:
+        mount = proj.fs_storage_mount_path
+        if not mount:
+            continue
+        root = Path(mount)
+        for subdir in ("docs", ".claude/docs"):
+            base = root / subdir
+            if not base.is_dir():
+                continue
+            for md_path in base.rglob("*.md"):
+                try:
+                    rec = MarkdownRecord.from_file(md_path)
+                    if proj.id and getattr(rec, "project_id", None) is None:
+                        object.__setattr__(rec, "project_id", proj.id)
+                    entity = await Entity.from_record(rec, notify=False)
+                    # Mark system so include_system filters work; idempotent re-save.
+                    if entity is not None and not getattr(entity, "system", False):
+                        entity.system = True
+                        await entity.save(notify=False)
+                except Exception as e:
+                    logging.debug(f"[bootstrap] failed to index system markdown {md_path}: {e}")
+
+
 async def _ensure_welcome_favorite(user: User) -> None:
     """One-shot onboarding: drop a favorite bookmark to the Welcome markdown
     onto the user's home view the first time the server boots.
@@ -1317,11 +1354,17 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
         _t.time("get_or_create_local_user")
         project = await get_or_create_local_project(desktop_user=user)
         _t.time("get_or_create_local_project")
+        system_projects: list[Project] = []
         try:
-            await _ensure_system_projects(desktop_user=user)
+            system_projects = await _ensure_system_projects(desktop_user=user)
         except Exception as e:
             logging.warning(f"[bootstrap] Failed to ensure system projects (non-fatal): {e}")
         _t.time("ensure_system_projects")
+        try:
+            await _index_system_project_markdowns(system_projects)
+        except Exception as e:
+            logging.warning(f"[bootstrap] Failed to index system markdowns (non-fatal): {e}")
+        _t.time("index_system_markdowns")
         try:
             await _ensure_welcome_favorite(user)
         except Exception as e:
