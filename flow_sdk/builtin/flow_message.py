@@ -77,6 +77,13 @@ class FlowMessage(Entity):
     # unified ``context_entities`` on the base ``Entity``. Read via
     # ``msg.context_entities`` / ``msg.first_context_of_type('task')``.
     is_draft: bool = APIField(default=False)
+    # Discriminator for special message kinds. "user" is a normal message
+    # (the default for everything the user or hub produces). "invitation"
+    # marks a local-only placeholder FlowMessage that represents a pending
+    # hub Invitation as a first-row in the conversation strip — its
+    # ``context_entities`` carry the backing Invitation TypeId so the UI
+    # can read invitation_id off it for the Accept action.
+    kind: str = APIField(default="user")
     _api_visible: ClassVar[bool] = True
 
     @model_serializer(mode="wrap")

@@ -9,6 +9,7 @@ import { sendReply } from '@sdk/entities/notifications';
 import { useContext as useDataContext } from '@src/hooks/useContext';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
 import { useProjects } from '@src/hooks/use-projects';
+import { AutofillInput } from '@src/components/ui/autofill-input';
 import { Button } from '@src/components/ui/button';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
 import { FileAttachmentPicker } from '@src/components/conversation/FileAttachmentPicker';
@@ -42,6 +43,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
   const [participants, setParticipants] = useState<ConversationParticipant[]>([]);
   const [cloudUser, setCloudUser] = useState(cloudManager.currentUser);
   const [initialMessage, setInitialMessage] = useState('');
+  const [title, setTitle] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [senderName, setSenderName] = useState('');
   const [editingName, setEditingName] = useState(false);
@@ -53,6 +55,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
     if (!open) return;
     setParticipants([]);
     setInitialMessage('');
+    setTitle('');
     setFiles([]);
     setError(null);
     setEditingName(false);
@@ -84,13 +87,21 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
     (p) => !!p.user_id || (!!p.email && p.email.includes('@')),
   );
 
-  // Slack-style placeholder: "<my name>, <participant1>, ..."
+  // Slack-style autofill: "<my name>, <participant1>, ... - <Mon D>". Open-dialog
+  // sets the date once so the autofill is stable across re-renders within a session.
   const myLabel = cloudUser?.name || cloudUser?.email || ctx.user?.name || ctx.user?.email || 'You';
-  const placeholderTitle = useMemo(() => {
-    if (participants.length === 0) return 'New conversation';
+  const openedAt = useMemo(() => new Date(), [open]);
+  const dateSuffix = useMemo(
+    () => openedAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+    [openedAt],
+  );
+  const autofillTitle = useMemo(() => {
+    if (participants.length === 0) return `New conversation - ${dateSuffix}`;
     const others = participants.map((p) => p.name || p.email || 'unknown').join(', ');
-    return `${myLabel}, ${others}`;
-  }, [participants, myLabel]);
+    return `${myLabel}, ${others} - ${dateSuffix}`;
+  }, [participants, myLabel, dateSuffix]);
+  // Dialog heading mirrors the autofill so the header stays a live preview.
+  const placeholderTitle = autofillTitle;
 
   // Cross-user bundle conversations don't require a Project; local-only ones do.
   const canCreate = !busy && (hasRemoteParticipant || !!projectId) && participants.length > 0;
@@ -102,6 +113,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
     try {
       const hasFiles = files.length > 0;
       const message = initialMessage.trim();
+      const effectiveTitle = title.trim() || autofillTitle;
 
       let conversationId: string | null;
 
@@ -126,8 +138,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
         if (recipientEmails.length === 0) {
           throw new Error('At least one recipient email is required');
         }
-        const titleHint = participants.map((p) => p.name || p.email || 'unknown').join(', ');
-        const conv = new Conversation({ title: titleHint, participants });
+        const conv = new Conversation({ title: effectiveTitle, participants });
         await conv.save();
         await conv.share(recipientEmails);
         if (!hasFiles && message) {
@@ -140,6 +151,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
         const result = await createProjectConversation({
           project_id: projectId,
           participants,
+          title: effectiveTitle,
         });
         conversationId = result.conversation_id;
       }
@@ -210,6 +222,21 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
               )}
             </div>
           )}
+
+          {/* Title — pre-filled from participants + date. Click to select and
+              replace. After any keystroke the autofill is suppressed until the
+              dialog reopens. */}
+          <div className="flex flex-col gap-1.5">
+            <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
+              Title
+            </label>
+            <AutofillInput
+              autofill={autofillTitle}
+              value={title}
+              onChange={setTitle}
+              data-testid="conversation-title-input"
+            />
+          </div>
 
           {/* Project — required for project-local conversations, optional for
               cross-user bundle conversations (stamped on the local Conversation

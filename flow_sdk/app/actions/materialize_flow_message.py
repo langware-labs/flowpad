@@ -37,6 +37,7 @@ async def ensure_conversation_entity(
     remote_project_id: Optional[str] = None,
     remote_project_name: Optional[str] = None,
     participants: Optional[list] = None,
+    title: Optional[str] = None,
     someone_typeid: Optional[str] = None,
 ) -> Conversation:
     """Idempotent: return the local Conversation entity, creating it if missing.
@@ -56,6 +57,7 @@ async def ensure_conversation_entity(
     local-origin conversations.
     """
     conv = await Conversation.get_one({"id": conversation_id})
+    title_clean = (title or "").strip() or None
     if conv is None:
         payload: dict = {"id": conversation_id}
         if project_id:
@@ -66,16 +68,26 @@ async def ensure_conversation_entity(
             payload["remote_project_name"] = remote_project_name
         if participants:
             payload["participants"] = list(participants)
+        if title_clean:
+            payload["title"] = title_clean
         if parent_typeid is not None:
             payload["context_entities"] = [str(parent_typeid)]
         conv = Conversation.model_validate(payload)
         conv.id = conversation_id
         conv = await conv.save(someone_typeid, notify=False)
-    elif participants and not (conv.participants or []):
-        # Existing conv with no participants — backfill from the bundle so
-        # the reply-recipient resolver can find the other party's email.
-        conv.participants = list(participants)
-        conv = await conv.save(someone_typeid, notify=False)
+    else:
+        dirty = False
+        if participants and not (conv.participants or []):
+            # Backfill participants from the bundle so the reply-recipient
+            # resolver can find the other party's email.
+            conv.participants = list(participants)
+            dirty = True
+        if title_clean and not (conv.title or "").strip():
+            # Backfill title on first receive — keep an existing local override.
+            conv.title = title_clean
+            dirty = True
+        if dirty:
+            conv = await conv.save(someone_typeid, notify=False)
 
     if parent_typeid is not None and parent_typeid.type == BuiltinEntityType.TASK.value:
         parent_id = parent_typeid.id

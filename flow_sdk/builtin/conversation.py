@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import ClassVar, List, Optional
 
 from flow_sdk.api.api_types.api_field import APIField
@@ -39,6 +40,10 @@ class Conversation(Entity):
     # sender (delivered/received UPDATE frames are filtered by hub-side
     # Conversation._fanout_status_update). Co-recipients still see them.
     message_status_visible: bool = APIField(default=True)
+    # Strip-only dismissal. When set, the Recent Conversations strip hides
+    # this row UNTIL a FlowMessage newer than ``dismissed_at`` is appended
+    # (auto-revive on new activity). The Inbox ignores this field entirely.
+    dismissed_at: Optional[datetime] = APIField(default=None)
     # True once ``share()`` succeeded — the conversation has a hub-side mirror
     # with the same id, and future replies should route through the bridge.
     # NOTE: Entity base class already defines `remote`, this is a documentation

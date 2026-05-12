@@ -1346,6 +1346,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
    */
   private static TYPEID_COERCION_DENYLIST: ReadonlySet<string> = new Set([
     'target_typeid_str',
+    'message',
   ]);
 
   public deepAssign(target: any, source: any) {

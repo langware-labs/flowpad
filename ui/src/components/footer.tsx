@@ -1,5 +1,6 @@
 import { ClaudeUsageChip } from '@src/components/claude-usage-chip/ClaudeUsageChip';
 import { PoweredBy } from '@src/components/powered-by';
+import { IndexerStatusPill } from '@src/components/search-index/IndexerStatusPill';
 import { StatusBar } from '@src/components/status-bar';
 import { WarningsPopover } from '@src/components/warnings-popover';
 import { Agent, ArtifactType, FLOWPAD_ASSISTANT_PROJECT_UNAME, TypeId } from '@sdk';
@@ -92,6 +93,7 @@ export function Footer({ className = '' }: FooterProps) {
 
         {/* Usage chip + version + Powered by on the right */}
         <div className="ml-auto flex items-center gap-2">
+          <IndexerStatusPill />
           <button
             type="button"
             onClick={() => navigation.openDock(DockPointer.forProject(`@${FLOWPAD_ASSISTANT_PROJECT_UNAME}`))}

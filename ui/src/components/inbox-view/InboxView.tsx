@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Archive, CheckSquare, RefreshCw } from 'lucide-react';
-import { Conversation, FlowMessage, QueryRequest, Task, TypeId } from '@sdk';
+import { Archive, CheckSquare, MailPlus, RefreshCw } from 'lucide-react';
+import { Conversation, FlowMessage, QueryRequest, Task, TypeId, acceptInvitation } from '@sdk';
 import { useEntitiesQuery, useEntity } from '@src/hooks/entity-hooks';
 import { Button } from '@src/components/ui/button';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -52,19 +52,36 @@ function ConversationListRow({ conv, isFocused, onArchive, onToggleRead, onVisib
   );
   const { data: task } = useEntity<Task>(taskTypeId);
 
-  // Fetch only the latest FlowMessage for sender + snippet + read state.
+  // For invitation rows the first message IS the only message; for regular
+  // rows we want the latest message preview but still need to peek at the
+  // first to detect ``kind === 'invitation'``.
   const pointers = conv.conversationMessageIds ?? [];
-  const latest = pointers[pointers.length - 1];
-  const latestTypeId = useMemo(
-    () => (latest?.id ? new TypeId(FlowMessage.type, latest.id) : null),
-    [latest?.id],
+  const firstPtr = pointers[0];
+  const lastPtr = pointers[pointers.length - 1];
+  const firstTypeId = useMemo(
+    () => (firstPtr?.id ? new TypeId(FlowMessage.type, firstPtr.id) : null),
+    [firstPtr?.id],
   );
+  const latestTypeId = useMemo(
+    () => (lastPtr?.id ? new TypeId(FlowMessage.type, lastPtr.id) : null),
+    [lastPtr?.id],
+  );
+  const { data: firstMessage } = useEntity<FlowMessage>(firstTypeId);
   const { data: latestMessage } = useEntity<FlowMessage>(latestTypeId);
+
+  const isInvitationRow = firstMessage?.kind === 'invitation';
+  const invitationTypeId = useMemo(
+    () => firstMessage?.firstContextOfType?.('invitation') ?? null,
+    [firstMessage],
+  );
+  const invitationId = invitationTypeId?.id ?? null;
+  const [accepting, setAccepting] = useState(false);
 
   // Hide archived rows ("Archive all" flips is_archived on every FlowMessage)
   // and rows whose latest FlowMessage hasn't materialised yet (bundle pending).
+  // Inbox ignores ``dismissed_at`` — that's a strip-only flag.
   const isHidden =
-    !!latestMessage?.is_archived || (!!latest && !latestMessage);
+    !!latestMessage?.is_archived || (!!lastPtr && !latestMessage);
 
   const convId = conv.id ?? '';
   // useLayoutEffect (not useEffect) so the parent's `visibleIds` state is
@@ -79,17 +96,36 @@ function ConversationListRow({ conv, isFocused, onArchive, onToggleRead, onVisib
 
   if (isHidden) return null;
 
-  const sender = latestMessage?.sender_name?.trim() || 'Unknown';
+  const sender = isInvitationRow
+    ? 'Invitation'
+    : (latestMessage?.sender_name?.trim() || 'Unknown');
   const count = pointers.length;
-  const subject = task?.displayName ?? 'Conversation';
-  const snippet = latestMessage?.text?.replace(/\s+/g, ' ').trim() ?? '';
+  const subject = isInvitationRow
+    ? 'You’ve been invited to a conversation'
+    : (task?.displayName ?? 'Conversation');
+  const snippet = isInvitationRow
+    ? (firstMessage?.text?.replace(/\s+/g, ' ').trim() ?? '')
+    : (latestMessage?.text?.replace(/\s+/g, ' ').trim() ?? '');
   const time = formatGmailTime(conv.updated_date);
   const ago = formatTimeAgo(conv.updated_date);
-  const isUnread = latestMessage ? !latestMessage.is_read : false;
+  const isUnread = isInvitationRow ? true : (latestMessage ? !latestMessage.is_read : false);
 
   const handleClick = () => {
+    if (isInvitationRow) return; // primary action is Accept
     if (!conv.id) return;
     navigation.openDock(DockPointer.forConversation(conv.id));
+  };
+
+  const handleAccept = async () => {
+    if (!invitationId) return;
+    setAccepting(true);
+    try {
+      await acceptInvitation({ invitation_id: invitationId });
+    } catch (e) {
+      console.error('[InboxView] acceptInvitation failed', e);
+    } finally {
+      setAccepting(false);
+    }
   };
 
   return (
@@ -99,17 +135,27 @@ function ConversationListRow({ conv, isFocused, onArchive, onToggleRead, onVisib
       data-conversation-id={conv.id ?? ''}
       data-focused={isFocused ? 'true' : 'false'}
       data-unread={isUnread ? 'true' : 'false'}
+      data-kind={isInvitationRow ? 'invitation' : 'user'}
       onClick={handleClick}
-      className={`group relative flex h-9 cursor-pointer items-center gap-3 border-b border-border/40 px-3 text-sm transition-colors hover:bg-accent/40 hover:shadow-sm ${
+      className={`group relative flex h-9 ${
+        isInvitationRow ? 'cursor-default' : 'cursor-pointer'
+      } items-center gap-3 border-b border-border/40 px-3 text-sm transition-colors hover:bg-accent/40 hover:shadow-sm ${
         isFocused ? 'bg-primary/10' : ''
-      } ${isUnread ? 'bg-background' : 'bg-muted/20'}`}
+      } ${isUnread ? 'bg-background' : 'bg-muted/20'} ${
+        isInvitationRow ? 'border-l-2 border-l-violet-500/60' : ''
+      }`}
     >
       <span
         data-testid="inbox-row-sender"
-        className={`w-44 shrink-0 truncate ${isUnread ? 'font-semibold text-foreground' : 'text-muted-foreground'}`}
+        className={`flex w-44 shrink-0 items-center gap-1 truncate ${isUnread ? 'font-semibold text-foreground' : 'text-muted-foreground'}`}
       >
-        {sender}
-        {count > 1 && <span className="ml-1 font-normal text-muted-foreground">({count})</span>}
+        {isInvitationRow && (
+          <MailPlus className="h-3.5 w-3.5 flex-shrink-0 text-violet-500" aria-label="invitation" />
+        )}
+        <span className="truncate">{sender}</span>
+        {!isInvitationRow && count > 1 && (
+          <span className="ml-1 font-normal text-muted-foreground">({count})</span>
+        )}
       </span>
       <span className="min-w-0 flex-1 truncate" data-testid="inbox-row-subject-line">
         <span className={isUnread ? 'font-semibold text-foreground' : 'text-foreground/80'}>{subject}</span>
@@ -128,20 +174,34 @@ function ConversationListRow({ conv, isFocused, onArchive, onToggleRead, onVisib
         className="absolute right-2 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100"
         onClick={(e) => e.stopPropagation()}
       >
-        <button
-          className="rounded p-1 hover:bg-muted"
-          title={isUnread ? 'Mark read' : 'Mark unread'}
-          onClick={() => latestMessage?.id && onToggleRead(latestMessage.id, isUnread)}
-        >
-          <CheckSquare className="h-3.5 w-3.5 text-muted-foreground" />
-        </button>
-        <button
-          className="rounded p-1 hover:bg-destructive/10"
-          title="Archive"
-          onClick={() => latestMessage?.id && onArchive(latestMessage.id)}
-        >
-          <Archive className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
-        </button>
+        {isInvitationRow ? (
+          <button
+            type="button"
+            onClick={() => void handleAccept()}
+            disabled={accepting || !invitationId}
+            className="rounded bg-primary px-2 py-0.5 text-[11px] font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+            data-testid="inbox-accept-invitation-button"
+          >
+            {accepting ? 'Accepting…' : 'Accept'}
+          </button>
+        ) : (
+          <>
+            <button
+              className="rounded p-1 hover:bg-muted"
+              title={isUnread ? 'Mark read' : 'Mark unread'}
+              onClick={() => latestMessage?.id && onToggleRead(latestMessage.id, isUnread)}
+            >
+              <CheckSquare className="h-3.5 w-3.5 text-muted-foreground" />
+            </button>
+            <button
+              className="rounded p-1 hover:bg-destructive/10"
+              title="Archive"
+              onClick={() => latestMessage?.id && onArchive(latestMessage.id)}
+            >
+              <Archive className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
+            </button>
+          </>
+        )}
       </div>
     </div>
   );
