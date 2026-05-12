@@ -1330,7 +1330,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
    *
    * The default heuristic — "if the value looks like a TypeId string, treat it
    * as one" — corrupts plain-string fields whose values happen to match the
-   * `<type>-<id>` shape. The canonical example is `target_vfs_path` on
+   * `<type>-<id>` shape. The canonical example is `target_typeid_str` on
    * `AgenticProcess` / `Run`: the Python schema declares it `str | None`, the
    * on-disk record stores it as the string `"project-<uuid>"`, but
    * `deepAssign` would otherwise wrap it into a TypeId object — breaking
@@ -1345,7 +1345,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
    * this set — current consumers rely on the auto-coercion for those.
    */
   private static TYPEID_COERCION_DENYLIST: ReadonlySet<string> = new Set([
-    'target_vfs_path',
+    'target_typeid_str',
   ]);
 
   public deepAssign(target: any, source: any) {

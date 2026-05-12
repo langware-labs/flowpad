@@ -22,6 +22,12 @@ Typing into the asset-manager list filter threw `TypeError: (d.posix_path ?? "")
 
 **`assets_list_mode.md` described a phantom "Search-First UI"** — LayoutList/Network mode toggle + type pills never shipped. Actual UI is `BrowseableTree` (left) + `AssetListView` (right). Scenario fully rewritten this cycle.
 
+**Same `posix_path`/`sourcePath` non-string defect class across THREE consumers** — `AssetManagerPopover.tsx:192-193`, `AssetPickerPopover.tsx:74`, and `MarkdownEditor.tsx:194-195,224` all fixed this cycle with `typeof === 'string' ? x : ''` coercion. The underlying producer (server-side AssetDescriptor or FSRef) violates the SDK string contract; consumer coercion was the minimal-blast-radius fix. If a fourth crash of this class appears, hunt the producer next.
+
+**`browseable-chevron-asset-type:*` children load asynchronously** — even after the chevron's `title="Collapse"` (expanded state), level-2 treeitems may not be present yet. Adapter calls a separate endpoint. Either wait for treeitem level-2 to appear or click via the right-pane list view.
+
+**Port 9008 contention with Docker proxy** — A Docker container appears to claim port 9008 in parallel with the flowpad-oss backend; killed-then-restarted backends frequently hit `Errno 48 Address already in use` even when `lsof` shows no python listener. Symptom: server log says "Address already in use" while curl bootstrap eventually succeeds (Docker proxy forwards). If a restart loop is needed: pkill flow_sdk + uv run; rm `~/.flow/dev_server.pid`; sleep 6+ seconds for the kernel half-closed socket to drain; only then `uv run -m flow_sdk.server.run`.
+
 **MCP synthetic events do NOT trigger Radix close handlers** — `page.keyboard.press('Escape')` and dispatched pointerdown on document.body do not close a Radix Popover via MCP debugMcp. Validate Popover close behavior with a Playwright `.md.ts` instead.
 
 ### 2026-05-07 — Full QA cycle (all 8 phases) on v0.2.20-process-fixes

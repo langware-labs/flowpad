@@ -1609,3 +1609,24 @@ Same coercion belongs around any other `.toLowerCase()` call that targets a desc
 Tester reproduced the crash live with a screenshot/log; line 192/193 is the only call site that matches the stack trace; coercion is the minimal-risk fix and matches the surrounding code that already guards via `??`.
 
 ### Fixed: yes
+
+---
+
+## 2026-05-12 — agent_execution_asset_picker (UI validation follow-up): MarkdownEditor sourcePath crash
+
+### Scenario
+Live UI validation of the asset-picker-on-agents flow at `{APP_URL}/dock/assets/editor/agent/<asset_ref>`. The page mounted, the `entity-execution-settings` gear opened the `asset-manager-popover` (confirming the prior AssetManagerPopover.tsx:192 fix). Within a few seconds of interaction with the popover (any state change driving a re-render), the entire `AgentAssetEditor` tree unmounted via `RenderErrorBoundary`.
+
+### Symptom
+Unhandled `TypeError: sourcePath.split is not a function` at `ui/src/components/assets/editor/markdown/MarkdownEditor.tsx` (file lines 194-195, plus line 224). React tree unmounts.
+
+### RCA
+`AgentAssetEditor.tsx:40` passes `sourcePath = agent?.asset_ref ?? fsRef.path`. TS type says `string` but at runtime a non-string slips through (same defect class as `AssetManagerPopover.tsx:192-193` and `AssetPickerPopover.tsx:74` — the SDK producer can emit non-string for fields typed `string`).
+
+### Fix
+Coerce `sourcePath` to string once at the top of `MarkdownEditorContent`, then use the coerced `sourcePathStr` for `.split`/`.slice`/`.lastIndexOf` plus the `handleLinkClick` deps array.
+
+### Confidence: HIGH
+Browser console caught the exact trace pointing at MarkdownEditor; same `typeof === 'string'` pattern as the prior two consumer fixes. Typecheck clean. Page re-mount post-fix did not regress (no further TypeError noise; only the unrelated 404 noise documented in instructions.md).
+
+### Fixed: yes

@@ -243,8 +243,8 @@ async def _create_spec_and_task(
             if fork is not None:
                 task_vfs = str(TypeId(type=BuiltinEntityType.TASK.value, id=task.id))
                 dirty = False
-                if fork.target_vfs_path != task_vfs:
-                    fork.target_vfs_path = task_vfs
+                if fork.target_typeid_str != task_vfs:
+                    fork.target_typeid_str = task_vfs
                     dirty = True
                 if not fork.project_id and project_id:
                     fork.project_id = project_id

@@ -90,7 +90,7 @@ async def _fire_schedule_job(trigger_id: str) -> None:
                 proc = AgenticProcess(
                     instruction_content=entity.instruction,
                     workdir=entity.workdir,
-                    target_vfs_path=str(entity.typeid),
+                    target_typeid_str=str(entity.typeid),
                     project_id=entity.project_id,
                     visible=False,
                 )

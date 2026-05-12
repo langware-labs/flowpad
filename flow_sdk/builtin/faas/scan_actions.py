@@ -272,7 +272,7 @@ class ScanActionsMixin:
             workdir = context_data.pop("workdir", None)
             project_id = context_data.pop("project_id", None)
             # VFS path of the attached entity (trigger, markdown, …); stored on the process for the runs drawer / chat panel queries.
-            target_vfs_path = context_data.pop("target_vfs_path", None)
+            target_typeid_str = context_data.pop("target_typeid_str", None)
             # Lift `process_type` out of `context_data` so it lands on the
             # top-level field declared in the AgenticProcess schema. The
             # `useProcessesForTarget` filter on the chat-panel queries
@@ -364,7 +364,7 @@ class ScanActionsMixin:
                 visible=visible,
                 additional_dirs=additional_dirs,
                 project_id=project_id or None,
-                target_vfs_path=target_vfs_path or None,
+                target_typeid_str=target_typeid_str or None,
                 process_type=process_type,
             )
             if resume_session_id and not fork_session:

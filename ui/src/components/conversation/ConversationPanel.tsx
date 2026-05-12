@@ -96,7 +96,7 @@ export function ConversationPanel({
   // the drawer always shows something useful.
   const contextMessageId = selectedMessageId ?? mostRecentMessageId;
 
-  // Runs tab target — Backend stamps `target_vfs_path` on Run as either
+  // Runs tab target — Backend stamps `target_typeid_str` on Run as either
   // task.typeid (task-scoped scenarios A/B/C) or conversation.typeid
   // (hub-direct). When this surface mounts us without a `task` prop but the
   // underlying conversation IS task-bound (e.g. inbox view of a Scenario B

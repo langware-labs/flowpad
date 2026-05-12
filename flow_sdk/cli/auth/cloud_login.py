@@ -32,7 +32,11 @@ def _classify_hub(api_base_url: str | None) -> str:
     host = (urlparse(api_base_url or "").hostname or "").lower()
     if host == "flowpad.ai" or host.endswith(".flowpad.ai"):
         return "cloud"
-    if host in ("localhost", "127.0.0.1", "::1"):
+    if host in ("localhost", "127.0.0.1", "::1", "host.docker.internal"):
+        # ``host.docker.internal`` is Docker's stable alias for the host
+        # loopback (with ``extra_hosts: host.docker.internal:host-gateway``
+        # on Linux). Containerized backends in docker/docker-compose.yml use
+        # this URL to reach the hub running on the dev host.
         return "local"
     return "unsupported"
 

@@ -10,7 +10,7 @@ Per-entity wrappers live next to their entity action handlers
 its entity and calls ``run_scope(scope, prompt_text, …)``.
 
 The pipeline:
-  1. Resolve a reusable AgenticProcess (preferred id, else target_vfs_path
+  1. Resolve a reusable AgenticProcess (preferred id, else target_typeid_str
      match, else spawn fresh invisible process).
   2. Drive ``ClaudeCLIStreamWorker`` headlessly with the prompt; capture
      every FlowData item the worker emits.
@@ -71,7 +71,7 @@ class HeadlessRunScope:
     entity's action handler.
 
     Fields:
-      target_typeid       Pinned to the spawned process as ``target_vfs_path``;
+      target_typeid       Pinned to the spawned process as ``target_typeid_str``;
                           surfaces the run in the entity's Runs drawer.
       conversation_id     Where the resulting draft FlowMessage lands.
       workdir             Claude ``--cwd``.
@@ -80,7 +80,7 @@ class HeadlessRunScope:
       draft_context       ``context_entities`` + per-typeid attachments for the
                           draft FlowMessage.
       preferred_process_id  When set, prefer this id for reuse before falling
-                          back to ``target_vfs_path`` lookup. Tasks set this
+                          back to ``target_typeid_str`` lookup. Tasks set this
                           from ``task.shared_process_id`` (Scenario C pre-fork);
                           conversations leave it None.
       source_flow_message_id  FlowMessage whose PROMPT attachment was approved
@@ -104,7 +104,7 @@ async def _resolve_or_spawn_process(scope: HeadlessRunScope, someone_typeid: str
 
     Reuse priority:
       1. ``scope.preferred_process_id`` when set and live (Scenario C pre-fork).
-      2. Any live process whose ``target_vfs_path`` matches ``scope.target_typeid``
+      2. Any live process whose ``target_typeid_str`` matches ``scope.target_typeid``
          — only consulted when no preferred id was given. This is what gives
          conversation-scoped runs Claude-session continuity across approvals.
 
@@ -120,7 +120,7 @@ async def _resolve_or_spawn_process(scope: HeadlessRunScope, someone_typeid: str
                     logger.debug("[%s] reuse context_entities save failed", scope.log_label, exc_info=True)
             return existing
     else:
-        candidates = await AgenticProcess.get_all({"target_vfs_path": str(scope.target_typeid)}) or []
+        candidates = await AgenticProcess.get_all({"target_typeid_str": str(scope.target_typeid)}) or []
         for proc in candidates:
             if proc.status in _REUSABLE_PROCESS_STATUSES:
                 if proc.add_context_entities(*scope.process_context):
@@ -141,7 +141,7 @@ async def _resolve_or_spawn_process(scope: HeadlessRunScope, someone_typeid: str
         workdir=scope.workdir,
         visible=False,
         project_id=scope.project_id or None,
-        target_vfs_path=str(scope.target_typeid),
+        target_typeid_str=str(scope.target_typeid),
         context_entities=scope.process_context,
     )
     await process.save(someone_typeid)
@@ -250,7 +250,7 @@ async def _create_run(
     AgenticProcess is reused for Claude session continuity.
     """
     run_data: dict = {
-        "target_vfs_path": str(scope.target_typeid),
+        "target_typeid_str": str(scope.target_typeid),
         "process_id": process.id,
         "prompt_text": prompt_text,
         "status": RunStatus.RUNNING.value,

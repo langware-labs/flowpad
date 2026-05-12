@@ -74,7 +74,7 @@ const NEGATIVE: Array<[label: string, mutate: (p: AgenticProcess) => void]> = [
   ['tags',            (p) => { p.tags = ['a', 'b']; }],
   ['labels',          (p) => { p.labels = ['x']; }],
   ['visible',         (p) => { p.visible = true; }],
-  ['target_vfs_path', (p) => { p.target_vfs_path = 'markdown-deadbeef-dead-beef-dead-beefdeadbeef'; }],
+  ['target_typeid_str', (p) => { p.target_typeid_str = 'markdown-deadbeef-dead-beef-dead-beefdeadbeef'; }],
   ['plan_path',       (p) => { p.plan_path = '/tmp/some-plan.md'; }],
 ];
 

@@ -208,7 +208,7 @@ export interface IAgenticProcess extends IEntity {
   /** CollaborationRoom this process was spawned in, if any */
   collaboration_room_id?: string | null;
   /** VFS path the process is keyed to. Either an entity TypeId ("type-id") for entity-scoped processes, or "<typeid>/<sub_path>" for surface-scoped processes (e.g. a per-doc process keyed on the file path). */
-  target_vfs_path?: string | null;
+  target_typeid_str?: string | null;
   /**
    * True when a worker-relevant field changed since the last successful start()
    * while status==RUNNING. Backend sets this automatically via the save-hook;
@@ -647,7 +647,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   collaboration_room_id: string | null = null;
 
   /** VFS path the process is keyed to. Either an entity TypeId ("type-id") for entity-scoped processes, or "<typeid>/<sub_path>" for surface-scoped processes (e.g. a per-doc process keyed on the file path). */
-  target_vfs_path: string | null = null;
+  target_typeid_str: string | null = null;
 
   /**
    * True when a worker-relevant field changed since the last successful start()
@@ -934,7 +934,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this.pty_rename = entity.pty_rename ?? true;
     this.project_id = entity.project_id ?? null;
     this.collaboration_room_id = entity.collaboration_room_id ?? null;
-    this.target_vfs_path = entity.target_vfs_path ?? null;
+    this.target_typeid_str = entity.target_typeid_str ?? null;
     this.exe_folder = entity.exe_folder ? FSRef.fromJson(entity.exe_folder) : null;
     this.input_folder = entity.input_folder ? FSRef.fromJson(entity.input_folder) : null;
     this.output_folder = entity.output_folder ? FSRef.fromJson(entity.output_folder) : null;

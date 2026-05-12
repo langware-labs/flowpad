@@ -8,7 +8,7 @@ export enum RunStatus {
 }
 
 export interface IRun extends IEntity {
-  target_vfs_path?: string;
+  target_typeid_str?: string;
   process_id?: string;
   prompt_text?: string;
   status?: string;
@@ -21,7 +21,7 @@ export interface IRun extends IEntity {
 
 @registerEntity
 export class Run extends APIEntity<Run> implements IRun {
-  target_vfs_path?: string;
+  target_typeid_str?: string;
   process_id?: string;
   prompt_text?: string;
   status?: string;
@@ -33,7 +33,7 @@ export class Run extends APIEntity<Run> implements IRun {
 
   constructor(entity: Partial<IRun> = {}) {
     super(entity);
-    this.target_vfs_path = entity.target_vfs_path;
+    this.target_typeid_str = entity.target_typeid_str;
     this.process_id = entity.process_id;
     this.prompt_text = entity.prompt_text;
     this.status = entity.status;
