@@ -51,9 +51,10 @@ export function applyFilterToParams(params: URLSearchParams, filter: AssetFilter
     if (filter.projectIds.length > 0) {
       params.set('scope', 'user,project');
       params.set('project_ids', filter.projectIds.join(','));
-    } else {
-      params.set('scope', 'user');
     }
+    // ``all`` with no project filter intentionally omits ``scope`` so
+    // unscoped record types (e.g. ``project``) still appear; the previous
+    // ``scope=user`` fallback hid every project from /dock/assets/list/project.
   } else if (filter.scope === 'user') {
     params.set('scope', 'user');
   } else if (filter.scope === 'project') {
