@@ -18,6 +18,10 @@ import { useEntitiesQuery } from '@sdk/react/hooks';
 export interface PrivateContextItems {
   tasks: Task[];
   processes: AgenticProcess[];
+  /** True once the processes query has returned at least once. Callers gate
+   *  "Start session" UI on this to avoid a refresh-time flicker where the
+   *  button briefly renders before the existing-session check resolves. */
+  processesLoaded: boolean;
 }
 
 /**
@@ -43,13 +47,11 @@ export function usePrivateContext(
 
   // ── Tasks ────────────────────────────────────────────────────────────
   const tasksQuery = useMemo(() => {
-    const match: Record<string, unknown> = {};
-    if (projectId) match.project_id = projectId;
     return new QueryRequest({
       type: Task.type,
       scope: [],
       name: `private-context-tasks:${flowMessageId ?? 'none'}:${projectId ?? 'noproj'}`,
-      query: new QueryFilter({ match }),
+      query: projectId ? new QueryFilter({ match: { project_id: projectId } }) : undefined,
     });
   }, [flowMessageId, projectId]);
   const { data: candidateTasks = [] } = useEntitiesQuery<Task>(tasksQuery, {
@@ -64,18 +66,22 @@ export function usePrivateContext(
   }, [candidateTasks, fmKey]);
 
   // ── AgenticProcesses (transcript-derived sessions) ───────────────────
-  // Same scope-by-project + client-side filter approach as Tasks.
+  // Don't filter by `project_id` server-side: the backend resolves
+  // `conv.project_id` from its DB row, which can lag the frontend's local
+  // mapping — a freshly-mapped conversation may not yet have project_id
+  // synced server-side, so the spawned process gets `project_id=null` and
+  // a project-id filter would exclude it. Pull all AgenticProcesses and
+  // filter client-side on `contextEntities` containing the FlowMessage
+  // (same single-criterion approach Tasks use above).
   const processQuery = useMemo(() => {
-    const match: Record<string, unknown> = {};
-    if (projectId) match.project_id = projectId;
     return new QueryRequest({
       type: AgenticProcess.type,
       scope: [],
-      name: `private-context-processes:${flowMessageId ?? 'none'}:${projectId ?? 'noproj'}`,
-      query: new QueryFilter({ match }),
+      name: `private-context-processes:${flowMessageId ?? 'none'}`,
+      query: undefined,
     });
-  }, [flowMessageId, projectId]);
-  const { data: candidateProcesses = [] } = useEntitiesQuery<AgenticProcess>(processQuery, {
+  }, [flowMessageId]);
+  const { data: candidateProcesses = [], isSuccess: processesLoaded } = useEntitiesQuery<AgenticProcess>(processQuery, {
     enabled: !!flowMessageId,
   });
 
@@ -86,5 +92,5 @@ export function usePrivateContext(
     );
   }, [candidateProcesses, fmKey]);
 
-  return { tasks, processes };
+  return { tasks, processes, processesLoaded };
 }

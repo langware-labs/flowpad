@@ -1,4 +1,4 @@
-import { getWorkerMode, isReadyForInput, ProcessStatus, type StatusBearingProcess, WorkerMode } from '@sdk';
+import { getWorkerMode, isReadyForInput, ProcessStatus, type StatusBearingProcess, WorkerMode, WorkerStatus } from '@sdk';
 import { cn } from '@src/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { Terminal } from 'lucide-react';
@@ -70,13 +70,32 @@ export function ProcessStatusLine({
   const styles = sizeStyles[size];
 
   const status = process.status as ProcessStatus | undefined;
-  // Running processes are openable whenever the shared readiness predicate
-  // says they can accept input. Completed headless runs with a session can
-  // also be resumed into a terminal.
+  // Two distinct gates depending on worker mode:
+  // - Interactive PTY (visible=true): clickable when the worker is ready for
+  //   input — clicking just focuses the existing tab.
+  // - Headless (visible=false): clickable ONLY when the worker has explicitly
+  //   reported COMPLETE / INTERRUPTED for a real turn, OR the lifecycle
+  //   reached STOPPED / FAILED with a session to resume. We exclude
+  //   `WorkerStatus.IDLE` deliberately — the Python side uses IDLE as the
+  //   *default* / "never ran" projection (see flow_sdk/.../agentic_process.py
+  //   `worker_status` fallback). Treating IDLE as "ready" would enable the
+  //   icon on a brand-new AP that hasn't started its first turn. The rule
+  //   the user sees:
+  //     New / IDLE / spinning up / mid-turn → disabled
+  //     Turn finished (COMPLETE)             → enabled
+  //     Next turn kicked off                 → disabled (executeInstruction
+  //                                             optimistically flips workerStatus
+  //                                             to WAITING immediately)
+  //     That next turn finishes              → enabled
+  const worker = (process.workerStatus ?? process.worker_status) as WorkerStatus | undefined;
+  const workerTurnDone =
+    worker === WorkerStatus.COMPLETE ||
+    worker === WorkerStatus.INTERRUPTED;
   const canResume =
-    !!process.session_id &&
-    (status === ProcessStatus.STOPPED || status === ProcessStatus.FAILED);
-  const canOpenTerminal = ready || canResume;
+    workerTurnDone ||
+    (!!process.session_id && (status === ProcessStatus.STOPPED || status === ProcessStatus.FAILED));
+  const canOpenTerminal =
+    mode === WorkerMode.Interactive ? ready : canResume;
 
   const iconSpinning =
     label === 'Running' ||

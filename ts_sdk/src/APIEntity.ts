@@ -388,6 +388,19 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     return this.dockPointer;
   }
 
+  /**
+   * Navigate the dock to this entity. Delegates to the active
+   * NavigationActions instance registered as the ``navigation`` global by
+   * ``useDockNavigation`` in the UI. No-op when no navigation is available
+   * (non-UI contexts, before first render).
+   */
+  public openDock(extraOptions?: Record<string, string>): void {
+    const nav = (window as any).navigation as
+      | { openDock: (pointer: DockPointerData, extraOptions?: Record<string, string>) => void }
+      | undefined;
+    nav?.openDock(this.dockPointer, extraOptions);
+  }
+
   public clone(): T {
     // Get the full JSON representation of the current entity
     const jsonData = this.toJSON();

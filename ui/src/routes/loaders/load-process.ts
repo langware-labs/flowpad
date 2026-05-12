@@ -17,6 +17,7 @@ import {
   TypeId,
 } from '@sdk';
 import { estimateCols, estimateRows } from '@src/components/terminal/interactive-terminal/terminalConfig';
+import { pushLoadedProcessTab } from '@src/hooks/useActiveTerminals';
 
 /**
  * Route wrappers pattern-match on `kind` to decide recovery behavior.
@@ -87,6 +88,11 @@ export async function loadProcess(
   if (!shell) {
     throw new ProcessLoadError('no_shell', processId, process.shell_id ?? null);
   }
+
+  // Optimistically insert the row into the shared strip state so TabbedTerminal's
+  // self-heal effect doesn't fire during the gap before the next
+  // ``active-terminals`` refetch reflects the newly-visible process.
+  pushLoadedProcessTab(process, shell);
 
   dataContext.setActiveShellId(shell.id);
   dataContext.setActiveTerminalTargetTypeId(new TypeId(AgenticProcess.type, processId));

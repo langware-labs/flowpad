@@ -7,13 +7,12 @@
 
 import { useState } from 'react';
 import { ArrowLeft, Activity } from 'lucide-react';
-import { Spec, Task, TypeId } from '@sdk';
+import { Conversation, Spec, Task, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { ExpansionRequest } from '@sdk/FlowSync/query';
 import { sendReply } from '@sdk/entities/notifications';
 import { toast } from 'sonner';
 import { ConversationPanel } from '@src/components/conversation/ConversationPanel';
-import { ConversationMode } from '@src/components/conversation/conversation-mode';
 import { useLocalUser } from '@src/components/conversation/useLocalUser';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
 
@@ -21,10 +20,18 @@ const STATUS_REQUEST_PROMPT_TEXT = 'Summarize the task and plan status in 5 line
 
 interface SharedTaskViewProps {
   task: Task;
+  /**
+   * Conversation id parsed from the URL pointer (`/dock/tasks/<taskId>/conversation/<convId>`).
+   * Preferred over `task.firstContextOfType('conversation')` because the URL
+   * is the canonical anchor and the route loader has already warm-loaded the
+   * Conversation entity. The task-derived value is kept as a fallback for the
+   * inline TaskBar mount path, which doesn't have a URL conversation segment.
+   */
+  conversationId?: string | null;
   onClose: () => void;
 }
 
-export function SharedTaskView({ task, onClose }: SharedTaskViewProps) {
+export function SharedTaskView({ task, conversationId, onClose }: SharedTaskViewProps) {
   const blobExpansion = new ExpansionRequest({ expand: ['blobs'] });
 
   const senderName = task.sender_name
@@ -36,7 +43,11 @@ export function SharedTaskView({ task, onClose }: SharedTaskViewProps) {
     specTypeId,
     { query: blobExpansion },
   );
-  const conversationTypeId = task.firstContextOfType?.('conversation') ?? null;
+  const taskDerivedConvTypeId = task.firstContextOfType?.('conversation') ?? null;
+  const resolvedConversationId = conversationId ?? taskDerivedConvTypeId?.id ?? null;
+  const conversationTypeId = resolvedConversationId
+    ? new TypeId(Conversation.type, resolvedConversationId)
+    : null;
 
   const { localUser } = useLocalUser();
   const ensureCloudLogin = useCloudLoginGate();
@@ -56,7 +67,10 @@ export function SharedTaskView({ task, onClose }: SharedTaskViewProps) {
         { task, conversationId: conversationTypeId.id },
         '',
         undefined,
-        { promptText: STATUS_REQUEST_PROMPT_TEXT },
+        {
+          promptText: STATUS_REQUEST_PROMPT_TEXT,
+          contextEntities: specTypeId ? [specTypeId.toString()] : [],
+        },
       );
       toast.success('Status request sent', {
         description: 'The recipient will see a PROMPT to approve.',
@@ -129,7 +143,6 @@ export function SharedTaskView({ task, onClose }: SharedTaskViewProps) {
               task={task}
               conversationId={conversationTypeId.id}
               senderName={senderName}
-              mode={ConversationMode.HEADLESS}
             />
           ) : (
             <p className="px-4 py-4 text-xs italic text-muted-foreground/60">No conversation yet.</p>

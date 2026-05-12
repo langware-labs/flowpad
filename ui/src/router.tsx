@@ -9,6 +9,7 @@ import { WorkflowTracePreviewPage } from '@src/components/workflow-trace/Workflo
 import { BASE_PATH } from '@src/constants/basePath';
 import AgentRedirect from '@src/pages/agent-redirect';
 import FlowPage from '@src/pages/flow-page/flow-page';
+import KeychainApproval from '@src/pages/keychain-approval';
 import LandingPage from '@src/pages/landing-page/landing-page';
 import NotFound from '@src/pages/NotFound';
 import App from '@src/App';
@@ -107,6 +108,10 @@ export const router = createBrowserRouter(
             Mounts WorkflowTraceViewer standalone with a process id from URL. */}
         <Route path="trace/:runId" element={<WorkflowTracePreviewPage />} />
       </Route>
+
+      {/* Deep-link bridge: pops the SecretApprovalDialog when the
+          /auth/login_callback handler detects keychain access isn't approved. */}
+      <Route path="electron/keychain-approval" element={<KeychainApproval />} />
 
       {/* Global catch-all */}
       <Route path="*" element={<NotFound />} />

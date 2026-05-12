@@ -13,6 +13,7 @@ WS event and persists the hub credential payload + user mirror.
 from __future__ import annotations
 
 import asyncio
+import logging
 import webbrowser
 from typing import Any
 from urllib.parse import urlparse
@@ -22,11 +23,14 @@ import httpx
 from flow_sdk.api.messages import OAuthMessage, OAuthMessageStatus
 from flow_sdk.api.oauth_api import OAuthProvider
 from flow_sdk.cli.app_config import set_user
-from flow_sdk.cli.auth.credentials import UserHubCredentials, save_credentials
+from flow_sdk.cli.auth.credentials import UserHubCredentials, load_credentials, save_credentials
 from flow_sdk.cli.auth.cloud_urls import get_login_url
+from flow_sdk.cli.auth.credentials import SERVICE_NAME, _api_key_name
 from flow_sdk.cloud_client import ApiConfig, FlowpadClient
 from flow_sdk.cloud_client.api.auth import LoginData
 from flow_sdk.instance_settings import get_instance_settings
+
+logger = logging.getLogger(__name__)
 
 
 def _classify_hub(api_base_url: str | None) -> str:
@@ -146,7 +150,19 @@ async def _finalize_login(login_data: LoginData) -> None:
     ))
 
     save_credentials(UserHubCredentials.from_login_data(login_data))
+    # Read-back verification: if this logs FAILED on a system where the OS
+    # prompt was silently bypassed, the keyring backend is broken (rare).
+    stored = load_credentials()
+    stored_ok = stored is not None and stored.api_key == login_data.token
+    logger.info(
+        "credentials write %s — keychain entry: service=%r account=%r",
+        "OK" if stored_ok else "FAILED (read-back mismatch)",
+        SERVICE_NAME,
+        _api_key_name(),
+    )
     # Sentinel flag so is_cloud_login_available() reads the key on next boot.
+    # enable_secrets() swallows its own keyring errors and returns a bool,
+    # so we don't need a try/except here.
     from flow_sdk.cli.auth.secrets import enable_secrets
     enable_secrets()
     set_user(user_info)

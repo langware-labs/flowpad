@@ -74,6 +74,9 @@ class ClaudeDriver:
         cmd = ClaudeCliOptions.from_json(process.cli_config)
         cmd.session_id = process.session_id
         cmd.workdir = process.workdir
+        if cmd.session_id and self.transcript_path(process) is not None:
+            cmd.resume = True
+            cmd.fork_session_id = None
         if cmd.workdir:
             cmd.env_vars.setdefault("CLAUDE_PROJECT_DIR", cmd.workdir)
         if default_service_config.load_flowpad_assistant:
@@ -136,7 +139,13 @@ class ClaudeDriver:
         # session-id (cli_options sets ``cmd.fork_session_id``). When present,
         # we resume from the source and tell the worker to fork; the new
         # session id is ``process.session_id``.
+        # Once the fork has already materialised on disk, the new session
+        # is no longer "new" — re-issuing ``--fork-session --session-id <existing>``
+        # errors with "Session ID is already in use". Drop the fork source
+        # so this turn plain-resumes the materialised session instead.
         fork_source = cli_cfg.get("fork_session_id")
+        if fork_source and self.transcript_path(process) is not None:
+            fork_source = None
         # Default the headless parent to sonnet — opus's parent-side latency
         # blows past the 28-s long-test budget on multi-step flows. Callers
         # can override via cli_config["model"] / ["effort"].
@@ -217,6 +226,22 @@ class ClaudeDriver:
                 logger.exception("ClaudeDriver.run_print_turn: worker error")
             finally:
                 _PROMPT_WORKERS.pop(process_id, None)
+                # If the fork materialised on disk (the new session's JSONL
+                # was written), drop ``fork_session_id`` from cli_config so
+                # subsequent launches plain ``--resume`` the new session
+                # instead of trying to re-fork from the parent — which
+                # errors with "Session ID is already in use" against the
+                # now-existing new session. Guarded by transcript existence
+                # so an early-failed fork keeps the parent reference for
+                # retry.
+                if self.transcript_path(process_ref) is not None:
+                    cli_cfg_next = dict(process_ref.cli_config or {})
+                    if cli_cfg_next.pop("fork_session_id", None) is not None:
+                        process_ref.cli_config = cli_cfg_next
+                        try:
+                            await process_ref.save()
+                        except Exception:
+                            logger.debug("ClaudeDriver.run_print_turn: fork-strip save failed", exc_info=True)
                 # ``worker_status`` is a computed projection re-derived from
                 # the JSONL tail by ``to_dict`` / ``api_json_serializer``, so
                 # ``save()`` short-circuits when no real entity field changed.
