@@ -214,11 +214,16 @@ export function AssetsPage() {
   // Use the canonical synthetic project_id (uuid5 of mount_path) so the
   // selection round-trips with what the indexer stamps on records and what
   // the picker emits — independent of how dataContext bootstraps the Project.
-  const currentProjectId = projectIdForPath(dataContext.project?.fs_storage_mount_path);
+  // Default to the unrestricted asset filter. Seeding ``projectIds`` to
+  // ``[currentProjectId]`` would silently exclude system-project vaults
+  // (e.g. the Flowpad Assistant docs at ``/dock/assets/list/markdown``),
+  // since ``keepVault`` then only retains vaults whose ``project_id`` is
+  // in the picker selection. The picker remains user-driven for narrowing.
   const [assetFilter, setAssetFilter] = useState<AssetFilter>(() => ({
     ...DEFAULT_ASSET_FILTER,
-    projectIds: currentProjectId ? [currentProjectId] : [],
   }));
+  // Still derived (passed to ScopeFilterBar to highlight "current project").
+  const currentProjectId = projectIdForPath(dataContext.project?.fs_storage_mount_path);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFilters, setSearchFilters] = useState<SearchFilters>({});
   const [selectedResultIndex, setSelectedResultIndex] = useState(-1);
