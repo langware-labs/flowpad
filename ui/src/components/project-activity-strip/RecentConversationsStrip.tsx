@@ -11,6 +11,8 @@ import {
 } from '@sdk';
 import { uploadFlowMessage, type UploadConflict } from '@sdk/entities/flow-message';
 import { useEntitiesQuery, useEntity } from '@src/hooks/entity-hooks';
+import { useLoginRequired } from '@src/hooks/use-login-required';
+import LoginDialog, { ActionType } from '@src/components/login-required-dialog';
 import { NewConversationDialog } from '@src/components/new-conversation-dialog/NewConversationDialog';
 import { deriveConversationTitle } from '@src/components/conversation/conversation-title';
 import { participantLabelByUserId } from '@src/components/conversation/participant-display';
@@ -30,6 +32,7 @@ interface RecentConversationsStripProps {
 
 export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: RecentConversationsStripProps) {
   const { navigation } = useDockNavigation();
+  const { checkLoginAndProceed, showLoginDialog, closeLoginDialog } = useLoginRequired();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadConflicts, setUploadConflicts] = useState<UploadConflict[] | null>(null);
@@ -84,6 +87,11 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
   const hasMore = visibleCountActual > visibleCount;
 
   const handleRefresh = async () => {
+    // Refresh pulls from the hub, which requires a cloud session. Gate on
+    // login first — silently swallowing 401s here led to a confusing UX
+    // where the button appeared dead. Same pattern as "Start conversation"
+    // on the home landing.
+    if (!checkLoginAndProceed(ActionType.REFRESH, undefined, undefined, { forceLogin: true })) return;
     setHubSyncing(true);
     try {
       try {
@@ -296,6 +304,7 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
           void refetch();
         }}
       />
+      <LoginDialog open={showLoginDialog} onOpenChange={closeLoginDialog} />
     </div>
   );
 }

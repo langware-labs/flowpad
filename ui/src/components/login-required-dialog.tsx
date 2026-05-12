@@ -22,6 +22,7 @@ export enum ActionType {
   TOOLS = 'tools',
   CODEBASE = 'codebase',
   FILES = 'files',
+  REFRESH = 'refresh',
 }
 
 export interface PendingLoginAction {
