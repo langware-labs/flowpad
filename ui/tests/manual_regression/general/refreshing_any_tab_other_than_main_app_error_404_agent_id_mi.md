@@ -6,7 +6,7 @@ test 1: Navigating to execute flow tab does not produce 404 (agent ID missing) e
 - validate no such errors appeared
 
 test 2: Navigating to skills tab does not produce 404 error
-- navigate to {APP_URL}/dock/skills
+- navigate to {APP_URL}/dock/assets/list/skill
 - wait 3 seconds for the skills view to load
 - validate the skills view is visible
 - check console for 404 errors
