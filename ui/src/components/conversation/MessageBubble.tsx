@@ -8,7 +8,7 @@ import { MessageChips } from './chips/MessageChips';
 import { PromptApprovalRow } from './PromptApprovalRow';
 import { useLocalUser } from './useLocalUser';
 import { PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT } from './constants';
-import { formatTimeAgo } from '@/utils/format-time-ago';
+import { formatTimeAgo } from '@src/utils/format-time-ago';
 
 interface MessageBubbleProps {
   message: ConversationMessage;

@@ -12,7 +12,7 @@ import type { ITask } from '@sdk/entities/task';
 import type { FlowData } from '@sdk/flow_processing';
 import { FlowElementTypes } from '@sdk/flow_processing/flow-element-types';
 import { toast } from 'sonner';
-import { useProcessesForTarget } from '@src/components/entity-chat-panel';
+import { useProcessesForTarget } from '@src/components/entity-execution-panel';
 import { approveAndReload, buildMergedPrompt } from './prompt-building';
 
 interface UseApproveAndExecuteOptions {
