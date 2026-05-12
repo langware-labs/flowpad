@@ -147,6 +147,8 @@ def run_cell(
     workdir: Path,
     prompt: str,
     timeout_seconds: float = 25.0,
+    extra_mounts: list[tuple[Path, str]] | None = None,
+    workdir_ro: bool = False,
 ) -> subprocess.CompletedProcess:
     """Invoke one matrix cell. Returns the CompletedProcess for assertion.
 
@@ -154,25 +156,37 @@ def run_cell(
     + ANTHROPIC_API_KEY via env. The runner writes its sentinel into /work,
     visible on the host via the bind mount.
     """
+    # Drop root inside the container — claude refuses
+    # ``--dangerously-skip-permissions`` (the bypassPermissions mapping) when
+    # running as root. Match host UID/GID so writes to the bind-mounted /work
+    # land with the right ownership. HOME=/work gives claude a writable home
+    # for its per-project session JSONL.
+    uid = os.getuid()
+    gid = os.getgid()
+    cmd = [
+        docker_bin,
+        "run",
+        "--rm",
+        "--user",
+        f"{uid}:{gid}",
+        "-e",
+        "HOME=/work",
+        "-e",
+        f"ANTHROPIC_API_KEY={api_key}",
+        "-e",
+        f"SCENARIO={scenario}",
+        "-v",
+        f"{workdir}:/work" + (":ro" if workdir_ro else ""),
+        "-v",
+        f"{RUNNER_SCRIPT}:/opt/runner_entrypoint.py:ro",
+        "-v",
+        f"{VICTIMIZE_SCRIPT}:/opt/victimize.sh:ro",
+    ]
+    for src, dst in (extra_mounts or []):
+        cmd.extend(["-v", f"{src}:{dst}:ro"])
+    cmd.extend([image, "/work", prompt])
     return subprocess.run(
-        [
-            docker_bin,
-            "run",
-            "--rm",
-            "-e",
-            f"ANTHROPIC_API_KEY={api_key}",
-            "-e",
-            f"SCENARIO={scenario}",
-            "-v",
-            f"{workdir}:/work",
-            "-v",
-            f"{RUNNER_SCRIPT}:/opt/runner_entrypoint.py:ro",
-            "-v",
-            f"{VICTIMIZE_SCRIPT}:/opt/victimize.sh:ro",
-            image,
-            "/work",
-            prompt,
-        ],
+        cmd,
         capture_output=True,
         text=True,
         timeout=timeout_seconds,

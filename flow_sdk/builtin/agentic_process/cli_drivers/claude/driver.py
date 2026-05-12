@@ -180,7 +180,13 @@ class ClaudeDriver:
             try:
                 await process.save()
             except Exception:
-                logger.debug("ClaudeDriver.run_print_turn: lifecycle save failed", exc_info=True)
+                # WARNING so headless / migration callers can observe that
+                # lifecycle state isn't being persisted. See the matching
+                # change at agentic_process.py:_run_turn.
+                logger.warning(
+                    "ClaudeDriver.run_print_turn: lifecycle save failed",
+                    exc_info=True,
+                )
 
         worker = ClaudeCLIStreamWorker()
         from flow_sdk.builtin.agentic_process.agentic_process import _PROMPT_WORKERS
@@ -199,7 +205,10 @@ class ClaudeDriver:
                             process_ref.session_id = sid
                             await process_ref.save()
                         except Exception:
-                            logger.debug("ClaudeDriver.run_print_turn: session_id save failed", exc_info=True)
+                            logger.warning(
+                                "ClaudeDriver.run_print_turn: session_id save failed",
+                                exc_info=True,
+                            )
                     try:
                         await process_ref.emit_flow_data(fd.model_dump())
                     except Exception:

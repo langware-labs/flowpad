@@ -224,6 +224,23 @@ class HubWsBridge:
         if op == "create":
             payload = dict(data)
             payload.setdefault("id", fm_id)
+            # Hub fires TWO create frames per add_message: the entity-save
+            # auto-notify (no from_entity, broadcast to the sender and any
+            # owners) and the explicit Conversation._fanout_message (with
+            # from_entity, sent only to participants other than the sender).
+            # The auto-notify version is useless to us — we already know
+            # about our own sends — and lacks the conversation parent, so it
+            # would hit the policy-denied parents_path fallback. Skip it by
+            # matching ``sender_id`` against the *cloud* user id (the local
+            # ``User`` row uses a different per-machine id).
+            try:
+                from flow_sdk.cli.app_config import get_user as _get_cloud_user
+                cloud_user = _get_cloud_user() or {}
+                cloud_user_id = cloud_user.get("id")
+                if cloud_user_id and payload.get("sender_id") == cloud_user_id:
+                    return
+            except Exception:
+                pass
             conversation_id = payload.get("conversation_id") or parent_conv_id
             if not conversation_id:
                 # The hub may carry the conversation id under context_entities;
