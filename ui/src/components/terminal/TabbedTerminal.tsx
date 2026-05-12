@@ -287,7 +287,12 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
     if (visibleSessions.length === 0) return;
     if (hasActiveTab) return;
     const firstSession = visibleSessions[0];
-    const pointer = firstSession.agenticProcess?.dockPointer ?? firstSession.shell?.dockPointer;
+    // Self-heal lands on the live terminal, not the transcript. AgenticProcess's
+    // default ``dockPointer`` is read-only (lens/transcript); the terminal pane
+    // wants ``terminalDockPointer`` so the shell-id vs agentic_process-id route
+    // resolves correctly and the actual PTY surfaces.
+    const pointer =
+      firstSession.agenticProcess?.terminalDockPointer ?? firstSession.shell?.dockPointer;
     if (pointer) navigation.openDockPointer(pointer);
   }, [hasActiveTab, visibleSessions, navigation]);
 
@@ -317,11 +322,21 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
         targetShellId: result.shellId,
         targetProcessId: result.processId,
       });
+      // The just-created entities may not yet be in the dataManager cache
+      // (the createProcess() round-trip resolves before the cache populates
+      // them under the typeId). Fetch them so the new tab carries the
+      // ``AgenticProcess`` instance — without it the navigation useEffect
+      // falls back to ``shell.dockPointer`` and the URL lands on
+      // ``/dock/shell/shell-<uuid>`` instead of the agentic_process route.
       const agenticProcess =
-        AgenticProcess.getByIdFromCache<AgenticProcess>(result.processId) ?? undefined;
+        AgenticProcess.getByIdFromCache<AgenticProcess>(result.processId) ??
+        (await AgenticProcess.getById(result.processId)) ??
+        undefined;
       const shell =
         result.shellId
-          ? Shell.getByIdFromCache<Shell>(result.shellId) ?? undefined
+          ? Shell.getByIdFromCache<Shell>(result.shellId) ??
+            (await Shell.getById(result.shellId)) ??
+            undefined
           : undefined;
       // Atomic create: backend spawned the Shell + PTY before responding,
       // so result.shellId is always populated. Push directly into terminalState.
