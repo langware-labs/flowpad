@@ -148,6 +148,15 @@ let isQuitting = false;
 // Deep link that arrived before the window was ready to navigate.
 let pendingDeepLink = null;
 
+function isStartupOnlyDeepLink(url) {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'flowpad:' && ['__probe', '__launch'].includes(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Convert a flowpad:// URL to the equivalent http://localhost:9007 URL and
  * navigate the main window to it.
@@ -161,12 +170,7 @@ function handleDeepLink(url) {
   // These are only used by the browser to detect whether FlowPad
   // is installed and must never replace a real task/message deep link.
 
-  if (
-    url === 'flowpad://__probe' ||
-    url.startsWith('flowpad://__probe?') ||
-    url === 'flowpad://__launch' ||
-    url.startsWith('flowpad://__launch?')
-  ) {
+  if (isStartupOnlyDeepLink(url)) {
     log.info('[deep-link] ignoring startup-only url');
     return;
   }
