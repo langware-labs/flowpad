@@ -24,7 +24,12 @@ export function useResumeInTerminal() {
             toast({ title: 'Session not found', description: `Session ${workerId} is not in Claude or Codex history.`, variant: 'destructive' });
             return;
           }
-          navigation.openDockPointer(p.dockPointer, timestamp ? { t: timestamp } : undefined);
+          // The bookmark/open-session UX wants the live PTY (the timestamp
+          // jumps to a moment in the running terminal), not the read-only
+          // transcript that ``dockPointer`` resolves to. Use the explicit
+          // terminal pointer so the URL contains the process id and the
+          // ``?t=`` query param the test asserts.
+          navigation.openDockPointer(p.terminalDockPointer, timestamp ? { t: timestamp } : undefined);
         } catch (error) {
           console.error('[useResumeInTerminal] Failed to resume process:', error);
         } finally {
