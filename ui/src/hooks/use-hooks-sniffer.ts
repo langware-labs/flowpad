@@ -42,7 +42,7 @@ export type SnifferEvent = {
 
 const MAX_EVENTS_STORAGE_KEY = 'flowpad-sniffer-max-events';
 const DEFAULT_MAX_EVENTS = 100;
-const SNIFFER_ENABLED_STORAGE_KEY = 'flowpad-sniffer-enabled';
+const SNIFFER_ENABLED_STORAGE_KEY = 'flowpad.snifferEnabled';
 
 function loadMaxEvents(): number {
   try {
