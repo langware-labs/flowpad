@@ -702,6 +702,22 @@ class ScanActionsMixin:
 
         session_rec, worker_type = _resolve_session_record(worker_id, hint=hint)
         if session_rec is None:
+            # Disk lookup miss — fall back to an existing AgenticProcess that
+            # already carries this session_id. This covers the bookmark flow:
+            # the worker assigns a session UUID at startup (we stamp it on the
+            # process entity), but the on-disk JSONL only appears after the
+            # first turn. Resuming via a bookmark created before the first
+            # turn would otherwise 404. Heal directly from the entity DB so
+            # the navigation works.
+            from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
+            from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter  # noqa: PLC0415
+
+            existing = await AgenticProcess.get_all(
+                entities_filter=QueryFilter(match=ExpressionNode(session_id=worker_id))
+            )
+            if existing:
+                return ApiSuccessResponse(data=existing[0].model_dump())
+
             return ApiFailResponse(
                 message=f"Session {worker_id} not found in Claude or Codex history",
                 status_code=404,
