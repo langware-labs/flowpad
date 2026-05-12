@@ -27,6 +27,11 @@ services:
       FLOWPAD_CLOUD_USER_EMAIL: "alice@local.test"
       FLOWPAD_CLOUD_USER_PASSWORD: "alice-pw-1234"
       FLOWPAD_DEV: "true"
+      # Anthropic API key for the claude CLI spawned inside the container.
+      # Read from the host's environment; the container fails-soft if unset
+      # (claude prints an auth error and exits, which is what the tests then
+      # assert against, never a hard "command not found").
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
     ports:
       - "9008:9008"
     volumes:
@@ -54,6 +59,7 @@ services:
       # FLOWPAD_DEV intentionally unset → instance_name=prod.
       # Critical: this is set per service in this compose file, never via
       # shell-inheritance, so bob can't accidentally pick up alice's FLOWPAD_DEV.
+      ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
     ports:
       - "9007:9007"
     volumes:
