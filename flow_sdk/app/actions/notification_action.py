@@ -25,7 +25,7 @@ import re
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from flow_sdk._compat import UTC
 from flow_sdk.actions.action_registry import action
@@ -1178,6 +1178,56 @@ async def _attach_uploaded_files(reply_fm: "FlowMessage", uploaded_files: list) 
         reply_fm.attachment = new_attachments
 
 
+def _parse_asset_references(raw: Any) -> list:
+    """Normalize ``asset_references`` body field into a list of typeid strings.
+
+    Multipart bodies arrive as a JSON-encoded string (``sendReply`` does
+    ``form.append('asset_references', JSON.stringify([...]))``); JSON bodies
+    arrive as an already-decoded list. A scalar string is wrapped in a list.
+    """
+    import json
+
+    if raw is None:
+        return []
+    if isinstance(raw, list):
+        return [str(x) for x in raw if isinstance(x, (str, bytes))]
+    if isinstance(raw, (bytes, bytearray)):
+        raw = raw.decode("utf-8", errors="replace")
+    if isinstance(raw, str):
+        s = raw.strip()
+        if not s:
+            return []
+        try:
+            parsed = json.loads(s)
+        except json.JSONDecodeError:
+            return [s]
+        if isinstance(parsed, list):
+            return [str(x) for x in parsed if isinstance(x, (str, bytes))]
+        if isinstance(parsed, str):
+            return [parsed]
+        return []
+    return []
+
+
+async def _attach_asset_references(reply_fm: "FlowMessage", asset_typeids: list) -> None:
+    """Append TYPE_ID attachments for each asset typeid string on the FlowMessage.
+
+    Mirrors ``_attach_uploaded_files`` for assets — the typeid is stored verbatim
+    in ``Attachment.data`` so downstream readers can resolve it via TypeId(...).
+    """
+    from flow_sdk.builtin.flow_message import Attachment, AttachmentType
+
+    new_attachments: list = list(reply_fm.attachment or [])
+    added_any = False
+    for tid in asset_typeids:
+        if not isinstance(tid, str) or not tid.strip():
+            continue
+        new_attachments.append(Attachment(attachment_type=AttachmentType.TYPE_ID, data=tid.strip()))
+        added_any = True
+    if added_any:
+        reply_fm.attachment = new_attachments
+
+
 async def _append_message_to_conversation(
     *,
     conv: Conversation,
@@ -1434,11 +1484,18 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
     uploaded_files_preview = body.get("files") or []
     if not isinstance(uploaded_files_preview, list):
         uploaded_files_preview = [uploaded_files_preview]
+    asset_references = _parse_asset_references(body.get("asset_references"))
 
     if not task_id and not conversation_id:
         return ApiFailResponse(message="task_id or conversation_id is required")
-    if not message and not prompt_text_preview and not prompt_files_preview and not uploaded_files_preview:
-        return ApiFailResponse(message="message, prompt, or files required")
+    if (
+        not message
+        and not prompt_text_preview
+        and not prompt_files_preview
+        and not uploaded_files_preview
+        and not asset_references
+    ):
+        return ApiFailResponse(message="message, prompt, files, or asset_references required")
     if not message:
         # Synthesize a placeholder so the rest of the pipeline (which assumes a
         # non-empty text body) keeps working for prompt-only / files-only sends.
@@ -1487,6 +1544,7 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
         and not uploaded_files
         and not prompt_text
         and not prompt_files
+        and not asset_references
     ):
         hub_response = await _try_send_reply_via_hub(
             conv_id=conv.id,
@@ -1512,6 +1570,9 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
 
     if uploaded_files:
         await _attach_uploaded_files(reply_fm, uploaded_files)
+
+    if asset_references:
+        await _attach_asset_references(reply_fm, asset_references)
 
     if prompt_text or prompt_files:
         await _attach_prompt(reply_fm, sender_id, prompt_text, prompt_files)
