@@ -2,7 +2,7 @@
 title: "Hello from Flowpad"
 ---
 
-# [CLAUDE.md](/dock/assets/wiki/CLAUDE.md)Hello from Flowpad
+# Hello from Flowpad
 
 Welcome to the Flowpad Assistant workspace. This is where you'll find
 docs, skills, and agents that ship with the SDK.
