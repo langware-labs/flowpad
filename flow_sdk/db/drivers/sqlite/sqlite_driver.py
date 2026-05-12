@@ -678,6 +678,34 @@ class SQLiteDBDriver(DBDriver):
                 result = await session.execute(text("SELECT COUNT(*) FROM entities"))
             return result.scalar() or 0
 
+    async def count_orphans_by_type(self, type_name: str | None = None) -> int:
+        """Count orphan entities, optionally filtered by type.
+
+        Orphan = a row whose Layer 1 source file no longer exists. The flag
+        lives inside the JSON `data` blob (written by the indexer's
+        `_mark_orphans_in_db`), so we read it via `json_extract`. Same
+        pattern as `_load_entity_state_map` for scope/project_id.
+        """
+        if not self.session_factory:
+            return 0
+        async with self._session_ctx() as session:
+            if type_name:
+                result = await session.execute(
+                    text(
+                        "SELECT COUNT(*) FROM entities "
+                        "WHERE type = :type AND json_extract(data, '$.orphan') = 1"
+                    ),
+                    {"type": type_name},
+                )
+            else:
+                result = await session.execute(
+                    text(
+                        "SELECT COUNT(*) FROM entities "
+                        "WHERE json_extract(data, '$.orphan') = 1"
+                    )
+                )
+            return result.scalar() or 0
+
     async def delete_entities_by_type(self, type_name: str | None = None) -> int:
         """Delete entities (and their FTS rows) by type. None = all entities."""
         if not self.session_factory:

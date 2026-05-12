@@ -3,17 +3,21 @@ import apiClient from '@sdk/client';
 
 const STATUS_PATH = '/graph/compute_node/@local/fs-records/index-status';
 
+export interface IndexStatusPerType {
+  type_name: string;
+  last_indexed_at: string | null;
+  entity_count: number;
+  stale: boolean;
+  orphan_count: number;
+}
+
 export interface IndexStatus {
   never_indexed: boolean;
   last_indexed_at: string | null;
   stale: boolean;
   default_types: string[];
-  per_type?: Array<{
-    type_name: string;
-    last_indexed_at: string | null;
-    entity_count: number;
-    stale: boolean;
-  }>;
+  per_type?: IndexStatusPerType[];
+  total_orphans: number;
 }
 
 export type IndexStatusState =
@@ -30,6 +34,8 @@ const EMPTY_STATUS: IndexStatus = {
   last_indexed_at: null,
   stale: false,
   default_types: [],
+  per_type: [],
+  total_orphans: 0,
 };
 
 export function useIndexStatus(): UseIndexStatusResult {
@@ -44,13 +50,21 @@ export function useIndexStatus(): UseIndexStatusResult {
         // `status` field to consumers, since downstream code reads
         // `status.per_type` etc. directly.
         const incoming = (data && typeof data === 'object') ? (data as Partial<IndexStatus>) : null;
+        const per_type: IndexStatusPerType[] = (incoming?.per_type ?? []).map((pt) => ({
+          type_name: pt.type_name,
+          last_indexed_at: pt.last_indexed_at ?? null,
+          entity_count: pt.entity_count ?? 0,
+          stale: pt.stale ?? false,
+          orphan_count: pt.orphan_count ?? 0,
+        }));
         const status: IndexStatus = incoming
           ? {
               never_indexed: incoming.never_indexed ?? EMPTY_STATUS.never_indexed,
               last_indexed_at: incoming.last_indexed_at ?? null,
               stale: incoming.stale ?? false,
               default_types: incoming.default_types ?? [],
-              per_type: incoming.per_type ?? [],
+              per_type,
+              total_orphans: incoming.total_orphans ?? per_type.reduce((s, p) => s + p.orphan_count, 0),
             }
           : EMPTY_STATUS;
         setState({ phase: 'ready', status });
