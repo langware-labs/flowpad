@@ -24,9 +24,18 @@ test.describe('Wiki folder tree (asset browseable tree)', () => {
     await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
     await dismissWelcomeModalIfShown(page);
 
-    const chevron = page.locator('[data-testid^="browseable-chevron-asset-type:markdown"]');
+    const chevron = page.locator('[data-testid^="browseable-chevron-asset-type:markdown"]').first();
     await expect(chevron).toBeVisible({ timeout: 10_000 });
-    await chevron.click();
+
+    // The markdown root is auto-expanded by ``expandParentsForPointer`` when
+    // the active dock URL is /dock/assets/list/markdown (the root owns that
+    // pointer). Clicking the chevron would COLLAPSE it. Only click when the
+    // row reports aria-expanded="false".
+    const expandedAttr = await chevron.evaluateHandle((el: any) => el.closest('[role="treeitem"]')?.getAttribute('aria-expanded'));
+    const expandedVal = await expandedAttr.jsonValue();
+    if (expandedVal !== 'true') {
+      await chevron.click();
+    }
 
     // Probe the backend for markdown vaults to decide what to assert.
     const apiUrl = process.env.API_URL || 'http://localhost:9008';
@@ -63,7 +72,17 @@ test.describe('Wiki folder tree (asset browseable tree)', () => {
     await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
     await dismissWelcomeModalIfShown(page);
 
-    await page.locator('[data-testid^="browseable-chevron-asset-type:markdown"]').click();
+    // The markdown root is auto-expanded by ``expandParentsForPointer`` for
+    // /dock/assets/list/markdown. Only click the chevron if it's currently
+    // collapsed; otherwise the click would collapse the already-open tree
+    // and hide the vault rows the rest of the test needs.
+    const chevron = page.locator('[data-testid^="browseable-chevron-asset-type:markdown"]').first();
+    await expect(chevron).toBeVisible({ timeout: 10_000 });
+    const expandedAttr = await chevron.evaluateHandle((el: any) => el.closest('[role="treeitem"]')?.getAttribute('aria-expanded'));
+    const expandedVal = await expandedAttr.jsonValue();
+    if (expandedVal !== 'true') {
+      await chevron.click();
+    }
 
     const apiUrl = process.env.API_URL || 'http://localhost:9008';
     const typesRes = await request.get(`${apiUrl}/api/v1/assets/types`).catch(() => null);
