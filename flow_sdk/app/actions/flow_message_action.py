@@ -930,6 +930,31 @@ async def handle_conversation_sync(someone_typeid: str) -> ApiResponse:
     })
 
 
+async def handle_invitation_sync(someone_typeid: str) -> ApiResponse:
+    """Pull pending invitations only — no inbox-fetch.
+
+    Realtime callers (vitest ping-pong, mobile poll-then-accept) need to
+    discover a fresh invitation quickly. ``conversation-sync`` also runs the
+    cursor-based inbox-fetch, which retries 404'd bundle downloads from
+    prior FlowMessages and adds seconds of latency. This variant skips
+    that, returning the moment invitations are mirrored.
+    """
+    if not hub_base_url():
+        return ApiFailResponse(message="Hub not configured")
+
+    inv_count = 0
+    invitations = await hub_get(BuiltinEntityType.INVITATION, action="pending") or []
+    if not isinstance(invitations, list):
+        invitations = []
+    for inv in invitations:
+        try:
+            if await _materialize_remote_invitation(inv, someone_typeid):
+                inv_count += 1
+        except Exception as e:
+            logger.warning("[invitation-sync] upsert failed: %s", e)
+    return ApiSuccessResponse(data={"invitations": inv_count})
+
+
 @action.post(action_name="conversation-sync", types=None)
 async def conversation_sync() -> ApiResponse:
     try:
@@ -939,6 +964,18 @@ async def conversation_sync() -> ApiResponse:
         return await handle_conversation_sync(request_info.someone_typeid)
     except Exception as e:
         logger.error("[flow_message_action] conversation-sync error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Failed: {e}")
+
+
+@action.post(action_name="invitation-sync", types=None)
+async def invitation_sync() -> ApiResponse:
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.someone_typeid:
+            return ApiFailResponse(message="Authentication required")
+        return await handle_invitation_sync(request_info.someone_typeid)
+    except Exception as e:
+        logger.error("[flow_message_action] invitation-sync error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Failed: {e}")
 
 

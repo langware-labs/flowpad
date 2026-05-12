@@ -1085,12 +1085,16 @@ class AgenticProcess(Entity):
         Args:
             instruction: The prompt text to send.
         """
+        if not self.visible:
+            # Headless flow — no PTY/Shell. Driver decides how to spawn
+            # its CLI, capture session_id, and manage lifecycle. Inline
+            # cli_config + workdir is sufficient; the AP does NOT need
+            # to be in DB. This unblocks bootstrap-time uses (e.g.
+            # ``flow start`` spawning a migration agent before the
+            # substrate is fully initialised).
+            return await self.driver.run_print_turn(self, instruction)
         if not self.exist_in_db:
             return ApiFailResponse(message=f"AgenticProcess {self.id} not found in database")
-        if not self.visible:
-            # Headless flow — no PTY/Shell. Driver decides how to spawn its
-            # CLI, capture session_id, and manage lifecycle.
-            return await self.driver.run_print_turn(self, instruction)
         if await self.is_running():
             await self.send(instruction)
             return ApiSuccessResponse(data={"status": "sent"})
@@ -1381,7 +1385,13 @@ class AgenticProcess(Entity):
                         try:
                             await self.save()
                         except Exception:
-                            logger.debug("prompt: lifecycle save failed", exc_info=True)
+                            # WARNING (not DEBUG) so headless / migration use
+                            # cases can observe persistence failure. The catch
+                            # is intentional: TestClient shutdown can pop the
+                            # DB driver mid-turn (see project_testclient_close
+                            # _db_split_brain memo) and we don't want to crash
+                            # the turn over a transient race.
+                            logger.warning("prompt: lifecycle save failed", exc_info=True)
 
                     async for fd in worker.execute(prompt=composed_prompt, context=context):
                         await handler.on_flow_data(fd)
@@ -1391,7 +1401,7 @@ class AgenticProcess(Entity):
                             try:
                                 await self.save()
                             except Exception:
-                                logger.debug("prompt: session_id save failed", exc_info=True)
+                                logger.warning("prompt: session_id save failed", exc_info=True)
             except Exception as e:
                 logger.exception("prompt: worker error")
                 await handler.add_str_to_queue(Exception(f"prompt error: {e}"))
@@ -1538,7 +1548,8 @@ class AgenticProcess(Entity):
                 self.last_started_hash = self._restart_snapshot()
             await self.save()
         except Exception:
-            logger.debug(
+            # WARNING so resume-from-transcript regressions surface.
+            logger.warning(
                 "AgenticProcess %s transcript: session_id save failed",
                 self.id,
                 exc_info=True,
@@ -1634,7 +1645,7 @@ class AgenticProcess(Entity):
                 try:
                     await self.save()
                 except Exception:
-                    logger.debug(
+                    logger.warning(
                         "AgenticProcess %s transcript/plan: clear stale plan_path failed", self.id, exc_info=True
                     )
             return ApiSuccessResponse(data={"markdown": None, "plan_path": None})
@@ -1644,7 +1655,7 @@ class AgenticProcess(Entity):
             try:
                 await self.save()
             except Exception:
-                logger.debug(
+                logger.warning(
                     "AgenticProcess %s transcript/plan: save plan_path failed", self.id, exc_info=True
                 )
 

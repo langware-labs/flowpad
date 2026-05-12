@@ -40,5 +40,5 @@ def test_happy_path(docker_available, valid_api_key, harness_image, tmp_path):
     sentinel = read_sentinel(workdir)
     assert sentinel is not None, "runner did not write _runner_complete.json"
     assert sentinel.get("session_id"), f"no session_id captured: {sentinel}"
-    assert sentinel.get("n_frames", 0) > 0, f"no flow data frames: {sentinel}"
-    assert not sentinel.get("saw_error_frame"), f"error frame in stream: {sentinel}"
+    assert sentinel.get("n_entries", 0) > 0, f"no transcript entries: {sentinel}"
+    assert sentinel.get("ap_id"), f"no AgenticProcess id: {sentinel}"

@@ -86,6 +86,12 @@ class Conversation(Entity):
                         "invitation_targets": [
                             {"typeid": f"conversation-{self.id}", "role": "member"},
                         ],
+                        # Stamp the target conv typeid in ``message`` so the
+                        # recipient can disambiguate this invitation from
+                        # earlier stale ones sharing the same email — the
+                        # ``InvitedThrough`` relationship isn't exposed on the
+                        # ``Invitation`` GET payload.
+                        "message": f"conversation-{self.id}",
                     },
                 )
         return self

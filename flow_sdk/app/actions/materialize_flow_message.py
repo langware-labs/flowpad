@@ -131,7 +131,18 @@ async def materialize_flow_message(
         fm = FlowMessage.model_validate(payload)
         if not payload.get("id"):
             fm.id = FlowMessage.allocate_id(payload)
+        # Save with notify=False, then emit CREATE explicitly. ``save()``
+        # would emit an UPDATE here because ``model_validate`` carried the
+        # hub's ``created_by`` over (making ``exist_in_db`` True). Local
+        # subscribers (TS SDK ``on('message')``) filter for CREATE only,
+        # so the UPDATE would be invisible.
         fm = await fm.save(someone_typeid, notify=False)
+        if notify:
+            from flow_sdk.api.messages import DataOpMessage, OperationType  # noqa: PLC0415
+            from flow_sdk.core.network.resource_tracker import handle_entity_op  # noqa: PLC0415
+            await handle_entity_op(
+                DataOpMessage(data=fm, op=OperationType.CREATE, to_entity=fm.typeid)
+            )
 
     # Resolve parent (Task preferred, else Project) for the record's parent_ref.
     conv = await Conversation.get_one({"id": conversation_id})

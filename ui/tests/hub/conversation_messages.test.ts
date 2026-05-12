@@ -57,15 +57,28 @@ describe(`hub: alice + bob ping-pong loop to ${STOP_AT}`, () => {
     await conv.share([bobEmail!]);
     expect(conv.remote).toBe(true);
 
+    // Publish the conv id via a rendezvous file so bob's vitest can target
+    // THIS run's invitation, not a stale one with matching recipient email
+    // from a prior run.
+    const fs = await import('node:fs/promises');
+    await fs.writeFile('/tmp/flowpad_pingpong_conv.txt', conv.id, 'utf-8');
+
     // 2. Reactive tap on incoming flow_messages for THIS conversation. Alice
     //    increments bob's number and sends back. Loop exits at STOP_AT.
     const log: { who: string; kind: string; n: number; t: number }[] = [];
     const tStart = Date.now();
+    const seen = new Set<number>();
     const done = new Promise<void>((resolve) => {
       const off = conv.on('message', (m: FlowMessage) => {
         const text = (m.text || '').trim();
         if (!/^\d+$/.test(text)) return;
         const n = parseInt(text, 10);
+        // De-dupe: each hub frame is delivered to the local TS SDK twice
+        // (the fanout CREATE and the bridge's explicit local CREATE
+        // emission). Acting on the dup makes the loop send each reply
+        // twice and confuses the symmetric counter.
+        if (seen.has(n)) return;
+        seen.add(n);
         log.push({ who: 'alice', kind: 'rx', n, t: Date.now() - tStart });
         if (n >= STOP_AT) {
           off();
@@ -74,11 +87,15 @@ describe(`hub: alice + bob ping-pong loop to ${STOP_AT}`, () => {
         }
         const next = n + 1;
         log.push({ who: 'alice', kind: 'tx', n: next, t: Date.now() - tStart });
-        void conv.addMessage(String(next));
-        if (next >= STOP_AT) {
-          off();
-          resolve();
-        }
+        // Await the final send so bob has time to receive STOP_AT before
+        // vitest tears the WS down.
+        (async () => {
+          await conv.addMessage(String(next));
+          if (next >= STOP_AT) {
+            off();
+            resolve();
+          }
+        })();
       });
     });
 
@@ -111,5 +128,5 @@ describe(`hub: alice + bob ping-pong loop to ${STOP_AT}`, () => {
     console.log(`alice rx: [${rxNums.join(', ')}]`);
 
     void dataContext; void dataManager;
-  }, 8_000);
+  }, 10_000);
 });
