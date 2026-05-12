@@ -46,6 +46,7 @@ function cloudStatusEqual(a: CloudStatusData, b: CloudStatusData): boolean {
 
 export function UserInfo({ user }: UserInfoProps) {
   const [copied, setCopied] = useState(false);
+  const [copiedEmail, setCopiedEmail] = useState(false);
   const [cloudStatus, setCloudStatus] = useState<CloudStatusData>(cloudManager.cloudStatus);
   const [cloudBusy, setCloudBusy] = useState(false);
   const { version } = useContext();
@@ -109,6 +110,17 @@ export function UserInfo({ user }: UserInfoProps) {
     }
   };
 
+  const handleCopyEmail = async () => {
+    if (!user.email) return;
+    try {
+      await navigator.clipboard.writeText(user.email);
+      setCopiedEmail(true);
+      setTimeout(() => setCopiedEmail(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
+  };
+
   return (
     <div className="flex flex-col gap-4 p-4">
       <div className="flex flex-col gap-1">
@@ -118,7 +130,21 @@ export function UserInfo({ user }: UserInfoProps) {
 
       <div className="flex flex-col gap-1">
         <label className="text-sm font-semibold text-muted-foreground">Email:</label>
-        <div className="text-base">{user.email || 'N/A'}</div>
+        <div className="flex items-center gap-2">
+          <div className="min-w-0 break-all text-base">{user.email || 'N/A'}</div>
+          {user.email && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 flex-shrink-0"
+              onClick={() => {
+                void handleCopyEmail();
+              }}
+            >
+              {copiedEmail ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
+            </Button>
+          )}
+        </div>
       </div>
 
       <div className="flex flex-col gap-1">

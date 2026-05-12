@@ -845,7 +845,12 @@ export interface ProjectListItem {
   encoded_name: string;
   cwd: string | null;
   session_count: number;
+  claude_session_count?: number;
+  codex_session_count?: number;
   modified_at: string | null;
+  claude?: boolean;
+  codex?: boolean;
+  worker_types?: string[];
   /** True when this project entry represents an SDK-shipped system project. */
   system?: boolean;
 }
@@ -856,6 +861,10 @@ export interface ProjectListItem {
 export interface ListProjectsResponse {
   projects: ProjectListItem[];
   total_count: number;
+  claude_count?: number;
+  codex_count?: number;
+  both_count?: number;
+  none_count?: number;
 }
 
 /**
@@ -887,7 +896,7 @@ export interface ScanProjectResponse {
 }
 
 /**
- * Fast project enumeration - just directory listing (~50ms).
+ * Indexer-backed project enumeration.
  * Use this for the project list sidebar.
  */
 export async function listProjectsFromComputeNode(computeNodeId: string): Promise<ListProjectsResponse> {

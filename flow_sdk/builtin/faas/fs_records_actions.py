@@ -133,84 +133,98 @@ class FsRecordsActionsMixin:
 
     async def _handle_fs_records_search(self, request_info) -> ApiResponse:
         from flow_sdk.core.entity.entity_model import Entity
+        from flow_sdk.server.search_filters import (  # noqa: PLC0415
+            apply_folder_filter,
+            apply_scope_filter,
+            apply_system_filter,
+            apply_tag_filter,
+        )
 
         qp = request_info.request.query_params
         q = qp.get("q", "").strip()
         limit = max(1, int(qp.get("limit", DEFAULT_BROWSE_LIMIT)))
         record_type = qp.get("record_type", "") or None
         status = qp.get("status", "") or None
+        scope = qp.get("scope") or None
+        project_ids = qp.get("project_ids") or None
+        parent_path = qp.get("parent_path") or None
+        vault_root = qp.get("vault_root") or None
+        include_system = (qp.get("include_system", "").strip().lower() in ("true", "1"))
+        tags_raw = qp.get("tags") or ""
+        tag_list = [t.strip() for t in tags_raw.split(",") if t.strip()]
+
+        def _row(ent, *, snippet=None) -> dict:
+            ent_status = getattr(ent, "status", None) or ""
+            row = {
+                "record_id": ent.id,
+                "record_type": ent.type or ent.get_type(),
+                "name": self._entity_display_name(ent),
+                "snippet": snippet,
+                "fts_title": getattr(ent, "_fts_title", None),
+                "fts_description": getattr(ent, "_fts_description", None),
+                "status": ent_status,
+                "scope": getattr(ent, "scope", "") or "",
+                "created_at": (d.isoformat() if (d := getattr(ent, "created_date", None)) else ""),
+                "modified_at": (d.isoformat() if (d := getattr(ent, "updated_date", None)) else ""),
+                "asset_ref": "",  # filled below; awaitable
+                "labels": getattr(ent, "labels", None) or [],
+            }
+            for extra_field in ("session_id", "worker_session_id"):
+                val = getattr(ent, extra_field, None)
+                if val:
+                    row[extra_field] = val
+            return row
+
+        async def _rows(entities, *, with_snippet: bool) -> list[dict]:
+            out: list[dict] = []
+            for ent in entities:
+                snip = getattr(ent, "_fts_snippet", None) if with_snippet else None
+                row = _row(ent, snippet=snip)
+                row["asset_ref"] = await self._resolve_asset_ref(ent)
+                out.append(row)
+            return out
 
         if not q:
             # Filter-only browse: query DB with FTS join so fts_title is populated
-            if record_type:
-                entities = await Entity.browse(record_type=record_type, limit=limit, status=status)
-                results = []
-                for ent in entities:
-                    ent_status = getattr(ent, "status", None) or ""
-                    row = {
-                            "record_id": ent.id,
-                            "record_type": ent.type or record_type,
-                            "name": self._entity_display_name(ent),
-                            "snippet": None,
-                            "fts_title": getattr(ent, "_fts_title", None),
-                            "fts_description": getattr(ent, "_fts_description", None),
-                            "status": ent_status,
-                            "scope": getattr(ent, "scope", "") or "",
-                            "created_at": (d.isoformat() if (d := getattr(ent, "created_date", None)) else ""),
-                            "modified_at": (d.isoformat() if (d := getattr(ent, "updated_date", None)) else ""),
-                            "asset_ref": await self._resolve_asset_ref(ent),
-                            "labels": getattr(ent, "labels", None) or [],
-                        }
-                    for extra_field in ("session_id", "worker_session_id"):
-                        val = getattr(ent, extra_field, None)
-                        if val:
-                            row[extra_field] = val
-                    results.append(row)
-                return ApiSuccessResponse(
-                    data={"results": results, "query": "", "total": len(results), "indexer_ready": True}
-                )
-            return ApiSuccessResponse(data={"results": [], "query": q, "total": 0, "indexer_ready": True})
+            if not record_type:
+                return ApiSuccessResponse(data={"results": [], "query": q, "total": 0, "indexer_ready": True})
+            entities = await Entity.browse(record_type=record_type, limit=limit, status=status)
+            entities = apply_scope_filter(entities, scope, project_ids)
+            entities = apply_folder_filter(entities, parent_path, vault_root)
+            entities = apply_system_filter(entities, include_system)
+            entities = apply_tag_filter(entities, tag_list)
+            results = await _rows(entities, with_snippet=False)
+            return ApiSuccessResponse(
+                data={"results": results, "query": "", "total": len(results), "indexer_ready": True}
+            )
 
         # Parse optional calibration params
         from flow_sdk.db.drivers.sqlite.sqlite_driver import SearchCalibration
 
         col_weights_raw = qp.get("col_weights")
         recency_boost_raw = qp.get("recency_boost")
+        recency_factor_raw = qp.get("recency_factor")
+        overfetch_raw = qp.get("overfetch")
         type_scores_raw = qp.get("type_scores")
         cal = None
-        if col_weights_raw or recency_boost_raw or type_scores_raw:
+        if col_weights_raw or recency_boost_raw or recency_factor_raw or overfetch_raw or type_scores_raw:
             cal = SearchCalibration(
                 col_weights=[float(x) for x in col_weights_raw.split(",")] if col_weights_raw else None,
                 recency_boost=float(recency_boost_raw) if recency_boost_raw else None,
+                recency_factor=float(recency_factor_raw) if recency_factor_raw else None,
+                overfetch=int(overfetch_raw) if overfetch_raw else None,
                 type_scores=json.loads(type_scores_raw) if type_scores_raw else None,
             )
 
         # FTS5 search
         entities = await Entity.search(query=q, limit=limit, record_type=record_type, calibration=cal)
-        results = []
-        for ent in entities:
-            ent_status = getattr(ent, "status", None) or ""
-            if status and ent_status != status:
-                continue
-            row = {
-                    "record_id": ent.id,
-                    "record_type": ent.type or ent.get_type(),
-                    "name": self._entity_display_name(ent),
-                    "snippet": getattr(ent, "_fts_snippet", None),
-                    "fts_title": getattr(ent, "_fts_title", None),
-                    "fts_description": getattr(ent, "_fts_description", None),
-                    "status": ent_status,
-                    "scope": getattr(ent, "scope", "") or "",
-                    "created_at": (d.isoformat() if (d := getattr(ent, "created_date", None)) else ""),
-                    "modified_at": (d.isoformat() if (d := getattr(ent, "updated_date", None)) else ""),
-                    "asset_ref": await self._resolve_asset_ref(ent),
-                    "labels": getattr(ent, "labels", None) or [],
-                }
-            for extra_field in ("session_id", "worker_session_id"):
-                val = getattr(ent, extra_field, None)
-                if val:
-                    row[extra_field] = val
-            results.append(row)
+        if status:
+            entities = [e for e in entities if (getattr(e, "status", None) or "") == status]
+        entities = apply_scope_filter(entities, scope, project_ids)
+        entities = apply_folder_filter(entities, parent_path, vault_root)
+        entities = apply_system_filter(entities, include_system)
+        entities = apply_tag_filter(entities, tag_list)
+        results = await _rows(entities, with_snippet=True)
         return ApiSuccessResponse(data={"results": results, "query": q, "total": len(results), "indexer_ready": True})
 
     async def _handle_fs_records_scan(self, request_info) -> ApiResponse:
@@ -1201,3 +1215,4 @@ def _normalize_asset_path(p: str) -> str:
     if p.startswith("/"):
         p = p[1:]
     return p
+

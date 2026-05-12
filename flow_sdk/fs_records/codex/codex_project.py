@@ -47,7 +47,10 @@ def _is_valid_cwd(cwd: str) -> bool:
     """Filter out system/temp paths that should never appear as user projects."""
     if not cwd or not cwd.startswith("/"):
         return False
-    return not cwd.startswith(_TEMP_PATH_PREFIXES)
+    if cwd == "/":
+        return False
+    temp_roots = tuple(prefix.rstrip("/") for prefix in _TEMP_PATH_PREFIXES)
+    return cwd not in temp_roots and not cwd.startswith(_TEMP_PATH_PREFIXES)
 
 
 def _read_codex_projects_from_config(config_path: Path) -> dict[str, dict]:

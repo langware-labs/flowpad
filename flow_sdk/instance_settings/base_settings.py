@@ -219,6 +219,30 @@ class BaseInstanceSettings:
             return int(env)
         return default_port
 
+    # -----------------------------------------------------------------
+    # Cross-instance shared paths (computed; not per-instance prefixed)
+    # -----------------------------------------------------------------
+    # These live directly under ``flow_home`` and are shared across all
+    # instances (prod/dev/test) by design — they coordinate state that
+    # spans instances, like the migration ledger.
+
+    @property
+    def global_dir(self) -> Path:
+        """``<flow_home>/global`` — cross-instance shared state."""
+        return self.flow_home / "global"
+
+    @property
+    def migrations_status_dir(self) -> Path:
+        """``<flow_home>/global/migrations`` — per-version status JSON files."""
+        return self.global_dir / "migrations"
+
+    @property
+    def instances_root(self) -> Path:
+        """``<flow_home>/instances`` — parent of per-instance canonical
+        subdirectories. Contents under each ``instances/<name>/`` are
+        out of scope for Phase 1; this exposes the parent path only."""
+        return self.flow_home / "instances"
+
 
 # Public alias — code reads ``InstanceSettings`` for type annotations.
 InstanceSettings = BaseInstanceSettings
