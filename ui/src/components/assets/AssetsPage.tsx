@@ -135,7 +135,10 @@ function buildFolderBreadcrumbs(
   return crumbs;
 }
 
-const HIDDEN_TYPES = new Set<string>([RecordType.ANNOTATION, RecordType.PROJECT]);
+// Annotation is internal; project IS shown in the tree because clicking a
+// project row navigates to its collaboration space (handled at the click
+// site in AssetListView), which is a primary navigation surface.
+const HIDDEN_TYPES = new Set<string>([RecordType.ANNOTATION]);
 
 const SIDEBAR_COLLAPSED_KEY = 'wiki:sidebar-collapsed';
 
