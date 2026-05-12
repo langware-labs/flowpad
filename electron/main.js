@@ -6,19 +6,7 @@ const UvManager = require('./uv-manager');
 
 // Register flowpad:// as a custom protocol so the OS routes deep links here.
 // Must be called before app.whenReady().
-//
-// Windows dev-mode pitfall: when Electron is launched via `electron .`,
-// process.defaultApp is true and the bare registration would point at
-// electron.exe with no script argument — the OS would later launch electron.exe
-// with the deep-link URL but Electron wouldn't know which app to start.
-// Pass the script path explicitly so the registry entry is
-//   "<electron.exe>" "<path/to/main.js>" "%1"
-// and the deep link arrives in process.argv as expected.
-if (process.defaultApp && process.argv.length >= 2) {
-  app.setAsDefaultProtocolClient('flowpad', process.execPath, [path.resolve(process.argv[1])]);
-} else {
-  app.setAsDefaultProtocolClient('flowpad');
-}
+app.setAsDefaultProtocolClient('flowpad');
 
 // Enforce single-instance so Windows/Linux deep links reach the running app
 // via the 'second-instance' event rather than spawning a second process.
@@ -159,10 +147,6 @@ let isQuitting = false;
 
 // Deep link that arrived before the window was ready to navigate.
 let pendingDeepLink = null;
-// Becomes true once startApp() has loaded the real UI (or a pending deep link).
-// Until then, even if mainWindow exists it's showing loading.html and the
-// backend may not be reachable, so deep-link navigations must be deferred.
-let startupComplete = false;
 
 /**
  * Convert a flowpad:// URL to the equivalent http://localhost:9007 URL and
@@ -172,6 +156,15 @@ let startupComplete = false;
  */
 function handleDeepLink(url) {
   log.info(`[deep-link] received: ${url}`);
+
+  // Ignore install/probe URLs.
+  // These are only used by the browser to detect whether FlowPad
+  // is installed and must never replace a real task/message deep link.
+  if (url === 'flowpad://__probe' || url.startsWith('flowpad://__probe?')) {
+    log.info('[deep-link] ignoring probe url');
+    return;
+  }
+
   try {
     const parsed = new URL(url);
     // host = "task", pathname = "/<id>"  (or just "" for the root)
@@ -180,14 +173,12 @@ function handleDeepLink(url) {
     const tail = `${parsed.search}${parsed.hash}`;
     const localUrl = typePart ? `${BACKEND_URL}/${typePart}${idPart}${tail}` : `${BACKEND_URL}${tail}`;
 
-    if (startupComplete && mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
       mainWindow.loadURL(localUrl);
     } else {
-      // Either the window doesn't exist yet, OR it exists but startup hasn't
-      // finished (loading.html showing / backend not ready). Defer to the
-      // pending-deep-link slot consumed at the end of startApp().
+      // Window not ready yet — apply after startup completes.
       pendingDeepLink = localUrl;
     }
   } catch (err) {
@@ -211,18 +202,6 @@ app.on('second-instance', (_event, argv) => {
     mainWindow.focus();
   }
 });
-
-// Windows / Linux COLD START: when the OS launches the app via a flowpad://
-// URL for the first time, the URL is in process.argv. There's no event for
-// this — we have to read it ourselves before app.whenReady fires startApp.
-// (On macOS this path is dead — the URL arrives via 'open-url' instead.)
-if (process.platform !== 'darwin') {
-  const argvDeepLink = process.argv.find(arg => arg.startsWith('flowpad://'));
-  if (argvDeepLink) {
-    log.info(`[deep-link] picked up from process.argv: ${argvDeepLink}`);
-    handleDeepLink(argvDeepLink);
-  }
-}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -299,7 +278,6 @@ function sendStatus(message) {
 }
 
 async function startApp() {
-  startupComplete = false;
   createWindow();
 
   // Wait for the loading page to finish loading so IPC listeners are ready
@@ -399,9 +377,6 @@ async function startApp() {
   pendingDeepLink = null;
   log.info(`Loading UI from ${startUrl}`);
   mainWindow.loadURL(startUrl);
-  // From here on, deep links can be applied directly via mainWindow.loadURL —
-  // the backend is ready and the real UI (not loading.html) is being loaded.
-  startupComplete = true;
 
   // Electron wrapper auto-update
   setupElectronAutoUpdater();
