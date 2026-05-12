@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Archive, CheckSquare, MailPlus, RefreshCw } from 'lucide-react';
-import { Conversation, FlowMessage, QueryRequest, Task, TypeId, acceptInvitation } from '@sdk';
+import { Conversation, FlowMessage, QueryRequest, Task, TypeId, acceptInvitation, fetchConversations } from '@sdk';
 import { useEntitiesQuery, useEntity } from '@src/hooks/entity-hooks';
 import { Button } from '@src/components/ui/button';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -8,7 +8,6 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { useInboxStore } from '@src/store/use-inbox-store';
 import { formatTimeAgo } from '@src/components/project-activity-strip/project-activity-utils';
 import {
-  fetchInboxFromHub,
   updateMessage,
   bulkUpdateMessages,
 } from './inbox-api';
@@ -270,7 +269,7 @@ export function InboxView() {
   // 404 in the rendered rows. Fire-and-forget — the entity-update channel
   // will refresh rows once the FMs land locally.
   useEffect(() => {
-    void fetchInboxFromHub().then(() => refetch()).catch(() => {});
+    void fetchConversations().then(() => refetch()).catch(() => {});
     // Run once per mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -279,7 +278,7 @@ export function InboxView() {
   const handleRefresh = useCallback(async () => {
     setFetching(true);
     try {
-      await fetchInboxFromHub();
+      await fetchConversations();
       void refetch();
     } finally {
       setFetching(false);

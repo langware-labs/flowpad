@@ -10,6 +10,7 @@ import {
 import { SettingsPane } from '@src/components/ui/settings-pane';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { Cloud, LogIn, LogOut, Settings, User as UserIcon, Wrench } from 'lucide-react';
+import { toast } from 'sonner';
 
 import { AccountInfo } from '@src/components/account/account-info';
 
@@ -168,6 +169,17 @@ export function UserDropdown() {
     try {
       await cloudManager.login();
     } catch (e) {
+      // Surface as a Sonner toast immediately so the user gets a visible
+      // popup even if the hub-side hub_client_error WS broadcast didn't
+      // make it through (e.g. WS still reconnecting). The error message
+      // is already user-friendly — produced server-side in
+      // ``flow_sdk/cli/auth/cloud_login.py::_post_cloud_login``.
+      const message = e instanceof Error ? e.message : 'Cloud sign-in failed.';
+      const isUnavailable = /cloud is not available/i.test(message);
+      toast.error(
+        isUnavailable ? 'Cloud is not available' : 'Cloud sign-in failed',
+        { description: isUnavailable ? message.replace(/^cloud is not available\.?\s*/i, '') : message },
+      );
       console.error('[Cloud Login] Failed:', e);
     }
   }, []);

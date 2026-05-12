@@ -420,17 +420,100 @@ class FsRecordsActionsMixin:
         """Clear all FTS index data and reset index logs.
 
         DELETE /fs-records/index
+
+        Emits per-type ``progress_report`` events so the footer pill and the
+        scanner page can show per-type progress while the clear runs. Mirrors
+        the index handler's event shape (``job_name='clear'``, ``rows[]`` with
+        ``done``/``total``, terminal ``text='complete'``).
         """
+        from datetime import datetime, timezone  # noqa: PLC0415
+
+        from flow_sdk.core.network.resource_tracker import broadcast_progress  # noqa: PLC0415
+        from flow_sdk.db import get_db_driver  # noqa: PLC0415
+        from flow_sdk.fs_records.record_error import RecordError  # noqa: PLC0415
         from flow_sdk.fs_records.schema_record import SchemaRecord  # noqa: PLC0415
+        from flow_sdk.fs_store.indexer import IndexProgressTable, TypeProgressRow  # noqa: PLC0415
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry, _sanitize_type_name, _schema_dir  # noqa: PLC0415
 
         qp = request_info.request.query_params
         filter_type = qp.get("type", "").strip()
-        types = [filter_type] if filter_type else None
-        result = await SchemaRecord.clear_index(types)
+        target_types = [filter_type] if filter_type else SchemaRegistry.get_all_record_types()
+
+        try:
+            activity = self._start_activity("clear", timeout_seconds=120)
+        except RuntimeError as e:
+            return ApiFailResponse(message=str(e), status_code=409)
+
+        driver = get_db_driver()
+        per_type_done: dict[str, int] = {t: 0 for t in target_types}
+        per_type_total: dict[str, int] = {t: 1 for t in target_types}  # 1 step each
+        fts_cleared = 0
+        entities_cleared = 0
+        current_type: str | None = None
+
+        def make_table(text: str | None = None) -> IndexProgressTable:
+            rows = tuple(
+                TypeProgressRow(
+                    type_name=t,
+                    done=per_type_done[t],
+                    total=per_type_total[t],
+                    errors=0,
+                    skipped=0,
+                )
+                for t in target_types
+            )
+            return IndexProgressTable(
+                job_name="clear",
+                rows=rows,
+                current=current_type,
+                done=sum(per_type_done.values()),
+                total=sum(per_type_total.values()),
+                text=text,
+                ts=datetime.now(timezone.utc).isoformat(),
+            )
+
+        async def emit(text: str | None = None) -> None:
+            table = make_table(text=text)
+            activity.latest_table = table
+            await broadcast_progress(
+                to_entity=str(self.typeid),
+                flow_data=activity.make_flow_data(),
+            )
+
+        try:
+            await emit()  # initial snapshot — totals known, done=0
+            for type_name in target_types:
+                current_type = type_name
+                await emit()
+                if hasattr(driver, "delete_entities_by_type"):
+                    n = await driver.delete_entities_by_type(type_name)
+                    entities_cleared += n
+                sanitized = _sanitize_type_name(type_name)
+                log_file = _schema_dir() / "types" / sanitized / "index_log.jsonl"
+                if log_file.exists():
+                    log_file.unlink()
+                await RecordError.clear_for_type(type_name)
+                per_type_done[type_name] = 1
+                await emit()
+
+            # When clearing everything, also clear the FTS index and the global log.
+            if not filter_type and hasattr(driver, "fts_clear"):
+                fts_cleared = await driver.fts_clear()
+                global_log = _schema_dir() / "index_log.jsonl"
+                if global_log.exists():
+                    global_log.unlink()
+                await RecordError.clear_all()
+
+            current_type = None
+            await emit(text="complete")
+        finally:
+            self._complete_activity("clear")
+
         return ApiSuccessResponse(
             data={
-                "fts_cleared": result.fts_cleared,
-                "entities_cleared": result.entities_cleared,
+                "fts_cleared": fts_cleared,
+                "entities_cleared": entities_cleared,
+                "types_cleared": target_types,
             }
         )
 

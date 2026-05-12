@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
-import { Conversation, dataManager, FlowMessage, QueryFilter, QueryRequest, syncFromHub, TypeId } from '@sdk';
+import { Conversation, dataManager, fetchConversations, FlowMessage, QueryFilter, QueryRequest, TypeId } from '@sdk';
 import { useEntitiesQuery, useEntity } from '@sdk/react/hooks';
 import type { ITask } from '@sdk/entities/task';
 import { openInboxMessage } from '@src/components/inbox-view/inbox-api';
@@ -194,7 +194,7 @@ export function ConversationView({
     setHubSyncing(true);
     try {
       try {
-        await syncFromHub();
+        await fetchConversations();
       } catch {
         // Hub may be offline / not configured — local refetch still runs.
       }

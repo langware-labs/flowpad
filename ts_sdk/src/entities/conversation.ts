@@ -267,12 +267,39 @@ export interface SyncFromHubResult {
   flow_messages: number;
 }
 
-/** Pull pending invitations + new FlowMessages (cursor-based) from the hub. */
-export async function syncFromHub(): Promise<SyncFromHubResult> {
-  const action = new ActionInfo('conversation-sync', null, null, 'POST');
+export interface FetchConversationsResult {
+  /** Freshly-merged list of local Conversations after hub upsert. */
+  conversations: unknown[];
+  /** Conversation ids that triggered a background message fetch (hub had
+   *  more messages than local). The actual messages arrive via WS frames. */
+  bg_fetch_dispatched: string[];
+  /** False when the hub call(s) failed (network/config). The local list
+   *  is still returned so the UI can render from cache. */
+  hub_reachable: boolean;
+  /** True when the hub returned 401 — UI should open the LoginDialog. */
+  auth_required: boolean;
+}
+
+/** Unified hub catch-up: pulls the conversation + invitation lists in
+ *  parallel, upserts hub metadata locally, and dispatches per-conversation
+ *  background message fetches keyed off ``message_count`` deltas. Returns
+ *  fast (the merged list); new messages arrive via WS ``data_op_msg``
+ *  frames as the background fetchers complete. */
+export async function fetchConversations(): Promise<FetchConversationsResult> {
+  const action = new ActionInfo('conversation-list', null, null, 'POST');
   action.bodyParameters = {};
-  const res = await dataManager.callAction<Record<string, never>, SyncFromHubResult>(action);
-  return res!;
+  const res = await dataManager.callAction<Record<string, never>, FetchConversationsResult>(action);
+  return res ?? { conversations: [], bg_fetch_dispatched: [], hub_reachable: false, auth_required: false };
+}
+
+/** @deprecated Use {@link fetchConversations} instead. Kept as a one-release
+ *  shim so existing UI call sites don't break in the same PR as the rename. */
+export async function syncFromHub(): Promise<SyncFromHubResult> {
+  const result = await fetchConversations();
+  return {
+    invitations: 0,
+    flow_messages: result.bg_fetch_dispatched.length,
+  };
 }
 
 export interface AcceptInvitationParams {

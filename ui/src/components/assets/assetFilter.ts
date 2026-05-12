@@ -18,8 +18,7 @@ export interface AssetFilter {
    */
   scope: AssetScope;
   /** Project entity IDs the project-half of the filter applies to. Used by
-   *  scope='all' (user + these projects) and scope='project' (these projects only).
-   *  AssetsPage seeds this with the current project on mount. */
+   *  scope='all' (user + these projects) and scope='project' (these projects only). */
   projectIds: string[];
   /** Tag chips the user has added. */
   tags: string[];

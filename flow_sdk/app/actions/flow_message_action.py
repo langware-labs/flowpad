@@ -5,6 +5,7 @@
   GET  /api/v1/graph/flow_message/{id}/create-and-download-local-flowmsg  — download .flowmsg (entity-scoped)
   GET  /api/v1/graph/flow_message/{id}/open   — deep-link: fetch from hub and open IncomingTaskDialog
 """
+import asyncio
 import json as _json
 import logging
 import os
@@ -492,10 +493,19 @@ def _save_last_fetch(ts: str) -> None:
     _last_fetch_path().write_text(_json.dumps({"last_fetch": ts}))
 
 
-async def _download_and_unpack_bundle(fm_id: str, attachment_filename: str) -> bool:
+async def _download_and_unpack_bundle(
+    fm_id: str,
+    attachment_filename: str,
+    *,
+    asset_dest_root: Path | None = None,
+) -> bool:
     """Download the .flowmsg bundle from the hub and unpack it locally.
 
     Returns True if the bundle was successfully unpacked, False otherwise.
+
+    ``asset_dest_root`` is forwarded to ``unpack_bundle`` to anchor FS-rooted
+    assets (skill/agent) restored from the bundle. ``None`` falls through to
+    ``unpack_bundle``'s lazy ``tempfile.mkdtemp()`` default.
     """
     from flow_sdk.fs_records.flow_message_bundle import FlowMessageExistsError, unpack_bundle
     bundle_bytes = await hub_get(
@@ -510,7 +520,9 @@ async def _download_and_unpack_bundle(fm_id: str, attachment_filename: str) -> b
         tmp_path = Path(tmp.name)
         tmp.write(bundle_bytes)
     try:
-        await unpack_bundle(tmp_path, local_user_id, overwrite=False)
+        await unpack_bundle(
+            tmp_path, local_user_id, overwrite=False, asset_dest_root=asset_dest_root,
+        )
         return True
     except FlowMessageExistsError:
         return True  # already materialized — counts as success
@@ -587,7 +599,14 @@ async def _process_single_hub_message(raw: dict) -> str | None:
 
 
 async def handle_inbox_fetch(someone_typeid: str) -> ApiResponse:
-    """Pull new FlowMessages from hub, materialize bundles locally."""
+    """**Deprecated** — prefer ``conversation-list``.
+
+    Still wired up for the in-process ``notification_scanner`` background
+    sweep, which relies on the legacy ``{created, ids}`` return shape. New
+    UI call sites should go through ``conversation-list`` instead, which
+    fans out per-conversation bundle fetches in the background and returns
+    the merged list inline.
+    """
     since = _load_last_fetch()
     fetch_started = datetime.now(UTC).isoformat()
 
@@ -1042,51 +1061,285 @@ async def _cleanup_invitation_placeholder(
         logger.warning("[invitation-cleanup] jsonl unlink failed: %s", e)
 
 
-async def handle_conversation_sync(someone_typeid: str) -> ApiResponse:
-    """Pull pending invitations + new FlowMessages from the hub.
+# ---------------------------------------------------------------------------
+# Unified conversation-list pipeline
+#
+# Single endpoint replacing the prior `conversation-sync` + `inbox-fetch` split.
+# Reads local SQLite first (instant), pulls hub conversations + invitations in
+# parallel, upserts hub metadata locally, and fans out per-conversation
+# background message fetches keyed off the `message_count` delta. The hub WS
+# bridge stays in place as the realtime channel; this path is the defensive
+# catch-up that runs on Refresh / cold-start.
+# ---------------------------------------------------------------------------
 
-    Two operations:
+# Process-local single-flight registry for per-conversation message fetches.
+# Keyed by conversation id. Prevents rapid Refresh clicks from piling up
+# duplicate bundle downloads for the same conversation.
+_conv_fetch_locks: dict[str, asyncio.Lock] = {}
 
-    1. **Invitations** — `hub_get(INVITATION, action='pending')` mirrors any
-       new pending invitations into local Invitation rows so the strip can
-       render the Accept button.
-    2. **Inbox-fetch** — cursor-based; only pulls FlowMessages whose
-       `created_date` is newer than the saved cursor. Each FM's `.flowmsg`
-       bundle is downloaded and unpacked, which materializes the local
-       Conversation + appends pointers to its `conversation.jsonl`.
 
-    All cross-user conversations use the same bundle delivery, so this is the
-    only sync path. There are no hub-side Conversation entities to query.
+def _dispatch_conversation_message_fetch(conv_id: str, someone_typeid: str) -> None:
+    """Fire-and-forget kickoff for a per-conversation message catch-up.
+
+    Idempotent: if a fetch is already in-flight for this ``conv_id``, the new
+    dispatch is a no-op. The lock is held inside the spawned task, not by the
+    dispatcher, so callers never block.
+    """
+    existing = _conv_fetch_locks.get(conv_id)
+    if existing is not None and existing.locked():
+        return
+    asyncio.create_task(
+        _fetch_conversation_messages(conv_id, someone_typeid),
+        name=f"conv-msg-fetch-{conv_id[:8]}",
+    )
+
+
+async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> None:
+    """Bring local message state for a single conversation up to the hub's.
+
+    Reads the hub conversation's ``message_ids`` projection (already JSON-encoded
+    ``[{typeid, ts}, ...]``), diffs against the local on-disk pointer index,
+    and for each missing pointer downloads + unpacks the bundle via the same
+    production path used by `_process_single_hub_message`.
+
+    All exceptions are logged and swallowed — this runs as a detached task and
+    must never crash the event loop.
+    """
+    lock = _conv_fetch_locks.setdefault(conv_id, asyncio.Lock())
+    async with lock:
+        try:
+            hub_conv = await hub_get(BuiltinEntityType.CONVERSATION, conv_id)
+            if not isinstance(hub_conv, dict):
+                return
+            raw_ids = hub_conv.get("message_ids")
+            if not raw_ids:
+                return
+            try:
+                hub_pointers = _json.loads(raw_ids) if isinstance(raw_ids, str) else raw_ids
+            except (ValueError, TypeError):
+                logger.warning("[conv-msg-fetch] %s: bad message_ids payload", conv_id[:8])
+                return
+            try:
+                rec = ConversationRecord.from_jsonl(
+                    ConversationRecord.default_jsonl_path(conv_id),
+                    parent_id="", record_id=conv_id, parent_type=RecordType.PROJECT,
+                )
+                local_ids = {p.id for p in rec.message_pointers()}
+            except Exception:  # noqa: BLE001
+                local_ids = set()
+            missing_fm_ids: list[str] = []
+            for raw_ptr in hub_pointers:
+                typeid_str = (raw_ptr or {}).get("typeid") or ""
+                dash = typeid_str.find("-")
+                if dash <= 0:
+                    continue
+                fm_id = typeid_str[dash + 1:].lstrip("@")
+                if fm_id and fm_id not in local_ids:
+                    missing_fm_ids.append(fm_id)
+            if not missing_fm_ids:
+                return
+            logger.info(
+                "[conv-msg-fetch] %s: fetching %d missing message(s)",
+                conv_id[:8], len(missing_fm_ids),
+            )
+            for fm_id in missing_fm_ids:
+                try:
+                    raw_fm = await hub_get(BuiltinEntityType.FLOW_MESSAGE, fm_id)
+                    if isinstance(raw_fm, dict):
+                        await _process_single_hub_message(raw_fm)
+                except Exception as e:  # noqa: BLE001
+                    logger.warning(
+                        "[conv-msg-fetch] %s: fm=%s failed: %s",
+                        conv_id[:8], fm_id, e,
+                    )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[conv-msg-fetch] %s: aborted: %s", conv_id[:8], e)
+
+
+async def _upsert_hub_conversation_metadata(
+    hub_conv: dict, someone_typeid: str,
+) -> Optional[Conversation]:
+    """Upsert a hub-side Conversation into the local SQLite table.
+
+    Copies the user-visible metadata (``title``, ``participants``,
+    ``remote_project_id`` / ``remote_project_name``, ``message_status_visible``)
+    onto the local row and marks ``remote=True``. **Does not touch**
+    ``message_ids`` / ``message_count`` — those are projection-guarded on the
+    local side and only legitimately written by
+    ``ConversationRecord._project_pointers_to_entity`` as bundles are unpacked.
+    """
+    conv_id = (hub_conv.get("id") or "").strip()
+    if not conv_id:
+        return None
+    existing = await Conversation.get_one({"id": conv_id})
+    if existing is None:
+        payload: dict = {"id": conv_id, "remote": True}
+        for k in ("title", "participants", "remote_project_id", "remote_project_name"):
+            if hub_conv.get(k) is not None:
+                payload[k] = hub_conv[k]
+        if hub_conv.get("message_status_visible") is not None:
+            payload["message_status_visible"] = bool(hub_conv["message_status_visible"])
+        conv = Conversation.model_validate(payload)
+        conv.id = conv_id
+        return await conv.save(someone_typeid, notify=True)
+    # Update path: copy hub-owned fields without touching projections.
+    changed = False
+    for k in ("title", "participants", "remote_project_id", "remote_project_name"):
+        v = hub_conv.get(k)
+        if v is not None and getattr(existing, k, None) != v:
+            setattr(existing, k, v)
+            changed = True
+    if hub_conv.get("message_status_visible") is not None and \
+            existing.message_status_visible != bool(hub_conv["message_status_visible"]):
+        existing.message_status_visible = bool(hub_conv["message_status_visible"])
+        changed = True
+    if not existing.remote:
+        existing.remote = True
+        changed = True
+    if changed:
+        return await existing.save(someone_typeid, notify=True)
+    return existing
+
+
+async def handle_conversation_list(someone_typeid: str) -> ApiResponse:
+    """Unified conversation list: local SQLite + hub catch-up + background message fetch.
+
+    Pipeline (all stages run inside the request handler unless noted):
+
+    1. Read local conversations from SQLite (the canonical render source).
+    2. In parallel, hub_get(CONVERSATION) + hub_get(INVITATION, pending).
+       Failures here are non-fatal — we degrade to local-only with a flag.
+    3. For each hub conversation, upsert metadata locally (title, participants,
+       etc.). Compute ``hub.message_count - local.message_count`` — if positive,
+       queue a single-flight background fetch.
+    4. For each pending invitation, run the existing
+       ``_materialize_remote_invitation`` + placeholder-conversation pipeline.
+    5. Return the freshly-merged local list. Background fetches run after the
+       HTTP response is sent; their results stream in via WS data_op_msg.
     """
     if not hub_base_url():
-        return ApiFailResponse(message="Hub not configured")
+        # Local-only mode: still return whatever's in SQLite so the UI renders.
+        local = await Conversation.get_all({})
+        return ApiSuccessResponse(data={
+            "conversations": [c.model_dump(mode="json") for c in local],
+            "bg_fetch_dispatched": [],
+            "hub_reachable": False,
+            "auth_required": False,
+        })
 
-    inv_count = 0
+    local_list = await Conversation.get_all({})
+    local_index = {c.id: c for c in local_list if c.id}
 
-    invitations = await hub_get(
-        BuiltinEntityType.INVITATION, action="pending",
-    ) or []
-    if not isinstance(invitations, list):
-        invitations = []
-    for inv in invitations:
+    # Peek at credential state up front so we can flag ``auth_required`` even
+    # when the underlying hub_get swallows the 401 (it returns None on any
+    # non-200). Missing credentials is the most common reason the hub call
+    # comes back empty; assume that case and refine if the hub IS reachable
+    # for some calls but rejects others.
+    try:
+        from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
+        creds_present = bool(load_credentials() and load_credentials().api_key)
+    except Exception:  # noqa: BLE001
+        creds_present = False
+
+    hub_convs_result, hub_invs_result = await asyncio.gather(
+        hub_get(BuiltinEntityType.CONVERSATION),
+        hub_get(BuiltinEntityType.INVITATION, action="pending"),
+        return_exceptions=True,
+    )
+
+    hub_reachable = True
+    auth_required = False
+
+    def _coerce_list(result) -> Optional[list]:
+        nonlocal hub_reachable, auth_required
+        if isinstance(result, Exception):
+            hub_reachable = False
+            if "401" in str(result) or "Unauthorized" in str(result):
+                auth_required = True
+            return None
+        if result is None:
+            hub_reachable = False
+            return None
+        return result if isinstance(result, list) else []
+
+    hub_convs = _coerce_list(hub_convs_result) or []
+    hub_invs = _coerce_list(hub_invs_result) or []
+
+    # If both hub calls came back empty AND we never had credentials, the
+    # hub returned 401 (or we never authenticated) — flag auth_required so
+    # the UI routes to LoginDialog instead of showing a generic error.
+    if not hub_reachable and not creds_present:
+        auth_required = True
+
+    # (c) upsert hub conversation metadata; dispatch per-conv message fetch
+    # when the hub has more messages than we do locally.
+    bg_fetch_dispatched: list[str] = []
+    for hub_conv in hub_convs:
+        try:
+            await _upsert_hub_conversation_metadata(hub_conv, someone_typeid)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[conv-list] upsert conv=%s failed: %s",
+                           (hub_conv.get("id") or "?")[:8], e)
+            continue
+        hub_count = int(hub_conv.get("message_count") or 0)
+        local_conv = local_index.get(hub_conv.get("id"))
+        local_count = int((local_conv.message_count if local_conv else 0) or 0)
+        if hub_count > local_count:
+            conv_id = hub_conv.get("id")
+            if conv_id:
+                _dispatch_conversation_message_fetch(conv_id, someone_typeid)
+                bg_fetch_dispatched.append(conv_id)
+
+    # (d) invitations through the existing placeholder pipeline so they land
+    # as kind='invitation' rows in the same merged Conversation list.
+    for inv in hub_invs:
         try:
             local_inv = await _materialize_remote_invitation(inv, someone_typeid)
             if local_inv:
-                inv_count += 1
                 try:
                     await _ensure_invitation_placeholder_conversation(local_inv, someone_typeid)
                 except Exception as ph_err:  # noqa: BLE001
-                    logger.warning("[conversation-sync] placeholder build failed: %s", ph_err)
-        except Exception as e:
-            logger.warning("[conversation-sync] invitation upsert failed: %s", e)
+                    logger.warning("[conv-list] placeholder build failed: %s", ph_err)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[conv-list] invitation upsert failed: %s", e)
 
-    fetch_resp = await handle_inbox_fetch(someone_typeid)
-    fetch_data = fetch_resp.data if hasattr(fetch_resp, "data") else {}
-    fm_count = (fetch_data or {}).get("created", 0)
-
+    # (e) return the freshly-merged list. Background tasks finish after the
+    # response, fanning out their writes via data_op_msg WS frames.
+    merged = await Conversation.get_all({})
     return ApiSuccessResponse(data={
-        "invitations": inv_count,
-        "flow_messages": fm_count,
+        "conversations": [c.model_dump(mode="json") for c in merged],
+        "bg_fetch_dispatched": bg_fetch_dispatched,
+        "hub_reachable": hub_reachable,
+        "auth_required": auth_required,
+    })
+
+
+@action.post(action_name="conversation-list", types=None)
+async def conversation_list() -> ApiResponse:
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.someone_typeid:
+            return ApiFailResponse(message="Authentication required")
+        return await handle_conversation_list(request_info.someone_typeid)
+    except Exception as e:
+        logger.error("[flow_message_action] conversation-list error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Failed: {e}")
+
+
+async def handle_conversation_sync(someone_typeid: str) -> ApiResponse:
+    """**Deprecated** — delegates to ``handle_conversation_list``.
+
+    Kept for back-compat with external SDK callers; new code should call the
+    ``conversation-list`` action directly. The legacy response shape
+    ``{invitations, flow_messages}`` is reconstructed from the new payload.
+    """
+    resp = await handle_conversation_list(someone_typeid)
+    if not isinstance(resp, ApiSuccessResponse):
+        return resp
+    data = resp.data or {}
+    return ApiSuccessResponse(data={
+        "invitations": 0,  # legacy shape; placeholder count
+        "flow_messages": len(data.get("bg_fetch_dispatched", []) or []),
     })
 
 

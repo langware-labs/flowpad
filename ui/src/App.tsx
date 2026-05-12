@@ -132,8 +132,8 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
     const handleHubClientError = (msg: Record<string, unknown>) => {
       const method = String(msg.method ?? '').trim();
       const path = String(msg.path ?? '').trim();
-      const status = String(msg.status_code ?? '').trim();
-      const message = String(msg.message ?? 'Hub client error');
+      const statusCode = Number(msg.status_code ?? 0);
+      const rawMessage = String(msg.message ?? '');
       const suppressedCount = Number(msg.suppressed_count ?? 0);
 
       if (suppressedCount > 0) {
@@ -143,8 +143,45 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
         return;
       }
 
-      toast.error('Hub client error', {
-        description: `${method} ${path} -> ${status}: ${message}`.trim(),
+      // /login has a dedicated handler in user-dropdown that shows a more
+      // targeted toast (with friendly copy already produced by
+      // ``_post_cloud_login`` server-side). Suppress the generic toast here
+      // to avoid two near-identical popups on the same click.
+      if (path === '/login' || path.endsWith('/login')) return;
+
+      // Map raw transport / status signals to user-friendly copy. The raw
+      // form ("POST /login -> 0: All connection attempts failed") reads as
+      // a stack-trace; the categorized form below answers "what should I do
+      // about it?" for the common cases.
+      let title = 'Cloud error';
+      let description = rawMessage;
+      if (statusCode === 0) {
+        title = 'Cloud is not available';
+        description = "We couldn't reach the cloud service. Check your connection or try again in a moment.";
+      } else if (statusCode === 401) {
+        title = 'Cloud sign-in expired';
+        description = 'Please sign in again to keep using cloud features.';
+      } else if (statusCode === 403) {
+        title = 'Cloud access denied';
+        description = "You don't have permission for this action. Contact your admin if this seems wrong.";
+      } else if (statusCode === 404) {
+        title = 'Cloud resource not found';
+        description = "We couldn't find what you were looking for on the cloud.";
+      } else if (statusCode >= 500) {
+        title = 'Cloud service is having trouble';
+        description = 'The cloud service returned an error. Please try again in a moment.';
+      } else if (statusCode >= 400) {
+        title = 'Cloud request rejected';
+        description = rawMessage || `The cloud rejected the request (${statusCode}).`;
+      }
+
+      toast.error(title, {
+        description,
+        // Stash technical detail in a footer so power users can still see it
+        // without it being the headline.
+        action: rawMessage
+          ? { label: 'Detail', onClick: () => console.warn('[hub error]', { method, path, statusCode, rawMessage }) }
+          : undefined,
       });
     };
 
