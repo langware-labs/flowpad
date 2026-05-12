@@ -137,7 +137,7 @@ function setupElectronAutoUpdater() {
 // Configuration
 const BACKEND_PORT = 9007;
 const BACKEND_URL = `http://localhost:${BACKEND_PORT}`;
-const FLOWPAD_CLOUD_URL = process.env.FLOWPAD_CLOUD_URL || 'https://dev.flowpad.ai';
+const FLOWPAD_CLOUD_URL = process.env.FLOWPAD_CLOUD_URL || 'https://app.flowpad.ai';
 const HEALTH_CHECK_INTERVAL = 500; // ms
 const MAX_HEALTH_CHECKS = 60; // 30 seconds max wait
 
