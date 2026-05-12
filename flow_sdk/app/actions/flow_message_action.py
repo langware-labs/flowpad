@@ -1013,20 +1013,31 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
         return ApiFailResponse(message=f"Accept transport error: {e}")
 
     # Conversation target → join the hub-side conversation so we enter
-    # ``participants`` and start receiving WS fanout. The hub fires
-    # ``_fanout_self_update`` after the join; bob's hub WS bridge sees it and
-    # materializes the local Conversation via ``_handle_conversation_op``.
+    # ``participants`` and start receiving WS fanout. Then GET the conv from
+    # the hub and save it locally so the UI's conversation view has something
+    # to render the moment ``invitation-accept`` returns — without racing the
+    # bridge's async ``_handle_conversation_op`` materialization.
     if linked_conv_id:
         try:
             from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
             from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
+            from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
 
             creds = load_credentials()
             if creds and creds.api_key:
                 async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
                     await client.post(f"/graph/conversation/{linked_conv_id}/join", {})
+                    hub_conv = await client.get(f"/graph/conversation/{linked_conv_id}")
+                if isinstance(hub_conv, dict) and hub_conv.get("id"):
+                    existing = await Conversation.get_one({"id": linked_conv_id})
+                    if existing is None:
+                        await Conversation.model_validate({
+                            "id": linked_conv_id,
+                            "title": hub_conv.get("title"),
+                            "remote": True,
+                        }).save(someone_typeid)
         except Exception as e:
-            logger.warning("[invitation-accept] hub join failed for conversation %s: %s", linked_conv_id, e, exc_info=True)
+            logger.warning("[invitation-accept] hub join+materialize failed: %s", e, exc_info=True)
 
     # Mark local invitation as accepted (best-effort).
     try:

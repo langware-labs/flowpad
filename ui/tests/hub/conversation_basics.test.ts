@@ -20,7 +20,7 @@ import { Conversation } from '@sdk/entities/conversation';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
-import { HUB_URL, hubAvailable, localBackendIsCloudLoggedIn } from './_hub';
+import { HUB_URL, getAliceCreds, hubAvailable, hubLogin, localBackendIsCloudLoggedIn } from './_hub';
 
 let skipReason: string | null = null;
 let hubToken: string | null = null;
@@ -31,24 +31,16 @@ beforeAll(async () => {
     skipReason = hub.reason ?? 'hub unreachable';
     return;
   }
-  // SERVER_URL is e.g. http://localhost:9008/api/v1 — strip /api/v1 then re-add
-  // explicitly when probing the local /cloud/status route.
-  const localApiBase = config.SERVER_URL;
-  const loggedIn = await localBackendIsCloudLoggedIn(localApiBase);
-  if (!loggedIn) {
-    skipReason =
-      'local backend is not cloud-logged-in — run `flowpad cloud login` (or the UI) first';
+  if (!(await localBackendIsCloudLoggedIn(config.SERVER_URL))) {
+    skipReason = 'local backend is not cloud-logged-in (run `flowpad cloud login`)';
     return;
   }
-  // Pull the hub bearer token from the local /cloud/status response so the
-  // verification GET can authenticate without re-logging.
-  try {
-    const r = await fetch(`${localApiBase}/cloud/status`);
-    const body = (await r.json()) as { data?: { api_key?: string; token?: string } };
-    hubToken = body.data?.api_key || body.data?.token || null;
-  } catch {
-    /* swallow — handled below */
+  const alice = await getAliceCreds();
+  if (!alice) {
+    skipReason = 'missing FLOWPAD_CLOUD_USER_{EMAIL,PASSWORD} in flowpad-oss/.env.local';
+    return;
   }
+  hubToken = (await hubLogin(alice.email, alice.password)).token;
 });
 
 const signupInfo = getTestSignupInfo();
@@ -67,6 +59,10 @@ describe('hub: Conversation.share', () => {
     expect(conv.id).toBeTruthy();
     expect(conv.remote).toBeFalsy();
 
+    // The TS share path POSTs to ``/graph/conversation/<id>/share`` on the
+    // local backend; the action dispatcher requires the target entity to
+    // exist locally first.
+    await conv.save();
     await conv.share();
 
     expect(conv.remote).toBe(true);

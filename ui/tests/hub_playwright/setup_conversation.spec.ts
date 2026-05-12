@@ -70,25 +70,18 @@ test('setup: alice creates → bob accepts via UI → realtime round-trip < 500 
     await bob.page.getByTestId('pending-invitation-row').first()
       .waitFor({ state: 'visible', timeout: 2_000 });
 
-    // 3. Accept every pending invitation visible (the freshly-created one
-    //    may share the strip with stale invites from prior runs; accepting
-    //    them all is harmless and unambiguous).
+    // 3. Click Accept on every pending row in parallel. Stale invitations
+    //    from prior runs are harmless to accept; the one we care about is
+    //    alice's freshly-created Conversation-target invite. ``Promise.all``
+    //    over the buttons fires all clicks concurrently so accept latency is
+    //    dominated by the single slowest hub round-trip, not N×serial.
     const tInviteSeen = Date.now();
-    let rows = await bob.page.getByTestId('pending-invitation-row').all();
-    console.log(`[setup] bob sees ${rows.length} pending invitation(s)  (+${tInviteSeen - tCreated} ms)`);
-    expect(rows.length).toBeGreaterThan(0);
-    for (let i = 0; i < rows.length; i++) {
-      // Re-query each iteration — the list re-renders after each accept and
-      // detaches previous locators.
-      const fresh = await bob.page.getByTestId('pending-invitation-row').all();
-      if (fresh.length === 0) break;
-      await fresh[0].getByTestId('accept-invitation-button').click();
-      // Wait until that row's identity (its accept button label flipping to
-      // "Accepting…" then disappearing) settles.
-      await bob.page.waitForTimeout(150);
-    }
+    const acceptButtons = await bob.page.getByTestId('accept-invitation-button').all();
+    console.log(`[setup] bob sees ${acceptButtons.length} pending invitation(s)  (+${tInviteSeen - tCreated} ms)`);
+    expect(acceptButtons.length).toBeGreaterThan(0);
+    await Promise.all(acceptButtons.map((b) => b.click()));
     const tAccepted = Date.now();
-    console.log(`[setup] bob accepted all pending invitations  (+${tAccepted - tInviteSeen} ms)`);
+    console.log(`[setup] bob clicked all accepts (parallel)    (+${tAccepted - tInviteSeen} ms)`);
 
     // 4. Both navigate to the conversation.
     await gotoConversation(bob.page, convId);
