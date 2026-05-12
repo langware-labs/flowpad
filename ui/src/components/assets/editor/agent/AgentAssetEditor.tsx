@@ -16,7 +16,7 @@ interface AgentAssetEditorProps {
 }
 
 /**
- * Agent files render two surfaces, keyed on different `target_vfs_path`
+ * Agent files render two surfaces, keyed on different `target_typeid_str`
  * values so they own separate AgenticProcess rows:
  *
  *   - Side-drawer editor process — generic, no agent embed,

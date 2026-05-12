@@ -7,7 +7,7 @@ session continuity — the Run's ``process_id`` points at it so the Runs
 drawer's terminal-icon click can attach to the same shared session.
 
 Field model:
-  * ``target_vfs_path`` mirrors the value the AgenticProcess carries, so the
+  * ``target_typeid_str`` mirrors the value the AgenticProcess carries, so the
     same drawer query (by target) lists every Run for a Task / Conversation /
     other anchor entity.
   * ``process_id`` is the FK that lets the row open a terminal on the actual
@@ -36,7 +36,7 @@ class RunStatus(StrEnum):
 
 class Run(Entity):
     type: str = APIField(default="run")
-    target_vfs_path: str = APIField("")
+    target_typeid_str: str = APIField("")
     process_id: str = APIField("")
     prompt_text: str = APIField("")
     status: str = APIField(default=RunStatus.RUNNING)

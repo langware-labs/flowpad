@@ -147,7 +147,7 @@ export function serializeAgenticContext(ctx: AgenticContext): Record<string, unk
     debug: ctx.debug,
     worktree: ctx.worktree,
     additional_dirs: ctx.additionalDirs ?? [],
-    target_vfs_path: ctx.targetVfsPath,
+    target_typeid_str: ctx.targetVfsPath,
     output_format: ctx.outputFormat,
     worker_type: ctx.workerType,
     process_type: ctx.processType,

@@ -126,7 +126,7 @@ export function WorkflowAssetEditor({ fsRef, workflow: providedWorkflow }: Workf
       context_data: { project_id: dataContext.project?.id },
       workdir,
       visible: false,
-      target_vfs_path: resolvedWorkflow.typeId.toString(),
+      target_typeid_str: resolvedWorkflow.typeId.toString(),
       process_type: ProcessType.Execution,
     }).save([resolvedWorkflow.typeId]);
 

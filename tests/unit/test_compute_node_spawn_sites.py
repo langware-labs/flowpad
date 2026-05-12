@@ -79,7 +79,7 @@ async def test_scan_create_process_fresh_path_constructs_with_post_refactor_fiel
     # Validate post-refactor field set
     expected = {
         "worker_type", "instruction_content", "cli_config", "context_data",
-        "workdir", "visible", "additional_dirs", "project_id", "target_vfs_path",
+        "workdir", "visible", "additional_dirs", "project_id", "target_typeid_str",
     }
     assert expected.issubset(captured.keys()), captured.keys()
     assert captured["workdir"] == "/tmp/proj"

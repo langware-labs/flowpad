@@ -3,7 +3,7 @@ import { useEntitiesQuery } from '@sdk/react/hooks';
 import { useMemo } from 'react';
 
 /**
- * Subscribe to Runs keyed to a target_vfs_path, optionally narrowed to those
+ * Subscribe to Runs keyed to a target_typeid_str, optionally narrowed to those
  * triggered by a specific source FlowMessage. One Run per Approve & Execute.
  *
  * The underlying AgenticProcess is shared across Runs to preserve Claude
@@ -19,7 +19,7 @@ export function useRunsForTarget(
   const sourceFmId = options?.sourceFlowMessageId || '';
   const query = useMemo(() => {
     const eqClauses: Array<{ op: string; operands: unknown[] }> = [
-      { op: '$EQ', operands: ['target_vfs_path', key] },
+      { op: '$EQ', operands: ['target_typeid_str', key] },
     ];
     if (sourceFmId) {
       eqClauses.push({ op: '$EQ', operands: ['source_flow_message_id', sourceFmId] });

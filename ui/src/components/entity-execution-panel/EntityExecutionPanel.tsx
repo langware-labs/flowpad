@@ -43,7 +43,7 @@ import { useAgenticProcessStream } from '@src/hooks/use-agentic-process-stream';
 interface EntityExecutionPanelProps {
   /**
    * VFS path the session is keyed to, stored as-is in
-   * `AgenticProcess.target_vfs_path`. Either an entity TypeId string
+   * `AgenticProcess.target_typeid_str`. Either an entity TypeId string
    * (`"agent-<uuid>"`, `"plan-<uuid>"`, …) or a `<typeid>/<sub_path>` form
    * (`"compute_node-<id>/Users/.../foo.md"` for a per-document session). Null
    * disables the panel (send is guarded on non-empty target).
@@ -110,7 +110,7 @@ interface EntityExecutionPanelProps {
  * trigger, …); drives a single AgenticProcess keyed by `target`.
  *
  * Process lifecycle:
- *   - Queries AgenticProcess by `target_vfs_path === target`.
+ *   - Queries AgenticProcess by `target_typeid_str === target`.
  *   - If a process already exists, reuse it (session persistence survives reloads).
  *   - If none, create one lazily on the first send via `computeNode.createProcess({
  *       targetVfsPath, outputFormat: "stream-json" })`. Print-mode processes

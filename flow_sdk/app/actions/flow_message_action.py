@@ -1097,7 +1097,7 @@ async def invitation_accept() -> ApiResponse:
 #   - `start-cc-from-transcript`: when the message has a `conversation.jsonl`
 #     FILE attachment, spawn a Claude session pre-loaded with that transcript
 #     path and ask for a brief analysis. The new AgenticProcess pins
-#     `target_vfs_path = <fm typeid>` so the frontend query picks it up.
+#     `target_typeid_str = <fm typeid>` so the frontend query picks it up.
 #
 # Both actions return immediately with `process_id`; the entity-query channel
 # delivers updates to the UI as the run progresses.
@@ -1159,7 +1159,7 @@ async def handle_derive_task(fm_id: str, someone_typeid: str) -> ApiResponse:
     fm_typeid = TypeId(type=BuiltinEntityType.FLOW_MESSAGE.value, id=fm.id)
     fm_typeid_str = str(fm_typeid)
 
-    # 1. Spawn the invisible AgenticProcess pinned to this FM. ``target_vfs_path``
+    # 1. Spawn the invisible AgenticProcess pinned to this FM. ``target_typeid_str``
     #    surfaces it in Private Context / Runs queries.
     cli_opts = ClaudeCliOptions(
         print_mode=True,
@@ -1172,7 +1172,7 @@ async def handle_derive_task(fm_id: str, someone_typeid: str) -> ApiResponse:
         workdir=workdir,
         visible=False,
         project_id=project_id,
-        target_vfs_path=fm_typeid_str,
+        target_typeid_str=fm_typeid_str,
         context_entities=[fm_typeid],
     )
     await process.save(someone_typeid)

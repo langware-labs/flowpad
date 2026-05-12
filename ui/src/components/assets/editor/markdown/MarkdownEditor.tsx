@@ -190,9 +190,9 @@ function MarkdownEditorContent({
     setBodyRef.current(newBody);
   }, []);
 
-  // Derive display name from path
-  const fileName = sourcePath.split('/').pop() ?? sourcePath;
-  const dirPath = sourcePath.slice(0, sourcePath.lastIndexOf('/'));
+  const sourcePathStr = typeof sourcePath === 'string' ? sourcePath : '';
+  const fileName = sourcePathStr.split('/').pop() || sourcePathStr;
+  const dirPath = sourcePathStr.slice(0, sourcePathStr.lastIndexOf('/'));
 
   const handleOpenExternal = useCallback(() => {
     void fsRef.open({ select: true });
@@ -221,11 +221,11 @@ function MarkdownEditorContent({
       return;
     }
 
-    const dir = sourcePath.slice(0, sourcePath.lastIndexOf('/'));
+    const dir = sourcePathStr.slice(0, sourcePathStr.lastIndexOf('/'));
     const resolvedPath = href.startsWith('/') ? href : `${dir}/${href}`;
     const assetType = currentDock?.pointer?.split('/')?.[1] ?? 'claude_memory';
     navigation.openDock(DockPointer.forAssetEditor(assetType, resolvedPath));
-  }, [sourcePath, currentDock, navigation]);
+  }, [sourcePathStr, currentDock, navigation]);
 
   // ── Loading ────────────────────────────────────────────────────────────────
   if (isLoading) {

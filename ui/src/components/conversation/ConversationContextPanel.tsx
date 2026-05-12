@@ -83,7 +83,7 @@ function dockPointerFor(typeId: TypeId, inside?: { type: string; id: string }): 
  *   2. **Private Context** — items the local user explicitly attached to this
  *      message: Tasks Claude derived headlessly, CC sessions started from a
  *      transcript. Linkage stored on the new entity (FlowMessage TypeId in
- *      `context_entities` for Tasks, `target_vfs_path` for AgenticProcess).
+ *      `context_entities` for Tasks, `target_typeid_str` for AgenticProcess).
  *      A "+" button picks the entity type to add (Task only for now).
  */
 export function ConversationContextPanel({

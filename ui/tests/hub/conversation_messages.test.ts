@@ -82,9 +82,22 @@ describe(`hub: alice + bob ping-pong loop to ${STOP_AT}`, () => {
       });
     });
 
-    // 3. Ignite. Wait briefly for bob to accept+join before firing the
-    //    first message — bob's polling cycle is ~500ms.
-    await new Promise((r) => setTimeout(r, 2000));
+    // 3. Ignite — but only after bob has joined as a hub-side participant.
+    //    We can't see participants via GET (api_invisible), so we wait for
+    //    bob to publish his presence as the first non-ignite ``add_message``
+    //    he sends after accepting. Workaround: bob is configured to send a
+    //    handshake "0" right after his join. Alice waits for that, then
+    //    ignites with "1". (Bob's "0" arrives via her own ``on('message')``
+    //    tap, so this is consistent with the realtime path.)
+    const ready = new Promise<void>((resolve) => {
+      const offReady = conv.on('message', (m: FlowMessage) => {
+        if ((m.text || '').trim() === '0') {
+          offReady();
+          resolve();
+        }
+      });
+    });
+    await ready;
     log.push({ who: 'alice', kind: 'tx', n: 1, t: Date.now() - tStart });
     await conv.addMessage('1');
 
@@ -98,5 +111,5 @@ describe(`hub: alice + bob ping-pong loop to ${STOP_AT}`, () => {
     console.log(`alice rx: [${rxNums.join(', ')}]`);
 
     void dataContext; void dataManager;
-  }, 30_000);
+  }, 8_000);
 });

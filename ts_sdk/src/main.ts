@@ -74,6 +74,11 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
         if (persistedTypeId && !persistedTypeId.equals(computeNode.typeId)) {
           setContextEntityToLocalStorage(ContextEntitiesEnum.CurrentComputeNodeTypeId, null);
         }
+        // Evict cached compute_node entities so getById('@local') re-fetches the fresh
+        // UUID. Without this, a prior expanded ComputeNode keyed under the @local alias
+        // survives bootstrap and createProcess posts to a dead UUID → 404.
+        dataManager.removeEntityFromCache(new TypeId('compute_node', '@local'));
+        if (persistedTypeId) dataManager.removeEntityFromCache(persistedTypeId);
         await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentComputeNodeTypeId, computeNode.typeId);
       }
 

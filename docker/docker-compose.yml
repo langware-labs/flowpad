@@ -1,0 +1,72 @@
+# Two flow_sdk backends in fully isolated containers for the realtime
+# round-trip tests. The hub stays on the host (already running at
+# :8093); both containers reach it via host.docker.internal:8093.
+#
+# Tests on the host hit:
+#   localhost:9008 → alice container → hub (host)
+#   localhost:9007 → bob   container → hub (host)
+#
+# Identity isolation comes from each container having:
+#   - its own filesystem (named volume mounted at /root/.flow)
+#   - its own python_keyring file backend
+#   - its own env namespace (no shell-inheritance path)
+#
+# Bring up:    docker compose -f docker/docker-compose.yml up -d --build --wait
+# Tear down:   docker compose -f docker/docker-compose.yml down -v
+
+services:
+  alice:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.flow-backend
+    image: flowpad-backend:latest
+    container_name: flowpad_alice
+    environment:
+      LOCAL_SERVER_PORT: "9008"
+      FLOWPAD_HUB_URL: "http://host.docker.internal:8093"
+      FLOWPAD_CLOUD_USER_EMAIL: "alice@local.test"
+      FLOWPAD_CLOUD_USER_PASSWORD: "alice-pw-1234"
+      FLOWPAD_DEV: "true"
+    ports:
+      - "9008:9008"
+    volumes:
+      - alice_flow:/root/.flow
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:9008/api/v1/health/status"]
+      interval: 2s
+      timeout: 1s
+      retries: 20
+      start_period: 5s
+
+  bob:
+    # Reuses the image built by ``alice`` — same Dockerfile, just different env.
+    image: flowpad-backend:latest
+    container_name: flowpad_bob
+    depends_on:
+      - alice
+    environment:
+      LOCAL_SERVER_PORT: "9007"
+      FLOWPAD_HUB_URL: "http://host.docker.internal:8093"
+      FLOWPAD_CLOUD_USER_EMAIL: "bob@local.test"
+      FLOWPAD_CLOUD_USER_PASSWORD: "bob-pw-1234"
+      # FLOWPAD_DEV intentionally unset → instance_name=prod.
+      # Critical: this is set per service in this compose file, never via
+      # shell-inheritance, so bob can't accidentally pick up alice's FLOWPAD_DEV.
+    ports:
+      - "9007:9007"
+    volumes:
+      - bob_flow:/root/.flow
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-fs", "http://localhost:9007/api/v1/health/status"]
+      interval: 2s
+      timeout: 1s
+      retries: 20
+      start_period: 5s
+
+volumes:
+  alice_flow:
+  bob_flow:
