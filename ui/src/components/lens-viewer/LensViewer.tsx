@@ -1,4 +1,4 @@
-import { dataContext } from '@sdk';
+import { dataContext, isAbsoluteMachinePath } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useMemo } from 'react';
@@ -58,8 +58,10 @@ export function LensViewer() {
         try { return decodeURIComponent(ref); } catch { return ref; }
       })();
 
-      // Form 2: absolute path.
-      if (decoded.startsWith('/')) {
+      // Form 2: absolute path — POSIX (``/…``) or Windows (``C:\…``).
+      // Forwarded to ``TranscriptViewer path={…}`` as-is; the backend reads
+      // the file with its native OS path semantics.
+      if (isAbsoluteMachinePath(decoded)) {
         return (
           <TranscriptViewer
             workerType={workerType}

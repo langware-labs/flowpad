@@ -4,6 +4,32 @@ import { AttachmentType } from '@sdk/entities/flow-message';
 import { fileAttachmentUrl } from './attachment-url';
 
 /**
+ * Build the "context entities saved locally" lines for a list of TypeIds.
+ *
+ * Every Flowpad entity is mirrored on disk under `recordsRoot` as
+ * `<type>/<type>-@<id>/metadata.json`, so we hand Claude the absolute path
+ * it can `Read` directly. When `recordsRoot` is unset (rare — server
+ * bootstrap hasn't run yet) we fall back to the GET endpoint so the lines
+ * still resolve to *something* readable.
+ *
+ * Caller is expected to dedupe TypeIds before passing them in.
+ */
+export function buildContextEntityLines(typeIds: readonly TypeId[]): string[] {
+  const recordsRoot = dataManager.recordsRoot;
+  const out: string[] = [];
+  for (const tid of typeIds) {
+    if (!tid?.type || !tid?.id || tid.type === FlowMessage.type) continue;
+    if (recordsRoot) {
+      const recordPath = `${recordsRoot}/${tid.type}/${tid.type}-@${tid.id}/metadata.json`;
+      out.push(`- ${tid.toUrlString()} (${tid.type}) — read: ${recordPath}`);
+    } else {
+      out.push(`- ${tid.toUrlString()} (${tid.type}) — fetch: GET http://localhost:9007/api/v1/graph/${tid.type}/${tid.id}`);
+    }
+  }
+  return out;
+}
+
+/**
  * Resolve a single PROMPT attachment to its inline text.
  *
  * - Inline text → return `data` verbatim.
@@ -87,20 +113,10 @@ export async function buildMergedPrompt(flowMessage: FlowMessage): Promise<strin
     );
   }
 
-  const recordsRoot = dataManager.recordsRoot;
-  const contextLines: string[] = [];
-  for (const tid of flowMessage.contextEntities) {
-    if (!tid?.type || !tid?.id || tid.type === FlowMessage.type) continue;
-    if (recordsRoot) {
-      const recordPath = `${recordsRoot}/${tid.type}/${tid.type}-@${tid.id}/metadata.json`;
-      contextLines.push(`- ${tid.toUrlString()} (${tid.type}) — read: ${recordPath}`);
-    } else {
-      contextLines.push(`- ${tid.toUrlString()} (${tid.type}) — fetch: GET http://localhost:9007/api/v1/graph/${tid.type}/${tid.id}`);
-    }
-  }
+  const contextLines = buildContextEntityLines(flowMessage.contextEntities);
   const contextSection: string[] = [];
   if (contextLines.length > 0) {
-    const verb = recordsRoot ? 'read each one as JSON' : 'fetch each one with curl/HTTP';
+    const verb = dataManager.recordsRoot ? 'read each one as JSON' : 'fetch each one with curl/HTTP';
     contextSection.push(
       `Flowpad entities in this conversation's context — ${verb} to inspect its fields when needed:\n${contextLines.join('\n')}`,
     );

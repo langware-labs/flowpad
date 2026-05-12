@@ -235,6 +235,23 @@ def start(ctx: typer.Context):
 
     # Skip browser open when launched from Electron (it has its own BrowserWindow)
     if not os.environ.get("FLOWPAD_NO_BROWSER"):
+        import time
+        from flow_sdk.server.launch import check_server_health
+
+        healthy = False
+        for _ in range(5):
+            if check_server_health(port):
+                healthy = True
+                break
+            time.sleep(0.3)
+
+        if not healthy:
+            typer.echo(
+                f"Server is not responding on port {port}; skipping browser launch. "
+                f"Try `flow start` again once it comes up."
+            )
+            return
+
         import webbrowser
 
         webbrowser.open(f"http://127.0.0.1:{port}")

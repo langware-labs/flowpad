@@ -300,6 +300,7 @@ class DataContext extends EventEmitter {
     runInAction(() => {
       this.workdir = path;
     });
+    defineGlobal('workdir', path);
     this.emit(ContextEventType.CONTEXT_CHANGED);
   }
 
@@ -350,6 +351,7 @@ class DataContext extends EventEmitter {
     super();
     makeObservable(this, {
       _cloudLoggedIn: observable,
+      cloudApiUrl: computed,
       cloudLoginAvailable: computed,
       user: computed,
       workspace: computed,
@@ -389,8 +391,6 @@ class DataContext extends EventEmitter {
       activeTerminalTargetTypeId: observable,
       workdir: observable,
       envName: computed,
-      cloudApiUrl: computed,
-      cloudLoginAvailable: computed,
       desktopInfo: computed,
       isDesktop: computed,
       version: computed,

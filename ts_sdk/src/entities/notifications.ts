@@ -9,6 +9,8 @@ export interface SendReplyExtras {
   promptFiles?: File[];
   /** TypeId strings (e.g. "skill-<uuid>") to attach as TYPE_ID attachments. */
   assetReferences?: string[];
+  /** Additional TypeId strings to attach as context entities on the FlowMessage (deduped against task/conversation). */
+  contextEntities?: string[];
 }
 
 export interface SendReplyTarget {
@@ -39,6 +41,7 @@ export async function sendReply(
     (files && files.length > 0) ||
     (extras?.promptFiles && extras.promptFiles.length > 0) ||
     hasAssetRefs;
+  const ctxEntities = (extras?.contextEntities ?? []).filter(Boolean);
   if (hasFiles) {
     const form = new FormData();
     if (taskId) form.append('task_id', taskId);
@@ -54,12 +57,16 @@ export async function sendReply(
     if (hasAssetRefs) {
       form.append('asset_references', JSON.stringify(extras!.assetReferences));
     }
+    for (const ce of ctxEntities) {
+      form.append('context_entities', ce);
+    }
     action.bodyParameters = form;
   } else {
-    const body: Record<string, string> = { message };
+    const body: Record<string, unknown> = { message };
     if (taskId) body.task_id = taskId;
     if (conversationId) body.conversation_id = conversationId;
     if (extras?.promptText) body.prompt_text = extras.promptText;
+    if (ctxEntities.length > 0) body.context_entities = ctxEntities;
     action.bodyParameters = body;
   }
   await dataManager.callAction(action);

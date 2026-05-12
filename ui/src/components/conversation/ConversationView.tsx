@@ -7,13 +7,9 @@ import { openInboxMessage } from '@src/components/inbox-view/inbox-api';
 import { markFlowMessagesReceived } from '@sdk/entities/flow-message';
 import { FlowMessageBubble } from './FlowMessageBubble';
 import { MessageComposer } from './MessageComposer';
-import { useApproveAndExecutePty } from './useApproveAndExecutePty';
-import { useApproveAndExecuteHeadless } from './useApproveAndExecuteHeadless';
+import { useApproveAndExecute } from './useApproveAndExecute';
 import { useLocalUser } from './useLocalUser';
-import { ConversationMode } from './conversation-mode';
 import { buildConversationItems, ConversationItemKind } from './conversation-items';
-
-export { ConversationMode } from './conversation-mode';
 
 interface ConversationViewProps {
   conversationId: string;
@@ -22,7 +18,6 @@ interface ConversationViewProps {
   senderName?: string;
   /** Wraps any action that needs a `cwd`/project. Provided by the parent (SharedTaskView / TaskDetailPanel). */
   ensureMapped?: (continuation: () => void | Promise<void>) => void;
-  mode?: ConversationMode;
   /** ID of the currently-selected message (for the Context drawer tab). */
   selectedMessageId?: string | null;
   /** Called when the user clicks (or starts editing) a message. */
@@ -36,7 +31,6 @@ export function ConversationView({
   task,
   senderName: _senderName,
   ensureMapped,
-  mode = ConversationMode.HEADLESS,
   selectedMessageId,
   onSelectMessage,
   onMostRecentMessageChange,
@@ -119,8 +113,7 @@ export function ConversationView({
   // task is present so we can keep the call unconditional, then suppress the
   // approve action below.
   const inertTask = useMemo(() => ({ id: '', metadata: {} }) as ITask, []);
-  const { approveAndExecute: approveAndExecutePty } = useApproveAndExecutePty({ task: task ?? inertTask });
-  const { approveAndExecute: approveAndExecuteHeadless } = useApproveAndExecuteHeadless({
+  const { approveAndExecute } = useApproveAndExecute({
     task: task ?? inertTask,
     conversationId,
   });
@@ -131,17 +124,13 @@ export function ConversationView({
     (messageId: string, idx: number) => {
       if (!canApproveAndExecute) return;
       const action = async () => {
-        if (mode === ConversationMode.HEADLESS) {
-          await approveAndExecuteHeadless(messageId, idx);
-        } else {
-          await approveAndExecutePty(messageId, idx);
-        }
+        await approveAndExecute(messageId, idx);
         void refetch();
       };
       if (ensureMapped) ensureMapped(action);
       else void action();
     },
-    [approveAndExecuteHeadless, approveAndExecutePty, mode, refetch, ensureMapped, canApproveAndExecute],
+    [approveAndExecute, refetch, ensureMapped, canApproveAndExecute],
   );
 
   const orderedItems = useMemo(

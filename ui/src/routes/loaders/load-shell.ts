@@ -250,8 +250,20 @@ async function routeProcessPointer(processId: string): Promise<void> {
       // eslint-disable-next-line @typescript-eslint/only-throw-error
       throw replace('/dock/shell');
     }
+    const fallbackPointer = loadedToPointer(next.loaded);
+    const requestedProc = AgenticProcess.getByIdFromCache<AgenticProcess>(processId);
+    const requestedName = requestedProc?.name ?? requestedProc?.displayName ?? `${processId.slice(0, 8)}…`;
+    const fallbackName =
+      next.loaded.kind === 'process'
+        ? next.loaded.process.name ?? next.loaded.process.displayName ?? fallbackPointer
+        : next.loaded.shell.name ?? fallbackPointer;
+    toast({
+      title: `Terminal "${requestedName}" not found`,
+      description: `${directCleanup.title} — opened "${fallbackName}" instead.`,
+      variant: 'destructive',
+    });
     // eslint-disable-next-line @typescript-eslint/only-throw-error
-    throw replace(`/dock/shell/${loadedToPointer(next.loaded)}`);
+    throw replace(`/dock/shell/${fallbackPointer}`);
   }
 }
 
@@ -300,8 +312,14 @@ async function routePlainShellPointer(pointer: string): Promise<void> {
       // eslint-disable-next-line @typescript-eslint/only-throw-error
       throw replace('/dock/shell');
     }
+    const fallbackPointer = loadedToPointer(next.loaded);
+    toast({
+      title: 'Opened a different terminal',
+      description: `Couldn't load ${shellId.slice(0, 8)}… (${directCleanup.title}) — opened ${fallbackPointer} instead.`,
+      variant: 'destructive',
+    });
     // eslint-disable-next-line @typescript-eslint/only-throw-error
-    throw replace(`/dock/shell/${loadedToPointer(next.loaded)}`);
+    throw replace(`/dock/shell/${fallbackPointer}`);
   }
 }
 

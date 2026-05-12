@@ -387,10 +387,11 @@ class Shell(Entity):
         return await self.start_pty(*args, **kwargs)
 
     async def stop(self) -> None:
-        """Kill PTY but keep the Shell entity. Tab entry remains.
+        """Kill PTY + worker, keep the Shell entity. Tab entry remains.
 
         Use before server restarts or when you want manual resume control.
         """
+        await self.terminate_worker()
         pty_handle = self.compute_node.get_pty(self.id) if self.compute_node_id else None
         if pty_handle:
             await pty_handle.kill()
@@ -823,7 +824,12 @@ class Shell(Entity):
 
     @action.post(action_name="close")
     async def close(self) -> ApiResponse:
-        """Kill PTY + delete disk record + delete entity. Permanent teardown."""
+        """Kill worker + PTY + delete disk record + delete entity. Permanent teardown."""
+        try:
+            await self.terminate_worker()
+        except Exception as e:
+            logging.warning(f"[Shell.close] worker termination failed: {e}")
+
         try:
             record = await self.get_record()
             if record:

@@ -13,6 +13,7 @@ import { AttachmentType } from '@sdk/entities/flow-message';
 import type { ITask } from '@sdk/entities/task';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useLocalUser } from './useLocalUser';
+import { buildContextEntityLines } from './prompt-building';
 
 interface UseMyProcessOptions {
   task: Task;
@@ -35,8 +36,11 @@ interface UseMyProcessResult {
  * Build the receiver's "first Start" instruction — same six-section structured
  * prompt we used to inject every execute. Only fires once: subsequent Opens
  * just reattach to the existing process with no instruction.
+ *
+ * Exported so the Shared Context "Start session" actions (spec row, transcript
+ * row) can spawn an AgenticProcess with the same prompt.
  */
-async function buildReceiverContextPrompt(
+export async function buildReceiverContextPrompt(
   task: Task,
   conversationId: string,
   senderName: string | undefined,
@@ -109,12 +113,42 @@ async function buildReceiverContextPrompt(
     parts.push('', 'Other attachments:', ...otherFileLines);
   }
 
-  parts.push(
-    '',
-    isSession
-      ? 'We are about to assist a user who encountered the following issue. Please read through the above session and conversation carefully and acknowledge you have everything you need.'
-      : 'Please read through the above plan and conversation carefully and implement the required changes. If anything is unclear, ask before proceeding.',
-  );
+  // Local on-disk paths for every Flowpad entity referenced in the
+  // conversation's context — same convention Approve & Execute uses
+  // (`<recordsRoot>/<type>/<type>-@<id>/metadata.json`). Collect from every
+  // FlowMessage's contextEntities plus the Task itself, dedupe by stringified
+  // TypeId, then emit via the shared helper.
+  const referencedTypeIds = new Map<string, TypeId>();
+  const addTypeId = (t: TypeId | null | undefined) => {
+    if (!t) return;
+    const key = t.toString();
+    if (!referencedTypeIds.has(key)) referencedTypeIds.set(key, t);
+  };
+  for (const fm of messages) {
+    if (!fm) continue;
+    for (const t of fm.contextEntities ?? []) addTypeId(t);
+  }
+  for (const t of task.contextEntities ?? []) addTypeId(t);
+  const contextEntityLines = buildContextEntityLines(Array.from(referencedTypeIds.values()));
+  if (contextEntityLines.length > 0) {
+    parts.push(
+      '',
+      "Context entities saved locally (read each one's metadata.json for details):",
+      ...contextEntityLines,
+    );
+  }
+
+  // Closing instruction only fires when an actual Spec is attached — without
+  // one there's no "plan" to read or "issue" to triage, so we leave it off
+  // and let the user drive the conversation themselves.
+  if (spec) {
+    parts.push(
+      '',
+      isSession
+        ? 'We are about to assist a user who encountered the following issue. Please read through the above session and conversation carefully and acknowledge you have everything you need.'
+        : 'Please read through the above plan and conversation carefully and implement the required changes. If anything is unclear, ask before proceeding.',
+    );
+  }
   return parts.join('\n');
 }
 
@@ -170,7 +204,7 @@ export function useMyProcess({ task, conversationId, senderName }: UseMyProcessO
         }
         if (existing) {
           await existing.start();
-          navigation.openDock(existing.dockPointer);
+          navigation.openDock(existing.terminalDockPointer);
           return;
         }
       }
@@ -189,7 +223,7 @@ export function useMyProcess({ task, conversationId, senderName }: UseMyProcessO
         t.my_process_id = spawned.id;
         await t.save();
       }
-      navigation.openDock(spawned.dockPointer);
+      navigation.openDock(spawned.terminalDockPointer);
     } catch (err) {
       console.error('[useMyProcess] openOrStart failed:', err);
     } finally {
