@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Filter } from 'lucide-react';
 import type { AssetScope } from './assetFilter';
 import { ProjectPickerModal } from './ProjectPickerModal';
@@ -20,19 +20,27 @@ const SCOPES: { value: AssetScope; label: string }[] = [
 export function ScopeFilterBar({
   scope,
   projectIds,
-  currentProjectId: _currentProjectId,
+  currentProjectId,
   onScopeChange,
   onProjectIdsChange,
 }: ScopeFilterBarProps): React.ReactElement {
   const [pickerOpen, setPickerOpen] = useState(false);
 
-  const projectScopeDisabled = projectIds.length === 0;
-  const projectCount = projectIds.length;
+  const effectiveProjectIds = useMemo(() => {
+    if (projectIds.length > 0) return projectIds;
+    if (currentProjectId) return [currentProjectId];
+    return [];
+  }, [currentProjectId, projectIds]);
+  const projectScopeDisabled = effectiveProjectIds.length === 0;
+  const projectCount = effectiveProjectIds.length;
 
   const handleScopeClick = (s: AssetScope) => {
     if (s === 'project' && projectScopeDisabled) {
       setPickerOpen(true);
       return;
+    }
+    if (s === 'project' && projectIds.length === 0 && currentProjectId) {
+      onProjectIdsChange([currentProjectId]);
     }
     onScopeChange(s);
   };
@@ -85,7 +93,7 @@ export function ScopeFilterBar({
       <ProjectPickerModal
         open={pickerOpen}
         onOpenChange={setPickerOpen}
-        selectedIds={projectIds}
+        selectedIds={effectiveProjectIds}
         onConfirm={(ids) => {
           onProjectIdsChange(ids);
           setPickerOpen(false);

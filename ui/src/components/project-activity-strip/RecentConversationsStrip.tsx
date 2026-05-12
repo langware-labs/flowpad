@@ -7,7 +7,7 @@ import {
   TypeId,
   acceptInvitation,
   dismissConversation,
-  syncFromHub,
+  fetchConversations,
 } from '@sdk';
 import { uploadFlowMessage, type UploadConflict } from '@sdk/entities/flow-message';
 import { useEntitiesQuery, useEntity } from '@src/hooks/entity-hooks';
@@ -42,8 +42,8 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
   // Single source of truth: every row is a Conversation. Invitation rows are
   // Conversations whose first FlowMessage has ``kind === 'invitation'`` —
   // built locally by ``_ensure_invitation_placeholder_conversation`` after
-  // ``syncFromHub`` materializes a pending Invitation. The Accept CTA reads
-  // ``invitation_id`` off that first message's ``context_entities``.
+  // ``fetchConversations`` materializes a pending Invitation. The Accept CTA
+  // reads ``invitation_id`` off that first message's ``context_entities``.
   const request = useMemo(() => new QueryRequest({ type: Conversation.type }), []);
   const { data: conversations = [], refetch, isLoading } = useEntitiesQuery<Conversation>(request);
 
@@ -95,7 +95,7 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
     setHubSyncing(true);
     try {
       try {
-        await syncFromHub();
+        await fetchConversations();
       } catch (e) {
         // hub may be unavailable / not configured — local refetch still works
       }

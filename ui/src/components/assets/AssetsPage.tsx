@@ -222,7 +222,7 @@ export function AssetsPage() {
   const [assetFilter, setAssetFilter] = useState<AssetFilter>(() => ({
     ...DEFAULT_ASSET_FILTER,
   }));
-  // Still derived (passed to ScopeFilterBar to highlight "current project").
+  // Still derived so ScopeFilterBar can default project-only filtering to the current project.
   const currentProjectId = projectIdForPath(dataContext.project?.fs_storage_mount_path);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFilters, setSearchFilters] = useState<SearchFilters>({});

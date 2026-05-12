@@ -17,6 +17,8 @@ import webbrowser
 from typing import Any
 from urllib.parse import urlparse
 
+import httpx
+
 from flow_sdk.api.messages import OAuthMessage, OAuthMessageStatus
 from flow_sdk.api.oauth_api import OAuthProvider
 from flow_sdk.cli.app_config import set_user
@@ -56,10 +58,13 @@ async def cloud_login() -> dict[str, Any]:
 
     if kind == "local":
         if not (settings.cloud_user_email and settings.cloud_user_pass):
-            raise ValueError("Local hub login requires FLOWPAD_CLOUD_USER_EMAIL and FLOWPAD_CLOUD_USER_PASSWORD")
+            raise ValueError(
+                "Cloud is not configured. Set FLOWPAD_CLOUD_USER_EMAIL and "
+                "FLOWPAD_CLOUD_USER_PASSWORD in .env.local and restart the app."
+            )
         return await _login_by_api(settings.cloud_user_email, settings.cloud_user_pass)
 
-    raise ValueError(f"Login not supported for hub URL: {hub_url}")
+    raise ValueError(f"Cloud sign-in isn't supported for this hub URL: {hub_url}")
 
 
 async def _login_by_api(email: str, password: str) -> dict[str, Any]:
@@ -89,13 +94,37 @@ async def _wait_or_timeout(timeout: float) -> None:
 
 
 async def _post_cloud_login(email: str, password: str) -> LoginData:
-    """POST cloud /login and return the full LoginData payload."""
+    """POST cloud /login and return the full LoginData payload.
+
+    Translates raw transport / non-success envelope failures into
+    user-friendly RuntimeError messages so the UI surfaces clear copy in
+    both the warnings popover and the hub-client-error toast, rather than
+    httpx's "All connection attempts failed" stack-trace text.
+    """
     config = ApiConfig.from_env()
-    async with FlowpadClient(config) as client:
-        data = await client.post("/login", {"email": email, "password": password})
+    try:
+        async with FlowpadClient(config) as client:
+            data = await client.post("/login", {"email": email, "password": password})
+    except httpx.RequestError as e:
+        # Transport failure — hub process is down, DNS resolution failed,
+        # connection refused, network unreachable, etc.
+        raise RuntimeError(
+            "Cloud is not available. The hub server can't be reached — "
+            "check your connection or try again in a moment."
+        ) from e
+    except ValueError as e:
+        # ``FlowpadClient._unwrap`` raises ValueError for non-200 / non-success
+        # envelopes. Map the common cases.
+        text = str(e)
+        if "401" in text or "Unauthorized" in text or "invalid token" in text.lower():
+            raise RuntimeError("Cloud sign-in was rejected. Your credentials may be wrong or expired.") from e
+        if "403" in text or "Forbidden" in text:
+            raise RuntimeError("Cloud access denied for these credentials.") from e
+        # Strip the giant raw response body from the user-facing message.
+        raise RuntimeError("Cloud sign-in failed. Please try again.") from e
     login_data = LoginData.model_validate(data)
     if not login_data.token or not login_data.user:
-        raise ValueError(f"login response missing token/user: {data!r}")
+        raise RuntimeError("Cloud sign-in returned an unexpected response. Please try again.")
     return login_data
 
 

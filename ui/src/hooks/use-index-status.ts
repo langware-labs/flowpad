@@ -39,7 +39,21 @@ export function useIndexStatus(): UseIndexStatusResult {
     apiClient
       .get(STATUS_PATH)
       .then((data: unknown) => {
-        setState({ phase: 'ready', status: data as IndexStatus });
+        // Defensive: if the API returns null/undefined or shape unexpectedly
+        // lacks fields, fall back to EMPTY_STATUS — never expose a null
+        // `status` field to consumers, since downstream code reads
+        // `status.per_type` etc. directly.
+        const incoming = (data && typeof data === 'object') ? (data as Partial<IndexStatus>) : null;
+        const status: IndexStatus = incoming
+          ? {
+              never_indexed: incoming.never_indexed ?? EMPTY_STATUS.never_indexed,
+              last_indexed_at: incoming.last_indexed_at ?? null,
+              stale: incoming.stale ?? false,
+              default_types: incoming.default_types ?? [],
+              per_type: incoming.per_type ?? [],
+            }
+          : EMPTY_STATUS;
+        setState({ phase: 'ready', status });
       })
       .catch(() => {
         // On error assume ok — don't block search

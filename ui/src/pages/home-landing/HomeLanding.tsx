@@ -46,7 +46,8 @@ import { navigateToResult } from '@src/navigation/record-type-nav';
 import { InlineSearchResults } from './InlineSearchResults';
 import { Loader2, PackageSearch, X, CheckCircle2, Hammer, Inbox, RefreshCw, Users } from 'lucide-react';
 import { useInboxStore } from '@src/store/use-inbox-store';
-import { listInboxMessages, fetchInboxFromHub } from '@src/components/inbox-view/inbox-api';
+import { listInboxMessages } from '@src/components/inbox-view/inbox-api';
+import { fetchConversations } from '@sdk';
 import { ViewType } from '@src/types/ViewType';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDevMode } from '@src/contexts/dev-mode-context';
@@ -240,7 +241,7 @@ export function HomeLanding() {
   const handleInboxRefresh = useCallback(async () => {
     setInboxRefreshing(true);
     try {
-      await fetchInboxFromHub();
+      await fetchConversations();
       const msgs = await listInboxMessages();
       setUnreadCount(msgs.filter((m) => !m.is_read).length);
     } finally {
