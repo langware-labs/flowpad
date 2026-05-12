@@ -101,6 +101,12 @@ class BaseInstanceSettings:
     # ---- Cloud login: max wait for browser-mode callback. Override via CLOUD_LOGIN_TIMEOUT_SECONDS. ----
     cloud_login_timeout_seconds: float = 300.0
 
+    # ---- Sniffer: single source of truth for whether the desktop bootstrap
+    # auto-installs the Claude-Code hooks into ~/.claude/settings.json.
+    # Default off; flip to true to opt in. Frontend reads the resulting
+    # bootstrap.sniffer_hook payload (null when disabled). ----
+    sniffer_enabled: bool = False
+
     # ---- Process info (filled at boot, optional) ----
     server_pid: int | None = None
 

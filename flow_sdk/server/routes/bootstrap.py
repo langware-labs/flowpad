@@ -1363,14 +1363,20 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
         scan_info = await get_scan_info()
         _t.time("get_scan_info")
 
-        # Auto-enable sniffer hook on desktop init.
-        # Skip setup if already enabled — one read, zero writes on subsequent boots.
+        # Sniffer hook is opt-in via InstanceSettings.sniffer_enabled
+        # (default off). When disabled, bootstrap reports whatever is in the
+        # DB (None if it was never enabled, the existing entity if the user
+        # toggled it on via the hooks-sniffer action) but never auto-installs
+        # hooks into ~/.claude/settings.json on its own.
         from flow_sdk.app.actions.hooks_sniffer import _create_or_update_sniffer_hook, _get_sniffer_hook  # noqa: PLC0415
+        from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
         sniffer_hook = None
         try:
             sniffer_hook = await _get_sniffer_hook()
             _t.time("get_sniffer_hook")
-            if not sniffer_hook or not sniffer_hook.enabled:
+            if get_instance_settings().sniffer_enabled and (
+                not sniffer_hook or not sniffer_hook.enabled
+            ):
                 sniffer_hook = await _create_or_update_sniffer_hook(user)
                 _t.time("create_or_update_sniffer_hook")
                 await sniffer_hook.apply()

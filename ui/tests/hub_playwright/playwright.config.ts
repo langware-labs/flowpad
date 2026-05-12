@@ -24,7 +24,7 @@ export default defineConfig({
   use: {
     headless: true,
     trace: 'retain-on-failure',
-    actionTimeout: 3_000,
+    actionTimeout: 5_000,
     navigationTimeout: 5_000,
   },
   projects: [

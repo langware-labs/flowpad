@@ -57,8 +57,11 @@ function loadMaxEvents(): number {
   return DEFAULT_MAX_EVENTS;
 }
 
-/** Last user decision; defaults to OFF when no preference has been recorded. */
-function loadSnifferPreference(): boolean {
+/** Last user decision. Returns ``null`` when no preference has been recorded
+ *  so callers can fall back to the backend state — bootstrap auto-enables
+ *  the sniffer on desktop init, and clobbering that to OFF on every fresh
+ *  install would clear the just-injected ~/.claude/settings.json hooks. */
+function loadSnifferPreference(): boolean | null {
   try {
     const stored = localStorage.getItem(SNIFFER_ENABLED_STORAGE_KEY);
     if (stored === 'true') return true;
@@ -66,7 +69,7 @@ function loadSnifferPreference(): boolean {
   } catch {
     // ignore
   }
-  return false;
+  return null;
 }
 
 function saveSnifferPreference(enabled: boolean): void {
@@ -162,13 +165,14 @@ export function useHooksSniffer() {
   }, [snifferEnabled]);
 
   // Reconcile server state with the user's last-saved preference, exactly once
-  // after bootstrap completes. Default is OFF (see loadSnifferPreference).
+  // after bootstrap completes. When no preference is recorded, trust the
+  // backend (bootstrap auto-enables on desktop init).
   const reconciledRef = useRef(false);
   useEffect(() => {
     if (isBootstrapping || reconciledRef.current) return;
     reconciledRef.current = true;
     const desired = loadSnifferPreference();
-    if (desired === snifferEnabled) return;
+    if (desired === null || desired === snifferEnabled) return;
     setIsToggling(true);
     void (desired ? snifferManager.enable() : snifferManager.disable())
       .then(() => setHookId(desired ? snifferManager.entity?.id ?? null : null))

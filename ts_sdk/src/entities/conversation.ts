@@ -270,6 +270,8 @@ export interface AcceptInvitationParams {
 
 export interface AcceptInvitationResult {
   invitation_id: string;
+  /** Id of the Conversation joined post-accept (direct-share invite flow). */
+  conversation_id?: string | null;
   /** Id of the FlowMessage whose bundle was downloaded and unpacked, if any. */
   flow_message_id?: string | null;
   /** True when the targeted bundle download materialized the local Conversation. */
