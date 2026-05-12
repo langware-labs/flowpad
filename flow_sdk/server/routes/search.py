@@ -225,8 +225,21 @@ async def search_records(
             "data": {"results": results, "query": "", "total": total_count, "indexer_ready": True},
         })
 
+    # Sanitize the FTS query: the unicode61 tokenizer used for entities_fts
+    # treats '-' as a word separator, AND FTS5 syntax interprets a hyphen
+    # adjacent to a term as a NEGATION operator. A user query like
+    # ``hello-flowpad`` therefore parses as ``hello NOT flowpad`` and
+    # matches nothing. Replace operator-y punctuation with spaces so
+    # callers can type hyphenated names directly. (Quotation marks left
+    # alone — callers can still escape for phrase queries.)
+    fts_q = q
+    if fts_q:
+        for ch in "-/_:":
+            fts_q = fts_q.replace(ch, " ")
+        fts_q = " ".join(fts_q.split())
+
     try:
-        entities = await Entity.search(query=q, limit=limit + offset, record_type=record_type, status=status, calibration=calibration)
+        entities = await Entity.search(query=fts_q, limit=limit + offset, record_type=record_type, status=status, calibration=calibration)
     except Exception:
         logger.warning("FTS search failed (index may not be ready), returning empty results", exc_info=True)
         return JSONResponse(content={
