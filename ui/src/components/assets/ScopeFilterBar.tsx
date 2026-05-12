@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { Filter } from 'lucide-react';
 import type { AssetScope } from './assetFilter';
 import { ProjectPickerModal } from './ProjectPickerModal';
+import { ScopeBar, type ScopeBarOption } from '@src/components/ui/scope-bar';
 
 interface ScopeFilterBarProps {
   scope: AssetScope;
@@ -10,12 +11,6 @@ interface ScopeFilterBarProps {
   onScopeChange: (scope: AssetScope) => void;
   onProjectIdsChange: (ids: string[]) => void;
 }
-
-const SCOPES: { value: AssetScope; label: string }[] = [
-  { value: 'all', label: 'All' },
-  { value: 'user', label: 'User' },
-  { value: 'project', label: 'Project' },
-];
 
 export function ScopeFilterBar({
   scope,
@@ -34,62 +29,48 @@ export function ScopeFilterBar({
   const projectScopeDisabled = effectiveProjectIds.length === 0;
   const projectCount = effectiveProjectIds.length;
 
-  const handleScopeClick = (s: AssetScope) => {
-    if (s === 'project' && projectScopeDisabled) {
-      setPickerOpen(true);
-      return;
-    }
-    if (s === 'project' && projectIds.length === 0 && currentProjectId) {
+  const options: ScopeBarOption<AssetScope>[] = [
+    { value: 'all', label: 'All' },
+    { value: 'user', label: 'User' },
+    {
+      value: 'project',
+      label: 'Project',
+      count: projectCount,
+      disabled: projectScopeDisabled,
+      title: projectScopeDisabled ? 'Open the filter to pick projects' : undefined,
+    },
+  ];
+
+  const handleChange = (next: AssetScope) => {
+    if (next === 'project' && projectIds.length === 0 && currentProjectId) {
       onProjectIdsChange([currentProjectId]);
     }
-    onScopeChange(s);
+    onScopeChange(next);
+  };
+
+  const handleDisabledClick = (next: AssetScope) => {
+    if (next === 'project') setPickerOpen(true);
   };
 
   return (
-    <div className="flex items-center gap-1">
-      {SCOPES.map(({ value, label }) => {
-        const disabled = value === 'project' && projectScopeDisabled;
-        const showCount = value === 'project' && projectCount > 0;
-        const isActive = scope === value;
-        return (
+    <>
+      <ScopeBar
+        value={scope}
+        options={options}
+        onChange={handleChange}
+        onDisabledClick={handleDisabledClick}
+        trailing={
           <button
-            key={value}
-            onClick={() => handleScopeClick(value)}
-            disabled={disabled}
-            title={
-              disabled
-                ? 'Open the filter to pick projects'
-                : undefined
-            }
-            className={`flex h-7 items-center gap-1 rounded-md px-2.5 text-xs font-medium transition-colors ${
-              isActive
-                ? 'bg-accent text-accent-foreground'
-                : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
-            } ${disabled ? 'cursor-not-allowed opacity-50' : ''}`}
+            type="button"
+            onClick={() => setPickerOpen(true)}
+            className="ml-1 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent/50 hover:text-foreground"
+            title="Choose projects to filter by"
+            aria-label="Project filter"
           >
-            {label}
-            {showCount && (
-              <span
-                className={`inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full px-1 text-[10px] ${
-                  isActive
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-muted text-muted-foreground'
-                }`}
-              >
-                {projectCount}
-              </span>
-            )}
+            <Filter className="h-3.5 w-3.5" />
           </button>
-        );
-      })}
-      <button
-        onClick={() => setPickerOpen(true)}
-        className="ml-1 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent/50 hover:text-foreground"
-        title="Choose projects to filter by"
-        aria-label="Project filter"
-      >
-        <Filter className="h-3.5 w-3.5" />
-      </button>
+        }
+      />
       <ProjectPickerModal
         open={pickerOpen}
         onOpenChange={setPickerOpen}
@@ -102,6 +83,6 @@ export function ScopeFilterBar({
           }
         }}
       />
-    </div>
+    </>
   );
 }

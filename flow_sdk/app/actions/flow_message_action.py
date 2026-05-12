@@ -441,6 +441,134 @@ async def conversation_dismiss() -> ApiResponse:
         return ApiFailResponse(message=f"Failed: {e}")
 
 
+async def handle_conversation_archive(
+    conversation_id: str, someone_typeid: str
+) -> ApiResponse:
+    """Stamp ``Conversation.archived_at = now()``.
+
+    Both Inbox and Recent strip hide the row when set; a FlowMessage newer
+    than the stamp auto-revives it. Conversation-level archive — does NOT
+    touch ``FlowMessage.is_read`` (those are per-message and remain
+    independent). Idempotent: re-archiving already-archived row is a
+    no-op (the stamp doesn't move backward in time, but the function
+    re-stamps with the current time, which is harmless).
+    """
+    conversation_id = (conversation_id or "").strip()
+    if not conversation_id:
+        return ApiFailResponse(message="conversation_id required")
+    conv = await Conversation.get_one({"id": conversation_id})
+    if conv is None:
+        return ApiFailResponse(message="Conversation not found")
+    conv.archived_at = datetime.now(UTC)
+    await conv.save(someone_typeid)
+    return ApiSuccessResponse(data={
+        "conversation_id": conversation_id,
+        "archived_at": conv.archived_at.isoformat() if conv.archived_at else None,
+    })
+
+
+async def handle_conversation_archive_all(someone_typeid: str) -> ApiResponse:
+    """Stamp ``archived_at = now()`` on every Conversation that isn't
+    already archived.
+
+    Cheap on repeat clicks because conversations with a non-null
+    ``archived_at`` are skipped — no SQLite write, no WS broadcast for
+    rows that are already in the target state. Returns the count of rows
+    that were freshly archived.
+    """
+    convs = await Conversation.get_all({})
+    now = datetime.now(UTC)
+    archived = 0
+    for conv in convs or []:
+        if conv.archived_at is not None:
+            continue
+        conv.archived_at = now
+        await conv.save(someone_typeid)
+        archived += 1
+    return ApiSuccessResponse(data={
+        "archived": archived,
+        "scanned": len(convs or []),
+        "archived_at": now.isoformat(),
+    })
+
+
+@action.post(action_name="conversation-archive", types=None)
+async def conversation_archive() -> ApiResponse:
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.someone_typeid:
+            return ApiFailResponse(message="Authentication required")
+        body = await request_info.get_post_data() or {}
+        conv_id = (body.get("conversation_id") or "").strip()
+        return await handle_conversation_archive(conv_id, request_info.someone_typeid)
+    except Exception as e:
+        logger.error("[flow_message_action] conversation-archive error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Failed: {e}")
+
+
+@action.post(action_name="conversation-archive-all", types=None)
+async def conversation_archive_all() -> ApiResponse:
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.someone_typeid:
+            return ApiFailResponse(message="Authentication required")
+        return await handle_conversation_archive_all(request_info.someone_typeid)
+    except Exception as e:
+        logger.error("[flow_message_action] conversation-archive-all error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Failed: {e}")
+
+
+async def handle_conversation_delete_archived(someone_typeid: str) -> ApiResponse:
+    """Hard-delete every Conversation whose ``archived_at`` is set.
+
+    Scoped strictly to the archived bucket — only the UI's "Archived view"
+    surfaces this action, and only after the user has explicitly archived
+    those rows. Idempotent: runs in O(archived-rows).
+
+    Per-conversation cleanup mirrors ``_cleanup_invitation_placeholder``:
+    delete the on-disk ``conversation.jsonl`` + parent dir if empty, then
+    delete the entity row. FlowMessages attached to deleted conversations
+    are NOT cascaded — they'd be orphaned in SQLite but not surface via
+    Inbox queries (which iterate conversations).
+    """
+    convs = await Conversation.get_all({})
+    targets = [c for c in (convs or []) if c.archived_at is not None]
+    deleted = 0
+    for conv in targets:
+        try:
+            jsonl_path = ConversationRecord.default_jsonl_path(conv.id)
+            if jsonl_path.exists():
+                jsonl_path.unlink()
+            parent = jsonl_path.parent
+            if parent.exists() and not any(parent.iterdir()):
+                parent.rmdir()
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[conv-delete-archived] %s jsonl unlink failed: %s",
+                           (conv.id or "?")[:8], e)
+        try:
+            await conv.delete()
+            deleted += 1
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[conv-delete-archived] %s entity delete failed: %s",
+                           (conv.id or "?")[:8], e)
+    return ApiSuccessResponse(data={
+        "deleted": deleted,
+        "scanned": len(convs or []),
+    })
+
+
+@action.post(action_name="conversation-delete-archived", types=None)
+async def conversation_delete_archived() -> ApiResponse:
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.someone_typeid:
+            return ApiFailResponse(message="Authentication required")
+        return await handle_conversation_delete_archived(request_info.someone_typeid)
+    except Exception as e:
+        logger.error("[flow_message_action] conversation-delete-archived error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Failed: {e}")
+
+
 @action.post(action_name="conversation-create", types=None)
 async def conversation_create() -> ApiResponse:
     try:

@@ -44,6 +44,12 @@ class Conversation(Entity):
     # this row UNTIL a FlowMessage newer than ``dismissed_at`` is appended
     # (auto-revive on new activity). The Inbox ignores this field entirely.
     dismissed_at: Optional[datetime] = APIField(default=None)
+    # Conversation-level archive. Honored by **both** Inbox and Recent strip
+    # — the conversation is hidden everywhere UNTIL a FlowMessage newer than
+    # ``archived_at`` lands (auto-revive on new activity, same comparison
+    # pattern as ``dismissed_at``). Per-message ``FlowMessage.is_read``
+    # remains independent and is not affected by archive.
+    archived_at: Optional[datetime] = APIField(default=None)
     # True once ``share()`` succeeded — the conversation has a hub-side mirror
     # with the same id, and future replies should route through the bridge.
     # NOTE: Entity base class already defines `remote`, this is a documentation

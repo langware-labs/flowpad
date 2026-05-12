@@ -1,6 +1,17 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Archive, CheckSquare, MailPlus, RefreshCw } from 'lucide-react';
-import { Conversation, FlowMessage, QueryRequest, Task, TypeId, acceptInvitation, fetchConversations } from '@sdk';
+import { Archive, CheckSquare, Inbox as InboxIcon, MailPlus, RefreshCw, Trash2 } from 'lucide-react';
+import {
+  Conversation,
+  FlowMessage,
+  QueryRequest,
+  Task,
+  TypeId,
+  acceptInvitation,
+  archiveAllConversations,
+  archiveConversation,
+  deleteArchivedConversations,
+  fetchConversations,
+} from '@sdk';
 import { useEntitiesQuery, useEntity } from '@src/hooks/entity-hooks';
 import { Button } from '@src/components/ui/button';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -32,10 +43,20 @@ function formatGmailTime(iso?: string | null): string {
 // Single line: [sender(s)] [subject — snippet…] [time]
 // Click anywhere on the row opens the conversation via its dockPointer.
 
+type InboxViewMode = 'inbox' | 'unread' | 'archived';
+
 interface ConversationListRowProps {
   conv: Conversation;
   isFocused: boolean;
-  onArchive: (messageId: string) => void;
+  /** Active inbox view:
+   *  - 'inbox'    → hide archived rows (default)
+   *  - 'unread'   → show only non-archived rows whose latest FlowMessage is unread
+   *  - 'archived' → show ONLY archived rows */
+  viewMode: InboxViewMode;
+  /** Conversation-level archive. Stamps ``Conversation.archived_at = now()``
+   *  server-side; row auto-revives when a FlowMessage newer than the stamp
+   *  arrives. */
+  onArchive: (convId: string) => void;
   onToggleRead: (messageId: string, isRead: boolean) => void;
   /** Reports whether this row will actually render so the parent can decide
    *  whether to show the "No conversations" empty state. */
@@ -43,7 +64,7 @@ interface ConversationListRowProps {
   refSetter: (el: HTMLDivElement | null) => void;
 }
 
-function ConversationListRow({ conv, isFocused, onArchive, onToggleRead, onVisibilityChange, refSetter }: ConversationListRowProps) {
+function ConversationListRow({ conv, isFocused, viewMode, onArchive, onToggleRead, onVisibilityChange, refSetter }: ConversationListRowProps) {
   const { navigation } = useDockNavigation();
   const taskTypeId = useMemo(
     () => conv.firstContextOfType?.('task') ?? null,
@@ -76,11 +97,28 @@ function ConversationListRow({ conv, isFocused, onArchive, onToggleRead, onVisib
   const invitationId = invitationTypeId?.id ?? null;
   const [accepting, setAccepting] = useState(false);
 
-  // Hide archived rows ("Archive all" flips is_archived on every FlowMessage)
-  // and rows whose latest FlowMessage hasn't materialised yet (bundle pending).
-  // Inbox ignores ``dismissed_at`` — that's a strip-only flag.
-  const isHidden =
-    !!latestMessage?.is_archived || (!!lastPtr && !latestMessage);
+  // Hide rule depends on view mode:
+  //   - 'inbox'     → hide archived rows (default; archived_at && stamp ≥ latest ts)
+  //   - 'archived'  → show ONLY archived rows; hide everything else
+  // ``archived_at`` uses the pointer's ts so we don't race the async
+  // FlowMessage fetch (the latestMessage entity arrives later than the
+  // conversation entity that carries the pointer).
+  const archivedAt = conv.archived_at ? new Date(conv.archived_at).getTime() : null;
+  const latestPtrTime = lastPtr?.ts ? new Date(lastPtr.ts).getTime() : 0;
+  const archivedActive =
+    archivedAt !== null && !Number.isNaN(archivedAt) && latestPtrTime <= archivedAt;
+  const inLoadingState = !!lastPtr && !latestMessage;
+  // unread = latest message is_read=false (invitation rows count as unread
+  // since they always carry an actionable CTA).
+  const isUnreadRow = isInvitationRow ? true : (latestMessage ? !latestMessage.is_read : false);
+  let isHidden: boolean;
+  if (viewMode === 'archived') {
+    isHidden = !archivedActive || inLoadingState;
+  } else if (viewMode === 'unread') {
+    isHidden = archivedActive || !isUnreadRow || inLoadingState;
+  } else {
+    isHidden = archivedActive || inLoadingState;
+  }
 
   const convId = conv.id ?? '';
   // useLayoutEffect (not useEffect) so the parent's `visibleIds` state is
@@ -109,7 +147,7 @@ function ConversationListRow({ conv, isFocused, onArchive, onToggleRead, onVisib
   const snippet = String(rawText ?? '').replace(/\s+/g, ' ').trim();
   const time = formatGmailTime(conv.updated_date);
   const ago = formatTimeAgo(conv.updated_date);
-  const isUnread = isInvitationRow ? true : (latestMessage ? !latestMessage.is_read : false);
+  const isUnread = isUnreadRow;
 
   const handleClick = () => {
     if (isInvitationRow) return; // primary action is Accept
@@ -196,8 +234,8 @@ function ConversationListRow({ conv, isFocused, onArchive, onToggleRead, onVisib
             </button>
             <button
               className="rounded p-1 hover:bg-destructive/10"
-              title="Archive"
-              onClick={() => latestMessage?.id && onArchive(latestMessage.id)}
+              title="Archive conversation"
+              onClick={() => conv.id && onArchive(conv.id)}
             >
               <Archive className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
             </button>
@@ -212,6 +250,11 @@ function ConversationListRow({ conv, isFocused, onArchive, onToggleRead, onVisib
 
 export function InboxView() {
   const [fetching, setFetching] = useState(false);
+  // 'inbox' (default) shows active conversations; 'archived' shows only
+  // rows whose ``archived_at`` is set and not yet revived by newer activity.
+  // "Delete all" is gated behind the 'archived' view — a destructive op only
+  // exposed once the user has explicitly archived rows.
+  const [viewMode, setViewMode] = useState<InboxViewMode>('inbox');
   // Set of conv ids whose row currently chose to render. Driven by row-level
   // `onVisibilityChange` callbacks so the header badge and empty-state both
   // reflect exactly what the user sees (rows hide themselves when their latest
@@ -287,8 +330,8 @@ export function InboxView() {
     }
   }, [refetch]);
 
-  const handleArchive = useCallback(async (id: string) => {
-    await updateMessage(id, { is_archived: true });
+  const handleArchive = useCallback(async (convId: string) => {
+    await archiveConversation({ conversation_id: convId });
     void refetch();
   }, [refetch]);
 
@@ -304,43 +347,118 @@ export function InboxView() {
   }, [refetch, setUnreadCount]);
 
   const handleArchiveAll = useCallback(async () => {
-    await bulkUpdateMessages({ is_archived: true });
-    setUnreadCount(0);
+    // Conversation-level archive — O(threads), not O(messages). Includes
+    // empties (zero-message conversations) since archive is now a property
+    // of the conversation itself, independent of FlowMessage state.
+    await archiveAllConversations();
     void refetch();
-  }, [refetch, setUnreadCount]);
+  }, [refetch]);
 
+  const handleDeleteArchived = useCallback(async () => {
+    // Hard delete — only callable from the 'archived' view, where the user
+    // has explicitly archived these rows. Server side already filters to
+    // ``archived_at IS NOT NULL`` so this is scoped strictly to the bucket.
+    await deleteArchivedConversations();
+    void refetch();
+  }, [refetch]);
+
+  const setView = useCallback((next: InboxViewMode) => {
+    setViewMode((cur) => {
+      if (cur === next) return cur;
+      // Visible-ids tracks the previous mode's rows; reset so the count
+      // badge doesn't flash stale during the swap.
+      setVisibleIds(new Set());
+      return next;
+    });
+  }, []);
+
+
+  const inArchivedView = viewMode === 'archived';
+  const inUnreadView = viewMode === 'unread';
+
+  // Segmented view pill — Inbox | Unread | Archived. Active mode is filled,
+  // inactive is ghost. Count badge sits inside the active pill so it
+  // reflects exactly what the user is looking at.
+  const renderViewPill = (mode: InboxViewMode, label: string, Icon: typeof InboxIcon) => {
+    const active = viewMode === mode;
+    return (
+      <button
+        type="button"
+        onClick={() => setView(mode)}
+        className={`flex h-7 items-center gap-1 rounded-md px-2 text-xs font-medium transition-colors ${
+          active
+            ? 'bg-background text-foreground shadow-sm'
+            : 'text-muted-foreground hover:text-foreground'
+        }`}
+        data-testid={`inbox-view-${mode}`}
+        aria-pressed={active}
+      >
+        <Icon className="h-3.5 w-3.5" />
+        <span>{label}</span>
+        {active && visibleCount > 0 && (
+          <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+            {visibleCount}
+          </span>
+        )}
+      </button>
+    );
+  };
 
   // List mode
   return (
     <div className="flex h-full flex-col">
       <div className="flex shrink-0 items-center justify-between border-b px-3 py-1.5">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-semibold">Inbox</span>
-          {visibleCount > 0 && (
-            <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-              {visibleCount}
-            </span>
-          )}
+        {/* LEFT — view selector */}
+        <div
+          className="flex items-center gap-0.5 rounded-md bg-muted/40 p-0.5"
+          role="tablist"
+          aria-label="Inbox view"
+          data-testid="inbox-view-bar"
+        >
+          {renderViewPill('inbox', 'Inbox', InboxIcon)}
+          {renderViewPill('unread', 'Unread', MailPlus)}
+          {renderViewPill('archived', 'Archived', Archive)}
         </div>
-        <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 text-xs"
-            onClick={() => void handleMarkAllRead()}
-            disabled={isLoading || visibleCount === 0}
-          >
-            Mark all read
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
-            onClick={() => void handleArchiveAll()}
-            disabled={isLoading || visibleCount === 0}
-          >
-            Archive all
-          </Button>
+        {/* RIGHT — actions for the current view */}
+        <div className="flex items-center gap-1" data-testid="inbox-action-bar">
+          {!inArchivedView && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={() => void handleMarkAllRead()}
+              disabled={isLoading || visibleCount === 0}
+            >
+              Mark all read
+            </Button>
+          )}
+          {/* Archive all archives every conversation regardless of read state;
+              hide it in the Archived view where it makes no sense. */}
+          {!inArchivedView && !inUnreadView && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+              onClick={() => void handleArchiveAll()}
+              disabled={isLoading || visibleCount === 0}
+              data-testid="inbox-archive-all-button"
+            >
+              Archive all
+            </Button>
+          )}
+          {inArchivedView && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
+              onClick={() => void handleDeleteArchived()}
+              disabled={isLoading || visibleCount === 0}
+              data-testid="inbox-delete-archived-button"
+            >
+              <Trash2 className="mr-1 h-3.5 w-3.5" />
+              Delete all
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="icon"
@@ -361,11 +479,17 @@ export function InboxView() {
 
         {!isLoading && visibleCount === 0 && (
           <div className="flex h-48 flex-col items-center justify-center gap-3 text-muted-foreground">
-            <span className="text-sm">No conversations</span>
-            <Button variant="outline" size="sm" onClick={() => void handleRefresh()} disabled={fetching}>
-              <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${fetching ? 'animate-spin' : ''}`} />
-              Check for new messages
-            </Button>
+            <span className="text-sm">
+              {inArchivedView ? 'No archived conversations'
+                : inUnreadView ? 'No unread conversations'
+                : 'No conversations'}
+            </span>
+            {!inArchivedView && (
+              <Button variant="outline" size="sm" onClick={() => void handleRefresh()} disabled={fetching}>
+                <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${fetching ? 'animate-spin' : ''}`} />
+                Check for new messages
+              </Button>
+            )}
           </div>
         )}
 
@@ -375,6 +499,7 @@ export function InboxView() {
               key={conv.id ?? ''}
               conv={conv}
               isFocused={false}
+              viewMode={viewMode}
               onArchive={handleArchive}
               onToggleRead={handleToggleRead}
               onVisibilityChange={handleRowVisibility}

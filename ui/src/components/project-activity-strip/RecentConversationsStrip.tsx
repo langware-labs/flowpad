@@ -364,21 +364,21 @@ function ConversationRow({
   );
   const invitationId = invitationTypeId?.id ?? null;
 
-  // Strip-only dismissal: hide when the conversation has a dismissed_at AND
-  // there's no message newer than it. New activity auto-revives the row.
-  // Use the pointer's ``ts`` (available synchronously from message_ids) rather
-  // than the FlowMessage's async-fetched created_date — otherwise rows flicker
-  // hidden during the brief window between conversation load and message load.
-  const dismissedAt = conv.dismissed_at ? new Date(conv.dismissed_at).getTime() : null;
+  // Both timestamps use the same auto-revive-on-new-message pattern:
+  // compare the stamp against the latest pointer's ``ts`` (available
+  // synchronously off ``message_ids``) so we don't flicker during the
+  // async FlowMessage fetch.
+  //   * dismissed_at — strip-only "Hide from Recent" (EyeOff button)
+  //   * archived_at  — conversation-level archive (Inbox + strip honor it)
   const latestMessageTime = lastPtr?.ts ? new Date(lastPtr.ts).getTime() : 0;
+  const dismissedAt = conv.dismissed_at ? new Date(conv.dismissed_at).getTime() : null;
   const dismissedHidden =
     dismissedAt !== null && !Number.isNaN(dismissedAt) && latestMessageTime <= dismissedAt;
+  const archivedAt = conv.archived_at ? new Date(conv.archived_at).getTime() : null;
+  const archivedHidden =
+    archivedAt !== null && !Number.isNaN(archivedAt) && latestMessageTime <= archivedAt;
 
-  // Same self-hiding pattern as the inbox: rows whose latest message is
-  // archived disappear (archives have no per-row "undo" in the strip).
-  const archiveHidden = !!latestMessage?.is_archived;
-
-  const hidden = dismissedHidden || archiveHidden;
+  const hidden = dismissedHidden || archivedHidden;
   const convIdStr = conv.id ?? '';
   // Report hidden state up so the parent can drive the header count + empty
   // state. No cleanup callback: cleanup that calls setState during unmount /
