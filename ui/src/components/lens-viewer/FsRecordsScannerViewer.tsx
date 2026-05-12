@@ -10,6 +10,7 @@ import { Input } from '@src/components/ui/input';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@src/components/ui/alert-dialog';
 import { SearchFilters, useRecordSearch } from '@src/hooks/use-record-search';
+import { formatTimeAgo } from '@src/utils/format-time-ago';
 
 const BASE = '/graph/compute_node/@local/fs-records';
 const SCAN_PATH = `${BASE}/scan`;
@@ -60,15 +61,6 @@ function fmtMs(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
-function fmtAgo(iso: string): string {
-  const ms = Date.now() - new Date(iso).getTime();
-  if (ms < 60_000) return 'just now';
-  if (ms < 3_600_000) return `${Math.floor(ms / 60_000)}m ago`;
-  if (ms < 86_400_000) return `${Math.floor(ms / 3_600_000)}h ago`;
-  return `${Math.floor(ms / 86_400_000)}d ago`;
-}
-
-
 function TypeRow({
   stats,
   onExpand,
@@ -114,7 +106,7 @@ function TypeRow({
           {stats.count > 0 ? fmtBytes(stats.avg_bytes) : '—'}
         </td>
         <td className="py-2 pr-4 text-right text-xs text-muted-foreground">
-          {stats.last_scan_at ? fmtAgo(stats.last_scan_at) : '—'}
+          {stats.last_scan_at ? (formatTimeAgo(stats.last_scan_at) ?? '—') : '—'}
         </td>
         <td className="py-2 pr-3 text-right text-xs text-muted-foreground">
           {stats.error ? (

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import apiClient from '@sdk/client';
 
 const STATUS_PATH = '/graph/compute_node/@local/fs-records/index-status';
@@ -8,16 +8,34 @@ export interface IndexStatus {
   last_indexed_at: string | null;
   stale: boolean;
   default_types: string[];
+  per_type?: Array<{
+    type_name: string;
+    last_indexed_at: string | null;
+    entity_count: number;
+    stale: boolean;
+  }>;
 }
 
 export type IndexStatusState =
   | { phase: 'loading' }
   | { phase: 'ready'; status: IndexStatus };
 
-export function useIndexStatus(): IndexStatusState {
+export interface UseIndexStatusResult {
+  state: IndexStatusState;
+  refresh: () => void;
+}
+
+const EMPTY_STATUS: IndexStatus = {
+  never_indexed: false,
+  last_indexed_at: null,
+  stale: false,
+  default_types: [],
+};
+
+export function useIndexStatus(): UseIndexStatusResult {
   const [state, setState] = useState<IndexStatusState>({ phase: 'loading' });
 
-  useEffect(() => {
+  const refresh = useCallback(() => {
     apiClient
       .get(STATUS_PATH)
       .then((data: unknown) => {
@@ -25,12 +43,13 @@ export function useIndexStatus(): IndexStatusState {
       })
       .catch(() => {
         // On error assume ok — don't block search
-        setState({
-          phase: 'ready',
-          status: { never_indexed: false, last_indexed_at: null, stale: false, default_types: [] },
-        });
+        setState({ phase: 'ready', status: EMPTY_STATUS });
       });
   }, []);
 
-  return state;
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  return { state, refresh };
 }

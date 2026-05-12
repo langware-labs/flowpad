@@ -57,6 +57,11 @@ export interface IFlowMessage extends IEntity {
   // ``msg.contextEntities`` / ``msg.firstContextOfType('task')``.
   /** Local-only draft message: not appended to conversation.jsonl, not pushed to hub. Flips to false on send-draft. */
   is_draft?: boolean;
+  /** Special-message discriminator. "user" (default) is a normal message;
+   *  "invitation" marks a local-only placeholder representing a pending hub
+   *  Invitation as the first row of a conversation. The invitation TypeId
+   *  lives in ``context_entities``. */
+  kind?: 'user' | 'invitation';
 }
 
 @registerEntity
@@ -76,6 +81,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   delivered_at?: string | null;
   received_at?: string | null;
   is_draft?: boolean;
+  kind?: 'user' | 'invitation';
   static type: string = 'flow_message';
 
   constructor(entity: Partial<IFlowMessage> = {}) {
@@ -95,6 +101,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.delivered_at = entity.delivered_at ?? null;
     this.received_at = entity.received_at ?? null;
     this.is_draft = entity.is_draft ?? false;
+    this.kind = entity.kind ?? 'user';
   }
 
   /** Promote a draft message to a real reply: flips is_draft=false, appends to conversation.jsonl, pushes to hub. */

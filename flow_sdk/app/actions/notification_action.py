@@ -323,6 +323,7 @@ async def _create_conversation_and_fm(
         project_id=project_id,
         remote_project_id=project_id,
         remote_project_name=project_name,
+        title=title,
     )
     if task is not None:
         task.add_context_entity(TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv.id))

@@ -52,12 +52,19 @@ export interface IConversation extends IEntity {
   message_count?: number;
   message_ids?: string | null;  // JSON-encoded RawConversationPointer[]
   participants?: ConversationParticipant[];
+  /** User-set display title. Set at creation in NewConversationDialog and
+   *  shipped through the bundle on cross-user send. */
+  title?: string | null;
   /**
    * Per-conversation read-receipt visibility. When false, the hub suppresses
    * `delivered` / `received` UPDATE frames to the original sender (co-recipients
    * still see them). Mirrors the hub-side flag added in Phase 1.
    */
   message_status_visible?: boolean;
+  /** Strip-only dismissal timestamp. Recent strip hides the row when set;
+   *  auto-revives when a FlowMessage newer than this stamp arrives. Inbox
+   *  ignores this field. Null = not dismissed. */
+  dismissed_at?: string | Date | null;
   // NOTE: task_id moved into context_entities. Use conv.firstContextOfType('task').
   // NOTE: data_path is derived from the canonical records-data path on the
   // server — not exposed as a stored field anymore.
@@ -71,7 +78,9 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
   message_count?: number;
   message_ids?: string | null;
   participants?: ConversationParticipant[];
+  title?: string | null;
   message_status_visible?: boolean;
+  dismissed_at?: string | Date | null;
   static type: string = 'conversation';
 
   constructor(entity: Partial<IConversation> = {}) {
@@ -82,7 +91,9 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
     this.message_count = entity.message_count;
     this.message_ids = entity.message_ids;
     this.participants = entity.participants;
+    this.title = entity.title;
     this.message_status_visible = entity.message_status_visible ?? true;
+    this.dismissed_at = entity.dismissed_at ?? null;
   }
 
   /** Surface the project as a chip-projected direct field. */
@@ -276,6 +287,27 @@ export interface AcceptInvitationResult {
   flow_message_id?: string | null;
   /** True when the targeted bundle download materialized the local Conversation. */
   bundle_unpacked: boolean;
+}
+
+export interface DismissConversationParams {
+  conversation_id: string;
+}
+
+export interface DismissConversationResult {
+  conversation_id: string;
+  dismissed_at: string | null;
+}
+
+/** Strip-only dismiss: stamps ``dismissed_at = now()`` on the conversation so
+ *  the Recent strip hides it. The row auto-revives when a FlowMessage newer
+ *  than the stamp arrives. Inbox ignores this field. */
+export async function dismissConversation(
+  params: DismissConversationParams,
+): Promise<DismissConversationResult> {
+  const action = new ActionInfo('conversation-dismiss', null, null, 'POST');
+  action.bodyParameters = params;
+  const res = await dataManager.callAction<DismissConversationParams, DismissConversationResult>(action);
+  return res!;
 }
 
 /** Accept a pending invitation on the hub and download just the unlocked bundle.

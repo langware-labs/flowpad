@@ -121,7 +121,7 @@ export function SearchView() {
   useEffect(() => dataManager.onScanInfoChange(setScanInfo), []);
 
   // Index status
-  const statusState = useIndexStatus();
+  const { state: statusState } = useIndexStatus();
   const [indexState, setIndexState] = useState<IndexState>('loading');
   const [modalOpen, setModalOpen] = useState(false);
 
