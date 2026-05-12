@@ -213,6 +213,21 @@ app.on('second-instance', (_event, argv) => {
   }
 });
 
+// Windows / Linux COLD START: when the OS launches the app via a flowpad://
+// URL for the first time, the URL is in process.argv. There's no event for
+// this — we have to read it ourselves before app.whenReady fires startApp.
+// (On macOS this path is dead — the URL arrives via 'open-url' instead.)
+//
+// handleDeepLink will see mainWindow === null and stash the URL into
+// pendingDeepLink, which startApp consumes after backend warmup.
+if (process.platform !== 'darwin') {
+  const argvDeepLink = process.argv.find(arg => arg.startsWith('flowpad://'));
+  if (argvDeepLink) {
+    log.info(`[deep-link] picked up from process.argv: ${argvDeepLink}`);
+    handleDeepLink(argvDeepLink);
+  }
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,

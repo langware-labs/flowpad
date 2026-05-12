@@ -30,22 +30,87 @@ _REDIRECT_HTML = """<!DOCTYPE html>
 <meta charset="UTF-8">
 <title>FlowPad — Opening task...</title>
 <style>
-  body{{font-family:-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;
-       height:100vh;margin:0;background:#f5f4ff;color:#1a1a2e;text-align:center}}
-  .card{{background:#fff;border-radius:12px;padding:40px;box-shadow:0 2px 12px rgba(0,0,0,.1);max-width:400px}}
-  h2{{font-size:20px;margin-bottom:8px}}
-  p{{color:#666;font-size:14px}}
-  .spinner{{width:32px;height:32px;border:3px solid #e0e0ff;border-top-color:#4f46e5;
-            border-radius:50%;animation:spin .7s linear infinite;margin:16px auto}}
-  @keyframes spin{{to{{transform:rotate(360deg)}}}}
+  *,*::before,*::after{{box-sizing:border-box}}
+  html,body{{margin:0;padding:0}}
+  body{{
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    background:#f5f4ff;
+    color:#1a1a2e;
+    line-height:1.6;
+    min-height:100vh;
+    display:flex;
+    flex-direction:column;
+  }}
+  .nl-header{{
+    background:#4f46e5;
+    padding:20px 32px;
+    text-align:center;
+  }}
+  .nl-header h1{{
+    color:#fff;
+    font-size:20px;
+    font-weight:700;
+    letter-spacing:0.5px;
+    margin:0;
+  }}
+  .nl-main{{
+    flex:1;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:40px 32px;
+  }}
+  .nl-card{{
+    background:#fff;
+    border-radius:10px;
+    box-shadow:0 1px 4px rgba(0,0,0,0.08);
+    padding:40px 32px;
+    max-width:420px;
+    width:100%;
+    text-align:center;
+  }}
+  .nl-spinner{{
+    width:36px;
+    height:36px;
+    border:3px solid #e0deff;
+    border-top-color:#4f46e5;
+    border-radius:50%;
+    animation:nl-spin .7s linear infinite;
+    margin:0 auto 20px;
+  }}
+  .nl-card h2{{
+    font-size:18px;
+    font-weight:700;
+    color:#1a1a2e;
+    margin:0 0 8px;
+  }}
+  .nl-card p{{
+    font-size:14px;
+    color:#555;
+    margin:0;
+  }}
+  .nl-footer{{
+    text-align:left;
+    padding:0 32px 24px;
+    font-size:12px;
+    color:#aaa;
+  }}
+  .nl-footer a{{color:#aaa}}
+  @keyframes nl-spin{{to{{transform:rotate(360deg)}}}}
 </style>
 <meta http-equiv="refresh" content="1;url={redirect_url}">
 </head>
 <body>
-<div class="card">
-  <div class="spinner"></div>
-  <h2>Opening FlowPad...</h2>
-  <p>Redirecting you to the conversation.</p>
+<div class="nl-header"><h1>FlowPad</h1></div>
+<div class="nl-main">
+  <div class="nl-card">
+    <div class="nl-spinner"></div>
+    <h2>Opening FlowPad...</h2>
+    <p>Redirecting you to the conversation.</p>
+  </div>
+</div>
+<div class="nl-footer">
+  Sent via FlowPad &middot; <a href="https://flowpad.ai">flowpad.ai</a>
 </div>
 </body>
 </html>"""
