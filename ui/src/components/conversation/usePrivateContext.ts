@@ -18,6 +18,10 @@ import { useEntitiesQuery } from '@sdk/react/hooks';
 export interface PrivateContextItems {
   tasks: Task[];
   processes: AgenticProcess[];
+  /** True once the processes query has returned at least once. Callers gate
+   *  "Start session" UI on this to avoid a refresh-time flicker where the
+   *  button briefly renders before the existing-session check resolves. */
+  processesLoaded: boolean;
 }
 
 /**
@@ -43,13 +47,11 @@ export function usePrivateContext(
 
   // ── Tasks ────────────────────────────────────────────────────────────
   const tasksQuery = useMemo(() => {
-    const match: Record<string, unknown> = {};
-    if (projectId) match.project_id = projectId;
     return new QueryRequest({
       type: Task.type,
       scope: [],
       name: `private-context-tasks:${flowMessageId ?? 'none'}:${projectId ?? 'noproj'}`,
-      query: new QueryFilter({ match }),
+      query: projectId ? new QueryFilter({ match: { project_id: projectId } }) : undefined,
     });
   }, [flowMessageId, projectId]);
   const { data: candidateTasks = [] } = useEntitiesQuery<Task>(tasksQuery, {
@@ -76,30 +78,19 @@ export function usePrivateContext(
       type: AgenticProcess.type,
       scope: [],
       name: `private-context-processes:${flowMessageId ?? 'none'}`,
-      query: new QueryFilter({ match: {} as Record<string, unknown> }),
+      query: undefined,
     });
   }, [flowMessageId]);
-  const { data: candidateProcesses = [] } = useEntitiesQuery<AgenticProcess>(processQuery, {
+  const { data: candidateProcesses = [], isSuccess: processesLoaded } = useEntitiesQuery<AgenticProcess>(processQuery, {
     enabled: !!flowMessageId,
   });
 
   const processes = useMemo(() => {
     if (!fmKey) return [] as AgenticProcess[];
-    const filtered = candidateProcesses.filter((p) =>
+    return candidateProcesses.filter((p) =>
       p.contextEntities?.some((tid) => tid.toString() === fmKey),
     );
-    console.log('[usePrivateContext] process filter:', {
-      fmKey,
-      candidateCount: candidateProcesses.length,
-      candidates: candidateProcesses.map((p) => ({
-        id: p.id,
-        visible: p.visible,
-        contextEntities: p.contextEntities?.map((t) => t.toString()),
-      })),
-      matchedCount: filtered.length,
-    });
-    return filtered;
   }, [candidateProcesses, fmKey]);
 
-  return { tasks, processes };
+  return { tasks, processes, processesLoaded };
 }
