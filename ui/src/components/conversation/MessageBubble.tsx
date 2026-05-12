@@ -8,6 +8,7 @@ import { MessageChips } from './chips/MessageChips';
 import { PromptApprovalRow } from './PromptApprovalRow';
 import { useLocalUser } from './useLocalUser';
 import { PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT } from './constants';
+import { formatTimeAgo } from '@/utils/format-time-ago';
 
 interface MessageBubbleProps {
   message: ConversationMessage;
@@ -159,6 +160,7 @@ export function MessageBubble({
   const displayName = isBot ? 'Claude' : senderName || 'Unknown';
   const initial = (displayName.trim()[0] ?? '?').toUpperCase();
   const time = formatTime(message.timestamp);
+  const ago = formatTimeAgo(message.timestamp);
 
   const handleBubbleClick = (e: MouseEvent<HTMLDivElement>) => {
     if (!onSelect) return;
@@ -209,7 +211,12 @@ export function MessageBubble({
               <Pencil className="h-2.5 w-2.5" />
             </button>
           )}
-          {time && <span className="text-[10px] text-muted-foreground">{time}</span>}
+          {time && (
+            <span className="text-[10px] text-muted-foreground">
+              {time}
+              {ago && <span className="ml-1 opacity-70">· {ago}</span>}
+            </span>
+          )}
           {showReceipt && <DeliveryReceipt status={flowMessage?.delivery_status} />}
           <MessageChips flowMessageId={flowMessageId} />
         </div>

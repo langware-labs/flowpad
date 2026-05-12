@@ -102,9 +102,11 @@ function ConversationListRow({ conv, isFocused, onArchive, onToggleRead, onVisib
   const subject = isInvitationRow
     ? 'You’ve been invited to a conversation'
     : (task?.displayName ?? 'Conversation');
-  const snippet = isInvitationRow
-    ? (firstMessage?.text?.replace(/\s+/g, ' ').trim() ?? '')
-    : (latestMessage?.text?.replace(/\s+/g, ' ').trim() ?? '');
+  // ``FlowMessage.text`` is typed string but older rows in the local DB can
+  // hold non-string payloads (object-shaped values from earlier schema
+  // iterations); ``?.replace`` would TypeError on those. Coerce first.
+  const rawText = isInvitationRow ? firstMessage?.text : latestMessage?.text;
+  const snippet = String(rawText ?? '').replace(/\s+/g, ' ').trim();
   const time = formatGmailTime(conv.updated_date);
   const ago = formatTimeAgo(conv.updated_date);
   const isUnread = isInvitationRow ? true : (latestMessage ? !latestMessage.is_read : false);
