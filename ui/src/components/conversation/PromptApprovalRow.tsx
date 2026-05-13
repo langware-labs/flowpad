@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Paperclip, Pencil, Play } from 'lucide-react';
+import { ExternalLink, Eye, Paperclip, Pencil, Play } from 'lucide-react';
 import type { Attachment } from '@sdk/entities/flow-message';
 import {
   Dialog,
@@ -17,6 +17,21 @@ interface PromptApprovalRowProps {
   messageId?: string;
   /** Show the Approve & Execute CTA (initiator, prompt unapproved). Disappears once approved. */
   onApprove?: () => void;
+  /** Show the Implement Plan CTA. Sits alongside Approve in the same row so the
+   *  spec/PROMPT combo lands on one line. Independent of prompt presence — the
+   *  row renders for this chip alone when there's no PROMPT attachment.
+   *  Suppressed once `onOpenPlanSession` is set (a session already exists). */
+  onImplementPlan?: () => void;
+  /** When a plan-implementation session already exists, the row renders an
+   *  "Open Plan Implementation Session" text+link affordance in the same slot
+   *  the Implement Plan chip would have occupied. Mutually exclusive with
+   *  `onImplementPlan` — callers should pass one or the other. */
+  onOpenPlanSession?: () => void;
+  /** Open the spec's markdown in an editable Milkdown view. Rendered as a
+   *  small neutral pill (Eye icon) next to the Implement Plan / Open Session
+   *  affordance. Independent of session state — visible whenever the bubble
+   *  carries a spec. */
+  onViewPlan?: () => void;
   /** Show an Edit CTA (sender, message not sent yet — composer preview). */
   onEdit?: () => void;
 }
@@ -44,6 +59,9 @@ export function PromptApprovalRow({
   attachments,
   messageId,
   onApprove,
+  onImplementPlan,
+  onOpenPlanSession,
+  onViewPlan,
   onEdit,
 }: PromptApprovalRowProps) {
   const inlineAttachments = useMemo(
@@ -102,9 +120,15 @@ export function PromptApprovalRow({
 
   const trimmed = inlineText ? truncate(inlineText, TRIM_LIMIT) : '';
 
+  // The row hosts whichever combination of CTAs the message warrants. Bail
+  // when there's literally nothing to show so we don't render an empty bar
+  // under every message.
+  const hasPromptContent = inlineAttachments.length > 0 || fileAttachments.length > 0;
+  if (!hasPromptContent && !onApprove && !onImplementPlan && !onOpenPlanSession && !onViewPlan && !onEdit) return null;
+
   return (
     <div className="mt-1.5 flex flex-wrap items-center gap-2 font-mono text-[12px] text-muted-foreground">
-      <span className="shrink-0">Prompt to run:</span>
+      {hasPromptContent && <span className="shrink-0">Prompt to run:</span>}
 
       {/* Inline text portion (if any) — click to expand. */}
       {inlineText && (
@@ -169,6 +193,41 @@ export function PromptApprovalRow({
           Approve & Execute
         </button>
       )}
+      {onViewPlan && (
+        <button
+          type="button"
+          onClick={onViewPlan}
+          title="Open the spec in the Milkdown editor"
+          data-testid="message-bubble-view-plan"
+          className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border border-border bg-background px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          <Eye className="h-3 w-3" />
+          View Plan
+        </button>
+      )}
+      {onOpenPlanSession ? (
+        <button
+          type="button"
+          onClick={onOpenPlanSession}
+          title="Open the plan-implementation session already started in this conversation"
+          data-testid="message-bubble-open-plan-session"
+          className="inline-flex h-7 shrink-0 items-center gap-1 rounded px-1.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          Open Plan Implementation Session
+          <ExternalLink className="h-3 w-3" />
+        </button>
+      ) : onImplementPlan ? (
+        <button
+          type="button"
+          onClick={onImplementPlan}
+          title="Start a Claude Code session pre-loaded with this plan and the conversation context"
+          data-testid="message-bubble-implement-plan"
+          className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border border-emerald-500/60 bg-emerald-500/15 px-2.5 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-500/25 dark:text-emerald-300"
+        >
+          <Play className="h-3 w-3" />
+          Implement Plan
+        </button>
+      ) : null}
       {!onApprove && onEdit && (
         <button
           type="button"

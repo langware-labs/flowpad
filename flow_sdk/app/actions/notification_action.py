@@ -47,6 +47,7 @@ from flow_sdk.discovery.notify import send_resource_sync
 from flow_sdk.fs_store import SyncOperation
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse, ApiResponse
 from flow_sdk.utils.git import find_project_root, git_add_commit_push, git_current_branch, git_pull, git_remote_url, git_repo_full_name, repo_id
+from flow_sdk.cli.auth.hub_login import is_logged_in
 from flow_sdk.utils.hub import HubError, hub_base_url, hub_get, hub_post, hub_put
 from flow_sdk.builtin.bookmark import Bookmark
 
@@ -1661,6 +1662,8 @@ async def send_notification() -> ApiResponse:
             return ApiFailResponse(message="No request info found")
         if not request_info.someone_typeid:
             return ApiFailResponse(message="No authenticated user in request context")
+        if not is_logged_in():
+            return ApiFailResponse(message="Cloud login required to send messages")
         body = await request_info.get_post_data() or {}
         return await handle_send_notification(body, request_info.someone_typeid)
     except Exception as e:
@@ -1682,6 +1685,8 @@ async def conversation_start_bundle() -> ApiResponse:
             return ApiFailResponse(message="No request info found")
         if not request_info.someone_typeid:
             return ApiFailResponse(message="No authenticated user in request context")
+        if not is_logged_in():
+            return ApiFailResponse(message="Cloud login required to start a conversation")
         body = await request_info.get_post_data() or {}
         return await handle_start_conversation_bundle(body, request_info.someone_typeid)
     except Exception as e:
@@ -1698,6 +1703,9 @@ async def append_conversation() -> ApiResponse:
         if not request_info.someone_typeid:
             return ApiFailResponse(message="No authenticated user in request context")
         body = await request_info.get_post_data() or {}
+        # Drafts are local-only (no hub push); only non-draft sends require login.
+        if not bool(body.get("is_draft")) and not is_logged_in():
+            return ApiFailResponse(message="Cloud login required to send messages")
         return await handle_append_conversation(body, request_info.someone_typeid)
     except Exception as e:
         logger.error(f"[notification_action] append-conversation error: {e}", exc_info=True)

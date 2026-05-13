@@ -106,6 +106,15 @@ function WorkflowRunItem({
   const { navigation } = useDockNavigation();
   const { data: live } = useEntity<AgenticProcess>(entry.process.typeId ?? null);
   const process = live ?? entry.process;
+  // [AP-status-debug] DELETE ME — fires on every re-render of the row so we can
+  // see what the UI is actually pulling out of the cache + which path the row
+  // is on (live entity from useEntity vs stale entry.process fallback).
+  console.log('[AP-status-debug] WorkflowRunItem render', {
+    id: process.id,
+    fromLive: !!live,
+    status: process.status,
+    workerStatus: process.workerStatus,
+  });
 
   const handleOpenInTerminal = () => {
     navigation.openDock(process.terminalDockPointer);

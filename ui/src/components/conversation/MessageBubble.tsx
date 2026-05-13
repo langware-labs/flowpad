@@ -9,6 +9,7 @@ import { PromptApprovalRow } from './PromptApprovalRow';
 import { useLocalUser } from './useLocalUser';
 import { PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT } from './constants';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
+import { flowMessageSpecTypeId } from './flow-message-helpers';
 
 interface MessageBubbleProps {
   message: ConversationMessage;
@@ -18,6 +19,22 @@ interface MessageBubbleProps {
   senderName: string;
   onEditName?: (newName: string) => void;
   onApproveAndExecute?: (attachmentIndex: number) => void;
+  /** Spawn a Claude Code session pre-loaded with the receiver-context prompt
+   *  (spec + transcript + conversation + attachments). Renders an emerald CTA
+   *  chip styled identically to Approve & Execute when the bubble's message
+   *  carries a Spec TypeId and the local user is the recipient. */
+  onImplementPlan?: () => void;
+  /** When a plan-implementation session already exists for this conversation,
+   *  the bubble shows an "Open Plan Implementation Session" link in place of
+   *  the Implement Plan chip. Set on every spec-bearing bubble in the thread
+   *  once one session is live so all bubbles point at the same session. */
+  onOpenPlanSession?: () => void;
+  /** Open the spec's markdown in an editable Milkdown view. Fires with the
+   *  Spec id the bubble carries — the bubble itself does the lookup so the
+   *  parent doesn't have to thread per-message TypeIds. Independent of the
+   *  Implement Plan / Open Session state — View Plan always renders when the
+   *  bubble has a spec and the local user is the recipient. */
+  onViewPlan?: (specId: string) => void;
   /** Optional content rendered below the message body (e.g. attachment chips). */
   footer?: ReactNode;
   /** Visual selection — drives the Context tab. */
@@ -111,6 +128,9 @@ export function MessageBubble({
   senderName,
   onEditName,
   onApproveAndExecute,
+  onImplementPlan,
+  onOpenPlanSession,
+  onViewPlan,
   footer,
   isSelected,
   onSelect,
@@ -136,8 +156,23 @@ export function MessageBubble({
     (a) => a.attachment_type === AttachmentType.PROMPT && !a.approved_by,
   );
   const hasUnapprovedPrompt = firstUnapprovedPromptIdx >= 0;
-  const showPromptRow = promptAttachments.length > 0;
   const canApprovePrompt = isFromOther && hasUnapprovedPrompt && !!onApproveAndExecute;
+
+  // Implement Plan / Open Plan Implementation Session: same gating shape as
+  // Approve & Execute — only spec-bearing bubbles from the other user (so the
+  // local user is the recipient) qualify. When `onOpenPlanSession` is set
+  // (a session already exists somewhere in the thread) the row swaps the
+  // emerald chip for an open-link affordance pointing at that session. Both
+  // states share `PromptApprovalRow`'s container so they land in the same
+  // horizontal slot (alongside Approve when both fire).
+  const specTypeId = flowMessageSpecTypeId(flowMessage);
+  const isSpecBearingRecipient = isFromOther && !!specTypeId;
+  const canImplementPlan = isSpecBearingRecipient && !!onImplementPlan && !onOpenPlanSession;
+  const canOpenPlanSession = isSpecBearingRecipient && !!onOpenPlanSession;
+  // View Plan is purely a reader affordance — independent of session state,
+  // so it stays visible even after Implement Plan flips to Open.
+  const canViewPlan = isSpecBearingRecipient && !!onViewPlan;
+  const showPromptRow = promptAttachments.length > 0 || canImplementPlan || canOpenPlanSession || canViewPlan;
 
   const startEdit = () => {
     setEditValue(senderName);
@@ -237,7 +272,10 @@ export function MessageBubble({
           <PromptApprovalRow
             attachments={promptAttachments}
             messageId={flowMessageId}
-            onApprove={canApprovePrompt ? () => onApproveAndExecute!(firstUnapprovedPromptIdx) : undefined}
+            onApprove={canApprovePrompt ? () => onApproveAndExecute(firstUnapprovedPromptIdx) : undefined}
+            onImplementPlan={canImplementPlan ? onImplementPlan : undefined}
+            onOpenPlanSession={canOpenPlanSession ? onOpenPlanSession : undefined}
+            onViewPlan={canViewPlan && specTypeId && onViewPlan ? () => onViewPlan(specTypeId.id) : undefined}
           />
         )}
         {footer}

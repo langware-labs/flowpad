@@ -19,6 +19,17 @@ interface FlowMessageBubbleProps {
   timestamp: string;
   task?: ITask | null;
   onApproveAndExecute?: (messageId: string, attachmentIndex: number) => void;
+  /** Per-message Implement Plan handler. The bubble itself decides whether to
+   *  render the chip (spec present + recipient role) — pass the raw messageId
+   *  callback and the bubble binds it. */
+  onImplementPlan?: (messageId: string) => void;
+  /** When a plan-implementation session already exists for this conversation
+   *  (or is in-flight), the bubble shows an "Open Plan Implementation Session"
+   *  link instead of the Implement Plan chip. */
+  onOpenPlanSession?: () => void;
+  /** Open the spec's markdown in an editable Milkdown view. The bubble looks
+   *  up its own Spec TypeId and calls back with the id. */
+  onViewPlan?: (specId: string) => void;
   /** Render the bubble as a local draft — replaces the message view with the
    *  DraftMessageComposer (always-editable, attachment picker, Send/Discard). */
   isDraft?: boolean;
@@ -39,6 +50,9 @@ export function FlowMessageBubble({
   timestamp,
   task,
   onApproveAndExecute,
+  onImplementPlan,
+  onOpenPlanSession,
+  onViewPlan,
   isDraft,
   onDraftSent,
   isSelected,
@@ -154,6 +168,9 @@ export function FlowMessageBubble({
         await updateName(newName);
       } : undefined}
       onApproveAndExecute={onApproveAndExecute ? (idx) => onApproveAndExecute(messageId, idx) : undefined}
+      onImplementPlan={onImplementPlan ? () => onImplementPlan(messageId) : undefined}
+      onOpenPlanSession={onOpenPlanSession}
+      onViewPlan={onViewPlan}
       footer={footer}
       isSelected={isSelected}
       onSelect={onSelect}

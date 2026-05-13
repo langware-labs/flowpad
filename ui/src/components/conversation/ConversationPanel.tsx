@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { Conversation, FlowMessage, type Task, TypeId } from '@sdk';
+import { useCallback, useMemo, useState } from 'react';
+import { Conversation, type Task, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { History, Layers, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
@@ -89,12 +89,35 @@ export function ConversationPanel({
   // Drawer + ribbon state. Drawer is collapsible — toggled via the ribbon.
   const [sideOpen, setSideOpen] = useState<boolean>(true);
   const [activeSideTab, setActiveSideTab] = useState<ConversationSideTab>('context');
-  const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
-  const [mostRecentMessageId, setMostRecentMessageId] = useState<string | null>(null);
-
-  // Context is per-message; falls back to the most recent message so the
-  // panel always shows something useful.
-  const contextMessageId = selectedMessageId ?? mostRecentMessageId;
+  // Selection drives the bubble highlight + per-row highlight in the
+  // aggregated Context panel. It's a list rather than a single id so that
+  // clicking a context entity can light up *every* message the entity was
+  // contributed by — and so clicking any one of those messages keeps lighting
+  // the same entity row.
+  //   - Clicking a bubble  → [thatId] (size 1), no entity selected.
+  //   - Clicking an entity → that entity's full origin list + the entity's
+  //     own row-key so we can light *only* that entity (not every other
+  //     entity that happens to share those bubbles).
+  // The asymmetry matters: a bubble lighting up doesn't imply every entity
+  // attached to it should also light. Entity-mode is the more precise
+  // selection — it pins exactly one row to the highlight, plus the bubbles
+  // that contributed it.
+  const [selectedMessageIds, setSelectedMessageIds] = useState<string[]>([]);
+  const [selectedEntityKey, setSelectedEntityKey] = useState<string | null>(null);
+  const selectOneMessage = useCallback(
+    (id: string) => {
+      setSelectedMessageIds([id]);
+      setSelectedEntityKey(null);
+    },
+    [],
+  );
+  const selectEntity = useCallback(
+    (entityKey: string, messageIds: string[]) => {
+      setSelectedMessageIds(messageIds);
+      setSelectedEntityKey(entityKey);
+    },
+    [],
+  );
 
   // Runs tab target — always the conversation typeid. Approve & Execute
   // stamps every spawned AP with ``target_vfs_path = <conversation typeid>``,
@@ -118,12 +141,6 @@ export function ConversationPanel({
       .map((p) => ({ process: p }));
   }, [runProcesses]);
 
-  // Context tab — fetch the selected message so the panel can render its
-  // chips / attachments / transcript.
-  const { data: contextMessage } = useEntity<FlowMessage>(
-    contextMessageId ? new TypeId(FlowMessage.type, contextMessageId) : null,
-  );
-
   const headerWrapper =
     variant === 'compact'
       ? 'flex items-center gap-1.5 text-xs font-medium text-muted-foreground'
@@ -142,11 +159,13 @@ export function ConversationPanel({
   const drawerChildren: Partial<Record<ConversationSideTab, React.ReactNode>> = {
     context: (
       <ConversationContextPanel
-        flowMessage={contextMessage ?? null}
         task={task ?? null}
         conversation={convEntity ?? null}
         conversationId={conversationId}
         ensureMapped={ensureMapped}
+        selectedMessageIds={selectedMessageIds}
+        selectedEntityKey={selectedEntityKey}
+        onSelectEntity={selectEntity}
       />
     ),
   };
@@ -170,6 +189,15 @@ export function ConversationPanel({
     setSideOpen(true);
   };
 
+  // Approve & Execute spawns a new headless AgenticProcess; surface it
+  // immediately by popping the drawer open on the Runs tab. No-op when the
+  // conversation has no Runs target (project-only views, etc.).
+  const revealRunsTab = useCallback(() => {
+    if (!showRuns) return;
+    setActiveSideTab('runs');
+    setSideOpen(true);
+  }, [showRuns]);
+
   return (
     <div className={`flex h-full min-h-0 flex-1 flex-col ${className ?? ''}`}>
       <div className="flex min-h-0 flex-1">
@@ -186,9 +214,9 @@ export function ConversationPanel({
                 task={task}
                 senderName={senderName}
                 ensureMapped={ensureMapped}
-                selectedMessageId={selectedMessageId}
-                onSelectMessage={setSelectedMessageId}
-                onMostRecentMessageChange={setMostRecentMessageId}
+                selectedMessageIds={selectedMessageIds}
+                onSelectMessage={selectOneMessage}
+                onApproveAndExecuteFired={revealRunsTab}
               />
             </ChipsExcludeProvider>
           </div>
