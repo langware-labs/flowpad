@@ -175,11 +175,24 @@ export function UserDropdown() {
       // is already user-friendly — produced server-side in
       // ``flow_sdk/cli/auth/cloud_login.py::_post_cloud_login``.
       const message = e instanceof Error ? e.message : 'Cloud sign-in failed.';
-      const isUnavailable = /cloud is not available/i.test(message);
-      toast.error(
-        isUnavailable ? 'Cloud is not available' : 'Cloud sign-in failed',
-        { description: isUnavailable ? message.replace(/^cloud is not available\.?\s*/i, '') : message },
-      );
+      // Categorize for the toast title so the user immediately knows the
+      // KIND of failure; description carries the specific copy.
+      let title = 'Cloud sign-in failed';
+      let description = message;
+      if (/cloud is not available/i.test(message)) {
+        title = 'Cloud is not available';
+        description = message.replace(/^cloud is not available\.?\s*/i, '');
+      } else if (/invalid email or password|invalid credentials/i.test(message)) {
+        title = 'Invalid credentials';
+        description = message;
+      } else if (/access denied/i.test(message)) {
+        title = 'Cloud access denied';
+        description = message;
+      } else if (/not configured/i.test(message)) {
+        title = 'Cloud is not configured';
+        description = message;
+      }
+      toast.error(title, { description });
       console.error('[Cloud Login] Failed:', e);
     }
   }, []);

@@ -11,6 +11,8 @@ import {
 import { useProcessesForTarget } from '@src/components/entity-execution-panel';
 import { RunButton } from '@src/components/assets/editor/run/RunButton';
 import { Button } from '@src/components/ui/button';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -32,6 +34,8 @@ import {
 import { ClaudeCliOptions } from '@sdk/cli_workers/claude-cli';
 import { History } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+
+const RUN_ID_PARAM = 'runId';
 
 interface WorkflowAssetEditorProps {
   /** FSRef to the workflow's source markdown file. */
@@ -66,10 +70,28 @@ export function WorkflowAssetEditor({ fsRef, workflow: providedWorkflow }: Workf
   const [isStarting, setIsStarting] = useState(false);
   const [showMcpModal, setShowMcpModal] = useState(false);
   const [mcpEnabling, setMcpEnabling] = useState(false);
+
   // When set, the main pane swaps from MarkdownEditor → WorkflowTraceViewer.
-  // Phase 3 (greedy v1): viewer renders whatever trace/analysis files are
-  // present in the run's output_folder.
-  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
+  // URL-bound via ?runId=<id> on the same DockPointer so the selection is
+  // shareable + back-button-restorable, matching ?editorMode handling in
+  // MarkdownEditor. Param name is `runId` to mirror /dev/trace/:runId.
+  const { navigation, currentDock } = useDockNavigation();
+  const selectedRunId = currentDock?.options?.[RUN_ID_PARAM] ?? null;
+  const setSelectedRunId = useCallback(
+    (runId: string | null) => {
+      if (!currentDock) return;
+      const nextOptions = { ...(currentDock.options ?? {}) };
+      if (runId) {
+        nextOptions[RUN_ID_PARAM] = runId;
+      } else {
+        delete nextOptions[RUN_ID_PARAM];
+      }
+      navigation.openDock(
+        new DockPointer(currentDock.viewType, currentDock.pointer, nextOptions, currentDock.layout),
+      );
+    },
+    [currentDock, navigation],
+  );
 
   // WorkflowStrip's Play button stashes a live ProcessEntry here before
   // navigating — drain it on mount so we show the run in progress.

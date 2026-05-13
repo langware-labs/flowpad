@@ -118,13 +118,36 @@ async def _post_cloud_login(email: str, password: str) -> LoginData:
         ) from e
     except ValueError as e:
         # ``FlowpadClient._unwrap`` raises ValueError for non-200 / non-success
-        # envelopes. Map the common cases.
+        # envelopes. The envelope body is embedded in str(e); we sniff it for
+        # the common credential / authz signals so the UI toast surfaces a
+        # specific cause instead of a generic "try again".
         text = str(e)
-        if "401" in text or "Unauthorized" in text or "invalid token" in text.lower():
-            raise RuntimeError("Cloud sign-in was rejected. Your credentials may be wrong or expired.") from e
-        if "403" in text or "Forbidden" in text:
+        text_lower = text.lower()
+        # Credential failure — hub returns this for wrong email/password on
+        # either 401 (legacy) or 400 (current hub returns ``{"status":"FAIL",
+        # "message":"Invalid Credentials, Check email or Password"}`` with
+        # HTTP 400). Both map to the same user-facing surface.
+        if (
+            "invalid credentials" in text_lower
+            or "check email or password" in text_lower
+            or "401" in text
+            or "unauthorized" in text_lower
+            or "invalid token" in text_lower
+        ):
+            raise RuntimeError("Invalid email or password. Check your cloud credentials.") from e
+        if "403" in text or "forbidden" in text_lower:
             raise RuntimeError("Cloud access denied for these credentials.") from e
-        # Strip the giant raw response body from the user-facing message.
+        if "404" in text or "not found" in text_lower:
+            raise RuntimeError("Cloud sign-in endpoint not found on the configured hub.") from e
+        if "5" == text.strip()[:1] and any(s in text for s in (" 500", " 502", " 503", " 504")):
+            raise RuntimeError("The cloud service returned an error. Please try again in a moment.") from e
+        # As a last resort, try to extract the hub's own message field
+        # from the embedded response body so the user sees what the hub
+        # said rather than a generic fallback.
+        import re as _re
+        m = _re.search(r'"message"\s*:\s*"([^"]+)"', text)
+        if m:
+            raise RuntimeError(f"Cloud sign-in failed: {m.group(1)}") from e
         raise RuntimeError("Cloud sign-in failed. Please try again.") from e
     login_data = LoginData.model_validate(data)
     if not login_data.token or not login_data.user:

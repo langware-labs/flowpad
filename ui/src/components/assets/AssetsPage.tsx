@@ -138,6 +138,10 @@ function buildFolderBreadcrumbs(
 const HIDDEN_TYPES = new Set<string>([RecordType.ANNOTATION, RecordType.PROJECT]);
 
 const SIDEBAR_COLLAPSED_KEY = 'wiki:sidebar-collapsed';
+const SIDEBAR_WIDTH_KEY = 'wiki:sidebar-width';
+const SIDEBAR_DEFAULT_WIDTH = 224;
+const SIDEBAR_MIN_WIDTH = 160;
+const SIDEBAR_MAX_WIDTH = 560;
 
 /** Breadcrumb rendered above the folder-filtered AssetListView. Each crumb
  *  except the last navigates to that ancestor; the last is the current page.
@@ -228,6 +232,14 @@ export function AssetsPage() {
     if (typeof window === 'undefined') return false;
     return window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1';
   });
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
+    if (typeof window === 'undefined') return SIDEBAR_DEFAULT_WIDTH;
+    const raw = window.localStorage.getItem(SIDEBAR_WIDTH_KEY);
+    const n = raw ? Number(raw) : NaN;
+    if (!Number.isFinite(n)) return SIDEBAR_DEFAULT_WIDTH;
+    return Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, n));
+  });
+  const [isResizingSidebar, setIsResizingSidebar] = useState(false);
 
   useEffect(() => { setSelectedResultIndex(-1); }, [searchQuery]);
 
@@ -258,7 +270,39 @@ export function AssetsPage() {
     window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, sidebarCollapsed ? '1' : '0');
   }, [sidebarCollapsed]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth));
+  }, [sidebarWidth]);
+
   const toggleSidebar = useCallback(() => setSidebarCollapsed((c) => !c), []);
+
+  const handleSidebarResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = sidebarWidth;
+    setIsResizingSidebar(true);
+    const prevCursor = document.body.style.cursor;
+    const prevUserSelect = document.body.style.userSelect;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    const onMove = (ev: MouseEvent) => {
+      const next = Math.max(
+        SIDEBAR_MIN_WIDTH,
+        Math.min(SIDEBAR_MAX_WIDTH, startWidth + (ev.clientX - startX)),
+      );
+      setSidebarWidth(next);
+    };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      document.body.style.cursor = prevCursor;
+      document.body.style.userSelect = prevUserSelect;
+      setIsResizingSidebar(false);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }, [sidebarWidth]);
 
   const handleScopeChange = useCallback((scope: AssetScope) => {
     setAssetFilter(prev => ({ ...prev, scope }));
@@ -474,14 +518,15 @@ export function AssetsPage() {
       </div>
 
       <div className="flex min-h-0 flex-1">
-        {/* Type sidebar — collapsible push drawer */}
+        {/* Type sidebar — collapsible push drawer, drag-resizable when expanded */}
         <div
-          className={`flex-shrink-0 overflow-hidden border-r transition-[width] duration-200 ease-out ${
-            sidebarCollapsed ? 'w-0' : 'w-56'
+          className={`flex-shrink-0 overflow-hidden border-r ${
+            isResizingSidebar ? '' : 'transition-[width] duration-200 ease-out'
           }`}
+          style={{ width: sidebarCollapsed ? 0 : sidebarWidth }}
           aria-hidden={sidebarCollapsed}
         >
-          <div className="h-full w-56 overflow-y-auto">
+          <div className="h-full overflow-y-auto" style={{ width: sidebarWidth }}>
             <BrowseableTree
               roots={wikiRoots}
               activePointer={currentDock ?? null}
@@ -490,6 +535,20 @@ export function AssetsPage() {
             />
           </div>
         </div>
+        {/* Resize handle for the sidebar — hidden when collapsed */}
+        {!sidebarCollapsed && (
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize asset tree"
+            onMouseDown={handleSidebarResizeStart}
+            onDoubleClick={() => setSidebarWidth(SIDEBAR_DEFAULT_WIDTH)}
+            className={`group relative w-1 flex-shrink-0 cursor-col-resize select-none ${
+              isResizingSidebar ? 'bg-primary/40' : 'hover:bg-primary/30'
+            }`}
+            data-testid="asset-tree-resize-handle"
+          />
+        )}
 
         {/* Main content: editor when in editor mode, list view otherwise */}
         <div className="min-w-0 flex-1">

@@ -13,11 +13,18 @@ import { ChevronDown, ChevronRight, Download, Eye, ExternalLink, FileCode, Gradu
 import { useTheme } from 'next-themes';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
-const EDITOR_MODES = ['view', 'review', 'editor', 'markdown', 'learning'] as const;
-type ViewMode = (typeof EDITOR_MODES)[number];
+export const EDITOR_MODES = ['view', 'review', 'editor', 'markdown', 'learning'] as const;
+export type EditorMode = (typeof EDITOR_MODES)[number];
+// Backwards-compatible internal alias; new code should use `EditorMode`.
+type ViewMode = EditorMode;
 
 const MODE_STORAGE_KEY = 'markdownEditor.mode';
+const EDITOR_MODE_PARAM = 'editorMode';
 const DEFAULT_MODE: ViewMode = 'view';
+
+function isEditorMode(value: string | undefined | null): value is ViewMode {
+  return value != null && (EDITOR_MODES as readonly string[]).includes(value);
+}
 
 function readStoredMode(): ViewMode {
   if (typeof window === 'undefined') return DEFAULT_MODE;
@@ -144,15 +151,45 @@ function MarkdownEditorContent({
   learningPanel?: React.ReactNode;
 }) {
   const { navigation, currentDock } = useDockNavigation();
-  const [viewMode, setViewMode] = useState<ViewMode>(readStoredMode);
+
+  // viewMode source of truth: URL `?editorMode=…` if present and valid; else
+  // last-used value from localStorage; else DEFAULT_MODE. Updating viewMode
+  // pushes a new DockPointer with the option merged in — the URL becomes
+  // shareable + back-button-restorable, and per-tab independent.
+  const urlMode = currentDock?.options?.[EDITOR_MODE_PARAM];
+  const viewMode: ViewMode = isEditorMode(urlMode) ? urlMode : readStoredMode();
+
+  const setViewMode = useCallback((mode: ViewMode) => {
+    if (!currentDock) return; // outside dock context — shouldn't happen for MarkdownEditor
+    const nextOptions = { ...(currentDock.options ?? {}), [EDITOR_MODE_PARAM]: mode };
+    navigation.openDock(new DockPointer(currentDock.viewType, currentDock.pointer, nextOptions, currentDock.layout));
+  }, [currentDock, navigation]);
+
   // Restore from a stale 'learning' selection when the chip is hidden for this doc.
+  // For URL-bound state, that means stripping ?editorMode=learning so the URL
+  // reflects the actual visible mode (silent + clean per design).
+  //
+  // Guard against the initial-mount race: `showLearningMode` is computed by
+  // WorkflowAssetEditor from an async process query, so it starts `false` for
+  // ~one tick even when this doc DOES have learning runs. Stripping then would
+  // wipe a legitimate `?editorMode=learning` share-link. We delay the strip
+  // by a small idle period; if learning becomes available within that window,
+  // the timer is cancelled and the URL is preserved.
   useEffect(() => {
-    if (viewMode === 'learning' && !showLearningMode) setViewMode(DEFAULT_MODE);
-  }, [viewMode, showLearningMode]);
+    if (urlMode !== 'learning' || showLearningMode || !currentDock) return;
+    const handle = window.setTimeout(() => {
+      const nextOptions = { ...(currentDock.options ?? {}) };
+      delete nextOptions[EDITOR_MODE_PARAM];
+      navigation.openDock(new DockPointer(currentDock.viewType, currentDock.pointer, nextOptions, currentDock.layout));
+    }, 1500);
+    return () => window.clearTimeout(handle);
+  }, [urlMode, showLearningMode, currentDock, navigation]);
+
   // Imperative handle to the underlying Milkdown editor — driven by the
   // wiki toolbar to insert wikilinks at the cursor.
   const milkdownRef = useRef<MilkdownEditorInstance | null>(null);
 
+  // Keep localStorage as the no-URL fallback for new docs / fresh links.
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try { window.localStorage.setItem(MODE_STORAGE_KEY, viewMode); } catch { /* storage may be disabled */ }
@@ -484,6 +521,8 @@ function EditorHeader({ fileName, dirPath, dirty, viewMode, onViewModeChange, on
               key={mode}
               onClick={() => onViewModeChange(mode)}
               title={mode.charAt(0).toUpperCase() + mode.slice(1)}
+              data-testid={`editor-mode-chip-${mode}`}
+              data-mode-active={active ? 'true' : 'false'}
               className={`flex items-center gap-1 rounded px-2 py-1 text-xs font-medium capitalize transition-colors ${
                 active
                   ? 'bg-background text-foreground shadow-sm'
