@@ -72,10 +72,7 @@ DESKTOP_LABEL = "--user-type--.desktop"
 # overwrite it from `git config user.name` on subsequent server starts.
 NAME_OVERRIDE_LABEL = "--user--.name-overridden"
 
-# Display-only placeholder domain for desktop users that have not logged in
-# yet. NEVER written into ``User.email`` — the field stays ``None`` until
-# cloud login fills it in. Used only by helpers that need a non-empty visible
-# string (e.g., ``User.local_sender_identity``).
+# Domain for default desktop user email
 DESKTOP_EMAIL_DOMAIN = "desktop.local"
 
 # Cloud token SOD name (stub -- flow-cli does not use SOD cloud tokens)
@@ -102,13 +99,12 @@ AGENTS_TO_CHECK = [AgentName.CLAUDE_CODE, AgentName.CURSOR]
 
 
 def get_default_desktop_email() -> str:
-    """Synthesise a *display-only* fallback for nameless / un-logged-in users.
+    """Generate a default email for desktop users when no email is found.
 
-    Returns ``hostname@desktop.local``. The string MUST NOT be written into
-    ``User.email`` — that field is the routing key for outgoing flow messages
-    and writing a synthetic value here would silently break delivery (the hub
-    can't email a fake ``@desktop.local`` host). Use this only where the
-    caller needs a non-empty visible string.
+    Returns:
+        Default email in format 'hostname@desktop.local'
+
+    Migrated from FlowPad: flowpad/hub/core/desktop_loader.py
     """
     hostname = socket.gethostname()
     return f"{hostname}@{DESKTOP_EMAIL_DOMAIN}"
@@ -665,11 +661,7 @@ async def get_or_create_local_user() -> User:
     1. git config user.email
     2. OS-specific methods (macOS MobileMeAccounts, Windows registry)
     3. Environment variables (EMAIL, USER_EMAIL)
-
-    The cloud login flow later overwrites ``email`` with the authenticated
-    address (see ``cloud_login._finalize_login``). When no email is found and
-    the user has not logged in, ``email`` stays ``None`` and any action that
-    requires identity (share, reply, etc.) is rejected at the route level.
+    4. Falls back to hostname@desktop.local
 
     Derives user display name from email: email.split("@")[0].replace(".", " ").title()
 
@@ -680,6 +672,12 @@ async def get_or_create_local_user() -> User:
     # Check if desktop user already exists (by label)
     desktop_user = await get_desktop_user()
     if desktop_user:
+        # Handle existing desktop user with no email - update with default email
+        if not desktop_user.email:
+            default_email = get_default_desktop_email()
+            logging.info(f"Desktop user {desktop_user.id} has no email, setting default: {default_email}")
+            desktop_user.email = default_email
+            await desktop_user.save()
         # Refresh name from git config user.name unless the user manually overrode it
         manually_overridden = NAME_OVERRIDE_LABEL in (desktop_user.labels or [])
         git_name = await asyncio.to_thread(get_name)
@@ -688,19 +686,6 @@ async def get_or_create_local_user() -> User:
             desktop_user.name = git_name
             await desktop_user.save()
             logging.info(f"Updated desktop user {desktop_user.id} name: {old_name} -> {git_name}")
-        # Self-heal: if the user is cloud-logged-in, overwrite the local
-        # record's ``.email`` from the stored cloud user_info whenever it is
-        # empty OR carries a stale ``@desktop.local`` synthetic from older
-        # builds. Without this, every new share keeps stamping the synthetic
-        # and the hub silently drops the email at SendGrid.
-        from flow_sdk.cli.app_config import get_user  # noqa: PLC0415
-        cloud_email = (get_user() or {}).get("email")
-        current = (desktop_user.email or "").strip()
-        is_stale = (not current) or current.endswith("@desktop.local")
-        if cloud_email and is_stale and current != cloud_email:
-            desktop_user.email = cloud_email
-            await desktop_user.save()
-            logging.info(f"Synced desktop user {desktop_user.id} email from cloud: {cloud_email} (was {current!r})")
         logging.info(f"Desktop user already exists: {desktop_user.id} ({desktop_user.email}, {desktop_user.name})")
         return desktop_user
 
@@ -712,11 +697,11 @@ async def get_or_create_local_user() -> User:
             existing_by_uname.add_label(DESKTOP_LABEL)
             await existing_by_uname.save()
         # Update email/name: prefer git config user.name unless manually overridden
-        email = await asyncio.to_thread(get_email)
+        email = await asyncio.to_thread(get_email) or get_default_desktop_email()
         git_name = await asyncio.to_thread(get_name)
-        name_from_email = email.split("@")[0].replace(".", " ").title() if email else None
+        name_from_email = email.split("@")[0].replace(".", " ").title()
         manually_overridden = NAME_OVERRIDE_LABEL in (existing_by_uname.labels or [])
-        needs_email_update = not existing_by_uname.email and bool(email)
+        needs_email_update = not existing_by_uname.email
         needs_name_update = not manually_overridden and (
             existing_by_uname.name == "Local Desktop User"
             or (git_name and existing_by_uname.name != git_name)
@@ -725,17 +710,20 @@ async def get_or_create_local_user() -> User:
             if needs_email_update:
                 existing_by_uname.email = email
             if needs_name_update:
-                existing_by_uname.name = git_name or name_from_email or existing_by_uname.name
+                existing_by_uname.name = git_name or name_from_email
             await existing_by_uname.save()
             logging.info(f"Updated @local user with email: {existing_by_uname.email}, name: {existing_by_uname.name}")
         return existing_by_uname
 
-    # Create new desktop user. ``email`` stays ``None`` until cloud login fills it in.
+    # Create new desktop user
     email = await asyncio.to_thread(get_email)
+    if not email:
+        email = get_default_desktop_email()
+        logging.info(f"No email found for desktop user, using default: {email}")
 
-    # Prefer git config user.name; fall back to email-derived name; finally to a generic label.
+    # Prefer git config user.name; fall back to email-derived name
     git_name = await asyncio.to_thread(get_name)
-    name = git_name or (email.split("@")[0].replace(".", " ").title() if email else "Local Desktop User")
+    name = git_name or email.split("@")[0].replace(".", " ").title()
 
     user = User(
         type="user",
@@ -750,7 +738,7 @@ async def get_or_create_local_user() -> User:
     try:
         await user.save()
     except Exception as save_error:
-        if email and "already exist" in str(save_error) and email in str(save_error):
+        if "already exist" in str(save_error) and email in str(save_error):
             logging.info(f"Deleting pre-existing user with email {email} and recreating with desktop label")
             existing_user = await User.get_user_by_email(email)
             if existing_user:
