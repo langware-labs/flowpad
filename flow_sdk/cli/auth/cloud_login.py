@@ -129,9 +129,27 @@ async def _finalize_login(token: str, user_info: dict[str, Any]) -> None:
     from flow_sdk.cli.auth.secrets import enable_secrets
     enable_secrets()
     set_user(user_info)
+    await _sync_local_user_email(user_info)
     state.login_result = {"success": True, "user": user_info, "message": "Login successful"}
     state.login_received.set()
     invalidate_bootstrap_cache()
+
+
+async def _sync_local_user_email(user_info: dict[str, Any]) -> None:
+    """Write the cloud-authenticated email onto the desktop ``User`` row.
+
+    Outgoing shares/replies stamp ``task.sender_email`` from this field. Until
+    login fills it in, the desktop user has ``email=None`` and the send-action
+    routes refuse to dispatch (see ``is_logged_in`` gating in the action layer).
+    """
+    from flow_sdk.builtin.user import User
+    cloud_email = (user_info or {}).get("email")
+    if not cloud_email:
+        return
+    local_user = await User.get_local()
+    if local_user and local_user.email != cloud_email:
+        local_user.email = cloud_email
+        await local_user.save()
 
 
 async def _broadcast_oauth(msg: OAuthMessage) -> None:
