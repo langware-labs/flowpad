@@ -30,14 +30,24 @@ export function ScopeFilterBar({
   const projectCount = effectiveProjectIds.length;
 
   const options: ScopeBarOption<AssetScope>[] = [
-    { value: 'all', label: 'All' },
-    { value: 'user', label: 'User' },
+    {
+      value: 'all',
+      label: 'Both',
+      title: 'Both user assets and selected projects assets',
+    },
+    {
+      value: 'user',
+      label: 'User',
+      title: 'User assets only',
+    },
     {
       value: 'project',
       label: 'Project',
       count: projectCount,
       disabled: projectScopeDisabled,
-      title: projectScopeDisabled ? 'Open the filter to pick projects' : undefined,
+      title: projectScopeDisabled
+        ? 'Open the filter to pick projects'
+        : 'Selected projects assets only',
     },
   ];
 

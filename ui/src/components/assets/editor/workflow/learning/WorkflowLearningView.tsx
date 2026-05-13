@@ -1,4 +1,6 @@
 import { useToast } from '@src/hooks/use-toast';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { AgenticProcess, Workflow } from '@sdk';
 import { GraduationCap } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -8,6 +10,8 @@ import { LearningRunRow } from './LearningRunRow';
 import { runAnalyzer, runLearner } from './runLearningJob';
 import { useWorkflowLearningArtifacts } from './useWorkflowLearningArtifacts';
 
+const LEARNING_PROCESS_ID_PARAM = 'learningProcessId';
+
 interface WorkflowLearningViewProps {
   workflow: Workflow;
   /** Terminal-status processes for this workflow, newest first. */
@@ -16,16 +20,49 @@ interface WorkflowLearningViewProps {
 
 export function WorkflowLearningView({ workflow, runs }: WorkflowLearningViewProps) {
   const { toast } = useToast();
-  const [activeId, setActiveId] = useState<string | null>(runs[0]?.id ?? null);
+
+  // Selected past-run id, URL-bound via ?learningProcessId=<id> on the current
+  // DockPointer. URL > runs[0]. Setting it pushes a new pointer with the option
+  // merged in (mirrors ?editorMode and ?runId on the same surface).
+  const { navigation, currentDock } = useDockNavigation();
+  const urlActiveId = currentDock?.options?.[LEARNING_PROCESS_ID_PARAM];
+  const urlActiveIsValid = !!urlActiveId && runs.some((r) => r.id === urlActiveId);
+  const activeId: string | null = urlActiveIsValid
+    ? (urlActiveId as string)
+    : (runs[0]?.id ?? null);
+
+  const setActiveId = useCallback(
+    (id: string | null) => {
+      if (!currentDock) return;
+      const nextOptions = { ...(currentDock.options ?? {}) };
+      if (id) {
+        nextOptions[LEARNING_PROCESS_ID_PARAM] = id;
+      } else {
+        delete nextOptions[LEARNING_PROCESS_ID_PARAM];
+      }
+      navigation.openDock(
+        new DockPointer(currentDock.viewType, currentDock.pointer, nextOptions, currentDock.layout),
+      );
+    },
+    [currentDock, navigation],
+  );
+
+  // Strip a stale ?learningProcessId from the URL when the targeted run is no
+  // longer in `runs` (deleted, filtered out, etc.). Mirrors the editorMode=learning
+  // fallback in MarkdownEditor: silent + clean.
+  useEffect(() => {
+    if (urlActiveId && !urlActiveIsValid && currentDock) {
+      const nextOptions = { ...(currentDock.options ?? {}) };
+      delete nextOptions[LEARNING_PROCESS_ID_PARAM];
+      navigation.openDock(
+        new DockPointer(currentDock.viewType, currentDock.pointer, nextOptions, currentDock.layout),
+      );
+    }
+  }, [urlActiveId, urlActiveIsValid, currentDock, navigation]);
+
   const [refreshKey, setRefreshKey] = useState(0);
   const [jobByRunner, setJobByRunner] = useState<Record<string, AgenticProcess | undefined>>({});
   const learning = useWorkflowLearningArtifacts(workflow);
-
-  // Keep active selection valid as the run list refreshes.
-  useEffect(() => {
-    if (!activeId && runs.length > 0) setActiveId(runs[0].id);
-    if (activeId && !runs.find((r) => r.id === activeId)) setActiveId(runs[0]?.id ?? null);
-  }, [activeId, runs]);
 
   const activeProcess = useMemo(() => runs.find((r) => r.id === activeId) ?? null, [runs, activeId]);
 
