@@ -142,32 +142,39 @@ export function buildSkipKeys(
 export function buildSharedEntities(
   orderedMessages: FlowMessage[],
   skipKeys: ReadonlySet<string>,
+  conversation?: { contextEntities?: TypeId[] } | null,
 ): SharedEntityAgg[] {
   const byKey = new Map<string, SharedEntityAgg>();
+  const pushTypeId = (t: TypeId | null, originMessageId: string | null) => {
+    if (!t) return;
+    const key = t.toString();
+    if (skipKeys.has(key)) return;
+    let entry = byKey.get(key);
+    if (!entry) {
+      entry = { typeId: t, originMessageIds: [] };
+      byKey.set(key, entry);
+    }
+    if (originMessageId && !entry.originMessageIds.includes(originMessageId)) {
+      entry.originMessageIds.push(originMessageId);
+    }
+  };
   for (const fm of orderedMessages) {
     if (!fm.id) continue;
-    const pushTypeId = (t: TypeId | null) => {
-      if (!t) return;
-      const key = t.toString();
-      if (skipKeys.has(key)) return;
-      let entry = byKey.get(key);
-      if (!entry) {
-        entry = { typeId: t, originMessageIds: [] };
-        byKey.set(key, entry);
-      }
-      if (fm.id && !entry.originMessageIds.includes(fm.id)) {
-        entry.originMessageIds.push(fm.id);
-      }
-    };
-    for (const t of fm.contextEntities ?? []) pushTypeId(t);
+    for (const t of fm.contextEntities ?? []) pushTypeId(t, fm.id);
     for (const a of fm.attachment ?? []) {
       if (a.attachment_type !== AttachmentType.TYPE_ID) continue;
       try {
-        pushTypeId(new TypeId(a.data));
+        pushTypeId(new TypeId(a.data), fm.id);
       } catch {
         /* malformed — skip */
       }
     }
+  }
+  // Conversation-level context entities (e.g. specs added via the + button)
+  // surface as Shared Context with no specific origin message — they belong
+  // to the whole thread, not to a single bubble.
+  if (conversation) {
+    for (const t of conversation.contextEntities ?? []) pushTypeId(t, null);
   }
   return Array.from(byKey.values());
 }
