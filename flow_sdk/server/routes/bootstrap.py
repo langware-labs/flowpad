@@ -688,6 +688,19 @@ async def get_or_create_local_user() -> User:
             desktop_user.name = git_name
             await desktop_user.save()
             logging.info(f"Updated desktop user {desktop_user.id} name: {old_name} -> {git_name}")
+        # Self-heal: if the user is cloud-logged-in, overwrite the local
+        # record's ``.email`` from the stored cloud user_info whenever it is
+        # empty OR carries a stale ``@desktop.local`` synthetic from older
+        # builds. Without this, every new share keeps stamping the synthetic
+        # and the hub silently drops the email at SendGrid.
+        from flow_sdk.cli.app_config import get_user  # noqa: PLC0415
+        cloud_email = (get_user() or {}).get("email")
+        current = (desktop_user.email or "").strip()
+        is_stale = (not current) or current.endswith("@desktop.local")
+        if cloud_email and is_stale and current != cloud_email:
+            desktop_user.email = cloud_email
+            await desktop_user.save()
+            logging.info(f"Synced desktop user {desktop_user.id} email from cloud: {cloud_email} (was {current!r})")
         logging.info(f"Desktop user already exists: {desktop_user.id} ({desktop_user.email}, {desktop_user.name})")
         return desktop_user
 
