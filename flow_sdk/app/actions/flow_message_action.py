@@ -749,6 +749,9 @@ async def send_draft() -> ApiResponse:
             return ApiFailResponse(message="No request info found")
         if not request_info.someone_typeid:
             return ApiFailResponse(message="Authentication required")
+        from flow_sdk.cli.auth.hub_login import is_logged_in
+        if not is_logged_in():
+            return ApiFailResponse(message="Cloud login required to send messages")
         return await handle_send_draft(
             fm_id=str(request_info.target_entity_typeid.id),
             someone_typeid=request_info.someone_typeid,
