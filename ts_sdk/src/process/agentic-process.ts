@@ -2091,6 +2091,14 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       if (statusData.status && typeof statusData.status === 'string') {
         const oldWorker = this.workerStatus;
         this.workerStatus = statusData.status as WorkerStatus;
+        // [AP-status-debug] DELETE ME — tracks FlowData-driven worker transitions.
+        console.log('[AP-status-debug] _handleFlowData status element', {
+          id: this.id,
+          oldWorker,
+          newWorker: this.workerStatus,
+          lifecycleStatus: this.status,
+          isComplete,
+        });
         this.emit('state_change', {
           field: 'workerStatus',
           oldValue: oldWorker,
@@ -2103,6 +2111,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     }
 
     if (elementType === 'status' && isComplete) {
+      // [AP-status-debug] DELETE ME — _markComplete does NOT touch this.status.
+      console.log('[AP-status-debug] _handleFlowData firing _markComplete (lifecycle stays at)', this.status, 'id=', this.id);
       this._markComplete();
     }
   }
@@ -2118,9 +2128,25 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * @internal
    */
   protected onEntityUpdate(data: Partial<IAgenticProcess>): void {
+    // [AP-status-debug] DELETE ME — every WS-driven entity update lands here.
+    // Shows which fields the backend sent so we can tell whether the
+    // lifecycle transition (status: stopped) is pushed at all, vs only the
+    // worker transition (worker_status: complete).
+    console.log('[AP-status-debug] onEntityUpdate WS payload', {
+      id: this.id,
+      hasStatus: 'status' in data,
+      hasWorkerStatus: 'worker_status' in data,
+      incomingStatus: data.status,
+      incomingWorkerStatus: data.worker_status,
+      currentStatus: this.status,
+      currentWorkerStatus: this.workerStatus,
+      payloadKeys: Object.keys(data),
+    });
     if (data.status) {
       const oldStatus = this.status;
       this.status = data.status as ProcessStatus;
+      // [AP-status-debug] DELETE ME — confirms lifecycle transition applied.
+      console.log('[AP-status-debug] lifecycle transition', { id: this.id, oldStatus, newStatus: this.status });
       this.emit('state_change', {
         field: 'status',
         oldValue: oldStatus,
@@ -2137,6 +2163,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     if (data.worker_status) {
       const oldWorker = this.workerStatus;
       this.workerStatus = data.worker_status as WorkerStatus;
+      // [AP-status-debug] DELETE ME — confirms worker transition applied.
+      console.log('[AP-status-debug] worker transition', { id: this.id, oldWorker, newWorker: this.workerStatus });
       this.emit('state_change', {
         field: 'workerStatus',
         oldValue: oldWorker,
