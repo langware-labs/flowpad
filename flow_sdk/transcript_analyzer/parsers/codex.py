@@ -35,13 +35,14 @@ from flow_sdk._compat import StrEnum
 
 from ..entries import (
     AssistantMessageEntry,
+    CodexUsageEntry,
     MetaEntry,
     SummaryEntry,
     SystemEntry,
-    TokenUsageEntry,
     ToolResultEntry,
     ToolUseEntry,
     UnknownEntry,
+    UsageEntry,
     UserMessageEntry,
 )
 from ..entry import TranscriptEntry
@@ -280,7 +281,14 @@ class _CodexParserBase:
             return int(round(value))
         return None
 
-    def _make_token_usage(self, payload: dict, base: dict) -> TokenUsageEntry:
+    def _emit_usage(self, payload: dict, base: dict) -> list[TranscriptEntry]:
+        """Per-dim ``UsageEntry`` list + one ``CodexUsageEntry`` for cumulative totals.
+
+        Codex packs both per-turn (``last_token_usage``) and cumulative
+        (``total_token_usage``) into one ``token_count`` event. We emit
+        per-dim entries from ``last`` (so cost math sees only this turn's
+        spend) and one separate cumulative carrier for sanity-checking.
+        """
         info = payload.get("info") if isinstance(payload, dict) else None
         if not isinstance(info, dict):
             info = payload if isinstance(payload, dict) else {}
@@ -293,17 +301,50 @@ class _CodexParserBase:
         turn_id = info.get("turn_id")
         if not turn_id and isinstance(payload, dict):
             turn_id = payload.get("turn_id")
-        return TokenUsageEntry(
-            input_tokens=last.get("input_tokens"),
-            output_tokens=last.get("output_tokens"),
-            cached_input_tokens=last.get("cached_input_tokens"),
-            reasoning_output_tokens=last.get("reasoning_output_tokens"),
-            total_input_tokens=total.get("input_tokens"),
-            total_output_tokens=total.get("output_tokens"),
-            turn_id=str(turn_id) if turn_id else None,
-            model=self._current_model,
-            **base,
+        turn_id_str = str(turn_id) if turn_id else None
+
+        out: list[TranscriptEntry] = []
+        base_id = base["id"]
+        base_envelope = {k: v for k, v in base.items() if k != "id"}
+        entry_id = f"{base_id}:usage"
+
+        def _emit(**fields: object) -> None:
+            count = fields.get("count")
+            if not isinstance(count, (int, float)) or count <= 0:
+                return
+            dim_id = f"{base_id}:usage:dim_{len(out)}"
+            out.append(UsageEntry(
+                id=dim_id,
+                entry_id=entry_id,
+                model=self._current_model,
+                **base_envelope,
+                **fields,  # type: ignore[arg-type]
+            ))
+
+        _emit(count=last.get("input_tokens") or 0, io="input", cache="none")
+        _emit(count=last.get("output_tokens") or 0, io="output")
+        _emit(count=last.get("cached_input_tokens") or 0, io="input", cache="read")
+        _emit(
+            count=last.get("reasoning_output_tokens") or 0,
+            io="output", reasoning=True,
         )
+
+        # Cumulative totals — one carrier per token_count event, even if
+        # all per-dim entries were zero. Useful for matching against
+        # OpenAI's own session totals.
+        if total or turn_id_str:
+            out.append(CodexUsageEntry(
+                id=f"{base_id}:usage:cumulative",
+                entry_id=entry_id,
+                model=self._current_model,
+                count=0,
+                io="input",
+                total_input_tokens=total.get("input_tokens"),
+                total_output_tokens=total.get("output_tokens"),
+                turn_id=turn_id_str,
+                **base_envelope,
+            ))
+        return out
 
     def _parse_compacted(self, raw: dict, base: dict) -> list[TranscriptEntry]:
         payload = raw.get("payload") or raw
@@ -569,7 +610,7 @@ class _CodexParserBase:
         if etype in ("agent_message", "user_message"):
             return []
         if etype == "token_count":
-            return [self._make_token_usage(payload, base)]
+            return self._emit_usage(payload, base)
         if etype in {
             "task_started",
             "task_complete",
@@ -685,7 +726,7 @@ class CodexRolloutParser(_CodexParserBase):
             return self._parse_compacted(raw, base)
         if rtype is CodexLineType.TOKEN_COUNT:
             payload = raw.get("payload") or raw
-            return [self._make_token_usage(payload, base)]
+            return self._emit_usage(payload, base)
         if rtype in {CodexLineType.TASK_STARTED, CodexLineType.TASK_COMPLETE}:
             return [SystemEntry(
                 subtype=rtype.value,

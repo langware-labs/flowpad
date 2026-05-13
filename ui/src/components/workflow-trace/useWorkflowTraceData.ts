@@ -14,6 +14,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { AgenticProcess, FSRef, TypeId } from "@sdk";
 import { useEntity } from "@sdk/react/hooks";
+import {
+  parseClaudeTranscriptUsage,
+  pricingFor,
+  type UsageEntry,
+} from "@sdk/transcript-analyzer";
 import { useAgentContext } from "@src/components/agent-layout/agent-layout";
 
 import type {
@@ -196,10 +201,26 @@ function bulletTextFromWorkflow(
   return raw.replace(/^\s*[-*]\s*/, "").trim() || `(line ${line})`;
 }
 
+/** Cost in [enter_ts, done_ts] window for a single step. ISO timestamps compare lexicographically. */
+function costInSpan(
+  usage: UsageEntry[],
+  enterTs: string | undefined,
+  doneTs: string | undefined,
+): number {
+  if (!enterTs || !doneTs || usage.length === 0) return 0;
+  let total = 0;
+  for (const e of usage) {
+    if (!e.timestamp || e.timestamp < enterTs || e.timestamp > doneTs) continue;
+    total += pricingFor(e.model).costOf(e);
+  }
+  return total;
+}
+
 function buildSteps(
   trace: WorkflowReportEntry[],
   analysis: AnalysisRecord[],
   workflowText: string | null,
+  usage: UsageEntry[],
 ): StepViewModel[] {
   const tracePairs = pairTraceEvents(trace);
   const analysisByAnchor = new Map<AnchorKey, AnalysisRecord>();
@@ -228,6 +249,13 @@ function buildSteps(
     const step_text =
       ana?.step_text ?? bulletTextFromWorkflow(workflowText, line);
 
+    // Cost: pair the (enter_ts, done_ts) window with usage entries in that
+    // span and sum via pricingFor(model). Falls through to 0 when the run
+    // has no transcript yet (older runs without session_id, etc).
+    const enterTs = pair?.enter.ts ?? ana?.trace.enter_ts;
+    const doneTs = pair?.terminal?.ts ?? ana?.trace.done_ts;
+    const cost_usd = costInSpan(usage, enterTs, doneTs);
+
     steps.push({
       file,
       line,
@@ -238,6 +266,7 @@ function buildSteps(
       tool_calls: ana?.transcript_span?.tool_calls,
       issues: ana?.issues ?? [],
       recommendation: ana?.recommendation ?? undefined,
+      cost_usd: cost_usd > 0 ? cost_usd : undefined,
     });
   }
 
@@ -246,7 +275,7 @@ function buildSteps(
   return steps;
 }
 
-function buildSummary(steps: StepViewModel[]): RunSummary {
+function buildSummary(steps: StepViewModel[], usage: UsageEntry[]): RunSummary {
   let cleanCount = 0;
   let warnCount = 0;
   let errorCount = 0;
@@ -263,12 +292,19 @@ function buildSummary(steps: StepViewModel[]): RunSummary {
       pendingCount += 1;
     }
   }
+  // Total cost = sum of every UsageEntry in the transcript (not just
+  // step-attributed) so the headline matches the full session bill.
+  let totalCostUsd = 0;
+  for (const e of usage) {
+    totalCostUsd += pricingFor(e.model).costOf(e);
+  }
   return {
     cleanCount,
     warnCount,
     errorCount,
     pendingCount,
     totalDurationMs,
+    totalCostUsd: totalCostUsd > 0 ? totalCostUsd : undefined,
     total: steps.length,
   };
 }
@@ -334,6 +370,26 @@ export function useWorkflowTraceData(
   const trace = useJsonlFile<WorkflowReportEntry>(traceRef);
   const analysis = useJsonlFile<AnalysisRecord>(analysisRef);
 
+  // Transcript path = ${homeDir}/.claude/projects/${project_encoded_name}/${session_id}.jsonl.
+  // The runner stores session_id + project_encoded_name on the AgenticProcess
+  // when it spawns; backfilled records mirror the convention. Missing either
+  // field is fine — cost just renders as undefined.
+  const transcriptRef = useMemo(() => {
+    const sessionId = process?.session_id;
+    const project = process?.project_encoded_name;
+    const home = computeNode?.home_dir;
+    if (!sessionId || !project || !home || !fsTypeId) return null;
+    const path = `${home.replace(/\/$/, "")}/.claude/projects/${project}/${sessionId}.jsonl`.replace(/^\//, "");
+    return new FSRef(path, fsTypeId);
+  }, [process?.session_id, process?.project_encoded_name, computeNode?.home_dir, fsTypeId]);
+
+  const transcriptText = useTextFile(transcriptRef);
+
+  const usage = useMemo<UsageEntry[]>(
+    () => (transcriptText.text ? parseClaudeTranscriptUsage(transcriptText.text) : []),
+    [transcriptText.text],
+  );
+
   const workflowFile = useMemo<string | null>(() => {
     if (analysis.records.length > 0) return analysis.records[0].anchor.file;
     if (trace.records.length > 0) return trace.records[0].file;
@@ -352,8 +408,9 @@ export function useWorkflowTraceData(
       trace.records,
       analysis.records,
       workflowFile_text.text,
+      usage,
     );
-    const summary = buildSummary(steps);
+    const summary = buildSummary(steps, usage);
     const header = splitWorkflowMarkdown(workflowFile_text.text);
 
     let notice: string | undefined;
@@ -402,6 +459,7 @@ export function useWorkflowTraceData(
     workflowFile_text.text,
     workflowFile_text.found,
     workflowFile_text.isLoading,
+    usage,
   ]);
 
   return viewModel;

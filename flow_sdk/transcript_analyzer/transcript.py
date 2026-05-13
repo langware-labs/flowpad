@@ -16,6 +16,7 @@ from .entries import (
     ShellCommandEntry,
     ToolResultEntry,
     ToolUseEntry,
+    UsageEntry,
     UserMessageEntry,
 )
 from .entry import EntryKind, TranscriptEntry
@@ -36,6 +37,8 @@ _SYNTHETIC_USER_TEXTS = frozenset({
 
 if TYPE_CHECKING:
     from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
+
+    from .pricing.base import ModelPricing
 
 logger = logging.getLogger(__name__)
 
@@ -222,6 +225,62 @@ class AgentTranscript:
                 continue
             out.append(e)
         return out
+
+    # ── cost / usage ─────────────────────────────────────────────────────────
+
+    @property
+    def usage(self) -> list[UsageEntry]:
+        """All per-dim usage entries in this transcript, in source order.
+
+        Each entry represents one chargeable stream (tokens or requests)
+        from a single assistant turn — see :class:`UsageEntry`. Pairing
+        with :mod:`flow_sdk.transcript_analyzer.pricing` gives USD cost
+        without losing per-stream detail (cache_read vs cache_write_1h
+        vs server_tool_use are all separately matchable).
+        """
+        return [e for e in self.entries if isinstance(e, UsageEntry)]
+
+    def cost(self, pricing: dict[str, "ModelPricing"] | None = None) -> float:
+        """Sum USD cost across all usage entries.
+
+        Per-entry pricing is resolved by ``entry.model`` via
+        :func:`flow_sdk.transcript_analyzer.pricing.pricing_for`. The
+        optional ``pricing`` arg overrides the default lookup (useful for
+        testing or applying a custom rate table).
+        """
+        from .pricing import pricing_for as _pricing_for
+
+        total = 0.0
+        for e in self.usage:
+            table = pricing[e.model] if (pricing and e.model in pricing) else _pricing_for(e.model, self.worker_type)
+            total += table.cost_of(e)
+        return total
+
+    def usage_in_span(self, enter_ts: str, done_ts: str) -> list[UsageEntry]:
+        """Usage entries whose ``timestamp`` falls in ``[enter_ts, done_ts]``.
+
+        Mirrors the workflow-anchor pairing that ``session_analysis`` uses
+        for tool_calls — so an analysis pass can attribute per-step cost
+        the same way it already attributes per-step tool usage. Inclusive
+        on both bounds; string compare works because Claude / Codex emit
+        ISO-8601 timestamps with Z suffix.
+        """
+        return [e for e in self.usage if e.timestamp and enter_ts <= e.timestamp <= done_ts]
+
+    def cost_in_span(
+        self,
+        enter_ts: str,
+        done_ts: str,
+        pricing: dict[str, "ModelPricing"] | None = None,
+    ) -> float:
+        """USD cost for usage entries within the time span. See :meth:`usage_in_span`."""
+        from .pricing import pricing_for as _pricing_for
+
+        total = 0.0
+        for e in self.usage_in_span(enter_ts, done_ts):
+            table = pricing[e.model] if (pricing and e.model in pricing) else _pricing_for(e.model, self.worker_type)
+            total += table.cost_of(e)
+        return total
 
     @property
     def latest_plan(self) -> ToolUseEntry | None:

@@ -100,6 +100,10 @@ export interface StepViewModel {
   /** issues + recommendation; empty array when the step ran clean */
   issues: AnalysisIssue[];
   recommendation?: string;
+  /** USD cost of this step, computed by pairing the (enter_ts, done_ts)
+   *  window with transcript usage entries × ModelPricing. Undefined when
+   *  the run's transcript isn't available (older runs without session_id). */
+  cost_usd?: number;
 }
 
 export interface RunSummary {
@@ -113,6 +117,9 @@ export interface RunSummary {
   pendingCount: number;
   /** sum of all step durations in ms (steps without duration excluded) */
   totalDurationMs: number;
+  /** USD cost of the entire transcript — sum across every usage entry,
+   *  not just step-attributed ones. Undefined when transcript is missing. */
+  totalCostUsd?: number;
   /** total number of step view-models */
   total: number;
 }

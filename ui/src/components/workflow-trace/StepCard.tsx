@@ -36,6 +36,14 @@ function formatDuration(ms?: number): string {
   return `${m}m ${rs}s`;
 }
 
+function formatCost(usd?: number): string | null {
+  if (usd === undefined || usd === null || usd <= 0) return null;
+  if (usd < 0.001) return `<$0.001`;
+  if (usd < 0.01) return `$${usd.toFixed(4)}`;
+  if (usd < 1) return `$${usd.toFixed(3)}`;
+  return `$${usd.toFixed(2)}`;
+}
+
 interface StatusVisual {
   Icon: typeof CheckCircle2;
   color: string;
@@ -72,6 +80,10 @@ export function StepCard({ index, step }: StepCardProps) {
   const subLineParts: ReactNode[] = [];
   if (step.duration_ms !== undefined) {
     subLineParts.push(<span key="dur">{formatDuration(step.duration_ms)}</span>);
+  }
+  const costLabel = formatCost(step.cost_usd);
+  if (costLabel) {
+    subLineParts.push(<span key="cost" data-testid="step-card-cost">{costLabel}</span>);
   }
   if (toolCount > 0) {
     subLineParts.push(

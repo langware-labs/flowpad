@@ -323,8 +323,6 @@ export function assetTypeRoot(type: AssetTypeInfo, deps: AssetTypeRootDeps): Bro
       if (parsed.mode === 'list' || parsed.mode === null) {
         return [root];
       }
-      // editor mode: synthesize the leaf directly from the pointer. No fetch
-      // needed — the pointer already carries everything the leaf shows.
       if (!parsed.vfsPath) return [root];
       const leaf: Browseable = {
         id: `asset:${type.type_name}:${parsed.vfsPath}`,
@@ -334,7 +332,48 @@ export function assetTypeRoot(type: AssetTypeInfo, deps: AssetTypeRootDeps): Bro
         hasChildren: false,
         pointer: DockPointer.forAssetEditor(type.type_name, parsed.vfsPath),
       };
-      return [root, leaf];
+      // When the type renders with grouping (≥2 sources), the leaf lives
+      // inside a User/Project bucket. We must inject the group node into the
+      // chain so ``expandParentsForPointer`` auto-expands it on deep-link;
+      // otherwise the leaf is hidden in a collapsed group and never gets
+      // ``aria-selected``. Reuses the cached fetch when the user later
+      // expands the group manually.
+      let results: SearchResult[];
+      try {
+        results = await fetchAssetsOfType(type.type_name, filter, limit);
+      } catch {
+        return [root, leaf];
+      }
+      const groups = groupRecords(results);
+      if (groups.length <= 1) return [root, leaf];
+      const match = results.find(
+        (r) => (r.asset_ref || '').replace(/^\//, '') === parsed.vfsPath,
+      );
+      if (!match) return [root, leaf];
+      const groupKey =
+        match.scope === 'user'
+          ? 'user'
+          : match.scope === 'project' && match.project_id
+            ? `project:${match.project_id}`
+            : null;
+      if (!groupKey) return [root, leaf];
+      const matchedGroup = groups.find((g) => g.key === groupKey);
+      const groupNode: Browseable = {
+        id: `asset-group:${type.type_name}:${groupKey}`,
+        kind: 'group',
+        label: matchedGroup?.label ?? groupKey,
+        icon: groupKey === 'user' ? (
+          <UserIcon className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+        ) : (
+          <Folder className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
+        ),
+        badge: <StaticCountBadge count={matchedGroup?.records.length ?? 0} />,
+        hasChildren: true,
+        pointer: null,
+        listChildren: async () =>
+          (matchedGroup?.records ?? []).map((r) => assetChild(type.type_name, r)),
+      };
+      return [root, groupNode, leaf];
     },
   };
   return root;

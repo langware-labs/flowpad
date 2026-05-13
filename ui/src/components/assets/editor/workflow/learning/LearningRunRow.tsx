@@ -122,7 +122,17 @@ export function LearningRunRow({
             {status || 'unknown'}
           </span>
         </div>
-        <div className="mt-0.5 text-[11px] text-muted-foreground">{stateLabel}</div>
+        <div className="mt-0.5 flex items-baseline gap-2 text-[11px] text-muted-foreground">
+          <span>{stateLabel}</span>
+          {typeof (process as unknown as { total_cost_usd?: number }).total_cost_usd === 'number' && (
+            <span
+              className="tabular-nums text-foreground/70"
+              title="Session cost (sum of usage entries from the transcript JSONL × Opus 4 pricing)"
+            >
+              ${(process as unknown as { total_cost_usd: number }).total_cost_usd.toFixed(2)}
+            </span>
+          )}
+        </div>
       </div>
 
       {action !== 'none' && (

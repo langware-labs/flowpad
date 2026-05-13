@@ -10,6 +10,7 @@ Public surface:
 from .entries import (
     AgentSpawnEntry,
     AssistantMessageEntry,
+    CodexUsageEntry,
     ExitPlanModeEntry,
     FileEditEntry,
     FileReadEntry,
@@ -23,6 +24,7 @@ from .entries import (
     ToolResultEntry,
     ToolUseEntry,
     UnknownEntry,
+    UsageEntry,
     UserMessageEntry,
     WebFetchEntry,
 )
@@ -35,6 +37,7 @@ __all__ = [
     "AgentTranscript",
     "AgentSpawnEntry",
     "AssistantMessageEntry",
+    "CodexUsageEntry",
     "EntryKind",
     "ExitPlanModeEntry",
     "FileEditEntry",
@@ -50,12 +53,12 @@ __all__ = [
     "TodoUpdateEntry",
     "ToolResultEntry",
     "ToolUseEntry",
-    "TokenUsageEntry",
     "TranscriptDescriptor",
     "TranscriptEntry",
     "TranscriptFormat",
     "TranscriptSource",
     "UnknownEntry",
+    "UsageEntry",
     "UserMessageEntry",
     "WebFetchEntry",
 ]
