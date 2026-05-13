@@ -357,6 +357,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       workdir: options.workdir,
       visible: workerOptions?.visible,
       shell_mode: options.shellMode,
+      ...(options.targetVfsPath ? { target_vfs_path: options.targetVfsPath } : {}),
     }).save(options.scope ?? []);
 
     if (workerOptions?.headless) {
@@ -566,7 +567,14 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * Use this when the user wants to attach to (or launch) the running PTY.
    */
   get terminalDockPointer(): DockPointerData {
-    return new DockPointerData(ViewType.SHELL, this.typeId?.toString());
+    return new DockPointerData(ViewType.SHELL, `${AgenticProcess.type}${TypeId.DELIMITER}${this.id}`);
+  }
+
+  openTerminalDock(extraOptions?: Record<string, string>): void {
+    const nav = (window as any).navigation as
+      | { openDock: (pointer: DockPointerData, extraOptions?: Record<string, string>) => void }
+      | undefined;
+    nav?.openDock(this.terminalDockPointer, extraOptions);
   }
 
   /**
@@ -792,6 +800,11 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     if (!this.shell_id) return undefined;
     const entity = dataManager.getByTypeIdFromCache(new TypeId('shell', this.shell_id)) as any;
     return entity?.ptyConnection;
+  }
+
+  async printPty(): Promise<void> {
+    const sh = await this.shell();
+    sh?.printPty();
   }
 
   // ── Line / trigger event surface ──────────────────────────────────────────
