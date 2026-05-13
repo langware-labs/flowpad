@@ -78,6 +78,17 @@ export async function loadAgentApp(args: LoaderArgs) {
   const t = new TimeIt(`loadAgentApp(${params['*'] || params.viewType || '/'})`);
   _perfLog(`loadAgentApp start (${params['*'] || params.viewType || '?'})`);
 
+  // React Router 6.4 runs root and child route loaders **in parallel** by
+  // default — the root `loadRoot()` does NOT serialize child loaders behind
+  // it. Without this await, a cold-load nav races: `loadAgentApp` constructs
+  // entities (via `loadShellRoute → load-process.ts`) before the root
+  // loader's initSdk has finished registering schemas → `isDbField`
+  // schema-not-found warning storm.
+  //
+  // `initSdk` is idempotent (memoised via the module-level `initPromise`
+  // in `ts_sdk/src/main.ts`), so this is effectively `await
+  // dataManager.schemasReady` — zero work on the warm path, full
+  // serialisation on the cold path.
   await initSdk(params);
   t.time('initSdk');
 
@@ -98,15 +109,33 @@ export async function loadAgentApp(args: LoaderArgs) {
     throw redirect('/');
   }
 
+  // Handle session context — set process in dataContext (no agent required).
   if (viewType === ViewType.SESSION) {
-    const target = pointer
-      ? DockPointer.isAgenticProcessPointer(pointer)
-        ? pointer
-        : new TypeId(AgenticProcess.type, pointer).toString()
-      : '';
-    t.done(0.5);
-    // eslint-disable-next-line @typescript-eslint/only-throw-error
-    throw redirect(target ? `/dock/shell/${target}` : '/dock/shell');
+    const sessionProcessId = pointer;
+
+    await dataContext.setContextEntityTypeId(
+      ContextEntitiesEnum.CurrentProcessTypeId,
+      sessionProcessId ? new TypeId(AgenticProcess.type, sessionProcessId) : null,
+    );
+
+    if (sessionProcessId) {
+      await dataContext.setActiveEntityTypeId(new TypeId(AgenticProcess.type, sessionProcessId));
+      const process = await AgenticProcess.getById(sessionProcessId).catch(() => null);
+      if (process?.project_id) {
+        await dataContext.setContextEntityTypeId(
+          ContextEntitiesEnum.CurrentProjectTypeId,
+          new TypeId(Project.type, process.project_id),
+        );
+      } else {
+        await systemTools.resolveProjectContext(process?.workdir, process ?? undefined);
+      }
+    }
+
+    // Session view doesn't require agent — just ensure compute node and return.
+    await ensureComputeNodeLoaded();
+    t.time('ensureComputeNode');
+    t.done(1.2);
+    return;
   }
 
   if (!processId) {
@@ -156,22 +185,22 @@ export async function loadAgentApp(args: LoaderArgs) {
       }
     }
 
-    t.done(0.5);
+    t.done(1.2);
     return;
   }
 
   const dockViewType = getDockViewType(args);
   if (!dockViewType) {
-    t.done(0.5);
+    t.done(1.2);
     return loadFlowFromParams(args);
   }
   if (!isValidViewType(args)) {
     const brokenViewUrl = getBrokenViewUrl(args);
     console.error(`[LOADER] Invalid view type(${dockViewType}). Redirecting to default view URL:`, brokenViewUrl);
-    t.done(0.5);
+    t.done(1.2);
     // eslint-disable-next-line @typescript-eslint/only-throw-error
     throw redirect(brokenViewUrl);
   }
-  t.done(0.5);
+  t.done(1.2);
   return loadFlowFromParams(args);
 }

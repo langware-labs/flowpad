@@ -1,6 +1,14 @@
+precondition: opt the sniffer in (default is OFF since v0.2.21)
+- in a fresh tab, before navigation, run:
+  `localStorage.setItem('flowpad.snifferEnabled', 'true')`
+- # Sniffer is opt-in via InstanceSettings.sniffer_enabled + the user's
+- #   localStorage preference. Priming reflects an already-opted-in user
+- #   and is the realistic state for these scenarios.
+
 test 1: sniffer captures events via webhook listen endpoint
-- start backend and frontend; open browser to `http://localhost:4097`
-- verify sniffer is enabled (green dot)
+- start backend and frontend; open browser to `http://localhost:4097` (with the localStorage flag primed above)
+- wait for window.appReady === true
+- verify sniffer is enabled (green dot in EventSnifferChip)
 - get the sniffer hook ID from console: `window.context.snifferHook.entity.id`
 - send a synthetic hook event directly:
   ```

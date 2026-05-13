@@ -24,7 +24,9 @@ from flow_sdk.fs_store.record import get_default_records_data_root, get_default_
 class ShellStatus(StrEnum):
     IDLE = "idle"
     RUNNING = "running"
+    CLOSING = "closing"
     CLOSED = "closed"
+    ERROR = "error"
 
 
 class ShellRecord(Record):

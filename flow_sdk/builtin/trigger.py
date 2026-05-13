@@ -90,12 +90,12 @@ async def _fire_schedule_job(trigger_id: str) -> None:
                 proc = AgenticProcess(
                     instruction_content=entity.instruction,
                     workdir=entity.workdir,
-                    target_vfs_path=str(entity.typeid),
+                    target_typeid_str=str(entity.typeid),
                     project_id=entity.project_id,
                     visible=False,
                 )
                 await proc.save()
-                await proc.start(instruction=entity.instruction, visible=False)
+                await proc.start_pty(instruction=entity.instruction, visible=False)
                 process_id = proc.id
             except Exception as e:
                 logger.error(f"Schedule trigger {entity.name}: failed to spawn process: {e}")
@@ -437,12 +437,22 @@ class Trigger(Entity):
             triggers.append(existing)
         return ApiSuccessResponse(data=triggers)
 
+    @core_action.post(action_name="fire")
+    async def fire_action(self, request: Request) -> ApiResponse:
+        """Alias for ``/test`` — POST /api/v1/graph/trigger/{id}/fire fires
+        the trigger immediately. Same body+response shape as ``test_action``.
+        Kept because the natural verb for a trigger is "fire"; the original
+        endpoint was named "test" before that distinction mattered.
+        """
+        return await self.test_action(request)
+
     @core_action.post(action_name="test")
     async def test_action(self, request: Request) -> ApiResponse:
         """
         POST /api/v1/graph/trigger/{id}/test — fire the trigger immediately.
         For schedule triggers: fires the schedule job.
         For hook triggers: runs the rule against a mock UserPromptSubmit event.
+        Also reachable as POST /api/v1/graph/trigger/{id}/fire.
         """
         if self.trigger_type == "schedule":
             await _fire_schedule_job(self.id)

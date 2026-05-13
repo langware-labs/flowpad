@@ -2,6 +2,7 @@
 export * from './use-action';
 export * from './use-debounce-callback';
 export * from './use-domain';
+export * from './use-entity-ops';
 export * from './use-fs-item-flows';
 export * from './use-settings';
 export * from './useAuth';

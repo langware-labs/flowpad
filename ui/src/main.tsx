@@ -6,7 +6,6 @@ import { ThemeProvider } from 'next-themes';
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { RouterProvider } from 'react-router';
-import App from './App.tsx';
 import '@src/contexts/dev-mode-context';
 import { router } from './router';
 import './styles/highlightjs.css';
@@ -20,7 +19,10 @@ function defineGlobals() {
   });
 }
 
-// Resolve backend URL from Electron IPC before rendering (no-op in browser)
+// Resolve backend URL from Electron IPC before rendering (no-op in browser).
+// `<App>` is intentionally NOT wrapped here — it lives inside the router's
+// loader-gated subtree (see `RootLayout` in `router.tsx`) so its hooks only
+// mount after `loadRoot` has finished `initSdk()`.
 async function init() {
   defineGlobals();
   await initDesktopBackend(sdkConfig);
@@ -28,14 +30,12 @@ async function init() {
   ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>
       <ThemeProvider attribute="class" defaultTheme="dark" enableSystem disableTransitionOnChange>
-        <App>
-          <RouterProvider
-            router={router}
-            unstable_onError={(error) => {
-              console.error('Error loading session:', error);
-            }}
-          />
-        </App>
+        <RouterProvider
+          router={router}
+          unstable_onError={(error) => {
+            console.error('Error loading session:', error);
+          }}
+        />
       </ThemeProvider>
     </React.StrictMode>,
   );

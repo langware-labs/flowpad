@@ -20,6 +20,7 @@ inside ``_restart_snapshot``.
 import pytest
 
 from flow_sdk.builtin.agentic_process import AgenticProcess
+from flow_sdk.builtin.agentic_process.cli_drivers.codex import CodexCliOptions
 from flow_sdk.flowpad_types.enums.worker_enums import WorkerType
 
 
@@ -76,3 +77,56 @@ def test_every_worker_type_member_is_snapshot_stable(form_a, form_b):
     p_enum = AgenticProcess()
     object.__setattr__(p_enum, "worker_type", form_b)
     assert p_str._restart_snapshot() == p_enum._restart_snapshot()
+
+
+def test_codex_snapshot_treats_null_and_missing_optional_cli_keys_the_same():
+    """Persisted cli_config may omit null fields present in CodexCliOptions JSON."""
+    cli_config_with_nulls = CodexCliOptions(
+        workdir=None,
+        session_id=None,
+        model=None,
+    ).to_json()
+    cli_config_missing_nulls = {
+        key: value
+        for key, value in cli_config_with_nulls.items()
+        if value is not None
+    }
+
+    p_nulls = AgenticProcess(
+        worker_type="codex",
+        cli_config=cli_config_with_nulls,
+        workdir="/repo",
+        session_id="session-1",
+    )
+    p_missing = AgenticProcess(
+        worker_type="codex",
+        cli_config=cli_config_missing_nulls,
+        workdir="/repo",
+        session_id="session-1",
+    )
+
+    assert p_nulls._restart_snapshot() == p_missing._restart_snapshot()
+
+
+def test_codex_snapshot_ignores_unrecognized_claude_cli_config_fields():
+    base = AgenticProcess(worker_type="codex", cli_config={})
+    claude_field = AgenticProcess(worker_type="codex", cli_config={"chrome": True})
+
+    assert base._restart_snapshot() == claude_field._restart_snapshot()
+
+
+def test_codex_snapshot_tracks_codex_worker_fields():
+    base = AgenticProcess(worker_type="codex", cli_config={"model": "gpt-5.2"})
+    changed = AgenticProcess(worker_type="codex", cli_config={"model": "gpt-5.3"})
+
+    assert base._restart_snapshot() != changed._restart_snapshot()
+
+
+def test_visible_changes_codex_launch_shape_but_not_claude_launch_shape():
+    codex_hidden = AgenticProcess(worker_type="codex", visible=False)
+    codex_visible = AgenticProcess(worker_type="codex", visible=True)
+    claude_hidden = AgenticProcess(worker_type="claude_code", visible=False)
+    claude_visible = AgenticProcess(worker_type="claude_code", visible=True)
+
+    assert codex_hidden._restart_snapshot() != codex_visible._restart_snapshot()
+    assert claude_hidden._restart_snapshot() == claude_visible._restart_snapshot()

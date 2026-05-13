@@ -1,5 +1,5 @@
 test 1: Skills view loads and skill controls are accessible without 482 console error (FLOWPAD-1666)
-- navigate to {APP_URL}/dock/skills
+- navigate to {APP_URL}/dock/assets/list/skill
 - wait 3 seconds for the skills view to load
 - validate the skills viewer component is visible
 - validate at least one skill entry is visible in the list (or empty state message)

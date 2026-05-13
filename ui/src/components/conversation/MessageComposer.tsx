@@ -1,11 +1,13 @@
-import { useMemo, useRef, useState } from 'react';
-import { File, MessageSquarePlus, Paperclip, Send, X } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { File, MessageSquarePlus, Send, X } from 'lucide-react';
 import { sendReply } from '@sdk/entities/notifications';
 import { AttachmentType, type Attachment } from '@sdk/entities/flow-message';
 import type { ITask } from '@sdk/entities/task';
+import type { AssetDescriptor } from '@sdk';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
 import { cn } from '@src/lib/utils';
 import { MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_LABEL } from './constants';
+import { AttachMenu, AssetRefChips } from './AttachMenu';
 import { PromptComposerDialog, type QueuedPrompt } from './PromptComposerDialog';
 import { PromptApprovalRow } from './PromptApprovalRow';
 
@@ -32,12 +34,12 @@ export function MessageComposer({ task, conversationId, disabled, onSent, queued
   const ensureCloudLogin = useCloudLoginGate();
   const [text, setText] = useState('');
   const [files, setFiles] = useState<File[]>([]);
+  const [assetRefs, setAssetRefs] = useState<AssetDescriptor[]>([]);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [localPrompt, setLocalPrompt] = useState<QueuedPrompt | null>(null);
   const [showPromptDialog, setShowPromptDialog] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const canAddPrompt = !!conversationId;
 
   const activePrompt = queuedPrompt ?? localPrompt;
@@ -97,7 +99,7 @@ export function MessageComposer({ task, conversationId, disabled, onSent, queued
     // reply") OR an explicit override (the dialog's "Send" button uses this so
     // we don't lose the prompt to a state-update race).
     const effectivePrompt = override && 'prompt' in override ? override.prompt : activePrompt;
-    if (!trimmed && !effectivePrompt && files.length === 0) return;
+    if (!trimmed && !effectivePrompt && files.length === 0 && assetRefs.length === 0) return;
     setSending(true);
     setError(null);
     try {
@@ -109,20 +111,23 @@ export function MessageComposer({ task, conversationId, disabled, onSent, queued
         setError(gate.error);
         return;
       }
-      const extras = effectivePrompt
-        ? {
-            promptText: effectivePrompt.text || undefined,
-            promptFiles: effectivePrompt.files.length > 0 ? effectivePrompt.files : undefined,
-          }
-        : undefined;
+      const extras: Parameters<typeof sendReply>[3] = {};
+      if (effectivePrompt) {
+        if (effectivePrompt.text) extras.promptText = effectivePrompt.text;
+        if (effectivePrompt.files.length > 0) extras.promptFiles = effectivePrompt.files;
+      }
+      if (assetRefs.length > 0) {
+        extras.assetReferences = assetRefs.map((a) => a.typeid);
+      }
       await sendReply(
         { task, conversationId },
         trimmed,
         files.length > 0 ? files : undefined,
-        extras,
+        Object.keys(extras).length > 0 ? extras : undefined,
       );
       setText('');
       setFiles([]);
+      setAssetRefs([]);
       setActivePrompt(null);
       onSent?.();
     } catch (err: unknown) {
@@ -150,7 +155,8 @@ export function MessageComposer({ task, conversationId, disabled, onSent, queued
     if (!isDisabled) addFiles(e.dataTransfer.files);
   };
 
-  const canSend = (!!text.trim() || !!activePrompt || files.length > 0) && !isDisabled;
+  const canSend =
+    (!!text.trim() || !!activePrompt || files.length > 0 || assetRefs.length > 0) && !isDisabled;
 
   return (
     <div className="space-y-1.5">
@@ -163,24 +169,15 @@ export function MessageComposer({ task, conversationId, disabled, onSent, queued
           dragging && 'border-primary bg-primary/5',
         )}
       >
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={isDisabled}
-          title="Attach files"
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
-        >
-          <Paperclip className="h-3.5 w-3.5" />
-        </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          className="hidden"
-          disabled={isDisabled}
-          onChange={(e) => addFiles(e.target.files)}
-          onClick={(e) => ((e.target as HTMLInputElement).value = '')}
-        />
+        <div className="shrink-0 self-end pb-0.5">
+          <AttachMenu
+            assetRefs={assetRefs}
+            onAssetRefsChange={setAssetRefs}
+            onFilesPicked={addFiles}
+            disabled={isDisabled}
+            hideAssetList
+          />
+        </div>
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
@@ -258,6 +255,8 @@ export function MessageComposer({ task, conversationId, disabled, onSent, queued
           ))}
         </ul>
       )}
+
+      <AssetRefChips assetRefs={assetRefs} onChange={setAssetRefs} disabled={isDisabled} />
 
       {error && <p className="text-xs text-destructive">{error}</p>}
 

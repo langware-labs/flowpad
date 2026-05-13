@@ -9,6 +9,8 @@
  * a `switch (entry.kind)` block to narrow types.
  */
 
+import type { TranscriptFormat, TranscriptSource } from '../../transcript-analyzer';
+
 export type EntryKind =
   | 'user_message'
   | 'assistant_message'
@@ -100,17 +102,28 @@ export interface MetaEntry extends BaseEntry {
 
 export interface TokenUsageEntry extends BaseEntry {
   kind: 'token_usage';
-  input_tokens: number | null;
-  output_tokens: number | null;
-  /** Single-value cache field — read-preferred summary (legacy callers). */
-  cached_input_tokens: number | null;
-  /** Disaggregated cache fields — Claude can populate both on the same turn. */
-  cache_read_tokens: number | null;
-  cache_creation_tokens: number | null;
-  reasoning_output_tokens: number | null;
-  total_input_tokens: number | null;
-  total_output_tokens: number | null;
-  turn_id: string | null;
+  // New per-dim shape (post pricing-refactor). One entry per chargeable stream.
+  count?: number;
+  io?: 'input' | 'output';
+  unit?: 'token' | 'request';
+  cache?: 'none' | 'read' | 'write';
+  cache_tier?: 'none' | '5m' | '1h';
+  reasoning?: boolean;
+  tool?: string | null;
+  /** Codex-only cumulative carriers (the per-dim siblings carry chargeable counts). */
+  total_input_tokens?: number | null;
+  total_output_tokens?: number | null;
+  turn_id?: string | null;
+  // Legacy aggregate shape — still emitted by older Python servers that
+  // haven't reloaded the pricing-refactor parser. The lens-viewer's
+  // group-entries.ts collapses either shape into UnifiedEntry.usage so
+  // the UI works during the rollout window.
+  input_tokens?: number | null;
+  output_tokens?: number | null;
+  cached_input_tokens?: number | null;
+  cache_read_tokens?: number | null;
+  cache_creation_tokens?: number | null;
+  reasoning_output_tokens?: number | null;
 }
 
 export interface UnknownEntry extends BaseEntry {
@@ -271,6 +284,8 @@ export interface ParsedTranscript {
   worker_type: string;
   session_id: string;
   path: string;
+  transcript_format: TranscriptFormat | null;
+  transcript_source: TranscriptSource | null;
   header: TranscriptHeader;
   entries: GenericEntry[];
 }

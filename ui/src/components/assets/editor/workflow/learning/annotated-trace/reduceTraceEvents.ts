@@ -1,5 +1,6 @@
 import type { AnchoredItem } from '@src/components/anchored-markdown';
 import type { TraceMark } from '@src/components/anchored-markdown';
+import { pricingFor, type UsageEntry } from '@sdk/transcript-analyzer';
 
 interface TraceEvent {
   kind: string;
@@ -8,6 +9,17 @@ interface TraceEvent {
   status?: 'enter' | 'done' | 'skip' | 'error';
   message?: string;
   ts?: string;
+}
+
+/** Sum cost of usage entries whose timestamp ∈ [startTs, endTs]. */
+function costInWindow(usage: UsageEntry[], startTs?: string, endTs?: string): number {
+  if (!startTs || !endTs || usage.length === 0) return 0;
+  let total = 0;
+  for (const e of usage) {
+    if (!e.timestamp || e.timestamp < startTs || e.timestamp > endTs) continue;
+    total += pricingFor(e.model).costOf(e);
+  }
+  return total;
 }
 
 /**
@@ -20,7 +32,10 @@ interface TraceEvent {
  *   - error event → ✗ error with message in tooltip
  *   - skip event → − skip
  */
-export function reduceTraceEvents(jsonl: string): AnchoredItem<TraceMark>[] {
+export function reduceTraceEvents(
+  jsonl: string,
+  usage: UsageEntry[] = [],
+): AnchoredItem<TraceMark>[] {
   const events = jsonl
     .split(/\r?\n/)
     .filter((l) => l.trim())
@@ -78,16 +93,20 @@ export function reduceTraceEvents(jsonl: string): AnchoredItem<TraceMark>[] {
     }
   }
 
-  return Array.from(byLine.values()).map((a) => ({
-    id: `trace:${a.line}`,
-    anchor: { line: a.line },
-    data: {
-      status: a.status,
-      durationMs: a.totalMs,
-      attempts: Math.max(1, a.attempts),
-      errorMessage: a.errorMessage,
-      startedAt: a.startedAt,
-      endedAt: a.endedAt,
-    } satisfies TraceMark,
-  }));
+  return Array.from(byLine.values()).map((a) => {
+    const costUsd = costInWindow(usage, a.startedAt, a.endedAt);
+    return {
+      id: `trace:${a.line}`,
+      anchor: { line: a.line },
+      data: {
+        status: a.status,
+        durationMs: a.totalMs,
+        attempts: Math.max(1, a.attempts),
+        errorMessage: a.errorMessage,
+        startedAt: a.startedAt,
+        endedAt: a.endedAt,
+        costUsd: costUsd > 0 ? costUsd : undefined,
+      } satisfies TraceMark,
+    };
+  });
 }

@@ -29,10 +29,10 @@ from ..entries import (
     SummaryEntry,
     SystemEntry,
     TodoUpdateEntry,
-    TokenUsageEntry,
     ToolResultEntry,
     ToolUseEntry,
     UnknownEntry,
+    UsageEntry,
     UserMessageEntry,
     WebFetchEntry,
 )
@@ -82,6 +82,14 @@ class ClaudeParser:
 
     def __init__(self, session_id: str = "") -> None:
         self.session_id = session_id
+        # Track unique message ids whose usage has already been emitted.
+        # Claude Code writes some assistant messages multiple times in the
+        # JSONL (streaming snapshot + finalized snapshot share message.id).
+        # Without dedup, downstream cost summation double-counts every
+        # repeated message — observed inflation 1.78×-2.95× depending on
+        # how many turns got snapshotted. Each unique message.id is billed
+        # once by Anthropic, so we emit usage once per message.id.
+        self._usage_seen_msg_ids: set[str] = set()
 
     def feed(self, raw: dict, line_index: int) -> list[TranscriptEntry]:
         rtype = raw.get("type") or ""
@@ -164,39 +172,98 @@ class ClaudeParser:
             )
 
         out: list[TranscriptEntry] = [main]
-        usage_entry = self._maybe_token_usage(message, base, model=model)
-        if usage_entry is not None:
-            out.append(usage_entry)
+        out.extend(self._emit_usage(message, base, model=model))
         return out
 
-    def _maybe_token_usage(
+    def _emit_usage(
         self,
         message: dict,
         base: dict,
         *,
         model: str | None,
-    ) -> TokenUsageEntry | None:
+    ) -> list[UsageEntry]:
+        """One ``UsageEntry`` per nonzero chargeable stream from ``message.usage``.
+
+        Splits Claude's flat ``usage`` dict into per-dimension entries so
+        each one matches a single ``pricing.ItemPrice`` rule (1.25× 5m
+        cache write, 2× 1h cache write, 0.1× cache read, etc). Zero-token
+        streams are skipped — they don't contribute cost and clutter
+        downstream iteration.
+        """
         usage = message.get("usage")
         if not isinstance(usage, dict):
-            return None
-        # Claude reports cache hits as ``cache_read_input_tokens`` (read hit)
-        # AND ``cache_creation_input_tokens`` (wrote a new cache block) on the
-        # same usage payload — both are meaningful for cost. Preserve them
-        # separately. ``cached_input_tokens`` stays as the legacy single-value
-        # summary (read preferred) for callers that haven't migrated.
-        cache_read = usage.get("cache_read_input_tokens")
-        cache_create = usage.get("cache_creation_input_tokens")
-        cached = cache_read if cache_read is not None else cache_create
-        usage_base = {**base, "id": f"{base['id']}:usage"}
-        return TokenUsageEntry(
-            input_tokens=usage.get("input_tokens"),
-            output_tokens=usage.get("output_tokens"),
-            cached_input_tokens=cached,
-            cache_read_tokens=cache_read,
-            cache_creation_tokens=cache_create,
-            model=model,
-            **usage_base,
+            return []
+        # Dedup by message.id: see note in __init__. If this message.id was
+        # already billed in an earlier line, drop this duplicate usage block.
+        msg_id = str(message.get("id") or "") or None
+        if msg_id and msg_id in self._usage_seen_msg_ids:
+            return []
+        if msg_id:
+            self._usage_seen_msg_ids.add(msg_id)
+        out: list[UsageEntry] = []
+        base_id = base["id"]
+        base_envelope = {k: v for k, v in base.items() if k != "id"}
+        entry_id = f"{base_id}:usage"
+
+        def _emit(**fields: object) -> None:
+            count = fields.get("count")
+            if not isinstance(count, (int, float)) or count <= 0:
+                return
+            dim_id = f"{base_id}:usage:dim_{len(out)}"
+            out.append(UsageEntry(
+                id=dim_id,
+                entry_id=entry_id,
+                model=model,
+                **base_envelope,
+                **fields,  # type: ignore[arg-type]
+            ))
+
+        # Bare input (NOT in cache) — the prefix the model actually had to
+        # process this turn.
+        _emit(count=usage.get("input_tokens") or 0, io="input", cache="none")
+        # Output.
+        _emit(count=usage.get("output_tokens") or 0, io="output")
+        # Cache read — pre-cached prefix served at 0.1× input price.
+        _emit(
+            count=usage.get("cache_read_input_tokens") or 0,
+            io="input",
+            cache="read",
         )
+        # Cache writes — disaggregated by tier (5-min default vs 1-hour
+        # opt-in). Claude exposes both nested under ``cache_creation`` AND
+        # the legacy ``cache_creation_input_tokens`` flat total. Prefer the
+        # nested per-tier breakdown when present so we can apply the right
+        # price multiplier (1.25× for 5m, 2× for 1h).
+        ce = usage.get("cache_creation") if isinstance(usage.get("cache_creation"), dict) else None
+        if ce:
+            _emit(
+                count=ce.get("ephemeral_5m_input_tokens") or 0,
+                io="input", cache="write", cache_tier="5m",
+            )
+            _emit(
+                count=ce.get("ephemeral_1h_input_tokens") or 0,
+                io="input", cache="write", cache_tier="1h",
+            )
+        else:
+            # No tier breakdown — fall back to the flat total and assume 5m
+            # (the API default when ``cache_control`` doesn't specify TTL).
+            _emit(
+                count=usage.get("cache_creation_input_tokens") or 0,
+                io="input", cache="write", cache_tier="5m",
+            )
+        # Server-tool usage — billed per-request, not per-token. The unit
+        # change tells the price table to use the per-request rate.
+        stu = usage.get("server_tool_use") if isinstance(usage.get("server_tool_use"), dict) else None
+        if stu:
+            _emit(
+                count=stu.get("web_search_requests") or 0,
+                io="input", unit="request", tool="web_search",
+            )
+            _emit(
+                count=stu.get("web_fetch_requests") or 0,
+                io="input", unit="request", tool="web_fetch",
+            )
+        return out
 
     def _build_semantic_tool_entry(
         self,

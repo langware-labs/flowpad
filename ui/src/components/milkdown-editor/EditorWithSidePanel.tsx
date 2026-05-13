@@ -39,8 +39,8 @@ interface EditorWithSidePanelProps {
   activeTab?: string;
   /** Emitted whenever the active tab changes (including programmatic + internal). */
   onActiveTabChange?: (id: string) => void;
-  /** Forwarded to the Chat tab — runs once after its backing process is created. */
-  chatOnProcessCreated?: (process: AgenticProcess) => Promise<void> | void;
+  /** Forwarded to the Chat tab — runs once after its backing chat process is created. */
+  onChatProcessCreated?: (process: AgenticProcess) => Promise<void> | void;
   /**
    * Current caret line (1-indexed, on-disk) emitted by whichever editor is mounted.
    * Rendered as "line N" in the chat header. Null hides the badge.
@@ -52,10 +52,10 @@ interface EditorWithSidePanelProps {
  * Editor-agnostic shell: any markdown editor as `children`, plus a fixed-width
  * tabbed side window (Chat, Backlinks, extras). The side panel is always on
  * and stays mounted across editor swaps so its tab state, scroll position,
- * and chat history persist when the parent toggles between editor backends.
+ * and chat process history persist when the parent toggles between editor backends.
  *
  * Callers must supply a real entity TypeId as `chatTarget`; files without a
- * backing entity cannot host chat.
+ * backing entity cannot host a chat process.
  */
 export function EditorWithSidePanel({
   children,
@@ -63,7 +63,7 @@ export function EditorWithSidePanel({
   extraTabs,
   activeTab: activeTabProp,
   onActiveTabChange,
-  chatOnProcessCreated,
+  onChatProcessCreated,
   cursorLine,
 }: EditorWithSidePanelProps) {
   const [internalTab, setInternalTab] = useState<string>(MD_SIDE_TABS_DEFAULT);
@@ -93,7 +93,7 @@ export function EditorWithSidePanel({
       chat: (
         <ChatTab
           target={chatTarget}
-          onProcessCreated={chatOnProcessCreated}
+          onChatProcessCreated={onChatProcessCreated}
           cursorLine={cursorLine}
         />
       ),
@@ -101,7 +101,7 @@ export function EditorWithSidePanel({
     };
     for (const t of extraTabs ?? []) base[t.id] = t.panel;
     return base;
-  }, [chatTarget, extraTabs, chatOnProcessCreated, cursorLine]);
+  }, [chatTarget, extraTabs, onChatProcessCreated, cursorLine]);
 
   return (
     <div className="flex h-full w-full" data-testid="md-editor-with-side-panel">

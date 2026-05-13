@@ -5,6 +5,8 @@ Tests CRUD operations via the graph API for Shell entities.
 
 import pytest
 
+from flow_sdk.builtin.agentic_process import AgenticProcess
+from flow_sdk.fs_records.agentic_process_lifecycle import ProcessStatus
 from flow_sdk.responses.response import ApiResponse
 
 
@@ -234,6 +236,94 @@ async def test_close_all_then_list_empty(bootstrapped_client):
     our_ids = set(ids)
     remaining = [s for s in res.data if s.get("id") in our_ids]
     assert len(remaining) == 0
+
+
+@pytest.mark.asyncio
+async def test_terminals_list_and_batch_close_shells(bootstrapped_client):
+    """terminals/list + terminals/close are the tab-strip list/close contract."""
+    ids = []
+    for name in ["Terminals A", "Terminals B"]:
+        resp = await bootstrapped_client.post(
+            "/api/v1/graph/shell",
+            json={"name": name, "status": "running"},
+        )
+        assert resp.status_code == 200, resp.text
+        ids.append(ApiResponse(**resp.json()).data["id"])
+
+    list_resp = await bootstrapped_client.get("/api/v1/graph/compute_node/@local/terminals/list")
+    assert list_resp.status_code == 200, list_resp.text
+    listed = ApiResponse(**list_resp.json()).data
+    listed_ids = {s.get("id") for s in listed["pure_shells"]}
+    assert set(ids).issubset(listed_ids)
+
+    close_resp = await bootstrapped_client.post(
+        "/api/v1/graph/compute_node/@local/terminals/close",
+        json={"targets": [f"shell-{ids[0]}", f"shell-{ids[1]}", "not-a-typeid"]},
+    )
+    assert close_resp.status_code == 200, close_resp.text
+    closed = ApiResponse(**close_resp.json()).data
+    assert closed["accepted"] == [f"shell-{ids[0]}", f"shell-{ids[1]}"]
+    assert closed["missing"] == []
+    assert closed["invalid"] == ["not-a-typeid"]
+
+    list_after_resp = await bootstrapped_client.get("/api/v1/graph/compute_node/@local/terminals/list")
+    assert list_after_resp.status_code == 200, list_after_resp.text
+    listed_after = ApiResponse(**list_after_resp.json()).data
+    listed_after_ids = {s.get("id") for s in listed_after["pure_shells"]}
+    assert not set(ids).intersection(listed_after_ids)
+
+
+@pytest.mark.asyncio
+async def test_terminals_close_agentic_process_marks_intent(bootstrapped_client):
+    """Closing an agentic-process target hides it by persisted process intent."""
+    shell_resp = await bootstrapped_client.post(
+        "/api/v1/graph/shell",
+        json={"name": "Process Shell", "status": "running"},
+    )
+    assert shell_resp.status_code == 200, shell_resp.text
+    shell_id = ApiResponse(**shell_resp.json()).data["id"]
+
+    process = AgenticProcess(
+        name="Process Tab",
+        shell_id=shell_id,
+        visible=True,
+        status=ProcessStatus.RUNNING.value,
+    )
+    await process.save()
+
+    list_resp = await bootstrapped_client.get("/api/v1/graph/compute_node/@local/terminals/list")
+    assert list_resp.status_code == 200, list_resp.text
+    listed = ApiResponse(**list_resp.json()).data
+    assert process.id in {p.get("id") for p in listed["visible_processes"]}
+    assert shell_id not in {s.get("id") for s in listed["pure_shells"]}
+
+    close_resp = await bootstrapped_client.post(
+        "/api/v1/graph/compute_node/@local/terminals/close",
+        json={"targets": [f"agentic_process-{process.id}"]},
+    )
+    assert close_resp.status_code == 200, close_resp.text
+    closed = ApiResponse(**close_resp.json()).data
+    assert closed["accepted"] == [f"agentic_process-{process.id}"]
+
+    process_resp = await bootstrapped_client.get(f"/api/v1/graph/agentic_process/{process.id}")
+    assert process_resp.status_code == 200, process_resp.text
+    process_after = ApiResponse(**process_resp.json()).data
+    assert process_after["visible"] is False
+    assert process_after["status"] in {ProcessStatus.STOPPING.value, ProcessStatus.STOPPED.value}
+
+    list_after_resp = await bootstrapped_client.get("/api/v1/graph/compute_node/@local/terminals/list")
+    assert list_after_resp.status_code == 200, list_after_resp.text
+    listed_after = ApiResponse(**list_after_resp.json()).data
+    assert process.id not in {p.get("id") for p in listed_after["visible_processes"]}
+
+
+@pytest.mark.asyncio
+async def test_active_terminals_action_removed(bootstrapped_client):
+    """Hard migration: active-terminals is no longer a backend action."""
+    response = await bootstrapped_client.get("/api/v1/graph/compute_node/@local/active-terminals")
+    assert response.status_code == 410
+    res = ApiResponse(**response.json())
+    assert res.status == "FAIL"
 
 
 @pytest.mark.asyncio

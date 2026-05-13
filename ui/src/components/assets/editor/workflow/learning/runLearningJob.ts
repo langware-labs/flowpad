@@ -39,7 +39,7 @@ function spawnHeadless(args: {
     context_data: { project_id: dataContext.project?.id },
     workdir: args.workdir,
     visible: false,
-    target_vfs_path: args.targetVfsPath,
+    target_typeid_str: args.targetVfsPath,
   })
     .save(args.scope)
     .then((process) => {

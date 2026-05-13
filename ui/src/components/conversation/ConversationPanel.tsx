@@ -4,7 +4,7 @@ import { useEntity } from '@sdk/react/hooks';
 import { History, Layers, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
 import { TabbedSideDrawer } from '@src/components/ui/side-drawer';
-import { useProcessesForTarget } from '@src/components/entity-chat-panel/hooks/useProcessesForTarget';
+import { useProcessesForTarget } from '@src/components/entity-execution-panel/hooks/useProcessesForTarget';
 import { WorkflowRunsPanel } from '@src/components/workflows-view/WorkflowRunsPanel';
 import type { ProcessEntry } from '@src/components/workflows-view/workflow-run-store';
 import { ConversationView } from './ConversationView';

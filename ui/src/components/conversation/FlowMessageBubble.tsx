@@ -2,7 +2,7 @@ import { FlowMessage, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { useState } from 'react';
 import type { ITask } from '@sdk/entities/task';
-import type { ConversationMessage } from '@sdk/entities/conversation';
+import type { ConversationMessage, ConversationParticipant } from '@sdk/entities/conversation';
 import { AttachmentType, downloadFlowMessageUrl } from '@sdk/entities/flow-message';
 import { Download } from 'lucide-react';
 import { MessageBubble } from './MessageBubble';
@@ -11,6 +11,7 @@ import { fileAttachmentUrl } from './attachment-url';
 import { useLocalUser } from './useLocalUser';
 import { localBundleUrl } from './flow-message-drafts';
 import { DraftMessageComposer } from './DraftMessageComposer';
+import { participantLabelByUserId } from './participant-display';
 
 
 interface FlowMessageBubbleProps {
@@ -38,6 +39,10 @@ interface FlowMessageBubbleProps {
   isSelected?: boolean;
   /** Click on the bubble fires this so the parent can mark this message selected. */
   onSelect?: () => void;
+  participants?: ConversationParticipant[];
+  /** Parent conversation's `message_status_visible` flag — passed straight
+   *  through to the receipt indicator. Defaults to true. */
+  conversationStatusVisible?: boolean;
 }
 
 export function FlowMessageBubble({
@@ -52,6 +57,8 @@ export function FlowMessageBubble({
   onDraftSent,
   isSelected,
   onSelect,
+  participants,
+  conversationStatusVisible = true,
 }: FlowMessageBubbleProps) {
   const { data: fm } = useEntity<FlowMessage>(
     new TypeId(FlowMessage.type, messageId),
@@ -87,7 +94,10 @@ export function FlowMessageBubble({
   }
 
   const isCurrentUser = !!(fm.sender_id && localUser?.id && fm.sender_id === localUser.id);
-  const displayName = overrideName ?? (fm.sender_name || (isCurrentUser ? (localUser?.name || 'You') : 'Unknown'));
+  const displayName = overrideName
+    ?? participantLabelByUserId(participants, fm.sender_id)
+    ?? fm.sender_name
+    ?? (isCurrentUser ? (localUser?.name || 'You') : 'unknown');
 
   // When task is present, role tracks the original task initiator (sender) vs
   // recipient. For project-scoped conversations (no task), use the local user
@@ -164,6 +174,7 @@ export function FlowMessageBubble({
       footer={footer}
       isSelected={isSelected}
       onSelect={onSelect}
+      conversationStatusVisible={conversationStatusVisible}
     />
   );
 }

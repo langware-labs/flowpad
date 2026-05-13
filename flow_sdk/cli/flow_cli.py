@@ -188,6 +188,20 @@ def _start_service(port: int) -> None:
     """Start the Flow server and monitor. Shared by `flow start` and `flow start service`."""
     from flow_sdk.server.launch import check_server_health, start_monitor_detached, wait_for_server_health
 
+    # Run any pending migration for the current version BEFORE the server
+    # boots. The migration is itself a headless AgenticProcess, so its
+    # stdout streams to this same terminal — the user sees progress.
+    # ``run_if_needed`` is a no-op when no recipe exists or the migration
+    # already completed, so this is safe on every start.
+    from flow_sdk.migrations import runner as migration_runner
+    migration_exit = migration_runner.run_if_needed()
+    if migration_exit != 0:
+        typer.echo(
+            f"Migration failed (exit={migration_exit}); refusing to start server.",
+            err=True,
+        )
+        raise typer.Exit(migration_exit)
+
     if check_server_health(port):
         typer.echo(f"Server already running on port {port}")
     else:
@@ -959,6 +973,12 @@ app.add_typer(schema_app, name="schema")
 
 from flow_sdk.cli.commands.record_cmd import record_app
 app.add_typer(record_app, name="record")
+
+from flow_sdk.cli.commands.workflow_cmd import workflow_app
+app.add_typer(workflow_app, name="workflow")
+
+from flow_sdk.cli.commands.migrate_cmd import migrate_app
+app.add_typer(migrate_app, name="migrate")
 
 
 @log_app.callback(invoke_without_command=True)

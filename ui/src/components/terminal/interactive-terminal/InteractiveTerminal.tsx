@@ -45,6 +45,7 @@ import {
   SimpleDirTree,
   parseSideTabIdList,
   parseSideTabId,
+  usePromptsForProcess,
   type PromptEntry,
 } from './side-windows';
 import { SidecarShellTerminal } from './SidecarShellTerminal';
@@ -520,32 +521,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // so it survives hook misses and WS drops that historically made the
   // annotation+trace merge unreliable. Annotations remain as an auxiliary
   // index for terminal-row anchoring (click-to-scroll).
-  const [transcriptPrompts, setTranscriptPrompts] = useState<
-    Array<{ uuid: string; time: string; text: string }>
-  >([]);
-
-  useEffect(() => {
-    if (!process) return;
-    let cancelled = false;
-    const fetchPrompts = async () => {
-      try {
-        const ums = await process.getPrompts();
-        if (cancelled) return;
-        setTranscriptPrompts(
-          ums.map((e) => ({ uuid: e.id, time: e.timestamp, text: e.text })),
-        );
-      } catch {
-        // Silent — annotations still drive the gutter; the list just
-        // stays empty until the next refresh.
-      }
-    };
-    void fetchPrompts();
-    // Status transitions (e.g. RUNNING → READY) are a coarse signal that
-    // the JSONL likely grew. Re-fetch on each.
-    const unsub = process.on('status', () => { void fetchPrompts(); });
-    return () => { cancelled = true; unsub(); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [process?.id]);
+  const { transcriptPrompts } = usePromptsForProcess(process ?? null);
 
   // Build a {timestamp → absRow} index from prompt annotations so we can
   // attach click-to-scroll behavior to transcript prompts whose annotation

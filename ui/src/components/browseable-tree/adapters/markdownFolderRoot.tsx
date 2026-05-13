@@ -253,8 +253,12 @@ export function markdownFolderRoot(
   const visibleVaults = vaults.filter((v) => keepVault(v, filter));
   // Include filter signature so the tree refetches children when the user
   // toggles scope/picker — otherwise children are cached against the stale
-  // visibleVaults from the previous expansion.
-  const filterSig = `${filter.scope}:${[...filter.projectIds].sort().join(',')}`;
+  // visibleVaults from the previous expansion. Also include the source
+  // ``vaults.length`` so the cache invalidates when the /assets/types
+  // response arrives AFTER the initial render — otherwise the root keeps
+  // serving the empty ``listChildren`` closure that was captured before
+  // the API populated ``type.vaults``.
+  const filterSig = `${filter.scope}:${[...filter.projectIds].sort().join(',')}:v${vaults.length}`;
 
   const root: BrowseableRoot = {
     id: `asset-type:${type.type_name}:${filterSig}`,

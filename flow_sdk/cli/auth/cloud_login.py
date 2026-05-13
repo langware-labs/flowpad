@@ -7,7 +7,7 @@ to the cloud's login form, wait for the cloud's redirect to
 ``/auth/login_callback``).
 
 Both paths converge on ``_finalize_login``, which broadcasts the success
-WS event and persists the bearer token + user.
+WS event and persists the hub credential payload + user mirror.
 """
 
 from __future__ import annotations
@@ -18,12 +18,16 @@ import webbrowser
 from typing import Any
 from urllib.parse import urlparse
 
+import httpx
+
 from flow_sdk.api.messages import OAuthMessage, OAuthMessageStatus
 from flow_sdk.api.oauth_api import OAuthProvider
 from flow_sdk.cli.app_config import set_user
+from flow_sdk.cli.auth.credentials import UserHubCredentials, load_credentials, save_credentials
 from flow_sdk.cli.auth.cloud_urls import get_login_url
-from flow_sdk.cli.auth.hub_login import SERVICE_NAME, _api_key_name, get_api_key, set_api_key
+from flow_sdk.cli.auth.credentials import SERVICE_NAME, _api_key_name
 from flow_sdk.cloud_client import ApiConfig, FlowpadClient
+from flow_sdk.cloud_client.api.auth import LoginData
 from flow_sdk.instance_settings import get_instance_settings
 
 logger = logging.getLogger(__name__)
@@ -34,7 +38,11 @@ def _classify_hub(api_base_url: str | None) -> str:
     host = (urlparse(api_base_url or "").hostname or "").lower()
     if host == "flowpad.ai" or host.endswith(".flowpad.ai"):
         return "cloud"
-    if host in ("localhost", "127.0.0.1", "::1"):
+    if host in ("localhost", "127.0.0.1", "::1", "host.docker.internal"):
+        # ``host.docker.internal`` is Docker's stable alias for the host
+        # loopback (with ``extra_hosts: host.docker.internal:host-gateway``
+        # on Linux). Containerized backends in docker/docker-compose.yml use
+        # this URL to reach the hub running on the dev host.
         return "local"
     return "unsupported"
 
@@ -54,16 +62,19 @@ async def cloud_login() -> dict[str, Any]:
 
     if kind == "local":
         if not (settings.cloud_user_email and settings.cloud_user_pass):
-            raise ValueError("Local hub login requires FLOWPAD_CLOUD_USER_EMAIL and FLOWPAD_CLOUD_USER_PASSWORD")
+            raise ValueError(
+                "Cloud is not configured. Set FLOWPAD_CLOUD_USER_EMAIL and "
+                "FLOWPAD_CLOUD_USER_PASSWORD in .env.local and restart the app."
+            )
         return await _login_by_api(settings.cloud_user_email, settings.cloud_user_pass)
 
-    raise ValueError(f"Login not supported for hub URL: {hub_url}")
+    raise ValueError(f"Cloud sign-in isn't supported for this hub URL: {hub_url}")
 
 
 async def _login_by_api(email: str, password: str) -> dict[str, Any]:
-    token, user_info = await _post_cloud_login(email, password)
-    await _finalize_login(token, user_info)
-    return {"status": "logged_in", "user": user_info}
+    login_data = await _post_cloud_login(email, password)
+    await _finalize_login(login_data)
+    return {"status": "logged_in", "user": login_data.user}
 
 
 async def _login_by_window(port: int, timeout: float) -> dict[str, Any]:
@@ -86,44 +97,70 @@ async def _wait_or_timeout(timeout: float) -> None:
         await _broadcast_oauth_error(f"Login timed out after {int(timeout)}s — please try again")
 
 
-async def _post_cloud_login(email: str, password: str) -> tuple[str, dict[str, Any]]:
-    """POST cloud /login. Returns ``(token, user_info)`` from the LoginData payload."""
+async def _post_cloud_login(email: str, password: str) -> LoginData:
+    """POST cloud /login and return the full LoginData payload.
+
+    Translates raw transport / non-success envelope failures into
+    user-friendly RuntimeError messages so the UI surfaces clear copy in
+    both the warnings popover and the hub-client-error toast, rather than
+    httpx's "All connection attempts failed" stack-trace text.
+    """
     config = ApiConfig.from_env()
-    async with FlowpadClient(config) as client:
-        data = await client.post("/login", {"email": email, "password": password})
-    if not isinstance(data, dict) or not data.get("token") or not data.get("user"):
-        raise ValueError(f"login response missing token/user: {data!r}")
-    return data["token"], data["user"]
+    try:
+        async with FlowpadClient(config) as client:
+            data = await client.post("/login", {"email": email, "password": password})
+    except httpx.RequestError as e:
+        # Transport failure — hub process is down, DNS resolution failed,
+        # connection refused, network unreachable, etc.
+        raise RuntimeError(
+            "Cloud is not available. The hub server can't be reached — "
+            "check your connection or try again in a moment."
+        ) from e
+    except ValueError as e:
+        # ``FlowpadClient._unwrap`` raises ValueError for non-200 / non-success
+        # envelopes. Map the common cases.
+        text = str(e)
+        if "401" in text or "Unauthorized" in text or "invalid token" in text.lower():
+            raise RuntimeError("Cloud sign-in was rejected. Your credentials may be wrong or expired.") from e
+        if "403" in text or "Forbidden" in text:
+            raise RuntimeError("Cloud access denied for these credentials.") from e
+        # Strip the giant raw response body from the user-facing message.
+        raise RuntimeError("Cloud sign-in failed. Please try again.") from e
+    login_data = LoginData.model_validate(data)
+    if not login_data.token or not login_data.user:
+        raise RuntimeError("Cloud sign-in returned an unexpected response. Please try again.")
+    return login_data
 
 
-async def _finalize_login(token: str, user_info: dict[str, Any]) -> None:
+async def _finalize_login(login_data: LoginData) -> None:
     """Broadcast SUCCESS first (UI un-blocks immediately), then persist locally.
 
-    set_api_key may trigger an OS keychain prompt that blocks for seconds —
+    save_credentials may trigger an OS keychain prompt that blocks for seconds —
     don't make WS subscribers wait on it. The WS payload carries user_info,
     so the UI doesn't need the keyring read to render logged-in state.
     """
     from flow_sdk.server import state
     from flow_sdk.server.routes.bootstrap import invalidate_bootstrap_cache
 
+    user_info = login_data.user
     await _broadcast_oauth(OAuthMessage(
         oauth_request_id=OAuthProvider.FLOWPAD_CLOUD,
         status=OAuthMessageStatus.SUCCESS,
         user=user_info,
     ))
 
-    set_api_key(token)
+    save_credentials(UserHubCredentials.from_login_data(login_data))
     # Read-back verification: if this logs FAILED on a system where the OS
     # prompt was silently bypassed, the keyring backend is broken (rare).
-    stored_ok = get_api_key() == token
+    stored = load_credentials()
+    stored_ok = stored is not None and stored.api_key == login_data.token
     logger.info(
-        "api-key write %s — keychain entry: service=%r account=%r",
+        "credentials write %s — keychain entry: service=%r account=%r",
         "OK" if stored_ok else "FAILED (read-back mismatch)",
         SERVICE_NAME,
         _api_key_name(),
     )
-    # If the keyring write succeeded, mark the secrets-enabled sentinel so
-    # is_cloud_login_available() can read the key on subsequent boots.
+    # Sentinel flag so is_cloud_login_available() reads the key on next boot.
     # enable_secrets() swallows its own keyring errors and returns a bool,
     # so we don't need a try/except here.
     from flow_sdk.cli.auth.secrets import enable_secrets
@@ -132,6 +169,13 @@ async def _finalize_login(token: str, user_info: dict[str, Any]) -> None:
     state.login_result = {"success": True, "user": user_info, "message": "Login successful"}
     state.login_received.set()
     invalidate_bootstrap_cache()
+
+    try:
+        from flow_sdk.cloud_client.ws_client import hub_ws_manager
+
+        await hub_ws_manager.restart()
+    except Exception:
+        pass
 
 
 async def _broadcast_oauth(msg: OAuthMessage) -> None:
@@ -156,11 +200,18 @@ def clear_cloud_credentials() -> None:
     Used by ``/api/v1/cloud/logout``, ``/api/v1/cloud/logout_callback``, and the
     legacy ``flowpad_cloud/disconnect`` action handler — single owner.
     """
-    from flow_sdk.cli.auth.hub_login import delete_api_key
+    from flow_sdk.cli.auth.credentials import clear_credentials
     from flow_sdk.server import state
     from flow_sdk.server.routes.bootstrap import invalidate_bootstrap_cache
 
-    delete_api_key()
+    try:
+        from flow_sdk.cloud_client.ws_client import hub_ws_manager
+
+        hub_ws_manager.request_stop()
+    except Exception:
+        pass
+
+    clear_credentials()
     set_user({})
     state.login_result = None
     state.login_received.clear()

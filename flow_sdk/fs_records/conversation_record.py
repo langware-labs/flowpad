@@ -174,7 +174,15 @@ class ConversationRecord(Record):
         Bypasses ``Conversation.__setattr__``'s projection guard via the
         ``_PROJECTION_SENTINEL`` sentinel so application code keeps raising
         on direct mutation.
+
+        Also bumps ``conv.updated_date`` to the latest pointer's ts so that
+        downstream consumers (hub list endpoint, ``conversation-list`` diff)
+        can use ``updated_date`` as a freshness signal. Without this, append
+        only moves ``message_count`` / ``message_ids`` and the parent row's
+        ``updated_date`` looks stale.
         """
+        from datetime import datetime  # noqa: PLC0415
+        from flow_sdk._compat import UTC  # noqa: PLC0415
         from flow_sdk.builtin.conversation import (  # noqa: PLC0415  (lazy to avoid cycle)
             Conversation,
             _PROJECTION_SENTINEL,
@@ -190,6 +198,18 @@ class ConversationRecord(Record):
             return
         conv._set_projection("message_ids", new_ids, _PROJECTION_SENTINEL)
         conv._set_projection("message_count", new_count, _PROJECTION_SENTINEL)
+        # Bump updated_date so the hub list endpoint and conversation-list
+        # diff see fresh activity. Prefer the latest pointer's ts (already
+        # the message's authoritative timestamp); fall back to now() if a
+        # pointer somehow lacks ts.
+        latest_ts: str | None = pointers[-1].ts if pointers else None
+        if latest_ts:
+            try:
+                conv.updated_date = datetime.fromisoformat(latest_ts.replace("Z", "+00:00"))
+            except (ValueError, TypeError):
+                conv.updated_date = datetime.now(UTC)
+        else:
+            conv.updated_date = datetime.now(UTC)
         local_user_typeid = await _resolve_local_owner_typeid()
         await conv.save(local_user_typeid, notify=notify)
 
