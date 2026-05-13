@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AgenticProcess,
   Conversation,
@@ -60,15 +60,22 @@ interface ConversationContextPanelProps {
   /** Wraps any action that needs a `cwd`/project (still passed in case future
    *  Private Context entry types need it; currently unused here). */
   ensureMapped?: (continuation: () => void | Promise<void>) => void;
-  /** Currently-selected message ids. A row lights up when its origin set
-   *  has any overlap with this list — so clicking a multi-message entity
-   *  keeps the row lit no matter which of its origin bubbles is picked next,
-   *  and clicking a bubble lights up every entity it contributed. */
+  /** Currently-selected message ids. Drives bubble highlight and (only when
+   *  `selectedEntityKey` is null) the origin-overlap highlight on entity
+   *  rows. */
   selectedMessageIds?: readonly string[];
-  /** Click on an entity's icon / type / name fires this with the entity's
-   *  *entire* origin list, so every message the entity is attached to lights
-   *  up at once (parent scrolls to the first / earliest one). */
-  onSelectMessages?: (messageIds: string[]) => void;
+  /** Set when the user clicked an entity row (the click that *originated* the
+   *  current selection). When non-null, only the matching row lights — every
+   *  other entity in the selected messages stays dim, so the highlight tracks
+   *  the user's actual pick instead of cascading through shared bubbles.
+   *  `null` means the selection came from a bubble click, in which case the
+   *  entity rows fall back to the "origin overlaps selectedMessageIds" rule. */
+  selectedEntityKey?: string | null;
+  /** Click on an entity's icon / type / name fires this with the row's stable
+   *  key (TypeId string for entities, `${messageId}:${attachment.data}` for
+   *  transcript / file rows) and the entity's *entire* origin list, so the
+   *  parent can both pin the row and light every bubble that contributed it. */
+  onSelectEntity?: (entityKey: string, messageIds: string[]) => void;
 }
 
 /** Title-case the type slug for human-friendly type labels in tables. */
@@ -121,7 +128,8 @@ export function ConversationContextPanel({
   conversationId,
   ensureMapped,
   selectedMessageIds,
-  onSelectMessages,
+  selectedEntityKey,
+  onSelectEntity,
 }: ConversationContextPanelProps) {
   // Normalise the optional selection input. A Set keeps the per-row overlap
   // check O(1) instead of O(n) on a list that may contain every message id
@@ -130,6 +138,10 @@ export function ConversationContextPanel({
     () => new Set(selectedMessageIds ?? []),
     [selectedMessageIds],
   );
+  // When set, an entity row should light *only* when its key matches —
+  // origin-overlap cascade is suppressed so clicking one entity doesn't
+  // co-light every other entity that happens to share its messages.
+  const entityKey = selectedEntityKey ?? null;
   // Fetch every FlowMessage in the conversation so we can aggregate context
   // across all of them. Sorting is deferred to the order the conversation
   // itself records on `conversationMessageIds` (the ordered jsonl pointer
@@ -144,9 +156,25 @@ export function ConversationContextPanel({
     }),
     [conversationId],
   );
-  const { data: candidateFlowMessages = [] } = useEntitiesQuery<FlowMessage>(flowMessagesQuery, {
+  const { data: candidateFlowMessages = [], refetch: refetchFlowMessages } = useEntitiesQuery<FlowMessage>(flowMessagesQuery, {
     enabled: !!conversationId,
   });
+
+  // Type-level FlowMessage queries don't auto-invalidate when a new entity is
+  // registered in the cache (see DataManager._query — it updates results but
+  // doesn't call notifyCallbacks). So after a send, ConversationView refetches
+  // the Conversation entity (pointer list grows) but the panel's flow-messages
+  // query stays stale — the new message and its attachments never reach
+  // buildAttachmentEntries / buildSharedEntities. Refetching when the pointer
+  // count grows pulls the new FlowMessage and surfaces its attachments here.
+  const pointerCount = conversation?.conversationMessageIds?.length ?? 0;
+  const prevPointerCountRef = useRef(pointerCount);
+  useEffect(() => {
+    if (pointerCount > prevPointerCountRef.current) {
+      void refetchFlowMessages();
+    }
+    prevPointerCountRef.current = pointerCount;
+  }, [pointerCount, refetchFlowMessages]);
 
   // The conversation's pointer list is the authoritative ordering — same
   // approach `ConversationView` uses. We don't filter server-side on
@@ -170,8 +198,8 @@ export function ConversationContextPanel({
   );
 
   const sharedEntities = useMemo(
-    () => buildSharedEntities(orderedMessages, skipKeys),
-    [orderedMessages, skipKeys],
+    () => buildSharedEntities(orderedMessages, skipKeys, conversation),
+    [orderedMessages, skipKeys, conversation],
   );
 
   const transcriptEntries = useMemo(
@@ -312,17 +340,20 @@ export function ConversationContextPanel({
         attachmentEntries={attachmentEntries}
         conversationId={conversationId}
         selectedSet={selectedSet}
-        onSelectMessages={onSelectMessages}
+        selectedEntityKey={entityKey}
+        onSelectEntity={onSelectEntity}
       />
 
       <PrivateContextSection
         anchorMessageId={anchorMessageId}
         conversationId={conversationId}
+        conversation={conversation}
         projectTypeId={projectTypeId}
         tasks={privateTasks}
         processes={privateProcesses}
         selectedSet={selectedSet}
-        onSelectMessages={onSelectMessages}
+        selectedEntityKey={entityKey}
+        onSelectEntity={onSelectEntity}
         onStartAssistance={task && showStartSession ? handleStartAssistance : undefined}
         starting={starting}
       />
@@ -340,7 +371,8 @@ interface SharedContextSectionProps {
   attachmentEntries: AttachmentEntry[];
   conversationId: string;
   selectedSet: ReadonlySet<string>;
-  onSelectMessages?: (messageIds: string[]) => void;
+  selectedEntityKey: string | null;
+  onSelectEntity?: (entityKey: string, messageIds: string[]) => void;
 }
 
 function SharedContextSection({
@@ -349,7 +381,8 @@ function SharedContextSection({
   attachmentEntries,
   conversationId,
   selectedSet,
-  onSelectMessages,
+  selectedEntityKey,
+  onSelectEntity,
 }: SharedContextSectionProps) {
   const { navigation } = useDockNavigation();
   const containerInside = { type: Conversation.type, id: conversationId };
@@ -359,6 +392,15 @@ function SharedContextSection({
     && transcriptEntries.length === 0
     && attachmentEntries.length === 0;
 
+  // When an entity is the selection origin, only the matching row lights;
+  // otherwise we fall back to "any origin in selectedSet" so message-driven
+  // selections still cascade their entities. This is the asymmetric rule:
+  // entity → messages (one row), message → entities (all overlapping).
+  const isRowHighlighted = (key: string, originMessageIds: readonly string[]): boolean => {
+    if (selectedEntityKey !== null) return selectedEntityKey === key;
+    return originMessageIds.some((id) => selectedSet.has(id));
+  };
+
   return (
     <div>
       <SectionHeader title="Shared Context" icon={Users} />
@@ -366,40 +408,61 @@ function SharedContextSection({
         <EmptyHint text="Nothing shared in this conversation." />
       ) : (
         <ContextTable>
-          {sharedEntities.map((entry) => (
-            <SharedEntityRow
-              key={entry.typeId.toString()}
-              typeId={entry.typeId}
-              originMessageIds={entry.originMessageIds}
-              isHighlighted={entry.originMessageIds.some((id) => selectedSet.has(id))}
-              onSelectMessages={onSelectMessages}
-              onOpen={() => {
-                const ptr = dockPointerFor(entry.typeId, containerInside);
-                if (ptr) navigation.openDock(ptr);
-              }}
-            />
-          ))}
-          {transcriptEntries.map((t) => (
-            <TranscriptRow
-              key={`${t.messageId}:${t.attachment.data}`}
-              messageId={t.messageId}
-              attachment={t.attachment}
-              originMessageIds={t.originMessageIds}
-              isHighlighted={t.originMessageIds.some((id) => selectedSet.has(id))}
-              onSelectMessages={onSelectMessages}
-            />
-          ))}
-          {attachmentEntries.map((a) => (
-            <AttachmentRow
-              key={`${a.messageId}:${a.kind}:${a.attachment.data}`}
-              messageId={a.messageId}
-              attachment={a.attachment}
-              kind={a.kind}
-              originMessageIds={a.originMessageIds}
-              isHighlighted={a.originMessageIds.some((id) => selectedSet.has(id))}
-              onSelectMessages={onSelectMessages}
-            />
-          ))}
+          {sharedEntities.map((entry) => {
+            const rowKey = entry.typeId.toString();
+            return (
+              <SharedEntityRow
+                key={rowKey}
+                typeId={entry.typeId}
+                originMessageIds={entry.originMessageIds}
+                isHighlighted={isRowHighlighted(rowKey, entry.originMessageIds)}
+                onSelect={
+                  onSelectEntity && entry.originMessageIds.length > 0
+                    ? () => onSelectEntity(rowKey, entry.originMessageIds)
+                    : undefined
+                }
+                onOpen={() => {
+                  const ptr = dockPointerFor(entry.typeId, containerInside);
+                  if (ptr) navigation.openDock(ptr);
+                }}
+              />
+            );
+          })}
+          {transcriptEntries.map((t) => {
+            const rowKey = `transcript:${t.messageId}:${t.attachment.data}`;
+            return (
+              <TranscriptRow
+                key={rowKey}
+                messageId={t.messageId}
+                attachment={t.attachment}
+                originMessageIds={t.originMessageIds}
+                isHighlighted={isRowHighlighted(rowKey, t.originMessageIds)}
+                onSelect={
+                  onSelectEntity && t.originMessageIds.length > 0
+                    ? () => onSelectEntity(rowKey, t.originMessageIds)
+                    : undefined
+                }
+              />
+            );
+          })}
+          {attachmentEntries.map((a) => {
+            const rowKey = `${a.kind}:${a.messageId}:${a.attachment.data}`;
+            return (
+              <AttachmentRow
+                key={rowKey}
+                messageId={a.messageId}
+                attachment={a.attachment}
+                kind={a.kind}
+                originMessageIds={a.originMessageIds}
+                isHighlighted={isRowHighlighted(rowKey, a.originMessageIds)}
+                onSelect={
+                  onSelectEntity && a.originMessageIds.length > 0
+                    ? () => onSelectEntity(rowKey, a.originMessageIds)
+                    : undefined
+                }
+              />
+            );
+          })}
         </ContextTable>
       )}
     </div>
@@ -410,7 +473,9 @@ interface SharedEntityRowProps {
   typeId: TypeId;
   originMessageIds: string[];
   isHighlighted: boolean;
-  onSelectMessages?: (messageIds: string[]) => void;
+  /** Pre-bound to the parent's `onSelectEntity(rowKey, originMessageIds)` —
+   *  rows don't need to know the key or the original origin list. */
+  onSelect?: () => void;
   onOpen: () => void;
 }
 
@@ -418,7 +483,7 @@ function SharedEntityRow({
   typeId,
   originMessageIds,
   isHighlighted,
-  onSelectMessages,
+  onSelect,
   onOpen,
 }: SharedEntityRowProps) {
   const { data: entity } = useEntity(typeId);
@@ -435,11 +500,7 @@ function SharedEntityRow({
       type={humanType(typeId.type)}
       name={name}
       isHighlighted={isHighlighted}
-      onFocus={
-        onSelectMessages && originMessageIds.length > 0
-          ? () => onSelectMessages(originMessageIds)
-          : undefined
-      }
+      onFocus={onSelect}
       focusTitle={
         originMessageIds.length > 1
           ? `Light up the ${originMessageIds.length} messages this is attached to`
@@ -459,15 +520,14 @@ interface TranscriptRowProps {
   attachment: Attachment;
   originMessageIds: string[];
   isHighlighted: boolean;
-  onSelectMessages?: (messageIds: string[]) => void;
+  onSelect?: () => void;
 }
 
 function TranscriptRow({
   messageId,
   attachment,
-  originMessageIds,
   isHighlighted,
-  onSelectMessages,
+  onSelect,
 }: TranscriptRowProps) {
   const { navigation } = useDockNavigation();
   // ``attachment.local_path`` is synthesized at serialization time by
@@ -496,11 +556,7 @@ function TranscriptRow({
       type="Transcript"
       name={attachment.data.split('/').pop() ?? attachment.data}
       isHighlighted={isHighlighted}
-      onFocus={
-        onSelectMessages && originMessageIds.length > 0
-          ? () => onSelectMessages(originMessageIds)
-          : undefined
-      }
+      onFocus={onSelect}
       focusTitle="Reveal the message that produced this transcript"
     >
       <RowAction
@@ -520,16 +576,15 @@ interface AttachmentRowProps {
   kind: 'file' | 'prompt-file';
   originMessageIds: string[];
   isHighlighted: boolean;
-  onSelectMessages?: (messageIds: string[]) => void;
+  onSelect?: () => void;
 }
 
 function AttachmentRow({
   messageId,
   attachment,
   kind,
-  originMessageIds,
   isHighlighted,
-  onSelectMessages,
+  onSelect,
 }: AttachmentRowProps) {
   // Same URL helper FlowMessageBubble uses to render its inline chips
   // (FlowMessageBubble.tsx:131) — points at the backend endpoint that streams
@@ -544,11 +599,7 @@ function AttachmentRow({
       type={typeLabel}
       name={filename}
       isHighlighted={isHighlighted}
-      onFocus={
-        onSelectMessages && originMessageIds.length > 0
-          ? () => onSelectMessages(originMessageIds)
-          : undefined
-      }
+      onFocus={onSelect}
       focusTitle="Reveal the message this file is attached to"
     >
       <RowAction
@@ -572,13 +623,18 @@ interface PrivateContextSectionProps {
    *  message is explicitly selected. `null` when the conversation is empty. */
   anchorMessageId: string | null;
   conversationId: string;
+  /** Conversation entity for the current view. Used by add-spec to link the
+   *  new spec into the conversation's `context_entities` so it shows up in
+   *  Shared Context on later visits. `null` if not yet loaded. */
+  conversation: Conversation | null;
   /** Mapped project (task.project_id / conversation.project_id) — rendered as
    *  a row at the top of Private Context. `null` when no project is mapped. */
   projectTypeId: TypeId | null;
   tasks: PrivateTaskAgg[];
   processes: PrivateProcessAgg[];
   selectedSet: ReadonlySet<string>;
-  onSelectMessages?: (messageIds: string[]) => void;
+  selectedEntityKey: string | null;
+  onSelectEntity?: (entityKey: string, messageIds: string[]) => void;
   /** Wired to the Session entry in the + menu. Undefined when no task is
    *  mapped or a PTY session already exists in the conversation. */
   onStartAssistance?: () => void;
@@ -588,11 +644,13 @@ interface PrivateContextSectionProps {
 function PrivateContextSection({
   anchorMessageId,
   conversationId,
+  conversation,
   projectTypeId,
   tasks,
   processes,
   selectedSet,
-  onSelectMessages,
+  selectedEntityKey,
+  onSelectEntity,
   onStartAssistance,
   starting,
 }: PrivateContextSectionProps) {
@@ -651,6 +709,17 @@ function PrivateContextSection({
       });
       const scopeIds = projectTypeId ? [projectTypeId] : [];
       await spec.save(scopeIds);
+      // Surface the new spec on the conversation itself so it stays visible
+      // in Shared Context when the user returns to the conversation later —
+      // not just under the anchor FlowMessage's Private Context view.
+      if (conversation && spec.id) {
+        conversation.addContextEntity(new TypeId(Spec.type, spec.id));
+        try {
+          await conversation.save();
+        } catch (convErr) {
+          console.error('[PrivateContext] linking spec to conversation failed', convErr);
+        }
+      }
       toast.success('Spec created');
       if (spec.id) navigation.openDock(DockPointer.forSpec(spec.id));
     } catch (err) {
@@ -741,6 +810,12 @@ function PrivateContextSection({
   // mapped or a PTY session already exists.
   const canAdd = !!onStartAssistance || (!!anchorMessageId && !adding);
 
+  // Same selection-mode gate as SharedContextSection.
+  const isRowHighlighted = (key: string, originMessageIds: readonly string[]): boolean => {
+    if (selectedEntityKey !== null) return selectedEntityKey === key;
+    return originMessageIds.some((id) => selectedSet.has(id));
+  };
+
   return (
     <div>
       <SectionHeader title="Private Context" icon={Lock} />
@@ -757,34 +832,48 @@ function PrivateContextSection({
               }}
             />
           )}
-          {standaloneTasks.map((t) => (
-            <PrivateTaskRow
-              key={t.task.id}
-              task={t.task}
-              originMessageIds={t.originMessageIds}
-              isHighlighted={t.originMessageIds.some((id) => selectedSet.has(id))}
-              onSelectMessages={onSelectMessages}
-              onView={() => {
-                if (!t.task.typeId) return;
-                const ptr = dockPointerFor(t.task.typeId, containerInside);
-                if (ptr) navigation.openDock(ptr);
-              }}
-              onEdit={() => {
-                if (!t.task.id) return;
-                navigation.openDock(DockPointer.forTasks(t.task.id, { conversationId }));
-              }}
-            />
-          ))}
+          {standaloneTasks.map((t) => {
+            const rowKey = t.task.typeId ? t.task.typeId.toString() : `task:${t.task.id ?? ''}`;
+            return (
+              <PrivateTaskRow
+                key={t.task.id}
+                task={t.task}
+                originMessageIds={t.originMessageIds}
+                isHighlighted={isRowHighlighted(rowKey, t.originMessageIds)}
+                onSelect={
+                  onSelectEntity && t.originMessageIds.length > 0
+                    ? () => onSelectEntity(rowKey, t.originMessageIds)
+                    : undefined
+                }
+                onView={() => {
+                  if (!t.task.typeId) return;
+                  const ptr = dockPointerFor(t.task.typeId, containerInside);
+                  if (ptr) navigation.openDock(ptr);
+                }}
+                onEdit={() => {
+                  if (!t.task.id) return;
+                  navigation.openDock(DockPointer.forTasks(t.task.id, { conversationId }));
+                }}
+              />
+            );
+          })}
           {derivationProcesses.map((p) => {
             const linked = p.process.id ? linkedTaskByProcessId.get(p.process.id) : undefined;
+            const rowKey = p.process.typeId
+              ? p.process.typeId.toString()
+              : `ap:${p.process.id ?? ''}`;
             return (
               <PrivateDerivationRow
                 key={p.process.id}
                 process={p.process}
                 linkedTask={linked?.task}
                 originMessageIds={p.originMessageIds}
-                isHighlighted={p.originMessageIds.some((id) => selectedSet.has(id))}
-                onSelectMessages={onSelectMessages}
+                isHighlighted={isRowHighlighted(rowKey, p.originMessageIds)}
+                onSelect={
+                  onSelectEntity && p.originMessageIds.length > 0
+                    ? () => onSelectEntity(rowKey, p.originMessageIds)
+                    : undefined
+                }
                 onOpenTask={() => {
                   if (!linked?.task.id) return;
                   navigation.openDock(
@@ -794,21 +883,30 @@ function PrivateContextSection({
               />
             );
           })}
-          {transcriptProcesses.map((p) => (
-            <PrivateProcessRow
-              key={p.process.id}
-              process={p.process}
-              originMessageIds={p.originMessageIds}
-              isHighlighted={p.originMessageIds.some((id) => selectedSet.has(id))}
-              onSelectMessages={onSelectMessages}
-              onView={() => {
-                if (p.process.transcriptDockPointer) navigation.openDock(p.process.transcriptDockPointer);
-              }}
-              onOpen={() => {
-                if (p.process.terminalDockPointer) navigation.openDock(p.process.terminalDockPointer);
-              }}
-            />
-          ))}
+          {transcriptProcesses.map((p) => {
+            const rowKey = p.process.typeId
+              ? p.process.typeId.toString()
+              : `ap:${p.process.id ?? ''}`;
+            return (
+              <PrivateProcessRow
+                key={p.process.id}
+                process={p.process}
+                originMessageIds={p.originMessageIds}
+                isHighlighted={isRowHighlighted(rowKey, p.originMessageIds)}
+                onSelect={
+                  onSelectEntity && p.originMessageIds.length > 0
+                    ? () => onSelectEntity(rowKey, p.originMessageIds)
+                    : undefined
+                }
+                onView={() => {
+                  if (p.process.transcriptDockPointer) navigation.openDock(p.process.transcriptDockPointer);
+                }}
+                onOpen={() => {
+                  if (p.process.terminalDockPointer) navigation.openDock(p.process.terminalDockPointer);
+                }}
+              />
+            );
+          })}
         </ContextTable>
       )}
       {canAdd && (
@@ -908,14 +1006,14 @@ function PrivateTaskRow({
   task,
   originMessageIds,
   isHighlighted,
-  onSelectMessages,
+  onSelect,
   onView,
   onEdit,
 }: {
   task: Task;
   originMessageIds: string[];
   isHighlighted: boolean;
-  onSelectMessages?: (messageIds: string[]) => void;
+  onSelect?: () => void;
   onView: () => void;
   onEdit: () => void;
 }) {
@@ -926,11 +1024,7 @@ function PrivateTaskRow({
       type="Task"
       name={task.displayName ?? task.id ?? '(unnamed)'}
       isHighlighted={isHighlighted}
-      onFocus={
-        onSelectMessages && originMessageIds.length > 0
-          ? () => onSelectMessages(originMessageIds)
-          : undefined
-      }
+      onFocus={onSelect}
       focusTitle={
         originMessageIds.length > 1
           ? `Light up the ${originMessageIds.length} messages this task is linked to`
@@ -953,14 +1047,14 @@ function PrivateProcessRow({
   process,
   originMessageIds,
   isHighlighted,
-  onSelectMessages,
+  onSelect,
   onView,
   onOpen,
 }: {
   process: AgenticProcess;
   originMessageIds: string[];
   isHighlighted: boolean;
-  onSelectMessages?: (messageIds: string[]) => void;
+  onSelect?: () => void;
   /** Read-only transcript view (lens). Disabled when there's no
    *  `session_id` yet — nothing to read until the worker has produced one. */
   onView: () => void;
@@ -975,11 +1069,7 @@ function PrivateProcessRow({
       type="Session"
       name={process.displayName ?? process.id ?? '(running)'}
       isHighlighted={isHighlighted}
-      onFocus={
-        onSelectMessages && originMessageIds.length > 0
-          ? () => onSelectMessages(originMessageIds)
-          : undefined
-      }
+      onFocus={onSelect}
       focusTitle={
         originMessageIds.length > 1
           ? `Light up the ${originMessageIds.length} messages this session is linked to`
@@ -1014,14 +1104,14 @@ function PrivateDerivationRow({
   linkedTask,
   originMessageIds,
   isHighlighted,
-  onSelectMessages,
+  onSelect,
   onOpenTask,
 }: {
   process: AgenticProcess;
   linkedTask: Task | undefined;
   originMessageIds: string[];
   isHighlighted: boolean;
-  onSelectMessages?: (messageIds: string[]) => void;
+  onSelect?: () => void;
   onOpenTask: () => void;
 }) {
   const Icon = ICON_BY_TYPE.task ?? ExternalLink;
@@ -1037,11 +1127,7 @@ function PrivateDerivationRow({
       type="Task"
       name={name}
       isHighlighted={isHighlighted}
-      onFocus={
-        onSelectMessages && originMessageIds.length > 0
-          ? () => onSelectMessages(originMessageIds)
-          : undefined
-      }
+      onFocus={onSelect}
       focusTitle={
         originMessageIds.length > 1
           ? `Light up the ${originMessageIds.length} messages this task is linked to`

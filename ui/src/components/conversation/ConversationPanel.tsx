@@ -94,15 +94,28 @@ export function ConversationPanel({
   // clicking a context entity can light up *every* message the entity was
   // contributed by — and so clicking any one of those messages keeps lighting
   // the same entity row.
-  //   - Clicking a bubble  → [thatId] (size 1)
-  //   - Clicking an entity → entity.originMessageIds (size N)
+  //   - Clicking a bubble  → [thatId] (size 1), no entity selected.
+  //   - Clicking an entity → that entity's full origin list + the entity's
+  //     own row-key so we can light *only* that entity (not every other
+  //     entity that happens to share those bubbles).
+  // The asymmetry matters: a bubble lighting up doesn't imply every entity
+  // attached to it should also light. Entity-mode is the more precise
+  // selection — it pins exactly one row to the highlight, plus the bubbles
+  // that contributed it.
   const [selectedMessageIds, setSelectedMessageIds] = useState<string[]>([]);
+  const [selectedEntityKey, setSelectedEntityKey] = useState<string | null>(null);
   const selectOneMessage = useCallback(
-    (id: string) => setSelectedMessageIds([id]),
+    (id: string) => {
+      setSelectedMessageIds([id]);
+      setSelectedEntityKey(null);
+    },
     [],
   );
-  const selectManyMessages = useCallback(
-    (ids: string[]) => setSelectedMessageIds(ids),
+  const selectEntity = useCallback(
+    (entityKey: string, messageIds: string[]) => {
+      setSelectedMessageIds(messageIds);
+      setSelectedEntityKey(entityKey);
+    },
     [],
   );
 
@@ -151,7 +164,8 @@ export function ConversationPanel({
         conversationId={conversationId}
         ensureMapped={ensureMapped}
         selectedMessageIds={selectedMessageIds}
-        onSelectMessages={selectManyMessages}
+        selectedEntityKey={selectedEntityKey}
+        onSelectEntity={selectEntity}
       />
     ),
   };
