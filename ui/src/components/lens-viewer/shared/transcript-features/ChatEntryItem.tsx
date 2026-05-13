@@ -131,6 +131,17 @@ export function ChatEntryItem({ entry, toolFilters, isExpanded, onToggle }: Prop
                   {formatNumber(totalTokens)}
                 </span>
               )}
+              {entry.usage?.costUsd != null && entry.usage.costUsd > 0 && (
+                <span
+                  className="shrink-0 text-[10px] font-medium tabular-nums text-foreground/80"
+                  data-testid="turn-cost-usd"
+                  title={`${entry.usage.model ?? 'unknown model'} · cost for this turn`}
+                >
+                  ${entry.usage.costUsd < 0.01
+                    ? entry.usage.costUsd.toFixed(4)
+                    : entry.usage.costUsd.toFixed(3)}
+                </span>
+              )}
             </div>
 
             {text && (

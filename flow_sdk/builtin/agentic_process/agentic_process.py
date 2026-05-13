@@ -493,6 +493,15 @@ class AgenticProcess(Entity):
         default=None,
         description="FSRef for `<exe_folder>/assets/` — materialised embedded agents / skills.",
     )
+    total_cost_usd: float | None = APIField(
+        default=None,
+        description=(
+            "USD cost of this process's session transcript so far. Derived "
+            "server-side from the on-disk JSONL via "
+            "transcript_analyzer.pricing.total_cost_usd; not persisted on the "
+            "entity. None when no session_id is known yet."
+        ),
+    )
     shell_id: str | None = APIField(default=None)
     sidecar_shell_id: str | None = APIField(default=None)
     visible: bool = APIField(default=False, description="Whether this process is visible in the tabs view")

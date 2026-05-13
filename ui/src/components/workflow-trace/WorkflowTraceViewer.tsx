@@ -178,6 +178,14 @@ function fmtDuration(ms?: number): string {
   return `${m}m ${rs}s`;
 }
 
+function fmtCost(usd?: number): string | null {
+  if (usd === undefined || usd === null || usd <= 0) return null;
+  if (usd < 0.001) return `<$0.001`;
+  if (usd < 0.01) return `$${usd.toFixed(4)}`;
+  if (usd < 1) return `$${usd.toFixed(3)}`;
+  return `$${usd.toFixed(2)}`;
+}
+
 function fmtClock(iso?: string): string {
   if (!iso) return "";
   try {
@@ -235,6 +243,7 @@ function LeftGutter({ step }: { step: StepViewModel | undefined }) {
     Boolean(step.detail) ||
     (step.tool_calls && step.tool_calls.length > 0);
 
+  const costLabel = fmtCost(step.cost_usd);
   const line = (
     <div className="flex items-center justify-end gap-1.5 whitespace-nowrap text-[11px] leading-none">
       <Icon
@@ -244,6 +253,14 @@ function LeftGutter({ step }: { step: StepViewModel | undefined }) {
       <span className={cn("font-medium tabular-nums", color)}>
         {step.duration_ms !== undefined ? fmtDuration(step.duration_ms) : label}
       </span>
+      {costLabel && (
+        <span
+          className="tabular-nums text-muted-foreground"
+          data-testid="workflow-step-cost"
+        >
+          {costLabel}
+        </span>
+      )}
     </div>
   );
 
@@ -451,10 +468,12 @@ function MarkdownLine({
 function RunSummary({
   steps,
   totalMs,
+  totalCostUsd,
   hasAnalysis,
 }: {
   steps: StepViewModel[];
   totalMs: number;
+  totalCostUsd?: number;
   hasAnalysis: boolean;
 }) {
   const total = steps.length;
@@ -486,11 +505,13 @@ function RunSummary({
 
   const sub: string[] = [];
   if (totalMs > 0) sub.push(fmtDuration(totalMs));
+  const costLabel = fmtCost(totalCostUsd);
+  if (costLabel) sub.push(costLabel);
   if (issues > 0) sub.push(`${issues} ${issues === 1 ? "issue" : "issues"}`);
   if (!hasAnalysis) sub.push("analysis pending");
 
   return (
-    <div className="flex items-baseline gap-2 text-sm">
+    <div className="flex items-baseline gap-2 text-sm" data-testid="workflow-run-summary">
       <span className={cn("font-medium", toneColor)}>{headline}</span>
       {sub.length > 0 && (
         <span className="text-xs text-muted-foreground">{sub.join(" · ")}</span>
@@ -654,6 +675,7 @@ export function WorkflowTraceViewer({
             <RunSummary
               steps={view.steps}
               totalMs={totalMs}
+              totalCostUsd={view.summary.totalCostUsd}
               hasAnalysis={view.hasAnalysis}
             />
             {selectedArchive && (

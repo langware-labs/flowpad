@@ -36,7 +36,7 @@ export function PastAttemptsBand({ learningLog, stickyTop = 0 }: PastAttemptsBan
         <span className="ml-1">· {entryCount}</span>
       </button>
       {open && entryCount > 0 && learningLog && (
-        <div className="max-h-[40vh] overflow-y-auto border-t bg-muted/20 px-4 py-3">
+        <div className="max-h-[40vh] overflow-y-auto border-t bg-muted px-4 py-3">
           <div className="prose prose-sm max-w-none dark:prose-invert">
             <MarkdownView value={learningLog} compact />
           </div>

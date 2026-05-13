@@ -16,7 +16,8 @@ import {
   SystemEntry,
   ToolResultEntry,
   ToolUseEntry,
-  TokenUsageEntry,
+  UsageEntry,
+  CodexUsageEntry,
   UnknownEntry,
   UserMessageEntry,
 } from './entries';
@@ -31,7 +32,8 @@ export {
   SystemEntry,
   ToolResultEntry,
   ToolUseEntry,
-  TokenUsageEntry,
+  UsageEntry,
+  CodexUsageEntry,
   UnknownEntry,
   UserMessageEntry,
   type AssistantMessageEntryData,
@@ -40,7 +42,8 @@ export {
   type SystemEntryData,
   type ToolResultEntryData,
   type ToolUseEntryData,
-  type TokenUsageEntryData,
+  type UsageEntryData,
+  type CodexUsageEntryData,
   type UnknownEntryData,
   type UserMessageEntryData,
 } from './entries';
@@ -50,6 +53,9 @@ export {
   flatten_tool_result,
   first_block_of_type,
 } from './_helpers';
+export type { ItemPrice } from './pricing';
+export { ModelPricing, CLAUDE_PRICING, pricingFor } from './pricing';
+export { parseClaudeTranscriptUsage } from './parse-claude-usage';
 
 /**
  * Hydrate a REST-serialized entry payload into the right TranscriptEntry
@@ -73,7 +79,7 @@ export function fromJson(raw: Record<string, unknown>): TranscriptEntry {
     case EntryKind.META:
       return new MetaEntry(raw as never);
     case EntryKind.TOKEN_USAGE:
-      return new TokenUsageEntry(raw as never);
+      return new UsageEntry(raw as never);
     case EntryKind.SYSTEM:
       return new SystemEntry(raw as never);
     case EntryKind.SUMMARY:

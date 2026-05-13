@@ -10,12 +10,13 @@ import type {
   WebFetchEntry,
 } from '@sdk';
 import { isOperation, isToolUse } from '@sdk';
+import { pricingFor, type UsageEntry } from '@sdk/transcript-analyzer';
 
 import type { UnifiedEntry, UnifiedRole } from './types';
 
-/** Strip the `:usage` suffix the python parser appends to TokenUsageEntry ids. */
+/** Strip the `:usage` or `:usage:dim_N` suffix the python parser appends to UsageEntry ids. */
 function baseId(id: string): string {
-  return id.endsWith(':usage') ? id.slice(0, -':usage'.length) : id;
+  return id.replace(/:usage(?::dim_\d+)?$/, '');
 }
 
 /**
@@ -125,14 +126,64 @@ function projectGroup(group: GenericEntry[]): UnifiedEntry | null {
       if (am.text) out.text = am.text;
       if (am.thinking) out.thinking = am.thinking;
     }
-    if (usage && usage.kind === 'token_usage') {
+    // Aggregate ALL token_usage entries from this turn. Handles two wire
+    // shapes (older servers haven't reloaded the per-dim parser yet):
+    //   • per-dim: one entry per chargeable stream (count + io + cache)
+    //   • legacy aggregate: one entry carrying input_tokens / output_tokens / ...
+    // Cost is resolved via the shared pricingFor() table either way.
+    const usageEntries = group.filter((g): g is typeof g & { kind: 'token_usage' } => g.kind === 'token_usage');
+    if (usageEntries.length > 0) {
+      let input = 0, output = 0, cacheRead = 0, cacheCreation = 0, reasoning = 0;
+      let costUsd = 0;
+      const model = (usageEntries[0] as { model?: string | null }).model ?? null;
+      const table = pricingFor(model);
+      const isPerDim = (u: typeof usageEntries[number]) => typeof u.io === 'string' && typeof u.count === 'number';
+      for (const u of usageEntries) {
+        if (isPerDim(u)) {
+          const count = u.count ?? 0;
+          if (u.io === 'output') {
+            if (u.reasoning) reasoning += count;
+            else output += count;
+          } else if (u.cache === 'read') {
+            cacheRead += count;
+          } else if (u.cache === 'write') {
+            cacheCreation += count;
+          } else {
+            input += count;
+          }
+          costUsd += table.costOf(u as unknown as UsageEntry);
+        } else {
+          // Legacy aggregate shape — synthesize per-dim UsageEntry shapes
+          // on the fly so pricingFor() applies the same rules.
+          const ui = u.input_tokens ?? 0;
+          const uo = u.output_tokens ?? 0;
+          const ur = u.cache_read_tokens ?? u.cached_input_tokens ?? 0;
+          const uw = u.cache_creation_tokens ?? 0;
+          const ureasoning = u.reasoning_output_tokens ?? 0;
+          input += ui;
+          output += uo;
+          cacheRead += ur;
+          cacheCreation += uw;
+          reasoning += ureasoning;
+          // Legacy servers don't disaggregate 5m vs 1h — assume 1h
+          // (matches what Sonnet-4 actually emits in practice; pricing
+          // is 2× input rather than 1.25×).
+          if (ui) costUsd += table.costOf({ count: ui, io: 'input', cache: 'none', cache_tier: 'none', unit: 'token', reasoning: false, tool: null, model } as unknown as UsageEntry);
+          if (uo) costUsd += table.costOf({ count: uo, io: 'output', cache: 'none', cache_tier: 'none', unit: 'token', reasoning: false, tool: null, model } as unknown as UsageEntry);
+          if (ur) costUsd += table.costOf({ count: ur, io: 'input', cache: 'read', cache_tier: 'none', unit: 'token', reasoning: false, tool: null, model } as unknown as UsageEntry);
+          if (uw) costUsd += table.costOf({ count: uw, io: 'input', cache: 'write', cache_tier: '1h', unit: 'token', reasoning: false, tool: null, model } as unknown as UsageEntry);
+          if (ureasoning) costUsd += table.costOf({ count: ureasoning, io: 'output', cache: 'none', cache_tier: 'none', unit: 'token', reasoning: true, tool: null, model } as unknown as UsageEntry);
+        }
+      }
       out.usage = {
-        input: usage.input_tokens,
-        output: usage.output_tokens,
-        cached: usage.cached_input_tokens,
-        cacheRead: usage.cache_read_tokens,
-        cacheCreation: usage.cache_creation_tokens,
-        reasoning: usage.reasoning_output_tokens,
+        input,
+        output,
+        cached: cacheRead || null,
+        cacheRead: cacheRead || null,
+        cacheCreation: cacheCreation || null,
+        reasoning: reasoning || null,
+        costUsd: costUsd > 0 ? costUsd : null,
+        model,
       };
     }
     out.searchHaystack = ((out.text ?? '') + ' ' + (out.thinking ?? '')).toLowerCase();

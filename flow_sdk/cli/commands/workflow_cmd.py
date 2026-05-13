@@ -48,7 +48,14 @@ def _resolve_process_id(process_opt: Optional[str]) -> str:
     from flow_sdk.utils.environment import get_execution_scope
 
     scope = get_execution_scope()
-    proc = next((s for s in scope if s.get("type") == "agentic_process"), None)
+    proc: Optional[dict] = None
+    for s in scope:
+        if isinstance(s, dict) and s.get("type") == "agentic_process":
+            proc = s
+            break
+        if isinstance(s, str) and s.startswith("agentic_process-"):
+            proc = {"id": s.split("-", 1)[1]}
+            break
     if not proc:
         _fail(
             EXIT_INVALID_ARG,
