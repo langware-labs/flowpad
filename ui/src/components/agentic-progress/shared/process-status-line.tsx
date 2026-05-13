@@ -1,17 +1,24 @@
-import { getWorkerMode, isReadyForInput, ProcessStatus, type StatusBearingProcess, WorkerMode, WorkerStatus } from '@sdk';
+import { getWorkerMode, isReadyForInput, isWorkerTerminal, ProcessStatus, type StatusBearingProcess, WorkerMode, WorkerStatus } from '@sdk';
 import { cn } from '@src/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { Terminal } from 'lucide-react';
-import { getStatusColor, getStatusIcon, getStatusLabel } from './status-indicator';
+import { getStatusLabel, processStatusConfig, workerStatusConfig } from './status-indicator';
 
 /**
  * Reusable one-liner status line for an AgenticProcess.
  *
  * Renders (left-to-right):
- *   [Icon] [Label]  [secondary]  [elapsed]  [Open-in-Terminal button]
+ *   [Icon] [MainLabel] [<sub>workerSubscript</sub>]  [secondary]  [elapsed]  [Open-in-Terminal button]
  *
- * - Icon + label come from ``getDisplayStatus`` → the right config
- *   (``workerStatusConfig`` when the worker is running; ``processStatusConfig`` otherwise).
+ * Label rule (so the UI matches the user's intuition about "the run is done"):
+ * - If ``workerStatus`` is terminal (``COMPLETE / ERROR / INTERRUPTED /
+ *   INACTIVE / API_TIMEOUT``), the *worker* drives the main label — the run is
+ *   effectively over regardless of how late the backend transitions the
+ *   lifecycle from ``RUNNING`` → ``STOPPED``. No subscript in that case.
+ * - Otherwise the lifecycle (``processStatusConfig[process.status]``) drives
+ *   the main label; ``workerStatus`` is appended as a smaller, worker-coloured
+ *   subscript via ``<sub>``, but only when defined, not ``UNKNOWN``, and
+ *   distinct from the main label (identical labels collapse to a single token).
  * - Open-in-Terminal button is only rendered when ``onOpenInTerminal`` is passed.
  *   It is disabled unless ``isReadyForInput(process)`` — i.e. the worker is at
  *   ``IDLE`` / ``COMPLETE`` / ``INTERRUPTED`` and the process is in ``RUNNING``
@@ -37,6 +44,7 @@ interface ProcessStatusLineProps {
 const sizeStyles = {
   sm: {
     text: 'text-xs',
+    worker: 'text-[10px]',
     secondary: 'text-[11px]',
     icon: 'h-3 w-3',
     btn: 'h-5 w-5',
@@ -45,6 +53,7 @@ const sizeStyles = {
   },
   md: {
     text: 'text-sm',
+    worker: 'text-[11px]',
     secondary: 'text-xs',
     icon: 'h-4 w-4',
     btn: 'h-6 w-6',
@@ -62,14 +71,34 @@ export function ProcessStatusLine({
   className,
   'data-testid': dataTestId,
 }: ProcessStatusLineProps) {
-  const Icon = getStatusIcon(process);
-  const label = getStatusLabel(process);
-  const colorClass = getStatusColor(process);
+  const status = (process.status as ProcessStatus | undefined) ?? ProcessStatus.NEW;
+  const procConfig = processStatusConfig[status] ?? processStatusConfig[ProcessStatus.NEW];
+
+  const worker = (process.workerStatus ?? process.worker_status) as WorkerStatus | undefined;
+  const workerConfig =
+    worker && worker !== WorkerStatus.UNKNOWN ? workerStatusConfig[worker] : undefined;
+  const workerTerminal = worker !== undefined && isWorkerTerminal(worker);
+
+  // Promote the worker config to the main slot when the worker is terminal
+  // (COMPLETE / ERROR / …) — the run is over from the user's POV even if the
+  // lifecycle hasn't transitioned to STOPPED yet. No subscript in that case.
+  const mainConfig = workerTerminal && workerConfig ? workerConfig : procConfig;
+  const subConfig =
+    !workerTerminal && workerConfig && workerConfig.label !== procConfig.label
+      ? workerConfig
+      : undefined;
+
+  const MainIcon = mainConfig.icon;
+  const mainLabel = mainConfig.label;
+  const mainColor = mainConfig.color;
+
+  // Tooltip text uses the fine-grained label so "Busy — worker is …" still
+  // describes what the worker is actually doing.
+  const tooltipLabel = getStatusLabel(process);
+
   const ready = isReadyForInput(process);
   const mode = getWorkerMode(process);
   const styles = sizeStyles[size];
-
-  const status = process.status as ProcessStatus | undefined;
   // Two distinct gates depending on worker mode:
   // - Interactive PTY (visible=true): clickable when the worker is ready for
   //   input — clicking just focuses the existing tab.
@@ -87,7 +116,6 @@ export function ProcessStatusLine({
   //                                             optimistically flips workerStatus
   //                                             to WAITING immediately)
   //     That next turn finishes              → enabled
-  const worker = (process.workerStatus ?? process.worker_status) as WorkerStatus | undefined;
   const workerTurnDone =
     worker === WorkerStatus.COMPLETE ||
     worker === WorkerStatus.INTERRUPTED;
@@ -97,25 +125,30 @@ export function ProcessStatusLine({
   const canOpenTerminal =
     mode === WorkerMode.Interactive ? ready : canResume;
 
-  const iconSpinning =
-    label === 'Running' ||
-    label === 'Starting' ||
-    label === 'Stopping' ||
-    label === 'Thinking' ||
-    label === 'Running tool' ||
-    label === 'Initializing' ||
-    label === 'API retry';
+  const iconSpinning = mainConfig.animate === true;
 
   return (
     <div
       className={cn('flex items-center', styles.gap, className)}
       data-testid={dataTestId ?? 'process-status-line'}
     >
-      <Icon
-        className={cn(styles.icon, colorClass, iconSpinning && 'animate-spin', 'shrink-0')}
+      <MainIcon
+        className={cn(styles.icon, mainColor, iconSpinning && 'animate-spin', 'shrink-0')}
         aria-hidden
       />
-      <span className={cn(styles.text, colorClass, 'font-medium shrink-0')}>{label}</span>
+      <span className={cn(styles.text, mainColor, 'font-medium shrink-0')}>{mainLabel}</span>
+      {subConfig && (
+        <span
+          className={cn(
+            styles.worker,
+            subConfig.color,
+            'font-medium shrink-0 -ml-0.5 self-end pb-px',
+          )}
+          data-testid="process-status-line-worker"
+        >
+          {subConfig.label}
+        </span>
+      )}
 
       {secondary && (
         <span className={cn(styles.secondary, 'min-w-0 flex-1 truncate text-muted-foreground')}>
@@ -154,7 +187,7 @@ export function ProcessStatusLine({
                       : canResume && !ready
                         ? 'Resume in terminal'
                         : 'Open in terminal'
-                    : `Busy — worker is ${label.toLowerCase()}`
+                    : `Busy — worker is ${tooltipLabel.toLowerCase()}`
                 }
               >
                 <Terminal className={styles.btnIcon} />
@@ -167,7 +200,7 @@ export function ProcessStatusLine({
                   : canResume && !ready
                     ? 'Resume in terminal'
                     : 'Open in terminal'
-                : `Busy — worker is ${label.toLowerCase()}`}
+                : `Busy — worker is ${tooltipLabel.toLowerCase()}`}
             </TooltipContent>
           </Tooltip>
         </TooltipProvider>
