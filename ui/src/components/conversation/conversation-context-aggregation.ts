@@ -56,6 +56,16 @@ export interface TranscriptEntry extends OriginSet {
   attachment: Attachment;
 }
 
+/** A file attached to a message (either as a regular FILE or as a prompt-slot
+ *  file), surfaced in Shared Context. `kind` distinguishes the two slots so
+ *  the row can label them differently. Bytes live in the message's VFS — this
+ *  entry is purely a view-model. */
+export interface AttachmentEntry extends OriginSet {
+  messageId: string;
+  attachment: Attachment;
+  kind: 'file' | 'prompt-file';
+}
+
 export interface PrivateTaskAgg extends OriginSet {
   task: Task;
 }
@@ -172,6 +182,27 @@ export function buildTranscriptEntries(orderedMessages: FlowMessage[]): Transcri
     for (const a of fm.attachment ?? []) {
       if (isTranscriptAttachment(a)) {
         out.push({ messageId: fm.id, attachment: a, originMessageIds: [fm.id] });
+      }
+    }
+  }
+  return out;
+}
+
+/** File attachments (regular + prompt-slot files) across the thread, one row
+ *  per attachment. Inline-text PROMPT attachments are skipped — those are
+ *  rendered by PromptApprovalRow on the message bubble, not as context rows.
+ *  Transcript files are excluded (they're surfaced by `buildTranscriptEntries`
+ *  separately). */
+export function buildAttachmentEntries(orderedMessages: FlowMessage[]): AttachmentEntry[] {
+  const out: AttachmentEntry[] = [];
+  for (const fm of orderedMessages) {
+    if (!fm.id) continue;
+    for (const a of fm.attachment ?? []) {
+      if (a.attachment_type === AttachmentType.FILE) {
+        if (isTranscriptAttachment(a)) continue;
+        out.push({ messageId: fm.id, attachment: a, kind: 'file', originMessageIds: [fm.id] });
+      } else if (a.attachment_type === AttachmentType.PROMPT && a.data.startsWith('prompt/')) {
+        out.push({ messageId: fm.id, attachment: a, kind: 'prompt-file', originMessageIds: [fm.id] });
       }
     }
   }
