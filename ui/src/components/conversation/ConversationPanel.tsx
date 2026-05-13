@@ -4,10 +4,10 @@ import { useEntity } from '@sdk/react/hooks';
 import { History, Layers, PanelRightClose, PanelRightOpen } from 'lucide-react';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
 import { TabbedSideDrawer } from '@src/components/ui/side-drawer';
-import { useRunsForTarget } from '@src/components/runs-drawer/useRunsForTarget';
-import { RunsListPanel } from '@src/components/runs-drawer/RunsListPanel';
+import { useProcessesForTarget } from '@src/components/entity-chat-panel/hooks/useProcessesForTarget';
+import { WorkflowRunsPanel } from '@src/components/workflows-view/WorkflowRunsPanel';
+import type { ProcessEntry } from '@src/components/workflows-view/workflow-run-store';
 import { ConversationView } from './ConversationView';
-import { ConversationMode } from './conversation-mode';
 import { useProjectMappingGate } from './useProjectMappingGate';
 import { ChipsExcludeProvider } from './chips/ChipsExcludeContext';
 import { taskChipKeys } from './chips/keys';
@@ -30,8 +30,6 @@ interface ConversationPanelProps {
    * `default` matches the SharedTaskView layout.
    */
   variant?: 'default' | 'compact';
-  /** Approve & Execute backend; forwarded to ConversationView. */
-  mode?: ConversationMode;
   className?: string;
 }
 
@@ -53,8 +51,12 @@ interface ConversationPanelProps {
  * — clicking the active tab there also folds the drawer; clicking either
  * tab when folded re-opens the drawer to that tab.
  *
- * Tabs (left → right) match the ribbon order: Context, Runs. Both are
- * per-message — switching the selected message wholesale-replaces both panels.
+ * Tabs (left → right) match the ribbon order: Context, Runs.
+ *   - **Context** is per-message — switching the selected message
+ *     wholesale-replaces the panel.
+ *   - **Runs** is per-conversation — one row per AgenticProcess (Claude
+ *     session) used to service this conversation, regardless of which
+ *     message the user is currently looking at.
  *
  * The conversation toolbar deliberately renders no chips. Project / spec /
  * shared-terminal affordances all live in the Context tab now, scoped to
@@ -66,7 +68,6 @@ export function ConversationPanel({
   senderName,
   headerLabel = 'Conversation',
   variant = 'default',
-  mode,
   className,
 }: ConversationPanelProps) {
   // One gate, two subject shapes. Remote provenance always lives on the
@@ -91,31 +92,31 @@ export function ConversationPanel({
   const [selectedMessageId, setSelectedMessageId] = useState<string | null>(null);
   const [mostRecentMessageId, setMostRecentMessageId] = useState<string | null>(null);
 
-  // Runs / Context are both per-message: switching the selected message
-  // wholesale-replaces both panels. Falls back to the most recent message so
-  // the drawer always shows something useful.
+  // Context is per-message; falls back to the most recent message so the
+  // panel always shows something useful.
   const contextMessageId = selectedMessageId ?? mostRecentMessageId;
 
-  // Runs tab target — Backend stamps `target_vfs_path` on Run as either
-  // task.typeid (task-scoped scenarios A/B/C) or conversation.typeid
-  // (hub-direct). When this surface mounts us without a `task` prop but the
-  // underlying conversation IS task-bound (e.g. inbox view of a Scenario B
-  // help-task), fall back to the task linked from `conversation.context_entities`
-  // so the query still matches the backend-stamped target. Last fallback is
-  // the conversation's own typeid for genuinely task-less hub-direct convs.
-  const fallbackTaskTypeId = convEntity?.firstContextOfType?.('task') ?? null;
-  const targetStr = task?.typeId
-    ? task.typeId.toString()
-    : fallbackTaskTypeId
-      ? fallbackTaskTypeId.toString()
-      : convEntity?.typeId
-        ? convEntity.typeId.toString()
-        : '';
+  // Runs tab target — always the conversation typeid. Approve & Execute
+  // stamps every spawned AP with ``target_vfs_path = <conversation typeid>``,
+  // so sibling conversations under the same task get independent Runs lists.
+  // (Legacy task-scoped APs from before this refactor — Scenarios A/B/C —
+  // still exist in the DB stamped with task typeid; they no longer surface
+  // here and need to be cleaned up out of band if visibility is desired.)
+  const targetStr = convEntity?.typeId ? convEntity.typeId.toString() : '';
   const showRuns = !!targetStr;
-  const { runs } = useRunsForTarget(targetStr, {
-    enabled: !!targetStr && !!contextMessageId,
-    sourceFlowMessageId: contextMessageId,
+  const { processes: runProcesses } = useProcessesForTarget(targetStr, {
+    enabled: !!targetStr,
   });
+  const runEntries = useMemo<ProcessEntry[]>(() => {
+    const toMs = (d: unknown): number => {
+      if (d instanceof Date) return d.getTime();
+      if (typeof d === 'string') return new Date(d).getTime() || 0;
+      return 0;
+    };
+    return [...runProcesses]
+      .sort((a, b) => toMs(b.created_date) - toMs(a.created_date))
+      .map((p) => ({ process: p }));
+  }, [runProcesses]);
 
   // Context tab — fetch the selected message so the panel can render its
   // chips / attachments / transcript.
@@ -134,7 +135,7 @@ export function ConversationPanel({
   const tabs = [
     { id: 'context' as const, label: 'Context', icon: Layers },
     ...(showRuns
-      ? [{ id: 'runs' as const, label: runs.length > 0 ? `Runs ${runs.length}` : 'Runs', icon: History }]
+      ? [{ id: 'runs' as const, label: runEntries.length > 0 ? `Runs ${runEntries.length}` : 'Runs', icon: History }]
       : []),
   ];
 
@@ -150,7 +151,13 @@ export function ConversationPanel({
     ),
   };
   if (showRuns) {
-    drawerChildren.runs = <RunsListPanel runs={runs} />;
+    drawerChildren.runs = (
+      <WorkflowRunsPanel
+        entries={runEntries}
+        currentEntry={null}
+        computeNodeId={targetStr || undefined}
+      />
+    );
   }
 
   const toggleSideTab = (tab: ConversationSideTab) => {
@@ -179,7 +186,6 @@ export function ConversationPanel({
                 task={task}
                 senderName={senderName}
                 ensureMapped={ensureMapped}
-                mode={mode}
                 selectedMessageId={selectedMessageId}
                 onSelectMessage={setSelectedMessageId}
                 onMostRecentMessageChange={setMostRecentMessageId}
@@ -225,7 +231,7 @@ export function ConversationPanel({
         activeSideTab={sideOpen ? activeSideTab : null}
         onToggleSideTab={toggleSideTab}
         showRuns={showRuns}
-        runsBadge={runs.length}
+        runsBadge={runEntries.length}
       />
 
       <OpenProjectComponent {...mappingDialogProps} />

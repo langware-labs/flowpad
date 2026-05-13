@@ -20,7 +20,6 @@ export * from './jobs_enum';
 export * from './knowledge_base';
 export * from './label';
 export * from './bookmark';
-export * from './run';
 export * from './mention';
 export * from './page';
 export * from './plugin';

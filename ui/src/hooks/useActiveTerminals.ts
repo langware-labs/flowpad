@@ -228,6 +228,30 @@ function updateTerminalShared(target: TerminalTab | TypeId | string, patch: Part
   setTerminalState(terminalState.map((t) => (terminalTargetKey(t) === key ? { ...t, ...patch } : t)));
 }
 
+/**
+ * Optimistically insert a row built from a freshly-loaded process + its shell.
+ * Called by route loaders so the strip reflects a newly-active process *before*
+ * the next ``active-terminals`` refetch completes — closes the race window in
+ * which TabbedTerminal's self-heal effect would otherwise pick a stale tab.
+ */
+export function pushLoadedProcessTab(process: AgenticProcess, shell: Shell): void {
+  const tab: TerminalTab = {
+    targetTypeId: new TypeId(AgenticProcess.type, process.id),
+    shellId: shell.id,
+    processId: process.id,
+    tabOrder: shell.tab_order ?? 0,
+    name: process.name ?? shell.name ?? null,
+    type: 'claude',
+    isDisabled: shell.status === ShellStatus.CLOSING,
+    statusReason: shell.status === ShellStatus.CLOSING ? 'Closing...' : '',
+    projectId: process.project_id ?? shell.project_id ?? null,
+    projectDisplayName: null,
+    shell,
+    agenticProcess: process,
+  };
+  pushTerminalShared(tab);
+}
+
 export interface UseTerminalsResult {
   data: TerminalTab[];
   /** Re-fetch from server and replace the list. Call after any action that
