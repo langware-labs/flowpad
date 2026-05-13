@@ -705,16 +705,22 @@ async def handle_send_draft(fm_id: str, someone_typeid: str) -> ApiResponse:
             sender_id, sender_name = await User.local_sender_identity()
             if not sender_id:
                 sender_id = fm.sender_id
-        recipient_email = _resolve_reply_recipient_email(task, local_user.id if local_user else "")
-        await _send_reply_to_hub(
-            reply_fm=fm,
-            task=task,
-            task_id=task.id,
-            message=fm.text or "",
-            sender_id=sender_id,
-            sender_name=sender_name,
-            recipient_email=recipient_email,
+        recipient_email = _resolve_reply_recipient_email(
+            task,
+            conv,
+            (local_user.email or "") if local_user else "",
+            (local_user.id or "") if local_user else "",
         )
+        if recipient_email:
+            await _send_reply_to_hub(
+                reply_fm=fm,
+                task=task,
+                conv_title=(conv.name or "") if conv else "",
+                message=fm.text or "",
+                sender_id=sender_id,
+                sender_name=sender_name,
+                recipient_email=recipient_email,
+            )
 
     _notify_ui_conversation_updated(conv.id, task.id if task else "", fm.id)
 
