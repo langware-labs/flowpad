@@ -7,6 +7,7 @@ import {
   ProcessStatus,
   QueryFilter,
   QueryRequest,
+  Skill,
   Spec,
   Task,
   TypeId,
@@ -16,10 +17,12 @@ import { ClaudeCliOptions } from '@sdk/cli_workers/claude-cli';
 import { useEntitiesQuery, useEntity } from '@sdk/react/hooks';
 import type { Attachment } from '@sdk/entities/flow-message';
 import {
+  Download,
   ExternalLink,
   Pencil,
   Eye,
   Lock,
+  Paperclip,
   PlayCircle,
   Plus,
   Users,
@@ -34,6 +37,7 @@ import { buildAssistancePrompt } from './prompt-building';
 import {
   aggregatePrivateProcesses,
   aggregatePrivateTasks,
+  buildAttachmentEntries,
   buildPrivateTypeIds,
   buildSharedEntities,
   buildSkipKeys,
@@ -42,6 +46,7 @@ import {
   orderMessagesByConversation,
   resolveAnchorMessage,
   resolveProjectTypeId,
+  type AttachmentEntry,
   type PrivateProcessAgg,
   type PrivateTaskAgg,
   type SharedEntityAgg,
@@ -174,6 +179,11 @@ export function ConversationContextPanel({
     [orderedMessages],
   );
 
+  const attachmentEntries = useMemo(
+    () => buildAttachmentEntries(orderedMessages),
+    [orderedMessages],
+  );
+
   // ── Private Context (aggregated across the whole conversation) ───────
   // Pull every Task / AgenticProcess scoped by project_id (project gives the
   // backend a useful index), then keep only those whose `contextEntities`
@@ -299,6 +309,7 @@ export function ConversationContextPanel({
       <SharedContextSection
         sharedEntities={sharedEntities}
         transcriptEntries={transcriptEntries}
+        attachmentEntries={attachmentEntries}
         conversationId={conversationId}
         selectedSet={selectedSet}
         onSelectMessages={onSelectMessages}
@@ -326,6 +337,7 @@ export function ConversationContextPanel({
 interface SharedContextSectionProps {
   sharedEntities: SharedEntityAgg[];
   transcriptEntries: TranscriptEntry[];
+  attachmentEntries: AttachmentEntry[];
   conversationId: string;
   selectedSet: ReadonlySet<string>;
   onSelectMessages?: (messageIds: string[]) => void;
@@ -334,6 +346,7 @@ interface SharedContextSectionProps {
 function SharedContextSection({
   sharedEntities,
   transcriptEntries,
+  attachmentEntries,
   conversationId,
   selectedSet,
   onSelectMessages,
@@ -341,7 +354,10 @@ function SharedContextSection({
   const { navigation } = useDockNavigation();
   const containerInside = { type: Conversation.type, id: conversationId };
 
-  const isEmpty = sharedEntities.length === 0 && transcriptEntries.length === 0;
+  const isEmpty =
+    sharedEntities.length === 0
+    && transcriptEntries.length === 0
+    && attachmentEntries.length === 0;
 
   return (
     <div>
@@ -370,6 +386,17 @@ function SharedContextSection({
               attachment={t.attachment}
               originMessageIds={t.originMessageIds}
               isHighlighted={t.originMessageIds.some((id) => selectedSet.has(id))}
+              onSelectMessages={onSelectMessages}
+            />
+          ))}
+          {attachmentEntries.map((a) => (
+            <AttachmentRow
+              key={`${a.messageId}:${a.kind}:${a.attachment.data}`}
+              messageId={a.messageId}
+              attachment={a.attachment}
+              kind={a.kind}
+              originMessageIds={a.originMessageIds}
+              isHighlighted={a.originMessageIds.some((id) => selectedSet.has(id))}
               onSelectMessages={onSelectMessages}
             />
           ))}
@@ -487,6 +514,54 @@ function TranscriptRow({
   );
 }
 
+interface AttachmentRowProps {
+  messageId: string;
+  attachment: Attachment;
+  kind: 'file' | 'prompt-file';
+  originMessageIds: string[];
+  isHighlighted: boolean;
+  onSelectMessages?: (messageIds: string[]) => void;
+}
+
+function AttachmentRow({
+  messageId,
+  attachment,
+  kind,
+  originMessageIds,
+  isHighlighted,
+  onSelectMessages,
+}: AttachmentRowProps) {
+  // Same URL helper FlowMessageBubble uses to render its inline chips
+  // (FlowMessageBubble.tsx:131) — points at the backend endpoint that streams
+  // bytes from the FlowMessage's embedded VFS.
+  const downloadUrl = fileAttachmentUrl(messageId, attachment.data);
+  const filename = attachment.data.split('/').pop() ?? attachment.data;
+  const typeLabel = kind === 'prompt-file' ? 'Prompt file' : 'File';
+
+  return (
+    <Row
+      icon={Paperclip}
+      type={typeLabel}
+      name={filename}
+      isHighlighted={isHighlighted}
+      onFocus={
+        onSelectMessages && originMessageIds.length > 0
+          ? () => onSelectMessages(originMessageIds)
+          : undefined
+      }
+      focusTitle="Reveal the message this file is attached to"
+    >
+      <RowAction
+        onClick={() => window.open(downloadUrl, '_blank', 'noopener,noreferrer')}
+        title={`Download ${filename}`}
+      >
+        <Download className="h-3 w-3" />
+        Download
+      </RowAction>
+    </Row>
+  );
+}
+
 // ─────────────────────────────────────────────────────────────────────────
 //  Private Context
 // ─────────────────────────────────────────────────────────────────────────
@@ -553,6 +628,63 @@ function PrivateContextSection({
     if (!onStartAssistance) return;
     setMenuOpen(false);
     onStartAssistance();
+  };
+
+  // Create a fresh Spec linked back to this FlowMessage. The same pattern the
+  // Session lifecycle uses — stamp `context_entities = [<FM TypeId>]` up-front
+  // so a single save persists the linkage, and the new spec surfaces in the
+  // Private Context table via the contextEntities filter without a second save.
+  // Project scope (`scopeIds = [projectTypeId]`) keeps the spec under the
+  // mapped project; falls back to user-home when unmapped.
+  const handleAddSpec = async () => {
+    if (!anchorMessageId || adding) return;
+    const title = window.prompt('Spec title')?.trim();
+    if (!title) return;
+    setMenuOpen(false);
+    setAdding(true);
+    try {
+      const fmTypeIdString = new TypeId(FlowMessage.type, anchorMessageId).toString();
+      const spec = new Spec({
+        title,
+        content: '',
+        context_entities: [fmTypeIdString],
+      });
+      const scopeIds = projectTypeId ? [projectTypeId] : [];
+      await spec.save(scopeIds);
+      toast.success('Spec created');
+      if (spec.id) navigation.openDock(DockPointer.forSpec(spec.id));
+    } catch (err) {
+      console.error('[PrivateContext] add-spec failed', err);
+      toast.error('Failed to create spec');
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  // Same shape as handleAddSpec, but for Skills. Backed by a SkillRecord on
+  // disk; `asset_ref` is populated post-save and points at the skill folder
+  // that the asset editor can edit (SKILL.md inside it).
+  const handleAddSkill = async () => {
+    if (!anchorMessageId || adding) return;
+    const name = window.prompt('Skill name')?.trim();
+    if (!name) return;
+    setMenuOpen(false);
+    setAdding(true);
+    try {
+      const fmTypeIdString = new TypeId(FlowMessage.type, anchorMessageId).toString();
+      const skill = new Skill({ name, context_entities: [fmTypeIdString] });
+      const scopeIds = projectTypeId ? [projectTypeId] : [];
+      await skill.save(scopeIds);
+      toast.success('Skill created');
+      if (skill.asset_ref) {
+        navigation.openDock(DockPointer.forAssetEditor('skill', skill.asset_ref));
+      }
+    } catch (err) {
+      console.error('[PrivateContext] add-skill failed', err);
+      toast.error('Failed to create skill');
+    } finally {
+      setAdding(false);
+    }
   };
 
   // Split processes by role:
@@ -720,6 +852,34 @@ function PrivateContextSection({
                   Session
                 </button>
               )}
+              <button
+                type="button"
+                onClick={() => void handleAddSpec()}
+                disabled={adding}
+                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+                data-testid="private-context-add-spec"
+              >
+                {ICON_BY_TYPE.spec &&
+                  (() => {
+                    const Icon = ICON_BY_TYPE.spec;
+                    return <Icon className="h-3 w-3 text-muted-foreground" />;
+                  })()}
+                Spec
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleAddSkill()}
+                disabled={adding}
+                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+                data-testid="private-context-add-skill"
+              >
+                {ICON_BY_TYPE.skill &&
+                  (() => {
+                    const Icon = ICON_BY_TYPE.skill;
+                    return <Icon className="h-3 w-3 text-muted-foreground" />;
+                  })()}
+                Skill
+              </button>
             </div>
           )}
         </div>
