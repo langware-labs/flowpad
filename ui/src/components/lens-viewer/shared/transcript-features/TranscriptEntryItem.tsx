@@ -199,6 +199,11 @@ export function TranscriptEntryItem({
                 {entry.usage.cacheCreation != null && entry.usage.cacheCreation > 0 && (
                   <span className="text-orange-600">Cache write: {formatNumber(entry.usage.cacheCreation)}</span>
                 )}
+                {entry.usage.costUsd != null && entry.usage.costUsd > 0 && (
+                  <span className="font-medium text-foreground" data-testid="turn-cost-usd">
+                    ${entry.usage.costUsd < 0.01 ? entry.usage.costUsd.toFixed(4) : entry.usage.costUsd.toFixed(3)}
+                  </span>
+                )}
               </div>
             )}
           </div>

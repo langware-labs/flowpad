@@ -18,7 +18,7 @@ export function FeedbackBanner({ feedback, stickyTop = 0 }: FeedbackBannerProps)
   return (
     <div
       className={cn(
-        'z-30 border-b border-amber-300 bg-amber-50 dark:border-amber-900/60 dark:bg-amber-950/30',
+        'z-30 border-b border-amber-300 bg-amber-50 dark:border-amber-900/60 dark:bg-amber-950',
       )}
       style={{ position: 'sticky', top: stickyTop }}
       data-testid="learning-feedback-banner"

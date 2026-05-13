@@ -3,15 +3,16 @@ import { RefreshCw } from 'lucide-react';
 import {
   Conversation,
   dataManager,
-  FlowMessage,
+ fetchConversations, FlowMessage,
   QueryFilter,
   QueryRequest,
-  syncFromHub,
+
   TypeId,
 } from '@sdk';
 import { useEntitiesQuery, useEntity } from '@sdk/react/hooks';
 import type { ITask } from '@sdk/entities/task';
 import { openInboxMessage } from '@src/components/inbox-view/inbox-api';
+import { markFlowMessagesReceived } from '@sdk/entities/flow-message';
 import { FlowMessageBubble } from './FlowMessageBubble';
 import { MessageComposer } from './MessageComposer';
 import { useApproveAndExecute } from './useApproveAndExecute';
@@ -222,12 +223,37 @@ export function ConversationView({
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }, [selectionKey, scrollTargetId]);
 
+  // Read-ack emission: when the conversation panel is open, batch-mark all
+  // current pointers as `received`. The hub honors monotonicity + sender-skip
+  // server-side, so re-acking already-received or own-sent messages is a
+  // cheap no-op. Debounced 250ms to coalesce bursts (e.g. catch-up).
+  const ackedRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (pointers.length === 0) return;
+    const candidates = pointers
+      .map((p) => p.id)
+      .filter((id) => id && !ackedRef.current.has(id));
+    if (candidates.length === 0) return;
+    const handle = setTimeout(() => {
+      candidates.forEach((id) => ackedRef.current.add(id));
+      void markFlowMessagesReceived(candidates).catch(() => {
+        // Network/hub failure shouldn't crash the UI. Reset our tracker so
+        // the next pointer change will retry.
+        candidates.forEach((id) => ackedRef.current.delete(id));
+      });
+    }, 250);
+    return () => clearTimeout(handle);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pointers.map((p) => p.id).join(',')]);
+
+  const conversationStatusVisible = conversation?.message_status_visible !== false;
+
   const [hubSyncing, setHubSyncing] = useState(false);
   const handleRefresh = useCallback(async () => {
     setHubSyncing(true);
     try {
       try {
-        await syncFromHub();
+        await fetchConversations();
       } catch {
         // Hub may be offline / not configured — local refetch still runs.
       }
@@ -267,12 +293,14 @@ export function ConversationView({
                   messageId={id}
                   timestamp={item.timestamp}
                   task={task}
+                  participants={conversation?.participants}
                   onApproveAndExecute={canApproveAndExecute ? runApprove : undefined}
                   onImplementPlan={task && !openPlanSession ? runImplementPlan : undefined}
                   onOpenPlanSession={openPlanSession}
                   onViewPlan={runViewPlan}
                   isSelected={(selectedMessageIds ?? []).includes(id)}
                   onSelect={onSelectMessage ? () => onSelectMessage(id) : undefined}
+                  conversationStatusVisible={conversationStatusVisible}
                 />
               );
             }
@@ -285,10 +313,12 @@ export function ConversationView({
                   ? item.draft.created_date.toISOString()
                   : (item.draft.created_date ?? '')}
                 task={task}
+                participants={conversation?.participants}
                 isDraft
                 onDraftSent={() => void refetch()}
                 isSelected={!!id && (selectedMessageIds ?? []).includes(id)}
                 onSelect={onSelectMessage && id ? () => onSelectMessage(id) : undefined}
+                conversationStatusVisible={conversationStatusVisible}
               />
             );
           })}

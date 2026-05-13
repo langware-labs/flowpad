@@ -19,11 +19,11 @@ export interface IndexNowModalProps {
 }
 
 export function IndexNowModal({ open, types, onComplete, onDeny }: IndexNowModalProps) {
-  const { indexTypes, currentActivity, activityProgress } = useSystemTools();
+  const { indexTypes, currentActivity, progressTable } = useSystemTools();
   const [phase, setPhase] = useState<'confirm' | 'indexing'>('confirm');
 
   const indexing = phase === 'indexing' && currentActivity === 'index';
-  const progress = indexing ? activityProgress : null;
+  const table = indexing ? progressTable : null;
 
   async function startIndexing() {
     setPhase('indexing');
@@ -48,11 +48,12 @@ export function IndexNowModal({ open, types, onComplete, onDeny }: IndexNowModal
           </AlertDialogDescription>
         </AlertDialogHeader>
 
-        {phase === 'indexing' && progress && (
+        {phase === 'indexing' && table && (
           <div className="flex flex-col gap-1 py-2">
             {types.map((t) => {
-              const isDone = progress.done.includes(t);
-              const isCurrent = progress.current === t;
+              const row = table.rows.find((r) => r.type_name === t);
+              const isDone = row != null && row.total > 0 && row.done >= row.total;
+              const isCurrent = table.current === t;
               return (
                 <div key={t} className="flex items-center gap-2 text-sm">
                   {isDone ? (
@@ -65,6 +66,11 @@ export function IndexNowModal({ open, types, onComplete, onDeny }: IndexNowModal
                   <span className={isDone ? 'text-muted-foreground line-through' : isCurrent ? '' : 'text-muted-foreground/60'}>
                     {t}
                   </span>
+                  {row && row.total > 0 && (
+                    <span className="ml-auto text-xs tabular-nums text-muted-foreground">
+                      {row.done}/{row.total}
+                    </span>
+                  )}
                 </div>
               );
             })}

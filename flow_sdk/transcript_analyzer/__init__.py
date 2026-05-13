@@ -10,6 +10,7 @@ Public surface:
 from .entries import (
     AgentSpawnEntry,
     AssistantMessageEntry,
+    CodexUsageEntry,
     ExitPlanModeEntry,
     FileEditEntry,
     FileReadEntry,
@@ -23,10 +24,12 @@ from .entries import (
     ToolResultEntry,
     ToolUseEntry,
     UnknownEntry,
+    UsageEntry,
     UserMessageEntry,
     WebFetchEntry,
 )
 from .entry import EntryKind, TranscriptEntry
+from .formats import TranscriptDescriptor, TranscriptFormat, TranscriptSource
 from .process_entry import ObservationKind, ProcessEntry
 from .transcript import AgentTranscript
 
@@ -34,24 +37,28 @@ __all__ = [
     "AgentTranscript",
     "AgentSpawnEntry",
     "AssistantMessageEntry",
+    "CodexUsageEntry",
     "EntryKind",
     "ExitPlanModeEntry",
     "FileEditEntry",
     "FileReadEntry",
     "FileWriteEntry",
     "MetaEntry",
+    "ObservationKind",
+    "ProcessEntry",
     "SearchEntry",
     "ShellCommandEntry",
     "SummaryEntry",
     "SystemEntry",
     "TodoUpdateEntry",
-    "ObservationKind",
-    "ProcessEntry",
     "ToolResultEntry",
     "ToolUseEntry",
-    "TokenUsageEntry",
+    "TranscriptDescriptor",
     "TranscriptEntry",
+    "TranscriptFormat",
+    "TranscriptSource",
     "UnknownEntry",
+    "UsageEntry",
     "UserMessageEntry",
     "WebFetchEntry",
 ]

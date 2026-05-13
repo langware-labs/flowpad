@@ -6,6 +6,8 @@
  * field managed internally by the backend process runtime.
  */
 
+import type { ProcessType } from './process-types';
+
 /**
  * Permission mode for instruction execution
  * - 'bypassPermissions': Skip permission checks (for automated execution)
@@ -71,7 +73,7 @@ export interface AgenticContext {
   /** Extra directories to expose to Claude via --add-dir */
   additionalDirs?: string[];
 
-  /** VFS path the process is keyed to. Either an entity TypeId ("type-id") for entity-scoped chats, or "<typeid>/<sub_path>" for surface-scoped chats (e.g. per-doc chat keyed on the file path). */
+  /** VFS path the process is keyed to. Either an entity TypeId ("type-id") for entity-scoped processes, or "<typeid>/<sub_path>" for surface-scoped processes (e.g. a per-doc process keyed on the file path). */
   targetVfsPath?: string;
 
   /** One of "text" | "json" | "stream-json"; omit for CLI default. When
@@ -83,6 +85,9 @@ export interface AgenticContext {
    * `FLOWPAD_DEFAULT_WORKER` (typically claude). Surfaced so the UI can
    * launch a Codex tab from the same opener flow. */
   workerType?: 'claude_code' | 'codex';
+
+  /** Discriminates how this process is being used (chat vs execution). */
+  processType?: ProcessType;
 }
 
 /**
@@ -142,8 +147,9 @@ export function serializeAgenticContext(ctx: AgenticContext): Record<string, unk
     debug: ctx.debug,
     worktree: ctx.worktree,
     additional_dirs: ctx.additionalDirs ?? [],
-    target_vfs_path: ctx.targetVfsPath,
+    target_typeid_str: ctx.targetVfsPath,
     output_format: ctx.outputFormat,
     worker_type: ctx.workerType,
+    process_type: ctx.processType,
   };
 }

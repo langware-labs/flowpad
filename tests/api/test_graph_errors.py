@@ -10,6 +10,7 @@ Tests proper error responses for:
 - Non-existent entity IDs
 """
 
+import logging
 import uuid
 
 import pytest
@@ -44,6 +45,25 @@ async def test_non_existing_id(bootstrapped_client):
     assert response.status_code in [401, 403, 404], (
         f"Expected 401/403/404 for non-existent ID, got {response.status_code}: {response.text}"
     )
+
+
+async def test_missing_target_short_circuits_watch(bootstrapped_client, caplog):
+    """Watching a stale target id should fail before the watch action runs."""
+    client = bootstrapped_client
+    fake_id = str(uuid.uuid4())
+    caplog.set_level(logging.WARNING)
+
+    response = await client.post(
+        f"/api/v1/graph/project/{fake_id}/watch",
+        json={"connection_id": str(uuid.uuid4())},
+    )
+
+    assert response.status_code == 404, response.text
+    res = response.json()
+    assert res["status"] == ApiResponseStatus.FAIL.value
+    assert res["message"] == f"Entity not found: project/{fake_id}"
+    assert not any("B1-probe" in record.message for record in caplog.records)
+    assert not any("entity_model.get_by_typeid returned None" in record.message for record in caplog.records)
 
 
 async def test_error_response_format(client):

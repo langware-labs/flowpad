@@ -1,10 +1,10 @@
 import '@src/styles/highlightjs.css';
 import { trackEvent } from '@src/utils/analytics';
-import { config, dataContext, navigator } from '@sdk';
+import { cloudManager, config, dataContext, navigator } from '@sdk';
 import { useAuth, useGlobalEvents, useWarnings } from '@sdk/react/hooks';
 import { TooltipProvider } from '@src/components/ui/tooltip';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { Toaster as Sonner } from 'sonner';
+import { Toaster as Sonner, toast } from 'sonner';
 import { Toaster } from '@src/components/ui/toaster';
 import { CleanupModal } from '@src/components/recovery/cleanup-modal';
 import { useEffect, useRef, useState } from 'react';
@@ -12,6 +12,7 @@ import { DesktopSetupModal, DESKTOP_SETUP_REASON_AUTH_FAILURE } from '@src/compo
 import SecretApprovalDialog from '@src/components/secret-approval-dialog';
 import { initNotificationListener } from '@src/store/use-notification-store';
 import { SnifferProvider } from '@src/contexts/SnifferContext';
+import { FloatingChatProvider } from '@src/components/floating-chat';
 import { usePresenceReporter } from '@src/hooks/use-presence-reporter';
 import { useBrowserContextReporter } from '@src/hooks/use-browser-context-reporter';
 import { useUiCommandListener } from '@src/hooks/use-ui-command-listener';
@@ -82,73 +83,14 @@ const DesktopSetupModalHandler = () => {
   );
 };
 
-// Simple error display component for bootstrap failures
-// Uses error.type: 'config' | 'network' | 'server' set by navigator.error()
-const BootstrapError = ({ message }: { message?: string }) => (
-  <div
-    style={{
-      display: 'flex',
-      minHeight: '100vh',
-      alignItems: 'center',
-      justifyContent: 'center',
-      background: '#f9fafb',
-      fontFamily: 'system-ui, -apple-system, sans-serif',
-    }}
-  >
-    <div
-      style={{
-        width: '100%',
-        maxWidth: '28rem',
-        borderRadius: '0.5rem',
-        background: 'white',
-        padding: '2rem',
-        textAlign: 'center',
-        boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)',
-      }}
-    >
-      <div
-        style={{
-          margin: '0 auto 1rem',
-          display: 'flex',
-          height: '4rem',
-          width: '4rem',
-          alignItems: 'center',
-          justifyContent: 'center',
-          borderRadius: '50%',
-          background: '#fed7aa',
-          fontSize: '2rem',
-        }}
-      >
-        ⚠️
-      </div>
-      <h1 style={{ marginBottom: '0.5rem', fontSize: '1.5rem', fontWeight: 'bold', color: '#111827' }}>
-        Connection Error
-      </h1>
-      <p style={{ marginBottom: '0.5rem', color: '#4b5563' }}>
-        {message || 'The FlowPad backend server is not responding.'}
-      </p>
-      <button
-        onClick={() => window.location.reload()}
-        style={{
-          padding: '0.5rem 1rem',
-          background: '#3b82f6',
-          color: 'white',
-          border: 'none',
-          borderRadius: '0.375rem',
-          cursor: 'pointer',
-          fontSize: '0.875rem',
-          marginTop: '1rem',
-        }}
-      >
-        Retry Connection
-      </button>
-    </div>
-  </div>
-);
+// Bootstrap-error UX is handled by the router's root `errorElement`
+// (`<ErrorScreen/>` in `router.tsx`). The root loader (`loadRoot`) re-throws
+// service-unavailable / network / config errors before any React tree mounts,
+// so a parallel inline error UI here is no longer needed.
 
 // Component that handles auth logic
 const AppContent = ({ children }: { children: React.ReactNode }) => {
-  const { user, someone, error } = useAuth();
+  const { user, someone } = useAuth();
   const analyticsTrackingRef = useRef(false);
 
   const GlobalEvents = () => {
@@ -186,17 +128,68 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
     });
   }, [someone, user]);
 
-  // Handle auth errors - log them for debugging
   useEffect(() => {
-    if (error) {
-      console.log('Auth error:', error);
-    }
-  }, [error]);
+    const handleHubClientError = (msg: Record<string, unknown>) => {
+      const method = String(msg.method ?? '').trim();
+      const path = String(msg.path ?? '').trim();
+      const statusCode = Number(msg.status_code ?? 0);
+      const rawMessage = String(msg.message ?? '');
+      const suppressedCount = Number(msg.suppressed_count ?? 0);
 
-  // Show error screen if bootstrap failed
-  if (error) {
-    return <BootstrapError message={error.message} />;
-  }
+      if (suppressedCount > 0) {
+        toast.warning('Hub errors suppressed', {
+          description: `${suppressedCount} hub errors were suppressed in the current window.`,
+        });
+        return;
+      }
+
+      // /login has a dedicated handler in user-dropdown that shows a more
+      // targeted toast (with friendly copy already produced by
+      // ``_post_cloud_login`` server-side). Suppress the generic toast here
+      // to avoid two near-identical popups on the same click.
+      if (path === '/login' || path.endsWith('/login')) return;
+
+      // Map raw transport / status signals to user-friendly copy. The raw
+      // form ("POST /login -> 0: All connection attempts failed") reads as
+      // a stack-trace; the categorized form below answers "what should I do
+      // about it?" for the common cases.
+      let title = 'Cloud error';
+      let description = rawMessage;
+      if (statusCode === 0) {
+        title = 'Cloud is not available';
+        description = "We couldn't reach the cloud service. Check your connection or try again in a moment.";
+      } else if (statusCode === 401) {
+        title = 'Cloud sign-in expired';
+        description = 'Please sign in again to keep using cloud features.';
+      } else if (statusCode === 403) {
+        title = 'Cloud access denied';
+        description = "You don't have permission for this action. Contact your admin if this seems wrong.";
+      } else if (statusCode === 404) {
+        title = 'Cloud resource not found';
+        description = "We couldn't find what you were looking for on the cloud.";
+      } else if (statusCode >= 500) {
+        title = 'Cloud service is having trouble';
+        description = 'The cloud service returned an error. Please try again in a moment.';
+      } else if (statusCode >= 400) {
+        title = 'Cloud request rejected';
+        description = rawMessage || `The cloud rejected the request (${statusCode}).`;
+      }
+
+      toast.error(title, {
+        description,
+        // Stash technical detail in a footer so power users can still see it
+        // without it being the headline.
+        action: rawMessage
+          ? { label: 'Detail', onClick: () => console.warn('[hub error]', { method, path, statusCode, rawMessage }) }
+          : undefined,
+      });
+    };
+
+    cloudManager.on('hub_client_error', handleHubClientError);
+    return () => {
+      cloudManager.off('hub_client_error', handleHubClientError);
+    };
+  }, []);
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -208,7 +201,9 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
         <DesktopSetupModalHandler />
         <SecretApprovalDialog />
         <SnifferProvider>
-          {children}
+          <FloatingChatProvider>
+            {children}
+          </FloatingChatProvider>
         </SnifferProvider>
       </TooltipProvider>
     </QueryClientProvider>

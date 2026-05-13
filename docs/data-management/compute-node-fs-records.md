@@ -647,36 +647,46 @@ This method does **not** touch the Entity DB or FTS. All DB sync happens before 
 
 ## Scan and Index: `progress_report` WebSocket Events
 
-The `/fs-records/scan` and `/fs-records/index` endpoints broadcast `progress_report` FlowData events during execution so that connected clients can show real-time progress without polling.
+The `/fs-records/scan` and `/fs-records/index` endpoints broadcast
+`progress_report` FlowData events during execution so connected clients can
+show real-time progress without polling.
 
-### Two-level event interleave
-
-For each record type processed in an aggregate scan/index, two kinds of events are emitted **interleaved**:
-
-| Event kind | `sub_activity_name` | `done` meaning | Emitted when |
-|---|---|---|---|
-| Sub-activity | `"<type_name>"` | records processed within that type | Every `PROGRESS_EMIT_EVERY` (25) records |
-| Job-level | `null` | types completed out of total types | After each type finishes |
+Each event is a complete `IndexProgressTable` snapshot:
 
 ```json
-// Sub-activity event — per-record progress within a type
-{ "element_type": "progress_report", "attributes": {
-    "job_name": "scan", "sub_activity_name": "skill",
-    "done": 25, "skipped": 0, "errors": 0, "total": 500, "text": null }}
-
-// Job-level event — type completed
-{ "element_type": "progress_report", "attributes": {
-    "job_name": "scan", "sub_activity_name": null,
-    "done": 3, "skipped": 0, "errors": 0, "total": 12, "text": null }}
+{
+  "element_type": "progress_report",
+  "attributes": {
+    "job_name": "index",
+    "rows": [
+      { "type_name": "skill", "done": 25, "total": 100, "errors": 0, "skipped": 10 }
+    ],
+    "current": "skill",
+    "done": 25,
+    "total": 100,
+    "text": null,
+    "ts": "2026-05-07T12:00:00+00:00"
+  }
+}
 ```
 
-For `index` events `skipped` reflects records that were already fresh (`skip_fresh=True`); `errors` reflects `sync_to_db()` failures.
+Progress is emitted only as table snapshots, with aggregate totals and per-type
+rows in the same payload.
 
-### Per-type endpoints
+For `index`, totals are known up front because the indexer first performs an
+internal scan. The first table contains the discovered type rows with `done=0`
+and populated `total`.
 
-Per-type scan (`?type=X`) and per-type index (`?type=X`) also emit progress events:
-- One sub-activity event at completion (`done == total`)
-- One job-level event (`done=1, total=1`)
+For `scan`, totals are unknown while discovery is running. Table-level `total`
+is `0`, and type rows are added as they are discovered. The UI shows count-only
+scan progress.
+
+The terminal event has `text: "complete"` and `current: null`. For `index`
+events `skipped` reflects records that were already fresh; `errors` reflects
+record sync failures.
+
+Per-type scan (`?type=X`) and per-type index (`?type=X`) emit the same table
+shape, normally with a single relevant row for `X`.
 
 ### Conflict detection (409)
 

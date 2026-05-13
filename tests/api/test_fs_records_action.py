@@ -42,17 +42,29 @@ async def test_crud_lifecycle(bootstrapped_client):
     base = f"/api/v1/graph/compute_node/{cn_id}/fs-records/skill"
 
     # CREATE
-    resp = await bootstrapped_client.post(base, json={"name": "my-test-skill", "description": "A test"})
+    unique_token = "deleteftsprobeabc123"
+    resp = await bootstrapped_client.post(
+        base,
+        json={"name": f"my-test-skill-{unique_token}", "description": f"A test {unique_token}"},
+    )
     assert resp.status_code == 200, resp.text
     created = resp.json()["data"]
     record_id = created["id"]
-    assert created["name"] == "my-test-skill"
+    assert created["name"] == f"my-test-skill-{unique_token}"
+
+    # CREATE syncs to FTS, and DELETE must remove that FTS row as well.
+    resp = await bootstrapped_client.get(
+        f"/api/v1/graph/compute_node/{cn_id}/fs-records/search"
+        f"?q={unique_token}&record_type=skill"
+    )
+    assert resp.status_code == 200
+    assert any(r["record_id"] == record_id for r in resp.json()["data"]["results"])
 
     # READ one
     resp = await bootstrapped_client.get(f"{base}/{record_id}")
     assert resp.status_code == 200
     assert resp.json()["data"]["id"] == record_id
-    assert resp.json()["data"]["name"] == "my-test-skill"
+    assert resp.json()["data"]["name"] == f"my-test-skill-{unique_token}"
 
     # LIST — discovers records from disk via SkillRecord.discover() which
     # scans ~/.claude/skills/, not the isolated records root. The test-created
@@ -68,7 +80,7 @@ async def test_crud_lifecycle(bootstrapped_client):
     assert resp.status_code == 200
     assert resp.json()["data"]["description"] == "Updated"
     # name should still be intact
-    assert resp.json()["data"]["name"] == "my-test-skill"
+    assert resp.json()["data"]["name"] == f"my-test-skill-{unique_token}"
 
     # DELETE
     resp = await bootstrapped_client.request("DELETE", f"{base}/{record_id}")
@@ -78,6 +90,14 @@ async def test_crud_lifecycle(bootstrapped_client):
     # READ after delete → 404
     resp = await bootstrapped_client.get(f"{base}/{record_id}")
     assert resp.status_code == 404
+
+    # Search after delete → stale FTS row is gone
+    resp = await bootstrapped_client.get(
+        f"/api/v1/graph/compute_node/{cn_id}/fs-records/search"
+        f"?q={unique_token}&record_type=skill"
+    )
+    assert resp.status_code == 200
+    assert all(r["record_id"] != record_id for r in resp.json()["data"]["results"])
 
 
 @pytest.mark.asyncio

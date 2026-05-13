@@ -34,6 +34,10 @@ export interface TokenUsage {
   cacheRead?: number | null;
   cacheCreation?: number | null;
   reasoning?: number | null;
+  /** Total USD cost for this turn (per-dim entries × ModelPricing.cost). */
+  costUsd?: number | null;
+  /** Model that produced this turn — used to resolve the price table. */
+  model?: string | null;
 }
 
 export interface UnifiedEntry {

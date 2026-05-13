@@ -46,7 +46,8 @@ import { navigateToResult } from '@src/navigation/record-type-nav';
 import { InlineSearchResults } from './InlineSearchResults';
 import { Loader2, PackageSearch, X, CheckCircle2, Hammer, Inbox, RefreshCw, Users } from 'lucide-react';
 import { useInboxStore } from '@src/store/use-inbox-store';
-import { listInboxMessages, fetchInboxFromHub } from '@src/components/inbox-view/inbox-api';
+import { listInboxMessages } from '@src/components/inbox-view/inbox-api';
+import { fetchConversations } from '@sdk';
 import { ViewType } from '@src/types/ViewType';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDevMode } from '@src/contexts/dev-mode-context';
@@ -182,7 +183,7 @@ export function HomeLanding() {
   );
 
   const devMode = useDevMode();
-  const { busy, resetAndRescan, clearIndex, currentActivity, activityProgress, scanInfo, lastScanResult } = useSystemTools();
+  const { busy, resetAndRescan, clearIndex, currentActivity, progressTable, scanInfo, lastScanResult } = useSystemTools();
   const [progressOpen, setProgressOpen] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
   const [postScanResult, setPostScanResult] = useState<LastScanResult | null>(null);
@@ -203,19 +204,32 @@ export function HomeLanding() {
   }, [scanInfo]);
   const firstName = user?.name?.split(' ')[0] || 'there';
 
-  const { checkLoginAndProceed, requiresLogin, showLoginDialog, closeLoginDialog } = useLoginRequired();
+  const {
+    checkLoginAndProceed,
+    requiresLogin,
+    showLoginDialog,
+    closeLoginDialog,
+    pendingAction,
+    clearPending,
+    isPostLogin,
+  } = useLoginRequired();
   const [showNewConversation, setShowNewConversation] = useState(false);
   const [showJoinConversation, setShowJoinConversation] = useState(false);
   const [showCommunityAssistance, setShowCommunityAssistance] = useState(false);
   const [draftPrompt, setDraftPrompt] = useState('');
   const handleStartConversation = () => {
-    if (requiresLogin && !checkLoginAndProceed(ActionType.SEND)) return;
+    if (!checkLoginAndProceed(ActionType.START_CONVERSATION, undefined, undefined, { forceLogin: true })) return;
     setShowNewConversation(true);
   };
   const handleJoinConversation = () => {
     if (requiresLogin && !checkLoginAndProceed(ActionType.SEND)) return;
     setShowJoinConversation(true);
   };
+  useEffect(() => {
+    if (!isPostLogin || pendingAction?.action !== ActionType.START_CONVERSATION) return;
+    setShowNewConversation(true);
+    clearPending();
+  }, [clearPending, isPostLogin, pendingAction?.action]);
 
   // Inbox state
   const { unreadCount, setUnreadCount } = useInboxStore();
@@ -227,7 +241,7 @@ export function HomeLanding() {
   const handleInboxRefresh = useCallback(async () => {
     setInboxRefreshing(true);
     try {
-      await fetchInboxFromHub();
+      await fetchConversations();
       const msgs = await listInboxMessages();
       setUnreadCount(msgs.filter((m) => !m.is_read).length);
     } finally {
@@ -268,9 +282,12 @@ export function HomeLanding() {
   const paths = useMemo(() => dataContext.bootstrapInfo?.desktop_info?.paths, []);
 
   const apiUrl = useMemo(() => {
-    // Derive API URL from the current window location or use default
-    const port = '9007';
-    return `http://${window.location.hostname}:${port}`;
+    // __API_URL__ is the vite-time define populated from LOCAL_SERVER_PORT in
+    // .env.local. Falls back to a derived hostname-based URL only if the
+    // define somehow resolves to an empty string (packaged build).
+    const fromDefine = (typeof __API_URL__ === 'string' && __API_URL__) || '';
+    if (fromDefine) return fromDefine;
+    return `${window.location.protocol}//${window.location.host}`;
   }, []);
   const currentProjectPath = useMemo(
     () => normalizePath(currentProject?.fs_storage_mount_path || currentProject?.name || ''),
@@ -655,40 +672,26 @@ export function HomeLanding() {
                     : currentActivity === 'scan' ? 'Scanning'
                     : 'Indexing'}
                 </span>
-                {activityProgress?.current && (
+                {progressTable?.current && (
                   <span className="font-mono text-foreground truncate max-w-[180px]">
-                    {activityProgress.current}
+                    {progressTable.current}
                   </span>
                 )}
-                {activityProgress?.current && activityProgress.counts?.[activityProgress.current] !== undefined && (
-                  <span className="text-muted-foreground shrink-0 tabular-nums">
-                    {activityProgress.counts[activityProgress.current].toLocaleString()} recs
-                  </span>
-                )}
-                {activityProgress?.recordsDone != null && activityProgress.recordsTotal != null && (
-                  <span className="text-muted-foreground shrink-0 tabular-nums">
-                    {activityProgress.recordsDone.toLocaleString()}/{activityProgress.recordsTotal.toLocaleString()} recs
-                  </span>
-                )}
-                {activityProgress && (
+                {progressTable && (
                   <>
                     <span className="ml-auto text-muted-foreground shrink-0 tabular-nums">
-                      {activityProgress.jobDone != null && activityProgress.jobTotal != null
-                        ? `${activityProgress.jobDone}/${activityProgress.jobTotal}`
-                        : `${activityProgress.done.length}/${activityProgress.total}`}
+                      {progressTable.total > 0
+                        ? `${progressTable.done.toLocaleString()}/${progressTable.total.toLocaleString()}`
+                        : progressTable.done.toLocaleString()}
                     </span>
-                    <div className="h-1 w-20 rounded-full bg-muted overflow-hidden shrink-0">
-                      <div
-                        className="h-full bg-primary rounded-full transition-all"
-                        style={{
-                          width: `${activityProgress.recordsDone != null && activityProgress.recordsTotal
-                            ? (activityProgress.recordsDone / activityProgress.recordsTotal) * 100
-                            : activityProgress.jobDone != null && activityProgress.jobTotal
-                            ? (activityProgress.jobDone / activityProgress.jobTotal) * 100
-                            : (activityProgress.done.length / activityProgress.total) * 100}%`
-                        }}
-                      />
-                    </div>
+                    {progressTable.total > 0 && (
+                      <div className="h-1 w-20 rounded-full bg-muted overflow-hidden shrink-0">
+                        <div
+                          className="h-full bg-primary rounded-full transition-all"
+                          style={{ width: `${(progressTable.done / progressTable.total) * 100}%` }}
+                        />
+                      </div>
+                    )}
                   </>
                 )}
               </button>
@@ -784,13 +787,14 @@ export function HomeLanding() {
       <ActivityProgressModal
         open={progressOpen}
         onOpenChange={setProgressOpen}
-        progress={activityProgress}
+        table={progressTable}
         title={currentActivity ? (
           currentActivity === 'archive' ? 'Archiving…'
           : currentActivity === 'clear' ? 'Clearing index…'
           : currentActivity === 'load_from_archive' ? 'Restoring…'
-          : currentActivity === 'scan' ? `Scanning… ${activityProgress?.jobDone ?? activityProgress?.done.length ?? 0}/${activityProgress?.jobTotal ?? activityProgress?.total ?? 0}`
-          : `Indexing… ${activityProgress?.jobDone ?? activityProgress?.done.length ?? 0}/${activityProgress?.jobTotal ?? activityProgress?.total ?? 0}`
+          : currentActivity === 'scan'
+            ? `Scanning… ${progressTable ? progressTable.done.toLocaleString() : 0}`
+            : `Indexing… ${progressTable && progressTable.total > 0 ? `${progressTable.done}/${progressTable.total}` : (progressTable?.done ?? 0)}`
         ) : 'Activity'}
       />
 

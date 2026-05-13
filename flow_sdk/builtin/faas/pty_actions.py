@@ -69,6 +69,15 @@ class PtyActionsMixin:
     ComputeNode keeps the @action stubs and delegates to these methods.
     """
 
+    @staticmethod
+    def _request_message_id(body: dict | None = None) -> str:
+        request_info = get_current_request_info()
+        if request_info and request_info.request_message_id:
+            return request_info.request_message_id
+        if body and body.get("message_id"):
+            return str(body["message_id"])
+        return str(uuid.uuid4())
+
     async def _pty_terminal_command(self):
         """Dispatch terminal operations via /terminal-command/<op> API.
 
@@ -499,7 +508,7 @@ class PtyActionsMixin:
                 s.error_message = "PTY session not found"
                 await s.save()
 
-        active = [s for s in all_sessions if s.status not in ("closed", "error")]
+        active = [s for s in all_sessions if s.status not in ("closing", "closed", "error")]
         result = [s.model_dump(mode="json") for s in active]
 
         # Enrich with agentic_process_id from AgenticProcess
@@ -865,10 +874,7 @@ class PtyActionsMixin:
 
     async def _send_pty_input(self, body: dict) -> ApiResponse:
         """Send input to PTY session."""
-        request_info = get_current_request_info()
-        if not request_info or not request_info.request_message_id:
-            return ApiFailResponse(message="Invalid request context")
-        request_message_id = request_info.request_message_id
+        request_message_id = self._request_message_id(body)
 
         shell_id = body.get("shell_id")
         data = body.get("data", "")
@@ -923,10 +929,7 @@ class PtyActionsMixin:
 
     async def _resize_pty(self, body: dict) -> ApiResponse:
         """Resize PTY terminal."""
-        request_info = get_current_request_info()
-        if not request_info or not request_info.request_message_id:
-            return ApiFailResponse(message="Invalid request context")
-        request_message_id = request_info.request_message_id
+        request_message_id = self._request_message_id(body)
 
         shell_id = body.get("shell_id")
         try:

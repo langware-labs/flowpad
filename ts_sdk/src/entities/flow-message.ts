@@ -27,6 +27,10 @@ export interface Attachment {
   approved_by?: string | null;
 }
 
+/** Three-state delivery receipt. Mirrors the hub-side schema. Monotonic
+ *  transitions only: created → delivered → received. */
+export type DeliveryStatus = 'created' | 'delivered' | 'received';
+
 export interface IFlowMessage extends IEntity {
   text?: string;
   instruction?: string | null;
@@ -41,11 +45,23 @@ export interface IFlowMessage extends IEntity {
   conversation_id?: string | null;
   is_read?: boolean;
   is_archived?: boolean;
+  /** Receipt state — orthogonal to the local-only `is_read` flag. Set only
+   *  by the hub via mark_delivered / mark_received actions; flows back to
+   *  the sender as a data_op_msg(update) frame, subject to the parent
+   *  conversation's `message_status_visible` gate. */
+  delivery_status?: DeliveryStatus;
+  delivered_at?: string | null;
+  received_at?: string | null;
   // NOTE: ``context`` (string[]) was renamed and consolidated into the
   // unified ``context_entities`` on IEntity. Read via
   // ``msg.contextEntities`` / ``msg.firstContextOfType('task')``.
   /** Local-only draft message: not appended to conversation.jsonl, not pushed to hub. Flips to false on send-draft. */
   is_draft?: boolean;
+  /** Special-message discriminator. "user" (default) is a normal message;
+   *  "invitation" marks a local-only placeholder representing a pending hub
+   *  Invitation as the first row of a conversation. The invitation TypeId
+   *  lives in ``context_entities``. */
+  kind?: 'user' | 'invitation';
 }
 
 @registerEntity
@@ -61,7 +77,11 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   conversation_id?: string | null;
   is_read?: boolean;
   is_archived?: boolean;
+  delivery_status?: DeliveryStatus;
+  delivered_at?: string | null;
+  received_at?: string | null;
   is_draft?: boolean;
+  kind?: 'user' | 'invitation';
   static type: string = 'flow_message';
 
   constructor(entity: Partial<IFlowMessage> = {}) {
@@ -77,7 +97,11 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.conversation_id = entity.conversation_id;
     this.is_read = entity.is_read ?? false;
     this.is_archived = entity.is_archived ?? false;
+    this.delivery_status = entity.delivery_status ?? 'created';
+    this.delivered_at = entity.delivered_at ?? null;
+    this.received_at = entity.received_at ?? null;
     this.is_draft = entity.is_draft ?? false;
+    this.kind = entity.kind ?? 'user';
   }
 
   /** Promote a draft message to a real reply: flips is_draft=false, appends to conversation.jsonl, pushes to hub. */
@@ -141,4 +165,22 @@ export async function createTaskBundle(params: CreateTaskBundleParams): Promise<
   action.bodyParameters = params;
   const res = await dataManager.callAction<CreateTaskBundleParams, CreateTaskBundleResult>(action);
   return res!;
+}
+
+export interface MarkResult {
+  updated?: string[];
+  skipped?: Array<{ id: string; reason: string; current?: string }>;
+}
+
+/**
+ * Batch read-ack: tells the local server (which forwards to the hub) that
+ * the listed FlowMessages have been seen by the current user. Hub flips
+ * their `delivery_status` to "received" and fans an UPDATE frame back to
+ * the sender (subject to the parent conversation's `message_status_visible`).
+ */
+export async function markFlowMessagesReceived(flow_message_ids: string[]): Promise<MarkResult | null> {
+  if (flow_message_ids.length === 0) return null;
+  const action = new ActionInfo('mark_received', 'flow_message', null, 'POST');
+  action.bodyParameters = { flow_message_ids };
+  return dataManager.callAction<{ flow_message_ids: string[] }, MarkResult>(action);
 }

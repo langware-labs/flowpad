@@ -59,6 +59,38 @@ class User(Entity):
         self.hashed_password_ = None
         return self
 
+    def to_participant(self, override_name: str | None = None) -> dict:
+        name = override_name.strip() if override_name and override_name.strip() else (self.name or self.email or "")
+        return {
+            "user_id": self.id or "",
+            "name": name,
+            "email": self.email or "",
+        }
+
+    @classmethod
+    async def current_sender_participant(cls, override_name: str | None = None) -> dict:
+        override = override_name.strip() if override_name and override_name.strip() else ""
+        try:
+            from flow_sdk.cli.app_config import get_user
+            from flow_sdk.cli.auth.hub_login import is_logged_in
+
+            if is_logged_in():
+                cloud_user = get_user()
+                if isinstance(cloud_user, dict) and cloud_user.get("id"):
+                    email = str(cloud_user.get("email") or "")
+                    return {
+                        "user_id": str(cloud_user.get("id") or ""),
+                        "name": override or str(cloud_user.get("name") or email),
+                        "email": email,
+                    }
+        except Exception:
+            pass
+
+        local_user = await cls.get_local()
+        if local_user:
+            return local_user.to_participant(override)
+        return {"user_id": "", "name": override, "email": ""}
+
     @classmethod
     async def get_user_by_email(cls, email: str) -> "User | None":
         return await cls.get_one({"email": email})
@@ -90,17 +122,18 @@ class User(Entity):
           ``local_user.email``, else ``""``.
         """
         local_user = await cls.get_local()
-        sender_id = local_user.id if local_user else None
-        if override_name and override_name.strip():
-            return sender_id, override_name.strip()
         if local_user:
-            return sender_id, local_user.name or local_user.email or ""
+            participant = local_user.to_participant(override_name)
+            return participant.get("user_id") or None, participant.get("name") or ""
         return None, ""
 
     @classmethod
     async def get_or_create_by_email(cls, email: str, name: str | None = None) -> "User":
         existing = await cls.get_one({"email": email})
         if existing:
+            if name and not existing.name:
+                existing.name = name
+                return await existing.save()
             return existing
         user = cls(email=email, name=name)
         await user.save()

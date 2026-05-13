@@ -37,6 +37,7 @@ async def ensure_conversation_entity(
     remote_project_id: Optional[str] = None,
     remote_project_name: Optional[str] = None,
     participants: Optional[list] = None,
+    title: Optional[str] = None,
     someone_typeid: Optional[str] = None,
 ) -> Conversation:
     """Idempotent: return the local Conversation entity, creating it if missing.
@@ -56,6 +57,7 @@ async def ensure_conversation_entity(
     local-origin conversations.
     """
     conv = await Conversation.get_one({"id": conversation_id})
+    title_clean = (title or "").strip() or None
     if conv is None:
         payload: dict = {"id": conversation_id}
         if project_id:
@@ -66,16 +68,26 @@ async def ensure_conversation_entity(
             payload["remote_project_name"] = remote_project_name
         if participants:
             payload["participants"] = list(participants)
+        if title_clean:
+            payload["title"] = title_clean
         if parent_typeid is not None:
             payload["context_entities"] = [str(parent_typeid)]
         conv = Conversation.model_validate(payload)
         conv.id = conversation_id
         conv = await conv.save(someone_typeid, notify=False)
-    elif participants and not (conv.participants or []):
-        # Existing conv with no participants — backfill from the bundle so
-        # the reply-recipient resolver can find the other party's email.
-        conv.participants = list(participants)
-        conv = await conv.save(someone_typeid, notify=False)
+    else:
+        dirty = False
+        if participants and not (conv.participants or []):
+            # Backfill participants from the bundle so the reply-recipient
+            # resolver can find the other party's email.
+            conv.participants = list(participants)
+            dirty = True
+        if title_clean and not (conv.title or "").strip():
+            # Backfill title on first receive — keep an existing local override.
+            conv.title = title_clean
+            dirty = True
+        if dirty:
+            conv = await conv.save(someone_typeid, notify=False)
 
     if parent_typeid is not None and parent_typeid.type == BuiltinEntityType.TASK.value:
         parent_id = parent_typeid.id
@@ -131,7 +143,18 @@ async def materialize_flow_message(
         fm = FlowMessage.model_validate(payload)
         if not payload.get("id"):
             fm.id = FlowMessage.allocate_id(payload)
+        # Save with notify=False, then emit CREATE explicitly. ``save()``
+        # would emit an UPDATE here because ``model_validate`` carried the
+        # hub's ``created_by`` over (making ``exist_in_db`` True). Local
+        # subscribers (TS SDK ``on('message')``) filter for CREATE only,
+        # so the UPDATE would be invisible.
         fm = await fm.save(someone_typeid, notify=False)
+        if notify:
+            from flow_sdk.api.messages import DataOpMessage, OperationType  # noqa: PLC0415
+            from flow_sdk.core.network.resource_tracker import handle_entity_op  # noqa: PLC0415
+            await handle_entity_op(
+                DataOpMessage(data=fm, op=OperationType.CREATE, to_entity=fm.typeid)
+            )
 
     # Resolve parent (Task preferred, else Project) for the record's parent_ref.
     conv = await Conversation.get_one({"id": conversation_id})

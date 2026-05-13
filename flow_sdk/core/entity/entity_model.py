@@ -28,6 +28,7 @@ except ImportError:
             return decorator
 
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 
 from pydantic import Field, SerializationInfo, SerializeAsAny, TypeAdapter, ValidationError, model_serializer
@@ -75,6 +76,23 @@ class Entity(DBEntity):
     tags: List[str] = APIField(default_factory=list)
     system: bool = APIField(default=False, description="True when this entity belongs to an SDK-shipped system project")
     remote: bool = APIField(default=False, description="True when this entity has a hub counterpart at the same id; refreshable from the hub")
+    orphan: bool = APIField(
+        default=False,
+        description=(
+            "True when the entity's source asset (file/folder at asset_ref) is "
+            "missing on disk. Set by the FSIndexer's orphan-detection pass; "
+            "cleared automatically when the source reappears. Non-asset entities "
+            "(those without an asset_ref) are always False."
+        ),
+    )
+    orphan_since: datetime | None = APIField(
+        default=None,
+        description=(
+            "UTC timestamp of when the entity first transitioned to orphan=True. "
+            "Null when orphan=False. Preserved across rescans so 'how long has "
+            "this been missing' is answerable."
+        ),
+    )
 
     # Generic context-entity references — the unified container for "what
     # other entities is this one contextually related to." Persists as a list
@@ -713,6 +731,59 @@ class Entity(DBEntity):
             return
         await blob_index_entity.save(self.embedded_storage)
         # logging.info(f"Saved blob index for {self.typeid} with fields: {blob_index_entity._blob_index.fields.keys()} on \n {self.storage.vfs_root_path}")
+
+    def cloud_watch(self) -> "CloudWatch":
+        """Async-context stream of hub events scoped to this entity.
+
+        See ``flow_sdk.cloud_client.events.CloudWatch`` for the full API.
+        Matches events whose ``entity_id`` *or* ``parent_id`` equals
+        ``self.id`` — i.e., "events about me" + "events about my children".
+        """
+        from flow_sdk.cloud_client.events import CloudWatch  # noqa: PLC0415
+
+        if not self.id:
+            raise RuntimeError("cloud_watch requires entity.id; save first")
+        return CloudWatch(self.id)
+
+    async def share(self: EntityType) -> EntityType:
+        """Create this entity on the hub (POST /api/v1/graph/<type>).
+
+        Generic, type-agnostic: the body is this entity's serialized dump,
+        the URL is constructed via ``build_hub_url(self.type)``, auth is
+        taken from the stored hub credentials. Returns ``self`` after
+        flipping the ``remote`` field when the subclass declares one.
+
+        Raises ``RuntimeError`` if not cloud-logged-in or the hub rejects.
+        """
+        from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
+        from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
+        from flow_sdk.core.urls.service_urls import build_hub_url  # noqa: PLC0415
+
+        creds = load_credentials()
+        if not creds or not creds.api_key:
+            raise RuntimeError("Cloud login required before share()")
+
+        # Body = entity dump, excluding:
+        #  - ``context_entities``  — local-only chip projection, not on hub schema
+        #  - ``created_by`` / ``updated_by`` — local user ids do not resolve on
+        #    the hub; the hub stamps these from the auth token. Leaving them in
+        #    triggers the hub's role-lookup with an unknown user → 404.
+        #  - ``created_date`` / ``updated_date`` — hub stamps timestamps itself.
+        body = self.model_dump(
+            mode="json",
+            exclude_none=True,
+            exclude={"context_entities", "created_by", "updated_by", "created_date", "updated_date"},
+        )
+
+        path = build_hub_url(self.get_type())
+        async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
+            resp = await client.post(path, body)
+
+        # ``remote`` is opt-in per subclass. Flip it when present so callers
+        # can branch on it. Subclasses without the field stay unchanged.
+        if "remote" in type(self).model_fields:
+            self.remote = True
+        return self
 
     async def save(self: EntityType, owner: DBEntity | TypeId | types.NoneType = None, notify: bool = True) -> EntityType:
         user_id = owner

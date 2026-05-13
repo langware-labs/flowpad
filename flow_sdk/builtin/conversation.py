@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import ClassVar, List, Optional
 
 from flow_sdk.api.api_types.api_field import APIField
@@ -29,14 +30,106 @@ class Conversation(Entity):
     """
 
     type: str = APIField(default="conversation")
+    title: Optional[str] = APIField(default=None)
     remote_project_id: Optional[str] = APIField(None)
     remote_project_name: Optional[str] = APIField(None)
     message_count: int = APIField(0)
     message_ids: Optional[str] = APIField(None)  # JSON-encoded [{"typeid": ..., "ts": ...}]
     participants: list[dict] = APIField(default_factory=list)  # [{user_id, email, name}]
+    # When False, hub suppresses delivery_status fan-out to the original
+    # sender (delivered/received UPDATE frames are filtered by hub-side
+    # Conversation._fanout_status_update). Co-recipients still see them.
+    message_status_visible: bool = APIField(default=True)
+    # Strip-only dismissal. When set, the Recent Conversations strip hides
+    # this row UNTIL a FlowMessage newer than ``dismissed_at`` is appended
+    # (auto-revive on new activity). The Inbox ignores this field entirely.
+    dismissed_at: Optional[datetime] = APIField(default=None)
+    # Conversation-level archive. Honored by **both** Inbox and Recent strip
+    # — the conversation is hidden everywhere UNTIL a FlowMessage newer than
+    # ``archived_at`` lands (auto-revive on new activity, same comparison
+    # pattern as ``dismissed_at``). Per-message ``FlowMessage.is_read``
+    # remains independent and is not affected by archive.
+    archived_at: Optional[datetime] = APIField(default=None)
+    # True once ``share()`` succeeded — the conversation has a hub-side mirror
+    # with the same id, and future replies should route through the bridge.
+    # NOTE: Entity base class already defines `remote`, this is a documentation
+    # marker that the field is meaningful for Conversations specifically.
     # NOTE: task_id moved into ``context_entities``. Use
     # ``conv.first_context_of_type('task')`` to read it back.
     _api_visible: ClassVar[bool] = True
+
+    async def share(self, recipients: Optional[List[str]] = None) -> "Conversation":
+        """Push to hub + invite recipients via the standard hub pattern.
+
+        Without ``recipients``: equivalent to ``Entity.share()`` — POSTs to
+        ``/graph/conversation`` so the hub-side row exists; the caller then
+        has ``owner`` role.
+
+        With ``recipients`` (list of email strings): after the create, the
+        caller joins the conversation (so they enter ``participants``), then
+        one ``MembershipRequest`` per recipient is sent via the canonical
+        ``POST /graph/conversation/<id>/members`` endpoint, targeting this
+        Conversation with role ``member``. Each recipient discovers the
+        invitation via ``GET /graph/invitation/pending``, accepts via
+        ``GET /graph/members/accept``, and then ``POST /graph/conversation/<id>/join``
+        themselves (wired in ``flow_message_action.handle_invitation_accept``).
+        """
+        from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
+        from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
+
+        await super().share()
+        if not recipients:
+            return self
+        creds = load_credentials()
+        if not creds or not creds.api_key:
+            raise RuntimeError("Cloud login required")
+        async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
+            # Caller joins so the creator enters ``participants``.
+            await client.post(f"/graph/conversation/{self.id}/join", {})
+            # One invitation per recipient.
+            for email in recipients:
+                if not email or not isinstance(email, str):
+                    continue
+                await client.post(
+                    f"/graph/conversation/{self.id}/members",
+                    {
+                        "recipient_email": email,
+                        "invitation_targets": [
+                            {"typeid": f"conversation-{self.id}", "role": "member"},
+                        ],
+                        # Stamp the target conv typeid in ``message`` so the
+                        # recipient can disambiguate this invitation from
+                        # earlier stale ones sharing the same email — the
+                        # ``InvitedThrough`` relationship isn't exposed on the
+                        # ``Invitation`` GET payload.
+                        "message": f"conversation-{self.id}",
+                    },
+                )
+        return self
+
+    async def add_message(self, text: str, *, sender_name: Optional[str] = None) -> dict:
+        """Append a FlowMessage to this conversation on the hub.
+
+        Hits ``POST <hub>/api/v1/graph/conversation/<id>/add_message`` via the
+        standard cloud client — same path the Python tests use directly. Returns
+        the response ``data`` (the persisted FlowMessage).
+        """
+        from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
+        from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
+        from flow_sdk.core.urls.service_urls import build_hub_url  # noqa: PLC0415
+
+        if not self.id:
+            raise RuntimeError("Conversation.id is required")
+        creds = load_credentials()
+        if not creds or not creds.api_key:
+            raise RuntimeError("Cloud login required before add_message()")
+        body: dict = {"text": text}
+        if sender_name:
+            body["sender_name"] = sender_name
+        path = build_hub_url(self, action="add_message")
+        async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
+            return await client.post(path, body)
+
 
     @property
     def data_path(self) -> str:

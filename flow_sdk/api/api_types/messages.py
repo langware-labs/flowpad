@@ -43,6 +43,8 @@ class WSMessageType(Enum):
     CLIENT_NODE_READY_MSG = "client_node_ready_msg"
     PTY_OUTPUT_MSG = "pty_output_msg"
     PTY_SESSION_STATUS_MSG = "pty_session_status_msg"
+    HUB_CLIENT_ERROR_MSG = "hub_client_error_msg"
+    AUTH_EXPIRED_MSG = "auth_expired_msg"
 
 
 class ExeMessageSubType(StrEnum):
@@ -122,6 +124,20 @@ class OAuthMessage(BaseMessage):
     message_type: str = WSMessageType.OAUTH_MSG.value
     oauth_request_id: str
     status: OAuthMessageStatus
+
+
+class HubClientErrorMessage(BaseMessage):
+    message_type: str = WSMessageType.HUB_CLIENT_ERROR_MSG.value
+    status_code: int
+    method: str
+    path: str
+    message: str
+    suppressed_count: int = 0
+
+
+class AuthExpiredMessage(BaseMessage):
+    message_type: str = WSMessageType.AUTH_EXPIRED_MSG.value
+    reason: str
 
 
 class EntityMessage(BaseMessage):

@@ -8,8 +8,9 @@ For each asset type with at least one entity:
      Must equal the disk bytes.
   4. List the entity's shadow folder ~/.flow/records/<type>/<type>-@<id>/.
      Must contain only metadata.json, state.json, and *.hash files. No body.
-  5. POST /api/v1/search/reindex/<type>. Re-check 3 + 4 are still clean
-     (idempotence — reindex must not plant new files in the shadow).
+  5. POST /api/v1/graph/compute_node/@local/fs-records/index?type=<type>.
+     Re-check 3 + 4 are still clean (idempotence — reindex must not plant
+     new files in the shadow).
 
 Prints pass/fail per type and exits non-zero on any failure.
 """
@@ -161,7 +162,9 @@ def validate_type(entity_type: str) -> tuple[bool, str]:
         return False, f"stray body in shadow: {[p.name for p in stray]}"
 
     # 4. Reindex idempotence
-    rstatus, _rbody = _http_post(f"{API_ROOT}/api/v1/search/reindex/{entity_type}")
+    rstatus, _rbody = _http_post(
+        f"{API_ROOT}/api/v1/graph/compute_node/@local/fs-records/index?type={entity_type}"
+    )
     if rstatus != 200:
         return False, f"reindex status={rstatus}"
 

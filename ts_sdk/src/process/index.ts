@@ -33,6 +33,7 @@ export type {
   ExecuteOptions,
   SpawnResult,
 } from './agentic-process';
+export { ProcessType } from './process-types';
 export type { AssetDescriptor, AssetSource } from './asset-descriptor';
 export { ASSET_SOURCE_LABEL, READONLY_ASSET_SOURCES, isReadOnlySource } from './asset-descriptor';
 

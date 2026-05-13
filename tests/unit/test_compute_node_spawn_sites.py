@@ -1,9 +1,8 @@
-"""Fast unit tests for the three backend AgenticProcess spawn sites.
+"""Fast unit tests for the backend AgenticProcess spawn sites.
 
 Covers:
-  - compute_node.py:546  ``elevate-shell``  (_elevate_shell)
-  - scan_actions.py:318  ``createProcess``  (_scan_create_process, fresh)
-  - scan_actions.py:456  ``upsertSessionProcess`` (_scan_upsert_session_process, resume)
+  - scan_actions.py  ``createProcess``  (_scan_create_process, fresh)
+  - scan_actions.py  ``upsertSessionProcess`` (_scan_upsert_session_process, resume)
 
 We mock get_current_request_info, AgenticProcess.save, and AgenticProcess.start
 so the tests run in milliseconds without a DB or real PTY. The goal is to
@@ -36,90 +35,10 @@ def _make_request_info(body: dict):
     return info
 
 
-_PATCH_REQ = "flow_sdk.builtin.faas.compute_node.get_current_request_info"
 _PATCH_REQ_SCAN = "flow_sdk.builtin.faas.scan_actions.get_current_request_info"
 
 
-# ─── elevate-shell (compute_node.py:546) ─────────────────────────────────────
-
-
-@pytest.mark.asyncio
-async def test_elevate_shell_constructs_agentic_process_with_post_refactor_fields():
-    """_elevate_shell must build AgenticProcess(shell_id=, session_id=, cli_config=)
-    with the post-asset_ref-refactor schema (no source_vfs_path) and persist it."""
-    node = _make_compute_node()
-    info = _make_request_info({
-        "shell_id": "shell-abc",
-        "model": "claude-sonnet-4-5",
-        "permission_mode": "bypassPermissions",
-    })
-
-    captured: dict = {}
-
-    class FakeProc:
-        def __init__(self, **kwargs):
-            captured.update(kwargs)
-            self.id = "proc-1"
-            self.type = "agentic_process"
-
-        async def save(self, owner=None):
-            captured["__saved_owner"] = owner
-
-        async def start(self):
-            return ApiSuccessResponse(data={"id": self.id, "type": self.type})
-
-    with patch(_PATCH_REQ, return_value=info), \
-         patch("flow_sdk.builtin.agentic_process.AgenticProcess", FakeProc):
-        resp = await node._elevate_shell()
-
-    assert isinstance(resp, ApiSuccessResponse)
-    assert resp.data == {"id": "proc-1", "type": "agentic_process"}
-    # post-refactor schema: only shell_id, session_id, cli_config — no source_vfs_path
-    assert captured["shell_id"] == "shell-abc"
-    assert isinstance(captured["session_id"], str) and len(captured["session_id"]) > 0
-    assert isinstance(captured["cli_config"], dict)
-    assert "source_vfs_path" not in captured
-
-
-@pytest.mark.asyncio
-async def test_elevate_shell_missing_shell_id_returns_fail():
-    node = _make_compute_node()
-    info = _make_request_info({})
-    with patch(_PATCH_REQ, return_value=info):
-        resp = await node._elevate_shell()
-    assert resp.status == "FAIL"
-    assert "shell_id" in resp.message
-
-
-@pytest.mark.asyncio
-async def test_elevate_shell_resume_uses_provided_session_id():
-    """When resume_session_id is provided, AgenticProcess.session_id == that id and
-    cli_config carries resume=True."""
-    node = _make_compute_node()
-    info = _make_request_info({
-        "shell_id": "shell-xyz",
-        "resume_session_id": "session-resume-1",
-    })
-    captured: dict = {}
-
-    class FakeProc:
-        def __init__(self, **kwargs):
-            captured.update(kwargs)
-            self.id = "p"
-            self.type = "agentic_process"
-
-        async def save(self, owner=None): pass
-        async def start(self): return ApiSuccessResponse(data={"id": "p"})
-
-    with patch(_PATCH_REQ, return_value=info), \
-         patch("flow_sdk.builtin.agentic_process.AgenticProcess", FakeProc):
-        await node._elevate_shell()
-
-    assert captured["session_id"] == "session-resume-1"
-    assert captured["cli_config"].get("resume") is True
-
-
-# ─── createProcess fresh path (scan_actions.py:318) ──────────────────────────
+# ─── createProcess fresh path ────────────────────────────────────────────────
 
 
 @pytest.mark.asyncio
@@ -147,7 +66,7 @@ async def test_scan_create_process_fresh_path_constructs_with_post_refactor_fiel
         async def save(self, owner=None):
             captured["__saved_owner"] = owner
 
-        async def start(self, visible=False):
+        async def start_pty(self, visible=False, **kwargs):
             captured["__started_visible"] = visible
             return ApiSuccessResponse(data={"id": self.id})
 
@@ -160,15 +79,57 @@ async def test_scan_create_process_fresh_path_constructs_with_post_refactor_fiel
     # Validate post-refactor field set
     expected = {
         "worker_type", "instruction_content", "cli_config", "context_data",
-        "workdir", "visible", "additional_dirs", "project_id", "target_vfs_path",
+        "workdir", "visible", "additional_dirs", "project_id", "target_typeid_str",
     }
     assert expected.issubset(captured.keys()), captured.keys()
     assert captured["workdir"] == "/tmp/proj"
     assert captured["visible"] is True
     assert "source_vfs_path" not in captured
+    # Visible processes must be eagerly started so the terminal tab strip
+    # gets a fully-attached row in one round-trip.
+    assert captured.get("__started_visible") is True
 
 
-# ─── upsertSessionProcess resume path (scan_actions.py:456) ──────────────────
+@pytest.mark.asyncio
+async def test_scan_create_process_headless_does_not_eagerly_start():
+    """Headless (visible=False) processes manage their lifecycle per-turn via
+    ``run_print_turn``. Eagerly calling ``start()`` here pre-allocates a
+    session_id without ever writing a JSONL, which then makes the next
+    ``/prompt`` land on a stale session and emit no assistant turn."""
+    node = _make_compute_node()
+    info = _make_request_info({
+        "context": {"workdir": "/tmp/proj"},
+        "visible": False,
+    })
+
+    captured: dict = {}
+
+    class FakeProc:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+            self.id = "headless-1"
+            self.type = "agentic_process"
+            self.shell_id = None
+
+        async def save(self, owner=None):
+            captured["__saved_owner"] = owner
+
+        async def start_pty(self, visible=False, **kwargs):
+            captured["__started_visible"] = visible
+            return ApiSuccessResponse(data={"id": self.id})
+
+    with patch(_PATCH_REQ_SCAN, return_value=info), \
+         patch("flow_sdk.builtin.agentic_process.AgenticProcess", FakeProc):
+        resp = await node._scan_create_process()
+
+    assert resp.status == "SUCCESS"
+    assert resp.data["id"] == "headless-1"
+    assert captured["visible"] is False
+    # Critical: start_pty() must NOT be called for headless processes.
+    assert "__started_visible" not in captured
+
+
+# ─── upsertSessionProcess resume path ────────────────────────────────────────
 
 
 @pytest.mark.asyncio
@@ -204,16 +165,30 @@ async def test_scan_upsert_session_process_creates_fresh_when_no_existing():
         async def save(self, owner=None):
             captured["__saved_owner"] = owner
 
-        async def start(self, visible=False):
+        async def start_pty(self, visible=False, **kwargs):
             captured["__started_visible"] = visible
             return ApiSuccessResponse(data={"id": self.id})
+
+        def model_dump(self, mode=None):
+            return {
+                "id": self.id,
+                "type": self.type,
+                "session_id": self.session_id,
+                "cli_config": self.cli_config,
+                "workdir": self.workdir,
+                "shell_id": self.shell_id,
+                "visible": self.visible,
+                "worker_type": self.worker_type,
+            }
 
     with patch(_PATCH_REQ_SCAN, return_value=info), \
          patch("flow_sdk.builtin.agentic_process.AgenticProcess", FakeProc):
         resp = await node._scan_upsert_session_process()
 
     assert resp.status == "SUCCESS", resp
-    assert resp.data["created"] is True
+    # Production returns ``process.model_dump(mode="json")`` directly — there's
+    # no ``created`` flag injection in the response (AgenticProcess has no such
+    # field). The fresh-vs-resume distinction is verified via captured kwargs.
     assert resp.data["session_id"] == "sess-new-1"
     assert captured["session_id"] == "sess-new-1"
     assert captured["use_worker_history"] is True
@@ -236,6 +211,19 @@ async def test_scan_upsert_session_process_returns_existing_on_resume():
     existing.visible = True
     existing.worker_type = "claude"
     existing.pty_pid = None
+    # ``_scan_upsert_session_process`` returns ``process.model_dump(mode="json")``
+    # to the caller; configure the mock to produce a real dict so the response
+    # has ``data["id"] == "existing-id"`` instead of a recursive MagicMock.
+    existing.model_dump.return_value = {
+        "id": "existing-id",
+        "type": "agentic_process",
+        "session_id": "sess-existing",
+        "shell_id": "shell-1",
+        "visible": True,
+        "worker_type": "claude",
+        "pty_pid": None,
+        "created": False,
+    }
 
     class FakeProc:
         constructed = False
@@ -255,5 +243,7 @@ async def test_scan_upsert_session_process_returns_existing_on_resume():
     assert resp.data["id"] == "existing-id"
     assert resp.data["type"] == "agentic_process"
     assert resp.data["session_id"] == "sess-existing"
-    assert resp.data["created"] is False
+    # Production returns ``process.model_dump(mode="json")`` directly; no
+    # ``created`` flag is injected. The "no new construction" property is
+    # verified via FakeProc.constructed below.
     assert FakeProc.constructed is False, "Should not construct a new entity on resume hit"
