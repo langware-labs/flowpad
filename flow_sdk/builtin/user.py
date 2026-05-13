@@ -87,16 +87,14 @@ class User(Entity):
         * ``sender_id`` ← local desktop user's id (None if no local user)
         * ``sender_name`` ← ``override_name.strip()`` if non-empty, else
           ``local_user.name`` (synced from ``git config user.name``), else
-          ``local_user.email``, else the synthetic ``hostname@desktop.local``
-          (display-only — never used as a routing address), else ``""``.
+          ``local_user.email``, else ``""``.
         """
-        from flow_sdk.server.routes.bootstrap import get_default_desktop_email
         local_user = await cls.get_local()
         sender_id = local_user.id if local_user else None
         if override_name and override_name.strip():
             return sender_id, override_name.strip()
         if local_user:
-            return sender_id, local_user.name or local_user.email or get_default_desktop_email()
+            return sender_id, local_user.name or local_user.email or ""
         return None, ""
 
     @classmethod
