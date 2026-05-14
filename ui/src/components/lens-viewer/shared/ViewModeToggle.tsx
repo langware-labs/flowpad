@@ -1,8 +1,10 @@
 import { MessageSquare, ScrollText } from 'lucide-react';
 
+import type { TranscriptMode } from './use-transcript-mode';
+
 interface Props {
-  mode: 'chat' | 'transcript';
-  onChange: (mode: 'chat' | 'transcript') => void;
+  mode: TranscriptMode;
+  onChange: (mode: TranscriptMode) => void;
 }
 
 export function ViewModeToggle({ mode, onChange }: Props) {
@@ -14,6 +16,8 @@ export function ViewModeToggle({ mode, onChange }: Props) {
       <button
         type="button"
         onClick={() => onChange('chat')}
+        data-testid="transcript-mode-chip-chat"
+        data-mode-active={mode === 'chat' ? 'true' : 'false'}
         className={`flex items-center gap-1 px-2 py-1 transition-colors ${mode === 'chat' ? activeClass : inactiveClass}`}
         title="Chat view"
       >
@@ -22,12 +26,14 @@ export function ViewModeToggle({ mode, onChange }: Props) {
       </button>
       <button
         type="button"
-        onClick={() => onChange('transcript')}
-        className={`flex items-center gap-1 px-2 py-1 transition-colors ${mode === 'transcript' ? activeClass : inactiveClass}`}
-        title="Transcript view"
+        onClick={() => onChange('trace')}
+        data-testid="transcript-mode-chip-trace"
+        data-mode-active={mode === 'trace' ? 'true' : 'false'}
+        className={`flex items-center gap-1 px-2 py-1 transition-colors ${mode === 'trace' ? activeClass : inactiveClass}`}
+        title="Trace view"
       >
         <ScrollText className="h-3 w-3" />
-        Transcript
+        Trace
       </button>
     </div>
   );

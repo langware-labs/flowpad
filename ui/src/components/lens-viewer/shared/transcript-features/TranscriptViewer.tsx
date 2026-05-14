@@ -171,7 +171,7 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
   // ── Scroll-to effect ──────────────────────────────────────────────────────
   useEffect(() => {
     if (!pendingScrollId || !entries.length) return;
-    if (viewMode === 'transcript') {
+    if (viewMode === 'trace') {
       setExpandedEntries((prev) => {
         if (prev.has(pendingScrollId)) return prev;
         const next = new Set(prev);
@@ -245,7 +245,7 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
   }, [viewMode, isLoading]);
 
   // ── Mode switch with viewport preservation ────────────────────────────────
-  const switchMode = (newMode: 'chat' | 'transcript') => {
+  const switchMode = (newMode: 'chat' | 'trace') => {
     if (newMode === viewMode) return;
     isProgrammaticScrollRef.current = true;
     const anchorEntry = currentEntryId ? entries.find((e) => e.id === currentEntryId) ?? null : null;
