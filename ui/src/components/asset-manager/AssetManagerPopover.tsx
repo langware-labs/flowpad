@@ -271,7 +271,9 @@ export function AssetManagerPopover({
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
       <PopoverContent
         align="end"
-        className="flex max-h-[calc(100vh-6rem)] w-96 flex-col p-0"
+        sideOffset={4}
+        collisionPadding={8}
+        className="flex max-h-[min(calc(100vh-6rem),var(--radix-popover-content-available-height))] w-96 flex-col p-0"
         data-testid="asset-manager-popover"
       >
         {/* Header */}

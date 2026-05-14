@@ -2,8 +2,13 @@ import { MarkdownEditor } from '@src/components/assets/editor/markdown/MarkdownE
 import { enableMcp, isMcpAvailable } from '@src/components/assets/utils';
 import type { ExtraSideTab } from '@src/components/milkdown-editor/EditorWithSidePanel';
 import { WorkflowRunsPanel } from '@src/components/workflows-view/WorkflowRunsPanel';
-import { WorkflowLearningView } from './learning/WorkflowLearningView';
-import { WorkflowTraceViewer } from '@src/components/workflow-trace';
+import { WorkflowRunnerView } from '@src/components/workflow-runner';
+import { useSpawnRunner } from '@src/components/workflow-runner/data/useSpawnRunner';
+// WorkflowTraceViewer was the legacy "full pane drill into one run" view —
+// replaced by the new <WorkflowRunnerView> mounted in the learning panel.
+// Per-run navigation now happens via the RunStrip at the bottom of the
+// runner view. `selectedRunId` URL param is preserved as a no-op for
+// rollback safety; will be removed after one release.
 import {
   workflowRunStore,
   type ProcessEntry,
@@ -128,34 +133,15 @@ export function WorkflowAssetEditor({ fsRef, workflow: providedWorkflow }: Workf
     return sorted.map((p) => (liveId && p.id === liveId ? processEntry! : { process: p }));
   }, [pastRunProcesses, processEntry]);
 
+  const { spawn: spawnRunner } = useSpawnRunner();
   const doRun = useCallback(async () => {
-    if (!resolvedWorkflow?.asset_ref) return;
-    const systemSkills = dataContext.bootstrapInfo?.desktop_info?.paths?.system_skills;
-    const flowSkillPath = systemSkills
-      ? `/${systemSkills}/flow/SKILL.md`
-      : '~/.flow/system_assets/skills/flow/SKILL.md';
-    const instruction = `Run workflow at /${resolvedWorkflow.asset_ref} using the flow skill located at: ${flowSkillPath}`;
-    const workdir = dataContext.project?.fs_storage_mount_path;
-
-    const cliOptions = new ClaudeCliOptions({
-      permission_mode: 'bypassPermissions',
-      print_mode: true,
-      output_format: 'stream-json',
-      verbose: true,
-    });
-    const process = await new AgenticProcess({
-      cli_config: cliOptions.toJson(),
-      context_data: { project_id: dataContext.project?.id },
-      workdir,
-      visible: false,
-      target_typeid_str: resolvedWorkflow.typeId.toString(),
-      process_type: ProcessType.Execution,
-    }).save([resolvedWorkflow.typeId]);
-
-    void process.prompt(instruction);
-    setProcessEntry({ process });
-    setActiveSideTab('runs');
-  }, [resolvedWorkflow]);
+    if (!resolvedWorkflow) return;
+    const process = await spawnRunner({ workflow: resolvedWorkflow });
+    if (process) {
+      setProcessEntry({ process });
+      setActiveSideTab('runs');
+    }
+  }, [resolvedWorkflow, spawnRunner]);
 
   const handleRun = useCallback(async () => {
     if (!resolvedWorkflow?.asset_ref) return;
@@ -246,28 +232,27 @@ export function WorkflowAssetEditor({ fsRef, workflow: providedWorkflow }: Workf
   );
   const showLearningMode = terminalRuns.length > 0;
   const learningPanel = showLearningMode ? (
-    <WorkflowLearningView workflow={resolvedWorkflow} runs={terminalRuns} />
+    <WorkflowRunnerView workflow={resolvedWorkflow} runs={terminalRuns} />
   ) : null;
+
+  // selectedRunId is now a soft hint — when set by a deep link from
+  // WorkflowRunsPanel, we drop into learning mode. The actual per-run
+  // selection lives in WorkflowRunnerView's useRunSelection (?runs= URL).
+  void selectedRunId;
+  void setSelectedRunId;
 
   return (
     <>
-      {selectedRunId ? (
-        <WorkflowTraceViewer
-          processId={selectedRunId}
-          onBack={() => setSelectedRunId(null)}
-        />
-      ) : (
-        <MarkdownEditor
-          fsRef={resolvedWorkflow.doc ?? fsRef}
-          chatTarget={resolvedWorkflow.typeId.toString()}
-          toolbar={toolbar}
-          extraSideTabs={[runsTab]}
-          activeSideTab={activeSideTab}
-          onActiveSideTabChange={setActiveSideTab}
-          showLearningMode={showLearningMode}
-          learningPanel={learningPanel}
-        />
-      )}
+      <MarkdownEditor
+        fsRef={resolvedWorkflow.doc ?? fsRef}
+        chatTarget={resolvedWorkflow.typeId.toString()}
+        toolbar={toolbar}
+        extraSideTabs={[runsTab]}
+        activeSideTab={activeSideTab}
+        onActiveSideTabChange={setActiveSideTab}
+        showLearningMode={showLearningMode}
+        learningPanel={learningPanel}
+      />
 
       <AlertDialog open={showMcpModal} onOpenChange={setShowMcpModal}>
         <AlertDialogContent>

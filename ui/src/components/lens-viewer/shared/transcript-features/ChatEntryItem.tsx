@@ -1,13 +1,11 @@
 import { useState } from 'react';
-import { ChevronDown, ChevronRight, Minus, Plus, User, Zap } from 'lucide-react';
+import { Minus, Plus, User, Zap } from 'lucide-react';
 
-import { OperationExpandedDetail, OperationOneLiner } from './OperationRow';
-import { formatEntryTime, formatNumber, operationFilterKey, workerIcon, workerLabel } from './transcript-utils';
+import { formatEntryTime, formatNumber, workerIcon, workerLabel } from './transcript-utils';
 import type { UnifiedEntry } from './types';
 
 interface Props {
   entry: UnifiedEntry;
-  toolFilters?: Record<string, boolean>;
   isExpanded: boolean;
   onToggle: () => void;
 }
@@ -16,9 +14,8 @@ function needsTruncation(text: string): boolean {
   return text.split('\n').length > 3 || text.length > 280;
 }
 
-export function ChatEntryItem({ entry, toolFilters, isExpanded, onToggle }: Props) {
+export function ChatEntryItem({ entry, isExpanded, onToggle }: Props) {
   const [showThinking, setShowThinking] = useState(false);
-  const [opExpanded, setOpExpanded] = useState(false);
   const timestamp = formatEntryTime(entry);
 
   // ── User turn (text body) ──────────────────────────────────────────────────
@@ -52,49 +49,6 @@ export function ChatEntryItem({ entry, toolFilters, isExpanded, onToggle }: Prop
                 {isExpanded ? <Minus className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
                 {isExpanded ? 'Show less' : 'Show more'}
               </button>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // ── Operation row (file_write / shell / search / tool_use catch-all) ──────
-  if (entry.role === 'operation' && entry.operation) {
-    const op = entry.operation;
-    const filterKey = operationFilterKey(op);
-    if (toolFilters && toolFilters[filterKey] === false) return null;
-    const WorkerIcon = workerIcon(entry.worker);
-    return (
-      <div className="border-b border-border px-4 py-3">
-        <div className="flex items-start gap-2.5">
-          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-green-500/15">
-            <WorkerIcon className="h-3.5 w-3.5" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <div className="mb-1 flex items-center gap-2">
-              <span className="text-xs font-semibold text-foreground/80">{workerLabel(entry.worker)}</span>
-              <span className="text-[10px] text-muted-foreground">{timestamp}</span>
-              {entry.isSidechain && (
-                <span className="rounded bg-purple-500/10 px-1 text-[10px] text-purple-600">sidechain</span>
-              )}
-            </div>
-            <button
-              type="button"
-              onClick={() => setOpExpanded((v) => !v)}
-              className="flex w-full items-center gap-1.5 rounded border border-border bg-muted/30 px-2 py-1.5 text-left hover:bg-muted/50"
-            >
-              {opExpanded ? (
-                <ChevronDown className="h-3 w-3 shrink-0 text-muted-foreground" />
-              ) : (
-                <ChevronRight className="h-3 w-3 shrink-0 text-muted-foreground" />
-              )}
-              <OperationOneLiner operation={op} />
-            </button>
-            {opExpanded && (
-              <div className="mt-1 rounded border border-border bg-muted/30 p-2">
-                <OperationExpandedDetail operation={op} />
-              </div>
             )}
           </div>
         </div>
@@ -162,23 +116,34 @@ export function ChatEntryItem({ entry, toolFilters, isExpanded, onToggle }: Prop
               </>
             )}
 
-            {thinking && (
-              <div className="mt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowThinking((v) => !v)}
-                  className="flex items-center gap-1 text-[10px] text-purple-600 hover:text-purple-700"
-                >
-                  {showThinking ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
-                  {showThinking ? 'Hide' : 'Show'} thinking
-                </button>
-                {showThinking && (
-                  <div className="mt-1 rounded border border-purple-500/20 bg-purple-500/5 p-2">
-                    <p className="whitespace-pre-wrap text-xs text-purple-700">{thinking}</p>
+            {thinking && (() => {
+              const thinkingCanTruncate = needsTruncation(thinking);
+              const thinkingCollapsed = thinkingCanTruncate && !showThinking;
+              return (
+                <div className="mt-2 rounded border border-purple-500/20 bg-purple-500/5 p-2">
+                  <div className="mb-1 text-[10px] uppercase tracking-wide text-purple-600">
+                    thinking
                   </div>
-                )}
-              </div>
-            )}
+                  <p
+                    className={`break-words text-xs leading-relaxed text-purple-700 dark:text-purple-300 ${
+                      thinkingCollapsed ? 'line-clamp-3' : 'whitespace-pre-wrap'
+                    }`}
+                  >
+                    {thinking}
+                  </p>
+                  {thinkingCanTruncate && (
+                    <button
+                      type="button"
+                      onClick={() => setShowThinking((v) => !v)}
+                      className="mt-1.5 flex items-center gap-1 text-[11px] text-purple-600 hover:text-purple-700"
+                    >
+                      {showThinking ? <Minus className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
+                      {showThinking ? 'Show less' : 'Show more'}
+                    </button>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         </div>
       </div>

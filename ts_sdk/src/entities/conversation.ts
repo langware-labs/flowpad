@@ -138,14 +138,30 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
    * Append a FlowMessage to this conversation. Hits the standard graph
    * action ``POST /api/v1/graph/conversation/<id>/add_message``; the local
    * backend forwards to the hub. Returns the persisted FlowMessage JSON.
+   *
+   * ``attachment``: optional list of Attachment-shaped entries. When at
+   * least one entry requires a body bundle (FILE / PROMPT-with-file /
+   * TYPE_ID) the hub stamps ``body_status=UPLOADING`` on the FM and the
+   * caller is expected to fire ``fm.uploadBody()`` in the background.
    */
-  async addMessage(text: string, opts: { sender_name?: string } = {}): Promise<IFlowMessage> {
+  async addMessage(
+    text: string,
+    opts: {
+      sender_name?: string;
+      attachment?: unknown[];
+      context_entities?: unknown[];
+    } = {},
+  ): Promise<IFlowMessage> {
     const action = new ActionInfo('add_message', this.typeId.type, this.typeId.id, 'POST');
     action.bodyParameters = {
       text,
       ...(opts.sender_name ? { sender_name: opts.sender_name } : {}),
+      ...(opts.attachment && opts.attachment.length > 0 ? { attachment: opts.attachment } : {}),
+      ...(opts.context_entities && opts.context_entities.length > 0
+        ? { context_entities: opts.context_entities }
+        : {}),
     };
-    const res = await dataManager.callAction<{ text: string; sender_name?: string }, IFlowMessage>(action);
+    const res = await dataManager.callAction<unknown, IFlowMessage>(action);
     return res!;
   }
 

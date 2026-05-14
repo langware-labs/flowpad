@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import ReactMarkdown, { type Components } from 'react-markdown';
 import rehypeRaw from 'rehype-raw';
 import rehypeSanitize from 'rehype-sanitize';
@@ -22,6 +22,19 @@ export function useReactMarkdownAnchor(source: string): {
 } {
   const ref = useRef<HTMLDivElement | null>(null);
   const rectMap = useLineRectMap(ref);
+
+  // The `useLineRectMap` effect runs once on mount and relies on a
+  // ResizeObserver for follow-ups. But our parent layout pins the container
+  // height (`h-full` + flex `items-stretch`), so the observer never fires
+  // when `source` populates after an async data fetch. Without this bump,
+  // [data-line] elements appear in the DOM but the rect map stays empty,
+  // and every gutter track silently renders nothing. Recompute on source
+  // change — and once more after layout settles for late-arriving glyphs.
+  useEffect(() => {
+    rectMap.bump();
+    const id = requestAnimationFrame(() => rectMap.bump());
+    return () => cancelAnimationFrame(id);
+  }, [source, rectMap]);
 
   const body = (
     <div ref={ref} className="anchored-md-body relative px-4 py-4">

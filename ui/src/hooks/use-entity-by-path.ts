@@ -3,8 +3,10 @@ import { EntityFactory } from '@sdk/schema/factory';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useMemo } from 'react';
 
-const stripLeadingSlash = (p: string | undefined | null): string =>
-  p ? (p.startsWith('/') ? p.slice(1) : p) : '';
+const stripLeadingSlash = (p: unknown): string => {
+  if (typeof p !== 'string' || p.length === 0) return '';
+  return p.startsWith('/') ? p.slice(1) : p;
+};
 
 /**
  * Discriminator for entity-by-path resolution lifecycle.
