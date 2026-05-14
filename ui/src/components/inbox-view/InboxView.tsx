@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Archive, CheckSquare, Inbox as InboxIcon, MailPlus, RefreshCw, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
 import {
   Conversation,
   FlowMessage,
@@ -9,11 +10,18 @@ import {
   acceptInvitation,
   archiveAllConversations,
   archiveConversation,
+  declineInvitation,
   deleteArchivedConversations,
+  deleteConversation,
+  dismissConversation,
   fetchConversations,
+  leaveConversation,
 } from '@sdk';
+import { useAuth, useCloudStatus } from '@sdk/react/hooks';
 import { useEntitiesQuery, useEntity } from '@src/hooks/entity-hooks';
 import { Button } from '@src/components/ui/button';
+import { BulkConfirmDialog } from '@src/components/ui/bulk-confirm-dialog';
+import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useInboxStore } from '@src/store/use-inbox-store';
@@ -22,6 +30,12 @@ import {
   updateMessage,
   bulkUpdateMessages,
 } from './inbox-api';
+
+type RowDeleteAction =
+  | { kind: 'invitation'; invitationId: string; conversationId: string }
+  | { kind: 'owner'; conversationId: string }
+  | { kind: 'leave'; conversationId: string }
+  | { kind: 'local'; conversationId: string };
 
 // ── Time formatter (Gmail-style) ────────────────────────────────────────────
 // today → "12:34 PM"  ·  this year → "Apr 28"  ·  older → locale date
@@ -58,13 +72,19 @@ interface ConversationListRowProps {
    *  arrives. */
   onArchive: (convId: string) => void;
   onToggleRead: (messageId: string, isRead: boolean) => void;
+  /** Caller resolves the appropriate dialog/action mode based on the row's
+   *  role + the current cloud user id. */
+  onRequestDelete: (action: RowDeleteAction) => void;
+  /** Used by the row to figure out whether the local user is the hub-side
+   *  owner of the conversation. */
+  cloudUserId: string | null;
   /** Reports whether this row will actually render so the parent can decide
    *  whether to show the "No conversations" empty state. */
   onVisibilityChange: (convId: string, visible: boolean) => void;
   refSetter: (el: HTMLDivElement | null) => void;
 }
 
-function ConversationListRow({ conv, isFocused, viewMode, onArchive, onToggleRead, onVisibilityChange, refSetter }: ConversationListRowProps) {
+function ConversationListRow({ conv, isFocused, viewMode, onArchive, onToggleRead, onRequestDelete, cloudUserId, onVisibilityChange, refSetter }: ConversationListRowProps) {
   const { navigation } = useDockNavigation();
   const taskTypeId = useMemo(
     () => conv.firstContextOfType?.('task') ?? null,
@@ -239,7 +259,41 @@ function ConversationListRow({ conv, isFocused, viewMode, onArchive, onToggleRea
             >
               <Archive className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
             </button>
+            <button
+              className="rounded p-1 hover:bg-destructive/10"
+              title="Delete conversation"
+              onClick={() => {
+                if (!conv.id) return;
+                if (!conv.remote) {
+                  onRequestDelete({ kind: 'local', conversationId: conv.id });
+                } else if (cloudUserId && conv.created_by === cloudUserId) {
+                  onRequestDelete({ kind: 'owner', conversationId: conv.id });
+                } else {
+                  onRequestDelete({ kind: 'leave', conversationId: conv.id });
+                }
+              }}
+              data-testid="inbox-row-delete-button"
+            >
+              <Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
+            </button>
           </>
+        )}
+        {isInvitationRow && conv.id && invitationId && (
+          <button
+            type="button"
+            className="rounded p-1 hover:bg-destructive/10"
+            title="Decline (delete) invitation"
+            onClick={() =>
+              onRequestDelete({
+                kind: 'invitation',
+                invitationId,
+                conversationId: conv.id!,
+              })
+            }
+            data-testid="inbox-invitation-delete-button"
+          >
+            <Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
+          </button>
         )}
       </div>
     </div>
@@ -263,6 +317,15 @@ export function InboxView() {
   const rowRefs = useRef<Map<string, HTMLDivElement | null>>(new Map());
   const { navigation, currentDock } = useDockNavigation();
   const { setUnreadCount } = useInboxStore();
+  const { cloudUser } = useAuth();
+  const cloudUserId = cloudUser?.id ?? null;
+  const { connection } = useCloudStatus();
+  const hubReachable =
+    connection.status === 'connected' || connection.status === 'verified';
+
+  // Bulk-delete + per-row-delete dialog state.
+  const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
+  const [rowDelete, setRowDelete] = useState<RowDeleteAction | null>(null);
 
   const request = useMemo(() => new QueryRequest({ type: Conversation.type }), []);
   const { data: conversations = [], refetch, isLoading } = useEntitiesQuery<Conversation>(request);
@@ -354,13 +417,138 @@ export function InboxView() {
     void refetch();
   }, [refetch]);
 
-  const handleDeleteArchived = useCallback(async () => {
-    // Hard delete — only callable from the 'archived' view, where the user
-    // has explicitly archived these rows. Server side already filters to
-    // ``archived_at IS NOT NULL`` so this is scoped strictly to the bucket.
-    await deleteArchivedConversations();
-    void refetch();
+  // Compute the bulk-delete bucket breakdown from the locally-known
+  // archived conversations. Drives the BulkConfirmDialog summary and the
+  // hub-reachability gate. Mirrors the server-side classification in
+  // ``handle_conversation_delete_archived``.
+  const archivedConvs = useMemo(
+    () => conversations.filter((c) => c.archived_at),
+    [conversations],
+  );
+  const buckets = useMemo(() => {
+    let ownerCount = 0;
+    let nonOwnerCount = 0;
+    let invitationCount = 0;
+    let localCount = 0;
+    for (const c of archivedConvs) {
+      const pointers = c.conversationMessageIds ?? [];
+      const firstPtr = pointers[0];
+      // We don't have the FM entity loaded for archived convs the user
+      // never opened, so heuristic: invitation-kind conversations are
+      // expected to be `remote=true` with the matching invitation entity
+      // in the local DB. The server's classifier is the source of truth;
+      // here we just give the user a reasonable preview.
+      const seemsInvitation = !!firstPtr && (c.title || '').toLowerCase() === 'invitation';
+      if (seemsInvitation) {
+        invitationCount += 1;
+      } else if (!c.remote) {
+        localCount += 1;
+      } else if (cloudUserId && c.created_by === cloudUserId) {
+        ownerCount += 1;
+      } else {
+        nonOwnerCount += 1;
+      }
+    }
+    return { ownerCount, nonOwnerCount, invitationCount, localCount };
+  }, [archivedConvs, cloudUserId]);
+  const needsHub = buckets.ownerCount + buckets.nonOwnerCount + buckets.invitationCount > 0;
+
+  const handleDeleteArchived = useCallback(() => {
+    if (archivedConvs.length === 0) return;
+    if (needsHub && !hubReachable) {
+      toast.error('Cloud disconnected', {
+        description: 'Reconnect to the cloud to delete shared conversations.',
+      });
+      return;
+    }
+    setBulkDialogOpen(true);
+  }, [archivedConvs.length, hubReachable, needsHub]);
+
+  const runBulkDelete = useCallback(async () => {
+    try {
+      const res = await deleteArchivedConversations();
+      const ok = res.deleted?.length ?? 0;
+      const failed = res.failed ?? [];
+      if (failed.length === 0) {
+        toast.success(`Deleted ${ok} conversation${ok === 1 ? '' : 's'}`);
+      } else {
+        const firstFew = failed
+          .slice(0, 3)
+          .map((f) => `${f.id.slice(0, 8)}: ${f.reason}`)
+          .join('\n');
+        toast.error(`Deleted ${ok}, ${failed.length} failed`, {
+          description: firstFew,
+        });
+      }
+    } catch (e) {
+      toast.error('Delete all failed', {
+        description: e instanceof Error ? e.message : String(e),
+      });
+    } finally {
+      void refetch();
+    }
   }, [refetch]);
+
+  const handleRowDelete = useCallback(
+    (action: RowDeleteAction) => {
+      if (action.kind !== 'local' && !hubReachable) {
+        toast.error('Cloud disconnected', {
+          description: 'Reconnect to the cloud to delete this conversation.',
+        });
+        return;
+      }
+      setRowDelete(action);
+    },
+    [hubReachable],
+  );
+
+  const confirmRowDelete = useCallback(async () => {
+    if (!rowDelete) return;
+    try {
+      if (rowDelete.kind === 'invitation') {
+        await declineInvitation({ invitation_id: rowDelete.invitationId });
+        toast.success('Invitation declined');
+      } else if (rowDelete.kind === 'owner') {
+        await deleteConversation({
+          conversation_id: rowDelete.conversationId,
+          mode: 'delete_for_all',
+        });
+        toast.success('Conversation deleted');
+      } else if (rowDelete.kind === 'leave') {
+        await leaveConversation({ conversation_id: rowDelete.conversationId });
+        toast.success('Left conversation');
+      } else {
+        await deleteConversation({
+          conversation_id: rowDelete.conversationId,
+          mode: 'local',
+        });
+        toast.success('Conversation deleted');
+      }
+    } catch (e) {
+      toast.error('Delete failed', {
+        description: e instanceof Error ? e.message : String(e),
+      });
+    } finally {
+      void refetch();
+    }
+  }, [refetch, rowDelete]);
+
+  const dismissInvitationRow = useCallback(
+    async (action: RowDeleteAction) => {
+      if (action.kind !== 'invitation') return;
+      try {
+        await dismissConversation({ conversation_id: action.conversationId });
+        toast.success('Invitation dismissed');
+      } catch (e) {
+        toast.error('Dismiss failed', {
+          description: e instanceof Error ? e.message : String(e),
+        });
+      } finally {
+        void refetch();
+      }
+    },
+    [refetch],
+  );
 
   const setView = useCallback((next: InboxViewMode) => {
     setViewMode((cur) => {
@@ -502,6 +690,8 @@ export function InboxView() {
               viewMode={viewMode}
               onArchive={handleArchive}
               onToggleRead={handleToggleRead}
+              onRequestDelete={handleRowDelete}
+              cloudUserId={cloudUserId}
               onVisibilityChange={handleRowVisibility}
               refSetter={(el) => {
                 if (conv.id) rowRefs.current.set(conv.id, el);
@@ -509,6 +699,124 @@ export function InboxView() {
             />
           ))}
       </div>
+
+      <BulkConfirmDialog
+        open={bulkDialogOpen}
+        onOpenChange={setBulkDialogOpen}
+        title="Delete archived conversations"
+        intro={
+          needsHub
+            ? 'This sends a cloud action per conversation:'
+            : 'These conversations exist only on this device.'
+        }
+        buckets={[
+          {
+            label: 'You own — delete for everyone',
+            count: buckets.ownerCount,
+            tone: 'destructive',
+            description: 'Removed for all participants',
+          },
+          {
+            label: 'You will leave',
+            count: buckets.nonOwnerCount,
+            description: 'Removed for you; other members keep it',
+          },
+          {
+            label: 'Invitations — decline',
+            count: buckets.invitationCount,
+            description: 'Notifies the inviter',
+          },
+          {
+            label: 'Local only — permanent',
+            count: buckets.localCount,
+            tone: 'destructive',
+            description: 'Never synced to cloud',
+          },
+        ]}
+        confirmLabel="Delete all"
+        onConfirm={() => void runBulkDelete()}
+      />
+
+      {rowDelete?.kind === 'invitation' && (
+        <BulkConfirmDialog
+          open
+          onOpenChange={(o) => !o && setRowDelete(null)}
+          title="Invitation"
+          intro="Pick what to do with this invitation."
+          buckets={[
+            {
+              label: 'Decline (notifies the inviter)',
+              count: 1,
+              tone: 'destructive',
+              description: 'Removes it everywhere',
+            },
+          ]}
+          confirmLabel="Decline"
+          cancelLabel="Cancel"
+          onConfirm={() => {
+            void confirmRowDelete();
+            setRowDelete(null);
+          }}
+          onCancel={() => {
+            // Offer the "dismiss" path explicitly so the user can hide the
+            // row without notifying the inviter. We fire it from the cancel
+            // handler so the dialog is closed first.
+            void dismissInvitationRow(rowDelete);
+          }}
+        />
+      )}
+
+      {rowDelete?.kind === 'owner' && (
+        <BulkConfirmDialog
+          open
+          onOpenChange={(o) => !o && setRowDelete(null)}
+          title="Delete this conversation"
+          intro="You own this conversation — pick how you want to leave."
+          buckets={[
+            {
+              label: 'Delete for everyone',
+              count: 1,
+              tone: 'destructive',
+              description: 'Removed for all participants on the cloud',
+            },
+          ]}
+          confirmLabel="Delete for everyone"
+          onConfirm={() => {
+            void confirmRowDelete();
+            setRowDelete(null);
+          }}
+        />
+      )}
+
+      {rowDelete?.kind === 'leave' && (
+        <ConfirmDialog
+          open
+          onOpenChange={(o) => !o && setRowDelete(null)}
+          title="Leave this conversation?"
+          description="You'll be removed from the participant list. Other members keep the conversation."
+          confirmLabel="Leave"
+          variant="destructive"
+          onConfirm={() => {
+            void confirmRowDelete();
+            setRowDelete(null);
+          }}
+        />
+      )}
+
+      {rowDelete?.kind === 'local' && (
+        <ConfirmDialog
+          open
+          onOpenChange={(o) => !o && setRowDelete(null)}
+          title="Permanently delete?"
+          description="This conversation is local-only. It will be removed from this device."
+          confirmLabel="Delete"
+          variant="destructive"
+          onConfirm={() => {
+            void confirmRowDelete();
+            setRowDelete(null);
+          }}
+        />
+      )}
     </div>
   );
 }
