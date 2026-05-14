@@ -67,7 +67,7 @@ test('setup: alice creates → bob accepts via UI → realtime round-trip < 500 
     //    the strip's reactive query updates as soon as the row hits the local
     //    DB — well within 2s of the click.
     await bob.page.getByTestId('refresh-conversations-button').click();
-    await bob.page.getByTestId('pending-invitation-row').first()
+    await bob.page.locator('[data-testid="conversation-row"][data-kind="invitation"]').first()
       .waitFor({ state: 'visible', timeout: 2_000 });
 
     // 3. Click Accept on every pending row in parallel. Stale invitations
@@ -76,7 +76,7 @@ test('setup: alice creates → bob accepts via UI → realtime round-trip < 500 
     //    over the buttons fires all clicks concurrently so accept latency is
     //    dominated by the single slowest hub round-trip, not N×serial.
     const tInviteSeen = Date.now();
-    const acceptButtons = await bob.page.getByTestId('accept-invitation-button').all();
+    const acceptButtons = await bob.page.locator('[data-testid="conversation-row"][data-kind="invitation"] [data-testid="accept-invitation-button"]').all();
     console.log(`[setup] bob sees ${acceptButtons.length} pending invitation(s)  (+${tInviteSeen - tCreated} ms)`);
     expect(acceptButtons.length).toBeGreaterThan(0);
     await Promise.all(acceptButtons.map((b) => b.click()));
@@ -92,7 +92,18 @@ test('setup: alice creates → bob accepts via UI → realtime round-trip < 500 
     //    we use a fresh marker so the wait is unambiguous.
     const calibrate = `ping-${Date.now()}`;
     const { sentAt } = await sendReplyViaUi(alice.page, calibrate);
-    const tRx = await waitForBubbleText(bob.page, calibrate, 2_000);
+    let tRx: number;
+    try {
+      tRx = await waitForBubbleText(bob.page, calibrate, 2_000);
+    } catch (e) {
+      // RCA dump: did the message land in bob's local DB? did the bubble even render?
+      const bubbleCount = await bob.page.locator('[data-testid^="message-bubble-"]').count();
+      const bubbleTexts = await bob.page.locator('[data-testid^="message-bubble-"] .text-sm:not(.font-semibold)').allInnerTexts();
+      const bobFm = await fetch(`${BOB.backendUrl}/api/v1/graph/conversation/${convId}/messages`).then((r) => r.json()).catch(() => null);
+      console.log('[rca] bob bubbles:', bubbleCount, JSON.stringify(bubbleTexts));
+      console.log('[rca] bob backend messages:', JSON.stringify(bobFm));
+      throw e;
+    }
     const rtt = tRx - sentAt;
     console.log(`[setup] realtime round-trip alice → bob: ${rtt} ms`);
 

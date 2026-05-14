@@ -137,7 +137,9 @@ export async function startConversationViaUi(
 export async function sendReplyViaUi(page: Page, text: string): Promise<{ sentAt: number }> {
   const textarea = page.locator('textarea[placeholder^="Reply to sender"]');
   await textarea.fill(text);
-  const sendBtn = page.locator('button[title="Send"]');
+  // Scope to the composer's send button — the other ``title="Send"`` is the
+  // entity-execution panel's button (data-testid="entity-execution-send").
+  const sendBtn = page.locator('button[title="Send"]:not([data-testid])');
   await expect(sendBtn).toBeEnabled({ timeout: 1_000 });
   const sentAt = Date.now();
   await sendBtn.click();
