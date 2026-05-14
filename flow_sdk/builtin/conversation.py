@@ -31,6 +31,11 @@ class Conversation(Entity):
 
     type: str = APIField(default="conversation")
     title: Optional[str] = APIField(default=None)
+    # Hub-side owner of the conversation (mirrors ``Conversation.initiated_by``
+    # on the hub). Populated by ``_upsert_hub_conversation_metadata`` and used
+    # by ``handle_conversation_delete_archived`` to classify each archived
+    # row as own-delete vs leave vs decline. Always equal to a cloud-user id.
+    created_by: Optional[str] = APIField(default=None)
     remote_project_id: Optional[str] = APIField(None)
     remote_project_name: Optional[str] = APIField(None)
     message_count: int = APIField(0)

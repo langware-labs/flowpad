@@ -625,41 +625,198 @@ async def conversation_archive_all() -> ApiResponse:
         return ApiFailResponse(message=f"Failed: {e}")
 
 
-async def handle_conversation_delete_archived(someone_typeid: str) -> ApiResponse:
-    """Hard-delete every Conversation whose ``archived_at`` is set.
+async def _hard_delete_local_conversation(conv: Conversation) -> None:
+    """Hard-delete a local Conversation row + its FlowMessages + jsonl.
 
-    Scoped strictly to the archived bucket — only the UI's "Archived view"
-    surfaces this action, and only after the user has explicitly archived
-    those rows. Idempotent: runs in O(archived-rows).
-
-    Per-conversation cleanup mirrors ``_cleanup_invitation_placeholder``:
-    delete the on-disk ``conversation.jsonl`` + parent dir if empty, then
-    delete the entity row. FlowMessages attached to deleted conversations
-    are NOT cascaded — they'd be orphaned in SQLite but not surface via
-    Inbox queries (which iterate conversations).
+    Shared by the prune step in ``handle_conversation_list``, the per-row
+    ``handle_conversation_delete`` action, and the bulk
+    ``handle_conversation_delete_archived`` loop. Best-effort — exceptions
+    in any sub-step are logged but don't abort the rest of the cleanup.
     """
+    if conv is None or not conv.id:
+        return
+    cid = conv.id
+    # Cascade: delete child FlowMessages so they don't orphan in SQLite.
+    try:
+        from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
+        flt = QueryFilter(type=BuiltinEntityType.FLOW_MESSAGE.value, conversation_id=cid)
+        msgs = await FlowMessage.get_all(flt)
+        for fm in msgs:
+            try:
+                await fm.delete()
+            except Exception as e:  # noqa: BLE001
+                logger.warning("[conv-hard-delete] %s fm delete failed: %s", cid[:8], e)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[conv-hard-delete] %s fm list failed: %s", cid[:8], e)
+    # Unlink the on-disk jsonl pointer index + parent dir if empty.
+    try:
+        jsonl_path = ConversationRecord.default_jsonl_path(cid)
+        if jsonl_path.exists():
+            jsonl_path.unlink()
+        parent = jsonl_path.parent
+        if parent.exists() and not any(parent.iterdir()):
+            parent.rmdir()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[conv-hard-delete] %s jsonl unlink failed: %s", cid[:8], e)
+    # Finally delete the entity row.
+    try:
+        await conv.delete()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[conv-hard-delete] %s entity delete failed: %s", cid[:8], e)
+
+
+def _is_invitation_conversation(conv: Conversation) -> bool:
+    """A conversation row that surfaces an invitation: it was materialized
+    from a hub Invitation's embedded ``conversation`` payload AND the local
+    user has not yet been added to ``participants`` (i.e. hasn't accepted).
+    """
+    if not conv:
+        return False
+    # The invitation pipeline materializes the conversation with a single
+    # FlowMessage of kind='invitation'. The first-message kind isn't stored
+    # on the Conversation row, so we infer the invitation state via the
+    # local Invitation entity instead — there's exactly one invitation per
+    # conversation in the new pipeline.
+    return False
+
+
+async def _classify_archived_delete(
+    conv: Conversation, current_user_id: Optional[str]
+) -> str:
+    """Return one of: 'decline_invitation' | 'local' | 'delete_for_all' | 'leave'.
+
+    Inspection order:
+      1. Is this conversation the target of a still-pending Invitation that
+         I (the local cloud user) have not accepted? → 'decline_invitation'.
+      2. Is the conv local-only (``remote=False``)? → 'local'.
+      3. Am I the hub-side owner (``conv.created_by == current_user_id``)?
+         → 'delete_for_all'.
+      4. Otherwise → 'leave'.
+    """
+    from flow_sdk.builtin.invitation import Invitation as LocalInvitation  # noqa: PLC0415
+
+    # Check pending invitation targeting this conv. We stored the conv id
+    # via the invitation's ``message`` field as ``conversation-<id>`` in
+    # ``Conversation.share`` — the most reliable disambiguator.
+    if conv.remote:
+        try:
+            invs = await LocalInvitation.get_all({})
+            for inv in (invs or []):
+                if getattr(inv, "accepted", False):
+                    continue
+                msg = (getattr(inv, "message", None) or "").strip()
+                if msg == f"conversation-{conv.id}":
+                    return "decline_invitation"
+        except Exception:  # noqa: BLE001
+            pass
+    if not conv.remote:
+        return "local"
+    if current_user_id and conv.created_by == current_user_id:
+        return "delete_for_all"
+    return "leave"
+
+
+async def _current_cloud_user_id() -> Optional[str]:
+    """Return the local cloud user's hub-side id, or None if not logged in."""
+    try:
+        from flow_sdk.cli.app_config import get_user  # noqa: PLC0415
+        user = get_user() or {}
+        uid = user.get("id")
+        return uid if uid else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+async def _hub_decline_invitation(invitation_id: str) -> None:
+    from flow_sdk.utils.hub import hub_delete  # noqa: PLC0415
+    await hub_delete(BuiltinEntityType.INVITATION, invitation_id, action="decline")
+
+
+async def _hub_delete_conversation(conv_id: str) -> None:
+    from flow_sdk.utils.hub import hub_delete  # noqa: PLC0415
+    await hub_delete(BuiltinEntityType.CONVERSATION, conv_id, action="delete")
+
+
+async def _hub_leave_conversation(conv_id: str) -> None:
+    from flow_sdk.utils.hub import hub_post  # noqa: PLC0415
+    await hub_post(
+        BuiltinEntityType.CONVERSATION, {}, entity_id=conv_id, action="leave",
+    )
+
+
+async def handle_conversation_delete_archived(someone_typeid: str) -> ApiResponse:
+    """Best-effort bulk delete: classify each archived conversation, apply
+    the correct hub-side action, then hard-delete locally only for items
+    that succeeded hub-side.
+
+    Returns per-item status:
+      data = {
+        "deleted": [<conv_id>, ...],
+        "failed":  [{"id": <conv_id>, "reason": <str>}, ...],
+        "scanned": <int>,
+      }
+    """
+    from flow_sdk.utils.hub import HubError, hub_base_url  # noqa: PLC0415
+    from flow_sdk.builtin.invitation import Invitation as LocalInvitation  # noqa: PLC0415
+
     convs = await Conversation.get_all({})
     targets = [c for c in (convs or []) if c.archived_at is not None]
-    deleted = 0
+    cloud_user_id = await _current_cloud_user_id()
+
+    # Pre-check: if any target needs the hub but the hub isn't reachable,
+    # bail with a structured error so the UI can surface the
+    # "Cloud disconnected — Reconnect first" toast (decision #4a).
+    any_needs_hub = False
+    for c in targets:
+        kind = await _classify_archived_delete(c, cloud_user_id)
+        if kind in ("delete_for_all", "leave", "decline_invitation"):
+            any_needs_hub = True
+            break
+    if any_needs_hub and not hub_base_url():
+        return ApiFailResponse(
+            data={"hub_reachable": False, "auth_required": False},
+            message="Cloud disconnected — reconnect to delete shared conversations.",
+        )
+
+    deleted: list[str] = []
+    failed: list[dict] = []
     for conv in targets:
         try:
-            jsonl_path = ConversationRecord.default_jsonl_path(conv.id)
-            if jsonl_path.exists():
-                jsonl_path.unlink()
-            parent = jsonl_path.parent
-            if parent.exists() and not any(parent.iterdir()):
-                parent.rmdir()
+            mode = await _classify_archived_delete(conv, cloud_user_id)
+            if mode == "decline_invitation":
+                inv = None
+                try:
+                    invs = await LocalInvitation.get_all({})
+                    for cand in (invs or []):
+                        if (getattr(cand, "message", None) or "").strip() == f"conversation-{conv.id}":
+                            inv = cand
+                            break
+                except Exception:  # noqa: BLE001
+                    pass
+                if inv and inv.id:
+                    await _hub_decline_invitation(inv.id)
+                    try:
+                        await inv.delete()
+                    except Exception:  # noqa: BLE001
+                        pass
+                await _hard_delete_local_conversation(conv)
+            elif mode == "delete_for_all":
+                await _hub_delete_conversation(conv.id)
+                await _hard_delete_local_conversation(conv)
+            elif mode == "leave":
+                await _hub_leave_conversation(conv.id)
+                await _hard_delete_local_conversation(conv)
+            else:  # mode == "local"
+                await _hard_delete_local_conversation(conv)
+            deleted.append(conv.id)
+        except HubError as e:
+            failed.append({"id": conv.id, "reason": f"hub {e.status_code}: {e.reason}"})
         except Exception as e:  # noqa: BLE001
-            logger.warning("[conv-delete-archived] %s jsonl unlink failed: %s",
-                           (conv.id or "?")[:8], e)
-        try:
-            await conv.delete()
-            deleted += 1
-        except Exception as e:  # noqa: BLE001
-            logger.warning("[conv-delete-archived] %s entity delete failed: %s",
-                           (conv.id or "?")[:8], e)
+            failed.append({"id": conv.id, "reason": str(e)})
+
     return ApiSuccessResponse(data={
         "deleted": deleted,
+        "failed": failed,
         "scanned": len(convs or []),
     })
 
@@ -673,6 +830,132 @@ async def conversation_delete_archived() -> ApiResponse:
         return await handle_conversation_delete_archived(request_info.someone_typeid)
     except Exception as e:
         logger.error("[flow_message_action] conversation-delete-archived error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Failed: {e}")
+
+
+async def handle_conversation_delete(
+    conversation_id: str, mode: str, someone_typeid: str,
+) -> ApiResponse:
+    """Per-row delete with explicit semantics (mode in {delete_for_all, leave, local}).
+
+    The UI picks the mode based on the user's relationship to the conversation:
+      * ``delete_for_all`` — caller owns a shared conv (rule 1 cascade).
+      * ``leave``          — caller is a non-owner participant (rule 3).
+      * ``local``          — purely-local conv with no hub counterpart (rule 2).
+
+    All non-``local`` modes pre-check hub reachability (decision #4a) and
+    return ``{hub_reachable: false, auth_required}`` on failure so the UI
+    can surface a clear toast instead of a transient error.
+    """
+    from flow_sdk.utils.hub import HubError, hub_base_url  # noqa: PLC0415
+
+    if mode not in {"delete_for_all", "leave", "local"}:
+        return ApiFailResponse(message=f"Unknown delete mode: {mode}")
+    if not conversation_id:
+        return ApiFailResponse(message="conversation_id is required")
+
+    conv = await Conversation.get_one({"id": conversation_id})
+    if conv is None:
+        return ApiFailResponse(message="Conversation not found", data={"id": conversation_id})
+
+    if mode != "local":
+        if not hub_base_url():
+            return ApiFailResponse(
+                data={"hub_reachable": False, "auth_required": False, "id": conversation_id},
+                message="Cloud disconnected — reconnect to delete shared conversations.",
+            )
+        try:
+            if mode == "delete_for_all":
+                await _hub_delete_conversation(conversation_id)
+            else:  # mode == "leave"
+                await _hub_leave_conversation(conversation_id)
+        except HubError as e:
+            return ApiFailResponse(
+                data={"id": conversation_id, "hub_status": e.status_code},
+                message=f"Hub {e.status_code}: {e.reason}",
+            )
+
+    await _hard_delete_local_conversation(conv)
+    return ApiSuccessResponse(data={"id": conversation_id, "mode": mode})
+
+
+@action.post(action_name="conversation-delete", types=None)
+async def conversation_delete() -> ApiResponse:
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.someone_typeid:
+            return ApiFailResponse(message="Authentication required")
+        body = await request_info.get_post_data() or {}
+        conv_id = (body.get("conversation_id") or "").strip()
+        mode = (body.get("mode") or "").strip()
+        return await handle_conversation_delete(conv_id, mode, request_info.someone_typeid)
+    except Exception as e:
+        logger.error("[flow_message_action] conversation-delete error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Failed: {e}")
+
+
+async def handle_invitation_decline(
+    invitation_id: str, someone_typeid: str,
+) -> ApiResponse:
+    """Decline a pending invitation hub-side AND remove the local row
+    (along with the embedded Conversation + preview message that the
+    new invitation pipeline materialized).
+    """
+    from flow_sdk.utils.hub import HubError, hub_base_url  # noqa: PLC0415
+    from flow_sdk.builtin.invitation import Invitation as LocalInvitation  # noqa: PLC0415
+
+    if not invitation_id:
+        return ApiFailResponse(message="invitation_id is required")
+    if not hub_base_url():
+        return ApiFailResponse(
+            data={"hub_reachable": False, "auth_required": False, "id": invitation_id},
+            message="Cloud disconnected — reconnect to decline invitations.",
+        )
+    try:
+        await _hub_decline_invitation(invitation_id)
+    except HubError as e:
+        return ApiFailResponse(
+            data={"id": invitation_id, "hub_status": e.status_code},
+            message=f"Hub {e.status_code}: {e.reason}",
+        )
+
+    # Locate the local invitation + its target conversation (the conv id
+    # is stamped into the invitation message via ``Conversation.share``).
+    try:
+        inv = await LocalInvitation.get_one({"id": invitation_id})
+    except Exception:  # noqa: BLE001
+        inv = None
+    target_conv_id: Optional[str] = None
+    if inv is not None:
+        msg = (getattr(inv, "message", None) or "").strip()
+        if msg.startswith("conversation-"):
+            target_conv_id = msg.removeprefix("conversation-")
+        try:
+            await inv.delete()
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[invitation-decline] local inv delete failed: %s", e)
+    if target_conv_id:
+        try:
+            conv = await Conversation.get_one({"id": target_conv_id})
+            if conv is not None:
+                await _hard_delete_local_conversation(conv)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[invitation-decline] local conv cleanup failed: %s", e)
+
+    return ApiSuccessResponse(data={"id": invitation_id})
+
+
+@action.post(action_name="invitation-decline", types=None)
+async def invitation_decline() -> ApiResponse:
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.someone_typeid:
+            return ApiFailResponse(message="Authentication required")
+        body = await request_info.get_post_data() or {}
+        inv_id = (body.get("invitation_id") or "").strip()
+        return await handle_invitation_decline(inv_id, request_info.someone_typeid)
+    except Exception as e:
+        logger.error("[flow_message_action] invitation-decline error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Failed: {e}")
 
 
@@ -1153,17 +1436,31 @@ async def inbox_bulk_update() -> ApiResponse:
 # ---------------------------------------------------------------------------
 
 
-async def _materialize_remote_invitation(
+async def _materialize_invitation(
     hub_inv: dict, someone_typeid: str
-) -> Optional["Invitation"]:
-    """Upsert a local Invitation row to mirror a hub-side invitation."""
-    from flow_sdk.builtin.invitation import Invitation as LocalInvitation
+) -> tuple[Optional["Invitation"], Optional[str]]:
+    """Upsert a hub-side Invitation locally — and the Conversation + preview
+    FlowMessage that the hub now ships embedded in the ``pending`` response.
+
+    Returns ``(local_invitation, conversation_id)``. ``conversation_id`` is
+    None when the hub didn't embed a target Conversation (defensive — older
+    hub builds without the embedding change still work, the placeholder is
+    just not materialized).
+
+    Decision #2 in the plan: invitations carry the real Conversation, so
+    the recipient sees a normal ``remote=True`` Conversation row with the
+    first FlowMessage already present, no synthesized "placeholder" id.
+    """
+    from flow_sdk.app.actions.materialize_flow_message import (  # noqa: PLC0415
+        materialize_flow_message,
+    )
+    from flow_sdk.builtin.invitation import Invitation as LocalInvitation  # noqa: PLC0415
 
     if not hub_inv or not hub_inv.get("id"):
-        return None
+        return None, None
     inv_id = hub_inv["id"]
-    existing = await LocalInvitation.get_one({"id": inv_id})
-    fields = {
+    existing_inv = await LocalInvitation.get_one({"id": inv_id})
+    inv_fields = {
         "id": inv_id,
         "recipient_email": hub_inv.get("recipient_email") or "",
         "accepted": bool(hub_inv.get("accepted") or False),
@@ -1171,132 +1468,84 @@ async def _materialize_remote_invitation(
         "message": hub_inv.get("message"),
         "remote": True,
     }
-    if existing:
-        existing.recipient_email = fields["recipient_email"]
-        existing.accepted = fields["accepted"]
-        existing.sent = fields["sent"]
-        existing.message = fields["message"]
-        existing.remote = True
-        return await existing.save(someone_typeid)
+    if existing_inv:
+        existing_inv.recipient_email = inv_fields["recipient_email"]
+        existing_inv.accepted = inv_fields["accepted"]
+        existing_inv.sent = inv_fields["sent"]
+        existing_inv.message = inv_fields["message"]
+        existing_inv.remote = True
+        local_inv = await existing_inv.save(someone_typeid)
+    else:
+        local_inv = await LocalInvitation.model_validate(inv_fields).save(someone_typeid)
 
-    inv = LocalInvitation.model_validate(fields)
-    return await inv.save(someone_typeid)
+    if local_inv.accepted:
+        return local_inv, None
 
-
-def _invitation_placeholder_conv_id(invitation_id: str) -> str:
-    """Derive a stable Conversation id for the invitation-placeholder row.
-
-    Deterministic from the invitation id so re-sync hits the same row (no
-    duplicates) and the accept cleanup can find the placeholder without
-    storing a back-pointer on the Invitation entity.
-    """
-    import uuid  # noqa: PLC0415
-    return str(uuid.uuid5(uuid.NAMESPACE_OID, f"invitation-placeholder:{invitation_id}"))
-
-
-async def _ensure_invitation_placeholder_conversation(
-    invitation: "Invitation", someone_typeid: str
-) -> Optional[str]:
-    """Create (idempotently) a local Conversation + invitation-kind FlowMessage
-    that represents the pending hub Invitation as a first row in the Recent
-    strip and Inbox.
-
-    The Conversation is ``remote=False`` because it has no hub counterpart;
-    it's a UI rendering affordance. The FlowMessage carries ``kind=invitation``
-    and pins the Invitation TypeId in ``context_entities`` so the UI can read
-    the invitation_id when the user clicks Accept.
-
-    Returns the placeholder conversation id, or None if the invitation is
-    already accepted / missing.
-    """
-    from flow_sdk.app.actions.materialize_flow_message import (  # noqa: PLC0415
-        materialize_flow_message,
-    )
-    from flow_sdk.builtin.invitation import Invitation as LocalInvitation  # noqa: PLC0415
-
-    if not invitation or not invitation.id or invitation.accepted:
-        return None
-
-    conv_id = _invitation_placeholder_conv_id(invitation.id)
-
-    existing_conv = await Conversation.get_one({"id": conv_id})
-    if existing_conv is not None:
-        return conv_id
-
-    invitation_typeid = f"{LocalInvitation.get_type()}-{invitation.id}"
-
-    payload: dict = {
-        "id": conv_id,
-        "title": "Invitation",
-        "remote": False,
-    }
-    conv = Conversation.model_validate(payload)
-    conv.id = conv_id
-    conv = await conv.save(someone_typeid, notify=False)
-
-    rec = ConversationRecord.from_jsonl(
-        ConversationRecord.default_jsonl_path(conv_id),
-        parent_id="", record_id=conv_id, parent_type=RecordType.PROJECT,
-    )
-    rec.save()
-
-    msg_text = (invitation.message or "You've been invited to a conversation").strip()
-    msg_payload = {
-        "text": msg_text,
-        "kind": "invitation",
-        "context_entities": [invitation_typeid],
-        "remote": False,
-    }
-    await materialize_flow_message(
-        msg_payload,
-        conversation_id=conv_id,
-        someone_typeid=someone_typeid,
-        notify=True,
-    )
-    return conv_id
-
-
-async def _cleanup_invitation_placeholder(
-    invitation_id: str, someone_typeid: str
-) -> None:
-    """Hard-delete the local placeholder Conversation + its invitation-kind
-    FlowMessage(s) after a successful invitation-accept.
-
-    The hub-materialized "real" conversation has a different id and will
-    appear via the normal bundle / join path; the placeholder served its
-    purpose (giving the user something to click on before accept).
-    """
-    conv_id = _invitation_placeholder_conv_id(invitation_id)
+    # Materialize the embedded Conversation if the hub provided one.
+    embedded_conv = hub_inv.get("conversation")
+    if not isinstance(embedded_conv, dict) or not embedded_conv.get("id"):
+        return local_inv, None
+    conv_id = embedded_conv["id"]
     try:
-        conv = await Conversation.get_one({"id": conv_id})
-    except Exception:
-        conv = None
-    if conv is None:
-        return
-    try:
-        from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
-        flt = QueryFilter(type=BuiltinEntityType.FLOW_MESSAGE.value, conversation_id=conv_id)
-        msgs = await FlowMessage.get_all(flt)
-        for fm in msgs:
-            try:
-                await fm.delete()
-            except Exception as e:  # noqa: BLE001
-                logger.warning("[invitation-cleanup] fm delete failed: %s", e)
+        await _upsert_hub_conversation_metadata(embedded_conv, someone_typeid)
     except Exception as e:  # noqa: BLE001
-        logger.warning("[invitation-cleanup] fm list failed: %s", e)
+        logger.warning("[inv-materialize] conv upsert failed: %s", e)
+        return local_inv, None
+
+    # Ensure the on-disk jsonl exists so future bundle writes have a home.
     try:
-        await conv.delete()
+        rec = ConversationRecord.from_jsonl(
+            ConversationRecord.default_jsonl_path(conv_id),
+            parent_id="", record_id=conv_id, parent_type=RecordType.PROJECT,
+        )
+        rec.save()
     except Exception as e:  # noqa: BLE001
-        logger.warning("[invitation-cleanup] conv delete failed: %s", e)
-    try:
-        jsonl_path = ConversationRecord.default_jsonl_path(conv_id)
-        if jsonl_path.exists():
-            jsonl_path.unlink()
-        parent = jsonl_path.parent
-        if parent.exists() and not any(parent.iterdir()):
-            parent.rmdir()
-    except Exception as e:  # noqa: BLE001
-        logger.warning("[invitation-cleanup] jsonl unlink failed: %s", e)
+        logger.warning("[inv-materialize] jsonl init failed: %s", e)
+
+    # Materialize the embedded preview FlowMessage. The UI keys off
+    # ``kind='invitation'`` to render the invitation row, and reads the
+    # Invitation TypeId out of ``context_entities`` for the Accept button.
+    preview = hub_inv.get("preview_message")
+    invitation_typeid = f"{LocalInvitation.get_type()}-{inv_id}"
+    if isinstance(preview, dict):
+        msg_payload = dict(preview)
+        msg_payload.setdefault("text", local_inv.message or "You've been invited to a conversation")
+        msg_payload["kind"] = "invitation"
+        existing_ctx = msg_payload.get("context_entities") or []
+        if invitation_typeid not in existing_ctx:
+            existing_ctx = list(existing_ctx) + [invitation_typeid]
+        msg_payload["context_entities"] = existing_ctx
+        msg_payload["remote"] = True
+        try:
+            await materialize_flow_message(
+                msg_payload,
+                conversation_id=conv_id,
+                someone_typeid=someone_typeid,
+                notify=True,
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[inv-materialize] preview msg failed: %s", e)
+    else:
+        # Defensive: even with no preview, ensure there's an invitation-kind
+        # message so the UI's invitation-row branch matches. Synthesize one
+        # locally so accept-flow stays consistent with older hub builds.
+        synth_payload = {
+            "text": (local_inv.message or "You've been invited to a conversation"),
+            "kind": "invitation",
+            "context_entities": [invitation_typeid],
+            "remote": False,
+        }
+        try:
+            await materialize_flow_message(
+                synth_payload,
+                conversation_id=conv_id,
+                someone_typeid=someone_typeid,
+                notify=True,
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[inv-materialize] synth preview failed: %s", e)
+
+    return local_inv, conv_id
 
 
 # ---------------------------------------------------------------------------
@@ -1409,12 +1658,26 @@ async def _upsert_hub_conversation_metadata(
     conv_id = (hub_conv.get("id") or "").strip()
     if not conv_id:
         return None
+    # Defensive: if the hub signals this conv was deleted (audit-only on
+    # hub-side after owner-delete), we still expect the prune step to clear
+    # the local row. Short-circuit here so we don't re-create it.
+    if hub_conv.get("deleted_at"):
+        existing = await Conversation.get_one({"id": conv_id})
+        if existing is not None:
+            try:
+                await _hard_delete_local_conversation(existing)
+            except Exception as e:  # noqa: BLE001
+                logger.warning("[conv-upsert] deleted_at hub row, local cleanup failed: %s", e)
+        return None
     existing = await Conversation.get_one({"id": conv_id})
     if existing is None:
         payload: dict = {"id": conv_id, "remote": True}
         for k in ("title", "participants", "remote_project_id", "remote_project_name"):
             if hub_conv.get(k) is not None:
                 payload[k] = hub_conv[k]
+        # Hub owner field ``initiated_by`` mirrors locally as ``created_by``.
+        if hub_conv.get("initiated_by"):
+            payload["created_by"] = hub_conv["initiated_by"]
         if hub_conv.get("message_status_visible") is not None:
             payload["message_status_visible"] = bool(hub_conv["message_status_visible"])
         conv = Conversation.model_validate(payload)
@@ -1427,6 +1690,10 @@ async def _upsert_hub_conversation_metadata(
         if v is not None and getattr(existing, k, None) != v:
             setattr(existing, k, v)
             changed = True
+    hub_owner = hub_conv.get("initiated_by")
+    if hub_owner is not None and getattr(existing, "created_by", None) != hub_owner:
+        existing.created_by = hub_owner
+        changed = True
     if hub_conv.get("message_status_visible") is not None and \
             existing.message_status_visible != bool(hub_conv["message_status_visible"]):
         existing.message_status_visible = bool(hub_conv["message_status_visible"])
@@ -1528,25 +1795,46 @@ async def handle_conversation_list(someone_typeid: str) -> ApiResponse:
                 _dispatch_conversation_message_fetch(conv_id, someone_typeid)
                 bg_fetch_dispatched.append(conv_id)
 
-    # (d) invitations through the existing placeholder pipeline so they land
-    # as kind='invitation' rows in the same merged Conversation list.
+    # (d) invitations through the new materializer: the hub embeds the
+    # target Conversation + first FlowMessage in each invitation, so the
+    # local row is the real conv (remote=True) — no synthesized placeholder.
+    invitation_conv_ids: set[str] = set()
     for inv in hub_invs:
         try:
-            local_inv = await _materialize_remote_invitation(inv, someone_typeid)
-            if local_inv:
-                try:
-                    await _ensure_invitation_placeholder_conversation(local_inv, someone_typeid)
-                except Exception as ph_err:  # noqa: BLE001
-                    logger.warning("[conv-list] placeholder build failed: %s", ph_err)
+            _local_inv, conv_id = await _materialize_invitation(inv, someone_typeid)
+            if conv_id:
+                invitation_conv_ids.add(conv_id)
         except Exception as e:  # noqa: BLE001
-            logger.warning("[conv-list] invitation upsert failed: %s", e)
+            logger.warning("[conv-list] invitation materialize failed: %s", e)
 
-    # (e) return the freshly-merged list. Background tasks finish after the
+    # (e) Prune step (decision #1c): any local `remote=True` row that did
+    # NOT appear in this fetch (neither in hub_convs nor as the target of
+    # a pending invitation) means it was deleted hub-side (or the local
+    # user lost access). Reconcile by hard-deleting locally so the next
+    # render reflects reality.
+    pruned_ids: list[str] = []
+    if hub_reachable:
+        seen_ids = {c.get("id") for c in hub_convs if c.get("id")}
+        seen_ids.update(invitation_conv_ids)
+        # Re-read local state because the upsert + invitation steps may have
+        # added rows that didn't exist when we snapshotted earlier.
+        refreshed_local = await Conversation.get_all({})
+        for c in refreshed_local:
+            if c.remote and c.id and c.id not in seen_ids:
+                try:
+                    await _hard_delete_local_conversation(c)
+                    pruned_ids.append(c.id)
+                except Exception as e:  # noqa: BLE001
+                    logger.warning("[conv-list] prune %s failed: %s",
+                                   (c.id or "?")[:8], e)
+
+    # (f) return the freshly-merged list. Background tasks finish after the
     # response, fanning out their writes via data_op_msg WS frames.
     merged = await Conversation.get_all({})
     return ApiSuccessResponse(data={
         "conversations": [c.model_dump(mode="json") for c in merged],
         "bg_fetch_dispatched": bg_fetch_dispatched,
+        "pruned_ids": pruned_ids,
         "hub_reachable": hub_reachable,
         "auth_required": auth_required,
     })
@@ -1599,13 +1887,9 @@ async def handle_invitation_sync(someone_typeid: str) -> ApiResponse:
         invitations = []
     for inv in invitations:
         try:
-            local_inv = await _materialize_remote_invitation(inv, someone_typeid)
+            local_inv, _conv_id = await _materialize_invitation(inv, someone_typeid)
             if local_inv:
                 inv_count += 1
-                try:
-                    await _ensure_invitation_placeholder_conversation(local_inv, someone_typeid)
-                except Exception as ph_err:  # noqa: BLE001
-                    logger.warning("[invitation-sync] placeholder build failed: %s", ph_err)
         except Exception as e:
             logger.warning("[invitation-sync] upsert failed: %s", e)
     return ApiSuccessResponse(data={"invitations": inv_count})
@@ -1742,14 +2026,11 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
     except Exception as e:
         logger.warning("[invitation-accept] local update failed: %s", e)
 
-    # Drop the local invitation-placeholder conversation + its invitation-kind
-    # FlowMessage. The hub-materialized real conversation (different id) is
-    # what the UI lands on; the placeholder was only there to give the user
-    # a clickable row pre-accept.
-    try:
-        await _cleanup_invitation_placeholder(inv_id, someone_typeid)
-    except Exception as e:  # noqa: BLE001
-        logger.warning("[invitation-accept] placeholder cleanup failed: %s", e)
+    # The invitation now ships with the Conversation embedded, so the local
+    # SDK already has the real conversation row pre-accept. Nothing to clean
+    # up here — the invitation-kind FlowMessage stays as the first message
+    # in the conversation (it IS the preview); subsequent bundle downloads
+    # append after it.
 
     # Targeted bundle download — exactly one FM materialized (the one just
     # unlocked by the accept). Avoids the cursor-less inbox fetch that would

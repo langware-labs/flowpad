@@ -208,6 +208,41 @@ async def hub_post(
     raise HubError(resp.status_code, reason)
 
 
+async def hub_delete(
+    entity_type: BuiltinEntityType,
+    entity_id: str,
+    action: str | None = None,
+    *,
+    scope: list[tuple[str, str]] | None = None,
+) -> Optional[dict[str, Any]]:
+    """DELETE a hub graph endpoint (entity-level or entity-action).
+
+    Returns the response ``data`` dict on success, None when FLOWPAD_HUB_URL
+    is not configured. Raises ``HubError`` on transport failure or non-200
+    so callers can classify (e.g. 403 owner-only) vs network errors.
+    """
+    url = hub_graph_url(entity_type, entity_id, action, scope=scope)
+    if not url:
+        logger.debug("[hub] FLOWPAD_HUB_URL not set — skipping DELETE %s/%s",
+                     entity_type, entity_id)
+        return None
+    try:
+        async with FlowpadClient(ApiConfig.from_env()) as client:
+            logger.info("[hub] DELETE %s", url)
+            resp = await client.request("DELETE", url, timeout=httpx.Timeout(10))
+    except HubAuthExpiredError as e:
+        logger.warning("[hub] DELETE %s auth expired: %s", url, e)
+        raise HubError(401, "auth expired")
+    except Exception as e:
+        logger.warning("[hub] DELETE %s transport error: %s", url, e)
+        raise HubError(0, str(e))
+    if resp.status_code == 200:
+        return resp.json().get("data") or {}
+    reason = _extract_reason(resp)
+    logger.warning("[hub] DELETE %s returned %s: %s", url, resp.status_code, resp.text[:200])
+    raise HubError(resp.status_code, reason)
+
+
 async def hub_put(
     entity_type: BuiltinEntityType,
     entity_id: str,
