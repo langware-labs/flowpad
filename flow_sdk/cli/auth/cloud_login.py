@@ -49,15 +49,11 @@ async def cloud_login() -> dict[str, Any]:
     hub_url = ApiConfig.from_env().api_base_url
     kind = _classify_hub(hub_url)
 
-    if kind == "cloud":
-        return await _login_by_window(settings.port, settings.cloud_login_timeout_seconds)
-
     if kind == "local":
-        if not (settings.cloud_user_email and settings.cloud_user_pass):
-            raise ValueError("Local hub login requires FLOWPAD_CLOUD_USER_EMAIL and FLOWPAD_CLOUD_USER_PASSWORD")
-        return await _login_by_api(settings.cloud_user_email, settings.cloud_user_pass)
+        if settings.cloud_user_email and settings.cloud_user_pass:
+            return await _login_by_api(settings.cloud_user_email, settings.cloud_user_pass)
 
-    raise ValueError(f"Login not supported for hub URL: {hub_url}")
+    return await _login_by_window(settings.port, settings.cloud_login_timeout_seconds)
 
 
 async def _login_by_api(email: str, password: str) -> dict[str, Any]:
