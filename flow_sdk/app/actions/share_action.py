@@ -70,6 +70,13 @@ async def conversation_add_message() -> ApiSuccessResponse:
 
     Body: ``{"text": str, "sender_name": str?}``. Returns the hub's response
     payload (the persisted FlowMessage as serialized by the hub).
+
+    After the hub stores the message, mirror it into the local DB via
+    ``materialize_flow_message`` — the hub WS bridge intentionally skips the
+    sender's own auto-notify CREATE frame (see ``hub_bridge._handle_flow_message_op``),
+    so without this write the sender's local ``Conversation.message_ids`` stays
+    empty until a manual refresh. The ``append-conversation`` path used for
+    follow-up replies materializes for the same reason.
     """
     request_info = get_current_request_info()
     if not request_info or not request_info.target_entity_typeid:
@@ -86,6 +93,20 @@ async def conversation_add_message() -> ApiSuccessResponse:
     if not isinstance(text, str) or not text:
         raise HTTPException(status_code=400, detail="add_message: 'text' is required")
 
-    conv = Conversation(id=request_info.target_entity_typeid.id)
+    conv_id = request_info.target_entity_typeid.id
+    conv = Conversation(id=conv_id)
     data = await conv.add_message(text, sender_name=body.get("sender_name"))
+
+    try:
+        from flow_sdk.app.actions.materialize_flow_message import materialize_flow_message  # noqa: PLC0415
+        if isinstance(data, dict) and data.get("id"):
+            await materialize_flow_message(
+                data,
+                conversation_id=conv_id,
+                someone_typeid=request_info.someone_typeid,
+                notify=True,
+            )
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[add_message] sender-side materialize failed: %s", e, exc_info=True)
+
     return ApiSuccessResponse(data=data)

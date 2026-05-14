@@ -1622,6 +1622,7 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
                             "title": hub_conv.get("title"),
                             "remote": True,
                         }).save(someone_typeid)
+                await _fetch_conversation_messages(linked_conv_id, someone_typeid)
         except Exception as e:
             logger.warning("[invitation-accept] hub join+materialize failed: %s", e, exc_info=True)
 
