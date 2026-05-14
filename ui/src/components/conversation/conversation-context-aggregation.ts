@@ -24,14 +24,16 @@ import {
   Task,
   TypeId,
 } from '@sdk';
-import { AttachmentType, type Attachment } from '@sdk/entities/flow-message';
+import { AttachmentType, attachmentDataString, type Attachment } from '@sdk/entities/flow-message';
 
 const TRANSCRIPT_FILENAME = 'conversation.jsonl';
 
 /** Detect the `conversation.jsonl` file attachment — surfaced as its own row
  *  in Shared Context rather than as a generic file. */
 export function isTranscriptAttachment(a: Attachment): boolean {
-  return a.attachment_type === AttachmentType.FILE && a.data.endsWith(TRANSCRIPT_FILENAME);
+  if (a.attachment_type !== AttachmentType.FILE) return false;
+  const d = attachmentDataString(a);
+  return !!d && d.endsWith(TRANSCRIPT_FILENAME);
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -208,7 +210,10 @@ export function buildAttachmentEntries(orderedMessages: FlowMessage[]): Attachme
       if (a.attachment_type === AttachmentType.FILE) {
         if (isTranscriptAttachment(a)) continue;
         out.push({ messageId: fm.id, attachment: a, kind: 'file', originMessageIds: [fm.id] });
-      } else if (a.attachment_type === AttachmentType.PROMPT && a.data.startsWith('prompt/')) {
+      } else if (
+        a.attachment_type === AttachmentType.PROMPT &&
+        attachmentDataString(a).startsWith('prompt/')
+      ) {
         out.push({ messageId: fm.id, attachment: a, kind: 'prompt-file', originMessageIds: [fm.id] });
       }
     }

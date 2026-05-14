@@ -329,9 +329,16 @@ async def test_message_matrix_http_ws_upload_download(
         hub_payload: dict[str, Any] = fm_bundle.model_dump(
             mode="python", context={"skip_api_serializer": True},
         )
-        hub_payload["context_entities"] = [f"conversation-{conv_id}"]
-        hub_data = await hub_post(BuiltinEntityType.FLOW_MESSAGE, hub_payload)
-        assert hub_data and hub_data.get("id"), f"hub_post(flow_message) returned: {hub_data!r}"
+        # Route through ``conversation/<id>/add_message`` so the action grants
+        # participants (incl. bob) read on the new FM. Raw ``hub_post(FLOW_MESSAGE)``
+        # bypasses that and bob's blob GET 401s with NR1.
+        hub_data = await hub_post(
+            BuiltinEntityType.CONVERSATION,
+            hub_payload,
+            entity_id=conv_id,
+            action="add_message",
+        )
+        assert hub_data and hub_data.get("id"), f"hub_post(add_message) returned: {hub_data!r}"
         hub_fm_id = hub_data["id"]
         fm_bundle.id = hub_fm_id  # align local & hub ids so pack carries the hub id
 

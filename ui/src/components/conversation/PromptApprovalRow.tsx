@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ExternalLink, Eye, Paperclip, Pencil, Play } from 'lucide-react';
-import type { Attachment } from '@sdk/entities/flow-message';
+import { attachmentDataString, type Attachment } from '@sdk/entities/flow-message';
 import {
   Dialog,
   DialogContent,
@@ -65,17 +65,21 @@ export function PromptApprovalRow({
   onEdit,
 }: PromptApprovalRowProps) {
   const inlineAttachments = useMemo(
-    () => attachments.filter((a) => !!a.data && !a.data.startsWith('prompt/')),
+    () =>
+      attachments.filter((a) => {
+        const d = attachmentDataString(a);
+        return d.length > 0 && !d.startsWith('prompt/');
+      }),
     [attachments],
   );
   const fileAttachments = useMemo(
-    () => attachments.filter((a) => !!a.data && a.data.startsWith('prompt/')),
+    () => attachments.filter((a) => attachmentDataString(a).startsWith('prompt/')),
     [attachments],
   );
 
   // Inline text is the user's typed prompt. Concatenate when there are
   // multiple (very rare — usually 0 or 1).
-  const inlineText = inlineAttachments.map((a) => a.data).join('\n\n');
+  const inlineText = inlineAttachments.map(attachmentDataString).join('\n\n');
 
   // For the dialog, also fetch each prompt file's text so the merged "Prompt
   // to run" preview matches what will actually be sent to Claude.
@@ -85,14 +89,15 @@ export function PromptApprovalRow({
     (async () => {
       const updates: Record<string, string> = {};
       for (const a of fileAttachments) {
-        if (filePreviews[a.data] !== undefined) continue;
+        const key = attachmentDataString(a);
+        if (filePreviews[key] !== undefined) continue;
         if (!a.local_path) continue;
         try {
           const res = await fetch(a.local_path);
           if (!res.ok) continue;
           const text = await res.text();
           if (cancelled) return;
-          updates[a.data] = text;
+          updates[key] = text;
         } catch {
           // leave undefined — file chip still works for download.
         }
@@ -110,8 +115,9 @@ export function PromptApprovalRow({
     const parts: string[] = [];
     if (inlineText) parts.push(inlineText);
     for (const a of fileAttachments) {
-      const filename = a.data.split('/').pop() ?? a.data;
-      const body = filePreviews[a.data];
+      const d = attachmentDataString(a);
+      const filename = d.split('/').pop() || d;
+      const body = filePreviews[d];
       if (body !== undefined) parts.push(`--- ${filename} ---\n${body}`);
       else parts.push(`--- ${filename} ---\n(content unavailable)`);
     }
@@ -156,14 +162,15 @@ export function PromptApprovalRow({
       {/* Prompt-file chips. Downloadable when we have a messageId; preview-only
           (no link) when this is the composer-queued state pre-upload. */}
       {fileAttachments.map((a) => {
-        const filename = a.data.split('/').pop() ?? a.data;
+        const d = attachmentDataString(a);
+        const filename = d.split('/').pop() || d;
         const display = truncateMiddle(filename, FILENAME_LIMIT);
-        const url = messageId ? fileAttachmentUrl(messageId, a.data) : undefined;
+        const url = messageId ? fileAttachmentUrl(messageId, d) : undefined;
         const className =
           'inline-flex shrink-0 items-center gap-1 rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[11px] font-medium text-foreground/80 transition-colors hover:bg-muted hover:text-foreground';
         return url ? (
           <a
-            key={a.data}
+            key={d}
             href={url}
             target="_blank"
             rel="noreferrer"
@@ -175,7 +182,7 @@ export function PromptApprovalRow({
             {display}
           </a>
         ) : (
-          <span key={a.data} className={className} title={filename}>
+          <span key={d} className={className} title={filename}>
             <Paperclip className="h-3 w-3" />
             {display}
           </span>

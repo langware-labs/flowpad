@@ -93,10 +93,29 @@ async def conversation_add_message() -> ApiSuccessResponse:
     if not isinstance(text, str) or not text:
         raise HTTPException(status_code=400, detail="add_message: 'text' is required")
 
+    attachments = body.get("attachment")
+    if attachments is not None and not isinstance(attachments, list):
+        raise HTTPException(status_code=400, detail="add_message: 'attachment' must be a list")
+    context_entities = body.get("context_entities")
+    if context_entities is not None and not isinstance(context_entities, list):
+        raise HTTPException(status_code=400, detail="add_message: 'context_entities' must be a list")
+
     conv_id = request_info.target_entity_typeid.id
     conv = Conversation(id=conv_id)
-    data = await conv.add_message(text, sender_name=body.get("sender_name"))
+    data = await conv.add_message(
+        text,
+        sender_name=body.get("sender_name"),
+        attachments=attachments,
+        context_entities=context_entities,
+    )
 
+    # Mirror the hub-confirmed FM into the local DB. Hub WS skips the sender's
+    # own create frame (see hub_bridge._handle_flow_message_op), so without
+    # this the sender's Conversation.message_ids stays empty until a manual
+    # refresh. Same materializer the bridge uses for inbound frames, keeping
+    # message_ids + message_count projections consistent. Also lets sender-side
+    # body actions (has_body / upload_body / download_body) resolve the entity
+    # at /api/v1/graph/flow_message/<id>/<action>.
     try:
         from flow_sdk.app.actions.materialize_flow_message import materialize_flow_message  # noqa: PLC0415
         if isinstance(data, dict) and data.get("id"):
