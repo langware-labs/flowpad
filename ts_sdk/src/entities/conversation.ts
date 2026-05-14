@@ -397,17 +397,58 @@ export async function archiveAllConversations(): Promise<ArchiveAllConversations
 }
 
 export interface DeleteArchivedConversationsResult {
-  deleted: number;
+  /** Ids of conversations that succeeded both hub-side and locally. */
+  deleted: string[];
+  /** Per-item failure (e.g. hub returned 403 on a non-owner row). */
+  failed: { id: string; reason: string }[];
+  /** Total number of archived rows considered. */
   scanned: number;
 }
 
-/** Hard-delete every Conversation whose ``archived_at`` is set. Only the
- *  inbox's "Archived view" should surface this action. */
+/** Bulk delete-archived: best-effort loop on the server. For each archived
+ *  row, the server classifies the user's role and either calls the hub
+ *  delete/leave/decline action or just deletes locally. Per-item status is
+ *  returned so the caller can surface partial failures. */
 export async function deleteArchivedConversations(): Promise<DeleteArchivedConversationsResult> {
   const action = new ActionInfo('conversation-delete-archived', null, null, 'POST');
   action.bodyParameters = {};
   const res = await dataManager.callAction<Record<string, never>, DeleteArchivedConversationsResult>(action);
   return res!;
+}
+
+export type DeleteConversationMode = 'delete_for_all' | 'leave' | 'local';
+
+export interface DeleteConversationParams {
+  conversation_id: string;
+  /** Caller picks the mode based on the user's relationship to the conv:
+   *    - ``delete_for_all``: owner cascade-delete (rule 1)
+   *    - ``leave``:          non-owner participant leaves (rule 3)
+   *    - ``local``:          purely-local conv, no hub call (rule 2)
+   */
+  mode: DeleteConversationMode;
+}
+
+export interface DeleteConversationResult {
+  id: string;
+  mode: DeleteConversationMode;
+}
+
+/** Per-row conversation delete. The server calls the matching hub action
+ *  for non-``local`` modes and hard-deletes the local row on success. */
+export async function deleteConversation(
+  params: DeleteConversationParams,
+): Promise<DeleteConversationResult> {
+  const action = new ActionInfo('conversation-delete', null, null, 'POST');
+  action.bodyParameters = params;
+  const res = await dataManager.callAction<DeleteConversationParams, DeleteConversationResult>(action);
+  return res!;
+}
+
+/** Thin alias: leave a shared conversation you don't own. */
+export async function leaveConversation(
+  params: { conversation_id: string },
+): Promise<DeleteConversationResult> {
+  return deleteConversation({ conversation_id: params.conversation_id, mode: 'leave' });
 }
 
 /** Accept a pending invitation on the hub and download just the unlocked bundle.

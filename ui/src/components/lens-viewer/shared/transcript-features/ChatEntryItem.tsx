@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Minus, Plus, User, Zap } from 'lucide-react';
+import { Minus, Plus, Sparkles, User, Zap } from 'lucide-react';
 
 import { formatEntryTime, formatNumber, workerIcon, workerLabel } from './transcript-utils';
 import type { UnifiedEntry } from './types';
@@ -120,12 +120,13 @@ export function ChatEntryItem({ entry, isExpanded, onToggle }: Props) {
               const thinkingCanTruncate = needsTruncation(thinking);
               const thinkingCollapsed = thinkingCanTruncate && !showThinking;
               return (
-                <div className="mt-2 rounded border border-purple-500/20 bg-purple-500/5 p-2">
-                  <div className="mb-1 text-[10px] uppercase tracking-wide text-purple-600">
+                <div className="mt-3 ml-3 rounded-r border-l-2 border-purple-400/60 bg-purple-500/[0.04] py-1.5 pl-3 pr-2 dark:border-purple-300/40 dark:bg-purple-400/[0.06]">
+                  <div className="mb-1 flex items-center gap-1 text-[10px] font-medium uppercase tracking-wider text-purple-600/80 dark:text-purple-300/80">
+                    <Sparkles className="h-2.5 w-2.5" />
                     thinking
                   </div>
                   <p
-                    className={`break-words text-xs leading-relaxed text-purple-700 dark:text-purple-300 ${
+                    className={`break-words font-serif text-[12px] italic leading-relaxed text-purple-800/85 dark:text-purple-200/80 ${
                       thinkingCollapsed ? 'line-clamp-3' : 'whitespace-pre-wrap'
                     }`}
                   >
@@ -135,7 +136,7 @@ export function ChatEntryItem({ entry, isExpanded, onToggle }: Props) {
                     <button
                       type="button"
                       onClick={() => setShowThinking((v) => !v)}
-                      className="mt-1.5 flex items-center gap-1 text-[11px] text-purple-600 hover:text-purple-700"
+                      className="mt-1.5 flex items-center gap-1 text-[11px] text-purple-600 hover:text-purple-700 dark:text-purple-300 dark:hover:text-purple-200"
                     >
                       {showThinking ? <Minus className="h-3 w-3" /> : <Plus className="h-3 w-3" />}
                       {showThinking ? 'Show less' : 'Show more'}
