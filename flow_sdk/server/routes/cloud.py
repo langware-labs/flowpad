@@ -98,7 +98,7 @@ def _render_result_page(
 async def logout_callback():
     """Cloud-redirect logout callback. Clears local credentials."""
     from flow_sdk.cli.auth.cloud_login import clear_cloud_credentials
-    clear_cloud_credentials()
+    await clear_cloud_credentials()
     blank_script = '<script>setTimeout(function(){ document.body.innerHTML = ""; }, 10000);</script>'
     return _render_result_page(
         title="Logout Successful",
@@ -117,21 +117,41 @@ async def logout_callback():
 
 @router.get("/status")
 async def status():
-    """Logged-in flag, current user, cloud URL (for tooltips)."""
+    """Logged-in flag, current user, cloud URL, and orthogonal hub statuses."""
     try:
         from flow_sdk.cli.app_config import get_user
         from flow_sdk.cli.auth.hub_login import is_logged_in
         from flow_sdk.cloud_client import ApiConfig
+        from flow_sdk.cloud_client.auth_state import current_login_status
+        from flow_sdk.cloud_client.auth_status import HubLoginStatus
         from flow_sdk.cloud_client.ws_client import hub_ws_manager
 
         logged_in = is_logged_in()
         user_info = get_user() if logged_in else None
         cloud_url = ApiConfig.from_env().api_base_url
 
+        login_status = current_login_status()
+        # Heal in-memory mirror if disk and memory disagree (e.g. fresh boot
+        # before any transition has been emitted).
+        if logged_in and login_status != HubLoginStatus.LOGGED_IN:
+            login_status = HubLoginStatus.LOGGED_IN
+        elif not logged_in and login_status == HubLoginStatus.LOGGED_IN:
+            login_status = HubLoginStatus.LOGGED_OUT
+
+        connection_payload = hub_ws_manager.connection_payload()
+
         return ApiSuccessResponse(data={
+            # New nested shape — canonical, drives the UI.
+            "login": {
+                "status": login_status.value,
+                "user": user_info,
+                "reason": None,
+            },
+            "connection": connection_payload,
+            "cloud_url": cloud_url,
+            # Deprecated aliases — kept for one release while UI migrates.
             "logged_in": logged_in,
             "user": user_info,
-            "cloud_url": cloud_url,
             **hub_ws_manager.status_payload(),
         })
     except Exception as e:
@@ -144,7 +164,10 @@ def _cloud_ws_error(message: str, status_code: int = 400):
     return JSONResponse(
         content=ApiFailResponse(
             message=message,
-            data=hub_ws_manager.status_payload(),
+            data={
+                "connection": hub_ws_manager.connection_payload(),
+                **hub_ws_manager.status_payload(),
+            },
         ).model_dump(mode="json"),
         status_code=status_code,
     )
@@ -170,7 +193,11 @@ async def connect_ws():
             return _cloud_ws_error(status_payload.get("hub_ws_error") or "Hub WebSocket did not connect.", 502)
 
         verification = await hub_ws_manager.verify_current_user()
-        return ApiSuccessResponse(data={**hub_ws_manager.status_payload(), "verification": verification})
+        return ApiSuccessResponse(data={
+            "connection": hub_ws_manager.connection_payload(),
+            **hub_ws_manager.status_payload(),
+            "verification": verification,
+        })
     except HubWebSocketLoginRequiredError as e:
         return _cloud_ws_error(str(e), 401)
     except HubWebSocketAuthError as e:
@@ -193,7 +220,11 @@ async def disconnect_ws():
     try:
         from flow_sdk.cloud_client.ws_client import hub_ws_manager
 
-        return ApiSuccessResponse(data=await hub_ws_manager.stop())
+        legacy = await hub_ws_manager.stop()
+        return ApiSuccessResponse(data={
+            "connection": hub_ws_manager.connection_payload(),
+            **legacy,
+        })
     except Exception as e:
         return _cloud_ws_error(str(e), 500)
 
@@ -214,7 +245,11 @@ async def verify_ws():
             return _cloud_ws_error("Cloud login required before verifying hub WebSocket.", 401)
 
         verification = await hub_ws_manager.verify_current_user()
-        return ApiSuccessResponse(data={**hub_ws_manager.status_payload(), "verification": verification})
+        return ApiSuccessResponse(data={
+            "connection": hub_ws_manager.connection_payload(),
+            **hub_ws_manager.status_payload(),
+            "verification": verification,
+        })
     except HubWebSocketLoginRequiredError as e:
         return _cloud_ws_error(str(e), 401)
     except HubWebSocketAuthError as e:
@@ -259,7 +294,7 @@ async def logout():
     from flow_sdk.cli.auth.cloud_urls import get_logout_url
     from flow_sdk.instance_settings import get_instance_settings
 
-    clear_cloud_credentials()
+    await clear_cloud_credentials()
     port = get_instance_settings().port
     callback_url = f"http://127.0.0.1:{port}/api/v1/cloud/logout_callback"
     return ApiSuccessResponse(data={"cloud_logout_url": get_logout_url(callback_url)})

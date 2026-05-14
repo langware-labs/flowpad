@@ -27,6 +27,12 @@ import { TypeId } from '../models/TypeId';
 import { UserWarning } from '../models/UserWarning';
 import { defineGlobal } from '../utils/globals';
 import { SnifferHook } from '../services/sniffer-hook';
+import {
+  HubConnectionStatus,
+  HubLoginStatus,
+  LocalConnectionStatus,
+  LocalLoginStatus,
+} from '../services/cloud_status';
 import { sdkConfig } from '../config/index';
 import { ConnectionManager } from '../websocket';
 import { AuthError, AuthEventType, authManager } from './auth';
@@ -167,6 +173,37 @@ class DataContext extends EventEmitter {
   get cloudLoginAvailable(): boolean {
     return this._cloudLoggedIn;
   }
+
+  // Reactive mirrors of the four orthogonal statuses. Managers push into
+  // these via setCloudLoginStatus / setCloudConnectionStatus /
+  // setLocalLoginStatus / setLocalConnectionStatus so mobx observers
+  // re-render. Reading is sync and circular-import-safe.
+  _cloudLoginStatus: HubLoginStatus = 'logged_out';
+  _cloudConnectionStatus: HubConnectionStatus = 'disconnected';
+  _localLoginStatus: LocalLoginStatus = 'logged_out';
+  _localConnectionStatus: LocalConnectionStatus = 'disconnected';
+
+  setCloudLoginStatus(v: HubLoginStatus) {
+    if (this._cloudLoginStatus === v) return;
+    runInAction(() => { this._cloudLoginStatus = v; });
+  }
+  setCloudConnectionStatus(v: HubConnectionStatus) {
+    if (this._cloudConnectionStatus === v) return;
+    runInAction(() => { this._cloudConnectionStatus = v; });
+  }
+  setLocalLoginStatus(v: LocalLoginStatus) {
+    if (this._localLoginStatus === v) return;
+    runInAction(() => { this._localLoginStatus = v; });
+  }
+  setLocalConnectionStatus(v: LocalConnectionStatus) {
+    if (this._localConnectionStatus === v) return;
+    runInAction(() => { this._localConnectionStatus = v; });
+  }
+
+  get cloudLoginStatus(): HubLoginStatus { return this._cloudLoginStatus; }
+  get cloudConnectionStatus(): HubConnectionStatus { return this._cloudConnectionStatus; }
+  get localLoginStatus(): LocalLoginStatus { return this._localLoginStatus; }
+  get localConnectionStatus(): LocalConnectionStatus { return this._localConnectionStatus; }
 
   /**
    * Get the desktop info from bootstrap
@@ -351,8 +388,16 @@ class DataContext extends EventEmitter {
     super();
     makeObservable(this, {
       _cloudLoggedIn: observable,
+      _cloudLoginStatus: observable,
+      _cloudConnectionStatus: observable,
+      _localLoginStatus: observable,
+      _localConnectionStatus: observable,
       cloudApiUrl: computed,
       cloudLoginAvailable: computed,
+      cloudLoginStatus: computed,
+      cloudConnectionStatus: computed,
+      localLoginStatus: computed,
+      localConnectionStatus: computed,
       user: computed,
       workspace: computed,
       activeEntity: computed,

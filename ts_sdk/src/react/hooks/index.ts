@@ -6,6 +6,7 @@ export * from './use-entity-ops';
 export * from './use-fs-item-flows';
 export * from './use-settings';
 export * from './useAuth';
+export * from './useCloudStatus';
 export * from './useConnectionStatus';
 export * from './useContext';
 export * from './useEntityEnv';

@@ -33,6 +33,8 @@ class WSMessageType(Enum):
     FLOW_DATA_MSG = "flow_data_msg"
     HUB_CLIENT_ERROR_MSG = "hub_client_error_msg"
     AUTH_EXPIRED_MSG = "auth_expired_msg"
+    CLOUD_LOGIN_STATUS_MSG = "cloud_login_status_msg"
+    CLOUD_CONNECTION_STATUS_MSG = "cloud_connection_status_msg"
 
 
 class ExeMessageSubType(StrEnum):

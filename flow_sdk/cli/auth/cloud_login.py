@@ -53,22 +53,33 @@ async def cloud_login() -> dict[str, Any]:
     Returns ``{status: "logged_in", user}`` (local) or ``{status: "started", url}`` (cloud).
     Browser-mode result arrives later via OAuthMessage WS broadcast.
     """
-    settings = get_instance_settings()
-    hub_url = ApiConfig.from_env().api_base_url
-    kind = _classify_hub(hub_url)
+    from flow_sdk.cloud_client.auth_state import set_login_status
+    from flow_sdk.cloud_client.auth_status import HubLoginStatus
 
-    if kind == "cloud":
-        return await _login_by_window(settings.port, settings.cloud_login_timeout_seconds)
+    await set_login_status(HubLoginStatus.LOGGING_IN)
+    try:
+        settings = get_instance_settings()
+        hub_url = ApiConfig.from_env().api_base_url
+        kind = _classify_hub(hub_url)
 
-    if kind == "local":
-        if not (settings.cloud_user_email and settings.cloud_user_pass):
-            raise ValueError(
-                "Cloud is not configured. Set FLOWPAD_CLOUD_USER_EMAIL and "
-                "FLOWPAD_CLOUD_USER_PASSWORD in .env.local and restart the app."
-            )
-        return await _login_by_api(settings.cloud_user_email, settings.cloud_user_pass)
+        if kind == "cloud":
+            # Browser-mode: success/failure arrives later via the OAuth WS
+            # callback. LOGGED_IN / LOGIN_FAILED are emitted from there
+            # (_finalize_login on success, _broadcast_oauth_error on error).
+            return await _login_by_window(settings.port, settings.cloud_login_timeout_seconds)
 
-    raise ValueError(f"Cloud sign-in isn't supported for this hub URL: {hub_url}")
+        if kind == "local":
+            if not (settings.cloud_user_email and settings.cloud_user_pass):
+                raise ValueError(
+                    "Cloud is not configured. Set FLOWPAD_CLOUD_USER_EMAIL and "
+                    "FLOWPAD_CLOUD_USER_PASSWORD in .env.local and restart the app."
+                )
+            return await _login_by_api(settings.cloud_user_email, settings.cloud_user_pass)
+
+        raise ValueError(f"Cloud sign-in isn't supported for this hub URL: {hub_url}")
+    except Exception as exc:
+        await set_login_status(HubLoginStatus.LOGIN_FAILED, reason=str(exc))
+        raise
 
 
 async def _login_by_api(email: str, password: str) -> dict[str, Any]:
@@ -193,6 +204,12 @@ async def _finalize_login(login_data: LoginData) -> None:
     state.login_received.set()
     invalidate_bootstrap_cache()
 
+    # Broadcast the canonical login transition so the UI can paint LOGGED_IN
+    # immediately. ``set_login_status`` is the single funnel for login state.
+    from flow_sdk.cloud_client.auth_state import set_login_status
+    from flow_sdk.cloud_client.auth_status import HubLoginStatus
+    await set_login_status(HubLoginStatus.LOGGED_IN, user=user_info)
+
     try:
         from flow_sdk.cloud_client.ws_client import hub_ws_manager
 
@@ -215,15 +232,23 @@ async def _broadcast_oauth_error(message: str) -> None:
         status=OAuthMessageStatus.ERROR,
         message=message,
     ))
+    # Mirror the failure into the canonical login-status channel so UI code
+    # that has migrated to the new event no longer has to listen to OAuth.
+    from flow_sdk.cloud_client.auth_state import set_login_status
+    from flow_sdk.cloud_client.auth_status import HubLoginStatus
+    await set_login_status(HubLoginStatus.LOGIN_FAILED, reason=message)
 
 
-def clear_cloud_credentials() -> None:
-    """Delete keyring api-key, blank user JSON, reset waiter state, invalidate bootstrap cache.
+async def clear_cloud_credentials(reason: str | None = None) -> None:
+    """Stop the hub WS, clear keyring + user JSON, broadcast LOGGED_OUT + DISCONNECTED.
 
-    Used by ``/api/v1/cloud/logout``, ``/api/v1/cloud/logout_callback``, and the
-    legacy ``flowpad_cloud/disconnect`` action handler — single owner.
+    Single owner used by ``/api/v1/cloud/logout``, ``/api/v1/cloud/logout_callback``,
+    the legacy ``flowpad_cloud/disconnect`` action handler, and
+    ``invalidate_hub_login`` (which forwards a non-empty reason).
     """
     from flow_sdk.cli.auth.credentials import clear_credentials
+    from flow_sdk.cloud_client.auth_state import set_connection_status, set_login_status
+    from flow_sdk.cloud_client.auth_status import HubConnectionStatus, HubLoginStatus
     from flow_sdk.server import state
     from flow_sdk.server.routes.bootstrap import invalidate_bootstrap_cache
 
@@ -239,3 +264,6 @@ def clear_cloud_credentials() -> None:
     state.login_result = None
     state.login_received.clear()
     invalidate_bootstrap_cache()
+
+    await set_login_status(HubLoginStatus.LOGGED_OUT, reason=reason)
+    await set_connection_status(HubConnectionStatus.DISCONNECTED)

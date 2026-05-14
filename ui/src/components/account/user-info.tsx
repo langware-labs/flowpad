@@ -1,9 +1,14 @@
-import { cloudManager, type CloudStatusData, User } from '@sdk';
-import { useContext } from '@sdk/react/hooks';
+import {
+  cloudManager,
+  HubConnectionStatus,
+  HubLoginStatus,
+  User,
+} from '@sdk';
+import { useCloudStatus, useContext } from '@sdk/react/hooks';
 import { Badge } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
 import { AlertCircle, Check, CheckCircle2, Cloud, CloudOff, Copy, Loader2 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useState } from 'react';
 import { toast } from 'sonner';
 import { Chip } from '../label-chip';
 
@@ -11,92 +16,98 @@ interface UserInfoProps {
   user: User;
 }
 
-type ConnectionDisplay = 'connecting' | 'verified' | 'connected' | 'error' | 'disconnected';
-
-const CONNECTION_VISUAL: Record<ConnectionDisplay, {
+type BadgeVisual = {
   text: string;
   variant: 'destructive' | 'secondary' | 'outline';
   icon: typeof Loader2;
   iconClassName?: string;
-}> = {
-  connecting: { text: 'Connecting', variant: 'outline', icon: Loader2, iconClassName: 'animate-spin' },
-  verified:   { text: 'Connection verified', variant: 'secondary', icon: CheckCircle2 },
-  connected:  { text: 'Connected', variant: 'outline', icon: Cloud },
-  error:      { text: 'Connection error', variant: 'destructive', icon: AlertCircle },
-  disconnected: { text: 'Not connected', variant: 'outline', icon: CloudOff },
 };
 
-function connectionDisplay(status: CloudStatusData): ConnectionDisplay {
-  if (status.hub_ws_status === 'connecting') return 'connecting';
-  if (status.hub_ws_verified) return 'verified';
-  if (status.hub_ws_connected) return 'connected';
-  if (status.hub_ws_status === 'error') return 'error';
-  return 'disconnected';
-}
+const LOGIN_VISUAL: Record<HubLoginStatus, BadgeVisual> = {
+  logged_in:    { text: 'Logged in',  variant: 'secondary', icon: CheckCircle2 },
+  logging_in:   { text: 'Signing in', variant: 'outline',   icon: Loader2, iconClassName: 'animate-spin' },
+  login_failed: { text: 'Login failed', variant: 'destructive', icon: AlertCircle },
+  logged_out:   { text: 'Logged out', variant: 'outline',   icon: CloudOff },
+};
 
-function cloudStatusEqual(a: CloudStatusData, b: CloudStatusData): boolean {
-  return (
-    a.logged_in === b.logged_in &&
-    a.hub_ws_connected === b.hub_ws_connected &&
-    a.hub_ws_verified === b.hub_ws_verified &&
-    a.hub_ws_status === b.hub_ws_status &&
-    a.hub_ws_error === b.hub_ws_error
-  );
+const CONNECTION_VISUAL: Record<HubConnectionStatus, BadgeVisual> = {
+  verified:      { text: 'Connection verified', variant: 'secondary',   icon: CheckCircle2 },
+  connected:     { text: 'Connected',           variant: 'outline',     icon: Cloud },
+  connecting:    { text: 'Connecting',          variant: 'outline',     icon: Loader2, iconClassName: 'animate-spin' },
+  auth_rejected: { text: 'Connection rejected', variant: 'destructive', icon: AlertCircle },
+  error:         { text: 'Connection error',    variant: 'destructive', icon: AlertCircle },
+  disconnected:  { text: 'Not connected',       variant: 'outline',     icon: CloudOff },
+};
+
+type ButtonAction = 'sign_in' | 'reconnect' | 'verify' | 'disconnect' | null;
+
+function computeButton(
+  login: HubLoginStatus,
+  connection: HubConnectionStatus,
+): { label: string; action: ButtonAction; disabled: boolean; busy: boolean } {
+  if (login === 'logged_out' || login === 'login_failed') {
+    return { label: 'Sign in', action: 'sign_in', disabled: false, busy: false };
+  }
+  if (login === 'logging_in') {
+    return { label: 'Signing in…', action: null, disabled: true, busy: true };
+  }
+  // login === 'logged_in'
+  if (connection === 'connecting') {
+    return { label: 'Connecting…', action: null, disabled: true, busy: true };
+  }
+  if (connection === 'verified') {
+    return { label: 'Disconnect', action: 'disconnect', disabled: false, busy: false };
+  }
+  if (connection === 'connected') {
+    return { label: 'Verify', action: 'verify', disabled: false, busy: false };
+  }
+  // disconnected | error | auth_rejected
+  return { label: 'Reconnect', action: 'reconnect', disabled: false, busy: false };
 }
 
 export function UserInfo({ user }: UserInfoProps) {
   const [copied, setCopied] = useState(false);
   const [copiedEmail, setCopiedEmail] = useState(false);
-  const [cloudStatus, setCloudStatus] = useState<CloudStatusData>(cloudManager.cloudStatus);
-  const [cloudBusy, setCloudBusy] = useState(false);
+  const [busy, setBusy] = useState(false);
   const { version } = useContext();
+  const { login, connection, cloudUrl } = useCloudStatus();
 
-  useEffect(() => {
-    const sync = () => {
-      const next = cloudManager.cloudStatus;
-      setCloudStatus((prev) => (cloudStatusEqual(prev, next) ? prev : { ...next }));
-    };
-    cloudManager.on('cloud_status_changed', sync);
-    void cloudManager.refreshStatus();
-    return () => {
-      cloudManager.off('cloud_status_changed', sync);
-    };
-  }, []);
+  const loginVisual = LOGIN_VISUAL[login.status];
+  const connectionVisual = CONNECTION_VISUAL[connection.status];
+  const button = computeButton(login.status, connection.status);
+  const buttonBusy = button.busy || busy;
+  const LoginIcon = loginVisual.icon;
+  const ConnectionIcon = connectionVisual.icon;
 
-  const isCloudLoggedIn = Boolean(cloudStatus.logged_in);
-  const isConnecting = cloudBusy || cloudStatus.hub_ws_status === 'connecting';
-  const display = useMemo(() => CONNECTION_VISUAL[connectionDisplay(cloudStatus)], [cloudStatus]);
-  const Icon = display.icon;
-
-  const handleCloudConnect = async () => {
-    setCloudBusy(true);
+  const runAction = async (action: ButtonAction) => {
+    if (!action) return;
+    setBusy(true);
     try {
-      const result = await cloudManager.connectHubWs();
-      if (result.hub_ws_verified) {
-        toast.success('Connection verified', { description: 'Hub WebSocket profile matches this account.' });
-      } else {
-        toast.success('Connected', { description: 'Hub WebSocket connected but verification did not complete.' });
+      if (action === 'sign_in') {
+        await cloudManager.login();
+        toast.success('Signed in');
+      } else if (action === 'reconnect') {
+        const result = await cloudManager.connectHubWs();
+        if (result.hub_ws_verified) {
+          toast.success('Reconnected', { description: 'Hub WebSocket profile verified.' });
+        } else {
+          toast.success('Connected', { description: 'Hub WebSocket connected.' });
+        }
+      } else if (action === 'verify') {
+        const result = await cloudManager.verifyHubWs();
+        if (result.hub_ws_verified) {
+          toast.success('Verified', { description: 'Hub WebSocket profile matches.' });
+        }
+      } else if (action === 'disconnect') {
+        await cloudManager.disconnectHubWs();
+        toast.success('Disconnected', { description: 'Hub WebSocket listener stopped.' });
       }
     } catch (err) {
-      toast.error('Hub WebSocket failed', {
-        description: err instanceof Error ? err.message : 'Could not connect to hub WebSocket.',
+      toast.error(button.label + ' failed', {
+        description: err instanceof Error ? err.message : 'Unknown error.',
       });
     } finally {
-      setCloudBusy(false);
-    }
-  };
-
-  const handleCloudDisconnect = async () => {
-    setCloudBusy(true);
-    try {
-      await cloudManager.disconnectHubWs();
-      toast.success('Disconnected', { description: 'Hub WebSocket listener stopped.' });
-    } catch (err) {
-      toast.error('Disconnect failed', {
-        description: err instanceof Error ? err.message : 'Could not stop hub WebSocket.',
-      });
-    } finally {
-      setCloudBusy(false);
+      setBusy(false);
     }
   };
 
@@ -169,36 +180,42 @@ export function UserInfo({ user }: UserInfoProps) {
           <div className="min-w-0">
             <label className="text-sm font-semibold text-muted-foreground">Flowpad Cloud:</label>
             <div className="mt-1 flex flex-wrap items-center gap-2">
-              <Badge variant={isCloudLoggedIn ? 'secondary' : 'outline'}>
-                {isCloudLoggedIn ? 'Logged in' : 'Logged out'}
+              <Badge variant={loginVisual.variant} className="gap-1">
+                <LoginIcon className={`h-3 w-3 ${loginVisual.iconClassName ?? ''}`.trim()} />
+                {loginVisual.text}
               </Badge>
-              <Badge variant={display.variant} className="gap-1">
-                <Icon className={`h-3 w-3 ${display.iconClassName ?? ''}`.trim()} />
-                {display.text}
+              <Badge variant={connectionVisual.variant} className="gap-1">
+                <ConnectionIcon className={`h-3 w-3 ${connectionVisual.iconClassName ?? ''}`.trim()} />
+                {connectionVisual.text}
               </Badge>
             </div>
+            {cloudUrl && (
+              <div className="mt-1 text-xs text-muted-foreground break-all">Hub: {cloudUrl}</div>
+            )}
           </div>
           <Button
-            variant={cloudStatus.hub_ws_connected || cloudStatus.hub_ws_verified ? 'outline' : 'default'}
+            variant={button.action === 'disconnect' ? 'outline' : 'default'}
             size="sm"
-            disabled={!isCloudLoggedIn || isConnecting}
+            disabled={button.disabled || buttonBusy}
             onClick={() => {
-              void (cloudStatus.hub_ws_connected || cloudStatus.hub_ws_verified
-                ? handleCloudDisconnect()
-                : handleCloudConnect());
+              void runAction(button.action);
             }}
-            title={!isCloudLoggedIn ? 'Cloud login required before connecting hub WebSocket' : undefined}
           >
-            {isConnecting && <Loader2 className="h-4 w-4 animate-spin" />}
-            {cloudStatus.hub_ws_connected || cloudStatus.hub_ws_verified ? 'Disconnect' : 'Connect'}
+            {buttonBusy && <Loader2 className="h-4 w-4 animate-spin" />}
+            {button.label}
           </Button>
         </div>
 
-        {cloudStatus.hub_ws_verified && (
-          <div className="text-xs font-medium text-green-600">Connection verified</div>
+        {connection.status === 'auth_rejected' && (
+          <div className="text-xs text-destructive">
+            {connection.error ?? 'The hub refused this client.'}
+          </div>
         )}
-        {cloudStatus.hub_ws_error && (
-          <div className="text-xs text-destructive">{cloudStatus.hub_ws_error}</div>
+        {connection.status === 'error' && connection.error && (
+          <div className="text-xs text-destructive">{connection.error}</div>
+        )}
+        {login.status === 'login_failed' && login.reason && (
+          <div className="text-xs text-destructive">Login: {login.reason}</div>
         )}
       </div>
 

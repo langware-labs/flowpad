@@ -50,6 +50,8 @@ export const WARNING_IDS = {
   LLM_DISCONNECTED: 'llm-disconnected',
   CLOUD_DISCONNECTED: 'cloud-disconnected',
   CLOUD_LOGIN_FAILED: 'cloud-login-failed',
+  CLOUD_CONNECTION_LOST: 'cloud-connection-lost',
+  CLOUD_CONNECTION_AUTH_REJECTED: 'cloud-connection-auth-rejected',
   NO_COMPUTE_NODE: 'no-compute-node',
   SNIFFER_NOT_FOUND: 'sniffer-not-found',
   SECRETS_NOT_ENABLED: 'secrets-not-enabled',
@@ -103,6 +105,53 @@ export function createCloudLoginFailedWarning(description: string): UserWarning 
     message: 'Cloud Login Failed',
     description,
     targetView: ViewType.CONNECTIONS,
+  };
+}
+
+/**
+ * Fires when login is OK but the hub WS connection has dropped — distinct
+ * from cloud-disconnected (which means logged-out). Action: reconnect.
+ */
+export function createCloudConnectionLostWarning(description?: string): UserWarning {
+  return {
+    id: WARNING_IDS.CLOUD_CONNECTION_LOST,
+    icon: 'CloudOff',
+    color: 'yellow',
+    message: 'Cloud Connection Lost',
+    description: description ?? 'Sharing and realtime updates are paused.',
+    targetView: ViewType.CONNECTIONS,
+    onClick: async () => {
+      try {
+        const { cloudManager } = await import('../services/cloud_login');
+        await cloudManager.connectHubWs();
+      } catch (e) {
+        console.error('[Cloud Reconnect] Failed:', e);
+      }
+    },
+  };
+}
+
+/**
+ * Specialised variant of "connection lost" for the auth-rejected case — the
+ * hub explicitly turned us away at the WS layer. Action: try reconnect (the
+ * underlying bug may still be there, but at least the user can retry).
+ */
+export function createCloudConnectionAuthRejectedWarning(description?: string): UserWarning {
+  return {
+    id: WARNING_IDS.CLOUD_CONNECTION_AUTH_REJECTED,
+    icon: 'CloudOff',
+    color: 'red',
+    message: 'Hub Rejected Connection',
+    description: description ?? 'The hub refused this client. Try reconnect.',
+    targetView: ViewType.CONNECTIONS,
+    onClick: async () => {
+      try {
+        const { cloudManager } = await import('../services/cloud_login');
+        await cloudManager.connectHubWs();
+      } catch (e) {
+        console.error('[Cloud Reconnect] Failed:', e);
+      }
+    },
   };
 }
 
