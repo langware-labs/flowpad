@@ -297,14 +297,12 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
     });
   }, [entries, showUser, showAssistant, toolFilters, searchQuery]);
 
-  // Chat mode shows user/assistant entries plus operation rows.
+  // Chat mode is a quick agent ↔ user view. Operations (tool calls / file
+  // writes / shell commands) live in trace mode only — chat stays simple.
   const chatEntries = useMemo(
     () => filteredEntries.filter((e) => {
       if (e.role === 'assistant') {
         return !!(e.text || e.thinking);
-      }
-      if (e.role === 'operation') {
-        return !!e.operation;
       }
       if (e.role === 'user') {
         return !!(e.text && e.text.trim().length);
@@ -555,7 +553,6 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
               >
                 <ChatEntryItem
                   entry={entry}
-                  toolFilters={toolFilters}
                   isExpanded={chatExpandedEntries.has(entry.id)}
                   onToggle={() => toggleChatEntry(entry.id)}
                 />
