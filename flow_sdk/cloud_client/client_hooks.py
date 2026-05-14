@@ -53,12 +53,19 @@ async def _on_response(response: httpx.Response) -> None:
     status_code = response.status_code
     if status_code < 400:
         if await _is_auth_failure_envelope(response):
+            # HTTP-layer auth failure (envelope status=fail with auth marker).
+            # This is a real credential rejection from the hub's identity
+            # check, not a WS-handshake reject — drop login state.
             await invalidate_hub_login("rejected")
         return
 
     await response.aread()
     path = request_path(response.request.url)
     if status_code in AUTH_FAILURE_STATUS_CODES:
+        # HTTP 401/402/424 on an authenticated call — the hub is telling us
+        # our credentials are no longer valid. Distinct from a WS-layer
+        # rejection (which only flips connection_status to AUTH_REJECTED),
+        # this drops login state via invalidate_hub_login.
         await invalidate_hub_login("rejected")
         return
 

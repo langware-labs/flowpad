@@ -7,7 +7,7 @@ import json
 import logging
 import uuid
 from contextlib import asynccontextmanager
-from typing import Any, Awaitable, Callable, Literal
+from typing import Any, Awaitable, Callable
 from urllib.parse import urlsplit, urlunsplit
 
 import websockets
@@ -19,7 +19,8 @@ from websockets.exceptions import (
 )
 
 from flow_sdk.cli.auth.credentials import UserHubCredentials, load_credentials
-from flow_sdk.cloud_client.auth_state import invalidate_hub_login
+from flow_sdk.cloud_client.auth_state import invalidate_hub_login, set_connection_status
+from flow_sdk.cloud_client.auth_status import HubConnectionStatus
 from flow_sdk.cloud_client.client import ApiConfig
 from flow_sdk.cloud_client.constants import EXPIRY_LEEWAY_SECONDS
 
@@ -34,7 +35,6 @@ AUTH_WS_STATUS_CODES = {401, 403, 412, 424}
 AUTH_WS_CLOSE_CODES = {1008}
 HUB_WS_VERIFY_TIMEOUT_SECONDS = 10.0
 HUB_WS_START_TIMEOUT_SECONDS = 5.0
-HubWsStatus = Literal["disconnected", "connecting", "connected", "verified", "error"]
 
 
 class HubWebSocketAuthError(RuntimeError):
@@ -95,9 +95,17 @@ def _exception_status_code(exc: BaseException) -> int | None:
 
 
 async def _handle_ws_auth_exception(exc: BaseException) -> None:
+    """Hub WS rejected our credentials at handshake time.
+
+    This is a CONNECTION-layer failure, not a credential-loss event. Mark
+    the connection as ``AUTH_REJECTED`` so the UI surfaces a connection
+    warning, but leave login state alone — the user can still use cached
+    cloud data and try Reconnect.
+    """
     status_code = _exception_status_code(exc)
     if status_code in AUTH_WS_STATUS_CODES:
-        await invalidate_hub_login("rejected")
+        error = f"hub rejected WS auth (HTTP {status_code})"
+        await set_connection_status(HubConnectionStatus.AUTH_REJECTED, error=error)
 
 
 @asynccontextmanager
@@ -151,7 +159,7 @@ class HubWebSocketManager:
         self._stop_requested = False
         self._connected = False
         self._verified = False
-        self._status: HubWsStatus = "disconnected"
+        self._status: HubConnectionStatus = HubConnectionStatus.DISCONNECTED
         self._last_error: str | None = None
         self._connected_event: asyncio.Event | None = None
         # Inbound dispatcher: message_type → handler. Replaces the prior
@@ -228,17 +236,25 @@ class HubWebSocketManager:
     def is_verified(self) -> bool:
         return self.is_connected and self._verified
 
+    def connection_payload(self) -> dict[str, Any]:
+        """Canonical {status, error} for the hub WS connection slot."""
+        return {
+            "status": self._status.value,
+            "error": self._last_error,
+        }
+
     def status_payload(self) -> dict[str, Any]:
+        """Legacy flat shape — kept for back-compat callers (error responses, etc.)."""
         return {
             "hub_ws_connected": self.is_connected,
             "hub_ws_verified": self.is_verified,
-            "hub_ws_status": self._status,
+            "hub_ws_status": self._status.value,
             "hub_ws_error": self._last_error,
         }
 
-    def _set_state(
+    async def _set_state(
         self,
-        status: HubWsStatus,
+        status: HubConnectionStatus,
         *,
         connected: bool | None = None,
         verified: bool | None = None,
@@ -250,6 +266,7 @@ class HubWebSocketManager:
         if verified is not None:
             self._verified = verified
         self._last_error = error
+        await set_connection_status(status, error=error)
 
     async def start(self, *, wait_connected: bool = False) -> dict[str, Any]:
         if self.is_running:
@@ -257,40 +274,40 @@ class HubWebSocketManager:
                 try:
                     await asyncio.wait_for(self._connected_event.wait(), timeout=HUB_WS_START_TIMEOUT_SECONDS)
                 except asyncio.TimeoutError:
-                    self._set_state("error", connected=False, verified=False, error="Timed out connecting hub WebSocket.")
+                    await self._set_state(HubConnectionStatus.ERROR, connected=False, verified=False, error="Timed out connecting hub WebSocket.")
             return self.status_payload()
 
         try:
             await _load_ws_credentials()
         except HubWebSocketLoginRequiredError as exc:
-            self._set_state("disconnected", connected=False, verified=False, error=str(exc))
+            await self._set_state(HubConnectionStatus.DISCONNECTED, connected=False, verified=False, error=str(exc))
             return self.status_payload()
         except HubWebSocketAuthError as exc:
-            self._set_state("error", connected=False, verified=False, error=str(exc))
+            await self._set_state(HubConnectionStatus.ERROR, connected=False, verified=False, error=str(exc))
             return self.status_payload()
 
         self._stop_requested = False
         self._connected_event = asyncio.Event()
-        self._set_state("connecting", connected=False, verified=False, error=None)
+        await self._set_state(HubConnectionStatus.CONNECTING, connected=False, verified=False, error=None)
         self._task = asyncio.create_task(self._run_forever(), name="hub-ws-client")
         if wait_connected:
             try:
                 await asyncio.wait_for(self._connected_event.wait(), timeout=HUB_WS_START_TIMEOUT_SECONDS)
             except asyncio.TimeoutError:
-                self._set_state("error", connected=False, verified=False, error="Timed out connecting hub WebSocket.")
+                await self._set_state(HubConnectionStatus.ERROR, connected=False, verified=False, error="Timed out connecting hub WebSocket.")
         return self.status_payload()
 
     async def stop(self) -> dict[str, Any]:
         self.request_stop()
         task = self._task
         if not task or task.done() or asyncio.current_task() is task:
-            self._set_state("disconnected", connected=False, verified=False, error=None)
+            await self._set_state(HubConnectionStatus.DISCONNECTED, connected=False, verified=False, error=None)
             return self.status_payload()
         try:
             await task
         except asyncio.CancelledError:
             pass
-        self._set_state("disconnected", connected=False, verified=False, error=None)
+        await self._set_state(HubConnectionStatus.DISCONNECTED, connected=False, verified=False, error=None)
         return self.status_payload()
 
     async def restart(self, *, wait_connected: bool = False) -> dict[str, Any]:
@@ -298,10 +315,16 @@ class HubWebSocketManager:
         return await self.start(wait_connected=wait_connected)
 
     def request_stop(self) -> None:
+        """Synchronously signal the run loop to stop.
+
+        Mutates in-memory state only; the connection-status broadcast is
+        emitted by callers (``stop()`` calls ``_set_state`` after; the logout
+        path in ``clear_cloud_credentials`` broadcasts DISCONNECTED itself).
+        """
         self._stop_requested = True
         self._connected = False
         self._verified = False
-        self._status = "disconnected"
+        self._status = HubConnectionStatus.DISCONNECTED
         self._last_error = None
         task = self._task
         if not task or task.done():
@@ -331,11 +354,15 @@ class HubWebSocketManager:
         try:
             while not self._stop_requested:
                 try:
-                    self._set_state("connecting", connected=False, verified=False, error=None)
+                    await self._set_state(HubConnectionStatus.CONNECTING, connected=False, verified=False, error=None)
                     async with connect_hub_websocket(self.config) as websocket:
                         backoff = self.reconnect_initial_seconds
                         attempts_at_level = 0
-                        self._set_state("verified" if self._verified else "connected", connected=True, error=None)
+                        await self._set_state(
+                            HubConnectionStatus.VERIFIED if self._verified else HubConnectionStatus.CONNECTED,
+                            connected=True,
+                            error=None,
+                        )
                         if self._connected_event:
                             self._connected_event.set()
                         # Fresh queue per connection — prior queued frames from
@@ -369,21 +396,24 @@ class HubWebSocketManager:
                     raise
                 except HubWebSocketLoginRequiredError as exc:
                     self._fail_pending(exc)
-                    self._set_state("disconnected", connected=False, verified=False, error=str(exc))
+                    await self._set_state(HubConnectionStatus.DISCONNECTED, connected=False, verified=False, error=str(exc))
                     return
                 except HubWebSocketAuthError as exc:
                     self._fail_pending(exc)
-                    self._set_state("error", connected=False, verified=False, error=str(exc))
+                    # Hub rejected our credentials at the WS layer. Stop the
+                    # reconnect loop and surface AUTH_REJECTED — login state
+                    # is left alone (see `_handle_ws_auth_exception`).
+                    await self._set_state(HubConnectionStatus.AUTH_REJECTED, connected=False, verified=False, error=str(exc))
                     return
                 except (ConnectionClosedError, ConnectionClosed) as exc:
                     self._fail_pending(exc)
                     if await self._handle_closed_connection(exc):
                         return
-                    self._set_state("disconnected", connected=False, verified=False, error=None)
+                    await self._set_state(HubConnectionStatus.DISCONNECTED, connected=False, verified=False, error=None)
                 except Exception as exc:
                     self._fail_pending(exc)
                     logger.info("Hub WS listener disconnected: %s", exc)
-                    self._set_state("error", connected=False, verified=False, error=str(exc))
+                    await self._set_state(HubConnectionStatus.ERROR, connected=False, verified=False, error=str(exc))
 
                 if not self._stop_requested:
                     await asyncio.sleep(backoff)
@@ -397,14 +427,28 @@ class HubWebSocketManager:
             if asyncio.current_task() is self._task:
                 self._task = None
             if self._stop_requested:
-                self._set_state("disconnected", connected=False, verified=False, error=None)
+                await self._set_state(HubConnectionStatus.DISCONNECTED, connected=False, verified=False, error=None)
 
     async def _handle_closed_connection(self, exc: ConnectionClosed) -> bool:
         if exc.code in AUTH_WS_CLOSE_CODES:
             creds = load_credentials()
-            reason = "expired" if creds and creds.is_expired(EXPIRY_LEEWAY_SECONDS) else "rejected"
-            await invalidate_hub_login(reason)
-            self._set_state("error", connected=False, verified=False, error="Hub WebSocket authentication was rejected.")
+            if creds and creds.is_expired(EXPIRY_LEEWAY_SECONDS):
+                # Real credential loss (clock-driven expiry) — drop everything.
+                await invalidate_hub_login("expired")
+                await self._set_state(
+                    HubConnectionStatus.DISCONNECTED,
+                    connected=False,
+                    verified=False,
+                    error="Hub auth expired.",
+                )
+                return True
+            # Hub rejected our (locally-valid) credentials — connection-only.
+            await self._set_state(
+                HubConnectionStatus.AUTH_REJECTED,
+                connected=False,
+                verified=False,
+                error="Hub WebSocket authentication was rejected.",
+            )
             return True
         logger.info("Hub WS listener closed: code=%s reason=%s", exc.code, exc.reason)
         return False
@@ -417,7 +461,7 @@ class HubWebSocketManager:
         local_user = get_user() or {}
         local_user_id = local_user.get("id")
         if not local_user_id:
-            self._set_state("disconnected", connected=False, verified=False, error="Cloud login required before connecting hub WebSocket.")
+            await self._set_state(HubConnectionStatus.DISCONNECTED, connected=False, verified=False, error="Cloud login required before connecting hub WebSocket.")
             raise HubWebSocketLoginRequiredError("Cloud login required before connecting hub WebSocket.")
 
         try:
@@ -425,21 +469,21 @@ class HubWebSocketManager:
                 await websocket.send(APIMessage(direct_resource_type="user").model_dump_json())
                 raw_message = await asyncio.wait_for(websocket.recv(), timeout=HUB_WS_VERIFY_TIMEOUT_SECONDS)
         except HubWebSocketAuthError:
-            self._set_state("error", connected=False, verified=False, error="Hub WebSocket authentication failed.")
+            await self._set_state(HubConnectionStatus.AUTH_REJECTED, connected=False, verified=False, error="Hub WebSocket authentication failed.")
             raise
         except Exception as exc:
-            self._set_state("error", connected=False, verified=False, error=str(exc))
+            await self._set_state(HubConnectionStatus.ERROR, connected=False, verified=False, error=str(exc))
             raise HubWebSocketVerificationError(str(exc)) from exc
 
         try:
             response = json.loads(raw_message)
         except json.JSONDecodeError as exc:
-            self._set_state("error", connected=False, verified=False, error="Hub WebSocket returned invalid JSON.")
+            await self._set_state(HubConnectionStatus.ERROR, connected=False, verified=False, error="Hub WebSocket returned invalid JSON.")
             raise HubWebSocketVerificationError("Hub WebSocket returned invalid JSON.") from exc
 
         if str(response.get("status") or "").lower() != "success":
             message = response.get("message") or "Hub WebSocket verification failed."
-            self._set_state("error", connected=False, verified=False, error=str(message))
+            await self._set_state(HubConnectionStatus.ERROR, connected=False, verified=False, error=str(message))
             raise HubWebSocketVerificationError(str(message))
 
         data = response.get("data")
@@ -448,13 +492,13 @@ class HubWebSocketManager:
         if not matching_user:
             hub_ids = [user.get("id") for user in hub_users if isinstance(user, dict) and user.get("id")]
             message = f"Hub WebSocket user mismatch: local={local_user_id}, hub={hub_ids or 'none'}"
-            self._set_state("error", connected=False, verified=False, error=message)
+            await self._set_state(HubConnectionStatus.ERROR, connected=False, verified=False, error=message)
             raise HubWebSocketVerificationError(message)
 
         self._verified = True
         self._last_error = None
         if self.is_connected:
-            self._status = "verified"
+            await self._set_state(HubConnectionStatus.VERIFIED, connected=True, verified=True, error=None)
         return {
             "verified": True,
             "local_user_id": local_user_id,
