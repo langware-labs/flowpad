@@ -107,12 +107,28 @@ class Conversation(Entity):
                 )
         return self
 
-    async def add_message(self, text: str, *, sender_name: Optional[str] = None) -> dict:
+    async def add_message(
+        self,
+        text: str,
+        *,
+        sender_name: Optional[str] = None,
+        attachments: Optional[list] = None,
+        context_entities: Optional[list] = None,
+    ) -> dict:
         """Append a FlowMessage to this conversation on the hub.
 
         Hits ``POST <hub>/api/v1/graph/conversation/<id>/add_message`` via the
         standard cloud client — same path the Python tests use directly. Returns
         the response ``data`` (the persisted FlowMessage).
+
+        ``attachments``: optional list of Attachment-shaped dicts (or
+        ``Attachment`` instances). When at least one attachment requires a
+        body bundle (FILE / PROMPT-with-file / TYPE_ID), the hub stamps
+        ``body_status=UPLOADING`` on the FM at creation time; the sender then
+        calls ``FlowMessage.upload_body()`` to pack and upload.
+
+        ``context_entities``: optional list of TypeId-shaped dicts to bind on
+        the FM. Mirrors the Entity.context_entities field surface.
         """
         from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
         from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
@@ -126,6 +142,13 @@ class Conversation(Entity):
         body: dict = {"text": text}
         if sender_name:
             body["sender_name"] = sender_name
+        if attachments:
+            body["attachment"] = [
+                a if isinstance(a, dict) else a.model_dump(mode="python")
+                for a in attachments
+            ]
+        if context_entities:
+            body["context_entities"] = context_entities
         path = build_hub_url(self, action="add_message")
         async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
             return await client.post(path, body)

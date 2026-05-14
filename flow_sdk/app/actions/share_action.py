@@ -86,6 +86,40 @@ async def conversation_add_message() -> ApiSuccessResponse:
     if not isinstance(text, str) or not text:
         raise HTTPException(status_code=400, detail="add_message: 'text' is required")
 
+    attachments = body.get("attachment")
+    if attachments is not None and not isinstance(attachments, list):
+        raise HTTPException(status_code=400, detail="add_message: 'attachment' must be a list")
+    context_entities = body.get("context_entities")
+    if context_entities is not None and not isinstance(context_entities, list):
+        raise HTTPException(status_code=400, detail="add_message: 'context_entities' must be a list")
+
     conv = Conversation(id=request_info.target_entity_typeid.id)
-    data = await conv.add_message(text, sender_name=body.get("sender_name"))
+    data = await conv.add_message(
+        text,
+        sender_name=body.get("sender_name"),
+        attachments=attachments,
+        context_entities=context_entities,
+    )
+
+    # Materialize the hub-confirmed FM locally so sender-side body actions
+    # (has_body / upload_body / download_body) can resolve the entity at
+    # /api/v1/graph/flow_message/<id>/<action>, AND the sender's UI renders
+    # the bubble immediately (hub fanout skips the sender). Reuses the same
+    # materialize_flow_message helper the bridge inbound handler uses, so
+    # conv.message_ids + message_count project consistently.
+    try:
+        from flow_sdk.app.actions.materialize_flow_message import materialize_flow_message
+        await materialize_flow_message(
+            data,
+            conv.id,
+            someone_typeid=getattr(request_info, "someone_typeid", None),
+            notify=True,
+        )
+    except Exception as _local_err:
+        import logging
+        logging.getLogger(__name__).warning(
+            "[conversation_add_message] local FM materialize failed (non-fatal): %s",
+            _local_err,
+        )
+
     return ApiSuccessResponse(data=data)
