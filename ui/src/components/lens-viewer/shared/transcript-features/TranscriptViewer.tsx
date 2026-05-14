@@ -11,7 +11,10 @@ import {
   Terminal,
 } from 'lucide-react';
 
+import { AgenticProcess } from '@sdk';
+
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
+import { toast } from '@src/hooks/use-toast';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useTranscript, type WorkerType } from '@src/hooks/use-transcript';
 
@@ -330,10 +333,16 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
   };
 
   const handleOpenInTerminal = useCallback(() => {
-    if (workerType === 'claude' && sessionId) {
-      void navigation.openClaudeSession(sessionId);
-    }
-  }, [navigation, sessionId, workerType]);
+    if (!sessionId) return;
+    void (async () => {
+      const process = await AgenticProcess.getByWorkerId(sessionId).catch(() => null);
+      if (!process) {
+        toast({ title: 'Process not found', description: `No live process for session ${sessionId}.`, variant: 'destructive' });
+        return;
+      }
+      navigation.openDockPointer(process.terminalDockPointer);
+    })();
+  }, [navigation, sessionId]);
 
   const handleOpenTasksOverview = useMemo(() => {
     if (workerType !== 'claude' || !sessionId) return undefined;
@@ -458,27 +467,22 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
       <div className="flex shrink-0 items-center gap-2 border-b border-border bg-card px-3 py-2">
         <ViewModeToggle mode={viewMode} onChange={switchMode} />
 
-        {workerType === 'claude' && sessionId && (
-          <button
-            type="button"
-            onClick={handleOpenInTerminal}
-            className="flex items-center gap-1 rounded px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
-            title="Open agentic process in terminal"
-          >
-            <Terminal className="h-3 w-3" />
-          </button>
-        )}
-
         {/* Scroll-position clock */}
         <div className="flex flex-1 items-center justify-center gap-0 text-[11px] tabular-nums">
           {transcriptStartTs && (
-            <span className="text-muted-foreground/50 text-[10px]" title="Session start">
+            <span
+              className="text-muted-foreground/50 text-[10px]"
+              title={`Session start\n${new Date(transcriptStartTs).toLocaleString()}\n${formatAgo(transcriptStartTs)}`}
+            >
               {new Date(transcriptStartTs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </span>
           )}
           {transcriptStartTs && <span className="mx-2 text-border">·····</span>}
           {displayTimestamp ? (
-            <span className="flex items-center gap-1.5">
+            <span
+              className="flex items-center gap-1.5"
+              title={`${new Date(displayTimestamp).toLocaleString()}\n${formatAgo(displayTimestamp)}`}
+            >
               <span className="font-medium text-foreground">{new Date(displayTimestamp).toLocaleTimeString()}</span>
               <span className="text-border/60">·</span>
               <span className="text-muted-foreground">{formatAgo(displayTimestamp)}</span>
@@ -497,11 +501,29 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
           )}
           {transcriptEndTs && <span className="mx-2 text-border">·····</span>}
           {transcriptEndTs && (
-            <span className="text-muted-foreground/50 text-[10px]" title="Session end">
+            <span
+              className="text-muted-foreground/50 text-[10px]"
+              title={`Session end\n${new Date(transcriptEndTs).toLocaleString()}\n${formatAgo(transcriptEndTs)}`}
+            >
               {new Date(transcriptEndTs).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </span>
           )}
         </div>
+
+        {sessionId && (
+          <div className="flex items-center gap-1" data-testid="transcript-viewer-toolbar">
+            <button
+              type="button"
+              onClick={handleOpenInTerminal}
+              className="flex items-center gap-1 rounded px-2 py-1 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground"
+              title="Open in terminal"
+              data-testid="transcript-open-in-terminal"
+            >
+              <Terminal className="h-3 w-3" />
+              Open in terminal
+            </button>
+          </div>
+        )}
 
         {viewMode === 'chat' && (
           <div className="flex items-center gap-1">
