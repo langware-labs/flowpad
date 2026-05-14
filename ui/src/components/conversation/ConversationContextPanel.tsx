@@ -15,7 +15,7 @@ import {
 import { ActionInfo } from '@sdk/models/ActionInfo';
 import { ClaudeCliOptions } from '@sdk/cli_workers/claude-cli';
 import { useEntitiesQuery, useEntity } from '@sdk/react/hooks';
-import type { Attachment } from '@sdk/entities/flow-message';
+import { attachmentDataString, type Attachment } from '@sdk/entities/flow-message';
 import {
   Download,
   ExternalLink,
@@ -429,7 +429,7 @@ function SharedContextSection({
             );
           })}
           {transcriptEntries.map((t) => {
-            const rowKey = `transcript:${t.messageId}:${t.attachment.data}`;
+            const rowKey = `transcript:${t.messageId}:${attachmentDataString(t.attachment)}`;
             return (
               <TranscriptRow
                 key={rowKey}
@@ -446,7 +446,7 @@ function SharedContextSection({
             );
           })}
           {attachmentEntries.map((a) => {
-            const rowKey = `${a.kind}:${a.messageId}:${a.attachment.data}`;
+            const rowKey = `${a.kind}:${a.messageId}:${attachmentDataString(a.attachment)}`;
             return (
               <AttachmentRow
                 key={rowKey}
@@ -537,7 +537,10 @@ function TranscriptRow({
   // for the backend that produced them. The download URL is the fallback when
   // no local path is populated.
   const localPath = attachment.local_path ?? null;
-  const downloadUrl = fileAttachmentUrl(messageId, attachment.data);
+  // Defensive: stale/malformed rows can have a non-string `data`; the bare
+  // `.split` used to take down the whole context panel.
+  const dataStr = attachmentDataString(attachment);
+  const downloadUrl = fileAttachmentUrl(messageId, dataStr);
 
   const handleView = () => {
     if (localPath) {
@@ -554,7 +557,7 @@ function TranscriptRow({
     <Row
       icon={ICON_BY_TYPE.conversation ?? ExternalLink}
       type="Transcript"
-      name={attachment.data.split('/').pop() ?? attachment.data}
+      name={dataStr.split('/').pop() || dataStr || '(unknown)'}
       isHighlighted={isHighlighted}
       onFocus={onSelect}
       focusTitle="Reveal the message that produced this transcript"
@@ -589,8 +592,11 @@ function AttachmentRow({
   // Same URL helper FlowMessageBubble uses to render its inline chips
   // (FlowMessageBubble.tsx:131) — points at the backend endpoint that streams
   // bytes from the FlowMessage's embedded VFS.
-  const downloadUrl = fileAttachmentUrl(messageId, attachment.data);
-  const filename = attachment.data.split('/').pop() ?? attachment.data;
+  // Defensive: stale/malformed rows can have a non-string `data`; the bare
+  // `.split` used to crash the whole context panel for the entire conv.
+  const dataStr = attachmentDataString(attachment);
+  const downloadUrl = fileAttachmentUrl(messageId, dataStr);
+  const filename = dataStr.split('/').pop() || dataStr || '(unknown)';
   const typeLabel = kind === 'prompt-file' ? 'Prompt file' : 'File';
 
   return (

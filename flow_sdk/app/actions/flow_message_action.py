@@ -346,6 +346,113 @@ async def download_flow_message() -> ApiResponse:
 
 
 # ---------------------------------------------------------------------------
+# Header / Body interface (principle #6 — exposes FlowMessage body methods
+# over HTTP so the UI + vitest tests can drive the same contract).
+# ---------------------------------------------------------------------------
+
+
+async def _load_fm_local_or_hub(fm_id: str) -> Optional[FlowMessage]:
+    """Get the FM from the local DB; on miss, fall back to the hub.
+
+    Sender-side, the local DB lags the hub (Conversation.add_message goes
+    straight to the hub and the bridge fanout skips the sender), so a freshly-
+    created FM exists on the hub before it lands locally. The fallback keeps
+    body actions usable in that window.
+    """
+    fm = await FlowMessage.get_one({"id": fm_id})
+    if fm is not None:
+        return fm
+    from flow_sdk.utils.hub import hub_get
+    payload = await hub_get(BuiltinEntityType.FLOW_MESSAGE, fm_id)
+    if not payload:
+        return None
+    return FlowMessage.model_validate(payload)
+
+
+async def handle_has_body(fm_id: str) -> ApiResponse:
+    """Return whether the FM has body-requiring attachments."""
+    fm = await _load_fm_local_or_hub(fm_id)
+    if not fm:
+        return ApiFailResponse(message=f"FlowMessage not found: {fm_id}", status_code=404)
+    return ApiSuccessResponse(data={"has_body": fm.has_body()})
+
+
+async def handle_upload_body(fm_id: str) -> ApiResponse:
+    """Pack + upload this message's body bundle. Idempotent: a second call
+    re-uploads (the hub PUT overwrites). On failure the hub-side body_status
+    remains UPLOADING and the exception surfaces as an ApiFailResponse."""
+    fm = await _load_fm_local_or_hub(fm_id)
+    if not fm:
+        return ApiFailResponse(message=f"FlowMessage not found: {fm_id}", status_code=404)
+    try:
+        await fm.upload_body()
+    except Exception as e:
+        logger.error("[flow_message_action] upload_body fm=%s: %s", fm_id, e, exc_info=True)
+        return ApiFailResponse(message=f"upload_body failed: {e}")
+    return ApiSuccessResponse(data={
+        "flow_message_id": fm.id,
+        "body_status": fm.body_status.value if hasattr(fm.body_status, "value") else fm.body_status,
+        "attachment_filename": fm.attachment_filename,
+    })
+
+
+async def handle_download_body(fm_id: str) -> ApiResponse:
+    """Download + unpack this message's body bundle. Refuses (BodyNotReadyError)
+    if body_status != READY — receivers must wait for the hub UPDATE fanout."""
+    from flow_sdk.builtin.flow_message import BodyNotReadyError
+    fm = await _load_fm_local_or_hub(fm_id)
+    if not fm:
+        return ApiFailResponse(message=f"FlowMessage not found: {fm_id}", status_code=404)
+    try:
+        await fm.download_body()
+    except BodyNotReadyError as e:
+        return ApiFailResponse(message=str(e), status_code=409)
+    except Exception as e:
+        logger.error("[flow_message_action] download_body fm=%s: %s", fm_id, e, exc_info=True)
+        return ApiFailResponse(message=f"download_body failed: {e}")
+    return ApiSuccessResponse(data={
+        "flow_message_id": fm.id,
+        "body_status": fm.body_status.value if hasattr(fm.body_status, "value") else fm.body_status,
+    })
+
+
+@action.get(action_name="has_body", types=["flow_message"])
+async def has_body_action() -> ApiResponse:
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.target_entity_typeid:
+            return ApiFailResponse(message="No request info found", status_code=400)
+        return await handle_has_body(str(request_info.target_entity_typeid.id))
+    except Exception as e:
+        logger.error(f"[flow_message_action] has_body error: {e}", exc_info=True)
+        return ApiFailResponse(message=f"has_body failed: {e}")
+
+
+@action.post(action_name="upload_body", types=["flow_message"])
+async def upload_body_action() -> ApiResponse:
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.target_entity_typeid:
+            return ApiFailResponse(message="No request info found", status_code=400)
+        return await handle_upload_body(str(request_info.target_entity_typeid.id))
+    except Exception as e:
+        logger.error(f"[flow_message_action] upload_body error: {e}", exc_info=True)
+        return ApiFailResponse(message=f"upload_body failed: {e}")
+
+
+@action.post(action_name="download_body", types=["flow_message"])
+async def download_body_action() -> ApiResponse:
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.target_entity_typeid:
+            return ApiFailResponse(message="No request info found", status_code=400)
+        return await handle_download_body(str(request_info.target_entity_typeid.id))
+    except Exception as e:
+        logger.error(f"[flow_message_action] download_body error: {e}", exc_info=True)
+        return ApiFailResponse(message=f"download_body failed: {e}")
+
+
+# ---------------------------------------------------------------------------
 # Project-scoped conversation creation (no Task)
 # ---------------------------------------------------------------------------
 

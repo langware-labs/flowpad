@@ -15,6 +15,56 @@ export enum AttachmentType {
   PROMPT = 'prompt',
 }
 
+/** Lifecycle of a FlowMessage's body bundle on the hub. Mirrors
+ *  flow_sdk.builtin.flow_message.BodyStatus exactly.
+ *  - NA        : no body needed (text-only, or inline-only attachments).
+ *  - UPLOADING : sender is staging the body; receivers must wait.
+ *  - READY     : body is available at fs/download/<BODY_FILENAME>.
+ *  Transitions are hub-enforced: NA is terminal; UPLOADING → READY only. */
+export enum BodyStatus {
+  NA = 'na',
+  UPLOADING = 'uploading',
+  READY = 'ready',
+}
+
+/** Single source of truth for the body filename on the hub blob store.
+ *  Must match flow_sdk.builtin.flow_message.BODY_FILENAME exactly — the
+ *  parity unit test asserts this literal. */
+export const BODY_FILENAME = 'body.flowmsg';
+
+/** VFS subpath prefix for PROMPT-with-file attachments. Mirrors
+ *  flow_sdk.builtin.flow_message.PROMPT_FILE_VFS_PREFIX. */
+const PROMPT_FILE_VFS_PREFIX = 'prompt/';
+
+/** Thrown by downloadBody() when called on an FM whose body_status != READY. */
+export class BodyNotReadyError extends Error {
+  constructor(status: BodyStatus | undefined) {
+    super(`download_body refused: body_status=${status} (must be READY)`);
+    this.name = 'BodyNotReadyError';
+  }
+}
+
+/** Read an Attachment's ``data`` field as a canonical string.
+ *
+ * The hub sometimes deserializes TYPE_ID attachments with ``data`` as a
+ * parsed ``{type, id}`` TypeId object rather than the ``"<type>-<uuid>"``
+ * string every UI consumer expects (chip rendering, ``.startsWith('prompt/')``,
+ * ``.endsWith('.jsonl')``, ``.split('/')`` for filenames). Use this helper
+ * at every read site so the shape variance is collapsed in one place.
+ * Returns ``''`` when ``data`` is missing/unrecognized so consumers can use
+ * length checks instead of typeof guards. */
+export function attachmentDataString(a: Pick<Attachment, 'data'>): string {
+  const d = a.data as unknown;
+  if (typeof d === 'string') return d;
+  if (d && typeof d === 'object' && !Array.isArray(d)) {
+    const obj = d as { type?: string; id?: string };
+    if (typeof obj.type === 'string' && typeof obj.id === 'string') {
+      return `${obj.type}-${obj.id}`;
+    }
+  }
+  return '';
+}
+
 export interface Attachment {
   attachment_type: AttachmentType;
   /** TypeId string ("type-id"), relative file path, repo path, URL, or — for PROMPT — inline text or "prompt/<filename>" VFS subpath. */
@@ -62,6 +112,11 @@ export interface IFlowMessage extends IEntity {
    *  Invitation as the first row of a conversation. The invitation TypeId
    *  lives in ``context_entities``. */
   kind?: 'user' | 'invitation';
+  /** Body-bundle lifecycle on the hub. Defaults to NA when the message has
+   *  no body. Stamped UPLOADING at hub add_message time when the incoming
+   *  attachments require a packed body; sender flips to READY after upload.
+   *  Receivers gate downloads on READY. */
+  body_status?: BodyStatus;
 }
 
 @registerEntity
@@ -82,6 +137,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   received_at?: string | null;
   is_draft?: boolean;
   kind?: 'user' | 'invitation';
+  body_status?: BodyStatus;
   static type: string = 'flow_message';
 
   constructor(entity: Partial<IFlowMessage> = {}) {
@@ -102,6 +158,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.received_at = entity.received_at ?? null;
     this.is_draft = entity.is_draft ?? false;
     this.kind = entity.kind ?? 'user';
+    this.body_status = entity.body_status ?? BodyStatus.NA;
   }
 
   /** Promote a draft message to a real reply: flips is_draft=false, appends to conversation.jsonl, pushes to hub. */
@@ -109,6 +166,54 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     const action = new ActionInfo('send-draft', 'flow_message', this.id ?? null, 'POST');
     const res = await dataManager.callAction<unknown, { flow_message_id: string; conversation_id: string; message_count: number }>(action);
     return res!;
+  }
+
+  // -------- Header / Body interface (principle #6) -------- //
+
+  /** True iff at least one attachment requires a packed body bundle.
+   *  Mirrors flow_sdk.builtin.flow_message.FlowMessage.has_body exactly. */
+  hasBody(): boolean {
+    for (const att of this.attachment ?? []) {
+      if (att.attachment_type === AttachmentType.FILE) return true;
+      if (att.attachment_type === AttachmentType.TYPE_ID) return true;
+      if (
+        att.attachment_type === AttachmentType.PROMPT &&
+        (att.data ?? '').startsWith(PROMPT_FILE_VFS_PREFIX)
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** Return the underlying attachment list (not a copy). */
+  attachments(): Attachment[] {
+    return this.attachment ?? [];
+  }
+
+  /** Pack + upload this message's body via the local backend, which handles
+   *  the hub fs/upload and the body_status state transitions.
+   *  POSTs /api/v1/graph/flow_message/<id>/upload_body. */
+  async uploadBody(_opts: { onProgress?: (pct: number) => void } = {}): Promise<this> {
+    if (!this.id) throw new Error('uploadBody requires this.id');
+    const action = new ActionInfo('upload_body', FlowMessage.type, this.id, 'POST');
+    await dataManager.callAction<unknown, unknown>(action);
+    this.body_status = BodyStatus.READY;
+    this.attachment_filename = BODY_FILENAME;
+    return this;
+  }
+
+  /** Download + unpack this message's body via the local backend.
+   *  Throws BodyNotReadyError when body_status != READY.
+   *  POSTs /api/v1/graph/flow_message/<id>/download_body. */
+  async downloadBody(_opts: { onProgress?: (pct: number) => void } = {}): Promise<this> {
+    if (this.body_status !== BodyStatus.READY) {
+      throw new BodyNotReadyError(this.body_status);
+    }
+    if (!this.id) throw new Error('downloadBody requires this.id');
+    const action = new ActionInfo('download_body', FlowMessage.type, this.id, 'POST');
+    await dataManager.callAction<unknown, unknown>(action);
+    return this;
   }
 }
 

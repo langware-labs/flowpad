@@ -1,12 +1,13 @@
-import { FlowMessage, TypeId } from '@sdk';
+import { Conversation, FlowMessage, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { useState } from 'react';
 import type { ITask } from '@sdk/entities/task';
 import type { ConversationMessage, ConversationParticipant } from '@sdk/entities/conversation';
-import { AttachmentType, downloadFlowMessageUrl } from '@sdk/entities/flow-message';
+import { AttachmentType, attachmentDataString, downloadFlowMessageUrl } from '@sdk/entities/flow-message';
 import { Download } from 'lucide-react';
 import { MessageBubble } from './MessageBubble';
 import { AttachmentChip } from './AttachmentChip';
+import { ContextEntityChip } from './EntityChip';
 import { fileAttachmentUrl } from './attachment-url';
 import { useLocalUser } from './useLocalUser';
 import { localBundleUrl } from './flow-message-drafts';
@@ -118,15 +119,64 @@ export function FlowMessageBubble({
   };
 
   // Filter out the conversation.jsonl transcript — that lives on the toolbar now.
-  const fileAttachments = (fm.attachment ?? []).filter(
-    (a) => a.attachment_type === AttachmentType.FILE && !a.data.endsWith('conversation.jsonl'),
-  );
+  // ``attachmentDataString`` collapses the hub's two ``data`` shapes
+  // (string ``"<type>-<id>"`` OR object ``{type, id}``) into one string.
+  const fileAttachments = (fm.attachment ?? []).filter((a) => {
+    if (a.attachment_type !== AttachmentType.FILE) return false;
+    const d = attachmentDataString(a);
+    return !!d && !d.endsWith('conversation.jsonl');
+  });
 
-  const hasAttachments = !!fm.attachment_filename || fileAttachments.length > 0;
+  // TYPE_ID attachments (Spec, Skill, Task, AgenticProcess, …) render as
+  // interactive entity chips below the bubble text — same EntityChip
+  // component the conversation toolbar + ContextPanel use.
+  const typeIdAttachments = (fm.attachment ?? [])
+    .filter((a) => a.attachment_type === AttachmentType.TYPE_ID)
+    .map((a) => {
+      const d = attachmentDataString(a);
+      const dash = d.indexOf('-');
+      if (dash <= 0) return null;
+      return new TypeId(d.slice(0, dash), d.slice(dash + 1));
+    })
+    .filter((t): t is TypeId => t !== null);
+
+  // Per-message context_entities — the "private context" axis: TypeIds
+  // pinned only on this row (not the whole conv). De-duped against the
+  // TYPE_ID attachment row so we don't render the same chip twice.
+  const attachmentChipKeys = new Set(typeIdAttachments.map((t) => `${t.type}-${t.id}`));
+  const contextChips: TypeId[] = (fm.contextEntities ?? []).filter((t) => {
+    if (!t || !t.type || !t.id) return false;
+    return !attachmentChipKeys.has(`${t.type}-${t.id}`);
+  });
+
+  const insideConv = { type: Conversation.type, id: fm.conversation_id ?? '' };
+  const hasAttachments =
+    !!fm.attachment_filename
+    || fileAttachments.length > 0
+    || typeIdAttachments.length > 0
+    || contextChips.length > 0;
   const totalAttachments = (fm.attachment_filename ? 1 : 0) + fileAttachments.length;
 
   const footer = hasAttachments ? (
     <div className="mt-2 space-y-1.5">
+      {(typeIdAttachments.length > 0 || contextChips.length > 0) && (
+        <div className="flex flex-wrap gap-1">
+          {typeIdAttachments.map((typeId) => (
+            <ContextEntityChip
+              key={`att:${typeId.type}-${typeId.id}`}
+              typeId={typeId}
+              inside={insideConv}
+            />
+          ))}
+          {contextChips.map((typeId) => (
+            <ContextEntityChip
+              key={`ctx:${typeId.type}-${typeId.id}`}
+              typeId={typeId}
+              inside={insideConv}
+            />
+          ))}
+        </div>
+      )}
       {fm.attachment_filename && (
         <AttachmentChip
           url={downloadFlowMessageUrl(messageId, fm.attachment_filename)}
@@ -134,11 +184,12 @@ export function FlowMessageBubble({
         />
       )}
       {fileAttachments.map((a) => {
-        const name = a.data.split('/').pop() ?? a.data;
+        const d = attachmentDataString(a);
+        const name = d.split('/').pop() || d;
         return (
           <AttachmentChip
-            key={a.data}
-            url={fileAttachmentUrl(messageId, a.data)}
+            key={d}
+            url={fileAttachmentUrl(messageId, d)}
             filename={name}
           />
         );
