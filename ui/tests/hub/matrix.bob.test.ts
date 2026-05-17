@@ -22,6 +22,7 @@ import { config, dataContext } from '@sdk';
 import { Conversation, acceptInvitation, fetchConversations } from '@sdk/entities/conversation';
 import {
   BodyStatus,
+  ConversationEvents,
   FlowMessage,
   markFlowMessagesReceived,
   type IFlowMessage,
@@ -124,7 +125,7 @@ describe('hub: matrix two-process — BOB', () => {
     );
 
     const inbox: IFlowMessage[] = [];
-    const offMessage = conv.on('message', (m: IFlowMessage) => {
+    const offMessage = conv.on(ConversationEvents.MESSAGE, (m: IFlowMessage) => {
       inbox.push(m);
     });
 

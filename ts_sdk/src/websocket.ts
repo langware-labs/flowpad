@@ -224,6 +224,15 @@ export interface FlowDataMessage extends EntityMessage {
 
 export type DataOpType = 'create' | 'update' | 'delete';
 
+/** Enum form of {@link DataOpType}. Use these members instead of bare
+ *  'create' / 'update' / 'delete' string literals when matching a
+ *  data_op frame's ``op``. */
+export enum DataOp {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+}
+
 interface DataOpMessage extends EntityMessage {
   op: DataOpType;
   data?: { [key: string]: any }; // Use a dictionary to represent the data or define the specific structure if known
