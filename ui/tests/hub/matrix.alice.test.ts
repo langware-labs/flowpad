@@ -21,7 +21,7 @@
  */
 import { config, dataContext } from '@sdk';
 import { Conversation } from '@sdk/entities/conversation';
-import { FlowMessage, type IFlowMessage } from '@sdk/entities/flow-message';
+import { ConversationEvents, FlowMessage, type IFlowMessage } from '@sdk/entities/flow-message';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
@@ -80,20 +80,6 @@ beforeEach(async (context: any) => {
 // attachment present so the body lifecycle (UPLOADING → READY) runs.
 const SKILL_ID = 'skill-deadbeef-0000-0000-0000-000000000001';
 
-// Poll a FlowMessage by id until its delivery_status reaches ``want``.
-// getById returns the SDK's cached entity, kept fresh by WS update frames —
-// so this observes the real ack fanout coming back from bob's side.
-async function waitForDeliveryStatus(fmId: string, want: string, timeoutMs: number) {
-  return pollUntil(
-    async () => {
-      const fm = await FlowMessage.getById<FlowMessage>(fmId);
-      return fm && fm.delivery_status === want ? fm : null;
-    },
-    timeoutMs,
-    `fm ${fmId.slice(0, 8)} → delivery_status=${want}`,
-  );
-}
-
 describe('hub: matrix two-process — ALICE', () => {
   it('creates, shares, exchanges messages + skill with the real bob backend', async () => {
     // Clear any stale rendezvous file BEFORE creating the conv, so bob can't
@@ -108,7 +94,7 @@ describe('hub: matrix two-process — ALICE', () => {
 
     // Collect every inbound message on this conv via the production SDK tap.
     const inbox: IFlowMessage[] = [];
-    const offMessage = conv.on('message', (m: IFlowMessage) => {
+    const offMessage = conv.on(ConversationEvents.MESSAGE, (m: IFlowMessage) => {
       inbox.push(m);
     });
 
@@ -164,14 +150,16 @@ describe('hub: matrix two-process — ALICE', () => {
       console.log('[matrix.alice] got thanks');
 
       // ── Step 7: ack assertions. ─────────────────────────────────────────
-      // Both of alice's sends should reach 'received': bob's backend bridge
-      // auto-acks 'delivered' on arrival, and bob explicitly marks them read
-      // after handling each — all real behavior, no simulation.
-      const hiFinal = await waitForDeliveryStatus(fmHi.id!, 'received', 15_000);
-      expect(hiFinal.received_at).toBeTruthy();
+      // waitForAck resolves once bob's receipt fans back: bob's bridge
+      // auto-acks 'delivered' on arrival, then bob explicitly marks each
+      // message read ('received') — all real behavior, no simulation.
+      const hiEntity = await FlowMessage.getById<FlowMessage>(fmHi.id!);
+      expect(hiEntity).toBeTruthy();
+      await hiEntity!.waitForAck(15_000);
+      expect(hiEntity!.received_at).toBeTruthy();
 
-      const skillFinal = await waitForDeliveryStatus(fmSkill.id!, 'received', 15_000);
-      expect(skillFinal.received_at).toBeTruthy();
+      await fmSkill!.waitForAck(15_000);
+      expect(fmSkill!.received_at).toBeTruthy();
       console.log('[matrix.alice] both sends reached received — done');
     } finally {
       offMessage();
