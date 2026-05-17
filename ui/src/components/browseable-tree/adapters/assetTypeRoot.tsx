@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileText, Plus, RefreshCw } from 'lucide-react';
+import { FileText, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import apiClient from '@sdk/client';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -9,6 +9,8 @@ import type { SearchResult } from '@src/hooks/use-asset-search';
 import { DEFAULT_ASSET_FILTER, applyFilterToParams } from '@src/components/assets/assetFilter';
 import type { AssetFilter } from '@src/components/assets/assetFilter';
 import type { Browseable, BrowseableRoot, ToolbarAction } from '@src/components/browseable-tree/types';
+import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
+import { config } from '@sdk';
 
 export interface AssetTypeRootDeps {
   /** Per-row refresh callback, e.g. systemTools.indexType from useSystemTools.
@@ -25,6 +27,8 @@ export interface AssetTypeRootDeps {
   childrenPageSize?: number;
   /** Called after a successful scan so the parent can refresh counts. */
   onScanComplete?: (typeName: string) => void;
+  /** Called after a successful asset delete so the parent can refresh counts + tree. */
+  onDeleteComplete?: (typeName: string) => void;
 }
 
 interface AssetPointerParts {
@@ -101,12 +105,33 @@ async function fetchAssetsOfType(
 /**
  * Build a child Browseable from a SearchResult.
  */
-function assetChild(typeName: string, result: SearchResult): Browseable {
+function assetChild(typeName: string, result: SearchResult, onAfterDelete?: () => void): Browseable {
   const label = result.name || basename(result.asset_ref) || '(untitled)';
   // Projects open in their collaboration space rather than the asset editor.
   const pointer = typeName === 'project'
     ? DockPointer.forProject(result.record_id)
     : DockPointer.forAssetEditor(typeName, result.asset_ref);
+  const toolbar: ToolbarAction[] = [];
+  // Projects open in their collaboration space and aren't deleted from the
+  // asset sidebar; everything else (markdown, agent, skill, workflow, plan,
+  // claude_md, …) routes through the same /graph/<type>/<id> DELETE endpoint.
+  if (typeName !== 'project') {
+    toolbar.push({
+      id: `delete:${typeName}:${result.record_id}`,
+      icon: <Trash2 />,
+      label: `Delete ${label}`,
+      run: () => {
+        showDeleteAssetModal({
+          name: label,
+          onConfirm: async () => {
+            await apiClient.delete(`${config.API_PREFIXES.graph}/${typeName}/${result.record_id}`);
+          },
+          onAfterDelete,
+        });
+      },
+      showBusyIndicator: false,
+    });
+  }
   return {
     id: `asset:${typeName}:${result.asset_ref}`,
     kind: 'asset',
@@ -114,6 +139,7 @@ function assetChild(typeName: string, result: SearchResult): Browseable {
     icon: <FileText className="h-3.5 w-3.5 flex-shrink-0" />,
     hasChildren: false,
     pointer,
+    toolbar: toolbar.length > 0 ? toolbar : undefined,
   };
 }
 
@@ -211,9 +237,12 @@ export function assetTypeRoot(type: AssetTypeInfo, deps: AssetTypeRootDeps): Bro
   const filter = deps.filter ?? DEFAULT_ASSET_FILTER;
   const limit = deps.childrenPageSize ?? 200;
 
+  const onAfterDelete = deps.onDeleteComplete
+    ? () => deps.onDeleteComplete!(type.type_name)
+    : undefined;
   const listChildren = async (): Promise<Browseable[]> => {
     const results = await fetchAssetsOfType(type.type_name, filter, limit);
-    return results.map((r) => assetChild(type.type_name, r));
+    return results.map((r) => assetChild(type.type_name, r, onAfterDelete));
   };
 
   // Filter signature in the id forces the BrowseableTree to refetch
