@@ -6,7 +6,7 @@ import apiClient, { apiStats, clearStats, GRAPH_API_PREFIX } from '../client';
 import config from '../config';
 import { IEntity } from '../IEntity';
 import { ActionInfo, BootstrapInfo, ScanInfo } from '../models';
-import { isTypeId, TypeId } from '../models/TypeId';
+import { TypeId } from '../models/TypeId';
 import { UserRole } from '../services/membershipService';
 import {
   ConnectionManager,
@@ -37,7 +37,7 @@ export enum EntityStatus {
 export interface EntityExpansion {
   roles?: UserRole[] | null;
   allowed_actions?: ActionType[] | null;
-  auth_scopes?: TypeId[][] | null;
+  auth_scopes?: string[][] | null;
   is_private?: boolean;
   expansions?: ExpansionType[] | null;
 }
@@ -1325,43 +1325,9 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     return entity;
   }
 
-  /**
-   * Field-name whitelist for the TypeId auto-coercion in `deepAssign`.
-   *
-   * The default heuristic — "if the value looks like a TypeId string, treat it
-   * as one" — corrupts plain-string fields whose values happen to match the
-   * `<type>-<id>` shape. The canonical example is `target_typeid_str` on
-   * `AgenticProcess` / `Run`: the Python schema declares it `str | None`, the
-   * on-disk record stores it as the string `"project-<uuid>"`, but
-   * `deepAssign` would otherwise wrap it into a TypeId object — breaking
-   * `useProcessesForTarget` queries (string match on the server, object
-   * mismatch on the client validator) and silently disabling the chat
-   * toolbar's history.
-   *
-   * The list below names every field whose value should NEVER be promoted to
-   * a TypeId, regardless of how it looks. Add new entries here when a plain
-   * string id field is introduced and its values can collide with the TypeId
-   * shape. Reference IDs (project_id, created_by, …) are intentionally NOT in
-   * this set — current consumers rely on the auto-coercion for those.
-   */
-  private static TYPEID_COERCION_DENYLIST: ReadonlySet<string> = new Set([
-    'target_typeid_str',
-    'message',
-  ]);
-
   public deepAssign(target: any, source: any) {
     for (const key in source) {
-      // Check if source[key] is a TypeId FIRST, before checking if it's an object
-      // This handles TypeId objects in arrays (like auth_scopes) where the key is just an index
-      if (
-        source[key] &&
-        isTypeId(source[key]) &&
-        !DataManager.TYPEID_COERCION_DENYLIST.has(key)
-      ) {
-        target[key] = new TypeId(source[key]);
-      } else if (typeof source[key] === 'object' && source[key] !== null) {
-        // For objects/arrays, recursively deep assign
-        // Initialize target[key] if it doesn't exist
+      if (typeof source[key] === 'object' && source[key] !== null) {
         if (!target[key]) {
           target[key] = Array.isArray(source[key]) ? [] : {};
         }

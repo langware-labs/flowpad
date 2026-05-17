@@ -70,8 +70,17 @@ def _plan_search_dirs() -> list[Path]:
 
 
 def _extract_name_from_markdown(text: str) -> str | None:
-    """Return first non-empty line with leading '#' and whitespace stripped."""
-    for line in text.splitlines():
+    """Return the first markdown heading (the text after leading `#` marks).
+
+    Strips YAML frontmatter first so the indexer-stamped `id:` block at the
+    top of the file (delimited by `---`) doesn't get mistaken for a heading.
+    Only lines that actually begin with `#` are eligible — without that guard
+    the `---` delimiter line would itself be returned as the title.
+    """
+    body = _extract_body(text)
+    for line in body.splitlines():
+        if not line.startswith("#"):
+            continue
         stripped = line.lstrip("#").strip()
         if stripped:
             return stripped

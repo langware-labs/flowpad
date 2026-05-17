@@ -202,72 +202,40 @@ describe('TypeId', () => {
       await dataManager.clearCache();
     });
 
-    it('should cast TypeId arrays when using dataManager deepAssign', () => {
-      // Step 1: Define an entity-like object with various TypeId formats in scope
+    it('should leave string scope arrays as strings (no auto-TypeId coercion)', () => {
       const uuid1 = '123e4567-e89b-41d4-a456-426614174000';
       const uuid2 = '987fcdeb-51d3-41d4-a456-426614174999';
 
-      // Create a mock entity JSON with scope containing all TypeId formats
       const mockEntityJson = {
         type: 'test_entity',
         id: uuid1,
         name: 'Test Entity',
-        // Scope array with all TypeId formats as strings (as they come from API)
         scope: [
-          `workspace-${uuid2}`, // UUID format
-          'workspace-SPACE-0', // Namespace format (namespace-index)
-          'user-name.john_doe', // Prop ID format (property.value)
-          'agent-@local', // Named ID format (@name)
+          `workspace-${uuid2}`,
+          'workspace-SPACE-0',
+          'user-name.john_doe',
+          'agent-@local',
         ],
       };
 
-      // Step 2: Create target object to deep assign into
       const targetObject: any = {};
-
-      // Step 3: Use dataManager deepAssign to cast TypeIds
       dataManager.deepAssign(targetObject, mockEntityJson);
 
-      // Step 4: Validate that id was properly assigned
       expect(targetObject.id).toBe(uuid1);
       expect(targetObject.name).toBe('Test Entity');
       expect(targetObject.type).toBe('test_entity');
 
-      // Step 5: Validate that scope array has all elements as TypeId class instances
-      expect(targetObject.scope).toBeDefined();
-      expect(Array.isArray(targetObject.scope)).toBe(true);
-      expect(targetObject.scope).toHaveLength(4);
-
-      // Validate each TypeId in scope is properly cast
-      // 1. UUID format
-      expect(targetObject.scope[0]).toBeInstanceOf(TypeId);
-      expect(targetObject.scope[0].type).toBe('workspace');
-      expect(targetObject.scope[0].id).toBe(uuid2);
-      expect(targetObject.scope[0].identifierType).toBe(IdentifierType.UUID);
-
-      // 2. Namespace format
-      expect(targetObject.scope[1]).toBeInstanceOf(TypeId);
-      expect(targetObject.scope[1].type).toBe('workspace');
-      expect(targetObject.scope[1].id).toBe('SPACE-0');
-      expect(targetObject.scope[1].identifierType).toBe(IdentifierType.NAMESPACE);
-
-      // 3. Prop ID format
-      expect(targetObject.scope[2]).toBeInstanceOf(TypeId);
-      expect(targetObject.scope[2].type).toBe('user');
-      expect(targetObject.scope[2].id).toBe('name.john_doe');
-      expect(targetObject.scope[2].identifierType).toBe(IdentifierType.PROP_ID);
-
-      // 4. Named ID format
-      expect(targetObject.scope[3]).toBeInstanceOf(TypeId);
-      expect(targetObject.scope[3].type).toBe('agent');
-      expect(targetObject.scope[3].id).toBe('@local');
-      expect(targetObject.scope[3].identifierType).toBe(IdentifierType.NAMED);
+      expect(targetObject.scope).toEqual(mockEntityJson.scope);
+      targetObject.scope.forEach((entry: unknown) => {
+        expect(typeof entry).toBe('string');
+        expect(entry).not.toBeInstanceOf(TypeId);
+      });
     });
 
-    it('should handle nested TypeId arrays in entity expansion', () => {
+    it('should leave nested auth_scopes arrays as plain strings', () => {
       const uuid1 = '111e4567-e89b-41d4-a456-426614174111';
       const uuid2 = '222fcdeb-51d3-41d4-a456-426614174222';
 
-      // Mock entity with nested TypeId arrays in expand.auth_scopes
       const mockEntityJson = {
         type: 'page',
         id: uuid1,
@@ -282,33 +250,13 @@ describe('TypeId', () => {
       const targetObject: any = {};
       dataManager.deepAssign(targetObject, mockEntityJson);
 
-      // Validate nested TypeId arrays are properly cast
-      expect(targetObject.expand).toBeDefined();
-      expect(targetObject.expand.auth_scopes).toBeDefined();
-      expect(Array.isArray(targetObject.expand.auth_scopes)).toBe(true);
-      expect(targetObject.expand.auth_scopes).toHaveLength(2);
-
-      // First scope array
-      expect(Array.isArray(targetObject.expand.auth_scopes[0])).toBe(true);
-      expect(targetObject.expand.auth_scopes[0]).toHaveLength(2);
-      expect(targetObject.expand.auth_scopes[0][0]).toBeInstanceOf(TypeId);
-      expect(targetObject.expand.auth_scopes[0][0].type).toBe('workspace');
-      expect(targetObject.expand.auth_scopes[0][0].id).toBe(uuid2);
-
-      expect(targetObject.expand.auth_scopes[0][1]).toBeInstanceOf(TypeId);
-      expect(targetObject.expand.auth_scopes[0][1].type).toBe('folder');
-      expect(targetObject.expand.auth_scopes[0][1].id).toBe('FOLDER-123');
-
-      // Second scope array
-      expect(Array.isArray(targetObject.expand.auth_scopes[1])).toBe(true);
-      expect(targetObject.expand.auth_scopes[1]).toHaveLength(2);
-      expect(targetObject.expand.auth_scopes[1][0]).toBeInstanceOf(TypeId);
-      expect(targetObject.expand.auth_scopes[1][0].type).toBe('page');
-      expect(targetObject.expand.auth_scopes[1][0].id).toBe('name.my_page');
-
-      expect(targetObject.expand.auth_scopes[1][1]).toBeInstanceOf(TypeId);
-      expect(targetObject.expand.auth_scopes[1][1].type).toBe('user');
-      expect(targetObject.expand.auth_scopes[1][1].id).toBe('@me');
+      expect(targetObject.expand.auth_scopes).toEqual(mockEntityJson.expand.auth_scopes);
+      targetObject.expand.auth_scopes.forEach((scope: unknown[]) => {
+        scope.forEach((entry) => {
+          expect(typeof entry).toBe('string');
+          expect(entry).not.toBeInstanceOf(TypeId);
+        });
+      });
     });
   });
 });

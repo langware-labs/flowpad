@@ -13,6 +13,7 @@ export interface WorkerHistoryEntry {
   project_cwd: string | null;
   last_active_time: string;
   name: string | null;
+  last_prompt: string | null;
   git_branch: string | null;
   message_count: number | null;
   agentic_process_id: string | null;
