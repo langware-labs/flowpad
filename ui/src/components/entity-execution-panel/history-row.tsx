@@ -46,6 +46,13 @@ export function pickHistoryTitle(
   if (display && !display.startsWith('agentic_process-')) {
     return display.length > 80 ? `${display.slice(0, 80)}…` : display;
   }
+  // No real title — fall through to the last prompt so the row stays
+  // identifiable in surfaces that show a single line (worker_history
+  // splits name vs last_prompt; only HistoryModal renders both).
+  const prompt = (entry?.last_prompt ?? '').trim();
+  if (prompt) {
+    return prompt.length > 80 ? `${prompt.slice(0, 80)}…` : prompt;
+  }
   const id = process?.id ?? entry?.agentic_process_id ?? entry?.worker_id ?? '';
   return id ? `Session ${shortId(id)}` : 'Session';
 }

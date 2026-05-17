@@ -48,7 +48,7 @@ export class AgenticProcessMock extends Flow {
       ...entity,
       expand: {
         ...entity.expand,
-        auth_scopes: entity.expand?.auth_scopes || [[new TypeId('project', projectId)]],
+        auth_scopes: entity.expand?.auth_scopes || [[new TypeId('project', projectId).toString()]],
       },
     };
     super(entityWithScopes);

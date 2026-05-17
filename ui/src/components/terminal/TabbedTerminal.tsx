@@ -434,7 +434,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
     [onTabClick],
   );
 
-  const scrollSelectedTabIntoView = useCallback((targetKey: string) => {
+  const scrollSelectedTabIntoView = useCallback((targetKey: string, behavior: ScrollBehavior = 'smooth') => {
     const container = tabContainerRef.current;
     const tab = tabRefs.current[targetKey];
     if (!container || !tab) return;
@@ -445,32 +445,27 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
     const visibleRight = visibleLeft + container.clientWidth;
 
     if (tabLeft < visibleLeft) {
-      container.scrollTo({
-        left: tabLeft,
-        behavior: 'smooth',
-      });
+      container.scrollTo({ left: tabLeft, behavior });
       return;
     }
 
     if (tabRight > visibleRight) {
-      container.scrollTo({
-        left: tabRight - container.clientWidth,
-        behavior: 'smooth',
-      });
+      container.scrollTo({ left: tabRight - container.clientWidth, behavior });
     }
   }, []);
 
   const selectTab = useCallback(
-    (targetKey: string, options?: { navigate?: boolean }) => {
+    (targetKey: string, options?: { navigate?: boolean; behavior?: ScrollBehavior }) => {
       if (!targetKey) return;
 
       if (options?.navigate !== false) {
         navigateToSession(targetKey);
       }
 
+      const behavior = options?.behavior ?? 'smooth';
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          scrollSelectedTabIntoView(targetKey);
+          scrollSelectedTabIntoView(targetKey, behavior);
         });
       });
     },
@@ -500,14 +495,34 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
     }
   }, [visibleSessions, pendingTabCreation, clearPendingTabCreation, scrollSelectedTabIntoView]);
 
+  // Mount + late-arriving-sessions + layout-shift: on initial mount the active
+  // tab may be in-view because only some sessions have rendered (so the
+  // strip is short). When the rest of the sessions land, the active tab gets
+  // pushed off-screen. When we then scroll right, `canScrollLeft` flips true
+  // and a left-arrow button mounts to our LEFT, shrinking our clientWidth and
+  // clipping the active tab on the right. ResizeObserver fires on either
+  // layout shift, so we re-evaluate scroll-into-view until the tab is
+  // genuinely visible — the function is a no-op once the tab fits.
+  // hasTabOverflow/canScrollLeft are intentionally NOT in the useEffect deps
+  // (they flip from the scroll itself → would infinite-loop).
+  const lastScrolledKeyRef = useRef<string | null>(null);
   useEffect(() => {
     if (!activeTargetKey || !hasActiveTab) return;
-    selectTab(activeTargetKey, { navigate: false });
-    // scrollSelectedTabIntoView reads DOM on each call — no need to re-run on
-    // scroll/overflow state changes, and doing so caused an infinite setState loop
-    // because selectTab scrolls the container, which flips hasTabOverflow/canScrollLeft.
+    const isFirstScrollForKey = lastScrolledKeyRef.current !== activeTargetKey;
+    lastScrolledKeyRef.current = activeTargetKey;
+    selectTab(activeTargetKey, { navigate: false, behavior: isFirstScrollForKey ? 'auto' : 'smooth' });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTargetKey, hasActiveTab, selectTab]);
+  }, [activeTargetKey, hasActiveTab, selectTab, visibleSessions.length]);
+
+  useEffect(() => {
+    const container = tabContainerRef.current;
+    if (!container || !activeTargetKey || !hasActiveTab) return;
+    const observer = new ResizeObserver(() => {
+      scrollSelectedTabIntoView(activeTargetKey, 'auto');
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [activeTargetKey, hasActiveTab, scrollSelectedTabIntoView]);
 
   const closeTabs = useCallback(
     async (tabs: TerminalTab[]): Promise<void> => {

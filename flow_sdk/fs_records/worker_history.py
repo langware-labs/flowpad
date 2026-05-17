@@ -36,6 +36,7 @@ class WorkerHistoryEntry(BaseModel):
     project_cwd: Optional[str] = None
     last_active_time: datetime
     name: Optional[str] = None
+    last_prompt: Optional[str] = None
     git_branch: Optional[str] = None
     message_count: Optional[int] = None
     agentic_process_id: Optional[str] = None
@@ -65,18 +66,35 @@ def _pick_name(
     *,
     custom_title: Optional[str],
     slug: Optional[str],
-    last_user_message: Optional[str],
     display: Optional[str],
     session_id: str,
 ) -> Optional[str]:
-    for cand in (custom_title, slug, last_user_message, display):
-        if not cand:
-            continue
-        v = cand.strip()
-        if not v or v == session_id or _is_uuid_like(v):
-            continue
-        return f"{v[:80]}…" if len(v) > 80 else v
-    return None
+    """A real user-set session title — never an auto-derived label.
+
+    Only ``custom_title`` qualifies. ``slug`` is Claude's auto-summary of the
+    first prompt (e.g., ``"open http://localhost..."``) — surfacing it as a
+    "name" hides the fact that the user never actually titled the session.
+    The prompt is returned separately via ``_pick_last_prompt`` so the UI can
+    decide how to render an untitled session (italic prompt / "Untitled").
+    ``slug`` and ``display`` remain in the signature for callers that pass
+    them; both are intentionally ignored here.
+    """
+    del slug, display
+    if not custom_title:
+        return None
+    v = custom_title.strip()
+    if not v or v == session_id or _is_uuid_like(v):
+        return None
+    return f"{v[:80]}…" if len(v) > 80 else v
+
+
+def _pick_last_prompt(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    v = value.strip()
+    if not v:
+        return None
+    return f"{v[:120]}…" if len(v) > 120 else v
 
 
 def _project_id_for(cwd: Optional[str], encoded: Optional[str]) -> Optional[str]:
@@ -231,9 +249,11 @@ def get_claude_worker_history(limit: int) -> list[WorkerHistoryEntry]:
         name = _pick_name(
             custom_title=custom_title,
             slug=slug,
-            last_user_message=last_user_message or history_prompt_index.get(sid),
             display=None,
             session_id=sid,
+        )
+        last_prompt = _pick_last_prompt(
+            last_user_message or history_prompt_index.get(sid),
         )
 
         result.append(
@@ -245,6 +265,7 @@ def get_claude_worker_history(limit: int) -> list[WorkerHistoryEntry]:
                 project_cwd=cwd,
                 last_active_time=datetime.fromtimestamp(mtime, tz=timezone.utc),
                 name=name,
+                last_prompt=last_prompt,
                 git_branch=git_branch,
                 message_count=message_count,
                 agentic_process_id=process_index.get(sid),
@@ -306,13 +327,8 @@ def get_codex_worker_history(limit: int) -> list[WorkerHistoryEntry]:
         except Exception as e:
             logger.debug("[worker_history] codex stats read failed for %s: %s", sid, e)
 
-        name = _pick_name(
-            custom_title=None,
-            slug=None,
-            last_user_message=last_user_message,
-            display=None,
-            session_id=sid,
-        )
+        # Codex sessions never carry a custom title; only the prompt is available.
+        last_prompt = _pick_last_prompt(last_user_message)
 
         result.append(
             WorkerHistoryEntry(
@@ -322,7 +338,8 @@ def get_codex_worker_history(limit: int) -> list[WorkerHistoryEntry]:
                 project_name=_basename(cwd),
                 project_cwd=cwd,
                 last_active_time=datetime.fromtimestamp(mtime, tz=timezone.utc),
-                name=name,
+                name=None,
+                last_prompt=last_prompt,
                 git_branch=None,
                 message_count=message_count,
                 agentic_process_id=process_index.get(sid),
