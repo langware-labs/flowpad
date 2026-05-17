@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { MarkdownEditor } from './MarkdownEditor';
 import { AssetPickerPopover } from '@src/components/asset-manager/AssetPickerPopover';
 import { RunButton } from '@src/components/assets/editor/run/RunButton';
@@ -8,6 +8,8 @@ import { WorkflowRunsPanel } from '@src/components/workflows-view/WorkflowRunsPa
 import type { ProcessEntry } from '@src/components/workflows-view/workflow-run-store';
 import { useProcessesForTarget } from '@src/components/entity-execution-panel';
 import { useEntityByPath } from '@src/hooks/use-entity-by-path';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { dataContext, FrontMatterFsRef, ProcessType } from '@sdk';
 import type { APIEntity, FSRef } from '@sdk';
 import { History } from 'lucide-react';
@@ -38,6 +40,16 @@ export function PlainMarkdownAssetEditor({ fsRef, assetType }: PlainMarkdownAsse
   const localTypeId = dataContext.computeNodeTypeId;
   const editorRef =
     assetRef && localTypeId ? new FrontMatterFsRef(assetRef, localTypeId) : fsRef;
+
+  const { navigation } = useDockNavigation();
+  // No backing FsRecord entity (raw CLAUDE.md etc.) → no delete button. The
+  // tree row + the file remain; user can still delete via the filesystem tools.
+  const deletable = entity as unknown as { delete?: () => Promise<boolean>; name?: string } | null;
+  const onDelete = useCallback(async () => {
+    if (!deletable?.delete) return;
+    await deletable.delete();
+    navigation.openDock(DockPointer.forAssetList(assetType));
+  }, [deletable, navigation, assetType]);
 
   const [activeSideTab, setActiveSideTab] = useState<string>('editor');
 
@@ -104,6 +116,8 @@ export function PlainMarkdownAssetEditor({ fsRef, assetType }: PlainMarkdownAsse
         extraSideTabs={[runsTab]}
         activeSideTab={activeSideTab}
         onActiveSideTabChange={setActiveSideTab}
+        onDelete={deletable?.delete ? onDelete : undefined}
+        deleteLabel={deletable?.name ?? undefined}
       />
       {mcpModal}
     </>

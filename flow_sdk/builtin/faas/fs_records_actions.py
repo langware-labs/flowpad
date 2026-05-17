@@ -1146,10 +1146,13 @@ class FsRecordsActionsMixin:
                     if hasattr(driver, "fts_delete"):
                         await driver.fts_delete(entity.id)
                     await entity.delete()
-                # Remove from disk
-                deleted = await record_list.delete(uid)
-                if not deleted:
+                # Remove from disk — including the live asset_ref folder so
+                # records like Skill don't re-surface via discover() after delete.
+                record = await asyncio.to_thread(record_list.get, uid)
+                if record is None:
                     return ApiFailResponse(message=f"Record '{uid}' not found", status_code=404)
+                await record.delete(delete_ref=True)
+                record_list.invalidate()
                 await self._broadcast_fs_record_op("delete", record_type, uid)
                 return ApiSuccessResponse(data={"deleted": uid})
 

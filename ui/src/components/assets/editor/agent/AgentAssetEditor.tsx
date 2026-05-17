@@ -1,6 +1,8 @@
 import { MarkdownEditor } from '@src/components/assets/editor/markdown/MarkdownEditor';
 import { EntityExecutionPanel } from '@src/components/entity-execution-panel';
 import { useEntityByPath } from '@src/hooks/use-entity-by-path';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { Agent, AgenticProcess, FSRef, ProcessType } from '@sdk';
 import { useCallback } from 'react';
 
@@ -46,10 +48,21 @@ export function AgentAssetEditor({ fsRef, agent: providedAgent }: AgentAssetEdit
   );
   const chatTarget = fsRef.vpath;
   const agentExecutionTarget = agent ? agent.typeId.toString() : null;
+  const { navigation } = useDockNavigation();
+  const onDelete = useCallback(async () => {
+    if (!agent) return;
+    await agent.delete();
+    navigation.openDock(DockPointer.forAssetList(Agent.type));
+  }, [agent, navigation]);
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="min-h-0 flex-1">
-        <MarkdownEditor fsRef={editorRef} chatTarget={chatTarget} />
+        <MarkdownEditor
+          fsRef={editorRef}
+          chatTarget={chatTarget}
+          onDelete={agent ? onDelete : undefined}
+          deleteLabel={agent?.name ?? undefined}
+        />
       </div>
       {agentExecutionTarget && (
         <div className="h-[300px] flex-shrink-0 border-t" data-testid="agent-execution">

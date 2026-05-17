@@ -9,9 +9,10 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { FSRef } from '@sdk';
 import { downloadFile } from '@sdk/utils/utils';
 import Editor, { type OnMount } from '@monaco-editor/react';
-import { ChevronDown, ChevronRight, Download, Eye, ExternalLink, FileCode, FilePlus2, GraduationCap, MessageSquareDiff, Pencil, RefreshCw } from 'lucide-react';
+import { ChevronDown, ChevronRight, Download, Eye, ExternalLink, FileCode, FilePlus2, GraduationCap, MessageSquareDiff, Pencil, RefreshCw, Trash2 } from 'lucide-react';
+import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
 import { useTheme } from 'next-themes';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 export const EDITOR_MODES = ['view', 'review', 'editor', 'markdown', 'learning'] as const;
 export type EditorMode = (typeof EDITOR_MODES)[number];
@@ -66,6 +67,15 @@ interface MarkdownEditorProps {
   showLearningMode?: boolean;
   /** Body rendered when viewMode === 'learning'. Required when showLearningMode is true. */
   learningPanel?: React.ReactNode;
+  /**
+   * When provided, the editor header renders a Delete button that opens a
+   * confirmation dialog and calls this on confirm. Callers own the actual
+   * delete and any post-delete navigation. Omit to hide the button (e.g.
+   * for read-only or entity-less files).
+   */
+  onDelete?: () => Promise<void>;
+  /** Display name shown in the delete confirmation. Defaults to the filename. */
+  deleteLabel?: string;
 }
 
 /**
@@ -87,6 +97,8 @@ export function MarkdownEditor({
   onChatProcessCreated,
   showLearningMode,
   learningPanel,
+  onDelete,
+  deleteLabel,
 }: MarkdownEditorProps) {
   return (
     <MarkdownEditorContent
@@ -100,6 +112,8 @@ export function MarkdownEditor({
       onChatProcessCreated={onChatProcessCreated}
       showLearningMode={showLearningMode}
       learningPanel={learningPanel}
+      onDelete={onDelete}
+      deleteLabel={deleteLabel}
     />
   );
 }
@@ -138,6 +152,8 @@ function MarkdownEditorContent({
   onChatProcessCreated,
   showLearningMode,
   learningPanel,
+  onDelete,
+  deleteLabel,
 }: {
   fsRef: FSRef;
   sourcePath: string;
@@ -149,6 +165,8 @@ function MarkdownEditorContent({
   onChatProcessCreated?: MarkdownEditorProps['onChatProcessCreated'];
   showLearningMode?: boolean;
   learningPanel?: React.ReactNode;
+  onDelete?: MarkdownEditorProps['onDelete'];
+  deleteLabel?: MarkdownEditorProps['deleteLabel'];
 }) {
   const { navigation, currentDock } = useDockNavigation();
 
@@ -244,6 +262,16 @@ function MarkdownEditorContent({
     })();
   }, [fsRef, fileName]);
 
+  const handleDelete = useMemo(() => {
+    if (!onDelete) return undefined;
+    return () => {
+      showDeleteAssetModal({
+        name: deleteLabel ?? fileName,
+        onConfirm: onDelete,
+      });
+    };
+  }, [onDelete, deleteLabel, fileName]);
+
   const handleLinkClick = useCallback((href: string) => {
     const slug = isSlugLink(href);
     if (slug !== null) {
@@ -278,6 +306,7 @@ function MarkdownEditorContent({
           onViewModeChange={setViewMode}
           onOpenExternal={handleOpenExternal}
           onDownload={handleDownload}
+          onDelete={handleDelete}
           actions={toolbar}
           showLearningMode={showLearningMode}
         />
@@ -300,6 +329,7 @@ function MarkdownEditorContent({
           onViewModeChange={setViewMode}
           onOpenExternal={handleOpenExternal}
           onDownload={handleDownload}
+          onDelete={handleDelete}
           actions={toolbar}
           showLearningMode={showLearningMode}
         />
@@ -327,6 +357,7 @@ function MarkdownEditorContent({
           onViewModeChange={setViewMode}
           onOpenExternal={handleOpenExternal}
           onDownload={handleDownload}
+          onDelete={handleDelete}
           actions={toolbar}
           showLearningMode={showLearningMode}
         />
@@ -352,6 +383,7 @@ function MarkdownEditorContent({
         onViewModeChange={setViewMode}
         onOpenExternal={handleOpenExternal}
         onDownload={handleDownload}
+        onDelete={handleDelete}
         actions={toolbar}
         showLearningMode={showLearningMode}
       />
@@ -503,11 +535,12 @@ interface EditorHeaderProps {
   onViewModeChange: (mode: ViewMode) => void;
   onOpenExternal: () => void;
   onDownload?: () => void;
+  onDelete?: () => void;
   actions?: React.ReactNode;
   showLearningMode?: boolean;
 }
 
-function EditorHeader({ fileName, dirPath, dirty, viewMode, onViewModeChange, onOpenExternal, onDownload, actions, showLearningMode }: EditorHeaderProps) {
+function EditorHeader({ fileName, dirPath, dirty, viewMode, onViewModeChange, onOpenExternal, onDownload, onDelete, actions, showLearningMode }: EditorHeaderProps) {
   const visibleModes = EDITOR_MODES.filter((m) => m !== 'learning' || showLearningMode);
   return (
     <div className="flex h-[52px] flex-shrink-0 items-center gap-2 border-b px-3">
@@ -536,6 +569,16 @@ function EditorHeader({ fileName, dirPath, dirty, viewMode, onViewModeChange, on
               className="flex-shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
             >
               <Download className="h-3 w-3" />
+            </button>
+          )}
+          {onDelete && (
+            <button
+              title="Delete file"
+              onClick={onDelete}
+              data-testid="markdown-editor-delete"
+              className="flex-shrink-0 rounded p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+            >
+              <Trash2 className="h-3 w-3" />
             </button>
           )}
         </div>
