@@ -335,6 +335,48 @@ async def _ws_collector(
             await events.put(msg)
 
 
+async def _ensure_bob_app_connected(bob_env: dict, bob_email: str) -> str:
+    """Drive bob's running flowpad app to env-mode login + hub WS connect, so
+    its *real* hub_bridge auto-acks delivery in cell 2b (the test no longer
+    POSTs mark_delivered itself). Mirrors docker/run_realtime_tests.sh.
+
+    Returns bob's app base url. Skips the test — not fails — when bob's app
+    isn't running or can't reach a hub-connected state: without it the
+    auto-ack simply can't fire, which is an environment gap, not a bug."""
+    port = (bob_env.get("LOCAL_SERVER_PORT") or "").strip()
+    if not port:
+        pytest.skip("bob .env.local missing LOCAL_SERVER_PORT — can't locate bob's app")
+    app_url = f"http://localhost:{port}"
+
+    async with httpx.AsyncClient(timeout=5.0) as h:
+        try:
+            await h.get(f"{app_url}/api/v1/cloud/status")
+        except Exception as e:
+            pytest.skip(f"bob's flowpad app not running on :{port} ({e}) — needed for auto-ack")
+
+        # Env-mode login ({} body → app reads its own FLOWPAD_CLOUD_USER_*),
+        # then explicitly kick the hub WS bridge to connect.
+        await h.post(f"{app_url}/api/v1/cloud/login", json={})
+        await h.post(f"{app_url}/api/v1/cloud/ws/connect", json={})
+
+        # Poll cloud/status until the bridge reports a verified hub connection.
+        deadline = asyncio.get_event_loop().time() + 10.0
+        while True:
+            r = await h.get(f"{app_url}/api/v1/cloud/status")
+            data = (r.json() or {}).get("data") or {}
+            if data.get("hub_ws_connected") and data.get("logged_in"):
+                got = ((data.get("user") or {}).get("email") or "")
+                if got != bob_email:
+                    pytest.skip(f"bob's app logged in as {got!r}, expected {bob_email!r}")
+                return app_url
+            if asyncio.get_event_loop().time() >= deadline:
+                pytest.skip(
+                    f"bob's app on :{port} did not reach hub-connected state "
+                    f"(status={data.get('hub_ws_status')!r}) — auto-ack can't fire"
+                )
+            await asyncio.sleep(0.5)
+
+
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_message_matrix_http_ws_upload_download(
@@ -366,6 +408,11 @@ async def test_message_matrix_http_ws_upload_download(
         hub_base_url, headers_a, headers_b, bob_env["FLOWPAD_CLOUD_USER_EMAIL"],
     )
     print(f"conv {conv_id[:8]} ready")
+
+    # Bob's real flowpad app must be logged in + hub-connected so its hub_bridge
+    # auto-acks delivery in cell 2b — the test no longer POSTs mark_delivered.
+    bob_app_url = await _ensure_bob_app_connected(bob_env, bob_env["FLOWPAD_CLOUD_USER_EMAIL"])
+    print(f"bob app connected: {bob_app_url}")
 
     # Open both WS sockets *before* cell 1 so create frames are captured.
     # The collector resolves ``ready`` with the open ws so the test can
@@ -409,26 +456,21 @@ async def test_message_matrix_http_ws_upload_download(
         assert ev_data.get("sender_id") == alice_id, f"WS sender mismatch: {ev_data.get('sender_id')!r}"
         print("cell 2 (WS receive): payload matches sender + text")
 
-        # ── Cell 2b: ack lifecycle (mark_delivered → mark_received) ────────
-        # Bob POSTs mark_delivered; hub stamps delivery_status="delivered" + delivered_at.
-        async with httpx.AsyncClient(timeout=5.0) as h:
-            r = await h.post(
-                f"{hub_base_url}/api/v1/graph/flow_message/mark_delivered",
-                headers=headers_b, json={"flow_message_ids": [fm_http_id]},
-            )
-        r.raise_for_status()
-        # REST response must list exactly our fm in `updated`.
-        ack_body = r.json().get("data") or {}
-        assert ack_body.get("updated") == [fm_http_id], f"mark_delivered body: {ack_body!r}"
-
-        # Alice (sender) sees the delivery fanout on her WS; delivered_at set,
-        # received_at still empty (only step 1 of the state machine has fired).
-        ev = await _await_fm_update(alice_events, fm_http_id, "delivered", timeout=5.0)
+        # ── Cell 2b: ack lifecycle (auto-delivered → explicit received) ────
+        # Delivered ack: the test does NOT send this. Bob's running flowpad app
+        # received the message and its real hub_bridge._on_data_op auto-fired
+        # mark_delivered. Alice (sender) sees the delivery fanout on her WS —
+        # this pins the real SDK auto-ack, not a test-driven POST. delivered_at
+        # is set; received_at still empty (only step 1 of the state machine).
+        ev = await _await_fm_update(alice_events, fm_http_id, "delivered", timeout=10.0)
         ev_data = ev["data"] or {}
         assert ev_data.get("delivered_at"), f"delivered_at missing: {ev_data!r}"
         assert ev_data.get("received_at") is None, f"received_at set too early: {ev_data!r}"
+        print("cell 2b (auto-ack): delivered fanout from bob's app")
 
-        # Bob POSTs mark_received (the read ack); hub stamps received_at.
+        # Received ack: still explicit — nothing in the product auto-fires it
+        # (the UI's "mark read" toggles a separate local-only is_read field).
+        # Bob POSTs mark_received; hub stamps received_at.
         async with httpx.AsyncClient(timeout=5.0) as h:
             r = await h.post(
                 f"{hub_base_url}/api/v1/graph/flow_message/mark_received",
@@ -442,7 +484,7 @@ async def test_message_matrix_http_ws_upload_download(
         ev = await _await_fm_update(alice_events, fm_http_id, "received", timeout=5.0)
         ev_data = ev["data"] or {}
         assert ev_data.get("received_at"), f"received_at missing: {ev_data!r}"
-        print("cell 2b (acks): delivered + received fanout to sender")
+        print("cell 2b (acks): delivered (auto, bob's app) + received (explicit)")
 
         # ── Cell 2c: Bob replies with text over WS ─────────────────────────
         # Bob sends a flow_message via his open WS socket (no REST).
