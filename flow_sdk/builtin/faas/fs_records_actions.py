@@ -345,9 +345,107 @@ class FsRecordsActionsMixin:
             # types. Total scan_ms (below) is the meaningful number.
             b["scan_ms"] = 0.0
 
+        # ----- Diff classification (cheap, no writes) -----
+        # For every indexable type, compare each FSRef against the DB state map
+        # to bucket as new / stale / mis_scoped / fresh, then derive orphans via
+        # (db_ids ∪ shadow_dir_ids) − seen_ids. Skipped when scope-filtered
+        # because seen_ids is incomplete for a partial walk. ~16% overhead on
+        # top of scan() — measured at ~360 ms on a 7660-FSRef tree.
+        from flow_sdk.db import get_db_driver as _get_db_driver  # noqa: PLC0415
+        from flow_sdk.fs_store.indexer.index_function import (  # noqa: PLC0415
+            FSIndexer as _FSIndexer,
+            _load_entity_state_map,
+        )
+
+        do_diff = scope_filter is None
+        if do_diff:
+            _driver = _get_db_driver()
+            _indexable_names = {str(t) for t in INDEXABLE_TYPES}
+            _state_map: dict[str, dict[str, tuple[float, str, str]]] = {}
+            for _tn in _indexable_names:
+                try:
+                    _state_map[_tn] = await _load_entity_state_map(_driver, _tn)
+                except Exception:
+                    _state_map[_tn] = {}
+
+            _seen_ids: dict[str, set[str]] = {tn: set() for tn in _indexable_names}
+            _diff: dict[str, dict[str, int]] = {
+                tn: {"new": 0, "stale": 0, "mis_scoped": 0, "fresh": 0}
+                for tn in _indexable_names
+            }
+            for ref in nodes:
+                rt = ref.record_type
+                if rt is None:
+                    continue
+                rt_name = str(rt)
+                if rt_name not in _indexable_names:
+                    continue
+                _info = _SR_rec.get(rt_name)
+                _record_cls = getattr(_info, "record_cls", None) if _info else None
+                if _record_cls is None or not hasattr(_record_cls, "from_fsref"):
+                    continue
+                try:
+                    ref_id = _record_cls.genId(ref)
+                except Exception:
+                    continue
+                if not ref_id:
+                    continue
+                _seen_ids[rt_name].add(ref_id)
+                db_state = _state_map[rt_name].get(ref_id)
+                if db_state is None:
+                    _diff[rt_name]["new"] += 1
+                    continue
+                db_mtime, db_scope, db_pid = db_state
+                try:
+                    file_mtime = _record_cls.asset_hash_for_ref(ref)
+                except Exception:
+                    file_mtime = 0.0
+                walk_scope = ref.scope or ""
+                walk_pid = ref.project_id or ""
+                scope_ok = walk_scope == "" or db_scope == walk_scope
+                pid_ok = walk_pid == "" or db_pid == walk_pid
+                if file_mtime and file_mtime <= db_mtime and scope_ok and pid_ok:
+                    _diff[rt_name]["fresh"] += 1
+                elif not (scope_ok and pid_ok):
+                    _diff[rt_name]["mis_scoped"] += 1
+                else:
+                    _diff[rt_name]["stale"] += 1
+
+            _disk_ids = _FSIndexer._discover_records_dir_ids(_indexable_names)
+            for _tn in _indexable_names:
+                _db_ids = set(_state_map[_tn].keys())
+                _all_ids = _db_ids | _disk_ids.get(_tn, set())
+                _diff[_tn]["orphan"] = len(_all_ids - _seen_ids[_tn])
+                _diff[_tn]["in_index"] = len(_db_ids)
+                _diff[_tn]["pending"] = (
+                    _diff[_tn]["new"] + _diff[_tn]["stale"] + _diff[_tn]["mis_scoped"]
+                )
+
+            # Merge diff fields into existing per-type buckets; create empty
+            # buckets for types that have no on-disk refs but DO have orphans
+            # or in_index rows (otherwise the UI loses visibility of them).
+            for _tn, _d in _diff.items():
+                if not any(_d.values()):
+                    continue
+                _b = by_type.get(_tn)
+                if _b is None:
+                    _b = by_type.setdefault(_tn, {
+                        "type": _tn, "count": 0, "total_bytes": 0,
+                        "avg_bytes": 0, "scan_ms": 0.0, "_records": [],
+                    })
+                _b.update(_d)
+
+            # Ensure every bucket has the diff keys (zero-fill non-indexable
+            # types so the response shape is uniform).
+            for _b in by_type.values():
+                for _k in ("new", "stale", "mis_scoped", "fresh", "orphan", "in_index", "pending"):
+                    _b.setdefault(_k, 0)
+
         per_type = list(by_type.values())
         grand_total = sum(b["count"] for b in per_type)
         grand_bytes = sum(b["total_bytes"] for b in per_type)
+        grand_pending = sum(b.get("pending", 0) for b in per_type) if do_diff else 0
+        grand_orphan = sum(b.get("orphan", 0) for b in per_type) if do_diff else 0
 
         # Strip internal _records key from aggregate response
         types_for_log = [
@@ -386,12 +484,22 @@ class FsRecordsActionsMixin:
                 "min_bytes": min(sizes),
                 "max_bytes": max(sizes),
                 "last_scan_at": last_scan_at,
+                "new": b.get("new", 0),
+                "stale": b.get("stale", 0),
+                "mis_scoped": b.get("mis_scoped", 0),
+                "orphan": b.get("orphan", 0),
+                "fresh": b.get("fresh", 0),
+                "in_index": b.get("in_index", 0),
+                "pending": b.get("pending", 0),
             })
 
         return ApiSuccessResponse(data={
             "types": types_for_log,
             "grand_total": grand_total,
             "scan_ms": scan_ms,
+            "grand_pending": grand_pending,
+            "grand_orphan": grand_orphan,
+            "diff_included": do_diff,
         })
 
     async def _handle_fs_records_index_status(self, request_info) -> ApiResponse:

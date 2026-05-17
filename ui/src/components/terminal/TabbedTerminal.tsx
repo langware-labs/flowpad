@@ -1160,16 +1160,19 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
           void (async () => {
             setHistoryModalOpen(false);
             try {
-              if (entry.agentic_process_id) {
-                await navigation.openShellProcess(entry.agentic_process_id);
-              } else {
+              // Always route through openShellProcess so the row opens the
+              // terminal view (process.terminalDockPointer), not whatever the
+              // generic dockPointer would resolve to (e.g. transcript).
+              let processId: string | null = entry.agentic_process_id;
+              if (!processId) {
                 const process = await AgenticProcess.getByWorkerId(entry.worker_id);
-                if (!process) {
-                  toast({ title: 'Session not found', description: `Session ${entry.worker_id} is not in Claude or Codex history.`, variant: 'destructive' });
-                } else {
-                  navigation.openDockPointer(process.dockPointer);
-                }
+                processId = process?.id ?? null;
               }
+              if (!processId) {
+                toast({ title: 'Session not found', description: `Session ${entry.worker_id} is not in Claude or Codex history.`, variant: 'destructive' });
+                return;
+              }
+              await navigation.openShellProcess(processId);
             } catch (err) {
               console.error('[TabbedTerminal] Failed to open session from history:', err);
             } finally {
