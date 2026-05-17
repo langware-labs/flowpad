@@ -1,3 +1,7 @@
+---
+id: d390caa6-6074-5554-8a5a-5425811fc04d
+---
+
 # Fork action from search dock-menu creates a visible, interactive PTY
 
 ## Preconditions

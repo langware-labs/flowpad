@@ -1,3 +1,7 @@
+---
+id: 01ae5dcc-8394-516e-a6b9-1a9a8184d8f6
+---
+
 precondition: opt the sniffer in (default is OFF since v0.2.21)
 - in a fresh tab, before navigation, run:
   `localStorage.setItem('flowpad.snifferEnabled', 'true')`

@@ -1,3 +1,7 @@
+---
+id: 3d3362db-2249-5985-a218-bcb7190f14f5
+---
+
 test 1: Validate streaming execution and completion
 - navigate to {APP_URL}/
 - fill landing input with "streaming test"

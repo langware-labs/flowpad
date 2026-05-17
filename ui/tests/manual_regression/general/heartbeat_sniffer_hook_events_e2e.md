@@ -1,3 +1,7 @@
+---
+id: 421b3fc5-7027-5c93-b276-c2b807276678
+---
+
 test 1: sniffer activation writes hooks to settings.json
 - start backend: `python minihub/run.py` (port 9007)
 - start frontend: `cd minihub/ui && npm run dev` (port 4097)

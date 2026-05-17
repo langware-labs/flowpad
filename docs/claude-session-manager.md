@@ -1,3 +1,7 @@
+---
+id: 091d1958-c9ec-51a2-91f5-89cdcb820c1b
+---
+
 # ClaudeSessionManager
 
 Singleton SDK service for Claude session lifecycle management.

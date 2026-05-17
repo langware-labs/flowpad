@@ -1,11 +1,15 @@
 ---
+id: d7a727e5-ad32-5bd8-92eb-0c47a38cac4a
 name: flow
-description: Execute a markdown workflow file step by step, emitting a structured trace via `flow workflow report`.
+description: Execute a markdown workflow file step by step, emitting a structured
+  trace via `flow workflow report`.
 tags:
-  - workflow
-  - execution
-  - automation
-allowed-tools: [Bash, Read]
+- workflow
+- execution
+- automation
+allowed-tools:
+- Bash
+- Read
 ---
 
 # Flow Skill

@@ -1,3 +1,7 @@
+---
+id: 312240be-229a-5ac6-bfd2-19ef3bd3e29f
+---
+
 test 1: System profile page does not produce 500 console errors (FLOWPAD-1659)
 - navigate to {APP_URL}/dock/system_profile
 - wait 3 seconds for the system profile to load

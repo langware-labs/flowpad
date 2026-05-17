@@ -1,3 +1,7 @@
+---
+id: f4afa785-c2e1-5c52-85e3-a4c970c9ea00
+---
+
 # Agent Management Specification
 
 This document is the current implementation-oriented reference for the

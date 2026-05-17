@@ -1,3 +1,7 @@
+---
+id: 3fe334c0-155a-5689-94a3-2163cd4d53cd
+---
+
 test 1: Terminal resizes when browser window resizes
 - navigate to the Shell view via sidebar
 - validate terminal is visible and ready

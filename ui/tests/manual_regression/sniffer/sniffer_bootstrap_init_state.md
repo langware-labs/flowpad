@@ -1,3 +1,7 @@
+---
+id: 42c92154-7e8a-5523-ae85-0ad3cb221671
+---
+
 test 1: bootstrap response includes sniffer_hook on every load
 - start backend: `uv run -m flow_sdk.server.run`
 - call bootstrap directly:

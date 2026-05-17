@@ -1,3 +1,7 @@
+---
+id: 2bec37f8-1f39-5874-9064-409e3748010c
+---
+
 # ClaudeSessionManager
 
 Small singleton convenience service for creating a new Claude `AgenticProcess`

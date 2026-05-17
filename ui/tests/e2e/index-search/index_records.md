@@ -1,3 +1,7 @@
+---
+id: 0b4890dd-af9f-5dde-829a-9867bccb8f82
+---
+
 test 1: POST /fs-records/index (full, all types) returns indexed count and types array
 - [api] POST {API_URL}/api/v1/graph/compute_node/@local/fs-records/index?limit_per_type=2&limit_types=3
 - [api] validate HTTP response status is 200

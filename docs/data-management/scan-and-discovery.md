@@ -1,3 +1,7 @@
+---
+id: 56fb0e59-2f93-57c1-bec9-49a18b3151c5
+---
+
 # Scan and Discovery
 
 This document describes the discovery mechanisms used throughout `flow_sdk` to locate, load, and filter records from disk. It covers the standard directory-scan (`Record.discover`), the O(1) single-record lookup (`Record.discover_one`), the two Claude session discovery modes, `SourceFileRecordList` extraction from config files, and `RecordQuery` filtering.

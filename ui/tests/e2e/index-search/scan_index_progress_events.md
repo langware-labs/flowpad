@@ -1,3 +1,7 @@
+---
+id: 52860b1c-0171-5104-acb7-c4abe0676583
+---
+
 REGRESSION: Added 2026-03-19, updated for IndexProgressTable snapshots.
 
 `progress_report` WebSocket events are emitted during scan and index operations.

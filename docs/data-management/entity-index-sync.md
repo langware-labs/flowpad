@@ -1,3 +1,7 @@
+---
+id: 63694603-d4ad-5cbb-bba2-e2abf32ac21c
+---
+
 # Entity Index Sync
 
 ## Naming Clarification

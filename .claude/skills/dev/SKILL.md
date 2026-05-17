@@ -1,7 +1,14 @@
 ---
+id: 2b41edda-6120-5286-8917-f7da027e3ea0
 name: dev
-description: Dev team skill for feature planning and implementation. Use when planning a new feature, designing architecture, or implementing a confirmed plan with a team of developer agents.
-tags: [dev, planning, architecture, feature]
+description: Dev team skill for feature planning and implementation. Use when planning
+  a new feature, designing architecture, or implementing a confirmed plan with a team
+  of developer agents.
+tags:
+- dev
+- planning
+- architecture
+- feature
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob
 output-dir: .flow/skills/dev/feature_plans
 instructions-file: .flow/skills/dev/instructions.md

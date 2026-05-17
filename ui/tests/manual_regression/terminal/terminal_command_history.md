@@ -1,5 +1,5 @@
 ---
-
+id: b0073913-a03f-5004-882f-132fe9aa6070
 ---
 
 test 1: Navigate command history with up/down arrows
@@ -35,4 +35,3 @@ test 1: Navigate command history with up/down arrows
 * press Enter to execute the recalled command
 
 * validate "three" appears in the output again
-

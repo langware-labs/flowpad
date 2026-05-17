@@ -1,3 +1,7 @@
+---
+id: ac1ac5b9-5906-5e25-95a7-8bf5de55e2b3
+---
+
 test 1: Flowpad Assistant collab space lists the shipped sample doc
 - navigate to {APP_URL}/dock/project/@flowpad_assistant
 - wait for the project page (CollaborationPage) to render

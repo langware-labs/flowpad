@@ -1,3 +1,7 @@
+---
+id: 99e2e228-a7a9-526f-ba19-a67370117363
+---
+
 test 1: Full scan + index combined flow — rescan then index all via UI
 - [browser] navigate to the Records Scanner page
 - [browser] wait for page to load

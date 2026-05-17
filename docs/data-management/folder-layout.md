@@ -1,3 +1,7 @@
+---
+id: 4c405bbb-553d-5d0f-a818-74ba7df07133
+---
+
 # On-Disk Folder Layout
 
 This document describes the complete on-disk structure used by flow-cli: the FlowPad records root (`~/.flow/records/`), the Claude Code directories (`~/.claude/`), all `RecordType` constants, and the `SourceFileRegistry` security check.

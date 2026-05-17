@@ -1,3 +1,7 @@
+---
+id: 9d670f21-8876-5e00-99d3-20659577bf16
+---
+
 # App Icons
 
 Replace these placeholder files with actual app icons:
