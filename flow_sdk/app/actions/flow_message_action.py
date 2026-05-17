@@ -1664,6 +1664,7 @@ async def _backfill_text_messages_from_hub_conv(
         materialize_flow_message,
     )
 
+    # TODO replace with GET conv/ meesage_id
     raw_ids = hub_conv.get("message_ids")
     logger.info(
         "[conv-backfill] conv=%s raw_message_ids=%r",

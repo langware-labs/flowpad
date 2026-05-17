@@ -282,6 +282,10 @@ class HubWsBridge:
                 conversation_id=conversation_id,
                 someone_typeid=someone_typeid,
                 notify=True,
+                # Live hub arrival: emit the local CREATE even if a catch-up
+                # sync already materialized the row, so the open conversation
+                # ``on('message')`` listener still fires.
+                emit_live_create=True,
             )
 
             # Auto-ack delivery — receiver-side acks are the only signal that
@@ -310,7 +314,15 @@ class HubWsBridge:
                 return
             local_user = await User.get_local()
             someone_typeid = local_user.typeid if local_user else None
-            for field in ("delivery_status", "delivered_at", "received_at", "is_read", "is_archived"):
+            for field in (
+                "delivery_status",
+                "delivered_at",
+                "received_at",
+                "is_read",
+                "is_archived",
+                "body_status",
+                "attachment_filename",
+            ):
                 if field in data:
                     setattr(existing, field, data[field])
             await existing.save(someone_typeid, notify=True)

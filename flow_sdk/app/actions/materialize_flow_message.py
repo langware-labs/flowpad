@@ -112,6 +112,7 @@ async def materialize_flow_message(
     someone_typeid: Optional[str],
     bundle_ts: Optional[str] = None,
     notify: bool = True,
+    emit_live_create: bool = False,
 ) -> FlowMessage:
     """Create or upsert a FlowMessage, append its pointer to the conversation,
     project ``message_ids`` / ``message_count``, and (optionally) notify.
@@ -136,6 +137,7 @@ async def materialize_flow_message(
 
     fm_id = payload.get("id")
     existing = await FlowMessage.get_one({"id": fm_id}) if fm_id else None
+    is_new = existing is None
     if existing is not None:
         # Idempotent upsert — keep the row, ensure the pointer exists, return.
         fm = existing
@@ -143,18 +145,27 @@ async def materialize_flow_message(
         fm = FlowMessage.model_validate(payload)
         if not payload.get("id"):
             fm.id = FlowMessage.allocate_id(payload)
-        # Save with notify=False, then emit CREATE explicitly. ``save()``
-        # would emit an UPDATE here because ``model_validate`` carried the
-        # hub's ``created_by`` over (making ``exist_in_db`` True). Local
-        # subscribers (TS SDK ``on('message')``) filter for CREATE only,
-        # so the UPDATE would be invisible.
+        # Save with notify=False — the CREATE is emitted explicitly below.
+        # ``save()`` would emit an UPDATE here because ``model_validate``
+        # carried the hub's ``created_by`` over (making ``exist_in_db``
+        # True), and CREATE-only subscribers would never see it.
         fm = await fm.save(someone_typeid, notify=False)
-        if notify:
-            from flow_sdk.api.messages import DataOpMessage, OperationType  # noqa: PLC0415
-            from flow_sdk.core.network.resource_tracker import handle_entity_op  # noqa: PLC0415
-            await handle_entity_op(
-                DataOpMessage(data=fm, op=OperationType.CREATE, to_entity=fm.typeid)
-            )
+
+    # Emit the explicit local CREATE that drives entity-event subscribers
+    # (TS SDK ``conv.on('message')``).
+    #
+    # A brand-new row always emits. An *existing* row emits too when the
+    # caller passes ``emit_live_create`` — that flag is the hub WS bridge
+    # saying "this is a live arrival". Without it, a background catch-up
+    # that materialized the row first would swallow the live create event
+    # (the "doorbell rings once" bug): the second materialize was silent,
+    # so body-bearing messages never reached the open conversation.
+    if notify and (is_new or emit_live_create):
+        from flow_sdk.api.messages import DataOpMessage, OperationType  # noqa: PLC0415
+        from flow_sdk.core.network.resource_tracker import handle_entity_op  # noqa: PLC0415
+        await handle_entity_op(
+            DataOpMessage(data=fm, op=OperationType.CREATE, to_entity=fm.typeid)
+        )
 
     # Resolve parent (Task preferred, else Project) for the record's parent_ref.
     conv = await Conversation.get_one({"id": conversation_id})

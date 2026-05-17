@@ -215,13 +215,18 @@ class FlowMessage(Entity):
         finally:
             zip_path.unlink(missing_ok=True)
 
-        await hub_put(
+        # Flip READY through the ``set_body_status`` action (not a plain PUT):
+        # the action fans the UPDATE to conversation participants so receivers
+        # learn the body is downloadable. A plain entity PUT only notifies the
+        # sender + owners, leaving receivers stuck on UPLOADING.
+        await hub_post(
             BuiltinEntityType.FLOW_MESSAGE,
-            self.id,
             {
+                "flow_message_id": self.id,
                 "body_status": BodyStatus.READY.value,
                 "attachment_filename": BODY_FILENAME,
             },
+            action="set_body_status",
         )
         self.body_status = BodyStatus.READY
         self.attachment_filename = BODY_FILENAME
