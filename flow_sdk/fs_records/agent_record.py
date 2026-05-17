@@ -131,7 +131,7 @@ class AgentRecord(Record):
         if not name:
             return None
         desc = (getattr(entity, "description", None) or "").strip()
-        return _render_frontmatter({"name": name, "description": desc}) + "\n"
+        return _render_frontmatter({"id": entity.id, "name": name, "description": desc}) + "\n"
 
     @property
     def agent_doc(self) -> "Any":  # FrontMatterFsRef | None
@@ -314,8 +314,12 @@ class AgentRecord(Record):
         else:
             agent_name = folder.name.split("-@", 1)[-1] if "-@" in folder.name else folder.name
 
+        # Prefer frontmatter `id` (or legacy `asset_id`) over the agent name.
+        raw_id = fields.get("id") or fields.get("asset_id")
+        agent_id = raw_id.strip() if isinstance(raw_id, str) and raw_id.strip() else agent_name
+
         _d = object.__getattribute__(self, "__dict__")
-        _d["id"] = agent_name
+        _d["id"] = agent_id
         _d["name"] = agent_name
         _d["type"] = RecordType.AGENT
         _d["status"] = "active"
@@ -355,7 +359,11 @@ class AgentRecord(Record):
         else:
             agent_name = p.name.split("-@", 1)[-1] if "-@" in p.name else p.name
 
-        data: dict[str, Any] = {"id": agent_name, "name": agent_name, "type": RecordType.AGENT, "status": "active"}
+        # Prefer frontmatter `id` (or legacy `asset_id`) over the agent name.
+        raw_id = fields.get("id") or fields.get("asset_id")
+        agent_id = raw_id.strip() if isinstance(raw_id, str) and raw_id.strip() else agent_name
+
+        data: dict[str, Any] = {"id": agent_id, "name": agent_name, "type": RecordType.AGENT, "status": "active"}
         for key in _AGENTS_SPEC_FIELDS:
             if key in fields:
                 data[key] = fields[key]
@@ -392,21 +400,66 @@ class AgentRecord(Record):
 
     @classmethod
     def getId(cls, ref) -> str:
-        """Id = agent name — prefer frontmatter `name` field, else filename stem.
+        """Read-only identifier.
 
-        Matches `AgentRecord.from_file` which sets `id = agent_name` where
-        agent_name is the yaml.name from frontmatter (or fallback to stem)."""
+        Prefer frontmatter ``id`` (or legacy ``asset_id``) — that's the stable,
+        file-bound id. Fall back to frontmatter ``name``, then filename stem.
+        """
         try:
             text = ref._path.read_text(encoding="utf-8")
             fm_raw = _extract_frontmatter(text)
             if fm_raw:
                 fields = _yaml_load(fm_raw) or {}
+                raw_id = fields.get("id") or fields.get("asset_id")
+                if isinstance(raw_id, str) and raw_id.strip():
+                    return raw_id.strip()
                 name = fields.get("name")
                 if isinstance(name, str) and name.strip():
                     return name.strip()
         except OSError:
             pass
         return ref._path.stem
+
+    @classmethod
+    def genId(cls, ref) -> str:
+        """Read existing id, or mint+write a stable one into agent .md frontmatter.
+
+        Idempotent. Preserves identity by writing the value ``getId`` would
+        return today (agent name or filename stem) — so any DB row already
+        keyed by that value stays valid through the rename-safe upgrade.
+        """
+        existing_id: str | None = None
+        try:
+            text = ref._path.read_text(encoding="utf-8")
+        except OSError:
+            return cls.getId(ref)
+        fm = _extract_frontmatter(text)
+        fields: dict = {}
+        if fm:
+            parsed = _yaml_load(fm)
+            if isinstance(parsed, dict):
+                fields.update(parsed)
+        raw_id = fields.get("id") or fields.get("asset_id")
+        if isinstance(raw_id, str) and raw_id.strip():
+            existing_id = raw_id.strip()
+        if existing_id:
+            return existing_id
+        # Compute the derived id (same value getId would return without an id field).
+        name = fields.get("name")
+        if isinstance(name, str) and name.strip():
+            new_id = name.strip()
+        else:
+            new_id = ref._path.stem
+        body = _extract_body(text)
+        merged = {"id": new_id, **{k: v for k, v in fields.items() if k not in ("id", "asset_id")}}
+        try:
+            ref._path.write_text(
+                _render_frontmatter(merged) + "\n\n" + body + ("\n" if body and not body.endswith("\n") else ""),
+                encoding="utf-8",
+            )
+        except OSError:
+            pass
+        return new_id
 
     # -- Loader helpers ----------------------------------------------------
 
