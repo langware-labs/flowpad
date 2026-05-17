@@ -35,46 +35,39 @@ class FsRecordsActionsMixin:
             return str(display_name)
         return getattr(ent, "name", None) or getattr(ent, "title", "") or ""
 
-    async def _resolve_scoped_roots(
-        self,
-        scope_set: set[str],
-        project_id_list: list[str],
-    ):
-        """Translate a (scope, project_ids) pair into a narrowed `roots` tuple
-        for the indexer, or ``None`` to use the indexer's default roots.
-
-        - ``scope`` may contain ``user`` and/or ``project``.
-        - ``project_ids`` is the list of project entity IDs to walk.
+    async def _resolve_scoped_roots(self, sf):
+        """Translate a ``ScopeFilter`` into a narrowed indexer ``roots`` tuple
+        (or ``None`` to use the indexer's default roots).
 
         Mapping:
-          - empty scope, empty projects   → None (use default_roots())
-          - {"user"}                      → (USER_HOME_FOLDER,)
-          - {"project"} + project_ids     → one REAL_PROJECT_CWD per project
-          - {"user","project"} + ids      → USER_HOME + per-project roots
-          - {"project"} + no ids          → None (UI guarantees ids when scoped)
+          - sf is None                         → None (default_roots())
+          - {user=True,  projects=[]}          → (USER_HOME_FOLDER,)
+          - {user=False, projects=[ids]}       → one REAL_PROJECT_CWD per id
+          - {user=True,  projects=[ids]}       → USER_HOME + per-project roots
+          - {user=False, projects=[]}          → None (degenerate; default_roots())
 
-        Returns ``ApiFailResponse`` on a per-project resolution error.
+        Returns ``ApiFailResponse`` on per-project resolution error.
         """
         from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
         from flow_sdk.fs_store.indexer.roots import default_roots  # noqa: PLC0415
         from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
 
-        if not scope_set and not project_id_list:
+        if sf is None or (not sf.user and not sf.projects):
             return None
 
         roots: list[FSRef] = []
 
-        if "user" in scope_set:
+        if sf.user:
             for r in default_roots():
                 if r.record_type == RecordType.USER_HOME_FOLDER:
                     roots.append(r)
                     break
 
-        if "project" in scope_set or (not scope_set and project_id_list):
+        if sf.projects:
             from flow_sdk.builtin.project import Project  # noqa: PLC0415
             from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
             from pathlib import Path as _Path  # noqa: PLC0415
-            for pid in project_id_list:
+            for pid in sf.projects:
                 proj = await Project.get_one(QueryFilter.parse({"id": pid}))
                 if proj is None:
                     return ApiFailResponse(
@@ -103,8 +96,6 @@ class FsRecordsActionsMixin:
                 )
 
         if not roots:
-            # E.g. scope={"project"} with empty project_ids — fall back to defaults
-            # rather than walking nothing.
             return None
         return tuple(roots)
 
@@ -134,6 +125,7 @@ class FsRecordsActionsMixin:
     async def _handle_fs_records_search(self, request_info) -> ApiResponse:
         from flow_sdk.core.entity.entity_model import Entity
         from flow_sdk.server.search_filters import (  # noqa: PLC0415
+            ScopeFilter,
             apply_folder_filter,
             apply_scope_filter,
             apply_system_filter,
@@ -145,8 +137,13 @@ class FsRecordsActionsMixin:
         limit = max(1, int(qp.get("limit", DEFAULT_BROWSE_LIMIT)))
         record_type = qp.get("record_type", "") or None
         status = qp.get("status", "") or None
-        scope = qp.get("scope") or None
-        project_ids = qp.get("project_ids") or None
+        # Unified ScopeFilter wire format: `?user=true&projects=A,B`. Absent
+        # both params means no filter applied (legacy callers).
+        scope_filter = (
+            ScopeFilter.from_query_params(qp)
+            if (qp.get("user") is not None or qp.get("projects") is not None)
+            else None
+        )
         parent_path = qp.get("parent_path") or None
         vault_root = qp.get("vault_root") or None
         include_system = (qp.get("include_system", "").strip().lower() in ("true", "1"))
@@ -189,7 +186,7 @@ class FsRecordsActionsMixin:
             if not record_type:
                 return ApiSuccessResponse(data={"results": [], "query": q, "total": 0, "indexer_ready": True})
             entities = await Entity.browse(record_type=record_type, limit=limit, status=status)
-            entities = apply_scope_filter(entities, scope, project_ids)
+            entities = apply_scope_filter(entities, scope_filter)
             entities = apply_folder_filter(entities, parent_path, vault_root)
             entities = apply_system_filter(entities, include_system)
             entities = apply_tag_filter(entities, tag_list)
@@ -220,7 +217,7 @@ class FsRecordsActionsMixin:
         entities = await Entity.search(query=q, limit=limit, record_type=record_type, calibration=cal)
         if status:
             entities = [e for e in entities if (getattr(e, "status", None) or "") == status]
-        entities = apply_scope_filter(entities, scope, project_ids)
+        entities = apply_scope_filter(entities, scope_filter)
         entities = apply_folder_filter(entities, parent_path, vault_root)
         entities = apply_system_filter(entities, include_system)
         entities = apply_tag_filter(entities, tag_list)
@@ -257,14 +254,15 @@ class FsRecordsActionsMixin:
         limit_per_type_raw = qp.get("limit_per_type", "").strip()
         limit_per_type = int(limit_per_type_raw) if limit_per_type_raw.isdigit() else None
 
-        # Scope/project filter for the indexer walk. `scope` may be a single
-        # value or comma-separated set; `project_ids` is comma-separated UUIDs.
-        # Translates into a narrowed `roots` tuple below.
-        scope_raw = qp.get("scope", "").strip()
-        scope_set = {s.strip() for s in scope_raw.split(",") if s.strip()}
-        project_ids_raw = qp.get("project_ids", "").strip()
-        project_id_list = [p.strip() for p in project_ids_raw.split(",") if p.strip()]
-        scoped_roots = await self._resolve_scoped_roots(scope_set, project_id_list)
+        # Unified ScopeFilter from wire format `?user=true&projects=A,B`.
+        # Absent params → None → indexer uses default_roots() (full scan).
+        from flow_sdk.server.search_filters import ScopeFilter  # noqa: PLC0415
+        scope_filter = (
+            ScopeFilter.from_query_params(qp)
+            if (qp.get("user") is not None or qp.get("projects") is not None)
+            else None
+        )
+        scoped_roots = await self._resolve_scoped_roots(scope_filter)
         if isinstance(scoped_roots, ApiFailResponse):
             return scoped_roots
 
@@ -554,16 +552,23 @@ class FsRecordsActionsMixin:
         limit_types = int(limit_types_raw) if limit_types_raw.isdigit() else None
         limit_per_type_raw = qp.get("limit_per_type", "").strip()
         limit_per_type = int(limit_per_type_raw) if limit_per_type_raw.isdigit() else None
-        # Legacy single-project param (kept for back-compat) and the new
-        # comma-separated `project_ids` + `scope` pair.
-        project_id = qp.get("project_id", "").strip() or None
-        scope_raw = qp.get("scope", "").strip()
-        scope_set = {s.strip() for s in scope_raw.split(",") if s.strip()}
-        project_ids_raw = qp.get("project_ids", "").strip()
-        project_id_list = [p.strip() for p in project_ids_raw.split(",") if p.strip()]
-        # Honor legacy single project_id when the new params aren't supplied.
-        if not project_id_list and project_id:
-            project_id_list = [project_id]
+        # Unified ScopeFilter from wire format `?user=true&projects=A,B`.
+        # Legacy single-project param `?project_id=…` is kept as a back-compat
+        # shim — promoted into ScopeFilter.projects when the new params are absent.
+        from flow_sdk.server.search_filters import ScopeFilter  # noqa: PLC0415
+        legacy_project_id = qp.get("project_id", "").strip() or None
+        if qp.get("user") is not None or qp.get("projects") is not None:
+            scope_filter = ScopeFilter.from_query_params(qp)
+        elif legacy_project_id:
+            scope_filter = ScopeFilter(user=False, projects=(legacy_project_id,))
+        else:
+            scope_filter = None
+        # Some downstream sites still want the singular project_id (effective_project_id).
+        project_id = legacy_project_id or (
+            scope_filter.projects[0]
+            if (scope_filter and len(scope_filter.projects) == 1)
+            else None
+        )
         orphan_action_raw = qp.get("orphan_action", "").strip().lower()
         try:
             orphan_action = (
@@ -578,9 +583,9 @@ class FsRecordsActionsMixin:
                 status_code=400,
             )
 
-        # Resolve scope + project_ids → narrowed roots. When neither is set,
+        # Resolve ScopeFilter → narrowed roots. When the filter is None,
         # fall back to the indexer's default_roots() (full walk).
-        custom_roots = await self._resolve_scoped_roots(scope_set, project_id_list)
+        custom_roots = await self._resolve_scoped_roots(scope_filter)
         if isinstance(custom_roots, ApiFailResponse):
             return custom_roots
 
@@ -623,8 +628,8 @@ class FsRecordsActionsMixin:
 
         # Single-project shortcut: when narrowed to exactly one project,
         # also pass project_id so the indexer can short-circuit non-project
-        # work paths.
-        effective_project_id = project_id_list[0] if len(project_id_list) == 1 else None
+        # work paths. Derived from the ScopeFilter above.
+        effective_project_id = project_id
 
         try:
             result = await get_shared_indexer().index(IndexerOptions(

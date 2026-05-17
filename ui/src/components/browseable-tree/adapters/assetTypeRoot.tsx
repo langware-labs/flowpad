@@ -13,7 +13,7 @@ import type { Browseable, BrowseableRoot, ToolbarAction } from '@src/components/
 export interface AssetTypeRootDeps {
   /** Per-row refresh callback, e.g. systemTools.indexType from useSystemTools.
    *  Receives the active filter so per-type scans can scope to the same. */
-  indexType: (typeName: string, filter?: AssetFilter) => Promise<{ indexed?: number } | void>;
+  indexType: (typeName: string, scope?: { user: boolean; projects: string[] }) => Promise<{ indexed?: number } | void>;
   /** Called when the "New" toolbar button is clicked for a creatable type. */
   onNew?: (typeName: string) => void;
   /** Types that can be created via "New"; others render without the plus button. */
@@ -185,7 +185,7 @@ function buildRootToolbar(type: AssetTypeInfo, deps: AssetTypeRootDeps): Toolbar
       icon: <RefreshCw />,
       label: 'Scan for changes',
       run: async () => {
-        await deps.indexType(type.type_name, deps.filter);
+        await deps.indexType(type.type_name, deps.filter?.scope);
         deps.onScanComplete?.(type.type_name);
       },
     },
@@ -219,7 +219,7 @@ export function assetTypeRoot(type: AssetTypeInfo, deps: AssetTypeRootDeps): Bro
   // Filter signature in the id forces the BrowseableTree to refetch
   // children when the user toggles scope/picker (the children are cached
   // by node id; without this they'd stay frozen at the previous filter).
-  const filterSig = `${filter.scope}:${[...filter.projectIds].sort().join(',')}`;
+  const filterSig = `${filter.scope.user ? '1' : '0'}:${[...filter.scope.projects].sort().join(',')}`;
 
   const root: BrowseableRoot = {
     id: `asset-type:${type.type_name}:${filterSig}`,

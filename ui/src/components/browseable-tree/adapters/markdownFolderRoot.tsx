@@ -21,7 +21,7 @@ import type { AssetFilter } from '@src/components/assets/assetFilter';
 export interface MarkdownFolderRootDeps {
   /** Reindex callback for the "Scan" toolbar button. Forwards the active
    *  filter so per-type scans honor the same scope. */
-  indexType: (typeName: string, filter?: AssetFilter) => Promise<{ indexed?: number } | void>;
+  indexType: (typeName: string, scope?: { user: boolean; projects: string[] }) => Promise<{ indexed?: number } | void>;
   /** Called when the root-level "New" toolbar is clicked (falls back to the
    *  legacy flow which creates under .claude/docs). */
   onNew?: (typeName: string) => void;
@@ -85,7 +85,7 @@ function rootToolbar(type: AssetTypeInfo, deps: MarkdownFolderRootDeps): Toolbar
       icon: <RefreshCw />,
       label: 'Scan for changes',
       run: async () => {
-        await deps.indexType(type.type_name, deps.filter);
+        await deps.indexType(type.type_name, deps.filter?.scope);
         deps.onScanComplete?.(type.type_name);
       },
     },
@@ -168,19 +168,14 @@ function folderBrowseable(args: {
   };
 }
 
-/** Mirror of backend ``_apply_scope_filter`` for vault listing: a vault is
- *  kept when its scope is in the active scope set, and (for project vaults)
- *  its project_id is in the picker selection. Same predicate shape so the
- *  vault tree and the records inside vaults stay consistent. */
+/** Mirror of backend ``apply_scope_filter`` for vault listing. Reads the
+ *  unified ScopeFilter `{user, projects}`: a user vault is kept iff
+ *  `sf.user`; a project vault is kept iff its `project_id` is in
+ *  `sf.projects`. Empty `projects` array means no project vaults are kept. */
 function keepVault(v: AssetTypeVault, filter: AssetFilter): boolean {
-  // scope='all' = {user, project}; scope='user' / scope='project' = singleton.
-  const allowsUser = filter.scope === 'all' || filter.scope === 'user';
-  const allowsProject = filter.scope === 'all' || filter.scope === 'project';
-  if (v.scope === 'user') return allowsUser;
+  if (v.scope === 'user') return filter.scope.user;
   if (v.scope === 'project') {
-    if (!allowsProject) return false;
-    if (filter.projectIds.length === 0) return true;
-    return v.project_id !== null && filter.projectIds.includes(v.project_id);
+    return v.project_id !== null && filter.scope.projects.includes(v.project_id);
   }
   return false;
 }
@@ -258,7 +253,7 @@ export function markdownFolderRoot(
   // response arrives AFTER the initial render — otherwise the root keeps
   // serving the empty ``listChildren`` closure that was captured before
   // the API populated ``type.vaults``.
-  const filterSig = `${filter.scope}:${[...filter.projectIds].sort().join(',')}:v${vaults.length}`;
+  const filterSig = `${filter.scope.user ? '1' : '0'}:${[...filter.scope.projects].sort().join(',')}:v${vaults.length}`;
 
   const root: BrowseableRoot = {
     id: `asset-type:${type.type_name}:${filterSig}`,
