@@ -1,3 +1,7 @@
+---
+id: 7c2c149b-83be-576f-8dd0-d91b1ef11f39
+---
+
 # Record Model
 
 This document describes the `Record` base class and the surrounding infrastructure in `flow_sdk/fs_store/`. The Record layer is the persistence backbone for all typed data objects in flow-cli: agent sessions, tasks, skills, hooks, settings, transcript entries, and more.

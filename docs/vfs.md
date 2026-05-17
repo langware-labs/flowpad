@@ -1,3 +1,7 @@
+---
+id: e1a0f701-7f37-52c4-8fcb-9bcdb7d14077
+---
+
 # VFS Path Specification
 
 VFS (Virtual File System) paths provide a universal URI scheme for addressing files stored under any entity in the system. Every entity that supports file storage (compute nodes, agents, projects, workspaces, users) exposes its files through this single path format.

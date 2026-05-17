@@ -1,3 +1,7 @@
+---
+id: a0f5322c-42b6-533d-9222-42878a8d1c9a
+---
+
 # PTY Line Synchronization — Annotation Gutter (right) & Trace Gutter (left)
 
 ## Context

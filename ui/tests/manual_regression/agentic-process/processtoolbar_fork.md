@@ -1,3 +1,7 @@
+---
+id: b2a56d34-91ea-5380-9530-c6ded72bd167
+---
+
 test 1: Fork button is disabled before a session exists and before the first assistant turn
 - navigate to {APP_URL}/dock/shell/new_terminal
 - wait for the plain shell tab

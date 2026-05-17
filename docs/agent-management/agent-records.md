@@ -1,5 +1,5 @@
 ---
-
+id: f0d070fa-2438-59b8-857d-f6f4a24ef2a7
 ---
 
 # Agent Records
@@ -1000,4 +1000,3 @@ record lookup.
 | `ts_sdk/src/process/agentic-process.ts`                              | Client-side `AgenticProcess` entity wrapper                        |
 | `ts_sdk/src/process/agentic-types.ts`                                | `ProcessStatus`, `WorkerStatus`, `WorkerMode`, readiness helpers   |
 | `ts_sdk/src/IEntity.ts`                                              | Base entity interface with legacy VFS fields                       |
-

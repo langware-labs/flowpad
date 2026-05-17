@@ -1,3 +1,7 @@
+---
+id: d5b076f3-d845-5740-8810-5b9a3203f042
+---
+
 precondition: prime localStorage so sniffer reconciles to ENABLED at boot
 - before navigation, in a fresh tab, run:
   `localStorage.setItem('flowpad.snifferEnabled', 'true')`

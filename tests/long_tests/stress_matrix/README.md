@@ -1,3 +1,7 @@
+---
+id: 4587f11c-2081-55b6-80a9-ac5a0d1e48ef
+---
+
 # Stress matrix — headless agentic process resilience
 
 Phase 1: prove the headless agentic process (`AgenticProcess.prompt` with

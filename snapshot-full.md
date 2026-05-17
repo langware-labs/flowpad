@@ -1,3 +1,7 @@
+---
+id: d9ccdf97-2a64-569d-8045-939502be3264
+---
+
 - generic [ref=e2]:
   - region "Notifications (F8)":
     - list

@@ -1,3 +1,7 @@
+---
+id: c107bc99-a521-595d-98f3-4fd5353da021
+---
+
 # Interactive tabs / project filtering — regression matrix
 
 Users have reported tab close, restore, and project-filter regressions. This file holds 50 scenarios across 8 areas: refresh & browse, open by id / from history, close-all, project-counter chip, footer selections, restart & CLI, Codex/Claude/terminal mix, navigation in/out of dock.

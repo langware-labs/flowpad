@@ -1,3 +1,7 @@
+---
+id: 428de95d-0669-5645-a725-fe86867abf30
+---
+
 test 1: Creating a new Claude session produces no console errors
 - navigate to /dock/shell/new_terminal and wait for shell tab
 - open browser console capture

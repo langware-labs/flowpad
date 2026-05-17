@@ -1,3 +1,7 @@
+---
+id: 59a02c9e-f169-5a53-8188-3a08b79375ab
+---
+
 test 1: Empty state shown when no log entries exist
 - [bash] run "rm -f ~/.flow/logs/cli.log.jsonl" to clear any existing log
 - [browser] navigate to {APP_URL}/

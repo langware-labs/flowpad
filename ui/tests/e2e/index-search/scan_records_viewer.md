@@ -1,3 +1,7 @@
+---
+id: dece0ab9-8959-5961-a2bc-58978cd01a06
+---
+
 test 1: Records Scanner viewer loads and shows Rescan button
 - [browser] navigate to {APP_URL}/
 - [browser] wait for page to load (networkidle)

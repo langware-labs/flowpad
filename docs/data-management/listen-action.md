@@ -1,3 +1,7 @@
+---
+id: 28abc670-8cbb-52ac-8e4f-c249bebdbeb2
+---
+
 # Listen Action and CRUD Event Pipeline
 
 This document describes the full path from an incoming webhook POST to a frontend entity cache update. It covers the `listen_action` entry point, the two webhook types, `_reflect_entity`, `DataOpMessage` broadcast, `resource_tracker` recipient resolution, the WebSocket route, and the TypeScript subscription layer.

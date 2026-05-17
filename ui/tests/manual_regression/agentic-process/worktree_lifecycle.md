@@ -1,3 +1,7 @@
+---
+id: 707df10b-94d3-512c-88e6-f8ef42f1d821
+---
+
 test 1: OpenInWorktreeButton spawns a worktree sibling; CommitMergeButton appears only inside the worktree
 - prerequisite: a git-repo workdir with at least one commit (create a tmp dir, `git init && git commit --allow-empty -m init`)
 - launch a Claude session in that workdir (e.g. via HomeLanding search, or navigate to /dock/shell/new_terminal?cwd=<path> and open the tab-opener "+" (data-testid="opener-plus-button") and pick the "Claude Code" row (data-testid="opener-menu-row-claude"))

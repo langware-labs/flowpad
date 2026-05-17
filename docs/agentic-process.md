@@ -1,3 +1,7 @@
+---
+id: e5da519d-77ef-57fb-8adf-faf38d99b810
+---
+
 # AgenticProcess Architecture
 
 `AgenticProcess` is the durable entity that represents an agent run. It is not

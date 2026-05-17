@@ -1,3 +1,7 @@
+---
+id: d89f3ffd-6934-52f8-93f2-fd3fc2f6e89c
+---
+
 test 1: File explorer is accessible and shows directory contents (FLOWPAD-1603)
 - navigate to {APP_URL}/dock/explorer
 - wait 3 seconds for the file explorer to load
