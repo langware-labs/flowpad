@@ -9,7 +9,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { FSRef } from '@sdk';
 import { downloadFile } from '@sdk/utils/utils';
 import Editor, { type OnMount } from '@monaco-editor/react';
-import { ChevronDown, ChevronRight, Download, Eye, ExternalLink, FileCode, GraduationCap, MessageSquareDiff, Pencil, RefreshCw } from 'lucide-react';
+import { ChevronDown, ChevronRight, Download, Eye, ExternalLink, FileCode, FilePlus2, GraduationCap, MessageSquareDiff, Pencil, RefreshCw } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -205,6 +205,8 @@ function MarkdownEditorContent({
     dirty,
     isLoading,
     loadError,
+    isMissing,
+    recreate,
     reload,
   } = useMarkdownContent(fsRef, { autoSave: true, autoSaveMs: 2000 });
 
@@ -281,6 +283,33 @@ function MarkdownEditorContent({
         />
         <div className="flex flex-1 items-center justify-center">
           <RefreshCw className="h-5 w-5 animate-spin text-muted-foreground" />
+        </div>
+      </div>
+    );
+  }
+
+  // ── Missing file ──────────────────────────────────────────────────────────
+  if (isMissing) {
+    return (
+      <div className="flex h-full flex-col overflow-hidden">
+        <EditorHeader
+          fileName={fileName}
+          dirPath={dirPath}
+          dirty={false}
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
+          onOpenExternal={handleOpenExternal}
+          onDownload={handleDownload}
+          actions={toolbar}
+          showLearningMode={showLearningMode}
+        />
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
+          <p className="text-sm font-medium text-foreground">Note: File is missing</p>
+          <p className="break-all font-mono text-xs text-muted-foreground">{sourcePathStr}</p>
+          <Button variant="outline" size="sm" onClick={() => void recreate()}>
+            <FilePlus2 className="mr-1 h-4 w-4" />
+            Re-create it
+          </Button>
         </div>
       </div>
     );

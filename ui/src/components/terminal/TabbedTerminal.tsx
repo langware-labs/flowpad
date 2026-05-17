@@ -654,7 +654,10 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
     const { scrollLeft, scrollWidth, clientWidth } = container;
     const hasOverflow = scrollWidth > clientWidth + 1;
     setHasTabOverflow(hasOverflow);
-    setCanScrollLeft(scrollLeft > 0);
+    // 1px epsilon matches the right-side check: sub-pixel scrollLeft values
+    // (macOS trackpad inertia, fractional zoom) would otherwise keep the
+    // left chevron lit when visually at the start.
+    setCanScrollLeft(hasOverflow && scrollLeft > 1);
     setCanScrollRight(hasOverflow && scrollLeft + clientWidth < scrollWidth - 1);
   };
 
@@ -836,14 +839,17 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
         {/* Tab Bar */}
         <div className="flex items-center border-b bg-muted" data-testid="terminal-tab-bar">
           <ProjectsCounterChip currentProjectId={tabsProjectId} />
-          {/* Left Scroll Button */}
-          {canScrollLeft && (
+          {/* Left Scroll Button — always reserves layout space when tabs
+              overflow, so toggling `canScrollLeft` doesn't shift the
+              tab row horizontally. Mirrors the right-button pattern. */}
+          {hasTabOverflow && (
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 shrink-0 rounded-none"
+              className={`h-7 w-7 shrink-0 rounded-none ${canScrollLeft ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
               onClick={() => scrollTabs('left')}
               aria-label="Scroll tabs left"
+              tabIndex={canScrollLeft ? 0 : -1}
             >
               <ChevronLeft className="h-4 w-4" />
             </Button>

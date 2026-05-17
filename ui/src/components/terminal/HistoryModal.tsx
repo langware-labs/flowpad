@@ -247,6 +247,16 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
           'flex w-full flex-col overflow-hidden p-4 max-h-[80vh] transition-[max-width] duration-200',
           peeking ? 'sm:max-w-3xl' : 'sm:max-w-lg',
         )}
+        onEscapeKeyDown={(e) => {
+          // When the inline filter is open, Esc clears/closes it instead of
+          // dismissing the whole modal — preventDefault here tells Radix's
+          // dismissable layer to not run its onOpenChange(false).
+          if (searchOpen) {
+            e.preventDefault();
+            if (query) setQuery('');
+            else setSearchOpen(false);
+          }
+        }}
       >
         <DialogHeader>
           <div className="flex items-center justify-between gap-2 pr-7">
@@ -319,13 +329,6 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Escape') {
-                  e.preventDefault();
-                  if (query) setQuery('');
-                  else setSearchOpen(false);
-                }
-              }}
               placeholder="Filter by name or last prompt…"
               className="h-7 w-full bg-transparent text-[12px] outline-none placeholder:text-muted-foreground/60"
               data-testid="history-search-input"

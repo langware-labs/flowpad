@@ -9,37 +9,83 @@ silently dropped by ``/fs-records/search``.
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 
-def apply_scope_filter(entities: list, scope: str | None, project_ids: str | None) -> list:
-    """Filter entities by scope and optional project IDs.
 
-    `scope` may be a single value (`user` / `project` / `system`) or a
-    comma-separated set (`user,project`). Comma-separated form means union:
-    keep entities whose `scope` is in the listed set. When `project` is in
-    the set and `project_ids` is given, project-scoped entities are
-    additionally restricted to those project IDs; non-project-scoped
-    entities are unaffected.
+@dataclass(frozen=True)
+class ScopeFilter:
+    """Single source of truth for "which records does the user want".
 
-    Entities without a populated `scope` field are dropped — by
-    construction the indexer stamps every record's scope from the FSRef
-    walk, so an empty value means an unindexed/legacy row that needs
-    reindexing.
+    Mirrors the frontend ``ScopeFilter`` in
+    ``ui/src/components/assets/assetFilter.ts`` exactly.
+
+    Fields:
+      - ``user``     — include user-scope records.
+      - ``projects`` — entity-IDs of projects to include; empty = no projects.
+
+    Wire format on the URL:  ``?user=true&projects=A,B``
     """
-    if not scope:
-        return entities
-    scope_set = {s.strip() for s in scope.split(",") if s.strip()}
-    if not scope_set:
-        return entities
 
-    pid_list = [p.strip() for p in project_ids.split(",") if p.strip()] if project_ids else []
-    pid_set = set(pid_list)
+    user: bool = True
+    projects: tuple[str, ...] = field(default_factory=tuple)
+
+    @classmethod
+    def from_query_params(cls, params) -> "ScopeFilter":
+        """Build from a Starlette / FastAPI ``request.query_params`` (or dict-like).
+
+        Tolerates either string keys or already-typed dict entries. Missing
+        ``user`` defaults to True; missing ``projects`` defaults to empty.
+        """
+        user_raw = (
+            params.get("user")
+            if hasattr(params, "get")
+            else params.get("user", None)  # type: ignore[union-attr]
+        )
+        if user_raw is None:
+            user = True
+        else:
+            user = str(user_raw).strip().lower() in ("true", "1", "yes")
+        projects_raw = (
+            params.get("projects") if hasattr(params, "get") else params.get("projects", "")
+        ) or ""
+        projects = tuple(p.strip() for p in str(projects_raw).split(",") if p.strip())
+        return cls(user=user, projects=projects)
+
+    def to_query_dict(self) -> dict[str, str]:
+        """Inverse of ``from_query_params`` for outbound URLs."""
+        return {
+            "user": "true" if self.user else "false",
+            "projects": ",".join(self.projects),
+        }
+
+
+def apply_scope_filter(entities: list, sf: "ScopeFilter | None") -> list:
+    """Filter entities by the unified ``ScopeFilter``.
+
+    Predicate (uniform across all surfaces — search, fs-records, indexer):
+
+      - ``scope == 'user'``    → keep iff ``sf.user``.
+      - ``scope == 'project'`` → keep iff ``project_id`` is in ``sf.projects``.
+      - ``scope == ''``        → keep (unscoped record types like ``project``
+        itself live here; they exist outside the user/project axis and the
+        filter has nothing to say about them).
+
+    Passing ``None`` returns entities unchanged — the canonical "no filter
+    applied" path (used by code paths that pre-date the filter or want to
+    explicitly opt out).
+    """
+    if sf is None:
+        return entities
+    pid_set = set(sf.projects)
 
     def _keep(e) -> bool:
         s = (getattr(e, "scope", None) or "")
-        if s not in scope_set:
-            return False
-        if s == "project" and pid_set and (getattr(e, "project_id", None) or "") not in pid_set:
-            return False
+        if s == "user":
+            return sf.user
+        if s == "project":
+            pid = getattr(e, "project_id", None) or ""
+            return pid in pid_set
+        # Unscoped record type — outside the user/project axis. Keep.
         return True
 
     return [e for e in entities if _keep(e)]
