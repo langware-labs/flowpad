@@ -293,7 +293,7 @@ function updateTerminalShared(target: TerminalTab | TypeId | string, patch: Part
 /**
  * Optimistically insert a row built from a freshly-loaded process + its shell.
  * Called by route loaders so the strip reflects a newly-active process *before*
- * the next ``active-terminals`` refetch completes — closes the race window in
+ * the next terminals/list refetch completes — closes the race window in
  * which TabbedTerminal's self-heal effect would otherwise pick a stale tab.
  */
 export function pushLoadedProcessTab(process: AgenticProcess, shell: Shell): void {
