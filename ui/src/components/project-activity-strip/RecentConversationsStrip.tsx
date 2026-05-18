@@ -428,12 +428,12 @@ function ConversationRow({
 
   // The current user's identity — cloud email when logged in, else local.
   const myEmail = (cloudUser?.email || currentUser?.email || '').trim().toLowerCase();
-  // Invitation conversations carry only the recipient(s) in ``participants``
-  // (the sender is absent), so email membership cleanly answers "was I
-  // invited to this?" vs "did I send this?".
-  const isParticipant =
-    !!myEmail &&
-    (conv.participants ?? []).some((p) => p.email?.trim().toLowerCase() === myEmail);
+  // The recipient is named directly on the Invitation entity. Matching against
+  // ``recipient_email`` — rather than the conversation participant list, which
+  // can also include the sender — is what cleanly separates "I was invited to
+  // this" from "I sent this".
+  const recipientEmail = invitation?.recipient_email?.trim().toLowerCase() || '';
+  const isRecipient = !!myEmail && myEmail === recipientEmail;
 
   // An invitation row (Accept CTA, no navigation) is shown ONLY to the
   // *recipient* of a still-pending invitation. The sender always sees a
@@ -444,7 +444,7 @@ function ConversationRow({
   const isInvitationRow =
     firstMessage?.kind === FlowMessageKind.INVITATION &&
     !invitation?.accepted &&
-    isParticipant;
+    isRecipient;
 
   // Both timestamps use the same auto-revive-on-new-message pattern:
   // compare the stamp against the latest pointer's ``ts`` (available

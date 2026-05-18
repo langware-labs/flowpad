@@ -58,6 +58,12 @@ async def share_entity() -> ApiSuccessResponse:
         raise HTTPException(status_code=400, detail="share: 'recipients' must be a list")
 
     if recipients and isinstance(entity, Conversation):
+        from flow_sdk.app.actions.flow_message_action import _learn_address_book  # noqa: PLC0415
+        learn_entries: list[dict] = list(entity.participants or [])
+        learn_entries += [
+            {"email": r} for r in recipients if isinstance(r, str) and r.strip()
+        ]
+        await _learn_address_book(learn_entries)
         await entity.share(recipients=recipients)
     else:
         await entity.share()
