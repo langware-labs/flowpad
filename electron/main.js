@@ -148,6 +148,15 @@ let isQuitting = false;
 // Deep link that arrived before the window was ready to navigate.
 let pendingDeepLink = null;
 
+function isStartupOnlyDeepLink(url) {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'flowpad:' && ['__probe', '__launch'].includes(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Convert a flowpad:// URL to the equivalent http://localhost:9007 URL and
  * navigate the main window to it.
@@ -156,6 +165,16 @@ let pendingDeepLink = null;
  */
 function handleDeepLink(url) {
   log.info(`[deep-link] received: ${url}`);
+
+  // Ignore install/probe URLs.
+  // These are only used by the browser to detect whether FlowPad
+  // is installed and must never replace a real task/message deep link.
+
+  if (isStartupOnlyDeepLink(url)) {
+    log.info('[deep-link] ignoring startup-only url');
+    return;
+  }
+
   try {
     const parsed = new URL(url);
     // host = "task", pathname = "/<id>"  (or just "" for the root)
@@ -193,6 +212,21 @@ app.on('second-instance', (_event, argv) => {
     mainWindow.focus();
   }
 });
+
+// Windows / Linux COLD START: when the OS launches the app via a flowpad://
+// URL for the first time, the URL is in process.argv. There's no event for
+// this — we have to read it ourselves before app.whenReady fires startApp.
+// (On macOS this path is dead — the URL arrives via 'open-url' instead.)
+//
+// handleDeepLink will see mainWindow === null and stash the URL into
+// pendingDeepLink, which startApp consumes after backend warmup.
+if (process.platform !== 'darwin') {
+  const argvDeepLink = process.argv.find(arg => arg.startsWith('flowpad://'));
+  if (argvDeepLink) {
+    log.info(`[deep-link] picked up from process.argv: ${argvDeepLink}`);
+    handleDeepLink(argvDeepLink);
+  }
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
