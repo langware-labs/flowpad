@@ -1419,8 +1419,12 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       const actionInfo = new ActionInfo('attach-embedded-asset', AgenticProcess.type, this.id, 'POST');
       actionInfo.bodyParameters = { entity_ref: ref.toString() };
       await dataManager.callAction(actionInfo);
+      // The WS broadcast lands embedded_asset_refs as plain stringified TypeIds
+      // (the server serializes them that way); avoid duplicating by comparing
+      // on the string form instead of property-by-property on TypeId.
+      const refStr = ref.toString();
       const current = this.embedded_asset_refs ?? [];
-      const has = current.some((r) => r.type === ref.type && r.id === ref.id);
+      const has = current.some((r) => String(r) === refStr);
       if (!has) this.embedded_asset_refs = [...current, ref];
     },
     detach: async (entityOrRef: { typeId?: TypeId } | TypeId | string): Promise<void> => {
@@ -1428,8 +1432,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       const actionInfo = new ActionInfo('detach-embedded-asset', AgenticProcess.type, this.id, 'POST');
       actionInfo.bodyParameters = { entity_ref: ref.toString() };
       await dataManager.callAction(actionInfo);
+      const refStr = ref.toString();
       this.embedded_asset_refs = (this.embedded_asset_refs ?? [])
-        .filter((r) => !(r.type === ref.type && r.id === ref.id));
+        .filter((r) => String(r) !== refStr);
     },
     list: (): TypeId[] => [...(this.embedded_asset_refs ?? [])],
   };
