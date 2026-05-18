@@ -121,38 +121,22 @@ async def handle_rest_message(connection_id: str, websocket: WebSocket, message_
 
     try:
         execution_context = await setup_rest_context(connection_id, message_json)
-        req_info = get_current_request_info()
-        if not req_info:
-            raise RuntimeError("Request info not found")
+        async with execution_context.transaction_scope():
+            req_info = get_current_request_info()
+            if not req_info:
+                raise RuntimeError("Request info not found")
 
-        if not req_info.request:
-            raise RuntimeError("Request not found")
+            if not req_info.request:
+                raise RuntimeError("Request not found")
 
-        response = await handle_request(req_info.request)
-
-        # Commit the request-scoped transaction so writes durably persist.
-        # The HTTP path commits in RequestTransactionMiddleware; the WS path
-        # bypasses that middleware entirely, so without this explicit commit
-        # every mutation handled over WS (e.g. conversation add_message) is
-        # silently discarded when cleanup() closes the session — the action
-        # still returns a success response, but nothing lands in the DB.
-        if execution_context is not None:
-            await execution_context.commit_transaction()
+            response = await handle_request(req_info.request)
 
     except Exception as ex:
         logger.error(f"Error handling REST message: {ex}")
         logger.debug(f"Exception stack: {traceback.format_exc()}")
-        if execution_context is not None:
-            try:
-                await execution_context.rollback_transaction()
-            except Exception as rollback_ex:
-                logger.error(f"Error rolling back WS REST transaction: {rollback_ex}")
         response = ApiFailResponse[str](status_code=403, message="Request error", data=str(ex))
 
     finally:
-        if execution_context is not None:
-            await execution_context.cleanup()
-
         if isinstance(response, ApiResponse):
             json_data = response.model_dump()
 
