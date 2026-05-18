@@ -1,7 +1,12 @@
-import { config, FSRef, FrontMatterFsRef, dataContext } from '@sdk';
+import { config, FSRef, FrontMatterFsRef, dataContext, Markdown } from '@sdk';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
-import { useQuery } from '@tanstack/react-query';
-import { RefreshCw } from 'lucide-react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { FileQuestion, RefreshCw } from 'lucide-react';
+import { useCallback, useState } from 'react';
+import { Button } from '@src/components/ui/button';
+import { useToast } from '@src/hooks/use-toast';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { MarkdownEditor } from './markdown/MarkdownEditor';
 
 interface WikiResolveViewProps {
@@ -27,6 +32,10 @@ interface MarkdownRow {
 export function WikiResolveView({ name }: WikiResolveViewProps) {
   const { computeNode } = useAgentContext();
   const typeIdStr = computeNode?.typeId?.toString();
+  const { toast } = useToast();
+  const { navigation } = useDockNavigation();
+  const queryClient = useQueryClient();
+  const [creating, setCreating] = useState(false);
 
   const { data, isLoading, error } = useQuery<MarkdownRow | null>({
     queryKey: ['wiki-resolve', name],
@@ -45,6 +54,26 @@ export function WikiResolveView({ name }: WikiResolveViewProps) {
     },
     staleTime: 30_000,
   });
+
+  const handleCreate = useCallback(async () => {
+    setCreating(true);
+    try {
+      const saved = await Markdown.createInProject(dataContext.project ?? null, name);
+      toast({ title: 'Markdown created', description: `[[${name}]]` });
+      void queryClient.invalidateQueries({ queryKey: ['wiki-resolve', name] });
+      if (saved.asset_ref) {
+        navigation.openDock(DockPointer.forAssetEditor('markdown', saved.asset_ref));
+      }
+    } catch (err) {
+      toast({
+        title: 'Could not create markdown',
+        description: err instanceof Error ? err.message : String(err),
+        variant: 'destructive',
+      });
+    } finally {
+      setCreating(false);
+    }
+  }, [name, navigation, queryClient, toast]);
 
   if (!computeNode?.typeId) {
     return (
@@ -72,8 +101,31 @@ export function WikiResolveView({ name }: WikiResolveViewProps) {
 
   if (!data?.asset_ref) {
     return (
-      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        No markdown record found for [[{name}]].
+      <div className="flex h-full items-center justify-center px-6">
+        <div
+          className="flex max-w-md flex-col items-center gap-4 text-center"
+          data-testid="wiki-not-found"
+        >
+          <FileQuestion className="h-10 w-10 text-muted-foreground/60" />
+          <div>
+            <div className="text-lg font-semibold">
+              [[{name}]] not found
+            </div>
+            <div className="mt-1 text-sm text-muted-foreground">
+              No markdown page exists with this name yet.
+            </div>
+          </div>
+          <Button onClick={() => void handleCreate()} disabled={creating}>
+            {creating ? (
+              <>
+                <RefreshCw className="mr-2 h-4 w-4 animate-spin" />
+                Creating…
+              </>
+            ) : (
+              <>Create it</>
+            )}
+          </Button>
+        </div>
       </div>
     );
   }

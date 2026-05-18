@@ -10,6 +10,7 @@ import { DEFAULT_ASSET_FILTER, applyFilterToParams } from '@src/components/asset
 import type { AssetFilter } from '@src/components/assets/assetFilter';
 import type { Browseable, BrowseableRoot, ToolbarAction } from '@src/components/browseable-tree/types';
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
+import { refreshNode } from '@src/components/browseable-tree/refresh-store';
 import { config } from '@sdk';
 
 export interface AssetTypeRootDeps {
@@ -237,21 +238,27 @@ export function assetTypeRoot(type: AssetTypeInfo, deps: AssetTypeRootDeps): Bro
   const filter = deps.filter ?? DEFAULT_ASSET_FILTER;
   const limit = deps.childrenPageSize ?? 200;
 
-  const onAfterDelete = deps.onDeleteComplete
-    ? () => deps.onDeleteComplete!(type.type_name)
-    : undefined;
+  // Filter signature in the id forces the BrowseableTree to refetch
+  // children when the user toggles scope/picker (the children are cached
+  // by node id; without this they'd stay frozen at the previous filter).
+  const filterSig = `${filter.scope.user ? '1' : '0'}:${[...filter.scope.projects].sort().join(',')}`;
+  const rootId = `asset-type:${type.type_name}:${filterSig}`;
+
+  // After delete: ask the tree to invalidate this root's children. The deleted
+  // row drops out without resetting the user's expansion state. The optional
+  // `onDeleteComplete` deps callback runs too so callers can refresh
+  // ancillary state (e.g. count badges).
+  const onAfterDelete = () => {
+    refreshNode(rootId);
+    deps.onDeleteComplete?.(type.type_name);
+  };
   const listChildren = async (): Promise<Browseable[]> => {
     const results = await fetchAssetsOfType(type.type_name, filter, limit);
     return results.map((r) => assetChild(type.type_name, r, onAfterDelete));
   };
 
-  // Filter signature in the id forces the BrowseableTree to refetch
-  // children when the user toggles scope/picker (the children are cached
-  // by node id; without this they'd stay frozen at the previous filter).
-  const filterSig = `${filter.scope.user ? '1' : '0'}:${[...filter.scope.projects].sort().join(',')}`;
-
   const root: BrowseableRoot = {
-    id: `asset-type:${type.type_name}:${filterSig}`,
+    id: rootId,
     kind: 'root',
     label: type.label,
     icon: resolveAssetIcon(type.icon),
