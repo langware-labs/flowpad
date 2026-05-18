@@ -34,6 +34,20 @@ class BodyStatus(str, Enum):
     READY = "ready"
 
 
+class FlowMessageKind(str, Enum):
+    """Discriminator for special FlowMessage kinds.
+
+    USER       — a normal message (the default for everything the user or
+                 hub produces).
+    INVITATION — a local-only placeholder FlowMessage representing a pending
+                 hub Invitation as the first row of a conversation; its
+                 ``context_entities`` carry the backing Invitation TypeId so
+                 the UI can read invitation_id off it for the Accept action.
+    """
+    USER = "user"
+    INVITATION = "invitation"
+
+
 # Single source of truth for the body filename on the hub blob store.
 # Bodies live under flow_message/<id>/fs/<BODY_FILENAME>.
 BODY_FILENAME = "body.flowmsg"
@@ -106,7 +120,7 @@ class FlowMessage(Entity):
     # hub Invitation as a first-row in the conversation strip — its
     # ``context_entities`` carry the backing Invitation TypeId so the UI
     # can read invitation_id off it for the Accept action.
-    kind: str = APIField(default="user")
+    kind: FlowMessageKind = APIField(default=FlowMessageKind.USER)
     # Body-bundle lifecycle on the hub. NA when the message has no body
     # (text-only, or only URL/REPO/inline-PROMPT attachments). UPLOADING is
     # stamped at hub-side add_message time when the incoming FM's attachments

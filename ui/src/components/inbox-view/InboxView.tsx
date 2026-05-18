@@ -4,6 +4,7 @@ import { toast } from 'sonner';
 import {
   Conversation,
   FlowMessage,
+  FlowMessageKind,
   QueryRequest,
   Task,
   TypeId,
@@ -109,7 +110,7 @@ function ConversationListRow({ conv, isFocused, viewMode, onArchive, onToggleRea
   const { data: firstMessage } = useEntity<FlowMessage>(firstTypeId);
   const { data: latestMessage } = useEntity<FlowMessage>(latestTypeId);
 
-  const isInvitationRow = firstMessage?.kind === 'invitation';
+  const isInvitationRow = firstMessage?.kind === FlowMessageKind.INVITATION;
   const invitationTypeId = useMemo(
     () => firstMessage?.firstContextOfType?.('invitation') ?? null,
     [firstMessage],

@@ -17,7 +17,7 @@ from typing import Optional
 
 from flow_sdk.actions.action_registry import action
 from flow_sdk.builtin.conversation import Conversation
-from flow_sdk.builtin.flow_message import Attachment, AttachmentType, FlowMessage
+from flow_sdk.builtin.flow_message import Attachment, AttachmentType, FlowMessage, FlowMessageKind
 from flow_sdk.builtin.spec import Spec
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.builtin.task import Task
@@ -1510,7 +1510,7 @@ async def _materialize_invitation(
     if isinstance(preview, dict):
         msg_payload = dict(preview)
         msg_payload.setdefault("text", local_inv.message or "You've been invited to a conversation")
-        msg_payload["kind"] = "invitation"
+        msg_payload["kind"] = FlowMessageKind.INVITATION.value
         existing_ctx = msg_payload.get("context_entities") or []
         if invitation_typeid not in existing_ctx:
             existing_ctx = list(existing_ctx) + [invitation_typeid]
@@ -1531,7 +1531,7 @@ async def _materialize_invitation(
         # locally so accept-flow stays consistent with older hub builds.
         synth_payload = {
             "text": (local_inv.message or "You've been invited to a conversation"),
-            "kind": "invitation",
+            "kind": FlowMessageKind.INVITATION.value,
             "context_entities": [invitation_typeid],
             "remote": False,
         }
