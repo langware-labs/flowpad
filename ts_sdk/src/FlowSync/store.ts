@@ -996,6 +996,27 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     return actionInfo.castResponse ? (this.castAndDeepAssign(response) as unknown as Res) : response;
   }
 
+  /**
+   * Call an action over the WebSocket when the socket is OPEN, otherwise fall
+   * back to the REST path. The branch is decided up front from the connection
+   * state — there is no post-failure retry, so a non-idempotent mutation can
+   * never be sent twice.
+   *
+   * For non-file mutations (e.g. a text-only message send) the WS hop skips an
+   * HTTP round-trip when a live socket already exists; REST keeps the call
+   * working when it doesn't. Multipart/file actions must NOT use this — binary
+   * bodies don't travel over the WS rest_api_msg channel.
+   */
+  public async callActionPreferWS<_Req, Res>(
+    actionInfo: ActionInfo,
+    options?: import('../websocket').IWSRestOptions,
+  ): Promise<Res> {
+    if (ConnectionManager.getInstance().connected) {
+      return this.callActionOverWS<_Req, Res>(actionInfo, options);
+    }
+    return this.callAction<_Req, Res>(actionInfo);
+  }
+
   public getCachedQueryResults<U extends T>(request: QueryRequest): U[] | undefined {
     const watchedQuery = this.watchedQueries.getWatchedQuery(request);
     return watchedQuery?.results as U[] | undefined;

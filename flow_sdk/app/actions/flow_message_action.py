@@ -1299,7 +1299,7 @@ async def handle_send_draft(fm_id: str, someone_typeid: str) -> ApiResponse:
     4. POST to hub + upload bundle (best-effort).
     5. Git-commit the conversation pointer change when the task lives in a
        project repo (mirrors the original-reply path in
-       `notification_action.handle_append_conversation`).
+       `notification_action.handle_add_message`).
     """
     from flow_sdk.app.actions.notification_action import (
         _append_message_to_conversation,

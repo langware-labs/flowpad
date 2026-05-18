@@ -168,11 +168,10 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
         await conv.save();
         await conv.share(recipientEmails);
         if (!hasFiles && !hasAssetRefs && message) {
-          // Initial message goes through the standard ``add_message`` path so
-          // the hub fanouts the FlowMessage to invited (post-accept) participants.
-          // When there are files or asset refs we route via ``sendReply`` below
-          // (multipart path) instead — addMessage is text-only today.
-          await conv.addMessage(message);
+          // Text-only initial message. Goes through the single send path
+          // (conversation/<id>/add_message) — same endpoint the file branch
+          // below uses, so first message and replies share one code path.
+          await sendReply({ conversationId: conv.id }, message);
         }
         conversationId = conv.id;
       } else {
@@ -231,7 +230,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
                   className="border-b border-input bg-transparent text-xs text-foreground focus:outline-none"
                   value={senderName}
                   onChange={(e) => setSenderName(e.target.value)}
-                  onBlur={async () => {
+                  onBlur={() => {
                     setEditingName(false);
                   }}
                   onKeyDown={(e) => {
