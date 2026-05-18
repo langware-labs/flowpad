@@ -171,7 +171,7 @@ async def test_jsonl_lands_in_records_data_root(bootstrapped_client):
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_append_conversation_writes_into_records_data_jsonl(bootstrapped_client):
-    """`append-conversation` with `conversation_id` lands in the records-data file."""
+    """`conversation/<id>/add_message` lands the pointer in the records-data file."""
     projects = (await bootstrapped_client.get("/api/v1/graph/project")).json()["data"]
     project_id = next(p for p in projects if p.get("uname") == "local")["id"]
 
@@ -182,8 +182,8 @@ async def test_append_conversation_writes_into_records_data_jsonl(bootstrapped_c
     conv_id = create.json()["data"]["conversation_id"]
 
     append = await bootstrapped_client.post(
-        "/api/v1/graph/notification/append-conversation",
-        json={"conversation_id": conv_id, "message": "hello world"},
+        f"/api/v1/graph/conversation/{conv_id}/add_message",
+        json={"message": "hello world"},
     )
     assert append.status_code == 200, append.text
     assert append.json()["status"] == "SUCCESS"
