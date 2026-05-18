@@ -1650,74 +1650,47 @@ async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> Non
             logger.warning("[conv-msg-fetch] %s: aborted: %s", conv_id[:8], e)
 
 
-async def _backfill_text_messages_from_hub_conv(
-    hub_conv: dict, conv_id: str, someone_typeid: str,
-) -> None:
-    """Pull all FlowMessages listed on a hub Conversation into the local store.
+async def _sync_conversation_messages(conv_id: str, someone_typeid: str) -> None:
+    """Materialize every hub-side message of a conversation into the local store.
 
-    Used after the recipient joins a cross-user (text-only) conversation: the
-    hub WS only fanouts messages from join-time forward, so anything the
-    inviter sent pre-accept needs an explicit catch-up. Each FM is fetched
-    by id and materialized directly from its hub payload via
-    ``materialize_flow_message`` — no ``.flowmsg`` bundle download, which is
-    what distinguishes this from ``_fetch_conversation_messages`` (legacy
-    bundle path).
+    Uses the standard scoped query ``GET /graph/conversation/<id>/flow_message``
+    — the hub returns the conversation's child FlowMessages the caller is
+    authorized to see (the dual role-path auth is satisfied once the caller
+    has joined the conversation). Each FM is materialized via
+    ``materialize_flow_message``, which is idempotent, so messages already
+    delivered through the WS bridge are no-ops.
 
-    Idempotent: ``materialize_flow_message`` returns the existing row when an
-    FM with the same id is already local, and pointer dedup happens inside
-    ``ConversationRecord.append_message_pointer``.
+    Called after an invitation accept: the hub WS only fanouts messages from
+    join-time forward, so the inviter's pre-accept messages (notably the
+    first one) need this explicit pull. Unlike ``_fetch_conversation_messages``
+    (legacy ``.flowmsg`` bundle path), this is the text-only path — the hub
+    payload is materialized directly with no bundle download.
     """
     from flow_sdk.app.actions.materialize_flow_message import (  # noqa: PLC0415
         materialize_flow_message,
     )
 
-    # TODO replace with GET conv/ meesage_id
-    raw_ids = hub_conv.get("message_ids")
-    logger.info(
-        "[conv-backfill] conv=%s raw_message_ids=%r",
-        conv_id[:8], raw_ids,
+    hub_msgs = await hub_get(
+        BuiltinEntityType.FLOW_MESSAGE,
+        scope=[("conversation", conv_id)],
     )
-    try:
-        pointers = _json.loads(raw_ids) if isinstance(raw_ids, str) else (raw_ids or [])
-    except (ValueError, TypeError):
-        logger.warning("[conv-backfill] conv=%s: malformed message_ids", conv_id[:8])
-        return
-    if not pointers:
-        logger.info("[conv-backfill] conv=%s: hub has no messages to backfill", conv_id[:8])
-        return
-
-    logger.info(
-        "[conv-backfill] conv=%s: %d pointer(s) to materialize",
-        conv_id[:8], len(pointers),
+    ordered = sorted(
+        (m for m in (hub_msgs or []) if isinstance(m, dict) and m.get("id")),
+        key=lambda m: m.get("created_date") or "",
     )
-
-    for ptr in pointers:
-        typeid_str = (ptr or {}).get("typeid") or ""
-        dash = typeid_str.find("-")
-        if dash <= 0:
-            continue
-        fm_id = typeid_str[dash + 1:].lstrip("@")
-        if not fm_id:
-            continue
+    logger.info("[conv-sync] conv=%s: syncing %d message(s)", conv_id[:8], len(ordered))
+    for raw_fm in ordered:
         try:
-            raw_fm = await hub_get(BuiltinEntityType.FLOW_MESSAGE, fm_id)
-            if not isinstance(raw_fm, dict):
-                logger.warning(
-                    "[conv-backfill] conv=%s fm=%s: hub_get returned %r (likely 403/404)",
-                    conv_id[:8], fm_id, type(raw_fm).__name__,
-                )
-                continue
             await materialize_flow_message(
                 raw_fm,
                 conversation_id=conv_id,
                 someone_typeid=someone_typeid,
                 notify=True,
             )
-            logger.info("[conv-backfill] conv=%s fm=%s: materialized", conv_id[:8], fm_id)
         except Exception as fm_err:  # noqa: BLE001
             logger.warning(
-                "[conv-backfill] conv=%s fm=%s backfill failed: %s",
-                conv_id[:8], fm_id, fm_err,
+                "[conv-sync] conv=%s fm=%s materialize failed: %s",
+                conv_id[:8], raw_fm.get("id"), fm_err,
             )
 
 
@@ -2083,11 +2056,6 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
                 async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
                     await client.post(f"/graph/conversation/{linked_conv_id}/join", {})
                     hub_conv = await client.get(f"/graph/conversation/{linked_conv_id}")
-                logger.info(
-                    "[invitation-accept] conv-target accept: linked_conv=%s hub_conv_keys=%s",
-                    linked_conv_id[:8],
-                    sorted((hub_conv or {}).keys()) if isinstance(hub_conv, dict) else None,
-                )
                 if isinstance(hub_conv, dict) and hub_conv.get("id"):
                     existing = await Conversation.get_one({"id": linked_conv_id})
                     if existing is None:
@@ -2096,12 +2064,10 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
                             "title": hub_conv.get("title"),
                             "remote": True,
                         }).save(someone_typeid)
-                    # Backfill messages the inviter sent before this user joined —
-                    # the hub WS only fanouts from join-time forward, so without
-                    # this they'd stay invisible until a manual refresh.
-                    await _backfill_text_messages_from_hub_conv(
-                        hub_conv, linked_conv_id, someone_typeid,
-                    )
+                # Pull the inviter's pre-accept messages — the hub WS only
+                # fanouts from join-time forward, so without this the first
+                # message stays invisible until a manual refresh.
+                await _sync_conversation_messages(linked_conv_id, someone_typeid)
         except Exception as e:
             logger.warning("[invitation-accept] hub join+materialize failed: %s", e, exc_info=True)
 
