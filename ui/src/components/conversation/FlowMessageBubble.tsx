@@ -1,4 +1,4 @@
-import { Conversation, FlowMessage, TypeId, User } from '@sdk';
+import { Conversation, FlowMessage, FlowMessageKind, TypeId, User } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { useState } from 'react';
 import type { ITask } from '@sdk/entities/task';
@@ -86,6 +86,13 @@ export function FlowMessageBubble({
         </div>
       </div>
     );
+  }
+
+  // The invitation-kind FlowMessage is a pre-accept marker — it drives the
+  // invitation row in the strip/inbox but is not a real conversation message.
+  // Keep it in the conversation record; just never render it as a bubble.
+  if (fm.kind === FlowMessageKind.INVITATION) {
+    return null;
   }
 
   if (isDraft) {
