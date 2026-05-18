@@ -167,7 +167,8 @@ class HubWsBridge:
         """Inbound data_op_msg dispatcher.
 
         Routes by the changed entity's type. Currently handles flow_message
-        (create + update) and conversation (any op as a passive upsert).
+        (create + update), conversation (any op as a passive upsert), and
+        invitation (nudge → invitation-sync pull).
         """
         op = str(message.get("op") or "").lower()
         etype, eid = _parse_to_entity(message.get("to_entity"))
@@ -186,6 +187,8 @@ class HubWsBridge:
                 await self._handle_flow_message_op(op, eid, data, parent_conv_id)
             elif etype == "conversation":
                 await self._handle_conversation_op(op, eid, data)
+            elif etype == "invitation":
+                await self._handle_invitation_op(op, eid, data)
             else:
                 logger.debug("hub_bridge: no handler for data_op_msg type=%s op=%s", etype, op)
         except Exception:
@@ -320,11 +323,12 @@ class HubWsBridge:
                         conversation_id=conversation_id,
                         someone_typeid=someone_typeid,
                         notify=False,
-                # Live hub arrival: emit the local CREATE even if a catch-up
-                # sync already materialized the row, so the open conversation
-                # ``on('message')`` listener still fires.
-                emit_live_create=True,
-            )except Exception as _err:
+                        # Live hub arrival: emit the local CREATE even if a catch-up
+                        # sync already materialized the row, so the open conversation
+                        # ``on('message')`` listener still fires.
+                        emit_live_create=True,
+                    )
+                except Exception as _err:
                     logger.warning("[bridge] inbound persist failed (non-fatal): %s", _err)
 
             asyncio.create_task(_persist_inbound())
@@ -420,6 +424,29 @@ class HubWsBridge:
             if field in clean:
                 setattr(existing, field, clean[field])
         await existing.save(someone_typeid, notify=True)
+
+    async def _handle_invitation_op(self, op: str, inv_id: str, data: dict) -> None:
+        """A new/updated Invitation was pushed by the hub.
+
+        The bridge can't materialize the invitation row from the WS payload
+        alone — the hub embeds the target Conversation + preview FlowMessage
+        only in the ``invitation/pending`` HTTP response. So treat the frame
+        as a nudge and run the lightweight ``handle_invitation_sync`` pull,
+        which materializes the placeholder conversation + invitation-kind
+        FlowMessage with ``notify=True`` so the conversations strip refreshes
+        without a manual refresh.
+        """
+        if op == "delete":
+            # Invitation revocation is reconciled by the conversation prune
+            # step on the next conversation-list; nothing to do live.
+            return
+        from flow_sdk.app.actions.flow_message_action import handle_invitation_sync
+        from flow_sdk.builtin.user import User
+
+        local_user = await User.get_local()
+        if local_user is None:
+            return
+        await handle_invitation_sync(local_user.typeid)
 
     # ------------------------------------------------------------------
     # Outbound helpers — thin wrappers around send_request for callers that
