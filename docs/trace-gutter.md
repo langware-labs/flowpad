@@ -1,3 +1,7 @@
+---
+id: 2fbab7d7-2dc8-591e-946e-68c58e96f225
+---
+
 # TraceGutter - FlowData Trace Events in the Terminal Left Gutter
 
 ## Overview

@@ -1,3 +1,7 @@
+---
+id: 1009873f-9649-5c90-b7b7-8a5febd1efcf
+---
+
 test 1: when claude runs in shell and is thinking, not all the output is visible (FLOWPAD-1617)
 - navigate to {APP_URL}/dock/shell
 - open 2 new shell terminals

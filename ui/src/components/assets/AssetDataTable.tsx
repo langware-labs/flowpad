@@ -16,7 +16,10 @@ import {
 } from '@src/components/ui/pagination';
 import { getColumns } from './columns/columnRegistry';
 import type { ColumnActions } from './columns/columnRegistry';
+import { scopeTag } from './columns/columnHelpers';
 import type { SearchResult } from '@src/hooks/use-asset-search';
+import { useClaudeProjectList, getProjectDisplayName } from '@src/hooks/use-claude-projects';
+import { projectIdForPath } from './utils';
 
 interface Props {
   results: SearchResult[];
@@ -43,9 +46,42 @@ export function AssetDataTable({ results, total, page, pageSize, onPageChange, r
   const colActions: ColumnActions = { filterByProject: onProjectFilter };
   const totalPages = Math.ceil(total / pageSize);
 
+  // Build a project_id → display-name lookup so the scope column can render
+  // human-readable project names instead of the project_id UUID. The API today
+  // returns `project_name: null` on rows, so we resolve here client-side via
+  // the same project list that powers `ProjectPickerModal` — uuid5(project:cwd)
+  // matches the `project_id` stamped on records by the indexer.
+  const { projects } = useClaudeProjectList();
+  const projectNameById = React.useMemo(() => {
+    const m = new Map<string, string>();
+    for (const p of projects) {
+      const pid = projectIdForPath(p.cwd || p.name);
+      if (pid) m.set(pid, getProjectDisplayName(p));
+    }
+    return m;
+  }, [projects]);
+
+  const renderScope = React.useCallback(
+    (r: SearchResult): React.ReactNode => {
+      if (r.scope === 'user') return scopeTag('user');
+      if (r.scope === 'project') {
+        const name = (r.project_name || (r.project_id ? projectNameById.get(r.project_id) : undefined)) ?? r.project_id ?? '';
+        return React.createElement(
+          'span',
+          { style: { display: 'inline-flex', alignItems: 'center', gap: '6px' } },
+          scopeTag('project'),
+          name ? React.createElement('span', { style: { fontSize: '12px', color: '#64748b' } }, name) : null,
+        );
+      }
+      return '—';
+    },
+    [projectNameById],
+  );
+
   const baseColumns = [
     { key: 'name', header: 'Name', render: (r: SearchResult) => r.name || r.uname || r.title || '—' },
     { key: 'status', header: 'Status', render: (r: SearchResult) => r.status || '—' },
+    { key: 'scope', header: 'Scope', render: (r: SearchResult) => renderScope(r) },
     { key: 'modified_at', header: 'Modified', render: (r: SearchResult) => formatDate(r.modified_at) },
   ];
 

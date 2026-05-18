@@ -1,3 +1,7 @@
+---
+id: be9f2e20-2308-5ab7-b398-d56ac2337ddf
+---
+
 test 1: File explorer download control is present (FLOWPAD-1605)
 - navigate to {APP_URL}/dock/explorer
 - wait 3 seconds for the file explorer to load

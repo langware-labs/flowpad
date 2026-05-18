@@ -1,3 +1,7 @@
+---
+id: cceb70de-20f4-5a14-ba27-e0cf49535bc6
+---
+
 test 1: Scroll sync - viewportY tracks correctly as terminal scrolls
 - navigate to /dock/shell/new_terminal
 - wait for PTY to be ready (prompt visible)

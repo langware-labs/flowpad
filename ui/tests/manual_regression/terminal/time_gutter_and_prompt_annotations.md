@@ -1,3 +1,7 @@
+---
+id: b2072b1d-0e04-5eb7-8603-25f8e36f0f83
+---
+
 test 1: Time gutter field columns are aligned with fixed widths
 - navigate to {APP_URL}/dock/shell/new_terminal, then open the tab-opener "+" (data-testid="opener-plus-button") and pick the "Claude Code" row (data-testid="opener-menu-row-claude")
 - wait for Claude CLI banner to appear (up to 45 seconds)

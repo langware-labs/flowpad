@@ -1,5 +1,5 @@
 ---
-
+id: 9c2406fc-f5c9-5f32-8932-f6d36f8fa3f9
 ---
 
 # AgenticProcess
@@ -652,4 +652,3 @@ The following names appear in older docs or compatibility shims but are not the 
 | -------------------------------------------------- | -------------------------------------------- |
 | `ui/src/components/terminal/interactive-terminal/` | Interactive terminal UI and process toolbar. |
 | `ui/src/components/terminal/TabbedTerminal.tsx`    | Multi-tab terminal orchestration.            |
-

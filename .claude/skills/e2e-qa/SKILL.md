@@ -1,7 +1,12 @@
 ---
+id: ae32bd1d-2fca-50c2-bf33-fa24a06aad61
 name: e2e-qa
 description: Team-based E2E QA system. QA Manager leads a team of testers and developers.
-tags: [testing, e2e, qa, regression]
+tags:
+- testing
+- e2e
+- qa
+- regression
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob
 output-dir: ui/tests/manual_regression/_results
 scenarios-dir: ui/tests/manual_regression

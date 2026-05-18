@@ -1,3 +1,7 @@
+---
+id: 302b626f-a2cf-597b-9e12-575ac5ea79a6
+---
+
 # Frontend Debug Cheatsheet
 
 Open DevTools → Console tab. Everything below runs in the browser console against a live app at `localhost:4097`.

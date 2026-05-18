@@ -5,7 +5,7 @@ import { ActivityProgressBar, ActivityProgressModal } from '@src/components/sear
 import { useIndexStatus } from '@src/hooks/use-index-status';
 import { useSystemTools } from '@src/hooks/use-system-tools';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { RefreshCw, ChevronDown, ChevronRight, Search, Database, FileSearch, Trash2, ScanSearch, Ghost } from 'lucide-react';
+import { RefreshCw, ChevronDown, ChevronRight, Search, Database, FileSearch, Trash2, ScanSearch, Ghost, RotateCw, Hammer } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { SweepOrphansDialog } from '@src/components/search-index/SweepOrphansDialog';
 import { Button } from '@src/components/ui/button';
@@ -58,12 +58,23 @@ interface AggregateScanType {
   count: number;
   total_bytes: number;
   avg_bytes: number;
+  // Diff against the live index — present when scan ran un-scoped.
+  new?: number;
+  stale?: number;
+  mis_scoped?: number;
+  orphan?: number;
+  fresh?: number;
+  in_index?: number;
+  pending?: number;
 }
 
 interface AggregateScan {
   types: AggregateScanType[];
   grand_total: number;
   scan_ms: number;
+  grand_pending?: number;
+  grand_orphan?: number;
+  diff_included?: boolean;
 }
 
 function fmtBytes(n: number): string {
@@ -142,8 +153,13 @@ function TypeRow({
             <span className="text-destructive">error</span>
           ) : row.orphan_count > 0 ? (
             <span className="text-amber-600 dark:text-amber-400">{row.orphan_count} orphan{row.orphan_count === 1 ? '' : 's'}</span>
-          ) : row.stale ? (
-            <span className="text-amber-600 dark:text-amber-400">stale</span>
+          ) : row.stale && !(row.count === 0 && row.last_indexed_at === null) ? (
+            <span
+              className="text-amber-600 dark:text-amber-400"
+              title={row.last_indexed_at === null ? 'Last indexed: never' : `Last indexed: ${row.last_indexed_at}`}
+            >
+              {row.last_indexed_at === null ? 'never indexed' : '24h+ idle'}
+            </span>
           ) : (
             <span className="text-emerald-600 dark:text-emerald-400">✓</span>
           )}
@@ -165,7 +181,7 @@ function TypeRow({
               <TooltipContent side="left">
                 {indexedCount !== null
                   ? `Indexed ${indexedCount} records`
-                  : `Re-index ${row.type}`}
+                  : `Sync ${row.type} changes`}
               </TooltipContent>
             </Tooltip>
             {row.count > 0 && (
@@ -274,20 +290,6 @@ export function FsRecordsScannerViewer() {
     prevActivity.current = currentActivity;
   }, [currentActivity, refreshIndexStatus]);
 
-  // F2 — auto-detect orphans on page mount. The default INDEX action is a
-  // no-op for effect (counts + marks orphans, doesn't remove). Cheap on a
-  // fresh tree thanks to skip-fresh; surfaces "as of now" orphan counts
-  // without waiting for a manual Re-index click. Single-shot per mount.
-  const autoDetectedRef = useRef(false);
-  useEffect(() => {
-    if (autoDetectedRef.current) return;
-    if (indexStatus.phase !== 'ready') return;
-    autoDetectedRef.current = true;
-    void apiClient.post(`${BASE}/index?orphan_action=index`).catch(() => {
-      // ignore — WS progress + activity→idle hook will surface any issue
-    });
-  }, [indexStatus.phase]);
-
   // F4/F5 — Scan Orphans dialog (toolbar + per-row click both open this).
   const [sweepOpen, setSweepOpen] = useState(false);
   const [sweepScopeType, setSweepScopeType] = useState<string | null>(null);
@@ -362,6 +364,37 @@ export function FsRecordsScannerViewer() {
       setDetails({});
     }
   }, []);
+
+  // Force re-sync: same walk, but bypass skip-fresh — re-parse and re-upsert
+  // EVERY entry under the default roots. DB ids preserved (no clear). Useful
+  // when a parser bug or schema change means stored content is wrong even
+  // though mtime hasn't moved.
+  const [forceResyncing, setForceResyncing] = useState(false);
+  const handleForceResync = useCallback(async () => {
+    setForceResyncing(true);
+    try {
+      await apiClient.post(`${BASE}/index?force=true`);
+    } finally {
+      setForceResyncing(false);
+      setDetails({});
+    }
+  }, []);
+
+  // Rebuild: clear DB + FTS for every indexable type, then walk + re-index
+  // from scratch. Orphan flags reset (no rows survive to be orphan). New
+  // ids if `genId` derivation changed. Files on disk untouched.
+  const [rebuilding, setRebuilding] = useState(false);
+  const handleRebuildIndex = useCallback(async () => {
+    setRebuilding(true);
+    try {
+      await apiClient.post(`${BASE}/index?rebuild=true`);
+    } finally {
+      setRebuilding(false);
+      setIndexedResults({});
+      setDetails({});
+      refreshIndexStatus();
+    }
+  }, [refreshIndexStatus]);
 
   const handleClearIndex = useCallback(async () => {
     await clearIndex();
@@ -484,11 +517,14 @@ export function FsRecordsScannerViewer() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      {/* Header — toolbar:
-            Re-index     (Database/cube)  — POST /fs-records/index (aggregate)
-            Scan Stats   (ScanSearch)     — GET /fs-records/scan, panel
-            Clear Index  (Trash)          — DELETE /fs-records/index (aggregate)
-          Per-type Re-index and Clear live as hover actions on each row. */}
+      {/* Header — toolbar (left → right):
+            Sync changes   (Database)    — POST /fs-records/index           (skip-fresh; default)
+            Force re-sync  (RotateCw)    — POST /fs-records/index?force=true (bypass skip-fresh)
+            Rebuild index  (Hammer)      — POST /fs-records/index?rebuild=true (clear + walk)
+            Scan Stats     (ScanSearch)  — GET  /fs-records/scan            (read-only)
+            Scan Orphans   (Ghost)       — open sweep dialog
+            Clear Index    (Trash2)      — DELETE /fs-records/index         (wipe, no walk)
+          Per-type Sync and Clear live as hover actions on each row. */}
       <div className="flex shrink-0 items-center justify-between border-b px-5 py-3">
         <h1 className="text-sm font-semibold">Records Scanner</h1>
         <div className="flex items-center gap-1">
@@ -499,14 +535,19 @@ export function FsRecordsScannerViewer() {
                 size="sm"
                 className="h-7 gap-1.5 text-xs"
                 onClick={() => void handleRefreshIndex()}
-                disabled={refreshing || clearing}
+                disabled={refreshing || clearing || forceResyncing || rebuilding}
               >
                 <Database className={`h-3.5 w-3.5 ${refreshing ? 'animate-pulse' : ''}`} />
-                {refreshing ? 'Re-indexing…' : 'Re-index'}
+                {refreshing ? 'Syncing…' : 'Sync changes'}
               </Button>
             </TooltipTrigger>
-            <TooltipContent>
-              Walk the filesystem and re-index all record types
+            <TooltipContent className="max-w-xs">
+              <p className="font-medium">Sync changes</p>
+              <p className="mt-1 text-xs opacity-90">
+                Walks the filesystem and parses only entries whose source file changed since last sync (skip-fresh).
+                Pending count drops to 0. Orphans stay flagged (use Scan Orphans to sweep).
+              </p>
+              <p className="mt-1 text-xs opacity-70">~2-4s on a quiet tree. The default action — what you want 99% of the time.</p>
             </TooltipContent>
           </Tooltip>
           <Tooltip>
@@ -515,15 +556,73 @@ export function FsRecordsScannerViewer() {
                 variant="ghost"
                 size="sm"
                 className="h-7 gap-1.5 text-xs"
+                onClick={() => void handleForceResync()}
+                disabled={refreshing || clearing || forceResyncing || rebuilding}
+              >
+                <RotateCw className={`h-3.5 w-3.5 ${forceResyncing ? 'animate-spin' : ''}`} />
+                {forceResyncing ? 'Re-parsing…' : 'Force re-sync'}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-xs">
+              <p className="font-medium">Force re-sync</p>
+              <p className="mt-1 text-xs opacity-90">
+                Walks the filesystem and re-parses <em>every</em> entry, even unchanged ones. DB ids preserved (no clear).
+                Use when you suspect a parser bug or schema change — when the stored content is wrong but mtime hasn't moved.
+              </p>
+              <p className="mt-1 text-xs opacity-70">~10-30s. Equivalent to Sync changes with skip-fresh disabled.</p>
+            </TooltipContent>
+          </Tooltip>
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 gap-1.5 text-xs"
+                disabled={refreshing || clearing || forceResyncing || rebuilding}
+              >
+                <Hammer className={`h-3.5 w-3.5 ${rebuilding ? 'animate-pulse' : ''}`} />
+                {rebuilding ? 'Rebuilding…' : 'Rebuild index'}
+              </Button>
+            </AlertDialogTrigger>
+            <AlertDialogContent>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Rebuild the entire index?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  Wipes the DB rows + FTS entries for every indexable type, then walks the filesystem and re-indexes from scratch.
+                  Orphan flags reset. New ids if <code>genId</code> derivation changed (rare).
+                  Files on disk are <em>not</em> touched.
+                  <br /><br />
+                  ~30-60s. Only do this if the index is genuinely corrupt — Sync changes solves 99% of cases.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={() => void handleRebuildIndex()}>
+                  Rebuild
+                </AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 gap-1.5 text-xs"
                 onClick={() => void handleScanStats()}
-                disabled={scanStatsLoading || refreshing || clearing}
+                disabled={scanStatsLoading || refreshing || clearing || forceResyncing || rebuilding}
               >
                 <ScanSearch className={`h-3.5 w-3.5 ${scanStatsLoading ? 'animate-pulse' : ''}`} />
                 {scanStatsLoading ? 'Scanning…' : 'Scan Stats'}
               </Button>
             </TooltipTrigger>
-            <TooltipContent>
-              Scan the filesystem and report per-type counts and sizes (no write)
+            <TooltipContent className="max-w-xs">
+              <p className="font-medium">Scan Stats</p>
+              <p className="mt-1 text-xs opacity-90">
+                Walks the filesystem and reports per-type counts and sizes (and, soon, the diff against the index).
+                Read-only — no DB writes, no <code>last_indexed_at</code> bump.
+              </p>
+              <p className="mt-1 text-xs opacity-70">~2s. Use to check what's on disk without changing anything.</p>
             </TooltipContent>
           </Tooltip>
           <Tooltip>
@@ -533,7 +632,7 @@ export function FsRecordsScannerViewer() {
                 size="sm"
                 className={`h-7 gap-1.5 text-xs ${totalOrphans > 0 ? 'text-amber-600 hover:text-amber-700 dark:text-amber-400' : ''}`}
                 onClick={() => openSweepDialog(null)}
-                disabled={refreshing || clearing}
+                disabled={refreshing || clearing || forceResyncing || rebuilding}
                 data-testid="toolbar-scan-orphans"
               >
                 <Ghost className="h-3.5 w-3.5" />
@@ -545,15 +644,27 @@ export function FsRecordsScannerViewer() {
                 )}
               </Button>
             </TooltipTrigger>
-            <TooltipContent>
-              {totalOrphans > 0
-                ? `${totalOrphans} orphan record${totalOrphans === 1 ? '' : 's'} — click to review and sweep`
-                : 'No orphans. Click to re-scan and confirm.'}
+            <TooltipContent className="max-w-xs">
+              <p className="font-medium">Scan Orphans</p>
+              <p className="mt-1 text-xs opacity-90">
+                An orphan is a DB row (or shadow record dir) whose source file is gone from disk.
+                The sweep dialog lets you remove just the DB row (IGNORE, keeps a forensic shadow dir) or both row + shadow (DELETE).
+              </p>
+              <p className="mt-1 text-xs opacity-70">
+                {totalOrphans > 0
+                  ? `${totalOrphans} orphan record${totalOrphans === 1 ? '' : 's'} pending review.`
+                  : 'No orphans right now. Click to re-scan and confirm.'}
+              </p>
             </TooltipContent>
           </Tooltip>
           <AlertDialog>
             <AlertDialogTrigger asChild>
-              <Button variant="ghost" size="sm" className="h-7 gap-1.5 text-xs text-destructive hover:text-destructive" disabled={clearing || refreshing}>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 gap-1.5 text-xs text-destructive hover:text-destructive"
+                disabled={clearing || refreshing || forceResyncing || rebuilding}
+              >
                 <Trash2 className={`h-3.5 w-3.5 ${clearing ? 'animate-pulse' : ''}`} />
                 {clearing ? 'Clearing…' : 'Clear Index'}
               </Button>
@@ -562,8 +673,10 @@ export function FsRecordsScannerViewer() {
               <AlertDialogHeader>
                 <AlertDialogTitle>Clear search index?</AlertDialogTitle>
                 <AlertDialogDescription>
-                  This removes all indexed content from the database and resets the index logs.
-                  Records on disk are not affected. You can rebuild the index at any time using Re-index.
+                  Wipes the DB rows + FTS entries for every indexable type. The index becomes empty until you re-populate it.
+                  Files on disk are <em>not</em> touched.
+                  <br /><br />
+                  After clearing, click <strong>Sync changes</strong> to re-index, or use <strong>Rebuild index</strong> to do both in one step.
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
@@ -806,36 +919,57 @@ export function FsRecordsScannerViewer() {
                 <span className="font-medium">{scanStats.grand_total.toLocaleString()} records on disk</span>
                 {' · '}
                 <span className="text-muted-foreground">{scanStats.types.length} types · {fmtMs(scanStats.scan_ms)}</span>
+                {scanStats.diff_included && (
+                  <>
+                    {' · '}
+                    <span className={(scanStats.grand_pending ?? 0) > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}>
+                      Pending: {(scanStats.grand_pending ?? 0).toLocaleString()}
+                    </span>
+                    {' · '}
+                    <span className={(scanStats.grand_orphan ?? 0) > 0 ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}>
+                      Orphans: {(scanStats.grand_orphan ?? 0).toLocaleString()}
+                    </span>
+                  </>
+                )}
               </div>
               <div className="max-h-[55vh] overflow-y-auto rounded border bg-card">
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="border-b bg-muted/50 text-muted-foreground">
-                      <th className="py-1 pl-3 pr-4 text-left font-medium">Type</th>
-                      <th className="py-1 pr-4 text-right font-medium">FS Count</th>
-                      <th className="py-1 pr-4 text-right font-medium">DB Count</th>
-                      <th className="py-1 pr-4 text-right font-medium">Diff</th>
-                      <th className="py-1 pr-4 text-right font-medium">Size</th>
+                      <th className="py-1 pl-3 pr-3 text-left font-medium">Type</th>
+                      <th className="py-1 pr-3 text-right font-medium">On Disk</th>
+                      <th className="py-1 pr-3 text-right font-medium">In Index</th>
+                      <th className="py-1 pr-3 text-right font-medium" title="Files on disk not yet in the DB">New</th>
+                      <th className="py-1 pr-3 text-right font-medium" title="File mtime is newer than DB updated_date">Stale</th>
+                      <th className="py-1 pr-3 text-right font-medium" title="DB row's scope/project_id no longer matches walk">Mis-Sc</th>
+                      <th className="py-1 pr-3 text-right font-medium" title="DB row or shadow dir, file is gone">Orphan</th>
+                      <th className="py-1 pr-3 text-right font-medium">Size</th>
                       <th className="w-10 py-1 pr-3" />
                     </tr>
                   </thead>
                   <tbody>
                     {scanStats.types
-                      .filter((t) => t.count > 0)
-                      .sort((a, b) => b.count - a.count)
+                      .filter((t) => (t.count ?? 0) > 0 || (t.in_index ?? 0) > 0 || (t.orphan ?? 0) > 0)
+                      .sort((a, b) => (b.count + (b.orphan ?? 0)) - (a.count + (a.orphan ?? 0)))
                       .map((t) => {
-                        const dbCount = typeRows.find((r) => r.type === t.type)?.count ?? 0;
-                        const diff = t.count - dbCount;
                         const isIndexing = indexingTypes.has(t.type);
+                        const amber = 'text-amber-600 dark:text-amber-400';
+                        const dim = 'text-muted-foreground';
+                        const newN = t.new ?? 0;
+                        const staleN = t.stale ?? 0;
+                        const miscN = t.mis_scoped ?? 0;
+                        const orphN = t.orphan ?? 0;
+                        const inIdx = t.in_index ?? 0;
                         return (
                           <tr key={t.type} className="group border-b last:border-0">
-                            <td className="py-1 pl-3 pr-4 font-mono">{t.type}</td>
-                            <td className="py-1 pr-4 text-right tabular-nums">{t.count}</td>
-                            <td className="py-1 pr-4 text-right tabular-nums text-muted-foreground">{dbCount}</td>
-                            <td className={`py-1 pr-4 text-right tabular-nums ${diff > 0 ? 'text-amber-600 dark:text-amber-400' : diff < 0 ? 'text-destructive' : 'text-muted-foreground'}`}>
-                              {diff === 0 ? '—' : diff > 0 ? `+${diff}` : diff}
-                            </td>
-                            <td className="py-1 pr-4 text-right tabular-nums text-muted-foreground">{fmtBytes(t.total_bytes)}</td>
+                            <td className="py-1 pl-3 pr-3 font-mono">{t.type}</td>
+                            <td className="py-1 pr-3 text-right tabular-nums">{t.count}</td>
+                            <td className={`py-1 pr-3 text-right tabular-nums ${dim}`}>{inIdx}</td>
+                            <td className={`py-1 pr-3 text-right tabular-nums ${newN > 0 ? amber : dim}`}>{newN || '—'}</td>
+                            <td className={`py-1 pr-3 text-right tabular-nums ${staleN > 0 ? amber : dim}`}>{staleN || '—'}</td>
+                            <td className={`py-1 pr-3 text-right tabular-nums ${miscN > 0 ? amber : dim}`}>{miscN || '—'}</td>
+                            <td className={`py-1 pr-3 text-right tabular-nums ${orphN > 0 ? amber : dim}`}>{orphN || '—'}</td>
+                            <td className={`py-1 pr-3 text-right tabular-nums ${dim}`}>{fmtBytes(t.total_bytes)}</td>
                             <td className="w-10 py-1 pr-3 text-right">
                               <Tooltip>
                                 <TooltipTrigger asChild>
@@ -850,7 +984,7 @@ export function FsRecordsScannerViewer() {
                                   </Button>
                                 </TooltipTrigger>
                                 <TooltipContent side="left">
-                                  {isIndexing ? `Re-indexing ${t.type}…` : `Re-index ${t.type} and refresh stats`}
+                                  {isIndexing ? `Syncing ${t.type}…` : `Sync ${t.type} changes and refresh stats`}
                                 </TooltipContent>
                               </Tooltip>
                             </td>
@@ -861,8 +995,9 @@ export function FsRecordsScannerViewer() {
                 </table>
               </div>
               <p className="text-xs text-muted-foreground">
-                <span className="text-amber-600 dark:text-amber-400">+N</span> = files on disk not yet indexed;{' '}
-                <span className="text-destructive">-N</span> = DB rows whose source file is gone (orphans).
+                <span className="text-amber-600 dark:text-amber-400">New / Stale / Mis-Sc</span> sum to{' '}
+                <strong>Pending</strong>: Sync changes drives them all to 0.{' '}
+                <span className="text-amber-600 dark:text-amber-400">Orphan</span> rows persist until you Scan Orphans → sweep.
               </p>
             </div>
           ) : (

@@ -297,5 +297,9 @@ describe('clean_claude_pty', () => {
     }
 
     expect(failures, `${failures.length}/${ITERATIONS} dirty:\n${failures.join('\n')}`).toHaveLength(0);
-  }, ITERATIONS * 15_000 + 60_000);
+    // 50 cold Claude PTYs × ~16-18s/iter on a loaded dev machine. Noisy
+    // iterations trigger the one-retry inner loop and can double their cost,
+    // so leave 20s/iter + 60s setup as the budget. (Nominal iteration is
+    // ~14s; the extra is retry headroom, not slack on the happy path.)
+  }, ITERATIONS * 20_000 + 60_000);
 });

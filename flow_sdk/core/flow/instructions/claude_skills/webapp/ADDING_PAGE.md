@@ -1,3 +1,7 @@
+---
+id: bf61c977-4522-5251-9686-01d23d5463a1
+---
+
 # Adding a New Page
 
 Guide for adding new pages and routes to the frontend.

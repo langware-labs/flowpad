@@ -1,5 +1,6 @@
 import type { Terminal, IBufferLine } from '@xterm/xterm';
 import type { TerminalDimensions, ScrollState } from '../types.js';
+import { RowTextCache } from './RowTextCache.js';
 
 // ─── Interface ───────────────────────────────────────────────────────────────
 
@@ -23,11 +24,29 @@ export interface IXtermAdapter {
 
 export class LiveXtermAdapter implements IXtermAdapter {
   private _evictionOffset = 0;
+  private _rowCache: RowTextCache | null = null;
+  private _contentVersion = 0;
 
   constructor(private readonly term: Terminal) {}
 
   setEvictionOffset(n: number): void { this._evictionOffset = n; }
   getEvictionOffset(): number { return this._evictionOffset; }
+
+  /**
+   * Attach a shared row-text cache (owned by PtySyncSession). After
+   * attachment, `getLineText` is keyed by `_contentVersion`, which the
+   * session bumps via `onContentBump()` whenever the xterm buffer's text
+   * may have changed.
+   */
+  attachRowCache(cache: RowTextCache, contentVersion: number): void {
+    this._rowCache = cache;
+    this._contentVersion = contentVersion;
+  }
+
+  /** Called by PtySyncSession on content-changing bumps. */
+  onContentBump(contentVersion: number): void {
+    this._contentVersion = contentVersion;
+  }
 
   getBufferLength(): number {
     return this.term.buffer.active.length;
@@ -64,8 +83,13 @@ export class LiveXtermAdapter implements IXtermAdapter {
   }
 
   getLineText(bufferIndex: number): string | null {
-    const line = this.getBufferLine(bufferIndex);
-    return line ? line.translateToString(true) : null;
+    const compute = (): string | null => {
+      const line = this.getBufferLine(bufferIndex);
+      return line ? line.translateToString(true) : null;
+    };
+    return this._rowCache
+      ? this._rowCache.getOrCompute(bufferIndex, this._contentVersion, compute)
+      : compute();
   }
 
   bufferIndexToPixelY(absRow: number): number {

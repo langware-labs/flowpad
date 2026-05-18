@@ -1,3 +1,7 @@
+---
+id: 239cd419-8f92-5bee-bdf5-40e3188a2b6d
+---
+
 test 1: Doc-chat panel mounts on every editable doc-type with asset_ref-resolved target
 - for each url under `{plan,agent,skill,markdown,claude_md,claude_memory}` open the corresponding asset editor URL
   - plan: {APP_URL}/dock/assets/editor/plan/Users/shlom/.claude/plans/zazzy-toasting-newell.md

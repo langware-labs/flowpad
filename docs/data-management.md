@@ -1,3 +1,7 @@
+---
+id: b67adcb2-5fd1-52b8-9ae2-21dabce099fc
+---
+
 # Data Management
 
 This document provides an overview of the data management architecture in flow-cli and links to detailed sub-documents for each subsystem.

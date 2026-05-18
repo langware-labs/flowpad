@@ -1,3 +1,7 @@
+---
+id: 351afa20-fcc2-5b86-86cd-13d4a1b2b6c1
+---
+
 test 1: Start new chat from landing page
 - navigate to {APP_URL}/
 - validate landing page is visible with project grid

@@ -23,7 +23,7 @@ import {
 } from '@src/components/ui/breadcrumb';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import type { AssetFilter, AssetScope } from './assetFilter';
+import type { AssetFilter, ScopeFilter } from './assetFilter';
 import { DEFAULT_ASSET_FILTER } from './assetFilter';
 import { projectIdForPath } from './utils';
 import { ScopeFilterBar } from './ScopeFilterBar';
@@ -248,7 +248,7 @@ export function AssetsPage() {
   }, []);
 
   const handleRebuildIndex = useCallback(() => {
-    void resetAndRescan(assetFilter);
+    void resetAndRescan(assetFilter.scope);
   }, [resetAndRescan, assetFilter]);
 
   const handleSearchSubmit = useCallback(() => {
@@ -304,12 +304,8 @@ export function AssetsPage() {
     window.addEventListener('mouseup', onUp);
   }, [sidebarWidth]);
 
-  const handleScopeChange = useCallback((scope: AssetScope) => {
+  const handleScopeChange = useCallback((scope: ScopeFilter) => {
     setAssetFilter(prev => ({ ...prev, scope }));
-  }, []);
-
-  const handleProjectIdsChange = useCallback((ids: string[]) => {
-    setAssetFilter(prev => ({ ...prev, projectIds: ids }));
   }, []);
 
   const {
@@ -441,7 +437,7 @@ export function AssetsPage() {
         return lastSeg === label || p.name === label;
       });
       if (match) {
-        setAssetFilter({ ...DEFAULT_ASSET_FILTER, scope: 'project', projectIds: [match.record_id] });
+        setAssetFilter({ ...DEFAULT_ASSET_FILTER, scope: { user: false, projects: [match.record_id] } });
       }
     } catch {
       // ignore
@@ -509,10 +505,8 @@ export function AssetsPage() {
           </Tooltip>
           <ScopeFilterBar
             scope={assetFilter.scope}
-            projectIds={assetFilter.projectIds}
             currentProjectId={currentProjectId}
             onScopeChange={handleScopeChange}
-            onProjectIdsChange={handleProjectIdsChange}
           />
         </div>
       </div>

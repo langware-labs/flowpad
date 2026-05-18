@@ -1,3 +1,7 @@
+---
+id: 47a5f579-4616-50fc-a542-1680b4d0a2ee
+---
+
 # System Tools Service (Frontend)
 
 `SystemToolsService` is the TypeScript SDK service for system-level data

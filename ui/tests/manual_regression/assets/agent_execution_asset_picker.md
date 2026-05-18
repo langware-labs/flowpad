@@ -1,3 +1,7 @@
+---
+id: 65739fe3-109f-53f8-89d7-9ffe08e9b1b4
+---
+
 # Agent Execution — Asset Picker (Asset Manager Popover)
 
 ## Summary

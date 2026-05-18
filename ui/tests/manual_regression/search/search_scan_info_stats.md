@@ -1,3 +1,7 @@
+---
+id: 0c35b90d-e469-51ac-ab87-9e99233a590d
+---
+
 test 1: Bootstrap API response includes scan_info with expected shape
 - [api] GET {API_URL}/api/v1/graph/bootstrap
 - [api] validate HTTP response status is 200

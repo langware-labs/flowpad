@@ -1,3 +1,7 @@
+---
+id: 3f96b826-5973-5211-96e9-64b20de8a0ea
+---
+
 # Playwright MCP — Usage & Debug
 
 ## Config (`.mcp.json`)

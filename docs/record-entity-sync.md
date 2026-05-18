@@ -1,3 +1,7 @@
+---
+id: 5ad0c9ea-7928-576f-a849-2381689d7e0a
+---
+
 # Record-Entity Linkage (`record_data_ref`)
 
 ## Overview

@@ -1,3 +1,7 @@
+---
+id: bffe7b0a-f5a0-5ec2-b5a5-81061e1760f4
+---
+
 # Tabs Management
 
 This document describes the current terminal tab, routing, PTY, and live session model. The current implementation is entity driven:

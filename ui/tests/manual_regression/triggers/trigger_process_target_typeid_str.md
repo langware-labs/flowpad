@@ -1,3 +1,7 @@
+---
+id: 54aed2d2-f5ec-5af7-81ba-c2aa33fb8306
+---
+
 # Regression: spawned AgenticProcess is attached to its Trigger via `target_typeid_str`
 
 ## Context

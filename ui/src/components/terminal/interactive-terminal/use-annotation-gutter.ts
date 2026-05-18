@@ -3,6 +3,7 @@ import { BookmarkType } from '@sdk/entities/bookmark';
 import { useEntitiesQuery } from '@sdk/react/hooks';
 import type { PtySyncSnapshot, PtySyncSession } from '@sdk/pty-sync/PtySyncSession.js';
 import type { PtyAnchor } from '@sdk/pty-sync/PtySegment.js';
+import { AnnotationRowResolver } from '@sdk/pty-sync/AnnotationRowResolver.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 /** Extract prompt anchors from annotations for anchor-based PTY alignment. */
@@ -29,11 +30,6 @@ function getAnnotationKind(annotation: Annotation): 'comment' | 'prompt' | 'plan
 }
 
 /**
- * Scan the xterm buffer for a line containing searchText.
- * Returns the absolute buffer row, or null if not found.
- * Same approach as PtySyncSession.buildSegmentsFromAnchors().
- */
-/**
  * Build search needles from annotation content.
  * Returns an array of candidate strings to search for (longest first).
  *
@@ -55,23 +51,6 @@ function buildNeedles(searchText: unknown): string[] {
   return needles;
 }
 
-function findTextRow(adapter: NonNullable<PtySyncSnapshot['adapter']>, searchText: unknown, scanFrom = 0): number | null {
-  const needles = buildNeedles(searchText);
-  if (needles.length === 0) return null;
-  const bufLen = adapter.getBufferLength();
-  const eviction = adapter.getEvictionOffset();
-  const startRow = Math.max(eviction, scanFrom);
-  for (const needle of needles) {
-    // Try with prompt prefix first (live session), fall back to raw text (replay).
-    const candidates = ['❯ ' + needle, needle];
-    for (let absRow = startRow; absRow < eviction + bufLen; absRow++) {
-      const lineText = adapter.getLineText(absRow);
-      if (lineText && candidates.some(c => lineText.trimStart().startsWith(c))) return absRow;
-    }
-  }
-  return null;
-}
-
 /**
  * Bridges persisted Bookmark entities and Annotation entities → unified AnnotationElement[]
  * for the annotation gutter.
@@ -84,7 +63,7 @@ function findTextRow(adapter: NonNullable<PtySyncSnapshot['adapter']>, searchTex
  *
  * Positioning strategy:
  *   - bookmark/comment: data.line (exact buffer row stored at user-click time)
- *   - prompt/plan: text search via adapter.getLineText() — runs after replayComplete so buffer is full
+ *   - prompt/plan: text search via AnnotationRowResolver — runs after replayComplete so buffer is full
  */
 export function useAnnotationGutter(
   workerSessionId: string | undefined | null,
@@ -137,6 +116,24 @@ export function useAnnotationGutter(
   const scrollFiredRef = useRef(false);
   const [pendingScrollLine, setPendingScrollLine] = useState<number | null>(null);
 
+  // Persistent annotation→absRow resolver. Reset on session switch so
+  // stale rows from another session never leak. The resolver caches
+  // resolutions across renders — full-buffer scans only happen for
+  // genuinely new or moved annotations, not every render.
+  const resolverRef = useRef<AnnotationRowResolver>(new AnnotationRowResolver());
+  useEffect(() => {
+    resolverRef.current.clear();
+  }, [workerSessionId]);
+
+  // The gutter's text-search work depends only on xterm buffer text, which
+  // changes when PtySyncSession bumps `contentVersion`. Using that
+  // (instead of the all-purpose snapshot `version`) keeps the useMemo
+  // stable across segment-only bumps. Fall back to the legacy
+  // `bufferVersion` arg when the snapshot doesn't expose `contentVersion`
+  // yet (older callers).
+  const contentVersion =
+    ptySyncSession?.getSnapshot()?.contentVersion ?? bufferVersion ?? 0;
+
   // Build unified elements array from bookmarks + annotations.
   // Prompt/plan annotations use text search — only run after replayComplete so the buffer is populated.
   const elements: AnnotationElement[] = useMemo(() => {
@@ -150,6 +147,12 @@ export function useAnnotationGutter(
       if (absRow === undefined) continue;
       result.push({ kind: 'bookmark', absRow, bookmark });
     }
+
+    // Drop resolutions that scrolled off the bottom of the eviction
+    // window — keeps the resolver from holding rows that can never be
+    // re-validated.
+    const resolver = resolverRef.current;
+    resolver.pruneEvicted(adapter.getEvictionOffset());
 
     // Annotations: comments use data.line; prompt/plan use text search.
     // Sort by created_date so scanFrom advances correctly for duplicate text.
@@ -171,10 +174,14 @@ export function useAnnotationGutter(
         if (line === undefined) continue;
         absRow = line;
       } else {
-        // prompt or plan: find exact buffer row by scanning for content text
+        // prompt or plan: find exact buffer row by scanning for content text.
+        // Resolver caches the resolved row across renders; only genuinely
+        // new or moved annotations trigger a full-buffer scan.
         const content = annotation.content as string | undefined;
         if (!content) continue;
-        absRow = findTextRow(adapter, content, scanFrom);
+        const needles = buildNeedles(content);
+        if (needles.length === 0) continue;
+        absRow = resolver.resolve(annotation.id, needles, adapter, scanFrom);
         if (absRow === null) continue;
         scanFrom = absRow + 1;
       }
@@ -183,7 +190,7 @@ export function useAnnotationGutter(
     }
 
     return result;
-  }, [adapter, terminalReady, replayComplete, workerSessionId, sessionBookmarks, sessionAnnotations, ptySyncSession, bufferVersion]);
+  }, [adapter, terminalReady, replayComplete, workerSessionId, sessionBookmarks, sessionAnnotations, ptySyncSession, contentVersion]);
 
   // Reset scroll state on session or timestamp change
   useEffect(() => {

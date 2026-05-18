@@ -1,3 +1,7 @@
+---
+id: 65ac9063-f58a-52bf-b13f-08330973b59e
+---
+
 
 ### Tool Usage
 - Whenever a tool returns a result, you will see "..." as if from the user, but that is actually just the way for you to see the result, as tool results are automatically returned to you, and the user is not aware of it.

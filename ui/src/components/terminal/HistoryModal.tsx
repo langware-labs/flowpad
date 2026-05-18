@@ -2,7 +2,7 @@ import { AgenticProcess } from '@sdk';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Checkbox } from '@src/components/ui/checkbox';
 import { SideDrawer } from '@src/components/ui/side-drawer';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
+import { TooltipProvider } from '@src/components/ui/tooltip';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { CodexIcon } from '@src/components/icons/CodexIcon';
 import {
@@ -12,32 +12,30 @@ import {
 import { cn } from '@src/lib/utils';
 import { useWorkerHistory, type WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
 import { useProject } from '@src/hooks/useProject';
-import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { ArrowDown, ArrowUp, MessageSquare, Search } from 'lucide-react';
-import React, { useEffect, useMemo, useState } from 'react';
+import { ArrowDown, ArrowUp, MessageSquare, Search, X } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-function shortId(id: string): string {
-  return id.slice(0, 6);
-}
-
-function pickLabelFallback(entry: WorkerHistoryEntry): string {
+function pickName(entry: WorkerHistoryEntry): string | null {
   const name = (entry.name ?? '').trim();
   if (name && !UUID_RE.test(name) && name !== entry.worker_id) {
     return name.length > 80 ? `${name.slice(0, 80)}…` : name;
   }
-  return entry.project_name
-    ? `${entry.project_name} · ${shortId(entry.worker_id)}`
-    : shortId(entry.worker_id);
+  return null;
 }
 
-function buildSubline(entry: WorkerHistoryEntry): string {
+function buildMetaSubline(entry: WorkerHistoryEntry): string {
   const parts: string[] = [];
   if (entry.project_name) parts.push(entry.project_name);
   if (entry.git_branch) parts.push(entry.git_branch);
   if (entry.message_count && entry.message_count > 0) parts.push(`${entry.message_count} msgs`);
   return parts.join(' · ');
+}
+
+function pickLastPrompt(entry: WorkerHistoryEntry): string | null {
+  const v = (entry.last_prompt ?? '').trim();
+  return v ? v : null;
 }
 
 function timeAgo(iso: string | null | undefined): string {
@@ -96,7 +94,6 @@ function entryKey(entry: WorkerHistoryEntry): string {
 
 export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps) {
   const { entries, isLoading } = useWorkerHistory(30, { enabled: open });
-  const { navigation } = useDockNavigation();
   const { project: currentProject } = useProject();
 
   const [allProjects, setAllProjects] = useState(true);
@@ -105,6 +102,9 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
   const [peekProcess, setPeekProcess] = useState<AgenticProcess | null>(null);
   const [peekResolving, setPeekResolving] = useState(false);
   const [sortDir, setSortDir] = useState<SortDir>(readStoredSortDir);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     try {
@@ -114,22 +114,41 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
     }
   }, [sortDir]);
 
-  // Reset selection + peek when modal closes so a new open starts clean.
+  // Reset selection + peek + search when modal closes so a new open starts clean.
   useEffect(() => {
     if (!open) {
       setSelectedKeys(new Set());
       setPeekKey(null);
       setPeekProcess(null);
+      setSearchOpen(false);
+      setQuery('');
     }
   }, [open]);
 
+  // Autofocus the input the moment the search box is revealed.
+  useEffect(() => {
+    if (searchOpen) {
+      searchInputRef.current?.focus();
+    }
+  }, [searchOpen]);
+
   const visible = useMemo(() => {
     const currentProjectId = currentProject?.id ?? null;
-    const filtered = allProjects
+    const projectScoped = allProjects
       ? entries
       : entries.filter(
           (e) => currentProjectId != null && e.project_id === currentProjectId,
         );
+    const q = query.trim().toLowerCase();
+    const filtered = q
+      ? projectScoped.filter((e) => {
+          const hay = [e.name, e.last_prompt, e.project_name]
+            .filter(Boolean)
+            .join(' ')
+            .toLowerCase();
+          return hay.includes(q);
+        })
+      : projectScoped;
     const sorted = [...filtered];
     sorted.sort((a, b) => {
       const ta = a.last_active_time ? Date.parse(a.last_active_time) : 0;
@@ -137,7 +156,7 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
       return sortDir === 'desc' ? tb - ta : ta - tb;
     });
     return sorted;
-  }, [entries, allProjects, currentProject?.id, sortDir]);
+  }, [entries, allProjects, currentProject?.id, sortDir, query]);
 
   // Drop selections that are no longer visible after a filter change.
   useEffect(() => {
@@ -226,8 +245,18 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
       <DialogContent
         className={cn(
           'flex w-full flex-col overflow-hidden p-4 max-h-[80vh] transition-[max-width] duration-200',
-          peeking ? 'sm:max-w-2xl' : 'sm:max-w-sm',
+          peeking ? 'sm:max-w-3xl' : 'sm:max-w-lg',
         )}
+        onEscapeKeyDown={(e) => {
+          // When the inline filter is open, Esc clears/closes it instead of
+          // dismissing the whole modal — preventDefault here tells Radix's
+          // dismissable layer to not run its onOpenChange(false).
+          if (searchOpen) {
+            e.preventDefault();
+            if (query) setQuery('');
+            else setSearchOpen(false);
+          }
+        }}
       >
         <DialogHeader>
           <div className="flex items-center justify-between gap-2 pr-7">
@@ -268,11 +297,20 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
               </button>
               <button
                 type="button"
-                title="Search all sessions"
-                className="inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+                title="Filter recent sessions"
+                aria-label="Filter recent sessions"
+                aria-pressed={searchOpen}
+                data-testid="history-search-toggle"
+                className={cn(
+                  'inline-flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground',
+                  searchOpen && 'bg-muted text-foreground',
+                )}
                 onClick={() => {
-                  onOpenChange(false);
-                  navigation.openSearch();
+                  setSearchOpen((v) => {
+                    const next = !v;
+                    if (!next) setQuery('');
+                    return next;
+                  });
                 }}
               >
                 <Search className="h-3.5 w-3.5" />
@@ -280,6 +318,38 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
             </div>
           </div>
         </DialogHeader>
+        {searchOpen && (
+          <div
+            className="mt-1 flex items-center gap-1 rounded border border-input bg-background px-2"
+            data-testid="history-search-bar"
+          >
+            <Search className="h-3 w-3 shrink-0 text-muted-foreground" />
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Filter by name or last prompt…"
+              className="h-7 w-full bg-transparent text-[12px] outline-none placeholder:text-muted-foreground/60"
+              data-testid="history-search-input"
+            />
+            {query && (
+              <button
+                type="button"
+                className="inline-flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+                title="Clear filter"
+                aria-label="Clear filter"
+                onClick={() => {
+                  setQuery('');
+                  searchInputRef.current?.focus();
+                }}
+                data-testid="history-search-clear"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            )}
+          </div>
+        )}
         {selectedKeys.size > 0 && (
           <div
             className="mt-1 flex items-center justify-between gap-2 rounded bg-muted/40 px-2 py-1"
@@ -313,15 +383,19 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
             {isLoading && visible.length === 0 ? (
               <p className="py-4 text-center text-xs text-muted-foreground">Loading…</p>
             ) : visible.length === 0 ? (
-              <p className="py-4 text-center text-xs text-muted-foreground">No recent sessions</p>
+              <p className="py-4 text-center text-xs text-muted-foreground">
+                {query.trim() ? 'No matching sessions' : 'No recent sessions'}
+              </p>
             ) : (
               <ul className="mt-1 flex flex-col gap-0.5 overflow-y-auto">
                 <TooltipProvider delayDuration={400}>
                   {visible.map((entry) => {
-                    const subline = buildSubline(entry);
+                    const meta = buildMetaSubline(entry);
+                    const lastPrompt = pickLastPrompt(entry);
                     const key = entryKey(entry);
                     const selected = selectedKeys.has(key);
                     const isPeeking = peekKey === key;
+                    const name = pickName(entry);
                     return (
                       <li
                         key={key}
@@ -342,13 +416,48 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
                         </span>
                         <button
                           className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden rounded px-1.5 py-1.5 text-left text-sm"
-                          onClick={() => onSelect(entry)}
+                          onClick={() => {
+                            if (peeking) {
+                              // Detailed mode: click only changes the previewed row.
+                              setPeekKey(key);
+                            } else {
+                              // Compact mode: click opens the session.
+                              onSelect(entry);
+                            }
+                          }}
+                          onDoubleClick={() => {
+                            // Detailed mode only — double-click commits to opening.
+                            if (peeking) onSelect(entry);
+                          }}
                         >
                           <WorkerIcon workerType={entry.worker_type} />
                           <span className="flex min-w-0 flex-1 flex-col overflow-hidden">
-                            <span className="truncate font-medium">{pickLabelFallback(entry)}</span>
-                            {subline ? (
-                              <span className="truncate text-xs text-muted-foreground">{subline}</span>
+                            {name ? (
+                              <>
+                                <span className="truncate font-medium text-foreground">{name}</span>
+                                {lastPrompt ? (
+                                  <span
+                                    className="truncate text-xs italic text-muted-foreground"
+                                    data-testid="history-row-last-prompt"
+                                  >
+                                    &ldquo;{lastPrompt}&rdquo;
+                                  </span>
+                                ) : null}
+                              </>
+                            ) : lastPrompt ? (
+                              <span
+                                className="truncate text-sm italic text-muted-foreground"
+                                data-testid="history-row-last-prompt"
+                              >
+                                &ldquo;{lastPrompt}&rdquo;
+                              </span>
+                            ) : (
+                              <span className="truncate font-medium italic text-muted-foreground/60">
+                                Untitled session
+                              </span>
+                            )}
+                            {meta ? (
+                              <span className="truncate text-[10px] text-muted-foreground/70">{meta}</span>
                             ) : null}
                           </span>
                           <span
@@ -361,26 +470,23 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
                             </span>
                           </span>
                         </button>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <button
-                              type="button"
-                              className={cn(
-                                'mr-1 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted-foreground/10 hover:text-foreground',
-                                isPeeking && 'bg-muted-foreground/10 text-foreground',
-                              )}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                togglePeek(key);
-                              }}
-                              data-testid="history-row-prompts-button"
-                              aria-label="Prompts list"
-                            >
-                              <MessageSquare className="h-3.5 w-3.5" />
-                            </button>
-                          </TooltipTrigger>
-                          <TooltipContent side="left">Prompts list</TooltipContent>
-                        </Tooltip>
+                        <button
+                          type="button"
+                          className={cn(
+                            'mr-1 inline-flex h-6 shrink-0 items-center gap-1 rounded-md border px-1.5 text-[11px] font-medium shadow-sm transition-colors',
+                            isPeeking
+                              ? 'border-primary bg-primary text-primary-foreground hover:bg-primary/90'
+                              : 'border-border bg-background text-foreground hover:border-muted-foreground/40 hover:bg-muted-foreground/10 hover:text-foreground',
+                          )}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            togglePeek(key);
+                          }}
+                          data-testid="history-row-prompts-button"
+                        >
+                          <MessageSquare className="h-3 w-3" />
+                          <span>Prompts</span>
+                        </button>
                       </li>
                     );
                   })}

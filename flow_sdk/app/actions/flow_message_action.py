@@ -728,8 +728,15 @@ async def _current_cloud_user_id() -> Optional[str]:
 
 
 async def _hub_decline_invitation(invitation_id: str) -> None:
-    from flow_sdk.utils.hub import hub_delete  # noqa: PLC0415
-    await hub_delete(BuiltinEntityType.INVITATION, invitation_id, action="decline")
+    """Class-level action — pending recipients have no entity role yet, so
+    the hub registers ``decline`` as a class-action like ``pending``. We pass
+    the invitation_id in the body."""
+    from flow_sdk.utils.hub import hub_post  # noqa: PLC0415
+    await hub_post(
+        BuiltinEntityType.INVITATION,
+        {"invitation_id": invitation_id},
+        action="decline",
+    )
 
 
 async def _hub_delete_conversation(conv_id: str) -> None:

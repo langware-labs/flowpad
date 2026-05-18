@@ -1,19 +1,13 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { HistoryModal } from '@src/components/terminal/HistoryModal';
 import { useWorkerHistory, type WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
-import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@src/hooks/useWorkerHistory', () => ({
   useWorkerHistory: vi.fn(),
 }));
 
-vi.mock('@src/navigation/useDockNavigation', () => ({
-  useDockNavigation: vi.fn(),
-}));
-
 const mockUseWorkerHistory = vi.mocked(useWorkerHistory);
-const mockUseDockNavigation = vi.mocked(useDockNavigation);
 
 function entry(overrides: Partial<WorkerHistoryEntry>): WorkerHistoryEntry {
   return {
@@ -24,6 +18,7 @@ function entry(overrides: Partial<WorkerHistoryEntry>): WorkerHistoryEntry {
     project_cwd: null,
     last_active_time: '2026-05-06T12:00:00Z',
     name: null,
+    last_prompt: null,
     git_branch: null,
     message_count: null,
     agentic_process_id: null,
@@ -38,11 +33,6 @@ describe('HistoryModal', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockUseDockNavigation.mockReturnValue({
-      navigation: {
-        openSearch: vi.fn(),
-      },
-    } as unknown as ReturnType<typeof useDockNavigation>);
   });
 
   it('renders worker-specific icons for mixed recent sessions', () => {
@@ -71,25 +61,37 @@ describe('HistoryModal', () => {
     expect(document.querySelector('svg[aria-label="Claude"]')).not.toBeNull();
   });
 
-  it('opens broad search from the search button', () => {
-    const openSearch = vi.fn();
-    const onOpenChange = vi.fn();
-    mockUseDockNavigation.mockReturnValue({
-      navigation: {
-        openSearch,
-      },
-    } as unknown as ReturnType<typeof useDockNavigation>);
+  it('filters visible sessions inline by name or last prompt', () => {
     mockUseWorkerHistory.mockReturnValue({
-      entries: [],
+      entries: [
+        entry({
+          worker_id: '22222222-2222-4222-8222-222222222222',
+          name: 'Refactor auth',
+        }),
+        entry({
+          worker_id: '33333333-3333-4333-8333-333333333333',
+          name: null,
+          last_prompt: 'investigate flaky test',
+        }),
+        entry({
+          worker_id: '44444444-4444-4444-8444-444444444444',
+          name: 'Docs cleanup',
+        }),
+      ],
       isLoading: false,
       refetch: vi.fn(),
     });
 
-    render(<HistoryModal open onOpenChange={onOpenChange} onSelect={vi.fn()} />);
+    render(<HistoryModal open onOpenChange={vi.fn()} onSelect={vi.fn()} />);
 
-    fireEvent.click(screen.getByTitle('Search all sessions'));
+    // Toggle filter open and type a query that matches only the middle entry.
+    fireEvent.click(screen.getByTestId('history-search-toggle'));
+    fireEvent.change(screen.getByTestId('history-search-input'), {
+      target: { value: 'flaky' },
+    });
 
-    expect(onOpenChange).toHaveBeenCalledWith(false);
-    expect(openSearch).toHaveBeenCalledWith();
+    expect(screen.getByText(/investigate flaky test/i)).toBeTruthy();
+    expect(screen.queryByText('Refactor auth')).toBeNull();
+    expect(screen.queryByText('Docs cleanup')).toBeNull();
   });
 });

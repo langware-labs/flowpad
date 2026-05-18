@@ -343,10 +343,23 @@ export class SystemToolsService extends EventEmitter {
 
   // ---- scan index (fs-records) ---------------------------------------------
 
-  /** Index a single record type into the entity DB / FTS. */
-  async indexType(typeName: string): Promise<IndexTypeResult> {
+  /** Index a single record type into the entity DB / FTS.
+   *
+   *  Optional second arg `scope` is the unified ScopeFilter ({user, projects});
+   *  when present it's forwarded as `?user=…&projects=…` so the indexer
+   *  narrows its walk to the matching roots. Omit to run a full scan.
+   */
+  async indexType(
+    typeName: string,
+    scope?: { user: boolean; projects: string[] },
+  ): Promise<IndexTypeResult> {
+    const qs = new URLSearchParams({ type: typeName });
+    if (scope) {
+      qs.set('user', scope.user ? 'true' : 'false');
+      qs.set('projects', scope.projects.join(','));
+    }
     const res = await apiClient.post<IndexTypeResult>(
-      `${FS_RECORDS_BASE}/index?type=${encodeURIComponent(typeName)}`,
+      `${FS_RECORDS_BASE}/index?${qs.toString()}`,
     );
     void dataManager.refreshScanInfo();
     return res as unknown as IndexTypeResult;
@@ -432,7 +445,12 @@ export class SystemToolsService extends EventEmitter {
    * flag the local ``currentActivity`` so the footer label phases through
    * Archiving → Clearing → Scanning → Indexing.
    */
-  async resetAndRescan(): Promise<void> {
+  async resetAndRescan(scope?: { user: boolean; projects: string[] }): Promise<void> {
+    // Build the unified scope-filter query string once and reuse on every hop.
+    const scopeQs = scope
+      ? `&user=${scope.user ? 'true' : 'false'}&projects=${encodeURIComponent(scope.projects.join(','))}`
+      : '';
+
     let capturedScanResult: LastScanResult | null = null;
     try {
       this._setActivity('archive');
@@ -443,12 +461,14 @@ export class SystemToolsService extends EventEmitter {
       void dataManager.refreshScanInfo();
 
       this._setActivity('scan');
-      const scanData = await apiClient.get(`${FS_RECORDS_BASE}/scan?trigger=manual`);
+      const scanData = await apiClient.get(
+        `${FS_RECORDS_BASE}/scan?trigger=manual${scopeQs}`,
+      );
       const scanResult = scanData as unknown as LastScanResult;
       if (scanResult?.types) capturedScanResult = scanResult;
 
       this._setActivity('index');
-      await apiClient.post(`${FS_RECORDS_BASE}/index`);
+      await apiClient.post(`${FS_RECORDS_BASE}/index?_=1${scopeQs}`);
     } finally {
       if (capturedScanResult) this.lastScanResult = capturedScanResult;
       this._setActivity(null);

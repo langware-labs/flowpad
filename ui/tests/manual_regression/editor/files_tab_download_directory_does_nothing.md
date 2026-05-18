@@ -1,3 +1,7 @@
+---
+id: 07f1224a-418c-592c-815a-ff112deff4aa
+---
+
 test 1: File explorer shows files and directories correctly (FLOWPAD-1671)
 - navigate to {APP_URL}/dock/explorer
 - wait 3 seconds for the file explorer to load

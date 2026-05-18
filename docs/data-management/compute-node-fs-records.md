@@ -1,3 +1,7 @@
+---
+id: 24f24fb0-9255-56f5-88e6-0f4b77033acc
+---
+
 # ComputeNode `fs-records` Action
 
 This document describes the `fs-records` action registered on the `ComputeNode` entity. It is a unified CRUD gateway for filesystem-backed typed records, providing both type-based routing (by registered record type name) and path-based routing (by source file path on disk).

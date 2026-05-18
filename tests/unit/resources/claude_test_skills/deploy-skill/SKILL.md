@@ -1,4 +1,5 @@
 ---
+id: a45ef8b4-a767-5b53-9a2d-7fd1ecd89046
 name: deploy-skill
 description: Test skill with deployable resources
 version: 1.0.0

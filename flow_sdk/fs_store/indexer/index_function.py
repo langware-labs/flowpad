@@ -369,7 +369,12 @@ class FSIndexer:
 
                 # Track this id as "seen" before any skip/index decision so the
                 # orphan check post-loop won't false-positive a fresh-skip as missing.
-                ref_id = info.record_cls.getId(ref)
+                # genId is the mint-on-first-encounter variant: idempotent if the
+                # file already carries an id in frontmatter, else writes the
+                # currently derived id back so future scans and lookups are
+                # rename-stable. Falls back to getId for record classes that don't
+                # override genId (base class default keeps genId == getId).
+                ref_id = info.record_cls.genId(ref)
                 if ref_id:
                     seen_ids.setdefault(ref.record_type, set()).add(ref_id)
 

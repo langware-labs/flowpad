@@ -1,3 +1,7 @@
+---
+id: f59c4fcb-2d75-5fab-81ac-bdff4302e9e0
+---
+
 # PTY, Shell State, and WebSocket Transport
 
 Reference for the current PTY stack: Shell-owned state, backend PTY sessions,
