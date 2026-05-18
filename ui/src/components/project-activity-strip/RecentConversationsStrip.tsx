@@ -1,21 +1,25 @@
 import {
   Conversation,
   FlowMessage,
+  FlowMessageKind,
+  Invitation,
   Project,
   QueryRequest,
   Task,
   TypeId,
+  User,
   acceptInvitation,
   dismissConversation,
   fetchConversations,
+  isTypeId,
 } from '@sdk';
+import { useAuth } from '@sdk/react/hooks';
 import { uploadFlowMessage, type UploadConflict } from '@sdk/entities/flow-message';
 import { useEntitiesQuery, useEntity } from '@src/hooks/entity-hooks';
 import { useLoginRequired } from '@src/hooks/use-login-required';
 import LoginDialog, { ActionType } from '@src/components/login-required-dialog';
 import { NewConversationDialog } from '@src/components/new-conversation-dialog/NewConversationDialog';
 import { deriveConversationTitle } from '@src/components/conversation/conversation-title';
-import { participantLabelByUserId } from '@src/components/conversation/participant-display';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Archive, EyeOff, MailPlus, MessageSquare, Plus, RefreshCw, Upload } from 'lucide-react';
@@ -24,6 +28,42 @@ import { bulkUpdateMessages } from '@src/components/inbox-view/inbox-api';
 import { formatTimeAgo } from './project-activity-utils';
 
 const VISIBLE_COUNT = 5;
+
+/**
+ * Build the "from <name> <email>" label for a conversation row from a resolved
+ * User entity, falling back to a denormalized name string (e.g. a message's
+ * ``sender_name``) when the User isn't available. Returns null when neither a
+ * name nor an email can be determined.
+ */
+function formatSenderLabel(
+  user: User | null | undefined,
+  fallbackName?: string | null,
+): string | null {
+  const name = user?.name?.trim() || fallbackName?.trim() || '';
+  const email = user?.email?.trim() || '';
+  if (!name && !email) return null;
+  if (name && email) return `from ${name} <${email}>`;
+  return `from ${name || email}`;
+}
+
+/**
+ * Extract the sender's display name from an auto-generated conversation title.
+ * NewConversationDialog builds titles as "<sender>, <recipient>[, …] - <date>",
+ * so the leading segment before the first comma is the conversation
+ * originator. This is the only place the sender's display name is reliably
+ * stored — the conversation row and its messages carry only the recipient.
+ * Returns null for custom titles (no "<comma> … - <date>" shape) so callers
+ * can fall back to a resolved User.
+ */
+function parseSenderFromTitle(title: string | null | undefined): string | null {
+  if (!title) return null;
+  const trimmed = title.trim();
+  const comma = trimmed.indexOf(',');
+  // Require both the comma and the " - " date separator so custom titles
+  // ("Hello, world") aren't mistaken for the auto-generated shape.
+  if (comma <= 0 || !trimmed.includes(' - ')) return null;
+  return trimmed.slice(0, comma).trim() || null;
+}
 
 interface RecentConversationsStripProps {
   /** Optional cap on rows visible before "Open all" appears. Defaults to 5. */
@@ -327,6 +367,7 @@ function ConversationRow({
   onHiddenChange,
 }: ConversationRowProps) {
   const { navigation } = useDockNavigation();
+  const { cloudUser, currentUser } = useAuth();
   const projectTypeId = useMemo(
     () => (conv.project_id ? new TypeId(Project.type, conv.project_id) : null),
     [conv.project_id],
@@ -357,12 +398,53 @@ function ConversationRow({
   const { data: firstMessage } = useEntity<FlowMessage>(firstTypeId);
   const { data: latestMessage } = useEntity<FlowMessage>(lastTypeId);
 
-  const isInvitationRow = firstMessage?.kind === 'invitation';
   const invitationTypeId = useMemo(
     () => firstMessage?.firstContextOfType?.('invitation') ?? null,
     [firstMessage],
   );
   const invitationId = invitationTypeId?.id ?? null;
+  const { data: invitation } = useEntity<Invitation>(invitationTypeId);
+
+  // Resolve the conversation creator (the sender) to a User so the row can
+  // render "from <name> <email>" rather than a raw id. ``created_by`` may be
+  // "system" for machine-generated conversations — skip the lookup then.
+  const creatorTypeId = useMemo(
+    () => (conv.created_by && conv.created_by !== 'system'
+      ? new TypeId(User.type, conv.created_by)
+      : null),
+    [conv.created_by],
+  );
+  const { data: creatorUser } = useEntity<User>(creatorTypeId);
+
+  // Resolve the latest message's sender too — for an ongoing (non-invitation)
+  // conversation the "from" line tracks whoever spoke last.
+  const latestSenderTypeId = useMemo(
+    () => (latestMessage?.sender_id && latestMessage.sender_id !== 'system'
+      ? new TypeId(User.type, latestMessage.sender_id)
+      : null),
+    [latestMessage?.sender_id],
+  );
+  const { data: latestSenderUser } = useEntity<User>(latestSenderTypeId);
+
+  // The current user's identity — cloud email when logged in, else local.
+  const myEmail = (cloudUser?.email || currentUser?.email || '').trim().toLowerCase();
+  // Invitation conversations carry only the recipient(s) in ``participants``
+  // (the sender is absent), so email membership cleanly answers "was I
+  // invited to this?" vs "did I send this?".
+  const isParticipant =
+    !!myEmail &&
+    (conv.participants ?? []).some((p) => p.email?.trim().toLowerCase() === myEmail);
+
+  // An invitation row (Accept CTA, no navigation) is shown ONLY to the
+  // *recipient* of a still-pending invitation. The sender always sees a
+  // normal conversation row; once the recipient accepts, ``invitation.accepted``
+  // flips true via the WS entity update and the row collapses to the normal
+  // conversation for them too. The first message stays ``kind === 'invitation'``
+  // forever, so it can't drive this on its own.
+  const isInvitationRow =
+    firstMessage?.kind === FlowMessageKind.INVITATION &&
+    !invitation?.accepted &&
+    isParticipant;
 
   // Both timestamps use the same auto-revive-on-new-message pattern:
   // compare the stamp against the latest pointer's ``ts`` (available
@@ -395,18 +477,30 @@ function ConversationRow({
   const messageCount = conv.message_count ?? 0;
   const projectLabel = project?.displayName ?? null;
   const taskTitle = task?.title?.trim() || null;
+  const derivedTitle = deriveConversationTitle(conv);
   const title = isInvitationRow
     ? 'Invitation'
-    : (taskTitle ?? deriveConversationTitle(conv));
+    : (taskTitle ?? (isTypeId(derivedTitle) ? 'Conversation' : derivedTitle));
   const taskFirstWord = taskTitle ? taskTitle.split(/\s+/)[0] : null;
-  const previewText = isInvitationRow
-    ? (firstMessage?.text?.trim() || 'You’ve been invited to a conversation')
-    : (latestMessage?.text?.trim().split('\n').find((l) => l.trim()) ?? null);
-  const fromName = isInvitationRow
-    ? null
-    : (participantLabelByUserId(conv.participants, latestMessage?.sender_id)
-      ?? latestMessage?.sender_name?.trim()
-      ?? null);
+  // Preview text: an invitation preview's body is often just the raw
+  // ``conversation-<uuid>`` typeid — never surface that; use a friendly
+  // fallback instead.
+  const rawPreview = isInvitationRow
+    ? firstMessage?.text?.trim()
+    : latestMessage?.text?.trim().split('\n').find((l) => l.trim());
+  const previewText = isTypeId(rawPreview)
+    ? (isInvitationRow ? 'You’ve been invited to a conversation' : null)
+    : (rawPreview || (isInvitationRow ? 'You’ve been invited to a conversation' : null));
+  // "from <sender>" — the sender is the conversation originator. Auto-built
+  // titles ("<sender>, <recipient> - <date>") carry the originator's display
+  // name as their leading segment, which is the only place it is reliably
+  // stored; prefer that. Fall back to a resolved User (real message sender,
+  // then creator) for conversations whose title is custom.
+  const titleSender = parseSenderFromTitle(conv.title);
+  const fromName = titleSender
+    ? `from ${titleSender}`
+    : (formatSenderLabel(latestSenderUser, latestMessage?.sender_name)
+      ?? formatSenderLabel(creatorUser, null));
 
   const handleClick = () => {
     if (isInvitationRow) return; // primary CTA is Accept; don't navigate
