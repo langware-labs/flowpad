@@ -380,6 +380,21 @@ export async function createTaskBundle(params: CreateTaskBundleParams): Promise<
   return res!;
 }
 
+/**
+ * Download + unpack a FlowMessage's body bundle by id. The local backend
+ * pulls the ``.flowmsg`` from the hub and unpacks it, so every FILE / PROMPT
+ * attachment materializes under the message's VFS. After this resolves the
+ * FM's ``attachment[].local_path`` fields are populated and an entity UPDATE
+ * fans out — the conversation UI re-renders the chips as DOWNLOADED.
+ *
+ * Standalone (vs. ``FlowMessage.downloadBody``) so call sites holding only a
+ * message id — like a chip click handler — don't need a live entity instance.
+ */
+export async function downloadFlowMessageBody(messageId: string): Promise<void> {
+  const action = new ActionInfo('download_body', FlowMessage.type, messageId, 'POST');
+  await dataManager.callAction<unknown, unknown>(action);
+}
+
 export interface MarkResult {
   updated?: string[];
   skipped?: Array<{ id: string; reason: string; current?: string }>;
