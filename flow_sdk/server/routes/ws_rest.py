@@ -61,6 +61,14 @@ async def setup_rest_context(connection_id: str, message_json: dict) -> Executio
         context_name="WS_REST",
     )
 
+    # Publish the context BEFORE reading request info. get_current_request_info()
+    # resolves via the execution-context contextvar — if we set it only at the
+    # end (as before), the auth block below mutated a STALE RequestInfo from a
+    # prior WS message (or None on the first), leaving THIS request's
+    # request_info.user unset. handle_request then ran with no authenticated
+    # user, so every mutation action (e.g. add_message) failed auth.
+    set_execution_context(execution_context)
+
     # Set up local auth (allow all for minihub)
     req_info = get_current_request_info()
     if req_info:
@@ -100,7 +108,6 @@ async def setup_rest_context(connection_id: str, message_json: dict) -> Executio
         from flow_sdk.core.policy import PolicyResolver
         req_info.policies = PolicyResolver()
 
-    set_execution_context(execution_context)
     return execution_context
 
 
