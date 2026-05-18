@@ -1,6 +1,7 @@
 import { ContextEntitiesEnum, dataContext, Project } from '@sdk';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
+import { toast } from '@src/hooks/use-toast';
 import { useAllTerminals, type TerminalTab } from '@src/hooks/useActiveTerminals';
 import { Layers } from 'lucide-react';
 import React, { useMemo, useState } from 'react';
@@ -91,8 +92,19 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({ curren
 
   const handleSelect = async (row: Row) => {
     setOpen(false);
-    const project = Project.getByIdFromCache<Project>(row.projectId);
-    if (!project) return;
+    // Cache miss on initial hydration is normal; fall through to a network
+    // fetch before treating the project as truly missing.
+    const project =
+      Project.getByIdFromCache<Project>(row.projectId) ??
+      (await Project.getById<Project>(row.projectId).catch(() => null));
+    if (!project) {
+      toast({
+        title: 'Project no longer exists',
+        description: `${row.tabs.length} terminal${row.tabs.length === 1 ? '' : 's'} reference a deleted project (${row.projectId.slice(0, 8)}). Close them from the tab strip.`,
+        variant: 'destructive',
+      });
+      return;
+    }
     // Pure context flip — TabbedTerminal self-heals: when its active shell
     // falls out of the new project's strip, it picks the first tab and
     // updates URL + activeShellId. Keeps this chip's concern minimal.
@@ -117,6 +129,9 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({ curren
               >
                 <Layers className="h-3 w-3" />
                 {projectTotal}
+                <sub className="ml-0.5 text-[9px] leading-none text-muted-foreground">
+                  {terminalTotal}
+                </sub>
               </button>
             </PopoverTrigger>
           </TooltipTrigger>

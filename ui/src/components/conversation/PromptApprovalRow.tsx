@@ -206,7 +206,7 @@ export function PromptApprovalRow({
           onClick={onViewPlan}
           title="Open the spec in the Milkdown editor"
           data-testid="message-bubble-view-plan"
-          className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border border-border bg-background px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border border-blue-400/40 bg-blue-500/10 px-2.5 text-xs font-medium text-blue-400 transition-colors hover:border-blue-400 hover:bg-blue-500/15 hover:text-blue-300"
         >
           <Eye className="h-3 w-3" />
           View Plan
