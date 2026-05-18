@@ -1,4 +1,5 @@
 import { Conversation, FlowMessage, FlowMessageKind, TypeId, User } from '@sdk';
+import { isValidIdentifier } from '@sdk/models/TypeId';
 import { useEntity } from '@sdk/react/hooks';
 import { useState } from 'react';
 import type { ITask } from '@sdk/entities/task';
@@ -67,8 +68,12 @@ export function FlowMessageBubble({
   // Resolve the message author via `created_by`. Used as the sender-name
   // fallback for messages that carry no `sender_id`/`sender_name` — notably
   // the invitation-kind placeholder, whose author is the inviter.
+  // `created_by` can be a non-entity sentinel (e.g. "system") for hub-authored
+  // messages — guard so the TypeId constructor doesn't throw on those.
   const { data: creator } = useEntity<User>(
-    fm?.created_by ? new TypeId(User.type, fm.created_by) : null,
+    fm?.created_by && isValidIdentifier(fm.created_by)
+      ? new TypeId(User.type, fm.created_by)
+      : null,
   );
   const { localUser, updateName } = useLocalUser();
   const [overrideName, setOverrideName] = useState<string | null>(null);
