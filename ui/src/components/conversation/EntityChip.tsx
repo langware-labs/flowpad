@@ -21,6 +21,9 @@ export interface EntityChipEntity {
   name?: string | null;
   /** Optional Lucide icon override. We pick a sensible default by entity.type otherwise. */
   icon?: LucideIcon;
+  /** Asset entities (skill / agent / markdown) open in the Assets editor by
+   *  their VFS path — pass it here. Falls back to the entity id when absent. */
+  assetRef?: string | null;
 }
 
 interface EntityChipProps {
@@ -120,10 +123,14 @@ export function EntityChip({ entity, inside, onClick, title, size = 'chip' }: En
         return;
       }
       if (!resolved || !resolved.id) return;
-      const pointer = buildDockPointer(resolved as { type: string; id: string }, inside);
+      const pointer = buildDockPointer(
+        resolved as { type: string; id: string },
+        inside,
+        entity.assetRef ?? undefined,
+      );
       if (pointer) navigation.openDock(pointer);
     };
-  }, [onClick, resolved, inside, navigation]);
+  }, [onClick, resolved, inside, navigation, entity.assetRef]);
 
   const baseLayout =
     size === 'chip'
@@ -155,6 +162,7 @@ export function EntityChip({ entity, inside, onClick, title, size = 'chip' }: En
 function buildDockPointer(
   resolved: { type: string; id: string },
   inside: { type: string; id: string } | undefined,
+  assetRef?: string,
 ): DockPointer | null {
   switch (resolved.type) {
     case 'project':
@@ -165,6 +173,13 @@ function buildDockPointer(
       return DockPointer.forSpec(resolved.id);
     case 'conversation':
       return DockPointer.forConversation(resolved.id);
+    // Asset entities open in the Assets editor. They are addressed by VFS
+    // path; fall back to the entity id when the asset_ref isn't known yet
+    // (the Assets editor resolves an id ref the same way Skill.editorDockPointer does).
+    case 'skill':
+    case 'agent':
+    case 'markdown':
+      return DockPointer.forAssetEditor(resolved.type, assetRef || resolved.id);
     default:
       try {
         return DockPointer.fromUrl(resolved.type, resolved.id);
@@ -198,9 +213,13 @@ interface ContextEntityChipProps {
 export function ContextEntityChip({ typeId, inside, onClick, title, size }: ContextEntityChipProps) {
   const { data } = useEntity<APIEntity<any>>(typeId);
   const resolvedName = data?.displayName ?? typeId.toString();
+  // Asset entities (skill / agent / markdown) carry an `asset_ref` VFS path —
+  // the address the Assets editor opens. Forward it so the chip navigates to
+  // the real file rather than falling back to the bare entity id.
+  const assetRef = (data as unknown as { asset_ref?: string | null })?.asset_ref ?? null;
   return (
     <EntityChip
-      entity={{ typeId, type: typeId.type, id: typeId.id, name: resolvedName }}
+      entity={{ typeId, type: typeId.type, id: typeId.id, name: resolvedName, assetRef }}
       inside={inside}
       onClick={onClick}
       title={title}
