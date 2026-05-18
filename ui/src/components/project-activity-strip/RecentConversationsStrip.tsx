@@ -65,6 +65,20 @@ function parseSenderFromTitle(title: string | null | undefined): string | null {
   return trimmed.slice(0, comma).trim() || null;
 }
 
+/**
+ * Extract the participant list from an auto-generated conversation title
+ * ("<sender>, <recipient>[, …] - <date>") by dropping the trailing date
+ * suffix — yielding the "<sender>, <recipient>" portion. Returns null for
+ * custom titles that don't follow the shape so callers can fall back.
+ */
+function parseParticipantsFromTitle(title: string | null | undefined): string | null {
+  if (!title) return null;
+  const trimmed = title.trim();
+  const dateSep = trimmed.lastIndexOf(' - ');
+  if (dateSep <= 0 || !trimmed.includes(',')) return null;
+  return trimmed.slice(0, dateSep).trim() || null;
+}
+
 interface RecentConversationsStripProps {
   /** Optional cap on rows visible before "Open all" appears. Defaults to 5. */
   visibleCount?: number;
@@ -416,16 +430,6 @@ function ConversationRow({
   );
   const { data: creatorUser } = useEntity<User>(creatorTypeId);
 
-  // Resolve the latest message's sender too — for an ongoing (non-invitation)
-  // conversation the "from" line tracks whoever spoke last.
-  const latestSenderTypeId = useMemo(
-    () => (latestMessage?.sender_id && latestMessage.sender_id !== 'system'
-      ? new TypeId(User.type, latestMessage.sender_id)
-      : null),
-    [latestMessage?.sender_id],
-  );
-  const { data: latestSenderUser } = useEntity<User>(latestSenderTypeId);
-
   // The current user's identity — cloud email when logged in, else local.
   const myEmail = (cloudUser?.email || currentUser?.email || '').trim().toLowerCase();
   // The recipient is named directly on the Invitation entity. Matching against
@@ -491,16 +495,15 @@ function ConversationRow({
   const previewText = isTypeId(rawPreview)
     ? (isInvitationRow ? 'You’ve been invited to a conversation' : null)
     : (rawPreview || (isInvitationRow ? 'You’ve been invited to a conversation' : null));
-  // "from <sender>" — the sender is the conversation originator. Auto-built
-  // titles ("<sender>, <recipient> - <date>") carry the originator's display
-  // name as their leading segment, which is the only place it is reliably
-  // stored; prefer that. Fall back to a resolved User (real message sender,
-  // then creator) for conversations whose title is custom.
+  // Row label. A pending invitation shows "from <sender>" so the recipient
+  // sees who invited them. An accepted / ongoing conversation instead lists
+  // the participants ("Alice, bob@local.test"). Both are carried by the
+  // auto-generated title "<sender>, <recipient>[, …] - <date>"; custom titles
+  // fall through to the conversation title itself.
   const titleSender = parseSenderFromTitle(conv.title);
-  const fromName = titleSender
-    ? `from ${titleSender}`
-    : (formatSenderLabel(latestSenderUser, latestMessage?.sender_name)
-      ?? formatSenderLabel(creatorUser, null));
+  const fromName = isInvitationRow
+    ? (titleSender ? `from ${titleSender}` : formatSenderLabel(creatorUser, null))
+    : parseParticipantsFromTitle(conv.title);
 
   const handleClick = () => {
     if (isInvitationRow) return; // primary CTA is Accept; don't navigate
