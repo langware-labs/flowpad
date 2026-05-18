@@ -34,6 +34,11 @@ interface AssetPickerPopoverProps {
   /** Required when `open` is provided. Called when the popover should close
    *  or open (e.g. user clicks outside, or after `onPick`). */
   onOpenChange?: (open: boolean) => void;
+  /** Preferred side to open on. Defaults to `'bottom'`. Pass `'top'` when the
+   *  trigger sits near the bottom of the viewport (e.g. a message composer)
+   *  so the picker opens upward and its contents stay visible. Collision
+   *  detection still flips it back if there's no room on the preferred side. */
+  side?: 'top' | 'bottom';
 }
 
 const DEFAULT_FILTER = (d: AssetDescriptor): boolean =>
@@ -55,6 +60,7 @@ export function AssetPickerPopover({
   searchPlaceholder = 'Search agents and skills…',
   open: controlledOpen,
   onOpenChange,
+  side = 'bottom',
 }: AssetPickerPopoverProps) {
   const isControlled = controlledOpen !== undefined;
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
@@ -153,6 +159,7 @@ export function AssetPickerPopover({
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
       <PopoverContent
         align="end"
+        side={side}
         sideOffset={4}
         collisionPadding={8}
         className="flex max-h-[min(calc(100vh-6rem),var(--radix-popover-content-available-height))] w-96 flex-col p-0"
