@@ -100,6 +100,11 @@ export function groupEntriesByTurn(entries: GenericEntry[]): UnifiedEntry[] {
   // python side dedups USAGE on those); the duplicates have no adjacent
   // token_usage and would otherwise render as cost-less ghost rows.
   const seenMessageIds = new Set<string>();
+  // For codex transcripts: trailing token_usage entries (turn summary
+  // emitted as a separate response_item) get attached back to the most
+  // recent assistant/operation row in `out`. The map keys by that row's
+  // id so we can accumulate multiple per-dim entries and re-aggregate.
+  const trailingUsage = new Map<string, Array<GenericEntry & { kind: 'token_usage' }>>();
   let i = 0;
   while (i < entries.length) {
     const e = entries[i];
@@ -163,8 +168,28 @@ export function groupEntriesByTurn(entries: GenericEntry[]): UnifiedEntry[] {
       i = j;
       continue;
     }
-    // Standalone token_usage (no immediate assistant anchor) → drop.
-    if (e.kind === 'token_usage') { i++; continue; }
+    // Standalone token_usage. Two shapes:
+    //   • Claude: usage entries land adjacent to their assistant/operation
+    //     line and are picked up by the in-loop sub-walk above. None should
+    //     fall through here.
+    //   • Codex: usage is emitted as a *turn summary* on its own response_item
+    //     line, with a base id that doesn't match any earlier message line.
+    //     Attach it to the most recent assistant/operation in `out` so a
+    //     codex turn's cost lands on the row the user actually sees.
+    if (e.kind === 'token_usage') {
+      for (let k = out.length - 1; k >= 0; k--) {
+        const anchor = out[k];
+        if (anchor.role !== 'assistant' && anchor.role !== 'operation') continue;
+        const buf = trailingUsage.get(anchor.id) ?? [];
+        buf.push(e as GenericEntry & { kind: 'token_usage' });
+        trailingUsage.set(anchor.id, buf);
+        const merged = aggregateUsage(buf);
+        if (merged) anchor.usage = merged;
+        break;
+      }
+      i++;
+      continue;
+    }
     // Everything else (system, meta, summary, unknown): one row each.
     const projected = projectGroup([e]);
     if (projected) out.push(projected);

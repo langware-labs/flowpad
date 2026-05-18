@@ -47,9 +47,8 @@ Typing into the asset-manager list filter threw `TypeError: (d.posix_path ?? "")
 
 **Phase 8 manual regression triage** — drove 41 failures down to ~13 in 4 rerun rounds. Recurring patterns and one-line fixes:
 
-- **WelcomeModal Radix overlay blocks home-page clicks after DB clear** — `dismissSetupModal` helpers must also pre-set `localStorage['flowpad-index-approved']='1'`. The WelcomeModal opens when bootstrap returns `scanInfo.never_indexed=true`; its overlay intercepts pointer events on home buttons. Updated `chat/helpers.ts`, `terminal/helpers.ts`, `triggers/helpers.ts`, plus the inline setup() functions in memo-panel and search tests.
-- **Hardcoded `localhost:9007` in many test API calls** — actual port is 9008 in this env. `sed -i '' 's|localhost:9007|localhost:9008|g'` across all `.md.ts` files. Also fixed the `apiUrl` memoization in `HomeLanding.tsx` to use the vite-time `__API_URL__` define instead of a hardcoded `9007` string.
-- **MemoIframeModal was imported but never rendered in `HomeLanding.tsx`** — added a "Memo panel" button (data-testid="open-memo-panel-btn") next to the Community-assistance button and rendered `<MemoIframeModal>` driven by the existing `memoPanelOpen` state.
+- **WelcomeModal Radix overlay blocks home-page clicks after DB clear** — `dismissSetupModal` helpers must also pre-set `localStorage['flowpad-index-approved']='1'`. The WelcomeModal opens when bootstrap returns `scanInfo.never_indexed=true`; its overlay intercepts pointer events on home buttons. Updated `chat/helpers.ts`, `terminal/helpers.ts`, `triggers/helpers.ts`, plus the inline setup() functions in search tests.
+- **Hardcoded `localhost:9007` in many test API calls** — actual port is 9008 in this env. `sed -i '' 's|localhost:9007|localhost:9008|g'` across all `.md.ts` files.
 - **Terminal ribbon shrunk from 5 → 4 buttons** — Shell + Queue removed, Dir added. Tests `git_status_panel.md.ts` and `prompt_index_panel.md.ts` rebased their nth() indices and `toHaveCount`.
 - **Schedule triggers without project_id are still filtered out of TriggersView** (re-confirmed from prior cycle's note) — tests creating triggers via API must POST with `project_id: <bootstrap default_project.id>`.
 - **DirectoryTree selection didn't sync until expansion completed** — `DirectoryTree.tsx` now calls `tree.selectItem(selectedPath)` synchronously alongside the async `expandParentsForPath`.
@@ -59,11 +58,10 @@ Typing into the asset-manager list filter threw `TypeError: (d.posix_path ?? "")
 
 **Real product bugs left in Phase 8 (skipped or unfixed, tracked separately)**:
 - `routePlainShellPointer.cachedEntitiesByType` doesn't reliably surface a linked AgenticProcess on cold navigation → 2 tests skipped (`agentic_process_visible_restored_on_load`, `shell_url_recovers_linked_process`) and 1 related test (`_resume_revalidate_v3`) skipped.
-- MemoIframeModal MCP UI handshake — 7 iframe-content tests fail; the `[data-testid="memo-iframe-container"]` div mounts but no `iframe-memo-input` ever appears.
 - `scan_records_viewer.md.ts` — 3 tests time out waiting for a `<table>` after clicking Rescan. API works (`/scan?limit_types=5` returns 17200 records); the per-type-loop variant the UI runs may stall on Vite proxy or WS event flow.
 
 **Original 41-failure tally — pre-fix**:
-- `element(s) not found` / `toBeVisible failed` — selector drift in memo-panel, general, terminal
+- `element(s) not found` / `toBeVisible failed` — selector drift in general, terminal
 - triggers: `strict mode violation` — `text=Schedule Triggers` matches 2 elements (UI duplicated)
 - skills: 404 on `user-<uuid>` from `store.ts`
 - agentic-process: `page.waitForURL` timeout — navigation never resolves

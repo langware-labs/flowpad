@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import apiClient from '@sdk/client';
+import { applyScopeToParams, scopeFilterKey, type ScopeFilter } from '@src/lib/scope-filter';
 
 const STATUS_PATH = '/graph/compute_node/@local/fs-records/index-status';
 
@@ -38,12 +39,25 @@ const EMPTY_STATUS: IndexStatus = {
   total_orphans: 0,
 };
 
-export function useIndexStatus(): UseIndexStatusResult {
+/**
+ * Fetch `/fs-records/index-status` (optionally scoped by ScopeFilter so the
+ * per-type entity_count and orphan_count narrow to the same row set the
+ * assets/scanner surface is acting on).
+ */
+export function useIndexStatus(scope?: ScopeFilter): UseIndexStatusResult {
   const [state, setState] = useState<IndexStatusState>({ phase: 'loading' });
 
+  const scopeKey = scope ? scopeFilterKey(scope) : '';
+
   const refresh = useCallback(() => {
+    let url = STATUS_PATH;
+    if (scope) {
+      const p = new URLSearchParams();
+      applyScopeToParams(p, scope);
+      url = `${STATUS_PATH}?${p.toString()}`;
+    }
     apiClient
-      .get(STATUS_PATH)
+      .get(url)
       .then((data: unknown) => {
         // Defensive: if the API returns null/undefined or shape unexpectedly
         // lacks fields, fall back to EMPTY_STATUS — never expose a null
@@ -73,7 +87,10 @@ export function useIndexStatus(): UseIndexStatusResult {
         // On error assume ok — don't block search
         setState({ phase: 'ready', status: EMPTY_STATUS });
       });
-  }, []);
+    // scopeKey is part of useCallback's dep list so refresh changes identity
+    // when the chip changes — useEffect below picks that up and re-fetches.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scopeKey]);
 
   useEffect(() => {
     refresh();

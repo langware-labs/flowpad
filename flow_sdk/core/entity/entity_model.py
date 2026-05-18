@@ -260,7 +260,11 @@ class Entity(DBEntity):
         entity_cls = SchemaRegistry.get_entity_cls(record_type) or cls
         data = record.meta_dict()
         entity_uuid = entity_cls.allocate_id(data)
-        entity = await entity_cls.get_one(QueryFilter.parse({"id": entity_uuid}))
+        # Filter by the *record's* type, not entity_cls.get_type(). The latter
+        # is "entity" when entity_cls falls back to base Entity (most types
+        # have no registered subclass), which would miss the existing typed
+        # row and force a duplicate-create path that silently drops writes.
+        entity = await entity_cls.get_one(QueryFilter.parse({"id": entity_uuid}, record_type))
 
         # Collect domain fields the entity understands but meta_dict() omits.
         # Only fetch the SPECIFIC missing fields — never call to_dict(), which on
@@ -315,6 +319,10 @@ class Entity(DBEntity):
                 if field is not None:
                     v = TypeAdapter(field.annotation).validate_python(v)
                 setattr(entity, k, v)
+            # from_record is the disk→DB sync path; updated_date must advance to
+            # "now" so the indexer's skip-fresh check (file_mtime ≤ updated_date)
+            # can detect the next change. Reset so apply_update_fields stamps it.
+            entity._db.reset_update_fields(entity)
 
         # Propagate PropertyRecord values to matching entity fields
         already_set = set(data.keys()) | set(record_domain.keys())

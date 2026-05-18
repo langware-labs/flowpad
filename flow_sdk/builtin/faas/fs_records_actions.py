@@ -505,13 +505,27 @@ class FsRecordsActionsMixin:
     async def _handle_fs_records_index_status(self, request_info) -> ApiResponse:
         """Return index freshness info.
 
-        GET /fs-records/index-status
+        GET /fs-records/index-status[?user=&projects=]
+
+        When the unified ScopeFilter (?user=&projects=) is present, per-type
+        ``entity_count`` and ``orphan_count`` (and the rolled-up
+        ``total_orphans``) shrink to the scoped subset. The freshness fields
+        (``last_indexed_at``, ``stale``) are unaffected — those derive from
+        per-type indexer-run timestamps, not from row counts.
         """
         from dataclasses import asdict  # noqa: PLC0415
 
         from flow_sdk.fs_records.schema_record import SchemaRecord  # noqa: PLC0415
+        from flow_sdk.server.search_filters import ScopeFilter  # noqa: PLC0415
 
-        status = await SchemaRecord.get_index_status()
+        qp = request_info.request.query_params
+        scope_filter = (
+            ScopeFilter.from_query_params(qp)
+            if (qp.get("user") is not None or qp.get("projects") is not None)
+            else None
+        )
+
+        status = await SchemaRecord.get_index_status(scope=scope_filter)
         return ApiSuccessResponse(
             data={
                 "never_indexed": status.never_indexed,
@@ -545,6 +559,16 @@ class FsRecordsActionsMixin:
         qp = request_info.request.query_params
         filter_type = qp.get("type", "").strip()
         target_types = [filter_type] if filter_type else SchemaRegistry.get_all_record_types()
+
+        # Optional ScopeFilter narrows the delete to a subset of rows per type
+        # (e.g. only one project's markdown). Without these params the clear
+        # is full per type, matching legacy behaviour.
+        from flow_sdk.server.search_filters import ScopeFilter  # noqa: PLC0415
+        scope_filter = (
+            ScopeFilter.from_query_params(qp)
+            if (qp.get("user") is not None or qp.get("projects") is not None)
+            else None
+        )
 
         try:
             activity = self._start_activity("clear", timeout_seconds=120)
@@ -593,18 +617,29 @@ class FsRecordsActionsMixin:
                 current_type = type_name
                 await emit()
                 if hasattr(driver, "delete_entities_by_type"):
-                    n = await driver.delete_entities_by_type(type_name)
+                    try:
+                        n = await driver.delete_entities_by_type(type_name, scope=scope_filter)
+                    except TypeError:
+                        # Driver predates the scope kwarg — fall back to unscoped delete
+                        # (only happens when scope_filter is None).
+                        n = await driver.delete_entities_by_type(type_name)
                     entities_cleared += n
-                sanitized = _sanitize_type_name(type_name)
-                log_file = _schema_dir() / "types" / sanitized / "index_log.jsonl"
-                if log_file.exists():
-                    log_file.unlink()
-                await RecordError.clear_for_type(type_name)
+                # The per-type index_log is a wall-clock record of indexer runs;
+                # only unlink it on a full (unscoped) clear of that type so a
+                # scoped clear doesn't lose history about the OTHER scope.
+                if scope_filter is None:
+                    sanitized = _sanitize_type_name(type_name)
+                    log_file = _schema_dir() / "types" / sanitized / "index_log.jsonl"
+                    if log_file.exists():
+                        log_file.unlink()
+                    await RecordError.clear_for_type(type_name)
                 per_type_done[type_name] = 1
                 await emit()
 
             # When clearing everything, also clear the FTS index and the global log.
-            if not filter_type and hasattr(driver, "fts_clear"):
+            # Skip on scoped clears — FTS clear is all-or-nothing and would wipe
+            # rows that are still alive in the un-targeted scope.
+            if not filter_type and scope_filter is None and hasattr(driver, "fts_clear"):
                 fts_cleared = await driver.fts_clear()
                 global_log = _schema_dir() / "index_log.jsonl"
                 if global_log.exists():

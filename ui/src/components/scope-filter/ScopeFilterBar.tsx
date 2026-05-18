@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Filter } from 'lucide-react';
-import type { ScopeFilter } from './assetFilter';
-import { ProjectPickerModal } from './ProjectPickerModal';
+import type { ScopeFilter } from '@src/lib/scope-filter';
+import { ProjectPickerModal } from '@src/components/assets/ProjectPickerModal';
 import { ScopeBar, type ScopeBarOption } from '@src/components/ui/scope-bar';
 
 /**
