@@ -170,8 +170,18 @@ export function FlowMessageBubble({
   // pinned only on this row (not the whole conv). De-duped against the
   // TYPE_ID attachment row so we don't render the same chip twice.
   const attachmentChipKeys = new Set(typeIdAttachments.map((t) => `${t.type}-${t.id}`));
+  // A PROMPT attachment carries its source conversation + FlowMessage in
+  // context_entities as provenance. Those are implicit (the message already
+  // lives inside that conversation) and just clutter the chip row, so drop
+  // conversation / flow_message chips on prompt messages.
+  const hasPromptAttachment = (fm.attachment ?? []).some(
+    (a) => a.attachment_type === AttachmentType.PROMPT,
+  );
   const contextChips: TypeId[] = (fm.contextEntities ?? []).filter((t) => {
     if (!t || !t.type || !t.id) return false;
+    if (hasPromptAttachment && (t.type === Conversation.type || t.type === FlowMessage.type)) {
+      return false;
+    }
     return !attachmentChipKeys.has(`${t.type}-${t.id}`);
   });
 

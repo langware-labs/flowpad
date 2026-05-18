@@ -9,6 +9,7 @@ to the hub through ``FlowpadClient`` using the stored cloud credentials.
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from json import JSONDecodeError
 
@@ -115,20 +116,33 @@ async def conversation_add_message() -> ApiSuccessResponse:
         context_entities=context_entities,
     )
 
-    # Sender-side local materialize was REMOVED here. ``materialize_flow_message``
-    # does ~8 ops per call (FM DB read+write, conv DB read, jsonl read+append,
-    # conv DB write, optional WS notify) — ~300-800ms — which blew the 6s e2e
-    # budget for the alice/bob ping-pong even with fire-and-forget contention.
+    # Mirror the hub-confirmed FM into the sender's local DB. ConversationView
+    # renders strictly from the conversation's ``message_ids`` projection —
+    # only a local DB write populates it. Caching the response entity alone
+    # adds no pointer, so the sender would never see her own message, and a
+    # refresh can't recover it: the hub ``_fanout_message`` skips the sender,
+    # so her WS bridge never materializes it either.
     #
-    # Sender-side resolution is no longer required:
-    #   - has_body / upload_body / download_body each fall back to ``hub_get``
-    #     in ``_load_fm_local_or_hub`` when the FM isn't in the local DB, so
-    #     body actions on a freshly-sent message just work.
-    #   - The sender's UI receives the persisted FM JSON as the response of
-    #     ``conv.addMessage`` (this very route). The TS SDK can route that
-    #     return value into the local entity cache; the bubble renders from
-    #     ``useEntity`` against that cache without a round-trip.
-    #   - The bridge's inbound op-log handler continues to materialize FMs on
-    #     the RECEIVER side, which is the only side hub fanout reaches.
+    # Run detached so the HTTP response isn't blocked on the ~300-800ms write
+    # — same fire-and-forget pattern the inbound bridge uses
+    # (``hub_bridge._persist_inbound``). ``notify=True`` makes the open
+    # conversation refetch the moment the pointer lands.
+    someone_typeid = request_info.someone_typeid
+    if isinstance(data, dict) and data.get("id"):
+        async def _materialize_sender_copy() -> None:
+            try:
+                from flow_sdk.app.actions.materialize_flow_message import (  # noqa: PLC0415
+                    materialize_flow_message,
+                )
+                await materialize_flow_message(
+                    data,
+                    conversation_id=conv_id,
+                    someone_typeid=someone_typeid,
+                    notify=True,
+                )
+            except Exception as e:  # noqa: BLE001
+                logger.warning("[add_message] sender-side materialize failed: %s", e, exc_info=True)
+
+        asyncio.create_task(_materialize_sender_copy())
 
     return ApiSuccessResponse(data=data)
