@@ -122,7 +122,12 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
   const placeholderTitle = autofillTitle;
 
   // Cross-user bundle conversations don't require a Project; local-only ones do.
-  const canCreate = !busy && (hasRemoteParticipant || !!projectId) && participants.length > 0;
+  // The initial message is required — a conversation always starts with a message.
+  const canCreate =
+    !busy
+    && (hasRemoteParticipant || !!projectId)
+    && participants.length > 0
+    && !!initialMessage.trim();
 
   const handleCreate = async () => {
     if (!canCreate || submittingRef.current) return;
@@ -309,7 +314,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
             />
           </div>
 
-          {/* Initial message */}
+          {/* Initial message — required: a conversation always starts with one. */}
           <div className="flex flex-col gap-1.5">
             <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
               Initial message
@@ -318,7 +323,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
               className="min-h-[80px] rounded-md border border-input bg-transparent px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               value={initialMessage}
               onChange={(e) => setInitialMessage(e.target.value)}
-              placeholder={hasRemoteParticipant ? 'Say hi…' : 'Optional'}
+              placeholder={hasRemoteParticipant ? 'Say hi…' : 'Type your first message…'}
               data-testid="initial-message-input"
             />
           </div>
