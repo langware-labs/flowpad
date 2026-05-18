@@ -1,4 +1,4 @@
-import { Conversation, FlowMessage, TypeId, User } from '@sdk';
+import { FlowMessage, TypeId, User } from '@sdk';
 import { isValidIdentifier } from '@sdk/models/TypeId';
 import { useEntity } from '@sdk/react/hooks';
 import { useState } from 'react';
@@ -15,7 +15,6 @@ import {
 import { Download } from 'lucide-react';
 import { MessageBubble } from './MessageBubble';
 import { AttachmentChip, AttachmentChipState } from './AttachmentChip';
-import { ContextEntityChip } from './EntityChip';
 import { fileAttachmentUrl } from './attachment-url';
 import { useLocalUser } from './useLocalUser';
 import { localBundleUrl } from './flow-message-drafts';
@@ -158,40 +157,6 @@ export function FlowMessageBubble({
     return !!d && !d.endsWith('conversation.jsonl');
   });
 
-  // TYPE_ID attachments (Spec, Skill, Task, AgenticProcess, …) render as
-  // interactive entity chips below the bubble text — same EntityChip
-  // component the conversation toolbar + ContextPanel use.
-  const typeIdAttachments = (fm.attachment ?? [])
-    .filter((a) => a.attachment_type === AttachmentType.TYPE_ID)
-    .map((a) => {
-      const d = attachmentDataString(a);
-      const dash = d.indexOf('-');
-      if (dash <= 0) return null;
-      return new TypeId(d.slice(0, dash), d.slice(dash + 1));
-    })
-    .filter((t): t is TypeId => t !== null);
-
-  // Per-message context_entities — the "private context" axis: TypeIds
-  // pinned only on this row (not the whole conv). De-duped against the
-  // TYPE_ID attachment row so we don't render the same chip twice.
-  const attachmentChipKeys = new Set(typeIdAttachments.map((t) => `${t.type}-${t.id}`));
-  // A PROMPT attachment carries its source conversation + FlowMessage in
-  // context_entities as provenance. Those are implicit (the message already
-  // lives inside that conversation) and just clutter the chip row, so drop
-  // conversation / flow_message chips on prompt messages.
-  const hasPromptAttachment = (fm.attachment ?? []).some(
-    (a) => a.attachment_type === AttachmentType.PROMPT,
-  );
-  const contextChips: TypeId[] = (fm.contextEntities ?? []).filter((t) => {
-    if (!t || !t.type || !t.id) return false;
-    if (hasPromptAttachment && (t.type === Conversation.type || t.type === FlowMessage.type)) {
-      return false;
-    }
-    return !attachmentChipKeys.has(`${t.type}-${t.id}`);
-  });
-
-  const insideConv = { type: Conversation.type, id: fm.conversation_id ?? '' };
-
   // Body-bundle lifecycle drives each FILE chip's appearance:
   //   uploading  — sender still staging the body (body_status=uploading)
   //   ready      — body on the hub, not yet on this machine (no local_path)
@@ -222,9 +187,7 @@ export function FlowMessageBubble({
 
   const hasAttachments =
     showBundleChip
-    || fileAttachments.length > 0
-    || typeIdAttachments.length > 0
-    || contextChips.length > 0;
+    || fileAttachments.length > 0;
   const totalAttachments = (showBundleChip ? 1 : 0) + fileAttachments.length;
 
   const progressPct =
@@ -247,24 +210,6 @@ export function FlowMessageBubble({
             {progress.phase === 'upload' ? 'Uploading' : 'Downloading'}
             {progressPct === null ? '…' : ` ${progressPct}%`}
           </span>
-        </div>
-      )}
-      {(typeIdAttachments.length > 0 || contextChips.length > 0) && (
-        <div className="flex flex-wrap gap-1">
-          {typeIdAttachments.map((typeId) => (
-            <ContextEntityChip
-              key={`att:${typeId.type}-${typeId.id}`}
-              typeId={typeId}
-              inside={insideConv}
-            />
-          ))}
-          {contextChips.map((typeId) => (
-            <ContextEntityChip
-              key={`ctx:${typeId.type}-${typeId.id}`}
-              typeId={typeId}
-              inside={insideConv}
-            />
-          ))}
         </div>
       )}
       {showBundleChip && (
