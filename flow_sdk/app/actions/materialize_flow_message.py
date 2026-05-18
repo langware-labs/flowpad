@@ -197,17 +197,32 @@ async def materialize_flow_message(
     if notify:
         try:
             task_id_for_sync = parent_id if parent_type == RecordType.TASK else fm.id
+            # These are sniffer-channel NOTIFICATIONS that materialization
+            # happened — not entity-reflection instructions. The real entity
+            # events already fired: handle_entity_op for the FM CREATE above,
+            # and conv.notify_updated() below. Sent as CRUD ops (CREATE/UPDATE)
+            # they reached the webhook receiver's _reflect_entity, which tried
+            # to *construct* a FlowMessage from this event-shaped payload —
+            # which carries no entity fields — and failed with "text Field
+            # required". EVENT routes to the event handler / sniffer instead,
+            # which is all this channel was ever for.
             send_resource_sync(
                 type="flow_message",
                 id=fm.id,
-                operation=SyncOperation.CREATE,
-                data={"event_data": {"flow_message_id": fm.id, "task_id": task_id_for_sync}},
+                operation=SyncOperation.EVENT,
+                data={
+                    "event_name": "flow_message_materialized",
+                    "event_data": {"flow_message_id": fm.id, "task_id": task_id_for_sync},
+                },
             )
             send_resource_sync(
                 type="conversation",
                 id=conv.id,
-                operation=SyncOperation.UPDATE,
-                data={"event_data": {"task_id": task_id_for_sync, "conversation_id": conv.id}},
+                operation=SyncOperation.EVENT,
+                data={
+                    "event_name": "conversation_updated",
+                    "event_data": {"task_id": task_id_for_sync, "conversation_id": conv.id},
+                },
             )
             # Entity-event channel — required for React useEntity hooks to
             # re-render. send_resource_sync only fires the sniffer channel.
