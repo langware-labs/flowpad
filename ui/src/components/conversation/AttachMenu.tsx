@@ -91,6 +91,7 @@ export function AttachMenu({
             ``view === 'asset'``. Sharing the trigger keeps positioning sane. */}
         <AssetPickerPopover
           trigger={<span className="sr-only" aria-hidden />}
+          side="top"
           open={open && view === 'asset'}
           onOpenChange={(next) => {
             if (!next) {
