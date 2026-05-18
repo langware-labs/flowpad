@@ -5,6 +5,7 @@ import {
   Conversation,
   FlowMessage,
   FlowMessageKind,
+  Invitation,
   QueryRequest,
   Task,
   TypeId,
@@ -110,12 +111,25 @@ function ConversationListRow({ conv, isFocused, viewMode, onArchive, onToggleRea
   const { data: firstMessage } = useEntity<FlowMessage>(firstTypeId);
   const { data: latestMessage } = useEntity<FlowMessage>(latestTypeId);
 
-  const isInvitationRow = firstMessage?.kind === FlowMessageKind.INVITATION;
   const invitationTypeId = useMemo(
     () => firstMessage?.firstContextOfType?.('invitation') ?? null,
     [firstMessage],
   );
   const invitationId = invitationTypeId?.id ?? null;
+  const { data: invitation } = useEntity<Invitation>(invitationTypeId);
+
+  // An invitation row (Accept CTA) is shown ONLY to the *recipient* of a
+  // still-pending invitation — mirrors RecentConversationsStrip. The first
+  // message stays ``kind === 'invitation'`` forever, so it can't drive this
+  // on its own: the sender (and everyone post-accept) must see a normal row.
+  const { cloudUser, currentUser } = useAuth();
+  const myEmail = (cloudUser?.email || currentUser?.email || '').trim().toLowerCase();
+  const recipientEmail = invitation?.recipient_email?.trim().toLowerCase() || '';
+  const isInvitationRow =
+    firstMessage?.kind === FlowMessageKind.INVITATION &&
+    !invitation?.accepted &&
+    !!myEmail &&
+    myEmail === recipientEmail;
   const [accepting, setAccepting] = useState(false);
 
   // Hide rule depends on view mode:
