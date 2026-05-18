@@ -15,6 +15,7 @@ import {
 import { Download } from 'lucide-react';
 import { MessageBubble } from './MessageBubble';
 import { AttachmentChip, AttachmentChipState } from './AttachmentChip';
+import { ContextEntityChip } from './EntityChip';
 import { fileAttachmentUrl } from './attachment-url';
 import { useLocalUser } from './useLocalUser';
 import { localBundleUrl } from './flow-message-drafts';
@@ -22,6 +23,12 @@ import { DraftMessageComposer } from './DraftMessageComposer';
 import { participantLabelByUserId } from './participant-display';
 import { useFlowMessageProgress } from './useFlowMessageProgress';
 import { cn } from '@src/lib/utils';
+
+/** Attachment TypeId types the conversation send path injects as structural
+ *  self-references — the parent conversation, the message itself, and the
+ *  bound task. They are plumbing, not user-attached assets, so they never
+ *  render as asset chips. */
+const STRUCTURAL_ATTACHMENT_TYPES = new Set(['conversation', 'flow_message', 'task']);
 
 
 interface FlowMessageBubbleProps {
@@ -157,6 +164,20 @@ export function FlowMessageBubble({
     return !!d && !d.endsWith('conversation.jsonl');
   });
 
+  // Asset attachments — TYPE_ID attachments the user deliberately attached
+  // (Skill, Spec, …). Rendered as clickable chips that open the entity in its
+  // own view, exactly like the conversation Context panel. The structural
+  // self-refs the send path injects are plumbing, so they are filtered out.
+  const assetAttachments = (fm.attachment ?? [])
+    .filter((a) => a.attachment_type === AttachmentType.TYPE_ID)
+    .map((a) => {
+      const d = attachmentDataString(a);
+      const dash = d.indexOf('-');
+      if (dash <= 0) return null;
+      return new TypeId(d.slice(0, dash), d.slice(dash + 1));
+    })
+    .filter((t): t is TypeId => t !== null && !STRUCTURAL_ATTACHMENT_TYPES.has(t.type));
+
   // Body-bundle lifecycle drives each FILE chip's appearance:
   //   uploading  — sender still staging the body (body_status=uploading)
   //   ready      — body on the hub, not yet on this machine (no local_path)
@@ -187,7 +208,8 @@ export function FlowMessageBubble({
 
   const hasAttachments =
     showBundleChip
-    || fileAttachments.length > 0;
+    || fileAttachments.length > 0
+    || assetAttachments.length > 0;
   const totalAttachments = (showBundleChip ? 1 : 0) + fileAttachments.length;
 
   const progressPct =
@@ -210,6 +232,17 @@ export function FlowMessageBubble({
             {progress.phase === 'upload' ? 'Uploading' : 'Downloading'}
             {progressPct === null ? '…' : ` ${progressPct}%`}
           </span>
+        </div>
+      )}
+      {assetAttachments.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {assetAttachments.map((typeId) => (
+            <ContextEntityChip
+              key={`asset:${typeId.type}-${typeId.id}`}
+              typeId={typeId}
+              inside={{ type: 'conversation', id: fm.conversation_id ?? '' }}
+            />
+          ))}
         </div>
       )}
       {showBundleChip && (
