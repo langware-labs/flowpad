@@ -1,3 +1,7 @@
+---
+id: a4ae24fe-3c17-5014-bec3-e87a8bcb3370
+---
+
 test 1: Resume an existing Claude session from Recent / History navigates into a live AgenticProcess
 - prerequisite: at least one claude_session record exists in the index AND the corresponding AgenticProcess is currently not open in a visible tab (close any matching tab first)
 - navigate to {APP_URL}/dock/home

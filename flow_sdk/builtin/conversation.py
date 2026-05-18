@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import ClassVar, List, Optional
+from typing import ClassVar, List, Optional, TYPE_CHECKING
 
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.core import Entity
 from flow_sdk.db.drivers.db_base_record import TypeId
+
+if TYPE_CHECKING:  # pragma: no cover
+    from flow_sdk.cloud_client.client import FlowpadClient
 
 
 # Sentinel used by ConversationRecord.sync_to_db to bypass the projection
@@ -14,6 +17,33 @@ from flow_sdk.db.drivers.db_base_record import TypeId
 _PROJECTION_SENTINEL = object()
 
 _PROJECTED_FIELDS = frozenset({"message_ids", "message_count"})
+
+
+# Process-scoped FlowpadClient cache, keyed by api_key. ``Conversation.share`` /
+# ``add_message`` are on the hot path (ping-pong e2e: 10 alice sends back-to-
+# back in ≤6s). Constructing a fresh FlowpadClient per call rebuilds the
+# httpx.AsyncClient and pays a full TCP+TLS handshake to the hub on every
+# request (~80-130ms). The cached client keeps a single AsyncClient alive so
+# subsequent calls reuse the underlying keep-alive connection (~5-20ms).
+_HUB_CLIENT_BY_KEY: dict[str, "FlowpadClient"] = {}
+
+
+def _get_hub_client(api_key: str) -> "FlowpadClient":
+    """Return a process-cached FlowpadClient bound to ``api_key``.
+
+    Safe to call from any async context — FlowpadClient's underlying
+    ``httpx.AsyncClient`` is created lazily on first request and is itself
+    safe for concurrent reuse. The cache key is the api_key so credential
+    rotation produces a fresh client.
+    """
+    from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
+
+    existing = _HUB_CLIENT_BY_KEY.get(api_key)
+    if existing is not None:
+        return existing
+    client = FlowpadClient(ApiConfig.from_env(), api_key=api_key)
+    _HUB_CLIENT_BY_KEY[api_key] = client
+    return client
 
 
 class Conversation(Entity):

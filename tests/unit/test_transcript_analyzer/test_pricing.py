@@ -28,15 +28,17 @@ from flow_sdk.transcript_analyzer import AgentTranscript, EntryKind, UsageEntry
 _RESOURCES = Path(__file__).parent.parent / "resources" / "transcripts" / "cost"
 
 
-# (fixture_name, expected_usd) — verified manual numbers documented in
-# /tmp/run_cost_v2.py output.
+# (fixture_name, expected_usd) — verified per-message totals.
+# Each turn's `usage` block appears once per tool_use block in the JSONL but
+# Claude bills per-message, so the parser dedupes by `message.id`. The numbers
+# below reflect deduped sums against Sonnet-4 rates (Jan 2026).
 COST_BENCHMARKS = [
-    ("chat_run1.jsonl", 0.4587),
-    ("chat_run2.jsonl", 0.5722),
-    ("nav_run1.jsonl",  0.6122),
-    ("nav_run2.jsonl",  0.6110),
-    ("term_run1.jsonl", 0.5991),
-    ("term_run2.jsonl", 0.5988),
+    ("chat_run1.jsonl", 0.1781),
+    ("chat_run2.jsonl", 0.2004),
+    ("nav_run1.jsonl",  0.2004),
+    ("nav_run2.jsonl",  0.2130),
+    ("term_run1.jsonl", 0.2218),
+    ("term_run2.jsonl", 0.2177),
 ]
 
 

@@ -6,7 +6,7 @@ import apiClient, { apiStats, clearStats, GRAPH_API_PREFIX } from '../client';
 import config from '../config';
 import { IEntity } from '../IEntity';
 import { ActionInfo, BootstrapInfo, ScanInfo } from '../models';
-import { isTypeId, TypeId } from '../models/TypeId';
+import { TypeId } from '../models/TypeId';
 import { UserRole } from '../services/membershipService';
 import {
   ConnectionManager,
@@ -37,7 +37,7 @@ export enum EntityStatus {
 export interface EntityExpansion {
   roles?: UserRole[] | null;
   allowed_actions?: ActionType[] | null;
-  auth_scopes?: TypeId[][] | null;
+  auth_scopes?: string[][] | null;
   is_private?: boolean;
   expansions?: ExpansionType[] | null;
 }
@@ -1355,17 +1355,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
 
   public deepAssign(target: any, source: any) {
     for (const key in source) {
-      // Check if source[key] is a TypeId FIRST, before checking if it's an object
-      // This handles TypeId objects in arrays (like auth_scopes) where the key is just an index
-      if (
-        source[key] &&
-        isTypeId(source[key]) &&
-        !DataManager.TYPEID_COERCION_DENYLIST.has(key)
-      ) {
-        target[key] = new TypeId(source[key]);
-      } else if (typeof source[key] === 'object' && source[key] !== null) {
-        // For objects/arrays, recursively deep assign
-        // Initialize target[key] if it doesn't exist
+      if (typeof source[key] === 'object' && source[key] !== null) {
         if (!target[key]) {
           target[key] = Array.isArray(source[key]) ? [] : {};
         }

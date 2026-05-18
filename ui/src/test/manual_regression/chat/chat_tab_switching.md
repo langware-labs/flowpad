@@ -1,3 +1,7 @@
+---
+id: 5d35e063-78f9-5e0a-a62d-8fe2136617ef
+---
+
 test 1: Switch between sidebar dock views from a session
 - navigate to {APP_URL}/
 - fill landing input with "tab switching test"

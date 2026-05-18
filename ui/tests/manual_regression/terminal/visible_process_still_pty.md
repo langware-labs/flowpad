@@ -1,3 +1,7 @@
+---
+id: 0f85fa0c-9d65-53bd-84a6-9e6abee86dfe
+---
+
 test 1: visible=true AgenticProcess created via createProcess stays on the PTY (interactive-terminal) path
 
 Context:

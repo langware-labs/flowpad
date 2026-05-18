@@ -1,3 +1,7 @@
+---
+id: d1a6b81f-f10d-55f1-b865-dfebacb2bbd9
+---
+
 test 1: Search API handles limit=0 and limit=-1 without 500 error
 
 REGRESSION: Fixed 2026-03-07 — limit=0 passed to LanceDB caused ValueError → HTTP 500.

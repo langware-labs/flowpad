@@ -13,6 +13,7 @@
 import type { AgenticProcess } from '@sdk';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
+import type { StripRunSummary } from '../data/useStripRunSummaries';
 import type { RunViewModel } from '../data/types';
 import { RunChip } from './RunChip';
 
@@ -23,6 +24,12 @@ interface RunStripProps {
   selectedIds: string[];
   /** Already-loaded RunViewModels keyed by processId (for verdict/cost). */
   loadedRuns: RunViewModel[];
+  /**
+   * Lightweight per-run summaries for chips the user hasn't selected yet.
+   * Computed by useStripRunSummaries from trace+analysis on disk so the
+   * hover tooltip shows real pass/fail/cost instead of "UNKNOWN".
+   */
+  stripSummaries?: Map<string, StripRunSummary>;
   onSelectActive: (id: string) => void;
   onToggleOverlay: (id: string) => void;
 }
@@ -41,18 +48,41 @@ function startedAtMs(p: AgenticProcess): number | null {
   return Number.isFinite(ms) ? ms : null;
 }
 
-function chipModel(p: AgenticProcess, loaded?: RunViewModel): RunViewModel {
+function chipModel(
+  p: AgenticProcess,
+  loaded?: RunViewModel,
+  strip?: StripRunSummary,
+): RunViewModel {
   if (loaded) return loaded;
+  const startedAt =
+    p.created_date instanceof Date
+      ? p.created_date.toISOString()
+      : (p.created_date as string | undefined);
+  // Prefer the strip-derived summary (real pass/fail from trace+analysis)
+  // over the status-based guess (always 'unknown' for stopped runs).
+  if (strip) {
+    return {
+      processId: p.id,
+      colorIndex: 0,
+      label: '',
+      rawStatus: (p.status as string | undefined) ?? undefined,
+      verdict: strip.verdict,
+      startedAt,
+      durationSec: strip.durationSec,
+      costUsd: strip.costUsd ?? (p.total_cost_usd ?? undefined),
+      steps: [],
+      summary: strip.summary,
+      hasTrace: strip.hasTrace,
+      hasAnalysis: strip.hasAnalysis,
+    };
+  }
   return {
     processId: p.id,
     colorIndex: 0,
     label: '',
     rawStatus: (p.status as string | undefined) ?? undefined,
     verdict: rawVerdictGuess(p),
-    startedAt:
-      p.created_date instanceof Date
-        ? p.created_date.toISOString()
-        : (p.created_date as string | undefined),
+    startedAt,
     durationSec: undefined,
     costUsd: p.total_cost_usd ?? undefined,
     steps: [],
@@ -87,6 +117,7 @@ export function RunStrip({
   runs,
   selectedIds,
   loadedRuns,
+  stripSummaries,
   onSelectActive,
   onToggleOverlay,
 }: RunStripProps) {
@@ -102,6 +133,10 @@ export function RunStrip({
   useEffect(() => {
     const el = trackRef.current;
     if (!el) return;
+    // Seed with the current measured size — ResizeObserver only fires on
+    // subsequent CHANGES, so without this initial read the chips never
+    // render when the track is sized immediately on first paint.
+    setWidth(el.getBoundingClientRect().width);
     const ro = new ResizeObserver(([entry]) => setWidth(entry.contentRect.width));
     ro.observe(el);
     return () => ro.disconnect();
@@ -169,7 +204,7 @@ export function RunStrip({
         {positions.map(({ p, x }) => {
           const isActive = p.id === activeId;
           const isOverlay = overlay.has(p.id);
-          const m = chipModel(p, loadedById.get(p.id));
+          const m = chipModel(p, loadedById.get(p.id), stripSummaries?.get(p.id));
           return (
             <div
               key={p.id}

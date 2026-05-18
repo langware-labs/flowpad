@@ -337,9 +337,10 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     }
     const workspaces: TypeId[] = [];
     this.expand?.auth_scopes.forEach((scope) => {
-      scope.forEach((typeId) => {
-        if (typeId.type === Workspace.type) {
-          workspaces.push(typeId);
+      scope.forEach((raw) => {
+        const tid = new TypeId(raw);
+        if (tid.type === Workspace.type) {
+          workspaces.push(tid);
         }
       });
     });
@@ -696,20 +697,19 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     if (!this.expand?.auth_scopes) {
       return [];
     }
-    let selectedScope = this.expand?.auth_scopes.find((scope) => {
-      // Log to see the scope and typeId for debugging
-
-      return scope.some((typeId) => {
-        // Ensure workspaceTypeId is available and compare correctly
-        if (workspaceTypeId) {
-          return typeId.id === workspaceTypeId.id && typeId.type === workspaceTypeId.type;
-        }
-        return false;
-      });
-    });
-
-    if (!selectedScope && this.expand?.auth_scopes?.length > 0) {
-      selectedScope = this.expand?.auth_scopes[0];
+    const parsedScopes: TypeId[][] = this.expand.auth_scopes.map((scope) =>
+      scope.map((raw) => new TypeId(raw)),
+    );
+    let selectedScope = parsedScopes.find((scope) =>
+      workspaceTypeId
+        ? scope.some(
+            (typeId) =>
+              typeId.id === workspaceTypeId.id && typeId.type === workspaceTypeId.type,
+          )
+        : false,
+    );
+    if (!selectedScope && parsedScopes.length > 0) {
+      selectedScope = parsedScopes[0];
     }
     return selectedScope || [];
   }

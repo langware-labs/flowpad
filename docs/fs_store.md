@@ -1,3 +1,7 @@
+---
+id: 305e2927-497f-554c-b0d4-d307d3c921fa
+---
+
 # fs_store: Record System Architecture
 
 The `flow_sdk.fs_store` package provides file-system backed records. There is no single `FsStore` class — the package is a collection of modules that together provide record storage, indexing, querying, and lifecycle management. Every entity in the system (skills, tasks, sessions, hooks, settings entries) is a `Record`.

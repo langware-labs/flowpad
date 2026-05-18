@@ -84,9 +84,9 @@ async def search_records(
     offset: int = Query(default=0, ge=0, description="Offset for pagination"),
     record_type: Optional[str] = Query(default=None, description="Filter by record type"),
     status: Optional[str] = Query(default=None, description="Filter by record status"),
-    scope: Optional[str] = Query(default=None, description="Filter by scope. Single value (user|project) or comma-separated set (e.g. user,project) for a union."),
+    user: Optional[str] = Query(default=None, description="ScopeFilter.user: include user-scope records. 'true' (default if absent) or 'false'."),
+    projects: Optional[str] = Query(default=None, description="ScopeFilter.projects: comma-separated project entity IDs to include."),
     tags: Optional[str] = Query(default=None, description="Comma-separated tags to filter by"),
-    project_ids: Optional[str] = Query(default=None, description="Comma-separated project entity IDs (used when scope=project)"),
     parent_path: Optional[str] = Query(default=None, description="Filter to records whose parent_path is exactly this absolute path (direct children only)"),
     vault_root: Optional[str] = Query(default=None, description="Filter to records whose vault_root is exactly this absolute path (descendants at any depth)"),
     include_system: bool = Query(default=False, description="Include entities from SDK-shipped system projects. Default off."),
@@ -100,7 +100,17 @@ async def search_records(
     from flow_sdk.core.entity.entity_model import Entity
     from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
     from flow_sdk.db.drivers.sqlite.sqlite_driver import SearchCalibration  # noqa: PLC0415
+    from flow_sdk.server.search_filters import ScopeFilter  # noqa: PLC0415
     import json as _json  # noqa: PLC0415
+
+    # Build the unified ScopeFilter. If `user` param is absent (legacy
+    # caller), pass None so the filter is disabled (back-compat for any
+    # request that hasn't migrated to the new wire format yet).
+    scope_filter = (
+        ScopeFilter.from_query_params({"user": user, "projects": projects})
+        if user is not None or projects is not None
+        else None
+    )
 
     tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
 
@@ -138,7 +148,7 @@ async def search_records(
         qf.order_by = {"updated_date": "desc"}
         all_entities = await Entity.get_all(qf)
 
-        all_entities = apply_scope_filter(all_entities, scope, project_ids)
+        all_entities = apply_scope_filter(all_entities, scope_filter)
         all_entities = apply_folder_filter(all_entities, parent_path, vault_root)
         all_entities = apply_system_filter(all_entities, include_system)
         all_entities = apply_tag_filter(all_entities, tag_list)
@@ -184,7 +194,7 @@ async def search_records(
             "data": {"results": [], "query": q, "total": 0, "indexer_ready": False},
         })
 
-    entities = apply_scope_filter(entities, scope, project_ids)
+    entities = apply_scope_filter(entities, scope_filter)
     entities = apply_folder_filter(entities, parent_path, vault_root)
     entities = apply_system_filter(entities, include_system)
     entities = apply_tag_filter(entities, tag_list)

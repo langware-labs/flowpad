@@ -11,7 +11,19 @@ from flow_sdk.fs_store import Record, RecordType
 from flow_sdk.fs_store.record import Scope
 from flow_sdk.instance_settings import get_instance_settings
 
-from ._frontmatter import _coerce_scalar, _extract_frontmatter, _yaml_load  # noqa: F401
+from ._frontmatter import (  # noqa: F401
+    _coerce_scalar,
+    _extract_body,
+    _extract_frontmatter,
+    _render_frontmatter,
+    _yaml_load,
+)
+
+
+def _read_frontmatter_id_from_yaml(yaml_fields: dict) -> str | None:
+    """Pick `id` (or legacy `asset_id`) from a parsed yaml/frontmatter dict."""
+    raw = yaml_fields.get("id") or yaml_fields.get("asset_id")
+    return str(raw).strip() if isinstance(raw, str) and raw.strip() else None
 
 
 def _resolve_skill_name(yaml_fields: dict, folder_name: str) -> str:
@@ -111,7 +123,7 @@ class SkillRecord(Record):
         if not name:
             return None
         desc = (getattr(entity, "description", None) or "").strip()
-        return f'---\nname: {name}\ndescription: "{desc}"\n---\n\n# {name}\n\n'
+        return f'---\nid: {entity.id}\nname: {name}\ndescription: "{desc}"\n---\n\n# {name}\n\n'
 
     # -- FSRef accessors --
 
@@ -236,7 +248,8 @@ class SkillRecord(Record):
         yaml_fields = _load_skill_yaml_from_dir(folder)
         skill_name = _resolve_skill_name(yaml_fields, folder.name)
         _d = object.__getattribute__(self, "__dict__")
-        _d["id"] = _skill_id_from_name(skill_name)
+        # Prefer frontmatter `id` (or legacy `asset_id`) over name-derivation.
+        _d["id"] = _read_frontmatter_id_from_yaml(yaml_fields) or _skill_id_from_name(skill_name)
         _d["name"] = skill_name
         _d["type"] = RecordType.SKILL
         _d["status"] = "active"
@@ -265,7 +278,9 @@ class SkillRecord(Record):
         skill_name = _resolve_skill_name(yaml_fields, p.name)
 
         data: dict[str, Any] = {
-            "id": _skill_id_from_name(skill_name),
+            # Prefer frontmatter `id` (or legacy `asset_id`); fall back to
+            # name-derivation for skills that haven't been stamped yet.
+            "id": _read_frontmatter_id_from_yaml(yaml_fields) or _skill_id_from_name(skill_name),
             "name": skill_name,
             "type": RecordType.SKILL,
             "status": "active",
@@ -295,21 +310,70 @@ class SkillRecord(Record):
 
     @classmethod
     def getId(cls, ref) -> str:
-        """Id = whatever `load_record` produces.
+        """Read-only identifier.
 
-        Two cases inside load_record:
-          - Shadow record dir (contains metadata.json / data.json): id comes
-            from the metadata blob.
-          - Live skill dir (yaml/SKILL.md only): id is uuid5-derived from the
-            skill name (see ``_skill_id_from_name``).
-        Call through load_record so both cases stay consistent with
-        `from_fsref(ref)[0].id`."""
+        Prefer frontmatter ``id`` (or legacy ``asset_id``) when present in
+        skill.yaml / skill.yml / SKILL.md — that's the stable, file-bound id.
+        Otherwise fall back to ``load_record`` semantics (uuid5 of the skill
+        name for live dirs, or metadata.json blob for shadow dirs).
+        """
         try:
+            if ref._path.is_dir():
+                yaml_fields = _load_skill_yaml_from_dir(ref._path)
+                fm_id = _read_frontmatter_id_from_yaml(yaml_fields)
+                if fm_id:
+                    return fm_id
             rec = cls.load_record(ref._path)
             return str(rec.id)
         except Exception:
             folder_name = ref._path.name
             return folder_name.split("-@", 1)[-1] if "-@" in folder_name else folder_name
+
+    @classmethod
+    def genId(cls, ref) -> str:
+        """Read existing id, or mint+write a stable one into SKILL.md frontmatter.
+
+        Idempotent. For yaml-based skills (skill.yaml / skill.yml present), we
+        skip the write and just return the derived id — touching arbitrary yaml
+        files belongs to a separate change. For SKILL.md-only skills, the
+        currently derived id (``_skill_id_from_name(name)``) is written into
+        the frontmatter so future scans return the same id even if the yaml
+        ``name`` changes or the folder is renamed.
+        """
+        if not ref._path.is_dir():
+            return cls.getId(ref)
+        yaml_fields = _load_skill_yaml_from_dir(ref._path)
+        existing = _read_frontmatter_id_from_yaml(yaml_fields)
+        if existing:
+            return existing
+        skill_name = _resolve_skill_name(yaml_fields, ref._path.name)
+        new_id = _skill_id_from_name(skill_name)
+        # skill.yaml-based skills: don't touch the yaml file in this iteration.
+        if (ref._path / "skill.yaml").exists() or (ref._path / "skill.yml").exists():
+            return new_id
+        skill_md = ref._path / "SKILL.md"
+        if not skill_md.exists():
+            return new_id
+        try:
+            text = skill_md.read_text(encoding="utf-8")
+        except OSError:
+            return new_id
+        fm = _extract_frontmatter(text)
+        body = _extract_body(text)
+        fields: dict = {}
+        if fm:
+            parsed = _yaml_load(fm)
+            if isinstance(parsed, dict):
+                fields.update(parsed)
+        merged = {"id": new_id, **{k: v for k, v in fields.items() if k not in ("id", "asset_id")}}
+        try:
+            skill_md.write_text(
+                _render_frontmatter(merged) + "\n\n" + body + ("\n" if body and not body.endswith("\n") else ""),
+                encoding="utf-8",
+            )
+        except OSError:
+            pass
+        return new_id
 
     @classmethod
     def get(cls, uid: str, **kwargs: Any) -> "SkillRecord | None":

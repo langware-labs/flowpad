@@ -115,23 +115,20 @@ async def conversation_add_message() -> ApiSuccessResponse:
         context_entities=context_entities,
     )
 
-    # Mirror the hub-confirmed FM into the local DB. Hub WS skips the sender's
-    # own create frame (see hub_bridge._handle_flow_message_op), so without
-    # this the sender's Conversation.message_ids stays empty until a manual
-    # refresh. Same materializer the bridge uses for inbound frames, keeping
-    # message_ids + message_count projections consistent. Also lets sender-side
-    # body actions (has_body / upload_body / download_body) resolve the entity
-    # at /api/v1/graph/flow_message/<id>/<action>.
-    try:
-        from flow_sdk.app.actions.materialize_flow_message import materialize_flow_message  # noqa: PLC0415
-        if isinstance(data, dict) and data.get("id"):
-            await materialize_flow_message(
-                data,
-                conversation_id=conv_id,
-                someone_typeid=request_info.someone_typeid,
-                notify=True,
-            )
-    except Exception as e:  # noqa: BLE001
-        logger.warning("[add_message] sender-side materialize failed: %s", e, exc_info=True)
+    # Sender-side local materialize was REMOVED here. ``materialize_flow_message``
+    # does ~8 ops per call (FM DB read+write, conv DB read, jsonl read+append,
+    # conv DB write, optional WS notify) — ~300-800ms — which blew the 6s e2e
+    # budget for the alice/bob ping-pong even with fire-and-forget contention.
+    #
+    # Sender-side resolution is no longer required:
+    #   - has_body / upload_body / download_body each fall back to ``hub_get``
+    #     in ``_load_fm_local_or_hub`` when the FM isn't in the local DB, so
+    #     body actions on a freshly-sent message just work.
+    #   - The sender's UI receives the persisted FM JSON as the response of
+    #     ``conv.addMessage`` (this very route). The TS SDK can route that
+    #     return value into the local entity cache; the bubble renders from
+    #     ``useEntity`` against that cache without a round-trip.
+    #   - The bridge's inbound op-log handler continues to materialize FMs on
+    #     the RECEIVER side, which is the only side hub fanout reaches.
 
     return ApiSuccessResponse(data=data)

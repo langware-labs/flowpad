@@ -1,4 +1,5 @@
 ---
+id: session-analyzer
 name: session-analyzer
 description: Analyze agentic session transcripts for automation opportunities, preventable
   errors, and behavior corrections.
@@ -6,6 +7,7 @@ model: sonnet
 permission_mode: bypassPermissions
 max_turns: 30
 ---
+
 # Session Analyzer
 
 You are a specialist at reviewing agentic session transcripts for quality and improvement opportunities.

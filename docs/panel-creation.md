@@ -1,3 +1,7 @@
+---
+id: 683b136e-3d8a-51e4-917a-625c15e280eb
+---
+
 # Creating Standalone Panels with the FlowPad SDK
 
 A **panel** is a self-contained HTML file that can live anywhere on your machine. It loads the FlowPad SDK via a single `<script>` tag from the local backend and gets real-time reactivity through WebSocket — no build step, no framework, no bundler required on the panel side.

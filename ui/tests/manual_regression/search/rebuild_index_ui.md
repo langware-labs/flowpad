@@ -1,3 +1,7 @@
+---
+id: 2e94ef01-a00b-5cc5-99a8-df11e0f04736
+---
+
 test 1: Rebuild-index button is visible in the search-view header
 - [browser] navigate to {APP_URL}/dock/search
 - [browser] wait for page to load (networkidle)

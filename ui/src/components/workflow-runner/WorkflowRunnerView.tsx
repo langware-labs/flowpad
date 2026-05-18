@@ -17,6 +17,7 @@ import { useDismissedAttentions } from './data/useDismissedAttentions';
 import { useRunnerData } from './data/useRunnerData';
 import { useRunSelection } from './data/useRunSelection';
 import { useStepSelection } from './data/useStepSelection';
+import { useStripRunSummaries } from './data/useStripRunSummaries';
 import { useViewMode } from './data/useViewMode';
 import { AnnotatedDocument } from './document/AnnotatedDocument';
 import { StepDetailPane } from './detail/StepDetailPane';
@@ -40,6 +41,7 @@ export function WorkflowRunnerView({ workflow, runs }: WorkflowRunnerViewProps) 
   const { viewMode, setViewMode } = useViewMode();
 
   const vm = useRunnerData({ workflow, runs, selectedRunIds: selectedIds });
+  const stripSummaries = useStripRunSummaries(runs, vm.fullText);
   const { isDismissed, dismiss } = useDismissedAttentions(workflow.id);
 
   const selectedStep = useMemo(() => {
@@ -96,6 +98,7 @@ export function WorkflowRunnerView({ workflow, runs }: WorkflowRunnerViewProps) 
         runs={runs}
         selectedIds={selectedIds}
         loadedRuns={vm.runs}
+        stripSummaries={stripSummaries}
         onSelectActive={selectRun}
         onToggleOverlay={toggleOverlay}
       />

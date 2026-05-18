@@ -1,3 +1,7 @@
+---
+id: 38b2576d-c49f-5567-85e2-ae37a8b7a791
+---
+
 # Filesystem Discovery Benchmark
 
 This document records the findings of a cross-platform benchmark comparing four methods of recursively finding files on disk: two Python walkers, one OS-native walker, and one OS-native index query. The investigation was triggered by a ~57 s bootstrap latency traced to `SchemaRegistry.discover(types=["markdown"])` descending into contaminated scan roots (`/` and `$HOME`) returned by `iter_claude_project_paths()` in `flow_sdk/fs_records/_claude_projects.py`.

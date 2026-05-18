@@ -1,3 +1,7 @@
+---
+id: a33090ec-d7be-548d-8b1f-f0a3948be31d
+---
+
 test 1: Clear command clears terminal and scrollback is preserved
 - navigate to the Shell view via sidebar
 - validate terminal is visible and ready

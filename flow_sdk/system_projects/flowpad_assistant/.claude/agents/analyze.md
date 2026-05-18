@@ -1,4 +1,5 @@
 ---
+id: analyze
 name: analyze
 description: Analyze a Claude Code session transcript to identify mistakes, misunderstandings,
   inefficiencies, and automation opportunities. Writes analysis.json and analysis.md
@@ -7,6 +8,7 @@ model: sonnet
 permission_mode: bypassPermissions
 max_turns: 20
 ---
+
 # Session Analysis Agent
 
 You are a conversation analysis specialist that identifies problematic behaviors and automation opportunities in Claude Code sessions.

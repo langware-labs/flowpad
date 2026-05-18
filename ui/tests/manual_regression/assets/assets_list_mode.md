@@ -1,3 +1,7 @@
+---
+id: 79e55ed3-1173-53ca-ad86-0f3f8a597ab6
+---
+
 # Assets Page — Browseable Tree + AssetListView
 
 ## Summary

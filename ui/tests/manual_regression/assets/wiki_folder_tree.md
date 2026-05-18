@@ -1,3 +1,7 @@
+---
+id: af2248a3-8d35-5881-b473-e4699bbaed66
+---
+
 test 1: Folder tree renders markdown vault roots on expand
 - [browser] navigate to {APP_URL}/dock/assets/list/markdown
 - [browser] wait for page to load

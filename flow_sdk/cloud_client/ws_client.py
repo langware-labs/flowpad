@@ -432,22 +432,17 @@ class HubWebSocketManager:
     async def _handle_closed_connection(self, exc: ConnectionClosed) -> bool:
         if exc.code in AUTH_WS_CLOSE_CODES:
             creds = load_credentials()
-            if creds and creds.is_expired(EXPIRY_LEEWAY_SECONDS):
-                # Real credential loss (clock-driven expiry) — drop everything.
-                await invalidate_hub_login("expired")
-                await self._set_state(
-                    HubConnectionStatus.DISCONNECTED,
-                    connected=False,
-                    verified=False,
-                    error="Hub auth expired.",
-                )
-                return True
-            # Hub rejected our (locally-valid) credentials — connection-only.
+            locally_expired = bool(creds and creds.is_expired(EXPIRY_LEEWAY_SECONDS))
+            reason = "expired" if locally_expired else "rejected"
+            # Hub-side auth close — treat as canonical credential loss whether
+            # the local clock agrees or not. If the hub said no, the token is
+            # no longer valid; reason just disambiguates the cause for telemetry.
+            await invalidate_hub_login(reason)
             await self._set_state(
-                HubConnectionStatus.AUTH_REJECTED,
+                HubConnectionStatus.DISCONNECTED,
                 connected=False,
                 verified=False,
-                error="Hub WebSocket authentication was rejected.",
+                error="Hub auth expired." if locally_expired else "Hub WebSocket authentication was rejected.",
             )
             return True
         logger.info("Hub WS listener closed: code=%s reason=%s", exc.code, exc.reason)

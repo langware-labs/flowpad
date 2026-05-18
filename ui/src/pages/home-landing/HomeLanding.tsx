@@ -44,7 +44,7 @@ import type React from 'react';
 import { SearchFilters, SearchResult } from '@src/hooks/use-record-search';
 import { navigateToResult } from '@src/navigation/record-type-nav';
 import { InlineSearchResults } from './InlineSearchResults';
-import { Loader2, PackageSearch, X, CheckCircle2, Hammer, Inbox, RefreshCw, Users } from 'lucide-react';
+import { Loader2, PackageSearch, X, CheckCircle2, Hammer, Inbox, RefreshCw, Users, StickyNote } from 'lucide-react';
 import { useInboxStore } from '@src/store/use-inbox-store';
 import { listInboxMessages } from '@src/components/inbox-view/inbox-api';
 import { fetchConversations } from '@sdk';
@@ -651,6 +651,15 @@ export function HomeLanding() {
                   <Users className="h-3 w-3" />
                   Community assistance
                 </button>
+                <button
+                  type="button"
+                  data-testid="open-memo-panel-btn"
+                  className="inline-flex h-6 items-center gap-1 rounded-full border border-amber-600/60 bg-transparent px-2.5 text-xs font-medium text-amber-600 transition-colors hover:bg-amber-50 dark:border-amber-400/60 dark:text-amber-400 dark:hover:bg-amber-950/40"
+                  onClick={() => setMemoPanelOpen(true)}
+                >
+                  <StickyNote className="h-3 w-3" />
+                  Memo panel
+                </button>
               </div>
             </div>
 
@@ -780,6 +789,11 @@ export function HomeLanding() {
       <CommunityAssistanceDialog
         open={showCommunityAssistance}
         onClose={() => setShowCommunityAssistance(false)}
+      />
+      <MemoIframeModal
+        open={memoPanelOpen}
+        onOpenChange={setMemoPanelOpen}
+        apiUrl={apiUrl}
       />
       <LoginDialog open={showLoginDialog} onOpenChange={closeLoginDialog} />
 

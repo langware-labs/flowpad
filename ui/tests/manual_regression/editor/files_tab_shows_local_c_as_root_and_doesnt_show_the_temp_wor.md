@@ -1,3 +1,7 @@
+---
+id: 6a6b1a8d-8855-5497-8c9b-c03aa3f8a4d8
+---
+
 test 1: File explorer shows Unix-style root path (not Windows C:/) on macOS (FLOWPAD-1594)
 - navigate to {APP_URL}/dock/explorer
 - wait 3 seconds for the file explorer to load

@@ -1,3 +1,7 @@
+---
+id: d0c8a8e6-41d7-5afb-9fdc-9e4346f9c767
+---
+
 test 1: "+" New-doc button is in the DOCS category header row, never on its own
 - navigate to {APP_URL}/dock/project/@flowpad_assistant
 - wait for the left sidebar to render

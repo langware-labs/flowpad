@@ -252,6 +252,11 @@ export function WorkflowAssetEditor({ fsRef, workflow: providedWorkflow }: Workf
         onActiveSideTabChange={setActiveSideTab}
         showLearningMode={showLearningMode}
         learningPanel={learningPanel}
+        onDelete={async () => {
+          await resolvedWorkflow.delete();
+          navigation.openDock(DockPointer.forAssetList(Workflow.type));
+        }}
+        deleteLabel={resolvedWorkflow.name ?? undefined}
       />
 
       <AlertDialog open={showMcpModal} onOpenChange={setShowMcpModal}>

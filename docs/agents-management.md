@@ -1,3 +1,7 @@
+---
+id: a92a9c6b-3ea7-5680-bd00-d0bd1902490f
+---
+
 # Agent Management
 
 This is the top-level index for agent management documentation. The focused topic

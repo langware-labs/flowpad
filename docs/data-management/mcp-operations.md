@@ -1,3 +1,7 @@
+---
+id: 1e15f81a-5225-5a6a-af91-3cd2645e39d3
+---
+
 # MCP Server Operations
 
 The `flow_sdk` MCP server exposes a set of tools that Claude Code can call from within a running session. These tools allow in-session agents to record entities, report progress via XML flow tags, manage per-session key-value context, and introspect session transcripts — all over the MCP stdio protocol rather than through the HTTP graph API.

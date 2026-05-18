@@ -1,3 +1,7 @@
+---
+id: eb2bf03b-7eee-589d-a1fd-d8ddb8ee5c15
+---
+
 test 1: Plain text message with USER and ASSISTANT blocks
 - navigate to {APP_URL}/
 - fill landing input with "message types test"

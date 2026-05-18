@@ -1,3 +1,7 @@
+---
+id: 10c7d57b-09db-5a20-9ffd-b5475f2edff4
+---
+
 # System Agents
 
 System agents are pre-built Claude Code sub-agents bundled with the SDK. They execute specialized tasks (session analysis, skill creation, error fixing) through an isolated project environment and produce typed artifacts.

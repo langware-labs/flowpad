@@ -1,3 +1,7 @@
+---
+id: 9bbe4f85-965d-52d2-8adc-6e02db368698
+---
+
 test 1: Typing and submitting from app home page navigates to a shell session (FLOWPAD-1656)
 - navigate to {APP_URL}/dock/home
 - validate the home landing page is visible

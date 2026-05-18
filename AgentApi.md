@@ -1,3 +1,7 @@
+---
+id: 40c37f22-76be-5f63-bcb1-bdd5cb626cf9
+---
+
 # AgentApi.md — Agent Execution API Specification
 
 > Design and implementation guide for the three-layer agent execution stack.

@@ -1,3 +1,7 @@
+---
+id: 273cd1d7-93e9-58d3-bcad-24b592465dd2
+---
+
 test 1: Git status button appears in agentic process terminal ribbon
 - navigate to {APP_URL}/dock/shell/new_terminal
 - click the "Start Claude" button if on a plain shell to create an agentic process

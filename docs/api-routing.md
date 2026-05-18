@@ -1,3 +1,7 @@
+---
+id: 566ca793-90ca-5fb4-8fc5-0dc44b466925
+---
+
 # API Routing Specification
 
 This document describes how HTTP requests are routed through the flow-cli system — from URL to action handler — covering both the Python backend and the TypeScript frontend.

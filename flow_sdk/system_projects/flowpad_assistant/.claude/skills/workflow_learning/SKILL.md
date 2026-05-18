@@ -1,11 +1,16 @@
 ---
+id: 6317c0da-0839-551e-a9b0-b4fefb885c66
 name: workflow_learning
-description: Synthesize across a workflow's recent runs. Update memory.md with concrete learnings the next runner can apply, log the attempt, and surrender to the user via feedback.md only when stuck after multiple tries.
+description: Synthesize across a workflow's recent runs. Update memory.md with concrete
+  learnings the next runner can apply, log the attempt, and surrender to the user
+  via feedback.md only when stuck after multiple tries.
 tags:
-  - workflow
-  - learning
-  - memory
-allowed-tools: [Read, Write]
+- workflow
+- learning
+- memory
+allowed-tools:
+- Read
+- Write
 ---
 
 # Workflow Learning Skill

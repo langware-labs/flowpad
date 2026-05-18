@@ -1,3 +1,7 @@
+---
+id: d5f14146-b20b-56e6-9c77-2934bd42000b
+---
+
 test 1: Search with no params returns empty results array
 - [api] GET {API_URL}/api/v1/graph/compute_node/@local/fs-records/search
 - [api] validate HTTP response status is 200

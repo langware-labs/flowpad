@@ -434,7 +434,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
     [onTabClick],
   );
 
-  const scrollSelectedTabIntoView = useCallback((targetKey: string) => {
+  const scrollSelectedTabIntoView = useCallback((targetKey: string, behavior: ScrollBehavior = 'smooth') => {
     const container = tabContainerRef.current;
     const tab = tabRefs.current[targetKey];
     if (!container || !tab) return;
@@ -445,32 +445,27 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
     const visibleRight = visibleLeft + container.clientWidth;
 
     if (tabLeft < visibleLeft) {
-      container.scrollTo({
-        left: tabLeft,
-        behavior: 'smooth',
-      });
+      container.scrollTo({ left: tabLeft, behavior });
       return;
     }
 
     if (tabRight > visibleRight) {
-      container.scrollTo({
-        left: tabRight - container.clientWidth,
-        behavior: 'smooth',
-      });
+      container.scrollTo({ left: tabRight - container.clientWidth, behavior });
     }
   }, []);
 
   const selectTab = useCallback(
-    (targetKey: string, options?: { navigate?: boolean }) => {
+    (targetKey: string, options?: { navigate?: boolean; behavior?: ScrollBehavior }) => {
       if (!targetKey) return;
 
       if (options?.navigate !== false) {
         navigateToSession(targetKey);
       }
 
+      const behavior = options?.behavior ?? 'smooth';
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
-          scrollSelectedTabIntoView(targetKey);
+          scrollSelectedTabIntoView(targetKey, behavior);
         });
       });
     },
@@ -500,14 +495,34 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
     }
   }, [visibleSessions, pendingTabCreation, clearPendingTabCreation, scrollSelectedTabIntoView]);
 
+  // Mount + late-arriving-sessions + layout-shift: on initial mount the active
+  // tab may be in-view because only some sessions have rendered (so the
+  // strip is short). When the rest of the sessions land, the active tab gets
+  // pushed off-screen. When we then scroll right, `canScrollLeft` flips true
+  // and a left-arrow button mounts to our LEFT, shrinking our clientWidth and
+  // clipping the active tab on the right. ResizeObserver fires on either
+  // layout shift, so we re-evaluate scroll-into-view until the tab is
+  // genuinely visible — the function is a no-op once the tab fits.
+  // hasTabOverflow/canScrollLeft are intentionally NOT in the useEffect deps
+  // (they flip from the scroll itself → would infinite-loop).
+  const lastScrolledKeyRef = useRef<string | null>(null);
   useEffect(() => {
     if (!activeTargetKey || !hasActiveTab) return;
-    selectTab(activeTargetKey, { navigate: false });
-    // scrollSelectedTabIntoView reads DOM on each call — no need to re-run on
-    // scroll/overflow state changes, and doing so caused an infinite setState loop
-    // because selectTab scrolls the container, which flips hasTabOverflow/canScrollLeft.
+    const isFirstScrollForKey = lastScrolledKeyRef.current !== activeTargetKey;
+    lastScrolledKeyRef.current = activeTargetKey;
+    selectTab(activeTargetKey, { navigate: false, behavior: isFirstScrollForKey ? 'auto' : 'smooth' });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTargetKey, hasActiveTab, selectTab]);
+  }, [activeTargetKey, hasActiveTab, selectTab, visibleSessions.length]);
+
+  useEffect(() => {
+    const container = tabContainerRef.current;
+    if (!container || !activeTargetKey || !hasActiveTab) return;
+    const observer = new ResizeObserver(() => {
+      scrollSelectedTabIntoView(activeTargetKey, 'auto');
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [activeTargetKey, hasActiveTab, scrollSelectedTabIntoView]);
 
   const closeTabs = useCallback(
     async (tabs: TerminalTab[]): Promise<void> => {
@@ -639,7 +654,10 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
     const { scrollLeft, scrollWidth, clientWidth } = container;
     const hasOverflow = scrollWidth > clientWidth + 1;
     setHasTabOverflow(hasOverflow);
-    setCanScrollLeft(scrollLeft > 0);
+    // 1px epsilon matches the right-side check: sub-pixel scrollLeft values
+    // (macOS trackpad inertia, fractional zoom) would otherwise keep the
+    // left chevron lit when visually at the start.
+    setCanScrollLeft(hasOverflow && scrollLeft > 1);
     setCanScrollRight(hasOverflow && scrollLeft + clientWidth < scrollWidth - 1);
   };
 
@@ -821,14 +839,17 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
         {/* Tab Bar */}
         <div className="flex items-center border-b bg-muted" data-testid="terminal-tab-bar">
           <ProjectsCounterChip currentProjectId={tabsProjectId} />
-          {/* Left Scroll Button */}
-          {canScrollLeft && (
+          {/* Left Scroll Button — always reserves layout space when tabs
+              overflow, so toggling `canScrollLeft` doesn't shift the
+              tab row horizontally. Mirrors the right-button pattern. */}
+          {hasTabOverflow && (
             <Button
               variant="ghost"
               size="icon"
-              className="h-7 w-7 shrink-0 rounded-none"
+              className={`h-7 w-7 shrink-0 rounded-none ${canScrollLeft ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
               onClick={() => scrollTabs('left')}
               aria-label="Scroll tabs left"
+              tabIndex={canScrollLeft ? 0 : -1}
             >
               <ChevronLeft className="h-4 w-4" />
             </Button>
@@ -1139,16 +1160,19 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
           void (async () => {
             setHistoryModalOpen(false);
             try {
-              if (entry.agentic_process_id) {
-                await navigation.openShellProcess(entry.agentic_process_id);
-              } else {
+              // Always route through openShellProcess so the row opens the
+              // terminal view (process.terminalDockPointer), not whatever the
+              // generic dockPointer would resolve to (e.g. transcript).
+              let processId: string | null = entry.agentic_process_id;
+              if (!processId) {
                 const process = await AgenticProcess.getByWorkerId(entry.worker_id);
-                if (!process) {
-                  toast({ title: 'Session not found', description: `Session ${entry.worker_id} is not in Claude or Codex history.`, variant: 'destructive' });
-                } else {
-                  navigation.openDockPointer(process.dockPointer);
-                }
+                processId = process?.id ?? null;
               }
+              if (!processId) {
+                toast({ title: 'Session not found', description: `Session ${entry.worker_id} is not in Claude or Codex history.`, variant: 'destructive' });
+                return;
+              }
+              await navigation.openShellProcess(processId);
             } catch (err) {
               console.error('[TabbedTerminal] Failed to open session from history:', err);
             } finally {

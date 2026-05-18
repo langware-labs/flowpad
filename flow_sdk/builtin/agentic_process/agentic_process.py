@@ -932,8 +932,7 @@ class AgenticProcess(Entity):
             await self.save()
 
             if shell:
-                await shell.terminate_worker()  # graceful SIGTERM → SIGKILL
-                await shell.stop()              # kill PTY, set status=idle
+                await shell.stop()  # terminates worker + kills PTY, status=idle
                 logger.info("AgenticProcess %s: exited (shell entity %s preserved)", self.id, self.shell_id)
             else:
                 logger.warning("AgenticProcess %s: Shell entity %s not found on exit", self.id, self.shell_id)

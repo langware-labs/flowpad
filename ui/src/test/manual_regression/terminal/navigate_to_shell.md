@@ -1,3 +1,7 @@
+---
+id: 42a24500-24bb-5694-9fcb-3512d433da52
+---
+
 test 1: Open the shell view from the sidebar
 - navigate to {APP_URL}/
 - validate landing page is visible with "Hey" heading

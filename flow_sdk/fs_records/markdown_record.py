@@ -231,12 +231,12 @@ class MarkdownRecord(Record):
         return None
 
     def default_body(self, entity) -> "str | None":
-        """Stub for new markdown docs. Stamps asset_id into frontmatter so the
+        """Stub for new markdown docs. Stamps `id` into frontmatter so the
         indexer's getId reads back the same id and never creates a duplicate
         Record on next scan. Only fires when the file at the computed
         asset_ref doesn't yet exist; shadow guard refuses writes there."""
         name = (getattr(entity, "name", None) or "").strip() or "Untitled"
-        return _render_frontmatter({"asset_id": entity.id, "title": name}) + f"\n# {name}\n"
+        return _render_frontmatter({"id": entity.id, "title": name}) + f"\n# {name}\n"
 
     @classmethod
     def from_markdown(cls, text: str, path: Path | None = None) -> "MarkdownRecord":
@@ -496,16 +496,22 @@ class MarkdownRecord(Record):
 
     @classmethod
     def genId(cls, ref) -> str:
-        """Read asset_id, or mint one into the frontmatter and return it.
+        """Read `id` (or legacy `asset_id`), or mint one into the frontmatter and return it.
 
-        Idempotent: if the file already has an `asset_id`, no write happens.
-        Otherwise a fresh `uuid4()` is inserted at the top of the frontmatter,
-        preserving every other field and the markdown body verbatim.
+        Idempotent: if the file already has an id field, no write happens.
+        Otherwise we preserve identity by writing the *currently derived* id
+        (uuid5 of resolved path — what `getId` would return) back into the
+        frontmatter. This locks identity to the file forever without orphaning
+        any DB row that was already keyed by that derived value. The next time
+        the file is renamed or moved, the id stays the same.
         """
         existing = cls._read_frontmatter_asset_id(ref._path)
         if existing:
             return existing
-        new_id = str(uuid.uuid4())
+        # Preserve the id already derived from path (same value as getId would
+        # return). Writing a fresh uuid4 here would orphan DB rows keyed by the
+        # derived uuid5.
+        new_id = str(uuid.uuid5(uuid.NAMESPACE_URL, str(ref._path.resolve())))
         try:
             text = ref._path.read_text(encoding="utf-8")
         except OSError:
@@ -517,8 +523,8 @@ class MarkdownRecord(Record):
             parsed = _yaml_load(fm)
             if isinstance(parsed, dict):
                 fields.update(parsed)
-        # Insert asset_id at the front for readability
-        merged = {"asset_id": new_id, **{k: v for k, v in fields.items() if k not in ("asset_id",)}}
+        # Insert `id` at the front for readability; drop any legacy `asset_id`.
+        merged = {"id": new_id, **{k: v for k, v in fields.items() if k not in ("id", "asset_id")}}
         try:
             ref._path.write_text(
                 _render_frontmatter(merged) + "\n\n" + body + ("\n" if body and not body.endswith("\n") else ""),

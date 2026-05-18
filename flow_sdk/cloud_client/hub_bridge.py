@@ -13,6 +13,7 @@ in Conversation.participants IS the subscription.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from dataclasses import dataclass
@@ -275,18 +276,58 @@ class HubWsBridge:
             local_user = await User.get_local()
             someone_typeid = local_user.typeid if local_user else None
 
-            from flow_sdk.app.actions.materialize_flow_message import materialize_flow_message
+            # CRITICAL PATH OPTIMIZATION
+            # ─────────────────────────
+            # Emit the FlowMessage CREATE op to local subscribers IMMEDIATELY
+            # using the payload from the wire. ``conv.on('message', cb)`` taps
+            # fire off this op — that's what unblocks alice's vitest loop on
+            # every bob→alice message in the ping-pong e2e. The full
+            # ``materialize_flow_message`` (DB save + conv.jsonl append +
+            # conv message_ids/count projection + UI resource_sync × 2) does
+            # ~300-500ms of work per call and used to sit on the critical
+            # path between the hub fanout and the alice tap, blowing the
+            # 6s ping-pong budget for STOP_AT=20.
+            #
+            # Now: TS subscribers see the data instantly via the in-payload
+            # CREATE; persistence runs in the background and lands in the
+            # local DB a few hundred ms later — well before the user's next
+            # interaction needs to query the FM by id.
+            try:
+                from flow_sdk.api.messages import DataOpMessage, OperationType  # noqa: PLC0415
+                from flow_sdk.core.network.resource_tracker import handle_entity_op  # noqa: PLC0415
+                from flow_sdk.builtin.flow_message import FlowMessage as _FlowMessageCls  # noqa: PLC0415
+                _fm_for_emit = _FlowMessageCls.model_validate(
+                    {**payload, "conversation_id": conversation_id}
+                )
+                await handle_entity_op(
+                    DataOpMessage(
+                        data=_fm_for_emit,
+                        op=OperationType.CREATE,
+                        to_entity=_fm_for_emit.typeid,
+                    )
+                )
+            except Exception as _emit_err:
+                logger.warning("[bridge] inbound CREATE emit failed (non-fatal): %s", _emit_err)
 
-            await materialize_flow_message(
-                payload,
-                conversation_id=conversation_id,
-                someone_typeid=someone_typeid,
-                notify=True,
+            # Persist in the background — keeps the bridge handler off the
+            # critical path. notify=False because we already emitted CREATE
+            # above; a second notify would double-fire subscribers.
+            async def _persist_inbound() -> None:
+                try:
+                    from flow_sdk.app.actions.materialize_flow_message import materialize_flow_message
+                    await materialize_flow_message(
+                        payload,
+                        conversation_id=conversation_id,
+                        someone_typeid=someone_typeid,
+                        notify=False,
                 # Live hub arrival: emit the local CREATE even if a catch-up
                 # sync already materialized the row, so the open conversation
                 # ``on('message')`` listener still fires.
                 emit_live_create=True,
-            )
+            )except Exception as _err:
+                    logger.warning("[bridge] inbound persist failed (non-fatal): %s", _err)
+
+            asyncio.create_task(_persist_inbound())
 
             # Auto-ack delivery — receiver-side acks are the only signal that
             # makes the sender's UI tick from ✓ to ✓✓. Skip if the local user
