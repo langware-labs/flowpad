@@ -325,3 +325,31 @@ async def broadcast_progress(to_entity: str, flow_data: dict) -> None:
                 pass
     except Exception as e:
         logger.error(f"Error broadcasting progress: {e}", exc_info=True)
+
+
+def make_flow_message_progress_emitter(fm_id: str, phase: str):
+    """Build an async ``on_progress(bytes_done, bytes_total)`` callback that
+    fans a ``flow_data_msg`` for a FlowMessage's body upload/download bar.
+
+    ``phase`` is ``"upload"`` or ``"download"`` — it becomes the flow_data
+    ``element_type`` (``upload_progress`` / ``download_progress``) the UI's
+    ``useFlowMessageProgress`` hook filters on. Broadcast (not watcher-scoped)
+    so the bar shows regardless of whether the FM is registered as watched.
+    """
+    to_entity = f"flow_message-{fm_id}"
+    element_type = f"{phase}_progress"
+
+    async def _emit(bytes_done: int, bytes_total: int) -> None:
+        try:
+            await broadcast_progress(to_entity, {
+                "element_type": element_type,
+                "attributes": {
+                    "flow_message_id": fm_id,
+                    "bytes_done": bytes_done,
+                    "bytes_total": bytes_total,
+                },
+            })
+        except Exception:  # noqa: BLE001
+            pass
+
+    return _emit

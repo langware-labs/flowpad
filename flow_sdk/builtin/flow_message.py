@@ -3,7 +3,10 @@ from __future__ import annotations
 from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, ClassVar, Optional
+from typing import Any, Awaitable, Callable, ClassVar, Optional
+
+# An async progress callback: ``await on_progress(bytes_done, bytes_total)``.
+ProgressCallback = Callable[[int, int], Awaitable[None]]
 
 from pydantic import BaseModel, SerializerFunctionWrapHandler, model_serializer
 
@@ -142,12 +145,21 @@ class FlowMessage(Entity):
             typeid = TypeId(type="flow_message", id=self.id)
             storage = get_entity_embedded_storage(typeid)
             for att in data["attachment"]:
+                vfs_subpath: Optional[str] = None
                 if att.get("attachment_type") == AttachmentType.FILE.value:
-                    att["local_path"] = storage.get_storage_path(att.get("data", ""))
+                    vfs_subpath = att.get("data", "")
                 elif att.get("attachment_type") == AttachmentType.PROMPT.value:
                     raw = att.get("data", "")
                     if raw and raw.startswith(PROMPT_FILE_VFS_PREFIX):
-                        att["local_path"] = storage.get_storage_path(raw)
+                        vfs_subpath = raw
+                if not vfs_subpath:
+                    continue
+                # Expose ``local_path`` only when the bytes are actually on
+                # local disk. The UI reads a non-null local_path as "the file
+                # is downloaded": a receiver sees null until it pulls the body
+                # bundle; the sender sees it set the moment the file is staged.
+                resolved = storage.get_storage_path(vfs_subpath)
+                att["local_path"] = resolved if resolved and Path(resolved).exists() else None
         return data
 
     async def to_file(self, dest_dir: Path | None = None) -> Path:
@@ -190,14 +202,19 @@ class FlowMessage(Entity):
         """
         return self.attachment
 
-    async def upload_body(self) -> "FlowMessage":
+    async def upload_body(
+        self, *, on_progress: Optional[ProgressCallback] = None,
+    ) -> "FlowMessage":
         """Pack the body, upload it to the hub, and stamp body_status=READY.
 
         Sequence:
           1. PUT body_status=UPLOADING on the hub (announce intent).
           2. pack_bundle into a temp .flowmsg.
           3. POST multipart to flow_message/<id>/fs/upload with BODY_FILENAME.
-          4. PUT body_status=READY + attachment_filename=BODY_FILENAME.
+          4. set_body_status action → body_status=READY + attachment_filename.
+
+        ``on_progress`` — optional async callback fired as upload bytes go out;
+        receives (bytes_done, bytes_total). Drives the sender's progress bar.
 
         On any step failure, the hub-side body_status remains UPLOADING and
         the exception propagates — callers decide retry. Caller is expected
@@ -225,6 +242,7 @@ class FlowMessage(Entity):
                 "fs",
                 "upload",
                 files={"uploaded_file": (BODY_FILENAME, content, "application/zip")},
+                on_progress=on_progress,
             )
         finally:
             zip_path.unlink(missing_ok=True)
@@ -246,7 +264,12 @@ class FlowMessage(Entity):
         self.attachment_filename = BODY_FILENAME
         return self
 
-    async def download_body(self, *, asset_dest_root: Path | None = None) -> "FlowMessage":
+    async def download_body(
+        self,
+        *,
+        asset_dest_root: Path | None = None,
+        on_progress: Optional[ProgressCallback] = None,
+    ) -> "FlowMessage":
         """Download the body from the hub and unpack it locally.
 
         Refuses (BodyNotReadyError) when body_status != READY — receivers
@@ -254,6 +277,9 @@ class FlowMessage(Entity):
         Reuses the standard unpack_bundle path so all attachment kinds
         (FILE, PROMPT-file, TYPE_ID, FS-rooted records) restore identically
         to the receive-on-inbox flow.
+
+        ``on_progress`` — optional async callback fired as download bytes
+        land; receives (bytes_done, bytes_total). Drives the receiver's bar.
         """
         if self.body_status != BodyStatus.READY:
             raise BodyNotReadyError(
@@ -264,7 +290,9 @@ class FlowMessage(Entity):
 
         from flow_sdk.app.actions.flow_message_action import _download_and_unpack_bundle
         filename = self.attachment_filename or BODY_FILENAME
-        ok = await _download_and_unpack_bundle(self.id, filename, asset_dest_root=asset_dest_root)
+        ok = await _download_and_unpack_bundle(
+            self.id, filename, asset_dest_root=asset_dest_root, on_progress=on_progress,
+        )
         if not ok:
             raise RuntimeError(f"download_body failed for fm={self.id}")
         return self

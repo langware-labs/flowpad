@@ -4,16 +4,25 @@ import { useEntity } from '@sdk/react/hooks';
 import { useState } from 'react';
 import type { ITask } from '@sdk/entities/task';
 import type { ConversationMessage, ConversationParticipant } from '@sdk/entities/conversation';
-import { AttachmentType, attachmentDataString, downloadFlowMessageUrl } from '@sdk/entities/flow-message';
+import {
+  AttachmentType,
+  BodyStatus,
+  BODY_FILENAME,
+  attachmentDataString,
+  downloadFlowMessageUrl,
+  downloadFlowMessageBody,
+} from '@sdk/entities/flow-message';
 import { Download } from 'lucide-react';
 import { MessageBubble } from './MessageBubble';
-import { AttachmentChip } from './AttachmentChip';
+import { AttachmentChip, AttachmentChipState } from './AttachmentChip';
 import { ContextEntityChip } from './EntityChip';
 import { fileAttachmentUrl } from './attachment-url';
 import { useLocalUser } from './useLocalUser';
 import { localBundleUrl } from './flow-message-drafts';
 import { DraftMessageComposer } from './DraftMessageComposer';
 import { participantLabelByUserId } from './participant-display';
+import { useFlowMessageProgress } from './useFlowMessageProgress';
+import { cn } from '@src/lib/utils';
 
 
 interface FlowMessageBubbleProps {
@@ -77,6 +86,9 @@ export function FlowMessageBubble({
   );
   const { localUser, updateName } = useLocalUser();
   const [overrideName, setOverrideName] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState(false);
+  // Live body upload/download bar — null when no transfer is in flight.
+  const progress = useFlowMessageProgress(messageId);
 
   if (!fm) {
     // The pointer to this FlowMessage is in the conversation.jsonl, but the
@@ -186,15 +198,64 @@ export function FlowMessageBubble({
   });
 
   const insideConv = { type: Conversation.type, id: fm.conversation_id ?? '' };
+
+  // Body-bundle lifecycle drives each FILE chip's appearance:
+  //   uploading  — sender still staging the body (body_status=uploading)
+  //   ready      — body on the hub, not yet on this machine (no local_path)
+  //   downloaded — bytes are local (local_path set) or no body round-trip (na)
+  const bodyStatus = fm.body_status ?? BodyStatus.NA;
+  const chipState = (att: { local_path?: string | null }): AttachmentChipState => {
+    if (bodyStatus === BodyStatus.UPLOADING) return AttachmentChipState.Uploading;
+    if (att.local_path) return AttachmentChipState.Downloaded;
+    if (bodyStatus === BodyStatus.READY) return AttachmentChipState.Ready;
+    return AttachmentChipState.Downloaded;
+  };
+  const handleDownloadBody = async () => {
+    if (downloading) return;
+    setDownloading(true);
+    try {
+      await downloadFlowMessageBody(messageId);
+      // Success fans an entity UPDATE — useEntity re-renders the chips as
+      // DOWNLOADED. On failure they stay READY so the user can retry.
+    } catch {
+      /* swallowed — chip stays READY */
+    } finally {
+      setDownloading(false);
+    }
+  };
+  // The body.flowmsg bundle is transport, not a user-facing file — never chip it.
+  const showBundleChip =
+    !!fm.attachment_filename && fm.attachment_filename !== BODY_FILENAME;
+
   const hasAttachments =
-    !!fm.attachment_filename
+    showBundleChip
     || fileAttachments.length > 0
     || typeIdAttachments.length > 0
     || contextChips.length > 0;
-  const totalAttachments = (fm.attachment_filename ? 1 : 0) + fileAttachments.length;
+  const totalAttachments = (showBundleChip ? 1 : 0) + fileAttachments.length;
+
+  const progressPct =
+    progress && progress.bytesTotal > 0 ? Math.round(progress.fraction * 100) : null;
 
   const footer = hasAttachments ? (
     <div className="mt-2 space-y-1.5">
+      {progress && (
+        <div className="flex items-center gap-2">
+          <div className="h-1 flex-1 overflow-hidden rounded-full bg-muted">
+            <div
+              className={cn(
+                'h-full rounded-full bg-primary transition-all',
+                progressPct === null && 'animate-pulse',
+              )}
+              style={{ width: progressPct === null ? '100%' : `${progressPct}%` }}
+            />
+          </div>
+          <span className="text-[10px] tabular-nums text-muted-foreground">
+            {progress.phase === 'upload' ? 'Uploading' : 'Downloading'}
+            {progressPct === null ? '…' : ` ${progressPct}%`}
+          </span>
+        </div>
+      )}
       {(typeIdAttachments.length > 0 || contextChips.length > 0) && (
         <div className="flex flex-wrap gap-1">
           {typeIdAttachments.map((typeId) => (
@@ -213,20 +274,24 @@ export function FlowMessageBubble({
           ))}
         </div>
       )}
-      {fm.attachment_filename && (
+      {showBundleChip && (
         <AttachmentChip
-          url={downloadFlowMessageUrl(messageId, fm.attachment_filename)}
-          filename={fm.attachment_filename}
+          url={downloadFlowMessageUrl(messageId, fm.attachment_filename!)}
+          filename={fm.attachment_filename!}
         />
       )}
       {fileAttachments.map((a) => {
         const d = attachmentDataString(a);
         const name = d.split('/').pop() || d;
+        const st = chipState(a);
         return (
           <AttachmentChip
             key={d}
             url={fileAttachmentUrl(messageId, d)}
             filename={name}
+            state={st}
+            downloading={st === AttachmentChipState.Ready && downloading}
+            onDownload={st === AttachmentChipState.Ready ? () => void handleDownloadBody() : undefined}
           />
         );
       })}
@@ -250,9 +315,9 @@ export function FlowMessageBubble({
       flowMessage={fm}
       task={task ?? undefined}
       senderName={displayName}
-      onEditName={isCurrentUser ? async (newName) => {
+      onEditName={isCurrentUser ? (newName) => {
         setOverrideName(newName);
-        await updateName(newName);
+        void updateName(newName);
       } : undefined}
       onApproveAndExecute={onApproveAndExecute ? (idx) => onApproveAndExecute(messageId, idx) : undefined}
       onImplementPlan={onImplementPlan ? () => onImplementPlan(messageId) : undefined}

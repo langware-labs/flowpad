@@ -147,6 +147,8 @@ class Conversation(Entity):
         text: str,
         *,
         sender_name: Optional[str] = None,
+        sender_id: Optional[str] = None,
+        flow_message_id: Optional[str] = None,
         attachments: Optional[list] = None,
         context_entities: Optional[list] = None,
     ) -> dict:
@@ -164,6 +166,11 @@ class Conversation(Entity):
 
         ``context_entities``: optional list of TypeId-shaped dicts to bind on
         the FM. Mirrors the Entity.context_entities field surface.
+
+        ``flow_message_id``: when given, the hub creates the FM under this id
+        instead of minting its own. The sender uses this so the local FM, the
+        hub FM, and the uploaded ``body.flowmsg`` bundle all share one key —
+        ``FlowMessage.upload_body()`` then targets the same id.
         """
         from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
         from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
@@ -175,6 +182,10 @@ class Conversation(Entity):
         if not creds or not creds.api_key:
             raise RuntimeError("Cloud login required before add_message()")
         body: dict = {"text": text}
+        if flow_message_id:
+            body["id"] = flow_message_id
+        if sender_id:
+            body["sender_id"] = sender_id
         if sender_name:
             body["sender_name"] = sender_name
         if attachments:
@@ -184,6 +195,7 @@ class Conversation(Entity):
             ]
         if context_entities:
             body["context_entities"] = context_entities
+        body["conversation_id"] = self.id
         path = build_hub_url(self, action="add_message")
         async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
             return await client.post(path, body)

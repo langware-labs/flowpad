@@ -384,8 +384,9 @@ async def handle_upload_body(fm_id: str) -> ApiResponse:
     fm = await _load_fm_local_or_hub(fm_id)
     if not fm:
         return ApiFailResponse(message=f"FlowMessage not found: {fm_id}", status_code=404)
+    from flow_sdk.core.network.resource_tracker import make_flow_message_progress_emitter
     try:
-        await fm.upload_body()
+        await fm.upload_body(on_progress=make_flow_message_progress_emitter(fm_id, "upload"))
     except Exception as e:
         logger.error("[flow_message_action] upload_body fm=%s: %s", fm_id, e, exc_info=True)
         return ApiFailResponse(message=f"upload_body failed: {e}")
@@ -400,11 +401,12 @@ async def handle_download_body(fm_id: str) -> ApiResponse:
     """Download + unpack this message's body bundle. Refuses (BodyNotReadyError)
     if body_status != READY — receivers must wait for the hub UPDATE fanout."""
     from flow_sdk.builtin.flow_message import BodyNotReadyError
+    from flow_sdk.core.network.resource_tracker import make_flow_message_progress_emitter
     fm = await _load_fm_local_or_hub(fm_id)
     if not fm:
         return ApiFailResponse(message=f"FlowMessage not found: {fm_id}", status_code=404)
     try:
-        await fm.download_body()
+        await fm.download_body(on_progress=make_flow_message_progress_emitter(fm_id, "download"))
     except BodyNotReadyError as e:
         return ApiFailResponse(message=str(e), status_code=409)
     except Exception as e:
@@ -1023,6 +1025,7 @@ async def _download_and_unpack_bundle(
     attachment_filename: str,
     *,
     asset_dest_root: Path | None = None,
+    on_progress=None,
 ) -> bool:
     """Download the .flowmsg bundle from the hub and unpack it locally.
 
@@ -1031,10 +1034,14 @@ async def _download_and_unpack_bundle(
     ``asset_dest_root`` is forwarded to ``unpack_bundle`` to anchor FS-rooted
     assets (skill/agent) restored from the bundle. ``None`` falls through to
     ``unpack_bundle``'s lazy ``tempfile.mkdtemp()`` default.
+
+    ``on_progress`` — optional async callback fired as download bytes land;
+    when set the hub GET is streamed instead of buffered whole.
     """
     from flow_sdk.fs_records.flow_message_bundle import FlowMessageExistsError, unpack_bundle
     bundle_bytes = await hub_get(
-        BuiltinEntityType.FLOW_MESSAGE, fm_id, "fs", f"download/{attachment_filename}", raw=True
+        BuiltinEntityType.FLOW_MESSAGE, fm_id, "fs", f"download/{attachment_filename}",
+        raw=True, on_progress=on_progress,
     )
     if not bundle_bytes:
         logger.warning("[bundle] download returned no bytes for fm=%s", fm_id)
