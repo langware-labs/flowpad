@@ -580,7 +580,11 @@ class SchemaRegistry:
     clear = clear_index
 
     @classmethod
-    async def get_index_status(cls, types: list[str] | None = None) -> IndexStatus:
+    async def get_index_status(
+        cls,
+        types: list[str] | None = None,
+        scope: "object | None" = None,
+    ) -> IndexStatus:
         """Snapshot of per-instance index state. Async because it queries the DB
         for live entity counts.
 
@@ -589,6 +593,11 @@ class SchemaRegistry:
         indexing (UI's "Index Now" loop) automatically flips ``never_indexed``.
         ``entity_count`` comes from ``driver.count_entities_by_type`` so it
         reflects what's actually searchable, not a stale log entry.
+
+        When ``scope`` (a server-side ScopeFilter) is provided, per-type
+        ``entity_count`` and ``orphan_count`` shrink to the scoped subset.
+        The ``last_indexed_at`` / ``stale`` fields are unaffected (those are
+        per-type indexer-run timestamps, not row counts).
         """
         from datetime import timedelta  # noqa: PLC0415
         from flow_sdk._compat import UTC
@@ -606,15 +615,20 @@ class SchemaRegistry:
                 if latest_iso is None or type_last > latest_iso:
                     latest_iso = type_last
             try:
+                count = await driver.count_entities_by_type(type_name, scope=scope)
+            except TypeError:
+                # Driver predates the scope kwarg — fall back to unscoped count.
                 count = await driver.count_entities_by_type(type_name)
             except Exception:
                 count = 0
             try:
-                orphans = (
-                    await driver.count_orphans_by_type(type_name)
-                    if hasattr(driver, "count_orphans_by_type")
-                    else 0
-                )
+                if hasattr(driver, "count_orphans_by_type"):
+                    try:
+                        orphans = await driver.count_orphans_by_type(type_name, scope=scope)
+                    except TypeError:
+                        orphans = await driver.count_orphans_by_type(type_name)
+                else:
+                    orphans = 0
             except Exception:
                 orphans = 0
             per_type.append(

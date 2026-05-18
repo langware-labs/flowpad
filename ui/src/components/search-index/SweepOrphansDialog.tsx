@@ -9,6 +9,7 @@ import {
   DialogTitle,
 } from '@src/components/ui/dialog';
 import { useIndexStatus, type IndexStatusPerType } from '@src/hooks/use-index-status';
+import { applyScopeToParams, type ScopeFilter } from '@src/lib/scope-filter';
 import { Ghost, Loader2, RefreshCw, Trash2 } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 
@@ -25,6 +26,18 @@ interface SweepOrphansDialogProps {
   perType: IndexStatusPerType[];
   /** Total across all types — drives the toolbar badge upstream; passed here for the summary line. */
   totalOrphans: number;
+  /** Optional ScopeFilter — when set, sweep and re-scan calls narrow to that
+   *  subset (and the index-status refresh after each action follows the same
+   *  scope so the orphan counts re-fetched match what the page sees). */
+  scope?: ScopeFilter;
+}
+
+function appendScope(url: string, scope?: ScopeFilter): string {
+  if (!scope) return url;
+  const p = new URLSearchParams();
+  applyScopeToParams(p, scope);
+  const sep = url.includes('?') ? '&' : '?';
+  return `${url}${sep}${p.toString()}`;
 }
 
 export function SweepOrphansDialog({
@@ -33,11 +46,12 @@ export function SweepOrphansDialog({
   scopeType,
   perType,
   totalOrphans,
+  scope,
 }: SweepOrphansDialogProps) {
   const [action, setAction] = useState<SweepAction>('ignore');
   const [scanning, setScanning] = useState(false);
   const [sweeping, setSweeping] = useState(false);
-  const { refresh: refreshIndexStatus } = useIndexStatus();
+  const { refresh: refreshIndexStatus } = useIndexStatus(scope);
 
   const orphanRows = useMemo(() => {
     const rows = perType.filter((p) => p.orphan_count > 0);
@@ -57,12 +71,12 @@ export function SweepOrphansDialog({
   const handleRescan = useCallback(async () => {
     setScanning(true);
     try {
-      await apiClient.post(`${BASE}/index?orphan_action=index`);
+      await apiClient.post(appendScope(`${BASE}/index?orphan_action=index`, scope));
     } finally {
       setScanning(false);
       refreshIndexStatus();
     }
-  }, [refreshIndexStatus]);
+  }, [refreshIndexStatus, scope]);
 
   // Sweep: POST /fs-records/index?orphan_action=ignore|delete, optionally
   // scoped to one type. Same backend path the indexer uses internally; WS
@@ -70,16 +84,16 @@ export function SweepOrphansDialog({
   const handleSweep = useCallback(async () => {
     setSweeping(true);
     try {
-      const url = scopeType
+      const baseUrl = scopeType
         ? `${BASE}/index?type=${encodeURIComponent(scopeType)}&orphan_action=${action}`
         : `${BASE}/index?orphan_action=${action}`;
-      await apiClient.post(url);
+      await apiClient.post(appendScope(baseUrl, scope));
     } finally {
       setSweeping(false);
       refreshIndexStatus();
       onOpenChange(false);
     }
-  }, [scopeType, action, refreshIndexStatus, onOpenChange]);
+  }, [scopeType, action, refreshIndexStatus, onOpenChange, scope]);
 
   const busy = scanning || sweeping;
   const title = scopeType ? `Orphan ${scopeType} records` : 'Orphan records';

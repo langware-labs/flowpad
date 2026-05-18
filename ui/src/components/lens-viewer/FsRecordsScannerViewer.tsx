@@ -1,4 +1,5 @@
 import apiClient from '@sdk/client';
+import { dataContext } from '@sdk';
 import { RecordSearchBar } from '@src/components/record-search-bar/RecordSearchBar';
 import { SearchResultCard } from '@src/components/record-search-bar/SearchResultCard';
 import { ActivityProgressBar, ActivityProgressModal } from '@src/components/search-index/ActivityProgressModal';
@@ -14,6 +15,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tool
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@src/components/ui/alert-dialog';
 import { SearchFilters, useRecordSearch } from '@src/hooks/use-record-search';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
+import { ScopeFilterBar } from '@src/components/scope-filter/ScopeFilterBar';
+import { applyScopeToParams, defaultScopeFilter, scopeFilterEqual, scopeFilterKey, type ScopeFilter } from '@src/lib/scope-filter';
+import { projectIdForPath } from '@src/components/assets/utils';
 
 const BASE = '/graph/compute_node/@local/fs-records';
 const SCAN_PATH = `${BASE}/scan`;
@@ -261,7 +265,19 @@ function TypeRow({
 }
 
 export function FsRecordsScannerViewer() {
-  const { state: indexStatus, refresh: refreshIndexStatus } = useIndexStatus();
+  // Unified scope chip — same component, same shape, same wire format as the
+  // assets page. Drives every action and every count on this page so the
+  // user sees one consistent view of "what scope am I operating on".
+  const currentProjectId = projectIdForPath(dataContext.project?.fs_storage_mount_path);
+  const [scope, setScope] = useState<ScopeFilter>(() => defaultScopeFilter(currentProjectId));
+  const scopeIsDefault = scopeFilterEqual(scope, defaultScopeFilter(currentProjectId));
+  const scopeQs = useCallback((): string => {
+    const p = new URLSearchParams();
+    applyScopeToParams(p, scope);
+    return p.toString();
+  }, [scope]);
+
+  const { state: indexStatus, refresh: refreshIndexStatus } = useIndexStatus(scope);
   const { currentActivity, progressTable, clearIndex, indexType: indexTypeFromHook } = useSystemTools();
   const clearing = currentActivity === 'clear';
   const refreshing = currentActivity === 'scan' || currentActivity === 'index';
@@ -289,6 +305,19 @@ export function FsRecordsScannerViewer() {
     }
     prevActivity.current = currentActivity;
   }, [currentActivity, refreshIndexStatus]);
+
+  // Drop the per-type expand cache when the scope chip changes — the
+  // narrowed result set means the cached size/record list is misleading.
+  // useIndexStatus(scope) handles its own re-fetch via the scopeKey dep.
+  const lastScopeKey = useRef(scopeFilterKey(scope));
+  useEffect(() => {
+    const k = scopeFilterKey(scope);
+    if (k !== lastScopeKey.current) {
+      lastScopeKey.current = k;
+      setDetails({});
+      setExpandedType(null);
+    }
+  }, [scope]);
 
   // F4/F5 — Scan Orphans dialog (toolbar + per-row click both open this).
   const [sweepOpen, setSweepOpen] = useState(false);
@@ -357,13 +386,13 @@ export function FsRecordsScannerViewer() {
     // footer pill, this page's progress bar, and any other listener all see
     // from the same stream.
     try {
-      await apiClient.post(`${BASE}/index`);
+      await apiClient.post(`${BASE}/index?${scopeQs()}`);
     } finally {
       // index-status auto-refreshes on activity→idle via the effect above;
       // detail cache is invalidated so the next expand re-fetches.
       setDetails({});
     }
-  }, []);
+  }, [scopeQs]);
 
   // Force re-sync: same walk, but bypass skip-fresh — re-parse and re-upsert
   // EVERY entry under the default roots. DB ids preserved (no clear). Useful
@@ -373,12 +402,12 @@ export function FsRecordsScannerViewer() {
   const handleForceResync = useCallback(async () => {
     setForceResyncing(true);
     try {
-      await apiClient.post(`${BASE}/index?force=true`);
+      await apiClient.post(`${BASE}/index?force=true&${scopeQs()}`);
     } finally {
       setForceResyncing(false);
       setDetails({});
     }
-  }, []);
+  }, [scopeQs]);
 
   // Rebuild: clear DB + FTS for every indexable type, then walk + re-index
   // from scratch. Orphan flags reset (no rows survive to be orphan). New
@@ -387,27 +416,36 @@ export function FsRecordsScannerViewer() {
   const handleRebuildIndex = useCallback(async () => {
     setRebuilding(true);
     try {
-      await apiClient.post(`${BASE}/index?rebuild=true`);
+      await apiClient.post(`${BASE}/index?rebuild=true&${scopeQs()}`);
     } finally {
       setRebuilding(false);
       setIndexedResults({});
       setDetails({});
       refreshIndexStatus();
     }
-  }, [refreshIndexStatus]);
+  }, [refreshIndexStatus, scopeQs]);
 
   const handleClearIndex = useCallback(async () => {
-    await clearIndex();
+    // Scoped DELETE — bypasses the legacy clearIndex() hook helper because
+    // that one always wipes the full type set. Backend honors ?user=&projects=.
+    try {
+      await apiClient.delete(`${BASE}/index?${scopeQs()}`);
+    } catch {
+      // ignore — fall back to legacy unscoped clear via the hook
+      await clearIndex();
+    }
     setIndexedResults({});
     setDetails({});
     refreshIndexStatus();
-  }, [clearIndex, refreshIndexStatus]);
+  }, [clearIndex, refreshIndexStatus, scopeQs]);
 
   const handleClearType = useCallback(
     async (typeName: string) => {
       setClearingTypes((prev) => new Set(prev).add(typeName));
       try {
-        await apiClient.delete(`${BASE}/index?type=${encodeURIComponent(typeName)}`);
+        await apiClient.delete(
+          `${BASE}/index?type=${encodeURIComponent(typeName)}&${scopeQs()}`,
+        );
         setDetails((prev) => {
           const next = { ...prev };
           delete next[typeName];
@@ -424,21 +462,21 @@ export function FsRecordsScannerViewer() {
         });
       }
     },
-    [refreshIndexStatus],
+    [refreshIndexStatus, scopeQs],
   );
 
   const handleScanStats = useCallback(async () => {
     setScanStatsLoading(true);
     setScanStatsOpen(true);
     try {
-      const r = await apiClient.get<AggregateScan>(`${BASE}/scan`);
+      const r = await apiClient.get<AggregateScan>(`${BASE}/scan?${scopeQs()}`);
       setScanStats(r as unknown as AggregateScan);
     } catch {
       setScanStats(null);
     } finally {
       setScanStatsLoading(false);
     }
-  }, []);
+  }, [scopeQs]);
 
   // Re-index a single type from inside the Scan Stats modal, then refresh both
   // the modal's stats and the page's per-type rows. Visible "indexing…" state
@@ -448,11 +486,11 @@ export function FsRecordsScannerViewer() {
     async (typeName: string) => {
       setIndexingTypes((prev) => new Set(prev).add(typeName));
       try {
-        await indexTypeFromHook(typeName);
+        await indexTypeFromHook(typeName, scope);
         // Reload aggregate scan so FS Count / DB Count / Diff reflect the new
         // post-index state.
         try {
-          const r = await apiClient.get<AggregateScan>(`${BASE}/scan`);
+          const r = await apiClient.get<AggregateScan>(`${BASE}/scan?${scopeQs()}`);
           setScanStats(r as unknown as AggregateScan);
         } catch {
           // leave existing stats if scan fails
@@ -469,14 +507,14 @@ export function FsRecordsScannerViewer() {
         });
       }
     },
-    [indexTypeFromHook, refreshIndexStatus],
+    [indexTypeFromHook, refreshIndexStatus, scope, scopeQs],
   );
 
   const handleIndexType = useCallback(
     async (typeName: string) => {
       setIndexingTypes((prev) => new Set(prev).add(typeName));
       try {
-        const res = await indexTypeFromHook(typeName);
+        const res = await indexTypeFromHook(typeName, scope);
         setIndexedResults((prev) => ({ ...prev, [typeName]: res.indexed ?? 0 }));
         // Invalidate the cached detail so the row reflects the re-index.
         setDetails((prev) => {
@@ -494,7 +532,7 @@ export function FsRecordsScannerViewer() {
         });
       }
     },
-    [indexTypeFromHook],
+    [indexTypeFromHook, scope],
   );
 
   const grandTotal = useMemo(() => typeRows.reduce((s, r) => s + r.count, 0), [typeRows]);
@@ -526,7 +564,14 @@ export function FsRecordsScannerViewer() {
             Clear Index    (Trash2)      — DELETE /fs-records/index         (wipe, no walk)
           Per-type Sync and Clear live as hover actions on each row. */}
       <div className="flex shrink-0 items-center justify-between border-b px-5 py-3">
-        <h1 className="text-sm font-semibold">Records Scanner</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-sm font-semibold">Records Scanner</h1>
+          <ScopeFilterBar
+            scope={scope}
+            currentProjectId={currentProjectId}
+            onScopeChange={setScope}
+          />
+        </div>
         <div className="flex items-center gap-1">
           <Tooltip>
             <TooltipTrigger asChild>
@@ -740,6 +785,18 @@ export function FsRecordsScannerViewer() {
               </button>
             </>
           )}
+          {!scopeIsDefault && (
+            <>
+              {' · '}
+              <span className="rounded-md bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary">
+                {scope.user && scope.projects.length > 0
+                  ? `scope: user + ${scope.projects.length} project${scope.projects.length === 1 ? '' : 's'}`
+                  : scope.user
+                    ? 'scope: user only'
+                    : `scope: ${scope.projects.length} project${scope.projects.length === 1 ? '' : 's'} only`}
+              </span>
+            </>
+          )}
         </div>
       )}
 
@@ -897,6 +954,7 @@ export function FsRecordsScannerViewer() {
         scopeType={sweepScopeType}
         perType={indexStatus.phase === 'ready' ? (indexStatus.status.per_type ?? []) : []}
         totalOrphans={totalOrphans}
+        scope={scope}
       />
 
       {/* Scan Stats modal — one-shot aggregate scan report. */}
