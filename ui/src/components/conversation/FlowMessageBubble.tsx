@@ -1,4 +1,4 @@
-import { Conversation, FlowMessage, TypeId } from '@sdk';
+import { Conversation, FlowMessage, TypeId, User } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { useState } from 'react';
 import type { ITask } from '@sdk/entities/task';
@@ -64,6 +64,12 @@ export function FlowMessageBubble({
   const { data: fm } = useEntity<FlowMessage>(
     new TypeId(FlowMessage.type, messageId),
   );
+  // Resolve the message author via `created_by`. Used as the sender-name
+  // fallback for messages that carry no `sender_id`/`sender_name` — notably
+  // the invitation-kind placeholder, whose author is the inviter.
+  const { data: creator } = useEntity<User>(
+    fm?.created_by ? new TypeId(User.type, fm.created_by) : null,
+  );
   const { localUser, updateName } = useLocalUser();
   const [overrideName, setOverrideName] = useState<string | null>(null);
 
@@ -95,10 +101,13 @@ export function FlowMessageBubble({
   }
 
   const isCurrentUser = !!(fm.sender_id && localUser?.id && fm.sender_id === localUser.id);
+  const creatorLabel = creator?.name?.trim() || creator?.email?.trim() || null;
   const displayName = overrideName
     ?? participantLabelByUserId(participants, fm.sender_id)
     ?? fm.sender_name
-    ?? (isCurrentUser ? (localUser?.name || 'You') : 'unknown');
+    ?? (isCurrentUser ? (localUser?.name || 'You') : null)
+    ?? creatorLabel
+    ?? 'unknown';
 
   // When task is present, role tracks the original task initiator (sender) vs
   // recipient. For project-scoped conversations (no task), use the local user
@@ -111,9 +120,14 @@ export function FlowMessageBubble({
     ? 'sender'
     : 'recipient';
 
+  // The invitation-kind placeholder stores the target conversation's TypeId
+  // in `text` (the hub reuses Invitation.message as a conv-id pointer). That
+  // string is plumbing, not a message — never render it as bubble content.
+  const isConvIdPointer = !!fm.conversation_id
+    && fm.text === `conversation-${fm.conversation_id}`;
   const message: ConversationMessage = {
     role,
-    content: fm.text ?? '',
+    content: isConvIdPointer ? '' : (fm.text ?? ''),
     sender_id: fm.sender_id ?? '',
     timestamp,
   };

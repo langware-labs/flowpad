@@ -29,6 +29,19 @@ export enum BodyStatus {
   READY = 'ready',
 }
 
+/** Discriminator for special FlowMessage kinds. Mirrors
+ *  flow_sdk.builtin.flow_message.FlowMessageKind exactly.
+ *  - USER       : a normal message (the default for everything the user or
+ *                 hub produces).
+ *  - INVITATION : a local-only placeholder FlowMessage representing a pending
+ *                 hub Invitation as the first row of a conversation; its
+ *                 ``context_entities`` carry the backing Invitation TypeId so
+ *                 the UI can read invitation_id off it for the Accept action. */
+export enum FlowMessageKind {
+  USER = 'user',
+  INVITATION = 'invitation',
+}
+
 /** Single source of truth for the body filename on the hub blob store.
  *  Must match flow_sdk.builtin.flow_message.BODY_FILENAME exactly — the
  *  parity unit test asserts this literal. */
@@ -123,11 +136,11 @@ export interface IFlowMessage extends IEntity {
   // ``msg.contextEntities`` / ``msg.firstContextOfType('task')``.
   /** Local-only draft message: not appended to conversation.jsonl, not pushed to hub. Flips to false on send-draft. */
   is_draft?: boolean;
-  /** Special-message discriminator. "user" (default) is a normal message;
-   *  "invitation" marks a local-only placeholder representing a pending hub
+  /** Special-message discriminator. USER (default) is a normal message;
+   *  INVITATION marks a local-only placeholder representing a pending hub
    *  Invitation as the first row of a conversation. The invitation TypeId
    *  lives in ``context_entities``. */
-  kind?: 'user' | 'invitation';
+  kind?: FlowMessageKind;
   /** Body-bundle lifecycle on the hub. Defaults to NA when the message has
    *  no body. Stamped UPLOADING at hub add_message time when the incoming
    *  attachments require a packed body; sender flips to READY after upload.
@@ -152,7 +165,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   delivered_at?: string | null;
   received_at?: string | null;
   is_draft?: boolean;
-  kind?: 'user' | 'invitation';
+  kind?: FlowMessageKind;
   body_status?: BodyStatus;
   static type: string = 'flow_message';
 
@@ -173,7 +186,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.delivered_at = entity.delivered_at ?? null;
     this.received_at = entity.received_at ?? null;
     this.is_draft = entity.is_draft ?? false;
-    this.kind = entity.kind ?? 'user';
+    this.kind = entity.kind ?? FlowMessageKind.USER;
     this.body_status = entity.body_status ?? BodyStatus.NA;
   }
 
