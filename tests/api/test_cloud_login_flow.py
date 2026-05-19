@@ -197,6 +197,7 @@ async def test_login_callback_returns_success_html(client):
         ),
         patch("flow_sdk.cli.auth.cloud_login.save_credentials"),
         patch("flow_sdk.cli.app_config.set_user"),
+        patch("flow_sdk.server.routes.auth.is_secrets_enabled", return_value=True),
     ):
         response = await client.get(
             f"/auth/login_callback?flowpad-api-key={TEST_API_KEY}"
@@ -220,6 +221,7 @@ async def test_login_callback_full_flow_finalizes_login(client):
         # must patch the names AS USED inside cloud_login (not at the source).
         patch("flow_sdk.cli.auth.cloud_login.save_credentials") as mock_save_credentials,
         patch("flow_sdk.cli.auth.cloud_login.set_user") as mock_set_user,
+        patch("flow_sdk.server.routes.auth.is_secrets_enabled", return_value=True),
     ):
         state.login_result = None
         state.login_received.clear()
@@ -253,9 +255,12 @@ async def test_login_callback_missing_key_returns_400(client):
 @pytest.mark.asyncio
 async def test_login_callback_invalid_key_returns_400(client):
     """GET /auth/login_callback with a key that fails validation returns 400."""
-    with patch(
-        "flow_sdk.cli.auth.hub_login.validate_api_key_async",
-        new=AsyncMock(side_effect=Exception("Invalid API key")),
+    with (
+        patch(
+            "flow_sdk.cli.auth.hub_login.validate_api_key_async",
+            new=AsyncMock(side_effect=Exception("Invalid API key")),
+        ),
+        patch("flow_sdk.server.routes.auth.is_secrets_enabled", return_value=True),
     ):
         response = await client.get(
             f"/auth/login_callback?flowpad-api-key={TEST_API_KEY}"
@@ -280,6 +285,7 @@ async def test_login_callback_invalidates_bootstrap_cache(client):
         ),
         patch("flow_sdk.cli.auth.cloud_login.save_credentials"),
         patch("flow_sdk.cli.app_config.set_user"),
+        patch("flow_sdk.server.routes.auth.is_secrets_enabled", return_value=True),
     ):
         response = await client.get(
             f"/auth/login_callback?flowpad-api-key={TEST_API_KEY}"

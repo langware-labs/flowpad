@@ -9,6 +9,7 @@ from typing import (
     Any,
     ClassVar,
     List,
+    Literal,
     Optional,
     Type,
     TypeGuard,
@@ -94,19 +95,34 @@ class Entity(DBEntity):
         ),
     )
 
-    # Generic context-entity references — the unified container for "what
-    # other entities is this one contextually related to." Persists as a list
-    # of TypeIds. Direct fields (``project_id``, ``assignee``, etc.) stay on
-    # the entity for indexing/business logic; ``context_entities`` holds the
-    # purely-pointer references that previously lived as one-off fields like
-    # ``task.spec_id`` / ``conversation.task_id`` / ``flow_message.context``.
-    # Mutate via ``add_context_entity`` / ``remove_context_entity``.
-    context_entities: list[TypeId] = APIField(
+    # Context-entity references — split into two buckets by the rule
+    # "if it came over the wire, it is shared; otherwise private."
+    #
+    #   * ``shared_context_entities`` is wire-bound: deserialized from incoming
+    #     payloads, serialized on outbound, propagates to any reader of the
+    #     entity. Mutated via ``add_shared_context_entities`` /
+    #     ``remove_shared_context_entities`` from backend actions that publish
+    #     a link to the thread.
+    #   * ``private_context_entities_`` (trailing underscore: raw storage)
+    #     is local-only: persists to disk but is excluded from the wire by
+    #     ``share()``. The computed ``private_context_entities`` property
+    #     merges in per-subclass direct-field projections (project_id,
+    #     assignee, etc.) via ``_direct_fields_as_typeids()``.
+    shared_context_entities: list[TypeId] = APIField(
         default_factory=list,
         description=(
-            "Pointers to other entities that contextually relate to this one. "
-            "Used by EntityChips to render lineage. Frontend writes go through "
-            "addContextEntity / removeContextEntity only."
+            "Wire-bound context references. Anything received over the wire "
+            "lands here; anything added via add_shared_context_entities is "
+            "republished. EntityChips render this as 'lineage everyone sees'."
+        ),
+    )
+    private_context_entities_: list[TypeId] = APIField(
+        default_factory=list,
+        description=(
+            "Local-only context references. Excluded from share()/hub push. "
+            "Mutated by add_private_context_entities. Read via the computed "
+            "``private_context_entities`` property, which adds direct-field "
+            "projections (project_id, assignee, ...) at read time."
         ),
     )
 
@@ -772,7 +788,7 @@ class Entity(DBEntity):
             raise RuntimeError("Cloud login required before share()")
 
         # Body = entity dump, excluding:
-        #  - ``context_entities``  — local-only chip projection, not on hub schema
+        #  - ``private_context_entities_``  — local-only chip projection, not on hub schema
         #  - ``created_by`` / ``updated_by`` — local user ids do not resolve on
         #    the hub; the hub stamps these from the auth token. Leaving them in
         #    triggers the hub's role-lookup with an unknown user → 404.
@@ -780,7 +796,7 @@ class Entity(DBEntity):
         body = self.model_dump(
             mode="json",
             exclude_none=True,
-            exclude={"context_entities", "created_by", "updated_by", "created_date", "updated_date"},
+            exclude={"private_context_entities_", "created_by", "updated_by", "created_date", "updated_date"},
         )
 
         path = build_hub_url(self.get_type())
@@ -1020,43 +1036,113 @@ class Entity(DBEntity):
 
     # ── context_entities surface ─────────────────────────────────────────
     #
-    # Mirrors the TS APIEntity API. ``context_entities`` is the persisted
-    # list of TypeId references; the dynamic ``context_entities_full``
-    # property merges in per-entity-projected direct fields. Subclasses
-    # override ``_direct_fields_as_typeids`` to surface fields like
-    # ``project_id`` / ``assignee`` for chip rendering.
+    # Mirrors the TS APIEntity API. Two persisted buckets:
+    #   * ``shared_context_entities``  — wire-bound, no auto-injection. The
+    #     read accessor is the field itself.
+    #   * ``private_context_entities_``  — local-only raw storage. The
+    #     computed ``private_context_entities`` property merges in
+    #     ``_direct_fields_as_typeids()`` (project_id, assignee, etc.).
+    #
+    # Subclasses override ``_direct_fields_as_typeids`` to add direct-field
+    # projections; those land in the private bucket only.
 
     def _direct_fields_as_typeids(self) -> List[TypeId]:
-        """Per-subclass projection of direct fields into the chip context.
+        """Per-subclass projection of direct fields into the private context.
         Default: nothing. Override on entities that want their own fields
-        (e.g. project_id) to appear in the merged context list.
+        (e.g. project_id) to appear in the private chip list.
         """
         return []
 
     @property
-    def context_entities_full(self) -> List[TypeId]:
-        """Direct-field projection + persisted ``context_entities``."""
-        return [*self._direct_fields_as_typeids(), *self.context_entities]
+    def private_context_entities(self) -> List[TypeId]:
+        """Direct-field projection + persisted ``private_context_entities_``.
+        Read-only view; mutate via add/remove helpers."""
+        return [*self._direct_fields_as_typeids(), *self.private_context_entities_]
 
-    def add_context_entity(self, type_id: TypeId) -> None:
-        """Append a context entity (idempotent)."""
-        if any(t == type_id for t in self.context_entities):
-            return
-        self.context_entities = [*self.context_entities, type_id]
+    @staticmethod
+    def _normalize_typeids(args: tuple[Any, ...]) -> List[TypeId]:
+        """Flatten variadic args that may mix TypeIds and lists/tuples of
+        TypeIds. Drops ``None`` entries silently."""
+        out: List[TypeId] = []
+        for a in args:
+            if a is None:
+                continue
+            if isinstance(a, TypeId):
+                out.append(a)
+            else:
+                for t in a:
+                    if t is not None:
+                        out.append(t)
+        return out
 
-    def remove_context_entity(self, type_id: TypeId) -> bool:
-        """Remove a context entity. Returns True if removed."""
-        before = len(self.context_entities)
-        self.context_entities = [t for t in self.context_entities if t != type_id]
-        return len(self.context_entities) < before
+    _BUCKET_FIELDS = {"shared": "shared_context_entities", "private": "private_context_entities_"}
 
-    def context_of_type(self, type_name: str) -> List[TypeId]:
-        """All context entries of the given entity type."""
-        return [t for t in self.context_entities_full if t.type == type_name]
+    def _add_to_bucket(self, bucket: Literal["shared", "private"], type_ids: tuple[Any, ...]) -> bool:
+        incoming = self._normalize_typeids(type_ids)
+        if not incoming:
+            return False
+        field = self._BUCKET_FIELDS[bucket]
+        current = list(getattr(self, field))
+        seen = {(t.type, t.id) for t in current}
+        added = False
+        for t in incoming:
+            key = (t.type, t.id)
+            if key in seen:
+                continue
+            current.append(t)
+            seen.add(key)
+            added = True
+        if added:
+            setattr(self, field, current)
+        return added
 
-    def first_context_of_type(self, type_name: str) -> TypeId | None:
-        """First context entry of the given entity type, or None."""
-        return next((t for t in self.context_entities_full if t.type == type_name), None)
+    def _remove_from_bucket(self, bucket: Literal["shared", "private"], type_ids: tuple[Any, ...]) -> bool:
+        targets = self._normalize_typeids(type_ids)
+        if not targets:
+            return False
+        field = self._BUCKET_FIELDS[bucket]
+        drop = {(t.type, t.id) for t in targets}
+        current: list[TypeId] = getattr(self, field)
+        kept = [t for t in current if (t.type, t.id) not in drop]
+        if len(kept) == len(current):
+            return False
+        setattr(self, field, kept)
+        return True
+
+    def add_shared_context_entities(self, *type_ids: "TypeId | list[TypeId] | None") -> bool:
+        """Append TypeIds to ``shared_context_entities`` (idempotent, deduped by (type, id))."""
+        return self._add_to_bucket("shared", type_ids)
+
+    def remove_shared_context_entities(self, *type_ids: "TypeId | list[TypeId] | None") -> bool:
+        return self._remove_from_bucket("shared", type_ids)
+
+    def add_private_context_entities(self, *type_ids: "TypeId | list[TypeId] | None") -> bool:
+        """Append TypeIds to ``private_context_entities_`` (idempotent, deduped by (type, id))."""
+        return self._add_to_bucket("private", type_ids)
+
+    def remove_private_context_entities(self, *type_ids: "TypeId | list[TypeId] | None") -> bool:
+        return self._remove_from_bucket("private", type_ids)
+
+    def _bucket_view(self, bucket: Literal["shared", "private", "both"]) -> List[TypeId]:
+        if bucket == "shared":
+            return list(self.shared_context_entities)
+        if bucket == "private":
+            return list(self.private_context_entities)
+        if bucket == "both":
+            return [*self.shared_context_entities, *self.private_context_entities]
+        raise ValueError(f"bucket must be 'shared' | 'private' | 'both', got {bucket!r}")
+
+    def context_of_type(
+        self, type_name: str, *, bucket: Literal["shared", "private", "both"] = "both"
+    ) -> List[TypeId]:
+        """All context entries of the given entity type in the requested bucket."""
+        return [t for t in self._bucket_view(bucket) if t.type == type_name]
+
+    def first_context_of_type(
+        self, type_name: str, *, bucket: Literal["shared", "private", "both"] = "both"
+    ) -> TypeId | None:
+        """First context entry of the given entity type in the requested bucket, or None."""
+        return next((t for t in self._bucket_view(bucket) if t.type == type_name), None)
 
     def get_env_table(self) -> "EntityEnvVars":
         if not self.env_vars:

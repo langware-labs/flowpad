@@ -85,7 +85,27 @@ def configure_desktop_hub(hub_base_url):
 
 @pytest.fixture(autouse=True)
 def isolated_hub_keyring(monkeypatch):
-    from flow_sdk.cli.auth import credentials as credentials_mod
+    """Per-test in-memory keyring with isolated per-instance sod state.
+
+    Phase C+D: credentials no longer live in keyring directly — they live
+    in the per-instance encrypted sodot file, with only the Fernet key in
+    keyring. This fixture mirrors the shared ``sod_env`` pattern (see
+    tests/conftest.py): unique FLOW_INSTANCE per test, monkeypatched
+    keyring, consent gate opened via ``enable_secrets()``.
+
+    The root tests/conftest.py registers a process-wide in-memory keyring
+    backend before any flow_sdk import, so even if a test bypassed this
+    fixture the real OS keychain would still be unreachable.
+    """
+    import keyring
+    import keyring.errors
+    import uuid as _uuid
+
+    instance_name = f"test-{_uuid.uuid4().hex[:8]}"
+    monkeypatch.setenv("FLOW_INSTANCE", instance_name)
+
+    from flow_sdk.instance_settings import reset_instance_settings
+    reset_instance_settings()
 
     store: dict[tuple[str, str], str] = {}
 
@@ -96,15 +116,19 @@ def isolated_hub_keyring(monkeypatch):
         store[(service, name)] = value
 
     def delete_password(service: str, name: str):
-        try:
-            del store[(service, name)]
-        except KeyError:
-            raise credentials_mod.keyring.errors.PasswordDeleteError("missing")
+        if (service, name) not in store:
+            raise keyring.errors.PasswordDeleteError("missing")
+        del store[(service, name)]
 
-    monkeypatch.setattr(credentials_mod.keyring, "get_password", get_password)
-    monkeypatch.setattr(credentials_mod.keyring, "set_password", set_password)
-    monkeypatch.setattr(credentials_mod.keyring, "delete_password", delete_password)
-    return store
+    monkeypatch.setattr(keyring, "get_password", get_password)
+    monkeypatch.setattr(keyring, "set_password", set_password)
+    monkeypatch.setattr(keyring, "delete_password", delete_password)
+
+    from flow_sdk.cli.auth.secrets import enable_secrets
+    enable_secrets()
+
+    yield store
+    reset_instance_settings()
 
 
 def _login(hub_base_url: str, *, expires_in_seconds: int | None = None) -> dict:

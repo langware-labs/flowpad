@@ -194,7 +194,8 @@ function buildDockPointer(
 }
 
 interface ContextEntityChipProps {
-  /** TypeId from an entity's ``contextEntities`` list. */
+  /** TypeId from one of an entity's two context buckets
+   *  (``sharedContextEntities`` or ``privateContextEntities``). */
   typeId: TypeId;
   inside?: { type: string; id: string };
   onClick?: () => void;
@@ -203,11 +204,12 @@ interface ContextEntityChipProps {
 }
 
 /**
- * Renders one entry from an entity's dynamic ``contextEntities`` list as an
+ * Renders one entry from one of an entity's two dynamic context lists as an
  * ``EntityChip`` — looks up the target entity to populate the chip's display
  * name (``title`` for Spec/Plan, ``name`` for Project/User, etc.), then
  * delegates rendering. This is the data-driven counterpart to ``EntityChip``:
- * callers iterating ``entity.contextEntities`` use this wrapper instead of
+ * callers iterating ``entity.sharedContextEntities`` /
+ * ``entity.privateContextEntities`` use this wrapper instead of
  * hand-constructing each chip.
  */
 export function ContextEntityChip({ typeId, inside, onClick, title, size }: ContextEntityChipProps) {

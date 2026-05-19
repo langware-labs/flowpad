@@ -25,7 +25,6 @@ from flow_sdk.api.oauth_api import OAuthProvider
 from flow_sdk.cli.app_config import set_user
 from flow_sdk.cli.auth.credentials import UserHubCredentials, load_credentials, save_credentials
 from flow_sdk.cli.auth.cloud_urls import get_login_url
-from flow_sdk.cli.auth.credentials import SERVICE_NAME, _api_key_name
 from flow_sdk.cloud_client import ApiConfig, FlowpadClient
 from flow_sdk.cloud_client.api.auth import LoginData
 from flow_sdk.instance_settings import get_instance_settings
@@ -183,22 +182,23 @@ async def _finalize_login(login_data: LoginData) -> None:
         user=user_info,
     ))
 
-    save_credentials(UserHubCredentials.from_login_data(login_data))
-    # Read-back verification: if this logs FAILED on a system where the OS
-    # prompt was silently bypassed, the keyring backend is broken (rare).
-    stored = load_credentials()
-    stored_ok = stored is not None and stored.api_key == login_data.token
-    logger.info(
-        "credentials write %s — keychain entry: service=%r account=%r",
-        "OK" if stored_ok else "FAILED (read-back mismatch)",
-        SERVICE_NAME,
-        _api_key_name(),
-    )
-    # Sentinel flag so is_cloud_login_available() reads the key on next boot.
-    # enable_secrets() swallows its own keyring errors and returns a bool,
-    # so we don't need a try/except here.
+    # Defensive: ensure consent marker exists before save_credentials writes
+    # to instance.sod (which raises SecretsNotEnabledError without consent).
+    # The canonical login flow has already passed through the bootstrap
+    # explanation page → enable_secrets approval; this call is a no-op on
+    # that path but covers any non-canonical caller that reaches here.
     from flow_sdk.cli.auth.secrets import enable_secrets
     enable_secrets()
+    save_credentials(UserHubCredentials.from_login_data(login_data))
+    # Read-back verification: confirms the sod write decrypts cleanly.
+    stored = load_credentials()
+    stored_ok = stored is not None and stored.api_key == login_data.token
+    sodot_path = get_instance_settings().sodot_path
+    logger.info(
+        "credentials write %s — sodot=%s",
+        "OK" if stored_ok else "FAILED (read-back mismatch)",
+        sodot_path,
+    )
     set_user(user_info)
     state.login_result = {"success": True, "user": user_info, "message": "Login successful"}
     state.login_received.set()

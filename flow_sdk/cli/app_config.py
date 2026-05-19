@@ -1,100 +1,86 @@
 #!/usr/bin/env python3
-"""
-Application configuration module for flow CLI.
-Manages user configuration in a JSON file using platformdirs.
+"""Per-instance application configuration.
+
+Phase D: config lives at ``<instance_dir>/config.json`` (per-instance JSON
+file), replacing the legacy single ``~/Library/Application Support/flow-cli/
+config.json`` that used per-instance suffixes (``user``, ``user:dev``,
+``user:test``) as key namespaces.
+
+The public API (``get_config`` / ``set_config`` / ``get_user`` / ``set_user`` /
+``clear_user``) is unchanged — only the storage location moves.
 """
 
-from platformdirs import user_config_dir
-from pathlib import Path
+from __future__ import annotations
+
 import json
+from pathlib import Path
 from typing import Any
 
 
-# Initialize config directory and file path
-_config_dir = Path(user_config_dir("flow-cli"))
-_config_dir.mkdir(parents=True, exist_ok=True)
-config_file_path = _config_dir / "config.json"
+USER_KEY = "user"
+
+
+def _config_file_path() -> Path:
+    """Resolve the per-instance config.json path. Lazy so import doesn't
+    create the directory (or fail if instance_settings isn't loadable)."""
+    from flow_sdk.instance_settings import get_instance_settings
+    return get_instance_settings().instance_dir / "config.json"
+
+
+# Back-compat module attribute. Computed lazily on first access by callers
+# that expected ``app_config.config_file_path`` at import time.
+def __getattr__(name: str):
+    if name == "config_file_path":
+        return _config_file_path()
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def _load_config() -> dict:
-    """Load the configuration from the JSON file."""
-    if not config_file_path.exists():
+    """Load the per-instance configuration. Returns {} if the file doesn't
+    exist or is corrupt."""
+    path = _config_file_path()
+    if not path.exists():
         return {}
-
     try:
-        with open(config_file_path, 'r') as f:
-            return json.load(f)
-    except (json.JSONDecodeError, IOError):
+        return json.loads(path.read_text())
+    except (json.JSONDecodeError, OSError):
         return {}
 
 
 def _save_config(config: dict) -> None:
-    """Save the configuration to the JSON file."""
-    with open(config_file_path, 'w') as f:
-        json.dump(config, f, indent=2)
+    """Atomic-ish write: ensure the instance_dir exists, then write the file.
+    The instance_dir may not exist yet on a fresh install — create it."""
+    path = _config_file_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(config, indent=2))
 
 
 def set_config(key: str, value: Any) -> None:
-    """
-    Set a configuration value.
-
-    Supports native Python types (str, int, float, bool) and complex types
-    (dict, list) which will be stored as JSON.
-
-    Args:
-        key: Configuration key
-        value: Configuration value (will be JSON serialized if complex type)
-    """
+    """Set a configuration value. Supports native Python types and
+    JSON-serializable composites."""
     config = _load_config()
-
-    # Store the value directly - json.dump will handle serialization
     config[key] = value
-
     _save_config(config)
 
 
 def get_config(key: str, default: Any = None) -> Any:
-    """
-    Get a configuration value.
-
-    Args:
-        key: Configuration key
-        default: Default value if key doesn't exist
-
-    Returns:
-        The configuration value, or default if not found
-    """
-    config = _load_config()
-    return config.get(key, default)
-
-
-def _user_key() -> str:
-    """Per-instance config key for the user record.
-
-    ``prod`` keeps the legacy ``"user"`` key (zero migration for installed
-    users); other instances use ``"user:<instance_name>"`` so two local
-    instances logged in as different cloud users don't overwrite each
-    other's record.
-    """
-    from flow_sdk.instance_settings import get_instance_settings
-    name = get_instance_settings().instance_name
-    return "user" if name == "prod" else f"user:{name}"
+    """Get a configuration value, or ``default`` if not set."""
+    return _load_config().get(key, default)
 
 
 def get_user() -> dict | None:
-    """Get the stored user information for the current instance."""
-    return get_config(_user_key())
+    """Return the stored user record for the current instance, or None."""
+    return get_config(USER_KEY)
 
 
 def set_user(user_info: dict) -> None:
-    """Store user information for the current instance."""
-    set_config(_user_key(), user_info)
+    """Persist the user record for the current instance."""
+    set_config(USER_KEY, user_info)
 
 
 def clear_user() -> None:
-    """Clear stored user information for the current instance."""
+    """Drop the user record for the current instance. Idempotent."""
     config = _load_config()
-    key = _user_key()
-    if key in config:
-        del config[key]
+    if USER_KEY in config:
+        del config[USER_KEY]
         _save_config(config)

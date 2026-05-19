@@ -4,7 +4,6 @@ import httpx
 import pytest
 
 from flow_sdk.cli.app_config import clear_user, set_user
-from flow_sdk.cli.auth import credentials as credentials_mod
 from flow_sdk.cli.auth.credentials import UserHubCredentials, load_credentials, save_credentials
 from flow_sdk.cli.auth.hub_login import is_logged_in
 from flow_sdk.cloud_client import ApiConfig, FlowpadClient
@@ -12,26 +11,14 @@ from flow_sdk.cloud_client.client_hooks import HubAuthExpiredError
 
 
 @pytest.fixture()
-def memory_keyring(monkeypatch):
-    store: dict[tuple[str, str], str] = {}
-
-    def get_password(service: str, name: str):
-        return store.get((service, name))
-
-    def set_password(service: str, name: str, value: str):
-        store[(service, name)] = value
-
-    def delete_password(service: str, name: str):
-        try:
-            del store[(service, name)]
-        except KeyError:
-            raise credentials_mod.keyring.errors.PasswordDeleteError("missing")
-
-    monkeypatch.setattr(credentials_mod.keyring, "get_password", get_password)
-    monkeypatch.setattr(credentials_mod.keyring, "set_password", set_password)
-    monkeypatch.setattr(credentials_mod.keyring, "delete_password", delete_password)
+def memory_keyring(sod_env):
+    """Back-compat name. Phase C moved credentials off keyring into the
+    per-instance sod, so the shared ``sod_env`` fixture (tests/conftest.py)
+    is the right primitive. Tests reference this fixture for parameter
+    injection; the yielded value (the active InstanceSettings) isn't
+    inspected directly by any test in this file."""
     clear_user()
-    yield store
+    yield sod_env
     clear_user()
 
 

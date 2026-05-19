@@ -124,15 +124,10 @@ export class NavigationActions {
   }
 
   /**
-   * Open a dock pointer in a separate browser tab named "flowpad-shell".
-   *
-   * - Reuses the existing browser tab named "flowpad-shell" if one is open,
-   *   so repeated clicks land in the same secondary tab instead of spawning new ones.
-   * - Leaves the current tab (e.g. the conversation view) untouched.
-   *
-   * Useful for shell / Claude Code sessions launched from a non-shell view.
+   * Build the absolute deep-link URL for a dock pointer without navigating.
+   * Pure helper — used by share/copy-link flows and openInBrowserTab.
    */
-  openInBrowserTab(pointer: IDockPointer | DockPointer): void {
+  getDockUrl(pointer: IDockPointer | DockPointer): string {
     const base = pointer instanceof DockPointer ? pointer : new DockPointer(pointer);
     const { viewType, pointer: pointerValue, layout } = base.toUrlSegments();
     const searchParams = base.toSearchParams();
@@ -144,7 +139,20 @@ export class NavigationActions {
       Object.fromEntries(searchParams.entries()),
       layout,
     );
-    const absoluteUrl = `${window.location.origin}${fullUrl}`;
+    return `${window.location.origin}${fullUrl}`;
+  }
+
+  /**
+   * Open a dock pointer in a separate browser tab named "flowpad-shell".
+   *
+   * - Reuses the existing browser tab named "flowpad-shell" if one is open,
+   *   so repeated clicks land in the same secondary tab instead of spawning new ones.
+   * - Leaves the current tab (e.g. the conversation view) untouched.
+   *
+   * Useful for shell / Claude Code sessions launched from a non-shell view.
+   */
+  openInBrowserTab(pointer: IDockPointer | DockPointer): void {
+    const absoluteUrl = this.getDockUrl(pointer);
     const opened = window.open(absoluteUrl, 'flowpad-shell');
     if (opened) opened.focus();
   }

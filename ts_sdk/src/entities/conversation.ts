@@ -69,9 +69,6 @@ export interface IConversation extends IEntity {
    *  the row when set; auto-revives when a FlowMessage newer than this stamp
    *  arrives. Per-message ``FlowMessage.is_read`` remains independent. */
   archived_at?: string | Date | null;
-  // NOTE: task_id moved into context_entities. Use conv.firstContextOfType('task').
-  // NOTE: data_path is derived from the canonical records-data path on the
-  // server — not exposed as a stored field anymore.
 }
 
 @registerEntity
@@ -149,7 +146,7 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
     opts: {
       sender_name?: string;
       attachment?: unknown[];
-      context_entities?: unknown[];
+      shared_context_entities?: unknown[];
     } = {},
   ): Promise<IFlowMessage> {
     const action = new ActionInfo('add_message', this.typeId.type, this.typeId.id, 'POST');
@@ -157,8 +154,8 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
       text,
       ...(opts.sender_name ? { sender_name: opts.sender_name } : {}),
       ...(opts.attachment && opts.attachment.length > 0 ? { attachment: opts.attachment } : {}),
-      ...(opts.context_entities && opts.context_entities.length > 0
-        ? { context_entities: opts.context_entities }
+      ...(opts.shared_context_entities && opts.shared_context_entities.length > 0
+        ? { shared_context_entities: opts.shared_context_entities }
         : {}),
     };
     const res = await dataManager.callAction<unknown, IFlowMessage>(action);

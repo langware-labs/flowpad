@@ -788,4 +788,8 @@ debug_file_path = os.path.join(FLOWPAD_TEMP_DIR, "debug.log")
 
 # Environment variable constants (for consumers that import these)
 GOOGLE_APPLICATION_CREDENTIALS = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", None)
-DEVELOPMENT = os.getenv("FLOWPAD_DEV", False)
+# Phase D: ``DEVELOPMENT = os.getenv("FLOWPAD_DEV", False)`` was dropped here.
+# Callers route through ``get_instance_settings().is_dev`` (derived from
+# instance_name). The legacy constant had a ``str|False`` type-inconsistency
+# bug and no remaining external consumers — sqlite_driver imports its own
+# local ``DEVELOPMENT`` from ``.connection``, not from this module.

@@ -115,19 +115,16 @@ export function flowMessageIdSet(orderedMessages: FlowMessage[]): Set<string> {
   return out;
 }
 
-/** Things to *exclude* from Shared Context: the conversation itself, both
- *  task-side AgenticProcesses, and every FlowMessage in the thread (so a
- *  message that references itself doesn't show up as its own context row). */
+/** Things to *exclude* from Shared Context: the conversation itself and
+ *  every FlowMessage in the thread (so a message that references itself
+ *  doesn't show up as its own context row). */
 export function buildSkipKeys(
   flowMessageIds: ReadonlySet<string>,
   conversationId: string,
-  task: Task | null,
 ): Set<string> {
   const out = new Set<string>();
   for (const id of flowMessageIds) out.add(id);
   out.add(new TypeId(Conversation.type, conversationId).toString());
-  if (task?.my_process_id) out.add(new TypeId(AgenticProcess.type, task.my_process_id).toString());
-  if (task?.shared_process_id) out.add(new TypeId(AgenticProcess.type, task.shared_process_id).toString());
   return out;
 }
 
@@ -144,7 +141,7 @@ export function buildSkipKeys(
 export function buildSharedEntities(
   orderedMessages: FlowMessage[],
   skipKeys: ReadonlySet<string>,
-  conversation?: { contextEntities?: TypeId[] } | null,
+  conversation?: { sharedContextEntities?: TypeId[] } | null,
 ): SharedEntityAgg[] {
   const byKey = new Map<string, SharedEntityAgg>();
   const pushTypeId = (t: TypeId | null, originMessageId: string | null) => {
@@ -162,7 +159,8 @@ export function buildSharedEntities(
   };
   for (const fm of orderedMessages) {
     if (!fm.id) continue;
-    for (const t of fm.contextEntities ?? []) pushTypeId(t, fm.id);
+    // Walk the wire-bound shared bucket only — private is local annotation.
+    for (const t of fm.sharedContextEntities ?? []) pushTypeId(t, fm.id);
     for (const a of fm.attachment ?? []) {
       if (a.attachment_type !== AttachmentType.TYPE_ID) continue;
       try {
@@ -172,11 +170,12 @@ export function buildSharedEntities(
       }
     }
   }
-  // Conversation-level context entities (e.g. specs added via the + button)
-  // surface as Shared Context with no specific origin message — they belong
-  // to the whole thread, not to a single bubble.
+  // Conversation-level shared context (e.g. specs published via the + button
+  // through the share-context endpoint) surface as Shared Context with no
+  // specific origin message — they belong to the whole thread, not to a
+  // single bubble.
   if (conversation) {
-    for (const t of conversation.contextEntities ?? []) pushTypeId(t, null);
+    for (const t of conversation.sharedContextEntities ?? []) pushTypeId(t, null);
   }
   return Array.from(byKey.values());
 }
@@ -224,45 +223,6 @@ export function buildAttachmentEntries(orderedMessages: FlowMessage[]): Attachme
 // ─────────────────────────────────────────────────────────────────────────
 //  Private Context
 // ─────────────────────────────────────────────────────────────────────────
-
-/** Keep only the candidate tasks that reference at least one FlowMessage in
- *  the thread, and capture every matching message id in conversation order. */
-export function aggregatePrivateTasks(
-  candidateTasks: Task[],
-  flowMessageIds: ReadonlySet<string>,
-): PrivateTaskAgg[] {
-  return candidateTasks
-    .map<PrivateTaskAgg | null>((t) => {
-      const origins: string[] = [];
-      for (const tid of t.contextEntities ?? []) {
-        if (tid.type !== FlowMessage.type) continue;
-        if (flowMessageIds.has(tid.toString()) && !origins.includes(tid.id)) {
-          origins.push(tid.id);
-        }
-      }
-      return origins.length > 0 ? { task: t, originMessageIds: origins } : null;
-    })
-    .filter((v): v is PrivateTaskAgg => v !== null);
-}
-
-/** Same shape as `aggregatePrivateTasks`, but for AgenticProcesses. */
-export function aggregatePrivateProcesses(
-  candidateProcesses: AgenticProcess[],
-  flowMessageIds: ReadonlySet<string>,
-): PrivateProcessAgg[] {
-  return candidateProcesses
-    .map<PrivateProcessAgg | null>((p) => {
-      const origins: string[] = [];
-      for (const tid of p.contextEntities ?? []) {
-        if (tid.type !== FlowMessage.type) continue;
-        if (flowMessageIds.has(tid.toString()) && !origins.includes(tid.id)) {
-          origins.push(tid.id);
-        }
-      }
-      return origins.length > 0 ? { process: p, originMessageIds: origins } : null;
-    })
-    .filter((v): v is PrivateProcessAgg => v !== null);
-}
 
 // ─────────────────────────────────────────────────────────────────────────
 //  Project + TypeId helpers

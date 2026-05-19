@@ -45,14 +45,14 @@ export interface IEntity extends Partial<IResource> {
   /** True when this entity has a hub-side counterpart at the same id; refreshable from the hub. */
   remote?: boolean;
   /**
-   * Generic context-entity references. The unified container for "what other
-   * entities is this entity contextually related to." On the wire, each entry
-   * is a TypeId-formatted string ("type-id"); in code, entities expose a typed
-   * ``contextEntities`` getter that merges this list with per-entity-projected
-   * direct fields. Frontend code must NOT push to this array directly — use
-   * ``addContextEntity`` / ``removeContextEntity``.
+   * Wire-bound context references. On the wire, each entry is a TypeId-formatted
+   * string ("type-id"). Anything received over the wire lands here; anything
+   * locally added via ``addContextEntities`` does NOT propagate (it goes into
+   * the private bucket and stays local). Read via the typed
+   * ``sharedContextEntities`` getter. Frontend code must NOT push to this
+   * array directly — call a backend ``share-context`` action.
    */
-  context_entities?: string[];
+  shared_context_entities?: string[];
 }
 
 export const defaultEntityType = 'entity_base';

@@ -1,19 +1,15 @@
 #!/usr/bin/env python3
-"""
-Authentication module for flow CLI.
-Manages API keys using system keyring.
+"""Authentication helpers for the flow CLI.
 
-The keyring slot is per-instance: ``prod`` keeps the legacy
-``flowpad_api_key`` username (zero migration for installed users); ``dev``
-and ``test`` use ``flowpad_api_key:<instance_name>`` so two local
-instances logged in as different cloud users don't overwrite each other's
-token.
+Credentials are stored per-instance in the encrypted sodot file. See
+``flow_sdk/cli/auth/credentials.py`` for the storage layer. Per-instance
+partitioning is automatic (each instance has its own sodot + Fernet key)
+— two local instances logged in as different cloud users never overwrite
+each other's token.
 """
 
 from flow_sdk.cli.auth.credentials import (
-    SERVICE_NAME,
     UserHubCredentials,
-    _api_key_name,
     clear_credentials,
     load_credentials,
     save_credentials,

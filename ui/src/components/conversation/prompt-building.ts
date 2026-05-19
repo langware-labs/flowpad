@@ -164,7 +164,10 @@ export async function buildMergedPrompt(flowMessage: FlowMessage): Promise<strin
     );
   }
 
-  const contextLines = buildContextEntityLines(flowMessage.contextEntities);
+  // Prompt sends the wire-bound (shared) context — same data any other
+  // reader of this FlowMessage would see. Private (local-only) context is
+  // not propagated to the model.
+  const contextLines = buildContextEntityLines(flowMessage.sharedContextEntities);
   const contextSection: string[] = [];
   if (contextLines.length > 0) {
     contextSection.push(
