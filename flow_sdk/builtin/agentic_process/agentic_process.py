@@ -2468,7 +2468,9 @@ class AgenticProcess(Entity):
         d = super().to_dict()
         computed = self._discover_status_from_transcript()
         d["worker_status"] = str(computed) if computed else WorkerStatus.IDLE.value
-        d["ready_for_input"] = is_ready_for_input(self, computed)
+        ready = is_ready_for_input(self, computed)
+        d["ready_for_input"] = ready
+        d["ready_for_input_since"] = self._ready_for_input_since() if ready else None
         return d
 
     @model_serializer(mode="wrap")
@@ -2480,7 +2482,9 @@ class AgenticProcess(Entity):
             return None
         computed = self._discover_status_from_transcript()
         data["worker_status"] = str(computed) if computed else WorkerStatus.IDLE.value
-        data["ready_for_input"] = is_ready_for_input(self, computed)
+        ready = is_ready_for_input(self, computed)
+        data["ready_for_input"] = ready
+        data["ready_for_input_since"] = self._ready_for_input_since() if ready else None
         # Surface the live launch command so the UI (run drawer, session info
         # popover, etc.) can show what was actually spawned. Failure-tolerant:
         # if a driver hasn't been wired or the cli_config is malformed, omit
@@ -2554,11 +2558,34 @@ class AgenticProcess(Entity):
     async def get_status(self):
         """Return current app status and computed worker_status from transcript."""
         worker_status = self._discover_status_from_transcript()
+        ready = is_ready_for_input(self, worker_status)
         return ApiSuccessResponse(data={
             "status": self.status,
             "worker_status": str(worker_status) if worker_status else WorkerStatus.IDLE.value,
-            "ready_for_input": is_ready_for_input(self, worker_status),
+            "ready_for_input": ready,
+            "ready_for_input_since": self._ready_for_input_since() if ready else None,
         })
+
+    def _ready_for_input_since(self) -> float | None:
+        """Epoch-ms timestamp approximating when the worker became ready-for-input.
+
+        Derived from the transcript file's mtime: the worker writes the
+        completion / interrupt / idle entry that puts it into a ready state,
+        and then stops writing — so mtime is stable at "became ready at" for
+        as long as the worker stays ready. None when the transcript is
+        unavailable (pre-prompt worker, missing path).
+
+        Used by the UI pending-action store to keep glow state idempotent
+        across page refreshes: refresh sees the same timestamp, so already-
+        acknowledged transitions don't re-arm.
+        """
+        try:
+            path = self.driver.transcript_path(self)
+            if path is None or not path.exists():
+                return None
+            return path.stat().st_mtime * 1000.0
+        except Exception:
+            return None
 
     @property
     def is_idle(self) -> bool:

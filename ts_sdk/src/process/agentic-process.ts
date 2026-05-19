@@ -211,6 +211,14 @@ export interface IAgenticProcess extends IEntity {
    * Computed server-side via ``is_ready_for_input``. Read-only on the wire.
    */
   ready_for_input?: boolean;
+  /**
+   * Epoch-ms timestamp approximating when the worker became ready-for-input
+   * (transcript-file mtime). Stable across refresh so the UI pending-action
+   * store can compare against a persisted ack and avoid re-arming the glow
+   * for a transition the user has already seen. Null when not ready or when
+   * the transcript is unavailable.
+   */
+  ready_for_input_since?: number | null;
   /** @internal — use AgenticProcess.cliOptions getter/setter instead */
   cli_config?: Record<string, any>;
   /** Extra directories passed to Claude via --add-dir */
