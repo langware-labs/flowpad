@@ -1,6 +1,7 @@
 import { Agent, Markdown, Project, Skill, Task, Whiteboard, Workflow } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { Bot, CheckSquare, FileText, Palette, Sparkles, Workflow as WorkflowIcon, type LucideIcon } from 'lucide-react';
+import type { HarnessKind, ScopeKind } from './ScopeSelection';
 
 /**
  * Result returned by a QuickCreateDescriptor's `create` function.
@@ -14,8 +15,16 @@ export interface QuickCreateResult {
 }
 
 export interface QuickCreateCreateArgs {
+  /** Currently-active project context (legacy create paths still rely on this). */
   project: Project | null;
   name: string;
+  /** Final destination as edited by the user in the path input. */
+  absolutePath: string;
+  /** Which scope chip was active when Create was pressed. */
+  scope: ScopeKind;
+  /** Which harness chip was active (affects which on-disk convention the path follows). */
+  harness: HarnessKind;
+  /** Project-relative folder when scope === 'project' (e.g. ".claude/skills"). */
   folderVfsPath?: string;
 }
 
@@ -26,12 +35,29 @@ export interface QuickCreateDescriptor {
   label: string;
   /** React icon component, rendered in the quick-create menu and dialog header. */
   Icon: LucideIcon;
-  /** When true, the create dialog renders a directory tree for folder placement. */
-  allowFolderSelection: boolean;
-  /** VFS-relative default folder under the project mount (e.g. `.claude/skills`). */
-  defaultFolder?: string;
+  /** Sub-folder under the scope root for Claude / All (e.g. ".claude/skills"). */
+  defaultSubFolder: string;
+  /** Codex project-scope sub-folder. Falls back to defaultSubFolder when omitted. */
+  codexProjectSubFolder?: string;
+  /** Codex user-scope sub-folder. Falls back to codexProjectSubFolder, then defaultSubFolder. */
+  codexUserSubFolder?: string;
   /** Creation function — shared between the quick-create dialog and AssetsPage. */
   create: (args: QuickCreateCreateArgs) => Promise<QuickCreateResult>;
+}
+
+function leafOf(subFolder: string): string {
+  const idx = subFolder.lastIndexOf('/');
+  return idx >= 0 ? subFolder.slice(idx + 1) : subFolder;
+}
+
+/** Resolve the sub-folder for a (descriptor, harness, scope) tuple. */
+export function subFolderFor(descriptor: QuickCreateDescriptor, harness: HarnessKind, scope: ScopeKind): string {
+  if (harness === 'all') return `assets/${leafOf(descriptor.defaultSubFolder)}`;
+  if (harness === 'codex') {
+    if (scope === 'user') return descriptor.codexUserSubFolder ?? descriptor.codexProjectSubFolder ?? descriptor.defaultSubFolder;
+    return descriptor.codexProjectSubFolder ?? descriptor.defaultSubFolder;
+  }
+  return descriptor.defaultSubFolder;
 }
 
 export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
@@ -39,8 +65,9 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     type: 'skill',
     label: 'Skill',
     Icon: Sparkles,
-    allowFolderSelection: true,
-    defaultFolder: '.claude/skills',
+    defaultSubFolder: '.claude/skills',
+    codexProjectSubFolder: '.agents/skills',
+    codexUserSubFolder: '.codex/skills',
     create: async ({ project, name, folderVfsPath }) => {
       const saved = await Skill.createInProject(project, name, folderVfsPath);
       return {
@@ -53,8 +80,9 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     type: 'agent',
     label: 'Agent',
     Icon: Bot,
-    allowFolderSelection: true,
-    defaultFolder: '.claude/agents',
+    defaultSubFolder: '.claude/agents',
+    codexProjectSubFolder: '.codex/agents',
+    codexUserSubFolder: '.codex/agents',
     create: async ({ project, name, folderVfsPath }) => {
       const saved = await Agent.createInProject(project, name, folderVfsPath);
       return {
@@ -67,7 +95,8 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     type: 'workflow',
     label: 'Workflow',
     Icon: WorkflowIcon,
-    allowFolderSelection: false,
+    defaultSubFolder: '.claude/workflows',
+    codexProjectSubFolder: '.codex/workflows',
     create: async ({ project, name, folderVfsPath }) => {
       const saved = await Workflow.createInProject(project, name, folderVfsPath);
       return {
@@ -80,7 +109,8 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     type: 'task',
     label: 'Task',
     Icon: CheckSquare,
-    allowFolderSelection: false,
+    defaultSubFolder: '.claude/tasks',
+    codexProjectSubFolder: '.codex/tasks',
     create: async ({ project, name }) => {
       const task = await Task.createInProject(project, name);
       return {
@@ -93,8 +123,8 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     type: 'markdown',
     label: 'Markdown document',
     Icon: FileText,
-    allowFolderSelection: true,
-    defaultFolder: '.claude/docs',
+    defaultSubFolder: '.claude/docs',
+    codexProjectSubFolder: '.codex/docs',
     create: async ({ project, name }) => {
       const md = await Markdown.createInProject(project, name);
       return {
@@ -107,8 +137,8 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     type: 'whiteboard',
     label: 'Whiteboard',
     Icon: Palette,
-    allowFolderSelection: true,
-    defaultFolder: '.claude/whiteboards',
+    defaultSubFolder: '.claude/whiteboards',
+    codexProjectSubFolder: '.codex/whiteboards',
     create: async ({ project, name, folderVfsPath }) => {
       const saved = await Whiteboard.createInProject(project, name, folderVfsPath);
       return {

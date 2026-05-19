@@ -276,11 +276,18 @@ def restart_payload_from_cli_options(options: WorkerCLIOptions) -> dict[str, Any
 
     Runtime-only env vars are injected after the process identity is known but
     are not user launch config, so they must not force a restart prompt.
+
+    ``resume`` is derived from (session_id, transcript-on-disk) by the driver's
+    ``cli_options`` and flips False→True as soon as the worker writes its first
+    JSONL line. Hashing it would race the snapshot captured at the end of
+    ``start_pty()`` against that write and light up a phantom restart glow on
+    fresh processes, so it's stripped here.
     """
     data = dict(options.to_json())
     env_vars = dict(data.get("env_vars") or {})
     env_vars.pop("FLOWPAD_EXECUTION_SCOPE", None)
     data["env_vars"] = env_vars
+    data.pop("resume", None)
     return data
 
 

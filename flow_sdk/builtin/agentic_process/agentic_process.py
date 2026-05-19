@@ -830,10 +830,6 @@ class AgenticProcess(Entity):
 
             cmd = self._finalized_restart_cli_options()
 
-            # Server-restart resume: process had a shell but cli_config didn't encode resume
-            if not cmd.resume and self.session_id:
-                cmd.resume = self._is_exist_claude_resume_session(self.session_id)
-
             # Fork & CLAUDE_PROJECT_DIR plumbing are Claude-only — Codex's
             # ``CodexCliOptions`` has no ``fork_session_id`` and uses
             # ``-C <cwd>`` instead of ``CLAUDE_PROJECT_DIR``. Skip for any
@@ -908,8 +904,10 @@ class AgenticProcess(Entity):
             self.status = ProcessStatus.RUNNING.value
             # Capture snapshot of the freshly-launched config and clear the
             # restart-required flag — the live worker now matches saved state.
-            self.last_started_snapshot = self._restart_snapshot_payload()
-            self.last_started_hash = self._restart_snapshot()
+            # Build the payload once so snapshot and hash can't diverge.
+            snapshot_payload = self._restart_snapshot_payload()
+            self.last_started_snapshot = snapshot_payload
+            self.last_started_hash = self._restart_snapshot(snapshot_payload)
             self.restart_required = False
             await self.save()
 
@@ -2296,19 +2294,25 @@ class AgenticProcess(Entity):
             "worker": driver.restart_snapshot(self, options),
         }
 
-    def _restart_snapshot(self) -> str:
+    def _restart_snapshot(self, payload: dict[str, Any] | None = None) -> str:
         """Stable hash over finalized generic + worker launch inputs.
 
         Mismatch against ``last_started_hash`` (captured at last successful
         ``start_pty()``) means the live worker is running with stale config —
         ``restart_required`` flips True via the ``save()`` hook below.
+
+        Callers that already built the payload (e.g. start_pty's capture site,
+        which also persists it as ``last_started_snapshot``) can pass it in so
+        snapshot and hash are derived from a single evaluation.
         """
         import hashlib
         import json as _json
 
-        payload = self._normalize_restart_value(self._restart_snapshot_payload())
+        if payload is None:
+            payload = self._restart_snapshot_payload()
+        normalized = self._normalize_restart_value(payload)
         return hashlib.md5(
-            _json.dumps(payload, sort_keys=True, default=str).encode()
+            _json.dumps(normalized, sort_keys=True, default=str).encode()
         ).hexdigest()
 
     def _set_start_lifecycle(self, value: bool) -> None:
