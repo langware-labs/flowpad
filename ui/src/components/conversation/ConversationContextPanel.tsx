@@ -84,7 +84,11 @@ function humanType(type: string): string {
 }
 
 /** Build the canonical dock pointer for an entity TypeId, mirroring EntityChip. */
-function dockPointerFor(typeId: TypeId, inside?: { type: string; id: string }): DockPointer | null {
+function dockPointerFor(
+  typeId: TypeId,
+  inside?: { type: string; id: string },
+  assetRef?: string,
+): DockPointer | null {
   switch (typeId.type) {
     case 'project':
       return DockPointer.forProject(
@@ -100,6 +104,12 @@ function dockPointerFor(typeId: TypeId, inside?: { type: string; id: string }): 
       return DockPointer.forSpec(typeId.id);
     case 'conversation':
       return DockPointer.forConversation(typeId.id);
+    // Asset entities open in the Assets editor, addressed by VFS path —
+    // fall back to the entity id when the asset_ref isn't known yet.
+    case 'skill':
+    case 'agent':
+    case 'markdown':
+      return DockPointer.forAssetEditor(typeId.type, assetRef || typeId.id);
     default:
       try {
         return DockPointer.fromUrl(typeId.type, typeId.id);
@@ -421,8 +431,8 @@ function SharedContextSection({
                     ? () => onSelectEntity(rowKey, entry.originMessageIds)
                     : undefined
                 }
-                onOpen={() => {
-                  const ptr = dockPointerFor(entry.typeId, containerInside);
+                onOpen={(assetRef) => {
+                  const ptr = dockPointerFor(entry.typeId, containerInside, assetRef);
                   if (ptr) navigation.openDock(ptr);
                 }}
               />
@@ -476,7 +486,9 @@ interface SharedEntityRowProps {
   /** Pre-bound to the parent's `onSelectEntity(rowKey, originMessageIds)` —
    *  rows don't need to know the key or the original origin list. */
   onSelect?: () => void;
-  onOpen: () => void;
+  /** Fired with the resolved asset_ref (when the entity is an asset) so the
+   *  parent can route skill/agent/markdown rows to the Assets editor. */
+  onOpen: (assetRef?: string) => void;
 }
 
 function SharedEntityRow({
@@ -488,6 +500,7 @@ function SharedEntityRow({
 }: SharedEntityRowProps) {
   const { data: entity } = useEntity(typeId);
   const name = entity?.displayName ?? typeId.id;
+  const assetRef = (entity as unknown as { asset_ref?: string | null })?.asset_ref ?? undefined;
   const Icon = ICON_BY_TYPE[typeId.type] ?? ExternalLink;
   // Spec rows say "View" (they open in the Milkdown editor — see
   // DockPointer.forSpec → /dock/spec/<id>); everything else stays "Open".
@@ -507,7 +520,7 @@ function SharedEntityRow({
           : 'Reveal the message that introduced this'
       }
     >
-      <RowAction onClick={onOpen} title={`${primaryLabel} ${humanType(typeId.type)}: ${name}`}>
+      <RowAction onClick={() => onOpen(assetRef)} title={`${primaryLabel} ${humanType(typeId.type)}: ${name}`}>
         {primaryIcon}
         {primaryLabel}
       </RowAction>

@@ -48,18 +48,14 @@ async def test_upload_body_happy_path(tmp_path: Path) -> None:
     ):
         await fm.upload_body()
 
-    # Two PUTs: UPLOADING then READY+filename.
-    assert mock_put.await_count == 2
+    # One PUT: announce UPLOADING intent.
+    assert mock_put.await_count == 1
     first_call_payload = mock_put.await_args_list[0].args[2]
     assert first_call_payload == {"body_status": BodyStatus.UPLOADING.value}
-    second_call_payload = mock_put.await_args_list[1].args[2]
-    assert second_call_payload == {
-        "body_status": BodyStatus.READY.value,
-        "attachment_filename": BODY_FILENAME,
-    }
 
-    # One POST: multipart fs/upload with BODY_FILENAME.
-    assert mock_post.await_count == 1
+    # Two POSTs: multipart fs/upload, then the set_body_status action that
+    # flips READY (the action fans the UPDATE to receivers; a PUT would not).
+    assert mock_post.await_count == 2
     post_kwargs = mock_post.await_args_list[0].kwargs
     files = post_kwargs["files"]
     assert "uploaded_file" in files
@@ -67,6 +63,14 @@ async def test_upload_body_happy_path(tmp_path: Path) -> None:
     assert filename == BODY_FILENAME
     assert content == b"PK\x03\x04 pretend zip"
     assert content_type == "application/zip"
+
+    set_status_payload = mock_post.await_args_list[1].args[1]
+    assert mock_post.await_args_list[1].kwargs["action"] == "set_body_status"
+    assert set_status_payload == {
+        "flow_message_id": fm.id,
+        "body_status": BodyStatus.READY.value,
+        "attachment_filename": BODY_FILENAME,
+    }
 
     # Local mirror of the field flips to READY.
     assert fm.body_status == BodyStatus.READY

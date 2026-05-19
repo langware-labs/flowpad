@@ -112,6 +112,7 @@ async def materialize_flow_message(
     someone_typeid: Optional[str],
     bundle_ts: Optional[str] = None,
     notify: bool = True,
+    emit_live_create: bool = False,
 ) -> FlowMessage:
     """Create or upsert a FlowMessage, append its pointer to the conversation,
     project ``message_ids`` / ``message_count``, and (optionally) notify.
@@ -136,6 +137,7 @@ async def materialize_flow_message(
 
     fm_id = payload.get("id")
     existing = await FlowMessage.get_one({"id": fm_id}) if fm_id else None
+    is_new = existing is None
     if existing is not None:
         # Idempotent upsert — keep the row, ensure the pointer exists, return.
         fm = existing
@@ -143,18 +145,27 @@ async def materialize_flow_message(
         fm = FlowMessage.model_validate(payload)
         if not payload.get("id"):
             fm.id = FlowMessage.allocate_id(payload)
-        # Save with notify=False, then emit CREATE explicitly. ``save()``
-        # would emit an UPDATE here because ``model_validate`` carried the
-        # hub's ``created_by`` over (making ``exist_in_db`` True). Local
-        # subscribers (TS SDK ``on('message')``) filter for CREATE only,
-        # so the UPDATE would be invisible.
+        # Save with notify=False — the CREATE is emitted explicitly below.
+        # ``save()`` would emit an UPDATE here because ``model_validate``
+        # carried the hub's ``created_by`` over (making ``exist_in_db``
+        # True), and CREATE-only subscribers would never see it.
         fm = await fm.save(someone_typeid, notify=False)
-        if notify:
-            from flow_sdk.api.messages import DataOpMessage, OperationType  # noqa: PLC0415
-            from flow_sdk.core.network.resource_tracker import handle_entity_op  # noqa: PLC0415
-            await handle_entity_op(
-                DataOpMessage(data=fm, op=OperationType.CREATE, to_entity=fm.typeid)
-            )
+
+    # Emit the explicit local CREATE that drives entity-event subscribers
+    # (TS SDK ``conv.on('message')``).
+    #
+    # A brand-new row always emits. An *existing* row emits too when the
+    # caller passes ``emit_live_create`` — that flag is the hub WS bridge
+    # saying "this is a live arrival". Without it, a background catch-up
+    # that materialized the row first would swallow the live create event
+    # (the "doorbell rings once" bug): the second materialize was silent,
+    # so body-bearing messages never reached the open conversation.
+    if notify and (is_new or emit_live_create):
+        from flow_sdk.api.messages import DataOpMessage, OperationType  # noqa: PLC0415
+        from flow_sdk.core.network.resource_tracker import handle_entity_op  # noqa: PLC0415
+        await handle_entity_op(
+            DataOpMessage(data=fm, op=OperationType.CREATE, to_entity=fm.typeid)
+        )
 
     # Resolve parent (Task preferred, else Project) for the record's parent_ref.
     conv = await Conversation.get_one({"id": conversation_id})
@@ -186,17 +197,32 @@ async def materialize_flow_message(
     if notify:
         try:
             task_id_for_sync = parent_id if parent_type == RecordType.TASK else fm.id
+            # These are sniffer-channel NOTIFICATIONS that materialization
+            # happened — not entity-reflection instructions. The real entity
+            # events already fired: handle_entity_op for the FM CREATE above,
+            # and conv.notify_updated() below. Sent as CRUD ops (CREATE/UPDATE)
+            # they reached the webhook receiver's _reflect_entity, which tried
+            # to *construct* a FlowMessage from this event-shaped payload —
+            # which carries no entity fields — and failed with "text Field
+            # required". EVENT routes to the event handler / sniffer instead,
+            # which is all this channel was ever for.
             send_resource_sync(
                 type="flow_message",
                 id=fm.id,
-                operation=SyncOperation.CREATE,
-                data={"event_data": {"flow_message_id": fm.id, "task_id": task_id_for_sync}},
+                operation=SyncOperation.EVENT,
+                data={
+                    "event_name": "flow_message_materialized",
+                    "event_data": {"flow_message_id": fm.id, "task_id": task_id_for_sync},
+                },
             )
             send_resource_sync(
                 type="conversation",
                 id=conv.id,
-                operation=SyncOperation.UPDATE,
-                data={"event_data": {"task_id": task_id_for_sync, "conversation_id": conv.id}},
+                operation=SyncOperation.EVENT,
+                data={
+                    "event_name": "conversation_updated",
+                    "event_data": {"task_id": task_id_for_sync, "conversation_id": conv.id},
+                },
             )
             # Entity-event channel — required for React useEntity hooks to
             # re-render. send_resource_sync only fires the sniffer channel.

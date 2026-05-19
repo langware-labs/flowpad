@@ -19,7 +19,7 @@ from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 from flow_sdk.request_context.methods import get_current_request_info
-from flow_sdk.responses.response import ApiSuccessResponse
+from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 
 logger = logging.getLogger(__name__)
 
@@ -59,62 +59,56 @@ async def share_entity() -> ApiSuccessResponse:
 
     if recipients and isinstance(entity, Conversation):
         await entity.share(recipients=recipients)
+        try:
+            from flow_sdk.app.actions.flow_message_action import _learn_address_book  # noqa: PLC0415
+            learn_entries: list[dict] = list(entity.participants or [])
+            learn_entries += [
+                {"email": r} for r in recipients if isinstance(r, str) and r.strip()
+            ]
+            await _learn_address_book(learn_entries)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[share] address-book learning failed (non-fatal): %s", e)
     else:
         await entity.share()
     return ApiSuccessResponse(data=entity)
 
 
 @action.post(action_name="add_message", types=["conversation"])
-async def conversation_add_message() -> ApiSuccessResponse:
-    """``POST /graph/conversation/<id>/add_message`` — forward to hub.
+async def conversation_add_message() -> ApiResponse:
+    """``POST /graph/conversation/<id>/add_message`` — the single endpoint for
+    appending a message to a conversation.
 
-    Body: ``{"text": str, "sender_name": str?}``. Returns the hub's response
-    payload (the persisted FlowMessage as serialized by the hub).
+    Text-only and attachment sends (files, images, prompt files, asset
+    references) all come through here. The body is read multipart-aware and
+    delegated to ``handle_add_message``, which builds the FlowMessage,
+    persists it locally, appends the conversation.jsonl pointer, links it on
+    the hub via ``add_message`` (so delivery receipts work), and uploads any
+    attachment body in a background task.
+
+    The conversation id is taken from the URL — it is the source of truth.
     """
+    from flow_sdk.app.actions.notification_action import handle_add_message  # noqa: PLC0415
+    from flow_sdk.cli.auth.hub_login import is_logged_in  # noqa: PLC0415
+
     request_info = get_current_request_info()
     if not request_info or not request_info.target_entity_typeid:
         raise HTTPException(status_code=400, detail="add_message: target conversation typeid required")
     if request_info.target_entity_typeid.type != "conversation":
         raise HTTPException(status_code=400, detail="add_message: target must be a conversation")
+    if not request_info.someone_typeid:
+        return ApiFailResponse(message="No authenticated user in request context")
 
     try:
         body = await request_info.get_post_data() or {}
     except JSONDecodeError:
         body = {}
 
-    text = body.get("text")
-    if not isinstance(text, str) or not text:
-        raise HTTPException(status_code=400, detail="add_message: 'text' is required")
+    # The URL is the source of truth for which conversation this lands in —
+    # overwrite any stale id a caller might also have put in the body.
+    body["conversation_id"] = request_info.target_entity_typeid.id
 
-    attachments = body.get("attachment")
-    if attachments is not None and not isinstance(attachments, list):
-        raise HTTPException(status_code=400, detail="add_message: 'attachment' must be a list")
-    context_entities = body.get("context_entities")
-    if context_entities is not None and not isinstance(context_entities, list):
-        raise HTTPException(status_code=400, detail="add_message: 'context_entities' must be a list")
+    # Drafts are local-only (no hub push); only real sends require login.
+    if not bool(body.get("is_draft")) and not is_logged_in():
+        return ApiFailResponse(message="Cloud login required to send messages")
 
-    conv = Conversation(id=request_info.target_entity_typeid.id)
-    data = await conv.add_message(
-        text,
-        sender_name=body.get("sender_name"),
-        attachments=attachments,
-        context_entities=context_entities,
-    )
-
-    # Sender-side local materialize was REMOVED here. ``materialize_flow_message``
-    # does ~8 ops per call (FM DB read+write, conv DB read, jsonl read+append,
-    # conv DB write, optional WS notify) — ~300-800ms — which blew the 6s e2e
-    # budget for the alice/bob ping-pong even with fire-and-forget contention.
-    #
-    # Sender-side resolution is no longer required:
-    #   - has_body / upload_body / download_body each fall back to ``hub_get``
-    #     in ``_load_fm_local_or_hub`` when the FM isn't in the local DB, so
-    #     body actions on a freshly-sent message just work.
-    #   - The sender's UI receives the persisted FM JSON as the response of
-    #     ``conv.addMessage`` (this very route). The TS SDK can route that
-    #     return value into the local entity cache; the bubble renders from
-    #     ``useEntity`` against that cache without a round-trip.
-    #   - The bridge's inbound op-log handler continues to materialize FMs on
-    #     the RECEIVER side, which is the only side hub fanout reaches.
-
-    return ApiSuccessResponse(data=data)
+    return await handle_add_message(body, request_info.someone_typeid)

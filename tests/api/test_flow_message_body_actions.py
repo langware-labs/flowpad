@@ -116,10 +116,11 @@ async def test_upload_body_happy_path(bootstrapped_client, tmp_path: Path) -> No
     assert body["data"]["body_status"] == BodyStatus.READY.value
     assert body["data"]["attachment_filename"] == BODY_FILENAME
 
-    # Two PUTs (UPLOADING then READY) + one POST to fs/upload — same
-    # state machine the unit test asserts.
-    assert mock_put.await_count == 2
-    assert mock_post.await_count == 1
+    # One PUT (UPLOADING) + one POST to fs/upload + one POST to the
+    # set_body_status action (the READY flip) — set_body_status fans the
+    # UPDATE to receivers, which a plain PUT would not.
+    assert mock_put.await_count == 1
+    assert mock_post.await_count == 2
     upload_files = mock_post.await_args_list[0].kwargs["files"]
     filename, _content, ctype = upload_files["uploaded_file"]
     assert filename == BODY_FILENAME

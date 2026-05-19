@@ -167,7 +167,8 @@ class HubWsBridge:
         """Inbound data_op_msg dispatcher.
 
         Routes by the changed entity's type. Currently handles flow_message
-        (create + update) and conversation (any op as a passive upsert).
+        (create + update), conversation (any op as a passive upsert), and
+        invitation (nudge → invitation-sync pull).
         """
         op = str(message.get("op") or "").lower()
         etype, eid = _parse_to_entity(message.get("to_entity"))
@@ -186,6 +187,8 @@ class HubWsBridge:
                 await self._handle_flow_message_op(op, eid, data, parent_conv_id)
             elif etype == "conversation":
                 await self._handle_conversation_op(op, eid, data)
+            elif etype == "invitation":
+                await self._handle_invitation_op(op, eid, data)
             else:
                 logger.debug("hub_bridge: no handler for data_op_msg type=%s op=%s", etype, op)
         except Exception:
@@ -272,46 +275,25 @@ class HubWsBridge:
                 return
 
             self.remember_hub_conversation(conversation_id)
+            logger.info(
+                "[bridge] flow_message CREATE received fm=%s conv=%s sender=%s",
+                fm_id, conversation_id, payload.get("sender_id"),
+            )
 
             local_user = await User.get_local()
             someone_typeid = local_user.typeid if local_user else None
 
-            # CRITICAL PATH OPTIMIZATION
-            # ─────────────────────────
-            # Emit the FlowMessage CREATE op to local subscribers IMMEDIATELY
-            # using the payload from the wire. ``conv.on('message', cb)`` taps
-            # fire off this op — that's what unblocks alice's vitest loop on
-            # every bob→alice message in the ping-pong e2e. The full
-            # ``materialize_flow_message`` (DB save + conv.jsonl append +
-            # conv message_ids/count projection + UI resource_sync × 2) does
-            # ~300-500ms of work per call and used to sit on the critical
-            # path between the hub fanout and the alice tap, blowing the
-            # 6s ping-pong budget for STOP_AT=20.
+            # Persist + notify in the background — keeps the bridge handler
+            # off the critical path. ``materialize_flow_message`` is the single
+            # ordered emitter: it fires the FlowMessage CREATE *and* the
+            # Conversation UPDATE (in that load-bearing order).
             #
-            # Now: TS subscribers see the data instantly via the in-payload
-            # CREATE; persistence runs in the background and lands in the
-            # local DB a few hundred ms later — well before the user's next
-            # interaction needs to query the FM by id.
-            try:
-                from flow_sdk.api.messages import DataOpMessage, OperationType  # noqa: PLC0415
-                from flow_sdk.core.network.resource_tracker import handle_entity_op  # noqa: PLC0415
-                from flow_sdk.builtin.flow_message import FlowMessage as _FlowMessageCls  # noqa: PLC0415
-                _fm_for_emit = _FlowMessageCls.model_validate(
-                    {**payload, "conversation_id": conversation_id}
-                )
-                await handle_entity_op(
-                    DataOpMessage(
-                        data=_fm_for_emit,
-                        op=OperationType.CREATE,
-                        to_entity=_fm_for_emit.typeid,
-                    )
-                )
-            except Exception as _emit_err:
-                logger.warning("[bridge] inbound CREATE emit failed (non-fatal): %s", _emit_err)
-
-            # Persist in the background — keeps the bridge handler off the
-            # critical path. notify=False because we already emitted CREATE
-            # above; a second notify would double-fire subscribers.
+            # The bridge used to pre-emit just the CREATE here for latency and
+            # call materialize with notify=False — but notify=False also
+            # suppressed the Conversation UPDATE, so an already-open
+            # conversation view never re-rendered: inbound messages were
+            # persisted (pointer appended) yet silently failed to appear until
+            # a full reload. Correctness wins — emit both through materialize.
             async def _persist_inbound() -> None:
                 try:
                     from flow_sdk.app.actions.materialize_flow_message import materialize_flow_message
@@ -319,10 +301,19 @@ class HubWsBridge:
                         payload,
                         conversation_id=conversation_id,
                         someone_typeid=someone_typeid,
-                        notify=False,
+                        notify=True,
+                        # Live hub arrival: emit the local CREATE even if a catch-up
+                        # sync already materialized the row, so the open conversation
+                        # ``on('message')`` listener still fires.
+                        emit_live_create=True,
+                    )
+                    logger.info(
+                        "[bridge] inbound persisted fm=%s conv=%s", fm_id, conversation_id,
                     )
                 except Exception as _err:
-                    logger.warning("[bridge] inbound persist failed (non-fatal): %s", _err)
+                    logger.warning(
+                        "[bridge] inbound persist failed fm=%s (non-fatal): %s", fm_id, _err,
+                    )
 
             asyncio.create_task(_persist_inbound())
 
@@ -352,7 +343,15 @@ class HubWsBridge:
                 return
             local_user = await User.get_local()
             someone_typeid = local_user.typeid if local_user else None
-            for field in ("delivery_status", "delivered_at", "received_at", "is_read", "is_archived"):
+            for field in (
+                "delivery_status",
+                "delivered_at",
+                "received_at",
+                "is_read",
+                "is_archived",
+                "body_status",
+                "attachment_filename",
+            ):
                 if field in data:
                     setattr(existing, field, data[field])
             await existing.save(someone_typeid, notify=True)
@@ -409,6 +408,29 @@ class HubWsBridge:
             if field in clean:
                 setattr(existing, field, clean[field])
         await existing.save(someone_typeid, notify=True)
+
+    async def _handle_invitation_op(self, op: str, inv_id: str, data: dict) -> None:
+        """A new/updated Invitation was pushed by the hub.
+
+        The bridge can't materialize the invitation row from the WS payload
+        alone — the hub embeds the target Conversation + preview FlowMessage
+        only in the ``invitation/pending`` HTTP response. So treat the frame
+        as a nudge and run the lightweight ``handle_invitation_sync`` pull,
+        which materializes the placeholder conversation + invitation-kind
+        FlowMessage with ``notify=True`` so the conversations strip refreshes
+        without a manual refresh.
+        """
+        if op == "delete":
+            # Invitation revocation is reconciled by the conversation prune
+            # step on the next conversation-list; nothing to do live.
+            return
+        from flow_sdk.app.actions.flow_message_action import handle_invitation_sync
+        from flow_sdk.builtin.user import User
+
+        local_user = await User.get_local()
+        if local_user is None:
+            return
+        await handle_invitation_sync(local_user.typeid)
 
     # ------------------------------------------------------------------
     # Outbound helpers — thin wrappers around send_request for callers that

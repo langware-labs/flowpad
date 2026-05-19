@@ -51,6 +51,11 @@ async def test_hub_ws_rest_current_user_matches_rest_current_user(hub_base_url, 
         await websocket.send(message.model_dump_json())
         ws_response = await _recv_json(websocket)
 
+    # The hub wraps rest_api_msg replies in a response_msg envelope; unwrap
+    # to the ApiResponse payload before reading status/data.
+    if ws_response.get("message_type") == "response_msg":
+        ws_response = ws_response.get("content") or {}
+
     assert str(ws_response.get("status")).lower() == "success"
     ws_users = ws_response["data"]
     assert isinstance(ws_users, list)

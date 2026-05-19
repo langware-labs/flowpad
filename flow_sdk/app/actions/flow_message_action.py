@@ -17,7 +17,7 @@ from typing import Optional
 
 from flow_sdk.actions.action_registry import action
 from flow_sdk.builtin.conversation import Conversation
-from flow_sdk.builtin.flow_message import Attachment, AttachmentType, FlowMessage
+from flow_sdk.builtin.flow_message import Attachment, AttachmentType, FlowMessage, FlowMessageKind
 from flow_sdk.builtin.spec import Spec
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.builtin.task import Task
@@ -384,8 +384,9 @@ async def handle_upload_body(fm_id: str) -> ApiResponse:
     fm = await _load_fm_local_or_hub(fm_id)
     if not fm:
         return ApiFailResponse(message=f"FlowMessage not found: {fm_id}", status_code=404)
+    from flow_sdk.core.network.resource_tracker import make_flow_message_progress_emitter
     try:
-        await fm.upload_body()
+        await fm.upload_body(on_progress=make_flow_message_progress_emitter(fm_id, "upload"))
     except Exception as e:
         logger.error("[flow_message_action] upload_body fm=%s: %s", fm_id, e, exc_info=True)
         return ApiFailResponse(message=f"upload_body failed: {e}")
@@ -400,11 +401,12 @@ async def handle_download_body(fm_id: str) -> ApiResponse:
     """Download + unpack this message's body bundle. Refuses (BodyNotReadyError)
     if body_status != READY — receivers must wait for the hub UPDATE fanout."""
     from flow_sdk.builtin.flow_message import BodyNotReadyError
+    from flow_sdk.core.network.resource_tracker import make_flow_message_progress_emitter
     fm = await _load_fm_local_or_hub(fm_id)
     if not fm:
         return ApiFailResponse(message=f"FlowMessage not found: {fm_id}", status_code=404)
     try:
-        await fm.download_body()
+        await fm.download_body(on_progress=make_flow_message_progress_emitter(fm_id, "download"))
     except BodyNotReadyError as e:
         return ApiFailResponse(message=str(e), status_code=409)
     except Exception as e:
@@ -1023,6 +1025,7 @@ async def _download_and_unpack_bundle(
     attachment_filename: str,
     *,
     asset_dest_root: Path | None = None,
+    on_progress=None,
 ) -> bool:
     """Download the .flowmsg bundle from the hub and unpack it locally.
 
@@ -1031,10 +1034,14 @@ async def _download_and_unpack_bundle(
     ``asset_dest_root`` is forwarded to ``unpack_bundle`` to anchor FS-rooted
     assets (skill/agent) restored from the bundle. ``None`` falls through to
     ``unpack_bundle``'s lazy ``tempfile.mkdtemp()`` default.
+
+    ``on_progress`` — optional async callback fired as download bytes land;
+    when set the hub GET is streamed instead of buffered whole.
     """
     from flow_sdk.fs_records.flow_message_bundle import FlowMessageExistsError, unpack_bundle
     bundle_bytes = await hub_get(
-        BuiltinEntityType.FLOW_MESSAGE, fm_id, "fs", f"download/{attachment_filename}", raw=True
+        BuiltinEntityType.FLOW_MESSAGE, fm_id, "fs", f"download/{attachment_filename}",
+        raw=True, on_progress=on_progress,
     )
     if not bundle_bytes:
         logger.warning("[bundle] download returned no bytes for fm=%s", fm_id)
@@ -1292,7 +1299,7 @@ async def handle_send_draft(fm_id: str, someone_typeid: str) -> ApiResponse:
     4. POST to hub + upload bundle (best-effort).
     5. Git-commit the conversation pointer change when the task lives in a
        project repo (mirrors the original-reply path in
-       `notification_action.handle_append_conversation`).
+       `notification_action.handle_add_message`).
     """
     from flow_sdk.app.actions.notification_action import (
         _append_message_to_conversation,
@@ -1494,7 +1501,10 @@ async def _materialize_invitation(
         return local_inv, None
     conv_id = embedded_conv["id"]
     try:
-        await _upsert_hub_conversation_metadata(embedded_conv, someone_typeid)
+        # notify=False — the conversation must NOT reach the UI until its
+        # kind='invitation' first message exists. The explicit CREATE ops at
+        # the end of this function announce a fully-formed row instead.
+        await _upsert_hub_conversation_metadata(embedded_conv, someone_typeid, notify=False)
     except Exception as e:  # noqa: BLE001
         logger.warning("[inv-materialize] conv upsert failed: %s", e)
         return local_inv, None
@@ -1512,23 +1522,28 @@ async def _materialize_invitation(
     # Materialize the embedded preview FlowMessage. The UI keys off
     # ``kind='invitation'`` to render the invitation row, and reads the
     # Invitation TypeId out of ``context_entities`` for the Accept button.
+    # notify=False here too — the explicit CREATE ops below announce the
+    # FlowMessage and Conversation together, in load-bearing order, only
+    # once the conversation already carries its invitation-kind first
+    # message. Without this the strip/inbox briefly render a navigable row.
     preview = hub_inv.get("preview_message")
     invitation_typeid = f"{LocalInvitation.get_type()}-{inv_id}"
+    inv_fm = None
     if isinstance(preview, dict):
         msg_payload = dict(preview)
         msg_payload.setdefault("text", local_inv.message or "You've been invited to a conversation")
-        msg_payload["kind"] = "invitation"
+        msg_payload["kind"] = FlowMessageKind.INVITATION.value
         existing_ctx = msg_payload.get("context_entities") or []
         if invitation_typeid not in existing_ctx:
             existing_ctx = list(existing_ctx) + [invitation_typeid]
         msg_payload["context_entities"] = existing_ctx
         msg_payload["remote"] = True
         try:
-            await materialize_flow_message(
+            inv_fm = await materialize_flow_message(
                 msg_payload,
                 conversation_id=conv_id,
                 someone_typeid=someone_typeid,
-                notify=True,
+                notify=False,
             )
         except Exception as e:  # noqa: BLE001
             logger.warning("[inv-materialize] preview msg failed: %s", e)
@@ -1538,19 +1553,40 @@ async def _materialize_invitation(
         # locally so accept-flow stays consistent with older hub builds.
         synth_payload = {
             "text": (local_inv.message or "You've been invited to a conversation"),
-            "kind": "invitation",
+            "kind": FlowMessageKind.INVITATION.value,
             "context_entities": [invitation_typeid],
             "remote": False,
         }
         try:
-            await materialize_flow_message(
+            inv_fm = await materialize_flow_message(
                 synth_payload,
                 conversation_id=conv_id,
                 someone_typeid=someone_typeid,
-                notify=True,
+                notify=False,
             )
         except Exception as e:  # noqa: BLE001
             logger.warning("[inv-materialize] synth preview failed: %s", e)
+
+    # Announce to the UI in load-bearing order — FlowMessage CREATE first so
+    # the bubble row exists, then the Conversation CREATE. The conversation
+    # now already carries its kind='invitation' pointer, so the strip/inbox
+    # render it as a gated invitation row on the very first paint (no
+    # navigable window before the Accept gate appears).
+    try:
+        from flow_sdk.api.messages import DataOpMessage, OperationType  # noqa: PLC0415
+        from flow_sdk.core.network.resource_tracker import handle_entity_op  # noqa: PLC0415
+
+        if inv_fm is not None:
+            await handle_entity_op(
+                DataOpMessage(data=inv_fm, op=OperationType.CREATE, to_entity=inv_fm.typeid)
+            )
+        conv_fresh = await Conversation.get_one({"id": conv_id})
+        if conv_fresh is not None:
+            await handle_entity_op(
+                DataOpMessage(data=conv_fresh, op=OperationType.CREATE, to_entity=conv_fresh.typeid)
+            )
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[inv-materialize] invitation announce failed: %s", e)
 
     return local_inv, conv_id
 
@@ -1650,8 +1686,52 @@ async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> Non
             logger.warning("[conv-msg-fetch] %s: aborted: %s", conv_id[:8], e)
 
 
+async def _sync_conversation_messages(conv_id: str, someone_typeid: str) -> None:
+    """Materialize every hub-side message of a conversation into the local store.
+
+    Uses the standard scoped query ``GET /graph/conversation/<id>/flow_message``
+    — the hub returns the conversation's child FlowMessages the caller is
+    authorized to see (the dual role-path auth is satisfied once the caller
+    has joined the conversation). Each FM is materialized via
+    ``materialize_flow_message``, which is idempotent, so messages already
+    delivered through the WS bridge are no-ops.
+
+    Called after an invitation accept: the hub WS only fanouts messages from
+    join-time forward, so the inviter's pre-accept messages (notably the
+    first one) need this explicit pull. Unlike ``_fetch_conversation_messages``
+    (legacy ``.flowmsg`` bundle path), this is the text-only path — the hub
+    payload is materialized directly with no bundle download.
+    """
+    from flow_sdk.app.actions.materialize_flow_message import (  # noqa: PLC0415
+        materialize_flow_message,
+    )
+
+    hub_msgs = await hub_get(
+        BuiltinEntityType.FLOW_MESSAGE,
+        scope=[("conversation", conv_id)],
+    )
+    ordered = sorted(
+        (m for m in (hub_msgs or []) if isinstance(m, dict) and m.get("id")),
+        key=lambda m: m.get("created_date") or "",
+    )
+    logger.info("[conv-sync] conv=%s: syncing %d message(s)", conv_id[:8], len(ordered))
+    for raw_fm in ordered:
+        try:
+            await materialize_flow_message(
+                raw_fm,
+                conversation_id=conv_id,
+                someone_typeid=someone_typeid,
+                notify=True,
+            )
+        except Exception as fm_err:  # noqa: BLE001
+            logger.warning(
+                "[conv-sync] conv=%s fm=%s materialize failed: %s",
+                conv_id[:8], raw_fm.get("id"), fm_err,
+            )
+
+
 async def _upsert_hub_conversation_metadata(
-    hub_conv: dict, someone_typeid: str,
+    hub_conv: dict, someone_typeid: str, *, notify: bool = True,
 ) -> Optional[Conversation]:
     """Upsert a hub-side Conversation into the local SQLite table.
 
@@ -1661,6 +1741,13 @@ async def _upsert_hub_conversation_metadata(
     ``message_ids`` / ``message_count`` — those are projection-guarded on the
     local side and only legitimately written by
     ``ConversationRecord._project_pointers_to_entity`` as bundles are unpacked.
+
+    ``notify=False`` saves the row without broadcasting the entity op — used
+    by the invitation pipeline, which must materialize the conversation's
+    ``kind='invitation'`` first message *before* the UI ever sees the
+    conversation (otherwise the strip/inbox briefly render it as a normal,
+    navigable row). The caller emits the CREATE op itself once the row is
+    fully formed.
     """
     conv_id = (hub_conv.get("id") or "").strip()
     if not conv_id:
@@ -1689,7 +1776,7 @@ async def _upsert_hub_conversation_metadata(
             payload["message_status_visible"] = bool(hub_conv["message_status_visible"])
         conv = Conversation.model_validate(payload)
         conv.id = conv_id
-        return await conv.save(someone_typeid, notify=True)
+        return await conv.save(someone_typeid, notify=notify)
     # Update path: copy hub-owned fields without touching projections.
     changed = False
     for k in ("title", "participants", "remote_project_id", "remote_project_name"):
@@ -1709,7 +1796,7 @@ async def _upsert_hub_conversation_metadata(
         existing.remote = True
         changed = True
     if changed:
-        return await existing.save(someone_typeid, notify=True)
+        return await existing.save(someone_typeid, notify=notify)
     return existing
 
 
@@ -2020,6 +2107,10 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
                             "title": hub_conv.get("title"),
                             "remote": True,
                         }).save(someone_typeid)
+                # Pull the inviter's pre-accept messages — the hub WS only
+                # fanouts from join-time forward, so without this the first
+                # message stays invisible until a manual refresh.
+                await _sync_conversation_messages(linked_conv_id, someone_typeid)
         except Exception as e:
             logger.warning("[invitation-accept] hub join+materialize failed: %s", e, exc_info=True)
 

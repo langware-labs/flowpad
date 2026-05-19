@@ -87,10 +87,13 @@ export function AttachMenu({
           </PopoverContent>
         </Popover>
 
-        {/* AssetPickerPopover — anchored at the same trigger, opens when
-            ``view === 'asset'``. Sharing the trigger keeps positioning sane. */}
+        {/* AssetPickerPopover — opens centered on screen when
+            ``view === 'asset'``. The trigger is incidental (the menu fans out
+            to it programmatically), so the picker renders as a centered modal
+            rather than anchored to the Attach button. */}
         <AssetPickerPopover
           trigger={<span className="sr-only" aria-hidden />}
+          centered
           open={open && view === 'asset'}
           onOpenChange={(next) => {
             if (!next) {

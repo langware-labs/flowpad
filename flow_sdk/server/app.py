@@ -68,6 +68,17 @@ async def _on_server_startup():
     settings = get_instance_settings()
     print(f"  Database path: {get_database_path()}")
 
+    # Development: mirror all logs to a file on disk in addition to the
+    # console, so a session can be inspected after the fact. No-op in prod.
+    try:
+        from flow_sdk.service_log import init_dev_file_logging
+
+        _dev_log = init_dev_file_logging()
+        if _dev_log:
+            print(f"  Dev file log: {_dev_log}")
+    except Exception as _e:  # noqa: BLE001
+        print(f"  Dev file log: failed to init ({_e})")
+
     if os.environ.get("FLOWPAD_SKIP_LOCK", "").lower() == "true":
         return
 

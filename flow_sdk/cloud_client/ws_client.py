@@ -450,7 +450,7 @@ class HubWebSocketManager:
 
     async def verify_current_user(self, config: ApiConfig | None = None) -> dict[str, Any]:
         """Verify hub WS auth by comparing hub current-user data to local cloud profile."""
-        from flow_sdk.api.messages import APIMessage
+        from flow_sdk.api.messages import APIMessage, WSMessageType
         from flow_sdk.cli.app_config import get_user
 
         local_user = get_user() or {}
@@ -475,6 +475,11 @@ class HubWebSocketManager:
         except json.JSONDecodeError as exc:
             await self._set_state(HubConnectionStatus.ERROR, connected=False, verified=False, error="Hub WebSocket returned invalid JSON.")
             raise HubWebSocketVerificationError("Hub WebSocket returned invalid JSON.") from exc
+
+        # The hub wraps rest_api_msg replies in a response_msg envelope;
+        # unwrap to the ApiResponse payload before reading status/data.
+        if isinstance(response, dict) and response.get("message_type") == WSMessageType.RESPONSE_MSG.value:
+            response = response.get("content") or {}
 
         if str(response.get("status") or "").lower() != "success":
             message = response.get("message") or "Hub WebSocket verification failed."
