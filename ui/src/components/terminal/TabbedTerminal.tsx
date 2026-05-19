@@ -845,6 +845,23 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
   // so non-rendered ids in this set are inert.
   const pendingProcessIds = usePendingSessionIds();
 
+  // Auto-acknowledge whenever the active tab itself is pending. Covers two
+  // cases the click-handler ack misses: (a) ready transition arrives via WS
+  // while the user is already sitting on the tab; (b) the active tab is
+  // selected from the URL on load/refresh (no click). Without this, the user
+  // sees a glow on the very tab they're reading.
+  const activeSession = useMemo(
+    () => visibleSessions.find((s) => terminalTargetKey(s) === activeTargetKey),
+    [visibleSessions, activeTargetKey],
+  );
+  const activePendingProcessId = activeSession ? terminalProcessId(activeSession) : null;
+  const activeIsPending = activePendingProcessId ? pendingProcessIds.has(activePendingProcessId) : false;
+  useEffect(() => {
+    if (activeIsPending && activePendingProcessId) {
+      acknowledgePending(activePendingProcessId);
+    }
+  }, [activeIsPending, activePendingProcessId]);
+
   return (
     <div className={`flex h-full ${className}`}>
       {/* Main terminal area */}
@@ -901,7 +918,13 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
                   : `tab-shell-${targetKey}`;
               const indicatorKey = session.targetTypeId.type === Shell.type ? session.targetTypeId.id : targetKey;
               const sessionProcessId = terminalProcessId(session);
-              const isPending = sessionProcessId ? pendingProcessIds.has(sessionProcessId) : false;
+              const isActive = activeTargetKey === targetKey;
+              // Active tab never glows: the user is already looking at it,
+              // so highlighting it as "needs attention" is wrong. The
+              // useEffect above also acks it, but suppressing the class
+              // here avoids a one-frame flash on the render before the
+              // effect commits.
+              const isPending = sessionProcessId && !isActive ? pendingProcessIds.has(sessionProcessId) : false;
 
               const tabContent = (
                 <div
