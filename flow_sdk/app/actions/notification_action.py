@@ -1523,13 +1523,27 @@ async def _try_send_reply_via_hub(
 
 
 def _notify_ui_conversation_updated(conv_id: str, task_id: str, fm_id: str) -> None:
-    """Fire-and-forget sync event so the UI refreshes the conversation panel."""
+    """Fire-and-forget sniffer EVENT so the UI refreshes the conversation panel.
+
+    Must be SyncOperation.EVENT — never CRUD. Sent as UPDATE it reached the
+    webhook receiver's ``_reflect_entity``, which loaded the Conversation
+    entity *while ``materialize_flow_message`` was still mid-flight* (before
+    the new pointer was projected into ``message_ids``), re-saved that stale
+    snapshot, and re-broadcast ``notify_updated()`` — clobbering the freshly
+    projected message list and leaving the UI exactly one message behind.
+    EVENT routes to the event handler / sniffer instead, which is all this
+    channel was ever for. Mirrors ``materialize_flow_message``'s own
+    ``conversation_updated`` event.
+    """
     try:
         send_resource_sync(
             type="conversation",
             id=conv_id,
-            operation=SyncOperation.UPDATE,
-            data={"event_data": {"conversation_id": conv_id, "task_id": task_id, "flow_message_id": fm_id}},
+            operation=SyncOperation.EVENT,
+            data={
+                "event_name": "conversation_updated",
+                "event_data": {"conversation_id": conv_id, "task_id": task_id, "flow_message_id": fm_id},
+            },
         )
     except Exception:
         pass
