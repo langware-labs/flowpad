@@ -1501,7 +1501,10 @@ async def _materialize_invitation(
         return local_inv, None
     conv_id = embedded_conv["id"]
     try:
-        await _upsert_hub_conversation_metadata(embedded_conv, someone_typeid)
+        # notify=False — the conversation must NOT reach the UI until its
+        # kind='invitation' first message exists. The explicit CREATE ops at
+        # the end of this function announce a fully-formed row instead.
+        await _upsert_hub_conversation_metadata(embedded_conv, someone_typeid, notify=False)
     except Exception as e:  # noqa: BLE001
         logger.warning("[inv-materialize] conv upsert failed: %s", e)
         return local_inv, None
@@ -1519,8 +1522,13 @@ async def _materialize_invitation(
     # Materialize the embedded preview FlowMessage. The UI keys off
     # ``kind='invitation'`` to render the invitation row, and reads the
     # Invitation TypeId out of ``context_entities`` for the Accept button.
+    # notify=False here too — the explicit CREATE ops below announce the
+    # FlowMessage and Conversation together, in load-bearing order, only
+    # once the conversation already carries its invitation-kind first
+    # message. Without this the strip/inbox briefly render a navigable row.
     preview = hub_inv.get("preview_message")
     invitation_typeid = f"{LocalInvitation.get_type()}-{inv_id}"
+    inv_fm = None
     if isinstance(preview, dict):
         msg_payload = dict(preview)
         msg_payload.setdefault("text", local_inv.message or "You've been invited to a conversation")
@@ -1531,11 +1539,11 @@ async def _materialize_invitation(
         msg_payload["context_entities"] = existing_ctx
         msg_payload["remote"] = True
         try:
-            await materialize_flow_message(
+            inv_fm = await materialize_flow_message(
                 msg_payload,
                 conversation_id=conv_id,
                 someone_typeid=someone_typeid,
-                notify=True,
+                notify=False,
             )
         except Exception as e:  # noqa: BLE001
             logger.warning("[inv-materialize] preview msg failed: %s", e)
@@ -1550,14 +1558,35 @@ async def _materialize_invitation(
             "remote": False,
         }
         try:
-            await materialize_flow_message(
+            inv_fm = await materialize_flow_message(
                 synth_payload,
                 conversation_id=conv_id,
                 someone_typeid=someone_typeid,
-                notify=True,
+                notify=False,
             )
         except Exception as e:  # noqa: BLE001
             logger.warning("[inv-materialize] synth preview failed: %s", e)
+
+    # Announce to the UI in load-bearing order — FlowMessage CREATE first so
+    # the bubble row exists, then the Conversation CREATE. The conversation
+    # now already carries its kind='invitation' pointer, so the strip/inbox
+    # render it as a gated invitation row on the very first paint (no
+    # navigable window before the Accept gate appears).
+    try:
+        from flow_sdk.api.messages import DataOpMessage, OperationType  # noqa: PLC0415
+        from flow_sdk.core.network.resource_tracker import handle_entity_op  # noqa: PLC0415
+
+        if inv_fm is not None:
+            await handle_entity_op(
+                DataOpMessage(data=inv_fm, op=OperationType.CREATE, to_entity=inv_fm.typeid)
+            )
+        conv_fresh = await Conversation.get_one({"id": conv_id})
+        if conv_fresh is not None:
+            await handle_entity_op(
+                DataOpMessage(data=conv_fresh, op=OperationType.CREATE, to_entity=conv_fresh.typeid)
+            )
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[inv-materialize] invitation announce failed: %s", e)
 
     return local_inv, conv_id
 
@@ -1702,7 +1731,7 @@ async def _sync_conversation_messages(conv_id: str, someone_typeid: str) -> None
 
 
 async def _upsert_hub_conversation_metadata(
-    hub_conv: dict, someone_typeid: str,
+    hub_conv: dict, someone_typeid: str, *, notify: bool = True,
 ) -> Optional[Conversation]:
     """Upsert a hub-side Conversation into the local SQLite table.
 
@@ -1712,6 +1741,13 @@ async def _upsert_hub_conversation_metadata(
     ``message_ids`` / ``message_count`` — those are projection-guarded on the
     local side and only legitimately written by
     ``ConversationRecord._project_pointers_to_entity`` as bundles are unpacked.
+
+    ``notify=False`` saves the row without broadcasting the entity op — used
+    by the invitation pipeline, which must materialize the conversation's
+    ``kind='invitation'`` first message *before* the UI ever sees the
+    conversation (otherwise the strip/inbox briefly render it as a normal,
+    navigable row). The caller emits the CREATE op itself once the row is
+    fully formed.
     """
     conv_id = (hub_conv.get("id") or "").strip()
     if not conv_id:
@@ -1740,7 +1776,7 @@ async def _upsert_hub_conversation_metadata(
             payload["message_status_visible"] = bool(hub_conv["message_status_visible"])
         conv = Conversation.model_validate(payload)
         conv.id = conv_id
-        return await conv.save(someone_typeid, notify=True)
+        return await conv.save(someone_typeid, notify=notify)
     # Update path: copy hub-owned fields without touching projections.
     changed = False
     for k in ("title", "participants", "remote_project_id", "remote_project_name"):
@@ -1760,7 +1796,7 @@ async def _upsert_hub_conversation_metadata(
         existing.remote = True
         changed = True
     if changed:
-        return await existing.save(someone_typeid, notify=True)
+        return await existing.save(someone_typeid, notify=notify)
     return existing
 
 
