@@ -131,6 +131,14 @@ function gfmSlug(text: string): string {
   return text.toLowerCase().replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '-').replace(/-+/g, '-');
 }
 
+// Whitelist a frontmatter `direction` value to the two recognized base
+// directions. Anything else (missing, empty, typo) → undefined, which omits
+// the `dir` attribute on the editor wrapper and keeps default LTR behavior.
+function normalizeDirection(value: string | undefined): 'ltr' | 'rtl' | undefined {
+  const v = value?.trim().toLowerCase();
+  return v === 'ltr' || v === 'rtl' ? v : undefined;
+}
+
 function goToSlug(slug: string): void {
   const direct = document.getElementById(slug);
   const heading = direct ?? Array.from(
@@ -447,6 +455,7 @@ function MarkdownEditorContent({
                 editorRef={milkdownRef}
                 onCursorLineChange={handleEditorLineChange}
                 initialLine={initialBodyLine}
+                direction={normalizeDirection(fields.direction)}
                 toolbarRight={
                   viewMode === 'editor' ? (
                     <WikiToolbar editorRef={milkdownRef} sourceTypeId={chatTarget} />

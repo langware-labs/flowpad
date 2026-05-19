@@ -311,26 +311,26 @@ async def _index_additional_dir(path: str) -> None:
         logger.exception("add_dir: indexing failed for %s", path)
 
 
-async def _index_session_on_close(session_id: str, pty_title: str | None = None) -> None:
+async def _index_session_on_close(session_id: str, display_name: str | None = None) -> None:
     """Index the ClaudeSessionRecord after an AgenticProcess closes (fire-and-forget).
 
-    pty_title: Claude-generated tab title captured from ANSI OSC escapes in PTY
-               output. Used as the FTS title / entity name when the JSONL has no
-               user-set custom-title (i.e. the user never ran /rename).
+    display_name: Current tab display name (sourced from the AgenticProcess
+                  entity at close time). Used as the FTS title / entity name
+                  when the JSONL has no user-set custom-title.
     """
     try:
         from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
         record = ClaudeSessionRecord.get(session_id)
         if record:
-            if pty_title:
+            if display_name:
                 inst = object.__getattribute__(record, "__dict__")
                 if not inst.get("custom_title"):
-                    record.name = pty_title
+                    record.name = display_name
                     _ = record.search_content  # populate _fts_cache
                     cache = inst.get("_fts_cache")
                     object.__setattr__(
                         record, "_fts_cache",
-                        (pty_title[:120], cache[1] if cache else None),
+                        (display_name[:120], cache[1] if cache else None),
                     )
             await record.sync_to_db()
             logger.debug("[AgenticProcess] indexed session %s on close", session_id)
@@ -505,6 +505,13 @@ class AgenticProcess(Entity):
     shell_id: str | None = APIField(default=None)
     sidecar_shell_id: str | None = APIField(default=None)
     visible: bool = APIField(default=False, description="Whether this process is visible in the tabs view")
+    auto_rename: bool = APIField(
+        default=True,
+        description=(
+            "When True, PTY OSC title escapes are allowed to update `name`. "
+            "Cleared the first time the user manually renames this tab in the UI."
+        ),
+    )
     process_type: ProcessType | None = APIField(
         default=None,
         description=(
@@ -3020,14 +3027,9 @@ class AgenticProcess(Entity):
                     await proc.save()
 
                     if session_id:
-                        _pty_title: str | None = None
-                        if shell_id:
-                            try:
-                                from flow_sdk.builtin.faas.pty_actions import get_pty_session_title
-                                _pty_title = get_pty_session_title(shell_id)
-                            except Exception:
-                                pass
-                        asyncio.create_task(_index_session_on_close(session_id, pty_title=_pty_title))
+                        asyncio.create_task(
+                            _index_session_on_close(session_id, display_name=proc.name)
+                        )
                 except Exception as exc:
                     logger.warning("AgenticProcess %s: on_exit update failed: %s", agentic_process_id, exc)
             asyncio.run_coroutine_threadsafe(_update_state(), main_loop)

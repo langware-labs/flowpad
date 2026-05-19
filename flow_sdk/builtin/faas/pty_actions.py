@@ -9,7 +9,6 @@ from __future__ import annotations
 import asyncio
 import base64
 import logging
-import re as _re
 import uuid
 from typing import TYPE_CHECKING, Callable
 
@@ -27,40 +26,6 @@ if TYPE_CHECKING:
 # Prevents OS PTY device exhaustion (macOS default limit: 511).
 _PTY_CAP = 70
 _PTY_EVICT_COUNT = 10
-
-# ---------------------------------------------------------------------------
-# Session title tracking — captures Claude-generated tab titles in real time.
-# Keyed by shell_id (entity UUID).  Populated by on_pty_output() whenever an
-# ANSI OSC title escape is detected that isn't a Claude Code spinner frame.
-# ---------------------------------------------------------------------------
-_pty_session_titles: dict[str, str] = {}
-
-# Matches OSC 0 terminal title sequences: ESC ] 0 ; <title> BEL (or ST)
-_OSC_TITLE_RE = _re.compile(rb"\x1b\]0;([^\x07\x1b]+)(?:\x07|\x1b\\)")
-# Strips a leading spinner glyph + space (e.g. "✳ Morning coding session" → "Morning coding session")
-_SPINNER_PREFIX_RE = _re.compile(r"^[^\x00-\x7F] ")
-
-
-def _detect_osc_title(data: bytes) -> str | None:
-    """Extract the last meaningful session title from a raw PTY chunk, or None."""
-    matches = _OSC_TITLE_RE.findall(data)
-    for raw in reversed(matches):
-        try:
-            title = raw.decode("utf-8", errors="replace").strip()
-        except Exception:
-            continue
-        if "Claude Code" in title:
-            continue  # spinner-only frame ("⠂ Claude Code") — not a real title
-        title = _SPINNER_PREFIX_RE.sub("", title).strip()
-        if title:
-            return title
-    return None
-
-
-def get_pty_session_title(shell_id: str) -> str | None:
-    """Return the last Claude-generated title seen for *shell_id*, or None."""
-    return _pty_session_titles.get(shell_id)
-
 
 class PtyActionsMixin:
     """PTY session management implementation mixed into ComputeNode.
@@ -334,12 +299,6 @@ class PtyActionsMixin:
         def on_pty_output(data: bytes):
             logging.info(f"[PTY] on_pty_output (machine): {len(data)} bytes for session {shell_id}")
             current_pty_key = (self.id, self.node_provider_id, shell_id)
-
-            # Track Claude-generated session title (set via ANSI OSC escape after first prompt).
-            # Stored in module-level dict so AgenticProcess.close() can read it at close time.
-            _title = _detect_osc_title(data)
-            if _title and _pty_session_titles.get(shell_id) != _title:
-                _pty_session_titles[shell_id] = _title
 
             # Append to replay buffer (returns OutputChunk with seq and timestamp)
             chunk_record = replay_buffer.append(current_pty_key, data)

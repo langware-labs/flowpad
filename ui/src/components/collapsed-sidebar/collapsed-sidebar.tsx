@@ -72,10 +72,10 @@ export function CollapsedSidebar() {
   const handleClick = useCallback(
     (viewType: ViewType | null) => {
       if (viewType === null) {
-        (window as Record<string, unknown>).__homeNavT0 = performance.now();
+        if (import.meta.env.DEV) (window as Record<string, unknown>).__homeNavT0 = performance.now();
         if (currentView) void navigate('/');
       } else {
-        if (viewType === ViewType.SHELL) {
+        if (import.meta.env.DEV && viewType === ViewType.SHELL) {
           (window as Record<string, unknown>).__shellNavT0 = performance.now();
           console.log('[PERF] +0ms shell icon clicked');
         }

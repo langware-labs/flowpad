@@ -3,12 +3,13 @@ import {
   AgenticProcess,
   dataContext,
   dataManager,
+  Project,
   Shell,
   ShellStatus,
   TypeId,
 } from '@sdk';
 import { subscribeToEntityOps } from '@sdk/react/hooks';
-import { useCallback, useMemo, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 
 /** Discriminator for tab type. */
 export type TerminalTabType = 'plain' | 'claude';
@@ -104,7 +105,8 @@ function toShellTab(s: WireShell): TerminalTab {
     shellId: s.id,
     processId: null,
     tabOrder: s.tab_order ?? cached?.tab_order ?? 0,
-    name: s.name ?? cached?.name ?? null,
+    // Pure shells own their own name. AgenticProcess-backed tabs use toProcessTab.
+    name: s.name ?? null,
     type: 'plain',
     isDisabled: isClosing,
     statusReason: isClosing ? 'Closing...' : '',
@@ -124,7 +126,9 @@ function toProcessTab(p: WireProcess): TerminalTab {
     shellId: linkedShellId,
     processId: p.id,
     tabOrder: linkedShell?.tab_order ?? 0,
-    name: p.name ?? linkedShell?.name ?? cached?.name ?? null,
+    // Source of truth: AgenticProcess.name. No fallback to shell — keeps the
+    // canonical name on the process even after shell restart/deletion.
+    name: p.name ?? null,
     type: 'claude',
     isDisabled: isClosing,
     statusReason: isClosing ? 'Closing...' : '',
@@ -302,7 +306,7 @@ export function pushLoadedProcessTab(process: AgenticProcess, shell: Shell): voi
     shellId: shell.id,
     processId: process.id,
     tabOrder: shell.tab_order ?? 0,
-    name: process.name ?? shell.name ?? null,
+    name: process.name ?? null,
     type: 'claude',
     isDisabled: shell.status === ShellStatus.CLOSING,
     statusReason: shell.status === ShellStatus.CLOSING ? 'Closing...' : '',
@@ -378,4 +382,137 @@ export function useProjectTerminals(projectId?: string | null): UseTerminalsResu
     [all.data, pid],
   );
   return { ...all, data };
+}
+
+// ─── Project-bucketed view (chip consumes this) ─────────────────────────────
+
+export type BucketState = 'loading' | 'live' | 'missing';
+
+export interface TerminalProjectBucket {
+  /** Stable bucket identity. For stranded buckets this is still the dangling
+   *  Shell.project_id — the row exists, the Project entity just doesn't. */
+  projectId: string;
+  /** Resolved Project entity. Non-null iff ``state === 'live'``. */
+  project: Project | null;
+  /** 'loading' = cache miss, fetch in flight or pending; 'live' = entity
+   *  resolved; 'missing' = backend confirmed 404 (stranded). */
+  state: BucketState;
+  tabs: TerminalTab[];
+  /** Resurrect the Project from a tab's workdir + rebind every dependent's
+   *  project_id (server-side, via compute_node/recover-orphaned-project).
+   *  Resolves to the recovered Project, or null on failure. Only meaningful
+   *  when ``state === 'missing'``. */
+  recover: () => Promise<Project | null>;
+}
+
+export interface UseTerminalProjectBucketsResult {
+  buckets: TerminalProjectBucket[];
+}
+
+function bucketProjectId(tab: TerminalTab): string | null {
+  return tab.projectId ?? tab.shell?.project_id ?? tab.agenticProcess?.project_id ?? null;
+}
+
+/**
+ * Bucket the global tab strip by ``project_id`` and resolve each bucket's
+ * Project entity. Single owner of the "which projects own which tabs" question
+ * — consumers (e.g. ProjectsCounterChip) render rows straight from this hook
+ * without doing their own bucketing or dangling-FK fallback.
+ *
+ * Three bucket states:
+ *   - ``loading``: cache miss, resolution in flight. Chip shows a placeholder.
+ *   - ``live``: Project entity is in cache; bucket carries it.
+ *   - ``missing``: backend returned 404 for the FK. Bucket exposes ``recover()``.
+ *
+ * Recovery is explicit — the hook does not auto-recover on mount (would re-enter
+ * the auto-action antipattern called out in feedback memory).
+ */
+export function useTerminalProjectBuckets(): UseTerminalProjectBucketsResult {
+  const { data: tabs } = useAllTerminals();
+
+  const grouped = useMemo(() => {
+    const byProject = new Map<string, TerminalTab[]>();
+    for (const tab of tabs) {
+      const pid = bucketProjectId(tab);
+      if (!pid) continue;
+      const bucket = byProject.get(pid);
+      if (bucket) bucket.push(tab);
+      else byProject.set(pid, [tab]);
+    }
+    return Array.from(byProject.entries());
+  }, [tabs]);
+
+  // Resolution status per project_id. Seeded from the cache so projects already
+  // hydrated by other paths skip the loading flash.
+  const [status, setStatus] = useState<ReadonlyMap<string, BucketState>>(() => new Map());
+
+  useEffect(() => {
+    const toCheck = grouped
+      .map(([id]) => id)
+      .filter((id) => {
+        const known = status.get(id);
+        if (known === 'live' || known === 'missing') return false;
+        return true;
+      });
+    if (toCheck.length === 0) return;
+    let cancelled = false;
+    void (async () => {
+      const results = await Promise.all(
+        toCheck.map(async (id): Promise<[string, BucketState]> => {
+          const cached = Project.getByIdFromCache<Project>(id);
+          if (cached) return [id, 'live'];
+          const fetched = await Project.getById<Project>(id).catch(() => null);
+          return [id, fetched ? 'live' : 'missing'];
+        }),
+      );
+      if (cancelled) return;
+      setStatus((prev) => {
+        let changed = false;
+        const next = new Map(prev);
+        for (const [id, s] of results) {
+          if (next.get(id) !== s) {
+            next.set(id, s);
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [grouped, status]);
+
+  const buckets = useMemo<TerminalProjectBucket[]>(() => {
+    return grouped.map(([projectId, bucketTabs]) => {
+      const cached = Project.getByIdFromCache<Project>(projectId) ?? null;
+      const resolved = status.get(projectId);
+      const state: BucketState = cached
+        ? 'live'
+        : resolved === 'missing'
+          ? 'missing'
+          : 'loading';
+      const project = state === 'live' ? cached : null;
+      const recover = async (): Promise<Project | null> => {
+        if (project) return project;
+        const computeNodeId = dataContext.computeNode?.id;
+        if (!computeNodeId) return null;
+        const recovered = await Project.recoverOrphaned(projectId, computeNodeId).catch(() => null);
+        if (!recovered) return null;
+        // Backend rebound dependents; clear the strand so the next render
+        // reflects the live project. The WS Shell/AP update events will
+        // re-fetch terminals/list and re-bucket under the recovered project_id.
+        setStatus((prev) => {
+          const next = new Map(prev);
+          next.delete(projectId);
+          next.set(recovered.id, 'live');
+          return next;
+        });
+        return recovered;
+      };
+      return { projectId, project, state, tabs: bucketTabs, recover };
+    });
+  }, [grouped, status]);
+
+  return { buckets };
 }

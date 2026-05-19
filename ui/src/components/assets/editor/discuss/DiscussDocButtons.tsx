@@ -37,7 +37,10 @@ export function DiscussDocButtons({ fsRef }: Props) {
       if (pending) return;
       setPending(workerType);
       try {
-        const prompt = `Lets discuss ${fsRef.path}, Do not take any actions yet`;
+        // FSRef.path is the VFS sub-path (no leading slash). Normalize for
+        // the human-facing prompt so claude sees an absolute path.
+        const absPath = fsRef.path.startsWith('/') ? fsRef.path : `/${fsRef.path}`;
+        const prompt = `Lets discuss ${absPath}, Do not take any actions yet`;
         await AgenticProcess.openTab(workerType, prompt);
       } catch (err) {
         console.error('[DiscussDocButtons] openTab failed', err);

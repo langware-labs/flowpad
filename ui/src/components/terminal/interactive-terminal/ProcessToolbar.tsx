@@ -550,8 +550,16 @@ function useTimeDisplay(iso: string | null | undefined): string {
   return `${hh}:${mm}:${ss} (${ago})`;
 }
 
+function workerLabel(workerType: string | null | undefined): string {
+  const wt = (workerType ?? '').toLowerCase();
+  if (wt === 'codex') return 'Codex';
+  if (wt.startsWith('claude') || wt === '') return 'Claude';
+  return workerType ?? '';
+}
+
 function SessionInfoPopover({ process, sessionStartTime, lastMessageTime }: { process: AgenticProcess; sessionStartTime?: string | null; lastMessageTime?: string | null }) {
   const cliOpts = process.cliOptions;
+  const worker = workerLabel(process.worker_type);
   const workdir = process.workdir || '(not set)';
   const model = cliOpts.model || '(default)';
   const permMode = cliOpts.permission_mode;
@@ -616,8 +624,8 @@ function SessionInfoPopover({ process, sessionStartTime, lastMessageTime }: { pr
     ['Started', startDisplay],
     ['Last message', lastDisplay],
     ['Working Dir', workdir],
-    ['Session Name', sessionName || (process.session_id ? '(loading…)' : 'none')],
-    ['Session ID', process.session_id || 'none'],
+    [`${worker} Session Name`, sessionName || (process.session_id ? '(loading…)' : 'none')],
+    [`${worker} Session ID`, process.session_id || 'none'],
     ['PTY ID', process.pty_pid || 'none (detached)'],
     ['Permission', permMode],
     ['Chrome', chrome ? 'enabled' : 'disabled'],
@@ -632,14 +640,14 @@ function SessionInfoPopover({ process, sessionStartTime, lastMessageTime }: { pr
       <PopoverTrigger asChild>
         <button
           className="inline-flex h-7 w-7 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-          aria-label="Session info"
+          aria-label={`${worker} session info`}
         >
           <Info className="h-3.5 w-3.5" />
         </button>
       </PopoverTrigger>
       <PopoverContent side="bottom" align="end" className="w-96 p-0">
         <div className="border-b px-3 py-2">
-          <h4 className="text-xs font-semibold">Session Details</h4>
+          <h4 className="text-xs font-semibold">{worker} Session Details</h4>
         </div>
         <div className="space-y-1 px-3 py-2">
           {rows.map(([label, value]) => (

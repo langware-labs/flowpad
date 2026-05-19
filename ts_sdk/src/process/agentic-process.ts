@@ -204,8 +204,8 @@ export interface IAgenticProcess extends IEntity {
   visible?: boolean;
   /** Sidecar plain shell PTY session ID */
   sidecar_shell_id?: string | null;
-  /** True when linked shell PTY OSC title events may update the display name */
-  pty_rename?: boolean;
+  /** True when PTY OSC title escapes may update `name`. Cleared the first time the user manually renames this tab. */
+  auto_rename?: boolean;
   /**
    * Derived: true when the worker is ready for a new user prompt.
    * Computed server-side via ``is_ready_for_input``. Read-only on the wire.
@@ -648,8 +648,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /** Optional pinning index for tab ordering */
   favorite_index?: number | null;
 
-  /** True when linked shell PTY OSC title events may update the display name. */
-  pty_rename: boolean = true;
+  /** True when PTY OSC title escapes may update `name`. Cleared the first time the user manually renames this tab. */
+  auto_rename: boolean = true;
 
   /** Backend-owned lifecycle status. */
   private _status: ProcessStatus = ProcessStatus.NEW;
@@ -664,14 +664,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
 
   private set status(value: ProcessStatus) {
     this._status = value;
-  }
-
-  get ptyRename(): boolean {
-    return this.pty_rename;
-  }
-
-  set ptyRename(value: boolean) {
-    this.pty_rename = value;
   }
 
   /** Transcript-derived worker status. Read-only outside this class. */
@@ -1003,7 +995,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this.shell_id = entity.shell_id;
     this.visible = entity.visible;
     this.sidecar_shell_id = entity.sidecar_shell_id;
-    this.pty_rename = entity.pty_rename ?? true;
+    this.auto_rename = entity.auto_rename ?? true;
     this.project_id = entity.project_id ?? null;
     this.collaboration_room_id = entity.collaboration_room_id ?? null;
     this.target_typeid_str = entity.target_typeid_str ?? null;

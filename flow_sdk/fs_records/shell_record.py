@@ -29,6 +29,11 @@ class ShellStatus(StrEnum):
     ERROR = "error"
 
 
+def read_auto_rename(data: dict) -> bool:
+    """Read ``auto_rename`` with legacy ``pty_rename`` fallback. Default True."""
+    return bool(data.get("auto_rename", data.get("pty_rename", True)))
+
+
 class ShellRecord(Record):
     """Filesystem record for a shell session.
 
@@ -62,8 +67,7 @@ class ShellRecord(Record):
         kwargs.setdefault("agentic_process_id", None)
         kwargs.setdefault("workdir", None)
         kwargs.setdefault("name", None)
-        kwargs.setdefault("pty_rename", True)
-        kwargs.setdefault("user_renamed", False)
+        kwargs.setdefault("auto_rename", True)
         kwargs.setdefault("tab_order", 0)
         kwargs.setdefault("entity_id", None)
         kwargs.setdefault("created_at", datetime.now(timezone.utc).isoformat())
