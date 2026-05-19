@@ -24,8 +24,10 @@ secondary guard for crashed-coordinator recovery.
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import os
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +36,20 @@ from filelock import FileLock, Timeout
 
 from . import status as migration_status
 from .status import Decision, MigrationRecord, MigrationStatus
+
+
+@dataclass(frozen=True)
+class Recipe:
+    """A version's discovered migration artifacts.
+
+    A version may ship a Python script (``scripts/migrate.py``) and/or an
+    agent recipe (``skill/SKILL.md``). When both are present, the script
+    runs first (filesystem prep) and the agent recipe is a follow-up. For
+    now we run at most one per invocation — script takes priority.
+    """
+
+    script_path: Path | None = None  # <version>/scripts/migrate.py
+    skill_dir: Path | None = None    # <version>/skill/ (contains SKILL.md)
 
 
 def _is_process_alive(pid: int | None) -> bool:
@@ -52,9 +68,12 @@ def _is_process_alive(pid: int | None) -> bool:
             return False
 
 
-def _resolve_recipe_dir(version: str) -> Path | None:
-    """Return ``<migrations_root>/<version>/skill`` if a ``SKILL.md`` exists,
-    otherwise None.
+def _resolve_recipe(version: str) -> Recipe | None:
+    """Discover migration artifacts for ``version``.
+
+    Looks under ``<migrations_root>/<version>/`` for:
+      * ``scripts/migrate.py`` — Python script with a ``run()`` entry point
+      * ``skill/SKILL.md`` — agent recipe driven by AgenticProcess
 
     ``<migrations_root>`` defaults to
     ``<flowpad_assistant>/migrations`` but can be overridden via the
@@ -62,7 +81,8 @@ def _resolve_recipe_dir(version: str) -> Path | None:
     or tests can stage recipes outside the shipped assistant tree
     (e.g. the stress-matrix harness places recipes under ``/work``).
 
-    No recipe = no migration to run for this version.
+    Returns None when neither artifact exists — caller treats this as
+    "nothing to do for this version" and exits silently.
     """
     override = os.environ.get("FLOWPAD_MIGRATIONS_ROOT")
     if override:
@@ -70,10 +90,26 @@ def _resolve_recipe_dir(version: str) -> Path | None:
     else:
         from flow_sdk.config import flowpad_assistant_project_root
         migrations_root = flowpad_assistant_project_root() / "migrations"
-    recipe_dir = migrations_root / version / "skill"
-    if not (recipe_dir / "SKILL.md").is_file():
+
+    base = migrations_root / version
+    script_path = base / "scripts" / "migrate.py"
+    skill_dir = base / "skill"
+
+    has_script = script_path.is_file()
+    has_skill = (skill_dir / "SKILL.md").is_file()
+    if not has_script and not has_skill:
         return None
-    return recipe_dir
+    return Recipe(
+        script_path=script_path if has_script else None,
+        skill_dir=skill_dir if has_skill else None,
+    )
+
+
+# Back-compat: external callers / tests that import the old function name
+# still expect a directory pointing at the skill recipe.
+def _resolve_recipe_dir(version: str) -> Path | None:
+    recipe = _resolve_recipe(version)
+    return recipe.skill_dir if recipe else None
 
 
 def _resolve_status_dir() -> Path:
@@ -133,6 +169,66 @@ async def _bootstrap_local() -> Any:
     project = await get_or_create_local_project(desktop_user=user)
     cn = await get_or_create_local_compute_node(local_project=project, desktop_user=user)
     return cn
+
+
+def _drive_migration_script(
+    version: str,
+    script_path: Path,
+    status_dir: Path,
+    record: MigrationRecord,
+) -> int:
+    """Execute a ``scripts/migrate.py`` script via importlib.
+
+    Contract:
+      * The script module exposes a callable ``run()`` (no args, returns None).
+      * Failures raise; the runner converts to status=error + exit 1.
+      * The script is responsible for its own idempotency.
+      * stdout/stderr are inherited — the script's prints stream live.
+
+    Unlike the agentic path, there is no "warmup" delay: a Python script
+    starts producing output immediately, so we go straight from ``started``
+    to ``running`` before invoking it.
+    """
+    running = record.transition(MigrationStatus.RUNNING)
+    migration_status.write(status_dir, running)
+    typer.echo(f"  Running migration script: {script_path}")
+
+    try:
+        # Unique module name per version so re-runs don't hit sys.modules cache.
+        mod_name = f"_flowpad_migration_{version.replace('.', '_').replace('-', '_')}"
+        spec = importlib.util.spec_from_file_location(mod_name, script_path)
+        if spec is None or spec.loader is None:
+            raise RuntimeError(f"could not load migration script spec from {script_path}")
+        module = importlib.util.module_from_spec(spec)
+        # Register in sys.modules BEFORE exec_module: dataclasses (and others)
+        # resolve type annotations via sys.modules[cls.__module__], and a missing
+        # entry raises AttributeError("'NoneType' object has no attribute '__dict__'")
+        # when the dataclass decorator runs at module top-level.
+        sys.modules[mod_name] = module
+        try:
+            spec.loader.exec_module(module)
+            if not hasattr(module, "run"):
+                raise AttributeError(f"{script_path} has no run() entry point")
+            module.run()
+        finally:
+            sys.modules.pop(mod_name, None)
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        terminal = running.transition(MigrationStatus.ERROR, error_msg="interrupted")
+        migration_status.write(status_dir, terminal)
+        typer.echo("Migration interrupted.", err=True)
+        return 130
+    except Exception as e:
+        err = f"{type(e).__name__}: {e}"
+        terminal = running.transition(MigrationStatus.ERROR, error_msg=err)
+        migration_status.write(status_dir, terminal)
+        typer.echo(f"ERROR: migration {version}: {err}", err=True)
+        return 1
+
+    terminal = running.transition(MigrationStatus.COMPLETED)
+    migration_status.write(status_dir, terminal)
+    dur = terminal.duration_seconds or 0.0
+    typer.echo(f"Migration {version} completed in {dur:.1f}s.")
+    return 0
 
 
 async def _drive_migration(
@@ -236,8 +332,8 @@ async def _run_if_needed_async(
         from flow_sdk._version import __version__
         version = __version__
 
-    recipe_dir = _resolve_recipe_dir(version)
-    if recipe_dir is None:
+    recipe = _resolve_recipe(version)
+    if recipe is None:
         # No recipe — nothing to do for this version. Stays silent so the
         # `flow start` boot path doesn't add noise on every launch.
         return 0
@@ -292,9 +388,20 @@ async def _run_if_needed_async(
         migration_status.write(status_dir, record)
 
         try:
+            # Script takes priority when both are present (filesystem prep
+            # before agentic work). If we ever want to chain them, this is
+            # the place — for now, ship the simpler "one or the other".
+            if recipe.script_path is not None:
+                return _drive_migration_script(
+                    version=version,
+                    script_path=recipe.script_path,
+                    status_dir=status_dir,
+                    record=record,
+                )
+            assert recipe.skill_dir is not None  # _resolve_recipe guarantees one
             return await _drive_migration(
                 version=version,
-                recipe_dir=recipe_dir,
+                recipe_dir=recipe.skill_dir,
                 status_dir=status_dir,
                 record=record,
                 transcript_timeout=transcript_timeout,
