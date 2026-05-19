@@ -208,10 +208,18 @@ class FlowMessage(Entity):
         """Pack the body, upload it to the hub, and stamp body_status=READY.
 
         Sequence:
-          1. PUT body_status=UPLOADING on the hub (announce intent).
-          2. pack_bundle into a temp .flowmsg.
-          3. POST multipart to flow_message/<id>/fs/upload with BODY_FILENAME.
-          4. set_body_status action → body_status=READY + attachment_filename.
+          1. pack_bundle into a temp .flowmsg.
+          2. POST multipart to flow_message/<id>/fs/upload with BODY_FILENAME.
+          3. set_body_status action → body_status=READY + attachment_filename.
+
+        The hub FM is already at body_status=UPLOADING when this runs — the
+        hub's ``add_message_action`` stamps it (via ``_attachments_require_body``)
+        as the message header is created, which always precedes the body
+        upload. So no UPLOADING announce step is needed. A plain entity PUT to
+        set it would 401 anyway: the sender holds only the ``member`` role on a
+        hub conversation, and ``flow_message.update`` is denied to ``member`` —
+        that PUT aborted the whole upload and stranded the body on UPLOADING.
+        Every hub call below is an action, which ``member`` is allowed to invoke.
 
         ``on_progress`` — optional async callback fired as upload bytes go out;
         receives (bytes_done, bytes_total). Drives the sender's progress bar.
@@ -221,16 +229,10 @@ class FlowMessage(Entity):
         to gate on has_body() before calling.
         """
         from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
-        from flow_sdk.utils.hub import hub_post, hub_put
+        from flow_sdk.utils.hub import hub_post
 
         if not self.id:
             raise ValueError("upload_body requires self.id (FM must exist on hub)")
-
-        await hub_put(
-            BuiltinEntityType.FLOW_MESSAGE,
-            self.id,
-            {"body_status": BodyStatus.UPLOADING.value},
-        )
 
         zip_path = await self.to_file()
         try:
