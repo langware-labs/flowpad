@@ -1,6 +1,7 @@
 import { useAgentContext } from '@src/contexts/agent-context';
 import { Logo } from '@src/components/logo';
 import { Footer } from '@src/components/footer';
+import { FlowpadAssistantButton } from '@src/components/floating-chat';
 import { UserDropdown } from '@src/pages/flow-page/content-panel/user-dropdown/user-dropdown';
 import { DevMenu } from './dev-menu';
 import { Outlet } from 'react-router';
@@ -18,6 +19,7 @@ export default function DeveloperLayout() {
         </div>
 
         <div className="flex items-center gap-2">
+          <FlowpadAssistantButton />
           <UserDropdown />
         </div>
       </header>

@@ -1,6 +1,5 @@
 import { APIEntity, registerEntity } from '../APIEntity';
 import { IEntity } from '../IEntity';
-import { TypeId } from '../models';
 
 type ExecutionEnvironment = 'server' | 'client';
 
@@ -101,7 +100,7 @@ interface IPlugin extends IEntity {
   title: string;
   description: string;
   funcs: IFunc[];
-  install_target?: TypeId;
+  install_target?: string;
 }
 
 @registerEntity
@@ -120,7 +119,7 @@ export class Plugin extends APIEntity<Plugin> implements IPlugin {
   description: string;
   funcs: IFunc[];
   name: string;
-  install_target?: TypeId;
+  install_target?: string;
 
   public static async fromUrl(url: string): Promise<Plugin> {
     const response = await fetch(url);

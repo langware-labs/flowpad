@@ -74,6 +74,11 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
         if (persistedTypeId && !persistedTypeId.equals(computeNode.typeId)) {
           setContextEntityToLocalStorage(ContextEntitiesEnum.CurrentComputeNodeTypeId, null);
         }
+        // Evict cached compute_node entities so getById('@local') re-fetches the fresh
+        // UUID. Without this, a prior expanded ComputeNode keyed under the @local alias
+        // survives bootstrap and createProcess posts to a dead UUID → 404.
+        dataManager.removeEntityFromCache(new TypeId('compute_node', '@local'));
+        if (persistedTypeId) dataManager.removeEntityFromCache(persistedTypeId);
         await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentComputeNodeTypeId, computeNode.typeId);
       }
 
@@ -105,7 +110,7 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
       if (bootstrapInfo.user) {
         user = new User(bootstrapInfo.user);
         user.markAsExpanded();
-        await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentUserTypeId, user.typeId);
+        await dataContext.setContextEntityTypeId(ContextEntitiesEnum.LocalUserTypeId, user.typeId);
         trackUserToSentry(user);
         void ConnectionManager.getInstance().connect();
       }
@@ -127,6 +132,19 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
       await authManager.init(user);
       await dataContext.initContext({ setupWorkspace: params?.setupWorkspace, setupProject: true });
       //await acceptInvitation(url); // TODO Handle this
+      // Expose introspection hooks for manual_regression specs (and for
+      // hands-on debugging). ``window.context`` mirrors the dataContext
+      // singleton so specs can read ``window.context.snifferHook``,
+      // ``window.context.snifferEnabled``, ``window.context.bootstrapInfo``,
+      // etc.; ``window.sniffer`` is shorthand for the SnifferManager's
+      // attached entity, exposing its flowDataStream for event-count
+      // assertions.
+      try {
+        (window as Record<string, unknown>).context = dataContext;
+        (window as Record<string, unknown>).sniffer = snifferManager.entity;
+      } catch {
+        // ignore — non-browser env
+      }
       window['appReady'] = true;
     } catch (error: any) {
       console.error('initSdk error:', error);

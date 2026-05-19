@@ -1,3 +1,7 @@
+---
+id: 93149c34-80cc-599f-bb82-604548d1a52e
+---
+
 test 1: Adding a second terminal tab shows correct incremented tab name (FLOWPAD-1645)
 - navigate to {APP_URL}/dock/shell/new_terminal
 - wait for terminal to be ready (active terminal panel `[data-testid="terminal-panel"][data-active="true"]` shows xterm)

@@ -273,19 +273,18 @@ export class NavigationActions {
   }
 
   /**
-   * Open (or create) an AgenticProcess for a Claude CLI session UUID and navigate to it.
-   * Uses AgenticProcess.open() which calls upsertSessionProcess — finds existing or creates
-   * without starting a PTY. Then navigates to process.terminalDockPointer.
+   * Resolve a worker/session/thread id (Claude or Codex) and navigate to it.
+   * Backend auto-discovers worker_type. Returns null when the id is unknown
+   * to either Claude or Codex history; caller is expected to surface a toast.
    */
-  async openClaudeSession(sessionId: string): Promise<AgenticProcess | null> {
-    try {
-      const process = await AgenticProcess.fromClaudeSession(sessionId);
-      this.openDock(process.terminalDockPointer);
-      return process;
-    } catch (err) {
-      console.error('[NavigationActions.openClaudeSession]', err);
+  async openWorkerSession(workerId: string): Promise<AgenticProcess | null> {
+    const process = await AgenticProcess.getByWorkerId(workerId).catch((err) => {
+      console.error('[NavigationActions.openWorkerSession]', err);
       return null;
-    }
+    });
+    if (!process) return null;
+    this.openDock(process.dockPointer);
+    return process;
   }
 
   /**
@@ -327,7 +326,7 @@ export class NavigationActions {
       return {
         processId: agenticProcess.id,
         shellId: agenticProcess.shell_id ?? null,
-        dockPointer: agenticProcess.terminalDockPointer,
+        dockPointer: agenticProcess.dockPointer,
       };
     } catch (error) {
       console.error('[NavigationActions] Error creating AgenticProcess:', error);
@@ -363,6 +362,10 @@ export class NavigationActions {
           : dataContext.project?.fs_storage_mount_path) ||
         undefined;
       const newShell = Shell.create(cn, { name, workdir: cwd });
+      // Project consolidation (Path A, 2026-05-09): every Shell carries a
+      // real ``project_id``. Prefer the caller-pinned project, then the
+      // active dock project; the backend's Shell.save defaults to the
+      // bootstrap ``@local`` project if both are absent.
       const pinnedProjectId = options?.projectId ?? dataContext.project?.id ?? null;
       if (pinnedProjectId) newShell.project_id = pinnedProjectId;
       await newShell.save(cn.typeId);

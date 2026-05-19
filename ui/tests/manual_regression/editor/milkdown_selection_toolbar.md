@@ -1,3 +1,7 @@
+---
+id: 40244595-0c29-545d-a11e-fa35b21dc105
+---
+
 test 1: Selection toolbar appears above a non-empty text selection in editor mode
 - navigate to {APP_URL}/dock/assets/list/markdown
 - wait for the asset list to render

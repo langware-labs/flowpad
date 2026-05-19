@@ -1,6 +1,8 @@
 import {
   ActionInfo,
   connectionManager,
+  createCloudConnectionAuthRejectedWarning,
+  createCloudConnectionLostWarning,
   createCloudDisconnectedWarning,
   createLlmNotConfiguredWarning,
   createNoComputeNodeWarning,
@@ -64,7 +66,14 @@ export interface LlmConfigResponse {
  */
 export function useWarnings() {
   const context = useContext();
-  const { isDesktop, cloudLoginAvailable, user, computeNode, snifferEnabled } = context;
+  const {
+    isDesktop,
+    cloudLoginAvailable,
+    user,
+    computeNode,
+    snifferEnabled,
+    cloudConnectionStatus,
+  } = context;
   const queryClient = useQueryClient();
 
   const { data: secretsEnabledData } = useQuery({
@@ -178,9 +187,15 @@ export function useWarnings() {
       warnings.push(llmWarning);
     }
 
-    // Cloud disconnected warning
+    // Cloud disconnected warning — fires when LOGGED_OUT.
     if (!cloudLoginAvailable) {
       warnings.push(createCloudDisconnectedWarning());
+    } else if (cloudConnectionStatus === 'auth_rejected') {
+      // Logged in but the hub WS turned us away — distinct from "logged out".
+      warnings.push(createCloudConnectionAuthRejectedWarning());
+    } else if (cloudConnectionStatus === 'error' || cloudConnectionStatus === 'disconnected') {
+      // Logged in but the WS bridge is down. Realtime sharing paused.
+      warnings.push(createCloudConnectionLostWarning());
     }
 
     // No compute node warning
@@ -207,7 +222,7 @@ export function useWarnings() {
     }
 
     return warnings;
-  }, [isDesktop, isLlmConfigured, cloudLoginAvailable, computeNode, snifferEnabled, isSecretsEnabled]);
+  }, [isDesktop, isLlmConfigured, cloudLoginAvailable, cloudConnectionStatus, computeNode, snifferEnabled, isSecretsEnabled]);
 
   // Update context warnings when computed warnings change
   useEffect(() => {

@@ -7,6 +7,7 @@ import {
   ShellStatus,
   TypeId,
 } from '@sdk';
+import { subscribeToEntityOps } from '@sdk/react/hooks';
 import { useCallback, useMemo, useSyncExternalStore } from 'react';
 
 /** Discriminator for tab type. */
@@ -15,12 +16,20 @@ export type TerminalTabType = 'plain' | 'claude';
 /**
  * One row in the tab strip.
  *
- * Strip contract (deliberately simple):
+ * Strip contract:
  *   terminalState ← initial REST fetch ← `refresh()`
- *   terminalState ← direct mutations ← `pushTerminal` / `removeTerminal` / `updateTerminal`
+ *   terminalState ← direct mutations  ← `pushTerminal` / `removeTerminal` / `updateTerminal`
+ *   terminalState ← debounced refetch ← Shell / AgenticProcess create+delete
+ *                                       events on the WebSocket
  *
- * No WebSocket subscription, no merge ratchet, no implicit filtering. The list
- * the consumer renders is exactly what's in `terminalState`.
+ * Cross-session sync: Shell and AgenticProcess WebSocket events (create,
+ * update, delete) trigger a debounced re-fetch of `terminals/list`. This is
+ * what surfaces external mutations (CLI, REST POST, another browser window,
+ * backend bg tasks) in the open dock without a manual refresh. Update events
+ * are included because AgenticProcess.visible toggles via an update op (the
+ * backend filters APs by `visible=true` when building the strip) and Shell
+ * status transitions can also affect strip membership. The 100ms debounce
+ * keeps the refetch rate bounded under bursts.
  *
  * Per-row liveness (status badges, names, restart-required) is read from the
  * dataManager entity cache via `Shell.getByIdFromCache` / `AgenticProcess.
@@ -152,9 +161,9 @@ export function terminalProcessId(tab: TerminalTab): string | null {
 
 let terminalState: TerminalTab[] = [];
 let initialFetchStarted = false;
-let activeTerminalsFetchVersion = 0;
+let wsSubscribed = false;
+let wsRefetchTimer: ReturnType<typeof setTimeout> | null = null;
 const listeners = new Set<() => void>();
-const closedTerminalKeys = new Set<string>();
 
 function notifyListeners(): void {
   for (const cb of listeners) cb();
@@ -164,6 +173,38 @@ function setTerminalState(next: TerminalTab[]): void {
   if (next === terminalState) return;
   terminalState = next;
   notifyListeners();
+}
+
+/** Coalesce bursty WS events into one refetch (e.g. a loop of REST creates). */
+function scheduleTerminalsRefetch(): void {
+  if (wsRefetchTimer) return;
+  wsRefetchTimer = setTimeout(() => {
+    wsRefetchTimer = null;
+    void fetchActiveTerminals();
+  }, 100);
+}
+
+/** Subscribe (once, module-scoped) to Shell + AgenticProcess WebSocket events
+ *  and refetch the strip when they fire. We listen to all three ops:
+ *
+ *  - create/delete: change strip identity directly.
+ *  - update: can also change strip membership — most importantly,
+ *    AgenticProcess.visible toggles via an update op (the backend's
+ *    `terminals/list` only surfaces APs with `visible=true`, so the
+ *    transition is invisible to a refetch unless update events trigger one).
+ *    Shell status transitions (e.g. → CLOSING) also affect strip rendering.
+ *
+ *  The 100ms debounce in `scheduleTerminalsRefetch` keeps the rate bounded
+ *  even under bursts of status flickers. The listener lives for the lifetime
+ *  of the app — never unsubscribed — matching the same pattern as
+ *  `pending-actions-store`. */
+function ensureWsSubscription(): void {
+  if (wsSubscribed) return;
+  wsSubscribed = true;
+  subscribeToEntityOps(
+    [Shell.type, AgenticProcess.type],
+    () => scheduleTerminalsRefetch(),
+  );
 }
 
 /**
@@ -177,8 +218,8 @@ function setTerminalState(next: TerminalTab[]): void {
 export async function fetchActiveTerminals(): Promise<TerminalTab[]> {
   const computeNodeId = dataContext.computeNode?.id;
   if (!computeNodeId) return [];
-  const fetchVersion = ++activeTerminalsFetchVersion;
-  const action = new ActionInfo('active-terminals', 'compute_node', computeNodeId, 'GET');
+  const action = new ActionInfo('terminals', 'compute_node', computeNodeId, 'GET');
+  action.subpath = 'list';
   const result = await dataManager.callAction<unknown, ActiveTerminalsResponse>(action);
   if (!result) return [];
   // 1. Hydrate the entity cache so per-row reads (`shell.status`, `process.workerStatus`)
@@ -195,21 +236,43 @@ export async function fetchActiveTerminals(): Promise<TerminalTab[]> {
     ...result.pure_shells.map(toShellTab),
     ...result.visible_processes.map(toProcessTab),
   ];
-  if (fetchVersion !== activeTerminalsFetchVersion) return terminalState;
-
-  const fetchedKeys = new Set(fetched.map(terminalTargetKey));
-  for (const key of closedTerminalKeys) {
-    if (!fetchedKeys.has(key)) closedTerminalKeys.delete(key);
-  }
-
-  const incoming = fetched.filter((tab) => !closedTerminalKeys.has(terminalTargetKey(tab))).sort(byTabOrder);
+  const incoming = fetched.sort(byTabOrder);
   setTerminalState(incoming);
   return incoming;
 }
 
+export interface TerminalCloseResponse {
+  accepted: string[];
+  missing: string[];
+  invalid: string[];
+}
+
+export async function closeTerminalTargets(
+  targets: Array<TerminalTab | TypeId | string>,
+): Promise<TerminalCloseResponse> {
+  const keys = targets.map(terminalTargetKey);
+  const computeNodeId = dataContext.computeNode?.id;
+  if (!computeNodeId || keys.length === 0) {
+    return { accepted: [], missing: keys, invalid: [] };
+  }
+  const action = new ActionInfo('terminals', 'compute_node', computeNodeId, 'POST');
+  action.subpath = 'close';
+  action.bodyParameters = { targets: keys };
+  const result = await dataManager.callAction<{ targets: string[] }, TerminalCloseResponse>(action);
+  const accepted = result?.accepted ?? [];
+  if (accepted.length > 0) {
+    const closed = new Set(accepted);
+    setTerminalState(terminalState.filter((tab) => !closed.has(terminalTargetKey(tab))));
+  }
+  return {
+    accepted,
+    missing: result?.missing ?? [],
+    invalid: result?.invalid ?? [],
+  };
+}
+
 function pushTerminalShared(tab: TerminalTab): void {
   const key = terminalTargetKey(tab);
-  closedTerminalKeys.delete(key);
   setTerminalState(
     terminalState.some((t) => terminalTargetKey(t) === key)
       ? terminalState.map((t) => (terminalTargetKey(t) === key ? tab : t))
@@ -219,7 +282,6 @@ function pushTerminalShared(tab: TerminalTab): void {
 
 function removeTerminalShared(target: TerminalTab | TypeId | string): void {
   const key = terminalTargetKey(target);
-  closedTerminalKeys.add(key);
   setTerminalState(terminalState.filter((t) => terminalTargetKey(t) !== key));
 }
 
@@ -231,7 +293,7 @@ function updateTerminalShared(target: TerminalTab | TypeId | string, patch: Part
 /**
  * Optimistically insert a row built from a freshly-loaded process + its shell.
  * Called by route loaders so the strip reflects a newly-active process *before*
- * the next ``active-terminals`` refetch completes — closes the race window in
+ * the next terminals/list refetch completes — closes the race window in
  * which TabbedTerminal's self-heal effect would otherwise pick a stale tab.
  */
 export function pushLoadedProcessTab(process: AgenticProcess, shell: Shell): void {
@@ -278,6 +340,7 @@ export interface UseTerminalsResult {
 export function useAllTerminals(): UseTerminalsResult {
   const subscribe = useCallback((onChange: () => void) => {
     listeners.add(onChange);
+    ensureWsSubscription();
     if (!initialFetchStarted) {
       initialFetchStarted = true;
       void fetchActiveTerminals();
@@ -301,15 +364,17 @@ export function useAllTerminals(): UseTerminalsResult {
  * pin (e.g. for collaboration spaces); omit to default to the active project
  * via ``dataContext.project?.id``.
  *
- * Tabs whose `projectId` is null have no project affiliation (e.g. a plain
- * shell created before any project context is set) and are surfaced in every
- * scoped view — excluding them everywhere would orphan them from the UI.
+ * Project consolidation (Path A, 2026-05-09): every Shell carries a real
+ * ``project_id`` (defaulting server-side to the bootstrap ``@local`` project
+ * when none was passed). The historical orphan-include rule —
+ * ``|| t.projectId == null`` — is gone; the strict per-project filter below
+ * is now safe because no tab's ``projectId`` is ever null in normal flows.
  */
 export function useProjectTerminals(projectId?: string | null): UseTerminalsResult {
   const all = useAllTerminals();
   const pid = projectId ?? dataContext.project?.id ?? null;
   const data = useMemo(
-    () => (pid == null ? all.data : all.data.filter((t) => t.projectId === pid || t.projectId == null)),
+    () => (pid == null ? all.data : all.data.filter((t) => t.projectId === pid)),
     [all.data, pid],
   );
   return { ...all, data };

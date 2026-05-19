@@ -84,7 +84,7 @@ class TestInstanceSettings(BaseInstanceSettings):
             skill_rules_dir=flow_home / "skill_rules",
             schema_dir=flow_home / "schema",
             records_data_dir=flow_home / "records_data",
-            logs_dir=flow_home / "logs",
+            logs_dir=flow_home / "instances" / "test" / "logs",
             monitor_log_path=flow_home / "monitor.log",
             inbox_last_fetch_path=flow_home / ".inbox_last_fetch.json",
             conversation_last_sync_path=flow_home / ".conversation_last_sync.json",

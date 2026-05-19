@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileText, Folder, Plus, RefreshCw, User as UserIcon } from 'lucide-react';
+import { FileText, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import apiClient from '@sdk/client';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -9,11 +9,13 @@ import type { SearchResult } from '@src/hooks/use-asset-search';
 import { DEFAULT_ASSET_FILTER, applyFilterToParams } from '@src/components/assets/assetFilter';
 import type { AssetFilter } from '@src/components/assets/assetFilter';
 import type { Browseable, BrowseableRoot, ToolbarAction } from '@src/components/browseable-tree/types';
+import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
+import { config } from '@sdk';
 
 export interface AssetTypeRootDeps {
   /** Per-row refresh callback, e.g. systemTools.indexType from useSystemTools.
    *  Receives the active filter so per-type scans can scope to the same. */
-  indexType: (typeName: string, filter?: AssetFilter) => Promise<{ indexed?: number } | void>;
+  indexType: (typeName: string, scope?: { user: boolean; projects: string[] }) => Promise<{ indexed?: number } | void>;
   /** Called when the "New" toolbar button is clicked for a creatable type. */
   onNew?: (typeName: string) => void;
   /** Types that can be created via "New"; others render without the plus button. */
@@ -25,58 +27,8 @@ export interface AssetTypeRootDeps {
   childrenPageSize?: number;
   /** Called after a successful scan so the parent can refresh counts. */
   onScanComplete?: (typeName: string) => void;
-}
-
-/** A discovery source — "User" or one project — surfaced as a one-level
- *  grouping under each non-markdown type root. */
-export interface RecordGroup {
-  /** Stable key for React. */
-  key: string;
-  /** Display label ("User" or the project name). */
-  label: string;
-  /** Records that fell into this bucket. */
-  records: SearchResult[];
-}
-
-/**
- * Bucket records by discovery source: scope='user' → "User"; scope='project'
- * → one bucket per `project_id`, labeled by `project_name` (fallback to the
- * project_id UUID). Records with neither scope are dropped — they wouldn't
- * pass the backend filter anyway. Order is stable: User first, then projects
- * alpha by label.
- */
-export function groupRecords(results: SearchResult[]): RecordGroup[] {
-  const userBucket: SearchResult[] = [];
-  const projectBuckets = new Map<string, { label: string; records: SearchResult[] }>();
-  for (const r of results) {
-    if (r.scope === 'user') {
-      userBucket.push(r);
-      continue;
-    }
-    if (r.scope === 'project') {
-      const pid = r.project_id || '';
-      if (!pid) continue; // unindexed/legacy row — drop
-      const label = r.project_name || pid;
-      const key = `project:${pid}`;
-      let bucket = projectBuckets.get(key);
-      if (!bucket) {
-        bucket = { label, records: [] };
-        projectBuckets.set(key, bucket);
-      }
-      bucket.records.push(r);
-    }
-  }
-  const out: RecordGroup[] = [];
-  if (userBucket.length > 0) {
-    out.push({ key: 'user', label: 'User', records: userBucket });
-  }
-  const sortedProjects = [...projectBuckets.entries()].sort((a, b) =>
-    a[1].label.localeCompare(b[1].label),
-  );
-  for (const [key, { label, records }] of sortedProjects) {
-    out.push({ key, label, records });
-  }
-  return out;
+  /** Called after a successful asset delete so the parent can refresh counts + tree. */
+  onDeleteComplete?: (typeName: string) => void;
 }
 
 interface AssetPointerParts {
@@ -153,12 +105,33 @@ async function fetchAssetsOfType(
 /**
  * Build a child Browseable from a SearchResult.
  */
-function assetChild(typeName: string, result: SearchResult): Browseable {
+function assetChild(typeName: string, result: SearchResult, onAfterDelete?: () => void): Browseable {
   const label = result.name || basename(result.asset_ref) || '(untitled)';
   // Projects open in their collaboration space rather than the asset editor.
   const pointer = typeName === 'project'
     ? DockPointer.forProject(result.record_id)
     : DockPointer.forAssetEditor(typeName, result.asset_ref);
+  const toolbar: ToolbarAction[] = [];
+  // Projects open in their collaboration space and aren't deleted from the
+  // asset sidebar; everything else (markdown, agent, skill, workflow, plan,
+  // claude_md, …) routes through the same /graph/<type>/<id> DELETE endpoint.
+  if (typeName !== 'project') {
+    toolbar.push({
+      id: `delete:${typeName}:${result.record_id}`,
+      icon: <Trash2 />,
+      label: `Delete ${label}`,
+      run: () => {
+        showDeleteAssetModal({
+          name: label,
+          onConfirm: async () => {
+            await apiClient.delete(`${config.API_PREFIXES.graph}/${typeName}/${result.record_id}`);
+          },
+          onAfterDelete,
+        });
+      },
+      showBusyIndicator: false,
+    });
+  }
   return {
     id: `asset:${typeName}:${result.asset_ref}`,
     kind: 'asset',
@@ -166,6 +139,7 @@ function assetChild(typeName: string, result: SearchResult): Browseable {
     icon: <FileText className="h-3.5 w-3.5 flex-shrink-0" />,
     hasChildren: false,
     pointer,
+    toolbar: toolbar.length > 0 ? toolbar : undefined,
   };
 }
 
@@ -226,16 +200,6 @@ function AssetTypeCountBadge({
   );
 }
 
-/** Static badge showing a precomputed count (for group rows). */
-function StaticCountBadge({ count }: { count: number }) {
-  if (!count) return null;
-  return (
-    <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-      {count > 999 ? '999+' : count}
-    </span>
-  );
-}
-
 /**
  * Build toolbar actions for a type row: "Scan" (reindex) and, for creatable
  * types, "New". All side effects — never navigation.
@@ -247,7 +211,7 @@ function buildRootToolbar(type: AssetTypeInfo, deps: AssetTypeRootDeps): Toolbar
       icon: <RefreshCw />,
       label: 'Scan for changes',
       run: async () => {
-        await deps.indexType(type.type_name, deps.filter);
+        await deps.indexType(type.type_name, deps.filter?.scope);
         deps.onScanComplete?.(type.type_name);
       },
     },
@@ -273,35 +237,18 @@ export function assetTypeRoot(type: AssetTypeInfo, deps: AssetTypeRootDeps): Bro
   const filter = deps.filter ?? DEFAULT_ASSET_FILTER;
   const limit = deps.childrenPageSize ?? 200;
 
+  const onAfterDelete = deps.onDeleteComplete
+    ? () => deps.onDeleteComplete!(type.type_name)
+    : undefined;
   const listChildren = async (): Promise<Browseable[]> => {
     const results = await fetchAssetsOfType(type.type_name, filter, limit);
-    const groups = groupRecords(results);
-    // 0 or 1 source → render records flat (no redundant wrapper).
-    if (groups.length <= 1) {
-      return results.map((r) => assetChild(type.type_name, r));
-    }
-    // ≥2 sources → one level of grouping.
-    return groups.map((g) => ({
-      id: `asset-group:${type.type_name}:${g.key}`,
-      kind: 'group',
-      label: g.label,
-      icon:
-        g.key === 'user' ? (
-          <UserIcon className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
-        ) : (
-          <Folder className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
-        ),
-      badge: <StaticCountBadge count={g.records.length} />,
-      hasChildren: true,
-      pointer: null,
-      listChildren: async () => g.records.map((r) => assetChild(type.type_name, r)),
-    } satisfies Browseable));
+    return results.map((r) => assetChild(type.type_name, r, onAfterDelete));
   };
 
   // Filter signature in the id forces the BrowseableTree to refetch
   // children when the user toggles scope/picker (the children are cached
   // by node id; without this they'd stay frozen at the previous filter).
-  const filterSig = `${filter.scope}:${[...filter.projectIds].sort().join(',')}`;
+  const filterSig = `${filter.scope.user ? '1' : '0'}:${[...filter.scope.projects].sort().join(',')}`;
 
   const root: BrowseableRoot = {
     id: `asset-type:${type.type_name}:${filterSig}`,
@@ -323,8 +270,6 @@ export function assetTypeRoot(type: AssetTypeInfo, deps: AssetTypeRootDeps): Bro
       if (parsed.mode === 'list' || parsed.mode === null) {
         return [root];
       }
-      // editor mode: synthesize the leaf directly from the pointer. No fetch
-      // needed — the pointer already carries everything the leaf shows.
       if (!parsed.vfsPath) return [root];
       const leaf: Browseable = {
         id: `asset:${type.type_name}:${parsed.vfsPath}`,

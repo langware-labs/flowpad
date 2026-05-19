@@ -1,3 +1,7 @@
+---
+id: 566ca793-90ca-5fb4-8fc5-0dc44b466925
+---
+
 # API Routing Specification
 
 This document describes how HTTP requests are routed through the flow-cli system — from URL to action handler — covering both the Python backend and the TypeScript frontend.
@@ -257,6 +261,8 @@ Entity-specific actions on `AgenticProcessor` (`flow_sdk/builtin/agentic_process
 | `step` | ALL | `.../agentic_process/{id}/step` | Execute one step |
 | `exit` | ALL | `.../agentic_process/{id}/exit` | Exit process |
 | `get-history` | GET | `.../agentic_process/{id}/get-history` | Get execution history |
+| `transcript/plan` | POST | `.../agentic_process/{id}/transcript/plan` | Resolve the latest plan from the worker transcript |
+| `transcript/prompts` | POST | `.../agentic_process/{id}/transcript/prompts` | Return canonical user prompts from `AgentTranscript.prompts` |
 | `start-pty` | POST | `.../agentic_process/{id}/start-pty` | Start PTY terminal |
 | `resume-pty` | POST | `.../agentic_process/{id}/resume-pty` | Resume PTY session |
 | `kill-pty` | POST | `.../agentic_process/{id}/kill-pty` | Kill PTY process |

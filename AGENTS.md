@@ -1,3 +1,7 @@
+---
+id: 4b050b02-5082-5a2f-ae99-05e894716ba5
+---
+
 # Claude Guidelines for flow-cli
 
 ## Quick Start

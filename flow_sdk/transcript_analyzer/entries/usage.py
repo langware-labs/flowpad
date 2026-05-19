@@ -1,99 +1,141 @@
-"""``TokenUsageEntry`` — per-line token accounting.
+"""``UsageEntry`` — per-stream token / request accounting.
 
-Both Claude and Codex emit usage on assistant turns. Claude attaches
-``message.usage`` to assistant content lines; Codex emits a standalone
-``event_msg`` of type ``token_count`` with ``info.last_token_usage`` and
-``info.total_token_usage``.
+Each chargeable stream emitted by an assistant turn becomes one entry: a
+Claude turn with ``{input:30, output:12k, cache_read:50k, cache_write_1h:8k}``
+produces four entries. The dimension axes (``io``, ``cache``, ``cache_tier``,
+``reasoning``, ``tool``, ``unit``) form a key space that pairs cleanly with
+``ItemPrice.dims`` in :mod:`flow_sdk.transcript_analyzer.pricing` — cost is
+``count × matching rule.per_unit_usd`` per entry.
 
-This entry kind exists so that callers (cost dashboards, summarizers) can
-filter on ``EntryKind.TOKEN_USAGE`` without scanning every assistant line
-for a nested ``usage`` field. It does not render into the chat stream
-(``to_flow_data`` returns ``[]``).
+Why per-dim, not aggregate: every Anthropic / OpenAI price line maps to one
+tuple in this space. Adding a new chargeable axis is a parser+price-table
+change; downstream code (filters, summarizers, cost calc) stays the same.
+
+Codex emits cumulative totals separately — see :class:`CodexUsageEntry`.
 """
 
 from __future__ import annotations
 
-from typing import Any
-
-from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
+from typing import TYPE_CHECKING, Any, Literal
 
 from ..entry import EntryKind, TranscriptEntry
 
+if TYPE_CHECKING:
+    from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
 
-class TokenUsageEntry(TranscriptEntry):
+
+IoLiteral = Literal["input", "output"]
+CacheLiteral = Literal["none", "read", "write"]
+CacheTierLiteral = Literal["none", "5m", "1h"]
+UnitLiteral = Literal["token", "request"]
+
+
+class UsageEntry(TranscriptEntry):
+    """One chargeable stream (tokens or requests) emitted in a single turn.
+
+    Identity:
+      - ``model`` and ``timestamp`` come from the base envelope (set by the
+        parser to the assistant message's model + timestamp).
+      - All per-dim entries from the same turn share ``entry_id`` (the
+        message's ``{message.id}:usage``); ``self.id`` is suffixed with
+        ``:dim_<n>`` for uniqueness.
+
+    Pricing match contract: ``pricing.ItemPrice.matches(self)`` does
+    attribute equality on each key in ``dims``. Default ``cache="none"``
+    and ``cache_tier="none"`` makes the bare-input rule (``cache="none"``)
+    match every non-cache input entry without needing a wildcard.
+    """
+
     kind = EntryKind.TOKEN_USAGE
 
     def __init__(
         self,
         *,
-        input_tokens: int | None = None,
-        output_tokens: int | None = None,
-        cached_input_tokens: int | None = None,
-        cache_read_tokens: int | None = None,
-        cache_creation_tokens: int | None = None,
-        reasoning_output_tokens: int | None = None,
+        count: int,
+        io: IoLiteral,
+        unit: UnitLiteral = "token",
+        cache: CacheLiteral = "none",
+        cache_tier: CacheTierLiteral = "none",
+        reasoning: bool = False,
+        tool: str | None = None,
+        **base: Any,
+    ) -> None:
+        super().__init__(**base)
+        self.count = count
+        self.io = io
+        self.unit = unit
+        self.cache = cache
+        self.cache_tier = cache_tier
+        self.reasoning = reasoning
+        self.tool = tool
+
+    def to_flow_data(self) -> list["FlowData"]:
+        return []
+
+    def to_dict(self) -> dict:
+        return {
+            **super().to_dict(),
+            "count": self.count,
+            "io": self.io,
+            "unit": self.unit,
+            "cache": self.cache,
+            "cache_tier": self.cache_tier,
+            "reasoning": self.reasoning,
+            "tool": self.tool,
+        }
+
+    def _body_lines(self) -> list[str]:
+        parts: list[str] = [f"io={self.io}", f"count={self.count}", f"unit={self.unit}"]
+        if self.cache != "none":
+            parts.append(f"cache={self.cache}")
+            if self.cache_tier != "none":
+                parts.append(f"cache_tier={self.cache_tier}")
+        if self.reasoning:
+            parts.append("reasoning=true")
+        if self.tool:
+            parts.append(f"tool={self.tool}")
+        return ["usage: " + " ".join(parts)]
+
+
+class CodexUsageEntry(UsageEntry):
+    """Codex-only: carries the cumulative per-session totals + turn_id.
+
+    Codex emits these in the same ``token_count`` event_msg payload as the
+    per-turn counts. They're useful for sanity-checking aggregate spend
+    against per-entry sums but don't participate in cost arithmetic (the
+    per-dim ``UsageEntry`` siblings emitted in the same turn do).
+    """
+
+    def __init__(
+        self,
+        *,
         total_input_tokens: int | None = None,
         total_output_tokens: int | None = None,
         turn_id: str | None = None,
         **base: Any,
     ) -> None:
         super().__init__(**base)
-        self.input_tokens = input_tokens
-        self.output_tokens = output_tokens
-        # `cached_input_tokens` is the legacy single-value field (read OR
-        # creation, whichever was reported). Kept for back-compat.
-        # `cache_read_tokens` and `cache_creation_tokens` are the disaggregated
-        # form Claude actually emits — both are independently meaningful for
-        # cost dashboards (read = cheap hit; creation = wrote new prompt block).
-        self.cached_input_tokens = cached_input_tokens
-        self.cache_read_tokens = cache_read_tokens
-        self.cache_creation_tokens = cache_creation_tokens
-        self.reasoning_output_tokens = reasoning_output_tokens
-        # ``total_*`` are codex-specific cumulative counters (per-turn vs
-        # per-session). Claude's ``message.usage`` only carries per-turn
-        # numbers — totals stay None there.
         self.total_input_tokens = total_input_tokens
         self.total_output_tokens = total_output_tokens
         self.turn_id = turn_id
 
-    def to_flow_data(self) -> list[FlowData]:
-        return []
-
     def to_dict(self) -> dict:
         return {
             **super().to_dict(),
-            "input_tokens": self.input_tokens,
-            "output_tokens": self.output_tokens,
-            "cached_input_tokens": self.cached_input_tokens,
-            "cache_read_tokens": self.cache_read_tokens,
-            "cache_creation_tokens": self.cache_creation_tokens,
-            "reasoning_output_tokens": self.reasoning_output_tokens,
             "total_input_tokens": self.total_input_tokens,
             "total_output_tokens": self.total_output_tokens,
             "turn_id": self.turn_id,
         }
 
     def _body_lines(self) -> list[str]:
-        parts: list[str] = []
-        if self.input_tokens is not None:
-            parts.append(f"in={self.input_tokens}")
-        if self.output_tokens is not None:
-            parts.append(f"out={self.output_tokens}")
-        if self.cache_read_tokens is not None:
-            parts.append(f"cache_read={self.cache_read_tokens}")
-        if self.cache_creation_tokens is not None:
-            parts.append(f"cache_create={self.cache_creation_tokens}")
-        if self.cache_read_tokens is None and self.cache_creation_tokens is None and self.cached_input_tokens is not None:
-            parts.append(f"cached={self.cached_input_tokens}")
-        if self.reasoning_output_tokens is not None:
-            parts.append(f"reasoning={self.reasoning_output_tokens}")
+        lines = super()._body_lines()
+        extra: list[str] = []
         if self.total_input_tokens is not None:
-            parts.append(f"total_in={self.total_input_tokens}")
+            extra.append(f"total_in={self.total_input_tokens}")
         if self.total_output_tokens is not None:
-            parts.append(f"total_out={self.total_output_tokens}")
-        out: list[str] = []
-        if parts:
-            out.append("tokens: " + " ".join(parts))
+            extra.append(f"total_out={self.total_output_tokens}")
+        if extra:
+            lines.append("cumulative: " + " ".join(extra))
         if self.turn_id:
-            out.append(f"turn_id: {self.turn_id}")
-        return out
+            lines.append(f"turn_id: {self.turn_id}")
+        return lines

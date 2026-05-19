@@ -1,10 +1,14 @@
 from __future__ import annotations
 
-from typing import ClassVar, List, Optional
+from datetime import datetime
+from typing import ClassVar, List, Optional, TYPE_CHECKING
 
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.core import Entity
 from flow_sdk.db.drivers.db_base_record import TypeId
+
+if TYPE_CHECKING:  # pragma: no cover
+    from flow_sdk.cloud_client.client import FlowpadClient
 
 
 # Sentinel used by ConversationRecord.sync_to_db to bypass the projection
@@ -13,6 +17,33 @@ from flow_sdk.db.drivers.db_base_record import TypeId
 _PROJECTION_SENTINEL = object()
 
 _PROJECTED_FIELDS = frozenset({"message_ids", "message_count"})
+
+
+# Process-scoped FlowpadClient cache, keyed by api_key. ``Conversation.share`` /
+# ``add_message`` are on the hot path (ping-pong e2e: 10 alice sends back-to-
+# back in ≤6s). Constructing a fresh FlowpadClient per call rebuilds the
+# httpx.AsyncClient and pays a full TCP+TLS handshake to the hub on every
+# request (~80-130ms). The cached client keeps a single AsyncClient alive so
+# subsequent calls reuse the underlying keep-alive connection (~5-20ms).
+_HUB_CLIENT_BY_KEY: dict[str, "FlowpadClient"] = {}
+
+
+def _get_hub_client(api_key: str) -> "FlowpadClient":
+    """Return a process-cached FlowpadClient bound to ``api_key``.
+
+    Safe to call from any async context — FlowpadClient's underlying
+    ``httpx.AsyncClient`` is created lazily on first request and is itself
+    safe for concurrent reuse. The cache key is the api_key so credential
+    rotation produces a fresh client.
+    """
+    from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
+
+    existing = _HUB_CLIENT_BY_KEY.get(api_key)
+    if existing is not None:
+        return existing
+    client = FlowpadClient(ApiConfig.from_env(), api_key=api_key)
+    _HUB_CLIENT_BY_KEY[api_key] = client
+    return client
 
 
 class Conversation(Entity):
@@ -29,14 +60,146 @@ class Conversation(Entity):
     """
 
     type: str = APIField(default="conversation")
+    title: Optional[str] = APIField(default=None)
+    # Hub-side owner of the conversation (mirrors ``Conversation.initiated_by``
+    # on the hub). Populated by ``_upsert_hub_conversation_metadata`` and used
+    # by ``handle_conversation_delete_archived`` to classify each archived
+    # row as own-delete vs leave vs decline. Always equal to a cloud-user id.
+    created_by: Optional[str] = APIField(default=None)
     remote_project_id: Optional[str] = APIField(None)
     remote_project_name: Optional[str] = APIField(None)
     message_count: int = APIField(0)
     message_ids: Optional[str] = APIField(None)  # JSON-encoded [{"typeid": ..., "ts": ...}]
     participants: list[dict] = APIField(default_factory=list)  # [{user_id, email, name}]
+    # When False, hub suppresses delivery_status fan-out to the original
+    # sender (delivered/received UPDATE frames are filtered by hub-side
+    # Conversation._fanout_status_update). Co-recipients still see them.
+    message_status_visible: bool = APIField(default=True)
+    # Strip-only dismissal. When set, the Recent Conversations strip hides
+    # this row UNTIL a FlowMessage newer than ``dismissed_at`` is appended
+    # (auto-revive on new activity). The Inbox ignores this field entirely.
+    dismissed_at: Optional[datetime] = APIField(default=None)
+    # Conversation-level archive. Honored by **both** Inbox and Recent strip
+    # — the conversation is hidden everywhere UNTIL a FlowMessage newer than
+    # ``archived_at`` lands (auto-revive on new activity, same comparison
+    # pattern as ``dismissed_at``). Per-message ``FlowMessage.is_read``
+    # remains independent and is not affected by archive.
+    archived_at: Optional[datetime] = APIField(default=None)
+    # True once ``share()`` succeeded — the conversation has a hub-side mirror
+    # with the same id, and future replies should route through the bridge.
+    # NOTE: Entity base class already defines `remote`, this is a documentation
+    # marker that the field is meaningful for Conversations specifically.
     # NOTE: task_id moved into ``context_entities``. Use
     # ``conv.first_context_of_type('task')`` to read it back.
     _api_visible: ClassVar[bool] = True
+
+    async def share(self, recipients: Optional[List[str]] = None) -> "Conversation":
+        """Push to hub + invite recipients via the standard hub pattern.
+
+        Without ``recipients``: equivalent to ``Entity.share()`` — POSTs to
+        ``/graph/conversation`` so the hub-side row exists; the caller then
+        has ``owner`` role.
+
+        With ``recipients`` (list of email strings): after the create, the
+        caller joins the conversation (so they enter ``participants``), then
+        one ``MembershipRequest`` per recipient is sent via the canonical
+        ``POST /graph/conversation/<id>/members`` endpoint, targeting this
+        Conversation with role ``member``. Each recipient discovers the
+        invitation via ``GET /graph/invitation/pending``, accepts via
+        ``GET /graph/members/accept``, and then ``POST /graph/conversation/<id>/join``
+        themselves (wired in ``flow_message_action.handle_invitation_accept``).
+        """
+        from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
+        from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
+
+        await super().share()
+        if not recipients:
+            return self
+        creds = load_credentials()
+        if not creds or not creds.api_key:
+            raise RuntimeError("Cloud login required")
+        async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
+            # Caller joins so the creator enters ``participants``.
+            await client.post(f"/graph/conversation/{self.id}/join", {})
+            # One invitation per recipient.
+            for email in recipients:
+                if not email or not isinstance(email, str):
+                    continue
+                await client.post(
+                    f"/graph/conversation/{self.id}/members",
+                    {
+                        "recipient_email": email,
+                        "invitation_targets": [
+                            {"typeid": f"conversation-{self.id}", "role": "member"},
+                        ],
+                        # Stamp the target conv typeid in ``message`` so the
+                        # recipient can disambiguate this invitation from
+                        # earlier stale ones sharing the same email — the
+                        # ``InvitedThrough`` relationship isn't exposed on the
+                        # ``Invitation`` GET payload.
+                        "message": f"conversation-{self.id}",
+                    },
+                )
+        return self
+
+    async def add_message(
+        self,
+        text: str,
+        *,
+        sender_name: Optional[str] = None,
+        sender_id: Optional[str] = None,
+        flow_message_id: Optional[str] = None,
+        attachments: Optional[list] = None,
+        context_entities: Optional[list] = None,
+    ) -> dict:
+        """Append a FlowMessage to this conversation on the hub.
+
+        Hits ``POST <hub>/api/v1/graph/conversation/<id>/add_message`` via the
+        standard cloud client — same path the Python tests use directly. Returns
+        the response ``data`` (the persisted FlowMessage).
+
+        ``attachments``: optional list of Attachment-shaped dicts (or
+        ``Attachment`` instances). When at least one attachment requires a
+        body bundle (FILE / PROMPT-with-file / TYPE_ID), the hub stamps
+        ``body_status=UPLOADING`` on the FM at creation time; the sender then
+        calls ``FlowMessage.upload_body()`` to pack and upload.
+
+        ``context_entities``: optional list of TypeId-shaped dicts to bind on
+        the FM. Mirrors the Entity.context_entities field surface.
+
+        ``flow_message_id``: when given, the hub creates the FM under this id
+        instead of minting its own. The sender uses this so the local FM, the
+        hub FM, and the uploaded ``body.flowmsg`` bundle all share one key —
+        ``FlowMessage.upload_body()`` then targets the same id.
+        """
+        from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
+        from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
+        from flow_sdk.core.urls.service_urls import build_hub_url  # noqa: PLC0415
+
+        if not self.id:
+            raise RuntimeError("Conversation.id is required")
+        creds = load_credentials()
+        if not creds or not creds.api_key:
+            raise RuntimeError("Cloud login required before add_message()")
+        body: dict = {"text": text}
+        if flow_message_id:
+            body["id"] = flow_message_id
+        if sender_id:
+            body["sender_id"] = sender_id
+        if sender_name:
+            body["sender_name"] = sender_name
+        if attachments:
+            body["attachment"] = [
+                a if isinstance(a, dict) else a.model_dump(mode="python")
+                for a in attachments
+            ]
+        if context_entities:
+            body["context_entities"] = context_entities
+        body["conversation_id"] = self.id
+        path = build_hub_url(self, action="add_message")
+        async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
+            return await client.post(path, body)
+
 
     @property
     def data_path(self) -> str:

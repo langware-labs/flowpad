@@ -9,15 +9,23 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { FSRef } from '@sdk';
 import { downloadFile } from '@sdk/utils/utils';
 import Editor, { type OnMount } from '@monaco-editor/react';
-import { ChevronDown, ChevronRight, Download, Eye, ExternalLink, FileCode, GraduationCap, MessageSquareDiff, Pencil, RefreshCw } from 'lucide-react';
+import { ChevronDown, ChevronRight, Download, Eye, ExternalLink, FileCode, FilePlus2, GraduationCap, MessageSquareDiff, Pencil, RefreshCw, Trash2 } from 'lucide-react';
+import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
 import { useTheme } from 'next-themes';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-const EDITOR_MODES = ['view', 'review', 'editor', 'markdown', 'learning'] as const;
-type ViewMode = (typeof EDITOR_MODES)[number];
+export const EDITOR_MODES = ['view', 'review', 'editor', 'markdown', 'learning'] as const;
+export type EditorMode = (typeof EDITOR_MODES)[number];
+// Backwards-compatible internal alias; new code should use `EditorMode`.
+type ViewMode = EditorMode;
 
 const MODE_STORAGE_KEY = 'markdownEditor.mode';
+const EDITOR_MODE_PARAM = 'editorMode';
 const DEFAULT_MODE: ViewMode = 'view';
+
+function isEditorMode(value: string | undefined | null): value is ViewMode {
+  return value != null && (EDITOR_MODES as readonly string[]).includes(value);
+}
 
 function readStoredMode(): ViewMode {
   if (typeof window === 'undefined') return DEFAULT_MODE;
@@ -42,23 +50,32 @@ interface MarkdownEditorProps {
   fsRef: FSRef;
   /**
    * Serialized TypeId of the entity this markdown belongs to (e.g. `"plan-<id>"`).
-   * Keys Chat + Backlinks tabs. Null disables chat persistence on this file.
+   * Keys Editor + Backlinks tabs. Null disables editor persistence on this file.
    */
   chatTarget: string | null;
   /** Optional asset-specific toolbar actions rendered in the header */
   toolbar?: React.ReactNode;
-  /** Appended to the side drawer after Chat + Backlinks. */
+  /** Appended to the side drawer after Editor + Backlinks. */
   extraSideTabs?: ExtraSideTab[];
   /** Controlled active side-drawer tab id. */
   activeSideTab?: string;
   /** Fires when the active side-drawer tab changes (including internal clicks). */
   onActiveSideTabChange?: (id: string) => void;
-  /** Forwarded to the Chat tab — runs once after its backing process is created. */
-  chatOnProcessCreated?: (process: import('@sdk').AgenticProcess) => Promise<void> | void;
+  /** Forwarded to the Editor tab — runs once after its backing process is created. */
+  onChatProcessCreated?: (process: import('@sdk').AgenticProcess) => Promise<void> | void;
   /** When true, the "Learning" view-mode chip appears in the header strip. */
   showLearningMode?: boolean;
   /** Body rendered when viewMode === 'learning'. Required when showLearningMode is true. */
   learningPanel?: React.ReactNode;
+  /**
+   * When provided, the editor header renders a Delete button that opens a
+   * confirmation dialog and calls this on confirm. Callers own the actual
+   * delete and any post-delete navigation. Omit to hide the button (e.g.
+   * for read-only or entity-less files).
+   */
+  onDelete?: () => Promise<void>;
+  /** Display name shown in the delete confirmation. Defaults to the filename. */
+  deleteLabel?: string;
 }
 
 /**
@@ -77,9 +94,11 @@ export function MarkdownEditor({
   extraSideTabs,
   activeSideTab,
   onActiveSideTabChange,
-  chatOnProcessCreated,
+  onChatProcessCreated,
   showLearningMode,
   learningPanel,
+  onDelete,
+  deleteLabel,
 }: MarkdownEditorProps) {
   return (
     <MarkdownEditorContent
@@ -90,9 +109,11 @@ export function MarkdownEditor({
       extraSideTabs={extraSideTabs}
       activeSideTab={activeSideTab}
       onActiveSideTabChange={onActiveSideTabChange}
-      chatOnProcessCreated={chatOnProcessCreated}
+      onChatProcessCreated={onChatProcessCreated}
       showLearningMode={showLearningMode}
       learningPanel={learningPanel}
+      onDelete={onDelete}
+      deleteLabel={deleteLabel}
     />
   );
 }
@@ -128,9 +149,11 @@ function MarkdownEditorContent({
   extraSideTabs,
   activeSideTab,
   onActiveSideTabChange,
-  chatOnProcessCreated,
+  onChatProcessCreated,
   showLearningMode,
   learningPanel,
+  onDelete,
+  deleteLabel,
 }: {
   fsRef: FSRef;
   sourcePath: string;
@@ -139,20 +162,52 @@ function MarkdownEditorContent({
   extraSideTabs?: ExtraSideTab[];
   activeSideTab?: string;
   onActiveSideTabChange?: (id: string) => void;
-  chatOnProcessCreated?: MarkdownEditorProps['chatOnProcessCreated'];
+  onChatProcessCreated?: MarkdownEditorProps['onChatProcessCreated'];
   showLearningMode?: boolean;
   learningPanel?: React.ReactNode;
+  onDelete?: MarkdownEditorProps['onDelete'];
+  deleteLabel?: MarkdownEditorProps['deleteLabel'];
 }) {
   const { navigation, currentDock } = useDockNavigation();
-  const [viewMode, setViewMode] = useState<ViewMode>(readStoredMode);
+
+  // viewMode source of truth: URL `?editorMode=…` if present and valid; else
+  // last-used value from localStorage; else DEFAULT_MODE. Updating viewMode
+  // pushes a new DockPointer with the option merged in — the URL becomes
+  // shareable + back-button-restorable, and per-tab independent.
+  const urlMode = currentDock?.options?.[EDITOR_MODE_PARAM];
+  const viewMode: ViewMode = isEditorMode(urlMode) ? urlMode : readStoredMode();
+
+  const setViewMode = useCallback((mode: ViewMode) => {
+    if (!currentDock) return; // outside dock context — shouldn't happen for MarkdownEditor
+    const nextOptions = { ...(currentDock.options ?? {}), [EDITOR_MODE_PARAM]: mode };
+    navigation.openDock(new DockPointer(currentDock.viewType, currentDock.pointer, nextOptions, currentDock.layout));
+  }, [currentDock, navigation]);
+
   // Restore from a stale 'learning' selection when the chip is hidden for this doc.
+  // For URL-bound state, that means stripping ?editorMode=learning so the URL
+  // reflects the actual visible mode (silent + clean per design).
+  //
+  // Guard against the initial-mount race: `showLearningMode` is computed by
+  // WorkflowAssetEditor from an async process query, so it starts `false` for
+  // ~one tick even when this doc DOES have learning runs. Stripping then would
+  // wipe a legitimate `?editorMode=learning` share-link. We delay the strip
+  // by a small idle period; if learning becomes available within that window,
+  // the timer is cancelled and the URL is preserved.
   useEffect(() => {
-    if (viewMode === 'learning' && !showLearningMode) setViewMode(DEFAULT_MODE);
-  }, [viewMode, showLearningMode]);
+    if (urlMode !== 'learning' || showLearningMode || !currentDock) return;
+    const handle = window.setTimeout(() => {
+      const nextOptions = { ...(currentDock.options ?? {}) };
+      delete nextOptions[EDITOR_MODE_PARAM];
+      navigation.openDock(new DockPointer(currentDock.viewType, currentDock.pointer, nextOptions, currentDock.layout));
+    }, 1500);
+    return () => window.clearTimeout(handle);
+  }, [urlMode, showLearningMode, currentDock, navigation]);
+
   // Imperative handle to the underlying Milkdown editor — driven by the
   // wiki toolbar to insert wikilinks at the cursor.
   const milkdownRef = useRef<MilkdownEditorInstance | null>(null);
 
+  // Keep localStorage as the no-URL fallback for new docs / fresh links.
   useEffect(() => {
     if (typeof window === 'undefined') return;
     try { window.localStorage.setItem(MODE_STORAGE_KEY, viewMode); } catch { /* storage may be disabled */ }
@@ -168,6 +223,8 @@ function MarkdownEditorContent({
     dirty,
     isLoading,
     loadError,
+    isMissing,
+    recreate,
     reload,
   } = useMarkdownContent(fsRef, { autoSave: true, autoSaveMs: 2000 });
 
@@ -190,9 +247,9 @@ function MarkdownEditorContent({
     setBodyRef.current(newBody);
   }, []);
 
-  // Derive display name from path
-  const fileName = sourcePath.split('/').pop() ?? sourcePath;
-  const dirPath = sourcePath.slice(0, sourcePath.lastIndexOf('/'));
+  const sourcePathStr = typeof sourcePath === 'string' ? sourcePath : '';
+  const fileName = sourcePathStr.split('/').pop() || sourcePathStr;
+  const dirPath = sourcePathStr.slice(0, sourcePathStr.lastIndexOf('/'));
 
   const handleOpenExternal = useCallback(() => {
     void fsRef.open({ select: true });
@@ -204,6 +261,16 @@ function MarkdownEditorContent({
       downloadFile({ name: fileName, content: new Blob([content], { type: 'text/markdown' }) });
     })();
   }, [fsRef, fileName]);
+
+  const handleDelete = useMemo(() => {
+    if (!onDelete) return undefined;
+    return () => {
+      showDeleteAssetModal({
+        name: deleteLabel ?? fileName,
+        onConfirm: onDelete,
+      });
+    };
+  }, [onDelete, deleteLabel, fileName]);
 
   const handleLinkClick = useCallback((href: string) => {
     const slug = isSlugLink(href);
@@ -221,11 +288,11 @@ function MarkdownEditorContent({
       return;
     }
 
-    const dir = sourcePath.slice(0, sourcePath.lastIndexOf('/'));
+    const dir = sourcePathStr.slice(0, sourcePathStr.lastIndexOf('/'));
     const resolvedPath = href.startsWith('/') ? href : `${dir}/${href}`;
     const assetType = currentDock?.pointer?.split('/')?.[1] ?? 'claude_memory';
     navigation.openDock(DockPointer.forAssetEditor(assetType, resolvedPath));
-  }, [sourcePath, currentDock, navigation]);
+  }, [sourcePathStr, currentDock, navigation]);
 
   // ── Loading ────────────────────────────────────────────────────────────────
   if (isLoading) {
@@ -239,11 +306,40 @@ function MarkdownEditorContent({
           onViewModeChange={setViewMode}
           onOpenExternal={handleOpenExternal}
           onDownload={handleDownload}
+          onDelete={handleDelete}
           actions={toolbar}
           showLearningMode={showLearningMode}
         />
         <div className="flex flex-1 items-center justify-center">
           <RefreshCw className="h-5 w-5 animate-spin text-muted-foreground" />
+        </div>
+      </div>
+    );
+  }
+
+  // ── Missing file ──────────────────────────────────────────────────────────
+  if (isMissing) {
+    return (
+      <div className="flex h-full flex-col overflow-hidden">
+        <EditorHeader
+          fileName={fileName}
+          dirPath={dirPath}
+          dirty={false}
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
+          onOpenExternal={handleOpenExternal}
+          onDownload={handleDownload}
+          onDelete={handleDelete}
+          actions={toolbar}
+          showLearningMode={showLearningMode}
+        />
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
+          <p className="text-sm font-medium text-foreground">Note: File is missing</p>
+          <p className="break-all font-mono text-xs text-muted-foreground">{sourcePathStr}</p>
+          <Button variant="outline" size="sm" onClick={() => void recreate()}>
+            <FilePlus2 className="mr-1 h-4 w-4" />
+            Re-create it
+          </Button>
         </div>
       </div>
     );
@@ -261,6 +357,7 @@ function MarkdownEditorContent({
           onViewModeChange={setViewMode}
           onOpenExternal={handleOpenExternal}
           onDownload={handleDownload}
+          onDelete={handleDelete}
           actions={toolbar}
           showLearningMode={showLearningMode}
         />
@@ -286,6 +383,7 @@ function MarkdownEditorContent({
         onViewModeChange={setViewMode}
         onOpenExternal={handleOpenExternal}
         onDownload={handleDownload}
+        onDelete={handleDelete}
         actions={toolbar}
         showLearningMode={showLearningMode}
       />
@@ -330,7 +428,7 @@ function MarkdownEditorContent({
             extraTabs={extraSideTabs}
             activeTab={activeSideTab}
             onActiveTabChange={onActiveSideTabChange}
-            chatOnProcessCreated={chatOnProcessCreated}
+            onChatProcessCreated={onChatProcessCreated}
             cursorLine={cursorLine}
           >
             {viewMode === 'markdown' ? (
@@ -437,11 +535,12 @@ interface EditorHeaderProps {
   onViewModeChange: (mode: ViewMode) => void;
   onOpenExternal: () => void;
   onDownload?: () => void;
+  onDelete?: () => void;
   actions?: React.ReactNode;
   showLearningMode?: boolean;
 }
 
-function EditorHeader({ fileName, dirPath, dirty, viewMode, onViewModeChange, onOpenExternal, onDownload, actions, showLearningMode }: EditorHeaderProps) {
+function EditorHeader({ fileName, dirPath, dirty, viewMode, onViewModeChange, onOpenExternal, onDownload, onDelete, actions, showLearningMode }: EditorHeaderProps) {
   const visibleModes = EDITOR_MODES.filter((m) => m !== 'learning' || showLearningMode);
   return (
     <div className="flex h-[52px] flex-shrink-0 items-center gap-2 border-b px-3">
@@ -472,6 +571,16 @@ function EditorHeader({ fileName, dirPath, dirty, viewMode, onViewModeChange, on
               <Download className="h-3 w-3" />
             </button>
           )}
+          {onDelete && (
+            <button
+              title="Delete file"
+              onClick={onDelete}
+              data-testid="markdown-editor-delete"
+              className="flex-shrink-0 rounded p-0.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+            >
+              <Trash2 className="h-3 w-3" />
+            </button>
+          )}
         </div>
       </div>
 
@@ -484,6 +593,8 @@ function EditorHeader({ fileName, dirPath, dirty, viewMode, onViewModeChange, on
               key={mode}
               onClick={() => onViewModeChange(mode)}
               title={mode.charAt(0).toUpperCase() + mode.slice(1)}
+              data-testid={`editor-mode-chip-${mode}`}
+              data-mode-active={active ? 'true' : 'false'}
               className={`flex items-center gap-1 rounded px-2 py-1 text-xs font-medium capitalize transition-colors ${
                 active
                   ? 'bg-background text-foreground shadow-sm'

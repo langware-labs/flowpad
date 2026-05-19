@@ -1,3 +1,7 @@
+---
+id: 437ff4a3-d646-5028-9135-3374a61cea55
+---
+
 # Electron Desktop App
 
 How the Flowpad desktop application works — from development to packaging and distribution.

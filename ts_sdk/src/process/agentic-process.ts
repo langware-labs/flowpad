@@ -9,6 +9,7 @@
  */
 
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
+import { isApiError } from '../ApiResponse';
 import { IEntity } from '../IEntity';
 import { FSRef, type FSRefJson } from '../fs/FSRef';
 import { ClaudeCliOptions } from '../cli_workers';
@@ -25,7 +26,12 @@ import { InstructionFile } from '../models/workflow/InstructionFile';
 import { ViewType } from '../utils/ui/view-types';
 import { VFSPath } from '../utils/vfs-path';
 import { AgenticContext, IAgenticProcessOptions, ISpawnWorkerOptions, PermissionMode } from './agentic-context';
+import type { ProcessType } from './process-types';
 import { ProcessIconKey, ProcessStatus, WorkerStatus, isWorkerRunning, isWorkerTerminal } from './agentic-types';
+import type {
+  TranscriptFormat as TranscriptFormatType,
+  TranscriptSource as TranscriptSourceType,
+} from '../transcript-analyzer';
 
 // ---------------------------------------------------------------------------
 // Auto-recovery dispatcher — mirrors Shell's static-listener pattern at
@@ -171,11 +177,27 @@ export interface IAgenticProcess extends IEntity {
   readonly status?: ProcessStatus;
   readonly worker_status?: WorkerStatus;
   session_id?: string | null;
+  /**
+   * URL-encoded cwd Claude CLI ran in — used to locate the session jsonl at
+   * ~/.claude/projects/<project_encoded_name>/<session_id>.jsonl. Populated
+   * server-side after the first claude turn lands; read by helpers like
+   * runLearningJob's transcriptPathForRunner.
+   */
+  project_encoded_name?: string | null;
+  /**
+   * USD cost of this process's session transcript so far. Computed
+   * server-side from the session jsonl via
+   * flow_sdk.transcript_analyzer.pricing.total_cost_usd; not persisted on
+   * the entity. Null when no session_id exists yet.
+   */
+  total_cost_usd?: number | null;
   use_worker_history?: boolean;
   /** False=direct PTY spawn (default), True=legacy zsh intermediary */
   shell_mode?: boolean;
   /** CLI worker vendor (e.g. 'claude', 'codex'). Drives icon selection. */
   worker_type?: string | null;
+  /** Discriminates how this process is being used (chat vs execution). */
+  process_type?: ProcessType | null;
   /** Shell entity ID linked to this process */
   shell_id?: string | null;
   /** Whether this process is visible in the tabs view */
@@ -199,8 +221,8 @@ export interface IAgenticProcess extends IEntity {
   project_id?: string | null;
   /** CollaborationRoom this process was spawned in, if any */
   collaboration_room_id?: string | null;
-  /** VFS path the process is keyed to. Either an entity TypeId ("type-id") for entity-scoped chats, or "<typeid>/<sub_path>" for surface-scoped chats (e.g. per-doc chat keyed on the file path). */
-  target_vfs_path?: string | null;
+  /** VFS path the process is keyed to. Either an entity TypeId ("type-id") for entity-scoped processes, or "<typeid>/<sub_path>" for surface-scoped processes (e.g. a per-doc process keyed on the file path). */
+  target_typeid_str?: string | null;
   /**
    * True when a worker-relevant field changed since the last successful start()
    * while status==RUNNING. Backend sets this automatically via the save-hook;
@@ -408,37 +430,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   }
 
   /**
-   * Open (or create) an AgenticProcess for a Claude CLI session ID.
-   *
-   * Uses ComputeNode.upsertSessionProcess to find an existing process linked
-   * to this session, or create one if none exists (without starting a PTY).
-   * Returns the process so the caller can navigate to its dockPointer.
-   *
-   * @param sessionId - Claude CLI session UUID
-   */
-  static async open(sessionId: string): Promise<AgenticProcess> {
-    const { dataContext } = await import('../FlowSync/context');
-    const computeNode = dataContext.computeNode;
-    if (!computeNode) throw new Error('[AgenticProcess.open] No compute node');
-    const { processId } = await computeNode.upsertSessionProcess(sessionId);
-    const process = await AgenticProcess.getById(processId);
-    if (!process) throw new Error(`[AgenticProcess.open] Process ${processId} not found after upsert`);
-    return process;
-  }
-
-  /**
-   * Find or create an AgenticProcess by worker session ID.
-   * Uses upsertSessionProcess — returns the existing process if one already
-   * has this session_id, otherwise creates a new one.
-   *
-   * @param workerType - 'claude' (reserved for future worker types)
-   * @param sessionId  - The Claude CLI session UUID
-   */
-  static async fromWorkerSessionId(workerType: 'claude', sessionId: string): Promise<AgenticProcess> {
-    return AgenticProcess.open(sessionId);
-  }
-
-  /**
    * Open (or create) an AgenticProcess for a Record and ensure it has a live PTY.
    *
    * If an entity already exists for the given record ID it is reused;
@@ -467,79 +458,31 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   }
 
   /**
-   * Get or create an AgenticProcess linked to a Claude CLI session.
-   * Resolves the session's working directory from ClaudeSessionRecord if not provided.
-   * Sets session_id so the process can be resumed via start().
+   * Resolve a worker/session/thread id to a ready-to-use AgenticProcess.
    *
-   * @param sessionId - The Claude CLI session UUID
-   * @param cwd - Optional working directory (resolved from session record if omitted)
-   * @param projectId - Optional project_id to stamp on the process. Pass the
-   *   session's *intrinsic* project (e.g. ``WorkerHistoryEntry.project_id``)
-   *   when restoring a session from history; the active dataContext project is
-   *   used as a fallback only when the caller cannot derive a better value.
+   * Single round-trip: backend auto-discovers worker_type (Claude or Codex),
+   * resolves cwd + project from the on-disk session record, upserts the
+   * AgenticProcess (heals existing or creates+starts a new one), and returns
+   * the full entity dict. We hydrate the dataManager cache directly — no
+   * follow-up `getById` needed.
+   *
+   * @param workerId - Claude session id, Codex thread id, or any future worker id.
+   * @returns The AgenticProcess entity, or `null` if no on-disk session matches.
    */
-  static async fromClaudeSession(
-    sessionId: string,
-    cwd?: string,
-    projectId?: string | null,
-  ): Promise<AgenticProcess> {
-    const { dataContext } = await import('../FlowSync/context');
+  static async getByWorkerId(workerId: string): Promise<AgenticProcess | null> {
     const computeNode = dataContext.computeNode;
-    if (!computeNode) throw new Error('[AgenticProcess.fromClaudeSession] No compute node');
+    if (!computeNode) throw new Error('[AgenticProcess.getByWorkerId] No compute node');
 
-    // Resolve workdir from the session record on disk.
-    // Best-effort: empty sessions have no JSONL yet, so cwd may be null.
-    // upsertSessionProcess is idempotent — if the process already exists it is
-    // returned immediately without needing workdir at all.
-    let resolvedCwd = cwd;
-    if (!resolvedCwd) {
-      const { ClaudeSessionRecord } = await import('../resource_management/fs_records/claude/claude-session.js');
-      const record = await ClaudeSessionRecord.discover(sessionId).catch(() => null);
-      resolvedCwd = record?.cwd ?? undefined;
+    const action = new ActionInfo('terminals', 'compute_node', computeNode.id, 'GET');
+    action.subpath = `get_by_worker_id/${workerId}`;
+    try {
+      const data = await dataManager.callAction<void, IAgenticProcess | null>(action);
+      if (!data) return null;
+      return dataManager.castAndDeepAssign<AgenticProcess>(data) as AgenticProcess;
+    } catch (e) {
+      if (isApiError(e) && e.response?.status === 404) return null;
+      throw e;
     }
-
-    // upsertSessionProcess is idempotent: finds existing process or creates a new one.
-    // Backend sets cli_config.resume=true if the transcript exists on disk.
-    const resolvedProjectId = projectId ?? dataContext.project?.id;
-    const { processId } = await computeNode.upsertSessionProcess(sessionId, {
-      ...(resolvedCwd ? { workdir: resolvedCwd } : {}),
-      ...(resolvedProjectId ? { projectId: resolvedProjectId } : {}),
-    });
-    const process = await AgenticProcess.getById(processId);
-    if (!process) throw new Error(`[AgenticProcess.fromClaudeSession] Process ${processId} not found`);
-    return process;
-  }
-
-  /**
-   * Get or create an AgenticProcess linked to a Codex CLI session (rollout thread).
-   * Mirrors fromClaudeSession but for the Codex worker. Resolves the rollout's
-   * working directory from CodexSessionRecord when not supplied; the backend
-   * stamps cli_config.resume=true so the next start() spawns
-   * ``codex exec resume <thread_id>``.
-   *
-   * @param sessionId - The Codex thread_id (UUID from session_meta.payload.id)
-   * @param cwd - Optional working directory (resolved from rollout if omitted)
-   * @param projectId - Optional intrinsic project_id; falls back to active project.
-   */
-  static async fromCodexSession(
-    sessionId: string,
-    cwd?: string,
-    projectId?: string | null,
-  ): Promise<AgenticProcess> {
-    const { dataContext } = await import('../FlowSync/context');
-    const computeNode = dataContext.computeNode;
-    if (!computeNode) throw new Error('[AgenticProcess.fromCodexSession] No compute node');
-
-    const resolvedCwd = cwd; // backend resolves from CodexSessionRecord when null
-    const resolvedProjectId = projectId ?? dataContext.project?.id;
-    const { processId } = await computeNode.upsertSessionProcess(sessionId, {
-      ...(resolvedCwd ? { workdir: resolvedCwd } : {}),
-      ...(resolvedProjectId ? { projectId: resolvedProjectId } : {}),
-      workerType: 'codex',
-    });
-    const process = await AgenticProcess.getById(processId);
-    if (!process) throw new Error(`[AgenticProcess.fromCodexSession] Process ${processId} not found`);
-    return process;
   }
 
   /**
@@ -707,6 +650,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /** CLI worker vendor (e.g. 'claude', 'codex'). Drives icon selection. */
   worker_type?: string | null;
 
+  /** Discriminates how this process is being used (chat vs execution). */
+  process_type?: ProcessType | null;
+
   /** Shell entity ID linked to this process */
   shell_id?: string | null;
 
@@ -722,8 +668,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /** CollaborationRoom this process was spawned in, if any */
   collaboration_room_id: string | null = null;
 
-  /** VFS path the process is keyed to. Either an entity TypeId ("type-id") for entity-scoped chats, or "<typeid>/<sub_path>" for surface-scoped chats (e.g. per-doc chat keyed on the file path). */
-  target_vfs_path: string | null = null;
+  /** VFS path the process is keyed to. Either an entity TypeId ("type-id") for entity-scoped processes, or "<typeid>/<sub_path>" for surface-scoped processes (e.g. a per-doc process keyed on the file path). */
+  target_typeid_str: string | null = null;
 
   /**
    * True when a worker-relevant field changed since the last successful start()
@@ -928,6 +874,51 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     return out;
   }
 
+  /**
+   * Fetch the parsed worker transcript from the process-specific transcript source.
+   */
+  async getTranscript(): Promise<import('../transcript-analyzer').AgentTranscript> {
+    const {
+      AgentTranscript,
+      TranscriptFormat,
+      TranscriptSource,
+      fromJson,
+    } = await import('../transcript-analyzer');
+    const actionInfo = new ActionInfo('transcript', AgenticProcess.type, this.id, 'POST');
+    actionInfo.subpath = 'full';
+    const response = await dataManager.callAction<
+      unknown,
+      {
+        worker_type?: string | null;
+        session_id?: string | null;
+        path?: string | null;
+        transcript_path?: string | null;
+        transcript_format?: string | null;
+        transcript_source?: string | null;
+        entries?: Record<string, unknown>[] | null;
+      }
+    >(actionInfo);
+    const rawEntries = response?.entries ?? [];
+    const entries = rawEntries.map((entry) => fromJson(entry));
+    const format = Object.values(TranscriptFormat).includes(response?.transcript_format as never)
+      ? response?.transcript_format as TranscriptFormatType
+      : null;
+    const source = Object.values(TranscriptSource).includes(response?.transcript_source as never)
+      ? response?.transcript_source as TranscriptSourceType
+      : null;
+    const path = response?.path ?? response?.transcript_path ?? '';
+    return new AgentTranscript(
+      response?.worker_type ?? this.worker_type ?? '',
+      entries,
+      response?.session_id ?? this.session_id ?? '',
+      {
+        path,
+        transcript_format: format,
+        transcript_source: source,
+      },
+    );
+  }
+
   // ─────────────────────────────────────────────────────────────────────────
 
   /** Internal references (not serialized) */
@@ -963,13 +954,14 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this.use_worker_history = entity.use_worker_history;
     this.shell_mode = entity.shell_mode;
     this.worker_type = entity.worker_type ?? null;
+    this.process_type = entity.process_type ?? null;
     this.shell_id = entity.shell_id;
     this.visible = entity.visible;
     this.sidecar_shell_id = entity.sidecar_shell_id;
     this.pty_rename = entity.pty_rename ?? true;
     this.project_id = entity.project_id ?? null;
     this.collaboration_room_id = entity.collaboration_room_id ?? null;
-    this.target_vfs_path = entity.target_vfs_path ?? null;
+    this.target_typeid_str = entity.target_typeid_str ?? null;
     this.exe_folder = entity.exe_folder ? FSRef.fromJson(entity.exe_folder) : null;
     this.input_folder = entity.input_folder ? FSRef.fromJson(entity.input_folder) : null;
     this.output_folder = entity.output_folder ? FSRef.fromJson(entity.output_folder) : null;
@@ -1388,7 +1380,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * Symlink a skill folder into this process's assets dir so Claude Code
    * discovers it at startup. `sourcePath` is the absolute path of the skill
    * folder (parent of SKILL.md). Live edits to the source SKILL.md flow
-   * through to the next chat — no re-materialization needed.
+   * through to the next session — no re-materialization needed.
    */
   async loadEmbeddedSkill(sourcePath: string): Promise<void> {
     const actionInfo = new ActionInfo('load-embedded-skill', AgenticProcess.type, this.id, 'POST');
@@ -1427,8 +1419,12 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       const actionInfo = new ActionInfo('attach-embedded-asset', AgenticProcess.type, this.id, 'POST');
       actionInfo.bodyParameters = { entity_ref: ref.toString() };
       await dataManager.callAction(actionInfo);
+      // The WS broadcast lands embedded_asset_refs as plain stringified TypeIds
+      // (the server serializes them that way); avoid duplicating by comparing
+      // on the string form instead of property-by-property on TypeId.
+      const refStr = ref.toString();
       const current = this.embedded_asset_refs ?? [];
-      const has = current.some((r) => r.type === ref.type && r.id === ref.id);
+      const has = current.some((r) => String(r) === refStr);
       if (!has) this.embedded_asset_refs = [...current, ref];
     },
     detach: async (entityOrRef: { typeId?: TypeId } | TypeId | string): Promise<void> => {
@@ -1436,8 +1432,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       const actionInfo = new ActionInfo('detach-embedded-asset', AgenticProcess.type, this.id, 'POST');
       actionInfo.bodyParameters = { entity_ref: ref.toString() };
       await dataManager.callAction(actionInfo);
+      const refStr = ref.toString();
       this.embedded_asset_refs = (this.embedded_asset_refs ?? [])
-        .filter((r) => !(r.type === ref.type && r.id === ref.id));
+        .filter((r) => String(r) !== refStr);
     },
     list: (): TypeId[] => [...(this.embedded_asset_refs ?? [])],
   };
@@ -2091,6 +2088,14 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       if (statusData.status && typeof statusData.status === 'string') {
         const oldWorker = this.workerStatus;
         this.workerStatus = statusData.status as WorkerStatus;
+        // [AP-status-debug] DELETE ME — tracks FlowData-driven worker transitions.
+        console.log('[AP-status-debug] _handleFlowData status element', {
+          id: this.id,
+          oldWorker,
+          newWorker: this.workerStatus,
+          lifecycleStatus: this.status,
+          isComplete,
+        });
         this.emit('state_change', {
           field: 'workerStatus',
           oldValue: oldWorker,
@@ -2103,6 +2108,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     }
 
     if (elementType === 'status' && isComplete) {
+      // [AP-status-debug] DELETE ME — _markComplete does NOT touch this.status.
+      console.log('[AP-status-debug] _handleFlowData firing _markComplete (lifecycle stays at)', this.status, 'id=', this.id);
       this._markComplete();
     }
   }
@@ -2118,9 +2125,25 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * @internal
    */
   protected onEntityUpdate(data: Partial<IAgenticProcess>): void {
+    // [AP-status-debug] DELETE ME — every WS-driven entity update lands here.
+    // Shows which fields the backend sent so we can tell whether the
+    // lifecycle transition (status: stopped) is pushed at all, vs only the
+    // worker transition (worker_status: complete).
+    console.log('[AP-status-debug] onEntityUpdate WS payload', {
+      id: this.id,
+      hasStatus: 'status' in data,
+      hasWorkerStatus: 'worker_status' in data,
+      incomingStatus: data.status,
+      incomingWorkerStatus: data.worker_status,
+      currentStatus: this.status,
+      currentWorkerStatus: this.workerStatus,
+      payloadKeys: Object.keys(data),
+    });
     if (data.status) {
       const oldStatus = this.status;
       this.status = data.status as ProcessStatus;
+      // [AP-status-debug] DELETE ME — confirms lifecycle transition applied.
+      console.log('[AP-status-debug] lifecycle transition', { id: this.id, oldStatus, newStatus: this.status });
       this.emit('state_change', {
         field: 'status',
         oldValue: oldStatus,
@@ -2137,6 +2160,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     if (data.worker_status) {
       const oldWorker = this.workerStatus;
       this.workerStatus = data.worker_status as WorkerStatus;
+      // [AP-status-debug] DELETE ME — confirms worker transition applied.
+      console.log('[AP-status-debug] worker transition', { id: this.id, oldWorker, newWorker: this.workerStatus });
       this.emit('state_change', {
         field: 'workerStatus',
         oldValue: oldWorker,

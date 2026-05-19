@@ -1,3 +1,7 @@
+---
+id: d0a0c5b8-0ace-5a47-bd01-b04af48498e6
+---
+
 test 1: Home page has a search bar
 - [browser] navigate to {APP_URL}/
 - [browser] wait for the page to load (networkidle)

@@ -1,3 +1,7 @@
+---
+id: 707b458c-6d98-50bc-8966-37e926f57598
+---
+
 test 1: Double-click to rename a terminal tab
 - navigate to the Shell view via sidebar
 - validate terminal is visible and ready

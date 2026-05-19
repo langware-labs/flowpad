@@ -1,3 +1,7 @@
+---
+id: a178d785-4b50-5d10-8539-528ef362d418
+---
+
 # debugMCP Setup
 
 ## Overview

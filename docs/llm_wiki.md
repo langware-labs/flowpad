@@ -1,3 +1,7 @@
+---
+id: 5302e32d-a229-5a98-af31-939662265ef6
+---
+
 # Wiki Link Graph Primitives — flowpad-oss
 
 ## Context

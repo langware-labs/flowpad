@@ -101,6 +101,12 @@ class BaseInstanceSettings:
     # ---- Cloud login: max wait for browser-mode callback. Override via CLOUD_LOGIN_TIMEOUT_SECONDS. ----
     cloud_login_timeout_seconds: float = 300.0
 
+    # ---- Sniffer: single source of truth for whether the desktop bootstrap
+    # auto-installs the Claude-Code hooks into ~/.claude/settings.json.
+    # Default off; flip to true to opt in. Frontend reads the resulting
+    # bootstrap.sniffer_hook payload (null when disabled). ----
+    sniffer_enabled: bool = False
+
     # ---- Process info (filled at boot, optional) ----
     server_pid: int | None = None
 
@@ -135,7 +141,7 @@ class BaseInstanceSettings:
             skill_rules_dir=flow_home / "skill_rules",
             schema_dir=flow_home / "schema",
             records_data_dir=flow_home / "records_data",
-            logs_dir=flow_home / "logs",
+            logs_dir=flow_home / "instances" / "prod" / "logs",
             monitor_log_path=flow_home / "monitor.log",
             inbox_last_fetch_path=flow_home / ".inbox_last_fetch.json",
             conversation_last_sync_path=flow_home / ".conversation_last_sync.json",
@@ -212,6 +218,30 @@ class BaseInstanceSettings:
         if env and env.isdigit():
             return int(env)
         return default_port
+
+    # -----------------------------------------------------------------
+    # Cross-instance shared paths (computed; not per-instance prefixed)
+    # -----------------------------------------------------------------
+    # These live directly under ``flow_home`` and are shared across all
+    # instances (prod/dev/test) by design — they coordinate state that
+    # spans instances, like the migration ledger.
+
+    @property
+    def global_dir(self) -> Path:
+        """``<flow_home>/global`` — cross-instance shared state."""
+        return self.flow_home / "global"
+
+    @property
+    def migrations_status_dir(self) -> Path:
+        """``<flow_home>/global/migrations`` — per-version status JSON files."""
+        return self.global_dir / "migrations"
+
+    @property
+    def instances_root(self) -> Path:
+        """``<flow_home>/instances`` — parent of per-instance canonical
+        subdirectories. Contents under each ``instances/<name>/`` are
+        out of scope for Phase 1; this exposes the parent path only."""
+        return self.flow_home / "instances"
 
 
 # Public alias — code reads ``InstanceSettings`` for type annotations.

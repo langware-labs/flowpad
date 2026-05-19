@@ -72,6 +72,20 @@ class Project(Entity):
         default_factory=list,
         description="Collaboration participants: [{member_id, name, joined_at, last_seen_at}]",
     )
+    # ── Indexer-denormalized fields (project consolidation, Path A 2026-05-09) ──
+    # Written by the indexer at adopt time via ``Project.from_record`` so the
+    # frontend can render activity hints (session count, last activity) without
+    # querying records. Records remain backend-only.
+    session_count: int = APIField(
+        default=0,
+        description="Total session count across providers (Claude + Codex) at this project's cwd. "
+                    "Denormalized from the matching ProjectFsRecord at indexer-write time.",
+    )
+    last_session_at: str | None = APIField(
+        default=None,
+        description="ISO timestamp of the most recent session activity at this project's cwd, "
+                    "denormalized from the matching ProjectFsRecord. Null if no sessions yet.",
+    )
     _api_visible: ClassVar[bool] = True
     _icon: ClassVar[str] = "FolderOpen"
 
@@ -125,113 +139,187 @@ class Project(Entity):
             )
         return self
 
-    @staticmethod
-    def derive_id_for_path(path) -> str | None:
+    @classmethod
+    def derive_id_for_path(cls, path: str) -> str | None:
         """Canonical project_id for a mount path.
 
         Single source of truth for the synthetic id used everywhere: indexer
         FSRefs, transcript boundaries, and ``allocate_id``. ``None`` when no
-        path is given.
+        path is given. Uses uuid5 over canonical posix path so callers can
+        stamp ``project_id`` on records BEFORE the Project entity exists;
+        ``from_record`` will then materialize the entity with the same id.
         """
         if not path:
             return None
         import uuid
+        from flow_sdk.fs_store.path_utils import canonical_posix_path
         return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"project:{canonical_posix_path(path)}"))
 
     @classmethod
     def allocate_id(cls, data: dict) -> str:
-        """Deterministic UUID5 keyed on the project work directory.
+        """Return a stable id for this Project.
 
-        The deterministic ID takes priority over any client-provided id, because
-        the frontend always assigns a random UUID4 to new entities before saving.
-        Only fall back to the provided id (or a fresh UUID4) when no mount path
-        is available to derive a stable key from.
+        The canonical ``fs_storage_mount_path`` is the natural key, so the
+        path-derived uuid5 always wins when a path is supplied — clients
+        that pre-mint an optimistic uuid4 still resolve to the same row.
+
+        Order of precedence:
+          1. uuid5 over canonical ``fs_storage_mount_path`` when supplied.
+          2. ``data['id']`` if it's a valid uuid (no path supplied).
+          3. Random uuid4 fallback.
         """
         import uuid
         from flow_sdk.fs_store.identifier import is_valid_uuid
-        mount_path = data.get("fs_storage_mount_path") or data.get("real_path")
-        if not mount_path:
-            name = data.get("name", "")
-            if name and os.path.isabs(name):
-                mount_path = name
+        mount_path = data.get("fs_storage_mount_path")
         if mount_path:
-            pid = cls.derive_id_for_path(mount_path)
-            if pid:
-                return pid
+            derived = cls.derive_id_for_path(mount_path)
+            if derived:
+                return derived
         rid = data.get("id") or ""
         if rid and is_valid_uuid(rid):
             return rid
         return str(uuid.uuid4())
 
     @classmethod
+    async def find_by_cwd(cls, cwd: str) -> "Project | None":
+        """Find an existing Project whose ``fs_storage_mount_path`` matches the
+        given canonical posix cwd. Returns the first match, or ``None``.
+
+        This is the natural key for project dedup. Callers that mint a fresh
+        Project should always check find_by_cwd first; idempotent upsert is
+        ``find_by_cwd or save-new``.
+        """
+        if not cwd:
+            return None
+        canonical = canonical_posix_path(cwd)
+        existing = await cls.get_all()
+        for proj in existing:
+            mp = proj.fs_storage_mount_path
+            if mp and canonical_posix_path(mp) == canonical:
+                return proj
+        return None
+
+    @classmethod
     async def recover_by_path(cls, path: str) -> "Project | None":
-        """Recover (or materialize) a Project for ``path`` in three phases.
+        """Recover (or materialize) a Project for ``path``.
 
         Used by ``AgenticProcess.recover_project_action`` to resurrect orphaned
         processes whose ``project_id`` references a deleted project. ``path`` is
         typically ``AgenticProcess.workdir``.
 
-        Phase 1 — exact-match an existing Project by ``fs_storage_mount_path``.
-        Phase 2 — materialize from ``~/.claude/projects/<encoded>/`` if Claude Code
-                  knows the dir, via ``ClaudeProjectFsRecord._from_claude_dir`` +
-                  ``sync_to_db`` (which calls ``Entity.from_record``).
-        Phase 3 — construct a fresh Project from the path; ``Project.allocate_id``
-                  yields a deterministic uuid5.
+        Phase 1 — exact-match an existing Project by canonical mount_path
+                  (delegates to ``find_by_cwd``).
+        Phase 2 — construct a fresh Project from the path with a deterministic
+                  uuid5 id (``derive_id_for_path``) so any indexer-stamped
+                  ``project_id`` references on records resolve to the same row.
 
         Returns ``None`` only when ``path`` is empty/falsy.
         """
         if not path:
             return None
 
-        # Canonicalize so Windows path quirks (slash style, drive case,
-        # trailing sep, NFC) don't cause us to miss an existing match and
-        # mint a duplicate Project in Phase 3.
-        path = canonical_posix_path(path)
+        canonical = canonical_posix_path(path)
 
-        # Phase 1: existing Project at this exact (canonical) mount path.
-        existing = await cls.get_all()
-        for proj in existing:
-            if proj.fs_storage_mount_path and canonical_posix_path(proj.fs_storage_mount_path) == path:
-                return proj
+        # Phase 1: existing project at this canonical cwd.
+        existing = await cls.find_by_cwd(canonical)
+        if existing is not None:
+            return existing
 
-        # Phase 2: Claude Code's project directory at ~/.claude/projects/<encoded>/.
-        # Note: ClaudeProjectFsRecord.id is uuid5("project:<encoded>"), but the
-        # Project entity Entity.from_record materializes uses the path-based
-        # uuid5("project:<mount_path>") via Project.allocate_id. So we look up
-        # the materialized entity by mount path, not by record id.
-        from flow_sdk.fs_records.claude.claude_project import (
-            ClaudeProjectFsRecord,
-            _claude_projects_dir,
-        )
-        encoded = path.replace("/", "-")
-        claude_dir = _claude_projects_dir() / encoded
-        if claude_dir.is_dir() and ClaudeProjectFsRecord._is_valid_project_dir(claude_dir):
-            try:
-                rec = ClaudeProjectFsRecord._from_claude_dir(claude_dir)
-                await rec.sync_to_db(notify=False)
-                # Re-query for the materialized Project entity by mount path.
-                materialized = await cls.get_all()
-                for p in materialized:
-                    if p.fs_storage_mount_path and canonical_posix_path(p.fs_storage_mount_path) == path:
-                        return p
-            except Exception as e:
-                logging.warning(f"Project.recover_by_path: phase 2 failed for {path}: {e}")
-
-        # Phase 3: construct a fresh Project from the path.
+        # Phase 2: construct a fresh Project. Identity is derived from the
+        # canonical path so it matches what the indexer would have stamped
+        # on records via ``derive_id_for_path``.
+        derived_id = cls.derive_id_for_path(canonical)
         proj = cls.model_validate({
-            "fs_storage_mount_path": path,
-            "name": os.path.basename(path.rstrip(os.sep)) or path,
+            "id": derived_id,
+            "fs_storage_mount_path": canonical,
+            "name": os.path.basename(canonical.rstrip(os.sep)) or canonical,
         })
         proj.id = cls.allocate_id(proj.model_dump())
         await proj.save()
         return proj
 
-    # Phase 9: ``project_encoded_name`` property removed — it produced encoded
-    # paths that diverged from what Claude CLI actually wrote on disk for
-    # paths containing ``.``/``_``/``@``. Callers that need to reach a
-    # session JSONL should use
-    # ``flow_sdk.transcript_analyzer.resolver.resolve_session_jsonl(worker_type, session_id)``
-    # which globs and finds the actual file.
+    @classmethod
+    async def from_record(cls, record, notify: bool = True):  # type: ignore[override]
+        """Create or update a Project from a Record's meta_dict.
+
+        Overrides ``Entity.from_record`` to dedup by canonical mount_path
+        (the natural key) instead of by id (which is now an opaque uuid4).
+        Without this override, every call would mint a new entity since the
+        base implementation looks up by ``allocate_id``-derived id.
+
+        Path source priority (first non-empty wins):
+          1. ``fs_storage_mount_path`` — explicit field on the record's meta
+          2. ``cwd`` — what ``ProjectFsRecord`` exposes (the natural key)
+          3. ``real_path`` — legacy claude-project metadata
+          4. ``name`` if it's an absolute path
+
+        With (2) in place, the indexer-driven flow auto-adopts: each
+        ``ProjectFsRecord`` written by ``upsert_for_cwd`` gets a matching
+        ``Project`` entity created (or updated) on ``rec.sync_to_db()``.
+        """
+        data = record.meta_dict()
+        mount_path = (
+            data.get("fs_storage_mount_path")
+            or data.get("cwd")
+            or data.get("real_path")
+        )
+        if not mount_path:
+            name = data.get("name", "")
+            if name and os.path.isabs(name):
+                mount_path = name
+
+        canonical_mp = canonical_posix_path(mount_path) if mount_path else None
+        existing: Project | None = None
+        if canonical_mp:
+            existing = await cls.find_by_cwd(canonical_mp)
+
+        if existing is not None:
+            # Update in place — apply meta fields the entity understands.
+            for k, v in data.items():
+                if k in ("id", "type"):
+                    continue
+                if hasattr(existing, k):
+                    try:
+                        setattr(existing, k, v)
+                    except Exception:
+                        pass
+            # Ensure the canonical form is what's stored.
+            existing.fs_storage_mount_path = canonical_mp
+            # Denormalize indexer-supplied activity hints (Path A).
+            if "session_count" in data:
+                existing.session_count = int(data.get("session_count") or 0)
+            if "last_session_at" in data:
+                existing.last_session_at = data.get("last_session_at")
+            await existing.save(notify=notify)
+            return existing
+
+        # Net-new project: id is derived from the canonical mount path so it
+        # matches whatever the indexer already stamped on records (via
+        # ``derive_id_for_path``). Falls back to opaque uuid4 only when no
+        # path is available.
+        create_kwargs = {k: v for k, v in data.items() if k != "id"}
+        if canonical_mp:
+            create_kwargs["fs_storage_mount_path"] = canonical_mp
+            derived_id = cls.derive_id_for_path(canonical_mp)
+            if derived_id:
+                create_kwargs["id"] = derived_id
+        # Drop record-only fields the Project entity doesn't carry — provenance
+        # flags stay on ProjectFsRecord (backend only). Only denormalized
+        # activity hints surface on the entity.
+        for record_only in ("claude_project", "codex_project", "encoded_path",
+                            "last_indexed_at", "real_path", "cwd"):
+            create_kwargs.pop(record_only, None)
+        proj = cls(**create_kwargs)
+        proj.id = cls.allocate_id(create_kwargs)
+        await proj.save(notify=notify)
+        return proj
+
+    @property
+    def project_encoded_name(self) -> str | None:
+        """Encoded project path used to locate transcript files."""
+        if not self.fs_storage_mount_path:
+            return None
+        return str(self.fs_storage_mount_path).replace("/", "-")
 
     @property
     def main_ref(self):

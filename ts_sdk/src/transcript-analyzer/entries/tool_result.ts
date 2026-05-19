@@ -8,6 +8,9 @@ export interface ToolResultEntryData extends TranscriptEntryBase {
   is_error?: boolean;
   file_path?: string | null;
   tool_name?: string | null;
+  duration_ms?: number | null;
+  exit_code?: number | null;
+  output_token_count?: number | null;
 }
 
 export class ToolResultEntry extends TranscriptEntry {
@@ -23,6 +26,9 @@ export class ToolResultEntry extends TranscriptEntry {
    * referenced with a preceding ToolUseEntry.
    */
   tool_name: string | null;
+  duration_ms: number | null;
+  exit_code: number | null;
+  output_token_count: number | null;
 
   constructor(data: ToolResultEntryData) {
     super(data);
@@ -31,5 +37,8 @@ export class ToolResultEntry extends TranscriptEntry {
     this.is_error = data.is_error ?? false;
     this.file_path = data.file_path ?? null;
     this.tool_name = data.tool_name ?? null;
+    this.duration_ms = data.duration_ms ?? null;
+    this.exit_code = data.exit_code ?? null;
+    this.output_token_count = data.output_token_count ?? null;
   }
 }

@@ -125,11 +125,12 @@ describe('applyFilterToParams — parentPath', () => {
     const p = new URLSearchParams();
     applyFilterToParams(p, {
       ...DEFAULT_ASSET_FILTER,
-      scope: 'user',
+      scope: { user: true, projects: [] },
       tags: ['a', 'b'],
       parentPath: '/docs',
     });
-    expect(p.get('scope')).toBe('user');
+    expect(p.get('user')).toBe('true');
+    expect(p.get('projects')).toBe('');
     expect(p.get('tags')).toBe('a,b');
     expect(p.get('parent_path')).toBe('/docs');
   });

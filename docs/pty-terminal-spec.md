@@ -1,3 +1,7 @@
+---
+id: f167e843-4f52-5252-8a2c-fae98ce44479
+---
+
 # PTY / xterm Terminal System Specification
 
 ## Overview

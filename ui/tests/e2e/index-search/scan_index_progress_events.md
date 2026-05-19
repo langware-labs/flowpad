@@ -1,50 +1,42 @@
-REGRESSION: Added 2026-03-19 — progress_report WebSocket events for scan and index.
-Both sub-activity (per-record) and job-level (per-type) events are broadcast during
-scan and index operations. Old event names scan_progress/index_progress were removed.
+---
+id: 52860b1c-0171-5104-acb7-c4abe0676583
+---
 
-test 1: Aggregate scan emits sub-activity progress_report events over WebSocket
-- [ws] connect to the WebSocket at {WS_URL}/api/v1/connect/ws/local
-- [api] POST {API_URL}/api/v1/graph/compute_node/@local/fs-records/scan via GET with limit_types=3
-- [ws] collect FlowData events of element_type="progress_report" with sub_activity_name != null
-- [ws] validate at least one sub-activity event was received
-- [ws] validate each sub-activity event has: job_name="scan", sub_activity_name (string), done (number > 0), total (number > 0)
+REGRESSION: Added 2026-03-19, updated for IndexProgressTable snapshots.
 
-test 2: Aggregate index emits sub-activity progress_report events over WebSocket
-- [ws] connect to WebSocket
-- [api] POST {API_URL}/api/v1/graph/compute_node/@local/fs-records/index?limit_types=3
-- [ws] collect progress_report events with sub_activity_name != null
-- [ws] validate at least one sub-activity event with job_name="index"
+`progress_report` WebSocket events are emitted during scan and index operations.
+Each event is a full table snapshot:
+- `job_name`: `"scan"` or `"index"`
+- `rows`: per-record-type counters (`type_name`, `done`, `total`, `errors`, `skipped`)
+- `current`: type currently being scanned/indexed, or null
+- `done`/`total`: aggregate record progress (`scan.total === 0` means unknown)
+- `text`: `"complete"` on the terminal event
 
-test 3: Job-level events (sub_activity_name=null) are emitted per completed type
-- [ws] connect to WebSocket
-- [api] GET {API_URL}/api/v1/graph/compute_node/@local/fs-records/scan?limit_types=2
-- [ws] collect progress_report events with sub_activity_name == null
-- [ws] validate at least one job-level event was received
-- [ws] validate each job-level event has: job_name="scan", sub_activity_name=null, done (number), total (number)
-- [ws] validate the done values in job-level events are non-decreasing
+No per-entity progress events are expected. The old split between
+`sub_activity_name != null` sub-activity events and `sub_activity_name == null`
+job-level events is no longer valid.
 
-test 4: Per-type scan emits one completed sub-activity event for that type
-- [ws] connect to WebSocket
-- [api] GET {API_URL}/api/v1/graph/compute_node/@local/fs-records/scan?type=skill
-- [ws] collect sub-activity progress_report events
-- [ws] validate the last sub-activity event has sub_activity_name="skill" and done == total
+test 1: Aggregate scan emits progress table snapshots over WebSocket
+- [ws] connect through the frontend WebSocket
+- [api] GET {API_URL}/api/v1/graph/compute_node/@local/fs-records/scan?limit_types=3&trigger=manual
+- [ws] collect FlowData events of element_type="progress_report"
+- [ws] validate every captured event has `job_name="scan"`, `rows[]`, numeric `done`, numeric `total`
+- [ws] validate scan table-level `total` is 0 because scan totals are unknown while discovery is running
 
-test 5: Per-type index emits sub-activity events for that type only
-- [ws] connect to WebSocket
+test 2: Per-type scan returns completed response
+- [api] GET {API_URL}/api/v1/graph/compute_node/@local/fs-records/scan?type=skill&trigger=manual
+- [api] validate SUCCESS response with `data.type="skill"` and numeric `count`
+
+test 3: Per-type index returns completed response
 - [api] POST {API_URL}/api/v1/graph/compute_node/@local/fs-records/index?type=skill
-- [ws] collect sub-activity progress_report events
-- [ws] validate the last sub-activity event has sub_activity_name="skill" and done == total
+- [api] validate SUCCESS response with `data.type="skill"` and numeric `indexed`
 
-test 6: Scanner viewer shows progress bar during scan
-- [browser] navigate to the Records Scanner page
-- [browser] click "Rescan"
-- [browser] while scanning, validate a progress bar or "Scanning all record types…" indicator appears
-- [browser] wait for scan to complete
-- [browser] validate the progress indicator is no longer visible
+test 4: Aggregate scan response is coherent
+- [api] GET {API_URL}/api/v1/graph/compute_node/@local/fs-records/scan?limit_types=3
+- [api] validate numeric `grand_total` and `scan_ms`
 
-test 7: Scanner viewer shows progress bar during index all
-- [browser] navigate to the Records Scanner page
-- [browser] click "Rescan" and wait for scan to complete
-- [browser] click "Index All"
-- [browser] validate the "Index All" button shows "Indexing…" state or a progress bar appears
-- [browser] wait up to 60 seconds for indexing to complete
+test 5: Scanner viewer shows progress table UI during scan/index
+- [browser] navigate to the records/search UI
+- [browser] trigger scan or index
+- [browser] validate the compact progress indicator shows aggregate record count
+- [browser] open the progress modal and validate rows are per type, not per entity

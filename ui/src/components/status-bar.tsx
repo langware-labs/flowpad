@@ -1,5 +1,4 @@
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
-import { IndexingIndicator } from '@src/components/search-index/IndexingIndicator';
 import { useProjects } from '@src/hooks/use-projects';
 import { useContext } from '@src/hooks/useContext';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -82,7 +81,6 @@ export function StatusBar({ className = '' }: StatusBarProps) {
             <ArrowLeftRight className="h-3 w-3 shrink-0" />
             Select Project
           </button>
-          <IndexingIndicator />
         </div>
         <OpenProjectComponent
           open={isProjectModalOpen}
@@ -129,7 +127,6 @@ export function StatusBar({ className = '' }: StatusBarProps) {
             <ExternalLink className="h-3 w-3 shrink-0" />
           </button>
         )}
-        <IndexingIndicator />
       </div>
       <OpenProjectComponent
         open={isProjectModalOpen}

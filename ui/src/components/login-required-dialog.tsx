@@ -18,9 +18,11 @@ const STORAGE_KEY = 'flowpad_pending_login_action';
 
 export enum ActionType {
   SEND = 'send',
+  START_CONVERSATION = 'start_conversation',
   TOOLS = 'tools',
   CODEBASE = 'codebase',
   FILES = 'files',
+  REFRESH = 'refresh',
 }
 
 export interface PendingLoginAction {

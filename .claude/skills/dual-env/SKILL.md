@@ -1,7 +1,9 @@
 ---
-name: "dual-env"
-description: "Set up and run flow-cli in dual mode: a production instance (flow-cli-prod) and a development instance (flow-cli) side by side"
-tags: "[dev, setup, environment, dogfooding]"
+id: f9cad0a3-27ea-514b-9930-dadbf54ca26e
+name: dual-env
+description: 'Set up and run flow-cli in dual mode: a production instance (flow-cli-prod)
+  and a development instance (flow-cli) side by side'
+tags: '[dev, setup, environment, dogfooding]'
 ---
 
 # Dual Environment Setup (Prod + Dev)
@@ -153,4 +155,3 @@ When asked to set up dual-env, execute these steps:
 5. Kill any processes on ports 9007, 9008, 4097, 4098.
 6. Start prod: `cd ~/Developer/flow-cli-prod && source .venv/bin/activate && flow start`.
 7. Inform user to start dev instance from PyCharm or via `uv run -m server.run` + `cd ui && npm run dev`.
-

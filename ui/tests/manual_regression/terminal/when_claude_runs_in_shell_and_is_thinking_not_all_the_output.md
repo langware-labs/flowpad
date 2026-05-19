@@ -1,3 +1,7 @@
+---
+id: c4ef65d1-dc03-5ea9-bd20-0dcb1c9772bd
+---
+
 test 1: Terminal output remains visible after switching tabs while Claude is running (FLOWPAD-1617)
 - navigate to {APP_URL}/dock/shell/new_terminal
 - wait for terminal to be ready (active terminal panel `[data-testid="terminal-panel"][data-active="true"]` shows xterm)

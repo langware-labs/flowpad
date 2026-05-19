@@ -1,3 +1,7 @@
+---
+id: 63555676-e5f0-59cd-977e-40228a3030f8
+---
+
 test 1: Clicking a shell tab from agentic process view updates the URL
 - navigate to /dock/shell/new_terminal
 - wait for shell tab to be ready

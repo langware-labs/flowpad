@@ -1,3 +1,7 @@
+---
+id: e54d4265-bef1-5abb-8f25-d8204141caed
+---
+
 # Record System Requirements
 
 1. Disk is the source of truth. Records are scanned from disk; Entities are a DB index for fast query only. The entire Entity/DB layer can be deleted and rebuilt from disk without any data loss.

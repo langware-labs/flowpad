@@ -25,7 +25,7 @@ import { cn } from '@src/lib/utils';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ViewType } from '@src/types/ViewType';
-import { Bookmark as BookmarkIcon, Copy, FolderOpen, Send, ShieldOff, StickyNote, X } from 'lucide-react';
+import { Bookmark as BookmarkIcon, Copy, FolderOpen, Save, Send, ShieldOff, StickyNote, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './milkdown.css';
 import { planNotePlugins } from './plan-note-plugin';
@@ -316,8 +316,9 @@ const PlanFileEditor: React.FC = () => {
  * editing surface as workflow / markdown asset views, with chat + backlinks
  * keyed on the spec TypeId.
  *
- * Edits are debounced into spec.content + spec.save() (no file path; spec
- * content lives on the entity record itself).
+ * Edits stay in local state and only commit to the entity on an explicit
+ * Save click — autosave-on-every-keystroke would race itself into a storm
+ * of overlapping PUTs and a stuck ref status.
  */
 const SpecEntityEditor: React.FC = () => {
   const { navigation, currentDock } = useDockNavigation();
@@ -337,17 +338,27 @@ const SpecEntityEditor: React.FC = () => {
     if (spec?.content != null && localContent == null) setLocalContent(spec.content);
   }, [spec?.content, localContent]);
 
-  const onChangeRef = useRef((_v: string) => {});
-  onChangeRef.current = (value: string) => {
-    setLocalContent(value);
-    if (spec) {
-      spec.content = value;
-      void spec.save();
-    }
-  };
-  const handleContentChange = useCallback((v: string) => onChangeRef.current(v), []);
+  // Edits only update local state — no spec.content mutation, no spec.save().
+  // Saving is explicit via the Save button below.
+  const handleContentChange = useCallback((v: string) => setLocalContent(v), []);
 
   const [showShareDialog, setShowShareDialog] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const isDirty = !!spec && localContent != null && localContent !== spec.content;
+
+  const handleSave = useCallback(async () => {
+    if (!spec || localContent == null || localContent === spec.content) return;
+    setIsSaving(true);
+    try {
+      spec.content = localContent;
+      await spec.save();
+    } catch (e) {
+      console.error('[SpecEntityEditor] save failed', e);
+    } finally {
+      setIsSaving(false);
+    }
+  }, [spec, localContent]);
 
   if (!specId) {
     return (
@@ -379,6 +390,17 @@ const SpecEntityEditor: React.FC = () => {
         <div className="flex items-center gap-2">
           <Button
             size="sm"
+            variant="default"
+            onClick={handleSave}
+            disabled={!isDirty || isSaving}
+            title={isDirty ? 'Save changes' : 'No unsaved changes'}
+          >
+            <Save className="mr-2 h-4 w-4" />
+            {isSaving ? 'Saving…' : 'Save'}
+          </Button>
+
+          <Button
+            size="sm"
             variant="outline"
             onClick={() => setShowShareDialog(true)}
             title="Package this spec as a task and share it with someone"
@@ -391,7 +413,7 @@ const SpecEntityEditor: React.FC = () => {
             size="sm"
             variant="ghost"
             onClick={() => navigation.openDock(DockPointer.forInbox())}
-            title="Go back to inbox"
+            title={isDirty ? 'Discard unsaved changes and go back to inbox' : 'Go back to inbox'}
           >
             <X className="mr-2 h-4 w-4" />
             Cancel

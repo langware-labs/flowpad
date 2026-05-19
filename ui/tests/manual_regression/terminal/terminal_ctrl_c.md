@@ -1,3 +1,7 @@
+---
+id: 6c773e7f-5fd1-5f99-9d6c-07155422a042
+---
+
 test 1: Ctrl+C interrupts a running command
 - navigate to the Shell view via sidebar
 - validate terminal is visible and ready
