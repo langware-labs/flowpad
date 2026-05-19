@@ -1,6 +1,6 @@
-import { Agent, Markdown, Project, Skill, Task, Workflow } from '@sdk';
+import { Agent, Markdown, Project, Skill, Task, Whiteboard, Workflow } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { Bot, CheckSquare, FileText, Sparkles, Workflow as WorkflowIcon, type LucideIcon } from 'lucide-react';
+import { Bot, CheckSquare, FileText, Palette, Sparkles, Workflow as WorkflowIcon, type LucideIcon } from 'lucide-react';
 
 /**
  * Result returned by a QuickCreateDescriptor's `create` function.
@@ -91,7 +91,7 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
   },
   {
     type: 'markdown',
-    label: 'Markdown',
+    label: 'Markdown document',
     Icon: FileText,
     allowFolderSelection: true,
     defaultFolder: '.claude/docs',
@@ -100,6 +100,20 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
       return {
         pointer: md.asset_ref ? DockPointer.forAssetEditor('markdown', md.asset_ref) : undefined,
         toastTitle: 'Markdown created',
+      };
+    },
+  },
+  {
+    type: 'whiteboard',
+    label: 'Whiteboard',
+    Icon: Palette,
+    allowFolderSelection: true,
+    defaultFolder: '.claude/whiteboards',
+    create: async ({ project, name, folderVfsPath }) => {
+      const saved = await Whiteboard.createInProject(project, name, folderVfsPath);
+      return {
+        pointer: saved.asset_ref ? DockPointer.forAssetEditor('whiteboard', saved.asset_ref) : undefined,
+        toastTitle: 'Whiteboard created',
       };
     },
   },

@@ -521,7 +521,26 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // so it survives hook misses and WS drops that historically made the
   // annotation+trace merge unreliable. Annotations remain as an auxiliary
   // index for terminal-row anchoring (click-to-scroll).
-  const { transcriptPrompts } = usePromptsForProcess(process ?? null);
+  const { transcriptPrompts, refresh: refreshPrompts } = usePromptsForProcess(process ?? null);
+
+  // Hold the latest `refreshPrompts` in a ref so the xterm `onData` effect
+  // doesn't have to re-subscribe whenever the hook returns a new identity.
+  const refreshPromptsRef = useRef<typeof refreshPrompts>(refreshPrompts);
+  useEffect(() => { refreshPromptsRef.current = refreshPrompts; }, [refreshPrompts]);
+
+  // Debounced refetch fired ~1s after the user presses Enter in the terminal.
+  // Mashing Enter coalesces into one fetch 1s after the last keystroke.
+  const enterRefetchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scheduleEnterRefetch = useCallback(() => {
+    if (enterRefetchTimerRef.current) clearTimeout(enterRefetchTimerRef.current);
+    enterRefetchTimerRef.current = setTimeout(() => {
+      enterRefetchTimerRef.current = null;
+      refreshPromptsRef.current?.();
+    }, 1000);
+  }, []);
+  useEffect(() => () => {
+    if (enterRefetchTimerRef.current) clearTimeout(enterRefetchTimerRef.current);
+  }, []);
 
   // Build a {timestamp → absRow} index from prompt annotations so we can
   // attach click-to-scroll behavior to transcript prompts whose annotation
@@ -1134,12 +1153,13 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       // eslint-disable-next-line no-control-regex
       if (/^\x1b\[\?[0-9;]*c$/.test(data)) return;
       collectFirstPromptInput(data);
+      if (data.includes('\r') || data.includes('\n')) scheduleEnterRefetch();
       const shell = shellRef.current;
       if (shell?.connected) await shell.sendInput(data);
     });
 
     return () => disp.dispose();
-  }, [collectFirstPromptInput, terminalReady, sessionId]);
+  }, [collectFirstPromptInput, scheduleEnterRefetch, terminalReady, sessionId]);
 
   // On session restart: clear terminal, reset pty-sync, and re-fit so the
   // resumed session starts on a clean, full-size canvas.

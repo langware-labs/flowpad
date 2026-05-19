@@ -77,7 +77,7 @@ export function ContentPanel() {
   /** Navigate to a terminal tab's shell or agentic process */
   const navigateToTab = useCallback(
     (tab: (typeof terminalTabs)[number]) => {
-      const pointer = tab.agenticProcess?.dockPointer ?? tab.shell?.dockPointer;
+      const pointer = tab.agenticProcess?.terminalDockPointer ?? tab.shell?.dockPointer;
       if (pointer) navigation.openDock(pointer);
     },
     [navigation],

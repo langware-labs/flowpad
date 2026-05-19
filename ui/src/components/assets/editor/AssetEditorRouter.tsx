@@ -1,11 +1,12 @@
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
-import { Agent, FSRef, RecordType, Skill, Workflow } from '@sdk';
+import { Agent, FSRef, RecordType, Skill, Whiteboard, Workflow } from '@sdk';
 import { RefreshCw } from 'lucide-react';
 import { useMemo } from 'react';
 import { EntityResolutionGate } from './EntityResolutionGate';
 import { PlainMarkdownAssetEditor } from './markdown/PlainMarkdownAssetEditor';
 import { SkillAssetEditor } from './skill/SkillAssetEditor';
 import { AgentAssetEditor } from './agent/AgentAssetEditor';
+import { WhiteboardAssetEditor } from './whiteboard/WhiteboardAssetEditor';
 import { WorkflowAssetEditor } from './workflow/WorkflowAssetEditor';
 
 interface AssetEditorRouterProps {
@@ -26,6 +27,7 @@ interface AssetEditorRouterProps {
  */
 const EDITABLE_TYPES = new Set<string>([
   RecordType.SKILL, RecordType.MARKDOWN, RecordType.AGENT,
+  RecordType.WHITEBOARD,
   RecordType.CLAUDE_MD, 'claude_memory', 'claude_rules',
   RecordType.COMMAND, RecordType.PLAN, 'workflow',
   // Projects don't open in the editor — clicking a project row redirects to
@@ -78,6 +80,15 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
           fsRef={fsRef}
           typeLabel="agent"
           render={(agent) => <AgentAssetEditor fsRef={fsRef} agent={agent} />}
+        />
+      );
+    case RecordType.WHITEBOARD:
+      return (
+        <EntityResolutionGate<Whiteboard>
+          type={Whiteboard.type}
+          fsRef={fsRef}
+          typeLabel="whiteboard"
+          render={(whiteboard) => <WhiteboardAssetEditor fsRef={fsRef} whiteboard={whiteboard} />}
         />
       );
     case 'workflow':

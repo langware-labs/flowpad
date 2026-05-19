@@ -33,6 +33,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { closeTerminalTargets } from '@src/hooks/useActiveTerminals';
 import { PTYViewer } from './pty-viewer';
 import { PTYEventsViewer } from './pty-events-viewer';
+import { CommandStatusViewer } from './command-status-viewer';
 import type { ColVisibility, TraceFilters } from './InteractiveTerminal';
 
 interface ProcessToolbarProps {
@@ -56,6 +57,7 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
   const { navigation } = useDockNavigation();
   const [showPtyViewer, setShowPtyViewer] = useState(false);
   const [showPtyEventsViewer, setShowPtyEventsViewer] = useState(false);
+  const [showCommandStatus, setShowCommandStatus] = useState(false);
 
   // Force re-render whenever any field on the process entity changes. Backend
   // mutates the entity in place via castAndDeepAssign, so without an explicit
@@ -293,6 +295,9 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
             <DropdownMenuItem onSelect={() => setShowPtyEventsViewer(true)}>
               <span className="text-amber-400 text-xs font-medium">PTY Events Viewer</span>
             </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => setShowCommandStatus(true)}>
+              <span className="text-amber-400 text-xs font-medium">Command Status</span>
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
 
@@ -411,6 +416,7 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
 
       <PTYViewer open={showPtyViewer} onClose={() => setShowPtyViewer(false)} shell={shell ?? null} />
       <PTYEventsViewer open={showPtyEventsViewer} onClose={() => setShowPtyEventsViewer(false)} shell={shell ?? null} />
+      <CommandStatusViewer open={showCommandStatus} onClose={() => setShowCommandStatus(false)} process={process ?? null} />
     </TooltipProvider>
   );
 }
@@ -556,6 +562,26 @@ function SessionInfoPopover({ process, sessionStartTime, lastMessageTime }: { pr
   const startDisplay = useTimeDisplay(sessionStartTime);
   const lastDisplay = useTimeDisplay(lastMessageTime);
 
+  const [sessionName, setSessionName] = useState<string | null>(null);
+  useEffect(() => {
+    const sid = process.session_id;
+    if (!sid) {
+      setSessionName(null);
+      return;
+    }
+    let cancelled = false;
+    void ClaudeSessionRecord.discover(sid, workdir && workdir !== '(not set)' ? { project: workdir } : undefined)
+      .then((record) => {
+        if (!cancelled) setSessionName(record?.name ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setSessionName(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [process.session_id, workdir]);
+
   // Build a copy-paste-into-terminal-and-run command. The session is already
   // running, so the right flag is `--resume <uuid>` (not `--session-id`, which
   // is for first-time session creation with a chosen UUID — and would error if
@@ -590,6 +616,7 @@ function SessionInfoPopover({ process, sessionStartTime, lastMessageTime }: { pr
     ['Started', startDisplay],
     ['Last message', lastDisplay],
     ['Working Dir', workdir],
+    ['Session Name', sessionName || (process.session_id ? '(loading…)' : 'none')],
     ['Session ID', process.session_id || 'none'],
     ['PTY ID', process.pty_pid || 'none (detached)'],
     ['Permission', permMode],

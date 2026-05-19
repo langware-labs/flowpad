@@ -281,7 +281,7 @@ async function routePlainShellPointer(pointer: string): Promise<void> {
     // Use replace so BACK from the process URL doesn't pop back to the bare
     // shell URL (which would just re-bounce here → flicker).
     // eslint-disable-next-line @typescript-eslint/only-throw-error
-    throw replace(`/dock/shell/${linkedProcess.dockPointer.pointer}`);
+    throw replace(`/dock/shell/${linkedProcess.terminalDockPointer.pointer}`);
   }
 
   try {
@@ -297,7 +297,7 @@ async function routePlainShellPointer(pointer: string): Promise<void> {
       const recovered = await AgenticProcess.getByWorkerId(shellId).catch(() => null);
       if (recovered) {
         // eslint-disable-next-line @typescript-eslint/only-throw-error
-        throw replace(`/dock/shell/${recovered.dockPointer.pointer}`);
+        throw replace(`/dock/shell/${recovered.terminalDockPointer.pointer}`);
       }
     }
 

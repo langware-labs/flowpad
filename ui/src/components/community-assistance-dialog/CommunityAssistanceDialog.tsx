@@ -1,4 +1,4 @@
-import { config, createProjectConversation } from '@sdk';
+import { apiClient, createProjectConversation } from '@sdk';
 import { sendReply } from '@sdk/entities/notifications';
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
@@ -35,12 +35,11 @@ const PLACEHOLDER =
   'research, summarize, or fix? The more context the better.';
 
 async function findFlowpadAssistantProjectId(): Promise<string | null> {
-  const url = `${config.SERVER_URL}${config.API_PREFIXES.graph}/project?include_system=true`;
   try {
-    const resp = await fetch(url, { credentials: 'include' });
-    if (!resp.ok) return null;
-    const body = (await resp.json()) as { data?: Array<{ id?: string; uname?: string | null }> };
-    const match = (body.data ?? []).find((p) => p.uname === FLOWPAD_ASSISTANT_UNAME);
+    const rows = await apiClient.get<Array<{ id?: string; uname?: string | null }>>(
+      '/graph/project?include_system=true',
+    );
+    const match = (rows ?? []).find((p) => p.uname === FLOWPAD_ASSISTANT_UNAME);
     return match?.id ?? null;
   } catch {
     return null;

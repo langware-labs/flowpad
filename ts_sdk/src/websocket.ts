@@ -29,20 +29,6 @@ type MessageType =
   | 'cloud_connection_status_msg'
   | 'ui_command';
 
-function convertToWebSocketUrl(url: string) {
-  // Create a URL object to parse the input URL
-  const parsedUrl = new URL(url);
-
-  // Replace the protocol
-  if (parsedUrl.protocol === 'http:') {
-    parsedUrl.protocol = 'ws:';
-  } else if (parsedUrl.protocol === 'https:') {
-    parsedUrl.protocol = 'wss:';
-  }
-
-  // Return the modified URL as a string
-  return parsedUrl.toString();
-}
 
 interface BaseMessage {
   message_type: MessageType;
@@ -302,8 +288,8 @@ export class ConnectionManager extends EventEmitter {
     this._openPromise = connected_promise;
     this.setConnectionStatus('connecting');
     try {
-      const ws_url = `${config.SERVER_URL}${config.API_PREFIXES.connect}/${this.id}`;
-      const ws = new WebSocket(convertToWebSocketUrl(ws_url));
+      const ws_url = `${config.WS_URL}/${this.id}`;
+      const ws = new WebSocket(ws_url);
       this.socket = ws;
       ws.binaryType = 'arraybuffer';
       let didOpen = false;

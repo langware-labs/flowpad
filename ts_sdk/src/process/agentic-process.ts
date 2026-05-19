@@ -327,6 +327,51 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   }
 
   /**
+   * Spawn a visible AgenticProcess tab and (optionally) send an initial
+   * prompt. Mirrors the `Start Claude` / `Start Codex` openers in
+   * TabbedTerminal — use this from any UI surface outside the tab strip
+   * (e.g. an editor "discuss this doc" button) that needs to launch a
+   * harness tab pre-filled with a user prompt.
+   *
+   * @param workerType - `'claude_code'` or `'codex'`
+   * @param prompt - Optional initial user prompt. Delivered via the backend
+   *   `execute` action, which routes to `prompt()` → `send()` and writes the
+   *   text into the running PTY's stdin so the worker picks it up as its
+   *   first user message.
+   * @returns The spawned AgenticProcess (already navigated to).
+   */
+  static async openTab(
+    workerType: 'claude_code' | 'codex',
+    prompt?: string,
+  ): Promise<AgenticProcess> {
+    const computeNode = dataContext.computeNode;
+    if (!computeNode) throw new Error('[AgenticProcess.openTab] No local compute node');
+    const project = dataContext.project;
+    const process = await computeNode.createProcess(
+      {
+        workdir: project?.fs_storage_mount_path ?? undefined,
+        ...(project?.id ? { projectId: project.id } : {}),
+        workerType,
+      },
+      { visible: true, watchProcess: false },
+    );
+    process.openTerminalDock();
+    if (prompt) {
+      // Call backend `execute` action directly: bypasses the TS-side
+      // `isWorkerRunning` guard in executeInstruction() (the just-spawned PTY
+      // *is* running, which is exactly when we want to send to its stdin).
+      const actionInfo = new ActionInfo('execute', AgenticProcess.type, process.id, 'POST');
+      actionInfo.bodyParameters = { instruction: prompt };
+      try {
+        await dataManager.callAction(actionInfo);
+      } catch (err) {
+        console.error('[AgenticProcess.openTab] execute failed', err);
+      }
+    }
+    return process;
+  }
+
+  /**
    * Create and activate an AgenticProcess in one call.
    *
    * Replaces the manual `createProcess -> start/watch` pattern.
@@ -2085,17 +2130,13 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
 
     if (elementType === 'status' && typeof data.data === 'object' && data.data !== null) {
       const statusData = data.data as Record<string, unknown>;
-      if (statusData.status && typeof statusData.status === 'string') {
+      if (
+        statusData.status &&
+        typeof statusData.status === 'string' &&
+        statusData.status !== this.workerStatus
+      ) {
         const oldWorker = this.workerStatus;
         this.workerStatus = statusData.status as WorkerStatus;
-        // [AP-status-debug] DELETE ME — tracks FlowData-driven worker transitions.
-        console.log('[AP-status-debug] _handleFlowData status element', {
-          id: this.id,
-          oldWorker,
-          newWorker: this.workerStatus,
-          lifecycleStatus: this.status,
-          isComplete,
-        });
         this.emit('state_change', {
           field: 'workerStatus',
           oldValue: oldWorker,
@@ -2108,8 +2149,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     }
 
     if (elementType === 'status' && isComplete) {
-      // [AP-status-debug] DELETE ME — _markComplete does NOT touch this.status.
-      console.log('[AP-status-debug] _handleFlowData firing _markComplete (lifecycle stays at)', this.status, 'id=', this.id);
       this._markComplete();
     }
   }
@@ -2125,25 +2164,14 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * @internal
    */
   protected onEntityUpdate(data: Partial<IAgenticProcess>): void {
-    // [AP-status-debug] DELETE ME — every WS-driven entity update lands here.
-    // Shows which fields the backend sent so we can tell whether the
-    // lifecycle transition (status: stopped) is pushed at all, vs only the
-    // worker transition (worker_status: complete).
-    console.log('[AP-status-debug] onEntityUpdate WS payload', {
-      id: this.id,
-      hasStatus: 'status' in data,
-      hasWorkerStatus: 'worker_status' in data,
-      incomingStatus: data.status,
-      incomingWorkerStatus: data.worker_status,
-      currentStatus: this.status,
-      currentWorkerStatus: this.workerStatus,
-      payloadKeys: Object.keys(data),
-    });
-    if (data.status) {
+    // Skip no-op transitions: castAndDeepAssign() runs this hook for every
+    // WS entity-op AND for every REST-response write-through, so the same
+    // status often arrives many times. Without the equality guard, downstream
+    // `state_change` listeners (ProcessToolbar, useProcessState, useActiveTerminals)
+    // would re-render at the broadcast frequency even when nothing changed.
+    if (data.status && data.status !== this.status) {
       const oldStatus = this.status;
       this.status = data.status as ProcessStatus;
-      // [AP-status-debug] DELETE ME — confirms lifecycle transition applied.
-      console.log('[AP-status-debug] lifecycle transition', { id: this.id, oldStatus, newStatus: this.status });
       this.emit('state_change', {
         field: 'status',
         oldValue: oldStatus,
@@ -2157,11 +2185,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
         this._markError(new Error(`Process ended with lifecycle status: ${this.status}`));
       }
     }
-    if (data.worker_status) {
+    if (data.worker_status && data.worker_status !== this.workerStatus) {
       const oldWorker = this.workerStatus;
       this.workerStatus = data.worker_status as WorkerStatus;
-      // [AP-status-debug] DELETE ME — confirms worker transition applied.
-      console.log('[AP-status-debug] worker transition', { id: this.id, oldWorker, newWorker: this.workerStatus });
       this.emit('state_change', {
         field: 'workerStatus',
         oldValue: oldWorker,

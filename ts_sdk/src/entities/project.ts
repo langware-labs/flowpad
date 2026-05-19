@@ -1,8 +1,8 @@
 import { APIEntity, dataManager, isNonEmptyString, registerEntity } from '../APIEntity';
+import apiClient from '../client';
 import { QueryRequest } from '../FlowSync/query';
 import { ActionInfo, TypeId } from '../models';
 import { DockPointerData } from '../models/DockPointer';
-import config from '../config';
 import { ViewType } from '../utils/ui/view-types';
 import { Agent } from './agent';
 import { Artifact, IArtifact } from './artifact';
@@ -277,11 +277,17 @@ export class Project extends APIEntity<Project> {
   static async resolveByCode(code: string): Promise<ResolveProjectResult | null> {
     const normalized = (code ?? '').toUpperCase().trim();
     if (!normalized) return null;
-    const url = `${config.SERVER_URL}/api/v1/project/resolve/${encodeURIComponent(normalized)}`;
     try {
-      const resp = await fetch(url, { method: 'GET', credentials: 'include' });
-      if (!resp.ok) return null;
-      return (await resp.json()) as ResolveProjectResult;
+      // /project/resolve returns the resource shape directly (no {status,data}
+      // envelope). Wrap the raw body in {data} so apiClient's interceptor
+      // (`.data.data`) yields the parsed payload — same approach as
+      // dataManager.callAction for raw responses.
+      return (await apiClient.get<ResolveProjectResult>(
+        `/project/resolve/${encodeURIComponent(normalized)}`,
+        {
+          transformResponse: (raw: string) => ({ data: JSON.parse(raw) }),
+        },
+      )) as ResolveProjectResult;
     } catch {
       return null;
     }

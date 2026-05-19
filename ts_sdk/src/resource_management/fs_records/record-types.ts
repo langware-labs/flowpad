@@ -77,4 +77,5 @@ export enum RecordType {
   DIRECTORY = 'directory',
   GITHUB_REPO = 'github_repo',
   TODO_FILE = 'todo_file',
+  WHITEBOARD = 'whiteboard',
 }
