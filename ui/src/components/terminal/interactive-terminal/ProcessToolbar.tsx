@@ -12,7 +12,7 @@ import { AgenticProcess, dataManager, Shell } from '@sdk';
 import { hasWorkerStarted, ProcessStatus, WorkerStatus } from '@sdk/process/agentic-types.js';
 import { ClaudeSessionRecord } from '@sdk/resource_management/fs_records/claude/claude-session.js';
 import { CommitMergeButton, OpenInWorktreeButton } from './WorktreeButtons';
-import { AskForAssistanceButton } from './AskForAssistanceButton';
+import { EntityActionsToolbar } from '@src/components/entity-actions/EntityActionsToolbar';
 import { AssetManagerButton } from '@src/components/asset-manager';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
@@ -26,7 +26,7 @@ import {
   DropdownMenuLabel,
 } from '@src/components/ui/dropdown-menu';
 import { BugPlay, ExternalLink, Filter, GitFork, Info, RotateCcw, ScrollText, SlidersHorizontal, SquareTerminal, X } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useToast } from '@src/hooks/use-toast';
 import { ToastAction } from '@src/components/ui/toast';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -156,6 +156,19 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
   const anyCliActive = currentChrome || currentDanger || currentDebug;
   const anyTimeFieldActive = traceFilters.time || traceFilters.index || traceFilters.line || traceFilters.absLine || traceFilters.debugTime || traceFilters.refTime;
   const anyColActive = !colVis.trace || !colVis.time || !colVis.annotations || anyTimeFieldActive;
+
+  const processDisplayName = useMemo(() => {
+    const cd = process.context_data as Record<string, unknown> | undefined;
+    const dn = cd && typeof cd.display_name === 'string' ? cd.display_name.trim() : '';
+    if (dn) return dn;
+    const name = (process as { name?: string | null }).name;
+    if (typeof name === 'string' && name.trim().length > 0) return name.trim();
+    if (process.instruction_content) {
+      const trimmed = process.instruction_content.replace(/<!--.*?-->/g, '').trim();
+      if (trimmed.length > 0) return trimmed.substring(0, 30);
+    }
+    return 'Session';
+  }, [process.context_data, process.name, process.instruction_content]);
 
   const setTrace = (key: keyof TraceFilters) => (val: boolean) =>
     onTraceFiltersChange({ ...traceFilters, [key]: val });
@@ -331,7 +344,20 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
           </TooltipContent>
         </Tooltip>
 
-        {/* Spacer */}
+        {/* Spacer (left) */}
+        <div className="flex-1" />
+
+        {/* Primary CTAs — Share + Favorite, centered as the strongest CTA. */}
+        {!embedded && (
+          <EntityActionsToolbar
+            typeId={process.typeId}
+            favoriteTitle={processDisplayName}
+            favoriteIcon="agentic_process"
+            variant="prominent"
+          />
+        )}
+
+        {/* Spacer (right) */}
         <div className="flex-1" />
 
         {/* Reusable asset manager — same component the chat side panel uses. */}
@@ -341,9 +367,6 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
         {!embedded && (
           <CommitMergeButton process={process} onInjectPrompt={handleInjectPrompt} />
         )}
-
-        {/* Ask for Assistance — hidden in embedded mode */}
-        {!embedded && <AskForAssistanceButton process={process} />}
 
         {/* Open terminal in current folder — hidden in embedded mode */}
         {!embedded && (

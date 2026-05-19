@@ -116,10 +116,12 @@ async def test_upload_body_happy_path(bootstrapped_client, tmp_path: Path) -> No
     assert body["data"]["body_status"] == BodyStatus.READY.value
     assert body["data"]["attachment_filename"] == BODY_FILENAME
 
-    # One PUT (UPLOADING) + one POST to fs/upload + one POST to the
-    # set_body_status action (the READY flip) — set_body_status fans the
-    # UPDATE to receivers, which a plain PUT would not.
-    assert mock_put.await_count == 1
+    # Two POSTs — fs/upload + the set_body_status action (READY flip).
+    # No PUT: the hub stamps body_status=UPLOADING server-side (via
+    # _attachments_require_body when the message header is created), so
+    # the client never needs to PUT it. See flow_message.upload_body
+    # docstring for the rationale.
+    assert mock_put.await_count == 0
     assert mock_post.await_count == 2
     upload_files = mock_post.await_args_list[0].kwargs["files"]
     filename, _content, ctype = upload_files["uploaded_file"]

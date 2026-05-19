@@ -247,9 +247,18 @@ class HubWsBridge:
                 pass
             conversation_id = payload.get("conversation_id") or parent_conv_id
             if not conversation_id:
-                # The hub may carry the conversation id under context_entities;
-                # fall back when conversation_id isn't directly populated.
-                ctx = payload.get("context") or payload.get("context_entities") or []
+                # The hub may carry the conversation id under the wire-bound
+                # context field; fall back when conversation_id isn't directly
+                # populated. Tolerate three names during transition:
+                #   * ``shared_context_entities`` (new local name)
+                #   * ``context_entities`` (legacy unified field on the hub)
+                #   * ``context`` (legacy hub-only key)
+                ctx = (
+                    payload.get("shared_context_entities")
+                    or payload.get("context_entities")
+                    or payload.get("context")
+                    or []
+                )
                 for entry in ctx:
                     if isinstance(entry, dict) and entry.get("type") == "conversation":
                         conversation_id = entry.get("id")

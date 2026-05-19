@@ -128,9 +128,9 @@ export async function buildReceiverContextPrompt(
   };
   for (const fm of messages) {
     if (!fm) continue;
-    for (const t of fm.contextEntities ?? []) addShared(t);
+    for (const t of fm.sharedContextEntities ?? []) addShared(t);
   }
-  for (const t of task.contextEntities ?? []) addShared(t);
+  for (const t of task.sharedContextEntities ?? []) addShared(t);
   // Drop anything that's already in private to avoid duplicates across the
   // two sections — private wins for the local user's view.
   const privateKeys = new Set(privateTypeIds.map((t) => t.toString()));

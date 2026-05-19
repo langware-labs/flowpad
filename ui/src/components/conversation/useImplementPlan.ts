@@ -98,7 +98,7 @@ export function useImplementPlan({
             context_data: { project_id: task.project_id ?? undefined },
             workdir,
             visible: true,
-            context_entities: [fmTypeIdString],
+            shared_context_entities: [fmTypeIdString],
           }).save();
           setPendingPlanPointers((prev) => {
             const next = new Map(prev);
@@ -139,8 +139,8 @@ export function useImplementPlan({
   const planSessionByMessageId = useMemo(() => {
     const map = new Map<string, AgenticProcess>();
     for (const p of planSessionCandidates) {
-      if (!p.visible || !p.contextEntities) continue;
-      for (const tid of p.contextEntities) {
+      if (!p.visible) continue;
+      for (const tid of p.sharedContextEntities ?? []) {
         if (tid.type !== FlowMessage.type) continue;
         const existing = map.get(tid.id);
         if (!existing || toMs(p.created_date) > toMs(existing.created_date)) {

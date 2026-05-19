@@ -36,10 +36,6 @@ class CollaborationRoom(Entity):
         default_factory=list,
         description="Participants: [{member_id, name, joined_at, last_seen_at}]",
     )
-    # NOTE: agentic_process_ids moved into the unified ``context_entities``
-    # list. Use ``room.context_of_type('agentic_process')`` to read them and
-    # ``room.add_context_entity(TypeId(type='agentic_process', id=...))`` to
-    # append. The ``add_process`` action below routes through that.
     status: str = APIField(default=CollaborationRoomStatus.ACTIVE)
     started_at: str | None = APIField(default=None)
     updated_at: str | None = APIField(default=None)
@@ -106,19 +102,20 @@ class CollaborationRoom(Entity):
 
     async def add_process(self, process_id: str) -> bool:
         process_typeid = TypeId(type="agentic_process", id=process_id)
-        if any(t == process_typeid for t in self.context_entities):
+        added = self.add_shared_context_entities(process_typeid)
+        if not added:
             return False
-        self.add_context_entity(process_typeid)
         self._touch()
         await self.save()
         return True
 
     @property
     def agentic_process_ids(self) -> list[str]:
-        """Convenience: list of agentic_process ids in this room's context.
-        Read-only — append via ``add_process`` or ``add_context_entity``.
+        """Convenience: list of agentic_process ids in this room's shared
+        context. Read-only — append via ``add_process`` /
+        ``add_shared_context_entities``.
         """
-        return [t.id for t in self.context_of_type("agentic_process")]
+        return [t.id for t in self.context_of_type("agentic_process", bucket="shared")]
 
     # ── HTTP actions ──────────────────────────────────────────────────────────
 
@@ -171,7 +168,7 @@ class CollaborationRoom(Entity):
         return ApiSuccessResponse(
             data={
                 "ok": added,
-                "context_entities": [str(t) for t in self.context_entities],
+                "shared_context_entities": [str(t) for t in self.shared_context_entities],
             }
         )
 

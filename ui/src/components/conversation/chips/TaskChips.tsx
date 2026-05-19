@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { FileText } from 'lucide-react';
 import { AgenticProcess, Conversation, Project, Task, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
@@ -5,10 +6,12 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ContextEntityChip, EntityChip } from '../EntityChip';
 import { useChipsExclude } from './ChipsExcludeContext';
-import { ChipKey } from './keys';
+import { ChipKey, mergeContextBuckets } from './keys';
 
 interface TaskChipsProps {
-  /** Task entity instance — we drive chip rendering from ``task.contextEntities``. */
+  /** Task entity instance — we drive chip rendering from both
+   *  ``task.sharedContextEntities`` and ``task.privateContextEntities``
+   *  (merged via ``mergeContextBuckets``). */
   task: Task;
   conversationId: string;
   /** Override for the project chip when no project is mapped — opens the picker. */
@@ -18,11 +21,17 @@ interface TaskChipsProps {
 }
 
 /**
- * Chip row for the parent Task. Driven from the unified
- * ``task.contextEntities`` getter (direct-field projection + private
- * ``_context_entities``). Iterating that list is the single source of truth
- * — adding a new entry via ``task.addContextEntity(typeId)`` automatically
- * surfaces a chip on next render.
+ * Chip row for the parent Task. Driven from both context buckets:
+ *   * ``sharedContextEntities`` — wire-published links (specs, conversations,
+ *     spawned children).
+ *   * ``privateContextEntities`` — direct-field projections (project_id,
+ *     assignee, my_process_id, shared_process_id) and any locally-added
+ *     ``addContextEntities`` entries.
+ *
+ * Iterating both lists is the single source of truth — adding a new shared
+ * entry via the backend ``share-context`` action or a private entry via
+ * ``task.addContextEntities(typeId)`` automatically surfaces a chip on
+ * next render.
  *
  * Special dispatch:
  * - ``agentic_process`` matching ``task.my_process_id`` → suppressed here; the
@@ -55,14 +64,17 @@ export function TaskChips({
     localProjectId ? new TypeId(Project.type, localProjectId) : null,
   );
 
-  const conversationContainer = { type: Conversation.type, id: conversationId };
+  const conversationContainer = useMemo(
+    () => ({ type: Conversation.type, id: conversationId }),
+    [conversationId],
+  );
 
-  // Self-header: the task itself, shown once at the start of the row.
   const showTaskChip = !!task.id && !exclude.has(ChipKey.task(task.id));
 
-  // Drive the rest of the row from contextEntities. Order matches the order
-  // the entity exposes (direct projections first, then the private array).
-  const chips = task.contextEntities;
+  const chips = useMemo(
+    () => mergeContextBuckets(task),
+    [task.sharedContextEntities, task.privateContextEntities],
+  );
 
   return (
     <>
@@ -120,7 +132,8 @@ export function TaskChips({
         }
 
         // Generic: spec, project (loaded), assignee/user, plan, anything new
-        // added via task.addContextEntity later — all flow through here.
+        // added via task.addContextEntities (private) or task.shareContextEntities
+        // (shared, round-trips through the backend) later — all flow through here.
         // Tooltip falls back to EntityChip's default "Open <Type>: <name>".
         return (
           <ContextEntityChip

@@ -29,14 +29,6 @@ export interface ITask extends IEntity {
   my_process_id?: string | null;
   /** Forked AgenticProcess that runs *approved* incoming prompts. Initiator-only. */
   shared_process_id?: string | null;
-  // NOTE: `remote_project_id` / `remote_project_name` moved to the Conversation
-  // entity. Task-bound conversations carry the same provenance there; task-less
-  // conversations need it too. Read from the task's child conversation when
-  // needed (`task.firstContextOfType('conversation')` → `conv.remote_project_id`).
-  // NOTE: spec_id, conversation_id, links — moved into context_entities (the
-  // unified TypeId list on IEntity). Use task.firstContextOfType('spec') /
-  // task.firstContextOfType('conversation') and task.addContextEntity(...) /
-  // task.removeContextEntity(...) instead.
 
   // Promoted from former `metadata` blob — first-class fields.
   active_form?: string | null;

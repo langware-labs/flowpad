@@ -89,8 +89,8 @@ class Conversation(Entity):
     # with the same id, and future replies should route through the bridge.
     # NOTE: Entity base class already defines `remote`, this is a documentation
     # marker that the field is meaningful for Conversations specifically.
-    # NOTE: task_id moved into ``context_entities``. Use
-    # ``conv.first_context_of_type('task')`` to read it back.
+    # NOTE: task_id moved into ``shared_context_entities``. Use
+    # ``conv.first_context_of_type('task', bucket='shared')`` to read it back.
     _api_visible: ClassVar[bool] = True
 
     async def share(self, recipients: Optional[List[str]] = None) -> "Conversation":
@@ -150,7 +150,7 @@ class Conversation(Entity):
         sender_id: Optional[str] = None,
         flow_message_id: Optional[str] = None,
         attachments: Optional[list] = None,
-        context_entities: Optional[list] = None,
+        shared_context_entities: Optional[list] = None,
     ) -> dict:
         """Append a FlowMessage to this conversation on the hub.
 
@@ -164,8 +164,9 @@ class Conversation(Entity):
         ``body_status=UPLOADING`` on the FM at creation time; the sender then
         calls ``FlowMessage.upload_body()`` to pack and upload.
 
-        ``context_entities``: optional list of TypeId-shaped dicts to bind on
-        the FM. Mirrors the Entity.context_entities field surface.
+        ``shared_context_entities``: optional list of TypeId-shaped dicts to
+        bind on the FM's wire-bound bucket. Mirrors the
+        ``Entity.shared_context_entities`` field surface.
 
         ``flow_message_id``: when given, the hub creates the FM under this id
         instead of minting its own. The sender uses this so the local FM, the
@@ -193,8 +194,8 @@ class Conversation(Entity):
                 a if isinstance(a, dict) else a.model_dump(mode="python")
                 for a in attachments
             ]
-        if context_entities:
-            body["context_entities"] = context_entities
+        if shared_context_entities:
+            body["shared_context_entities"] = shared_context_entities
         body["conversation_id"] = self.id
         path = build_hub_url(self, action="add_message")
         async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:

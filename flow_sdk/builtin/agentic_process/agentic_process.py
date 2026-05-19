@@ -449,17 +449,6 @@ class AgenticProcess(Entity):
     instruction_content: str | None = APIField(default=None)
     asset_ref: str | None = APIField(default=None)
     context_data: dict[str, Any] = APIField(default_factory=dict)
-    context_entities: list[TypeId] = APIField(
-        default_factory=list,
-        description=(
-            "TypeIds of entities this process is contextually about — task, "
-            "conversation, spec, project, etc. Populated when the process is "
-            "invoked from a conversation (FlowMessage TYPE_ID attachments) and "
-            "copied across on fork. Project_id, when resolved later, is "
-            "appended in place. Surfaced by the UI to show what the process "
-            "is working on."
-        ),
-    )
     cli_config: dict[str, Any] = APIField(default_factory=dict)
     workdir: str | None = APIField(default=None)
     favorite_index: int | None = APIField(default=None)
@@ -983,32 +972,13 @@ class AgenticProcess(Entity):
             return exit_result
         return await self.start_pty()
 
-    def add_context_entities(self, *type_ids: "TypeId | None") -> bool:
-        """Append TypeIds to ``context_entities``, deduped by (type, id). In-place.
-
-        Returns True iff at least one new ref was added — the caller can use
-        this to decide whether a save is warranted.
-        """
-        refs = list(self.context_entities or [])
-        seen = {(r.type, r.id) for r in refs}
-        added = False
-        for tid in type_ids:
-            if tid is None:
-                continue
-            key = (tid.type, tid.id)
-            if key in seen:
-                continue
-            refs.append(tid)
-            seen.add(key)
-            added = True
-        if added:
-            self.context_entities = refs
-        return added
-
     def _bind_project_id(self, project_id: str) -> None:
-        """Set ``project_id`` and append the matching Project TypeId to ``context_entities``."""
+        """Set ``project_id`` and append the matching Project TypeId to the
+        process's shared context."""
         self.project_id = project_id
-        self.add_context_entities(TypeId(type=BuiltinEntityType.PROJECT.value, id=project_id))
+        self.add_shared_context_entities(
+            TypeId(type=BuiltinEntityType.PROJECT.value, id=project_id)
+        )
 
     @action.post(action_name="recover-project")
     async def recover_project_action(self) -> ApiSuccessResponse | ApiFailResponse:
@@ -1051,7 +1021,7 @@ class AgenticProcess(Entity):
                 session_id=self.session_id,
                 workdir=self.workdir,
                 visible=visible,
-                context_entities=list(self.context_entities or []),
+                shared_context_entities=list(self.shared_context_entities or []),
             )
             await new_proc.save(owner)
             return ApiSuccessResponse(data={"id": new_proc.id, "type": new_proc.type})
@@ -2779,22 +2749,11 @@ class AgenticProcess(Entity):
         await self.save()
         return True
 
-    @action.get(action_name="os-status")
-    async def os_status(self) -> ApiSuccessResponse:
-        """OS-level status snapshot for this AgenticProcess.
-
-        Single source of truth for "is this thing alive?". Combines:
-          - Persisted entity status (process + linked shell records).
-          - In-memory PTY-session liveness on the bound compute node.
-          - Real PID liveness check on the worker (psutil + cmdline match).
-
-        ``ready`` is the headline: True iff the PTY session is alive AND the
-        worker PID matches the recorded ``--session-id``/``--resume`` value.
-        It's the answer the frontend ``AgenticProcess.isAlive()`` returns.
-
-        Read-only with respect to lifecycle. ``has_attachable_pty`` /
-        ``worker_alive`` may opportunistically rebind a stale compute-node
-        link (self-healing), but never spawns or kills anything.
+    async def _collect_os_status_payload(self) -> dict:
+        """Build the os-status payload for this process. Pure data-collection;
+        no lifecycle side effects. Shared by the per-process ``os-status``
+        action and the compute_node-level ``os-status-batch`` endpoint —
+        both surface the exact same wire shape per-process.
         """
         shell = await self.shell() if self.shell_id else None
 
@@ -2851,7 +2810,7 @@ class AgenticProcess(Entity):
         else:
             reason = None
 
-        return ApiSuccessResponse(data={
+        return {
             "process_id": self.id,
             "process_status": self.status,
             "shell_id": self.shell_id,
@@ -2866,7 +2825,30 @@ class AgenticProcess(Entity):
             "ready": ready,
             "reason": reason,
             "checked_at": datetime.now(timezone.utc).isoformat(),
-        })
+        }
+
+    @action.get(action_name="os-status")
+    async def os_status(self) -> ApiSuccessResponse:
+        """OS-level status snapshot for this AgenticProcess.
+
+        Single source of truth for "is this thing alive?". Combines:
+          - Persisted entity status (process + linked shell records).
+          - In-memory PTY-session liveness on the bound compute node.
+          - Real PID liveness check on the worker (psutil + cmdline match).
+
+        ``ready`` is the headline: True iff the PTY session is alive AND the
+        worker PID matches the recorded ``--session-id``/``--resume`` value.
+        It's the answer the frontend ``AgenticProcess.isAlive()`` returns.
+
+        Read-only with respect to lifecycle. ``has_attachable_pty`` /
+        ``worker_alive`` may opportunistically rebind a stale compute-node
+        link (self-healing), but never spawns or kills anything.
+
+        For multi-process callers (the SDK's auto-recovery sweep) prefer the
+        compute_node-level ``os-status-batch`` action — one request, same
+        per-process payload, gathered concurrently server-side.
+        """
+        return ApiSuccessResponse(data=await self._collect_os_status_payload())
 
     @action.post(action_name="close")
     async def _http_close(self) -> ApiSuccessResponse | ApiFailResponse:

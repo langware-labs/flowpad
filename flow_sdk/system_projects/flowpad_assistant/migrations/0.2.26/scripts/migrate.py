@@ -144,15 +144,33 @@ def _copy_file(src: Path, dst: Path, report: InstanceReport, *, dry_run: bool) -
 
 
 def _copy_dir(src: Path, dst: Path, report: InstanceReport, *, dry_run: bool) -> None:
+    """Copy a directory tree, merging into an empty pre-existing dst.
+
+    Subtle but important: at the moment the migration runs, ``flow_sdk``
+    has already been imported by ``flow start service``.
+    ``ServiceConfig.apply_desktop_config`` eagerly mkdir's
+    ``settings.records_root`` (see ``flow_sdk/config.py:742``), so the
+    dst path (e.g. ``instances/dev/records``) typically already exists as
+    an **empty** directory before this function is called. A strict
+    ``if dst.exists(): skip`` would silently leave records at the legacy
+    location — exactly the bug that broke the Docker e2e test on first run.
+
+    Behavior:
+      * src missing → reported and skipped
+      * dst has content → genuine idempotency, skip
+      * dst missing or empty → copytree with ``dirs_exist_ok=True`` (3.8+)
+        merges into the empty pre-existing dir cleanly
+    """
     if not src.exists():
         report.missing_sources.append(src)
         return
-    if dst.exists():
+    dst_has_content = dst.exists() and any(dst.iterdir())
+    if dst_has_content:
         report.skipped_dst_exists.append(dst)
         return
     if not dry_run:
         dst.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copytree(src, dst)
+        shutil.copytree(src, dst, dirs_exist_ok=True)
     report.dirs_copied.append((src, dst))
 
 

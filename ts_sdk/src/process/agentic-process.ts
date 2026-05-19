@@ -36,28 +36,62 @@ import type {
 // ---------------------------------------------------------------------------
 // Auto-recovery dispatcher — mirrors Shell's static-listener pattern at
 // ts_sdk/src/entities/shell.ts:81-95. A single ConnectionManager listener and
-// a periodic poll fan out to every registered AgenticProcess; each instance's
-// ``reconnect()`` then short-circuits cheaply when nothing is wrong, so the
-// fan-out cost is one ``GET /os-status`` per registered process per tick.
+// a periodic poll drive a *single batched* os-status round-trip for every
+// registered AgenticProcess; results are fanned back out to each instance's
+// ``reconnectFromOsStatus(...)`` to make the per-process recovery decision.
+//
+// This is the consolidated form of what used to be one ``GET /os-status``
+// per registered process per tick — see ``compute_node/os-status-batch``.
 // ---------------------------------------------------------------------------
 const _agenticProcessRegistry = new Set<AgenticProcess>();
 let _agenticListenersRegistered = false;
 let _pollTimer: ReturnType<typeof setInterval> | null = null;
 const _POLL_INTERVAL_MS = 5000;
 
+interface OsStatusBatchResponse {
+  statuses: Record<string, AgenticProcessOSStatus>;
+  missing: string[];
+}
+
+/** One sweep: batch-fetch os-status for every registered AP and dispatch
+ *  recovery decisions. Falls back to per-AP probes only when there is no
+ *  compute_node context yet (early bootstrap), which is the same shape as
+ *  the legacy fan-out so behavior degrades gracefully. */
+async function _dispatchRecoverySweep(): Promise<void> {
+  if (_agenticProcessRegistry.size === 0) return;
+  const procs = Array.from(_agenticProcessRegistry);
+  const computeNodeId = dataContext.computeNode?.id;
+  if (!computeNodeId) {
+    for (const p of procs) void p.reconnect();
+    return;
+  }
+  const action = new ActionInfo('os-status-batch', 'compute_node', computeNodeId, 'POST');
+  action.bodyParameters = { process_ids: procs.map((p) => p.id) };
+  let result: OsStatusBatchResponse | null = null;
+  try {
+    result = await dataManager.callAction<{ process_ids: string[] }, OsStatusBatchResponse>(action);
+  } catch {
+    // Batch failed (compute_node unreachable, transient HTTP error). Skip
+    // this tick — the next one will retry. Per-AP ``getOsStatus()`` remains
+    // available for on-demand callers.
+    return;
+  }
+  const statuses = result?.statuses ?? {};
+  for (const p of procs) {
+    const s = statuses[p.id];
+    if (s) void p.reconnectFromOsStatus(s);
+  }
+}
+
 function _ensureAgenticStaticListeners(): void {
   if (_agenticListenersRegistered) return;
   _agenticListenersRegistered = true;
   void import('../websocket').then(({ ConnectionManager }) => {
     const cm = ConnectionManager.getInstance();
-    cm.on('on_reconnected', () => {
-      for (const proc of _agenticProcessRegistry) void proc.reconnect();
-    });
+    cm.on('on_reconnected', () => { void _dispatchRecoverySweep(); });
   });
   if (_pollTimer === null) {
-    _pollTimer = setInterval(() => {
-      for (const proc of _agenticProcessRegistry) void proc.reconnect();
-    }, _POLL_INTERVAL_MS);
+    _pollTimer = setInterval(() => { void _dispatchRecoverySweep(); }, _POLL_INTERVAL_MS);
   }
 }
 
@@ -172,7 +206,9 @@ export interface IAgenticProcess extends IEntity {
   asset_ref?: string;
   workdir?: string | null;
   context_data?: Record<string, unknown>;
-  context_entities?: TypeId[];
+  // ``shared_context_entities`` is inherited from IEntity (wire shape).
+  // ``privateContextEntities`` is exposed by the APIEntity getter — no
+  // field is declared here for it (local-only, never on the wire).
   favorite_index?: number | null;
   readonly status?: ProcessStatus;
   readonly worker_status?: WorkerStatus;
@@ -650,8 +686,11 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /** Persisted context data for session restoration */
   context_data?: Record<string, unknown>;
 
-  /** TypeIds of entities this process is contextually about (task / conversation / spec / project / …). */
-  context_entities?: TypeId[];
+  // TypeIds of entities this process is contextually about (task /
+  // conversation / spec / project / …) now live on the base APIEntity as
+  // ``sharedContextEntities`` (wire-bound) and ``privateContextEntities``
+  // (local). The constructor populates them from the wire field
+  // ``shared_context_entities``.
 
   /** Optional pinning index for tab ordering */
   favorite_index?: number | null;
@@ -1861,32 +1900,57 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     return status.ready;
   }
 
+  /** True iff this process is a valid target for an auto-recovery sweep.
+   *  Centralizes the skip predicates so the standalone ``reconnect()`` and
+   *  the batched ``reconnectFromOsStatus(...)`` agree on which states are
+   *  recovery-eligible.
+   *
+   *   - ``_userInitiatedStop``: user explicitly stopped this process.
+   *   - ``STARTING`` / ``STOPPING``: mid-transition — let the in-flight
+   *     call finish first.
+   *   - ``FAILED``: relaunching would loop because the worker can't start
+   *     with the current ``cli_options``.
+   */
+  private _isRecoveryEligible(): boolean {
+    if (this._userInitiatedStop) return false;
+    if (this.status === ProcessStatus.STARTING || this.status === ProcessStatus.STOPPING) return false;
+    if (this.status === ProcessStatus.FAILED) return false;
+    return true;
+  }
+
   /**
-   * Auto-recovery entry point. Driven by the static reconnect dispatcher on
-   * ConnectionManager ``on_reconnected`` events and a 5 s poll. Cheap when
-   * the process is healthy: one GET ``os-status`` and an early return.
+   * Decide and run recovery against a pre-fetched os-status payload. This is
+   * the per-AP half of the batched auto-recovery sweep — the dispatcher
+   * makes one ``compute_node/os-status-batch`` call and fans the results
+   * back out via this method, so no extra GETs are issued.
    *
-   * Skipped when:
-   *   - user explicitly stopped this process (``_userInitiatedStop``);
-   *   - status is mid-transition (``STARTING`` / ``STOPPING``) — let the
-   *     in-flight call finish first;
-   *   - status is ``FAILED`` — relaunching would loop because the worker
-   *     can't start with the current ``cli_options``.
+   * Concurrent triggers (poll tick arriving while ``on_reconnected`` is in
+   * flight) converge: the backend's per-process ``_OPEN_LOCKS`` mutex
+   * serializes ``open``, and a redundant ``start()`` is a cheap no-op once
+   * the first recovery has won.
    *
-   * Concurrent triggers (e.g. ``on_reconnected`` arriving while a poll is
-   * already in flight) converge: the backend's per-process ``_OPEN_LOCKS``
-   * mutex serializes ``open``, and the second ``isAlive()`` call sees the
-   * first recovery's result and short-circuits.
+   * @returns true iff a recovery ``start()`` was issued.
+   */
+  async reconnectFromOsStatus(status: AgenticProcessOSStatus): Promise<boolean> {
+    if (!this._isRecoveryEligible()) return false;
+    if (status.ready) return false;
+    await this.start({ visible: this.visible });
+    return true;
+  }
+
+  /**
+   * Standalone auto-recovery entry point. Issues its own ``os-status`` GET
+   * and applies the decision. Prefer the batched dispatcher
+   * (``_dispatchRecoverySweep``) for multi-AP sweeps; this method is kept
+   * for the early-bootstrap fallback (no compute_node context yet) and
+   * external callers that want a one-shot reconnect for a single process.
    *
    * @returns true iff a recovery ``start()`` was issued.
    */
   async reconnect(): Promise<boolean> {
-    if (this._userInitiatedStop) return false;
-    if (this.status === ProcessStatus.STARTING || this.status === ProcessStatus.STOPPING) return false;
-    if (this.status === ProcessStatus.FAILED) return false;
-    if (await this.isAlive()) return false;
-    await this.start({ visible: this.visible });
-    return true;
+    if (!this._isRecoveryEligible()) return false;
+    const status = await this.getOsStatus();
+    return this.reconnectFromOsStatus(status);
   }
 
   /**

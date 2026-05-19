@@ -145,8 +145,8 @@ def upgrade(
     import sys
 
     if info:
-        from flow_sdk.flowpad_types.enums import get_machine_id
         from flow_sdk.server.launch import get_status
+        from flow_sdk.utils.machine_id import get_machine_id
 
         status = get_status()
         status["version"] = __version__
