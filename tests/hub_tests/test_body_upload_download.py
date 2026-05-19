@@ -257,3 +257,91 @@ async def test_text_only_message_body_status_is_na(
     assert data.get("body_status") == BodyStatus.NA.value, (
         f"text-only FM got body_status={data.get('body_status')!r}, expected NA"
     )
+
+
+def _assert_monotonic(events: list[tuple[int, int]], label: str) -> None:
+    """Every reading's bytes_done is >= the previous one, and the last reading
+    reaches bytes_total (the transfer completed)."""
+    assert events, f"{label}: no progress events fired"
+    done_values = [d for d, _ in events]
+    assert done_values == sorted(done_values), (
+        f"{label}: bytes_done not monotonic non-decreasing: {done_values}"
+    )
+    final_done, final_total = events[-1]
+    assert final_total > 0 and final_done == final_total, (
+        f"{label}: final reading {final_done}/{final_total} did not reach total"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_upload_download_body_progress_callbacks(
+    tmp_path: Path, hub_base_url, isolated_hub_keyring,
+) -> None:
+    """upload_body / download_body fire on_progress with monotonically
+    non-decreasing bytes_done that reaches bytes_total — the streamed
+    multipart upload and streamed download both report real progress."""
+    oss_env = _read_env_local(REPO_OSS)
+    app_env = _read_env_local(REPO_APP)
+    if not (oss_env.get("FLOWPAD_CLOUD_USER_EMAIL") and app_env.get("FLOWPAD_CLOUD_USER_EMAIL")):
+        pytest.skip("missing FLOWPAD_CLOUD_USER_{EMAIL,PASSWORD} in oss + app .env.local")
+
+    alice_token, alice_user = await _login(
+        hub_base_url, oss_env["FLOWPAD_CLOUD_USER_EMAIL"], oss_env["FLOWPAD_CLOUD_USER_PASSWORD"],
+    )
+    bob_token, bob_user = await _login(
+        hub_base_url, app_env["FLOWPAD_CLOUD_USER_EMAIL"], app_env["FLOWPAD_CLOUD_USER_PASSWORD"],
+    )
+    headers_a = {"Authorization": f"Bearer {alice_token}", "Content-Type": "application/json"}
+    headers_b = {"Authorization": f"Bearer {bob_token}", "Content-Type": "application/json"}
+    conv_id = await _setup_shared_conv(
+        hub_base_url, headers_a, headers_b, app_env["FLOWPAD_CLOUD_USER_EMAIL"],
+    )
+
+    src_root = tmp_path / "alice_src"
+    skill_dir, skill_name = _write_skill(src_root)
+    idx = FSIndexer(roots=[FSRef(src_root, record_type=RecordType.USER_HOME_FOLDER, scope="user")])
+    idx.add_function(RecordType.USER_HOME_FOLDER, skill_fn)
+    await idx.index(IndexerOptions(verbose=False, force=True))
+    skill_id = SkillRecord.load_record(skill_dir).id
+
+    _set_creds(alice_token, alice_user)
+    fm = FlowMessage(
+        text="progress smoke",
+        attachment=[Attachment(attachment_type=AttachmentType.TYPE_ID, data=f"skill-{skill_id}")],
+    )
+    hub_data = await hub_post(
+        BuiltinEntityType.CONVERSATION,
+        fm.model_dump(mode="python", context={"skip_api_serializer": True}),
+        entity_id=conv_id,
+        action="add_message",
+    )
+    assert hub_data and hub_data.get("id")
+    fm.id = hub_data["id"]
+
+    # ── upload: collect every (bytes_done, bytes_total) the callback gets.
+    upload_events: list[tuple[int, int]] = []
+
+    async def _on_upload(done: int, total: int) -> None:
+        upload_events.append((done, total))
+
+    await fm.upload_body(on_progress=_on_upload)
+    assert fm.body_status == BodyStatus.READY
+    _assert_monotonic(upload_events, "upload")
+
+    # ── download: bob pulls the bundle; the streamed GET reports progress.
+    _set_creds(bob_token, bob_user)
+    bob_dest = tmp_path / "bob_dest"
+    bob_dest.mkdir()
+    bob_fm = FlowMessage(
+        text="progress smoke", body_status=BodyStatus.READY, attachment_filename=BODY_FILENAME,
+    )
+    bob_fm.id = fm.id
+
+    download_events: list[tuple[int, int]] = []
+
+    async def _on_download(done: int, total: int) -> None:
+        download_events.append((done, total))
+
+    await bob_fm.download_body(asset_dest_root=bob_dest, on_progress=_on_download)
+    _assert_monotonic(download_events, "download")

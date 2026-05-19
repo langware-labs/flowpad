@@ -156,26 +156,10 @@ class RequestTransactionMiddleware:
             early_response = None
 
         try:
-            if early_response is not None:
-                await early_response(scope, receive, send)
-            else:
-                await self.app(scope, receive, send)
-        except Exception as ex:
-            await execution_context.rollback_transaction()
-            raise ex
-        else:
-            # Success path: commit the per-request transaction so writes
-            # durably persist. cleanup() then closes the session.
-            await execution_context.commit_transaction()
+            async with execution_context.transaction_scope():
+                if early_response is not None:
+                    await early_response(scope, receive, send)
+                else:
+                    await self.app(scope, receive, send)
         finally:
-            # Cleanup (close session) — runs on both success and exception
-            # paths. Use the LOCAL `execution_context` we built at the top
-            # of __call__ so close() is guaranteed to run even if some
-            # inner code stomped the contextvar (which the previous
-            # `get_execution_context()` re-lookup defended against by
-            # accident — it returned None and skipped close, leaking the
-            # request session and its aiosqlite connection).
-            try:
-                await execution_context.cleanup()
-            finally:
-                set_execution_context(None)
+            set_execution_context(None)

@@ -28,7 +28,7 @@ import {
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { MessageSquarePlus, Pencil } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 interface NewConversationDialogProps {
   open: boolean;
@@ -54,6 +54,17 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Synchronous re-entry lock. ``busy`` is React state and updates only on
+  // the next render, so rapid double-clicks can both clear the ``canCreate``
+  // guard before it flips — this ref blocks the second call immediately.
+  const submittingRef = useRef(false);
+  // Holds the in-flight Conversation across retries. ``new Conversation()``
+  // mints a fresh uuid each call, so retrying a failed create with a new
+  // object POSTs a brand-new (empty) hub conversation every time, orphaning
+  // the previous ones. Reusing the same instance keeps the id stable so the
+  // hub create is an upsert, not a duplicate. Reset per dialog session.
+  const draftConvRef = useRef<Conversation | null>(null);
+
   // Default the project picker to the current project on open.
   useEffect(() => {
     if (!open) return;
@@ -65,6 +76,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
     setError(null);
     setEditingName(false);
     setProjectId(ctx.project?.id ?? projects[0]?.id ?? '');
+    draftConvRef.current = null;
   }, [open, ctx.project?.id, projects]);
 
   useEffect(() => {
@@ -110,10 +122,16 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
   const placeholderTitle = autofillTitle;
 
   // Cross-user bundle conversations don't require a Project; local-only ones do.
-  const canCreate = !busy && (hasRemoteParticipant || !!projectId) && participants.length > 0;
+  // The initial message is required — a conversation always starts with a message.
+  const canCreate =
+    !busy
+    && (hasRemoteParticipant || !!projectId)
+    && participants.length > 0
+    && !!initialMessage.trim();
 
   const handleCreate = async () => {
-    if (!canCreate) return;
+    if (!canCreate || submittingRef.current) return;
+    submittingRef.current = true;
     setBusy(true);
     setError(null);
     try {
@@ -145,15 +163,20 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
         if (recipientEmails.length === 0) {
           throw new Error('At least one recipient email is required');
         }
-        const conv = new Conversation({ title: effectiveTitle, participants });
+        // Reuse the Conversation across retries so the id stays stable — a
+        // fresh id would POST another empty hub conversation and orphan the
+        // one a prior failed attempt already created.
+        const conv = draftConvRef.current ?? new Conversation({ title: effectiveTitle, participants });
+        conv.title = effectiveTitle;
+        conv.participants = participants;
+        draftConvRef.current = conv;
         await conv.save();
         await conv.share(recipientEmails);
         if (!hasFiles && !hasAssetRefs && message) {
-          // Initial message goes through the standard ``add_message`` path so
-          // the hub fanouts the FlowMessage to invited (post-accept) participants.
-          // When there are files or asset refs we route via ``sendReply`` below
-          // (multipart path) instead — addMessage is text-only today.
-          await conv.addMessage(message);
+          // Text-only initial message. Goes through the single send path
+          // (conversation/<id>/add_message) — same endpoint the file branch
+          // below uses, so first message and replies share one code path.
+          await sendReply({ conversationId: conv.id }, message);
         }
         conversationId = conv.id;
       } else {
@@ -174,6 +197,9 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
         );
       }
 
+      // Fully created — drop the draft so a subsequent create in the same
+      // dialog session starts a fresh conversation.
+      draftConvRef.current = null;
       if (conversationId) {
         navigation.openDock(DockPointer.forConversation(conversationId));
       }
@@ -185,6 +211,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
       const msg = fromAxios || (err instanceof Error ? err.message : '') || 'Failed to create conversation';
       setError(msg);
     } finally {
+      submittingRef.current = false;
       setBusy(false);
     }
   };
@@ -208,7 +235,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
                   className="border-b border-input bg-transparent text-xs text-foreground focus:outline-none"
                   value={senderName}
                   onChange={(e) => setSenderName(e.target.value)}
-                  onBlur={async () => {
+                  onBlur={() => {
                     setEditingName(false);
                   }}
                   onKeyDown={(e) => {
@@ -287,7 +314,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
             />
           </div>
 
-          {/* Initial message */}
+          {/* Initial message — required: a conversation always starts with one. */}
           <div className="flex flex-col gap-1.5">
             <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
               Initial message
@@ -296,7 +323,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
               className="min-h-[80px] rounded-md border border-input bg-transparent px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               value={initialMessage}
               onChange={(e) => setInitialMessage(e.target.value)}
-              placeholder={hasRemoteParticipant ? 'Say hi…' : 'Optional'}
+              placeholder={hasRemoteParticipant ? 'Say hi…' : 'Type your first message…'}
               data-testid="initial-message-input"
             />
           </div>

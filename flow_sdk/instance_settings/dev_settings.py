@@ -53,7 +53,7 @@ class DevInstanceSettings(BaseInstanceSettings):
             skill_rules_dir=flow_home / "dev_skill_rules",
             schema_dir=flow_home / "dev_schema",
             records_data_dir=flow_home / "dev_records_data",
-            logs_dir=flow_home / "dev_logs",
+            logs_dir=flow_home / "instances" / "dev" / "logs",
             monitor_log_path=flow_home / "dev_monitor.log",
             inbox_last_fetch_path=flow_home / ".dev_inbox_last_fetch.json",
             conversation_last_sync_path=flow_home / ".dev_conversation_last_sync.json",

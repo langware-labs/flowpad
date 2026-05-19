@@ -1,6 +1,8 @@
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { IEntity } from '../IEntity';
 import { ActionInfo } from '../models/ActionInfo';
+import { Callable } from '../types';
+import { ConnectionManager, DataOp } from '../websocket';
 
 export enum DeliveryMode {
   EMAIL = 'email',
@@ -25,6 +27,19 @@ export enum BodyStatus {
   NA = 'na',
   UPLOADING = 'uploading',
   READY = 'ready',
+}
+
+/** Discriminator for special FlowMessage kinds. Mirrors
+ *  flow_sdk.builtin.flow_message.FlowMessageKind exactly.
+ *  - USER       : a normal message (the default for everything the user or
+ *                 hub produces).
+ *  - INVITATION : a local-only placeholder FlowMessage representing a pending
+ *                 hub Invitation as the first row of a conversation; its
+ *                 ``context_entities`` carry the backing Invitation TypeId so
+ *                 the UI can read invitation_id off it for the Accept action. */
+export enum FlowMessageKind {
+  USER = 'user',
+  INVITATION = 'invitation',
 }
 
 /** Single source of truth for the body filename on the hub blob store.
@@ -81,6 +96,20 @@ export interface Attachment {
  *  transitions only: created → delivered → received. */
 export type DeliveryStatus = 'created' | 'delivered' | 'received';
 
+/** Named event types emitted by ``Conversation`` and ``FlowMessage``. Use
+ *  these instead of bare strings so call sites are typo-proof:
+ *    conversation.on(ConversationEvents.MESSAGE, msg => ...)  // new inbound message
+ *    conversation.on(ConversationEvents.ACK, msg => ...)      // a receipt changed
+ *    message.on(ConversationEvents.ACK, () => ...)            // this message's receipt
+ *    await message.waitForAck(timeoutMs)                      // resolve once received
+ */
+export enum ConversationEvents {
+  /** A new inbound FlowMessage arrived on the conversation. */
+  MESSAGE = 'message',
+  /** A FlowMessage's delivery_status changed (delivered / received). */
+  ACK = 'ack',
+}
+
 export interface IFlowMessage extends IEntity {
   text?: string;
   instruction?: string | null;
@@ -107,11 +136,11 @@ export interface IFlowMessage extends IEntity {
   // ``msg.contextEntities`` / ``msg.firstContextOfType('task')``.
   /** Local-only draft message: not appended to conversation.jsonl, not pushed to hub. Flips to false on send-draft. */
   is_draft?: boolean;
-  /** Special-message discriminator. "user" (default) is a normal message;
-   *  "invitation" marks a local-only placeholder representing a pending hub
+  /** Special-message discriminator. USER (default) is a normal message;
+   *  INVITATION marks a local-only placeholder representing a pending hub
    *  Invitation as the first row of a conversation. The invitation TypeId
    *  lives in ``context_entities``. */
-  kind?: 'user' | 'invitation';
+  kind?: FlowMessageKind;
   /** Body-bundle lifecycle on the hub. Defaults to NA when the message has
    *  no body. Stamped UPLOADING at hub add_message time when the incoming
    *  attachments require a packed body; sender flips to READY after upload.
@@ -136,7 +165,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   delivered_at?: string | null;
   received_at?: string | null;
   is_draft?: boolean;
-  kind?: 'user' | 'invitation';
+  kind?: FlowMessageKind;
   body_status?: BodyStatus;
   static type: string = 'flow_message';
 
@@ -157,7 +186,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.delivered_at = entity.delivered_at ?? null;
     this.received_at = entity.received_at ?? null;
     this.is_draft = entity.is_draft ?? false;
-    this.kind = entity.kind ?? 'user';
+    this.kind = entity.kind ?? FlowMessageKind.USER;
     this.body_status = entity.body_status ?? BodyStatus.NA;
   }
 
@@ -215,6 +244,85 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     await dataManager.callAction<unknown, unknown>(action);
     return this;
   }
+
+  // -------- Realtime receipt (ack) subscription -------- //
+
+  private _ackTapOff: (() => void) | null = null;
+
+  /**
+   * Subscribe to receipt changes on THIS message.
+   *
+   * ``message.on(ConversationEvents.ACK, m => ...)`` fires every time the
+   * hub fans a delivery_status update (delivered → received) back for this
+   * message id; the callback receives the updated ``IFlowMessage``. Any
+   * other event type falls through to the base emitter unchanged.
+   */
+  override on(eventType: string | string[], callback: Callable): () => void {
+    const types = Array.isArray(eventType) ? eventType : [eventType];
+    if (types.includes(ConversationEvents.ACK)) {
+      this._ensureAckTap();
+    }
+    const baseOff = super.on(eventType, callback);
+    return () => {
+      baseOff();
+      if (types.includes(ConversationEvents.ACK)) {
+        this._maybeTearDownAckTap();
+      }
+    };
+  }
+
+  /**
+   * Resolve once this message reaches delivery_status='received' (the
+   * receiver has read it), or reject after ``timeoutMs``. Resolves
+   * immediately when the message is already received — replaces the manual
+   * "poll getById().delivery_status" loop.
+   */
+  waitForAck(timeoutMs = 15_000): Promise<this> {
+    if (this.delivery_status === 'received') return Promise.resolve(this);
+    return new Promise<this>((resolve, reject) => {
+      let off: (() => void) | null = null;
+      const timer = setTimeout(() => {
+        off?.();
+        reject(new Error(`waitForAck timed out after ${timeoutMs}ms (message ${this.id})`));
+      }, timeoutMs);
+      off = this.on(ConversationEvents.ACK, (m: IFlowMessage) => {
+        if (m.delivery_status !== 'received') return;
+        // Mirror the receipt onto this entity so callers can read it
+        // straight away regardless of data_op listener ordering.
+        this.delivery_status = m.delivery_status;
+        this.received_at = m.received_at ?? this.received_at;
+        this.delivered_at = m.delivered_at ?? this.delivered_at;
+        clearTimeout(timer);
+        off?.();
+        resolve(this);
+      });
+    });
+  }
+
+  /** Install a low-level data_op tap that emits ``ACK`` for update frames
+   *  carrying a delivery_status change on this message id. Idempotent. */
+  private _ensureAckTap(): void {
+    if (this._ackTapOff) return;
+    const cm = ConnectionManager.getInstance();
+    const handler = (typeIdStr: string, op: string, data: any) => {
+      if (op !== DataOp.UPDATE) return;
+      const dash = typeIdStr.indexOf('-');
+      if (dash <= 0) return;
+      if (typeIdStr.slice(0, dash) !== FlowMessage.type) return;
+      if (typeIdStr.slice(dash + 1) !== this.id) return;
+      if (!data || data.delivery_status == null) return;
+      this.emit(ConversationEvents.ACK, data as IFlowMessage);
+    };
+    cm.on('on_data_op', handler);
+    this._ackTapOff = () => cm.off('on_data_op', handler);
+  }
+
+  /** Tear the tap down once the last ACK listener unsubscribes. */
+  private _maybeTearDownAckTap(): void {
+    if (this._eventListeners.get(ConversationEvents.ACK)?.length) return;
+    this._ackTapOff?.();
+    this._ackTapOff = null;
+  }
 }
 
 export interface UploadFlowMessageResult {
@@ -270,6 +378,21 @@ export async function createTaskBundle(params: CreateTaskBundleParams): Promise<
   action.bodyParameters = params;
   const res = await dataManager.callAction<CreateTaskBundleParams, CreateTaskBundleResult>(action);
   return res!;
+}
+
+/**
+ * Download + unpack a FlowMessage's body bundle by id. The local backend
+ * pulls the ``.flowmsg`` from the hub and unpacks it, so every FILE / PROMPT
+ * attachment materializes under the message's VFS. After this resolves the
+ * FM's ``attachment[].local_path`` fields are populated and an entity UPDATE
+ * fans out — the conversation UI re-renders the chips as DOWNLOADED.
+ *
+ * Standalone (vs. ``FlowMessage.downloadBody``) so call sites holding only a
+ * message id — like a chip click handler — don't need a live entity instance.
+ */
+export async function downloadFlowMessageBody(messageId: string): Promise<void> {
+  const action = new ActionInfo('download_body', FlowMessage.type, messageId, 'POST');
+  await dataManager.callAction<unknown, unknown>(action);
 }
 
 export interface MarkResult {

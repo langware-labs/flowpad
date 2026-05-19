@@ -142,9 +142,17 @@ class FlowpadClient:
         json: Any = None,
         params: dict[str, Any] | None = None,
         files: Any = None,
+        content: Any = None,
+        headers: dict[str, str] | None = None,
         timeout: float | httpx.Timeout | None = None,
     ) -> httpx.Response:
-        """Make a raw HTTP request with hub hooks attached."""
+        """Make a raw HTTP request with hub hooks attached.
+
+        ``content`` accepts raw bytes or an (async) byte iterator — used for
+        streamed uploads where the body is produced incrementally so a
+        progress callback can fire between chunks. ``headers`` merges over the
+        client defaults (e.g. a hand-built ``multipart/form-data`` boundary).
+        """
         client = await self._get_client()
         try:
             return await client.request(
@@ -153,6 +161,8 @@ class FlowpadClient:
                 json=json,
                 params=params,
                 files=files,
+                content=content,
+                headers=headers,
                 timeout=timeout,
             )
         except HubAuthExpiredError:
@@ -165,6 +175,28 @@ class FlowpadClient:
                 message=str(e),
             )
             raise
+
+    async def open_stream(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+        timeout: float | httpx.Timeout | None = None,
+    ):
+        """Return an httpx streaming-response context manager.
+
+        For large downloads consumed chunk-by-chunk (``resp.aiter_bytes()``)
+        instead of buffered whole into ``resp.content`` — lets a caller report
+        download progress as bytes land. Usage::
+
+            async with await client.open_stream("GET", url) as resp:
+                async for chunk in resp.aiter_bytes():
+                    ...
+        """
+        client = await self._get_client()
+        return client.stream(method, path, params=params, headers=headers, timeout=timeout)
 
     @staticmethod
     def _request_path(url_or_path: Any) -> str:

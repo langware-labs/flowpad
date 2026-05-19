@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { isReadOnlySource, type AssetDescriptor } from '@sdk';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
+import { Dialog, DialogContent, DialogTitle } from '@src/components/ui/dialog';
 import { useAssetTypes } from '@src/hooks/use-asset-types';
 import { useProcessAssets } from './useProcessAssets';
 import {
@@ -34,6 +35,16 @@ interface AssetPickerPopoverProps {
   /** Required when `open` is provided. Called when the popover should close
    *  or open (e.g. user clicks outside, or after `onPick`). */
   onOpenChange?: (open: boolean) => void;
+  /** Preferred side to open on. Defaults to `'bottom'`. Pass `'top'` when the
+   *  trigger sits near the bottom of the viewport (e.g. a message composer)
+   *  so the picker opens upward and its contents stay visible. Collision
+   *  detection still flips it back if there's no room on the preferred side. */
+  side?: 'top' | 'bottom';
+  /** When true, render the picker as a centered modal dialog instead of a
+   *  popover anchored to the trigger. Use when the trigger is incidental
+   *  (e.g. a fan-out attach menu) and the picker should sit in the middle of
+   *  the screen. `side`/`align` are ignored in this mode. */
+  centered?: boolean;
 }
 
 const DEFAULT_FILTER = (d: AssetDescriptor): boolean =>
@@ -55,6 +66,8 @@ export function AssetPickerPopover({
   searchPlaceholder = 'Search agents and skills…',
   open: controlledOpen,
   onOpenChange,
+  side = 'bottom',
+  centered = false,
 }: AssetPickerPopoverProps) {
   const isControlled = controlledOpen !== undefined;
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
@@ -148,65 +161,86 @@ export function AssetPickerPopover({
     [onPick, setOpen],
   );
 
+  const body = (
+    <>
+      <div className="flex items-center gap-1.5 border-b px-3 py-2">
+        <Boxes className="h-3.5 w-3.5 text-muted-foreground" />
+        <span className="text-xs font-medium">Run with…</span>
+      </div>
+      <div
+        className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b px-3 py-2"
+        data-testid="asset-picker-type-bar"
+      >
+        <EntityTypeBar value={typeFilter} onChange={setTypeFilter} counts={typeCounts} />
+      </div>
+      <div
+        className="flex items-center border-b px-3 py-2"
+        data-testid="asset-picker-scope-bar"
+      >
+        <ScopeBar value={scopeFilter} options={scopeOptions} onChange={setScopeFilter} />
+      </div>
+      <div className="border-b px-3 py-2">
+        <div className="flex items-center gap-1.5">
+          <Search className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
+          <input
+            autoFocus
+            type="text"
+            placeholder={searchPlaceholder}
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="min-w-0 flex-1 rounded border bg-background px-1.5 py-0.5 text-[11px] outline-none focus:ring-1 focus:ring-ring"
+            data-testid="asset-picker-search"
+          />
+        </div>
+      </div>
+      <div
+        className="min-h-0 flex-1 overflow-y-auto"
+        data-testid="asset-picker-list"
+      >
+        {rows.length === 0 ? (
+          <div className="px-3 py-4 text-center text-[11px] text-muted-foreground">
+            {isLoading ? 'Loading…' : 'No assets to run.'}
+          </div>
+        ) : (
+          rows.map((d, idx) => (
+            <PickRow
+              key={`${d.typeid}|${d.source}|${idx}`}
+              descriptor={d}
+              iconForType={iconForType}
+              onPick={handlePick}
+            />
+          ))
+        )}
+      </div>
+    </>
+  );
+
+  if (centered) {
+    return (
+      <Dialog open={open} onOpenChange={handleOpenChange}>
+        <DialogContent
+          className="flex max-h-[min(85vh,40rem)] w-96 max-w-[calc(100vw-2rem)] flex-col gap-0 overflow-hidden p-0"
+          data-testid="asset-picker-popover"
+        >
+          <DialogTitle className="sr-only">Attach asset</DialogTitle>
+          {body}
+        </DialogContent>
+      </Dialog>
+    );
+  }
+
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>{trigger}</PopoverTrigger>
       <PopoverContent
         align="end"
+        side={side}
         sideOffset={4}
         collisionPadding={8}
         className="flex max-h-[min(calc(100vh-6rem),var(--radix-popover-content-available-height))] w-96 flex-col p-0"
         data-testid="asset-picker-popover"
       >
-        <div className="flex items-center gap-1.5 border-b px-3 py-2">
-          <Boxes className="h-3.5 w-3.5 text-muted-foreground" />
-          <span className="text-xs font-medium">Run with…</span>
-        </div>
-        <div
-          className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b px-3 py-2"
-          data-testid="asset-picker-type-bar"
-        >
-          <EntityTypeBar value={typeFilter} onChange={setTypeFilter} counts={typeCounts} />
-        </div>
-        <div
-          className="flex items-center border-b px-3 py-2"
-          data-testid="asset-picker-scope-bar"
-        >
-          <ScopeBar value={scopeFilter} options={scopeOptions} onChange={setScopeFilter} />
-        </div>
-        <div className="border-b px-3 py-2">
-          <div className="flex items-center gap-1.5">
-            <Search className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
-            <input
-              autoFocus
-              type="text"
-              placeholder={searchPlaceholder}
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              className="min-w-0 flex-1 rounded border bg-background px-1.5 py-0.5 text-[11px] outline-none focus:ring-1 focus:ring-ring"
-              data-testid="asset-picker-search"
-            />
-          </div>
-        </div>
-        <div
-          className="min-h-0 flex-1 overflow-y-auto"
-          data-testid="asset-picker-list"
-        >
-          {rows.length === 0 ? (
-            <div className="px-3 py-4 text-center text-[11px] text-muted-foreground">
-              {isLoading ? 'Loading…' : 'No assets to run.'}
-            </div>
-          ) : (
-            rows.map((d, idx) => (
-              <PickRow
-                key={`${d.typeid}|${d.source}|${idx}`}
-                descriptor={d}
-                iconForType={iconForType}
-                onPick={handlePick}
-              />
-            ))
-          )}
-        </div>
+        {body}
       </PopoverContent>
     </Popover>
   );

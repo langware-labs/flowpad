@@ -103,7 +103,15 @@ def get_db_folder() -> Path:
 
 
 def get_logs_folder() -> Path:
-    folder = Path.home() / "Flowpad workspace" / ".flow" / "logs"
+    """Per-instance logs directory (call-time, via InstanceSettings).
+
+    Resolves to ``<flow_home>/instances/<instance_name>/logs`` so the dev
+    (port 9008) and prod (port 9007) backends keep their logs in separate
+    folders. This is what the ``open-logs`` action opens and what the UI
+    shows as the log folder path.
+    """
+    from flow_sdk.instance_settings import get_instance_settings
+    folder = get_instance_settings().logs_dir
     folder.mkdir(parents=True, exist_ok=True)
     return folder
 

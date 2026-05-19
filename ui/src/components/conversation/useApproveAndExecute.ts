@@ -218,9 +218,8 @@ export function useApproveAndExecute(
     if (!text || !conversationId) return;
 
     try {
-      const action = new ActionInfo('append-conversation', 'notification', null, 'POST');
+      const action = new ActionInfo('add_message', 'conversation', conversationId, 'POST');
       action.bodyParameters = {
-        conversation_id: conversationId,
         message: wrapAsPromptResponse(text),
         is_draft: 'true',
       };

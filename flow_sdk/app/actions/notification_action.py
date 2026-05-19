@@ -13,9 +13,11 @@ File layout (all inside the git repo, committed and pushed):
 
 Routes:
   POST /api/v1/graph/share_task
-  POST /api/v1/graph/notification/{id}/append-conversation
   POST /api/v1/graph/notification/{id}/refresh
   GET  /api/v1/graph/notification/{id}/open
+
+The conversation message-send handler `handle_add_message` lives here too; it
+is exposed as the `conversation/<id>/add_message` action (see share_action.py).
 """
 
 import asyncio
@@ -1363,6 +1365,59 @@ async def _send_reply_to_hub(
         logger.warning("[append_conversation] hub reply upload failed (non-fatal): %s", _hub_err, exc_info=True)
 
 
+async def _send_conversation_message_header(conv: "Conversation", reply_fm: "FlowMessage") -> None:
+    """Create the hub-side FlowMessage header via the conversation's
+    ``add_message`` action.
+
+    Unlike the legacy ``flow_message/send`` path, ``add_message`` runs
+    ``Conversation.add_child`` on the hub, so the FlowMessage is graph-linked
+    to its parent Conversation. Delivery receipts (``_bump_delivery_status``)
+    resolve that parent via ``get_ancestor`` — without the link they skip with
+    ``no_parent_conversation`` and the sender's checkmarks never advance. The
+    FM id is pinned to the local id so the body bundle uploaded next lands
+    under the same key.
+    """
+    try:
+        attachments = [a.model_dump(mode="python") for a in (reply_fm.attachment or [])]
+        context_entities = [str(c) for c in (reply_fm.context_entities or [])]
+        await conv.add_message(
+            reply_fm.text,
+            sender_name=reply_fm.sender_name or None,
+            sender_id=reply_fm.sender_id or None,
+            flow_message_id=reply_fm.id,
+            attachments=attachments or None,
+            context_entities=context_entities or None,
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning(
+            "[append_conversation] hub add_message header failed (non-fatal): %s", e, exc_info=True
+        )
+
+
+async def _upload_body_and_finalize(reply_fm: "FlowMessage", conv_id: str) -> None:
+    """Pack + upload the FlowMessage body bundle in a background task.
+
+    ``upload_body`` runs the hub PUT → fs/upload → set_body_status sequence,
+    flipping the hub-side body_status to READY (which fans the UPDATE to
+    receivers). This mirrors READY onto the local FM and refreshes the UI so
+    the sender's attachment chips unlock. On failure the body stays UPLOADING
+    and the manual ``upload_body`` action remains available for retry.
+    """
+    try:
+        from flow_sdk.core.network.resource_tracker import (  # noqa: PLC0415
+            make_flow_message_progress_emitter,
+        )
+        await reply_fm.upload_body(
+            on_progress=make_flow_message_progress_emitter(reply_fm.id, "upload"),
+        )
+        await reply_fm.save()
+        _notify_ui_conversation_updated(conv_id, "", reply_fm.id)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(
+            "[append_conversation] background body upload failed (non-fatal): %s", e, exc_info=True
+        )
+
+
 async def _hub_knows_conversation(conv_id: str) -> bool:
     """Quick HTTP probe to decide whether the hub knows this conversation."""
     try:
@@ -1468,23 +1523,39 @@ async def _try_send_reply_via_hub(
 
 
 def _notify_ui_conversation_updated(conv_id: str, task_id: str, fm_id: str) -> None:
-    """Fire-and-forget sync event so the UI refreshes the conversation panel."""
+    """Fire-and-forget sniffer EVENT so the UI refreshes the conversation panel.
+
+    Must be SyncOperation.EVENT — never CRUD. Sent as UPDATE it reached the
+    webhook receiver's ``_reflect_entity``, which loaded the Conversation
+    entity *while ``materialize_flow_message`` was still mid-flight* (before
+    the new pointer was projected into ``message_ids``), re-saved that stale
+    snapshot, and re-broadcast ``notify_updated()`` — clobbering the freshly
+    projected message list and leaving the UI exactly one message behind.
+    EVENT routes to the event handler / sniffer instead, which is all this
+    channel was ever for. Mirrors ``materialize_flow_message``'s own
+    ``conversation_updated`` event.
+    """
     try:
         send_resource_sync(
             type="conversation",
             id=conv_id,
-            operation=SyncOperation.UPDATE,
-            data={"event_data": {"conversation_id": conv_id, "task_id": task_id, "flow_message_id": fm_id}},
+            operation=SyncOperation.EVENT,
+            data={
+                "event_name": "conversation_updated",
+                "event_data": {"conversation_id": conv_id, "task_id": task_id, "flow_message_id": fm_id},
+            },
         )
     except Exception:
         pass
 
 
-async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResponse:
-    """Append a reply to a Conversation.
+async def handle_add_message(body: dict, someone_typeid: str) -> ApiResponse:
+    """Append a message to a Conversation — the single message-send handler.
 
-    Accepts EITHER `task_id` (legacy task-bound path: hub push + git commit) OR
-    `conversation_id` (project-scoped conversations: local-only — no hub, no git).
+    Exposed as the `conversation/<id>/add_message` action. Handles text-only
+    sends and attachment sends (files, images, prompts, asset references)
+    alike. Accepts EITHER `task_id` (task-bound path: hub push + git commit)
+    OR `conversation_id` (the normal conversation path).
     """
     task_id = (body.get("task_id") or "").strip()
     conversation_id = (body.get("conversation_id") or "").strip()
@@ -1596,6 +1667,35 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
     if prompt_text or prompt_files:
         await _attach_prompt(reply_fm, sender_id, prompt_text, prompt_files)
 
+    # Resolve the remote recipient up front — it gates both the hub round-trip
+    # and the body_status stamp. A purely-local conversation (no remote
+    # recipient, or logged out) keeps body_status=NA: there is no hub to
+    # upload a body to, so the attachment is served straight off local VFS.
+    recipient_email = recipient_participant.get("email") or _resolve_reply_recipient_email(
+        task,
+        conv,
+        sender_email,
+        sender_id or "",
+    )
+    # A conversation reply goes to the hub whenever there is another party.
+    # ``conv.remote`` is the load-bearing signal: a hub-mirrored conversation
+    # is cross-machine by definition, so every message in it must reach the
+    # hub. The local participant list is NOT reliable for this — a conversation
+    # received from the hub can land with an empty ``participants`` array, so
+    # gating on locally-resolved recipient_email/user_id silently dropped
+    # attachment sends (the text path sidesteps this via _try_send_reply_via_hub,
+    # which lets the hub resolve membership). The recipient_email / user_id
+    # checks remain as a fallback for not-yet-flagged conversations.
+    # The hub add_message header itself needs no email, only the conv id.
+    is_remote_send = is_logged_in() and bool(
+        getattr(conv, "remote", False)
+        or recipient_email
+        or _participant_value(recipient_participant, "user_id")
+    )
+    if is_remote_send and reply_fm.has_body():
+        from flow_sdk.builtin.flow_message import BodyStatus  # noqa: PLC0415
+        reply_fm.body_status = BodyStatus.UPLOADING
+
     reply_fm = await reply_fm.save(someone_typeid)
 
     if is_draft:
@@ -1617,27 +1717,21 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
         someone_typeid=someone_typeid,
     )
 
-    recipient_email = recipient_participant.get("email") or _resolve_reply_recipient_email(
-        task,
-        conv,
-        sender_email,
-        sender_id or "",
-    )
-    if recipient_email:
-        await _send_reply_to_hub(
-            reply_fm=reply_fm,
-            task=task,
-            conv_title=(conv.name or "") if conv else "",
-            message=message,
-            sender_id=sender_id,
-            sender_name=sender_name,
-            recipient_email=recipient_email,
-            participants=list(conv.participants or []),
-        )
-
-    _notify_ui_conversation_updated(conv.id, effective_task_id or "", reply_fm.id)
-
     if task:
+        # Legacy task-bound reply: hub flow_message/send + bundle upload, then
+        # the git commit. Left as-is — the Share Task flow is aligned separately.
+        if recipient_email:
+            await _send_reply_to_hub(
+                reply_fm=reply_fm,
+                task=task,
+                conv_title=(conv.name or "") if conv else "",
+                message=message,
+                sender_id=sender_id,
+                sender_name=sender_name,
+                recipient_email=recipient_email,
+                participants=list(conv.participants or []),
+            )
+        _notify_ui_conversation_updated(conv.id, effective_task_id or "", reply_fm.id)
         project_root_str = task.project_root
         if project_root_str:
             await git_add_commit_push(
@@ -1645,6 +1739,17 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
                 ["tasks"],
                 f"chore: update conversation for task '{task.title}'",
             )
+    else:
+        # Conversation path: refresh the sender's UI immediately, then create
+        # the hub-side header via add_message (graph-linked to the parent
+        # Conversation so delivery receipts work). The body bundle uploads in
+        # a background task — the HTTP response returns without waiting on it.
+        _notify_ui_conversation_updated(conv.id, "", reply_fm.id)
+        if is_remote_send:
+            await _send_conversation_message_header(conv, reply_fm)
+            from flow_sdk.builtin.flow_message import BodyStatus  # noqa: PLC0415
+            if reply_fm.body_status == BodyStatus.UPLOADING:
+                asyncio.create_task(_upload_body_and_finalize(reply_fm, conv.id))
 
     return ApiSuccessResponse(data={
         "task_id": effective_task_id or "",
@@ -1692,24 +1797,6 @@ async def conversation_start_bundle() -> ApiResponse:
     except Exception as e:
         logger.error(f"[notification_action] conversation-start-bundle error: {e}", exc_info=True)
         return ApiFailResponse(message=f"Failed to start conversation: {str(e)}")
-
-
-@action.post(action_name="append-conversation", types=["notification"])
-async def append_conversation() -> ApiResponse:
-    try:
-        request_info = get_current_request_info()
-        if not request_info:
-            return ApiFailResponse(message="No request info found")
-        if not request_info.someone_typeid:
-            return ApiFailResponse(message="No authenticated user in request context")
-        body = await request_info.get_post_data() or {}
-        # Drafts are local-only (no hub push); only non-draft sends require login.
-        if not bool(body.get("is_draft")) and not is_logged_in():
-            return ApiFailResponse(message="Cloud login required to send messages")
-        return await handle_append_conversation(body, request_info.someone_typeid)
-    except Exception as e:
-        logger.error(f"[notification_action] append-conversation error: {e}", exc_info=True)
-        return ApiFailResponse(message=f"Failed to append conversation: {str(e)}")
 
 
 async def handle_refresh_notifications(project_path: str) -> ApiResponse:

@@ -113,7 +113,7 @@ class User(Entity):
         """Return ``(sender_id, sender_name)`` for outbound messages.
 
         Single source of truth for the resolution chain used by share-task,
-        ask-for-assistance, start-conversation, append-conversation, and
+        ask-for-assistance, start-conversation, add-message, and
         headless replies:
 
         * ``sender_id`` ← local desktop user's id (None if no local user)
