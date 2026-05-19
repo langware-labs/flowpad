@@ -1663,15 +1663,20 @@ async def handle_add_message(body: dict, someone_typeid: str) -> ApiResponse:
         sender_email,
         sender_id or "",
     )
-    # A conversation reply goes to the hub whenever there is another party —
-    # identified by email OR by user_id. Gating on email alone broke replies
-    # from an invited member back to the creator: the creator's participant
-    # entry carries only {user_id, name} (no email), so recipient_email came
-    # back empty, is_remote_send was False, and the hub add_message header was
-    # never sent — the message stayed local and the counterpart never saw it.
-    # The hub header itself needs no email, only the conversation membership.
+    # A conversation reply goes to the hub whenever there is another party.
+    # ``conv.remote`` is the load-bearing signal: a hub-mirrored conversation
+    # is cross-machine by definition, so every message in it must reach the
+    # hub. The local participant list is NOT reliable for this — a conversation
+    # received from the hub can land with an empty ``participants`` array, so
+    # gating on locally-resolved recipient_email/user_id silently dropped
+    # attachment sends (the text path sidesteps this via _try_send_reply_via_hub,
+    # which lets the hub resolve membership). The recipient_email / user_id
+    # checks remain as a fallback for not-yet-flagged conversations.
+    # The hub add_message header itself needs no email, only the conv id.
     is_remote_send = is_logged_in() and bool(
-        recipient_email or _participant_value(recipient_participant, "user_id")
+        getattr(conv, "remote", False)
+        or recipient_email
+        or _participant_value(recipient_participant, "user_id")
     )
     if is_remote_send and reply_fm.has_body():
         from flow_sdk.builtin.flow_message import BodyStatus  # noqa: PLC0415
