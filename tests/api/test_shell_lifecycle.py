@@ -83,73 +83,28 @@ async def test_close_shell(bootstrapped_client):
 
 
 @pytest.mark.asyncio
-async def test_update_display(bootstrapped_client):
-    """POST /graph/shell/{id}/update-display updates fields."""
-    # Create entity
+async def test_shell_rename_via_canonical_put(bootstrapped_client):
+    """PUT /graph/shell/{id} writes name + auto_rename through the standard entity update."""
     create_resp = await bootstrapped_client.post(
         "/api/v1/graph/shell",
         json={"name": "Display Test", "status": "created"},
     )
     assert create_resp.status_code == 200
-    created = ApiResponse(**create_resp.json()).data
-    entity_id = created["id"]
+    entity_id = ApiResponse(**create_resp.json()).data["id"]
 
-    # Update display
-    response = await bootstrapped_client.post(
-        f"/api/v1/graph/shell/{entity_id}/update-display",
-        json={"name": "Renamed Tab", "tab_order": 3},
+    update_resp = await bootstrapped_client.put(
+        f"/api/v1/graph/shell/{entity_id}",
+        json={"name": "Renamed Tab", "auto_rename": False, "tab_order": 3},
     )
-    assert response.status_code == 200, response.text
-    res = ApiResponse(**response.json())
+    assert update_resp.status_code == 200, update_resp.text
+    res = ApiResponse(**update_resp.json())
     assert res.status == "SUCCESS"
     assert res.data.get("name") == "Renamed Tab"
     assert res.data.get("tab_order") == 3
+    assert res.data.get("auto_rename") is False
 
-
-@pytest.mark.asyncio
-async def test_update_display_pty_rename_gate_is_sticky(bootstrapped_client):
-    """Manual rename disables PTY title renames until explicitly re-enabled."""
-    create_resp = await bootstrapped_client.post(
-        "/api/v1/graph/shell",
-        json={"name": "Tab 1", "status": "created"},
-    )
-    assert create_resp.status_code == 200
-    entity_id = ApiResponse(**create_resp.json()).data["id"]
-
-    manual_resp = await bootstrapped_client.post(
-        f"/api/v1/graph/shell/{entity_id}/update-display",
-        json={"name": "Manual Name"},
-    )
-    assert manual_resp.status_code == 200, manual_resp.text
-    manual = ApiResponse(**manual_resp.json()).data
-    assert manual.get("name") == "Manual Name"
-    assert manual.get("pty_rename") is False
-    assert manual.get("user_renamed") is True
-
-    ignored_resp = await bootstrapped_client.post(
-        f"/api/v1/graph/shell/{entity_id}/update-display",
-        json={"name": "PTY Title", "is_pty": True},
-    )
-    assert ignored_resp.status_code == 200, ignored_resp.text
-    ignored = ApiResponse(**ignored_resp.json()).data
-    assert ignored.get("name") == "Manual Name"
-    assert ignored.get("pty_rename") is False
-
-    enable_resp = await bootstrapped_client.post(
-        f"/api/v1/graph/shell/{entity_id}/update-display",
-        json={"pty_rename": True},
-    )
-    assert enable_resp.status_code == 200, enable_resp.text
-    assert ApiResponse(**enable_resp.json()).data.get("pty_rename") is True
-
-    accepted_resp = await bootstrapped_client.post(
-        f"/api/v1/graph/shell/{entity_id}/update-display",
-        json={"name": "PTY Title", "is_pty": True},
-    )
-    assert accepted_resp.status_code == 200, accepted_resp.text
-    accepted = ApiResponse(**accepted_resp.json()).data
-    assert accepted.get("name") == "PTY Title"
-    assert accepted.get("pty_rename") is True
+    # Default is True on a freshly-created shell.
+    assert ApiResponse(**create_resp.json()).data.get("auto_rename") is True
 
 
 @pytest.mark.asyncio

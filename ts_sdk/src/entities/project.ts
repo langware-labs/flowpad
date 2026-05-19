@@ -292,4 +292,20 @@ export class Project extends APIEntity<Project> {
       return null;
     }
   }
+
+  /**
+   * Recover a Project that's been deleted but still has dependents (Shells /
+   * AgenticProcesses with ``project_id == orphanedId``). The backend picks any
+   * dependent's ``workdir``, runs ``Project.recover_by_path`` (same 3-phase
+   * primitive ``AgenticProcess.recoverProject`` uses), and rebinds every
+   * dependent's ``project_id`` to the recovered id. Returns the recovered
+   * Project. Cached via dataManager.
+   */
+  static async recoverOrphaned(orphanedId: string, computeNodeId: string): Promise<Project | null> {
+    const action = new ActionInfo('recover-orphaned-project', 'compute_node', computeNodeId, 'POST');
+    action.bodyParameters = { dangling_id: orphanedId };
+    const response = await dataManager.callAction<{ dangling_id: string }, { project: unknown; rebound: number }>(action);
+    if (!response?.project) return null;
+    return dataManager.updateEntityFromJson<Project>(response.project as Record<string, unknown>);
+  }
 }

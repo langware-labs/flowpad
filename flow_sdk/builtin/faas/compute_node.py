@@ -671,6 +671,76 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             except Exception:
                 logging.exception(f"[terminals/close] Failed to persist shell close error for {shell_id}")
 
+    @action.post(action_name="recover-orphaned-project")
+    async def _recover_orphaned_project(self) -> ApiResponse:
+        """Resurrect a deleted Project from a dependent's ``workdir`` and rebind
+        every dependent's ``project_id`` to the recovered Project.
+
+        Body: ``{ "dangling_id": "<uuid>" }``
+        """
+        from flow_sdk.builtin.shell import Shell as ShellEntity
+        from flow_sdk.builtin.agentic_process import AgenticProcess
+        from flow_sdk.builtin.project import Project
+
+        request_info = get_current_request_info()
+        body = await request_info.get_post_data() if request_info else {}
+        dangling_id = (body or {}).get("dangling_id")
+        if not isinstance(dangling_id, str) or not dangling_id:
+            return ApiFailResponse(message="dangling_id (str) is required", status_code=400)
+
+        existing = await Project.get_by_id(dangling_id)
+        if existing is not None:
+            return ApiSuccessResponse(data={
+                "project": existing.model_dump(mode="json"),
+                "rebound": 0,
+            })
+
+        all_shells, all_processes = await asyncio.gather(
+            ShellEntity.get_all(),
+            AgenticProcess.get_all(),
+        )
+        dep_shells = [s for s in all_shells if getattr(s, "project_id", None) == dangling_id]
+        dep_procs = [p for p in all_processes if getattr(p, "project_id", None) == dangling_id]
+        if not dep_shells and not dep_procs:
+            return ApiFailResponse(
+                message=f"No dependents reference project {dangling_id}",
+                status_code=404,
+            )
+
+        workdir = next(
+            (getattr(d, "workdir", None) for d in (*dep_shells, *dep_procs) if getattr(d, "workdir", None)),
+            None,
+        )
+        if not workdir:
+            return ApiFailResponse(
+                message="No dependent has a workdir; cannot recover project",
+                status_code=422,
+            )
+
+        recovered = await Project.recover_by_path(workdir)
+        if recovered is None:
+            return ApiFailResponse(
+                message=f"Could not recover a project for {workdir}",
+                status_code=500,
+            )
+
+        rebound = 0
+        if recovered.id != dangling_id:
+            for s in dep_shells:
+                s.project_id = recovered.id
+            for p in dep_procs:
+                p._bind_project_id(recovered.id)
+            await asyncio.gather(
+                *(s.save() for s in dep_shells),
+                *(p.save() for p in dep_procs),
+            )
+            rebound = len(dep_shells) + len(dep_procs)
+
+        return ApiSuccessResponse(data={
+            "project": recovered.model_dump(mode="json"),
+            "rebound": rebound,
+        })
+
     @action.get(action_name="session-transcript")
     async def _session_transcript(self): return await self._pty_session_transcript()
 

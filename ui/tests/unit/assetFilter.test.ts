@@ -2,10 +2,12 @@ import { describe, it, expect } from 'vitest';
 import {
   applyFilterToParams,
   DEFAULT_ASSET_FILTER,
+} from '@src/components/assets/assetFilter';
+import {
   parseScopeFilterFromParams,
   scopeFilterEqual,
   scopeFilterKey,
-} from '@src/components/assets/assetFilter';
+} from '@src/lib/scope-filter';
 
 describe('applyFilterToParams (unified ScopeFilter wire format)', () => {
   it('default DEFAULT_ASSET_FILTER serializes user=true & projects=', () => {
