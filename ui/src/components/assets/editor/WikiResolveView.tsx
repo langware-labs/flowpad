@@ -1,9 +1,11 @@
-import { config, FSRef, FrontMatterFsRef, dataContext, Markdown } from '@sdk';
+import { apiClient, FSRef, FrontMatterFsRef, dataContext, Markdown, Whiteboard } from '@sdk';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { FileQuestion, RefreshCw } from 'lucide-react';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Button } from '@src/components/ui/button';
+import { RadioGroup, RadioGroupItem } from '@src/components/ui/radio-group';
+import { Label } from '@src/components/ui/label';
 import { useToast } from '@src/hooks/use-toast';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -14,20 +16,22 @@ interface WikiResolveViewProps {
   name: string;
 }
 
-interface MarkdownRow {
+interface ResolveResult {
+  type: string;
   id: string;
-  name?: string;
-  title?: string;
-  asset_ref?: string;
+  asset_ref: string;
 }
 
+type CreateAsType = 'markdown' | 'whiteboard';
+
 /**
- * Resolves a wiki name to a markdown record's asset_ref, then mounts the
- * normal markdown editor against it. URL bar stays at `/dock/assets/wiki/<name>`
- * so the link is rename-resilient and shareable.
+ * Resolves a wiki name to a record's asset_ref via the type-agnostic
+ * `/api/v1/wiki/resolve` endpoint. Markdown hits render inline so the
+ * URL bar stays at `/dock/assets/wiki/<name>` (rename-resilient). Other
+ * types (whiteboard, future) dispatch via openDock to their dedicated
+ * editor — the wiki URL becomes a redirect.
  *
- * Resolution mirrors `flow_sdk/wiki/resolver.py`: name match (case-insensitive),
- * fall back to title match. Includes system-shipped pages.
+ * On miss: type picker offering "Create as markdown" / "Create as whiteboard".
  */
 export function WikiResolveView({ name }: WikiResolveViewProps) {
   const { computeNode } = useAgentContext();
@@ -36,44 +40,60 @@ export function WikiResolveView({ name }: WikiResolveViewProps) {
   const { navigation } = useDockNavigation();
   const queryClient = useQueryClient();
   const [creating, setCreating] = useState(false);
+  const [createAs, setCreateAs] = useState<CreateAsType>('markdown');
 
-  const { data, isLoading, error } = useQuery<MarkdownRow | null>({
+  const { data, isLoading, error } = useQuery<ResolveResult | null>({
     queryKey: ['wiki-resolve', name],
     queryFn: async () => {
-      const url = `${config.SERVER_URL}${config.API_PREFIXES.graph}/markdown?include_system=true&limit=5000`;
-      const resp = await fetch(url);
-      if (!resp.ok) throw new Error(`failed to fetch: ${resp.status}`);
-      const body = await resp.json();
-      const rows: MarkdownRow[] = body.data ?? [];
-      const lower = name.toLowerCase();
-      return (
-        rows.find((r) => (r.name ?? '').toLowerCase() === lower) ??
-        rows.find((r) => (r.title ?? '').toLowerCase() === lower) ??
-        null
-      );
+      // /wiki/resolve returns the resource shape directly (no {status,data}
+      // envelope). Wrap the raw body in {data} so the apiClient interceptor's
+      // unconditional `.data.data` extract yields the parsed JSON — same trick
+      // dataManager.callAction uses for raw-response endpoints.
+      const body = (await apiClient.get<ResolveResult | null>('/wiki/resolve', {
+        params: { name },
+        transformResponse: (raw: string) => ({ data: JSON.parse(raw) }),
+      })) as ResolveResult | null;
+      if (!body || typeof body !== 'object' || !('type' in body) || !('id' in body)) return null;
+      return body;
     },
     staleTime: 30_000,
   });
 
+  // Whiteboard (and any non-markdown) hits: redirect to the dedicated editor.
+  // Markdown stays inline so the URL bar remains at /dock/assets/wiki/<name>.
+  useEffect(() => {
+    if (!data || data.type === 'markdown' || !data.asset_ref) return;
+    navigation.openDock(DockPointer.forAssetEditor(data.type, data.asset_ref));
+  }, [data, navigation]);
+
   const handleCreate = useCallback(async () => {
     setCreating(true);
     try {
-      const saved = await Markdown.createInProject(dataContext.project ?? null, name);
-      toast({ title: 'Markdown created', description: `[[${name}]]` });
-      void queryClient.invalidateQueries({ queryKey: ['wiki-resolve', name] });
-      if (saved.asset_ref) {
-        navigation.openDock(DockPointer.forAssetEditor('markdown', saved.asset_ref));
+      if (createAs === 'whiteboard') {
+        const saved = await Whiteboard.createInProject(dataContext.project ?? null, name);
+        toast({ title: 'Whiteboard created', description: `[[${name}]]` });
+        void queryClient.invalidateQueries({ queryKey: ['wiki-resolve', name] });
+        if (saved.asset_ref) {
+          navigation.openDock(DockPointer.forAssetEditor('whiteboard', saved.asset_ref));
+        }
+      } else {
+        const saved = await Markdown.createInProject(dataContext.project ?? null, name);
+        toast({ title: 'Markdown created', description: `[[${name}]]` });
+        void queryClient.invalidateQueries({ queryKey: ['wiki-resolve', name] });
+        if (saved.asset_ref) {
+          navigation.openDock(DockPointer.forAssetEditor('markdown', saved.asset_ref));
+        }
       }
     } catch (err) {
       toast({
-        title: 'Could not create markdown',
+        title: `Could not create ${createAs}`,
         description: err instanceof Error ? err.message : String(err),
         variant: 'destructive',
       });
     } finally {
       setCreating(false);
     }
-  }, [name, navigation, queryClient, toast]);
+  }, [createAs, name, navigation, queryClient, toast]);
 
   if (!computeNode?.typeId) {
     return (
@@ -108,13 +128,26 @@ export function WikiResolveView({ name }: WikiResolveViewProps) {
         >
           <FileQuestion className="h-10 w-10 text-muted-foreground/60" />
           <div>
-            <div className="text-lg font-semibold">
-              [[{name}]] not found
-            </div>
+            <div className="text-lg font-semibold">[[{name}]] not found</div>
             <div className="mt-1 text-sm text-muted-foreground">
-              No markdown page exists with this name yet.
+              No page exists with this name yet.
             </div>
           </div>
+          <RadioGroup
+            value={createAs}
+            onValueChange={(v) => setCreateAs(v as CreateAsType)}
+            className="flex flex-col items-start gap-2"
+            data-testid="wiki-create-as"
+          >
+            <div className="flex items-center gap-2">
+              <RadioGroupItem value="markdown" id="wiki-create-markdown" />
+              <Label htmlFor="wiki-create-markdown">Create as Markdown</Label>
+            </div>
+            <div className="flex items-center gap-2">
+              <RadioGroupItem value="whiteboard" id="wiki-create-whiteboard" />
+              <Label htmlFor="wiki-create-whiteboard">Create as Whiteboard</Label>
+            </div>
+          </RadioGroup>
           <Button onClick={() => void handleCreate()} disabled={creating}>
             {creating ? (
               <>
@@ -130,9 +163,17 @@ export function WikiResolveView({ name }: WikiResolveViewProps) {
     );
   }
 
-  // FrontMatterFsRef matches what PlainMarkdownAssetEditor would have built.
-  // chatTarget is taken directly from the resolved entity (`markdown-<id>`)
-  // — bypasses the path-based useEntityByPath lookup that misses system docs.
+  // Non-markdown hits redirect via the useEffect above. Render a small
+  // placeholder until the dock navigates away.
+  if (data.type !== 'markdown') {
+    return (
+      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+        <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> Opening [[{name}]]…
+      </div>
+    );
+  }
+
+  // Markdown hit — inline render so the wiki URL stays put.
   const localTypeId = dataContext.computeNodeTypeId;
   const editorRef = localTypeId
     ? new FrontMatterFsRef(data.asset_ref, localTypeId)

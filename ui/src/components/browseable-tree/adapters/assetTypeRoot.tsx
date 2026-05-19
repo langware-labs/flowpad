@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileText, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import apiClient from '@sdk/client';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -72,9 +72,9 @@ export function parseAssetPointer(pointer: string | null | undefined): AssetPoin
   return { mode: null, typeName: null, vfsPath: null, wikiName: null };
 }
 
-function resolveAssetIcon(iconName: string | null): React.ReactNode {
+function resolveAssetIcon(iconName: string | null, className = 'h-4 w-4 flex-shrink-0'): React.ReactNode {
   const Icon = lucideByName(iconName);
-  return <Icon className="h-4 w-4 flex-shrink-0" />;
+  return <Icon className={className} />;
 }
 
 /**
@@ -106,7 +106,7 @@ async function fetchAssetsOfType(
 /**
  * Build a child Browseable from a SearchResult.
  */
-function assetChild(typeName: string, result: SearchResult, onAfterDelete?: () => void): Browseable {
+function assetChild(typeName: string, iconName: string | null, result: SearchResult, onAfterDelete?: () => void): Browseable {
   const label = result.name || basename(result.asset_ref) || '(untitled)';
   // Projects open in their collaboration space rather than the asset editor.
   const pointer = typeName === 'project'
@@ -137,7 +137,7 @@ function assetChild(typeName: string, result: SearchResult, onAfterDelete?: () =
     id: `asset:${typeName}:${result.asset_ref}`,
     kind: 'asset',
     label,
-    icon: <FileText className="h-3.5 w-3.5 flex-shrink-0" />,
+    icon: resolveAssetIcon(iconName, 'h-3.5 w-3.5 flex-shrink-0'),
     hasChildren: false,
     pointer,
     toolbar: toolbar.length > 0 ? toolbar : undefined,
@@ -254,7 +254,7 @@ export function assetTypeRoot(type: AssetTypeInfo, deps: AssetTypeRootDeps): Bro
   };
   const listChildren = async (): Promise<Browseable[]> => {
     const results = await fetchAssetsOfType(type.type_name, filter, limit);
-    return results.map((r) => assetChild(type.type_name, r, onAfterDelete));
+    return results.map((r) => assetChild(type.type_name, type.icon, r, onAfterDelete));
   };
 
   const root: BrowseableRoot = {
@@ -282,7 +282,7 @@ export function assetTypeRoot(type: AssetTypeInfo, deps: AssetTypeRootDeps): Bro
         id: `asset:${type.type_name}:${parsed.vfsPath}`,
         kind: 'asset',
         label: basename(parsed.vfsPath),
-        icon: <FileText className="h-3.5 w-3.5 flex-shrink-0" />,
+        icon: resolveAssetIcon(type.icon, 'h-3.5 w-3.5 flex-shrink-0'),
         hasChildren: false,
         pointer: DockPointer.forAssetEditor(type.type_name, parsed.vfsPath),
       };

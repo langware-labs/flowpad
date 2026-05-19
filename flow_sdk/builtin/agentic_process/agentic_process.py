@@ -530,6 +530,14 @@ class AgenticProcess(Entity):
             "save() to detect drift."
         ),
     )
+    last_started_snapshot: dict[str, Any] | None = APIField(
+        default=None,
+        description=(
+            "Structured {generic, worker} payload captured at the last "
+            "successful start_pty(). Surfaced by the 'Command Status' debug "
+            "viewer to show the loaded-vs-current diff. None until first start."
+        ),
+    )
     additional_dirs: list[str] = APIField(default_factory=list, description="Extra directories passed to Claude via --add-dir")
     embedded_agent_ids: list[str] = APIField(default_factory=list, description="Agent ids injected via --agents at session launch")
     embedded_asset_refs: list[TypeId] = APIField(
@@ -893,6 +901,7 @@ class AgenticProcess(Entity):
             self.status = ProcessStatus.RUNNING.value
             # Capture snapshot of the freshly-launched config and clear the
             # restart-required flag — the live worker now matches saved state.
+            self.last_started_snapshot = self._restart_snapshot_payload()
             self.last_started_hash = self._restart_snapshot()
             self.restart_required = False
             await self.save()
@@ -2358,6 +2367,61 @@ class AgenticProcess(Entity):
                 "use_worker_history": True,
                 "count": len(history),
                 "history": [fd.model_dump(mode="python") for fd in history],
+            }
+        )
+
+    @staticmethod
+    def _diff_snapshot_fields(
+        loaded: dict[str, Any] | None,
+        current: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        """Return per-field differences between two ``{generic, worker}`` payloads.
+
+        Normalizes both sides through ``_normalize_restart_value`` so equality
+        matches the hash semantics in ``_restart_snapshot``. Keys present on
+        only one side are reported with the missing side as None.
+        """
+        if not loaded:
+            return []
+        norm_loaded = AgenticProcess._normalize_restart_value(loaded) or {}
+        norm_current = AgenticProcess._normalize_restart_value(current) or {}
+        changes: list[dict[str, Any]] = []
+        for section in ("generic", "worker"):
+            l_section = norm_loaded.get(section) or {}
+            c_section = norm_current.get(section) or {}
+            for field in sorted(set(l_section) | set(c_section)):
+                l_val = l_section.get(field)
+                c_val = c_section.get(field)
+                if l_val != c_val:
+                    changes.append({
+                        "section": section,
+                        "field": field,
+                        "loaded": l_val,
+                        "current": c_val,
+                    })
+        return changes
+
+    @action.get(action_name="restart-info")
+    async def restart_info_action(self) -> "ApiSuccessResponse":
+        """Read-only diff between the live worker's launch payload and the
+        current entity snapshot. Powers the 'Command Status' debug viewer.
+
+        ``loaded`` is the payload captured at last successful ``start_pty()``
+        (None before first start). ``current`` is computed live from the
+        entity's current fields. ``changed`` lists the field paths that
+        differ — empty when nothing has drifted since last start.
+        """
+        current = self._restart_snapshot_payload()
+        loaded = self.last_started_snapshot
+        changed = self._diff_snapshot_fields(loaded, current)
+        return ApiSuccessResponse(
+            data={
+                "restart_required": self.restart_required,
+                "running": self.status == ProcessStatus.RUNNING.value,
+                "worker_type": current.get("generic", {}).get("worker_type"),
+                "loaded": loaded,
+                "current": current,
+                "changed": changed,
             }
         )
 

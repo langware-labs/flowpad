@@ -1,7 +1,7 @@
 import React from 'react';
 import { ScopeBar, type ScopeBarOption } from '@src/components/ui/scope-bar';
 
-export type EntityTypeFilter = 'all' | 'agent' | 'skill' | 'markdown' | 'spec';
+export type EntityTypeFilter = 'all' | 'agent' | 'skill' | 'markdown' | 'spec' | 'whiteboard';
 
 interface EntityTypeBarProps {
   value: EntityTypeFilter;
@@ -16,6 +16,7 @@ const OPTIONS: { value: EntityTypeFilter; label: string }[] = [
   { value: 'skill', label: 'Skill' },
   { value: 'markdown', label: 'Document' },
   { value: 'spec', label: 'Spec' },
+  { value: 'whiteboard', label: 'Whiteboard' },
 ];
 
 export function EntityTypeBar({ value, onChange, counts }: EntityTypeBarProps): React.ReactElement {

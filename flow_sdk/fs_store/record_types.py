@@ -114,6 +114,7 @@ class RecordType(StrEnum):
     MARKDOWN = "markdown"
     SPEC = "spec"
     CONVERSATION = "conversation"
+    WHITEBOARD = "whiteboard"
 
     COLLABORATION_ROOM = "collaboration_room"
 

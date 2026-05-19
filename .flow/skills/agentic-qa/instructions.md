@@ -5,11 +5,33 @@
 - Backend: `http://localhost:9008` (port set via `LOCAL_SERVER_PORT=9008` in `.env.local`)
 - Frontend: `http://localhost:4098` (VITE_PORT=4098 in `.env.local`, NOT 4097)
 - Backend start command: `cd /Users/shlom/Documents/dev/flowpad-oss && LOCAL_SERVER_PORT=9008 uv run -m flow_sdk.server.run`
-- Backend reindex endpoint: `POST http://localhost:9008/api/v1/search/reindex/<record_type>`
+- Backend reindex endpoint: `POST http://localhost:9008/api/v1/graph/<type>/<id>/wiki/reindex` (per-entity). The path `/api/v1/search/reindex/<type>` does NOT exist (returns 405) — older docs reference it; the actual route was renamed and only the per-entity form remains as of 2026-05-19.
 - Platform: darwin (macOS)
 - Browser: chromium via MCP debugMcp (shared with user's interactive session — can cause tab contention when multiple testers run in parallel)
 
 ## Learnings
+
+### 2026-05-19 — Whiteboard validation cycle (8 scenarios / 27 sub-tests)
+
+**Real bug found + fixed: mermaid import dropped labels** — `ui/src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx:341-365` (handleImport). `parseMermaidToExcalidraw()` returns `ExcalidrawElementSkeleton[]` — minimal shape that MUST be run through `lib.convertToExcalidrawElements(...)` before `api.updateScene()`. Raw skeletons render rectangles without text labels and arrows without start/endBinding, causing the mermaid auto-sync to emit `N1[Untitled]` + `%% loose elements: unbound-arrow` instead of the actual node labels.
+
+**Real bug found + fixed: asset tree icons hardcoded to FileText** — `ui/src/components/browseable-tree/adapters/assetTypeRoot.tsx` lines 140 + 285 hardcoded `<FileText />` for every asset CHILD row. The category HEADER (line 264) correctly resolved per-type icon via `resolveAssetIcon(type.icon)`, but children all showed FileText regardless of type — affecting skills, agents, markdown, AND whiteboards (pre-existing bug, surfaced by adding Whiteboard). Fixed by threading `type.icon` into `assetChild` + adding className override to `resolveAssetIcon` for the smaller leaf size.
+
+**No Cmd+K binding for QuickCreate** — confirmed via grep. The only Cmd+K handler is for the sidebar at `ui/src/components/ui/sidebar.tsx:81`. QuickCreate is click-only (`MiniDesktop` on landing, "+" buttons in asset lists). Scenarios that assume Cmd+K will fail.
+
+**Bare URL `/dock/assets/wiki/<name>` may not auto-mount WikiResolveView** — needs confirmation under single-tester conditions (cross-tester tab pollution disrupted the test). Click-from-markdown path works correctly. AssetsPage at `ui/src/components/assets/AssetsPage.tsx:551` mounts WikiResolveView, but the dock pane may need to be explicitly opened first.
+
+**Folder rename behavior unclear** — after `mv <folder> <folder>-renamed` the entity disappeared from `/api/v1/graph/whiteboard` entirely (instead of re-resolving via stable frontmatter id). Needs single-tester re-test to distinguish real indexer cache bug from contention-driven cleanup. The mintable-id frontmatter pattern is supposed to make rename safe.
+
+**DELETE endpoint preserves the on-disk folder by default** — `flow_sdk/fs_store/record.py:1964-1986` `Record.delete()` only removes the entity row + shadow `record_dir`; the live `asset_ref` folder is kept unless `delete_ref=True` is passed. This is shared behavior across all asset types. UI tests should assert "entity gone" not "folder gone".
+
+**EntityTypeBar is NOT on /dock/assets/list/<type>** — that bar lives only inside `AssetPickerPopover` (the asset-pick overlay). The standalone assets page uses BrowseableTree + table; URL-based type filter is the only filter.
+
+**Whiteboard editor save uses fsManager.writeFile (POST), not HTTP PUT** — `ts_sdk/src/services/fsService.ts:441` builds the write via `createFSAction(typeid, 'write', path, 'POST')`. Scenarios that instrument fetch for `method:'PUT'` board.json saves will measure zero events; hook `fsManager.writeFile` or `dataManager.callAction` instead.
+
+**Tab contention with parallel qa-testers — confirmed reproducible** — shared MCP Chrome session means `browser_tabs.select(index)` doesn't reliably pin focus; concurrent testers' tabs hijack each other within seconds. For scenarios driving multi-step UI, serialize testers (1 concurrent worker). Bash + API-only scenarios are safe to parallelize. Reaffirms the 2026-05-12 learning.
+
+**Mermaid v10+ emits double-curly diamond syntax** — `flow_sdk/fs_records/_whiteboard_mermaid.py` produces `N1{{OK?}}`, not single-curly `N1{OK?}`. Both are valid mermaid; scenarios should accept either form.
 
 ### 2026-05-12 — Assets index + asset-picker-on-agents QA cycle (v0.2.21-fixes)
 

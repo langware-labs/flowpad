@@ -25,6 +25,8 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^5.1.1",
+    "@excalidraw/excalidraw": "^0.18.1",
+    "@excalidraw/mermaid-to-excalidraw": "^1.1.2",
     "@lexical/react": "^0.32.1",
     "@milkdown/core": "^7.18.0",
     "@milkdown/ctx": "^7.18.0",
