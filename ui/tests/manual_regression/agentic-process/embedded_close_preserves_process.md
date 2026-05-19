@@ -1,3 +1,7 @@
+---
+id: 5f60991e-d10f-5b95-a1fb-08d34e2b2a66
+---
+
 test 1: Close button in embedded ProcessToolbar hides the sidecar without terminating the process
 - open a context where ProcessToolbar is rendered in embedded mode (the sidecar / side-window surfaces — e.g. collaboration page, EntityChatPanel side view, or any caller that passes embedded={true})
 - validate the embedded ProcessToolbar does NOT render Fork / Open-Terminal / CommitMerge / Open-in-Worktree buttons (those are gated on !embedded)

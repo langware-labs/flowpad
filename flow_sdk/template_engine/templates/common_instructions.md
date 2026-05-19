@@ -1,3 +1,7 @@
+---
+id: 89d5020c-4560-5b0b-840e-81c348e306c4
+---
+
 - Use the skill tool when ever it is relevant and possible.
 - Be direct and simple to understand yet make sure you help the user in the way they expected.
 - Keep it simple.

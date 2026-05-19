@@ -1,3 +1,7 @@
+---
+id: bb349b16-b1f1-5eb4-a773-0374c894604b
+---
+
 test 1: Create multiple terminal tabs and switch between them
 - navigate to the Shell view via sidebar
 - validate terminal is visible with at least one tab

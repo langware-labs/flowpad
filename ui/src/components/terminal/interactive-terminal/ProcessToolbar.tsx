@@ -30,6 +30,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from '
 import { useToast } from '@src/hooks/use-toast';
 import { ToastAction } from '@src/components/ui/toast';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { closeTerminalTargets } from '@src/hooks/useActiveTerminals';
 import { PTYViewer } from './pty-viewer';
 import { PTYEventsViewer } from './pty-events-viewer';
 import type { ColVisibility, TraceFilters } from './InteractiveTerminal';
@@ -113,7 +114,7 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
         duration: Infinity,
         action: (
           <div className="flex gap-2">
-            <ToastAction altText="Terminate" onClick={() => { void process.close(); dismiss(id); apiTimeoutToastId.current = null; }}>
+            <ToastAction altText="Terminate" onClick={() => { void closeTerminalTargets([process.typeId]); dismiss(id); apiTimeoutToastId.current = null; }}>
               Terminate
             </ToastAction>
             <ToastAction altText="Keep Waiting" onClick={() => { dismiss(id); apiTimeoutToastId.current = null; }}>

@@ -15,7 +15,7 @@ from .todo_update import TodoUpdateEntry
 from .tool_result import ToolResultEntry
 from .tool_use import ToolUseEntry
 from .unknown import UnknownEntry
-from .usage import TokenUsageEntry
+from .usage import CodexUsageEntry, UsageEntry
 from .user_message import UserMessageEntry
 from .web_fetch import WebFetchEntry
 
@@ -31,8 +31,9 @@ __all__ = [
     "ShellCommandEntry",
     "SummaryEntry",
     "SystemEntry",
+    "CodexUsageEntry",
     "TodoUpdateEntry",
-    "TokenUsageEntry",
+    "UsageEntry",
     "ToolResultEntry",
     "ToolUseEntry",
     "UnknownEntry",

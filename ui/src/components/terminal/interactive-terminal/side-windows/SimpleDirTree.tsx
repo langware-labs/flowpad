@@ -12,6 +12,7 @@ import {
   FileCode,
   FileText,
   Folder,
+  FolderSearch,
   Image,
   RefreshCw,
 } from 'lucide-react';
@@ -149,6 +150,12 @@ export const SimpleDirTree: React.FC<SimpleDirTreeProps> = ({
   const [assetRefreshKey, setAssetRefreshKey] = useState(0);
   const [pathAssets, setPathAssets] = useState<PathAsset[]>([]);
   const [assetIconNames, setAssetIconNames] = useState<Record<string, string | null>>({});
+  const [filterQuery, setFilterQuery] = useState('');
+
+  // Reset filter when navigating between directories — a query that fit the
+  // old listing rarely fits the next one, and a stale filter that hides
+  // every entry looks like the panel is broken.
+  useEffect(() => { setFilterQuery(''); }, [currentPath]);
 
   const atTop = currentPath === normalizedTop;
   const browseResult = fs?.browse(currentPath);
@@ -261,6 +268,17 @@ export const SimpleDirTree: React.FC<SimpleDirTreeProps> = ({
     [computeNodeTypeId.id],
   );
 
+  const handleRevealInFinder = useCallback(
+    async (path: string) => {
+      try {
+        await openExternalFromComputeNode(computeNodeTypeId.id, path, { select: true });
+      } catch (error) {
+        console.error('[SimpleDirTree] Failed to reveal in file manager:', path, error);
+      }
+    },
+    [computeNodeTypeId.id],
+  );
+
   const handleEnter = useCallback(
     (item: { name: string; is_dir?: boolean; vfs_abs_path?: string }, asset?: PathAsset) => {
       const childPath = joinPath(currentPath, item.name);
@@ -297,13 +315,15 @@ export const SimpleDirTree: React.FC<SimpleDirTreeProps> = ({
   );
 
   const sortedItems = useMemo(() => {
-    return [...items].sort((a, b) => {
+    const q = filterQuery.trim().toLowerCase();
+    const base = q ? items.filter((item) => item.name.toLowerCase().includes(q)) : items;
+    return [...base].sort((a, b) => {
       const aDir = a.is_dir ? 0 : 1;
       const bDir = b.is_dir ? 0 : 1;
       if (aDir !== bDir) return aDir - bDir;
       return a.name.localeCompare(b.name);
     });
-  }, [items]);
+  }, [items, filterQuery]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
@@ -314,6 +334,18 @@ export const SimpleDirTree: React.FC<SimpleDirTreeProps> = ({
         <Button variant="ghost" size="sm" onClick={handleRefresh} className="h-6 w-6 shrink-0 p-0">
           <RefreshCw className="h-3.5 w-3.5" />
         </Button>
+      </div>
+
+      <div className="shrink-0 border-b px-2 py-1">
+        <input
+          type="text"
+          value={filterQuery}
+          onChange={(e) => setFilterQuery(e.target.value)}
+          placeholder="Filter…"
+          className="w-full rounded border border-border bg-background px-2 py-1 text-xs"
+          aria-label="Filter files"
+          data-testid="dir-tree-filter"
+        />
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-1">
@@ -369,6 +401,15 @@ export const SimpleDirTree: React.FC<SimpleDirTreeProps> = ({
                 </button>
                 <button
                   type="button"
+                  onClick={() => void handleRevealInFinder(childPath)}
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
+                  aria-label={`Reveal in Finder/Explorer: ${childPath}`}
+                  title={`Reveal in Finder/Explorer\n${childPath}`}
+                >
+                  <FolderSearch className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  type="button"
                   onClick={() => void handleOpenExternal(childPath)}
                   className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
                   aria-label={`Open externally: ${childPath}`}
@@ -381,7 +422,9 @@ export const SimpleDirTree: React.FC<SimpleDirTreeProps> = ({
           })}
 
           {sortedItems.length === 0 && browseResult && (
-            <p className="mt-4 px-2 text-center text-xs text-muted-foreground">empty</p>
+            <p className="mt-4 px-2 text-center text-xs text-muted-foreground">
+              {filterQuery.trim() ? 'no matches' : 'empty'}
+            </p>
           )}
         </div>
       </div>

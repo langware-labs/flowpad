@@ -1,3 +1,7 @@
+---
+id: ee7a1da9-3eaa-5db1-9946-71b9f207ee6d
+---
+
 test 1: Navigate back to home from active chat
 - navigate to {APP_URL}/
 - fill landing input with "return home test"

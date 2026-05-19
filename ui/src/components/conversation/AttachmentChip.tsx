@@ -10,6 +10,7 @@ import {
   FileText,
   FileVideo,
   Link as LinkIcon,
+  Loader2,
   MoreVertical,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -103,12 +104,35 @@ function absoluteUrl(url: string): string {
   return window.location.origin + (url.startsWith('/') ? url : `/${url}`);
 }
 
+/** Body-bundle lifecycle as the chip sees it:
+ *  - Uploading   : sender is still staging the body — bytes not on the hub yet.
+ *  - Ready       : body is on the hub but not on this machine — click to pull.
+ *  - Downloaded  : bytes are local — open/save normally (also: text-only and
+ *                  purely-local conversations, which never round-trip a body). */
+export enum AttachmentChipState {
+  Uploading = 'uploading',
+  Ready = 'ready',
+  Downloaded = 'downloaded',
+}
+
 interface AttachmentChipProps {
   url: string;
   filename: string;
+  /** Defaults to Downloaded — the file is local and openable. */
+  state?: AttachmentChipState;
+  /** Invoked when a READY chip is clicked — triggers the body-bundle pull. */
+  onDownload?: () => void;
+  /** True while that body-bundle pull is in flight. */
+  downloading?: boolean;
 }
 
-export function AttachmentChip({ url, filename }: AttachmentChipProps) {
+export function AttachmentChip({
+  url,
+  filename,
+  state = AttachmentChipState.Downloaded,
+  onDownload,
+  downloading = false,
+}: AttachmentChipProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [imgFailed, setImgFailed] = useState(false);
   const [videoFailed, setVideoFailed] = useState(false);
@@ -122,6 +146,52 @@ export function AttachmentChip({ url, filename }: AttachmentChipProps) {
     document.addEventListener('mousedown', onDocMouseDown);
     return () => document.removeEventListener('mousedown', onDocMouseDown);
   }, [menuOpen]);
+
+  // UPLOADING / READY: the bytes aren't on this machine, so there is no live
+  // URL to link or inline-render. Render a status row instead — greyed and
+  // inert for UPLOADING, dashed and clickable (→ download) for READY.
+  // Placed after every hook so hook order stays stable across renders.
+  if (state !== AttachmentChipState.Downloaded) {
+    const { Icon, bg, label } = fileMeta(filename);
+    const isUploading = state === AttachmentChipState.Uploading;
+    const clickable = state === AttachmentChipState.Ready && !downloading && !!onDownload;
+    const sub = isUploading
+      ? 'Uploading…'
+      : downloading
+        ? 'Downloading…'
+        : `${label} · Download`;
+    return (
+      <div className="max-w-[360px]">
+        <button
+          type="button"
+          disabled={!clickable}
+          onClick={clickable ? () => onDownload?.() : undefined}
+          title={isUploading ? 'File not uploaded yet' : downloading ? 'Downloading…' : 'Click to download'}
+          className={cn(
+            'flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors',
+            isUploading
+              ? 'cursor-not-allowed border-border bg-background opacity-50'
+              : clickable
+                ? 'cursor-pointer border-dashed border-primary/60 bg-background hover:bg-muted/40'
+                : 'cursor-default border-dashed border-primary/60 bg-background',
+          )}
+        >
+          <div
+            className={cn(
+              'flex h-10 w-10 shrink-0 items-center justify-center rounded text-white',
+              isUploading ? 'bg-slate-400' : bg,
+            )}
+          >
+            {downloading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Icon className="h-5 w-5" />}
+          </div>
+          <div className="flex min-w-0 flex-col">
+            <span className="truncate text-sm font-medium text-foreground">{filename}</span>
+            <span className="text-[11px] uppercase tracking-wide text-muted-foreground">{sub}</span>
+          </div>
+        </button>
+      </div>
+    );
+  }
 
   const handleCopyLink = async () => {
     try {
@@ -179,7 +249,7 @@ export function AttachmentChip({ url, filename }: AttachmentChipProps) {
           </a>
           <button
             type="button"
-            onClick={handleCopyLink}
+            onClick={() => void handleCopyLink()}
             className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground transition-colors hover:bg-muted"
           >
             <LinkIcon className="h-3 w-3 text-muted-foreground" />

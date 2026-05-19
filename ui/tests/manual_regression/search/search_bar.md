@@ -1,3 +1,7 @@
+---
+id: aa8a30e6-0547-5886-a3e7-45e5c8ce9fcc
+---
+
 precondition: bootstrap must complete before any deep-link / keypress assertion. Each test below waits for window.appReady === true after navigation; otherwise the SearchView TabsContent isn't mounted yet and the input testid won't be in the DOM.
 
 test 1: Home page has a search bar

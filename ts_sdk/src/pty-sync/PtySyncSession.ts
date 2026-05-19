@@ -1,6 +1,8 @@
 import type { Terminal } from '@xterm/xterm';
 import type { OutputChunk } from './types.js';
 import { LiveXtermAdapter } from './adapter/XtermAdapter.js';
+import { RowTextCache } from './adapter/RowTextCache.js';
+import { findRowByText } from './adapter/findRowByText.js';
 import { VirtualTerminal } from './simulator/VirtualTerminal.js';
 import { PtySegment, bucketEventToAbsRow } from './PtySegment.js';
 import type { PtyAnchor, PtyLineRange } from './PtySegment.js';
@@ -10,7 +12,16 @@ import type { PtyAnchor, PtyLineRange } from './PtySegment.js';
 export interface PtySyncSnapshot {
   adapter: LiveXtermAdapter | null;
   vt: VirtualTerminal | null;
+  /** Monotonic counter bumped on every snapshot rebuild (content OR segments). */
   version: number;
+  /**
+   * Monotonic counter bumped only when xterm buffer text may have changed
+   * (chunks processed, rebuild, initialize, dispose, notifyBufferReady).
+   * Stable across segment-only updates (initSegments, buildSegmentsFromAnchors,
+   * finalizeDefaultSegment). Consumers that derive data from buffer text
+   * should depend on this instead of `version` to avoid spurious work.
+   */
+  contentVersion: number;
   refLines: PtyLineRange[];
 }
 
@@ -29,6 +40,11 @@ export class PtySyncSession {
   private _adapter: LiveXtermAdapter | null = null;
   private _vt: VirtualTerminal | null = null;
   private _version = 0;
+  private _contentVersion = 0;
+  private _segmentsVersion = 0;
+  private _cachedRefLines: PtyLineRange[] | null = null;
+  private _refLinesVersion = -1;
+  private readonly _rowCache = new RowTextCache();
   private _snapshot: PtySyncSnapshot;
   private _listeners = new Set<Listener>();
   private readonly _scrollbackLines: number;
@@ -56,7 +72,7 @@ export class PtySyncSession {
     // Don't overwrite anchor-based segments — they are more precise.
     if (this._segments.some(s => s.startAnchor !== null)) return;
     this._segments = [new PtySegment(sessionStartTime, rows, baseAbsRow)];
-    this._bump();
+    this._bumpSegments();
   }
 
   /**
@@ -71,21 +87,16 @@ export class PtySyncSession {
 
     // Resolve absRow for each anchor by scanning the remaining buffer.
     // Each anchor's search starts after the previous match to avoid
-    // duplicate hits when multiple prompts have identical text.
-    const bufLen = this._adapter.getBufferLength();
-    const eviction = this._adapter.getEvictionOffset();
-    let scanFrom = eviction;
+    // duplicate hits when multiple prompts have identical text. The
+    // shared scanner caches per-row text lookups for the duration of
+    // the current content version.
+    let scanFrom = this._adapter.getEvictionOffset();
     for (const anchor of sorted) {
       const needle = anchor.text.slice(0, 60);
-      // Try with prompt prefix first (live session), fall back to raw text (replay).
-      const candidates = ['❯ ' + needle, needle];
-      for (let absRow = scanFrom; absRow < eviction + bufLen; absRow++) {
-        const lineText = this._adapter.getLineText(absRow);
-        if (lineText && candidates.some(c => lineText.trimStart().startsWith(c))) {
-          anchor.absRow = absRow;
-          scanFrom = absRow + 1;
-          break;
-        }
+      const absRow = findRowByText(this._adapter, [needle], { scanFrom, withPromptPrefix: true });
+      if (absRow !== null) {
+        anchor.absRow = absRow;
+        scanFrom = absRow + 1;
       }
     }
 
@@ -93,6 +104,9 @@ export class PtySyncSession {
     if (resolved.length === 0) {
       return;
     }
+
+    const bufLen = this._adapter.getBufferLength();
+    const eviction = this._adapter.getEvictionOffset();
 
     const newSegments: PtySegment[] = [];
     for (let i = 0; i < resolved.length; i++) {
@@ -114,7 +128,7 @@ export class PtySyncSession {
     }
 
     this._segments = newSegments;
-    this._bump();
+    this._bumpSegments();
   }
 
   /**
@@ -126,7 +140,7 @@ export class PtySyncSession {
     if (this._segments.length === 1) {
       this._segments[0].endTime = endTimeMs;
       this._segments[0].finalized = true;
-      this._bump();
+      this._bumpSegments();
     }
   }
 
@@ -200,6 +214,11 @@ export class PtySyncSession {
   initialize(term: Terminal): void {
     const adapter = new LiveXtermAdapter(term);
     this._adapter = adapter;
+    // Share the row-text cache so `adapter.getLineText` becomes a Map hit
+    // on repeat lookups within a single content version. `_bumpContent`
+    // below advances the version which transitively clears the cache on
+    // the next lookup.
+    adapter.attachRowCache(this._rowCache, this._contentVersion);
 
     const dims = adapter.getDimensions();
     this._vt = new VirtualTerminal({
@@ -211,14 +230,15 @@ export class PtySyncSession {
       seed: this._seed,
     });
 
-    this._bump();
+    this._bumpContent();
   }
 
   /** Tear down adapter and VT. Called on terminal dispose. */
   dispose(): void {
     this._adapter = null;
     this._vt = null;
-    this._bump();
+    this._rowCache.clear();
+    this._bumpContent();
   }
 
   // ── Chunk processing ──────────────────────────────────────────────────
@@ -237,7 +257,7 @@ export class PtySyncSession {
       this._adapter.setEvictionOffset(vt.getTotalScrolledOff());
     }
 
-    this._bump();
+    this._bumpContent();
   }
 
   // ── Resize ────────────────────────────────────────────────────────────
@@ -265,12 +285,12 @@ export class PtySyncSession {
 
     this._adapter.setEvictionOffset(newVt.getTotalScrolledOff());
     this._vt = newVt;
-    this._bump();
+    this._bumpContent();
   }
 
   /** Bump snapshot version after xterm has flushed its write queue. */
   notifyBufferReady(): void {
-    this._bump();
+    this._bumpContent();
   }
 
   // ── Session switch ────────────────────────────────────────────────────
@@ -278,7 +298,8 @@ export class PtySyncSession {
   /** Reset VT for a new session. */
   resetSession(): void {
     this._vt = null;
-    this._bump();
+    this._rowCache.clear();
+    this._bumpContent();
   }
 
   // ── useSyncExternalStore integration ──────────────────────────────────
@@ -293,6 +314,23 @@ export class PtySyncSession {
   }
 
   // ── Private ───────────────────────────────────────────────────────────
+
+  /**
+   * Bump for xterm buffer content changes (chunk processed, rebuild,
+   * initialize, dispose, notifyBufferReady). Invalidates the row-text
+   * cache via the adapter's contentVersion.
+   */
+  private _bumpContent(): void {
+    this._contentVersion++;
+    this._adapter?.onContentBump(this._contentVersion);
+    this._bump();
+  }
+
+  /** Bump for segment-only changes (initSegments, anchor rebuild, finalize). */
+  private _bumpSegments(): void {
+    this._segmentsVersion++;
+    this._bump();
+  }
 
   private _bump(): void {
     // Snapshot and version update synchronously so callers reading
@@ -327,11 +365,20 @@ export class PtySyncSession {
   }
 
   private _buildSnapshot(): PtySyncSnapshot {
+    // Reuse cached refLines whenever _segments hasn't mutated since the
+    // last snapshot. getRefLines() walks every segment + every row range,
+    // which showed up in perf traces (300ms / 34s) when called on every
+    // bump.
+    if (this._refLinesVersion !== this._segmentsVersion || this._cachedRefLines === null) {
+      this._cachedRefLines = this.getRefLines();
+      this._refLinesVersion = this._segmentsVersion;
+    }
     return {
       adapter: this._adapter,
       vt: this._vt,
       version: this._version,
-      refLines: this.getRefLines(),
+      contentVersion: this._contentVersion,
+      refLines: this._cachedRefLines,
     };
   }
 

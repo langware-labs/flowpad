@@ -1,82 +1,104 @@
+---
+id: 47a5f579-4616-50fc-a542-1680b4d0a2ee
+---
+
 # System Tools Service (Frontend)
 
-`SystemToolsService` is the TypeScript SDK service for system-level data management operations (backup, archive, restore, clear, scan, index). It is a reactive `EventEmitter` that tracks the currently running activity and exposes its state to React components via the `useSystemTools()` hook.
+`SystemToolsService` is the TypeScript SDK service for system-level data
+management operations: backup, archive, restore, clear, scan, and index. It is
+a reactive `EventEmitter` exposed to React through `useSystemTools()`.
 
-**Singleton:** `systemTools` in `ts_sdk/src/services/system-tools-service.ts`, pre-configured for `@local` compute node.
+**Singleton:** `systemTools` in `ts_sdk/src/services/system-tools-service.ts`,
+pre-configured for the `@local` compute node.
 
 ---
 
 ## Activity Model
 
-Only one activity runs at a time. `currentActivity === null` means idle.
+Only one system activity runs at a time. `currentActivity === null` means idle.
 
 ```ts
 export type SystemActivity = 'clear' | 'archive' | 'load_from_archive' | 'scan' | 'index';
 
-export interface ActivityProgress {
-  // Orchestration-level (set by resetAndRescan phases, seeded from type list)
+export interface TypeProgressRow {
+  type_name: string;
+  done: number;
   total: number;
-  done: string[];          // completed type names (advanced by WS sub-activity events)
-  current: string | null;  // type currently processing (set by WS sub-activity event)
-  pending: string[];       // types not yet started
-  counts?: Record<string, number>; // record counts per type (legacy / indexTypes path)
+  errors: number;
+  skipped: number;
+}
 
-  // Sub-activity level — populated by progress_report WS events (sub_activity_name set)
-  recordsDone?: number;    // records processed within the current type
-  recordsTotal?: number;   // total records in the current type
-  recordsSkipped?: number; // records skipped (index only)
-  recordsErrors?: number;  // records with errors
-
-  // Job level — populated by progress_report WS events (sub_activity_name=null)
-  jobDone?: number;        // types completed (from backend counter)
-  jobTotal?: number;       // total types (from backend counter)
-  jobText?: string;        // optional status text
+export interface IndexProgressTable {
+  job_name: SystemActivity;
+  rows: TypeProgressRow[];
+  current: string | null;
+  done: number;
+  total: number;
+  text: string | null;
+  ts: string;
 }
 ```
-
-### `progress_report` WebSocket Events
-
-During aggregate scan and index operations the backend broadcasts `progress_report` FlowData events over WebSocket. Two event shapes are emitted, interleaved per type:
-
-```json
-// Sub-activity event (sub_activity_name set) — per-record progress within a type
-{
-  "element_type": "progress_report",
-  "attributes": {
-    "job_name": "scan",
-    "sub_activity_name": "skill",
-    "done": 25, "skipped": 0, "errors": 0, "total": 500, "text": null
-  }
-}
-
-// Job-level event (sub_activity_name=null) — type completed
-{
-  "element_type": "progress_report",
-  "attributes": {
-    "job_name": "scan",
-    "sub_activity_name": null,
-    "done": 3, "skipped": 0, "errors": 0, "total": 12, "text": null
-  }
-}
-```
-
-The `SystemToolsService` WS listener filters these by `job_name === currentActivity` and populates `activityProgress` fields accordingly. Sub-activity events also advance `activityProgress.current` and `done[]`.
-
-### Conflict detection (`InProcessActivity`)
-
-Each scan/index operation acquires a slot in `_COMPUTE_ACTIVITIES` (module-level dict keyed by `"{entity_typeid}:{job_name}"`). A duplicate request while the job is running returns **409 Conflict**. The slot is released in a `finally` block. Slots auto-expire after `timeout_seconds` (default 600s for aggregate, 60s for per-type).
-
-**Source:** `flow_sdk/builtin/faas/in_process_activity.py` — `InProcessActivity` dataclass.
 
 State fields on the service:
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `currentActivity` | `SystemActivity \| null` | Currently running activity, null when idle |
-| `activityProgress` | `ActivityProgress \| null` | Per-step progress (null for single-step activities) |
+| `progressTable` | `IndexProgressTable \| null` | Latest scan/index table snapshot |
 | `scanInfo` | `ScanInfo \| null` | Mirrors `dataManager.scanInfo`, auto-updated |
 
 The service emits `'state_changed'` whenever any of these fields change.
+
+---
+
+## `progress_report` WebSocket Events
+
+During scan and index operations the backend broadcasts `progress_report`
+FlowData events over WebSocket. Each event carries a complete
+`IndexProgressTable` snapshot. Consumers replace their local table with the
+latest event; they do not merge sub-events.
+
+```json
+{
+  "element_type": "progress_report",
+  "attributes": {
+    "job_name": "index",
+    "rows": [
+      { "type_name": "skill", "done": 25, "total": 100, "errors": 0, "skipped": 10 },
+      { "type_name": "workflow", "done": 3, "total": 12, "errors": 0, "skipped": 0 }
+    ],
+    "current": "skill",
+    "done": 28,
+    "total": 112,
+    "text": null,
+    "ts": "2026-05-07T12:00:00+00:00"
+  }
+}
+```
+
+Progress is emitted only as table snapshots, with aggregate totals and per-type
+rows in the same payload.
+
+For `index`, totals are known before indexing starts because the backend first
+performs an internal scan. The first table contains all known type rows with
+`done=0` and populated `total`.
+
+For `scan`, totals are unknown while discovery is running. The table-level
+`total` is `0`, and rows are added as record types are discovered. The UI shows
+count-only scan progress instead of a percentage.
+
+The terminal event has `text: "complete"` and `current: null`.
+
+---
+
+## Conflict Detection
+
+Each scan/index operation acquires a slot in `_COMPUTE_ACTIVITIES`, keyed by
+`"{entity_typeid}:{job_name}"`. A duplicate request while the job is running
+returns **409 Conflict**. Slots are released in `finally` blocks and also
+auto-expire after `timeout_seconds`.
+
+**Source:** `flow_sdk/builtin/faas/in_process_activity.py`.
 
 ---
 
@@ -84,36 +106,27 @@ The service emits `'state_changed'` whenever any of these fields change.
 
 **File:** `ui/src/hooks/use-system-tools.ts`
 
-Uses `useSyncExternalStore` to subscribe to the singleton service. All components calling this hook share the same state — if one component triggers a backup, all components with this hook see `currentActivity === 'archive'` immediately.
-
 ```ts
 const {
-  currentActivity,   // SystemActivity | null
-  activityProgress,  // ActivityProgress | null
-  scanInfo,          // ScanInfo | null
-  busy,              // boolean — currentActivity !== null
-  // Actions (bound to singleton):
+  currentActivity,  // SystemActivity | null
+  progressTable,    // IndexProgressTable | null
+  scanInfo,         // ScanInfo | null
+  busy,             // currentActivity !== null
   clearIndex, clearAllData,
   backup, archive, restore,
   indexType, indexTypes,
   resetAndRescan,
-  getPaths, getStats, setDbPath,
-  openBackupFolder, openDbFolder, openLogsFolder,
+  fastScan,
 } = useSystemTools();
 ```
 
-**Pattern for derived state:**
-```ts
-const isClearing = currentActivity === 'clear';
-const isBacking  = currentActivity === 'archive';
-const indexingAll = currentActivity === 'index';
-```
+All components using the hook see the same singleton state.
 
 ---
 
 ## Methods
 
-### Single-step operations (no sub-progress)
+### Single-step operations
 
 | Method | Sets `currentActivity` |
 |--------|------------------------|
@@ -125,64 +138,43 @@ const indexingAll = currentActivity === 'index';
 
 Each resets `currentActivity` to `null` in a `finally` block.
 
-### Multi-step operations (with per-step progress)
+### `indexTypes(types, onProgress?)`
 
-#### `indexTypes(types, onProgress?)`
-
-Sequences through each type, emitting `'index'` activity updates per step. `activityProgress` is updated with `done`/`current`/`pending` after each type. Resets to `null` when complete.
-
-```ts
-await systemTools.indexTypes(types); // hook picks up progress automatically
-// or with legacy callback:
-await systemTools.indexTypes(types, (done, current, pending) => { ... });
-```
+Indexes the supplied types sequentially. Each per-type backend request emits
+its own `IndexProgressTable` snapshots; the optional callback is still invoked
+for callers that need explicit per-type sequencing.
 
 ### `resetAndRescan()`
 
-Compound five-phase operation visible in `SearchView`'s refresh button:
+Compound operation used by the search refresh UI:
 
 ```
-1. archive    — DB + records snapshot
-2. clear      — wipe FTS + entity index
-3. (fetch)    — get registered type list to seed activityProgress.pending
-4. scan       — aggregate scan: single GET /fs-records/scan (WS events drive progress)
-5. index      — aggregate index: single POST /fs-records/index (WS events drive progress)
+1. archive
+2. clear
+3. scan   - aggregate GET /fs-records/scan, table events drive progress
+4. index  - aggregate POST /fs-records/index, table events drive progress
 ```
 
-The `currentActivity` cycles `'archive' → 'clear' → 'scan' → 'index' → null`. Unlike the old per-type loop, scan and index phases now issue **single aggregate HTTP requests**. `activityProgress.current`, `done[]`, `recordsDone/Total`, and `jobDone/Total` are all updated reactively from `progress_report` WS events — the frontend no longer drives per-type sequencing.
+The `currentActivity` cycles `'archive' -> 'clear' -> 'scan' -> 'index' -> null`.
 
 ---
 
 ## Shared UI Components
 
-### `ActivityProgressModal` + `ActivityProgressBar`
-
-**File:** `ui/src/components/search-index/ActivityProgressModal.tsx`
-
-Reusable progress display extracted from `FsRecordsScannerViewer`.
+`ActivityProgressBar` and `ActivityProgressModal` in
+`ui/src/components/search-index/ActivityProgressModal.tsx` render the compact
+aggregate progress and the per-type row table.
 
 ```tsx
-// Bar (inline, clickable — opens modal)
-<ActivityProgressBar progress={activityProgress} onClick={() => setModalOpen(true)} />
+<ActivityProgressBar table={progressTable} onClick={() => setModalOpen(true)} />
 
-// Detailed modal
 <ActivityProgressModal
   open={modalOpen}
   onOpenChange={setModalOpen}
-  progress={activityProgress}
+  table={progressTable}
   title="Indexing Progress"
 />
 ```
-
----
-
-## Search Refresh Button
-
-The `SearchView` (`ui/src/pages/search-view/SearchView.tsx`) exposes a `RotateCcw` button next to the search bar that calls `resetAndRescan()`. While running:
-
-1. The button spins and is disabled
-2. A compact activity strip appears below the search bar showing the current activity label + mini progress bar
-3. Clicking the strip opens `ActivityProgressModal` with full done/current/pending detail
 
 ---
 
@@ -190,14 +182,14 @@ The `SearchView` (`ui/src/pages/search-view/SearchView.tsx`) exposes a `RotateCc
 
 | Component | Uses hook for |
 |-----------|---------------|
-| `database-section.tsx` | `isClearing`, `isBackingUp` (via `currentActivity`) |
+| `database-section.tsx` | `currentActivity` for clear/archive state |
 | `danger-zone.tsx` | same |
-| `FsRecordsScannerViewer.tsx` | `indexingAll`, `clearing`, `activityProgress` for index bar + modal |
-| `IndexNowModal.tsx` | `indexTypes` + `activityProgress` for per-type list |
-| `IndexRecommendedBanner.tsx` | `indexTypes` + `activityProgress` for per-type inline progress |
-| `SearchView.tsx` | `resetAndRescan`, `currentActivity`, `activityProgress` for strip + modal |
+| `FsRecordsScannerViewer.tsx` | scanner/index bars and modals |
+| `IndexNowModal.tsx` | `indexTypes` and `progressTable` rows |
+| `IndexRecommendedBanner.tsx` | stale-index refresh and row status |
+| `SearchView.tsx` | `resetAndRescan`, compact strip, modal |
 
 **Key source files:**
-- `ts_sdk/src/services/system-tools-service.ts` — service + singleton
-- `ui/src/hooks/use-system-tools.ts` — React hook
-- `ui/src/components/search-index/ActivityProgressModal.tsx` — shared bar + modal
+- `ts_sdk/src/services/system-tools-service.ts`
+- `ui/src/hooks/use-system-tools.ts`
+- `ui/src/components/search-index/ActivityProgressModal.tsx`

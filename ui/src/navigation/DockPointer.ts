@@ -184,9 +184,15 @@ export class DockPointer implements IDockPointer {
    * Pointer format: "editor/<assetType>/<vfsPath>"
    * @param assetType - The asset type (e.g., "skill", "markdown")
    * @param vfsPath - The VFS or filesystem path to the asset
+   * @param options - Query-string options (e.g. `{ editorMode: 'learning' }`)
    */
-  static forAssetEditor(assetType: string, vfsPath: string, layout: Layout = Layout.DOCK): DockPointer {
-    return new DockPointer(ViewType.ASSETS, `editor/${assetType}/${vfsPath.replace(/^\//, '')}`, undefined, layout);
+  static forAssetEditor(
+    assetType: string,
+    vfsPath: string,
+    layout: Layout = Layout.DOCK,
+    options?: Record<string, string>,
+  ): DockPointer {
+    return new DockPointer(ViewType.ASSETS, `editor/${assetType}/${vfsPath.replace(/^\//, '')}`, options, layout);
   }
 
   /**

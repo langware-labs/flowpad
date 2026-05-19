@@ -1,3 +1,7 @@
+---
+id: 29430b8b-4024-5ed6-b018-2b2ea34b70d1
+---
+
 test 1: ConversationView "first run" branch — brand-new session spawn (ConversationView.tsx:169)
 - prerequisite: a Task record with NO `agentic_session_id`, `agentic_process_id`, or `agentic_workdir` in metadata
 - navigate to the conversation surface for that task (open from a session-card or /dock/conversation/<id>)

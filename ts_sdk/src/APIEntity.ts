@@ -33,7 +33,18 @@ export function getProxy<T extends Manageable & { [key: string | symbol]: any }>
       const oldValue = target[property];
       const result = Reflect.set(target, property, value, receiver);
       if (result && oldValue !== value) {
-        if (property !== 'dirty' && property !== '_dirty') {
+        // Skip dirty + notify for internal fields. Underscore-prefixed
+        // properties (e.g. `_flowDataStream` lazy-init holder, `_dirty`,
+        // `_data` caches) are private to the entity — they are not part
+        // of the persisted schema and consumers do not subscribe to them.
+        // Firing notifyPropertyChanged for them is what triggered the
+        // render-phase "Cannot update component while rendering different
+        // component" warning: a getter-with-side-effects (e.g. `flowDataStream`)
+        // mutated `_flowDataStream` during a sibling component's render and
+        // synchronously dispatched setState across all subscribers.
+        const isInternal =
+          typeof property === 'string' && property.startsWith('_');
+        if (!isInternal && property !== 'dirty') {
           target.dirty = true;
           dataManager.notifyPropertyChanged(target.typeId, property as string);
         }
@@ -63,6 +74,14 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   namespace?: string;
   tags?: string[];
   system?: boolean;
+  /**
+   * Backend FSIndexer flag: true when the on-disk Record this entity points
+   * at can no longer be located. ``deepAssign`` in the constructor copies
+   * this off the wire JSON; subclasses don't need to redeclare.
+   */
+  orphan?: boolean;
+  /** ISO 8601 timestamp of the last ``orphan = true`` transition; null otherwise. */
+  orphan_since?: string | null;
   created_by?: string;
   created_date?: Date;
   updated_by?: string;
@@ -318,9 +337,10 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     }
     const workspaces: TypeId[] = [];
     this.expand?.auth_scopes.forEach((scope) => {
-      scope.forEach((typeId) => {
-        if (typeId.type === Workspace.type) {
-          workspaces.push(typeId);
+      scope.forEach((raw) => {
+        const tid = new TypeId(raw);
+        if (tid.type === Workspace.type) {
+          workspaces.push(tid);
         }
       });
     });
@@ -581,6 +601,31 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     return entity;
   }
 
+  /**
+   * Push this entity to the hub via the standard graph action
+   * ``POST /api/v1/graph/<type>/<id>/share``. The local backend's
+   * ``share`` action handler forwards the create to the hub using the
+   * stored cloud credentials. On success, ``remote`` is flipped.
+   *
+   * When ``recipients`` is provided (list of email strings) and the entity
+   * is a Conversation, each recipient is invited via the standard
+   * ``MembershipRequest`` pattern (one ``POST /graph/conversation/<id>/members``
+   * per recipient). See ``Conversation.share`` on the Python side.
+   */
+  public async share(recipients?: string[]): Promise<T> {
+    const info = new ActionInfo('share', this.typeId.type, this.typeId.id, 'POST');
+    info.bodyParameters = { ...this.toJSON(), ...(recipients ? { recipients } : {}) };
+    await dataManager.callAction<unknown, unknown>(info);
+    (this as any).remote = true;
+    return this as unknown as T;
+  }
+
+  /**
+   * True when this entity has a hub-side counterpart at the same id. Mirrors
+   * the Python ``Entity.remote`` field; flipped to ``true`` by ``share()``.
+   */
+  remote?: boolean;
+
   public async delete(): Promise<void> {
     console.log(
       `🗑️ [APIEntity.delete] Starting deletion of ${this.typeId.type}:${this.typeId.id} (${this.constructor.name})`,
@@ -652,20 +697,19 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     if (!this.expand?.auth_scopes) {
       return [];
     }
-    let selectedScope = this.expand?.auth_scopes.find((scope) => {
-      // Log to see the scope and typeId for debugging
-
-      return scope.some((typeId) => {
-        // Ensure workspaceTypeId is available and compare correctly
-        if (workspaceTypeId) {
-          return typeId.id === workspaceTypeId.id && typeId.type === workspaceTypeId.type;
-        }
-        return false;
-      });
-    });
-
-    if (!selectedScope && this.expand?.auth_scopes?.length > 0) {
-      selectedScope = this.expand?.auth_scopes[0];
+    const parsedScopes: TypeId[][] = this.expand.auth_scopes.map((scope) =>
+      scope.map((raw) => new TypeId(raw)),
+    );
+    let selectedScope = parsedScopes.find((scope) =>
+      workspaceTypeId
+        ? scope.some(
+            (typeId) =>
+              typeId.id === workspaceTypeId.id && typeId.type === workspaceTypeId.type,
+          )
+        : false,
+    );
+    if (!selectedScope && parsedScopes.length > 0) {
+      selectedScope = parsedScopes[0];
     }
     return selectedScope || [];
   }

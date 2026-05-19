@@ -1,3 +1,7 @@
+---
+id: a0f5322c-42b6-533d-9222-42878a8d1c9a
+---
+
 # PTY Line Synchronization — Annotation Gutter (right) & Trace Gutter (left)
 
 ## Context
@@ -60,11 +64,15 @@ interface PtySyncConfig {
 }
 ```
 
-### 1.3 Sniffer Event Data (left gutter)
+### 1.3 FlowData Trace Event Data (left gutter)
 
-Source: `useTraceGutter()` merges live sniffer events with historical transcript entries into `ClaudeTraceEvent[]`. Events map to `ClaudeTraceEvent` — see [trace-gutter.md](./trace-gutter.md) for the full model.
+The left gutter uses the FlowData trace channel, not the PTY I/O channel.
 
-Both live sniffer events and historical transcript events have their `absRow` resolved via `ptySyncSession.bucketTimestamp(ts)`, which uses `bucketEventToAbsRow` in `PtySegment.ts` to find the correct segment for each event's timestamp. See [trace-gutter.md](./trace-gutter.md) for the full bucketing model.
+Source: `useTraceGutter()` consumes `AgenticProcess.flowDataStream` through `useFlowDataTrace()`. That stream contains history loaded through `process.loadHistory()`, live worker stream output, and hook/sniffer events routed to the process.
+
+Every trace event has its `absRow` resolved via `ptySyncSession.bucketTimestamp(ts)`, which uses the current `PtySegment` list to find the best terminal row for the event timestamp. See [trace-gutter.md](./trace-gutter.md) for the full bucketing model.
+
+The PTY channel remains terminal I/O: `Shell` / `PtyConnection` deliver bytes to xterm and accept user input. `PtySyncSession` observes those chunks only to maintain terminal row coordinates for the parallel FlowData trace channel.
 
 ### 1.4 Annotation & Memo Entity Data (right gutter)
 
@@ -85,6 +93,10 @@ Source: `useAnnotationGutter` queries `Memo` entities (`memo_type === 'terminal_
 **Positioning strategy:**
 - `memo` / `comment`: `data.line` (exact row stored at creation time)
 - `prompt` / `plan`: scan xterm buffer via `adapter.getLineText(absRow)` for `content` — same approach as `buildSegmentsFromAnchors()`
+
+Prompt text for the prompt index is special: the canonical list comes from
+`AgenticProcess.getPrompts()` -> `transcript/prompts` -> `AgentTranscript.prompts`.
+Prompt annotations are only row anchors for click-to-scroll behavior.
 
 ---
 
@@ -390,10 +402,12 @@ Scroll state resets on session or `targetTimestamp` change.
 | `ts_sdk/src/pty-sync/simulator/VirtualTerminal.ts` | Core terminal emulator — processChunk, getCursorRow/getTotalScrolledOff getters |
 | `ts_sdk/src/pty-sync/types.ts` | Shared types: OutputChunk, TerminalDimensions, ScrollState, EnvSetup |
 | `ui/src/components/terminal/interactive-terminal/PtySyncContext.tsx` | React context provider + usePtySync / usePtySyncSession hooks |
-| `ui/src/components/terminal/interactive-terminal/use-trace-gutter.ts` | TraceGutter hook — merges sniffer + transcript, captures absRow anchors |
+| `ui/src/components/terminal/interactive-terminal/use-trace-gutter.ts` | TraceGutter hook — buckets per-process `AgenticProcess.flowDataStream` events to rows |
 | `ui/src/components/terminal/interactive-terminal/TraceGutter.tsx` | Left gutter component — dot column + expanded overlay panel |
 | `ui/src/components/terminal/interactive-terminal/use-annotation-gutter.ts` | Annotation hook — text-search + data.line positioning, memo/comment CRUD |
 | `ui/src/components/terminal/interactive-terminal/AnnotationGutter.tsx` | Right gutter — per-row cells, add/view/delete popovers |
-| `ui/src/types/trace-event.ts` | ClaudeTraceEvent type, TranscriptEntryData, mapper functions |
-| `ui/src/hooks/use-session-transcript.ts` | Fetches historical transcript from backend, caches by sessionId |
+| `ui/src/types/trace-event.ts` | Vendor-neutral `TraceEvent` type and FlowData mapper |
+| `ui/src/hooks/use-flow-data-trace.ts` | Loads process history and maps `AgenticProcess.flowDataStream` to trace events |
+| `ui/src/hooks/use-agentic-process-stream.ts` | Stable `useSyncExternalStore` subscription to the per-process stream |
+| `ts_sdk/src/process/agentic-process.ts` | `getPrompts()` calls `transcript/prompts` for canonical prompt text |
 | `ts_sdk/src/entities/memo.ts` | Memo entity (memo_type, session_id, data.line, content) |

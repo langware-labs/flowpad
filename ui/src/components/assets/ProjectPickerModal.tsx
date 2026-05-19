@@ -95,6 +95,16 @@ export function ProjectPickerModal({
     });
   };
 
+  const selectAllFiltered = () => {
+    setCheckedIds((prev) => {
+      const next = new Set(prev);
+      for (const r of filtered) next.add(r.pid);
+      return next;
+    });
+  };
+
+  const clearSelection = () => setCheckedIds(new Set());
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[85vh] overflow-hidden sm:max-w-lg">
@@ -112,6 +122,31 @@ export function ProjectPickerModal({
             className="h-8 pl-8 text-sm"
             autoFocus
           />
+        </div>
+
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <span>
+            {checkedIds.size} selected
+            {search.trim() ? ` · ${filtered.length} match${filtered.length === 1 ? '' : 'es'}` : ''}
+          </span>
+          <div className="flex gap-1">
+            <button
+              type="button"
+              onClick={selectAllFiltered}
+              disabled={filtered.length === 0}
+              className="rounded-md px-2 py-1 hover:bg-accent/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {search.trim() ? 'Select all matches' : 'Select all'}
+            </button>
+            <button
+              type="button"
+              onClick={clearSelection}
+              disabled={checkedIds.size === 0}
+              className="rounded-md px-2 py-1 hover:bg-accent/50 hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Clear selection
+            </button>
+          </div>
         </div>
 
         <div className="max-h-96 overflow-y-auto rounded-lg border border-border bg-card">

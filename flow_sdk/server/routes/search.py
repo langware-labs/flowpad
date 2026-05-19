@@ -4,28 +4,22 @@ Search route for the local server.
 Uses FTS5 full-text search via Entity.search().
 """
 
-import asyncio
 import logging
 from typing import Optional
 
 from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
 
+from flow_sdk.server.search_filters import (
+    apply_folder_filter,
+    apply_scope_filter,
+    apply_system_filter,
+    apply_tag_filter,
+)
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-
-async def _reindex_all() -> int:
-    """Discover all indexable record types and submit them for indexing via Record.sync_to_db().
-
-    Returns the count of records indexed.
-    """
-    from flow_sdk.fs_store.indexer import IndexerOptions, get_shared_indexer  # noqa: PLC0415
-
-    result = await get_shared_indexer().index(IndexerOptions(verbose=False))
-    logger.info("reindex: indexed %d records", result.total_indexed)
-    return result.total_indexed
 
 
 async def _entity_asset_ref(ent) -> str:
@@ -56,56 +50,6 @@ async def _entity_asset_ref(ent) -> str:
     return ""
 
 
-def _apply_scope_filter(entities: list, scope: str | None, project_ids: str | None) -> list:
-    """Filter entities by scope and optional project IDs.
-
-    `scope` may be a single value (`user` / `project` / `system`) or a
-    comma-separated set (`user,project`). Comma-separated form means union:
-    keep entities whose `scope` is in the listed set. When `project` is in the
-    set and `project_ids` is given, project-scoped entities are additionally
-    restricted to those project IDs; non-project-scoped entities are unaffected.
-
-    Entities without a populated `scope` field are dropped — by construction
-    the indexer stamps every record's scope from the FSRef walk, so an empty
-    value means an unindexed/legacy row that needs reindexing.
-    """
-    if not scope:
-        return entities
-    scope_set = {s.strip() for s in scope.split(",") if s.strip()}
-    if not scope_set:
-        return entities
-
-    pid_list = [p.strip() for p in project_ids.split(",") if p.strip()] if project_ids else []
-    pid_set = set(pid_list)
-
-    def _keep(e) -> bool:
-        s = (getattr(e, "scope", None) or "")
-        if s not in scope_set:
-            return False
-        if s == "project" and pid_set and (getattr(e, "project_id", None) or "") not in pid_set:
-            return False
-        return True
-
-    return [e for e in entities if _keep(e)]
-
-
-def _apply_folder_filter(entities: list, parent_path: str | None, vault_root: str | None) -> list:
-    """Filter entities by parent_path (exact) and/or vault_root (prefix).
-
-    parent_path  → direct children only (exact equality).
-    vault_root   → all descendants at any depth.
-    Both can be combined (AND).
-    """
-    if not parent_path and not vault_root:
-        return entities
-    filtered = entities
-    if parent_path:
-        filtered = [e for e in filtered if (getattr(e, "parent_path", None) or "") == parent_path]
-    if vault_root:
-        filtered = [e for e in filtered if (getattr(e, "vault_root", None) or "") == vault_root]
-    return filtered
-
-
 async def _entity_to_result(ent) -> dict:
     name = (
         getattr(ent, "name", None)
@@ -133,13 +77,6 @@ async def _entity_to_result(ent) -> dict:
     return result
 
 
-def _apply_system_filter(entities: list, include_system: bool) -> list:
-    """Drop system-project entities unless the caller opted in."""
-    if include_system:
-        return entities
-    return [e for e in entities if not getattr(e, "system", False)]
-
-
 @router.get("/api/v1/search")
 async def search_records(
     q: str = Query(default="", description="Search query"),
@@ -147,9 +84,9 @@ async def search_records(
     offset: int = Query(default=0, ge=0, description="Offset for pagination"),
     record_type: Optional[str] = Query(default=None, description="Filter by record type"),
     status: Optional[str] = Query(default=None, description="Filter by record status"),
-    scope: Optional[str] = Query(default=None, description="Filter by scope. Single value (user|project) or comma-separated set (e.g. user,project) for a union."),
+    user: Optional[str] = Query(default=None, description="ScopeFilter.user: include user-scope records. 'true' (default if absent) or 'false'."),
+    projects: Optional[str] = Query(default=None, description="ScopeFilter.projects: comma-separated project entity IDs to include."),
     tags: Optional[str] = Query(default=None, description="Comma-separated tags to filter by"),
-    project_ids: Optional[str] = Query(default=None, description="Comma-separated project entity IDs (used when scope=project)"),
     parent_path: Optional[str] = Query(default=None, description="Filter to records whose parent_path is exactly this absolute path (direct children only)"),
     vault_root: Optional[str] = Query(default=None, description="Filter to records whose vault_root is exactly this absolute path (descendants at any depth)"),
     include_system: bool = Query(default=False, description="Include entities from SDK-shipped system projects. Default off."),
@@ -163,7 +100,17 @@ async def search_records(
     from flow_sdk.core.entity.entity_model import Entity
     from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
     from flow_sdk.db.drivers.sqlite.sqlite_driver import SearchCalibration  # noqa: PLC0415
+    from flow_sdk.server.search_filters import ScopeFilter  # noqa: PLC0415
     import json as _json  # noqa: PLC0415
+
+    # Build the unified ScopeFilter. If `user` param is absent (legacy
+    # caller), pass None so the filter is disabled (back-compat for any
+    # request that hasn't migrated to the new wire format yet).
+    scope_filter = (
+        ScopeFilter.from_query_params({"user": user, "projects": projects})
+        if user is not None or projects is not None
+        else None
+    )
 
     tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
 
@@ -201,21 +148,10 @@ async def search_records(
         qf.order_by = {"updated_date": "desc"}
         all_entities = await Entity.get_all(qf)
 
-        # Apply scope + project_ids filtering
-        all_entities = _apply_scope_filter(all_entities, scope, project_ids)
-
-        # Apply folder filter (parent_path / vault_root)
-        all_entities = _apply_folder_filter(all_entities, parent_path, vault_root)
-
-        # Filter out system entities unless the caller opted in
-        all_entities = _apply_system_filter(all_entities, include_system)
-
-        # Apply tags filter
-        if tag_list:
-            all_entities = [
-                e for e in all_entities
-                if all(t in (getattr(e, "tags", None) or []) for t in tag_list)
-            ]
+        all_entities = apply_scope_filter(all_entities, scope_filter)
+        all_entities = apply_folder_filter(all_entities, parent_path, vault_root)
+        all_entities = apply_system_filter(all_entities, include_system)
+        all_entities = apply_tag_filter(all_entities, tag_list)
 
         total_count = len(all_entities)
         page = all_entities[offset:offset + limit]
@@ -225,8 +161,32 @@ async def search_records(
             "data": {"results": results, "query": "", "total": total_count, "indexer_ready": True},
         })
 
+    # Sanitize the FTS query: the unicode61 tokenizer used for entities_fts
+    # treats '-' as a word separator, AND FTS5 syntax interprets a hyphen
+    # adjacent to a term as a NEGATION operator. A user query like
+    # ``hello-flowpad`` therefore parses as ``hello NOT flowpad`` and
+    # matches nothing. Replace operator-y punctuation with spaces so
+    # callers can type hyphenated names directly. (Quotation marks left
+    # alone — callers can still escape for phrase queries.)
+    fts_q = q
+    if fts_q:
+        for ch in "-/_:":
+            fts_q = fts_q.replace(ch, " ")
+        fts_q = " ".join(fts_q.split())
+
     try:
-        entities = await Entity.search(query=q, limit=limit + offset, record_type=record_type, status=status, calibration=calibration)
+        # Fetch (offset + limit) rows from FTS, then apply python-side
+        # filters. NOTE: if filters drop more than `offset` rows here, page 2+
+        # may be short. A correct fix needs offset pushed into the SQL — left
+        # as a follow-up. `total` is the post-filter count BEFORE pagination,
+        # so callers see a consistent "matches found" number.
+        entities = await Entity.search(
+            query=fts_q,
+            limit=limit + offset,
+            record_type=record_type,
+            status=status,
+            calibration=calibration,
+        )
     except Exception:
         logger.warning("FTS search failed (index may not be ready), returning empty results", exc_info=True)
         return JSONResponse(content={
@@ -234,26 +194,14 @@ async def search_records(
             "data": {"results": [], "query": q, "total": 0, "indexer_ready": False},
         })
 
-    # Apply scope + project_ids filtering
-    entities = _apply_scope_filter(entities, scope, project_ids)
+    entities = apply_scope_filter(entities, scope_filter)
+    entities = apply_folder_filter(entities, parent_path, vault_root)
+    entities = apply_system_filter(entities, include_system)
+    entities = apply_tag_filter(entities, tag_list)
 
-    # Apply folder filter (parent_path / vault_root)
-    entities = _apply_folder_filter(entities, parent_path, vault_root)
-
-    # Filter out system entities unless the caller opted in
-    entities = _apply_system_filter(entities, include_system)
-
-    # Apply tags filter
-    if tag_list:
-        entities = [
-            e for e in entities
-            if all(t in (getattr(e, "tags", None) or []) for t in tag_list)
-        ]
-
-    # Apply offset slice
-    entities = entities[offset:]
-
-    results = [await _entity_to_result(e) for e in entities]
+    total_count = len(entities)
+    page = entities[offset:offset + limit]
+    results = [await _entity_to_result(e) for e in page]
 
     # Resolve project_name for each unique project_id in one batched read so
     # the UI can label per-project tree groups without a second round-trip.
@@ -276,59 +224,5 @@ async def search_records(
 
     return JSONResponse(content={
         "status": "SUCCESS",
-        "data": {"results": results, "query": q, "total": len(results), "indexer_ready": True},
-    })
-
-
-@router.post("/api/v1/search/reindex")
-async def reindex_records():
-    """Re-index all discoverable records via Record.sync_to_db()."""
-    indexed = await _reindex_all()
-    return JSONResponse(content={
-        "status": "SUCCESS",
-        "data": {"indexed": indexed},
-    })
-
-
-@router.post("/api/v1/search/reindex/{record_type}")
-async def reindex_records_by_type(record_type: str):
-    """Re-index all records of a specific type via Record.sync_to_db()."""
-    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
-
-    if SchemaRegistry.get_record_cls(record_type) is None:
-        return JSONResponse(
-            status_code=404,
-            content={"status": "FAIL", "message": f"Unknown record type: {record_type}", "data": None},
-        )
-
-    from flow_sdk.fs_store.record_list import RecordList  # noqa: PLC0415
-
-    from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
-
-    record_cls = SchemaRegistry.get_record_cls(record_type)
-    count = 0
-    live_ids: set[str] = set()
-    for rec in RecordList(record_class=record_cls):
-        try:
-            await rec.sync_to_db()
-            live_ids.add(rec.id)
-            count += 1
-        except Exception:
-            logger.exception("reindex: failed to index %s %s", record_type, rec.id)
-
-    # Delete entities whose records no longer exist on disk
-    from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
-    stale = await Entity.get_all(QueryFilter(type=record_type))
-    deleted = 0
-    for ent in stale:
-        if ent.id not in live_ids:
-            try:
-                await ent.delete()
-                deleted += 1
-            except Exception:
-                pass
-
-    return JSONResponse(content={
-        "status": "SUCCESS",
-        "data": {"indexed": count, "deleted": deleted, "record_type": record_type},
+        "data": {"results": results, "query": q, "total": total_count, "indexer_ready": True},
     })

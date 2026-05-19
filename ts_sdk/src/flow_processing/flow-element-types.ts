@@ -54,6 +54,9 @@ export const FlowElementTypes = {
   SURVEY: 'survey',
   CONTINUE: 'continue',
 
+  // Indexer / FAAS scan progress envelopes (emitted by in_process_activity)
+  PROGRESS_REPORT: 'progress_report',
+
   // Execution tracing / webhooks
   WEBHOOK: 'webhook',
 

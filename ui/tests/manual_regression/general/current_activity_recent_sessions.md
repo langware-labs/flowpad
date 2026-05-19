@@ -1,3 +1,7 @@
+---
+id: 1ffbf88e-5ed8-50f1-bf4a-80a78785937e
+---
+
 test 1: Home page has a current activity panel
 - [browser] navigate to {APP_URL}/
 - [browser] wait for page to load (networkidle)

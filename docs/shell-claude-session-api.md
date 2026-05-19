@@ -1,3 +1,7 @@
+---
+id: 69b3f08c-4316-5b87-a6bb-f49c1c3d1c31
+---
+
 # Shell & ClaudeSession Client-Side API
 
 ## Overview

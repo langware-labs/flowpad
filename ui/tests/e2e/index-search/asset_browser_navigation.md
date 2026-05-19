@@ -1,3 +1,7 @@
+---
+id: 05470b72-3355-5d04-a371-e063bf58822e
+---
+
 test 1: Assets page is accessible via the Assets nav item
 - [browser] navigate to {APP_URL}/
 - [browser] wait for page to load (networkidle)

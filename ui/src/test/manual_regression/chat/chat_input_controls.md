@@ -1,3 +1,7 @@
+---
+id: 441d2199-ed12-509e-bbc7-28a3baec26ef
+---
+
 test 1: Send message via Enter key
 - navigate to {APP_URL}/
 - fill landing input with "input controls test"

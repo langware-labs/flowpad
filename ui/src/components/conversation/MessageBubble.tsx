@@ -1,13 +1,15 @@
 import { useState, type MouseEvent, type ReactNode } from 'react';
-import { Pencil } from 'lucide-react';
+import { Pencil, Check, CheckCheck } from 'lucide-react';
 import type { FlowMessage } from '@sdk';
 import type { ConversationMessage } from '@sdk/entities/conversation';
-import { AttachmentType } from '@sdk/entities/flow-message';
+import { AttachmentType, type DeliveryStatus } from '@sdk/entities/flow-message';
 import type { ITask } from '@sdk/entities/task';
 import { MessageChips } from './chips/MessageChips';
 import { PromptApprovalRow } from './PromptApprovalRow';
 import { useLocalUser } from './useLocalUser';
 import { PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT } from './constants';
+import { formatTimeAgo } from '@src/utils/format-time-ago';
+import { flowMessageSpecTypeId } from './flow-message-helpers';
 
 interface MessageBubbleProps {
   message: ConversationMessage;
@@ -17,12 +19,69 @@ interface MessageBubbleProps {
   senderName: string;
   onEditName?: (newName: string) => void;
   onApproveAndExecute?: (attachmentIndex: number) => void;
+  /** Spawn a Claude Code session pre-loaded with the receiver-context prompt
+   *  (spec + transcript + conversation + attachments). Renders an emerald CTA
+   *  chip styled identically to Approve & Execute when the bubble's message
+   *  carries a Spec TypeId and the local user is the recipient. */
+  onImplementPlan?: () => void;
+  /** When a plan-implementation session already exists for this conversation,
+   *  the bubble shows an "Open Plan Implementation Session" link in place of
+   *  the Implement Plan chip. Set on every spec-bearing bubble in the thread
+   *  once one session is live so all bubbles point at the same session. */
+  onOpenPlanSession?: () => void;
+  /** Open the spec's markdown in an editable Milkdown view. Fires with the
+   *  Spec id the bubble carries — the bubble itself does the lookup so the
+   *  parent doesn't have to thread per-message TypeIds. Independent of the
+   *  Implement Plan / Open Session state — View Plan always renders when the
+   *  bubble has a spec and the local user is the recipient. */
+  onViewPlan?: (specId: string) => void;
   /** Optional content rendered below the message body (e.g. attachment chips). */
   footer?: ReactNode;
   /** Visual selection — drives the Context tab. */
   isSelected?: boolean;
   /** Click on the bubble fires this so the parent can mark it selected. */
   onSelect?: () => void;
+  /**
+   * Parent conversation's `message_status_visible` flag. When false, the
+   * receipt indicator is hidden on the sender side regardless of the
+   * underlying ``delivery_status``. Defaults to true.
+   */
+  conversationStatusVisible?: boolean;
+}
+
+/**
+ * Three-state delivery receipt indicator (WhatsApp-style):
+ *   created   → ✓        single check, muted
+ *   delivered → ✓✓       double check, muted
+ *   received  → ✓✓ blue  double check, accent color
+ *
+ * Renders nothing for incoming messages or when the parent conversation's
+ * `message_status_visible` flag is false.
+ */
+function DeliveryReceipt({ status }: { status: DeliveryStatus | undefined }) {
+  if (!status) return null;
+  if (status === 'created') {
+    return (
+      <span title="Sent" className="inline-flex items-center text-muted-foreground/70">
+        <Check className="h-3 w-3" strokeWidth={2.5} />
+      </span>
+    );
+  }
+  if (status === 'delivered') {
+    return (
+      <span title="Delivered" className="inline-flex items-center text-muted-foreground/70">
+        <CheckCheck className="h-3 w-3" strokeWidth={2.5} />
+      </span>
+    );
+  }
+  if (status === 'received') {
+    return (
+      <span title="Read" className="inline-flex items-center text-sky-500">
+        <CheckCheck className="h-3 w-3" strokeWidth={2.5} />
+      </span>
+    );
+  }
+  return null;
 }
 
 function avatarColor(role: ConversationMessage['role']): string {
@@ -69,15 +128,21 @@ export function MessageBubble({
   senderName,
   onEditName,
   onApproveAndExecute,
+  onImplementPlan,
+  onOpenPlanSession,
+  onViewPlan,
   footer,
   isSelected,
   onSelect,
+  conversationStatusVisible = true,
 }: MessageBubbleProps) {
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
   const { localUser } = useLocalUser();
 
   const isFromOther = !!(flowMessage?.sender_id && localUser?.id && flowMessage.sender_id !== localUser.id);
+  const isOutgoing = !!(flowMessage?.sender_id && localUser?.id && flowMessage.sender_id === localUser.id);
+  const showReceipt = isOutgoing && conversationStatusVisible && !flowMessage?.is_draft;
   // Show the prompt row for ANY message that has a PROMPT attachment so the
   // sender sees the same preview the receiver does. Approve & Execute is
   // wired only when it's the other user's still-unapproved prompt — once
@@ -91,8 +156,23 @@ export function MessageBubble({
     (a) => a.attachment_type === AttachmentType.PROMPT && !a.approved_by,
   );
   const hasUnapprovedPrompt = firstUnapprovedPromptIdx >= 0;
-  const showPromptRow = promptAttachments.length > 0;
   const canApprovePrompt = isFromOther && hasUnapprovedPrompt && !!onApproveAndExecute;
+
+  // Implement Plan / Open Plan Implementation Session: same gating shape as
+  // Approve & Execute — only spec-bearing bubbles from the other user (so the
+  // local user is the recipient) qualify. When `onOpenPlanSession` is set
+  // (a session already exists somewhere in the thread) the row swaps the
+  // emerald chip for an open-link affordance pointing at that session. Both
+  // states share `PromptApprovalRow`'s container so they land in the same
+  // horizontal slot (alongside Approve when both fire).
+  const specTypeId = flowMessageSpecTypeId(flowMessage);
+  const isSpecBearingRecipient = isFromOther && !!specTypeId;
+  const canImplementPlan = isSpecBearingRecipient && !!onImplementPlan && !onOpenPlanSession;
+  const canOpenPlanSession = isSpecBearingRecipient && !!onOpenPlanSession;
+  // View Plan is purely a reader affordance — independent of session state,
+  // so it stays visible even after Implement Plan flips to Open.
+  const canViewPlan = isSpecBearingRecipient && !!onViewPlan;
+  const showPromptRow = promptAttachments.length > 0 || canImplementPlan || canOpenPlanSession || canViewPlan;
 
   const startEdit = () => {
     setEditValue(senderName);
@@ -112,6 +192,7 @@ export function MessageBubble({
   const displayName = isBot ? 'Claude' : senderName || 'Unknown';
   const initial = (displayName.trim()[0] ?? '?').toUpperCase();
   const time = formatTime(message.timestamp);
+  const ago = formatTimeAgo(message.timestamp);
 
   const handleBubbleClick = (e: MouseEvent<HTMLDivElement>) => {
     if (!onSelect) return;
@@ -162,7 +243,13 @@ export function MessageBubble({
               <Pencil className="h-2.5 w-2.5" />
             </button>
           )}
-          {time && <span className="text-[10px] text-muted-foreground">{time}</span>}
+          {time && (
+            <span className="text-[10px] text-muted-foreground">
+              {time}
+              {ago && <span className="ml-1 opacity-70">· {ago}</span>}
+            </span>
+          )}
+          {showReceipt && <DeliveryReceipt status={flowMessage?.delivery_status} />}
           <MessageChips flowMessageId={flowMessageId} />
         </div>
         {message.content && message.content !== PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT && (() => {
@@ -185,7 +272,10 @@ export function MessageBubble({
           <PromptApprovalRow
             attachments={promptAttachments}
             messageId={flowMessageId}
-            onApprove={canApprovePrompt ? () => onApproveAndExecute!(firstUnapprovedPromptIdx) : undefined}
+            onApprove={canApprovePrompt ? () => onApproveAndExecute(firstUnapprovedPromptIdx) : undefined}
+            onImplementPlan={canImplementPlan ? onImplementPlan : undefined}
+            onOpenPlanSession={canOpenPlanSession ? onOpenPlanSession : undefined}
+            onViewPlan={canViewPlan && specTypeId && onViewPlan ? () => onViewPlan(specTypeId.id) : undefined}
           />
         )}
         {footer}

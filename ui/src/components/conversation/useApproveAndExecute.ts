@@ -12,7 +12,7 @@ import type { ITask } from '@sdk/entities/task';
 import type { FlowData } from '@sdk/flow_processing';
 import { FlowElementTypes } from '@sdk/flow_processing/flow-element-types';
 import { toast } from 'sonner';
-import { useProcessesForTarget } from '@src/components/entity-chat-panel';
+import { useProcessesForTarget } from '@src/components/entity-execution-panel';
 import { approveAndReload, buildMergedPrompt } from './prompt-building';
 
 interface UseApproveAndExecuteOptions {
@@ -218,9 +218,8 @@ export function useApproveAndExecute(
     if (!text || !conversationId) return;
 
     try {
-      const action = new ActionInfo('append-conversation', 'notification', null, 'POST');
+      const action = new ActionInfo('add_message', 'conversation', conversationId, 'POST');
       action.bodyParameters = {
-        conversation_id: conversationId,
         message: wrapAsPromptResponse(text),
         is_draft: 'true',
       };

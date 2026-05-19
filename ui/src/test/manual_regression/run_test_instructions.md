@@ -1,3 +1,7 @@
+---
+id: 970c3531-200a-5fb0-bf30-597691f93096
+---
+
 # Manual Regression Tests - Run Instructions & Learnings
 
 ## Prerequisites

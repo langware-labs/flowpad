@@ -43,9 +43,9 @@ class _Handler(FsRecordsActionsMixin):
         self.typeid = "test-compute-node"
         self._activity: InProcessActivity | None = None
 
-    def _start_activity(self, job_name: str, total: int = 0, timeout_seconds: int = 600):
+    def _start_activity(self, job_name: str, timeout_seconds: int = 600):
         self._activity = InProcessActivity(
-            job_name=job_name, entity_id=self.typeid, total=total,
+            job_name=job_name, entity_id=self.typeid,
             timeout_seconds=timeout_seconds,
         )
         return self._activity
@@ -138,31 +138,29 @@ async def test_scan_handler_unknown_type_400(captured_progress):
 # do not increase timeout without approval
 @pytest.mark.timeout(30)
 @pytest.mark.asyncio
-@pytest.mark.skip(
-    reason="Requires seeded CLAUDE_SESSION data inside the test instance "
-    "sandbox. Empty sandbox produces only one progress event, failing the "
-    "≥2 assertion."
-)
-async def test_scan_handler_emits_progress_events(captured_progress):
-    """At least one type_complete + one job-level event per type processed."""
+async def test_scan_handler_emits_table_snapshots(captured_progress):
+    """Scan emits at least the initial + terminal IndexProgressTable snapshots."""
     h = _Handler()
-    await h._handle_fs_records_scan(
-        FakeRequestInfo({"type": str(RecordType.CLAUDE_SESSION)})
+    await h._handle_fs_records_scan(FakeRequestInfo({}))
+
+    # Filter to progress_report broadcasts only.
+    snapshots = [
+        ev["attributes"] for ev in captured_progress
+        if ev.get("element_type") == "progress_report"
+        and ev.get("attributes", {}).get("job_name") == "scan"
+    ]
+    assert len(snapshots) >= 2, (
+        f"expected ≥2 snapshots (initial + terminal), got {len(snapshots)}"
     )
 
-    # At minimum: one sub_activity event (type_complete) + one job-level event
-    assert len(captured_progress) >= 2, (
-        f"expected ≥2 progress events, got {len(captured_progress)}"
-    )
-    # The sub-activity events should have sub_activity_name set to the type
-    sub_events = [
-        e for e in captured_progress
-        if e.get("attributes", {}).get("sub_activity_name") == "claude_session"
-    ]
-    assert sub_events, "no sub-activity event for claude_session found"
-    # The job-level events have sub_activity_name=None
-    job_events = [
-        e for e in captured_progress
-        if e.get("attributes", {}).get("sub_activity_name") is None
-    ]
-    assert job_events, "no job-level progress event found"
+    # Every snapshot has the table shape
+    for s in snapshots:
+        assert isinstance(s.get("rows"), list)
+        assert isinstance(s.get("done"), int)
+        # Scan total is unknown — always 0
+        assert s.get("total") == 0
+
+    # Last snapshot is the authoritative completion event
+    final = snapshots[-1]
+    assert final["text"] == "complete"
+    assert final["current"] is None

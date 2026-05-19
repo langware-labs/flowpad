@@ -17,9 +17,12 @@ export interface TraceMark {
   /** ISO timestamps of the first enter and final done/error. */
   startedAt?: string;
   endedAt?: string;
+  /** USD cost of usage entries whose timestamp falls in [startedAt, endedAt],
+   *  resolved via ModelPricing.costOf. Undefined when transcript is missing. */
+  costUsd?: number;
 }
 
-export const TRACE_TRACK_WIDTH = 84;
+export const TRACE_TRACK_WIDTH = 112;
 
 export function buildTraceTrack(items: AnchoredItem<TraceMark>[]): AnchoredTrack<TraceMark> {
   return {
@@ -39,10 +42,19 @@ function fmtDuration(ms: number): string {
   return `${minutes}m${seconds}s`;
 }
 
+function fmtCost(usd?: number): string | null {
+  if (usd === undefined || usd === null || usd <= 0) return null;
+  if (usd < 0.001) return `<$0.001`;
+  if (usd < 0.01) return `$${usd.toFixed(4)}`;
+  if (usd < 1) return `$${usd.toFixed(3)}`;
+  return `$${usd.toFixed(2)}`;
+}
+
 function TraceMarker({ mark }: { mark: TraceMark }) {
   const { Icon, color } = iconFor(mark);
   const main = `${fmtDuration(mark.durationMs)}`;
   const retried = mark.attempts > 1 ? ` ×${mark.attempts}` : '';
+  const cost = fmtCost(mark.costUsd);
   const tooltip = (
     <div className="space-y-0.5">
       <div className="font-medium">
@@ -51,6 +63,7 @@ function TraceMarker({ mark }: { mark: TraceMark }) {
       </div>
       <div className="text-[10px] opacity-80">
         {fmtDuration(mark.durationMs)}
+        {cost && ` · ${cost}`}
         {mark.startedAt && ` · started ${new Date(mark.startedAt).toLocaleTimeString()}`}
       </div>
       {mark.errorMessage && (
@@ -66,6 +79,11 @@ function TraceMarker({ mark }: { mark: TraceMark }) {
         <div className="flex h-full items-start justify-end gap-1 px-1.5 pt-1 text-[10px] tabular-nums text-muted-foreground">
           <Icon className={cn('h-3 w-3 shrink-0', color)} />
           <span className="truncate">{main}{retried}</span>
+          {cost && (
+            <span className="ml-0.5 truncate text-muted-foreground/80" data-testid="trace-mark-cost">
+              {cost}
+            </span>
+          )}
         </div>
       </TooltipTrigger>
       <TooltipContent side="left">{tooltip}</TooltipContent>

@@ -24,7 +24,7 @@ test('navigating to /dock/cron shows the unified Triggers view', async ({ page }
 
   // The unified triggers view should be visible
   await page.locator('text=Triggers').first().waitFor({ state: 'visible', timeout: 30_000 });
-  await page.locator('text=Schedule Triggers').waitFor({ state: 'visible', timeout: 10_000 });
+  await page.getByText('Schedule Triggers', { exact: true }).first().waitFor({ state: 'visible', timeout: 10_000 });
 
   // Should NOT show old CronView content (header with "+ New" for cron events)
   const oldCronHeader = page.locator('text=Schedules');

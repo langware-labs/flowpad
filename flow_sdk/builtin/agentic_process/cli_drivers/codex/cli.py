@@ -68,47 +68,20 @@ class CodexCliOptions(WorkerCLIOptions):
     # global timeout — keep this in sync if that limit is relaxed.
     DEFAULT_REASONING_EFFORT = "low"
 
-    # Reasoning summary capture defaults. Without these, codex rollouts
-    # carry only ``encrypted_content`` (an opaque server-side context-retention
-    # token) on each ``response_item.reasoning`` line, leaving the transcript
-    # analyzer unable to surface what the agent was thinking. With these set,
-    # the API returns plaintext markdown summaries in ``payload.summary[]``,
-    # which our codex parser at parsers/codex.py concatenates onto the
-    # ``AssistantMessageEntry.thinking`` field — matching the parity Claude's
-    # plaintext thinking blocks already provide.
-    DEFAULT_REASONING_SUMMARY = "auto"
-    DEFAULT_SHOW_RAW_REASONING = "true"
-
     def _build_worker_args(self) -> list[str]:
+        """Shell-quoted argv mirroring ``to_spawn_args``.
+
+        ``cmd_line`` (``to_shell_string`` → this method) and ``to_spawn_args``
+        used to drift in PTY mode (``json_stream=False``): the spawn argv was
+        bare ``codex`` (interactive TUI) but ``cmd_line`` showed ``codex exec
+        --json …``. Deriving from ``to_spawn_args`` keeps both paths in sync.
+        """
         import shlex
 
-        args: list[str] = ["codex", "exec"]
-        args.append("--skip-git-repo-check")
-        if self.permission_mode == "bypassPermissions":
-            args.append("--dangerously-bypass-approvals-and-sandbox")
-        if self.ephemeral:
-            args.append("--ephemeral")
-        if self.json_stream:
-            args.append("--json")
-        # Cap reasoning effort low so a user's global xhigh setting in
-        # ~/.codex/config.toml doesn't blow past the test timeout.
-        args.append(f"-c model_reasoning_effort={shlex.quote(self.DEFAULT_REASONING_EFFORT)}")
-        # Capture plaintext reasoning summaries for transcript analysis.
-        args.append(f"-c model_reasoning_summary={shlex.quote(self.DEFAULT_REASONING_SUMMARY)}")
-        args.append(f"-c show_raw_agent_reasoning={shlex.quote(self.DEFAULT_SHOW_RAW_REASONING)}")
-        if self.workdir:
-            args.append(f"-C {shlex.quote(self.workdir)}")
-        if self.model:
-            args.append(f"-m {shlex.quote(self.model)}")
-        for d in self.add_dirs:
-            args.append(f"--add-dir {shlex.quote(d)}")
-        if self.resume and self.session_id:
-            # ``codex exec resume <session_id>`` — keep flags before the subcommand
-            # to match the help output's ordering.
-            args.append("resume")
-            args.append(shlex.quote(self.session_id))
-        # Skills are surfaced as a comment-style suffix so the test that asserts
-        # on ``cmd_line`` containing the agent name still finds it. They are NOT
+        argv, _env = self.to_spawn_args()
+        args: list[str] = [shlex.quote(a) for a in argv]
+        # Skills are surfaced as a comment-style suffix so callers asserting on
+        # ``cmd_line`` containing the agent name still find it. They are NOT
         # actually passed to codex on the command line — codex discovers skills
         # from ~/.codex/skills/.
         for sk in self.skill_names:
@@ -149,8 +122,6 @@ class CodexCliOptions(WorkerCLIOptions):
             argv.append("--ephemeral")
         argv.append("--json")
         argv.extend(["-c", f"model_reasoning_effort={self.DEFAULT_REASONING_EFFORT}"])
-        argv.extend(["-c", f"model_reasoning_summary={self.DEFAULT_REASONING_SUMMARY}"])
-        argv.extend(["-c", f"show_raw_agent_reasoning={self.DEFAULT_SHOW_RAW_REASONING}"])
         if self.workdir:
             argv.extend(["-C", self.workdir])
         if self.model:

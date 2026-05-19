@@ -1,0 +1,50 @@
+# Single image used for BOTH alice and bob backends.
+# Each container only differs in env vars (port, hub URL, cloud user creds,
+# FLOWPAD_DEV flag) and which named volume mounts to /root/.flow.
+#
+# Why a headless image instead of running the host backend directly?
+# The host runs both backends, both reading the same macOS keychain and the
+# same ~/.flow/ — when env vars (FLOWPAD_DEV) leak between shell-sourced
+# sessions, alice and bob collapse onto the same identity. Containers give
+# each backend its own filesystem + keyring → identity isolation by
+# construction.
+FROM python:3.10-slim
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends curl ca-certificates git gnupg \
+ && rm -rf /var/lib/apt/lists/*
+
+# Node 20 (current LTS) — required to install the @anthropic-ai/claude-code CLI
+# globally. The QA cycle's "spawn Claude session" scenarios shell out to
+# ``claude`` from the agentic_process PTY; without it every such test fails
+# with "command not found: claude".
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+ && apt-get install -y --no-install-recommends nodejs \
+ && npm install -g @anthropic-ai/claude-code \
+ && rm -rf /var/lib/apt/lists/*
+
+# Install uv for fast deps install (already used on the host).
+RUN pip install --no-cache-dir uv
+
+WORKDIR /app
+
+# Install flow_sdk + its deps. No lock file in repo, so install directly
+# from pyproject — slower than uv sync --frozen but correct.
+COPY pyproject.toml README.md ./
+COPY flow_sdk ./flow_sdk
+RUN uv pip install --system .
+
+# Use the file-based keyring backend. Inside a slim container there is no
+# macOS Keychain / SecretService / kwallet, so the default backend would
+# crash on first set_password. ``keyrings.alt`` is already a flow_sdk
+# dependency; this env var tells the ``keyring`` library to use the file
+# backend without any code changes.
+#
+# Credentials live in /root/.local/share/python_keyring/keyring_pass.cfg
+# inside the container's volume — per-container, fully isolated.
+ENV PYTHON_KEYRING_BACKEND=keyrings.alt.file.PlaintextKeyring
+
+# Default port; compose overrides per service via LOCAL_SERVER_PORT.
+EXPOSE 9000-9100
+
+CMD ["python", "-m", "flow_sdk.server.run"]

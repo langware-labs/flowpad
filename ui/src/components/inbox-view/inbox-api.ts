@@ -42,14 +42,6 @@ export async function listInboxMessages(): Promise<InboxMessage[]> {
   return result ?? [];
 }
 
-/** Pull new messages from hub since last check */
-export async function fetchInboxFromHub(): Promise<FetchResult> {
-  const action = new ActionInfo('inbox-fetch', null, null, 'POST');
-  action.bodyParameters = {};
-  const result = await dataManager.callAction<Record<string, unknown>, FetchResult>(action);
-  return result ?? { created: 0, ids: [] };
-}
-
 /** Mark a single message read/unread or archived/unarchived */
 export async function updateMessage(
   messageId: string,

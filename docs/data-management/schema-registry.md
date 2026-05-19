@@ -1,3 +1,7 @@
+---
+id: ab331b9d-eea6-58a5-b44e-bbd65be5f867
+---
+
 # Schema Registry
 
 The `SchemaRegistry` is the single source of truth for all type metadata across the Record and Entity layers. It replaces the two separate, unconnected registries that previously existed (`fs_store/factory/type_registry.py` and `schema/entity_factory.py`).

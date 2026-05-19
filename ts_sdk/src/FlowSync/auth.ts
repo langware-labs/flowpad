@@ -2,6 +2,7 @@ import { AxiosError, AxiosResponse } from 'axios';
 import { EventEmitter } from 'events';
 import { config, dataManager } from '..';
 import apiClient, { invalidRefreshTokenMessage, invalidTokenMessage } from '../client';
+import { LocalLoginStatus, LoginSlot, makeLoginSlot } from '../services/cloud_status';
 import { defineGlobal } from '../utils/globals';
 
 export enum AuthErrorType {
@@ -76,6 +77,36 @@ export function getUtmParams(): Record<string, string> {
 export class AuthManager extends EventEmitter {
   _currentUser: any = null;
 
+  // Local login slot — same vocabulary as the hub side, narrower membership.
+  // Mutated only via setLoginStatus(); subscribers listen to
+  // AuthEventType.AUTH_STATUS_CHANGED (event payload upgraded to the slot
+  // shape; legacy listeners receiving plain user objects still see
+  // currentUser via the second emit at the bottom of each transition).
+  private _login: LoginSlot<LocalLoginStatus> = makeLoginSlot<LocalLoginStatus>('logged_out');
+
+  get loginStatus(): LocalLoginStatus {
+    return this._login.status;
+  }
+
+  get loginSlot(): Readonly<LoginSlot<LocalLoginStatus>> {
+    return this._login;
+  }
+
+  private setLoginStatus(
+    status: LocalLoginStatus,
+    user: Record<string, unknown> | null = null,
+    reason: string | null = null,
+  ) {
+    const prev = this._login.status;
+    this._login = { status, user, reason };
+    // Push into the context mirror so mobx observers re-render. Lazy import
+    // keeps this module load-order independent.
+    void import('./context').then((mod) => mod.dataContext.setLocalLoginStatus?.(status));
+    if (prev !== status) {
+      this.emit('login_status_changed', this._login);
+    }
+  }
+
   constructor() {
     super();
   }
@@ -95,7 +126,7 @@ export class AuthManager extends EventEmitter {
     return errorMessage;
   }
   get isLoggedIn() {
-    return this._currentUser !== null;
+    return this._login.status === 'logged_in' && this._currentUser !== null;
   }
   get currentUser() {
     return this._currentUser;
@@ -124,6 +155,7 @@ export class AuthManager extends EventEmitter {
 
         if (isAuthError) {
           this.currentUser = null;
+          this.setLoginStatus('logged_out', null, 'expired');
           const authError: AuthError = new Error('Invalid refresh token') as AuthError;
           if ((error.response?.data as any)?.message === invalidRefreshTokenMessage) {
             authError.type = AuthErrorType.INVALID_REFRESH_TOKEN;
@@ -149,9 +181,11 @@ export class AuthManager extends EventEmitter {
       if (!currentUser) {
         const authError: AuthError = new Error('Authentication failed - no user found') as AuthError;
         authError.type = AuthErrorType.INVALID_CREDENTIALS;
+        this.setLoginStatus('logged_out');
         this.emit(AuthEventType.AUTH_ERROR, authError);
       }
       this.currentUser = currentUser;
+      if (currentUser) this.setLoginStatus('logged_in', currentUser as Record<string, unknown>);
       this.emit(AuthEventType.AUTH_STATUS_CHANGED, currentUser);
     } catch (error) {
       const authError: AuthError = error as AuthError;
@@ -161,6 +195,7 @@ export class AuthManager extends EventEmitter {
   }
 
   public async login(login: LoginInfo): Promise<LoginData> {
+    this.setLoginStatus('logging_in');
     try {
       const loginData: LoginData = await apiClient.post(`${config.API_PREFIXES.login}`, login);
       if (!loginData) {
@@ -170,6 +205,8 @@ export class AuthManager extends EventEmitter {
         throw authError;
       }
 
+      this.currentUser = loginData.user;
+      this.setLoginStatus('logged_in', loginData.user as Record<string, unknown>);
       this.emit(AuthEventType.AUTH_STATUS_CHANGED, loginData.user);
 
       return loginData;
@@ -195,6 +232,7 @@ export class AuthManager extends EventEmitter {
         authError.type = AuthErrorType.UNKNOWN_ERROR;
       }
 
+      this.setLoginStatus('login_failed', null, authError.type);
       this.emit(AuthEventType.AUTH_ERROR, authError);
 
       throw authError;
@@ -205,6 +243,8 @@ export class AuthManager extends EventEmitter {
     try {
       const logoutData: LogoutData = await apiClient.post(`${config.API_PREFIXES.logout}`, {});
 
+      this.currentUser = null;
+      this.setLoginStatus('logged_out');
       this.emit(AuthEventType.AUTH_STATUS_CHANGED, null);
 
       return logoutData;

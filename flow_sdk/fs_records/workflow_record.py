@@ -16,11 +16,11 @@ from typing import Any, ClassVar
 from flow_sdk.fs_store import Record, RecordType
 from flow_sdk.instance_settings import get_instance_settings
 
-from ._frontmatter import _extract_frontmatter, _render_frontmatter, _yaml_load
+from ._frontmatter import _extract_body, _extract_frontmatter, _render_frontmatter, _yaml_load
 
 
 def _read_workflow_asset_id(path: Path) -> str | None:
-    """Return ``asset_id`` from frontmatter, or None if absent / unreadable."""
+    """Return ``id`` (or legacy ``asset_id``) from frontmatter, or None."""
     try:
         text = path.read_text(encoding="utf-8")
     except OSError:
@@ -29,7 +29,7 @@ def _read_workflow_asset_id(path: Path) -> str | None:
     if not fm:
         return None
     fields = _yaml_load(fm) or {}
-    raw = fields.get("asset_id") or fields.get("id")
+    raw = fields.get("id") or fields.get("asset_id")
     return str(raw).strip() if isinstance(raw, str) and raw.strip() else None
 
 
@@ -97,7 +97,7 @@ class WorkflowRecord(Record):
         refuses writes inside the shadow tree."""
         name = (getattr(entity, "name", None) or "").strip() or "Untitled"
         desc = (getattr(entity, "description", None) or "").strip()
-        fm: dict = {"asset_id": entity.id, "name": name}
+        fm: dict = {"id": entity.id, "name": name}
         if desc:
             fm["description"] = desc
         return _render_frontmatter(fm) + f"\n# {name}\n"
@@ -144,15 +144,48 @@ class WorkflowRecord(Record):
     async def from_fsref(cls, ref) -> list["WorkflowRecord"]:
         """Indexer entry point — construct from an FSRef emitted by workflow_fn.
 
-        Honors ``asset_id`` from frontmatter when present so that workflows
-        created via ``Entity.save()`` keep the same id on subsequent rescans
-        (avoiding duplicate Records). Falls back to ``uuid5(path)`` for
-        legacy files written without an asset_id stamp.
+        Honors ``id`` (or legacy ``asset_id``) from frontmatter when present so
+        that workflows created via ``Entity.save()`` keep the same id on
+        subsequent rescans (avoiding duplicate Records). Falls back to
+        ``uuid5(path)`` for legacy files written without an id stamp.
         """
         return [cls(file_path=ref._path, id=cls.getId(ref))]
 
     @classmethod
     def getId(cls, ref) -> str:
-        """Mirror ``from_fsref``: prefer frontmatter ``asset_id``, else uuid5(path)."""
+        """Read-only: prefer frontmatter ``id`` (or legacy ``asset_id``); else uuid5(path)."""
         existing = _read_workflow_asset_id(ref._path)
         return existing if existing else _workflow_id(ref._path)
+
+    @classmethod
+    def genId(cls, ref) -> str:
+        """Read existing id, or mint+write a stable one into the frontmatter.
+
+        Idempotent. Preserves the existing derived id (uuid5 of path) so that
+        any DB row already keyed by that value remains valid — see
+        ``MarkdownRecord.genId`` for the same migration semantics.
+        """
+        existing = _read_workflow_asset_id(ref._path)
+        if existing:
+            return existing
+        new_id = _workflow_id(ref._path)
+        try:
+            text = ref._path.read_text(encoding="utf-8")
+        except OSError:
+            return new_id
+        fm = _extract_frontmatter(text)
+        body = _extract_body(text)
+        fields: dict = {}
+        if fm:
+            parsed = _yaml_load(fm)
+            if isinstance(parsed, dict):
+                fields.update(parsed)
+        merged = {"id": new_id, **{k: v for k, v in fields.items() if k not in ("id", "asset_id")}}
+        try:
+            ref._path.write_text(
+                _render_frontmatter(merged) + "\n\n" + body + ("\n" if body and not body.endswith("\n") else ""),
+                encoding="utf-8",
+            )
+        except OSError:
+            pass
+        return new_id

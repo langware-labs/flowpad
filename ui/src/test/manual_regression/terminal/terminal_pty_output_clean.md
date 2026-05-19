@@ -1,3 +1,7 @@
+---
+id: d7e30fda-84b2-5977-89a7-67fa3ccbfed6
+---
+
 test 1: Terminal PTY output is clean (no duplicated lines or escape artifacts)
 - navigate to a fresh terminal via /dock/shell/new_terminal
 - validate terminal is visible and ready with a prompt

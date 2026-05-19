@@ -37,22 +37,11 @@ def _claude_project_dir() -> Path:
         return _claude_home()
 
 
-# Pricing constants (per 1M tokens) - January 2026
-MODEL_PRICING = {
-    "claude-opus-4-6": {"input": 5.00, "output": 25.00},
-    "claude-opus-4-5-20251101": {"input": 5.00, "output": 25.00},
-    "claude-opus-4-5": {"input": 5.00, "output": 25.00},
-    "claude-sonnet-4-5-20250929": {"input": 3.00, "output": 15.00},
-    "claude-sonnet-4-5": {"input": 3.00, "output": 15.00},
-    "claude-haiku-4-5-20251001": {"input": 1.00, "output": 5.00},
-    "claude-haiku-4-5": {"input": 1.00, "output": 5.00},
-    "claude-3-5-sonnet-20241022": {"input": 3.00, "output": 15.00},
-    "claude-3-5-sonnet": {"input": 3.00, "output": 15.00},
-    "claude-3-opus": {"input": 15.00, "output": 75.00},
-    "claude-3-haiku": {"input": 0.25, "output": 1.25},
-    "default": {"input": 3.00, "output": 15.00},
-}
-
+# Cache write/read multipliers — kept here for the legacy ``calculate_session_cost``
+# shape. The canonical pricing source is
+# :mod:`flow_sdk.transcript_analyzer.pricing` (per-worker, per-model tables
+# with cache-tier disaggregation). ``get_model_pricing`` below delegates to
+# that module so there's one source of truth.
 CACHE_WRITE_MULTIPLIER = 1.25
 CACHE_READ_MULTIPLIER = 0.10
 
@@ -125,13 +114,18 @@ def format_bytes(size: int) -> str:
 
 
 def get_model_pricing(model: str) -> dict:
-    """Get pricing for a model, with fuzzy matching."""
-    if model in MODEL_PRICING:
-        return MODEL_PRICING[model]
-    for model_key, pricing in MODEL_PRICING.items():
-        if model_key in model or model in model_key:
-            return pricing
-    return MODEL_PRICING["default"]
+    """Get pricing for a model, with fuzzy matching.
+
+    Returns the legacy ``{"input": $/MTok, "output": $/MTok}`` shape so
+    existing callers (cost_collector, dashboards) don't need to know
+    about per-dim entries. Backed by
+    :mod:`flow_sdk.transcript_analyzer.pricing` — see that module for
+    cache-tier / server-tool / per-worker support.
+    """
+    from flow_sdk.transcript_analyzer.pricing import legacy_input_output_rates  # noqa: PLC0415
+
+    in_rate, out_rate = legacy_input_output_rates(model)
+    return {"input": in_rate, "output": out_rate}
 
 
 def calculate_session_cost(

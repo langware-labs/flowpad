@@ -1,3 +1,7 @@
+---
+id: 247edca2-2207-589f-9cd9-18f52608a1ab
+---
+
 test 1: enabling sniffer from HooksManager also updates EventSnifferChip (shared DataContext)
 - start backend and frontend; open browser to `http://localhost:4097`
 - open browser DevTools → Network tab; filter by `hooks-sniffer`
