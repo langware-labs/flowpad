@@ -169,7 +169,7 @@ function ConversationListRow({ conv, isFocused, viewMode, onArchive, onToggleRea
   if (isHidden) return null;
 
   const sender = isInvitationRow
-    ? 'Invitation'
+    ? (firstMessage?.sender_name?.trim() || 'Invitation')
     : (latestMessage?.sender_name?.trim() || 'Unknown');
   const count = pointers.length;
   const subject = isInvitationRow
