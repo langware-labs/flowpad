@@ -1,10 +1,11 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useEntity } from '@sdk/react/hooks';
-import { sendNotification } from '@sdk/entities/notifications';
+import { sendReply } from '@sdk/entities/notifications';
 import { createTaskBundle } from '@sdk/entities/flow-message';
 import { ActionInfo } from '@sdk/models/ActionInfo';
-import { AgenticProcess, dataManager, TypeId } from '@sdk';
+import { AgenticProcess, Conversation, Task, dataManager, TypeId } from '@sdk';
 import type { ConversationParticipant } from '@sdk';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation';
 import { loadOptionalTranscript } from '@src/components/conversation/transcript-attachment';
 
@@ -117,6 +118,10 @@ export function useEntityShare(typeId: TypeId | null): UseEntityShareResult {
       if (!recipientId) throw new Error('Recipient required');
       const title = opts.title.trim();
       if (!title) throw new Error('Title required');
+      const recipientEmails = opts.recipients
+        .map((p) => (p.email || '').trim())
+        .filter((email): email is string => !!email && email.includes('@'));
+      if (recipientEmails.length === 0) throw new Error('Recipient required');
 
       setIsSharing(true);
       try {
@@ -151,32 +156,55 @@ export function useEntityShare(typeId: TypeId | null): UseEntityShareResult {
           }
         }
 
-        const result = await sendNotification({
-          recipient_id: recipientId,
-          spec_title: '',
-          spec_content: '',
-          spec_type: 'request',
-          task_title: title,
-          task_id: isProcess ? null : typeId.id,
-          message: (opts.message ?? '').trim() || null,
-          plan_id: null,
-          project_path: projectPath,
-          sender_name: opts.senderName?.trim() || null,
-          files: filesToSend.length > 0 ? filesToSend : undefined,
-          sender_process_id: isProcess ? typeId.id : null,
-          forked_process_id: forkedProcessId,
-          is_initial_share: false,
-        });
-        return {
-          sent: !result.git_error,
-          gitError: result.git_error ?? null,
-          emailError: result.email_error ?? null,
-        };
+        // Conversation transport: mint a Conversation linked to the entity being
+        // shared. For AgenticProcess, mint a Task carrying my_process_id /
+        // shared_process_id (matches AskForAssistance / Send-Plan flows) so the
+        // recipient's "Approve & Execute" reuses the pre-fork. For other entity
+        // types, the entity rides as a TYPE_ID attachment on the first message.
+        const conv = new Conversation({ title, participants: opts.recipients });
+        conv.title = title;
+        conv.participants = opts.recipients;
+        const assetReferences: string[] = [];
+
+        let task: Task | null = null;
+        if (isProcess) {
+          task = new Task({
+            title,
+            status: 'to_do',
+            spec_type: 'request',
+            sender_name: opts.senderName?.trim() || undefined,
+            recipient_email: recipientEmails[0],
+            my_process_id: typeId.id,
+          });
+          task.shared_process_id = forkedProcessId;
+          conv.addContextEntity(new TypeId(Task.type, task.id));
+          task.addContextEntity(new TypeId(Conversation.type, conv.id));
+          assetReferences.push(`${Task.type}-${task.id}`);
+          await task.save();
+        } else {
+          // Generic entity share: attach the shared entity itself as context
+          // and ride it on the first message bundle.
+          conv.addContextEntity(typeId);
+          assetReferences.push(`${typeId.type}-${typeId.id}`);
+        }
+
+        await conv.save();
+        await conv.share(recipientEmails);
+
+        await sendReply(
+          { conversationId: conv.id },
+          (opts.message ?? '').trim(),
+          filesToSend.length > 0 ? filesToSend : undefined,
+          assetReferences.length > 0 ? { assetReferences } : undefined,
+        );
+
+        navigation.openDock(DockPointer.forConversation(conv.id));
+        return { sent: true, gitError: null, emailError: null };
       } finally {
         setIsSharing(false);
       }
     },
-    [typeId, shouldForkBeforeSend],
+    [typeId, shouldForkBeforeSend, navigation],
   );
 
   const copyLink = useCallback(async (): Promise<string> => {
