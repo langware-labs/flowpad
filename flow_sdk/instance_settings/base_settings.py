@@ -140,17 +140,16 @@ class BaseInstanceSettings:
     # -----------------------------------------------------------------
 
     @classmethod
-    def from_env(cls) -> BaseInstanceSettings:
-        """Build the prod-default instance from current env.
+    def from_env(cls, name: str = "prod") -> BaseInstanceSettings:
+        """Build a base instance with the given name (default ``"prod"``).
 
-        Phase D: per-instance paths default to ``<flow_home>/instances/prod/``
-        — the canonical layout the migration script populates. Env-var
-        overrides (FS_RECORD_PATH, SQLITE_DATABASE_PATH) still win for
-        tests + ops escape hatches.
+        ``name`` flows through from the resolver in ``__init__.get_instance_settings``,
+        so arbitrary instance names (e.g. ``"oss"``, ``"app"``, ``"stage"``) get
+        their own per-instance directory rather than falling back to ``prod``.
         """
         return cls._build_from_env(
             cls=cls,
-            instance_name="prod",
+            instance_name=name,
             is_dev=False,
             default_port=DEFAULT_PROD_PORT,
         )

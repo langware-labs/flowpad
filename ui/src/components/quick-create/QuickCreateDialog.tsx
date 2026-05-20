@@ -1,7 +1,7 @@
-import { dataContext, type Project } from '@sdk';
+import { ContextEntitiesEnum, dataContext, Project } from '@sdk';
 import { useProject } from '@sdk/react/hooks';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
-import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
+import { NewProjectDialog, ProjectSelectorModal } from '@src/components/project-selector';
 import { Button } from '@src/components/ui/button';
 import {
   Dialog,
@@ -12,6 +12,7 @@ import {
   DialogTitle,
 } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
+import { useProjects } from '@src/hooks/use-projects';
 import { useToast } from '@src/hooks/use-toast';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Loader2 } from 'lucide-react';
@@ -54,6 +55,7 @@ export function QuickCreateDialog({ open, onOpenChange, type }: QuickCreateDialo
   const { navigation } = useDockNavigation();
   const { project } = useProject();
   const { computeNode } = useAgentContext();
+  const { projects: allProjects, isLoading: isLoadingProjects } = useProjects();
   const { restore, commit } = useProjectSnapshot(open);
 
   const [name, setName] = useState('');
@@ -62,7 +64,13 @@ export function QuickCreateDialog({ open, onOpenChange, type }: QuickCreateDialo
   const [path, setPath] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
+  const [newProjectOpen, setNewProjectOpen] = useState(false);
   const nameRef = useRef<HTMLInputElement | null>(null);
+
+  const defaultWorkspacePath = useMemo(
+    () => dataContext.bootstrapInfo?.desktop_info?.paths?.workspace || '',
+    [],
+  );
 
   // Reset form whenever the dialog opens for a new type
   useEffect(() => {
@@ -110,6 +118,57 @@ export function QuickCreateDialog({ open, onOpenChange, type }: QuickCreateDialo
       setPath(defaultPathFor(scope, descriptor, next));
     },
     [descriptor, scope],
+  );
+
+  const projectItems = useMemo(
+    () =>
+      (allProjects ?? []).map((p) => ({
+        id: p.id,
+        name: p.displayName,
+        path: p.fs_storage_mount_path ?? '',
+        modifiedAt: p.updated_date ?? null,
+      })),
+    [allProjects],
+  );
+
+  const handleProjectPick = useCallback(
+    async (id: string) => {
+      const picked = allProjects?.find((p) => p.id === id);
+      if (!picked) return;
+      await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, picked.typeId);
+      await dataContext.refreshProject();
+      dataContext.setWorkdir(picked.fs_storage_mount_path ?? null);
+    },
+    [allProjects],
+  );
+
+  const handleCreateProject = useCallback(
+    async (rawName: string, rawParent: string) => {
+      if (!dataContext.someone) throw new Error('You must be logged in');
+      const cleanName = rawName.trim();
+      const cleanParent = rawParent.trim().replace(/\\/g, '/').replace(/\/+$/, '');
+      if (!cleanName || !cleanParent) throw new Error('Name and parent folder required');
+      const fullPath = `${cleanParent}/${cleanName}`;
+      const pathKey = fullPath.replace(/^\/+/, '');
+
+      const existing =
+        allProjects?.find((p) => {
+          const path = (p.fs_storage_mount_path ?? '').replace(/\\/g, '/').replace(/\/+$/, '');
+          return path.replace(/^\/+/, '') === pathKey;
+        }) ?? null;
+
+      let target: Project;
+      if (existing) {
+        target = existing;
+      } else {
+        target = await new Project({ name: fullPath }).save([dataContext.someone]);
+      }
+      await target.setupForDesktop();
+      await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, target.typeId);
+      await dataContext.refreshProject();
+      dataContext.setWorkdir(target.fs_storage_mount_path ?? null);
+    },
+    [allProjects],
   );
 
   const handlePickFolder = useCallback(async (): Promise<string | null> => {
@@ -223,7 +282,26 @@ export function QuickCreateDialog({ open, onOpenChange, type }: QuickCreateDialo
         </DialogContent>
       </Dialog>
 
-      <OpenProjectComponent open={projectPickerOpen} onOpenChange={setProjectPickerOpen} />
+      <ProjectSelectorModal
+        open={projectPickerOpen}
+        onOpenChange={setProjectPickerOpen}
+        projects={projectItems}
+        selectedId={scope.project?.id ?? null}
+        onSelect={(id) => void handleProjectPick(id)}
+        isLoading={isLoadingProjects}
+        onCreateNew={() => {
+          setProjectPickerOpen(false);
+          setNewProjectOpen(true);
+        }}
+      />
+
+      <NewProjectDialog
+        open={newProjectOpen}
+        onOpenChange={setNewProjectOpen}
+        defaultParentFolder={defaultWorkspacePath}
+        onPickFolder={handlePickFolder}
+        onCreate={handleCreateProject}
+      />
     </>
   );
 }
