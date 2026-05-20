@@ -73,29 +73,15 @@ class RequestTransactionMiddleware:
                 else:
                     target_entity = await entity_model.get_by_typeid(req_info.target_entity_typeid)
                     if target_entity is None:
-                        # ``open`` deep-link actions can be reached before the
-                        # entity has been synced locally — a fresh invitee
-                        # clicking the email link is the typical case. Let the
-                        # handler run; it's expected to fetch from the hub
-                        # itself (see ``open_conversation`` /
-                        # ``handle_open_flow_message``).
-                        if req_info.action == "open":
-                            logging.debug(
-                                "[Middleware] open action on missing local entity "
-                                f"{req_info.target_entity_typeid.type}/"
-                                f"{req_info.target_entity_typeid.id} — letting handler "
-                                "fetch from hub"
-                            )
-                        else:
-                            message = (
-                                f"Entity not found: {req_info.target_entity_typeid.type}/"
-                                f"{req_info.target_entity_typeid.id}"
-                            )
-                            logging.debug("[Middleware] %s", message)
-                            return JSONResponse(
-                                content=ApiFailResponse(message=message, status_code=404).model_dump(mode="json"),
-                                status_code=404,
-                            )
+                        message = (
+                            f"Entity not found: {req_info.target_entity_typeid.type}/"
+                            f"{req_info.target_entity_typeid.id}"
+                        )
+                        logging.debug("[Middleware] %s", message)
+                        return JSONResponse(
+                            content=ApiFailResponse(message=message, status_code=404).model_dump(mode="json"),
+                            status_code=404,
+                        )
             except Exception as e:
                 logging.warning(
                     f"[Middleware] Failed to load target entity "
