@@ -1528,11 +1528,23 @@ async def _materialize_invitation(
         except Exception as e:  # noqa: BLE001
             logger.warning("[inv-materialize] preview msg failed: %s", e)
     else:
-        # Defensive: even with no preview, ensure there's an invitation-kind
-        # message so the UI's invitation-row branch matches. Synthesize one
-        # locally so accept-flow stays consistent with older hub builds.
+        # No real ``preview_message`` embedded by the hub (sender hasn't sent
+        # an actual message yet, or this is a re-poll of the same invite).
+        # Synthesize an invitation-kind FM so the UI's invitation-row branch
+        # matches. The text is ``local_inv.message`` (the inviter's note)
+        # when present, falling back to a generic placeholder otherwise.
+        #
+        # The id is derived deterministically from the invitation id so that
+        # when ``_materialize_invitation`` re-runs (the WS nudge and the
+        # ``pending`` poll both fire it for the same invite),
+        # ``materialize_flow_message`` upserts the same row instead of
+        # minting a fresh duplicate each time.
+        import uuid as _uuid  # noqa: PLC0415
+        synth_fm_id = str(_uuid.uuid5(_uuid.NAMESPACE_OID, f"invitation-preview-{inv_id}"))
+        message_text = (local_inv.message or "").strip()
         synth_payload = {
-            "text": (local_inv.message or "You've been invited to a conversation"),
+            "id": synth_fm_id,
+            "text": (message_text or "You've been invited to a conversation"),
             "kind": FlowMessageKind.INVITATION.value,
             "shared_context_entities": [invitation_typeid],
             "remote": False,
