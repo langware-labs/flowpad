@@ -458,8 +458,27 @@ class HubWsBridge:
             # Body just landed on the hub — pull it now so asset chips become
             # clickable without a refresh. ``_maybe_eager_pull_bundle`` is a
             # no-op when the FM carries no asset TYPE_ID attachments.
+            #
+            # Skip when we ARE the sender: the hub fans the body_status=READY
+            # UPDATE back to all participants (including the sender), and the
+            # sender's bundle is already on disk — re-downloading and
+            # re-unpacking it would just churn the local FS for no gain.
+            # Mirrors the existing sender-skip in the CREATE branch.
             new_body_status = getattr(existing, "body_status", None)
-            if new_body_status == "ready" and prev_body_status != "ready":
+            is_self_send = False
+            try:
+                from flow_sdk.cli.app_config import get_user as _get_cloud_user
+                cloud_user_id = (_get_cloud_user() or {}).get("id")
+                sender_id = getattr(existing, "sender_id", None)
+                if cloud_user_id and sender_id and sender_id == cloud_user_id:
+                    is_self_send = True
+            except Exception:
+                pass
+            if (
+                new_body_status == "ready"
+                and prev_body_status != "ready"
+                and not is_self_send
+            ):
                 asyncio.create_task(_maybe_eager_pull_bundle(
                     fm_id,
                     (getattr(existing, "attachment_filename", "") or "").strip(),
