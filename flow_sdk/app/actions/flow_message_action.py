@@ -15,22 +15,22 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+from flow_sdk._compat import UTC
 from flow_sdk.actions.action_registry import action
 from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.builtin.flow_message import Attachment, AttachmentType, FlowMessage, FlowMessageKind
 from flow_sdk.builtin.spec import Spec
-from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.builtin.task import Task
 from flow_sdk.builtin.user import User
-from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.fs_records.conversation_record import ConversationRecord
 from flow_sdk.fs_records.flow_message_bundle import FlowMessageExistsError
 from flow_sdk.fs_store.record_types import RecordType
+from flow_sdk.fs_store.type_id import TypeId
+from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.request_context.methods import get_current_request_info
-from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse, ApiResponse
-from flow_sdk._compat import UTC
-from flow_sdk.utils.hub import hub_get, hub_post, hub_base_url
+from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
+from flow_sdk.utils.hub import hub_base_url, hub_get, hub_post
 
 logger = logging.getLogger(__name__)
 
@@ -741,7 +741,6 @@ async def _hub_decline_invitation(invitation_id: str) -> None:
     """Class-level action — pending recipients have no entity role yet, so
     the hub registers ``decline`` as a class-action like ``pending``. We pass
     the invitation_id in the body."""
-    from flow_sdk.utils.hub import hub_post  # noqa: PLC0415
     await hub_post(
         BuiltinEntityType.INVITATION,
         {"invitation_id": invitation_id},
@@ -755,7 +754,6 @@ async def _hub_delete_conversation(conv_id: str) -> None:
 
 
 async def _hub_leave_conversation(conv_id: str) -> None:
-    from flow_sdk.utils.hub import hub_post  # noqa: PLC0415
     await hub_post(
         BuiltinEntityType.CONVERSATION, {}, entity_id=conv_id, action="leave",
     )
@@ -773,8 +771,8 @@ async def handle_conversation_delete_archived(someone_typeid: str) -> ApiRespons
         "scanned": <int>,
       }
     """
-    from flow_sdk.utils.hub import HubError, hub_base_url  # noqa: PLC0415
     from flow_sdk.builtin.invitation import Invitation as LocalInvitation  # noqa: PLC0415
+    from flow_sdk.utils.hub import HubError, hub_base_url  # noqa: PLC0415
 
     convs = await Conversation.get_all({})
     targets = [c for c in (convs or []) if c.archived_at is not None]
@@ -918,8 +916,8 @@ async def handle_invitation_decline(
     (along with the embedded Conversation + preview message that the
     new invitation pipeline materialized).
     """
-    from flow_sdk.utils.hub import HubError, hub_base_url  # noqa: PLC0415
     from flow_sdk.builtin.invitation import Invitation as LocalInvitation  # noqa: PLC0415
+    from flow_sdk.utils.hub import HubError, hub_base_url  # noqa: PLC0415
 
     if not invitation_id:
         return ApiFailResponse(message="invitation_id is required")
@@ -1316,22 +1314,18 @@ async def handle_send_draft(fm_id: str, someone_typeid: str) -> ApiResponse:
     """Promote a draft FlowMessage to a real reply.
 
     1. Validate `is_draft=True`.
-    2. Append a pointer to `<task-dir>/conversation.jsonl` and bump
+    2. Append a pointer to `conversation.jsonl` and bump
        `Conversation.message_ids` / `message_count`.
     3. Flip `is_draft=False`; save.
-    4. POST to hub + upload bundle (best-effort).
-    5. Git-commit the conversation pointer change when the task lives in a
-       project repo (mirrors the original-reply path in
-       `notification_action.handle_add_message`).
+    4. Notify the UI; the hub-side header is created by
+       ``_send_conversation_message_header`` when the conversation is remote.
     """
     from flow_sdk.app.actions.notification_action import (
         _append_message_to_conversation,
-        _find_task_conversation,
         _notify_ui_conversation_updated,
-        _resolve_reply_recipient_email,
-        _send_reply_to_hub,
+        _send_conversation_message_header,
     )
-    from flow_sdk.utils.git import git_add_commit_push
+    from flow_sdk.cli.auth.hub_login import is_logged_in
 
     fm = await FlowMessage.get_one({"id": fm_id})
     if not fm:
@@ -1345,14 +1339,8 @@ async def handle_send_draft(fm_id: str, someone_typeid: str) -> ApiResponse:
     if not conv:
         return ApiFailResponse(message=f"Conversation not found: {fm.conversation_id}")
 
-    task: Optional[Task] = None
-    task_typeid = conv.first_context_of_type(BuiltinEntityType.TASK.value)
-    if task_typeid:
-        task = await Task.get_one({"id": task_typeid.id})
-
     conv = await _append_message_to_conversation(
         conv=conv,
-        task_id=task.id if task else None,
         fm_id=fm.id,
         someone_typeid=someone_typeid,
     )
@@ -1360,48 +1348,10 @@ async def handle_send_draft(fm_id: str, someone_typeid: str) -> ApiResponse:
     fm.is_draft = False
     fm = await fm.save(someone_typeid)
 
-    if task:
-        from flow_sdk.app.actions.notification_action import _resolve_reply_recipient_participant
+    if getattr(conv, "remote", False) and is_logged_in():
+        await _send_conversation_message_header(conv, fm)
 
-        sender_participant = await User.current_sender_participant(fm.sender_name)
-        sender_id = sender_participant.get("user_id") or None
-        if not sender_id:
-            sender_id = fm.sender_id
-        sender_name = sender_participant.get("name") or ""
-        sender_email = sender_participant.get("email") or ""
-        recipient_participant = _resolve_reply_recipient_participant(
-            task,
-            conv,
-            sender_email,
-            sender_id or "",
-        )
-        recipient_email = recipient_participant.get("email") or _resolve_reply_recipient_email(
-            task,
-            conv,
-            sender_email,
-            sender_id or "",
-        )
-        await _send_reply_to_hub(
-            reply_fm=fm,
-            task=task,
-            conv_title=(conv.name or "") if conv else "",
-            message=fm.text or "",
-            sender_id=sender_id,
-            sender_name=sender_name,
-            recipient_email=recipient_email,
-            participants=list(conv.participants or []),
-        )
-
-    _notify_ui_conversation_updated(conv.id, task.id if task else "", fm.id)
-
-    if task:
-        project_root_str = task.project_root
-        if project_root_str:
-            await git_add_commit_push(
-                Path(project_root_str),
-                ["tasks"],
-                f"chore: update conversation for task '{task.title}'",
-            )
+    _notify_ui_conversation_updated(conv.id, "", fm.id)
 
     return ApiSuccessResponse(data={
         "flow_message_id": fm.id,
@@ -2120,9 +2070,9 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
     # bridge's async ``_handle_conversation_op`` materialization.
     if linked_conv_id:
         try:
+            from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
             from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
             from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
-            from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
 
             creds = load_credentials()
             if creds and creds.api_key:
