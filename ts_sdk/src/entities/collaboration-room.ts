@@ -53,12 +53,8 @@ export class CollaborationRoom
     return this.contextOfType('agentic_process').map((t) => t.id);
   }
 
-  /** Project the room's project as a chip-projected direct field. */
-  protected override _directFieldsAsTypeIds(): TypeId[] {
-    const out: TypeId[] = [];
-    if (this.project_id) out.push(new TypeId('project', this.project_id));
-    return out;
-  }
+  // NOTE: project_id projection moved server-side. See
+  // ``Entity.get_implicit_private_context_entities`` (Python).
 
   /**
    * When ``name`` is empty (legacy records created before auto-naming),

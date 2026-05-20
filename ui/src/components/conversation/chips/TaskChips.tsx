@@ -21,17 +21,20 @@ interface TaskChipsProps {
 }
 
 /**
- * Chip row for the parent Task. Driven from both context buckets:
- *   * ``sharedContextEntities`` — wire-published links (specs, conversations,
- *     spawned children).
- *   * ``privateContextEntities`` — direct-field projections (project_id,
- *     assignee, my_process_id, shared_process_id) and any locally-added
- *     ``addContextEntities`` entries.
+ * Chip row for the parent Task. Driven from both context buckets shipped
+ * by the backend:
+ *   * ``sharedContextEntities`` — wire-published links (specs,
+ *     conversations, spawned children).
+ *   * ``privateContextEntities`` — implicit projections (project_id) plus
+ *     explicit attachments, merged and deduped server-side via
+ *     ``Entity.get_implicit_private_context_entities`` +
+ *     ``private_context_entities`` computed_field. The FE renders the
+ *     arrays as-is; it never combines or mutates context locally.
  *
- * Iterating both lists is the single source of truth — adding a new shared
- * entry via the backend ``share-context`` action or a private entry via
- * ``task.addContextEntities(typeId)`` automatically surfaces a chip on
- * next render.
+ * Iterating both arrays is the single source of truth — adding context
+ * always goes through a backend action (``share-context`` for shared,
+ * any future private-mutation action for private). A new chip appears on
+ * the next WS broadcast.
  *
  * Special dispatch:
  * - ``agentic_process`` matching ``task.my_process_id`` → suppressed here; the
@@ -131,10 +134,11 @@ export function TaskChips({
           );
         }
 
-        // Generic: spec, project (loaded), assignee/user, plan, anything new
-        // added via task.addContextEntities (private) or task.shareContextEntities
-        // (shared, round-trips through the backend) later — all flow through here.
-        // Tooltip falls back to EntityChip's default "Open <Type>: <name>".
+        // Generic: spec, project (loaded), plan, or anything else that
+        // arrived in either bucket from the backend. New attachments flow
+        // through here automatically once the WS broadcast updates the
+        // entity. Tooltip falls back to EntityChip's default
+        // "Open <Type>: <name>".
         return (
           <ContextEntityChip
             key={key}

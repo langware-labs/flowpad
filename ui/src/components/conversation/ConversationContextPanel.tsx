@@ -1186,8 +1186,8 @@ function PrivateDerivationRow({
 function SectionHeader({ title, icon: Icon }: { title: string; icon?: LucideIcon }) {
   return (
     <div className="mb-1.5 flex items-center gap-1.5">
-      {Icon && <Icon className="h-3 w-3 text-muted-foreground" aria-hidden="true" />}
-      <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+      {Icon && <Icon className="h-3 w-3 text-foreground" aria-hidden="true" />}
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-foreground">
         {title}
       </span>
     </div>

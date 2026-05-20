@@ -98,7 +98,7 @@ class CodexDriver:
 
     # ── Per-turn execution ───────────────────────────────────────────────────
 
-    async def run_print_turn(
+    async def headless_prompt(
         self,
         process: "AgenticProcess",
         instruction: str,
@@ -112,7 +112,7 @@ class CodexDriver:
         try:
             await process.get_project()
         except Exception:
-            logger.debug("CodexDriver.run_print_turn: get_project failed", exc_info=True)
+            logger.debug("CodexDriver.headless_prompt: get_project failed", exc_info=True)
         if not process.workdir:
             return ApiFailResponse(message="codex prompt: workdir is not set")
 
@@ -140,7 +140,7 @@ class CodexDriver:
                 transcript_path.parent.mkdir(parents=True, exist_ok=True)
                 transcript_path.touch()
         except OSError:
-            logger.debug("CodexDriver.run_print_turn: failed to pre-touch transcript", exc_info=True)
+            logger.debug("CodexDriver.headless_prompt: failed to pre-touch transcript", exc_info=True)
 
         from flow_sdk.fs_records.agentic_process_lifecycle import ProcessStatus
         if process.status != ProcessStatus.RUNNING.value:
@@ -148,10 +148,18 @@ class CodexDriver:
             try:
                 await process.save()
             except Exception:
-                logger.debug("CodexDriver.run_print_turn: lifecycle save failed", exc_info=True)
+                logger.debug("CodexDriver.headless_prompt: lifecycle save failed", exc_info=True)
 
         process_ref = process
         process_id = process.id
+
+        # Multi-turn correctness: see ClaudeDriver.headless_prompt + the
+        # AgenticProcess._discover_status_from_transcript override.
+        object.__setattr__(process_ref, "_turn_in_flight", True)
+        try:
+            await process_ref.notify_updated()
+        except Exception:
+            logger.exception("CodexDriver.headless_prompt: start-of-turn notify_updated failed")
 
         async def _run_turn() -> None:
             session_id_persisted = False
@@ -164,15 +172,16 @@ class CodexDriver:
                             await process_ref.save()
                             session_id_persisted = True
                         except Exception:
-                            logger.debug("CodexDriver.run_print_turn: session_id save failed", exc_info=True)
+                            logger.debug("CodexDriver.headless_prompt: session_id save failed", exc_info=True)
                     try:
                         await process_ref.emit_flow_data(fd.model_dump())
                     except Exception:
-                        logger.debug("CodexDriver.run_print_turn: emit_flow_data failed", exc_info=True)
+                        logger.debug("CodexDriver.headless_prompt: emit_flow_data failed", exc_info=True)
             except Exception:
-                logger.exception("CodexDriver.run_print_turn: worker error")
+                logger.exception("CodexDriver.headless_prompt: worker error")
             finally:
                 _PROMPT_WORKERS.pop(process_id, None)
+                object.__setattr__(process_ref, "_turn_in_flight", False)
                 # ``worker_status`` is a computed projection re-derived from
                 # the JSONL tail by ``to_dict`` / ``api_json_serializer``, so
                 # ``save()`` short-circuits when no real entity field changed.
@@ -184,7 +193,7 @@ class CodexDriver:
                 try:
                     await process_ref.notify_updated()
                 except Exception:
-                    logger.exception("CodexDriver.run_print_turn: terminal notify_updated failed")
+                    logger.exception("CodexDriver.headless_prompt: terminal notify_updated failed")
 
         asyncio.create_task(_run_turn(), name=f"codex-{process.id[:8]}")
         return ApiSuccessResponse(data={"status": "started", "worker": self.name})

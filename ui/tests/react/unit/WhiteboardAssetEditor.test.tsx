@@ -86,6 +86,9 @@ vi.mock('@excalidraw/excalidraw', () => {
     Excalidraw: ExcalidrawStub,
     MainMenu: MainMenuStub,
     exportToSvg: exportToSvgMock,
+    // The editor materializes mermaid-import skeletons via this helper before
+    // calling updateScene — the test passes pre-shaped elements, so identity is fine.
+    convertToExcalidrawElements: (skel: unknown[]) => skel,
   };
 });
 

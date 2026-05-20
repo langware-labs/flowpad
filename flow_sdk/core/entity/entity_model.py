@@ -32,7 +32,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-from pydantic import Field, SerializationInfo, SerializeAsAny, TypeAdapter, ValidationError, model_serializer
+from pydantic import Field, SerializationInfo, SerializeAsAny, TypeAdapter, ValidationError, computed_field, model_serializer
 
 from flow_sdk.config import StorageProvider
 from flow_sdk.flowpad_types.enums import AuthRole, ExpansionType
@@ -986,8 +986,17 @@ class Entity(DBEntity):
         if data.get("expand") is None or (isinstance(data.get("expand"), dict) and not data["expand"]):
             data["expand"] = EntityExpansion()
 
+        # Keep ``computed_field`` outputs visible to the API. ``is_api_field``
+        # only knows about declared ``model_fields``; without this set,
+        # computed fields like ``private_context_entities`` would be dropped
+        # by the filter below.
+        computed_keys = set(type(self).model_computed_fields.keys())
+
         # Exclude None values and private keys to remove
-        data = {key: value for key, value in data.items() if value is not None and self.is_api_field(key)}
+        data = {
+            key: value for key, value in data.items()
+            if value is not None and (key in computed_keys or self.is_api_field(key))
+        }
         return data
 
     async def grant_access_to_public_data(self: EntityType, public_role=AuthRole.ANONYMOUS_VIEWER.value) -> EntityType:
@@ -1036,28 +1045,70 @@ class Entity(DBEntity):
 
     # ── context_entities surface ─────────────────────────────────────────
     #
-    # Mirrors the TS APIEntity API. Two persisted buckets:
-    #   * ``shared_context_entities``  — wire-bound, no auto-injection. The
-    #     read accessor is the field itself.
-    #   * ``private_context_entities_``  — local-only raw storage. The
-    #     computed ``private_context_entities`` property merges in
-    #     ``_direct_fields_as_typeids()`` (project_id, assignee, etc.).
+    # Mirrors the TS APIEntity API. Two buckets:
+    #   * ``shared_context_entities``  — wire-bound, no auto-injection.
+    #     The read accessor is the field itself.
+    #   * ``private_context_entities_``  — raw explicit storage (what the
+    #     user/backend has actively attached). The computed property
+    #     ``private_context_entities`` returns this *plus* implicit
+    #     projections (e.g. the owning project), deduplicated.
     #
-    # Subclasses override ``_direct_fields_as_typeids`` to add direct-field
-    # projections; those land in the private bucket only.
+    # IMPORTANT — implicit projection lives in the backend, never the
+    # frontend. The previous design had the FE compute ``project_id``-as-a-
+    # chip via ``_directFieldsAsTypeIds`` (TS) / ``_direct_fields_as_typeids``
+    # (Py). That meant two sides held the same projection logic and the FE
+    # was effectively "computing context." User feedback: never compute
+    # context on the FE. Implicit context comes from the server, always.
+    #
+    # The shape:
+    #   * Subclasses extend implicit projection by overriding
+    #     ``get_implicit_private_context_entities`` (call ``super()`` to
+    #     keep the base project-id projection).
+    #   * ``private_context_entities`` is a Pydantic computed field so it
+    #     serializes to the wire; the FE just renders the resulting list.
 
-    def _direct_fields_as_typeids(self) -> List[TypeId]:
-        """Per-subclass projection of direct fields into the private context.
-        Default: nothing. Override on entities that want their own fields
-        (e.g. project_id) to appear in the private chip list.
-        """
+    def get_implicit_private_context_entities(self) -> List[TypeId]:
+        """Implicit private-context references derived from this entity's
+        own state. Base implementation projects ``project_id`` when set —
+        every entity that belongs to a project should display the project
+        chip without anyone explicitly attaching it.
+
+        Override in subclasses (and call ``super()``) to add more implicit
+        projections. For now only ``project_id`` is implicit; previous
+        per-subclass projections (assignee on Task, author_id on Spec,
+        ``my_process_id`` / ``shared_process_id`` on Task) were removed
+        when projection moved to the backend — they can be reintroduced as
+        explicit subclass overrides here when there's a confirmed need."""
+        project_id = getattr(self, "project_id", None)
+        if project_id:
+            return [TypeId(type=BuiltinEntityType.PROJECT.value, id=project_id)]
         return []
 
+    @computed_field
     @property
     def private_context_entities(self) -> List[TypeId]:
-        """Direct-field projection + persisted ``private_context_entities_``.
-        Read-only view; mutate via add/remove helpers."""
-        return [*self._direct_fields_as_typeids(), *self.private_context_entities_]
+        """Computed view: implicit projections + explicit raw storage,
+        deduplicated by (type, id). This is what the FE sees over the
+        wire — the FE never combines implicit + explicit itself.
+
+        Decorated as a Pydantic ``computed_field`` so ``model_dump`` emits
+        it on outbound payloads. Read-only on incoming payloads (the wire
+        write path is ``private_context_entities_``)."""
+        seen: set[tuple[str, str]] = set()
+        out: List[TypeId] = []
+        for t in self.get_implicit_private_context_entities():
+            key = (t.type, t.id)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(t)
+        for t in self.private_context_entities_:
+            key = (t.type, t.id)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(t)
+        return out
 
     @staticmethod
     def _normalize_typeids(args: tuple[Any, ...]) -> List[TypeId]:

@@ -90,7 +90,7 @@ Flow:
 ```text
 frontend prompt/executeInstruction
   -> backend AgenticProcess.prompt()
-  -> if visible=false: driver.run_print_turn(...)
+  -> if visible=false: driver.headless_prompt(...)
   -> stream FlowData through the HTTP response/websocket processing path
   -> update transcript/history through the worker driver
 ```

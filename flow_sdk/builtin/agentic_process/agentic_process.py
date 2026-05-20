@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from functools import cached_property
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, List
 from uuid import uuid4
 
 from pydantic import SerializationInfo, model_serializer, model_validator
@@ -980,6 +980,13 @@ class AgenticProcess(Entity):
             TypeId(type=BuiltinEntityType.PROJECT.value, id=project_id)
         )
 
+    # NOTE: per-subclass project-id projection that used to live here moved
+    # to ``Entity.get_implicit_private_context_entities`` in the base. Every
+    # entity with ``project_id`` set now gets the project chip in its
+    # private context for free — including AgenticProcess. Override
+    # ``get_implicit_private_context_entities`` here if AP wants to add
+    # more implicit chips (e.g. ``collaboration_room_id`` → room chip).
+
     @action.post(action_name="recover-project")
     async def recover_project_action(self) -> ApiSuccessResponse | ApiFailResponse:
         """Re-attach this process to a Project derived from its ``workdir``.
@@ -1066,7 +1073,7 @@ class AgenticProcess(Entity):
         Routing:
           ``visible=True`` + worker alive (PTY) → write to PTY stdin (continues session)
           ``visible=True`` + worker dead        → ``start_pty(instruction)`` (PTY relaunch)
-          ``visible=False`` (headless)          → ``self.driver.run_print_turn(...)``
+          ``visible=False`` (headless)          → ``self.driver.headless_prompt(...)``
                                                   — vendor-specific print-mode that
                                                   handles multi-step tool sequences.
 
@@ -1084,7 +1091,7 @@ class AgenticProcess(Entity):
             # to be in DB. This unblocks bootstrap-time uses (e.g.
             # ``flow start`` spawning a migration agent before the
             # substrate is fully initialised).
-            return await self.driver.run_print_turn(self, instruction)
+            return await self.driver.headless_prompt(self, instruction)
         if not self.exist_in_db:
             return ApiFailResponse(message=f"AgenticProcess {self.id} not found in database")
         if await self.is_running():
@@ -1358,7 +1365,7 @@ class AgenticProcess(Entity):
 
         # Inline embedded-agent definitions (and persona directive when a single
         # agent is loaded) into the prompt — same path the SDK ``prompt()`` API
-        # uses via ``driver.run_print_turn``. Without this, HTTP chat would
+        # uses via ``driver.headless_prompt``. Without this, HTTP chat would
         # see the agent only as a delegable Task sub-agent and never adopt
         # the persona for free-form questions.
         composed_prompt = self.driver.compose_prompt(message, self.get_agents_json())
@@ -2501,6 +2508,16 @@ class AgenticProcess(Entity):
         """
         if getattr(self, "_post_tool_idle_complete", False):
             return WorkerStatus.COMPLETE
+        # Headless multi-turn: the JSONL tail keeps reporting the prior
+        # turn's ``end_turn`` (→ COMPLETE) until the new turn's worker
+        # writes its own ``end_turn``. ``headless_prompt`` sets
+        # ``_turn_in_flight`` while the worker spins up so the projection
+        # reports INITIALIZING — otherwise the end-of-turn broadcast
+        # carries COMPLETE → COMPLETE and the SDK mirror sees no edge.
+        # INITIALIZING is semantically correct: worker spawned, transcript
+        # not yet materialised.
+        if getattr(self, "_turn_in_flight", False):
+            return WorkerStatus.INITIALIZING
         path = self.driver.transcript_path(self)
         if path is None:
             if self.status in {

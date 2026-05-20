@@ -1082,15 +1082,25 @@ async def _download_and_unpack_bundle(
 
 
 async def handle_inbox_list() -> ApiResponse:
-    """Return all non-archived received FlowMessages (excluding sent), newest first."""
+    """Return non-archived received FlowMessages whose Conversation exists locally, newest first.
+
+    FMs whose ``conversation_id`` does not resolve to a locally-known Conversation
+    are filtered out so the sidebar badge stays aligned with what InboxView can
+    actually render (which iterates Conversation entities). Without this gate the
+    badge counted orphan FMs the user had no way to open or dismiss.
+    """
     from flow_sdk.db.drivers.query import QueryFilter
     current_user = await User.get_one({"uname": "local"})
     current_user_id = current_user.id if current_user else None
     flt = QueryFilter(type=BuiltinEntityType.FLOW_MESSAGE.value)
     all_messages = await FlowMessage.get_all(flt)
+    conv_flt = QueryFilter(type=BuiltinEntityType.CONVERSATION.value)
+    known_conv_ids = {c.id for c in await Conversation.get_all(conv_flt)}
     messages = [
         m for m in all_messages
-        if not m.is_archived and m.sender_id != current_user_id
+        if not m.is_archived
+        and m.sender_id != current_user_id
+        and m.conversation_id in known_conv_ids
     ]
     messages.sort(key=lambda m: m.created_date or "", reverse=True)
     return ApiSuccessResponse(data=[m.model_dump(mode="json") for m in messages])
