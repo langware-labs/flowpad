@@ -175,7 +175,10 @@ function ConversationListRow({ conv, isFocused, viewMode, onArchive, onToggleRea
   // participant has a name; invitation rows always render the canonical
   // ``Invitation`` placeholder so the violet mail-plus icon reads cleanly.
   const participantNames = useMemo(() => {
-    if (isInvitationRow) return ['Invitation'];
+    if (isInvitationRow) {
+      const inviter = (firstMessage?.sender_name || '').trim();
+      return [inviter || 'Invitation'];
+    }
     const names: string[] = [];
     const seen = new Set<string>();
     const pushName = (raw: string | null | undefined) => {
@@ -191,7 +194,7 @@ function ConversationListRow({ conv, isFocused, viewMode, onArchive, onToggleRea
       pushName(p?.name || (p?.email ? p.email.split('@')[0] : ''));
     }
     return names.length > 0 ? names : ['Unknown'];
-  }, [isInvitationRow, latestMessage?.sender_name, conv.participants]);
+  }, [isInvitationRow, firstMessage?.sender_name, latestMessage?.sender_name, conv.participants]);
   const senderLabel = participantNames.join(', ');
   const count = pointers.length;
   const subject = isInvitationRow
