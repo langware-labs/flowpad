@@ -58,3 +58,21 @@ uv build
 ```
 
 `build_ui.py` must run before `uv build` — it compiles the frontend into `server/static/assets/` which gets included in the wheel via `package-data` in `pyproject.toml`. Without this step, the pip-installed server will serve the HTML shell but 404 on JS/CSS assets. The deploy script (`scripts/deploy_to_github.sh`) runs `build_ui.py` automatically.
+
+## URL-first navigation (non-negotiable)
+
+The only allowed flow for any tab / view / asset / entity click in the UI is:
+
+```
+click → navigate(url) → react-router runs the loader → loader writes context
+       → context-derived hooks update → UI renders
+```
+
+That means, on every click handler that changes "what is shown":
+
+1. **The click handler only calls `navigation.openDock(...)` (or another `navigation.*` shortcut).** Nothing else.
+2. **No optimistic writes to `dataContext`, viewer stores, or any global state from the click handler.** Not "for instant feel", not "to avoid the loader's async work", not "the loader will overwrite it with the same value anyway". Those rationales are how the inversion keeps creeping back. The loader is the single writer.
+3. **The component's `active` / `selected` state must be derived from `currentDock` (URL)**, not from `dataContext.activeX` set by an upstream click. If `useDockNavigation().currentDock` says "this is the active pointer", that is the active pointer.
+4. **Loaders must be fast.** If a loader awaits a WS-bound or PTY-bound side effect, move that side effect into a `useEffect` on the mounted view. The loader resolves entity identity; the view does its own attach/connect on mount. Don't compensate for a slow loader with optimistic-write hacks elsewhere — fix the loader.
+
+If you find yourself writing `dataContext.set*(...)` immediately before `navigation.openDock(...)` in a click path, stop. That is the broken pattern. Delete the writes and make the active-key derivation URL-first.

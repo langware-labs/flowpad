@@ -126,7 +126,7 @@ export function TranscriptEntryItem({
             <ChevronRight className="mt-0.5 h-4 w-4 shrink-0" />
           )}
           {childMarker}
-          <OperationOneLiner operation={op} />
+          <OperationOneLiner operation={op} usage={entry.usage} />
           <span className="shrink-0 text-[10px] text-muted-foreground">{timestamp}</span>
           <InfoButton onInfo={onInfo} onInfoHover={onInfoHover} onInfoHoverEnd={onInfoHoverEnd} />
         </div>

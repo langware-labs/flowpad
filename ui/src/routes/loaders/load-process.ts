@@ -18,6 +18,7 @@ import {
 } from '@sdk';
 import { estimateCols, estimateRows } from '@src/components/terminal/interactive-terminal/terminalConfig';
 import { pushLoadedProcessTab } from '@src/hooks/useActiveTerminals';
+import { perfLog, perfTime } from './_perf';
 
 /**
  * Route wrappers pattern-match on `kind` to decide recovery behavior.
@@ -62,25 +63,25 @@ export function describeProcessStartError(error: unknown): { title: string; desc
 export async function loadProcess(
   processId: string,
 ): Promise<{ process: AgenticProcess; shell: Shell }> {
+  const cached = AgenticProcess.getByIdFromCache<AgenticProcess>(processId);
+  perfLog(`loadProcess cache=${cached ? 'hit' : 'miss'} processId=${processId.slice(0, 8)}`);
   const process =
-    AgenticProcess.getByIdFromCache<AgenticProcess>(processId) ??
-    (await AgenticProcess.getById<AgenticProcess>(processId).catch(() => null));
+    cached ??
+    (await perfTime('AgenticProcess.getById (network)', () =>
+      AgenticProcess.getById<AgenticProcess>(processId).catch(() => null),
+    ));
   if (!process) {
     throw new ProcessLoadError('not_found', processId);
   }
 
   let shell: Shell | null = null;
   try {
-    // Seed the PTY with viewport-derived dimensions instead of the 80x24
-    // VT100 default. The InteractiveTerminal issues an authoritative resize
-    // after fit.fit(); this seed only needs to be in the right ballpark to
-    // avoid the worker's first paint being wrapped at 80 cols on a wide
-    // viewport. SSR-safe: window is always defined here (loader runs in the
-    // browser via React Router).
     const cols = estimateCols(window.innerWidth);
     const rows = estimateRows(window.innerHeight);
-    await process.start({ visible: true, cols, rows });
-    shell = await process.shell();
+    await perfTime('process.start (PTY attach)', () =>
+      process.start({ visible: true, cols, rows }),
+    );
+    shell = await perfTime('process.shell()', () => process.shell());
   } catch (cause) {
     throw new ProcessLoadError('start_failed', processId, process.shell_id ?? null, cause);
   }

@@ -1,0 +1,11 @@
+{
+  "type": "excalidraw",
+  "version": 2,
+  "source": "test",
+  "elements": [
+    {"id": "r1", "type": "rectangle", "x": 0, "y": 0, "width": 80, "height": 40},
+    {"id": "img1", "type": "image", "x": 200, "y": 200, "width": 100, "height": 100, "fileId": "fakefile"}
+  ],
+  "appState": {},
+  "files": {}
+}

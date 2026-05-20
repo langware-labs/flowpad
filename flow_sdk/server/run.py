@@ -113,9 +113,13 @@ def _release_singleton_lock() -> None:
 # database, clobbering each other's conversation projections.
 try:
     from dotenv import find_dotenv
-    env_name = os.getenv("ENV", ".env.local")
-    env_file = find_dotenv(env_name)
-    load_dotenv(env_file, override=True)
+    # FLOWPAD_SKIP_DOTENV: opt-out for isolated test subprocesses that pin
+    # LOCAL_SERVER_PORT / SQLITE_DATABASE_PATH via Popen env — without this,
+    # ``override=True`` would clobber those back to .env.local's values.
+    if os.environ.get("FLOWPAD_SKIP_DOTENV", "").lower() != "true":
+        env_name = os.getenv("ENV", ".env.local")
+        env_file = find_dotenv(env_name)
+        load_dotenv(env_file, override=True)
 except (FileNotFoundError, OSError):
     pass
 

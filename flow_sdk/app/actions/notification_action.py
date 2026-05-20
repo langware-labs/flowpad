@@ -146,7 +146,7 @@ async def _create_conversation_entity(
     from flow_sdk.fs_store.type_id import TypeId
 
     task_typeid = TypeId(type=BuiltinEntityType.TASK.value, id=task.id)
-    conv_id = Conversation.allocate_id({"context_entities": [str(task_typeid)]})
+    conv_id = Conversation.allocate_id({"shared_context_entities": [str(task_typeid)]})
     conv = await ensure_conversation_entity(
         conv_id, parent_typeid=task_typeid, someone_typeid=someone_typeid
     )
@@ -212,8 +212,9 @@ async def _create_spec_and_task(
             "author_id": sender_id,
         }
         if plan_id:
-            # plan_id consolidated into ``context_entities``.
-            spec_payload["context_entities"] = [f"plan-{plan_id}"]
+            # plan_id consolidated into ``shared_context_entities`` (wire-bound:
+            # the spec→plan link is published with the spec).
+            spec_payload["shared_context_entities"] = [f"plan-{plan_id}"]
         spec = Spec.model_validate(spec_payload)
         spec.id = Spec.allocate_id(spec.model_dump())
         spec = await spec.save(someone_typeid)
@@ -234,8 +235,9 @@ async def _create_spec_and_task(
         "shared_process_id": forked_process_id,
     }
     if spec_id:
-        # spec_id consolidated into ``context_entities``.
-        task_payload["context_entities"] = [f"spec-{spec_id}"]
+        # spec_id consolidated into ``shared_context_entities`` (wire-bound:
+        # the task→spec link is published with the task).
+        task_payload["shared_context_entities"] = [f"spec-{spec_id}"]
     task = Task.model_validate(task_payload)
     task.id = Task.allocate_id(task.model_dump())
     task = await task.save(someone_typeid)
@@ -310,7 +312,7 @@ async def _create_conversation_and_fm(
         TypeId(type=BuiltinEntityType.TASK.value, id=task.id) if task else None
     )
     if task_typeid:
-        conv_id = Conversation.allocate_id({"context_entities": [str(task_typeid)]})
+        conv_id = Conversation.allocate_id({"shared_context_entities": [str(task_typeid)]})
     else:
         # No-Task share — seed id from sender + title so it's deterministic
         # for retries but not collide-prone with other no-Task shares.
@@ -329,7 +331,7 @@ async def _create_conversation_and_fm(
         title=title,
     )
     if task is not None:
-        task.add_context_entity(TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv.id))
+        task.add_shared_context_entities(TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv.id))
         task = await task.save(someone_typeid)
 
     if participants is not None and list(participants) != list(conv.participants or []):
@@ -359,7 +361,7 @@ async def _create_conversation_and_fm(
         {
             "id": fm_id,
             "text": fm_text,
-            "context_entities": fm_context,
+            "shared_context_entities": fm_context,
             "attachment": attachments,
             "sender_id": sender_id,
             "sender_name": sender_name,
@@ -1049,8 +1051,8 @@ async def handle_start_conversation_bundle(body: dict, someone_typeid: str) -> A
 
 
 async def _find_task_conversation(task: Task) -> Optional[Conversation]:
-    """Look up the Conversation for a task via its context_entities."""
-    conv_typeid = task.first_context_of_type(BuiltinEntityType.CONVERSATION.value)
+    """Look up the Conversation for a task via its shared context."""
+    conv_typeid = task.first_context_of_type(BuiltinEntityType.CONVERSATION.value, bucket="shared")
     if conv_typeid:
         conv = await Conversation.get_one({"id": conv_typeid.id})
         if conv:
@@ -1067,7 +1069,7 @@ def _build_reply_flow_message(
     sender_name: str,
     recipient_participant: Optional[dict] = None,
     is_draft: bool = False,
-    context_entities: Optional[list[str]] = None,
+    shared_context_entities: Optional[list[str]] = None,
 ) -> "FlowMessage":
     """Build (but do not save) the FlowMessage entity for a conversation reply.
 
@@ -1082,9 +1084,9 @@ def _build_reply_flow_message(
     if task_id:
         context.append(TypeId(type=BuiltinEntityType.TASK.value, id=task_id))
     context.append(TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv_id))
-    if context_entities:
+    if shared_context_entities:
         seen = {str(ce) for ce in context}
-        for raw in context_entities:
+        for raw in shared_context_entities:
             s = (raw or "").strip()
             if not s or s in seen:
                 continue
@@ -1101,7 +1103,7 @@ def _build_reply_flow_message(
 
     reply_fm = FlowMessage.model_validate({
         "text": message,
-        "context_entities": context,
+        "shared_context_entities": [str(c) if not isinstance(c, str) else c for c in context],
         "attachment": [],
         "sender_id": sender_id,
         "sender_name": sender_name,
@@ -1379,14 +1381,14 @@ async def _send_conversation_message_header(conv: "Conversation", reply_fm: "Flo
     """
     try:
         attachments = [a.model_dump(mode="python") for a in (reply_fm.attachment or [])]
-        context_entities = [str(c) for c in (reply_fm.context_entities or [])]
+        shared_context_entities = [str(c) for c in (reply_fm.shared_context_entities or [])]
         await conv.add_message(
             reply_fm.text,
             sender_name=reply_fm.sender_name or None,
             sender_id=reply_fm.sender_id or None,
             flow_message_id=reply_fm.id,
             attachments=attachments or None,
-            context_entities=context_entities or None,
+            shared_context_entities=shared_context_entities or None,
         )
     except Exception as e:  # noqa: BLE001
         logger.warning(
@@ -1569,11 +1571,18 @@ async def handle_add_message(body: dict, someone_typeid: str) -> ApiResponse:
     if not isinstance(uploaded_files_preview, list):
         uploaded_files_preview = [uploaded_files_preview]
     asset_references = _parse_asset_references(body.get("asset_references"))
-    context_entities = body.get("context_entities") or []
-    if isinstance(context_entities, str):
-        context_entities = [context_entities]
-    elif not isinstance(context_entities, list):
-        context_entities = []
+    # Accept both the new ``shared_context_entities`` name and the legacy
+    # ``context_entities`` body key during transition (frontend may not be
+    # fully cut over yet). Treat both as wire-bound (shared).
+    shared_context_entities = (
+        body.get("shared_context_entities")
+        or body.get("context_entities")
+        or []
+    )
+    if isinstance(shared_context_entities, str):
+        shared_context_entities = [shared_context_entities]
+    elif not isinstance(shared_context_entities, list):
+        shared_context_entities = []
 
     if not task_id and not conversation_id:
         return ApiFailResponse(message="task_id or conversation_id is required")
@@ -1655,7 +1664,7 @@ async def handle_add_message(body: dict, someone_typeid: str) -> ApiResponse:
         sender_name=sender_name,
         recipient_participant=recipient_participant,
         is_draft=is_draft,
-        context_entities=context_entities,
+        shared_context_entities=shared_context_entities,
     )
 
     if uploaded_files:

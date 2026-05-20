@@ -71,11 +71,14 @@ def test_app_config_json():
 
 
 def test_app_config_file_path():
-    """Test that config_file_path is exposed and valid."""
+    """Test that config_file_path is exposed and resolves under the
+    per-instance dir (Phase D — moved from platformdirs to
+    ``<instance_dir>/config.json``)."""
     assert config_file_path is not None
     assert isinstance(config_file_path, Path)
     assert config_file_path.name == 'config.json'
-    assert 'flow-cli' in str(config_file_path)
+    assert 'instances' in str(config_file_path), \
+        f"config.json should live under instances/<name>/: {config_file_path}"
 
     print(f"✓ Config file path: {config_file_path}")
     print("\n✅ Config file path test PASSED")

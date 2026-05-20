@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from functools import cached_property
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable
+from typing import TYPE_CHECKING, Any, Callable, List
 from uuid import uuid4
 
 from pydantic import SerializationInfo, model_serializer, model_validator
@@ -311,26 +311,26 @@ async def _index_additional_dir(path: str) -> None:
         logger.exception("add_dir: indexing failed for %s", path)
 
 
-async def _index_session_on_close(session_id: str, pty_title: str | None = None) -> None:
+async def _index_session_on_close(session_id: str, display_name: str | None = None) -> None:
     """Index the ClaudeSessionRecord after an AgenticProcess closes (fire-and-forget).
 
-    pty_title: Claude-generated tab title captured from ANSI OSC escapes in PTY
-               output. Used as the FTS title / entity name when the JSONL has no
-               user-set custom-title (i.e. the user never ran /rename).
+    display_name: Current tab display name (sourced from the AgenticProcess
+                  entity at close time). Used as the FTS title / entity name
+                  when the JSONL has no user-set custom-title.
     """
     try:
         from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
         record = ClaudeSessionRecord.get(session_id)
         if record:
-            if pty_title:
+            if display_name:
                 inst = object.__getattribute__(record, "__dict__")
                 if not inst.get("custom_title"):
-                    record.name = pty_title
+                    record.name = display_name
                     _ = record.search_content  # populate _fts_cache
                     cache = inst.get("_fts_cache")
                     object.__setattr__(
                         record, "_fts_cache",
-                        (pty_title[:120], cache[1] if cache else None),
+                        (display_name[:120], cache[1] if cache else None),
                     )
             await record.sync_to_db()
             logger.debug("[AgenticProcess] indexed session %s on close", session_id)
@@ -449,17 +449,6 @@ class AgenticProcess(Entity):
     instruction_content: str | None = APIField(default=None)
     asset_ref: str | None = APIField(default=None)
     context_data: dict[str, Any] = APIField(default_factory=dict)
-    context_entities: list[TypeId] = APIField(
-        default_factory=list,
-        description=(
-            "TypeIds of entities this process is contextually about — task, "
-            "conversation, spec, project, etc. Populated when the process is "
-            "invoked from a conversation (FlowMessage TYPE_ID attachments) and "
-            "copied across on fork. Project_id, when resolved later, is "
-            "appended in place. Surfaced by the UI to show what the process "
-            "is working on."
-        ),
-    )
     cli_config: dict[str, Any] = APIField(default_factory=dict)
     workdir: str | None = APIField(default=None)
     favorite_index: int | None = APIField(default=None)
@@ -505,6 +494,13 @@ class AgenticProcess(Entity):
     shell_id: str | None = APIField(default=None)
     sidecar_shell_id: str | None = APIField(default=None)
     visible: bool = APIField(default=False, description="Whether this process is visible in the tabs view")
+    auto_rename: bool = APIField(
+        default=True,
+        description=(
+            "When True, PTY OSC title escapes are allowed to update `name`. "
+            "Cleared the first time the user manually renames this tab in the UI."
+        ),
+    )
     process_type: ProcessType | None = APIField(
         default=None,
         description=(
@@ -528,6 +524,14 @@ class AgenticProcess(Entity):
             "MD5 of the worker-relevant config fields captured at the last "
             "successful start_pty(). Compared against the current snapshot on each "
             "save() to detect drift."
+        ),
+    )
+    last_started_snapshot: dict[str, Any] | None = APIField(
+        default=None,
+        description=(
+            "Structured {generic, worker} payload captured at the last "
+            "successful start_pty(). Surfaced by the 'Command Status' debug "
+            "viewer to show the loaded-vs-current diff. None until first start."
         ),
     )
     additional_dirs: list[str] = APIField(default_factory=list, description="Extra directories passed to Claude via --add-dir")
@@ -815,10 +819,6 @@ class AgenticProcess(Entity):
 
             cmd = self._finalized_restart_cli_options()
 
-            # Server-restart resume: process had a shell but cli_config didn't encode resume
-            if not cmd.resume and self.session_id:
-                cmd.resume = self._is_exist_claude_resume_session(self.session_id)
-
             # Fork & CLAUDE_PROJECT_DIR plumbing are Claude-only — Codex's
             # ``CodexCliOptions`` has no ``fork_session_id`` and uses
             # ``-C <cwd>`` instead of ``CLAUDE_PROJECT_DIR``. Skip for any
@@ -893,7 +893,10 @@ class AgenticProcess(Entity):
             self.status = ProcessStatus.RUNNING.value
             # Capture snapshot of the freshly-launched config and clear the
             # restart-required flag — the live worker now matches saved state.
-            self.last_started_hash = self._restart_snapshot()
+            # Build the payload once so snapshot and hash can't diverge.
+            snapshot_payload = self._restart_snapshot_payload()
+            self.last_started_snapshot = snapshot_payload
+            self.last_started_hash = self._restart_snapshot(snapshot_payload)
             self.restart_required = False
             await self.save()
 
@@ -969,32 +972,20 @@ class AgenticProcess(Entity):
             return exit_result
         return await self.start_pty()
 
-    def add_context_entities(self, *type_ids: "TypeId | None") -> bool:
-        """Append TypeIds to ``context_entities``, deduped by (type, id). In-place.
-
-        Returns True iff at least one new ref was added — the caller can use
-        this to decide whether a save is warranted.
-        """
-        refs = list(self.context_entities or [])
-        seen = {(r.type, r.id) for r in refs}
-        added = False
-        for tid in type_ids:
-            if tid is None:
-                continue
-            key = (tid.type, tid.id)
-            if key in seen:
-                continue
-            refs.append(tid)
-            seen.add(key)
-            added = True
-        if added:
-            self.context_entities = refs
-        return added
-
     def _bind_project_id(self, project_id: str) -> None:
-        """Set ``project_id`` and append the matching Project TypeId to ``context_entities``."""
+        """Set ``project_id`` and append the matching Project TypeId to the
+        process's shared context."""
         self.project_id = project_id
-        self.add_context_entities(TypeId(type=BuiltinEntityType.PROJECT.value, id=project_id))
+        self.add_shared_context_entities(
+            TypeId(type=BuiltinEntityType.PROJECT.value, id=project_id)
+        )
+
+    # NOTE: per-subclass project-id projection that used to live here moved
+    # to ``Entity.get_implicit_private_context_entities`` in the base. Every
+    # entity with ``project_id`` set now gets the project chip in its
+    # private context for free — including AgenticProcess. Override
+    # ``get_implicit_private_context_entities`` here if AP wants to add
+    # more implicit chips (e.g. ``collaboration_room_id`` → room chip).
 
     @action.post(action_name="recover-project")
     async def recover_project_action(self) -> ApiSuccessResponse | ApiFailResponse:
@@ -1037,7 +1028,7 @@ class AgenticProcess(Entity):
                 session_id=self.session_id,
                 workdir=self.workdir,
                 visible=visible,
-                context_entities=list(self.context_entities or []),
+                shared_context_entities=list(self.shared_context_entities or []),
             )
             await new_proc.save(owner)
             return ApiSuccessResponse(data={"id": new_proc.id, "type": new_proc.type})
@@ -1082,7 +1073,7 @@ class AgenticProcess(Entity):
         Routing:
           ``visible=True`` + worker alive (PTY) → write to PTY stdin (continues session)
           ``visible=True`` + worker dead        → ``start_pty(instruction)`` (PTY relaunch)
-          ``visible=False`` (headless)          → ``self.driver.run_print_turn(...)``
+          ``visible=False`` (headless)          → ``self.driver.headless_prompt(...)``
                                                   — vendor-specific print-mode that
                                                   handles multi-step tool sequences.
 
@@ -1100,7 +1091,7 @@ class AgenticProcess(Entity):
             # to be in DB. This unblocks bootstrap-time uses (e.g.
             # ``flow start`` spawning a migration agent before the
             # substrate is fully initialised).
-            return await self.driver.run_print_turn(self, instruction)
+            return await self.driver.headless_prompt(self, instruction)
         if not self.exist_in_db:
             return ApiFailResponse(message=f"AgenticProcess {self.id} not found in database")
         if await self.is_running():
@@ -1374,7 +1365,7 @@ class AgenticProcess(Entity):
 
         # Inline embedded-agent definitions (and persona directive when a single
         # agent is loaded) into the prompt — same path the SDK ``prompt()`` API
-        # uses via ``driver.run_print_turn``. Without this, HTTP chat would
+        # uses via ``driver.headless_prompt``. Without this, HTTP chat would
         # see the agent only as a delegable Task sub-agent and never adopt
         # the persona for free-form questions.
         composed_prompt = self.driver.compose_prompt(message, self.get_agents_json())
@@ -2280,19 +2271,25 @@ class AgenticProcess(Entity):
             "worker": driver.restart_snapshot(self, options),
         }
 
-    def _restart_snapshot(self) -> str:
+    def _restart_snapshot(self, payload: dict[str, Any] | None = None) -> str:
         """Stable hash over finalized generic + worker launch inputs.
 
         Mismatch against ``last_started_hash`` (captured at last successful
         ``start_pty()``) means the live worker is running with stale config —
         ``restart_required`` flips True via the ``save()`` hook below.
+
+        Callers that already built the payload (e.g. start_pty's capture site,
+        which also persists it as ``last_started_snapshot``) can pass it in so
+        snapshot and hash are derived from a single evaluation.
         """
         import hashlib
         import json as _json
 
-        payload = self._normalize_restart_value(self._restart_snapshot_payload())
+        if payload is None:
+            payload = self._restart_snapshot_payload()
+        normalized = self._normalize_restart_value(payload)
         return hashlib.md5(
-            _json.dumps(payload, sort_keys=True, default=str).encode()
+            _json.dumps(normalized, sort_keys=True, default=str).encode()
         ).hexdigest()
 
     def _set_start_lifecycle(self, value: bool) -> None:
@@ -2361,6 +2358,61 @@ class AgenticProcess(Entity):
             }
         )
 
+    @staticmethod
+    def _diff_snapshot_fields(
+        loaded: dict[str, Any] | None,
+        current: dict[str, Any],
+    ) -> list[dict[str, Any]]:
+        """Return per-field differences between two ``{generic, worker}`` payloads.
+
+        Normalizes both sides through ``_normalize_restart_value`` so equality
+        matches the hash semantics in ``_restart_snapshot``. Keys present on
+        only one side are reported with the missing side as None.
+        """
+        if not loaded:
+            return []
+        norm_loaded = AgenticProcess._normalize_restart_value(loaded) or {}
+        norm_current = AgenticProcess._normalize_restart_value(current) or {}
+        changes: list[dict[str, Any]] = []
+        for section in ("generic", "worker"):
+            l_section = norm_loaded.get(section) or {}
+            c_section = norm_current.get(section) or {}
+            for field in sorted(set(l_section) | set(c_section)):
+                l_val = l_section.get(field)
+                c_val = c_section.get(field)
+                if l_val != c_val:
+                    changes.append({
+                        "section": section,
+                        "field": field,
+                        "loaded": l_val,
+                        "current": c_val,
+                    })
+        return changes
+
+    @action.get(action_name="restart-info")
+    async def restart_info_action(self) -> "ApiSuccessResponse":
+        """Read-only diff between the live worker's launch payload and the
+        current entity snapshot. Powers the 'Command Status' debug viewer.
+
+        ``loaded`` is the payload captured at last successful ``start_pty()``
+        (None before first start). ``current`` is computed live from the
+        entity's current fields. ``changed`` lists the field paths that
+        differ — empty when nothing has drifted since last start.
+        """
+        current = self._restart_snapshot_payload()
+        loaded = self.last_started_snapshot
+        changed = self._diff_snapshot_fields(loaded, current)
+        return ApiSuccessResponse(
+            data={
+                "restart_required": self.restart_required,
+                "running": self.status == ProcessStatus.RUNNING.value,
+                "worker_type": current.get("generic", {}).get("worker_type"),
+                "loaded": loaded,
+                "current": current,
+                "changed": changed,
+            }
+        )
+
     @cached_property
     def driver(self) -> WorkerDriver:
         """The vendor-specific driver for this process's ``worker_type``.
@@ -2393,7 +2445,9 @@ class AgenticProcess(Entity):
         d = super().to_dict()
         computed = self._discover_status_from_transcript()
         d["worker_status"] = str(computed) if computed else WorkerStatus.IDLE.value
-        d["ready_for_input"] = is_ready_for_input(self, computed)
+        ready = is_ready_for_input(self, computed)
+        d["ready_for_input"] = ready
+        d["ready_for_input_since"] = self._ready_for_input_since() if ready else None
         return d
 
     @model_serializer(mode="wrap")
@@ -2405,7 +2459,9 @@ class AgenticProcess(Entity):
             return None
         computed = self._discover_status_from_transcript()
         data["worker_status"] = str(computed) if computed else WorkerStatus.IDLE.value
-        data["ready_for_input"] = is_ready_for_input(self, computed)
+        ready = is_ready_for_input(self, computed)
+        data["ready_for_input"] = ready
+        data["ready_for_input_since"] = self._ready_for_input_since() if ready else None
         # Surface the live launch command so the UI (run drawer, session info
         # popover, etc.) can show what was actually spawned. Failure-tolerant:
         # if a driver hasn't been wired or the cli_config is malformed, omit
@@ -2452,6 +2508,16 @@ class AgenticProcess(Entity):
         """
         if getattr(self, "_post_tool_idle_complete", False):
             return WorkerStatus.COMPLETE
+        # Headless multi-turn: the JSONL tail keeps reporting the prior
+        # turn's ``end_turn`` (→ COMPLETE) until the new turn's worker
+        # writes its own ``end_turn``. ``headless_prompt`` sets
+        # ``_turn_in_flight`` while the worker spins up so the projection
+        # reports INITIALIZING — otherwise the end-of-turn broadcast
+        # carries COMPLETE → COMPLETE and the SDK mirror sees no edge.
+        # INITIALIZING is semantically correct: worker spawned, transcript
+        # not yet materialised.
+        if getattr(self, "_turn_in_flight", False):
+            return WorkerStatus.INITIALIZING
         path = self.driver.transcript_path(self)
         if path is None:
             if self.status in {
@@ -2479,11 +2545,34 @@ class AgenticProcess(Entity):
     async def get_status(self):
         """Return current app status and computed worker_status from transcript."""
         worker_status = self._discover_status_from_transcript()
+        ready = is_ready_for_input(self, worker_status)
         return ApiSuccessResponse(data={
             "status": self.status,
             "worker_status": str(worker_status) if worker_status else WorkerStatus.IDLE.value,
-            "ready_for_input": is_ready_for_input(self, worker_status),
+            "ready_for_input": ready,
+            "ready_for_input_since": self._ready_for_input_since() if ready else None,
         })
+
+    def _ready_for_input_since(self) -> float | None:
+        """Epoch-ms timestamp approximating when the worker became ready-for-input.
+
+        Derived from the transcript file's mtime: the worker writes the
+        completion / interrupt / idle entry that puts it into a ready state,
+        and then stops writing — so mtime is stable at "became ready at" for
+        as long as the worker stays ready. None when the transcript is
+        unavailable (pre-prompt worker, missing path).
+
+        Used by the UI pending-action store to keep glow state idempotent
+        across page refreshes: refresh sees the same timestamp, so already-
+        acknowledged transitions don't re-arm.
+        """
+        try:
+            path = self.driver.transcript_path(self)
+            if path is None or not path.exists():
+                return None
+            return path.stat().st_mtime * 1000.0
+        except Exception:
+            return None
 
     @property
     def is_idle(self) -> bool:
@@ -2677,22 +2766,11 @@ class AgenticProcess(Entity):
         await self.save()
         return True
 
-    @action.get(action_name="os-status")
-    async def os_status(self) -> ApiSuccessResponse:
-        """OS-level status snapshot for this AgenticProcess.
-
-        Single source of truth for "is this thing alive?". Combines:
-          - Persisted entity status (process + linked shell records).
-          - In-memory PTY-session liveness on the bound compute node.
-          - Real PID liveness check on the worker (psutil + cmdline match).
-
-        ``ready`` is the headline: True iff the PTY session is alive AND the
-        worker PID matches the recorded ``--session-id``/``--resume`` value.
-        It's the answer the frontend ``AgenticProcess.isAlive()`` returns.
-
-        Read-only with respect to lifecycle. ``has_attachable_pty`` /
-        ``worker_alive`` may opportunistically rebind a stale compute-node
-        link (self-healing), but never spawns or kills anything.
+    async def _collect_os_status_payload(self) -> dict:
+        """Build the os-status payload for this process. Pure data-collection;
+        no lifecycle side effects. Shared by the per-process ``os-status``
+        action and the compute_node-level ``os-status-batch`` endpoint —
+        both surface the exact same wire shape per-process.
         """
         shell = await self.shell() if self.shell_id else None
 
@@ -2749,7 +2827,7 @@ class AgenticProcess(Entity):
         else:
             reason = None
 
-        return ApiSuccessResponse(data={
+        return {
             "process_id": self.id,
             "process_status": self.status,
             "shell_id": self.shell_id,
@@ -2764,7 +2842,30 @@ class AgenticProcess(Entity):
             "ready": ready,
             "reason": reason,
             "checked_at": datetime.now(timezone.utc).isoformat(),
-        })
+        }
+
+    @action.get(action_name="os-status")
+    async def os_status(self) -> ApiSuccessResponse:
+        """OS-level status snapshot for this AgenticProcess.
+
+        Single source of truth for "is this thing alive?". Combines:
+          - Persisted entity status (process + linked shell records).
+          - In-memory PTY-session liveness on the bound compute node.
+          - Real PID liveness check on the worker (psutil + cmdline match).
+
+        ``ready`` is the headline: True iff the PTY session is alive AND the
+        worker PID matches the recorded ``--session-id``/``--resume`` value.
+        It's the answer the frontend ``AgenticProcess.isAlive()`` returns.
+
+        Read-only with respect to lifecycle. ``has_attachable_pty`` /
+        ``worker_alive`` may opportunistically rebind a stale compute-node
+        link (self-healing), but never spawns or kills anything.
+
+        For multi-process callers (the SDK's auto-recovery sweep) prefer the
+        compute_node-level ``os-status-batch`` action — one request, same
+        per-process payload, gathered concurrently server-side.
+        """
+        return ApiSuccessResponse(data=await self._collect_os_status_payload())
 
     @action.post(action_name="close")
     async def _http_close(self) -> ApiSuccessResponse | ApiFailResponse:
@@ -2956,14 +3057,9 @@ class AgenticProcess(Entity):
                     await proc.save()
 
                     if session_id:
-                        _pty_title: str | None = None
-                        if shell_id:
-                            try:
-                                from flow_sdk.builtin.faas.pty_actions import get_pty_session_title
-                                _pty_title = get_pty_session_title(shell_id)
-                            except Exception:
-                                pass
-                        asyncio.create_task(_index_session_on_close(session_id, pty_title=_pty_title))
+                        asyncio.create_task(
+                            _index_session_on_close(session_id, display_name=proc.name)
+                        )
                 except Exception as exc:
                     logger.warning("AgenticProcess %s: on_exit update failed: %s", agentic_process_id, exc)
             asyncio.run_coroutine_threadsafe(_update_state(), main_loop)

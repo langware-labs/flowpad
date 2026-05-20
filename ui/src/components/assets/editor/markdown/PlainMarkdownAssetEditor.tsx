@@ -3,6 +3,7 @@ import { MarkdownEditor } from './MarkdownEditor';
 import { AssetPickerPopover } from '@src/components/asset-manager/AssetPickerPopover';
 import { RunButton } from '@src/components/assets/editor/run/RunButton';
 import { useRunOnFile } from '@src/components/assets/editor/run/useRunOnFile';
+import { DiscussDocButtons } from '@src/components/assets/editor/discuss/DiscussDocButtons';
 import type { ExtraSideTab } from '@src/components/milkdown-editor/EditorWithSidePanel';
 import { WorkflowRunsPanel } from '@src/components/workflows-view/WorkflowRunsPanel';
 import type { ProcessEntry } from '@src/components/workflows-view/workflow-run-store';
@@ -38,8 +39,12 @@ export function PlainMarkdownAssetEditor({ fsRef, assetType }: PlainMarkdownAsse
   const chatTarget = entity ? entity.typeId.toString() : null;
   const assetRef = (entity as { asset_ref?: string } | null)?.asset_ref;
   const localTypeId = dataContext.computeNodeTypeId;
-  const editorRef =
-    assetRef && localTypeId ? new FrontMatterFsRef(assetRef, localTypeId) : fsRef;
+  // Memoize: useFSRefContent's load effect is keyed on fsRef identity, so a
+  // fresh FrontMatterFsRef every render re-downloads the file on every re-render.
+  const editorRef = useMemo(
+    () => (assetRef && localTypeId ? new FrontMatterFsRef(assetRef, localTypeId) : fsRef),
+    [assetRef, localTypeId, fsRef],
+  );
 
   const { navigation } = useDockNavigation();
   // No backing FsRecord entity (raw CLAUDE.md etc.) → no delete button. The
@@ -80,17 +85,20 @@ export function PlainMarkdownAssetEditor({ fsRef, assetType }: PlainMarkdownAsse
   const isRunning = !!processEntry;
 
   const toolbar = (
-    <AssetPickerPopover
-      trigger={
-        <RunButton
-          isRunning={isRunning}
-          isStarting={isStarting}
-          disabled={!chatTarget}
-          title={!chatTarget ? 'No backing entity yet' : undefined}
-        />
-      }
-      onPick={(d) => void runWithAsset(d)}
-    />
+    <>
+      <DiscussDocButtons fsRef={fsRef} />
+      <AssetPickerPopover
+        trigger={
+          <RunButton
+            isRunning={isRunning}
+            isStarting={isStarting}
+            disabled={!chatTarget}
+            title={!chatTarget ? 'No backing entity yet' : undefined}
+          />
+        }
+        onPick={(d) => void runWithAsset(d)}
+      />
+    </>
   );
 
   const runsTab: ExtraSideTab = {

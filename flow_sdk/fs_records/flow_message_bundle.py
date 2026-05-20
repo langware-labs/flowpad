@@ -31,7 +31,7 @@ from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.fs_store import SyncOperation
 from flow_sdk.fs_store.type_id import TypeId
 
-_FM_FIELDS = {"type", "id", "text", "instruction", "context_entities", "attachment",
+_FM_FIELDS = {"type", "id", "text", "instruction", "shared_context_entities", "attachment",
               "sender_id", "sender_name", "receiver_address", "receiver_address_type"}
 
 _TASK_FIELDS = {"type", "id", "title", "description", "status", "task_type",
@@ -39,7 +39,7 @@ _TASK_FIELDS = {"type", "id", "title", "description", "status", "task_type",
                 "due_at", "start_date",
                 "project_id", "spec_type",
                 "shared_process_id",
-                "context_entities",
+                "shared_context_entities",
                 "active_form", "analysis_json_path", "analysis_path", "artifacts",
                 "branch", "classification_category", "classification_command",
                 "classification_path", "classification_title", "command",
@@ -675,7 +675,7 @@ async def unpack_bundle(
                     jsonl_file = entry_dir / "conversation.jsonl"
                     if jsonl_file.exists():
                         task_id_for_conv = next(
-                            (TypeId(c).id for c in msg_data.get("context_entities", []) if TypeId(c).type == BuiltinEntityType.TASK.value),
+                            (TypeId(c).id for c in msg_data.get("shared_context_entities", []) if TypeId(c).type == BuiltinEntityType.TASK.value),
                             None,
                         ) or task_id
                         # The bundle's conversation header carries the sender's
@@ -753,7 +753,7 @@ async def unpack_bundle(
         if not msg_data.get("conversation_id") and conversation_id:
             msg_data["conversation_id"] = conversation_id
         target_conv_id = conversation_id or next(
-            (TypeId(c).id for c in msg_data.get("context_entities", [])
+            (TypeId(c).id for c in msg_data.get("shared_context_entities", [])
              if TypeId(c).type == BuiltinEntityType.CONVERSATION.value),
             None,
         )

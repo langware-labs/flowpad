@@ -26,10 +26,9 @@ export class Spec extends APIEntity<Spec> implements ISpec {
     this.author_id = entity.author_id;
   }
 
-  /** Surface the author user as a chip-projected direct field. */
-  protected override _directFieldsAsTypeIds(): TypeId[] {
-    const out: TypeId[] = [];
-    if (this.author_id) out.push(new TypeId('user', this.author_id));
-    return out;
-  }
+  // NOTE: author_id projection moved server-side. See
+  // ``Entity.get_implicit_private_context_entities`` (Python) — base
+  // projects only project_id; author_id was dropped per
+  // "base returns project_id only for now". Add a Python-side override on
+  // Spec if the author chip needs to come back.
 }

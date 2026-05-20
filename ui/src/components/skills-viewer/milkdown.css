@@ -102,15 +102,26 @@
 }
 
 .milkdown-editor-wrapper .ProseMirror blockquote {
-  border-left: 3px solid hsl(var(--border));
-  padding-left: 1rem;
-  margin-left: 0;
+  border-inline-start: 3px solid hsl(var(--border));
+  padding-inline-start: 1rem;
+  margin-inline-start: 0;
   color: hsl(var(--muted-foreground));
+}
+
+/* See milkdown-editor/milkdown.css for the rationale. Duplicated here for the
+ * skills-viewer surface which loads its own copy of these styles. */
+.milkdown-editor-wrapper .ProseMirror blockquote:has(> p[dir="rtl"]),
+.milkdown-editor-wrapper .ProseMirror li:has(> p[dir="rtl"]) {
+  direction: rtl;
+}
+.milkdown-editor-wrapper .ProseMirror blockquote:has(> p[dir="ltr"]),
+.milkdown-editor-wrapper .ProseMirror li:has(> p[dir="ltr"]) {
+  direction: ltr;
 }
 
 .milkdown-editor-wrapper .ProseMirror ul,
 .milkdown-editor-wrapper .ProseMirror ol {
-  padding-left: 1.5rem;
+  padding-inline-start: 1.5rem;
   margin-bottom: 0.75rem;
 }
 
@@ -150,7 +161,7 @@
 .milkdown-editor-wrapper .ProseMirror td {
   border: 1px solid hsl(var(--border));
   padding: 0.5rem 0.75rem;
-  text-align: left;
+  text-align: start;
 }
 
 .milkdown-editor-wrapper .ProseMirror th {

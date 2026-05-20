@@ -6,20 +6,25 @@ import { useMemo, useSyncExternalStore } from 'react';
  * Pending Actions store.
  *
  * "Pending action" semantics: a tab whose AgenticProcess is currently
- * ready-for-input AND whose most recent ready transition happened within the
- * last `PENDING_DURATION_MS` (300s). The first observation of a process that
- * is already ready is treated as a transition — the user has just opened a
- * surface where this tab already needs attention.
+ * ready-for-input AND whose server-stamped ``ready_for_input_since`` is
+ * within the last `PENDING_DURATION_MS` (300s) AND the user has not yet
+ * acknowledged that specific transition on this device.
  *
- * Source of truth: ``isReadyForInput`` from the SDK, evaluated against the
- * raw entity payload on every WebSocket data op. Status / worker_status
- * timestamps are tracked separately for tooltip display.
+ * Source of truth for the *when* is the server (`ready_for_input_since`,
+ * transcript mtime). The store no longer stamps `now` on first observation,
+ * which is what caused a page-refresh to spuriously re-arm the glow for
+ * every already-ready process — the user had already seen those transitions
+ * pre-refresh.
+ *
+ * Ack state is persisted to localStorage as `{ processId → ackedReadyAt }`.
+ * Glow fires iff `readyAt > ackedReadyAt`, so a refresh observes the same
+ * server timestamp it dismissed before and stays quiet.
  */
 
 export interface PendingEntry {
   processId: string;
   projectId: string | null;
-  /** Wall time (ms) of the most recent ready transition. */
+  /** Server-provided wall time (ms) when the worker became ready-for-input. */
   readyAt: number;
 }
 
@@ -31,12 +36,13 @@ export interface ProcessTracker {
   ready: boolean;
   /** Wall time (ms) of the most recent observed status / worker_status change. */
   lastStatusChangedAt: number;
-  /** Wall time (ms) of the most recent ready transition. null if never observed ready. */
-  lastReadyAt: number | null;
+  /** Server-stamped epoch ms when the worker became ready-for-input. Null when not ready or unknown. */
+  readyAt: number | null;
 }
 
 const PENDING_DURATION_MS = 300_000;
 const TIMER_TICK_MS = 1_000;
+const ACK_STORAGE_KEY = 'pending-actions-acks-v1';
 
 const trackers = new Map<string, ProcessTracker>();
 const listeners = new Set<() => void>();
@@ -44,18 +50,46 @@ let snapshot: ReadonlyArray<PendingEntry> = [];
 let timer: ReturnType<typeof setInterval> | null = null;
 let attached = false;
 
+const ackedReadyAt: Map<string, number> = loadAcks();
+
+function loadAcks(): Map<string, number> {
+  try {
+    if (typeof localStorage === 'undefined') return new Map();
+    const raw = localStorage.getItem(ACK_STORAGE_KEY);
+    if (!raw) return new Map();
+    const obj = JSON.parse(raw) as Record<string, number>;
+    return new Map(Object.entries(obj));
+  } catch {
+    return new Map();
+  }
+}
+
+function persistAcks(): void {
+  try {
+    if (typeof localStorage === 'undefined') return;
+    const obj: Record<string, number> = {};
+    for (const [k, v] of ackedReadyAt) obj[k] = v;
+    localStorage.setItem(ACK_STORAGE_KEY, JSON.stringify(obj));
+  } catch {
+    // best effort — quota / private mode
+  }
+}
+
 function isCurrentlyPending(t: ProcessTracker, now: number): boolean {
-  return t.ready && t.lastReadyAt !== null && now - t.lastReadyAt < PENDING_DURATION_MS;
+  if (!t.ready || t.readyAt === null) return false;
+  if (now - t.readyAt >= PENDING_DURATION_MS) return false;
+  const acked = ackedReadyAt.get(t.processId);
+  if (acked !== undefined && acked >= t.readyAt) return false;
+  return true;
 }
 
 function rebuildSnapshot(now: number): boolean {
   const next: PendingEntry[] = [];
   for (const t of trackers.values()) {
     if (isCurrentlyPending(t, now)) {
-      next.push({ processId: t.processId, projectId: t.projectId, readyAt: t.lastReadyAt as number });
+      next.push({ processId: t.processId, projectId: t.projectId, readyAt: t.readyAt as number });
     }
   }
-  // Cheap shallow comparison: same length + same ids (order-insensitive)
   const changed =
     next.length !== snapshot.length ||
     next.some((e) => !snapshot.find((s) => s.processId === e.processId && s.readyAt === e.readyAt));
@@ -86,7 +120,7 @@ function ensureTimer(): void {
   if (timer) return;
   timer = setInterval(() => {
     const now = Date.now();
-    const anyReady = Array.from(trackers.values()).some((t) => t.ready && t.lastReadyAt !== null);
+    const anyReady = Array.from(trackers.values()).some((t) => t.ready && t.readyAt !== null);
     const changed = rebuildSnapshot(now);
     if (changed) notify();
     if (!anyReady && timer) {
@@ -116,6 +150,7 @@ function handleDataOp(typeIdStr: string, op: string, data: unknown): void {
     worker_status?: string;
     session_id?: string | null;
     project_id?: string | null;
+    ready_for_input_since?: number | null;
   };
   const view: StatusBearingProcess = {
     status: obj.status,
@@ -126,6 +161,7 @@ function handleDataOp(typeIdStr: string, op: string, data: unknown): void {
   const newStatus = obj.status;
   const newWorkerStatus = obj.worker_status;
   const projectId = obj.project_id ?? null;
+  const serverReadyAt = ready ? (obj.ready_for_input_since ?? null) : null;
   const now = Date.now();
 
   const prev = trackers.get(id);
@@ -137,11 +173,9 @@ function handleDataOp(typeIdStr: string, op: string, data: unknown): void {
       workerStatus: newWorkerStatus,
       ready,
       lastStatusChangedAt: now,
-      // First observation: if currently ready, treat as a fresh transition so
-      // tabs already awaiting input glow on app load / after navigation.
-      lastReadyAt: ready ? now : null,
+      readyAt: serverReadyAt,
     });
-    if (ready) ensureTimer();
+    if (ready && serverReadyAt !== null) ensureTimer();
     if (rebuildSnapshot(now)) notify();
     return;
   }
@@ -157,14 +191,13 @@ function handleDataOp(typeIdStr: string, op: string, data: unknown): void {
     prev.projectId = projectId;
     dirty = true;
   }
-  if (!prev.ready && ready) {
-    // Fresh ready transition — restart the 300s window.
-    prev.ready = true;
-    prev.lastReadyAt = now;
-    ensureTimer();
+  if (prev.ready !== ready) {
+    prev.ready = ready;
     dirty = true;
-  } else if (prev.ready && !ready) {
-    prev.ready = false;
+  }
+  if (prev.readyAt !== serverReadyAt) {
+    prev.readyAt = serverReadyAt;
+    if (serverReadyAt !== null) ensureTimer();
     dirty = true;
   }
   if (dirty && rebuildSnapshot(now)) notify();
@@ -202,15 +235,17 @@ export function isPending(processId: string | null | undefined): boolean {
   return !!t && isCurrentlyPending(t, Date.now());
 }
 
-/** Clear pending state for ``processId`` (e.g. user opened the tab). The
- *  status tracker is preserved so the tooltip still reads the latest
- *  change-age; only the glow is dismissed. The next fresh ready transition
- *  re-arms the glow. */
+/** Mark the current ready transition as seen. Persisted to localStorage so a
+ *  page refresh sees the same server `ready_for_input_since` and stays quiet.
+ *  The next time the worker transitions out of and back into ready, the
+ *  server stamps a fresh timestamp greater than the persisted ack, and the
+ *  glow re-arms. */
 export function acknowledgePending(processId: string | null | undefined): void {
   if (!processId) return;
   const t = trackers.get(processId);
-  if (!t || t.lastReadyAt === null) return;
-  t.lastReadyAt = null;
+  if (!t || t.readyAt === null) return;
+  ackedReadyAt.set(processId, t.readyAt);
+  persistAcks();
   const now = Date.now();
   if (rebuildSnapshot(now)) notify();
 }

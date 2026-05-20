@@ -1,4 +1,5 @@
-import { AgenticProcess, dataContext, getDisplayStatus, isProcessRunning, isReadyForInput, ProcessStatus, Shell, TypeId, type ComputeNode } from '@sdk';
+import { AgenticProcess, dataContext, getDisplayStatus, isProcessRunning, isReadyForInput, ProcessStatus, Shell, TypeId, ViewType, type ComputeNode } from '@sdk';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { CodexIcon } from '@src/components/icons/CodexIcon';
@@ -36,6 +37,7 @@ import {
   X,
 } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { allowRename } from './rename-rules';
 import { HistoryModal } from './HistoryModal';
 import InteractiveTerminal from './interactive-terminal';
 import { ProjectsCounterChip } from './ProjectsCounterChip';
@@ -237,18 +239,37 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
 
-  const { navigation } = useDockNavigation();
+  const { navigation, currentDock } = useDockNavigation();
   const visibleSessions = sessions;
 
-  // Active tab: set by the loader via dataContext.setActiveTerminalTargetTypeId.
-  // Fall back to the process/shell context, then first tab, when no selection
-  // exists yet (e.g. /dock/shell with no pointer).
+  // Active tab is URL-derived. The URL is the single source of truth:
+  // click → navigate(url) → loader → context → render. We parse currentDock
+  // (set by react-router from the live URL params), NOT dataContext fields
+  // that were set optimistically on the click path — those would re-introduce
+  // the "tab highlights before URL changes" inversion called out in CLAUDE.md.
+  const urlActiveTargetTypeId = useMemo<TypeId | null>(() => {
+    if (currentDock?.viewType !== ViewType.SHELL) return null;
+    const pointer = currentDock.pointer;
+    if (!pointer) return null;
+    if (DockPointer.isAgenticProcessPointer(pointer)) {
+      return new TypeId(AgenticProcess.type, DockPointer.extractAgenticProcessId(pointer));
+    }
+    const shellId = pointer.startsWith(Shell.type + '-')
+      ? pointer.slice(Shell.type.length + 1)
+      : pointer;
+    return new TypeId(Shell.type, shellId);
+  }, [currentDock?.viewType, currentDock?.pointer]);
+
+  // Fallback for views that don't drive the strip via /dock/shell (overview
+  // panes, embedded strips). Context fields here are written by the loader,
+  // not by click handlers — still URL-derived, just one indirection away.
   const fallbackActiveTargetTypeId =
     contextAgenticProcess?.typeId ??
     (contextShellId ? new TypeId(Shell.type, contextShellId) : null) ??
     visibleSessions[0]?.targetTypeId ??
     null;
-  const activeTargetTypeId = contextActiveTerminalTargetTypeId ?? fallbackActiveTargetTypeId;
+  const activeTargetTypeId =
+    urlActiveTargetTypeId ?? contextActiveTerminalTargetTypeId ?? fallbackActiveTargetTypeId;
   const activeTargetKey = activeTargetTypeId?.toString() ?? '';
   const hasActiveTab = Boolean(
     activeTargetKey && visibleSessions.some((session) => terminalTargetKey(session) === activeTargetKey),
@@ -414,21 +435,20 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
 
   const handleStartDocker = useCallback((dockerNode: ComputeNode) => startTerminalTab(dockerNode), [startTerminalTab]);
 
-  // Navigate to a tab by emitting onTabClick — consumer owns the destination.
-  // Uses sessionsRef to avoid re-creating the callback when the sessions
-  // array identity changes (which cascades into selectTab → scroll effects).
+  // URL-first: click handler only emits onTabClick. The consumer turns that
+  // into navigation.openDock(pointer); the loader then writes context; the
+  // strip re-renders because activeTargetTypeId is URL-derived. No optimistic
+  // dataContext writes here — see CLAUDE.md "URL-first navigation".
   const sessionsRef = useRef(sessions);
   sessionsRef.current = sessions;
   const navigateToSession = useCallback(
     (targetKey: string) => {
       const session = sessionsRef.current.find((s) => terminalTargetKey(s) === targetKey);
       if (!session) return;
-      // Set active target immediately so the CSS display toggle happens
-      // before the loader's async work (entity queries). The loader will
-      // later call setActiveTerminalTargetTypeId with the same value (no-op).
-      dataContext.setActiveTerminalTargetTypeId(session.targetTypeId);
-      const shellId = terminalTransportShellId(session);
-      if (shellId) dataContext.setActiveShellId(shellId);
+      if (import.meta.env.DEV) {
+        (window as Record<string, unknown>).__shellNavT0 = performance.now();
+        console.log(`[PERF] +0ms tab click → ${targetKey}`);
+      }
       onTabClick?.(targetKey, session);
     },
     [onTabClick],
@@ -483,9 +503,8 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
     });
     if (session) {
       const key = terminalTargetKey(session);
-      dataContext.setActiveTerminalTargetTypeId(session.targetTypeId);
-      const shellId = terminalTransportShellId(session);
-      if (shellId) dataContext.setActiveShellId(shellId);
+      // Don't write dataContext here — the consumer's onTabOpen already called
+      // navigation.openDock(pointer) and the loader owns the context writes.
       clearPendingTabCreation();
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
@@ -603,41 +622,35 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
     }
   };
 
-  const onTabRename = (session: (typeof visibleSessions)[number], newName: string, injectRename = true): void => {
-    const shell = session.shell;
-    if (!shell) return;
+  const onTabRename = (session: (typeof visibleSessions)[number], newName: string, fromPty = false): void => {
+    // Source of truth: AgenticProcess for process-backed tabs, Shell for pure shells.
+    // Whichever owns the tab owns its name + auto_rename. No cross-entity propagation.
+    const source = session.agenticProcess ?? session.shell;
+    if (!source) return;
+    if (!allowRename(newName)) return;
+    if (fromPty && !source.auto_rename) return;       // user already pinned this tab
+    if (source.name === newName) return;              // no-op — no flip, no save, no /rename
 
-    // Guard: reject TypeId-formatted strings (e.g. "claude-<uuid>", "shell-<uuid>")
-    if (/^[a-z][a-z0-9-]*-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(newName)) return;
-
-    // PTY title changes must not override an explicit user rename.
-    // user_renamed is set by the backend when the user runs /rename in CC or
-    // renames via the UI dialog.
-    if (!injectRename && shell.user_renamed) return;
-
-    // The tab strip renders the copied TerminalTab name, so patch it directly;
-    // Shell.updateDisplay updates the entity cache but does not notify terminalState.
     const previousName = session.name;
-    if (previousName !== newName) updateTerminal(session, { name: newName });
+    updateTerminal(session, { name: newName });       // optimistic; reconciles via WS data_op
 
-    // Rule 5: skip backend call if only the terminalState copy was stale.
-    if (shell.name !== newName) {
-      void shell.updateDisplay({ name: newName, is_pty: !injectRename }).catch((error) => {
-        if (previousName !== newName) updateTerminal(session, { name: previousName });
-        console.error('[TabbedTerminal] Failed to rename tab:', terminalTargetKey(session), error);
-      });
-    }
+    source.name = newName;
+    if (!fromPty) source.auto_rename = false;
+    void source.save().catch((error) => {
+      updateTerminal(session, { name: previousName });
+      console.error('[TabbedTerminal] Failed to rename tab:', terminalTargetKey(session), error);
+    });
 
-    // Inject /rename only when user-initiated AND the worker is ready for input,
-    // never when the title came from xterm (PTY escape sequence), to avoid a loop
-    // where Claude sets the title → we inject /rename → Claude sets the title again.
+    // User-initiated rename → tell Claude its own session title so it stops emitting
+    // the old one on the next OSC update. Frontend-only; never on PTY-sourced renames.
     if (
-      injectRename &&
+      !fromPty &&
+      session.shell &&
       terminalTargetKey(session) === activeTargetKey &&
       contextAgenticProcess &&
       isReadyForInput(contextAgenticProcess)
     ) {
-      void shell.sendInput(`/rename ${newName}\r`);
+      void session.shell.sendInput(`/rename ${newName}\r`);
     }
   };
 
@@ -832,6 +845,23 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
   // so non-rendered ids in this set are inert.
   const pendingProcessIds = usePendingSessionIds();
 
+  // Auto-acknowledge whenever the active tab itself is pending. Covers two
+  // cases the click-handler ack misses: (a) ready transition arrives via WS
+  // while the user is already sitting on the tab; (b) the active tab is
+  // selected from the URL on load/refresh (no click). Without this, the user
+  // sees a glow on the very tab they're reading.
+  const activeSession = useMemo(
+    () => visibleSessions.find((s) => terminalTargetKey(s) === activeTargetKey),
+    [visibleSessions, activeTargetKey],
+  );
+  const activePendingProcessId = activeSession ? terminalProcessId(activeSession) : null;
+  const activeIsPending = activePendingProcessId ? pendingProcessIds.has(activePendingProcessId) : false;
+  useEffect(() => {
+    if (activeIsPending && activePendingProcessId) {
+      acknowledgePending(activePendingProcessId);
+    }
+  }, [activeIsPending, activePendingProcessId]);
+
   return (
     <div className={`flex h-full ${className}`}>
       {/* Main terminal area */}
@@ -888,7 +918,13 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
                   : `tab-shell-${targetKey}`;
               const indicatorKey = session.targetTypeId.type === Shell.type ? session.targetTypeId.id : targetKey;
               const sessionProcessId = terminalProcessId(session);
-              const isPending = sessionProcessId ? pendingProcessIds.has(sessionProcessId) : false;
+              const isActive = activeTargetKey === targetKey;
+              // Active tab never glows: the user is already looking at it,
+              // so highlighting it as "needs attention" is wrong. The
+              // useEffect above also acks it, but suppressing the class
+              // here avoids a one-frame flash on the render before the
+              // effect commits.
+              const isPending = sessionProcessId && !isActive ? pendingProcessIds.has(sessionProcessId) : false;
 
               const tabContent = (
                 <div
@@ -1143,7 +1179,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
                       process={sessionProcess}
                       onTitleChange={(title) => {
                         if (session.isDisabled) return;
-                        onTabRename(session, title, false);
+                        onTabRename(session, title, true);
                       }}
                     />
                   )}

@@ -97,12 +97,22 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   _dirty: boolean = true;
   _typeId: TypeId | null = null;
   /**
-   * Generic context-entity references. Private — use ``addContextEntity`` /
-   * ``removeContextEntity`` to mutate. The wire shape is ``string[]`` of
-   * TypeId-formatted entries; we deserialize to ``TypeId[]`` in the
-   * constructor and serialize back via ``toJSON``.
+   * Wire-bound context references. Populated from the incoming
+   * ``shared_context_entities`` wire field on deserialize; emitted back on
+   * serialize. The public read accessor is ``sharedContextEntities``.
+   *
+   * Frontend code does NOT mutate this directly — to publish a link, call
+   * the backend ``share-context`` action.
    */
-  private _context_entities: TypeId[] = [];
+  private _shared_context_entities_: TypeId[] = [];
+  /**
+   * Backend-computed private context. The Python side merges implicit
+   * projections (project_id) with explicit attachments and ships the
+   * deduped array over the wire — this slot just stores what arrived.
+   * The FE never reads or mutates raw explicit attachments independently.
+   * Read via ``privateContextEntities`` (identity getter).
+   */
+  private _private_context_entities_: TypeId[] = [];
   _isLoaded: boolean = false;
   static nextInstanceIndex: number = 0;
   _instanceIndex: number = APIEntity.nextInstanceIndex++;
@@ -353,16 +363,32 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     if (entityJson.type && entityJson.type != this.getType()) {
       throw new Error(`Entity type mismatch: ${entityJson.type} != ${this.getType()}`);
     }
-    // Move the wire-shaped ``context_entities`` (string[] / TypeId[] after
-    // deepAssign) into the private storage and drop the public alias so
-    // toJSON's dynamic-property iterator doesn't double-emit it.
-    const fromWire = (this as any).context_entities as Array<unknown> | undefined;
-    if (Array.isArray(fromWire) && fromWire.length > 0) {
-      this._context_entities = fromWire.map((v) =>
+    // Move the wire-shaped ``shared_context_entities`` and the
+    // backend-computed ``private_context_entities`` into private storage,
+    // then drop the public aliases so toJSON's dynamic-property iterator
+    // doesn't double-emit them.
+    //
+    // IMPORTANT — ``private_context_entities`` arrives ALREADY merged from
+    // the backend: implicit projections (project_id) + explicit raw
+    // attachments + dedup. The FE just deserializes the final list and
+    // renders it. Computation lives server-side in
+    // ``Entity.get_implicit_private_context_entities`` /
+    // ``private_context_entities`` (Pydantic computed_field).
+    const fromWireShared = (this as any).shared_context_entities as Array<unknown> | undefined;
+    if (Array.isArray(fromWireShared) && fromWireShared.length > 0) {
+      this._shared_context_entities_ = fromWireShared.map((v) =>
         v instanceof TypeId ? v : new TypeId(String(v)),
       );
     }
-    delete (this as any).context_entities;
+    delete (this as any).shared_context_entities;
+
+    const fromWirePrivate = (this as any).private_context_entities as Array<unknown> | undefined;
+    if (Array.isArray(fromWirePrivate) && fromWirePrivate.length > 0) {
+      this._private_context_entities_ = fromWirePrivate.map((v) =>
+        v instanceof TypeId ? v : new TypeId(String(v)),
+      );
+    }
+    delete (this as any).private_context_entities;
     const proxy = getProxy(this);
     dataManager.register_new_entity(this.typeId, proxy);
     return proxy;
@@ -429,10 +455,12 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
       id: this.id,
       type: this.getType(),
       version: this.schema_version,
-      // Persist only the private array — direct fields are emitted as their
-      // own typed fields by the dynamic-property iterator below. The dynamic
-      // ``contextEntities`` getter merges them at read time.
-      context_entities: this._context_entities.map((t) => t.toString()),
+      // Wire-bound context only. Private context stays local — it's never
+      // published or sent to the backend, by design. Direct-field projections
+      // (project_id, assignee, ...) are emitted as their own typed fields by
+      // the dynamic-property iterator below; the ``privateContextEntities``
+      // getter folds them in at read time on this client only.
+      shared_context_entities: this._shared_context_entities_.map((t) => t.toString()),
     };
 
     // Dynamically add all enumerable properties of the instance
@@ -782,61 +810,119 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
 
   // ── context_entities surface ──────────────────────────────────────────
   //
-  // Unified container for "what other entities is this one contextually
-  // related to." See ``IEntity.context_entities``. The persisted slot is the
-  // private ``_context_entities``; the public ``contextEntities`` getter
-  // merges in per-entity-projected direct fields (overridable via
-  // ``_directFieldsAsTypeIds``). Frontend writes go through
-  // ``addContextEntity`` / ``removeContextEntity`` only.
+  // Two buckets, split by the rule "if it came over the wire it is shared,
+  // otherwise private":
+  //   * ``sharedContextEntities`` — wire-bound; what every reader of this
+  //     entity sees. Mutated only by the backend (call a ``share-context``
+  //     action to publish).
+  //   * ``privateContextEntities`` — also wire-bound now: the **backend**
+  //     computes the merged list (implicit projections like ``project_id``
+  //     PLUS the user's explicit attachments) via
+  //     ``Entity.get_implicit_private_context_entities`` +
+  //     ``private_context_entities`` Pydantic computed_field. The FE just
+  //     renders the list. **The FE never combines implicit + explicit
+  //     locally.** This file used to host a ``_directFieldsAsTypeIds`` hook
+  //     for FE-side projection; it was removed when projection moved to
+  //     the backend.
 
-  /**
-   * Per-entity projection of direct fields into the chip-renderable context.
-   * Override in subclasses to surface fields like ``project_id`` or
-   * ``assignee`` as TypeIds. Default: nothing.
-   */
-  protected _directFieldsAsTypeIds(): TypeId[] {
-    return [];
+  /** Wire-bound context. Read-only on the frontend — publish via a backend
+   *  ``share-context`` action. */
+  public get sharedContextEntities(): TypeId[] {
+    return [...this._shared_context_entities_];
+  }
+
+  /** Computed-by-backend private context (implicit projections + explicit
+   *  attachments, deduped server-side). Returned as-is — no FE-side
+   *  projection. */
+  public get privateContextEntities(): TypeId[] {
+    return [...this._private_context_entities_];
+  }
+
+  // NOTE: ``addContextEntities`` / ``removeContextEntities`` /
+  // ``_normalizeContextEntities`` lived here as FE-side mutation primitives
+  // for the private bucket. They were removed when the FE became
+  // display-only for context: the FE renders whatever the backend ships in
+  // ``private_context_entities`` (a Pydantic computed_field that merges
+  // implicit projections + explicit attachments, server-side). To attach
+  // something to a private context, use a dedicated backend action and let
+  // the WS broadcast deliver the updated array. The FE never combines or
+  // mutates context on its own.
+
+  private _bucketView(bucket: 'private' | 'shared' | 'both'): TypeId[] {
+    if (bucket === 'shared') return this.sharedContextEntities;
+    if (bucket === 'private') return this.privateContextEntities;
+    return [...this.sharedContextEntities, ...this.privateContextEntities];
+  }
+
+  /** All context entries of the given type. Default 'both' returns shared first then private. */
+  public contextOfType(type: string, bucket: 'private' | 'shared' | 'both' = 'both'): TypeId[] {
+    return this._bucketView(bucket).filter((t) => t.type === type);
+  }
+
+  /** First context entry of the given type, or null. */
+  public firstContextOfType(type: string, bucket: 'private' | 'shared' | 'both' = 'both'): TypeId | null {
+    return this._bucketView(bucket).find((t) => t.type === type) ?? null;
   }
 
   /**
-   * Full chip-renderable context: direct-field projection + persisted
-   * ``_context_entities``. Read-only — mutate via the add/remove methods.
+   * Publish one or many TypeIds to this entity's *shared* context via the
+   * backend ``share-context`` action. The frontend can't mutate
+   * ``_shared_context_entities_`` directly — sharing is a backend decision
+   * — so this is the canonical publish path.
+   *
+   * On success the backend returns the updated shared list; we apply it
+   * locally so the next render sees the change without waiting for the WS
+   * broadcast. Returns the post-update list as TypeIds.
    */
-  public get contextEntities(): TypeId[] {
-    return [...this._directFieldsAsTypeIds(), ...this._context_entities];
+  public async shareContextEntities(input: TypeId | TypeId[]): Promise<TypeId[]> {
+    const targets = this._normalizeContextEntities(input);
+    if (targets.length === 0) return [...this._shared_context_entities_];
+    const info = new ActionInfo('share-context', this.typeId.type, this.typeId.id, 'POST');
+    info.bodyParameters =
+      targets.length === 1
+        ? { typeid: targets[0].toString() }
+        : { typeids: targets.map((t) => t.toString()) };
+    const result = await dataManager.callAction<
+      { typeid?: string; typeids?: string[] },
+      { ok: boolean; id: string; type: string; shared_context_entities: string[] }
+    >(info);
+    return this._applySharedFromResponse(result?.shared_context_entities);
   }
 
   /**
-   * Append a context entity (idempotent — no-op if the same TypeId is
-   * already present). Sets ``dirty`` and notifies dataManager so observers
-   * re-render.
+   * Remove one or many TypeIds from this entity's *shared* context via the
+   * backend ``unshare-context`` action. Mirror of ``shareContextEntities``.
    */
-  public addContextEntity(typeId: TypeId): void {
-    if (this._context_entities.some((t) => t.equals(typeId))) return;
-    this._context_entities = [...this._context_entities, typeId];
-    dataManager.notifyPropertyChanged(this.typeId, 'context_entities');
+  public async unshareContextEntities(input: TypeId | TypeId[]): Promise<TypeId[]> {
+    const targets = this._normalizeContextEntities(input);
+    if (targets.length === 0) return [...this._shared_context_entities_];
+    const info = new ActionInfo('unshare-context', this.typeId.type, this.typeId.id, 'POST');
+    info.bodyParameters =
+      targets.length === 1
+        ? { typeid: targets[0].toString() }
+        : { typeids: targets.map((t) => t.toString()) };
+    const result = await dataManager.callAction<
+      { typeid?: string; typeids?: string[] },
+      { ok: boolean; id: string; type: string; shared_context_entities: string[] }
+    >(info);
+    return this._applySharedFromResponse(result?.shared_context_entities);
   }
 
-  /**
-   * Remove a context entity. Returns ``true`` if a matching entry was
-   * removed, ``false`` if none was present.
-   */
-  public removeContextEntity(typeId: TypeId): boolean {
-    const before = this._context_entities.length;
-    this._context_entities = this._context_entities.filter((t) => !t.equals(typeId));
-    if (this._context_entities.length === before) return false;
-    dataManager.notifyPropertyChanged(this.typeId, 'context_entities');
-    return true;
-  }
-
-  /** All context entries of the given type (e.g. ``'spec'``). */
-  public contextOfType(type: string): TypeId[] {
-    return this.contextEntities.filter((t) => t.type === type);
-  }
-
-  /** First context entry of the given type, or ``null``. */
-  public firstContextOfType(type: string): TypeId | null {
-    return this.contextEntities.find((t) => t.type === type) ?? null;
+  /** Rebuild ``_shared_context_entities_`` from the wire response of a
+   *  share/unshare-context call, notify subscribers, and return the new list. */
+  private _applySharedFromResponse(payload: string[] | undefined): TypeId[] {
+    if (!Array.isArray(payload)) return [...this._shared_context_entities_];
+    const parsed: TypeId[] = [];
+    for (const raw of payload) {
+      try {
+        parsed.push(new TypeId(raw));
+      } catch {
+        // Skip malformed entries from server.
+      }
+    }
+    this._shared_context_entities_ = parsed;
+    dataManager.notifyPropertyChanged(this.typeId, 'shared_context_entities');
+    return [...parsed];
   }
 
   /**

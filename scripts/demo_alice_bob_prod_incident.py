@@ -121,12 +121,29 @@ async def _login(http: httpx.AsyncClient, email: str, password: str) -> tuple[st
 
 
 async def _create_project(http: httpx.AsyncClient, alice_token: str, title: str) -> str:
+    # Allow reusing an existing project — handy when the hub's stale-connection
+    # lookup transiently blocks new POST /graph/project (the bug emits a 404
+    # "Missing resource. Exception: No connection_service found for connections
+    # (>1min old): connection-…"). Set DEMO_PROJECT_ID to skip the create.
+    override = os.environ.get("DEMO_PROJECT_ID")
+    if override:
+        return override
     resp = await http.post(
         f"{API_BASE}/graph/project",
         json={"title": title},
         headers={"Authorization": f"Bearer {alice_token}"},
     )
     if resp.status_code != 200:
+        # Fallback: pick an existing project with the same title.
+        listing = await http.get(
+            f"{API_BASE}/graph/project",
+            headers={"Authorization": f"Bearer {alice_token}"},
+        )
+        if listing.status_code == 200:
+            for p in (listing.json() or {}).get("data") or []:
+                if p.get("title") == title and p.get("id"):
+                    print(f"  ! POST /project failed ({resp.status_code}); reusing existing {p['id']}")
+                    return p["id"]
         raise RuntimeError(f"create project failed: {resp.status_code} {resp.text}")
     pid = ((resp.json() or {}).get("data") or {}).get("id")
     if not pid:

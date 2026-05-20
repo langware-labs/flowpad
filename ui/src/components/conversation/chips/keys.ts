@@ -25,15 +25,16 @@ export const ChipKey = {
 
 /**
  * Chips that ``TaskChips`` would render given its inputs. Derived from
- * ``task.contextEntities`` (the unified getter — direct projection +
- * private array) so it stays in sync as projections change. Plus the
- * task self-header key.
+ * both context buckets (shared = wire-published links, private =
+ * direct-field projections like project_id + locally-added entries) so
+ * the key set tracks every chip the row will draw. Plus the task
+ * self-header key.
  */
 export function taskChipKeys(task: Task | null | undefined): Set<string> {
   const keys = new Set<string>();
   if (!task) return keys;
   if (task.id) keys.add(ChipKey.task(task.id));
-  for (const tid of task.contextEntities ?? []) {
+  for (const tid of mergeContextBuckets(task)) {
     keys.add(ChipKey.forTypeId(tid));
   }
   // The process button has its own dedup key (keyed on the parent task)
@@ -57,5 +58,27 @@ export function conversationChipKeys(args: {
 export function unionKeys(a: Set<string>, b: Set<string>): Set<string> {
   const out = new Set(a);
   for (const k of b) out.add(k);
+  return out;
+}
+
+/** Shared then private TypeIds from an entity's context buckets, deduped by stringified TypeId. */
+export function mergeContextBuckets(entity: {
+  sharedContextEntities?: TypeId[] | null;
+  privateContextEntities?: TypeId[] | null;
+}): TypeId[] {
+  const seen = new Set<string>();
+  const out: TypeId[] = [];
+  for (const tid of entity.sharedContextEntities ?? []) {
+    const k = tid.toString();
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(tid);
+  }
+  for (const tid of entity.privateContextEntities ?? []) {
+    const k = tid.toString();
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(tid);
+  }
   return out;
 }

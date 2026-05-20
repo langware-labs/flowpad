@@ -71,7 +71,7 @@ async def ensure_conversation_entity(
         if title_clean:
             payload["title"] = title_clean
         if parent_typeid is not None:
-            payload["context_entities"] = [str(parent_typeid)]
+            payload["shared_context_entities"] = [str(parent_typeid)]
         conv = Conversation.model_validate(payload)
         conv.id = conversation_id
         conv = await conv.save(someone_typeid, notify=False)

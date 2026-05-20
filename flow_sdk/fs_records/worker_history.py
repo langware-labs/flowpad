@@ -248,14 +248,20 @@ def get_claude_worker_history(limit: int) -> list[WorkerHistoryEntry]:
         except Exception as e:
             logger.debug("[worker_history] stats read failed for %s: %s", sid, e)
 
-        # ``name`` is strictly the AgenticProcess entity title. Claude's
-        # ``slug`` / ``custom_title`` are auto-summaries of the first prompt,
-        # not real names — surface those through ``last_prompt`` only.
+        # Name priority: AgenticProcessRecord.name (user/upsert-set) >
+        # Claude's ``custom_title`` (set by ``/rename`` or Claude's own
+        # auto-summary, written as ``{"type":"custom-title"}`` lines) >
+        # ``slug`` (first-line envelope, auto-generated from the opening
+        # prompt). Without these fallbacks the row would be unnamed for
+        # any session that was never opened through Flowpad — that's the
+        # majority of on-disk Claude sessions. ``_pick_name`` filters out
+        # session_id / UUID-like values, so a trivial session still falls
+        # through to ``last_prompt`` rendering.
         ap_id, ap_name = process_index.get(sid, (None, None))
         name = _pick_name(
             custom_title=ap_name,
-            slug=None,
-            display=None,
+            slug=sd.get("custom_title") or None,
+            display=session.slug or None,
             session_id=sid,
         )
         last_prompt = _pick_last_prompt(

@@ -4,6 +4,7 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { Button } from '@src/components/ui/button';
 import type { Browseable, BrowseableTreeProps, ToolbarAction } from './types';
 import { useBrowseableTree } from './useBrowseableTree';
+import { subscribeRefresh } from './refresh-store';
 
 /**
  * Generic Notion-like tree menu.
@@ -38,6 +39,11 @@ export function BrowseableTree(props: BrowseableTreeProps) {
     },
     [onNavigate],
   );
+
+  // Subscribe to external refresh signals (e.g. asset deleted from a hover
+  // toolbar). The adapter that emits the signal owns the node id and decides
+  // which subtree to invalidate.
+  useEffect(() => subscribeRefresh((nodeId) => { void tree.invalidate(nodeId); }), [tree]);
 
   // Auto-expand ancestors for the active pointer. Dedupe by pointer value so
   // we don't re-walk on every render — but only mark as resolved once a leaf

@@ -113,3 +113,7 @@ def claude_settings(temp_workdir, monkeypatch):
     yield SettingsHelper(settings_file, claude_dir, temp_workdir)
 
     os.chdir(original_cwd)
+
+
+# NOTE: ``sod_env`` fixture lives in tests/conftest.py so every test
+# directory shares the same one. Don't redefine it here.

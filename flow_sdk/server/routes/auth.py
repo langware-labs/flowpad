@@ -18,8 +18,8 @@ from urllib.parse import urlencode
 from fastapi import APIRouter, Query
 from fastapi.responses import HTMLResponse, RedirectResponse
 
-from flow_sdk.cli.auth.hub_login import SERVICE_NAME, _api_key_name
 from flow_sdk.cli.auth.secrets import is_secrets_enabled
+from flow_sdk.instance_settings import get_instance_settings
 
 from .. import state
 from .cloud import _render_result_page
@@ -75,12 +75,13 @@ async def login_callback(
             return RedirectResponse(url=next, status_code=302)
 
         user_id = user_info.get("id", "Unknown")
+        s = get_instance_settings()
         detail_html = (
             f'<div class="detail-box">'
             f"<strong>Account Details:</strong><br>User ID: {user_id}<br>"
-            f"<strong>Keychain entry:</strong><br>"
-            f"service=<code>{SERVICE_NAME}</code><br>"
-            f"account=<code>{_api_key_name()}</code>"
+            f"<strong>Encrypted credentials:</strong><br>"
+            f"sodot=<code>{s.sodot_path}</code><br>"
+            f"keychain key=<code>Flowpad.ai.sod_key / {s.instance_name}</code>"
             f"</div>"
         )
         return _render_result_page(

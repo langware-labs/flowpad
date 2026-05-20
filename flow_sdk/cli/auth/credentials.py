@@ -1,8 +1,25 @@
 #!/usr/bin/env python3
-"""Canonical hub credential storage.
+"""Per-instance hub credential storage.
 
-The keyring slot used to store a raw API key now stores a JSON credential
-record. Legacy raw-string values are migrated on first read.
+Credentials live in the per-instance encrypted ``sodot`` file as four
+separate sod entries: ``api_key``, ``refresh_token``, ``expires_at`` (as
+string), ``user`` (as JSON string). The accessor is
+``get_instance_settings().sod`` — see ``flow_sdk/instance_settings``.
+
+The consent gate on ``instance.sod`` means ``save_credentials`` will raise
+``SecretsNotEnabledError`` if called before ``enable_secrets()``. The
+canonical login flow already calls ``enable_secrets`` before reaching
+save (via the bootstrap explanation page → user approval → re-invoked
+callback path); the no-op defensive call in
+``cloud_login._finalize_login`` keeps the invariant load-bearing for any
+non-canonical caller.
+
+Phase C of the InstanceSettings consolidation. The legacy OS keychain
+``Flowpad.ai.app_secrets/flowpad_api_key[:<instance>]`` entries are no
+longer read or written here; the migration script at
+``system_projects/flowpad_assistant/migrations/0.2.26/scripts/migrate.py``
+leaves them in place for rollback safety but does not bootstrap them
+into the new sodot.
 """
 
 from __future__ import annotations
@@ -11,19 +28,21 @@ import json
 import time
 from typing import Any
 
-import keyring
 from pydantic import BaseModel, Field
 
 
-SERVICE_NAME = "Flowpad.ai.app_secrets"
+# Well-known sod entry names. Stable wire format inside the sodot file —
+# treat as a small public contract.
+SOD_API_KEY = "api_key"
+SOD_REFRESH_TOKEN = "refresh_token"
+SOD_EXPIRES_AT = "expires_at"
+SOD_USER = "user"
 
 
-def _api_key_name() -> str:
-    """Per-instance keyring username."""
+def _sod():
+    """Lazy import so the module loads cleanly even before any sod use."""
     from flow_sdk.instance_settings import get_instance_settings
-
-    name = get_instance_settings().instance_name
-    return "flowpad_api_key" if name == "prod" else f"flowpad_api_key:{name}"
+    return get_instance_settings().sod
 
 
 class UserHubCredentials(BaseModel):
@@ -81,39 +100,77 @@ class UserHubCredentials(BaseModel):
 
 
 def save_credentials(creds: UserHubCredentials) -> None:
-    """Store credentials as JSON in the existing keyring slot."""
-    keyring.set_password(SERVICE_NAME, _api_key_name(), creds.model_dump_json())
+    """Persist ``creds`` to the per-instance sodot file.
+
+    Raises :class:`flow_sdk.instance_settings.SecretsNotEnabledError` if
+    secrets have not been enabled (consent marker missing). Callers
+    upstream of login should call ``enable_secrets()`` first.
+    """
+    sod = _sod()
+    sod.write(SOD_API_KEY, creds.api_key)
+    if creds.refresh_token is not None:
+        sod.write(SOD_REFRESH_TOKEN, creds.refresh_token)
+    else:
+        sod.delete(SOD_REFRESH_TOKEN)
+    if creds.expires_at is not None:
+        sod.write(SOD_EXPIRES_AT, str(creds.expires_at))
+    else:
+        sod.delete(SOD_EXPIRES_AT)
+    sod.write(SOD_USER, json.dumps(creds.user))
 
 
 def load_credentials() -> UserHubCredentials | None:
-    """Load credentials, migrating legacy raw API-key strings on first read."""
-    raw = keyring.get_password(SERVICE_NAME, _api_key_name())
-    if not raw:
+    """Return the stored credentials or None if the user is not logged in.
+
+    Returns None when secrets are not yet enabled — load is a read-only
+    probe and shouldn't force a keychain prompt by raising.
+    """
+    from flow_sdk.instance_settings import SecretsNotEnabledError
+    try:
+        sod = _sod()
+    except SecretsNotEnabledError:
         return None
 
-    try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError:
-        creds = UserHubCredentials(api_key=raw)
-        save_credentials(creds)
-        return creds
+    api_key = sod.read(SOD_API_KEY)
+    if not api_key:
+        return None
 
-    if isinstance(parsed, dict):
-        if "api_key" in parsed:
-            return UserHubCredentials.model_validate(parsed)
-        if "token" in parsed:
-            creds = UserHubCredentials.from_login_payload(parsed)
-            save_credentials(creds)
-            return creds
+    expires_raw = sod.read(SOD_EXPIRES_AT)
+    expires_at: float | None
+    if expires_raw is None or expires_raw == "":
+        expires_at = None
+    else:
+        try:
+            expires_at = float(expires_raw)
+        except ValueError:
+            expires_at = None
 
-    creds = UserHubCredentials(api_key=parsed if isinstance(parsed, str) else raw)
-    save_credentials(creds)
-    return creds
+    user_raw = sod.read(SOD_USER)
+    if user_raw:
+        try:
+            user = json.loads(user_raw)
+            if not isinstance(user, dict):
+                user = {}
+        except json.JSONDecodeError:
+            user = {}
+    else:
+        user = {}
+
+    return UserHubCredentials(
+        api_key=api_key,
+        refresh_token=sod.read(SOD_REFRESH_TOKEN),
+        expires_at=expires_at,
+        user=user,
+    )
 
 
 def clear_credentials() -> None:
-    """Delete the credential keyring entry. Idempotent."""
+    """Delete all credential sod entries. Idempotent. Safe to call when
+    secrets aren't enabled (no-op rather than raise)."""
+    from flow_sdk.instance_settings import SecretsNotEnabledError
     try:
-        keyring.delete_password(SERVICE_NAME, _api_key_name())
-    except keyring.errors.PasswordDeleteError:
-        pass
+        sod = _sod()
+    except SecretsNotEnabledError:
+        return
+    for name in (SOD_API_KEY, SOD_REFRESH_TOKEN, SOD_EXPIRES_AT, SOD_USER):
+        sod.delete(name)

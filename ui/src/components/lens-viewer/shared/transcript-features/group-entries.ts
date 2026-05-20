@@ -19,6 +19,63 @@ function baseId(id: string): string {
   return id.replace(/:usage(?::dim_\d+)?$/, '');
 }
 
+/** Aggregate adjacent `token_usage` entries (per-dim or legacy aggregate)
+ *  into one `TokenUsage` view-model with cost resolved via pricingFor(). */
+function aggregateUsage(usageEntries: ReadonlyArray<GenericEntry & { kind: 'token_usage' }>): import('./types').TokenUsage | null {
+  if (usageEntries.length === 0) return null;
+  let input = 0, output = 0, cacheRead = 0, cacheCreation = 0, reasoning = 0;
+  let costUsd = 0;
+  const model = (usageEntries[0] as { model?: string | null }).model ?? null;
+  const table = pricingFor(model);
+  const isPerDim = (u: typeof usageEntries[number]) => typeof u.io === 'string' && typeof u.count === 'number';
+  for (const u of usageEntries) {
+    if (isPerDim(u)) {
+      const count = u.count ?? 0;
+      if (u.io === 'output') {
+        if (u.reasoning) reasoning += count;
+        else output += count;
+      } else if (u.cache === 'read') {
+        cacheRead += count;
+      } else if (u.cache === 'write') {
+        cacheCreation += count;
+      } else {
+        input += count;
+      }
+      costUsd += table.costOf(u as unknown as UsageEntry);
+    } else {
+      // Legacy aggregate shape — synthesize per-dim UsageEntry shapes so
+      // pricingFor() applies the same rules.
+      const ui = u.input_tokens ?? 0;
+      const uo = u.output_tokens ?? 0;
+      const ur = u.cache_read_tokens ?? u.cached_input_tokens ?? 0;
+      const uw = u.cache_creation_tokens ?? 0;
+      const ureasoning = u.reasoning_output_tokens ?? 0;
+      input += ui;
+      output += uo;
+      cacheRead += ur;
+      cacheCreation += uw;
+      reasoning += ureasoning;
+      // Legacy servers don't disaggregate 5m vs 1h — assume 1h (matches
+      // what Sonnet-4 emits in practice; price is 2× input not 1.25×).
+      if (ui) costUsd += table.costOf({ count: ui, io: 'input', cache: 'none', cache_tier: 'none', unit: 'token', reasoning: false, tool: null, model } as unknown as UsageEntry);
+      if (uo) costUsd += table.costOf({ count: uo, io: 'output', cache: 'none', cache_tier: 'none', unit: 'token', reasoning: false, tool: null, model } as unknown as UsageEntry);
+      if (ur) costUsd += table.costOf({ count: ur, io: 'input', cache: 'read', cache_tier: 'none', unit: 'token', reasoning: false, tool: null, model } as unknown as UsageEntry);
+      if (uw) costUsd += table.costOf({ count: uw, io: 'input', cache: 'write', cache_tier: '1h', unit: 'token', reasoning: false, tool: null, model } as unknown as UsageEntry);
+      if (ureasoning) costUsd += table.costOf({ count: ureasoning, io: 'output', cache: 'none', cache_tier: 'none', unit: 'token', reasoning: true, tool: null, model } as unknown as UsageEntry);
+    }
+  }
+  return {
+    input,
+    output,
+    cached: cacheRead || null,
+    cacheRead: cacheRead || null,
+    cacheCreation: cacheCreation || null,
+    reasoning: reasoning || null,
+    costUsd: costUsd > 0 ? costUsd : null,
+    model,
+  };
+}
+
 /**
  * Project `GenericEntry[]` onto `UnifiedEntry[]` (one row per logical turn).
  *
@@ -37,20 +94,55 @@ function baseId(id: string): string {
  */
 export function groupEntriesByTurn(entries: GenericEntry[]): UnifiedEntry[] {
   const out: UnifiedEntry[] = [];
+  // Dedup streaming snapshots: Claude Code writes each turn multiple times
+  // (partial → final) sharing one `message.id`, which the python parser
+  // surfaces as `entry_id`. Only the first occurrence is billable (the
+  // python side dedups USAGE on those); the duplicates have no adjacent
+  // token_usage and would otherwise render as cost-less ghost rows.
+  const seenMessageIds = new Set<string>();
+  // For codex transcripts: trailing token_usage entries (turn summary
+  // emitted as a separate response_item) get attached back to the most
+  // recent assistant/operation row in `out`. The map keys by that row's
+  // id so we can accumulate multiple per-dim entries and re-aggregate.
+  const trailingUsage = new Map<string, Array<GenericEntry & { kind: 'token_usage' }>>();
   let i = 0;
   while (i < entries.length) {
     const e = entries[i];
     const ebid = baseId(e.id);
 
-    // Operation rows are always their own row — no merge with neighbours.
-    if (isOperation(e)) {
-      const projected = projectGroup([e]);
-      if (projected) out.push(projected);
+    // Skip duplicate snapshots of an already-rendered message.
+    const eid = (e as { entry_id?: string | null }).entry_id;
+    if (
+      eid &&
+      (e.kind === 'assistant_message' || isOperation(e)) &&
+      seenMessageIds.has(eid)
+    ) {
       i++;
       continue;
     }
 
+    // Operation rows: their own row, but ALSO pick up adjacent token_usage
+    // (same base id) — Python attaches usage to whichever entry the line
+    // produced, including semantic operations (tool_use, shell_command,
+    // file_read, …). Without this, tool-heavy sessions render every
+    // tool-call row with no cost.
+    if (isOperation(e)) {
+      if (eid) seenMessageIds.add(eid);
+      const group: GenericEntry[] = [e];
+      let j = i + 1;
+      while (j < entries.length && baseId(entries[j].id) === ebid &&
+             entries[j].kind === 'token_usage') {
+        group.push(entries[j]);
+        j++;
+      }
+      const projected = projectGroup(group);
+      if (projected) out.push(projected);
+      i = j;
+      continue;
+    }
+
     if (e.kind === 'assistant_message') {
+      if (eid) seenMessageIds.add(eid);
       const group: GenericEntry[] = [e];
       let j = i + 1;
       while (j < entries.length && baseId(entries[j].id) === ebid &&
@@ -76,8 +168,28 @@ export function groupEntriesByTurn(entries: GenericEntry[]): UnifiedEntry[] {
       i = j;
       continue;
     }
-    // Standalone token_usage (no immediate assistant anchor) → drop.
-    if (e.kind === 'token_usage') { i++; continue; }
+    // Standalone token_usage. Two shapes:
+    //   • Claude: usage entries land adjacent to their assistant/operation
+    //     line and are picked up by the in-loop sub-walk above. None should
+    //     fall through here.
+    //   • Codex: usage is emitted as a *turn summary* on its own response_item
+    //     line, with a base id that doesn't match any earlier message line.
+    //     Attach it to the most recent assistant/operation in `out` so a
+    //     codex turn's cost lands on the row the user actually sees.
+    if (e.kind === 'token_usage') {
+      for (let k = out.length - 1; k >= 0; k--) {
+        const anchor = out[k];
+        if (anchor.role !== 'assistant' && anchor.role !== 'operation') continue;
+        const buf = trailingUsage.get(anchor.id) ?? [];
+        buf.push(e as GenericEntry & { kind: 'token_usage' });
+        trailingUsage.set(anchor.id, buf);
+        const merged = aggregateUsage(buf);
+        if (merged) anchor.usage = merged;
+        break;
+      }
+      i++;
+      continue;
+    }
     // Everything else (system, meta, summary, unknown): one row each.
     const projected = projectGroup([e]);
     if (projected) out.push(projected);
@@ -98,6 +210,11 @@ function projectGroup(group: GenericEntry[]): UnifiedEntry | null {
     rawEntries: group,
   };
 
+  // Collect any adjacent token_usage entries up-front so both operation and
+  // assistant_message branches can share the aggregator.
+  const usageEntries = group.filter((g): g is GenericEntry & { kind: 'token_usage' } => g.kind === 'token_usage');
+  const aggregatedUsage = aggregateUsage(usageEntries);
+
   if (isOperation(anchor)) {
     const out: UnifiedEntry = {
       ...base,
@@ -113,79 +230,20 @@ function projectGroup(group: GenericEntry[]): UnifiedEntry | null {
         input: anchor.tool_input,
       };
     }
+    if (aggregatedUsage) out.usage = aggregatedUsage;
     out.searchHaystack = operationHaystack(anchor);
     return out;
   }
 
   // Assistant text turn (+ optional adjacent token_usage)
   const am = group.find((g) => g.kind === 'assistant_message');
-  const usage = group.find((g) => g.kind === 'token_usage');
   if (am) {
     const out: UnifiedEntry = { ...base, role: 'assistant', kind: 'assistant_message', searchHaystack: '' };
     if (am.kind === 'assistant_message') {
       if (am.text) out.text = am.text;
       if (am.thinking) out.thinking = am.thinking;
     }
-    // Aggregate ALL token_usage entries from this turn. Handles two wire
-    // shapes (older servers haven't reloaded the per-dim parser yet):
-    //   • per-dim: one entry per chargeable stream (count + io + cache)
-    //   • legacy aggregate: one entry carrying input_tokens / output_tokens / ...
-    // Cost is resolved via the shared pricingFor() table either way.
-    const usageEntries = group.filter((g): g is typeof g & { kind: 'token_usage' } => g.kind === 'token_usage');
-    if (usageEntries.length > 0) {
-      let input = 0, output = 0, cacheRead = 0, cacheCreation = 0, reasoning = 0;
-      let costUsd = 0;
-      const model = (usageEntries[0] as { model?: string | null }).model ?? null;
-      const table = pricingFor(model);
-      const isPerDim = (u: typeof usageEntries[number]) => typeof u.io === 'string' && typeof u.count === 'number';
-      for (const u of usageEntries) {
-        if (isPerDim(u)) {
-          const count = u.count ?? 0;
-          if (u.io === 'output') {
-            if (u.reasoning) reasoning += count;
-            else output += count;
-          } else if (u.cache === 'read') {
-            cacheRead += count;
-          } else if (u.cache === 'write') {
-            cacheCreation += count;
-          } else {
-            input += count;
-          }
-          costUsd += table.costOf(u as unknown as UsageEntry);
-        } else {
-          // Legacy aggregate shape — synthesize per-dim UsageEntry shapes
-          // on the fly so pricingFor() applies the same rules.
-          const ui = u.input_tokens ?? 0;
-          const uo = u.output_tokens ?? 0;
-          const ur = u.cache_read_tokens ?? u.cached_input_tokens ?? 0;
-          const uw = u.cache_creation_tokens ?? 0;
-          const ureasoning = u.reasoning_output_tokens ?? 0;
-          input += ui;
-          output += uo;
-          cacheRead += ur;
-          cacheCreation += uw;
-          reasoning += ureasoning;
-          // Legacy servers don't disaggregate 5m vs 1h — assume 1h
-          // (matches what Sonnet-4 actually emits in practice; pricing
-          // is 2× input rather than 1.25×).
-          if (ui) costUsd += table.costOf({ count: ui, io: 'input', cache: 'none', cache_tier: 'none', unit: 'token', reasoning: false, tool: null, model } as unknown as UsageEntry);
-          if (uo) costUsd += table.costOf({ count: uo, io: 'output', cache: 'none', cache_tier: 'none', unit: 'token', reasoning: false, tool: null, model } as unknown as UsageEntry);
-          if (ur) costUsd += table.costOf({ count: ur, io: 'input', cache: 'read', cache_tier: 'none', unit: 'token', reasoning: false, tool: null, model } as unknown as UsageEntry);
-          if (uw) costUsd += table.costOf({ count: uw, io: 'input', cache: 'write', cache_tier: '1h', unit: 'token', reasoning: false, tool: null, model } as unknown as UsageEntry);
-          if (ureasoning) costUsd += table.costOf({ count: ureasoning, io: 'output', cache: 'none', cache_tier: 'none', unit: 'token', reasoning: true, tool: null, model } as unknown as UsageEntry);
-        }
-      }
-      out.usage = {
-        input,
-        output,
-        cached: cacheRead || null,
-        cacheRead: cacheRead || null,
-        cacheCreation: cacheCreation || null,
-        reasoning: reasoning || null,
-        costUsd: costUsd > 0 ? costUsd : null,
-        model,
-      };
-    }
+    if (aggregatedUsage) out.usage = aggregatedUsage;
     out.searchHaystack = ((out.text ?? '') + ' ' + (out.thinking ?? '')).toLowerCase();
     return out;
   }

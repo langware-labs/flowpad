@@ -48,10 +48,10 @@ async def test_upload_body_happy_path(tmp_path: Path) -> None:
     ):
         await fm.upload_body()
 
-    # One PUT: announce UPLOADING intent.
-    assert mock_put.await_count == 1
-    first_call_payload = mock_put.await_args_list[0].args[2]
-    assert first_call_payload == {"body_status": BodyStatus.UPLOADING.value}
+    # No PUT: the hub auto-stamps body_status=UPLOADING server-side
+    # (_attachments_require_body during message-header creation), so the
+    # client doesn't announce it. See flow_message.upload_body docstring.
+    assert mock_put.await_count == 0
 
     # Two POSTs: multipart fs/upload, then the set_body_status action that
     # flips READY (the action fans the UPDATE to receivers; a PUT would not).
@@ -82,10 +82,11 @@ async def test_upload_body_happy_path(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_upload_body_pack_failure_leaves_uploading(tmp_path: Path) -> None:
-    """If pack_bundle raises after the UPLOADING PUT, the FM stays UPLOADING.
+    """If pack_bundle raises before any hub call, neither PUT nor POST fires.
 
     The caller observes the exception; the hub-side body_status is left at
-    UPLOADING so a retry resumes cleanly.
+    UPLOADING (server-stamped at message-creation time) so a retry resumes
+    cleanly.
     """
     fm = _fm_with_file_attachment()
 
@@ -97,8 +98,8 @@ async def test_upload_body_pack_failure_leaves_uploading(tmp_path: Path) -> None
         with pytest.raises(RuntimeError, match="pack boom"):
             await fm.upload_body()
 
-    # Only the UPLOADING PUT fired; no second PUT, no POST.
-    assert mock_put.await_count == 1
+    # No client-side hub traffic at all — pack failed before to_file returned.
+    assert mock_put.await_count == 0
     assert mock_post.await_count == 0
     # Local mirror never flipped to READY.
     assert fm.body_status != BodyStatus.READY
@@ -119,9 +120,8 @@ async def test_upload_body_upload_failure_leaves_uploading(tmp_path: Path) -> No
         with pytest.raises(RuntimeError, match="upload boom"):
             await fm.upload_body()
 
-    # Only the UPLOADING PUT fired (no READY PUT).
-    assert mock_put.await_count == 1
-    # POST was attempted.
+    # No PUT (client doesn't announce UPLOADING); upload POST was attempted.
+    assert mock_put.await_count == 0
     assert mock_post.await_count == 1
     assert fm.body_status != BodyStatus.READY
     # Temp zip is still cleaned up in finally.

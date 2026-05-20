@@ -5,7 +5,6 @@ import {
   dataManager,
   FlowMessage,
   ProcessStatus,
-  QueryFilter,
   QueryRequest,
   Skill,
   Spec,
@@ -35,8 +34,6 @@ import { fileAttachmentUrl } from './attachment-url';
 import { ICON_BY_TYPE } from './EntityChip';
 import { buildAssistancePrompt } from './prompt-building';
 import {
-  aggregatePrivateProcesses,
-  aggregatePrivateTasks,
   buildAttachmentEntries,
   buildPrivateTypeIds,
   buildSharedEntities,
@@ -122,15 +119,19 @@ function dockPointerFor(
 /**
  * Body of the conversation drawer's "Context" tab. Two tables:
  *
- *   1. **Shared Context** — entities the message itself carries (project,
- *      message `contextEntities`, TYPE_ID attachments, transcript attachment).
- *      Read-only links to open each in its viewer.
+ *   1. **Shared Context** — wire-bound entities each message and the
+ *      conversation publish (``sharedContextEntities``), plus TYPE_ID
+ *      attachments and the transcript attachment. Read-only links to open
+ *      each in its viewer.
  *
- *   2. **Private Context** — items the local user explicitly attached to this
- *      message: Tasks Claude derived headlessly, CC sessions started from a
- *      transcript. Linkage stored on the new entity (FlowMessage TypeId in
- *      `context_entities` for Tasks, `target_typeid_str` for AgenticProcess).
- *      A "+" button picks the entity type to add (Task only for now).
+ *   2. **Private Context** — spawn-children of this thread surfaced from the
+ *      per-message ``sharedContextEntities`` walk: Tasks Claude derived
+ *      headlessly, CC sessions started from a transcript. Backend spawn
+ *      actions stamp the new entity into the source FlowMessage's
+ *      ``shared_context_entities`` so the panel renders without a
+ *      candidate-pull query. A "+" button publishes additional entities
+ *      (Spec / Skill) into the conversation's shared bucket via the
+ *      ``share-context`` backend action.
  */
 export function ConversationContextPanel({
   task,
@@ -203,8 +204,8 @@ export function ConversationContextPanel({
 
   // ── Shared Context (aggregated) ──────────────────────────────────────
   const skipKeys = useMemo(
-    () => buildSkipKeys(flowMessageIdSet, conversationId, task),
-    [flowMessageIdSet, conversationId, task],
+    () => buildSkipKeys(flowMessageIdSet, conversationId),
+    [flowMessageIdSet, conversationId],
   );
 
   const sharedEntities = useMemo(
@@ -223,47 +224,52 @@ export function ConversationContextPanel({
   );
 
   // ── Private Context (aggregated across the whole conversation) ───────
-  // Pull every Task / AgenticProcess scoped by project_id (project gives the
-  // backend a useful index), then keep only those whose `contextEntities`
-  // reference a FlowMessage in this thread. Same single-criterion shape
-  // usePrivateContext uses — preserved for the same backend reasons.
-  const projectIdLifted = task?.project_id ?? conversation?.project_id ?? null;
-  const tasksQuery = useMemo(
-    () => new QueryRequest({
-      type: Task.type,
-      scope: [],
-      name: `conv-private-tasks:${conversationId}:${projectIdLifted ?? 'noproj'}`,
-      query: projectIdLifted ? new QueryFilter({ match: { project_id: projectIdLifted } }) : undefined,
-    }),
-    [conversationId, projectIdLifted],
-  );
-  const { data: candidateTasks = [] } = useEntitiesQuery<Task>(tasksQuery, {
-    enabled: flowMessageIdSet.size > 0,
-  });
-
-  const processQuery = useMemo(
-    () => new QueryRequest({
-      type: AgenticProcess.type,
-      scope: [],
-      name: `conv-private-processes:${conversationId}`,
-      query: undefined,
-    }),
-    [conversationId],
-  );
-  const { data: candidateProcesses = [], isSuccess: processesLoaded } =
-    useEntitiesQuery<AgenticProcess>(processQuery, {
-      enabled: flowMessageIdSet.size > 0,
-    });
-
-  const privateTasks = useMemo(
-    () => aggregatePrivateTasks(candidateTasks, flowMessageIdSet),
-    [candidateTasks, flowMessageIdSet],
-  );
-
-  const privateProcesses = useMemo(
-    () => aggregatePrivateProcesses(candidateProcesses, flowMessageIdSet),
-    [candidateProcesses, flowMessageIdSet],
-  );
+  // Walk every ordered FlowMessage's *shared* bucket, pick out the TypeIds
+  // that point at Tasks / AgenticProcesses (server-side spawn actions stamp
+  // them there), resolve via the entity cache. No candidate-pull / no
+  // unbounded query — see the Phase 3 plan write-up.
+  const { privateTasks, privateProcesses } = useMemo(() => {
+    const taskByKey = new Map<string, { task: Task; origins: string[] }>();
+    const procByKey = new Map<string, { proc: AgenticProcess; origins: string[] }>();
+    for (const fm of orderedMessages) {
+      if (!fm.id) continue;
+      for (const tid of fm.sharedContextEntities ?? []) {
+        const key = tid.toString();
+        if (tid.type === Task.type) {
+          const cached = dataManager.getByTypeIdFromCache<Task>(tid);
+          if (!cached) continue;
+          let entry = taskByKey.get(key);
+          if (!entry) {
+            entry = { task: cached, origins: [] };
+            taskByKey.set(key, entry);
+          }
+          if (!entry.origins.includes(fm.id)) entry.origins.push(fm.id);
+        } else if (tid.type === AgenticProcess.type) {
+          const cached = dataManager.getByTypeIdFromCache<AgenticProcess>(tid);
+          if (!cached) continue;
+          let entry = procByKey.get(key);
+          if (!entry) {
+            entry = { proc: cached, origins: [] };
+            procByKey.set(key, entry);
+          }
+          if (!entry.origins.includes(fm.id)) entry.origins.push(fm.id);
+        }
+      }
+    }
+    const tasksOut: PrivateTaskAgg[] = Array.from(taskByKey.values()).map(({ task: t, origins }) => ({
+      task: t,
+      originMessageIds: origins,
+    }));
+    const procsOut: PrivateProcessAgg[] = Array.from(procByKey.values()).map(({ proc, origins }) => ({
+      process: proc,
+      originMessageIds: origins,
+    }));
+    return { privateTasks: tasksOut, privateProcesses: procsOut };
+  }, [orderedMessages]);
+  // Loaded becomes a trivial constant under the FM-anchored model: the FM
+  // entity has already loaded by the time we get here (it's what the panel
+  // is rendering). The "Start session" gate just checks the transcript flag.
+  const processesLoaded = true;
 
   // PTY-backed (visible) sessions block "Start session" affordances — same
   // rule as the per-message version, just lifted to conversation scope.
@@ -313,7 +319,7 @@ export function ConversationContextPanel({
           context_data: { project_id: task.project_id ?? undefined },
           workdir,
           visible: true,
-          context_entities: [fmTypeIdString],
+          shared_context_entities: [fmTypeIdString],
         }).save();
         await proc.start({ instruction });
         proc.openTerminalDock();
@@ -395,7 +401,7 @@ function SharedContextSection({
   onSelectEntity,
 }: SharedContextSectionProps) {
   const { navigation } = useDockNavigation();
-  const containerInside = { type: Conversation.type, id: conversationId };
+  const containerInside = useMemo(() => ({ type: Conversation.type, id: conversationId }), [conversationId]);
 
   const isEmpty =
     sharedEntities.length === 0
@@ -674,7 +680,7 @@ function PrivateContextSection({
   starting,
 }: PrivateContextSectionProps) {
   const { navigation } = useDockNavigation();
-  const containerInside = { type: Conversation.type, id: conversationId };
+  const containerInside = useMemo(() => ({ type: Conversation.type, id: conversationId }), [conversationId]);
   const [adding, setAdding] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -721,20 +727,21 @@ function PrivateContextSection({
     setAdding(true);
     try {
       const fmTypeIdString = new TypeId(FlowMessage.type, anchorMessageId).toString();
+      // The new Spec carries the anchor FM as its origin in its own *shared*
+      // bucket — provenance that travels with the spec wherever it goes.
       const spec = new Spec({
         title,
         content: '',
-        context_entities: [fmTypeIdString],
+        shared_context_entities: [fmTypeIdString],
       });
       const scopeIds = projectTypeId ? [projectTypeId] : [];
       await spec.save(scopeIds);
-      // Surface the new spec on the conversation itself so it stays visible
-      // in Shared Context when the user returns to the conversation later —
-      // not just under the anchor FlowMessage's Private Context view.
+      // Publish the new spec onto the conversation's *shared* bucket via the
+      // canonical share-context endpoint so the thread renders the chip
+      // (Shared Context aggregation walks conversation.sharedContextEntities).
       if (conversation && spec.id) {
-        conversation.addContextEntity(new TypeId(Spec.type, spec.id));
         try {
-          await conversation.save();
+          await conversation.shareContextEntities(new TypeId(Spec.type, spec.id));
         } catch (convErr) {
           console.error('[PrivateContext] linking spec to conversation failed', convErr);
         }
@@ -760,7 +767,9 @@ function PrivateContextSection({
     setAdding(true);
     try {
       const fmTypeIdString = new TypeId(FlowMessage.type, anchorMessageId).toString();
-      const skill = new Skill({ name, context_entities: [fmTypeIdString] });
+      // Wire-bound shared_context_entities is on IEntity, not Skill itself —
+      // cast widens the partial type so the wire field reaches deepAssign.
+      const skill = new Skill({ name, shared_context_entities: [fmTypeIdString] } as Partial<Skill>);
       const scopeIds = projectTypeId ? [projectTypeId] : [];
       await skill.save(scopeIds);
       toast.success('Skill created');
@@ -790,16 +799,17 @@ function PrivateContextSection({
     return { derivationProcesses: derivation, transcriptProcesses: transcript };
   }, [processes]);
 
-  // Pair each derivation process to the Task it produced (if any). Claude is
-  // instructed to add the spawning AgenticProcess's TypeId to the new Task's
-  // context_entities so we can match them here.
+  // Pair each derivation process to the Task it produced (if any). The
+  // server-side spawn action publishes the spawning AgenticProcess's TypeId
+  // in the new Task's *shared* bucket (deterministic now — no longer
+  // dependent on a Claude prompt instruction).
   const linkedTaskByProcessId = useMemo(() => {
     const map = new Map<string, PrivateTaskAgg>();
     for (const p of derivationProcesses) {
       if (!p.process.id) continue;
       const procKey = new TypeId(AgenticProcess.type, p.process.id).toString();
       const linked = tasks.find((t) =>
-        t.task.contextEntities?.some((tid) => tid.toString() === procKey),
+        t.task.sharedContextEntities?.some((tid) => tid.toString() === procKey),
       );
       if (linked) map.set(p.process.id, linked);
     }
@@ -1176,8 +1186,8 @@ function PrivateDerivationRow({
 function SectionHeader({ title, icon: Icon }: { title: string; icon?: LucideIcon }) {
   return (
     <div className="mb-1.5 flex items-center gap-1.5">
-      {Icon && <Icon className="h-3 w-3 text-muted-foreground" aria-hidden="true" />}
-      <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+      {Icon && <Icon className="h-3 w-3 text-foreground" aria-hidden="true" />}
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-foreground">
         {title}
       </span>
     </div>

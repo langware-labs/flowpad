@@ -30,6 +30,8 @@ import {
   Bold, Italic, Code, Heading1, Heading2, Heading3,
   List, ListOrdered, SquareCode, Pilcrow, ExternalLink,
   Link as LinkIcon, Check, X, Pencil, Unlink,
+  ChevronsRight, ChevronsLeft, Languages,
+  AlignLeft, AlignCenter, AlignRight, AlignJustify,
 } from 'lucide-react';
 
 // Prism core must be imported before language components
@@ -47,6 +49,12 @@ import 'prismjs/components/prism-jsx';
 import 'prismjs/components/prism-tsx';
 
 import './milkdown.css';
+import {
+  bidiPlugins,
+  setDirCommand, unsetDirCommand,
+  setAlignCommand, unsetAlignCommand,
+  type BidiDir, type BidiAlign,
+} from './plugins/bidi';
 
 /**
  * Strip HTML comments from markdown content for display.
@@ -165,6 +173,14 @@ interface MilkdownEditorProps {
    * render — later prop changes do not move the caret.
    */
   initialLine?: number | null;
+  /**
+   * Document-wide base direction sourced from the file's `direction` frontmatter
+   * key (`ltr` | `rtl`). When set, applied as `dir=...` on the editor wrapper —
+   * blockquote bars, list bullets, indent, and table cell alignment flip to the
+   * correct side via CSS logical properties. Omit (or pass `undefined`) for the
+   * default LTR behavior with no `dir` attribute emitted.
+   */
+  direction?: 'ltr' | 'rtl';
 }
 
 // ── Link popup (hover + toolbar) ──────────────────────────────────────────────
@@ -347,6 +363,15 @@ function posForAnchor(view: EditorView, anchor: HTMLElement): number | null {
 
 // ── Toolbar active state ──────────────────────────────────────────────────────
 
+/**
+ * `null` ≡ attr is unset on every paragraph/heading in the selection (the
+ * default — no DOM `dir` attribute emitted). `'mixed'` ≡ the selection
+ * crosses paragraphs with different values. Otherwise the shared value
+ * across the selection.
+ */
+type BidiActiveDir = 'ltr' | 'rtl' | 'auto' | null | 'mixed';
+type BidiActiveAlign = 'start' | 'end' | 'center' | 'justify' | null | 'mixed';
+
 interface ActiveState {
   bold: boolean;
   italic: boolean;
@@ -357,12 +382,16 @@ interface ActiveState {
   codeBlock: boolean;
   link: boolean;        // cursor is inside or selection contains a link
   canAddLink: boolean;  // selection is non-empty, not already a link, not in code block
+  bidiDir: BidiActiveDir;
+  bidiAlign: BidiActiveAlign;
 }
 
 const EMPTY_ACTIVE: ActiveState = {
   bold: false, italic: false, inlineCode: false,
   headingLevel: 0, bulletList: false, orderedList: false, codeBlock: false,
   link: false, canAddLink: false,
+  bidiDir: null,
+  bidiAlign: null,
 };
 
 function getActiveState(state: EditorState): ActiveState {
@@ -397,7 +426,37 @@ function getActiveState(state: EditorState): ActiveState {
 
   const canAddLink = !empty && !link && !codeBlock;
 
-  return { bold, italic, inlineCode, headingLevel, bulletList, orderedList, codeBlock, link, canAddLink };
+  // Compute the selection's effective bidi direction and alignment. Only
+  // paragraph and heading are bidi-bearing in phases 4–5. A selection
+  // crossing nodes with different values surfaces as 'mixed' — the toolbar
+  // shows no button as pressed but the first click resolves the whole
+  // selection.
+  let bidiDir: BidiActiveDir | undefined;
+  let bidiAlign: BidiActiveAlign | undefined;
+  state.doc.nodesBetween(from, to, (node) => {
+    if (!node.isTextblock) return;
+    if (node.type.name !== 'paragraph' && node.type.name !== 'heading') return;
+    const nodeDir = (node.attrs.dir ?? null) as BidiActiveDir;
+    const nodeAlign = (node.attrs.align ?? null) as BidiActiveAlign;
+    if (bidiDir === undefined) bidiDir = nodeDir;
+    else if (bidiDir !== nodeDir) bidiDir = 'mixed';
+    if (bidiAlign === undefined) bidiAlign = nodeAlign;
+    else if (bidiAlign !== nodeAlign) bidiAlign = 'mixed';
+  });
+  // Empty selection that didn't hit any block above (defensive — shouldn't
+  // happen given $from.parent, but nodesBetween treats from===to as empty).
+  if (bidiDir === undefined || bidiAlign === undefined) {
+    const p = $from.parent;
+    const inBidiBlock = p.type.name === 'paragraph' || p.type.name === 'heading';
+    if (bidiDir === undefined) {
+      bidiDir = inBidiBlock ? ((p.attrs.dir ?? null) as BidiActiveDir) : null;
+    }
+    if (bidiAlign === undefined) {
+      bidiAlign = inBidiBlock ? ((p.attrs.align ?? null) as BidiActiveAlign) : null;
+    }
+  }
+
+  return { bold, italic, inlineCode, headingLevel, bulletList, orderedList, codeBlock, link, canAddLink, bidiDir, bidiAlign };
 }
 
 // ── Toolbar ───────────────────────────────────────────────────────────────────
@@ -511,7 +570,23 @@ function MilkdownToolbar({
     />
   );
 
-  const { headingLevel, bulletList, orderedList, codeBlock } = activeState;
+  const { headingLevel, bulletList, orderedList, codeBlock, bidiDir, bidiAlign } = activeState;
+
+  // Direction / alignment button click handlers: clicking the active button
+  // clears the attr (back to default null); clicking an inactive button or
+  // while 'mixed' sets that value across the whole selection.
+  const onDirClick = (target: BidiDir) => {
+    if (bidiDir === target) act(callCommand(unsetDirCommand.key));
+    else act(callCommand(setDirCommand.key, target));
+  };
+  const onAlignClick = (target: BidiAlign) => {
+    if (bidiAlign === target) act(callCommand(unsetAlignCommand.key));
+    else act(callCommand(setAlignCommand.key, target));
+  };
+  // Direction / alignment controls are nonsensical inside code blocks
+  // (always LTR, no line-level alignment) — disable both groups there.
+  const dirDisabled = codeBlock;
+  const alignDisabled = codeBlock;
 
   return (
     <div className="flex flex-shrink-0 items-center gap-0.5 border-b bg-muted/20 px-2 py-1">
@@ -525,6 +600,72 @@ function MilkdownToolbar({
       {headingBtn('Bullet list', <List className="h-3.5 w-3.5" />, callCommand(wrapInBulletListCommand.key), bulletList)}
       {headingBtn('Ordered list', <ListOrdered className="h-3.5 w-3.5" />, callCommand(wrapInOrderedListCommand.key), orderedList)}
       {headingBtn('Code block', <SquareCode className="h-3.5 w-3.5" />, callCommand(createCodeBlockCommand.key), codeBlock)}
+      <div className="mx-1.5 h-4 w-px bg-border" />
+      <FormatButton
+        title="Left-to-right paragraph"
+        icon={<ChevronsRight className="h-3.5 w-3.5" />}
+        active={bidiDir === 'ltr'}
+        disabled={dirDisabled}
+        testId="milkdown-toolbar-dir-ltr"
+        onMouseDown={(e) => { e.preventDefault(); if (!dirDisabled) onDirClick('ltr'); }}
+      />
+      <FormatButton
+        title="Right-to-left paragraph"
+        icon={<ChevronsLeft className="h-3.5 w-3.5" />}
+        active={bidiDir === 'rtl'}
+        disabled={dirDisabled}
+        testId="milkdown-toolbar-dir-rtl"
+        onMouseDown={(e) => { e.preventDefault(); if (!dirDisabled) onDirClick('rtl'); }}
+      />
+      <FormatButton
+        title="Auto-detect direction from first strong character"
+        icon={<Languages className="h-3.5 w-3.5" />}
+        active={bidiDir === 'auto'}
+        disabled={dirDisabled}
+        testId="milkdown-toolbar-dir-auto"
+        onMouseDown={(e) => { e.preventDefault(); if (!dirDisabled) onDirClick('auto'); }}
+      />
+      <div className="mx-1.5 h-4 w-px bg-border" />
+      {/*
+        Alignment buttons use logical values (start/end/center/justify). The
+        AlignLeft / AlignRight icons are physical and don't flip with text
+        direction — but the *behavior* (`text-align: start|end`) always
+        follows the paragraph's resolved direction. Matches Word's UX:
+        users recognize the icons; under the hood, "start" sits on the
+        right side in an RTL paragraph.
+      */}
+      <FormatButton
+        title="Align start (left in LTR, right in RTL)"
+        icon={<AlignLeft className="h-3.5 w-3.5" />}
+        active={bidiAlign === 'start'}
+        disabled={alignDisabled}
+        testId="milkdown-toolbar-align-start"
+        onMouseDown={(e) => { e.preventDefault(); if (!alignDisabled) onAlignClick('start'); }}
+      />
+      <FormatButton
+        title="Align center"
+        icon={<AlignCenter className="h-3.5 w-3.5" />}
+        active={bidiAlign === 'center'}
+        disabled={alignDisabled}
+        testId="milkdown-toolbar-align-center"
+        onMouseDown={(e) => { e.preventDefault(); if (!alignDisabled) onAlignClick('center'); }}
+      />
+      <FormatButton
+        title="Align end (right in LTR, left in RTL)"
+        icon={<AlignRight className="h-3.5 w-3.5" />}
+        active={bidiAlign === 'end'}
+        disabled={alignDisabled}
+        testId="milkdown-toolbar-align-end"
+        onMouseDown={(e) => { e.preventDefault(); if (!alignDisabled) onAlignClick('end'); }}
+      />
+      <FormatButton
+        title="Justify"
+        icon={<AlignJustify className="h-3.5 w-3.5" />}
+        active={bidiAlign === 'justify'}
+        disabled={alignDisabled}
+        testId="milkdown-toolbar-align-justify"
+        onMouseDown={(e) => { e.preventDefault(); if (!alignDisabled) onAlignClick('justify'); }}
+      />
       {rightSlot && (
         <>
           <div className="mx-1.5 h-4 w-px bg-border" />
@@ -601,7 +742,7 @@ function SelectionToolbar({
 
 // ── Editor inner ──────────────────────────────────────────────────────────────
 
-function MilkdownEditorInner({ content, onChange, editorMode, plugins, onActiveStateChange, onSelectionRectChange, onCursorLineChange, initialLine, editorRef }: MilkdownEditorProps & { onActiveStateChange?: (s: ActiveState) => void; onSelectionRectChange?: (r: SelectionRect | null) => void; editorRef?: React.MutableRefObject<Editor | null> }) {
+function MilkdownEditorInner({ content, onChange, editorMode, plugins, onActiveStateChange, onSelectionRectChange, onCursorLineChange, initialLine, direction, editorRef }: MilkdownEditorProps & { onActiveStateChange?: (s: ActiveState) => void; onSelectionRectChange?: (r: SelectionRect | null) => void; editorRef?: React.MutableRefObject<Editor | null> }) {
   const isReadOnly = editorMode === 'view' || editorMode === 'review';
   const localRef = useRef<Editor | null>(null);
   const setEditor = (e: Editor | null) => {
@@ -706,7 +847,14 @@ function MilkdownEditorInner({ content, onChange, editorMode, plugins, onActiveS
         .use(prism)
         .use(emoji)
         .use(history)
-        .use(trailing);
+        .use(trailing)
+        // Phase 3 of RTL/LTR support: extends paragraph + heading with `dir`
+        // and `align` attrs, registers a remark transformer that lifts
+        // `<p dir>` / `<h* dir>` HTML wrappers in source markdown into those
+        // attrs, and re-emits the wrappers on serialize when attrs are
+        // non-default. Default-attr nodes round-trip byte-identical to the
+        // unmodified commonmark output.
+        .use(bidiPlugins);
 
       // Register extra plugins (e.g. plan-note mark)
       if (plugins) {
@@ -830,13 +978,13 @@ function MilkdownEditorInner({ content, onChange, editorMode, plugins, onActiveS
   }, [displayContent, get]);
 
   return (
-    <div className="milkdown-editor-wrapper h-full">
+    <div className="milkdown-editor-wrapper h-full" dir={direction}>
       <Milkdown />
     </div>
   );
 }
 
-export function MilkdownEditor({ content, onChange, editorMode = 'editor', plugins, onLinkClick, editorRef: externalEditorRef, toolbarRight, onCursorLineChange, initialLine }: MilkdownEditorProps) {
+export function MilkdownEditor({ content, onChange, editorMode = 'editor', plugins, onLinkClick, editorRef: externalEditorRef, toolbarRight, onCursorLineChange, initialLine, direction }: MilkdownEditorProps) {
   const isReadOnly = editorMode === 'view' || editorMode === 'review';
   const [activeState, setActiveState] = useState<ActiveState>(EMPTY_ACTIVE);
   const [selectionRect, setSelectionRect] = useState<SelectionRect | null>(null);
@@ -1045,7 +1193,7 @@ export function MilkdownEditor({ content, onChange, editorMode = 'editor', plugi
           onMouseLeave={scheduleHide}
           onClickCapture={handleContainerClick}
         >
-          <MilkdownEditorInner content={content} onChange={onChange} editorMode={editorMode} plugins={plugins} onActiveStateChange={setActiveState} onSelectionRectChange={setSelectionRect} editorRef={editorRef} onCursorLineChange={onCursorLineChange} initialLine={initialLine} />
+          <MilkdownEditorInner content={content} onChange={onChange} editorMode={editorMode} plugins={plugins} onActiveStateChange={setActiveState} onSelectionRectChange={setSelectionRect} editorRef={editorRef} onCursorLineChange={onCursorLineChange} initialLine={initialLine} direction={direction} />
         </div>
       </div>
       {!isReadOnly && !linkPopup && (

@@ -254,20 +254,41 @@ class ComputeNode(PtyActionsMixin, FsRecordsActionsMixin, OpsActionsMixin, ScanA
     async def get_machine_id(self) -> str:
         """Get the unique machine ID of the compute node.
 
-        Returns a SHA256 hash based on platform, architecture, MAC address, and OS-specific UUID.
+        Returns a SHA256 hash of ``platform.system | platform.machine |
+        OS-specific stable UUID``. **No MAC address** (it changes under
+        MAC randomization, Docker veth, VPN, dock/undock) — the OS UUID
+        is the stable component.
+
+        Mirrors the OS-UUID derivation in ``flow_sdk/utils/machine_id.py``
+        (Linux /etc/machine-id, macOS IOPlatformUUID, Windows MachineGuid).
+        This runs a small script on the **remote** compute node, so it
+        can't share code with the local helper — keep the two derivation
+        sources in sync if either changes.
 
         Returns:
             64-character hex string representing the machine ID
         """
         machine_id_script = """
-import platform, uuid, hashlib, subprocess
-parts = [platform.system(), platform.machine(), hex(uuid.getnode())]
+import platform, hashlib, subprocess
+parts = [platform.system(), platform.machine()]
 try:
     system = platform.system()
     if system == "Linux":
-        parts.append(open("/etc/machine-id").read().strip())
+        for path in ("/etc/machine-id", "/var/lib/dbus/machine-id"):
+            try:
+                with open(path) as f:
+                    v = f.read().strip()
+                if v:
+                    parts.append(v); break
+            except OSError:
+                continue
     elif system == "Darwin":
-        parts.append(subprocess.check_output(["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"]).decode().split("IOPlatformUUID")[1].split('"')[1])
+        out = subprocess.check_output(["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"]).decode()
+        for line in out.splitlines():
+            if "IOPlatformUUID" in line:
+                pieces = line.split('"')
+                if len(pieces) >= 4:
+                    parts.append(pieces[3]); break
     elif system == "Windows":
         parts.append(subprocess.check_output(["wmic", "csproduct", "get", "uuid"], shell=True).decode().splitlines()[1].strip())
 except Exception:
@@ -671,6 +692,76 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             except Exception:
                 logging.exception(f"[terminals/close] Failed to persist shell close error for {shell_id}")
 
+    @action.post(action_name="recover-orphaned-project")
+    async def _recover_orphaned_project(self) -> ApiResponse:
+        """Resurrect a deleted Project from a dependent's ``workdir`` and rebind
+        every dependent's ``project_id`` to the recovered Project.
+
+        Body: ``{ "dangling_id": "<uuid>" }``
+        """
+        from flow_sdk.builtin.shell import Shell as ShellEntity
+        from flow_sdk.builtin.agentic_process import AgenticProcess
+        from flow_sdk.builtin.project import Project
+
+        request_info = get_current_request_info()
+        body = await request_info.get_post_data() if request_info else {}
+        dangling_id = (body or {}).get("dangling_id")
+        if not isinstance(dangling_id, str) or not dangling_id:
+            return ApiFailResponse(message="dangling_id (str) is required", status_code=400)
+
+        existing = await Project.get_by_id(dangling_id)
+        if existing is not None:
+            return ApiSuccessResponse(data={
+                "project": existing.model_dump(mode="json"),
+                "rebound": 0,
+            })
+
+        all_shells, all_processes = await asyncio.gather(
+            ShellEntity.get_all(),
+            AgenticProcess.get_all(),
+        )
+        dep_shells = [s for s in all_shells if getattr(s, "project_id", None) == dangling_id]
+        dep_procs = [p for p in all_processes if getattr(p, "project_id", None) == dangling_id]
+        if not dep_shells and not dep_procs:
+            return ApiFailResponse(
+                message=f"No dependents reference project {dangling_id}",
+                status_code=404,
+            )
+
+        workdir = next(
+            (getattr(d, "workdir", None) for d in (*dep_shells, *dep_procs) if getattr(d, "workdir", None)),
+            None,
+        )
+        if not workdir:
+            return ApiFailResponse(
+                message="No dependent has a workdir; cannot recover project",
+                status_code=422,
+            )
+
+        recovered = await Project.recover_by_path(workdir)
+        if recovered is None:
+            return ApiFailResponse(
+                message=f"Could not recover a project for {workdir}",
+                status_code=500,
+            )
+
+        rebound = 0
+        if recovered.id != dangling_id:
+            for s in dep_shells:
+                s.project_id = recovered.id
+            for p in dep_procs:
+                p._bind_project_id(recovered.id)
+            await asyncio.gather(
+                *(s.save() for s in dep_shells),
+                *(p.save() for p in dep_procs),
+            )
+            rebound = len(dep_shells) + len(dep_procs)
+
+        return ApiSuccessResponse(data={
+            "project": recovered.model_dump(mode="json"),
+            "rebound": rebound,
+        })
+
     @action.get(action_name="session-transcript")
     async def _session_transcript(self): return await self._pty_session_transcript()
 
@@ -747,6 +838,71 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
     @action.get(action_name="findSession")
     async def find_session(self): return await self._scan_find_session()
+
+    @action.post(action_name="os-status-batch")
+    async def _os_status_batch(self) -> ApiResponse:
+        """Batched os-status snapshot for many AgenticProcesses.
+
+        Collapses what would otherwise be N parallel GETs (the SDK's
+        per-process auto-recovery sweep) into a single round-trip. Each
+        per-process payload is identical to what the per-AP ``os-status``
+        action returns; the SDK fans the results back out to each
+        ``AgenticProcess`` instance to drive ``reconnect()`` decisions.
+
+        Body: ``{ "process_ids": ["<id>", ...] }``
+        Response: ``{ "statuses": { "<id>": <payload>, ... }, "missing": [...] }``
+        """
+        from flow_sdk.builtin.agentic_process import AgenticProcess
+
+        request_info = get_current_request_info()
+        body = await request_info.get_post_data() if request_info else {}
+        raw_ids = body.get("process_ids") if isinstance(body, dict) else None
+        if not isinstance(raw_ids, list):
+            return ApiFailResponse(
+                message="os-status-batch requires body: { process_ids: string[] }",
+                status_code=400,
+            )
+
+        # De-dup + drop empties without changing input order.
+        seen: set[str] = set()
+        ids: list[str] = []
+        for raw in raw_ids:
+            if not isinstance(raw, str) or not raw:
+                continue
+            if raw in seen:
+                continue
+            seen.add(raw)
+            ids.append(raw)
+
+        if not ids:
+            return ApiSuccessResponse(data={"statuses": {}, "missing": []})
+
+        fetched = await asyncio.gather(
+            *(AgenticProcess.get_by_id(i) for i in ids),
+            return_exceptions=True,
+        )
+
+        missing: list[str] = []
+        resolved: list[tuple[str, AgenticProcess]] = []
+        for pid, proc in zip(ids, fetched):
+            if isinstance(proc, Exception) or proc is None:
+                missing.append(pid)
+            else:
+                resolved.append((pid, proc))
+
+        payloads = await asyncio.gather(
+            *(proc._collect_os_status_payload() for _, proc in resolved),
+            return_exceptions=True,
+        )
+
+        statuses: dict[str, dict] = {}
+        for (pid, _), payload in zip(resolved, payloads):
+            if isinstance(payload, Exception):
+                missing.append(pid)
+                continue
+            statuses[pid] = payload
+
+        return ApiSuccessResponse(data={"statuses": statuses, "missing": missing})
 
     # -- fs-records action (implementation in FsRecordsActionsMixin) -------------
 
