@@ -352,7 +352,7 @@ class WorkerDriver(Protocol):
 
     # ── Per-turn execution ───────────────────────────────────────────────────
 
-    async def run_print_turn(
+    async def headless_prompt(
         self,
         process: "AgenticProcess",
         instruction: str,

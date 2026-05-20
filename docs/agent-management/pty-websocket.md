@@ -718,7 +718,7 @@ Current routing in `AgenticProcess.prompt(...)`:
 
 ```text
 visible=True  -> interactive PTY path
-visible=False -> self.driver.run_print_turn(...)
+visible=False -> self.driver.headless_prompt(...)
 ```
 
 Driver-specific headless implementations run CLI print/exec commands such as

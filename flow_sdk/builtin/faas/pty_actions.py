@@ -297,14 +297,14 @@ class PtyActionsMixin:
         session_state_holder: list = []
 
         def on_pty_output(data: bytes):
-            logging.info(f"[PTY] on_pty_output (machine): {len(data)} bytes for session {shell_id}")
+            logging.debug(f"[PTY] on_pty_output (machine): {len(data)} bytes for session {shell_id}")
             current_pty_key = (self.id, self.node_provider_id, shell_id)
 
             # Append to replay buffer (returns OutputChunk with seq and timestamp)
             chunk_record = replay_buffer.append(current_pty_key, data)
             seq = chunk_record.seq
             chunk_timestamp = chunk_record.timestamp
-            logging.info(f"[PTY] on_pty_output (machine): appended to replay buffer, seq={seq}")
+            logging.debug(f"[PTY] on_pty_output (machine): appended to replay buffer, seq={seq}")
 
             # Write to PTY stream file for persistence
             if session_state_holder:
@@ -328,7 +328,7 @@ class PtyActionsMixin:
                             seq,
                             chunk_timestamp,
                         )
-                    logging.info(
+                    logging.debug(
                         f"[PTY] on_pty_output (machine): sent to {len(current_session.connection_ids)} client(s)"
                     )
                 elif not current_session:
@@ -819,7 +819,7 @@ class PtyActionsMixin:
                     response_message_id=request_message_id,
                     content=pty_msg,
                 )
-                logging.info(f"[PTY] Sending PTY output to client: seq={seq}, size={len(data)} bytes")
+                logging.debug(f"[PTY] Sending PTY output to client: seq={seq}, size={len(data)} bytes")
                 await handler.send_message(response_msg.model_dump())
             except Exception as e:
                 logging.warning(f"Failed to send PTY output to client: {e}")

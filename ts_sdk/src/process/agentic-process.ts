@@ -1009,8 +1009,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   _instructionFile?: InstructionFile;
   _context?: AgenticContext;
 
-  /** Completion state */
-  private _completed: boolean = false;
+  /** Last error observed when ``workerStatus`` transitioned to a failure
+   *  state. Set by ``_handleError``; never set autonomously by the SDK. */
   private _error: Error | null = null;
 
   /** History loading state */
@@ -1052,6 +1052,12 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this.assets_folder = entity.assets_folder ? FSRef.fromJson(entity.assets_folder) : null;
     this.plan_path = entity.plan_path ?? null;
   }
+
+  // NOTE: project_id projection moved server-side. The base Python
+  // ``Entity.get_implicit_private_context_entities`` projects project_id
+  // for every entity with one; AgenticProcess inherits the projection
+  // automatically. FE displays the merged ``private_context_entities``
+  // from the wire as-is.
 
   // ── Field declarations (populated by constructor / wire data) ──────────────
 
@@ -1113,10 +1119,13 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   }
 
   /**
-   * Whether this process has completed execution.
+   * Whether this process has reached a terminal worker_status (complete /
+   * error / interrupted). Derived from ``workerStatus`` — the SDK keeps no
+   * separate completion flag; backend's projection is the single source of
+   * truth and we mirror it.
    */
   get completed(): boolean {
-    return this._completed;
+    return isWorkerTerminal(this.workerStatus);
   }
 
   /**
@@ -1155,8 +1164,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       yield data;
     }
 
-    // If already completed, we're done
-    if (this._completed) {
+    // If the worker has already reached a terminal state, we're done.
+    if (isWorkerTerminal(this.workerStatus)) {
       return;
     }
 
@@ -1365,12 +1374,15 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
         // Close any open groups after loading history
         this.flowDataStream.closeOpenGroups();
 
-        // Check if the worker already reached a terminal state.
+        // History replay can reveal that the worker already reached a
+        // terminal state by the time we mounted. Fire the matching
+        // handler so consumers waiting on the ``complete`` / ``error``
+        // event resolve instead of hanging.
         if (isWorkerTerminal(this.workerStatus)) {
           if (this.workerStatus === WorkerStatus.COMPLETE) {
-            this._markComplete();
+            this._handleComplete();
           } else {
-            this._markError(new Error(`Process ended with worker status: ${this.workerStatus}`));
+            this._handleError(new Error(`Process ended with worker status: ${this.workerStatus}`));
           }
         }
 
@@ -1401,7 +1413,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * @throws Error if execution fails
    */
   async waitForComplete(): Promise<void> {
-    if (this._completed) {
+    if (isWorkerTerminal(this.workerStatus)) {
       if (this._error) throw this._error;
       return;
     }
@@ -1611,8 +1623,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       throw new Error('Process is already running');
     }
 
-    // Reset completion flag for new instruction (multi-turn support)
-    this._completed = false;
+    // Clear the cached error from any prior turn. We do NOT touch
+    // ``workerStatus`` — that's backend-owned. ``headless_prompt`` on the
+    // server flips its projection to ``running`` and broadcasts, and the
+    // resulting entity-op is what the SDK mirrors as the new turn's edge.
     this._error = null;
 
     // Optimistically echo user message into the stream
@@ -1632,12 +1646,15 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
 
   /**
    * Wait for execution to complete.
-   * Listens for the 'complete' event which is emitted when status FlowData
-   * with complete=true is received (following Flow's pattern of state via FlowData).
+   *
+   * Listens for the ``complete`` / ``error`` events which fire when the
+   * SDK observes ``workerStatus`` transitioning to a terminal value via
+   * an entity-op broadcast. Backend is the sole authority on that
+   * transition; the SDK only reacts.
    */
   private async waitForExecutionComplete(): Promise<void> {
-    // If already completed, return immediately
-    if (this._completed) {
+    if (isWorkerTerminal(this.workerStatus)) {
+      if (this._error) throw this._error;
       return;
     }
 
@@ -1656,7 +1673,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
         }
       };
 
-      // Listen for completion event (emitted by _handleFlowData when status with complete=true is received)
       const unsubComplete = this.on('complete', () => {
         done('resolve');
       });
@@ -1665,9 +1681,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
         done('reject', err instanceof Error ? err : new Error(String(err)));
       });
 
-      // Check if already completed (race condition safety)
-      if (this._completed) {
-        done('resolve');
+      // Race: a terminal broadcast could land between the entry check above
+      // and listener installation. Re-check after subscribing.
+      if (isWorkerTerminal(this.workerStatus)) {
+        done(this._error ? 'reject' : 'resolve', this._error ?? undefined);
       }
     });
   }
@@ -2127,7 +2144,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     };
 
     const stateHandler = () => {
-      if (this._completed) {
+      if (isWorkerTerminal(this.workerStatus)) {
         stepComplete = true;
         if (resolver) {
           resolver(null);
@@ -2157,8 +2174,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
           continue;
         }
 
-        // If already completed, we're done
-        if (this._completed) {
+        // Worker already terminal — drain and exit.
+        if (isWorkerTerminal(this.workerStatus)) {
           break;
         }
 
@@ -2190,7 +2207,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    */
   _handleFlowData(data: FlowData): void {
     const elementType = data.attributes?.['element-type'];
-    const isComplete = data.attributes?.['complete'] === 'true';
 
     if (elementType === 'status' && typeof data.data === 'object' && data.data !== null) {
       const statusData = data.data as Record<string, unknown>;
@@ -2206,14 +2222,12 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
           oldValue: oldWorker,
           newValue: this.workerStatus,
         });
-        if (this.workerStatus === WorkerStatus.ERROR || this.workerStatus === WorkerStatus.INTERRUPTED) {
-          this._markError(new Error(`Process ended with worker status: ${this.workerStatus}`));
+        if (this.workerStatus === WorkerStatus.COMPLETE) {
+          this._handleComplete();
+        } else if (this.workerStatus === WorkerStatus.ERROR || this.workerStatus === WorkerStatus.INTERRUPTED) {
+          this._handleError(new Error(`Process ended with worker status: ${this.workerStatus}`));
         }
       }
-    }
-
-    if (elementType === 'status' && isComplete) {
-      this._markComplete();
     }
   }
 
@@ -2246,7 +2260,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       // object, benign name overlap.
       this.emit('status', this.status, oldStatus);
       if (this.status === ProcessStatus.FAILED && !isWorkerTerminal(this.workerStatus)) {
-        this._markError(new Error(`Process ended with lifecycle status: ${this.status}`));
+        this._handleError(new Error(`Process ended with lifecycle status: ${this.status}`));
       }
     }
     if (data.worker_status && data.worker_status !== this.workerStatus) {
@@ -2258,38 +2272,39 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
         newValue: this.workerStatus,
       });
       if (this.workerStatus === WorkerStatus.COMPLETE) {
-        this._markComplete();
+        this._handleComplete();
       } else if (this.workerStatus === WorkerStatus.ERROR || this.workerStatus === WorkerStatus.INTERRUPTED) {
-        this._markError(new Error(`Process ended with worker status: ${this.workerStatus}`));
+        this._handleError(new Error(`Process ended with worker status: ${this.workerStatus}`));
       }
     }
   }
 
   /**
-   * Mark process as complete.
-   * Closes all open groups and marks the flowDataStream as complete.
+   * Local-side reaction to ``workerStatus`` transitioning to COMPLETE.
+   * Frontend does NOT decide completion; backend's projection does. This
+   * just closes the stream and fires the ``complete`` event so consumers
+   * (``output()``, ``waitForExecutionComplete``) can resolve.
+   *
+   * Caller contract: only invoke on a real transition into COMPLETE. The
+   * existing call sites in ``_handleFlowData`` / ``onEntityUpdate`` are
+   * gated by ``newValue !== oldValue`` so this is naturally one-per-edge.
    * @internal
    */
-  _markComplete(): void {
-    if (!this._completed) {
-      this._completed = true;
-      // Close all open groups before marking complete
-      this.flowDataStream.closeOpenGroups();
-      this.flowDataStream.markComplete();
-      this.emit('complete');
-    }
+  _handleComplete(): void {
+    this.flowDataStream.closeOpenGroups();
+    this.flowDataStream.markComplete();
+    this.emit('complete');
   }
 
   /**
-   * Mark process as failed.
+   * Local-side reaction to ``workerStatus`` transitioning to a failure
+   * state. Same authority model as ``_handleComplete``: backend decides;
+   * SDK reacts.
    * @internal
    */
-  _markError(error: Error): void {
+  _handleError(error: Error): void {
     this._error = error;
-    if (!this._completed) {
-      this._completed = true;
-      this.emit('error', error);
-    }
+    this.emit('error', error);
   }
 
   /**

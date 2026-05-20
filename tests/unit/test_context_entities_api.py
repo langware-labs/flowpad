@@ -172,7 +172,12 @@ def test_buckets_are_independent():
 # ── Direct-field projection lands in private only ────────────────────
 
 
-def test_task_direct_fields_appear_in_private_view():
+def test_task_project_id_is_projected_into_private_view():
+    # ``Entity.get_implicit_private_context_entities`` projects project_id
+    # into the merged private view. Other former direct projections
+    # (assignee, my_process_id, shared_process_id) were dropped per
+    # "base returns project_id only for now" — they no longer surface
+    # unless Task overrides the implicit hook to add them back.
     task = Task(
         title="t",
         project_id=PROJ_ID_1,
@@ -183,9 +188,10 @@ def test_task_direct_fields_appear_in_private_view():
     private = task.private_context_entities
     private_ids = {(t.type, t.id) for t in private}
     assert ("project", PROJ_ID_1) in private_ids
-    assert ("user", USER_ID_1) in private_ids
-    assert ("agentic_process", PROC_ID_1) in private_ids
-    assert ("agentic_process", PROC_ID_2) in private_ids
+    # The other fields no longer auto-project.
+    assert ("user", USER_ID_1) not in private_ids
+    assert ("agentic_process", PROC_ID_1) not in private_ids
+    assert ("agentic_process", PROC_ID_2) not in private_ids
 
 
 def test_task_direct_fields_do_not_leak_into_shared():
@@ -207,10 +213,14 @@ def test_task_skips_unset_direct_fields():
     assert task.private_context_entities == []
 
 
-def test_spec_projects_author_into_private():
+def test_spec_no_longer_projects_author_into_private():
+    # Spec previously projected ``author_id`` as a user chip. That was
+    # dropped per "base returns project_id only for now"; if the UX needs
+    # an author chip, override ``get_implicit_private_context_entities``
+    # on Spec.
     spec = Spec(title="s", author_id=USER_ID_1)
     private = spec.private_context_entities
-    assert TypeId(type="user", id=USER_ID_1) in private
+    assert TypeId(type="user", id=USER_ID_1) not in private
 
 
 def test_spec_with_plan_in_private():

@@ -17,7 +17,7 @@ import { XTermHarness } from '@sdk/pty-sync/ui/XTermHarness.js';
 import { useContext } from '@src/hooks/useContext';
 import { useInputDir } from '@src/hooks/use-input-dir';
 import { useSettings } from '@src/hooks/use-settings';
-import { useDockNavigation } from '@src/navigation';
+import { DockPointer, useDockNavigation } from '@src/navigation';
 import { useAgenticQueue } from '@src/hooks/useAgenticQueue';
 import { useFS } from '@src/hooks/useFS';
 import { useShell } from '@src/hooks/useShell';
@@ -26,7 +26,7 @@ import { SearchAddon } from '@xterm/addon-search';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { Terminal as XTerm } from '@xterm/xterm';
 import { useTheme } from 'next-themes';
-import React, { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { AnnotationGutter } from './AnnotationGutter';
 import { ColumnHeaderBar } from './ColumnHeaderBar';
@@ -56,6 +56,7 @@ import { TraceGutter } from './TraceGutter';
 import { getAnchors, useAnnotationGutter } from './use-annotation-gutter';
 import { useTimeGutter } from './use-time-gutter';
 import { useTraceGutter } from './use-trace-gutter';
+import { EntityContextPanel } from '@src/components/entity-context';
 
 export interface TraceFilters {
   events: boolean;
@@ -124,42 +125,12 @@ function saveTraceFilters(f: TraceFilters): void {
 import { DARK_THEME, LIGHT_THEME } from './terminalThemes';
 import { FONT_FAMILY, FONT_SIZE_PX } from './terminalConfig';
 
-// ── Side-window state (tabs + active) managed atomically via reducer ─────────
+// ── Side-window state lives in the URL (?sideWindows=…&activeSideWindow=…) ──
+// Source of truth: `currentDock.options`. Same shape as ?editorMode in
+// MarkdownEditor — URL-first, shareable, back/forward-restorable, per-dock.
 
-type SideTabState = { tabs: SideTabId[]; active: SideTabId | null };
-type SideTabAction =
-  | { type: 'open'; tab: SideTabId } // add tab (if not present) and activate it
-  | { type: 'close'; tab: SideTabId } // remove tab; activate previous or null
-  | { type: 'select'; tab: SideTabId } // activate an already-open tab
-  | { type: 'toggle'; tab: SideTabId }; // open+activate if closed; close if already active
-
-function sideTabReducer(state: SideTabState, action: SideTabAction): SideTabState {
-  switch (action.type) {
-    case 'open': {
-      const tabs = state.tabs.includes(action.tab) ? state.tabs : [...state.tabs, action.tab];
-      return { tabs, active: action.tab };
-    }
-    case 'close': {
-      const tabs = state.tabs.filter((t) => t !== action.tab);
-      const active = state.active === action.tab ? (tabs[tabs.length - 1] ?? null) : state.active;
-      return { tabs, active };
-    }
-    case 'select': {
-      if (!state.tabs.includes(action.tab)) return state;
-      return { ...state, active: action.tab };
-    }
-    case 'toggle': {
-      if (state.active === action.tab && state.tabs.includes(action.tab)) {
-        // Already the active tab — close it
-        const tabs = state.tabs.filter((t) => t !== action.tab);
-        return { tabs, active: tabs[tabs.length - 1] ?? null };
-      }
-      // Open (if not already present) and activate
-      const tabs = state.tabs.includes(action.tab) ? state.tabs : [...state.tabs, action.tab];
-      return { tabs, active: action.tab };
-    }
-  }
-}
+const SIDE_WINDOWS_PARAM = 'sideWindows';
+const ACTIVE_SIDE_WINDOW_PARAM = 'activeSideWindow';
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -204,7 +175,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // For TabbedTerminal, no prop is passed — fall back to the context process
   // set by the loader, which is always authoritative for the active tab.
   const process = propProcess ?? contextProcess ?? undefined;
-  const { navigation } = useDockNavigation();
+  const { navigation, currentDock } = useDockNavigation();
   const { resolvedTheme } = useTheme();
   const [searchParams] = useSearchParams();
   const targetTimestamp = searchParams.get('t') ?? undefined;
@@ -272,34 +243,83 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const [traceFilters, setTraceFiltersState] = useState<TraceFilters>(() => loadTraceFilters());
   const [gutterExpanded, setGutterExpanded] = useState(false);
   const [colVis, setColVisState] = useState<ColVisibility>(() => loadColVis());
-  const [sideTabState, dispatchSideTab] = useReducer(sideTabReducer, { tabs: [], active: null });
-  const sideWindowTabs = sideTabState.tabs;
-  const activeSideTab = sideTabState.active;
+  const sideWindowTabs = useMemo(
+    () => parseSideTabIdList(currentDock?.options?.[SIDE_WINDOWS_PARAM]),
+    [currentDock?.options?.[SIDE_WINDOWS_PARAM]],
+  );
+  const activeSideTab = useMemo<SideTabId | null>(() => {
+    const parsed = parseSideTabId(currentDock?.options?.[ACTIVE_SIDE_WINDOW_PARAM]);
+    if (parsed && sideWindowTabs.includes(parsed)) return parsed;
+    return sideWindowTabs[sideWindowTabs.length - 1] ?? null;
+  }, [currentDock?.options?.[ACTIVE_SIDE_WINDOW_PARAM], sideWindowTabs]);
+
   const [searchOpen, setSearchOpen] = useState(false);
   const [activePane, setActivePane] = useState<'claude' | 'shell'>('claude');
   const handlePasteRef = useRef<() => Promise<void>>(async () => {});
 
-  const openSideTab = useCallback((tab: SideTabId) => {
-    dispatchSideTab({ type: 'open', tab });
-  }, []);
+  // Push a new {tabs, active} to the URL by merging into currentDock.options.
+  // Mirrors setViewMode in MarkdownEditor — single writer is the URL.
+  const pushSideTabs = useCallback(
+    (next: { tabs: SideTabId[]; active: SideTabId | null }) => {
+      if (!currentDock) return;
+      const nextOptions = { ...(currentDock.options ?? {}) };
+      if (next.tabs.length > 0) {
+        nextOptions[SIDE_WINDOWS_PARAM] = next.tabs.join(',');
+      } else {
+        delete nextOptions[SIDE_WINDOWS_PARAM];
+      }
+      // Only stamp activeSideWindow when it differs from the natural last-in-list
+      // default — keeps the URL clean for the common single/last-active case.
+      const defaultActive = next.tabs[next.tabs.length - 1] ?? null;
+      if (next.active && next.active !== defaultActive && next.tabs.includes(next.active)) {
+        nextOptions[ACTIVE_SIDE_WINDOW_PARAM] = next.active;
+      } else {
+        delete nextOptions[ACTIVE_SIDE_WINDOW_PARAM];
+      }
+      navigation.openDock(
+        new DockPointer(currentDock.viewType, currentDock.pointer, nextOptions, currentDock.layout),
+      );
+    },
+    [currentDock, navigation],
+  );
 
-  const closeSideTab = useCallback((tab: SideTabId) => {
-    dispatchSideTab({ type: 'close', tab });
-  }, []);
+  const openSideTab = useCallback(
+    (tab: SideTabId) => {
+      const tabs = sideWindowTabs.includes(tab) ? sideWindowTabs : [...sideWindowTabs, tab];
+      pushSideTabs({ tabs, active: tab });
+    },
+    [sideWindowTabs, pushSideTabs],
+  );
 
-  // URL-driven side windows: ?windows=team,git&activeWindow=team
-  // One-shot on sessionId change — user closing a tab afterwards does not rewrite the URL.
-  const urlWindowsAppliedRef = useRef<string | null>(null);
-  useEffect(() => {
-    const key = `${sessionId}|${searchParams.get('windows') ?? ''}|${searchParams.get('activeWindow') ?? ''}`;
-    if (urlWindowsAppliedRef.current === key) return;
-    urlWindowsAppliedRef.current = key;
-    const ids = parseSideTabIdList(searchParams.get('windows'));
-    if (ids.length === 0) return;
-    for (const tab of ids) dispatchSideTab({ type: 'open', tab });
-    const active = parseSideTabId(searchParams.get('activeWindow'));
-    if (active && ids.includes(active)) dispatchSideTab({ type: 'select', tab: active });
-  }, [sessionId, searchParams]);
+  const closeSideTab = useCallback(
+    (tab: SideTabId) => {
+      const tabs = sideWindowTabs.filter((t) => t !== tab);
+      const active = activeSideTab === tab ? (tabs[tabs.length - 1] ?? null) : activeSideTab;
+      pushSideTabs({ tabs, active });
+    },
+    [sideWindowTabs, activeSideTab, pushSideTabs],
+  );
+
+  const selectSideTab = useCallback(
+    (tab: SideTabId) => {
+      if (!sideWindowTabs.includes(tab)) return;
+      pushSideTabs({ tabs: sideWindowTabs, active: tab });
+    },
+    [sideWindowTabs, pushSideTabs],
+  );
+
+  const toggleSideTab = useCallback(
+    (tab: SideTabId) => {
+      if (activeSideTab === tab && sideWindowTabs.includes(tab)) {
+        const tabs = sideWindowTabs.filter((t) => t !== tab);
+        pushSideTabs({ tabs, active: tabs[tabs.length - 1] ?? null });
+        return;
+      }
+      const tabs = sideWindowTabs.includes(tab) ? sideWindowTabs : [...sideWindowTabs, tab];
+      pushSideTabs({ tabs, active: tab });
+    },
+    [sideWindowTabs, activeSideTab, pushSideTabs],
+  );
 
   // Queue hook — idle injection of queued prompts
   const { queue, addEntry, removeEntry, setEnabled, moveEntry } = useAgenticQueue(
@@ -1449,7 +1469,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
               <SideWindow
                 tabs={sideWindowTabs}
                 activeTab={activeSideTab}
-                onSelect={(tab) => dispatchSideTab({ type: 'select', tab })}
+                onSelect={selectSideTab}
                 onClose={closeSideTab}
               >
                 {activeSideTab === SideTabId.Git && (
@@ -1491,6 +1511,11 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
                     topLevel={process?.workdir ?? shellRef.current?.workdir ?? ''}
                   />
                 )}
+                {activeSideTab === SideTabId.Context && process && (
+                  <div className="h-full overflow-y-auto p-3">
+                    <EntityContextPanel entity={process} />
+                  </div>
+                )}
               </SideWindow>
             )}
           </div>
@@ -1522,7 +1547,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
             if (tab === SideTabId.Shell) {
               void handleToggleSidecar();
             } else {
-              dispatchSideTab({ type: 'toggle', tab });
+              toggleSideTab(tab);
             }
           }}
           hasLastPlan={hasPlan}

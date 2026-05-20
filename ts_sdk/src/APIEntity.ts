@@ -106,10 +106,11 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    */
   private _shared_context_entities_: TypeId[] = [];
   /**
-   * Local-only context references. Mutated by ``addContextEntities`` /
-   * ``removeContextEntities``. NEVER serialized to the wire — stays on this
-   * client. The public read accessor is ``privateContextEntities``, which
-   * also folds in per-subclass direct-field projections.
+   * Backend-computed private context. The Python side merges implicit
+   * projections (project_id) with explicit attachments and ships the
+   * deduped array over the wire — this slot just stores what arrived.
+   * The FE never reads or mutates raw explicit attachments independently.
+   * Read via ``privateContextEntities`` (identity getter).
    */
   private _private_context_entities_: TypeId[] = [];
   _isLoaded: boolean = false;
@@ -362,18 +363,32 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     if (entityJson.type && entityJson.type != this.getType()) {
       throw new Error(`Entity type mismatch: ${entityJson.type} != ${this.getType()}`);
     }
-    // Move the wire-shaped ``shared_context_entities`` (string[] / TypeId[]
-    // after deepAssign) into the shared private storage and drop the public
-    // alias so toJSON's dynamic-property iterator doesn't double-emit it.
-    // ``private_context_entities_`` is intentionally never on the wire — it
-    // starts empty and grows only via local ``addContextEntities`` calls.
-    const fromWire = (this as any).shared_context_entities as Array<unknown> | undefined;
-    if (Array.isArray(fromWire) && fromWire.length > 0) {
-      this._shared_context_entities_ = fromWire.map((v) =>
+    // Move the wire-shaped ``shared_context_entities`` and the
+    // backend-computed ``private_context_entities`` into private storage,
+    // then drop the public aliases so toJSON's dynamic-property iterator
+    // doesn't double-emit them.
+    //
+    // IMPORTANT — ``private_context_entities`` arrives ALREADY merged from
+    // the backend: implicit projections (project_id) + explicit raw
+    // attachments + dedup. The FE just deserializes the final list and
+    // renders it. Computation lives server-side in
+    // ``Entity.get_implicit_private_context_entities`` /
+    // ``private_context_entities`` (Pydantic computed_field).
+    const fromWireShared = (this as any).shared_context_entities as Array<unknown> | undefined;
+    if (Array.isArray(fromWireShared) && fromWireShared.length > 0) {
+      this._shared_context_entities_ = fromWireShared.map((v) =>
         v instanceof TypeId ? v : new TypeId(String(v)),
       );
     }
     delete (this as any).shared_context_entities;
+
+    const fromWirePrivate = (this as any).private_context_entities as Array<unknown> | undefined;
+    if (Array.isArray(fromWirePrivate) && fromWirePrivate.length > 0) {
+      this._private_context_entities_ = fromWirePrivate.map((v) =>
+        v instanceof TypeId ? v : new TypeId(String(v)),
+      );
+    }
+    delete (this as any).private_context_entities;
     const proxy = getProxy(this);
     dataManager.register_new_entity(this.typeId, proxy);
     return proxy;
@@ -800,19 +815,15 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
   //   * ``sharedContextEntities`` — wire-bound; what every reader of this
   //     entity sees. Mutated only by the backend (call a ``share-context``
   //     action to publish).
-  //   * ``privateContextEntities`` — local-only on this client. Mutated by
-  //     ``addContextEntities`` / ``removeContextEntities``. Folds in
-  //     per-subclass direct-field projections (project_id, assignee, ...)
-  //     at read time via ``_directFieldsAsTypeIds``.
-
-  /**
-   * Per-entity projection of direct fields into the *private* chip context.
-   * Override in subclasses to surface fields like ``project_id`` or
-   * ``assignee`` as TypeIds. Default: nothing.
-   */
-  protected _directFieldsAsTypeIds(): TypeId[] {
-    return [];
-  }
+  //   * ``privateContextEntities`` — also wire-bound now: the **backend**
+  //     computes the merged list (implicit projections like ``project_id``
+  //     PLUS the user's explicit attachments) via
+  //     ``Entity.get_implicit_private_context_entities`` +
+  //     ``private_context_entities`` Pydantic computed_field. The FE just
+  //     renders the list. **The FE never combines implicit + explicit
+  //     locally.** This file used to host a ``_directFieldsAsTypeIds`` hook
+  //     for FE-side projection; it was removed when projection moved to
+  //     the backend.
 
   /** Wire-bound context. Read-only on the frontend — publish via a backend
    *  ``share-context`` action. */
@@ -820,60 +831,22 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     return [...this._shared_context_entities_];
   }
 
-  /** Local-only context: direct-field projection + locally-added entries.
-   *  Mutate via ``addContextEntities`` / ``removeContextEntities``. */
+  /** Computed-by-backend private context (implicit projections + explicit
+   *  attachments, deduped server-side). Returned as-is — no FE-side
+   *  projection. */
   public get privateContextEntities(): TypeId[] {
-    return [...this._directFieldsAsTypeIds(), ...this._private_context_entities_];
+    return [...this._private_context_entities_];
   }
 
-  /**
-   * Normalize a ``TypeId | TypeId[]`` argument to a flat ``TypeId[]``.
-   * Used by the add/remove helpers so callers don't have to pre-wrap singles.
-   */
-  private _normalizeContextEntities(input: TypeId | TypeId[]): TypeId[] {
-    return Array.isArray(input) ? input.filter((t): t is TypeId => !!t) : input ? [input] : [];
-  }
-
-  /**
-   * Append one or many TypeIds to the *private* context (idempotent — no-op
-   * for any TypeId already present). Accepts a single TypeId or an array.
-   * Sets ``dirty`` and notifies dataManager iff at least one entry was added.
-   * Returns the count of newly-added entries.
-   */
-  public addContextEntities(input: TypeId | TypeId[]): number {
-    const incoming = this._normalizeContextEntities(input);
-    if (incoming.length === 0) return 0;
-    const next = [...this._private_context_entities_];
-    let added = 0;
-    for (const t of incoming) {
-      if (next.some((existing) => existing.equals(t))) continue;
-      next.push(t);
-      added += 1;
-    }
-    if (added > 0) {
-      this._private_context_entities_ = next;
-      dataManager.notifyPropertyChanged(this.typeId, 'private_context_entities');
-    }
-    return added;
-  }
-
-  /**
-   * Remove one or many TypeIds from the *private* context. Accepts a single
-   * TypeId or an array. Returns the count of entries actually removed.
-   */
-  public removeContextEntities(input: TypeId | TypeId[]): number {
-    const targets = this._normalizeContextEntities(input);
-    if (targets.length === 0) return 0;
-    const before = this._private_context_entities_.length;
-    this._private_context_entities_ = this._private_context_entities_.filter(
-      (t) => !targets.some((drop) => t.equals(drop)),
-    );
-    const removed = before - this._private_context_entities_.length;
-    if (removed > 0) {
-      dataManager.notifyPropertyChanged(this.typeId, 'private_context_entities');
-    }
-    return removed;
-  }
+  // NOTE: ``addContextEntities`` / ``removeContextEntities`` /
+  // ``_normalizeContextEntities`` lived here as FE-side mutation primitives
+  // for the private bucket. They were removed when the FE became
+  // display-only for context: the FE renders whatever the backend ships in
+  // ``private_context_entities`` (a Pydantic computed_field that merges
+  // implicit projections + explicit attachments, server-side). To attach
+  // something to a private context, use a dedicated backend action and let
+  // the WS broadcast deliver the updated array. The FE never combines or
+  // mutates context on its own.
 
   private _bucketView(bucket: 'private' | 'shared' | 'both'): TypeId[] {
     if (bucket === 'shared') return this.sharedContextEntities;

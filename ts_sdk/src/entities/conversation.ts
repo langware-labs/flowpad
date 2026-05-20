@@ -99,12 +99,10 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
     this.archived_at = entity.archived_at ?? null;
   }
 
-  /** Surface the project as a chip-projected direct field. */
-  protected override _directFieldsAsTypeIds(): TypeId[] {
-    const out: TypeId[] = [];
-    if (this.project_id) out.push(new TypeId('project', this.project_id));
-    return out;
-  }
+  // NOTE: FE-side project chip projection moved server-side. The backend's
+  // ``Entity.get_implicit_private_context_entities`` projects project_id
+  // for every entity that has one; the merged ``private_context_entities``
+  // arrives over the wire ready to render.
 
   /** Always open conversations in the conversation view — every entry point
    *  (inbox, recent strip, chips, deep links) lands on the same URL. */

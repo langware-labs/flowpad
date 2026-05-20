@@ -533,10 +533,10 @@ identifier and both write or resume the same Claude JSONL transcript path:
 `AgenticProcess.prompt(instruction)` routes to:
 
 ```python
-self.driver.run_print_turn(self, instruction)
+self.driver.headless_prompt(self, instruction)
 ```
 
-For Claude, `ClaudeDriver.run_print_turn()`:
+For Claude, `ClaudeDriver.headless_prompt()`:
 
 * Requires `process.workdir`.
 

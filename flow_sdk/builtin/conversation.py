@@ -247,8 +247,7 @@ class Conversation(Entity):
         finally:
             object.__setattr__(self, "_allow_projection_write", False)
 
-    def _direct_fields_as_typeids(self) -> List[TypeId]:
-        out: List[TypeId] = []
-        if self.project_id:
-            out.append(TypeId(type="project", id=self.project_id))
-        return out
+    # NOTE: per-subclass project-id projection moved to
+    # ``Entity.get_implicit_private_context_entities`` in the base. The
+    # project chip is now projected automatically for every entity with a
+    # ``project_id`` field, so Conversation gets it for free.

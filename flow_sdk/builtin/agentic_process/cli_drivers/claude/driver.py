@@ -99,7 +99,7 @@ class ClaudeDriver:
 
     # ── Per-turn execution ───────────────────────────────────────────────────
 
-    async def run_print_turn(
+    async def headless_prompt(
         self,
         process: "AgenticProcess",
         instruction: str,
@@ -118,7 +118,7 @@ class ClaudeDriver:
         try:
             await process.get_project()
         except Exception:
-            logger.debug("ClaudeDriver.run_print_turn: get_project failed", exc_info=True)
+            logger.debug("ClaudeDriver.headless_prompt: get_project failed", exc_info=True)
         if not process.workdir:
             return ApiFailResponse(message="claude print prompt: workdir is not set")
 
@@ -193,7 +193,7 @@ class ClaudeDriver:
                 # lifecycle state isn't being persisted. See the matching
                 # change at agentic_process.py:_run_turn.
                 logger.warning(
-                    "ClaudeDriver.run_print_turn: lifecycle save failed",
+                    "ClaudeDriver.headless_prompt: lifecycle save failed",
                     exc_info=True,
                 )
 
@@ -205,6 +205,16 @@ class ClaudeDriver:
         process_ref = process
         process_id = process.id
 
+        # Multi-turn correctness: see AgenticProcess._discover_status_from_transcript.
+        # Flip the projection to RUNNING for the duration of this turn and
+        # broadcast it now so the closing notify_updated (which carries the
+        # JSONL-derived COMPLETE) is a real edge for SDK mirrors.
+        object.__setattr__(process_ref, "_turn_in_flight", True)
+        try:
+            await process_ref.notify_updated()
+        except Exception:
+            logger.exception("ClaudeDriver.headless_prompt: start-of-turn notify_updated failed")
+
         async def _run_turn() -> None:
             try:
                 async for fd in worker.execute(prompt=composed, context=context):
@@ -215,17 +225,20 @@ class ClaudeDriver:
                             await process_ref.save()
                         except Exception:
                             logger.warning(
-                                "ClaudeDriver.run_print_turn: session_id save failed",
+                                "ClaudeDriver.headless_prompt: session_id save failed",
                                 exc_info=True,
                             )
                     try:
                         await process_ref.emit_flow_data(fd.model_dump())
                     except Exception:
-                        logger.exception("ClaudeDriver.run_print_turn: emit_flow_data failed")
+                        logger.exception("ClaudeDriver.headless_prompt: emit_flow_data failed")
             except Exception:
-                logger.exception("ClaudeDriver.run_print_turn: worker error")
+                logger.exception("ClaudeDriver.headless_prompt: worker error")
             finally:
                 _PROMPT_WORKERS.pop(process_id, None)
+                # Clear the override before the closing notify_updated so it
+                # carries the real JSONL-derived status.
+                object.__setattr__(process_ref, "_turn_in_flight", False)
                 # If the fork materialised on disk (the new session's JSONL
                 # was written), drop ``fork_session_id`` from cli_config so
                 # subsequent launches plain ``--resume`` the new session
@@ -241,7 +254,7 @@ class ClaudeDriver:
                         try:
                             await process_ref.save()
                         except Exception:
-                            logger.debug("ClaudeDriver.run_print_turn: fork-strip save failed", exc_info=True)
+                            logger.debug("ClaudeDriver.headless_prompt: fork-strip save failed", exc_info=True)
                 # ``worker_status`` is a computed projection re-derived from
                 # the JSONL tail by ``to_dict`` / ``api_json_serializer``, so
                 # ``save()`` short-circuits when no real entity field changed.
@@ -253,7 +266,7 @@ class ClaudeDriver:
                 try:
                     await process_ref.notify_updated()
                 except Exception:
-                    logger.exception("ClaudeDriver.run_print_turn: terminal notify_updated failed")
+                    logger.exception("ClaudeDriver.headless_prompt: terminal notify_updated failed")
 
         asyncio.create_task(_run_turn(), name=f"claude-{process.id[:8]}")
         return ApiSuccessResponse(data={"status": "started", "worker": self.name})

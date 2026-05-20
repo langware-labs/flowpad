@@ -1,5 +1,5 @@
 import type { LucideIcon } from 'lucide-react';
-import { FolderTree, GitBranch, ListOrdered, MessageSquare, Paperclip, SquareTerminal } from 'lucide-react';
+import { FolderTree, GitBranch, Layers, ListOrdered, MessageSquare, Paperclip, SquareTerminal } from 'lucide-react';
 
 export const SideTabId = {
   Shell:   'shell',
@@ -8,6 +8,7 @@ export const SideTabId = {
   Queue:   'queue',
   Files:   'files',
   Dir:     'dir',
+  Context: 'context',
 } as const;
 export type SideTabId = (typeof SideTabId)[keyof typeof SideTabId];
 
@@ -25,6 +26,7 @@ export const SIDE_TABS: Record<SideTabId, SideTabDescriptor> = {
   queue:   { id: 'queue',   label: 'Queue',   icon: ListOrdered,    description: 'Queued prompts to send when the session becomes idle' },
   files:   { id: 'files',   label: 'Files',   icon: Paperclip,      description: 'Input files attached to this session' },
   dir:     { id: 'dir',     label: 'Dir',     icon: FolderTree,     description: 'Browse the working directory' },
+  context: { id: 'context', label: 'Context', icon: Layers,         description: 'Context entities attached to this process — plans, skills, project, …' },
 };
 
 /** Narrow any string to a valid SideTabId, returning null if it's not one. */

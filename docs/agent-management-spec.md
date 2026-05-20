@@ -86,7 +86,7 @@ Flow:
 frontend process.prompt(text) or executeInstruction(...)
   -> POST agentic_process/<id>/prompt or execute
   -> backend AgenticProcess.prompt()
-  -> driver.run_print_turn(...)
+  -> driver.headless_prompt(...)
   -> worker CLI runs a print/headless turn
   -> FlowData is streamed to the caller
   -> transcript/history is still available through the driver
