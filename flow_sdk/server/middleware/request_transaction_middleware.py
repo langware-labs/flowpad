@@ -73,6 +73,7 @@ class RequestTransactionMiddleware:
                 else:
                     target_entity = await entity_model.get_by_typeid(req_info.target_entity_typeid)
                     if target_entity is None:
+                        # TODO - this is a patch, remove it
                         # ``open`` deep-link actions can land on entities the
                         # local DB hasn't synced yet — a fresh invitee clicking
                         # the email link is the typical case. The handler
