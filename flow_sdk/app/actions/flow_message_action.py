@@ -1690,9 +1690,12 @@ async def _sync_conversation_messages(conv_id: str, someone_typeid: str) -> None
 
     Called after an invitation accept: the hub WS only fanouts messages from
     join-time forward, so the inviter's pre-accept messages (notably the
-    first one) need this explicit pull. Unlike ``_fetch_conversation_messages``
-    (legacy ``.flowmsg`` bundle path), this is the text-only path — the hub
-    payload is materialized directly with no bundle download.
+    first one) need this explicit pull. After materializing each FM's row,
+    if the hub payload advertises a body bundle (``attachment_filename``)
+    the bundle is pulled and unpacked here so embedded TYPE_ID attachments
+    (Task / Spec / etc.) materialize on the recipient — without this step
+    the recipient would see only the FM text and miss any shared entities
+    the sender attached.
     """
     from flow_sdk.app.actions.materialize_flow_message import (  # noqa: PLC0415
         materialize_flow_message,
@@ -1719,6 +1722,17 @@ async def _sync_conversation_messages(conv_id: str, someone_typeid: str) -> None
             logger.warning(
                 "[conv-sync] conv=%s fm=%s materialize failed: %s",
                 conv_id[:8], raw_fm.get("id"), fm_err,
+            )
+            continue
+        attachment_filename = (raw_fm.get("attachment_filename") or "").strip()
+        if not attachment_filename:
+            continue
+        try:
+            await _download_and_unpack_bundle(raw_fm["id"], attachment_filename)
+        except Exception as b_err:  # noqa: BLE001
+            logger.warning(
+                "[conv-sync] conv=%s fm=%s bundle download failed: %s",
+                conv_id[:8], raw_fm.get("id"), b_err,
             )
 
 

@@ -93,12 +93,7 @@ class Conversation(Entity):
     # ``conv.first_context_of_type('task', bucket='shared')`` to read it back.
     _api_visible: ClassVar[bool] = True
 
-    async def share(
-        self,
-        recipients: Optional[List[str]] = None,
-        *,
-        owner=None,
-    ) -> "Conversation":
+    async def share(self, recipients: Optional[List[str]] = None) -> "Conversation":
         """Push to hub + invite recipients via the standard hub pattern.
 
         Without ``recipients``: equivalent to ``Entity.share()`` — POSTs to
@@ -114,13 +109,14 @@ class Conversation(Entity):
         ``GET /graph/members/accept``, and then ``POST /graph/conversation/<id>/join``
         themselves (wired in ``flow_message_action.handle_invitation_accept``).
 
-        ``owner`` is forwarded to ``Entity.share()`` so the in-DB
-        ``remote=True`` save is attributed to the calling user.
+        Persisting ``remote=True`` to the local DB is the caller's
+        responsibility (``share_action.share_entity`` does the local row
+        UPDATE immediately after ``share()`` returns).
         """
         from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
         from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
 
-        await super().share(owner=owner)
+        await super().share()
         if not recipients:
             return self
         creds = load_credentials()

@@ -769,25 +769,21 @@ class Entity(DBEntity):
             raise RuntimeError("cloud_watch requires entity.id; save first")
         return CloudWatch(self.id)
 
-    async def share(
-        self: EntityType,
-        *,
-        owner: DBEntity | TypeId | types.NoneType = None,
-    ) -> EntityType:
+    async def share(self: EntityType) -> EntityType:
         """Create this entity on the hub (POST /api/v1/graph/<type>).
 
         Generic, type-agnostic: the body is this entity's serialized dump,
         the URL is constructed via ``build_hub_url(self.type)``, auth is
         taken from the stored hub credentials. Returns ``self`` after
-        flipping the ``remote`` field when the subclass declares one — and
-        persisting that flip to the local DB so subsequent reads of the
-        entity see ``remote=True``.
+        flipping the ``remote`` field on the in-memory entity when the
+        subclass declares one.
 
-        ``owner`` is the typeid (or DBEntity) attributed for the local
-        ``remote=True`` save. Pass the calling user's typeid when available
-        (e.g. ``request_info.someone_typeid`` from an action handler); the
-        DB UPDATE path tolerates ``None`` but loses ``updated_by``
-        attribution for the flag flip.
+        The caller is responsible for persisting ``remote=True`` to the
+        local DB — typically by loading the on-disk row and saving it
+        immediately after ``share()`` returns. ``self`` here is often a
+        transient instance reconstructed from a request body and not
+        bound to a DB row, so we deliberately do not call ``self.save()``
+        from inside ``share()``.
 
         Raises ``RuntimeError`` if not cloud-logged-in or the hub rejects.
         """
@@ -809,9 +805,15 @@ class Entity(DBEntity):
         #  - ``system``      — local "ships in an SDK system project" flag.
         #  - ``orphan``      — local FS-indexer "source asset missing" flag.
         #  - ``message_count`` — SDK projection from the conversation jsonl pointer index.
-        # All six were producing ``None API field !!!`` errors on the hub at
-        # create because the hub schema doesn't declare them. They have no
-        # hub semantics; the SDK simply shouldn't be sending them.
+        #  - ``tags``        — local-only labels; the hub doesn't read them.
+        #  - ``project_id``  — sender's local project; recipients resolve their
+        #    own project mapping, so the hub deliberately doesn't store this.
+        #  - ``participants`` — initial sender-side list (email-only entries).
+        #    The hub builds the real participants list via ``/members`` invites
+        #    + ``/join``, which stamps a real ``user_id`` per joiner.
+        # All of the above were producing ``None API field !!!`` errors on the
+        # hub at create because the hub schema doesn't declare them. They
+        # have no hub semantics; the SDK simply shouldn't be sending them.
         body = self.model_dump(
             mode="json",
             exclude_none=True,
@@ -822,6 +824,7 @@ class Entity(DBEntity):
                 "created_date", "updated_date",
                 "remote", "system", "orphan",
                 "message_count",
+                "tags", "project_id", "participants",
             },
         )
 
@@ -831,34 +834,8 @@ class Entity(DBEntity):
 
         # ``remote`` is opt-in per subclass. Flip it when present so callers
         # can branch on it. Subclasses without the field stay unchanged.
-        #
-        # We also persist the flip to the local DB. ``self`` is often a
-        # transient instance reconstructed from a request body (no DB row
-        # bound), so we re-load the persistent record by id and save THAT
-        # — calling ``self.save()`` directly would attempt an INSERT on a
-        # row that already exists. Without this persistence step, callers
-        # downstream of ``share()`` (e.g. ``handle_add_message``'s
-        # ``is_remote_send`` gate) would keep seeing the disk-resident
-        # ``remote=False`` and treat the conversation as local-only.
         if "remote" in type(self).model_fields:
             self.remote = True
-            try:
-                db_row = await type(self).get_one({"id": self.id})
-            except Exception as e:  # noqa: BLE001
-                service_log.warn(
-                    f"[Entity.share] DB row lookup for {self.get_type()} {self.id} "
-                    f"failed (non-fatal): {e}"
-                )
-                db_row = None
-            if db_row is not None and getattr(db_row, "remote", None) is not True:
-                db_row.remote = True
-                try:
-                    await db_row.save(owner)
-                except Exception as e:  # noqa: BLE001
-                    service_log.warn(
-                        f"[Entity.share] persisting remote=True on local "
-                        f"{self.get_type()} {self.id} failed (non-fatal): {e}"
-                    )
         return self
 
     async def save(self: EntityType, owner: DBEntity | TypeId | types.NoneType = None, notify: bool = True) -> EntityType:
