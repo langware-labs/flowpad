@@ -90,6 +90,10 @@ export function AskHelpDialog({ open, onClose }: AskHelpDialogProps) {
       }
 
       // Mint the Task + Conversation once and reuse across retries (stable ids).
+      // ``shared_context_entities`` is passed in the constructor — the new
+      // shared-context API exposes no FE-side setter (sharing is a backend
+      // decision); the constructor lifts the wire field into the private
+      // ``_shared_context_entities_`` slot and ``save()`` ships it on the wire.
       const projectId = ctx.project?.id ?? null;
       const task = draftTaskRef.current ?? new Task({
         title: effectiveTitle,
@@ -104,16 +108,12 @@ export function AskHelpDialog({ open, onClose }: AskHelpDialogProps) {
       const conv = draftConvRef.current ?? new Conversation({
         title: effectiveTitle,
         participants: recipients,
-      });
+        shared_context_entities: [`${Task.type}-${task.id}`],
+      } as Partial<Conversation>);
       conv.title = effectiveTitle;
       conv.participants = recipients;
       conv.project_id = projectId;
       draftConvRef.current = conv;
-
-      // Cross-link Task <-> Conversation via context_entities (both ways) so
-      // useConversation resolves the task and apply-project-choice the conv.
-      conv.addContextEntity(new TypeId(Task.type, task.id));
-      task.addContextEntity(new TypeId(Conversation.type, conv.id));
 
       await task.save();
       await conv.save();

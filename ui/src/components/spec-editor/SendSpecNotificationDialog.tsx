@@ -160,6 +160,10 @@ export function SendPlanNotificationDialog({
       // ``shared_process_id`` rides the bundle to the recipient (whitelisted
       // into ``_TASK_FIELDS``); ``my_process_id`` is sender-only — set so the
       // sender's "Open Claude Code" chip works; the packer strips it on send.
+      // ``shared_context_entities`` is passed in the constructor — the new
+      // shared-context API exposes no FE-side setter; the constructor lifts
+      // the wire field into ``_shared_context_entities_`` and ``save()``
+      // ships it on the wire.
       const projectId = dataCtx.project?.id ?? null;
       const spec = draftSpecRef.current ?? new Spec({
         title: effectiveTitle,
@@ -178,23 +182,20 @@ export function SendPlanNotificationDialog({
         recipient_email: recipientEmails[0],
         project_id: projectId,
         my_process_id: processId ?? null,
-      });
+        shared_context_entities: [`${Spec.type}-${spec.id}`],
+      } as Partial<Task>);
       task.shared_process_id = forkedProcessId;
-      task.addContextEntity(new TypeId(Spec.type, spec.id));
       draftTaskRef.current = task;
 
       const conv = draftConvRef.current ?? new Conversation({
         title: effectiveTitle,
         participants: recipients,
-      });
+        shared_context_entities: [`${Task.type}-${task.id}`],
+      } as Partial<Conversation>);
       conv.title = effectiveTitle;
       conv.participants = recipients;
       conv.project_id = projectId;
       draftConvRef.current = conv;
-
-      // Cross-link Task <-> Conversation via context_entities (both ways).
-      conv.addContextEntity(new TypeId(Task.type, task.id));
-      task.addContextEntity(new TypeId(Conversation.type, conv.id));
 
       await spec.save();
       await task.save();
