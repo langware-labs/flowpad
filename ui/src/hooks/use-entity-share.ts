@@ -161,12 +161,14 @@ export function useEntityShare(typeId: TypeId | null): UseEntityShareResult {
         // shared_process_id (matches AskForAssistance / Send-Plan flows) so the
         // recipient's "Approve & Execute" reuses the pre-fork. For other entity
         // types, the entity rides as a TYPE_ID attachment on the first message.
-        const conv = new Conversation({ title, participants: opts.recipients });
-        conv.title = title;
-        conv.participants = opts.recipients;
+        // ``shared_context_entities`` is passed in the constructor — the new
+        // shared-context API doesn't expose a FE-side setter (sharing is a
+        // backend decision); the constructor lift moves it into the private
+        // ``_shared_context_entities_`` slot and ``save()`` ships it on the wire.
         const assetReferences: string[] = [];
-
         let task: Task | null = null;
+        let convSharedContext: string[] = [];
+
         if (isProcess) {
           task = new Task({
             title,
@@ -177,16 +179,23 @@ export function useEntityShare(typeId: TypeId | null): UseEntityShareResult {
             my_process_id: typeId.id,
           });
           task.shared_process_id = forkedProcessId;
-          conv.addContextEntity(new TypeId(Task.type, task.id));
-          task.addContextEntity(new TypeId(Conversation.type, conv.id));
+          convSharedContext = [`${Task.type}-${task.id}`];
           assetReferences.push(`${Task.type}-${task.id}`);
           await task.save();
         } else {
-          // Generic entity share: attach the shared entity itself as context
-          // and ride it on the first message bundle.
-          conv.addContextEntity(typeId);
+          // Generic entity share: the shared entity itself rides as context +
+          // first-message TYPE_ID attachment.
+          convSharedContext = [`${typeId.type}-${typeId.id}`];
           assetReferences.push(`${typeId.type}-${typeId.id}`);
         }
+
+        const conv = new Conversation({
+          title,
+          participants: opts.recipients,
+          shared_context_entities: convSharedContext,
+        } as Partial<Conversation>);
+        conv.title = title;
+        conv.participants = opts.recipients;
 
         await conv.save();
         await conv.share(recipientEmails);
