@@ -35,6 +35,7 @@ import { PaneSelectorBar } from './PaneSelectorBar';
 import { PaneView } from './PaneView';
 import { ProcessToolbar } from './ProcessToolbar';
 import { PtySyncProvider, usePtySyncSession } from './PtySyncContext';
+import { TerminalRuntimeErrorBanner } from './TerminalRuntimeErrorBanner';
 import {
   GitPanel,
   InputFilesPanel,
@@ -1344,6 +1345,11 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         />
       )}
       {activePane === 'shell' && sidecarShellId && <PaneBar label="Shell" onClose={() => void handleKillSidecar()} />}
+
+      {/* Runtime-error banner — populated by the shell-dock loader on soft
+          ProcessLoadError (PTY dead, process stopped, project missing,
+          shell entity missing, network). Renders nothing when null. */}
+      <TerminalRuntimeErrorBanner />
 
       <PtySyncProvider session={ptySyncRef.current}>
         {/* Column header — only for Claude pane */}
