@@ -3,7 +3,6 @@ import { File as FileIcon, MessageSquarePlus, Paperclip, Send, Trash2, X } from 
 import type { FlowMessage } from '@sdk';
 import { sendReply } from '@sdk/entities/notifications';
 import { AttachmentType, type Attachment } from '@sdk/entities/flow-message';
-import type { ITask } from '@sdk/entities/task';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
 import { toast } from 'sonner';
 import { cn } from '@src/lib/utils';
@@ -15,7 +14,6 @@ import { discardDraftFlowMessage } from './flow-message-drafts';
 
 interface DraftMessageComposerProps {
   fm: FlowMessage;
-  task?: ITask | null;
   conversationId?: string;
   /** Fires after successful send (draft promoted to real reply). */
   onAfterSend?: () => void;
@@ -33,7 +31,6 @@ function formatSize(bytes: number): string {
 
 export function DraftMessageComposer({
   fm,
-  task,
   conversationId,
   onAfterSend,
   onAfterDiscard,
@@ -140,7 +137,7 @@ export function DraftMessageComposer({
           }
         : undefined;
       await sendReply(
-        { task: task ?? undefined, conversationId },
+        { conversationId },
         trimmed,
         files.length > 0 ? files : undefined,
         extras,

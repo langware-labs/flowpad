@@ -6,15 +6,28 @@
  * A download icon in the top-left lets the user save a .flowmsg file locally.
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { FileAttachmentPicker } from '@src/components/conversation/FileAttachmentPicker';
 import { useLocalUser } from '@src/components/conversation/useLocalUser';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
 import { useContext } from '@sdk/react/hooks';
-import { sendNotification } from '@sdk/entities/notifications';
+import { useContext as useDataContext } from '@src/hooks/useContext';
+import { sendReply } from '@sdk/entities/notifications';
 import { createTaskBundle, DeliveryMode } from '@sdk/entities/flow-message';
 import { ActionInfo } from '@sdk/models/ActionInfo';
-import { AgenticProcess, dataManager, oauthService, OAUTH_PROVIDERS, TypeId, type ConversationParticipant } from '@sdk';
+import {
+  AgenticProcess,
+  Conversation,
+  dataManager,
+  oauthService,
+  OAUTH_PROVIDERS,
+  Spec,
+  Task,
+  TypeId,
+  type ConversationParticipant,
+} from '@sdk';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { toast } from 'sonner';
 import { Mail, Download, Github, Pencil } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
@@ -26,15 +39,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@src/components/ui/dialog';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@src/components/ui/alert-dialog';
 import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
 import { cn } from '@src/lib/utils';
@@ -54,6 +58,8 @@ interface SendPlanNotificationDialogProps {
   onClose: () => void;
   planFilePath: string;
   planContent: string;
+  /** Accepted for call-site compatibility; the conversation transport resolves
+   *  the project from the sender's context, so this is no longer forwarded. */
   workdir?: string | null;
   /** Active AgenticProcess id where the plan was authored — stamped onto the sender's task as my_process_id, then pre-forked so the recipient inherits its conversational context. */
   processId?: string;
@@ -62,13 +68,14 @@ interface SendPlanNotificationDialogProps {
 export function SendPlanNotificationDialog({
   open,
   onClose,
-  workdir,
   planFilePath,
   planContent,
   processId,
 }: SendPlanNotificationDialogProps) {
   const ctx = useContext();
   const { cloudLoginAvailable } = ctx;
+  const dataCtx = useDataContext();
+  const { navigation } = useDockNavigation();
   const { localUser, updateName } = useLocalUser();
   const [mode, setMode] = useState<DeliveryMode>(DeliveryMode.EMAIL);
   const [recipients, setRecipients] = useState<ConversationParticipant[]>([]);
@@ -81,8 +88,14 @@ export function SendPlanNotificationDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
-  const [gitError, setGitError] = useState<string | null>(null);
-  const [emailError, setEmailError] = useState<string | null>(null);
+
+  // Synchronous re-entry lock + draft refs holding the in-flight Spec / Task /
+  // Conversation across retries so a retry reuses stable ids (upsert) instead
+  // of orphaning the hub rows a prior attempt created.
+  const submittingRef = useRef(false);
+  const draftSpecRef = useRef<Spec | null>(null);
+  const draftTaskRef = useRef<Task | null>(null);
+  const draftConvRef = useRef<Conversation | null>(null);
 
   useEffect(() => {
     if (open) {
@@ -93,9 +106,11 @@ export function SendPlanNotificationDialog({
       setFiles([]);
       setError(null);
       setSuccess(false);
-      setGitError(null);
-      setEmailError(null);
       setEditingName(false);
+      submittingRef.current = false;
+      draftSpecRef.current = null;
+      draftTaskRef.current = null;
+      draftConvRef.current = null;
     }
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -111,13 +126,15 @@ export function SendPlanNotificationDialog({
   const handleEmail = async () => {
     const recipient = recipients[0];
     const recipientId = recipient?.email?.trim() ?? '';
-    if (!recipientId || !specTitle.trim() || busy) return;
+    if (!recipientId || !specTitle.trim() || busy || submittingRef.current) return;
+    submittingRef.current = true;
     setBusy(true);
     setError(null);
     try {
-      // Mirror Scenario C: stamp the sender's process id and pre-fork it so
-      // the recipient's headless runs (e.g. "Request status") resume from the
-      // session that authored the plan instead of spawning fresh context.
+      // Pre-fork the live session so the recipient's headless runs (e.g.
+      // "Request status") resume from the session that authored the plan
+      // instead of spawning fresh context. Best-effort — fork failure
+      // shouldn't block the share.
       const proc = processId
         ? await dataManager.getByTypeId<AgenticProcess>(new TypeId(AgenticProcess.type, processId)).catch(() => null)
         : null;
@@ -131,37 +148,86 @@ export function SendPlanNotificationDialog({
         }
       }
 
-      const result = await sendNotification({
-        recipient_id: recipientId,
-        spec_title: specTitle.trim(),
-        spec_content: specContent.trim(),
-        spec_type: 'plan',
-        task_title: specTitle.trim(),
-        task_id: null,
-        message: message.trim() || null,
-        plan_id: null,
-        project_path: workdir ?? null,
-        sender_name: senderName.trim() || null,
-        files: files.length > 0 ? files : undefined,
-        sender_process_id: processId ?? null,
-        forked_process_id: forkedProcessId,
-      });
-      if (result.git_error) {
-        setGitError(result.git_error);
-      } else if (result.email_error) {
-        setSuccess(true);
-        setEmailError(result.email_error);
-        toast.warning('Task created, but the notification email could not be sent. Check your activity panel.');
-        setTimeout(() => onClose(), 5000);
-      } else {
-        setSuccess(true);
-        toast.success('Task shared successfully!');
-        setTimeout(() => onClose(), 1200);
+      const effectiveTitle = specTitle.trim();
+      const recipientEmails = recipients
+        .map((p) => (p.email || '').trim())
+        .filter((email): email is string => !!email && email.includes('@'));
+      if (recipientEmails.length === 0) {
+        throw new Error('A recipient email is required');
       }
+
+      // Mint Spec + Task + Conversation once; reuse across retries (stable ids).
+      // ``shared_process_id`` rides the bundle to the recipient (whitelisted
+      // into ``_TASK_FIELDS``); ``my_process_id`` is sender-only — set so the
+      // sender's "Open Claude Code" chip works; the packer strips it on send.
+      const projectId = dataCtx.project?.id ?? null;
+      const spec = draftSpecRef.current ?? new Spec({
+        title: effectiveTitle,
+        content: specContent.trim(),
+        spec_type: 'plan',
+      });
+      spec.title = effectiveTitle;
+      spec.content = specContent.trim();
+      draftSpecRef.current = spec;
+
+      const task = draftTaskRef.current ?? new Task({
+        title: effectiveTitle,
+        status: 'to_do',
+        spec_type: 'plan',
+        sender_name: senderName.trim() || undefined,
+        recipient_email: recipientEmails[0],
+        project_id: projectId,
+        my_process_id: processId ?? null,
+      });
+      task.shared_process_id = forkedProcessId;
+      task.addContextEntity(new TypeId(Spec.type, spec.id));
+      draftTaskRef.current = task;
+
+      const conv = draftConvRef.current ?? new Conversation({
+        title: effectiveTitle,
+        participants: recipients,
+      });
+      conv.title = effectiveTitle;
+      conv.participants = recipients;
+      conv.project_id = projectId;
+      draftConvRef.current = conv;
+
+      // Cross-link Task <-> Conversation via context_entities (both ways).
+      conv.addContextEntity(new TypeId(Task.type, task.id));
+      task.addContextEntity(new TypeId(Conversation.type, conv.id));
+
+      await spec.save();
+      await task.save();
+      await conv.save();
+      await conv.share(recipientEmails);
+
+      // First message — text + user files + Spec & Task as TYPE_ID attachments
+      // so they ride the body bundle and materialize on the recipient. Same
+      // conversation transport as New Conversation: WS delivery + receipts.
+      await sendReply(
+        { conversationId: conv.id },
+        message.trim(),
+        files.length > 0 ? files : undefined,
+        {
+          assetReferences: [
+            `${Task.type}-${task.id}`,
+            `${Spec.type}-${spec.id}`,
+          ],
+        },
+      );
+
+      draftSpecRef.current = null;
+      draftTaskRef.current = null;
+      draftConvRef.current = null;
+      setSuccess(true);
+      toast.success('Task shared successfully!');
+      navigation.openDock(DockPointer.forConversation(conv.id));
+      setTimeout(() => onClose(), 1200);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to send notification.';
       setError(msg);
     } finally {
+      submittingRef.current = false;
       setBusy(false);
     }
   };
@@ -195,25 +261,7 @@ export function SendPlanNotificationDialog({
   const canSubmit = recipients.length > 0 && specTitle.trim().length > 0 && !busy;
 
   return (
-    <>
-      <AlertDialog open={!!gitError} onOpenChange={(o) => { if (!o) { setGitError(null); onClose(); } }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Git Push Failed</AlertDialogTitle>
-            <AlertDialogDescription asChild>
-              <div>
-                <p className="mb-2">The task could not be pushed to the remote repository. Please fix the git issue below and send the task again.</p>
-                <pre className="max-h-40 overflow-auto rounded bg-muted px-3 py-2 text-xs text-foreground whitespace-pre-wrap">{gitError}</pre>
-              </div>
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogAction>OK</AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      <Dialog open={open} onOpenChange={handleClose}>
+    <Dialog open={open} onOpenChange={handleClose}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Share Task</DialogTitle>
@@ -341,13 +389,7 @@ export function SendPlanNotificationDialog({
             </div>
 
             {error && <p className="text-xs text-destructive">{error}</p>}
-            {success && !emailError && <p className="text-xs text-green-600 dark:text-green-400">Task shared successfully.</p>}
-            {success && emailError && (
-              <div className="space-y-1">
-                <p className="text-xs text-green-600 dark:text-green-400">Task created successfully.</p>
-                <p className="text-xs text-yellow-600 dark:text-yellow-400">Email could not be sent. A reminder has been added to your activity panel.</p>
-              </div>
-            )}
+            {success && <p className="text-xs text-green-600 dark:text-green-400">Task shared successfully.</p>}
           </div>
 
           <DialogFooter className="sm:justify-between">
@@ -391,6 +433,5 @@ export function SendPlanNotificationDialog({
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </>
   );
 }
