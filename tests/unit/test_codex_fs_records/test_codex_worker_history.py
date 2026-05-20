@@ -2,11 +2,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from flow_sdk.fs_records.worker_history import WorkerType, get_codex_worker_history
 
 
-def test_codex_worker_history_shape(codex_sandbox: Path):
-    entries = get_codex_worker_history(limit=5)
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_codex_worker_history_shape(codex_sandbox: Path):
+    entries = await get_codex_worker_history(limit=5)
 
     assert entries
     entry = entries[0]

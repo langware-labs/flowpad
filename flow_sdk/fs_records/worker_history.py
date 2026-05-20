@@ -1,24 +1,32 @@
 """Unified worker history surface for the "Recent Sessions" UI.
 
-Per-worker providers (currently Claude and Codex) collect
-sessions from each agent's native history source. ``get_worker_history``
-merges, deduplicates, sorts and caps the combined list so the frontend can
-render it from a single response.
+Per-worker providers (currently Claude and Codex) collect sessions from each
+agent's native history source. ``get_worker_history`` merges, deduplicates,
+sorts and caps the combined list so the frontend can render it from a single
+response.
 
-Adding a new worker is a one-line addition to
-``WORKER_HISTORY_PROVIDERS``.
+The ``agentic_process_id`` baked onto each row is sourced from the live
+``AgenticProcess`` entity store (not the on-disk fs record). That guarantees
+the id resolves via ``AgenticProcess.getById`` on the client — no split-brain
+between the list endpoint and the click-time entity fetch.
+
+Adding a new worker is a one-line addition to ``WORKER_HISTORY_PROVIDERS``.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Awaitable, Callable, Optional, TYPE_CHECKING
 
 from pydantic import BaseModel
+
+if TYPE_CHECKING:
+    from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +50,8 @@ class WorkerHistoryEntry(BaseModel):
     agentic_process_id: Optional[str] = None
 
 
-WorkerHistoryProvider = Callable[[int], list[WorkerHistoryEntry]]
+ProcessIndex = dict[str, tuple[str, Optional[str]]]
+WorkerHistoryProvider = Callable[[int, ProcessIndex], Awaitable[list[WorkerHistoryEntry]]]
 
 
 def _is_uuid_like(s: Optional[str]) -> bool:
@@ -130,30 +139,35 @@ def _coerce_datetime(value: object) -> Optional[datetime]:
     return None
 
 
-def _build_agentic_process_index() -> dict[str, tuple[str, Optional[str]]]:
-    """Map ``worker_session_id → (agentic_process_id, agentic_process_name)``.
+def _normalize_worker_type(wt: object) -> WorkerType:
+    """Map AgenticProcess.worker_type (flowpad_types enum) → local WorkerType.
 
-    The name is the entity's user-facing title (``AgenticProcessRecord.name``).
-    It is the only thing the UI should call ``name`` — Claude's auto-generated
-    ``slug`` is the first prompt, not a real title, and conflating the two
-    hides untitled sessions.
+    The entity's enum carries ``claude_code``/``unsecured_claude``/``codex``
+    etc.; the UI surface only distinguishes claude vs codex. None defaults
+    to claude — matches ``AgenticProcess.spawn``'s legacy default.
     """
-    from flow_sdk.fs_records.agentic_process_record import AgenticProcessRecord
+    if wt is None:
+        return WorkerType.CLAUDE
+    val = (wt.value if hasattr(wt, "value") else str(wt)).lower()
+    if "codex" in val:
+        return WorkerType.CODEX
+    return WorkerType.CLAUDE
 
-    index: dict[str, tuple[str, Optional[str]]] = {}
-    try:
-        records = AgenticProcessRecord.discover()
-    except Exception as e:
-        logger.warning("[worker_history] discover agentic_process failed: %s", e)
-        return index
-    for rec in records:
-        data = object.__getattribute__(rec, "__dict__")
-        cli_config = data.get("cli_config") if isinstance(data.get("cli_config"), dict) else {}
-        sid = rec.worker_session_id or data.get("session_id") or cli_config.get("session_id")
-        if sid and sid not in index:
-            raw_name = getattr(rec, "name", None)
-            name = raw_name.strip() if isinstance(raw_name, str) and raw_name.strip() else None
-            index[sid] = (rec.id, name)
+
+def _build_agentic_process_index(processes: list["AgenticProcess"]) -> ProcessIndex:
+    """Map ``session_id → (agentic_process_id, name)`` from live entity rows.
+
+    Whatever ends up in this index is openable via ``AgenticProcess.getById``
+    on the client — by construction, since we sourced it from the same store.
+    """
+    index: ProcessIndex = {}
+    for proc in processes:
+        sid = proc.session_id
+        if not sid or sid in index:
+            continue
+        raw_name = getattr(proc, "name", None)
+        name = raw_name.strip() if isinstance(raw_name, str) and raw_name.strip() else None
+        index[sid] = (proc.id, name)
     return index
 
 
@@ -182,15 +196,10 @@ def _build_history_latest_prompt_index() -> dict[str, str]:
     return index
 
 
-def get_claude_worker_history(limit: int) -> list[WorkerHistoryEntry]:
-    """Return the most-recent N Claude sessions, newest first.
-
-    Sources sessions from on-disk transcripts (``~/.claude/projects/<enc>/<sid>.jsonl``)
-    rather than from ``~/.claude/history.jsonl``. The history file only logs *user
-    prompts*; sessions that were resumed/active today but whose latest prompt is older
-    are missing from it. The transcript file's mtime is the canonical "last active"
-    signal.
-    """
+def _collect_claude_entries_sync(
+    limit: int, process_index: ProcessIndex
+) -> list[WorkerHistoryEntry]:
+    """Blocking body of ``get_claude_worker_history``. Runs under ``to_thread``."""
     from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
     from flow_sdk.instance_settings import get_instance_settings
 
@@ -213,7 +222,6 @@ def get_claude_worker_history(limit: int) -> list[WorkerHistoryEntry]:
     # the rare skip (parse failure / empty session_id).
     candidates = candidates[: limit + 5]
 
-    process_index = _build_agentic_process_index()
     history_prompt_index = _build_history_latest_prompt_index()
 
     result: list[WorkerHistoryEntry] = []
@@ -248,15 +256,14 @@ def get_claude_worker_history(limit: int) -> list[WorkerHistoryEntry]:
         except Exception as e:
             logger.debug("[worker_history] stats read failed for %s: %s", sid, e)
 
-        # Name priority: AgenticProcessRecord.name (user/upsert-set) >
-        # Claude's ``custom_title`` (set by ``/rename`` or Claude's own
-        # auto-summary, written as ``{"type":"custom-title"}`` lines) >
-        # ``slug`` (first-line envelope, auto-generated from the opening
-        # prompt). Without these fallbacks the row would be unnamed for
-        # any session that was never opened through Flowpad — that's the
-        # majority of on-disk Claude sessions. ``_pick_name`` filters out
-        # session_id / UUID-like values, so a trivial session still falls
-        # through to ``last_prompt`` rendering.
+        # Name priority: AgenticProcess.name (user/upsert-set) > Claude's
+        # ``custom_title`` (set by ``/rename`` or Claude's own auto-summary,
+        # written as ``{"type":"custom-title"}`` lines) > ``slug`` (first-line
+        # envelope, auto-generated from the opening prompt). Without these
+        # fallbacks the row would be unnamed for any session that was never
+        # opened through Flowpad — that's the majority of on-disk Claude
+        # sessions. ``_pick_name`` filters out session_id / UUID-like values,
+        # so a trivial session still falls through to ``last_prompt`` rendering.
         ap_id, ap_name = process_index.get(sid, (None, None))
         name = _pick_name(
             custom_title=ap_name,
@@ -287,13 +294,10 @@ def get_claude_worker_history(limit: int) -> list[WorkerHistoryEntry]:
     return result
 
 
-def get_codex_worker_history(limit: int) -> list[WorkerHistoryEntry]:
-    """Return the most-recent N Codex sessions, newest first.
-
-    Walks ``$CODEX_HOME/sessions/YYYY/MM/DD/rollout-*.jsonl``, sorts by mtime
-    desc, and parses only the top-N for envelope + lazy stats. Mirrors the
-    Claude provider's stat-then-parse pattern.
-    """
+def _collect_codex_entries_sync(
+    limit: int, process_index: ProcessIndex
+) -> list[WorkerHistoryEntry]:
+    """Blocking body of ``get_codex_worker_history``. Runs under ``to_thread``."""
     from flow_sdk.fs_records.codex.codex_session import CodexSessionRecord
     from flow_sdk.instance_settings import get_instance_settings
 
@@ -309,8 +313,6 @@ def get_codex_worker_history(limit: int) -> list[WorkerHistoryEntry]:
             continue
     candidates.sort(key=lambda x: -x[0])
     candidates = candidates[: limit + 5]
-
-    process_index = _build_agentic_process_index()
 
     result: list[WorkerHistoryEntry] = []
     seen: set[str] = set()
@@ -363,6 +365,34 @@ def get_codex_worker_history(limit: int) -> list[WorkerHistoryEntry]:
     return result
 
 
+async def get_claude_worker_history(
+    limit: int, process_index: Optional[ProcessIndex] = None
+) -> list[WorkerHistoryEntry]:
+    """Return the most-recent N Claude sessions, newest first.
+
+    Sources sessions from on-disk transcripts (``~/.claude/projects/<enc>/<sid>.jsonl``)
+    rather than from ``~/.claude/history.jsonl``. The history file only logs *user
+    prompts*; sessions that were resumed/active today but whose latest prompt is older
+    are missing from it. The transcript file's mtime is the canonical "last active"
+    signal.
+    """
+    idx = process_index if process_index is not None else {}
+    return await asyncio.to_thread(_collect_claude_entries_sync, limit, idx)
+
+
+async def get_codex_worker_history(
+    limit: int, process_index: Optional[ProcessIndex] = None
+) -> list[WorkerHistoryEntry]:
+    """Return the most-recent N Codex sessions, newest first.
+
+    Walks ``$CODEX_HOME/sessions/YYYY/MM/DD/rollout-*.jsonl``, sorts by mtime
+    desc, and parses only the top-N for envelope + lazy stats. Mirrors the
+    Claude provider's stat-then-parse pattern.
+    """
+    idx = process_index if process_index is not None else {}
+    return await asyncio.to_thread(_collect_codex_entries_sync, limit, idx)
+
+
 WORKER_HISTORY_PROVIDERS: dict[WorkerType, WorkerHistoryProvider] = {
     WorkerType.CLAUDE: get_claude_worker_history,
     WorkerType.CODEX: get_codex_worker_history,
@@ -370,30 +400,21 @@ WORKER_HISTORY_PROVIDERS: dict[WorkerType, WorkerHistoryProvider] = {
 
 
 def _agentic_process_only_entries(
+    processes: list["AgenticProcess"],
     seen: set[tuple[WorkerType, str]],
 ) -> list[WorkerHistoryEntry]:
-    """Surface AgenticProcessRecords whose session is absent from any worker's history file."""
-    from flow_sdk.fs_records.agentic_process_record import AgenticProcessRecord
-
+    """Surface AgenticProcess entities whose session is absent from any worker's history file."""
     extra: list[WorkerHistoryEntry] = []
-    try:
-        records = AgenticProcessRecord.discover()
-    except Exception as e:
-        logger.warning("[worker_history] discover agentic_process: %s", e)
-        return extra
-
-    for rec in records:
-        sid = rec.worker_session_id
+    for proc in processes:
+        sid = proc.session_id
         if not sid:
             continue
-        # Per ts_sdk/src/process/agentic-process.ts:539, an unset worker_type
-        # means claude — that's what AgenticProcess.spawn produces today.
-        worker_type = WorkerType.CLAUDE
+        worker_type = _normalize_worker_type(getattr(proc, "worker_type", None))
         key = (worker_type, sid)
         if key in seen:
             continue
 
-        last_active = _coerce_datetime(getattr(rec, "updated_date", None)) or datetime.now(
+        last_active = _coerce_datetime(getattr(proc, "updated_date", None)) or datetime.now(
             tz=timezone.utc
         )
 
@@ -401,28 +422,43 @@ def _agentic_process_only_entries(
             WorkerHistoryEntry(
                 worker_type=worker_type,
                 worker_id=sid,
-                project_id=rec.project_id or _project_id_for(None, rec.project_encoded_name),
+                project_id=proc.project_id
+                or _project_id_for(None, proc.project_encoded_name),
                 project_name=None,
                 project_cwd=None,
                 last_active_time=last_active,
-                name=getattr(rec, "name", None) or None,
+                name=getattr(proc, "name", None) or None,
                 git_branch=None,
                 message_count=None,
-                agentic_process_id=rec.id,
+                agentic_process_id=proc.id,
             )
         )
 
     return extra
 
 
-def get_worker_history(limit: int = 10) -> list[WorkerHistoryEntry]:
+async def _load_agentic_processes() -> list["AgenticProcess"]:
+    """Best-effort fetch of all AgenticProcess entities. Returns ``[]`` on failure."""
+    from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
+
+    try:
+        return await AgenticProcess.get_all()
+    except Exception as e:
+        logger.warning("[worker_history] AgenticProcess.get_all failed: %s", e)
+        return []
+
+
+async def get_worker_history(limit: int = 10) -> list[WorkerHistoryEntry]:
     """Unified, deduplicated worker history across every registered provider."""
+    processes = await _load_agentic_processes()
+    process_index = _build_agentic_process_index(processes)
+
     collected: list[WorkerHistoryEntry] = []
     seen: set[tuple[WorkerType, str]] = set()
 
     for worker_type, provider in WORKER_HISTORY_PROVIDERS.items():
         try:
-            entries = provider(limit)
+            entries = await provider(limit, process_index)
         except NotImplementedError:
             continue
         except Exception as e:
@@ -435,6 +471,6 @@ def get_worker_history(limit: int = 10) -> list[WorkerHistoryEntry]:
             seen.add(key)
             collected.append(entry)
 
-    collected.extend(_agentic_process_only_entries(seen))
+    collected.extend(_agentic_process_only_entries(processes, seen))
     collected.sort(key=lambda e: e.last_active_time, reverse=True)
     return collected[:limit]

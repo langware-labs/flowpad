@@ -1036,7 +1036,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             limit = int(limit_raw) if limit_raw else 10
         except (TypeError, ValueError):
             limit = 10
-        entries = await asyncio.to_thread(get_worker_history, limit)
+        entries = await get_worker_history(limit)
         return ApiSuccessResponse(data=[e.model_dump(mode="json") for e in entries])
 
     @action.get(action_name="git-ops")
