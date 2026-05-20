@@ -24,6 +24,84 @@ from flow_sdk.cloud_client.ws_client import HubWebSocketManager, hub_ws_manager
 logger = logging.getLogger(__name__)
 
 
+# Asset-entity types whose chips open a file-backed editor (Skill.md,
+# Agent.md, etc.). When an inbound FlowMessage attaches one of these via a
+# TYPE_ID attachment, the recipient needs the bundle on disk before the chip
+# is clickable — otherwise the asset editor's ``useEntityByPath`` discover
+# step 404s. We eager-pull the bundle for these and skip the pull for
+# media-only FMs (FILE attachments stay manual).
+_ASSET_TYPEID_TYPES: frozenset[str] = frozenset({
+    "skill", "agent", "markdown", "spec", "workflow", "whiteboard",
+})
+
+
+def _has_asset_typeid_attachment(attachments: Any) -> bool:
+    """True iff ``attachments`` includes a TYPE_ID attachment for a file-backed
+    asset entity (skill / agent / markdown / spec / workflow / whiteboard).
+
+    Tolerates both the hub wire shape (list of dicts) and the local model
+    shape (list of ``Attachment`` instances) — the ``data`` field is a
+    ``"<type>-<id>"`` string in either case.
+    """
+    if not attachments:
+        return False
+    for att in attachments:
+        att_type = (
+            att.get("attachment_type") if isinstance(att, dict)
+            else getattr(att, "attachment_type", None)
+        )
+        if att_type != "type_id":
+            continue
+        data = (
+            att.get("data") if isinstance(att, dict)
+            else getattr(att, "data", None)
+        )
+        if not isinstance(data, str):
+            continue
+        dash = data.find("-")
+        if dash <= 0:
+            continue
+        if data[:dash] in _ASSET_TYPEID_TYPES:
+            return True
+    return False
+
+
+# In-flight bundle pulls keyed by fm_id — guards against the bridge
+# scheduling two concurrent downloads for the same FM (CREATE-with-READY
+# arriving before the UPDATE-to-READY, or two UPDATEs in quick succession).
+_INFLIGHT_BUNDLE_PULLS: set[str] = set()
+
+
+async def _maybe_eager_pull_bundle(
+    fm_id: str,
+    attachment_filename: str,
+    attachments: Any,
+) -> None:
+    """Pull the .flowmsg bundle in the background when the FM carries an
+    asset-entity TYPE_ID attachment. No-op otherwise — keeps media-bearing
+    FMs on the manual-download path.
+
+    Intentionally swallows exceptions: the eager pull is best-effort. If it
+    fails the user can still trigger the manual download from the file chip
+    (or the next ``notification_scanner`` sweep will retry).
+    """
+    if not attachment_filename:
+        return
+    if not _has_asset_typeid_attachment(attachments):
+        return
+    if fm_id in _INFLIGHT_BUNDLE_PULLS:
+        return
+    _INFLIGHT_BUNDLE_PULLS.add(fm_id)
+    try:
+        from flow_sdk.app.actions.flow_message_action import _download_and_unpack_bundle
+        await _download_and_unpack_bundle(fm_id, attachment_filename)
+        logger.info("[bridge] eager bundle pulled fm=%s", fm_id)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[bridge] eager bundle pull failed fm=%s (non-fatal): %s", fm_id, e)
+    finally:
+        _INFLIGHT_BUNDLE_PULLS.discard(fm_id)
+
+
 @dataclass
 class _Subscription:
     """Internal record for ``HubWsBridge.subscribe()`` filters."""
@@ -326,6 +404,18 @@ class HubWsBridge:
 
             asyncio.create_task(_persist_inbound())
 
+            # Eager bundle pull for asset-bearing FMs — see
+            # ``_maybe_eager_pull_bundle``. Only fires when body_status is
+            # already READY at CREATE time (the sender uploaded before our
+            # bridge saw the message); the READY transition for messages we
+            # observed mid-upload arrives as an UPDATE op handled below.
+            if payload.get("body_status") == "ready":
+                asyncio.create_task(_maybe_eager_pull_bundle(
+                    fm_id,
+                    (payload.get("attachment_filename") or "").strip(),
+                    payload.get("attachment") or [],
+                ))
+
             # Auto-ack delivery — receiver-side acks are the only signal that
             # makes the sender's UI tick from ✓ to ✓✓. Skip if the local user
             # IS the sender (hub ignores caller_is_sender anyway, but skipping
@@ -352,6 +442,7 @@ class HubWsBridge:
                 return
             local_user = await User.get_local()
             someone_typeid = local_user.typeid if local_user else None
+            prev_body_status = getattr(existing, "body_status", None)
             for field in (
                 "delivery_status",
                 "delivered_at",
@@ -364,6 +455,16 @@ class HubWsBridge:
                 if field in data:
                     setattr(existing, field, data[field])
             await existing.save(someone_typeid, notify=True)
+            # Body just landed on the hub — pull it now so asset chips become
+            # clickable without a refresh. ``_maybe_eager_pull_bundle`` is a
+            # no-op when the FM carries no asset TYPE_ID attachments.
+            new_body_status = getattr(existing, "body_status", None)
+            if new_body_status == "ready" and prev_body_status != "ready":
+                asyncio.create_task(_maybe_eager_pull_bundle(
+                    fm_id,
+                    (getattr(existing, "attachment_filename", "") or "").strip(),
+                    getattr(existing, "attachment", None) or [],
+                ))
             return
 
         if op == "delete":
