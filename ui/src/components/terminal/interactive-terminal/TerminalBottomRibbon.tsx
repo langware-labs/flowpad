@@ -21,6 +21,7 @@ interface TerminalBottomRibbonProps {
 }
 
 const RIBBON_TABS: SideTabIdType[] = [
+  SideTabId.Context,
   SideTabId.Git,
   SideTabId.Prompts,
   SideTabId.Files,

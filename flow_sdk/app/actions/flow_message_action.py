@@ -79,8 +79,8 @@ async def handle_upload_flow_message(file, overwrite: bool) -> ApiResponse:
     finally:
         tmp_path.unlink(missing_ok=True)
 
-    task_id = next((c.id for c in fm.context_entities if c.type == BuiltinEntityType.TASK.value), None)
-    conv_id = next((c.id for c in fm.context_entities if c.type == BuiltinEntityType.CONVERSATION.value), None)
+    task_id = next((c.id for c in fm.shared_context_entities if c.type == BuiltinEntityType.TASK.value), None)
+    conv_id = next((c.id for c in fm.shared_context_entities if c.type == BuiltinEntityType.CONVERSATION.value), None)
 
     return ApiSuccessResponse(data={
         "message_id": fm.id,
@@ -120,8 +120,9 @@ async def handle_create_task_bundle(
         "title": task_title,
         "shared_by_id": sender_id,
         "team_space_id": team_space_id or None,
-        # spec_id consolidated into ``context_entities``.
-        "context_entities": [f"spec-{spec.id}"],
+        # spec_id consolidated into ``shared_context_entities`` — published
+        # with the task wherever it travels.
+        "shared_context_entities": [f"spec-{spec.id}"],
     })
     task.id = Task.allocate_id(task.model_dump())
     task = await task.save(someone_typeid)
@@ -134,7 +135,7 @@ async def handle_create_task_bundle(
 
     conv_id = Conversation.allocate_id({
         "project_id": project_id,
-        "context_entities": [f"task-{task.id}"],
+        "shared_context_entities": [f"task-{task.id}"],
     })
     task_typeid = TypeId(type=BuiltinEntityType.TASK.value, id=task.id)
     conv = await ensure_conversation_entity(
@@ -142,7 +143,7 @@ async def handle_create_task_bundle(
         project_id=project_id, someone_typeid=someone_typeid,
     )
     await task.attach_child(conv)
-    task.add_context_entity(TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv.id))
+    task.add_shared_context_entities(TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv.id))
     task = await task.save(someone_typeid)
 
     # 4. Materialize the first FlowMessage through the unified write path.
@@ -157,7 +158,7 @@ async def handle_create_task_bundle(
         {
             "id": fm_id,
             "text": message or f"Task: {task_title}",
-            "context_entities": [task_typeid, TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv.id)],
+            "shared_context_entities": [task_typeid, TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv.id)],
             "attachment": attachments,
             "sender_id": sender_id,
             "sender_name": sender_name,
@@ -283,7 +284,7 @@ async def handle_open_flow_message(fm_id: str) -> ApiResponse:
     task_id = ""
     local_fm = await FlowMessage.get_one({"id": fm_id})
     if local_fm:
-        for ctx in (local_fm.context_entities or []):
+        for ctx in (local_fm.shared_context_entities or []):
             t = getattr(ctx, "type", None)
             if t == BuiltinEntityType.CONVERSATION.value and not conversation_id:
                 conversation_id = getattr(ctx, "id", "") or ""
@@ -292,7 +293,14 @@ async def handle_open_flow_message(fm_id: str) -> ApiResponse:
     else:
         # Fall back to the hub's context list (string typeids like
         # "conversation-<uuid>"). Format kept loose to tolerate variations.
-        for raw in ((data or {}).get("context_entities") or []):
+        # Accept both the new ``shared_context_entities`` key and the legacy
+        # ``context_entities`` key in case the hub hasn't fully cut over.
+        hub_ctx = (
+            (data or {}).get("shared_context_entities")
+            or (data or {}).get("context_entities")
+            or []
+        )
+        for raw in hub_ctx:
             s = raw if isinstance(raw, str) else str(raw)
             if s.startswith(f"{BuiltinEntityType.CONVERSATION.value}-") and not conversation_id:
                 conversation_id = s.split("-", 1)[1]
@@ -1074,15 +1082,25 @@ async def _download_and_unpack_bundle(
 
 
 async def handle_inbox_list() -> ApiResponse:
-    """Return all non-archived received FlowMessages (excluding sent), newest first."""
+    """Return non-archived received FlowMessages whose Conversation exists locally, newest first.
+
+    FMs whose ``conversation_id`` does not resolve to a locally-known Conversation
+    are filtered out so the sidebar badge stays aligned with what InboxView can
+    actually render (which iterates Conversation entities). Without this gate the
+    badge counted orphan FMs the user had no way to open or dismiss.
+    """
     from flow_sdk.db.drivers.query import QueryFilter
     current_user = await User.get_one({"uname": "local"})
     current_user_id = current_user.id if current_user else None
     flt = QueryFilter(type=BuiltinEntityType.FLOW_MESSAGE.value)
     all_messages = await FlowMessage.get_all(flt)
+    conv_flt = QueryFilter(type=BuiltinEntityType.CONVERSATION.value)
+    known_conv_ids = {c.id for c in await Conversation.get_all(conv_flt)}
     messages = [
         m for m in all_messages
-        if not m.is_archived and m.sender_id != current_user_id
+        if not m.is_archived
+        and m.sender_id != current_user_id
+        and m.conversation_id in known_conv_ids
     ]
     messages.sort(key=lambda m: m.created_date or "", reverse=True)
     return ApiSuccessResponse(data=[m.model_dump(mode="json") for m in messages])
@@ -1166,11 +1184,16 @@ async def handle_inbox_open(fm_id: str) -> ApiResponse:
     local_fm = await FlowMessage.get_one({"id": fm_id})
     if local_fm:
         attachment_filename = (local_fm.attachment_filename or "").strip()
-        raw_context = [str(c) for c in (local_fm.context_entities or [])]
+        raw_context = [str(c) for c in (local_fm.shared_context_entities or [])]
     else:
         hub_data = await hub_get(BuiltinEntityType.FLOW_MESSAGE, fm_id)
         attachment_filename = ((hub_data or {}).get("attachment_filename") or "").strip()
-        raw_context = (hub_data or {}).get("context_entities") or []
+        # Tolerate both new and legacy hub field names during transition.
+        raw_context = (
+            (hub_data or {}).get("shared_context_entities")
+            or (hub_data or {}).get("context_entities")
+            or []
+        )
 
     task_id = None
     conv_id = None
@@ -1521,11 +1544,12 @@ async def _materialize_invitation(
 
     # Materialize the embedded preview FlowMessage. The UI keys off
     # ``kind='invitation'`` to render the invitation row, and reads the
-    # Invitation TypeId out of ``context_entities`` for the Accept button.
-    # notify=False here too — the explicit CREATE ops below announce the
-    # FlowMessage and Conversation together, in load-bearing order, only
-    # once the conversation already carries its invitation-kind first
-    # message. Without this the strip/inbox briefly render a navigable row.
+    # Invitation TypeId out of ``shared_context_entities`` for the Accept
+    # button. notify=False here too — the explicit CREATE ops below
+    # announce the FlowMessage and Conversation together, in load-bearing
+    # order, only once the conversation already carries its
+    # invitation-kind first message. Without this the strip/inbox briefly
+    # render a navigable row.
     preview = hub_inv.get("preview_message")
     invitation_typeid = f"{LocalInvitation.get_type()}-{inv_id}"
     inv_fm = None
@@ -1533,10 +1557,16 @@ async def _materialize_invitation(
         msg_payload = dict(preview)
         msg_payload.setdefault("text", local_inv.message or "You've been invited to a conversation")
         msg_payload["kind"] = FlowMessageKind.INVITATION.value
-        existing_ctx = msg_payload.get("context_entities") or []
+        # Accept either the new or legacy field name on the incoming hub
+        # preview, then normalize on the new name for the local write.
+        existing_ctx = (
+            msg_payload.pop("shared_context_entities", None)
+            or msg_payload.pop("context_entities", None)
+            or []
+        )
         if invitation_typeid not in existing_ctx:
             existing_ctx = list(existing_ctx) + [invitation_typeid]
-        msg_payload["context_entities"] = existing_ctx
+        msg_payload["shared_context_entities"] = existing_ctx
         msg_payload["remote"] = True
         try:
             inv_fm = await materialize_flow_message(
@@ -1554,7 +1584,7 @@ async def _materialize_invitation(
         synth_payload = {
             "text": (local_inv.message or "You've been invited to a conversation"),
             "kind": FlowMessageKind.INVITATION.value,
-            "context_entities": [invitation_typeid],
+            "shared_context_entities": [invitation_typeid],
             "remote": False,
         }
         try:
@@ -2243,7 +2273,7 @@ async def handle_derive_task(fm_id: str, someone_typeid: str) -> ApiResponse:
         visible=False,
         project_id=project_id,
         target_typeid_str=fm_typeid_str,
-        context_entities=[fm_typeid],
+        shared_context_entities=[fm_typeid],
     )
     await process.save(someone_typeid)
     process_typeid = TypeId(type=BuiltinEntityType.AGENTIC_PROCESS.value, id=process.id)
@@ -2254,11 +2284,19 @@ async def handle_derive_task(fm_id: str, someone_typeid: str) -> ApiResponse:
         "title": placeholder_title,
         "description": fm_text or None,
         "project_id": project_id,
-        "context_entities": [fm_typeid, process_typeid],
+        "shared_context_entities": [fm_typeid, process_typeid],
     })
     task.id = Task.allocate_id(task.model_dump())
     task = await task.save(someone_typeid)
-    task_typeid_str = str(TypeId(type=BuiltinEntityType.TASK.value, id=task.id))
+    task_typeid = TypeId(type=BuiltinEntityType.TASK.value, id=task.id)
+    task_typeid_str = str(task_typeid)
+
+    # Push the new spawn-children back onto the source FlowMessage's shared
+    # bucket so the Private Context panel can render them via a synchronous
+    # read of ``fm.shared_context_entities`` — no candidate-pull-and-filter
+    # over every Task/AgenticProcess in the project.
+    if fm.add_shared_context_entities(process_typeid, task_typeid):
+        await fm.save(someone_typeid)
 
     instruction = (
         "A Task entity has been pre-created with id `" + task.id + "` "

@@ -130,6 +130,16 @@ _Generated Tue May 12 01:43:24 IDT 2026_
 ## triggers (1 specs)
 - `triggers/trigger_process_target_typeid_str.md`
 
+## whiteboard (8 specs)
+- `whiteboard/smoke.md`
+- `whiteboard/create_persist.md`
+- `whiteboard/mermaid_sync.md`
+- `whiteboard/wiki_integration.md`
+- `whiteboard/ui_ux.md`
+- `whiteboard/scope.md`
+- `whiteboard/edge_cases.md`
+- `whiteboard/multi_tab.md` [skip:harness]
+
 ## workflow (2 specs)
 - `workflow/workflow_entity_create.md`
 - `workflow/workflow_run_button.md`

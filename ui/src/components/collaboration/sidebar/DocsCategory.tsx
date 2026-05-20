@@ -1,6 +1,6 @@
 import { ChevronRight, FileText, Folder } from 'lucide-react';
 import { useMemo, useEffect, useState } from 'react';
-import { config, Markdown, Project, TypeId } from '@sdk';
+import { apiClient, Markdown, Project, TypeId } from '@sdk';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { useQuery } from '@tanstack/react-query';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -152,12 +152,10 @@ export function DocsCategory({ projectId, onOpenTab }: Props) {
   const { data: rows = [], isLoading } = useQuery<Markdown[]>({
     queryKey: ['docs-include-system'],
     queryFn: async () => {
-      const url = `${config.SERVER_URL}${config.API_PREFIXES.graph}/markdown?include_system=true&limit=5000`;
-      const resp = await fetch(url);
-      if (!resp.ok) throw new Error(`Failed to load docs: ${resp.status}`);
-      const body = await resp.json();
-      const records = (body.data ?? []) as Partial<Markdown>[];
-      return records.map((row) => new Markdown(row));
+      const records = await apiClient.get<Partial<Markdown>[]>(
+        '/graph/markdown?include_system=true&limit=5000',
+      );
+      return (records ?? []).map((row) => new Markdown(row));
     },
     staleTime: 30_000,
   });

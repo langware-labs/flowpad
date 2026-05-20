@@ -404,7 +404,7 @@ class ScanActionsMixin:
             # the tab strip races a Phase-B refresh and ends up empty.
             #
             # Headless (visible=False) processes manage their lifecycle
-            # per-turn via ``run_print_turn`` — pre-spawning a PTY here would
+            # per-turn via ``headless_prompt`` — pre-spawning a PTY here would
             # claim a session_id without ever writing a JSONL, leaving the
             # next ``/prompt`` to land on a stale session and emit nothing.
             if visible:

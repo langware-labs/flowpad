@@ -17,6 +17,52 @@ import pytest
 # Set environment variable for testing
 os.environ["TESTING"] = "true"
 
+
+# -----------------------------------------------------------------------------
+# CRITICAL: force keyring to an in-memory backend BEFORE any flow_sdk import.
+#
+# pytest sets PYTEST_CURRENT_TEST per-test, which makes flow_sdk's instance
+# resolver pick instance_name="test". Any test that reaches enable_secrets()
+# or instance.sod without the sod_env fixture would otherwise hit the real
+# macOS Keychain with the brand-new "Flowpad.ai.sod_key" service — and if the
+# login keychain is in any unusual state, macOS pops a *catastrophic*
+# "Keychain Not Found" dialog (which offers "Reset To Defaults" → wipes ALL
+# stored passwords). The dialog re-pops per test on Cancel.
+#
+# This in-memory backend is registered BEFORE any flow_sdk import so the
+# real OS keychain is never reachable from the test process. Per-test
+# sod_env fixture monkeypatches keyring.get_password/set_password on top of
+# this; both layers are belt-and-suspenders.
+# -----------------------------------------------------------------------------
+import keyring  # noqa: E402
+from keyring.backend import KeyringBackend  # noqa: E402
+from keyring.errors import PasswordDeleteError  # noqa: E402
+
+
+class _InMemoryKeyring(KeyringBackend):
+    """Process-local in-memory keyring backend.
+
+    Replaces the real OS keyring globally for the test session. Tests that
+    need to inspect keyring contents directly can read ``_InMemoryKeyring._store``.
+    """
+
+    priority = 1  # type: ignore[assignment]
+    _store: dict[tuple[str, str], str] = {}
+
+    def get_password(self, service, username):
+        return self._store.get((service, username))
+
+    def set_password(self, service, username, password):
+        self._store[(service, username)] = password
+
+    def delete_password(self, service, username):
+        if (service, username) not in self._store:
+            raise PasswordDeleteError(f"no entry for {service}/{username}")
+        del self._store[(service, username)]
+
+
+keyring.set_keyring(_InMemoryKeyring())
+
 from flow_sdk.config import FLOWPAD_TEMP_DIR
 
 # Ensure tests use a separate DB path (prevents conflicts with a running dev server)
@@ -144,4 +190,61 @@ def isolated_records_root(tmp_path, monkeypatch):
     monkeypatch.setenv("FS_RECORD_PATH", str(tmp_path / "records"))
     reset_instance_settings()
     yield tmp_path / "records"
+    reset_instance_settings()
+
+
+# ----------------------------------------------------------------------
+# Phase C: per-instance sod sandbox — usable from every test directory.
+#
+# Sets up FLOW_HOME=<tmp_path>, FLOW_INSTANCE=test-<uuid>, in-memory keyring
+# for the per-instance Fernet key, and calls enable_secrets() so the consent
+# gate is open. Yields the active InstanceSettings.
+#
+# Replaces the per-file ``memory_keyring`` fixtures that patched
+# ``credentials_mod.keyring`` — that import is gone in Phase C.
+# ----------------------------------------------------------------------
+
+@pytest.fixture
+def sod_env(monkeypatch, tmp_path):
+    import uuid as _uuid
+    from pathlib import Path
+
+    instance_name = f"test-{_uuid.uuid4().hex[:8]}"
+    monkeypatch.setenv("FLOW_HOME", str(tmp_path))
+    monkeypatch.setenv("FLOW_INSTANCE", instance_name)
+    monkeypatch.delenv("FLOWPAD_DEV", raising=False)
+    monkeypatch.delenv("FLOWPAD_TEST", raising=False)
+
+    from flow_sdk.instance_settings import (
+        get_instance_settings,
+        reset_instance_settings,
+    )
+    reset_instance_settings()
+
+    store: dict[tuple[str, str], str] = {}
+    import keyring as _keyring
+    import keyring.errors as _keyring_errors
+
+    def _get(service, account):
+        return store.get((service, account))
+
+    def _set(service, account, value):
+        store[(service, account)] = value
+
+    def _del(service, account):
+        if (service, account) not in store:
+            raise _keyring_errors.PasswordDeleteError("not in fake")
+        del store[(service, account)]
+
+    monkeypatch.setattr(_keyring, "get_password", _get)
+    monkeypatch.setattr(_keyring, "set_password", _set)
+    monkeypatch.setattr(_keyring, "delete_password", _del)
+
+    from flow_sdk.fs_store import set_default_records_root
+    set_default_records_root(Path(tmp_path) / "records")
+
+    from flow_sdk.cli.auth.secrets import enable_secrets
+    assert enable_secrets() is True
+
+    yield get_instance_settings()
     reset_instance_settings()

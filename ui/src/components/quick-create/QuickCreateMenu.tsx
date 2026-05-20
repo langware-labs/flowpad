@@ -66,7 +66,7 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
     // full UI registry — it's the best-effort source of truth.
     const enforce = serverCreatable.size > 0;
     return QUICK_CREATE_REGISTRY.filter((d) => !enforce || serverCreatable.has(d.type)).map((d) => {
-      const label = serverTypes.find((t) => t.type_name === d.type)?.label ?? d.label;
+      const label = d.label ?? serverTypes.find((t) => t.type_name === d.type)?.label;
       return { ...d, displayLabel: label };
     });
   }, [serverTypes]);

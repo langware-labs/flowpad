@@ -9,8 +9,10 @@ export interface SendReplyExtras {
   promptFiles?: File[];
   /** TypeId strings (e.g. "skill-<uuid>") to attach as TYPE_ID attachments. */
   assetReferences?: string[];
-  /** Additional TypeId strings to attach as context entities on the FlowMessage (deduped against task/conversation). */
-  contextEntities?: string[];
+  /** Additional TypeId strings to publish in the FlowMessage's *shared*
+   *  context (deduped against task/conversation TypeIds already stamped by
+   *  the backend). The wire field is ``shared_context_entities``. */
+  sharedContextEntities?: string[];
 }
 
 export interface SendReplyTarget {
@@ -46,7 +48,7 @@ export async function sendReply(
     (files && files.length > 0) ||
     (extras?.promptFiles && extras.promptFiles.length > 0) ||
     hasAssetRefs;
-  const ctxEntities = (extras?.contextEntities ?? []).filter(Boolean);
+  const sharedCtxEntities = (extras?.sharedContextEntities ?? []).filter(Boolean);
   if (hasFiles) {
     const form = new FormData();
     if (taskId) form.append('task_id', taskId);
@@ -61,8 +63,8 @@ export async function sendReply(
     if (hasAssetRefs) {
       form.append('asset_references', JSON.stringify(extras!.assetReferences));
     }
-    for (const ce of ctxEntities) {
-      form.append('context_entities', ce);
+    for (const ce of sharedCtxEntities) {
+      form.append('shared_context_entities', ce);
     }
     action.bodyParameters = form;
     // File sends are multipart — binary bodies only travel over REST.
@@ -71,7 +73,7 @@ export async function sendReply(
     const body: Record<string, unknown> = { message };
     if (taskId) body.task_id = taskId;
     if (extras?.promptText) body.prompt_text = extras.promptText;
-    if (ctxEntities.length > 0) body.context_entities = ctxEntities;
+    if (sharedCtxEntities.length > 0) body.shared_context_entities = sharedCtxEntities;
     action.bodyParameters = body;
     // Text-only send: prefer the WebSocket hop when the socket is open
     // (skips an HTTP round-trip), fall back to REST otherwise.

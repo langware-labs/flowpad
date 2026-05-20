@@ -67,8 +67,7 @@ export interface IShell extends IEntity {
   project_id?: string | null;
   collaboration_room_id?: string | null;
   tab_order?: number;
-  pty_rename?: boolean;
-  user_renamed?: boolean;
+  auto_rename?: boolean;
   claude_session_id?: string | null;
   created_at?: string | null;
   last_active_at?: string | null;
@@ -113,8 +112,7 @@ export class Shell extends APIEntity<Shell> implements IShell {
   project_id: string | null = null;
   collaboration_room_id: string | null = null;
   tab_order: number = 0;
-  pty_rename: boolean = true;
-  user_renamed: boolean = false;
+  auto_rename: boolean = true;
   claude_session_id: string | null = null;
   created_at: string | null = null;
   last_active_at: string | null = null;
@@ -135,14 +133,6 @@ export class Shell extends APIEntity<Shell> implements IShell {
 
   get computeNodeTypeId(): TypeId | null {
     return this.compute_node_id ? new TypeId('compute_node', this.compute_node_id) : null;
-  }
-
-  get ptyRename(): boolean {
-    return this.pty_rename;
-  }
-
-  set ptyRename(value: boolean) {
-    this.pty_rename = value;
   }
 
   constructor(entity: Partial<IShell> = {}) {
@@ -382,21 +372,6 @@ export class Shell extends APIEntity<Shell> implements IShell {
       this.status = previousStatus;
       throw error;
     }
-  }
-
-  async updateDisplay(fields: {
-    name?: string;
-    tab_order?: number;
-    is_pty?: boolean;
-    pty_rename?: boolean;
-    ptyRename?: boolean;
-  }): Promise<Shell> {
-    const action = new ActionInfo('update-display', Shell.type, this.id, 'POST');
-    action.bodyParameters = fields;
-    const result = await dataManager.callAction<any, Partial<IShell>>(action);
-    Object.assign(this, result ?? fields);
-    dataManager.notifyEntityChanged(this);
-    return this;
   }
 
   async run(command: string): Promise<ShellResult> {

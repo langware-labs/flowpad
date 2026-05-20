@@ -1,8 +1,9 @@
 import { ContextEntitiesEnum, dataContext, Project } from '@sdk';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
-import { useAllTerminals, type TerminalTab } from '@src/hooks/useActiveTerminals';
-import { Layers } from 'lucide-react';
+import { toast } from '@src/hooks/use-toast';
+import { useTerminalProjectBuckets, type TerminalProjectBucket } from '@src/hooks/useActiveTerminals';
+import { Layers, Loader2, RotateCcw } from 'lucide-react';
 import React, { useMemo, useState } from 'react';
 
 interface ProjectsCounterChipProps {
@@ -10,54 +11,48 @@ interface ProjectsCounterChipProps {
   currentProjectId?: string | null;
 }
 
-interface Row {
-  projectId: string;
-  name: string;
-  tabs: TerminalTab[];
+// Sort: current project first, then live before loading/missing, then by name.
+const STATE_RANK: Record<TerminalProjectBucket['state'], number> = {
+  live: 1,
+  loading: 2,
+  missing: 3,
+};
+
+function bucketDisplayName(bucket: TerminalProjectBucket): string {
+  return bucket.project?.getDisplayName() ?? bucket.project?.name ?? bucket.projectId;
 }
 
-function tabProjectId(tab: TerminalTab): string | null {
-  return tab.projectId ?? tab.shell?.project_id ?? tab.agenticProcess?.project_id ?? null;
+function compareBuckets(
+  a: TerminalProjectBucket,
+  b: TerminalProjectBucket,
+  currentProjectId: string | null | undefined,
+): number {
+  const currentDiff =
+    Number(b.projectId === currentProjectId) - Number(a.projectId === currentProjectId);
+  if (currentDiff) return currentDiff;
+  const stateDiff = STATE_RANK[a.state] - STATE_RANK[b.state];
+  if (stateDiff) return stateDiff;
+  return bucketDisplayName(a).localeCompare(bucketDisplayName(b));
 }
 
-function resolveProjectName(projectId: string): string {
-  const project = Project.getByIdFromCache<Project>(projectId);
-  return project?.getDisplayName() ?? project?.name ?? projectId.slice(0, 8);
+function bucketRowLabel(bucket: TerminalProjectBucket): string {
+  if (bucket.state === 'live') return bucketDisplayName(bucket);
+  if (bucket.state === 'loading') return 'Loading…';
+  return `Project unavailable (${bucket.projectId.slice(0, 8)})`;
 }
 
 export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({ currentProjectId }) => {
   const [open, setOpen] = useState(false);
-  const { data: tabs } = useAllTerminals();
+  const [recoveringId, setRecoveringId] = useState<string | null>(null);
+  const { buckets } = useTerminalProjectBuckets();
 
-  const { rows, projectTotal, terminalTotal } = useMemo(() => {
-    const byProject = new Map<string, TerminalTab[]>();
-    for (const tab of tabs) {
-      const pid = tabProjectId(tab);
-      // Project consolidation (Path A, 2026-05-09): every Shell carries a
-      // real ``project_id``. The historical skip-on-null guard here is
-      // retained as defensive code only — it should be unreachable now.
-      // Phase 7 removes it once we've verified no legacy null tabs reach
-      // the chip in production traces.
-      if (!pid) continue;
-      const bucket = byProject.get(pid);
-      if (bucket) bucket.push(tab);
-      else byProject.set(pid, [tab]);
-    }
-    const rows: Row[] = Array.from(byProject.entries()).map(([projectId, tabs]) => ({
-      projectId,
-      name: resolveProjectName(projectId),
-      tabs,
-    }));
-    rows.sort((a, b) => {
-      if (a.projectId === currentProjectId) return -1;
-      if (b.projectId === currentProjectId) return 1;
-      if (b.tabs.length !== a.tabs.length) return b.tabs.length - a.tabs.length;
-      return a.name.localeCompare(b.name);
-    });
-    const terminalTotal = rows.reduce((sum, r) => sum + r.tabs.length, 0);
-    return { rows, projectTotal: rows.length, terminalTotal };
-  }, [tabs, currentProjectId]);
+  const sorted = useMemo(
+    () => [...buckets].sort((a, b) => compareBuckets(a, b, currentProjectId)),
+    [buckets, currentProjectId],
+  );
 
+  const terminalTotal = buckets.reduce((sum, b) => sum + b.tabs.length, 0);
+  const projectTotal = buckets.length;
   const isEmpty = projectTotal === 0;
   const tooltipText = `${projectTotal} active project${projectTotal === 1 ? '' : 's'} with ${terminalTotal} terminal${
     terminalTotal === 1 ? '' : 's'
@@ -89,18 +84,45 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({ curren
     );
   }
 
-  const handleSelect = async (row: Row) => {
+  const switchToProject = async (project: Project) => {
     setOpen(false);
-    const project = Project.getByIdFromCache<Project>(row.projectId);
-    if (!project) return;
-    // Pure context flip — TabbedTerminal self-heals: when its active shell
-    // falls out of the new project's strip, it picks the first tab and
-    // updates URL + activeShellId. Keeps this chip's concern minimal.
     await dataContext.setContextEntityTypeId(
       ContextEntitiesEnum.CurrentProjectTypeId,
       project.typeId,
     );
     dataContext.setWorkdir(project.fs_storage_mount_path ?? null);
+  };
+
+  const handleRecover = async (bucket: TerminalProjectBucket) => {
+    setRecoveringId(bucket.projectId);
+    try {
+      const recovered = await bucket.recover();
+      if (!recovered) {
+        toast({
+          title: 'Recovery failed',
+          description: `Couldn't recover the project for ${bucket.tabs.length} terminal${
+            bucket.tabs.length === 1 ? '' : 's'
+          } (${bucket.projectId.slice(0, 8)}).`,
+          variant: 'destructive',
+        });
+        return;
+      }
+      await switchToProject(recovered);
+    } finally {
+      setRecoveringId(null);
+    }
+  };
+
+  const handleSelect = async (bucket: TerminalProjectBucket) => {
+    if (bucket.state === 'live' && bucket.project) {
+      await switchToProject(bucket.project);
+      return;
+    }
+    if (bucket.state === 'missing') {
+      await handleRecover(bucket);
+      return;
+    }
+    // 'loading' — ignore; spinner is rendered in the row.
   };
 
   return (
@@ -117,6 +139,9 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({ curren
               >
                 <Layers className="h-3 w-3" />
                 {projectTotal}
+                <sub className="ml-0.5 text-[9px] leading-none text-muted-foreground">
+                  {terminalTotal}
+                </sub>
               </button>
             </PopoverTrigger>
           </TooltipTrigger>
@@ -126,25 +151,41 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({ curren
           align="start"
           side="bottom"
           sideOffset={6}
-          className="w-64 p-1"
+          className="w-72 p-1"
           data-testid="projects-counter-popover"
         >
           <ul className="flex flex-col">
-            {rows.map((row) => {
-              const isCurrent = row.projectId === currentProjectId;
+            {sorted.map((bucket) => {
+              const isCurrent = bucket.projectId === currentProjectId;
+              const isRecovering = recoveringId === bucket.projectId;
+              const isMissing = bucket.state === 'missing';
+              let leadingIcon: React.ReactNode = null;
+              if (isMissing) {
+                leadingIcon = isRecovering
+                  ? <Loader2 className="h-3 w-3 shrink-0 animate-spin" />
+                  : <RotateCcw className="h-3 w-3 shrink-0" />;
+              }
+              const rowClass = `flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted ${
+                isCurrent ? 'bg-muted/60 font-medium' : ''
+              } ${isMissing ? 'text-muted-foreground' : ''}`;
               return (
-                <li key={row.projectId}>
+                <li key={bucket.projectId}>
                   <button
                     type="button"
                     aria-current={isCurrent ? 'true' : undefined}
-                    onClick={() => handleSelect(row)}
-                    className={`flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-sm hover:bg-muted ${
-                      isCurrent ? 'bg-muted/60 font-medium' : ''
-                    }`}
+                    disabled={bucket.state === 'loading' || isRecovering}
+                    onClick={() => handleSelect(bucket)}
+                    className={rowClass}
                   >
-                    <span className="min-w-0 flex-1 truncate">{row.name}</span>
+                    {leadingIcon}
+                    <span className="min-w-0 flex-1 truncate">{bucketRowLabel(bucket)}</span>
+                    {isMissing && !isRecovering ? (
+                      <span className="shrink-0 text-[10px] uppercase tracking-wide text-muted-foreground">
+                        recover
+                      </span>
+                    ) : null}
                     <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-xs tabular-nums text-muted-foreground">
-                      {row.tabs.length}
+                      {bucket.tabs.length}
                     </span>
                   </button>
                 </li>

@@ -93,7 +93,7 @@ async def test_scan_create_process_fresh_path_constructs_with_post_refactor_fiel
 @pytest.mark.asyncio
 async def test_scan_create_process_headless_does_not_eagerly_start():
     """Headless (visible=False) processes manage their lifecycle per-turn via
-    ``run_print_turn``. Eagerly calling ``start()`` here pre-allocates a
+    ``headless_prompt``. Eagerly calling ``start()`` here pre-allocates a
     session_id without ever writing a JSONL, which then makes the next
     ``/prompt`` land on a stale session and emit no assistant turn."""
     node = _make_compute_node()

@@ -20,6 +20,8 @@ import { scopeTag } from './columns/columnHelpers';
 import type { SearchResult } from '@src/hooks/use-asset-search';
 import { useClaudeProjectList, getProjectDisplayName } from '@src/hooks/use-claude-projects';
 import { projectIdForPath } from './utils';
+import { useContext } from '@src/hooks/useContext';
+import { fsManager } from '@sdk';
 
 interface Props {
   results: SearchResult[];
@@ -45,6 +47,31 @@ export function AssetDataTable({ results, total, page, pageSize, onPageChange, r
   const typeColumns = getColumns(recordType);
   const colActions: ColumnActions = { filterByProject: onProjectFilter };
   const totalPages = Math.ceil(total / pageSize);
+  const { computeNode } = useContext();
+
+  // Resolve the folder to reveal externally for a row: parent directory of the
+  // asset's source path. Falls back through the same fields the backend uses
+  // when populating asset_ref.
+  const folderPathForRow = React.useCallback((r: SearchResult): string | null => {
+    const raw = r.asset_ref || r.file_path || r.work_dir || '';
+    if (!raw) return null;
+    const trimmed = raw.replace(/\/+$/, '');
+    if (!trimmed) return null;
+    const lastSlash = trimmed.lastIndexOf('/');
+    if (lastSlash <= 0) return trimmed;
+    return trimmed.slice(0, lastSlash);
+  }, []);
+
+  const openScopeFolder = React.useCallback(async (r: SearchResult) => {
+    if (!computeNode?.typeId) return;
+    const folder = folderPathForRow(r);
+    if (!folder) return;
+    try {
+      await fsManager.open(computeNode.typeId, folder.replace(/^\//, ''));
+    } catch (err) {
+      console.error('[AssetDataTable] Failed to open scope folder:', err);
+    }
+  }, [computeNode?.typeId, folderPathForRow]);
 
   // Build a project_id → display-name lookup so the scope column can render
   // human-readable project names instead of the project_id UUID. The API today
@@ -63,19 +90,35 @@ export function AssetDataTable({ results, total, page, pageSize, onPageChange, r
 
   const renderScope = React.useCallback(
     (r: SearchResult): React.ReactNode => {
-      if (r.scope === 'user') return scopeTag('user');
-      if (r.scope === 'project') {
-        const name = (r.project_name || (r.project_id ? projectNameById.get(r.project_id) : undefined)) ?? r.project_id ?? '';
-        return React.createElement(
-          'span',
-          { style: { display: 'inline-flex', alignItems: 'center', gap: '6px' } },
-          scopeTag('project'),
-          name ? React.createElement('span', { style: { fontSize: '12px', color: '#64748b' } }, name) : null,
-        );
-      }
-      return '—';
+      if (r.scope !== 'user' && r.scope !== 'project') return '—';
+      const folder = folderPathForRow(r);
+      const canOpen = !!computeNode?.typeId && !!folder;
+      const handleClick = (e: React.MouseEvent) => {
+        if (!canOpen) return;
+        e.stopPropagation();
+        void openScopeFolder(r);
+      };
+      const tag = scopeTag(r.scope);
+      const projectLabel = r.scope === 'project'
+        ? ((r.project_name || (r.project_id ? projectNameById.get(r.project_id) : undefined)) ?? r.project_id ?? '')
+        : '';
+      return React.createElement(
+        'span',
+        {
+          onClick: handleClick,
+          title: canOpen ? `Open ${folder} in OS file manager` : undefined,
+          style: {
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '6px',
+            cursor: canOpen ? 'pointer' : 'default',
+          },
+        },
+        tag,
+        projectLabel ? React.createElement('span', { style: { fontSize: '12px', color: '#64748b' } }, projectLabel) : null,
+      );
     },
-    [projectNameById],
+    [projectNameById, folderPathForRow, computeNode?.typeId, openScopeFolder],
   );
 
   const baseColumns = [

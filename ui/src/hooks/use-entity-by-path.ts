@@ -1,4 +1,4 @@
-import { APIEntity, FSRef, config, systemTools } from '@sdk';
+import { APIEntity, FSRef, apiClient, systemTools } from '@sdk';
 import { EntityFactory } from '@sdk/schema/factory';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useMemo } from 'react';
@@ -114,13 +114,11 @@ export function useEntityByPath<T extends APIEntity<T>>(
   } = useQuery<T[]>({
     queryKey: bulkKey,
     queryFn: async () => {
-      const url = `${config.SERVER_URL}${config.API_PREFIXES.graph}/${type}?include_system=true&limit=5000`;
-      const resp = await fetch(url);
-      if (!resp.ok) throw new Error(`failed to fetch ${type}: ${resp.status}`);
-      const body = await resp.json();
-      const rows = (body.data ?? []) as Array<Record<string, unknown> & { type?: string }>;
+      const rows = await apiClient.get<Array<Record<string, unknown> & { type?: string }>>(
+        `/graph/${type}?include_system=true&limit=5000`,
+      );
       const out: T[] = [];
-      for (const row of rows) {
+      for (const row of rows ?? []) {
         if (!row.type) row.type = type;
         const inst = EntityFactory.createEntity(row as never) as T | undefined;
         if (inst) out.push(inst);

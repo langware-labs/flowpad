@@ -1,6 +1,6 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
-import { ScopeFilterBar } from '@src/components/assets/ScopeFilterBar';
+import { ScopeFilterBar } from '@src/components/scope-filter/ScopeFilterBar';
 
 const EMPTY_SCOPE = { user: true, projects: [] as string[] };
 

@@ -132,6 +132,54 @@ export function useBrowseableTree(roots: BrowseableRoot[]) {
   );
 
   /**
+   * Invalidate a node's cached children. If the node is currently expanded,
+   * its children are re-fetched immediately; expansion state is preserved.
+   * If the node isn't expanded, the next expansion will fetch fresh data.
+   *
+   * Walks every root looking for the node so callers (e.g. refresh-store
+   * listeners) can pass an arbitrary id — they don't need to hold a node ref.
+   *
+   * Bypasses `loadChildren`'s cache-hit shortcut (which would return the
+   * stale "ready" entry from the captured state snapshot) by calling
+   * `node.listChildren` directly.
+   */
+  const invalidate = useCallback(
+    async (nodeId: string): Promise<void> => {
+      const findNode = (n: Browseable): Browseable | null => {
+        if (n.id === nodeId) return n;
+        const cached = state.loadStates.get(n.id);
+        if (cached?.status === 'ready') {
+          for (const c of cached.children) {
+            const hit = findNode(c);
+            if (hit) return hit;
+          }
+        }
+        return null;
+      };
+      let node: Browseable | null = null;
+      for (const root of roots) {
+        node = findNode(root);
+        if (node) break;
+      }
+      inflight.current.delete(nodeId);
+      if (node && node.listChildren && state.expandedIds.has(nodeId)) {
+        setLoadState(nodeId, { status: 'loading' });
+        try {
+          const children = await node.listChildren();
+          setLoadState(nodeId, { status: 'ready', children });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          setLoadState(nodeId, { status: 'error', message });
+        }
+      } else {
+        // Not expanded (or unknown id) — clear cache so next expand fetches.
+        setLoadState(nodeId, { status: 'idle' });
+      }
+    },
+    [roots, state.expandedIds, state.loadStates, setLoadState],
+  );
+
+  /**
    * Expand every ancestor of the node addressed by `pointer`. The first
    * root whose `ownsPointer` returns true is used; its `pathFor` is walked
    * and each non-leaf ancestor is added to `expandedIds`. Cached results
@@ -188,5 +236,6 @@ export function useBrowseableTree(roots: BrowseableRoot[]) {
     collapse,
     toggleExpand,
     expandParentsForPointer,
+    invalidate,
   };
 }

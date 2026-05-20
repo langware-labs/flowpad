@@ -84,15 +84,13 @@ class Task(Entity):
 
     _api_visible: ClassVar[bool] = True
 
-    def _direct_fields_as_typeids(self) -> List[TypeId]:
-        """Project chip-relevant direct fields into the merged context view."""
-        out: List[TypeId] = []
-        if self.project_id:
-            out.append(TypeId(type="project", id=self.project_id))
-        if self.assignee:
-            out.append(TypeId(type="user", id=self.assignee))
-        if self.my_process_id:
-            out.append(TypeId(type="agentic_process", id=self.my_process_id))
-        if self.shared_process_id:
-            out.append(TypeId(type="agentic_process", id=self.shared_process_id))
-        return out
+    # NOTE: per-subclass implicit context projections (project_id /
+    # assignee / my_process_id / shared_process_id) used to live here as
+    # ``_direct_fields_as_typeids``. Implicit projection moved entirely to
+    # the backend base (``Entity.get_implicit_private_context_entities``);
+    # ``project_id`` is now projected automatically for every entity that
+    # has one, so Task gets the project chip for free. The other former
+    # projections (assignee / my_process_id / shared_process_id) were
+    # dropped per "base returns project_id only for now". Reintroduce them
+    # by overriding ``get_implicit_private_context_entities`` on Task and
+    # calling ``super()`` if there's a confirmed UX need.

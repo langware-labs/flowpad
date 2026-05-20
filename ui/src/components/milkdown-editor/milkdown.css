@@ -102,15 +102,41 @@
 }
 
 .milkdown-editor-wrapper .ProseMirror blockquote {
-  border-left: 3px solid hsl(var(--border));
-  padding-left: 1rem;
-  margin-left: 0;
+  border-inline-start: 3px solid hsl(var(--border));
+  padding-inline-start: 1rem;
+  margin-inline-start: 0;
   color: hsl(var(--muted-foreground));
+}
+
+/*
+ * Container-level direction inheritance for blockquote and list_item.
+ *
+ * The schema only carries `dir` on `paragraph` and `heading` (round-trip
+ * via HTML wrappers in source markdown). Containers `<blockquote>` and
+ * `<li>` would otherwise stay LTR even when their inner content is RTL,
+ * leaving the quote bar / list bullet on the wrong (visual-left) side
+ * inside a mixed-direction document.
+ *
+ * `:has()` lets the container pick up the inner paragraph's `dir`
+ * attribute purely in CSS. The container's `direction` property then
+ * cascades through `border-inline-start`, `padding-inline-start`, and
+ * `::marker` placement, so the quote bar / bullet flips automatically.
+ *
+ * Supported in Chrome 105+, Safari 15.4+, Firefox 121+ — all of our
+ * targets. No JS required.
+ */
+.milkdown-editor-wrapper .ProseMirror blockquote:has(> p[dir="rtl"]),
+.milkdown-editor-wrapper .ProseMirror li:has(> p[dir="rtl"]) {
+  direction: rtl;
+}
+.milkdown-editor-wrapper .ProseMirror blockquote:has(> p[dir="ltr"]),
+.milkdown-editor-wrapper .ProseMirror li:has(> p[dir="ltr"]) {
+  direction: ltr;
 }
 
 .milkdown-editor-wrapper .ProseMirror ul,
 .milkdown-editor-wrapper .ProseMirror ol {
-  padding-left: 1.5rem;
+  padding-inline-start: 1.5rem;
   margin-bottom: 0.75rem;
 }
 
@@ -150,7 +176,7 @@
 .milkdown-editor-wrapper .ProseMirror td {
   border: 1px solid hsl(var(--border));
   padding: 0.5rem 0.75rem;
-  text-align: left;
+  text-align: start;
 }
 
 .milkdown-editor-wrapper .ProseMirror th {

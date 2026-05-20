@@ -23,10 +23,12 @@ import {
 } from '@src/components/ui/breadcrumb';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import type { AssetFilter, ScopeFilter } from './assetFilter';
+import type { AssetFilter } from './assetFilter';
 import { DEFAULT_ASSET_FILTER } from './assetFilter';
+import { defaultScopeFilter } from '@src/lib/scope-filter';
+import type { ScopeFilter } from '@src/lib/scope-filter';
 import { projectIdForPath } from './utils';
-import { ScopeFilterBar } from './ScopeFilterBar';
+import { ScopeFilterBar } from '@src/components/scope-filter/ScopeFilterBar';
 import { AssetListView } from './AssetListView';
 import { BrowseableTree } from '@src/components/browseable-tree';
 import { assetTypeRoot } from '@src/components/browseable-tree/adapters/assetTypeRoot';
@@ -215,16 +217,15 @@ export function AssetsPage() {
   // Use the canonical synthetic project_id (uuid5 of mount_path) so the
   // selection round-trips with what the indexer stamps on records and what
   // the picker emits — independent of how dataContext bootstraps the Project.
-  // Default to the unrestricted asset filter. Seeding ``projectIds`` to
-  // ``[currentProjectId]`` would silently exclude system-project vaults
-  // (e.g. the Flowpad Assistant docs at ``/dock/assets/list/markdown``),
-  // since ``keepVault`` then only retains vaults whose ``project_id`` is
-  // in the picker selection. The picker remains user-driven for narrowing.
+  const currentProjectId = projectIdForPath(dataContext.project?.fs_storage_mount_path);
+  // Initial scope seeded from the current project so the Project chip's count
+  // is accurate from the first render. Seeding lives in `defaultScopeFilter`
+  // (lib/scope-filter.ts) so every surface gets the same context-aware default
+  // instead of each consumer reinventing it.
   const [assetFilter, setAssetFilter] = useState<AssetFilter>(() => ({
     ...DEFAULT_ASSET_FILTER,
+    scope: defaultScopeFilter(currentProjectId),
   }));
-  // Still derived so ScopeFilterBar can default project-only filtering to the current project.
-  const currentProjectId = projectIdForPath(dataContext.project?.fs_storage_mount_path);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFilters, setSearchFilters] = useState<SearchFilters>({});
   const [selectedResultIndex, setSelectedResultIndex] = useState(-1);

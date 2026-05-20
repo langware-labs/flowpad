@@ -1,45 +1,62 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ProjectsCounterChip } from '@src/components/terminal/ProjectsCounterChip';
-import { useAllTerminals } from '@src/hooks/useActiveTerminals';
+import {
+  useTerminalProjectBuckets,
+  type TerminalProjectBucket,
+} from '@src/hooks/useActiveTerminals';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('@src/hooks/useActiveTerminals', () => ({
-  useAllTerminals: vi.fn(),
+  useTerminalProjectBuckets: vi.fn(),
 }));
 
-const mockUseAllTerminals = vi.mocked(useAllTerminals);
+const mockUseTerminalProjectBuckets = vi.mocked(useTerminalProjectBuckets);
+
+function makeProject(id: string, displayName: string) {
+  return {
+    typeId: { type: 'project', id },
+    name: displayName,
+    fs_storage_mount_path: `/tmp/${displayName}`,
+    getDisplayName: () => displayName,
+  };
+}
+
+function makeBucket(
+  id: string,
+  displayName: string,
+  tabCount: number,
+): TerminalProjectBucket {
+  const tabs = Array.from({ length: tabCount }, () => ({ projectId: id }));
+  return {
+    projectId: id,
+    project: makeProject(id, displayName) as unknown as TerminalProjectBucket['project'],
+    state: 'live',
+    tabs: tabs as unknown as TerminalProjectBucket['tabs'],
+    recover: vi.fn(),
+  };
+}
 
 describe('ProjectsCounterChip', () => {
   beforeEach(() => {
-    mockUseAllTerminals.mockReset();
+    mockUseTerminalProjectBuckets.mockReset();
   });
 
   afterEach(() => {
     cleanup();
   });
 
-  function mockTerminalData() {
+  function seedBuckets() {
     const projectA = '11111111-1111-4111-8111-111111111111';
     const projectB = '22222222-2222-4222-8222-222222222222';
-
-    mockUseAllTerminals.mockReturnValue({
-      data: [
-        { projectId: projectA, agenticProcess: { project_id: null } },
-        { projectId: projectA, agenticProcess: { project_id: null } },
-        { projectId: projectB, shell: { project_id: null } },
-      ],
-      refresh: vi.fn(),
-      pushTerminal: vi.fn(),
-      removeTerminal: vi.fn(),
-      updateTerminal: vi.fn(),
-    } as unknown as ReturnType<typeof useAllTerminals>);
-
+    mockUseTerminalProjectBuckets.mockReturnValue({
+      buckets: [makeBucket(projectA, '11111111', 2), makeBucket(projectB, '22222222', 1)],
+    });
     return { projectA, projectB };
   }
 
   it('counts active projects while including terminal total in the label', () => {
-    const { projectA } = mockTerminalData();
+    const { projectA } = seedBuckets();
 
     render(<ProjectsCounterChip currentProjectId={projectA} />);
 
@@ -49,7 +66,7 @@ describe('ProjectsCounterChip', () => {
   });
 
   it('keeps per-project terminal counts in the popover list', async () => {
-    const { projectA } = mockTerminalData();
+    const { projectA } = seedBuckets();
 
     render(<ProjectsCounterChip currentProjectId={projectA} />);
 

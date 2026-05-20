@@ -24,8 +24,22 @@ import type { ComponentType } from 'react';
 
 import type { GenericEntry } from '@sdk';
 
+import type { TokenUsage } from './types';
+
 interface OperationOneLinerProps {
   operation: GenericEntry;
+  /** Aggregated per-turn token usage. When present and `costUsd > 0`,
+   *  renders a $X.XXX pill in the one-liner header so tool-call rows
+   *  show their cost the same way assistant text rows do. */
+  usage?: TokenUsage | null;
+}
+
+function formatCost(usd?: number | null): string | null {
+  if (usd === undefined || usd === null || usd <= 0) return null;
+  if (usd < 0.001) return `<$0.001`;
+  if (usd < 0.01) return `$${usd.toFixed(4)}`;
+  if (usd < 1) return `$${usd.toFixed(3)}`;
+  return `$${usd.toFixed(2)}`;
 }
 
 interface KindMeta {
@@ -120,10 +134,11 @@ function kindMeta(op: GenericEntry): KindMeta | null {
 }
 
 /** Inline one-liner: `<icon> <label> · <primary>` + chips. */
-export function OperationOneLiner({ operation }: OperationOneLinerProps) {
+export function OperationOneLiner({ operation, usage }: OperationOneLinerProps) {
   const meta = kindMeta(operation);
   if (!meta) return null;
   const { Icon, iconClassName, label, primary, chips } = meta;
+  const costLabel = formatCost(usage?.costUsd);
   return (
     <div className="flex min-w-0 flex-1 items-center gap-2">
       <Icon className={`h-3.5 w-3.5 shrink-0 ${iconClassName}`} />
@@ -136,6 +151,15 @@ export function OperationOneLiner({ operation }: OperationOneLinerProps) {
           {c}
         </span>
       ))}
+      {costLabel && (
+        <span
+          className="shrink-0 tabular-nums text-[10px] font-medium text-foreground/80"
+          data-testid="turn-cost-usd"
+          title={`${usage?.model ?? 'unknown model'} · cost for this turn`}
+        >
+          {costLabel}
+        </span>
+      )}
     </div>
   );
 }

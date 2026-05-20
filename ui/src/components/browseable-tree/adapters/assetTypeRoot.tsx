@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileText, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import apiClient from '@sdk/client';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -10,6 +10,7 @@ import { DEFAULT_ASSET_FILTER, applyFilterToParams } from '@src/components/asset
 import type { AssetFilter } from '@src/components/assets/assetFilter';
 import type { Browseable, BrowseableRoot, ToolbarAction } from '@src/components/browseable-tree/types';
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
+import { refreshNode } from '@src/components/browseable-tree/refresh-store';
 import { config } from '@sdk';
 
 export interface AssetTypeRootDeps {
@@ -71,9 +72,9 @@ export function parseAssetPointer(pointer: string | null | undefined): AssetPoin
   return { mode: null, typeName: null, vfsPath: null, wikiName: null };
 }
 
-function resolveAssetIcon(iconName: string | null): React.ReactNode {
+function resolveAssetIcon(iconName: string | null, className = 'h-4 w-4 flex-shrink-0'): React.ReactNode {
   const Icon = lucideByName(iconName);
-  return <Icon className="h-4 w-4 flex-shrink-0" />;
+  return <Icon className={className} />;
 }
 
 /**
@@ -105,7 +106,7 @@ async function fetchAssetsOfType(
 /**
  * Build a child Browseable from a SearchResult.
  */
-function assetChild(typeName: string, result: SearchResult, onAfterDelete?: () => void): Browseable {
+function assetChild(typeName: string, iconName: string | null, result: SearchResult, onAfterDelete?: () => void): Browseable {
   const label = result.name || basename(result.asset_ref) || '(untitled)';
   // Projects open in their collaboration space rather than the asset editor.
   const pointer = typeName === 'project'
@@ -136,7 +137,7 @@ function assetChild(typeName: string, result: SearchResult, onAfterDelete?: () =
     id: `asset:${typeName}:${result.asset_ref}`,
     kind: 'asset',
     label,
-    icon: <FileText className="h-3.5 w-3.5 flex-shrink-0" />,
+    icon: resolveAssetIcon(iconName, 'h-3.5 w-3.5 flex-shrink-0'),
     hasChildren: false,
     pointer,
     toolbar: toolbar.length > 0 ? toolbar : undefined,
@@ -237,21 +238,27 @@ export function assetTypeRoot(type: AssetTypeInfo, deps: AssetTypeRootDeps): Bro
   const filter = deps.filter ?? DEFAULT_ASSET_FILTER;
   const limit = deps.childrenPageSize ?? 200;
 
-  const onAfterDelete = deps.onDeleteComplete
-    ? () => deps.onDeleteComplete!(type.type_name)
-    : undefined;
-  const listChildren = async (): Promise<Browseable[]> => {
-    const results = await fetchAssetsOfType(type.type_name, filter, limit);
-    return results.map((r) => assetChild(type.type_name, r, onAfterDelete));
-  };
-
   // Filter signature in the id forces the BrowseableTree to refetch
   // children when the user toggles scope/picker (the children are cached
   // by node id; without this they'd stay frozen at the previous filter).
   const filterSig = `${filter.scope.user ? '1' : '0'}:${[...filter.scope.projects].sort().join(',')}`;
+  const rootId = `asset-type:${type.type_name}:${filterSig}`;
+
+  // After delete: ask the tree to invalidate this root's children. The deleted
+  // row drops out without resetting the user's expansion state. The optional
+  // `onDeleteComplete` deps callback runs too so callers can refresh
+  // ancillary state (e.g. count badges).
+  const onAfterDelete = () => {
+    refreshNode(rootId);
+    deps.onDeleteComplete?.(type.type_name);
+  };
+  const listChildren = async (): Promise<Browseable[]> => {
+    const results = await fetchAssetsOfType(type.type_name, filter, limit);
+    return results.map((r) => assetChild(type.type_name, type.icon, r, onAfterDelete));
+  };
 
   const root: BrowseableRoot = {
-    id: `asset-type:${type.type_name}:${filterSig}`,
+    id: rootId,
     kind: 'root',
     label: type.label,
     icon: resolveAssetIcon(type.icon),
@@ -275,7 +282,7 @@ export function assetTypeRoot(type: AssetTypeInfo, deps: AssetTypeRootDeps): Bro
         id: `asset:${type.type_name}:${parsed.vfsPath}`,
         kind: 'asset',
         label: basename(parsed.vfsPath),
-        icon: <FileText className="h-3.5 w-3.5 flex-shrink-0" />,
+        icon: resolveAssetIcon(type.icon, 'h-3.5 w-3.5 flex-shrink-0'),
         hasChildren: false,
         pointer: DockPointer.forAssetEditor(type.type_name, parsed.vfsPath),
       };

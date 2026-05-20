@@ -5,11 +5,33 @@
 - Backend: `http://localhost:9008` (port set via `LOCAL_SERVER_PORT=9008` in `.env.local`)
 - Frontend: `http://localhost:4098` (VITE_PORT=4098 in `.env.local`, NOT 4097)
 - Backend start command: `cd /Users/shlom/Documents/dev/flowpad-oss && LOCAL_SERVER_PORT=9008 uv run -m flow_sdk.server.run`
-- Backend reindex endpoint: `POST http://localhost:9008/api/v1/search/reindex/<record_type>`
+- Backend reindex endpoint: `POST http://localhost:9008/api/v1/graph/<type>/<id>/wiki/reindex` (per-entity). The path `/api/v1/search/reindex/<type>` does NOT exist (returns 405) — older docs reference it; the actual route was renamed and only the per-entity form remains as of 2026-05-19.
 - Platform: darwin (macOS)
 - Browser: chromium via MCP debugMcp (shared with user's interactive session — can cause tab contention when multiple testers run in parallel)
 
 ## Learnings
+
+### 2026-05-19 — Whiteboard validation cycle (8 scenarios / 27 sub-tests)
+
+**Real bug found + fixed: mermaid import dropped labels** — `ui/src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx:341-365` (handleImport). `parseMermaidToExcalidraw()` returns `ExcalidrawElementSkeleton[]` — minimal shape that MUST be run through `lib.convertToExcalidrawElements(...)` before `api.updateScene()`. Raw skeletons render rectangles without text labels and arrows without start/endBinding, causing the mermaid auto-sync to emit `N1[Untitled]` + `%% loose elements: unbound-arrow` instead of the actual node labels.
+
+**Real bug found + fixed: asset tree icons hardcoded to FileText** — `ui/src/components/browseable-tree/adapters/assetTypeRoot.tsx` lines 140 + 285 hardcoded `<FileText />` for every asset CHILD row. The category HEADER (line 264) correctly resolved per-type icon via `resolveAssetIcon(type.icon)`, but children all showed FileText regardless of type — affecting skills, agents, markdown, AND whiteboards (pre-existing bug, surfaced by adding Whiteboard). Fixed by threading `type.icon` into `assetChild` + adding className override to `resolveAssetIcon` for the smaller leaf size.
+
+**No Cmd+K binding for QuickCreate** — confirmed via grep. The only Cmd+K handler is for the sidebar at `ui/src/components/ui/sidebar.tsx:81`. QuickCreate is click-only (`MiniDesktop` on landing, "+" buttons in asset lists). Scenarios that assume Cmd+K will fail.
+
+**Bare URL `/dock/assets/wiki/<name>` may not auto-mount WikiResolveView** — needs confirmation under single-tester conditions (cross-tester tab pollution disrupted the test). Click-from-markdown path works correctly. AssetsPage at `ui/src/components/assets/AssetsPage.tsx:551` mounts WikiResolveView, but the dock pane may need to be explicitly opened first.
+
+**Folder rename behavior unclear** — after `mv <folder> <folder>-renamed` the entity disappeared from `/api/v1/graph/whiteboard` entirely (instead of re-resolving via stable frontmatter id). Needs single-tester re-test to distinguish real indexer cache bug from contention-driven cleanup. The mintable-id frontmatter pattern is supposed to make rename safe.
+
+**DELETE endpoint preserves the on-disk folder by default** — `flow_sdk/fs_store/record.py:1964-1986` `Record.delete()` only removes the entity row + shadow `record_dir`; the live `asset_ref` folder is kept unless `delete_ref=True` is passed. This is shared behavior across all asset types. UI tests should assert "entity gone" not "folder gone".
+
+**EntityTypeBar is NOT on /dock/assets/list/<type>** — that bar lives only inside `AssetPickerPopover` (the asset-pick overlay). The standalone assets page uses BrowseableTree + table; URL-based type filter is the only filter.
+
+**Whiteboard editor save uses fsManager.writeFile (POST), not HTTP PUT** — `ts_sdk/src/services/fsService.ts:441` builds the write via `createFSAction(typeid, 'write', path, 'POST')`. Scenarios that instrument fetch for `method:'PUT'` board.json saves will measure zero events; hook `fsManager.writeFile` or `dataManager.callAction` instead.
+
+**Tab contention with parallel qa-testers — confirmed reproducible** — shared MCP Chrome session means `browser_tabs.select(index)` doesn't reliably pin focus; concurrent testers' tabs hijack each other within seconds. For scenarios driving multi-step UI, serialize testers (1 concurrent worker). Bash + API-only scenarios are safe to parallelize. Reaffirms the 2026-05-12 learning.
+
+**Mermaid v10+ emits double-curly diamond syntax** — `flow_sdk/fs_records/_whiteboard_mermaid.py` produces `N1{{OK?}}`, not single-curly `N1{OK?}`. Both are valid mermaid; scenarios should accept either form.
 
 ### 2026-05-12 — Assets index + asset-picker-on-agents QA cycle (v0.2.21-fixes)
 
@@ -47,9 +69,8 @@ Typing into the asset-manager list filter threw `TypeError: (d.posix_path ?? "")
 
 **Phase 8 manual regression triage** — drove 41 failures down to ~13 in 4 rerun rounds. Recurring patterns and one-line fixes:
 
-- **WelcomeModal Radix overlay blocks home-page clicks after DB clear** — `dismissSetupModal` helpers must also pre-set `localStorage['flowpad-index-approved']='1'`. The WelcomeModal opens when bootstrap returns `scanInfo.never_indexed=true`; its overlay intercepts pointer events on home buttons. Updated `chat/helpers.ts`, `terminal/helpers.ts`, `triggers/helpers.ts`, plus the inline setup() functions in memo-panel and search tests.
-- **Hardcoded `localhost:9007` in many test API calls** — actual port is 9008 in this env. `sed -i '' 's|localhost:9007|localhost:9008|g'` across all `.md.ts` files. Also fixed the `apiUrl` memoization in `HomeLanding.tsx` to use the vite-time `__API_URL__` define instead of a hardcoded `9007` string.
-- **MemoIframeModal was imported but never rendered in `HomeLanding.tsx`** — added a "Memo panel" button (data-testid="open-memo-panel-btn") next to the Community-assistance button and rendered `<MemoIframeModal>` driven by the existing `memoPanelOpen` state.
+- **WelcomeModal Radix overlay blocks home-page clicks after DB clear** — `dismissSetupModal` helpers must also pre-set `localStorage['flowpad-index-approved']='1'`. The WelcomeModal opens when bootstrap returns `scanInfo.never_indexed=true`; its overlay intercepts pointer events on home buttons. Updated `chat/helpers.ts`, `terminal/helpers.ts`, `triggers/helpers.ts`, plus the inline setup() functions in search tests.
+- **Hardcoded `localhost:9007` in many test API calls** — actual port is 9008 in this env. `sed -i '' 's|localhost:9007|localhost:9008|g'` across all `.md.ts` files.
 - **Terminal ribbon shrunk from 5 → 4 buttons** — Shell + Queue removed, Dir added. Tests `git_status_panel.md.ts` and `prompt_index_panel.md.ts` rebased their nth() indices and `toHaveCount`.
 - **Schedule triggers without project_id are still filtered out of TriggersView** (re-confirmed from prior cycle's note) — tests creating triggers via API must POST with `project_id: <bootstrap default_project.id>`.
 - **DirectoryTree selection didn't sync until expansion completed** — `DirectoryTree.tsx` now calls `tree.selectItem(selectedPath)` synchronously alongside the async `expandParentsForPath`.
@@ -59,11 +80,10 @@ Typing into the asset-manager list filter threw `TypeError: (d.posix_path ?? "")
 
 **Real product bugs left in Phase 8 (skipped or unfixed, tracked separately)**:
 - `routePlainShellPointer.cachedEntitiesByType` doesn't reliably surface a linked AgenticProcess on cold navigation → 2 tests skipped (`agentic_process_visible_restored_on_load`, `shell_url_recovers_linked_process`) and 1 related test (`_resume_revalidate_v3`) skipped.
-- MemoIframeModal MCP UI handshake — 7 iframe-content tests fail; the `[data-testid="memo-iframe-container"]` div mounts but no `iframe-memo-input` ever appears.
 - `scan_records_viewer.md.ts` — 3 tests time out waiting for a `<table>` after clicking Rescan. API works (`/scan?limit_types=5` returns 17200 records); the per-type-loop variant the UI runs may stall on Vite proxy or WS event flow.
 
 **Original 41-failure tally — pre-fix**:
-- `element(s) not found` / `toBeVisible failed` — selector drift in memo-panel, general, terminal
+- `element(s) not found` / `toBeVisible failed` — selector drift in general, terminal
 - triggers: `strict mode violation` — `text=Schedule Triggers` matches 2 elements (UI duplicated)
 - skills: 404 on `user-<uuid>` from `store.ts`
 - agentic-process: `page.waitForURL` timeout — navigation never resolves
@@ -72,10 +92,10 @@ Each needs individual triage; not blocked by anything from phases 1-7.
 ### 2026-05-07 — Headless chat surfaces validated post `_scan_create_process` fix
 
 **Real production bug — `flow_sdk/builtin/faas/scan_actions.py` `_scan_create_process`**
-Eagerly called `process.start(visible=visible)` for every new AgenticProcess regardless of `visible`. `start()`/`_perform_open` doesn't branch on `visible`, so headless chats (`EntityChatPanel`→`createProcess`, no `visible` flag → server default `false`) got a PTY-claude REPL spawned anyway. The REPL claimed `session_id` without writing a JSONL, so the next `/prompt` (which routes through `run_print_turn` for `visible=false`) found a stale session and exited non-zero — chat showed "Complete" with no assistant turn. Fix: gate the `start()` call on `if visible:`. Headless processes manage their full lifecycle per-turn via `run_print_turn`. Also deleted the unused `elevate-shell` action and updated 3 tests to pass `visible: true` explicitly when they exercise the PTY lifecycle.
+Eagerly called `process.start(visible=visible)` for every new AgenticProcess regardless of `visible`. `start()`/`_perform_open` doesn't branch on `visible`, so headless chats (`EntityChatPanel`→`createProcess`, no `visible` flag → server default `false`) got a PTY-claude REPL spawned anyway. The REPL claimed `session_id` without writing a JSONL, so the next `/prompt` (which routes through `headless_prompt` for `visible=false`) found a stale session and exited non-zero — chat showed "Complete" with no assistant turn. Fix: gate the `start()` call on `if visible:`. Headless processes manage their full lifecycle per-turn via `headless_prompt`. Also deleted the unused `elevate-shell` action and updated 3 tests to pass `visible: true` explicitly when they exercise the PTY lifecycle.
 
 **One shared headless code path for ALL chat surfaces**
-The 7 chat surfaces (agent doc, agent persona, skill doc, skill persona, plain markdown, workflow, spec) all funnel through `EntityChatPanel.handleSend` → `computeNode.createProcess({...})` → server `_scan_create_process` → `run_print_turn`. Validating this shared path at the API level (`POST /createProcess` with `visible:false` → `POST /prompt`) covers all 7 surfaces transitively. Asked Claude for a one-word PONG; got `<flow-chat role="assistant">PONG</flow-chat>` in the stream — full chain works.
+The 7 chat surfaces (agent doc, agent persona, skill doc, skill persona, plain markdown, workflow, spec) all funnel through `EntityChatPanel.handleSend` → `computeNode.createProcess({...})` → server `_scan_create_process` → `headless_prompt`. Validating this shared path at the API level (`POST /createProcess` with `visible:false` → `POST /prompt`) covers all 7 surfaces transitively. Asked Claude for a one-word PONG; got `<flow-chat role="assistant">PONG</flow-chat>` in the stream — full chain works.
 
 **API-level validation beats UI for protocol-level fixes**
 The 4098 dev UI got stuck on the `LoadingScreen` ("Loading . . .") splash mid-session — `useAuth.someone` went null after some interaction (cause unrelated to the fix; possibly stale `flowpad-state` localStorage or cloud session expiry). For protocol/server-side fixes that share one code path across many UI surfaces, a direct API probe is faster and more deterministic than scripting every surface in the browser.

@@ -41,6 +41,7 @@ import { showCleanupModal } from '@src/components/recovery/cleanup-modal';
 import { toast } from '@src/hooks/use-toast';
 import { DockPointer } from '@src/navigation';
 import { replace } from 'react-router';
+import { perfLog, perfTime } from './_perf';
 import {
   describeProcessStartError,
   loadProcess,
@@ -80,11 +81,6 @@ function cachedEntitiesByType<U>(type: string): U[] {
   return out;
 }
 
-function _perfLog(label: string) {
-  const t0 = (window as Record<string, unknown>).__shellNavT0 as number | undefined;
-  if (t0 !== undefined) console.log(`[PERF] +${(performance.now() - t0).toFixed(0)}ms ${label}`);
-}
-
 // ── CORE: loadShell(shellId) — pure, no redirects ───────────────────────────
 
 /**
@@ -94,9 +90,13 @@ function _perfLog(label: string) {
  * dispatch (and will call `loadProcess` instead when a process owns the shell).
  */
 export async function loadShell(shellId: string): Promise<Shell> {
+  const cached = Shell.getByIdFromCache<Shell>(shellId);
+  perfLog(`loadShell cache=${cached ? 'hit' : 'miss'} shellId=${shellId.slice(0, 8)}`);
   const shell =
-    Shell.getByIdFromCache<Shell>(shellId) ??
-    (await Shell.getById<Shell>(shellId).catch(() => null));
+    cached ??
+    (await perfTime('Shell.getById (network)', () =>
+      Shell.getById<Shell>(shellId).catch(() => null),
+    ));
   if (!shell) {
     throw new ShellLoadError('not_found', shellId);
   }
@@ -104,7 +104,9 @@ export async function loadShell(shellId: string): Promise<Shell> {
     throw new ShellLoadError('error_status', shellId, shell.error_message ?? null);
   }
   try {
-    await shell.start({ cols: Shell.DEFAULT_COLS, rows: Shell.DEFAULT_ROWS, workdir: shell.workdir ?? undefined });
+    await perfTime('shell.start (PTY attach)', () =>
+      shell.start({ cols: Shell.DEFAULT_COLS, rows: Shell.DEFAULT_ROWS, workdir: shell.workdir ?? undefined }),
+    );
   } catch (cause) {
     throw new ShellLoadError('start_failed', shellId, null, cause);
   }
@@ -219,7 +221,7 @@ async function routeDefaultShell(): Promise<void> {
     await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProcessTypeId, null);
     return;
   }
-  _perfLog(`routeDefaultShell redirect → /dock/shell/${loadedToPointer(result.loaded)}`);
+  perfLog(`routeDefaultShell redirect → /dock/shell/${loadedToPointer(result.loaded)}`);
   // Replace (not push): bare /dock/shell is a transient placeholder the user
   // never sees — the loader resolves it to a concrete shell URL synchronously.
   // Using redirect() (PUSH) leaves bare /dock/shell as a no-op history entry,
@@ -281,7 +283,7 @@ async function routePlainShellPointer(pointer: string): Promise<void> {
     // Use replace so BACK from the process URL doesn't pop back to the bare
     // shell URL (which would just re-bounce here → flicker).
     // eslint-disable-next-line @typescript-eslint/only-throw-error
-    throw replace(`/dock/shell/${linkedProcess.dockPointer.pointer}`);
+    throw replace(`/dock/shell/${linkedProcess.terminalDockPointer.pointer}`);
   }
 
   try {
@@ -297,7 +299,7 @@ async function routePlainShellPointer(pointer: string): Promise<void> {
       const recovered = await AgenticProcess.getByWorkerId(shellId).catch(() => null);
       if (recovered) {
         // eslint-disable-next-line @typescript-eslint/only-throw-error
-        throw replace(`/dock/shell/${recovered.dockPointer.pointer}`);
+        throw replace(`/dock/shell/${recovered.terminalDockPointer.pointer}`);
       }
     }
 
@@ -364,7 +366,7 @@ async function buildShellCleanupForRoute(e: ShellLoadError): Promise<CleanupReco
  * single recovery / fallback primitive.
  */
 export async function loadShellRoute(pointer: string | undefined): Promise<void> {
-  _perfLog(`loadShellRoute(${pointer || 'no-pointer'}) start`);
+  perfLog(`loadShellRoute(${pointer || 'no-pointer'}) start`);
 
   // Gate on the FlowSync WS being OPEN. The dispatch chain below
   // (loadProcess → process.start → shell.attachPty → _reattach → callActionOverWS)
@@ -373,7 +375,9 @@ export async function loadShellRoute(pointer: string | undefined): Promise<void>
   // surface a toast and fall through (the existing redirect-on-failure chain
   // still applies if the downstream WS call ultimately fails).
   try {
-    await connectionManager.waitForConnected(5000);
+    await perfTime('connectionManager.waitForConnected', () =>
+      connectionManager.waitForConnected(5000),
+    );
   } catch {
     toast({
       title: 'No realtime connection',
@@ -394,10 +398,10 @@ export async function loadShellRoute(pointer: string | undefined): Promise<void>
   if (DockPointer.isAgenticProcessPointer(pointer)) {
     const processId = DockPointer.extractAgenticProcessId(pointer);
     await routeProcessPointer(processId);
-    _perfLog('loadShellRoute done (agentic process path)');
+    perfLog('loadShellRoute done (agentic process path)');
     return;
   }
 
   await routePlainShellPointer(pointer);
-  _perfLog('loadShellRoute done (shell path)');
+  perfLog('loadShellRoute done (shell path)');
 }

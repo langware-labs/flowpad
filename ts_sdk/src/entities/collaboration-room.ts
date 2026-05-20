@@ -18,8 +18,11 @@ export interface ICollaborationRoom extends IEntity {
   started_at?: string | null;
   updated_at?: string | null;
   ended_at?: string | null;
-  // NOTE: agentic_process_ids moved into context_entities. Use
-  // room.contextOfType('agentic_process') / room.addContextEntity(...).
+  // NOTE: agentic_process_ids moved into the shared context bucket (room
+  // membership is wire-bound). Read via
+  // room.contextOfType('agentic_process', 'shared'); publish via
+  // room.shareContextEntities(processTypeId), which round-trips through the
+  // backend share-context endpoint.
 }
 
 @registerEntity
@@ -50,12 +53,8 @@ export class CollaborationRoom
     return this.contextOfType('agentic_process').map((t) => t.id);
   }
 
-  /** Project the room's project as a chip-projected direct field. */
-  protected override _directFieldsAsTypeIds(): TypeId[] {
-    const out: TypeId[] = [];
-    if (this.project_id) out.push(new TypeId('project', this.project_id));
-    return out;
-  }
+  // NOTE: project_id projection moved server-side. See
+  // ``Entity.get_implicit_private_context_entities`` (Python).
 
   /**
    * When ``name`` is empty (legacy records created before auto-naming),
@@ -112,25 +111,17 @@ export class CollaborationRoom
   public async addProcess(processId: string): Promise<void> {
     const info = new ActionInfo('add_process', this.typeId.type, this.typeId.id, 'POST');
     info.bodyParameters = { agentic_process_id: processId };
-    // Backend appends the process to context_entities and returns the full
-    // list as TypeId-formatted strings. Rebuild the local context to mirror.
-    const result = await dataManager.callAction<
+    // Backend appends the process to shared_context_entities. The action
+    // response is informational only — the canonical local mirror arrives
+    // via the WS broadcast that the backend save emits, which routes back
+    // into ``_shared_context_entities_`` through the standard entity update
+    // path. (Pre-split this method manually re-built local context from the
+    // response; with the shared bucket being wire-bound and FE-write-locked,
+    // that path is the wrong tool — let the WS update do its job.)
+    await dataManager.callAction<
       { agentic_process_id: string },
-      { ok: boolean; context_entities: string[] }
+      { ok: boolean; shared_context_entities: string[] }
     >(info);
-    if (!result?.context_entities || !Array.isArray(result.context_entities)) return;
-    // Replace the local context with what the backend returned: drop the
-    // current agentic_process entries, re-add from the response. Other
-    // (non-process) context entries the backend may have stamped are kept.
-    const currentProcs = this.contextOfType('agentic_process');
-    currentProcs.forEach((t) => this.removeContextEntity(t));
-    result.context_entities.forEach((tid) => {
-      try {
-        this.addContextEntity(new TypeId(tid));
-      } catch {
-        // Skip malformed entries from server.
-      }
-    });
   }
 
   public async end(): Promise<void> {
