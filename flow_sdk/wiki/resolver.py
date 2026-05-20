@@ -65,14 +65,15 @@ async def _query_candidates(name: str) -> list[tuple[str, str]]:
 
 
 def _pick_candidate(
-    candidates: list[tuple[str, str]], src_type: str
+    candidates: list[tuple[str, str]], src_type: str | None
 ) -> tuple[str, str]:
     """Deterministic precedence:
-    1. Same record-type as source first.
+    1. ``src_type`` matches first (when supplied).
     2. Then alphabetical by (type, id).
     """
     candidates_sorted = sorted(candidates)
-    for type_, id_ in candidates_sorted:
-        if type_ == src_type:
-            return (type_, id_)
+    if src_type:
+        for type_, id_ in candidates_sorted:
+            if type_ == src_type:
+                return (type_, id_)
     return candidates_sorted[0]

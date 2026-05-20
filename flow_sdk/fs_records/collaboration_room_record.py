@@ -43,17 +43,18 @@ class CollaborationRoomRecord(Record):
         kwargs.setdefault("name", None)
         kwargs.setdefault("members", [])
         # ``agentic_process_ids`` lived on the entity historically; it now
-        # consolidates into ``context_entities`` (TypeId list). For old records
-        # that still carry the legacy field, route it into context_entities so
-        # the entity loads cleanly.
+        # consolidates into ``shared_context_entities`` (TypeId list — room
+        # membership is wire-bound metadata). For old records that still
+        # carry the legacy field, route it into shared so the entity loads
+        # cleanly.
         legacy_procs = kwargs.pop("agentic_process_ids", None)
-        ctx = list(kwargs.get("context_entities") or [])
+        ctx = list(kwargs.get("shared_context_entities") or [])
         if legacy_procs:
             for pid in legacy_procs:
                 tid = f"agentic_process-{pid}"
                 if tid not in ctx:
                     ctx.append(tid)
-        kwargs["context_entities"] = ctx
+        kwargs["shared_context_entities"] = ctx
         kwargs.setdefault("status", CollaborationRoomStatus.ACTIVE)
         kwargs.setdefault("started_at", now)
         kwargs.setdefault("updated_at", now)
@@ -69,14 +70,14 @@ class CollaborationRoomRecord(Record):
         self._mark_dirty("updated_at")
 
     def add_process(self, process_id: str) -> bool:
-        """Append an agentic_process to the room's context. Returns True if added."""
-        ctx = list(object.__getattribute__(self, "__dict__").get("context_entities") or [])
+        """Append an agentic_process to the room's shared context. Returns True if added."""
+        ctx = list(object.__getattribute__(self, "__dict__").get("shared_context_entities") or [])
         tid = f"agentic_process-{process_id}"
         if tid in ctx:
             return False
         ctx.append(tid)
-        object.__setattr__(self, "context_entities", ctx)
-        self._mark_dirty("context_entities")
+        object.__setattr__(self, "shared_context_entities", ctx)
+        self._mark_dirty("shared_context_entities")
         self.touch()
         return True
 

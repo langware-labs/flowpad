@@ -35,46 +35,39 @@ class FsRecordsActionsMixin:
             return str(display_name)
         return getattr(ent, "name", None) or getattr(ent, "title", "") or ""
 
-    async def _resolve_scoped_roots(
-        self,
-        scope_set: set[str],
-        project_id_list: list[str],
-    ):
-        """Translate a (scope, project_ids) pair into a narrowed `roots` tuple
-        for the indexer, or ``None`` to use the indexer's default roots.
-
-        - ``scope`` may contain ``user`` and/or ``project``.
-        - ``project_ids`` is the list of project entity IDs to walk.
+    async def _resolve_scoped_roots(self, sf):
+        """Translate a ``ScopeFilter`` into a narrowed indexer ``roots`` tuple
+        (or ``None`` to use the indexer's default roots).
 
         Mapping:
-          - empty scope, empty projects   → None (use default_roots())
-          - {"user"}                      → (USER_HOME_FOLDER,)
-          - {"project"} + project_ids     → one REAL_PROJECT_CWD per project
-          - {"user","project"} + ids      → USER_HOME + per-project roots
-          - {"project"} + no ids          → None (UI guarantees ids when scoped)
+          - sf is None                         → None (default_roots())
+          - {user=True,  projects=[]}          → (USER_HOME_FOLDER,)
+          - {user=False, projects=[ids]}       → one REAL_PROJECT_CWD per id
+          - {user=True,  projects=[ids]}       → USER_HOME + per-project roots
+          - {user=False, projects=[]}          → None (degenerate; default_roots())
 
-        Returns ``ApiFailResponse`` on a per-project resolution error.
+        Returns ``ApiFailResponse`` on per-project resolution error.
         """
         from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
         from flow_sdk.fs_store.indexer.roots import default_roots  # noqa: PLC0415
         from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
 
-        if not scope_set and not project_id_list:
+        if sf is None or (not sf.user and not sf.projects):
             return None
 
         roots: list[FSRef] = []
 
-        if "user" in scope_set:
+        if sf.user:
             for r in default_roots():
                 if r.record_type == RecordType.USER_HOME_FOLDER:
                     roots.append(r)
                     break
 
-        if "project" in scope_set or (not scope_set and project_id_list):
+        if sf.projects:
             from flow_sdk.builtin.project import Project  # noqa: PLC0415
             from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
             from pathlib import Path as _Path  # noqa: PLC0415
-            for pid in project_id_list:
+            for pid in sf.projects:
                 proj = await Project.get_one(QueryFilter.parse({"id": pid}))
                 if proj is None:
                     return ApiFailResponse(
@@ -103,8 +96,6 @@ class FsRecordsActionsMixin:
                 )
 
         if not roots:
-            # E.g. scope={"project"} with empty project_ids — fall back to defaults
-            # rather than walking nothing.
             return None
         return tuple(roots)
 
@@ -133,84 +124,104 @@ class FsRecordsActionsMixin:
 
     async def _handle_fs_records_search(self, request_info) -> ApiResponse:
         from flow_sdk.core.entity.entity_model import Entity
+        from flow_sdk.server.search_filters import (  # noqa: PLC0415
+            ScopeFilter,
+            apply_folder_filter,
+            apply_scope_filter,
+            apply_system_filter,
+            apply_tag_filter,
+        )
 
         qp = request_info.request.query_params
         q = qp.get("q", "").strip()
         limit = max(1, int(qp.get("limit", DEFAULT_BROWSE_LIMIT)))
         record_type = qp.get("record_type", "") or None
         status = qp.get("status", "") or None
+        # Unified ScopeFilter wire format: `?user=true&projects=A,B`. Absent
+        # both params means no filter applied (legacy callers).
+        scope_filter = (
+            ScopeFilter.from_query_params(qp)
+            if (qp.get("user") is not None or qp.get("projects") is not None)
+            else None
+        )
+        parent_path = qp.get("parent_path") or None
+        vault_root = qp.get("vault_root") or None
+        include_system = (qp.get("include_system", "").strip().lower() in ("true", "1"))
+        tags_raw = qp.get("tags") or ""
+        tag_list = [t.strip() for t in tags_raw.split(",") if t.strip()]
+
+        def _row(ent, *, snippet=None) -> dict:
+            ent_status = getattr(ent, "status", None) or ""
+            row = {
+                "record_id": ent.id,
+                "record_type": ent.type or ent.get_type(),
+                "name": self._entity_display_name(ent),
+                "snippet": snippet,
+                "fts_title": getattr(ent, "_fts_title", None),
+                "fts_description": getattr(ent, "_fts_description", None),
+                "status": ent_status,
+                "scope": getattr(ent, "scope", "") or "",
+                "created_at": (d.isoformat() if (d := getattr(ent, "created_date", None)) else ""),
+                "modified_at": (d.isoformat() if (d := getattr(ent, "updated_date", None)) else ""),
+                "asset_ref": "",  # filled below; awaitable
+                "labels": getattr(ent, "labels", None) or [],
+            }
+            for extra_field in ("session_id", "worker_session_id"):
+                val = getattr(ent, extra_field, None)
+                if val:
+                    row[extra_field] = val
+            return row
+
+        async def _rows(entities, *, with_snippet: bool) -> list[dict]:
+            out: list[dict] = []
+            for ent in entities:
+                snip = getattr(ent, "_fts_snippet", None) if with_snippet else None
+                row = _row(ent, snippet=snip)
+                row["asset_ref"] = await self._resolve_asset_ref(ent)
+                out.append(row)
+            return out
 
         if not q:
             # Filter-only browse: query DB with FTS join so fts_title is populated
-            if record_type:
-                entities = await Entity.browse(record_type=record_type, limit=limit, status=status)
-                results = []
-                for ent in entities:
-                    ent_status = getattr(ent, "status", None) or ""
-                    row = {
-                            "record_id": ent.id,
-                            "record_type": ent.type or record_type,
-                            "name": self._entity_display_name(ent),
-                            "snippet": None,
-                            "fts_title": getattr(ent, "_fts_title", None),
-                            "fts_description": getattr(ent, "_fts_description", None),
-                            "status": ent_status,
-                            "scope": getattr(ent, "scope", "") or "",
-                            "created_at": (d.isoformat() if (d := getattr(ent, "created_date", None)) else ""),
-                            "modified_at": (d.isoformat() if (d := getattr(ent, "updated_date", None)) else ""),
-                            "asset_ref": await self._resolve_asset_ref(ent),
-                            "labels": getattr(ent, "labels", None) or [],
-                        }
-                    for extra_field in ("session_id", "worker_session_id"):
-                        val = getattr(ent, extra_field, None)
-                        if val:
-                            row[extra_field] = val
-                    results.append(row)
-                return ApiSuccessResponse(
-                    data={"results": results, "query": "", "total": len(results), "indexer_ready": True}
-                )
-            return ApiSuccessResponse(data={"results": [], "query": q, "total": 0, "indexer_ready": True})
+            if not record_type:
+                return ApiSuccessResponse(data={"results": [], "query": q, "total": 0, "indexer_ready": True})
+            entities = await Entity.browse(record_type=record_type, limit=limit, status=status)
+            entities = apply_scope_filter(entities, scope_filter)
+            entities = apply_folder_filter(entities, parent_path, vault_root)
+            entities = apply_system_filter(entities, include_system)
+            entities = apply_tag_filter(entities, tag_list)
+            results = await _rows(entities, with_snippet=False)
+            return ApiSuccessResponse(
+                data={"results": results, "query": "", "total": len(results), "indexer_ready": True}
+            )
 
         # Parse optional calibration params
         from flow_sdk.db.drivers.sqlite.sqlite_driver import SearchCalibration
 
         col_weights_raw = qp.get("col_weights")
         recency_boost_raw = qp.get("recency_boost")
+        recency_factor_raw = qp.get("recency_factor")
+        overfetch_raw = qp.get("overfetch")
         type_scores_raw = qp.get("type_scores")
         cal = None
-        if col_weights_raw or recency_boost_raw or type_scores_raw:
+        if col_weights_raw or recency_boost_raw or recency_factor_raw or overfetch_raw or type_scores_raw:
             cal = SearchCalibration(
                 col_weights=[float(x) for x in col_weights_raw.split(",")] if col_weights_raw else None,
                 recency_boost=float(recency_boost_raw) if recency_boost_raw else None,
+                recency_factor=float(recency_factor_raw) if recency_factor_raw else None,
+                overfetch=int(overfetch_raw) if overfetch_raw else None,
                 type_scores=json.loads(type_scores_raw) if type_scores_raw else None,
             )
 
         # FTS5 search
         entities = await Entity.search(query=q, limit=limit, record_type=record_type, calibration=cal)
-        results = []
-        for ent in entities:
-            ent_status = getattr(ent, "status", None) or ""
-            if status and ent_status != status:
-                continue
-            row = {
-                    "record_id": ent.id,
-                    "record_type": ent.type or ent.get_type(),
-                    "name": self._entity_display_name(ent),
-                    "snippet": getattr(ent, "_fts_snippet", None),
-                    "fts_title": getattr(ent, "_fts_title", None),
-                    "fts_description": getattr(ent, "_fts_description", None),
-                    "status": ent_status,
-                    "scope": getattr(ent, "scope", "") or "",
-                    "created_at": (d.isoformat() if (d := getattr(ent, "created_date", None)) else ""),
-                    "modified_at": (d.isoformat() if (d := getattr(ent, "updated_date", None)) else ""),
-                    "asset_ref": await self._resolve_asset_ref(ent),
-                    "labels": getattr(ent, "labels", None) or [],
-                }
-            for extra_field in ("session_id", "worker_session_id"):
-                val = getattr(ent, extra_field, None)
-                if val:
-                    row[extra_field] = val
-            results.append(row)
+        if status:
+            entities = [e for e in entities if (getattr(e, "status", None) or "") == status]
+        entities = apply_scope_filter(entities, scope_filter)
+        entities = apply_folder_filter(entities, parent_path, vault_root)
+        entities = apply_system_filter(entities, include_system)
+        entities = apply_tag_filter(entities, tag_list)
+        results = await _rows(entities, with_snippet=True)
         return ApiSuccessResponse(data={"results": results, "query": q, "total": len(results), "indexer_ready": True})
 
     async def _handle_fs_records_scan(self, request_info) -> ApiResponse:
@@ -229,8 +240,8 @@ class FsRecordsActionsMixin:
         from flow_sdk.fs_records.schema_record import SchemaRecord  # noqa: PLC0415
         from flow_sdk.fs_store.indexer import (  # noqa: PLC0415
             INDEXABLE_TYPES,
+            IndexProgressTable,
             IndexerOptions,
-            ProgressEvent,
             get_shared_indexer,
         )
         from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
@@ -243,14 +254,15 @@ class FsRecordsActionsMixin:
         limit_per_type_raw = qp.get("limit_per_type", "").strip()
         limit_per_type = int(limit_per_type_raw) if limit_per_type_raw.isdigit() else None
 
-        # Scope/project filter for the indexer walk. `scope` may be a single
-        # value or comma-separated set; `project_ids` is comma-separated UUIDs.
-        # Translates into a narrowed `roots` tuple below.
-        scope_raw = qp.get("scope", "").strip()
-        scope_set = {s.strip() for s in scope_raw.split(",") if s.strip()}
-        project_ids_raw = qp.get("project_ids", "").strip()
-        project_id_list = [p.strip() for p in project_ids_raw.split(",") if p.strip()]
-        scoped_roots = await self._resolve_scoped_roots(scope_set, project_id_list)
+        # Unified ScopeFilter from wire format `?user=true&projects=A,B`.
+        # Absent params → None → indexer uses default_roots() (full scan).
+        from flow_sdk.server.search_filters import ScopeFilter  # noqa: PLC0415
+        scope_filter = (
+            ScopeFilter.from_query_params(qp)
+            if (qp.get("user") is not None or qp.get("projects") is not None)
+            else None
+        )
+        scoped_roots = await self._resolve_scoped_roots(scope_filter)
         if isinstance(scoped_roots, ApiFailResponse):
             return scoped_roots
 
@@ -267,59 +279,17 @@ class FsRecordsActionsMixin:
         elif limit_types is not None:
             types_filter = list(INDEXABLE_TYPES)[:limit_types]
 
-        # Activity tracking for duplicate-prevention + UI progress
-        total = 1 if filter_type else (
-            len(types_filter) if types_filter is not None else len(INDEXABLE_TYPES)
-        )
         try:
-            activity = self._start_activity("scan", total=total, timeout_seconds=600)
+            activity = self._start_activity("scan", timeout_seconds=600)
         except RuntimeError as e:
             return ApiFailResponse(message=str(e), status_code=409)
 
-        # Translate ProgressEvent → activity updates → WebSocket broadcast.
-        # Scaffolding types (USER_HOME_FOLDER, SYSTEM_ROOT, REAL_PROJECT_CWD,
-        # CWD_ROOT, PROJECT) are DFS waypoints the walker touches to reach the
-        # leaf record types; they should not show up in user-facing progress.
-        _SCAFFOLD_TYPES = {
-            RecordType.USER_HOME_FOLDER,
-            RecordType.SYSTEM_ROOT,
-            RecordType.REAL_PROJECT_CWD,
-            RecordType.CWD_ROOT,
-            RecordType.PROJECT,
-            RecordType.FOLDER,
-        }
-
-        async def emit(ev: ProgressEvent) -> None:
-            if ev.stage == "type_complete":
-                if ev.record_type in _SCAFFOLD_TYPES:
-                    return
-                if types_filter and ev.record_type not in types_filter:
-                    return
-                activity.sub_activity_name = str(ev.record_type)
-                activity.sub_done = ev.count
-                activity.sub_total = ev.count
-                activity.sub_skipped = 0
-                activity.sub_errors = ev.errors
-                await broadcast_progress(
-                    to_entity=str(self.typeid),
-                    flow_data=activity.make_flow_data(str(ev.record_type)),
-                )
-                activity.done = min(activity.done + 1, activity.total)
-                await broadcast_progress(
-                    to_entity=str(self.typeid),
-                    flow_data=activity.make_flow_data(None),
-                )
-            elif ev.stage == "scan_end":
-                # Authoritative scan-completion event; mirrors index_end.
-                activity.done = activity.total
-                activity.sub_activity_name = None
-                activity.sub_done = 0
-                activity.sub_total = 0
-                activity.text = "complete"
-                await broadcast_progress(
-                    to_entity=str(self.typeid),
-                    flow_data=activity.make_flow_data(None),
-                )
+        async def emit(table: IndexProgressTable) -> None:
+            activity.latest_table = table
+            await broadcast_progress(
+                to_entity=str(self.typeid),
+                flow_data=activity.make_flow_data(),
+            )
 
         try:
             t0 = time.perf_counter()
@@ -375,9 +345,107 @@ class FsRecordsActionsMixin:
             # types. Total scan_ms (below) is the meaningful number.
             b["scan_ms"] = 0.0
 
+        # ----- Diff classification (cheap, no writes) -----
+        # For every indexable type, compare each FSRef against the DB state map
+        # to bucket as new / stale / mis_scoped / fresh, then derive orphans via
+        # (db_ids ∪ shadow_dir_ids) − seen_ids. Skipped when scope-filtered
+        # because seen_ids is incomplete for a partial walk. ~16% overhead on
+        # top of scan() — measured at ~360 ms on a 7660-FSRef tree.
+        from flow_sdk.db import get_db_driver as _get_db_driver  # noqa: PLC0415
+        from flow_sdk.fs_store.indexer.index_function import (  # noqa: PLC0415
+            FSIndexer as _FSIndexer,
+            _load_entity_state_map,
+        )
+
+        do_diff = scope_filter is None
+        if do_diff:
+            _driver = _get_db_driver()
+            _indexable_names = {str(t) for t in INDEXABLE_TYPES}
+            _state_map: dict[str, dict[str, tuple[float, str, str]]] = {}
+            for _tn in _indexable_names:
+                try:
+                    _state_map[_tn] = await _load_entity_state_map(_driver, _tn)
+                except Exception:
+                    _state_map[_tn] = {}
+
+            _seen_ids: dict[str, set[str]] = {tn: set() for tn in _indexable_names}
+            _diff: dict[str, dict[str, int]] = {
+                tn: {"new": 0, "stale": 0, "mis_scoped": 0, "fresh": 0}
+                for tn in _indexable_names
+            }
+            for ref in nodes:
+                rt = ref.record_type
+                if rt is None:
+                    continue
+                rt_name = str(rt)
+                if rt_name not in _indexable_names:
+                    continue
+                _info = _SR_rec.get(rt_name)
+                _record_cls = getattr(_info, "record_cls", None) if _info else None
+                if _record_cls is None or not hasattr(_record_cls, "from_fsref"):
+                    continue
+                try:
+                    ref_id = _record_cls.genId(ref)
+                except Exception:
+                    continue
+                if not ref_id:
+                    continue
+                _seen_ids[rt_name].add(ref_id)
+                db_state = _state_map[rt_name].get(ref_id)
+                if db_state is None:
+                    _diff[rt_name]["new"] += 1
+                    continue
+                db_mtime, db_scope, db_pid = db_state
+                try:
+                    file_mtime = _record_cls.asset_hash_for_ref(ref)
+                except Exception:
+                    file_mtime = 0.0
+                walk_scope = ref.scope or ""
+                walk_pid = ref.project_id or ""
+                scope_ok = walk_scope == "" or db_scope == walk_scope
+                pid_ok = walk_pid == "" or db_pid == walk_pid
+                if file_mtime and file_mtime <= db_mtime and scope_ok and pid_ok:
+                    _diff[rt_name]["fresh"] += 1
+                elif not (scope_ok and pid_ok):
+                    _diff[rt_name]["mis_scoped"] += 1
+                else:
+                    _diff[rt_name]["stale"] += 1
+
+            _disk_ids = _FSIndexer._discover_records_dir_ids(_indexable_names)
+            for _tn in _indexable_names:
+                _db_ids = set(_state_map[_tn].keys())
+                _all_ids = _db_ids | _disk_ids.get(_tn, set())
+                _diff[_tn]["orphan"] = len(_all_ids - _seen_ids[_tn])
+                _diff[_tn]["in_index"] = len(_db_ids)
+                _diff[_tn]["pending"] = (
+                    _diff[_tn]["new"] + _diff[_tn]["stale"] + _diff[_tn]["mis_scoped"]
+                )
+
+            # Merge diff fields into existing per-type buckets; create empty
+            # buckets for types that have no on-disk refs but DO have orphans
+            # or in_index rows (otherwise the UI loses visibility of them).
+            for _tn, _d in _diff.items():
+                if not any(_d.values()):
+                    continue
+                _b = by_type.get(_tn)
+                if _b is None:
+                    _b = by_type.setdefault(_tn, {
+                        "type": _tn, "count": 0, "total_bytes": 0,
+                        "avg_bytes": 0, "scan_ms": 0.0, "_records": [],
+                    })
+                _b.update(_d)
+
+            # Ensure every bucket has the diff keys (zero-fill non-indexable
+            # types so the response shape is uniform).
+            for _b in by_type.values():
+                for _k in ("new", "stale", "mis_scoped", "fresh", "orphan", "in_index", "pending"):
+                    _b.setdefault(_k, 0)
+
         per_type = list(by_type.values())
         grand_total = sum(b["count"] for b in per_type)
         grand_bytes = sum(b["total_bytes"] for b in per_type)
+        grand_pending = sum(b.get("pending", 0) for b in per_type) if do_diff else 0
+        grand_orphan = sum(b.get("orphan", 0) for b in per_type) if do_diff else 0
 
         # Strip internal _records key from aggregate response
         types_for_log = [
@@ -416,24 +484,48 @@ class FsRecordsActionsMixin:
                 "min_bytes": min(sizes),
                 "max_bytes": max(sizes),
                 "last_scan_at": last_scan_at,
+                "new": b.get("new", 0),
+                "stale": b.get("stale", 0),
+                "mis_scoped": b.get("mis_scoped", 0),
+                "orphan": b.get("orphan", 0),
+                "fresh": b.get("fresh", 0),
+                "in_index": b.get("in_index", 0),
+                "pending": b.get("pending", 0),
             })
 
         return ApiSuccessResponse(data={
             "types": types_for_log,
             "grand_total": grand_total,
             "scan_ms": scan_ms,
+            "grand_pending": grand_pending,
+            "grand_orphan": grand_orphan,
+            "diff_included": do_diff,
         })
 
     async def _handle_fs_records_index_status(self, request_info) -> ApiResponse:
         """Return index freshness info.
 
-        GET /fs-records/index-status
+        GET /fs-records/index-status[?user=&projects=]
+
+        When the unified ScopeFilter (?user=&projects=) is present, per-type
+        ``entity_count`` and ``orphan_count`` (and the rolled-up
+        ``total_orphans``) shrink to the scoped subset. The freshness fields
+        (``last_indexed_at``, ``stale``) are unaffected — those derive from
+        per-type indexer-run timestamps, not from row counts.
         """
         from dataclasses import asdict  # noqa: PLC0415
 
         from flow_sdk.fs_records.schema_record import SchemaRecord  # noqa: PLC0415
+        from flow_sdk.server.search_filters import ScopeFilter  # noqa: PLC0415
 
-        status = await SchemaRecord.get_index_status()
+        qp = request_info.request.query_params
+        scope_filter = (
+            ScopeFilter.from_query_params(qp)
+            if (qp.get("user") is not None or qp.get("projects") is not None)
+            else None
+        )
+
+        status = await SchemaRecord.get_index_status(scope=scope_filter)
         return ApiSuccessResponse(
             data={
                 "never_indexed": status.never_indexed,
@@ -441,6 +533,7 @@ class FsRecordsActionsMixin:
                 "stale": status.stale,
                 "default_types": status.default_types,
                 "per_type": [asdict(t) for t in status.per_type],
+                "total_orphans": status.total_orphans,
             }
         )
 
@@ -448,17 +541,121 @@ class FsRecordsActionsMixin:
         """Clear all FTS index data and reset index logs.
 
         DELETE /fs-records/index
+
+        Emits per-type ``progress_report`` events so the footer pill and the
+        scanner page can show per-type progress while the clear runs. Mirrors
+        the index handler's event shape (``job_name='clear'``, ``rows[]`` with
+        ``done``/``total``, terminal ``text='complete'``).
         """
+        from datetime import datetime, timezone  # noqa: PLC0415
+
+        from flow_sdk.core.network.resource_tracker import broadcast_progress  # noqa: PLC0415
+        from flow_sdk.db import get_db_driver  # noqa: PLC0415
+        from flow_sdk.fs_records.record_error import RecordError  # noqa: PLC0415
         from flow_sdk.fs_records.schema_record import SchemaRecord  # noqa: PLC0415
+        from flow_sdk.fs_store.indexer import IndexProgressTable, TypeProgressRow  # noqa: PLC0415
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry, _sanitize_type_name, _schema_dir  # noqa: PLC0415
 
         qp = request_info.request.query_params
         filter_type = qp.get("type", "").strip()
-        types = [filter_type] if filter_type else None
-        result = await SchemaRecord.clear_index(types)
+        target_types = [filter_type] if filter_type else SchemaRegistry.get_all_record_types()
+
+        # Optional ScopeFilter narrows the delete to a subset of rows per type
+        # (e.g. only one project's markdown). Without these params the clear
+        # is full per type, matching legacy behaviour.
+        from flow_sdk.server.search_filters import ScopeFilter  # noqa: PLC0415
+        scope_filter = (
+            ScopeFilter.from_query_params(qp)
+            if (qp.get("user") is not None or qp.get("projects") is not None)
+            else None
+        )
+
+        try:
+            activity = self._start_activity("clear", timeout_seconds=120)
+        except RuntimeError as e:
+            return ApiFailResponse(message=str(e), status_code=409)
+
+        driver = get_db_driver()
+        per_type_done: dict[str, int] = {t: 0 for t in target_types}
+        per_type_total: dict[str, int] = {t: 1 for t in target_types}  # 1 step each
+        fts_cleared = 0
+        entities_cleared = 0
+        current_type: str | None = None
+
+        def make_table(text: str | None = None) -> IndexProgressTable:
+            rows = tuple(
+                TypeProgressRow(
+                    type_name=t,
+                    done=per_type_done[t],
+                    total=per_type_total[t],
+                    errors=0,
+                    skipped=0,
+                )
+                for t in target_types
+            )
+            return IndexProgressTable(
+                job_name="clear",
+                rows=rows,
+                current=current_type,
+                done=sum(per_type_done.values()),
+                total=sum(per_type_total.values()),
+                text=text,
+                ts=datetime.now(timezone.utc).isoformat(),
+            )
+
+        async def emit(text: str | None = None) -> None:
+            table = make_table(text=text)
+            activity.latest_table = table
+            await broadcast_progress(
+                to_entity=str(self.typeid),
+                flow_data=activity.make_flow_data(),
+            )
+
+        try:
+            await emit()  # initial snapshot — totals known, done=0
+            for type_name in target_types:
+                current_type = type_name
+                await emit()
+                if hasattr(driver, "delete_entities_by_type"):
+                    try:
+                        n = await driver.delete_entities_by_type(type_name, scope=scope_filter)
+                    except TypeError:
+                        # Driver predates the scope kwarg — fall back to unscoped delete
+                        # (only happens when scope_filter is None).
+                        n = await driver.delete_entities_by_type(type_name)
+                    entities_cleared += n
+                # The per-type index_log is a wall-clock record of indexer runs;
+                # only unlink it on a full (unscoped) clear of that type so a
+                # scoped clear doesn't lose history about the OTHER scope.
+                if scope_filter is None:
+                    sanitized = _sanitize_type_name(type_name)
+                    log_file = _schema_dir() / "types" / sanitized / "index_log.jsonl"
+                    if log_file.exists():
+                        log_file.unlink()
+                    await RecordError.clear_for_type(type_name)
+                per_type_done[type_name] = 1
+                await emit()
+
+            # When clearing everything, also clear the FTS index and the global log.
+            # Skip on scoped clears — FTS clear is all-or-nothing and would wipe
+            # rows that are still alive in the un-targeted scope.
+            if not filter_type and scope_filter is None and hasattr(driver, "fts_clear"):
+                fts_cleared = await driver.fts_clear()
+                global_log = _schema_dir() / "index_log.jsonl"
+                if global_log.exists():
+                    global_log.unlink()
+                await RecordError.clear_all()
+
+            current_type = None
+            await emit(text="complete")
+        finally:
+            self._complete_activity("clear")
+
         return ApiSuccessResponse(
             data={
-                "fts_cleared": result.fts_cleared,
-                "entities_cleared": result.entities_cleared,
+                "fts_cleared": fts_cleared,
+                "entities_cleared": entities_cleared,
+                "types_cleared": target_types,
             }
         )
 
@@ -481,9 +678,9 @@ class FsRecordsActionsMixin:
         from flow_sdk.fs_records.schema_record import SchemaRecord  # noqa: PLC0415
         from flow_sdk.fs_store.indexer import (  # noqa: PLC0415
             INDEXABLE_TYPES,
+            IndexProgressTable,
             IndexerOptions,
             OrphanAction,
-            ProgressEvent,
             get_shared_indexer,
         )
         from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
@@ -498,16 +695,23 @@ class FsRecordsActionsMixin:
         limit_types = int(limit_types_raw) if limit_types_raw.isdigit() else None
         limit_per_type_raw = qp.get("limit_per_type", "").strip()
         limit_per_type = int(limit_per_type_raw) if limit_per_type_raw.isdigit() else None
-        # Legacy single-project param (kept for back-compat) and the new
-        # comma-separated `project_ids` + `scope` pair.
-        project_id = qp.get("project_id", "").strip() or None
-        scope_raw = qp.get("scope", "").strip()
-        scope_set = {s.strip() for s in scope_raw.split(",") if s.strip()}
-        project_ids_raw = qp.get("project_ids", "").strip()
-        project_id_list = [p.strip() for p in project_ids_raw.split(",") if p.strip()]
-        # Honor legacy single project_id when the new params aren't supplied.
-        if not project_id_list and project_id:
-            project_id_list = [project_id]
+        # Unified ScopeFilter from wire format `?user=true&projects=A,B`.
+        # Legacy single-project param `?project_id=…` is kept as a back-compat
+        # shim — promoted into ScopeFilter.projects when the new params are absent.
+        from flow_sdk.server.search_filters import ScopeFilter  # noqa: PLC0415
+        legacy_project_id = qp.get("project_id", "").strip() or None
+        if qp.get("user") is not None or qp.get("projects") is not None:
+            scope_filter = ScopeFilter.from_query_params(qp)
+        elif legacy_project_id:
+            scope_filter = ScopeFilter(user=False, projects=(legacy_project_id,))
+        else:
+            scope_filter = None
+        # Some downstream sites still want the singular project_id (effective_project_id).
+        project_id = legacy_project_id or (
+            scope_filter.projects[0]
+            if (scope_filter and len(scope_filter.projects) == 1)
+            else None
+        )
         orphan_action_raw = qp.get("orphan_action", "").strip().lower()
         try:
             orphan_action = (
@@ -522,9 +726,9 @@ class FsRecordsActionsMixin:
                 status_code=400,
             )
 
-        # Resolve scope + project_ids → narrowed roots. When neither is set,
+        # Resolve ScopeFilter → narrowed roots. When the filter is None,
         # fall back to the indexer's default_roots() (full walk).
-        custom_roots = await self._resolve_scoped_roots(scope_set, project_id_list)
+        custom_roots = await self._resolve_scoped_roots(scope_filter)
         if isinstance(custom_roots, ApiFailResponse):
             return custom_roots
 
@@ -553,91 +757,22 @@ class FsRecordsActionsMixin:
                 # already cleared matching FTS rows via delete_entities_by_type
                 await driver.fts_clear()
 
-        # Activity tracking for duplicate-prevention + UI progress
-        total = 1 if filter_type else (
-            len(types_filter) if types_filter is not None else len(INDEXABLE_TYPES)
-        )
         try:
-            activity = self._start_activity("index", total=total, timeout_seconds=600)
+            activity = self._start_activity("index", timeout_seconds=600)
         except RuntimeError as e:
             return ApiFailResponse(message=str(e), status_code=409)
 
-        # Scaffolding types the walker traverses but the user didn't request.
-        _SCAFFOLD_TYPES_IDX = {
-            RecordType.USER_HOME_FOLDER,
-            RecordType.SYSTEM_ROOT,
-            RecordType.REAL_PROJECT_CWD,
-            RecordType.CWD_ROOT,
-            RecordType.PROJECT,
-            RecordType.FOLDER,
-        }
-
-        def _skip(ev: ProgressEvent) -> bool:
-            if ev.record_type in _SCAFFOLD_TYPES_IDX:
-                return True
-            if types_filter and ev.record_type not in types_filter:
-                return True
-            return False
-
-        async def emit(ev: ProgressEvent) -> None:
-            if ev.stage == "type_start":
-                if _skip(ev):
-                    return
-                activity.sub_activity_name = str(ev.record_type)
-                activity.sub_done = 0
-                activity.sub_total = ev.sub_total
-                activity.sub_errors = 0
-                activity.sub_skipped = 0
-                await broadcast_progress(
-                    to_entity=str(self.typeid),
-                    flow_data=activity.make_flow_data(str(ev.record_type)),
-                )
-            elif ev.stage == "type_progress":
-                if _skip(ev):
-                    return
-                activity.sub_activity_name = str(ev.record_type)
-                activity.sub_done = ev.sub_done
-                activity.sub_total = ev.sub_total
-                activity.sub_errors = ev.errors
-                await broadcast_progress(
-                    to_entity=str(self.typeid),
-                    flow_data=activity.make_flow_data(str(ev.record_type)),
-                )
-            elif ev.stage == "type_complete":
-                if _skip(ev):
-                    return
-                activity.sub_activity_name = str(ev.record_type)
-                activity.sub_done = ev.sub_done or ev.indexed
-                activity.sub_total = ev.sub_total or ev.indexed
-                activity.sub_errors = ev.errors
-                activity.sub_skipped = 0
-                await broadcast_progress(
-                    to_entity=str(self.typeid),
-                    flow_data=activity.make_flow_data(str(ev.record_type)),
-                )
-                activity.done = min(activity.done + 1, activity.total)
-                await broadcast_progress(
-                    to_entity=str(self.typeid),
-                    flow_data=activity.make_flow_data(None),
-                )
-            elif ev.stage == "index_end":
-                # Authoritative job-completion: settles UI state regardless of
-                # how the per-type events landed. Frontend's done>=total path
-                # treats this as the definitive "I'm done" signal.
-                activity.done = activity.total
-                activity.sub_activity_name = None
-                activity.sub_done = 0
-                activity.sub_total = 0
-                activity.text = "complete"
-                await broadcast_progress(
-                    to_entity=str(self.typeid),
-                    flow_data=activity.make_flow_data(None),
-                )
+        async def emit(table: IndexProgressTable) -> None:
+            activity.latest_table = table
+            await broadcast_progress(
+                to_entity=str(self.typeid),
+                flow_data=activity.make_flow_data(),
+            )
 
         # Single-project shortcut: when narrowed to exactly one project,
         # also pass project_id so the indexer can short-circuit non-project
-        # work paths.
-        effective_project_id = project_id_list[0] if len(project_id_list) == 1 else None
+        # work paths. Derived from the ScopeFilter above.
+        effective_project_id = project_id
 
         try:
             result = await get_shared_indexer().index(IndexerOptions(
@@ -704,12 +839,161 @@ class FsRecordsActionsMixin:
             "duration_ms": result.duration_ms,
         })
 
+    async def _handle_fs_records_discover_by_path(
+        self,
+        record_type: str,
+        request_info,
+    ) -> ApiResponse:
+        """POST /fs-records/{type}/discover?path=<P>
+
+        Find-or-recover a single record by absolute path. Scans the file on
+        disk, syncs the resulting record to the entity DB, and returns its
+        metadata. Idempotent: a second call hits the cache.
+
+        Used by the frontend's `useEntityByPath` hook to recover a record
+        when the bulk list query misses (e.g. just-created workflow file).
+
+        Returns 404 if the file doesn't exist on disk OR doesn't match the
+        requested type's discovery rules.
+        """
+        import flow_sdk.fs_records  # noqa: F401 — trigger auto-registration
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry as _SR  # noqa: PLC0415
+        from flow_sdk.fs_store.record_list import RecordList  # noqa: PLC0415
+
+        qp = request_info.request.query_params
+        raw_path = (qp.get("path") or "").strip()
+        if not raw_path:
+            return ApiFailResponse(
+                message="Missing required 'path' query parameter",
+                status_code=400,
+            )
+
+        record_cls = _SR.get_record_cls(record_type)
+        if record_cls is None:
+            return ApiFailResponse(
+                message=f"Unknown record type '{record_type}'. Available: {_SR.get_all_record_types()}",
+                status_code=400,
+            )
+
+        # Expand ~ and resolve to a Path. Don't require the file to exist yet —
+        # we'll let the discovery layer decide.
+        expanded = str(Path(raw_path).expanduser())
+        target_norm = _normalize_asset_path(expanded)
+
+        # Inline match helper — looks up the record list by asset_ref
+        # equivalence. Returns the matched record even if its source is
+        # missing on disk: the caller now reads ``entity.orphan`` to
+        # distinguish stale-but-known-rows from never-existed paths.
+        # 404 is reserved for "no record at all"; orphans are SUCCESS.
+        def _find_in(record_list: "RecordList") -> "Record | None":  # type: ignore[name-defined]
+            for rec in record_list:
+                ref = getattr(rec, "asset_ref", None) or getattr(rec, "_asset_ref", None)
+                ref_path = getattr(ref, "path", None) if ref is not None else None
+                if ref_path is None:
+                    ref_path = str(ref) if ref else ""
+                if _normalize_asset_path(ref_path) == target_norm:
+                    return rec
+            return None
+
+        # Pass 1: try the existing index (shadow tree). Fast path.
+        record_list = RecordList(record_class=record_cls)
+        try:
+            found = _find_in(record_list)
+        except Exception as e:
+            return ApiFailResponse(
+                message=f"Failed to scan {record_type}: {e}",
+                status_code=500,
+            )
+
+        # Pass 2: on miss, force a fresh FSIndexer scan of the user's
+        # workflow / agent / skill / plan directories. The base
+        # ``Record.discover()`` walks ``records_root / <type> /`` (the
+        # **shadow** tree), so a brand-new file on disk is invisible
+        # until the indexer materialises it. This is the recovery path
+        # for ``useEntityByPath``: file exists on disk, isn't yet in
+        # the index → re-index this single type, then look again.
+        if found is None:
+            try:
+                from flow_sdk.fs_store.indexer import (  # noqa: PLC0415
+                    IndexerOptions,
+                    get_shared_indexer,
+                )
+                from flow_sdk.fs_store.record_types import RecordType as _RT  # noqa: PLC0415
+                rt = _RT(record_type)
+                indexer = get_shared_indexer()
+                await indexer.index(IndexerOptions(types=[rt]))
+            except Exception as e:
+                return ApiFailResponse(
+                    message=f"Re-index failed for {record_type}: {e}",
+                    status_code=500,
+                )
+            # Fresh RecordList — `RecordList(MUTABLE)` re-discovers per call,
+            # but instantiating a new one is the cleanest reset.
+            record_list = RecordList(record_class=record_cls)
+            try:
+                found = _find_in(record_list)
+            except Exception as e:
+                return ApiFailResponse(
+                    message=f"Failed to scan {record_type} after reindex: {e}",
+                    status_code=500,
+                )
+
+        if found is None:
+            return ApiFailResponse(
+                message=f"No {record_type} found at path: {raw_path}",
+                status_code=404,
+            )
+
+        # Sync to DB so future bulk queries pick it up. Idempotent.
+        # Skip when the source is missing on disk — `sync_to_db` rebuilds
+        # the entity row from the Record's fields, which would clobber the
+        # `orphan` / `orphan_since` flags the FSIndexer set on this row.
+        # Orphan state is the indexer's responsibility; discover just reads.
+        _ar_for_sync = getattr(found, "asset_ref", None)
+        _ar_path_for_sync = getattr(_ar_for_sync, "path", None) if _ar_for_sync is not None else None
+        _alive_on_disk = bool(_ar_path_for_sync and Path(str(_ar_path_for_sync)).expanduser().exists())
+        if _alive_on_disk:
+            try:
+                await found.sync_to_db()
+            except Exception as e:
+                # Log but don't fail — sync may legitimately fail for read-only sources.
+                logging.debug(f"[fs-records] sync_to_db on discover skipped for {record_type}: {e}")
+
+        data = found.meta_dict()
+        _ar = getattr(found, "asset_ref", None)
+        _ar_path = getattr(_ar, "path", None) if _ar is not None else None
+        if _ar_path:
+            data["asset_ref"] = _ar_path
+
+        # Merge entity-level fields the Record's meta_dict doesn't know about
+        # (orphan / orphan_since live on the Entity row, not the Record).
+        # The frontend's `<MissingAssetCard>` reads these to differentiate
+        # stale-but-known rows from never-existed paths.
+        try:
+            from flow_sdk.fs_store.schema_registry import SchemaRegistry as _SR  # noqa: PLC0415
+            _ent_cls = _SR.get_entity_cls(record_type)
+            if _ent_cls is not None:
+                _ent = await _ent_cls.get_by_id(found.id)  # type: ignore[attr-defined]
+                if _ent is not None:
+                    data["orphan"] = bool(getattr(_ent, "orphan", False))
+                    _since = getattr(_ent, "orphan_since", None)
+                    if _since is not None:
+                        # datetime → ISO 8601 string for the wire
+                        data["orphan_since"] = _since.isoformat() if hasattr(_since, "isoformat") else str(_since)
+                    else:
+                        data["orphan_since"] = None
+        except Exception as e:
+            logging.debug(f"[fs-records] merge entity orphan fields skipped for {record_type}: {e}")
+        return ApiSuccessResponse(data=data)
+
 
     async def _handle_fs_records_activity_status(self, request_info) -> ApiResponse:
         """Return the currently-running scan/index activity for this compute node, if any.
 
         Used by the UI to re-seed progress state after a page refresh so the
-        "Rebuild index" progress modal can reopen mid-job.
+        progress modal can reopen mid-job. Returns the latest
+        ``IndexProgressTable`` plus ``started_at`` metadata, or null when
+        no activity is running.
         """
         from flow_sdk.builtin.faas.compute_node import _COMPUTE_ACTIVITIES  # noqa: PLC0415
 
@@ -719,20 +1003,9 @@ class FsRecordsActionsMixin:
                 continue
             if activity is None or activity.is_timed_out or activity.is_complete:
                 continue
-            return ApiSuccessResponse(data={
-                "job_name": activity.job_name,
-                "done": activity.done,
-                "skipped": activity.skipped,
-                "errors": activity.errors,
-                "total": activity.total,
-                "text": activity.text,
-                "sub_activity_name": activity.sub_activity_name,
-                "sub_done": activity.sub_done,
-                "sub_skipped": activity.sub_skipped,
-                "sub_errors": activity.sub_errors,
-                "sub_total": activity.sub_total,
-                "started_at": activity.started_at.isoformat(),
-            })
+            payload = activity.make_flow_data()["attributes"]
+            payload["started_at"] = activity.started_at.isoformat()
+            return ApiSuccessResponse(data=payload)
         return ApiSuccessResponse(data=None)
 
 
@@ -798,6 +1071,13 @@ class FsRecordsActionsMixin:
 
         if not segments:
             return ApiFailResponse(message="Record type is required in URL path", status_code=400)
+
+        # Discover-or-recover by path: POST /fs-records/{type}/discover?path=...
+        if len(segments) == 2 and segments[1] == "discover" and method == "post":
+            return await self._handle_fs_records_discover_by_path(
+                record_type=segments[0],
+                request_info=request_info,
+            )
 
         record_type = segments[0]
         uid = segments[1] if len(segments) > 1 else None
@@ -895,16 +1175,19 @@ class FsRecordsActionsMixin:
                 from flow_sdk.db import get_db_driver  # noqa: PLC0415
                 from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
 
-                entity = await Entity.get_one(QueryFilter.parse({"id": uid}))
+                entity = await Entity.get_one(QueryFilter.parse({"id": uid}, record_type))
                 if entity is not None:
                     driver = get_db_driver()
                     if hasattr(driver, "fts_delete"):
                         await driver.fts_delete(entity.id)
                     await entity.delete()
-                # Remove from disk
-                deleted = await record_list.delete(uid)
-                if not deleted:
+                # Remove from disk — including the live asset_ref folder so
+                # records like Skill don't re-surface via discover() after delete.
+                record = await asyncio.to_thread(record_list.get, uid)
+                if record is None:
                     return ApiFailResponse(message=f"Record '{uid}' not found", status_code=404)
+                await record.delete(delete_ref=True)
+                record_list.invalidate()
                 await self._broadcast_fs_record_op("delete", record_type, uid)
                 return ApiSuccessResponse(data={"deleted": uid})
 
@@ -1156,4 +1439,17 @@ class FsRecordsActionsMixin:
             await handle_entity_op(data_op_msg)
         except Exception as e:
             logging.warning(f"[fs-records] Failed to broadcast DataOp: {e}")
+
+
+def _normalize_asset_path(p: str) -> str:
+    """Lower-precision path comparison. Strips trailing slash + leading slash
+    so file/folder shapes match consistently."""
+    if not p:
+        return ""
+    p = p.rstrip("/")
+    if p.startswith("/"):
+        p = p[1:]
+    return p
+
+
 

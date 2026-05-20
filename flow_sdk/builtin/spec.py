@@ -26,8 +26,9 @@ class Spec(Entity):
     # ``spec.first_context_of_type('plan')`` to read it back.
     _api_visible: ClassVar[bool] = True
 
-    def _direct_fields_as_typeids(self) -> List[TypeId]:
-        out: List[TypeId] = []
-        if self.author_id:
-            out.append(TypeId(type="user", id=self.author_id))
-        return out
+    # NOTE: Spec's former ``author_id`` projection moved alongside other
+    # implicit projections to ``Entity.get_implicit_private_context_entities``.
+    # The base now projects ``project_id`` only; ``author_id`` was dropped
+    # per "base returns project_id only for now". Override
+    # ``get_implicit_private_context_entities`` here and call ``super()`` to
+    # bring it back if the UX needs an author chip.

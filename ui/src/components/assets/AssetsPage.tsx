@@ -23,10 +23,12 @@ import {
 } from '@src/components/ui/breadcrumb';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import type { AssetFilter, AssetScope } from './assetFilter';
+import type { AssetFilter } from './assetFilter';
 import { DEFAULT_ASSET_FILTER } from './assetFilter';
+import { defaultScopeFilter } from '@src/lib/scope-filter';
+import type { ScopeFilter } from '@src/lib/scope-filter';
 import { projectIdForPath } from './utils';
-import { ScopeFilterBar } from './ScopeFilterBar';
+import { ScopeFilterBar } from '@src/components/scope-filter/ScopeFilterBar';
 import { AssetListView } from './AssetListView';
 import { BrowseableTree } from '@src/components/browseable-tree';
 import { assetTypeRoot } from '@src/components/browseable-tree/adapters/assetTypeRoot';
@@ -138,6 +140,10 @@ function buildFolderBreadcrumbs(
 const HIDDEN_TYPES = new Set<string>([RecordType.ANNOTATION, RecordType.PROJECT]);
 
 const SIDEBAR_COLLAPSED_KEY = 'wiki:sidebar-collapsed';
+const SIDEBAR_WIDTH_KEY = 'wiki:sidebar-width';
+const SIDEBAR_DEFAULT_WIDTH = 224;
+const SIDEBAR_MIN_WIDTH = 160;
+const SIDEBAR_MAX_WIDTH = 560;
 
 /** Breadcrumb rendered above the folder-filtered AssetListView. Each crumb
  *  except the last navigates to that ancestor; the last is the current page.
@@ -212,9 +218,13 @@ export function AssetsPage() {
   // selection round-trips with what the indexer stamps on records and what
   // the picker emits — independent of how dataContext bootstraps the Project.
   const currentProjectId = projectIdForPath(dataContext.project?.fs_storage_mount_path);
+  // Initial scope seeded from the current project so the Project chip's count
+  // is accurate from the first render. Seeding lives in `defaultScopeFilter`
+  // (lib/scope-filter.ts) so every surface gets the same context-aware default
+  // instead of each consumer reinventing it.
   const [assetFilter, setAssetFilter] = useState<AssetFilter>(() => ({
     ...DEFAULT_ASSET_FILTER,
-    projectIds: currentProjectId ? [currentProjectId] : [],
+    scope: defaultScopeFilter(currentProjectId),
   }));
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFilters, setSearchFilters] = useState<SearchFilters>({});
@@ -223,6 +233,14 @@ export function AssetsPage() {
     if (typeof window === 'undefined') return false;
     return window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1';
   });
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() => {
+    if (typeof window === 'undefined') return SIDEBAR_DEFAULT_WIDTH;
+    const raw = window.localStorage.getItem(SIDEBAR_WIDTH_KEY);
+    const n = raw ? Number(raw) : NaN;
+    if (!Number.isFinite(n)) return SIDEBAR_DEFAULT_WIDTH;
+    return Math.max(SIDEBAR_MIN_WIDTH, Math.min(SIDEBAR_MAX_WIDTH, n));
+  });
+  const [isResizingSidebar, setIsResizingSidebar] = useState(false);
 
   useEffect(() => { setSelectedResultIndex(-1); }, [searchQuery]);
 
@@ -231,7 +249,7 @@ export function AssetsPage() {
   }, []);
 
   const handleRebuildIndex = useCallback(() => {
-    void resetAndRescan(assetFilter);
+    void resetAndRescan(assetFilter.scope);
   }, [resetAndRescan, assetFilter]);
 
   const handleSearchSubmit = useCallback(() => {
@@ -253,14 +271,42 @@ export function AssetsPage() {
     window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, sidebarCollapsed ? '1' : '0');
   }, [sidebarCollapsed]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth));
+  }, [sidebarWidth]);
+
   const toggleSidebar = useCallback(() => setSidebarCollapsed((c) => !c), []);
 
-  const handleScopeChange = useCallback((scope: AssetScope) => {
-    setAssetFilter(prev => ({ ...prev, scope }));
-  }, []);
+  const handleSidebarResizeStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = sidebarWidth;
+    setIsResizingSidebar(true);
+    const prevCursor = document.body.style.cursor;
+    const prevUserSelect = document.body.style.userSelect;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    const onMove = (ev: MouseEvent) => {
+      const next = Math.max(
+        SIDEBAR_MIN_WIDTH,
+        Math.min(SIDEBAR_MAX_WIDTH, startWidth + (ev.clientX - startX)),
+      );
+      setSidebarWidth(next);
+    };
+    const onUp = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      document.body.style.cursor = prevCursor;
+      document.body.style.userSelect = prevUserSelect;
+      setIsResizingSidebar(false);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }, [sidebarWidth]);
 
-  const handleProjectIdsChange = useCallback((ids: string[]) => {
-    setAssetFilter(prev => ({ ...prev, projectIds: ids }));
+  const handleScopeChange = useCallback((scope: ScopeFilter) => {
+    setAssetFilter(prev => ({ ...prev, scope }));
   }, []);
 
   const {
@@ -392,7 +438,7 @@ export function AssetsPage() {
         return lastSeg === label || p.name === label;
       });
       if (match) {
-        setAssetFilter({ ...DEFAULT_ASSET_FILTER, scope: 'project', projectIds: [match.record_id] });
+        setAssetFilter({ ...DEFAULT_ASSET_FILTER, scope: { user: false, projects: [match.record_id] } });
       }
     } catch {
       // ignore
@@ -460,23 +506,22 @@ export function AssetsPage() {
           </Tooltip>
           <ScopeFilterBar
             scope={assetFilter.scope}
-            projectIds={assetFilter.projectIds}
             currentProjectId={currentProjectId}
             onScopeChange={handleScopeChange}
-            onProjectIdsChange={handleProjectIdsChange}
           />
         </div>
       </div>
 
       <div className="flex min-h-0 flex-1">
-        {/* Type sidebar — collapsible push drawer */}
+        {/* Type sidebar — collapsible push drawer, drag-resizable when expanded */}
         <div
-          className={`flex-shrink-0 overflow-hidden border-r transition-[width] duration-200 ease-out ${
-            sidebarCollapsed ? 'w-0' : 'w-56'
+          className={`flex-shrink-0 overflow-hidden border-r ${
+            isResizingSidebar ? '' : 'transition-[width] duration-200 ease-out'
           }`}
+          style={{ width: sidebarCollapsed ? 0 : sidebarWidth }}
           aria-hidden={sidebarCollapsed}
         >
-          <div className="h-full w-56 overflow-y-auto">
+          <div className="h-full overflow-y-auto" style={{ width: sidebarWidth }}>
             <BrowseableTree
               roots={wikiRoots}
               activePointer={currentDock ?? null}
@@ -485,6 +530,20 @@ export function AssetsPage() {
             />
           </div>
         </div>
+        {/* Resize handle for the sidebar — hidden when collapsed */}
+        {!sidebarCollapsed && (
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize asset tree"
+            onMouseDown={handleSidebarResizeStart}
+            onDoubleClick={() => setSidebarWidth(SIDEBAR_DEFAULT_WIDTH)}
+            className={`group relative w-1 flex-shrink-0 cursor-col-resize select-none ${
+              isResizingSidebar ? 'bg-primary/40' : 'hover:bg-primary/30'
+            }`}
+            data-testid="asset-tree-resize-handle"
+          />
+        )}
 
         {/* Main content: editor when in editor mode, list view otherwise */}
         <div className="min-w-0 flex-1">

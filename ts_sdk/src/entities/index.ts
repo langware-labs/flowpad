@@ -41,6 +41,7 @@ export * from './visitor';
 export * from './web-domain';
 export * from './workflow';
 export * from './skill';
+export * from './whiteboard';
 export * from './markdown';
 export * from './plan';
 export * from './claude-md';

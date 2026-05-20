@@ -2,7 +2,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from flow_sdk._compat import UTC
-from typing import List, Optional
+from typing import ClassVar, List, Optional
 
 from pydantic import BaseModel
 
@@ -36,6 +36,7 @@ class Invitation(Entity):
     expiration_at: Optional[datetime] = APIField(None)
     sent: Optional[bool] = APIField(False)
     message: Optional[str] = APIField(None)
+    _api_visible: ClassVar[bool] = True
 
     def __init__(self, **data):
         super().__init__(**data)

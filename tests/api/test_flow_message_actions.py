@@ -8,6 +8,7 @@ import io
 import json
 import uuid
 import zipfile
+from datetime import datetime, timezone
 
 import pytest
 
@@ -24,6 +25,25 @@ def _make_flowmsg_bytes(msg_data: dict) -> bytes:
     return buf.getvalue()
 
 
+def _make_conversation_bundle_bytes(msg_data: dict, conv_id: str, participants: list[dict]) -> bytes:
+    buf = io.BytesIO()
+    pointer = {
+        "typeid": f"flow_message-{msg_data['id']}",
+        "ts": datetime.now(timezone.utc).isoformat(),
+    }
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("header.json", json.dumps(msg_data, ensure_ascii=False))
+        zf.writestr(
+            f"attachment/conversation-@{conv_id}/header.json",
+            json.dumps({"type": "conversation", "id": conv_id, "participants": participants}, ensure_ascii=False),
+        )
+        zf.writestr(
+            f"attachment/conversation-@{conv_id}/conversation.jsonl",
+            json.dumps(pointer, ensure_ascii=False) + "\n",
+        )
+    return buf.getvalue()
+
+
 def _msg_data(fm_id: str, task_id: str | None = None) -> dict:
     context = []
     if task_id:
@@ -32,7 +52,7 @@ def _msg_data(fm_id: str, task_id: str | None = None) -> dict:
         "id": fm_id,
         "type": "flow_message",
         "text": "Test message",
-        "context_entities": context,
+        "shared_context_entities": context,
         "attachment": [],
         "sender_id": None,
         "sender_name": None,
@@ -67,7 +87,7 @@ def _make_flowmsg_bytes_with_attachment(msg_data: dict, inner_fm_id: str) -> byt
         "id": inner_fm_id,
         "type": "flow_message",
         "text": "inner message",
-        "context_entities": [],
+        "shared_context_entities": [],
         "attachment": [],
         "sender_id": None,
         "sender_name": None,
@@ -142,6 +162,101 @@ async def test_upload_flow_message_overwrite_returns_200(bootstrapped_client):
     assert r2.status_code == 200, f"Expected 200 with overwrite, got {r2.status_code}: {r2.text}"
     body = r2.json()
     assert body.get("status") == "SUCCESS"
+
+
+@pytest.mark.asyncio
+async def test_upload_flow_message_preserves_bundle_participants(
+    bootstrapped_client,
+):
+    """Receiver unpack stores the bundle participants exactly as sent."""
+    from flow_sdk.builtin.conversation import Conversation
+    from flow_sdk.builtin.flow_message import FlowMessage
+
+    fm_id = _new_id()
+    conv_id = _new_id()
+    msg = {
+        "id": fm_id,
+        "type": "flow_message",
+        "text": "hi bob preserved",
+        "shared_context_entities": [f"conversation-{conv_id}"],
+        "attachment": [],
+        "sender_id": "11111111-1111-4111-8111-111111111111",
+        "sender_name": "Alice",
+        "receiver_address": "bob@local.test",
+        "receiver_address_type": "email",
+        "instruction": None,
+    }
+    participants = [
+        {"user_id": "11111111-1111-4111-8111-111111111111", "name": "Alice", "email": "alice@local.test"},
+        {"user_id": "", "name": "", "email": "bob@local.test"},
+    ]
+    flowmsg_bytes = _make_conversation_bundle_bytes(msg, conv_id, participants)
+
+    response = await bootstrapped_client.post(
+        "/api/v1/graph/flow-message-upload",
+        files={"file": ("conversation.flowmsg", flowmsg_bytes, "application/zip")},
+    )
+    assert response.status_code == 200, response.text
+
+    fm = await FlowMessage.get_one({"id": fm_id})
+    assert fm is not None
+    assert fm.sender_id == "11111111-1111-4111-8111-111111111111"
+    assert fm.receiver_address == "bob@local.test"
+    assert fm.receiver_address_type == "email"
+
+    conv = await Conversation.get_one({"id": conv_id})
+    assert conv is not None
+    assert conv.participants == participants
+
+
+@pytest.mark.asyncio
+async def test_unpack_conversation_bundle_relinks_existing_top_flow_message(
+    bootstrapped_client,
+    tmp_path,
+):
+    """Invitation accept repairs the conversation pointer when inbox sync already saved the FM."""
+    from flow_sdk.builtin.conversation import Conversation
+    from flow_sdk.builtin.flow_message import FlowMessage
+    from flow_sdk.builtin.user import User
+    from flow_sdk.fs_records.flow_message_bundle import unpack_bundle
+
+    local_user = await User.get_one({"uname": "local"})
+    owner_typeid = local_user.typeid if local_user else None
+    local_user_id = local_user.id if local_user else ""
+
+    fm_id = _new_id()
+    conv_id = _new_id()
+    msg = {
+        "id": fm_id,
+        "type": "flow_message",
+        "text": "hi bob already synced",
+        "shared_context_entities": [f"conversation-{conv_id}"],
+        "attachment": [],
+        "sender_id": "11111111-1111-4111-8111-111111111111",
+        "sender_name": "Alice",
+        "receiver_address": "bob@local.test",
+        "receiver_address_type": "email",
+        "instruction": None,
+    }
+    existing = FlowMessage.model_validate(msg)
+    existing.id = fm_id
+    await existing.save(owner_typeid)
+
+    participants = [
+        {"user_id": "11111111-1111-4111-8111-111111111111", "name": "Alice", "email": "alice@local.test"},
+        {"user_id": "", "name": "Bob", "email": "bob@local.test"},
+    ]
+    bundle_path = tmp_path / "conversation.flowmsg"
+    bundle_path.write_bytes(_make_conversation_bundle_bytes(msg, conv_id, participants))
+
+    result = await unpack_bundle(bundle_path, local_user_id, overwrite=False)
+
+    assert result.id == fm_id
+    conv = await Conversation.get_one({"id": conv_id})
+    assert conv is not None
+    assert conv.message_count == 1
+    message_ids = json.loads(conv.message_ids or "[]")
+    assert message_ids[0]["typeid"] == f"flow_message-{fm_id}"
 
 
 @pytest.mark.asyncio

@@ -180,17 +180,25 @@ describe('AgenticProcess loadEmbeddedAgent', () => {
     }
     expect(turn1Content.length, 'Turn 1: expected non-empty chat content').toBeGreaterThan(0);
 
-    // Turn 2 — capture stream position, executeInstruction resets _completed,
-    // then output() yields all existing items + new ones.
+    // Turn 2 — workerStatus is COMPLETE from Turn 1, so output() would
+    // observe a terminal state and exit immediately. Subscribe to the
+    // 'complete' event BEFORE triggering, then slice the stream after
+    // the next completion edge lands.
     const afterTurn1Count = proc.flowDataStream.items.length;
+    const turn2Done = new Promise<void>((resolve) => {
+      const unsub = proc.on('complete', () => {
+        unsub();
+        resolve();
+      });
+    });
     await proc.executeInstruction('Say goodbye', { sync: false });
-
-    const allOutputs2: FlowData[] = [];
-    for await (const item of proc.output()) {
-      allOutputs2.push(item);
-    }
-
-    const turn2Items = allOutputs2.slice(afterTurn1Count);
+    await Promise.race([
+      turn2Done,
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Turn 2 timed out after 12s')), 12_000),
+      ),
+    ]);
+    const turn2Items = proc.flowDataStream.items.slice(afterTurn1Count);
     const turn2Content = chatContent(turn2Items);
     console.log('[load_embedded_agent] turn2 content:', turn2Content);
     if (isClaudeUnavailable(turn2Content)) {

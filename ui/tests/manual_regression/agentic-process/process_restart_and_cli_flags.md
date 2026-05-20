@@ -1,3 +1,7 @@
+---
+id: 925602af-69eb-5555-b24b-230dd698c9cb
+---
+
 test 1: Top-left Restart button respawns the PTY
 - navigate to {APP_URL}/dock/shell/new_terminal then open the tab-opener "+" (data-testid="opener-plus-button") and pick the "Claude Code" row (data-testid="opener-menu-row-claude")
 - wait for Claude CLI banner (up to 45s) and note pty_pid (via Session Info popover -> PTY ID row, or websocket trace)

@@ -1,0 +1,12 @@
+{
+  "type": "excalidraw",
+  "version": 2,
+  "source": "test",
+  "elements": [
+    {"id": "f1", "type": "freedraw", "x": 0, "y": 0, "width": 50, "height": 50, "points": [[0, 0], [10, 10]]},
+    {"id": "f2", "type": "freedraw", "x": 100, "y": 100, "width": 30, "height": 30, "points": [[0, 0], [5, 5]]},
+    {"id": "f3", "type": "freedraw", "x": 200, "y": 200, "width": 30, "height": 30, "points": [[0, 0], [5, 5]]}
+  ],
+  "appState": {},
+  "files": {}
+}

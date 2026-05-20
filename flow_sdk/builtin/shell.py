@@ -22,7 +22,7 @@ from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.core import action
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
-from flow_sdk.fs_records.shell_record import ShellStatus
+from flow_sdk.fs_records.shell_record import ShellStatus, read_auto_rename
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 
@@ -33,29 +33,6 @@ if TYPE_CHECKING:
     from flow_sdk.fs_records.shell_record import ShellRecord
 
 logger = logging.getLogger(__name__)
-
-_TYPEID_NAME_RE = r"^[a-z][a-z0-9-]*-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
-
-
-def allow_rename(agentic_process, name: str) -> bool:
-    """Return True when a PTY-originated title is allowed to rename the tab."""
-    import re
-
-    incoming = (name or "").strip()
-    if not incoming:
-        return False
-    if re.match(_TYPEID_NAME_RE, incoming, re.I):
-        return False
-
-    worker_type = str(getattr(agentic_process, "worker_type", "") or "").lower()
-    if worker_type in {"claude", "claude_code"}:
-        # Claude emits spinner/status titles such as "Claude Code"; these are
-        # not stable user-facing session names. Extend this list as needed.
-        if "Claude Code" in incoming:
-            return False
-
-    return True
-
 
 class Shell(Entity):
     """Entity representing a shell tab (PTY session).
@@ -82,8 +59,13 @@ class Shell(Entity):
     error_message: str | None = APIField(default=None, description="Error message when status=error")
     worker_pid: int | None = APIField(default=None, description="OS PID of the running worker process")
     worker_name: str | None = APIField(default=None, description="Worker executable name, e.g. 'claude'")
-    user_renamed: bool = APIField(default=False, description="True when the shell was explicitly renamed outside PTY title events")
-    pty_rename: bool = APIField(default=True, description="True when PTY OSC title events may update the display name")
+    auto_rename: bool = APIField(
+        default=True,
+        description=(
+            "When True, PTY OSC title escapes are allowed to update `name`. "
+            "Cleared the first time the user manually renames this tab in the UI."
+        ),
+    )
     last_launch_cmd: dict | None = APIField(default=None, description="Serialized WorkerCLIOptions from the last launch() call")
 
     _api_visible: ClassVar[bool] = True
@@ -104,7 +86,7 @@ class Shell(Entity):
         binding hasn't been resolved yet AND we have no uname hint — purely to
         avoid breaking ephemeral sessions that still use a raw local id. For
         every other path (including sandbox shells) the real CN + provider are
-        used, so `Shell.start()` routes to the correct provider.
+        used, so `Shell.start_pty()` routes to the correct provider.
         """
         if self._bound_compute_node is not None:
             return self._bound_compute_node
@@ -275,15 +257,40 @@ class Shell(Entity):
 
     # ── Construction ──────────────────────────────────────────────────────────
 
+    async def save(self, *args, **kwargs):  # type: ignore[override]
+        """Persist this Shell, defaulting ``project_id`` to the bootstrap
+        ``@local`` Project when none was supplied.
+
+        Project consolidation (Path A, 2026-05-09) — every Shell carries a
+        real ``project_id`` so the tab strip, projects-counter chip, and
+        ``useProjectTerminals`` filter never see ``None`` for a tab's project.
+        Callers that want a specific project (per-project shell, sandbox-
+        scoped run, collaboration room) keep passing ``project_id`` explicitly;
+        callers that don't (CLI spawns, REST POSTs, legacy code paths,
+        tests) get the local default automatically.
+        """
+        if not self.project_id:
+            try:
+                from flow_sdk.builtin.project import Project  # noqa: PLC0415
+                local = await Project.get_by_prop("uname", "local", "project")
+                if local is not None and getattr(local, "id", None):
+                    self.project_id = local.id
+            except Exception:
+                # Never block save on the project lookup — fall through with
+                # ``project_id=None``. Phase 6 cleanup tolerates the legacy
+                # null path defensively.
+                pass
+        return await super().save(*args, **kwargs)
+
     @classmethod
     async def open(cls, workdir=None, **kwargs) -> "Shell":
         """Create + start PTY immediately. Returns a ready shell."""
         shell = cls(workdir=workdir, **kwargs)
-        await shell.start()
+        await shell.start_pty()
         return shell
 
     async def __aenter__(self) -> "Shell":
-        await self.start()
+        await self.start_pty()
         return self
 
     async def __aexit__(self, *_) -> None:
@@ -291,7 +298,7 @@ class Shell(Entity):
 
     # ── Lifecycle ─────────────────────────────────────────────────────────────
 
-    async def start(
+    async def start_pty(
         self,
         rows: int = 24,
         cols: int = 80,
@@ -355,6 +362,12 @@ class Shell(Entity):
         await self.save()
         return True
 
+    async def start(self, *args, **kwargs) -> bool:
+        """Back-compat alias for :meth:`start_pty`. Prefer ``start_pty`` —
+        ``start`` reads as a generic lifecycle word but this method only ever
+        spawns the PTY."""
+        return await self.start_pty(*args, **kwargs)
+
     async def stop(self) -> None:
         """Kill PTY + worker, keep the Shell entity. Tab entry remains.
 
@@ -368,9 +381,9 @@ class Shell(Entity):
         await self.save()
 
     async def restart(self) -> None:
-        """stop() then start(). Preserves workdir, env, tab_order."""
+        """stop() then start_pty(). Preserves workdir, env, tab_order."""
         await self.stop()
-        await self.start()
+        await self.start_pty()
 
     async def terminate_worker(self) -> None:
         """Gracefully kill the Claude worker and wait for full reap.
@@ -424,7 +437,17 @@ class Shell(Entity):
         """
         from flow_sdk.compute.providers.desktop.pty_replay_buffer import replay_buffer
 
-        pty_key = (self.compute_node_id, "local", self.id)
+        # Resolve the real provider_node_id used by the append path
+        # (pty_actions.py uses ``compute_node.node_provider_id``). The bare
+        # ``self.compute_node`` property returns a synthetic stub with
+        # ``node_provider_id="local"`` when the shell hasn't yet bound to a
+        # live CN — that literal never matches the append key, so the loop
+        # would always time out. Bind first, then read the resolved id.
+        await self.ensure_live_compute_node_binding()
+        provider_id = self.compute_node.node_provider_id if self.compute_node else None
+        if not provider_id:
+            return
+        pty_key = (self.compute_node_id, provider_id, self.id)
         deadline = asyncio.get_event_loop().time() + timeout
         last_seq = -1
         while asyncio.get_event_loop().time() < deadline:
@@ -443,7 +466,7 @@ class Shell(Entity):
         """
         pty_handle = self.compute_node.get_pty(self.id)
         if not pty_handle:
-            raise RuntimeError("No PTY session — call start() first")
+            raise RuntimeError("No PTY session — call start_pty() first")
         await self._wait_for_shell_ready()
         await pty_handle.write(f"{text}\r".encode())
 
@@ -455,7 +478,7 @@ class Shell(Entity):
         """
         pty_handle = self.compute_node.get_pty(self.id)
         if not pty_handle:
-            raise RuntimeError("No PTY session — call start() first")
+            raise RuntimeError("No PTY session — call start_pty() first")
         await pty_handle.write(data)
 
     async def read(self) -> bytes:
@@ -643,44 +666,14 @@ class Shell(Entity):
             except Exception as e:
                 logging.warning(f"[Shell.set_env] PTY inject failed: {e}")
 
-    # ── Display ───────────────────────────────────────────────────────────────
-
-    async def rename(self, name: str) -> None:
-        """Set the tab display label from a manual API/UI rename."""
-        self.name = name
-        self.user_renamed = True
-        self.pty_rename = False
-        self.last_active_at = datetime.now(timezone.utc).isoformat()
-        await self.save()
-        try:
-            record = await self.get_record()
-            if record:
-                record.sync_from_entity(self)
-        except Exception:
-            pass
-        try:
-            proc = await self._linked_agentic_process()
-            if proc:
-                proc.name = name
-                proc.pty_rename = False
-                await proc.save()
-        except Exception:
-            pass
-
-    async def _linked_agentic_process(self):
-        try:
-            from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
-            return await AgenticProcess.get_by_prop("shell_id", self.id, "agentic_process")
-        except Exception:
-            return None
-
     # ── Class utilities ───────────────────────────────────────────────────────
 
     @classmethod
     async def active(cls, compute_node_typeid: str | None = None) -> list["Shell"]:
         """All non-closed shells ordered by tab_order."""
         all_shells = await cls.get_all()
-        shells = [s for s in all_shells if s.status != ShellStatus.CLOSED.value]
+        hidden_statuses = {ShellStatus.CLOSING.value, ShellStatus.CLOSED.value, ShellStatus.ERROR.value}
+        shells = [s for s in all_shells if s.status not in hidden_statuses]
         shells.sort(key=lambda s: s.tab_order)
         return shells
 
@@ -733,8 +726,7 @@ class Shell(Entity):
             status=(record.status.value if hasattr(record.status, "value") else record.status) or ShellStatus.IDLE.value,
             compute_node_id=cn_id,
             compute_node_uname=record.data.get("compute_node_uname"),
-            user_renamed=bool(record.data.get("user_renamed", False)),
-            pty_rename=bool(record.data.get("pty_rename", True)),
+            auto_rename=read_auto_rename(record.data),
         )
         await entity.save()
 
@@ -760,8 +752,7 @@ class Shell(Entity):
         self.created_at = record.data.get("created_at")
         self.last_active_at = record.data.get("last_active_at")
         self.compute_node_uname = record.data.get("compute_node_uname")
-        self.user_renamed = bool(record.data.get("user_renamed", False))
-        self.pty_rename = bool(record.data.get("pty_rename", True))
+        self.auto_rename = read_auto_rename(record.data)
         status = record.status
         self.status = status.value if hasattr(status, "value") else (status or ShellStatus.IDLE.value)
 
@@ -779,7 +770,7 @@ class Shell(Entity):
         if working_dir:
             self.workdir = working_dir
         try:
-            await self.start(
+            await self.start_pty(
                 rows=body.get("rows", 24),
                 cols=body.get("cols", 80),
                 connection_id=body.get("connection_id"),
@@ -856,83 +847,6 @@ class Shell(Entity):
             return ApiFailResponse(message="vars is required")
         await self.set_env(**vars_dict)
         return ApiSuccessResponse(data={"vars": list(vars_dict.keys())})
-
-    @action.post(action_name="update-display")
-    async def update_display(self) -> ApiResponse:
-        """HTTP: Update display properties (name, tab_order).
-
-        POST body: {name?, tab_order?, pty_rename?, is_pty?}
-        When is_pty=True the name came from a PTY OSC title escape and is
-        accepted only when both the shell and linked process allow PTY renames
-        and allow_rename(process, name) passes. Manual renames make the
-        pty_rename flag false and sticky until explicitly re-enabled.
-        """
-        request_info = get_current_request_info()
-        body = await request_info.get_post_data() if request_info else {}
-
-        is_pty = bool(body.get("is_pty", False))
-        changed = False
-        proc_changed = False
-        proc = None
-        pty_rename_in_body = "pty_rename" in body or "ptyRename" in body
-        if pty_rename_in_body or "name" in body:
-            proc = await self._linked_agentic_process()
-
-        if pty_rename_in_body:
-            self.pty_rename = bool(body.get("pty_rename", body.get("ptyRename")))
-            changed = True
-            if proc and getattr(proc, "pty_rename", None) != self.pty_rename:
-                proc.pty_rename = self.pty_rename
-                proc_changed = True
-
-        if "name" in body:
-            incoming = str(body["name"]).strip()
-            proc_allows_pty = bool(getattr(proc, "pty_rename", True)) if proc else True
-            if is_pty and (
-                not self.pty_rename
-                or not proc_allows_pty
-                or not allow_rename(proc, incoming)
-            ):
-                logger.debug("[Shell.update_display] ignored PTY title for %s: %r", self.id, incoming)
-            else:
-                self.name = incoming
-                if not is_pty:
-                    self.user_renamed = True
-                    self.pty_rename = False
-                    if proc:
-                        proc.pty_rename = False
-                        proc_changed = True
-                changed = True
-        if "tab_order" in body:
-            self.tab_order = body["tab_order"]
-            changed = True
-
-        if changed:
-            self.last_active_at = datetime.now(timezone.utc).isoformat()
-            await self.save()
-            try:
-                record = await self.get_record()
-                if record:
-                    record.sync_from_entity(self)
-            except Exception:
-                pass
-
-            # Propagate name change to the linked AgenticProcess so the name
-            # survives shell deletion when the process is closed.
-            if self.name and "name" in body:
-                try:
-                    if proc and proc.name != self.name:
-                        proc.name = self.name
-                        proc_changed = True
-                except Exception:
-                    pass
-            if proc and proc_changed:
-                try:
-                    await proc.save()
-                except Exception:
-                    pass
-
-        return ApiSuccessResponse(data=self.model_dump(mode="json"))
 
     @action.get(action_name="fetch-pty-sequence")
     async def fetch_pty_sequence(self) -> ApiResponse:

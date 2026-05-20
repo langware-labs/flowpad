@@ -1,5 +1,5 @@
 ---
-
+id: f0d070fa-2438-59b8-857d-f6f4a24ef2a7
 ---
 
 # Agent Records
@@ -533,10 +533,10 @@ identifier and both write or resume the same Claude JSONL transcript path:
 `AgenticProcess.prompt(instruction)` routes to:
 
 ```python
-self.driver.run_print_turn(self, instruction)
+self.driver.headless_prompt(self, instruction)
 ```
 
-For Claude, `ClaudeDriver.run_print_turn()`:
+For Claude, `ClaudeDriver.headless_prompt()`:
 
 * Requires `process.workdir`.
 
@@ -1000,4 +1000,3 @@ record lookup.
 | `ts_sdk/src/process/agentic-process.ts`                              | Client-side `AgenticProcess` entity wrapper                        |
 | `ts_sdk/src/process/agentic-types.ts`                                | `ProcessStatus`, `WorkerStatus`, `WorkerMode`, readiness helpers   |
 | `ts_sdk/src/IEntity.ts`                                              | Base entity interface with legacy VFS fields                       |
-

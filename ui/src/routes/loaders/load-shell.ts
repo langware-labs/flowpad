@@ -20,6 +20,7 @@
 
 import {
   AgenticProcess,
+  connectionManager,
   ContextEntitiesEnum,
   dataContext,
   dataManager,
@@ -30,11 +31,17 @@ import {
   systemTools,
   TypeId,
 } from '@sdk';
-import { terminalProcessId, terminalTransportShellId, type TerminalTab } from '@src/hooks/useActiveTerminals';
+import {
+  closeTerminalTargets,
+  terminalProcessId,
+  terminalTransportShellId,
+  type TerminalTab,
+} from '@src/hooks/useActiveTerminals';
 import { showCleanupModal } from '@src/components/recovery/cleanup-modal';
 import { toast } from '@src/hooks/use-toast';
 import { DockPointer } from '@src/navigation';
-import { redirect, replace } from 'react-router';
+import { replace } from 'react-router';
+import { perfLog, perfTime } from './_perf';
 import {
   describeProcessStartError,
   loadProcess,
@@ -74,11 +81,6 @@ function cachedEntitiesByType<U>(type: string): U[] {
   return out;
 }
 
-function _perfLog(label: string) {
-  const t0 = (window as Record<string, unknown>).__shellNavT0 as number | undefined;
-  if (t0 !== undefined) console.log(`[PERF] +${(performance.now() - t0).toFixed(0)}ms ${label}`);
-}
-
 // ── CORE: loadShell(shellId) — pure, no redirects ───────────────────────────
 
 /**
@@ -88,9 +90,13 @@ function _perfLog(label: string) {
  * dispatch (and will call `loadProcess` instead when a process owns the shell).
  */
 export async function loadShell(shellId: string): Promise<Shell> {
+  const cached = Shell.getByIdFromCache<Shell>(shellId);
+  perfLog(`loadShell cache=${cached ? 'hit' : 'miss'} shellId=${shellId.slice(0, 8)}`);
   const shell =
-    Shell.getByIdFromCache<Shell>(shellId) ??
-    (await Shell.getById<Shell>(shellId).catch(() => null));
+    cached ??
+    (await perfTime('Shell.getById (network)', () =>
+      Shell.getById<Shell>(shellId).catch(() => null),
+    ));
   if (!shell) {
     throw new ShellLoadError('not_found', shellId);
   }
@@ -98,7 +104,9 @@ export async function loadShell(shellId: string): Promise<Shell> {
     throw new ShellLoadError('error_status', shellId, shell.error_message ?? null);
   }
   try {
-    await shell.start({ cols: Shell.DEFAULT_COLS, rows: Shell.DEFAULT_ROWS, workdir: shell.workdir ?? undefined });
+    await perfTime('shell.start (PTY attach)', () =>
+      shell.start({ cols: Shell.DEFAULT_COLS, rows: Shell.DEFAULT_ROWS, workdir: shell.workdir ?? undefined }),
+    );
   } catch (cause) {
     throw new ShellLoadError('start_failed', shellId, null, cause);
   }
@@ -213,13 +221,15 @@ async function routeDefaultShell(): Promise<void> {
     await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProcessTypeId, null);
     return;
   }
-  _perfLog(`routeDefaultShell redirect → /dock/shell/${loadedToPointer(result.loaded)}`);
-  // Push (not replace): the user navigated *to* /dock/shell intentionally.
-  // Replacing here would erase that navigation step from history, so BACK
-  // would skip the user's previous page (home → terminal → BACK should
-  // return to home, not whatever was before home).
+  perfLog(`routeDefaultShell redirect → /dock/shell/${loadedToPointer(result.loaded)}`);
+  // Replace (not push): bare /dock/shell is a transient placeholder the user
+  // never sees — the loader resolves it to a concrete shell URL synchronously.
+  // Using redirect() (PUSH) leaves bare /dock/shell as a no-op history entry,
+  // which (a) breaks back/forward navigation across tab clicks and (b) is
+  // dropped silently on hard-refresh. Home → BACK still returns to home
+  // because the resolved /dock/shell/<id> entry replaces the bare one.
   // eslint-disable-next-line @typescript-eslint/only-throw-error
-  throw redirect(`/dock/shell/${loadedToPointer(result.loaded)}`);
+  throw replace(`/dock/shell/${loadedToPointer(result.loaded)}`);
 }
 
 async function routeProcessPointer(processId: string): Promise<void> {
@@ -273,7 +283,7 @@ async function routePlainShellPointer(pointer: string): Promise<void> {
     // Use replace so BACK from the process URL doesn't pop back to the bare
     // shell URL (which would just re-bounce here → flicker).
     // eslint-disable-next-line @typescript-eslint/only-throw-error
-    throw replace(`/dock/shell/${linkedProcess.dockPointer.pointer}`);
+    throw replace(`/dock/shell/${linkedProcess.terminalDockPointer.pointer}`);
   }
 
   try {
@@ -281,6 +291,18 @@ async function routePlainShellPointer(pointer: string): Promise<void> {
     return;
   } catch (e) {
     if (!(e instanceof ShellLoadError)) throw e;
+
+    // Pointer wasn't a Shell id — try resolving it as a Claude/Codex worker
+    // session id via the backend before falling back to "next process". This
+    // is the URL-deep-link path: /dock/shell/<worker-session-uuid>.
+    if (e.kind === 'not_found') {
+      const recovered = await AgenticProcess.getByWorkerId(shellId).catch(() => null);
+      if (recovered) {
+        // eslint-disable-next-line @typescript-eslint/only-throw-error
+        throw replace(`/dock/shell/${recovered.terminalDockPointer.pointer}`);
+      }
+    }
+
     // See routeProcessPointer for rationale on `replace`.
     const directCleanup = await buildShellCleanupForRoute(e);
     const next = await loadNextProcess({
@@ -327,8 +349,7 @@ async function buildShellCleanupForRoute(e: ShellLoadError): Promise<CleanupReco
     case 'error_status':
       return { kind: 'shell_error_status', shellId: e.shellId, title: 'Shell unavailable', description: e.errorMessage ?? 'Shell error' };
     case 'start_failed': {
-      const cached = Shell.getByIdFromCache<Shell>(e.shellId);
-      await cached?.close().catch(() => {});
+      await closeTerminalTargets([new TypeId(Shell.type, e.shellId)]).catch(() => {});
       const desc = describeProcessStartError(e.cause ?? e);
       return { kind: 'shell_start_failed', shellId: e.shellId, title: desc.title, description: desc.description };
     }
@@ -345,7 +366,25 @@ async function buildShellCleanupForRoute(e: ShellLoadError): Promise<CleanupReco
  * single recovery / fallback primitive.
  */
 export async function loadShellRoute(pointer: string | undefined): Promise<void> {
-  _perfLog(`loadShellRoute(${pointer || 'no-pointer'}) start`);
+  perfLog(`loadShellRoute(${pointer || 'no-pointer'}) start`);
+
+  // Gate on the FlowSync WS being OPEN. The dispatch chain below
+  // (loadProcess → process.start → shell.attachPty → _reattach → callActionOverWS)
+  // throws synchronously when the socket isn't connected, which on cold tabs
+  // races against initSdk's fire-and-forget connect. 5 s budget; on timeout we
+  // surface a toast and fall through (the existing redirect-on-failure chain
+  // still applies if the downstream WS call ultimately fails).
+  try {
+    await perfTime('connectionManager.waitForConnected', () =>
+      connectionManager.waitForConnected(5000),
+    );
+  } catch {
+    toast({
+      title: 'No realtime connection',
+      description: 'Terminal may be unresponsive until the connection recovers.',
+      variant: 'destructive',
+    });
+  }
 
   if (pointer === 'new_terminal') {
     await routeNewTerminal();
@@ -359,10 +398,10 @@ export async function loadShellRoute(pointer: string | undefined): Promise<void>
   if (DockPointer.isAgenticProcessPointer(pointer)) {
     const processId = DockPointer.extractAgenticProcessId(pointer);
     await routeProcessPointer(processId);
-    _perfLog('loadShellRoute done (agentic process path)');
+    perfLog('loadShellRoute done (agentic process path)');
     return;
   }
 
   await routePlainShellPointer(pointer);
-  _perfLog('loadShellRoute done (shell path)');
+  perfLog('loadShellRoute done (shell path)');
 }

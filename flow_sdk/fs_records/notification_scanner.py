@@ -233,6 +233,7 @@ async def _create_conversation_from_disk(
     remote_project_id: str | None = None,
     remote_project_name: str | None = None,
     participants: list[dict] | None = None,
+    title: str | None = None,
 ) -> Conversation | None:
     """Create a Conversation entity from conversation.jsonl on disk (recipient side).
 
@@ -262,6 +263,7 @@ async def _create_conversation_from_disk(
         remote_project_id=remote_project_id,
         remote_project_name=remote_project_name,
         participants=participants,
+        title=title,
         someone_typeid=owner_typeid,
     )
 
@@ -302,11 +304,17 @@ async def _sync_conversation(task: Task, task_dir: Path) -> None:
         logger.warning(f"notification_scanner: schedule inbox-fetch failed (non-fatal): {e}")
 
     try:
+        # Sniffer EVENT — never CRUD. As SyncOperation.UPDATE this reached the
+        # webhook receiver's _reflect_entity, which re-saved a stale
+        # Conversation snapshot and clobbered the projected message list.
         send_resource_sync(
             type="conversation",
             id=conv.id,
-            operation=SyncOperation.UPDATE,
-            data={"event_data": {"task_id": task.id, "conversation_id": conv.id}},
+            operation=SyncOperation.EVENT,
+            data={
+                "event_name": "conversation_updated",
+                "event_data": {"task_id": task.id, "conversation_id": conv.id},
+            },
         )
     except Exception as e:
         logger.warning(f"notification_scanner: send_resource_sync (conv update) failed: {e}")

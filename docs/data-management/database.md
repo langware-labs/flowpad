@@ -1,3 +1,7 @@
+---
+id: 8106572b-f02b-5e7c-a9e7-c528fc03e0b5
+---
+
 # Database Architecture
 
 How the SQLite layer is wired in flow-cli — one async engine, one transaction

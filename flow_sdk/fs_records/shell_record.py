@@ -24,7 +24,14 @@ from flow_sdk.fs_store.record import get_default_records_data_root, get_default_
 class ShellStatus(StrEnum):
     IDLE = "idle"
     RUNNING = "running"
+    CLOSING = "closing"
     CLOSED = "closed"
+    ERROR = "error"
+
+
+def read_auto_rename(data: dict) -> bool:
+    """Read ``auto_rename`` with legacy ``pty_rename`` fallback. Default True."""
+    return bool(data.get("auto_rename", data.get("pty_rename", True)))
 
 
 class ShellRecord(Record):
@@ -60,8 +67,7 @@ class ShellRecord(Record):
         kwargs.setdefault("agentic_process_id", None)
         kwargs.setdefault("workdir", None)
         kwargs.setdefault("name", None)
-        kwargs.setdefault("pty_rename", True)
-        kwargs.setdefault("user_renamed", False)
+        kwargs.setdefault("auto_rename", True)
         kwargs.setdefault("tab_order", 0)
         kwargs.setdefault("entity_id", None)
         kwargs.setdefault("created_at", datetime.now(timezone.utc).isoformat())

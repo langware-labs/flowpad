@@ -31,6 +31,13 @@ export default defineConfig({
           include: ['tests/long_tests/**/*.test.{ts,tsx}'],
         },
       },
+      {
+        extends: './tests/hub/vitest.config.ts',
+        test: {
+          name: 'hub',
+          include: ['tests/hub/**/*.test.{ts,tsx}'],
+        },
+      },
     ],
   },
 });

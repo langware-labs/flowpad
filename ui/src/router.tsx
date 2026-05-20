@@ -2,19 +2,59 @@ import AgentLayout from '@src/components/agent-layout/agent-layout';
 import ErrorScreen from '@src/components/agent-layout/error-screen/error-screen';
 import { ApiKeysView } from '@src/components/api-keys-view/api-keys-view';
 import DeveloperLayout from '@src/components/developer-layout/developer-layout';
+import { FloatingChatWindow } from '@src/components/floating-chat';
 import { HooksView } from '@src/components/hooks-view/hooks-view';
 import { SessionsView } from '@src/components/sessions-view/sessions-view';
+// `WorkflowTracePreviewPage` was a dev-only standalone preview that bypassed
+// the entity layer. The workflow-runner refactor (May 2026) routes everything
+// through the main /dock/assets/editor/workflow URL. Removed.
 import { BASE_PATH } from '@src/constants/basePath';
 import AgentRedirect from '@src/pages/agent-redirect';
 import FlowPage from '@src/pages/flow-page/flow-page';
 import KeychainApproval from '@src/pages/keychain-approval';
 import LandingPage from '@src/pages/landing-page/landing-page';
 import NotFound from '@src/pages/NotFound';
-import { createBrowserRouter, createRoutesFromElements, Navigate, Route, type ShouldRevalidateFunctionArgs } from 'react-router';
+import App from '@src/App';
+import { createBrowserRouter, createRoutesFromElements, Navigate, Outlet, Route, useLocation, type ShouldRevalidateFunctionArgs } from 'react-router';
+
+/**
+ * Root-level `/dev/<anything-not-main-or-hooks>` URLs forward to `/dock/<same>`.
+ *
+ * Why: url-builder.ts and DockPointer treat `dock` and `dev` as interchangeable
+ * layout keywords (see parseDockUrl), so users land here from copy/paste,
+ * stale links, or hand-typed URLs. Without this redirect, the root catch-all
+ * NotFound swallows them — surprising and unhelpful.
+ */
+function DevToDockRedirect() {
+  const location = useLocation();
+  const rest = location.pathname.replace(/^\/dev\/?/, '');
+  const target = `/dock/${rest}${location.search}${location.hash}`;
+  return <Navigate to={target} replace />;
+}
+
+/**
+ * Root layout — sits inside the loader-gated subtree so `<App>` and every
+ * entity-touching hook it contains (useAuth, useGlobalEvents, …) only mount
+ * after `loadRoot` has resolved (i.e. SDK schemas + bootstrap are ready).
+ *
+ * `<FloatingChatWindow>` lives here because its descendants call
+ * react-router hooks (`useNavigate()`); placing it inside `<App>` keeps it
+ * below `<RouterProvider>` while still letting `FloatingChatProvider` (in
+ * `<App>`) own the open/close state across route changes.
+ */
+function RootLayout() {
+  return (
+    <App>
+      <Outlet />
+      <FloatingChatWindow />
+    </App>
+  );
+}
 
 // Import loaders
 import { loadHomePage } from './routes/loaders/home-loader';
 import { loadAgentApp } from './routes/loaders/main-loader';
+import { loadRoot } from './routes/loaders/root-loader';
 
 function shouldRevalidateDockShell({
   currentUrl,
@@ -35,6 +75,8 @@ export const router = createBrowserRouter(
   createRoutesFromElements(
     <Route
       path="/"
+      element={<RootLayout />}
+      loader={loadRoot}
       errorElement={<ErrorScreen />}
       HydrateFallback={() => (
         <div className="flex min-h-screen items-center justify-center">
@@ -79,6 +121,9 @@ export const router = createBrowserRouter(
         <Route path="main/api-keys" element={<ApiKeysView />} />
         {/* Connections route hidden until OAuth flow is fully implemented */}
         <Route path="hooks" element={<HooksView />} />
+        {/* /dev/trace/:runId removed by the workflow-runner refactor.
+            Use /dock/assets/editor/workflow/<asset_ref> instead. */}
+        <Route path="*" element={<DevToDockRedirect />} />
       </Route>
 
       {/* Deep-link bridge: pops the SecretApprovalDialog when the

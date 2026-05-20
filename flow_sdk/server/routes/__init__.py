@@ -23,6 +23,7 @@ from .debug import router as debug_router
 from .navigate import router as navigate_router
 from .agent_records import router as agent_records_router
 from .transcripts import router as transcripts_router
+from .wiki import router as wiki_router
 
 __all__ = [
     "bootstrap_router",
@@ -48,4 +49,5 @@ __all__ = [
     "navigate_router",
     "agent_records_router",
     "transcripts_router",
+    "wiki_router",
 ]

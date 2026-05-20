@@ -1,0 +1,39 @@
+{
+  "type": "excalidraw",
+  "version": 2,
+  "source": "test",
+  "elements": [
+    {"id": "ra", "type": "rectangle", "x": 0, "y": 0, "width": 80, "height": 40},
+    {"id": "ta", "type": "text", "x": 10, "y": 10, "width": 60, "height": 20, "text": "A"},
+    {"id": "rb", "type": "rectangle", "x": 200, "y": 0, "width": 80, "height": 40},
+    {"id": "tb", "type": "text", "x": 210, "y": 10, "width": 60, "height": 20, "text": "B"},
+    {"id": "rc", "type": "rectangle", "x": 400, "y": 0, "width": 80, "height": 40},
+    {"id": "tc", "type": "text", "x": 410, "y": 10, "width": 60, "height": 20, "text": "C"},
+    {
+      "id": "a_ab",
+      "type": "arrow",
+      "x": 80,
+      "y": 20,
+      "width": 120,
+      "height": 0,
+      "points": [[0, 0], [120, 0]],
+      "startBinding": {"elementId": "ra"},
+      "endBinding": {"elementId": "rb"}
+    },
+    {"id": "t_ab", "type": "text", "x": 130, "y": 10, "width": 20, "height": 20, "text": "step1"},
+    {
+      "id": "a_bc",
+      "type": "arrow",
+      "x": 280,
+      "y": 20,
+      "width": 120,
+      "height": 0,
+      "points": [[0, 0], [120, 0]],
+      "startBinding": {"elementId": "rb"},
+      "endBinding": {"elementId": "rc"}
+    },
+    {"id": "t_bc", "type": "text", "x": 330, "y": 10, "width": 20, "height": 20, "text": "step2"}
+  ],
+  "appState": {},
+  "files": {}
+}

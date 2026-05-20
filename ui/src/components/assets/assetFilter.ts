@@ -1,26 +1,19 @@
 /**
  * Unified filter state for the asset browser.
  * Lifted to AssetsPage so it persists across type-sidebar switches.
+ *
+ * The universal scope shape (ScopeFilter) and the URL serializer
+ * (applyScopeToParams) live in @src/lib/scope-filter — they're shared with
+ * the records-scanner page and any future surface that filters by user/
+ * project scope.
  */
-export type AssetScope = 'all' | 'user' | 'project';
+import { applyScopeToParams, type ScopeFilter } from '@src/lib/scope-filter';
 
 export interface AssetFilter {
   /** Free-text search query (debounced in the hook). */
   query: string;
-  /**
-   * Scope restriction.
-   * - 'all'     = union of user-scoped + project-scoped (filtered by `projectIds`).
-   *               When `projectIds` is empty, falls back to user-only.
-   * - 'user'    = user-scoped only; `projectIds` is ignored.
-   * - 'project' = project-scoped only, restricted to `projectIds`.
-   * The project filter (which projects) is set independently via the funnel
-   * filter button, not by clicking the scope buttons.
-   */
-  scope: AssetScope;
-  /** Project entity IDs the project-half of the filter applies to. Used by
-   *  scope='all' (user + these projects) and scope='project' (these projects only).
-   *  AssetsPage seeds this with the current project on mount. */
-  projectIds: string[];
+  /** Scope restriction — single unified shape. */
+  scope: ScopeFilter;
   /** Tag chips the user has added. */
   tags: string[];
   /** Per-type quick-filter key/value pairs (status, etc.). */
@@ -32,36 +25,18 @@ export interface AssetFilter {
 
 export const DEFAULT_ASSET_FILTER: AssetFilter = {
   query: '',
-  scope: 'all',
-  projectIds: [],
+  scope: { user: true, projects: [] },
   tags: [],
   filters: {},
 };
 
 /**
- * Serialize scope fields to URLSearchParams entries.
- *
- * - scope='all'     + projectIds non-empty -> scope=user,project & project_ids=…
- * - scope='all'     + projectIds empty     -> scope=user (no current project fallback)
- * - scope='user'                            -> scope=user
- * - scope='project'                         -> scope=project & project_ids=…
+ * Compose ScopeFilter + AssetFilter-specific fields onto URL search params.
+ * Scope serialization is delegated to applyScopeToParams so the wire format
+ * stays identical across asset / scanner / search call sites.
  */
 export function applyFilterToParams(params: URLSearchParams, filter: AssetFilter): void {
-  if (filter.scope === 'all') {
-    if (filter.projectIds.length > 0) {
-      params.set('scope', 'user,project');
-      params.set('project_ids', filter.projectIds.join(','));
-    } else {
-      params.set('scope', 'user');
-    }
-  } else if (filter.scope === 'user') {
-    params.set('scope', 'user');
-  } else if (filter.scope === 'project') {
-    params.set('scope', 'project');
-    if (filter.projectIds.length > 0) {
-      params.set('project_ids', filter.projectIds.join(','));
-    }
-  }
+  applyScopeToParams(params, filter.scope);
   if (filter.tags.length > 0) {
     params.set('tags', filter.tags.join(','));
   }

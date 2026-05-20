@@ -31,6 +31,10 @@ class WSMessageType(Enum):
     PTY_SESSION_STATUS_MSG = "pty_session_status_msg"
     LLM_CONFIG_MSG = "llm_config_msg"
     FLOW_DATA_MSG = "flow_data_msg"
+    HUB_CLIENT_ERROR_MSG = "hub_client_error_msg"
+    AUTH_EXPIRED_MSG = "auth_expired_msg"
+    CLOUD_LOGIN_STATUS_MSG = "cloud_login_status_msg"
+    CLOUD_CONNECTION_STATUS_MSG = "cloud_connection_status_msg"
 
 
 class ExeMessageSubType(StrEnum):
@@ -112,6 +116,20 @@ class OAuthMessage(BaseMessage):
     status: OAuthMessageStatus
     message: Optional[str] = None
     user: Optional[Dict[str, Any]] = None
+
+
+class HubClientErrorMessage(BaseMessage):
+    message_type: str = WSMessageType.HUB_CLIENT_ERROR_MSG.value
+    status_code: int
+    method: str
+    path: str
+    message: str
+    suppressed_count: int = 0
+
+
+class AuthExpiredMessage(BaseMessage):
+    message_type: str = WSMessageType.AUTH_EXPIRED_MSG.value
+    reason: str
 
 
 class EntityMessage(BaseMessage):

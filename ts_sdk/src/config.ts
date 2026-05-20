@@ -10,6 +10,7 @@ export const config = {
   SENTRY_PROJECT: sdkConfig.sentry_project,
   AUTH_PROVIDER: sdkConfig.auth_provider,
   SERVER_URL: sdkConfig.serverUrl,
+  WS_URL: sdkConfig.wsUrl,
   FLOWPAD_APP_HOST: sdkConfig.flowpad_app_host,
   FLOWPAD_APP_PORT: sdkConfig.flowpad_app_port,
   API_PREFIXES: sdkConfig.apiPrefixes,

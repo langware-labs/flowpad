@@ -5,7 +5,7 @@ Verifies the wire contract after the ProcessStatus/WorkerStatus consolidation:
   with the new lifecycle wire values (``running`` not ``live``).
 - The legacy ghost fields ``is_active`` and ``waiting_for_prompt`` are absent
   from both the status action response and the GET /<id> entity payload.
-- ``target_vfs_path`` round-trips through entity creation + query-filter lookup.
+- ``target_typeid_str`` round-trips through entity creation + query-filter lookup.
 """
 
 from __future__ import annotations
@@ -154,19 +154,19 @@ async def test_status_no_live_wire_value(bootstrapped_client, user):
 
 
 # ---------------------------------------------------------------------------
-# target_vfs_path round-trip
+# target_typeid_str round-trip
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_target_vfs_path_round_trip(bootstrapped_client, user):
-    """Create with target_vfs_path, look up by filter, get it back."""
+async def test_target_typeid_str_round_trip(bootstrapped_client, user):
+    """Create with target_typeid_str, look up by filter, get it back."""
     client = bootstrapped_client
 
     target = f"trigger-{uuid.uuid4()}"
     process = AgenticProcess(
         name="target-round-trip",
-        target_vfs_path=target,
+        target_typeid_str=target,
     )
     await process.save(user.typeid)
 
@@ -175,13 +175,13 @@ async def test_target_vfs_path_round_trip(bootstrapped_client, user):
         resp = await client.get(f"/api/v1/graph/agentic_process/{process.id}")
         assert resp.status_code == 200, resp.text
         data = resp.json().get("data")
-        assert data.get("target_vfs_path") == target
+        assert data.get("target_typeid_str") == target
 
-        # Query filter: match on target_vfs_path must return our process.
+        # Query filter: match on target_typeid_str must return our process.
         url = (
             "/api/v1/graph/agentic_process"
             "?filter%5Bmatch%5D%5Bop%5D=%24EQ"
-            "&filter%5Bmatch%5D%5Boperands%5D%5B0%5D=target_vfs_path"
+            "&filter%5Bmatch%5D%5Boperands%5D%5B0%5D=target_typeid_str"
             f"&filter%5Bmatch%5D%5Boperands%5D%5B1%5D={quote(target, safe='')}"
         )
         resp = await client.get(url)

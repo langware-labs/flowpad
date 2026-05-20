@@ -62,6 +62,7 @@ from .collaboration_room_record import CollaborationRoomRecord as CollaborationR
 from .collaboration_room_record import CollaborationRoomStatus as CollaborationRoomStatus
 from .skill_record import SkillRecord as SkillRecord
 from .spec_record import SpecRecord as SpecRecord
+from .whiteboard_record import WhiteboardRecord as WhiteboardRecord
 from .task import TaskResource as TaskResource
 from .task import TaskStatus as TaskStatus
 from .task import TaskType as TaskType

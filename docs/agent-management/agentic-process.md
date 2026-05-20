@@ -1,5 +1,5 @@
 ---
-
+id: 9c2406fc-f5c9-5f32-8932-f6d36f8fa3f9
 ---
 
 # AgenticProcess
@@ -89,7 +89,7 @@ Drivers own:
 | Driver method                              | Purpose                                             |
 | ------------------------------------------ | --------------------------------------------------- |
 | `cli_options(process)`                     | Build worker-specific CLI options from the process. |
-| `run_print_turn(process, instruction)`     | Run one headless turn.                              |
+| `headless_prompt(process, instruction)`     | Run one headless turn.                              |
 | `transcript_path(process)`                 | Locate this process's transcript/event log.         |
 | `tail_status(path)`                        | Map transcript tail to `WorkerStatus`.              |
 | `load_history(process)`                    | Convert transcript history into `FlowData`.         |
@@ -129,7 +129,7 @@ POST /api/v1/graph/agentic_process/<id>/execute
   -> AgenticProcess._http_execute()
   -> AgenticProcess.prompt()
   -> visible is false
-  -> process.driver.run_print_turn(process, instruction)
+  -> process.driver.headless_prompt(process, instruction)
 ```
 
 There is also a streaming HTTP prompt action:
@@ -652,4 +652,3 @@ The following names appear in older docs or compatibility shims but are not the 
 | -------------------------------------------------- | -------------------------------------------- |
 | `ui/src/components/terminal/interactive-terminal/` | Interactive terminal UI and process toolbar. |
 | `ui/src/components/terminal/TabbedTerminal.tsx`    | Multi-tab terminal orchestration.            |
-

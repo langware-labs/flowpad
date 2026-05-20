@@ -5,7 +5,8 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
 import { useInboxStore } from '@src/store/use-inbox-store';
-import { listInboxMessages, fetchInboxFromHub, updateMessage, type InboxMessage } from './inbox-api';
+import { fetchConversations } from '@sdk';
+import { listInboxMessages, updateMessage, type InboxMessage } from './inbox-api';
 
 /**
  * Compact inbox summary widget for HomeLanding.
@@ -36,7 +37,7 @@ export function InboxWidget() {
   const handleRefresh = useCallback(async () => {
     setFetching(true);
     try {
-      await fetchInboxFromHub();
+      await fetchConversations();
       await loadMessages();
     } finally {
       setFetching(false);
@@ -51,7 +52,7 @@ export function InboxWidget() {
         setUnreadCount(next.filter((m) => !m.is_read).length);
         return next;
       });
-      const taskContext = message.context_entities.find((c) => c.startsWith('task-'));
+      const taskContext = message.shared_context_entities.find((c) => c.startsWith('task-'));
       if (taskContext) {
         navigation.openDock(DockPointer.forTasks(taskContext.replace(/^task-/, '')));
       }

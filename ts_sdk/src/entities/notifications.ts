@@ -7,8 +7,12 @@ export interface SendReplyExtras {
   promptText?: string;
   /** Files to attach as PROMPT attachments (each stored under prompt/<filename>). */
   promptFiles?: File[];
-  /** Additional TypeId strings to attach as context entities on the FlowMessage (deduped against task/conversation). */
-  contextEntities?: string[];
+  /** TypeId strings (e.g. "skill-<uuid>") to attach as TYPE_ID attachments. */
+  assetReferences?: string[];
+  /** Additional TypeId strings to publish in the FlowMessage's *shared*
+   *  context (deduped against task/conversation TypeIds already stamped by
+   *  the backend). The wire field is ``shared_context_entities``. */
+  sharedContextEntities?: string[];
 }
 
 export interface SendReplyTarget {
@@ -32,14 +36,22 @@ export async function sendReply(
 
   const taskId = t.task?.id ?? null;
   const conversationId = t.conversationId ?? null;
+  if (!conversationId) {
+    throw new Error('sendReply requires a conversationId');
+  }
 
-  const action = new ActionInfo('append-conversation', 'notification', null, 'POST');
-  const hasFiles = (files && files.length > 0) || (extras?.promptFiles && extras.promptFiles.length > 0);
-  const ctxEntities = (extras?.contextEntities ?? []).filter(Boolean);
+  // Single send endpoint: conversation/<id>/add_message. The conversation id
+  // rides in the URL — the local backend (handle_add_message) reads it there.
+  const action = new ActionInfo('add_message', 'conversation', conversationId, 'POST');
+  const hasAssetRefs = !!(extras?.assetReferences && extras.assetReferences.length > 0);
+  const hasFiles =
+    (files && files.length > 0) ||
+    (extras?.promptFiles && extras.promptFiles.length > 0) ||
+    hasAssetRefs;
+  const sharedCtxEntities = (extras?.sharedContextEntities ?? []).filter(Boolean);
   if (hasFiles) {
     const form = new FormData();
     if (taskId) form.append('task_id', taskId);
-    if (conversationId) form.append('conversation_id', conversationId);
     form.append('message', message);
     if (extras?.promptText) form.append('prompt_text', extras.promptText);
     for (const file of files ?? []) {
@@ -48,19 +60,25 @@ export async function sendReply(
     for (const file of extras?.promptFiles ?? []) {
       form.append('prompt_files', file, file.name);
     }
-    for (const ce of ctxEntities) {
-      form.append('context_entities', ce);
+    if (hasAssetRefs) {
+      form.append('asset_references', JSON.stringify(extras!.assetReferences));
+    }
+    for (const ce of sharedCtxEntities) {
+      form.append('shared_context_entities', ce);
     }
     action.bodyParameters = form;
+    // File sends are multipart — binary bodies only travel over REST.
+    await dataManager.callAction(action);
   } else {
     const body: Record<string, unknown> = { message };
     if (taskId) body.task_id = taskId;
-    if (conversationId) body.conversation_id = conversationId;
     if (extras?.promptText) body.prompt_text = extras.promptText;
-    if (ctxEntities.length > 0) body.context_entities = ctxEntities;
+    if (sharedCtxEntities.length > 0) body.shared_context_entities = sharedCtxEntities;
     action.bodyParameters = body;
+    // Text-only send: prefer the WebSocket hop when the socket is open
+    // (skips an HTTP round-trip), fall back to REST otherwise.
+    await dataManager.callActionPreferWS(action);
   }
-  await dataManager.callAction(action);
 }
 
 export interface SendNotificationParams {

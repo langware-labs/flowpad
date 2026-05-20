@@ -3,7 +3,7 @@
 Covers `flow_sdk/builtin/trigger.py:_fire_schedule_job` after the
 `asset_ref` refactor. Confirms the spawned `AgenticProcess` carries:
 
-- `target_vfs_path` set from the trigger's TypeId
+- `target_typeid_str` set from the trigger's TypeId
 - `instruction_content` set from the trigger's instruction
 - no `source_vfs_path` (deleted field) and `asset_ref` is None
 """
@@ -25,7 +25,7 @@ def test_agentic_process_no_source_vfs_path_field():
     assert "source_vfs_path" not in fields, (
         "AgenticProcess.source_vfs_path should have been removed by the asset_ref refactor"
     )
-    assert "target_vfs_path" in fields
+    assert "target_typeid_str" in fields
     assert "instruction_content" in fields
     assert "asset_ref" in fields
 
@@ -69,14 +69,14 @@ def test_spawn_constructor_matches_trigger_py_line_90():
     proc = AgenticProcess(
         instruction_content=t.instruction,
         workdir=t.workdir,
-        target_vfs_path=str(t.typeid),
+        target_typeid_str=str(t.typeid),
         project_id=t.project_id,
         visible=False,
     )
 
     assert proc.instruction_content == "do the thing"
     assert proc.workdir == "/tmp/work"
-    assert proc.target_vfs_path == str(t.typeid)
+    assert proc.target_typeid_str == str(t.typeid)
     assert proc.project_id == "proj-xyz"
     assert proc.visible is False
     # Triggers don't have a backing file -> asset_ref absent / None
@@ -86,7 +86,7 @@ def test_spawn_constructor_matches_trigger_py_line_90():
 @pytest.mark.asyncio
 async def test_fire_schedule_job_spawns_with_expected_fields(monkeypatch):
     """Drive `_fire_schedule_job` directly without DB or PTY, and assert the
-    spawned AgenticProcess carries the trigger's instruction + target_vfs_path.
+    spawned AgenticProcess carries the trigger's instruction + target_typeid_str.
     """
     captured: dict = {}
 
@@ -118,7 +118,7 @@ async def test_fire_schedule_job_spawns_with_expected_fields(monkeypatch):
         captured["proc"] = self
         return self
 
-    async def fake_start(self, instruction=None, visible=None):
+    async def fake_start_pty(self, instruction=None, visible=None, **kwargs):
         captured["start_instruction"] = instruction
         captured["start_visible"] = visible
         return None
@@ -129,7 +129,8 @@ async def test_fire_schedule_job_spawns_with_expected_fields(monkeypatch):
     monkeypatch.setattr(Trigger, "get_by_id", classmethod(lambda cls, tid: fake_get_by_id(tid)))
     monkeypatch.setattr(Trigger, "update", fake_update)
     monkeypatch.setattr(AgenticProcess, "save", fake_save)
-    monkeypatch.setattr(AgenticProcess, "start", fake_start)
+    # Production calls ``proc.start_pty(...)`` (was ``proc.start`` pre-refactor).
+    monkeypatch.setattr(AgenticProcess, "start_pty", fake_start_pty)
 
     from flow_sdk.fs_records import trigger_log as tl_mod
     monkeypatch.setattr(tl_mod.TriggerLogRecord, "append_entry", staticmethod(fake_append_entry))
@@ -139,7 +140,7 @@ async def test_fire_schedule_job_spawns_with_expected_fields(monkeypatch):
     proc = captured.get("proc")
     assert proc is not None, "AgenticProcess was not constructed by _fire_schedule_job"
     assert proc.instruction_content == "please run the QA sweep"
-    assert proc.target_vfs_path == str(trig.typeid)
+    assert proc.target_typeid_str == str(trig.typeid)
     assert proc.workdir == "/tmp/qa"
     assert proc.project_id == "pid-1"
     assert proc.visible is False

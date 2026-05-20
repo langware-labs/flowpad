@@ -1,3 +1,7 @@
+---
+id: 28abc670-8cbb-52ac-8e4f-c249bebdbeb2
+---
+
 # Listen Action and CRUD Event Pipeline
 
 This document describes the full path from an incoming webhook POST to a frontend entity cache update. It covers the `listen_action` entry point, the two webhook types, `_reflect_entity`, `DataOpMessage` broadcast, `resource_tracker` recipient resolution, the WebSocket route, and the TypeScript subscription layer.
@@ -234,13 +238,13 @@ key, uname, expand
 
 **Function:** `_broadcast_to_sniffer(payload_data, webhook_type, skip_hook_id, warning, element_type, data_type)`
 
-Emits a `flow_data` event to the `@sniffer` AgentHook so the frontend annotation gutter (SnifferGutter) can display incoming webhook events inline in the terminal.
+Emits a `flow_data` event to the global `@sniffer` `AgentHook` so the global sniffer panel can display incoming webhook events.
 
 Behavior:
 1. Load the `AgentHook` entity with `uname == "sniffer"`. If not found, attempt a fallback lookup via `hooks_sniffer._get_sniffer_hook()` (legacy compatibility). If still not found, return silently.
 2. If `skip_hook_id` matches the sniffer hook's id, skip emission (avoids double-emitting when the webhook itself targets the sniffer hook).
-3. Build an `attributes` dict including `element-type`, `data-type`, `webhook_type`, timestamp, and an optional `warning` field.
-4. Call `sniffer_hook.emit_flow_data({flow_value: payload_data, attributes: attrs})`.
+3. Convert the webhook payload to canonical `FlowData` using `convert_webhook_event()`.
+4. Call `sniffer_hook.emit_flow_data({flow_value: fd.flow_value, attributes: fd.attributes})`.
 
 > **Double-broadcast for CRUD operations**: For `hook_op` CRUD events, `_broadcast_to_sniffer` is called **twice**: once in `listen_action` with the full raw webhook payload, and once inside `handle_hook_op` after `_reflect_entity` returns, with a minimal `{webhook_type, type, operation, id}` summary dict that includes any warning or error message. The sniffer therefore receives two `flow_data` entries per CRUD event.
 
@@ -250,7 +254,7 @@ Failures in this function are non-critical and logged at DEBUG level.
 
 **Function:** `_route_to_source_process(payload_data, execution_scope, session_id)`
 
-Routes a copy of the webhook event to the `AgenticProcess` that generated it, so it appears in the process's FlowData stream (visible in the terminal's flow view).
+Routes a copy of the webhook event to the `AgenticProcess` that generated it, so it appears in the process's `flowDataStream` and can be rendered by the terminal TraceGutter.
 
 A `flow_data_msg` is constructed:
 
@@ -579,9 +583,9 @@ The following steps trace a single `hook_op` CREATE event from the CLI to the fr
 
 2. **listen_action parses.** `WebhookPayload` and `HookOpPayload` are validated. If validation fails, `ApiFailResponse` is returned immediately.
 
-3. **Sniffer broadcast.** `_broadcast_to_sniffer` emits a `flow_data` event to the `@sniffer` AgentHook. The frontend's SnifferGutter receives this and renders the event annotation in the terminal.
+3. **Sniffer broadcast.** `_broadcast_to_sniffer` emits a `flow_data` event to the global `@sniffer` `AgentHook`. The global sniffer panel receives this stream.
 
-4. **Source process routing.** `_route_to_source_process` sends a `flow_data_msg` to `agentic_process-proc-456` via `_send_flow_data_message`. Any frontend component watching that process receives the event in its FlowData stream.
+4. **Source process routing.** `_route_to_source_process` sends a `flow_data_msg` to `agentic_process-proc-456` via `_send_flow_data_message`. The terminal TraceGutter receives this through that process's `flowDataStream`.
 
 5. **handle_hook_op dispatches.** Operation is `create`, resource is entity; calls `_reflect_entity("task", CREATE, {"id": "my-task-123", "title": "My Task", "status": "pending"})`.
 

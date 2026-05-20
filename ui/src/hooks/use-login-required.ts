@@ -1,6 +1,6 @@
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { ICompletionOptions } from '@sdk';
-import { useAuth } from '@sdk/react/hooks';
+import { useAuth, useContext as useSdkContext } from '@sdk/react/hooks';
 import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import {
@@ -15,41 +15,62 @@ interface UseLoginRequiredReturn {
   showLoginDialog: boolean;
   closeLoginDialog: () => void;
   requiresLogin: boolean;
-  checkLoginAndProceed: (action: ActionType, message?: string, options?: ICompletionOptions) => boolean;
+  checkLoginAndProceed: (
+    action: ActionType,
+    message?: string,
+    options?: ICompletionOptions,
+    guardOptions?: LoginGuardOptions,
+  ) => boolean;
   pendingAction: PendingLoginAction | null;
   clearPending: () => void;
   isPostLogin: boolean;
 }
 
+interface LoginGuardOptions {
+  forceLogin?: boolean;
+}
+
 export const useLoginRequired = (): UseLoginRequiredReturn => {
   const { agent } = useAgentContext();
-  const { user } = useAuth();
+  const { user, cloudUser } = useAuth();
+  const { cloudLoginAvailable, isDesktop } = useSdkContext();
   const [searchParams, setSearchParams] = useSearchParams();
   const [showLoginDialog, setShowLoginDialog] = useState(false);
   const [pendingAction, setPendingAction] = useState<PendingLoginAction | null>(null);
 
   const requiresLogin = agent?.site_config?.feature_flags?.require_login ?? false;
-  const isPostLogin = searchParams.has('login') || searchParams.has('signup');
+  const returnedFromLogin = searchParams.has('login') || searchParams.has('signup');
+  const loginSatisfied = isDesktop ? Boolean(cloudLoginAvailable || cloudUser) : Boolean(user);
+  const isPostLogin = returnedFromLogin || Boolean(loginSatisfied && pendingAction);
 
   // On mount and when returning from login, check for pending action
   useEffect(() => {
-    if (isPostLogin && user) {
+    if ((returnedFromLogin || loginSatisfied) && loginSatisfied) {
       const pending = getPendingAction();
       if (pending) {
         setPendingAction(pending);
+        setShowLoginDialog(false);
       }
+    }
+    if (returnedFromLogin) {
       // Clean up query params
       const newParams = new URLSearchParams(searchParams);
       newParams.delete('login');
       newParams.delete('signup');
       setSearchParams(newParams, { replace: true });
     }
-  }, [isPostLogin, user, searchParams, setSearchParams]);
+  }, [returnedFromLogin, loginSatisfied, searchParams, setSearchParams]);
 
   const checkLoginAndProceed = useCallback(
-    (action: ActionType, message?: string, options?: ICompletionOptions): boolean => {
+    (
+      action: ActionType,
+      message?: string,
+      options?: ICompletionOptions,
+      guardOptions?: LoginGuardOptions,
+    ): boolean => {
+      const shouldRequireLogin = guardOptions?.forceLogin || requiresLogin;
       // If user is logged in or login not required, proceed
-      if (user || !requiresLogin) {
+      if (loginSatisfied || !shouldRequireLogin) {
         return true;
       }
 
@@ -58,7 +79,7 @@ export const useLoginRequired = (): UseLoginRequiredReturn => {
       setShowLoginDialog(true);
       return false;
     },
-    [user, requiresLogin],
+    [loginSatisfied, requiresLogin],
   );
 
   const closeLoginDialog = useCallback(() => {

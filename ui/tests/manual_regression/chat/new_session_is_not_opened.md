@@ -1,3 +1,7 @@
+---
+id: 8dfc9f83-72c4-5407-8fa2-279fbd559d63
+---
+
 test 1: Submitting from home page opens a new shell session (FLOWPAD-1672)
 - navigate to {APP_URL}/dock/home
 - validate the home landing page is visible

@@ -69,7 +69,7 @@ export function SharedTaskView({ task, conversationId, onClose }: SharedTaskView
         undefined,
         {
           promptText: STATUS_REQUEST_PROMPT_TEXT,
-          contextEntities: specTypeId ? [specTypeId.toString()] : [],
+          sharedContextEntities: specTypeId ? [specTypeId.toString()] : [],
         },
       );
       toast.success('Status request sent', {

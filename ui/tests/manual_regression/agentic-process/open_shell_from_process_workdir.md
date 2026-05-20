@@ -1,3 +1,7 @@
+---
+id: 933703f1-5762-5ca6-ad2b-665a655e7f34
+---
+
 test 1: Open Terminal button opens a plain shell in the process workdir
 - navigate to {APP_URL}/dock/shell/new_terminal, then open the tab-opener "+" (data-testid="opener-plus-button") and pick the "Claude Code" row (data-testid="opener-menu-row-claude")
 - wait for the Claude banner

@@ -1,3 +1,7 @@
+---
+id: f006426d-69a6-5e5b-9df8-42790f240e43
+---
+
 test 1: Web app view is accessible after starting a Claude session (FLOWPAD-1616)
 - navigate to {APP_URL}/dock/shell/new_terminal
 - wait for terminal to be ready (active terminal panel `[data-testid="terminal-panel"][data-active="true"]` shows xterm)

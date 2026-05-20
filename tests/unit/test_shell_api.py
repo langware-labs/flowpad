@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 
 import pytest
 
-from flow_sdk.builtin.shell import Shell, allow_rename
+from flow_sdk.builtin.shell import Shell
 from flow_sdk.fs_store.record import (
     get_default_records_data_root,
     get_default_records_root,
@@ -330,31 +330,22 @@ async def test_output_returns_empty_iterator_when_no_pty():
 
 
 # ---------------------------------------------------------------------------
-# rename() / set_env()
+# auto_rename / set_env()
 # ---------------------------------------------------------------------------
+# Tab rename is no longer a Shell concern. Tabs are renamed by writing
+# `entity.name` and `entity.auto_rename` through the canonical PUT
+# /graph/<type>/<id> path on whichever entity is the tab's source
+# (AgenticProcess for process-backed tabs, Shell for pure shells). The
+# allow_rename / spinner-filter rules live on the frontend in
+# ui/src/components/terminal/rename-rules.ts. Covered by playwright
+# tab-rename.spec.ts and the canonical-write HTTP test in test_shell_lifecycle.
+
 
 @pytest.mark.asyncio
-async def test_rename_sets_name_and_user_renamed():
-    """rename() updates shell.name and disables future PTY title renames."""
+async def test_auto_rename_defaults_true():
+    """A fresh shell allows PTY OSC titles to rename it."""
     shell = _shell()
-    await shell.rename("My Tab")
-    assert shell.name == "My Tab"
-    assert shell.user_renamed is True
-    assert shell.pty_rename is False
-
-
-def test_allow_rename_rejects_claude_spinner_title():
-    """Claude spinner/status titles should not become tab names."""
-    proc = MagicMock(worker_type="claude_code")
-    assert allow_rename(proc, "Claude Code") is False
-    assert allow_rename(proc, "Working - Claude Code") is False
-    assert allow_rename(proc, "Implement auth flow") is True
-
-
-def test_allow_rename_rejects_typeid_values():
-    """TypeId-shaped titles are routing keys, not user-facing names."""
-    proc = MagicMock(worker_type="codex")
-    assert allow_rename(proc, "shell-123e4567-e89b-42d3-a456-426614174000") is False
+    assert shell.auto_rename is True
 
 
 @pytest.mark.asyncio
@@ -379,17 +370,23 @@ async def test_set_env_merges_with_existing():
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_active_excludes_closed_shells():
-    """active() omits shells with status='closed'."""
+async def test_active_excludes_hidden_shells():
+    """active() omits shells that are closing, closed, or errored."""
     running = Shell(id=str(uuid.uuid4()), status="running", tab_order=1)
     await running.save()
+    closing = Shell(id=str(uuid.uuid4()), status="closing", tab_order=0)
+    await closing.save()
     closed = Shell(id=str(uuid.uuid4()), status="closed", tab_order=0)
     await closed.save()
+    errored = Shell(id=str(uuid.uuid4()), status="error", tab_order=0)
+    await errored.save()
 
     active = await Shell.active()
     ids = [s.id for s in active]
     assert running.id in ids
+    assert closing.id not in ids
     assert closed.id not in ids
+    assert errored.id not in ids
 
 
 @pytest.mark.asyncio

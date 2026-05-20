@@ -2,16 +2,16 @@
 Tests for the cloud login/logout flow under the post-refactor /api/v1/cloud/* shape.
 
 Endpoints covered (defined in flow_sdk/server/routes/cloud.py):
-  - GET  /api/v1/cloud/status            -> {logged_in, user, cloud_url}
+  - GET  /api/v1/cloud/status            -> {logged_in, user, cloud_url, hub_ws_*}
   - POST /api/v1/cloud/login             -> env-mode {status:"logged_in"} or browser-mode {status:"started", url}
   - POST /api/v1/cloud/logout            -> {cloud_logout_url}
-  - POST /api/v1/cloud/refresh-token     -> "local_dev_token_refresh" string
   - GET  /auth/login_callback            -> success/error HTML page
   - GET  /api/v1/cloud/logout_callback   -> success HTML page
   - GET  /api/v1/graph/bootstrap         -> desktop_info.cloud_login_available
 
 Mocked targets (existing module paths still in use after the refactor):
-  - flow_sdk.cli.auth.hub_login.{is_logged_in, set_api_key, validate_api_key_async, delete_api_key}
+  - flow_sdk.cli.auth.hub_login.{is_logged_in, validate_api_key_async}
+  - flow_sdk.cli.auth.credentials.{save_credentials, clear_credentials}
   - flow_sdk.cli.app_config.{get_user, set_user}
   - flow_sdk.cli.auth.cloud_login.cloud_login (the chokepoint)
   - flow_sdk.server.routes.bootstrap.is_cloud_login_available
@@ -46,6 +46,9 @@ async def test_status_logged_in(client):
     data = response.json()["data"]
     assert data["logged_in"] is True
     assert data["user"]["id"] == USER_INFO["id"]
+    assert data["hub_ws_connected"] is False
+    assert data["hub_ws_verified"] is False
+    assert data["hub_ws_status"] in {"disconnected", "connecting", "connected", "verified", "error"}
 
 
 @pytest.mark.asyncio
@@ -58,6 +61,74 @@ async def test_status_logged_out(client):
     data = response.json()["data"]
     assert data["logged_in"] is False
     assert data["user"] is None
+    assert data["hub_ws_connected"] is False
+
+
+@pytest.mark.asyncio
+async def test_cloud_ws_connect_requires_login(client):
+    with patch("flow_sdk.cli.auth.hub_login.is_logged_in", return_value=False):
+        response = await client.post("/api/v1/cloud/ws/connect")
+
+    assert response.status_code == 401
+    body = response.json()
+    assert body["status"] == "FAIL"
+    assert "Cloud login required" in body["message"]
+
+
+@pytest.mark.asyncio
+async def test_cloud_ws_connect_verifies_and_starts_manager(client):
+    manager = MagicMock()
+    manager.restart = AsyncMock(return_value={
+        "hub_ws_connected": True,
+        "hub_ws_verified": False,
+        "hub_ws_status": "connected",
+        "hub_ws_error": None,
+    })
+    manager.verify_current_user = AsyncMock(return_value={
+        "verified": True,
+        "local_user_id": USER_INFO["id"],
+        "hub_user_id": USER_INFO["id"],
+    })
+    manager.status_payload.return_value = {
+        "hub_ws_connected": True,
+        "hub_ws_verified": True,
+        "hub_ws_status": "verified",
+        "hub_ws_error": None,
+    }
+
+    with (
+        patch("flow_sdk.cli.auth.hub_login.is_logged_in", return_value=True),
+        patch("flow_sdk.cloud_client.ws_client.hub_ws_manager", manager),
+    ):
+        response = await client.post("/api/v1/cloud/ws/connect")
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["hub_ws_connected"] is True
+    assert data["hub_ws_verified"] is True
+    assert data["hub_ws_status"] == "verified"
+    manager.restart.assert_awaited_once()
+    manager.verify_current_user.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_cloud_ws_disconnect_keeps_login_owner_separate(client):
+    manager = MagicMock()
+    manager.stop = AsyncMock(return_value={
+        "hub_ws_connected": False,
+        "hub_ws_verified": False,
+        "hub_ws_status": "disconnected",
+        "hub_ws_error": None,
+    })
+
+    with patch("flow_sdk.cloud_client.ws_client.hub_ws_manager", manager):
+        response = await client.post("/api/v1/cloud/ws/disconnect")
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["hub_ws_connected"] is False
+    assert data["hub_ws_status"] == "disconnected"
+    manager.stop.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------
@@ -124,8 +195,9 @@ async def test_login_callback_returns_success_html(client):
             "flow_sdk.cli.auth.hub_login.validate_api_key_async",
             new=AsyncMock(return_value=USER_INFO),
         ),
-        patch("flow_sdk.cli.auth.hub_login.set_api_key"),
+        patch("flow_sdk.cli.auth.cloud_login.save_credentials"),
         patch("flow_sdk.cli.app_config.set_user"),
+        patch("flow_sdk.server.routes.auth.is_secrets_enabled", return_value=True),
     ):
         response = await client.get(
             f"/auth/login_callback?flowpad-api-key={TEST_API_KEY}"
@@ -145,10 +217,11 @@ async def test_login_callback_full_flow_finalizes_login(client):
             "flow_sdk.cli.auth.hub_login.validate_api_key_async",
             new=AsyncMock(return_value=USER_INFO),
         ),
-        # _finalize_login imports set_api_key/set_user at module load, so we
+        # _finalize_login imports save_credentials/set_user at module load, so we
         # must patch the names AS USED inside cloud_login (not at the source).
-        patch("flow_sdk.cli.auth.cloud_login.set_api_key") as mock_set_key,
+        patch("flow_sdk.cli.auth.cloud_login.save_credentials") as mock_save_credentials,
         patch("flow_sdk.cli.auth.cloud_login.set_user") as mock_set_user,
+        patch("flow_sdk.server.routes.auth.is_secrets_enabled", return_value=True),
     ):
         state.login_result = None
         state.login_received.clear()
@@ -158,7 +231,10 @@ async def test_login_callback_full_flow_finalizes_login(client):
         )
 
     assert response.status_code == 200
-    mock_set_key.assert_called_once_with(TEST_API_KEY)
+    mock_save_credentials.assert_called_once()
+    saved_creds = mock_save_credentials.call_args.args[0]
+    assert saved_creds.api_key == TEST_API_KEY
+    assert saved_creds.expires_at is None
     mock_set_user.assert_called_once()
     assert state.login_result is not None
     assert state.login_result["success"] is True
@@ -179,9 +255,12 @@ async def test_login_callback_missing_key_returns_400(client):
 @pytest.mark.asyncio
 async def test_login_callback_invalid_key_returns_400(client):
     """GET /auth/login_callback with a key that fails validation returns 400."""
-    with patch(
-        "flow_sdk.cli.auth.hub_login.validate_api_key_async",
-        new=AsyncMock(side_effect=Exception("Invalid API key")),
+    with (
+        patch(
+            "flow_sdk.cli.auth.hub_login.validate_api_key_async",
+            new=AsyncMock(side_effect=Exception("Invalid API key")),
+        ),
+        patch("flow_sdk.server.routes.auth.is_secrets_enabled", return_value=True),
     ):
         response = await client.get(
             f"/auth/login_callback?flowpad-api-key={TEST_API_KEY}"
@@ -204,8 +283,9 @@ async def test_login_callback_invalidates_bootstrap_cache(client):
             "flow_sdk.cli.auth.hub_login.validate_api_key_async",
             new=AsyncMock(return_value=USER_INFO),
         ),
-        patch("flow_sdk.cli.auth.hub_login.set_api_key"),
+        patch("flow_sdk.cli.auth.cloud_login.save_credentials"),
         patch("flow_sdk.cli.app_config.set_user"),
+        patch("flow_sdk.server.routes.auth.is_secrets_enabled", return_value=True),
     ):
         response = await client.get(
             f"/auth/login_callback?flowpad-api-key={TEST_API_KEY}"
@@ -228,7 +308,7 @@ async def test_login_callback_broadcasts_oauth_message(client):
             "flow_sdk.cli.auth.hub_login.validate_api_key_async",
             new=AsyncMock(return_value=USER_INFO),
         ),
-        patch("flow_sdk.cli.auth.cloud_login.set_api_key"),
+        patch("flow_sdk.cli.auth.cloud_login.save_credentials"),
         patch("flow_sdk.cli.auth.cloud_login.set_user"),
         patch("flow_sdk.server.routes.websocket.broadcast", side_effect=_capture),
     ):
@@ -278,22 +358,6 @@ async def test_logout_callback_returns_success_html(client):
     assert response.status_code == 200
     assert "Logout Successful" in response.text
     assert "You can now close this browser page" in response.text
-
-
-# ---------------------------------------------------------------------------
-# POST /api/v1/cloud/refresh-token
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_refresh_token_returns_token_string(client):
-    """POST /api/v1/cloud/refresh-token returns a non-empty token string (local-dev stub)."""
-    response = await client.post("/api/v1/cloud/refresh-token")
-
-    assert response.status_code == 200
-    data = response.json()["data"]
-    assert isinstance(data, str)
-    assert len(data) > 0
 
 
 # ---------------------------------------------------------------------------

@@ -50,11 +50,15 @@ test.describe('Terminal Scroll Sync', () => {
 
     // Trigger resize by changing viewport
     await page.setViewportSize({ width: 900, height: 600 });
-    await page.waitForTimeout(500);
+    // ResizeObserver debounces the PTY resize signal by 250ms, and the
+    // 40-line scrollback loop above leaves render work in the queue; wait
+    // long enough that xterm refits, VirtualTerminal rebuilds, and the
+    // backend PTY ACKs the new dimensions before we drive new input.
+    await page.waitForTimeout(1_500);
 
     // Terminal should still accept input after resize
     await sendCommand(page, 'echo AFTER_RESIZE');
-    await waitForOutput(page, 'AFTER_RESIZE', 10_000);
+    await waitForOutput(page, 'AFTER_RESIZE', 15_000);
 
     // No escape sequences should be visible after resize
     const content = await page

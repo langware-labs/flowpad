@@ -16,9 +16,11 @@ from .entries import (
     ShellCommandEntry,
     ToolResultEntry,
     ToolUseEntry,
+    UsageEntry,
     UserMessageEntry,
 )
 from .entry import EntryKind, TranscriptEntry
+from .formats import TranscriptFormat
 from .parsers import get_parser_class
 
 # Outputs longer than this are truncated when folded into a semantic call
@@ -35,6 +37,8 @@ _SYNTHETIC_USER_TEXTS = frozenset({
 
 if TYPE_CHECKING:
     from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
+
+    from .pricing.base import ModelPricing
 
 logger = logging.getLogger(__name__)
 
@@ -53,10 +57,14 @@ class AgentTranscript:
         path: Path | str,
         *,
         session_id: str = "",
+        transcript_format: TranscriptFormat | str | None = None,
     ) -> None:
         self.worker_type = worker_type
         self.path = Path(path)
-        parser_cls = get_parser_class(worker_type)
+        self.transcript_format = (
+            TranscriptFormat(transcript_format) if transcript_format else None
+        )
+        parser_cls = get_parser_class(worker_type, self.transcript_format)
         self._parser = parser_cls(session_id=session_id)
         self.entries: list[TranscriptEntry] = self._parse()
 
@@ -218,16 +226,82 @@ class AgentTranscript:
             out.append(e)
         return out
 
-    @property
-    def latest_plan(self) -> ExitPlanModeEntry | None:
-        """Most recent ``ExitPlanMode`` tool_use, or None.
+    # ── cost / usage ─────────────────────────────────────────────────────────
 
-        ``latest_tool_use("ExitPlanMode")`` already returns the
-        ``ExitPlanModeEntry`` subclass when present (parser-side dispatch
-        in ``ClaudeParser._parse_assistant``).
+    @property
+    def usage(self) -> list[UsageEntry]:
+        """All per-dim usage entries in this transcript, in source order.
+
+        Each entry represents one chargeable stream (tokens or requests)
+        from a single assistant turn — see :class:`UsageEntry`. Pairing
+        with :mod:`flow_sdk.transcript_analyzer.pricing` gives USD cost
+        without losing per-stream detail (cache_read vs cache_write_1h
+        vs server_tool_use are all separately matchable).
         """
-        latest = self.latest_tool_use("ExitPlanMode")
-        return latest if isinstance(latest, ExitPlanModeEntry) else None
+        return [e for e in self.entries if isinstance(e, UsageEntry)]
+
+    def cost(self, pricing: dict[str, "ModelPricing"] | None = None) -> float:
+        """Sum USD cost across all usage entries.
+
+        Per-entry pricing is resolved by ``entry.model`` via
+        :func:`flow_sdk.transcript_analyzer.pricing.pricing_for`. The
+        optional ``pricing`` arg overrides the default lookup (useful for
+        testing or applying a custom rate table).
+        """
+        from .pricing import pricing_for as _pricing_for
+
+        total = 0.0
+        for e in self.usage:
+            table = pricing[e.model] if (pricing and e.model in pricing) else _pricing_for(e.model, self.worker_type)
+            total += table.cost_of(e)
+        return total
+
+    def usage_in_span(self, enter_ts: str, done_ts: str) -> list[UsageEntry]:
+        """Usage entries whose ``timestamp`` falls in ``[enter_ts, done_ts]``.
+
+        Mirrors the workflow-anchor pairing that ``session_analysis`` uses
+        for tool_calls — so an analysis pass can attribute per-step cost
+        the same way it already attributes per-step tool usage. Inclusive
+        on both bounds; string compare works because Claude / Codex emit
+        ISO-8601 timestamps with Z suffix.
+        """
+        return [e for e in self.usage if e.timestamp and enter_ts <= e.timestamp <= done_ts]
+
+    def cost_in_span(
+        self,
+        enter_ts: str,
+        done_ts: str,
+        pricing: dict[str, "ModelPricing"] | None = None,
+    ) -> float:
+        """USD cost for usage entries within the time span. See :meth:`usage_in_span`."""
+        from .pricing import pricing_for as _pricing_for
+
+        total = 0.0
+        for e in self.usage_in_span(enter_ts, done_ts):
+            table = pricing[e.model] if (pricing and e.model in pricing) else _pricing_for(e.model, self.worker_type)
+            total += table.cost_of(e)
+        return total
+
+    @property
+    def latest_plan(self) -> ToolUseEntry | None:
+        """Most recent plan-emitting tool_use across workers, or None.
+
+        Recognizes:
+          * ``ExitPlanMode`` — claude (returns the ``ExitPlanModeEntry``
+            subclass; ``plan_file_path`` is a real file claude wrote to disk).
+          * ``update_plan`` — codex (returns a generic ``ToolUseEntry``;
+            ``tool_input`` carries ``{explanation, plan: [{step, status}]}``
+            inline — the caller materializes the file).
+
+        Used by ``AgenticProcess._transcript_plan`` to drive the UI's
+        "Open last plan" button uniformly across workers.
+        """
+        for entry in reversed(self.entries):
+            if not isinstance(entry, ToolUseEntry):
+                continue
+            if entry.tool_name in ("ExitPlanMode", "update_plan"):
+                return entry
+        return None
 
     def to_flow_data(self) -> list["FlowData"]:
         """Concatenated ``FlowData`` stream from every entry."""

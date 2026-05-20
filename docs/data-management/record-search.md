@@ -1,3 +1,7 @@
+---
+id: a72f9f3e-ebb3-57b9-b3f2-3ece78268f87
+---
+
 # Record Search (FTS5/SQLite)
 
 ## 1. Overview

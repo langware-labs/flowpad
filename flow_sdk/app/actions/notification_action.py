@@ -13,9 +13,11 @@ File layout (all inside the git repo, committed and pushed):
 
 Routes:
   POST /api/v1/graph/share_task
-  POST /api/v1/graph/notification/{id}/append-conversation
   POST /api/v1/graph/notification/{id}/refresh
   GET  /api/v1/graph/notification/{id}/open
+
+The conversation message-send handler `handle_add_message` lives here too; it
+is exposed as the `conversation/<id>/add_message` action (see share_action.py).
 """
 
 import asyncio
@@ -25,7 +27,7 @@ import re
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from flow_sdk._compat import UTC
 from flow_sdk.actions.action_registry import action
@@ -47,6 +49,7 @@ from flow_sdk.discovery.notify import send_resource_sync
 from flow_sdk.fs_store import SyncOperation
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse, ApiResponse
 from flow_sdk.utils.git import find_project_root, git_add_commit_push, git_current_branch, git_pull, git_remote_url, git_repo_full_name, repo_id
+from flow_sdk.cli.auth.hub_login import is_logged_in
 from flow_sdk.utils.hub import HubError, hub_base_url, hub_get, hub_post, hub_put
 from flow_sdk.builtin.bookmark import Bookmark
 
@@ -69,6 +72,40 @@ def _meaningful_name(title: str) -> str:
     """Convert a title to a filesystem-safe directory name (no random IDs)."""
     name = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
     return name[:60] or "untitled"
+
+
+def _participant_value(participant: dict | None, key: str) -> str:
+    if not isinstance(participant, dict):
+        return ""
+    value = participant.get(key)
+    return value.strip() if isinstance(value, str) else ""
+
+
+def _participant_from_recipient_id(recipient_id: str) -> dict:
+    if not recipient_id:
+        return {}
+    if "@" in recipient_id:
+        return {"email": recipient_id}
+    return {"user_id": recipient_id}
+
+
+def _participants_for_conversation(
+    sender_participant: dict,
+    raw_participants: list[dict],
+    recipient_participant: dict | None,
+) -> list[dict]:
+    participants = [sender_participant, *list(raw_participants or [])]
+    if not raw_participants and recipient_participant:
+        participants.append(recipient_participant)
+    return participants
+
+
+async def _learn_address_book_participant(participant: dict | None, fallback_email: str = "") -> None:
+    email = _participant_value(participant, "email") or fallback_email
+    if not email:
+        return
+    name = _participant_value(participant, "name") or None
+    await User.get_or_create_by_email(email, name=name)
 
 
 async def _resolve_local_project_identity(
@@ -109,7 +146,7 @@ async def _create_conversation_entity(
     from flow_sdk.fs_store.type_id import TypeId
 
     task_typeid = TypeId(type=BuiltinEntityType.TASK.value, id=task.id)
-    conv_id = Conversation.allocate_id({"context_entities": [str(task_typeid)]})
+    conv_id = Conversation.allocate_id({"shared_context_entities": [str(task_typeid)]})
     conv = await ensure_conversation_entity(
         conv_id, parent_typeid=task_typeid, someone_typeid=someone_typeid
     )
@@ -117,17 +154,26 @@ async def _create_conversation_entity(
     return conv
 
 
-async def _resolve_recipient(recipient_id: str) -> tuple[Optional[str], str]:
-    """Return (recipient_email, resolved_recipient_id) or raise ValueError."""
-    recipient_user = await User.get_one({"id": recipient_id})
-    if not recipient_user:
-        recipient_user = await User.get_one({"email": recipient_id})
+async def _resolve_recipient(
+    recipient_id: str,
+    participant: dict | None = None,
+) -> tuple[Optional[str], str, dict]:
+    """Return routing info without rewriting the supplied participant."""
+    p = participant if isinstance(participant, dict) else _participant_from_recipient_id(recipient_id)
+    participant_user_id = _participant_value(p, "user_id")
+    participant_email = _participant_value(p, "email")
+    recipient_user_id = participant_user_id or (recipient_id if recipient_id and "@" not in recipient_id else "")
+    recipient_email = participant_email or (recipient_id if recipient_id and "@" in recipient_id else "")
 
+    recipient_user = await User.get_one({"id": recipient_user_id}) if recipient_user_id else None
+    if recipient_user and not recipient_email:
+        recipient_email = recipient_user.email or ""
+
+    if recipient_email:
+        await _learn_address_book_participant(p, recipient_email)
+        return recipient_email, recipient_user_id or recipient_email, p
     if recipient_user:
-        return recipient_user.email, recipient_user.id
-    if "@" in recipient_id:
-        recipient_user = await User.get_or_create_by_email(recipient_id)
-        return recipient_user.email, recipient_user.id
+        return recipient_user.email, recipient_user.id, p or recipient_user.to_participant()
     raise ValueError(f"Recipient not found: {recipient_id}")
 
 
@@ -166,8 +212,9 @@ async def _create_spec_and_task(
             "author_id": sender_id,
         }
         if plan_id:
-            # plan_id consolidated into ``context_entities``.
-            spec_payload["context_entities"] = [f"plan-{plan_id}"]
+            # plan_id consolidated into ``shared_context_entities`` (wire-bound:
+            # the spec→plan link is published with the spec).
+            spec_payload["shared_context_entities"] = [f"plan-{plan_id}"]
         spec = Spec.model_validate(spec_payload)
         spec.id = Spec.allocate_id(spec.model_dump())
         spec = await spec.save(someone_typeid)
@@ -188,8 +235,9 @@ async def _create_spec_and_task(
         "shared_process_id": forked_process_id,
     }
     if spec_id:
-        # spec_id consolidated into ``context_entities``.
-        task_payload["context_entities"] = [f"spec-{spec_id}"]
+        # spec_id consolidated into ``shared_context_entities`` (wire-bound:
+        # the task→spec link is published with the task).
+        task_payload["shared_context_entities"] = [f"spec-{spec_id}"]
     task = Task.model_validate(task_payload)
     task.id = Task.allocate_id(task.model_dump())
     task = await task.save(someone_typeid)
@@ -200,8 +248,8 @@ async def _create_spec_and_task(
             if fork is not None:
                 task_vfs = str(TypeId(type=BuiltinEntityType.TASK.value, id=task.id))
                 dirty = False
-                if fork.target_vfs_path != task_vfs:
-                    fork.target_vfs_path = task_vfs
+                if fork.target_typeid_str != task_vfs:
+                    fork.target_typeid_str = task_vfs
                     dirty = True
                 if not fork.project_id and project_id:
                     fork.project_id = project_id
@@ -238,7 +286,10 @@ async def _create_conversation_and_fm(
     title: str,
     sender_id: Optional[str],
     sender_name: str,
+    sender_email: str,
     recipient_email: Optional[str],
+    recipient_participant: Optional[dict],
+    participants: Optional[list[dict]],
     message: Optional[str],
     someone_typeid: str,
     project_id: Optional[str] = None,
@@ -261,7 +312,7 @@ async def _create_conversation_and_fm(
         TypeId(type=BuiltinEntityType.TASK.value, id=task.id) if task else None
     )
     if task_typeid:
-        conv_id = Conversation.allocate_id({"context_entities": [str(task_typeid)]})
+        conv_id = Conversation.allocate_id({"shared_context_entities": [str(task_typeid)]})
     else:
         # No-Task share — seed id from sender + title so it's deterministic
         # for retries but not collide-prone with other no-Task shares.
@@ -277,24 +328,15 @@ async def _create_conversation_and_fm(
         project_id=project_id,
         remote_project_id=project_id,
         remote_project_name=project_name,
+        title=title,
     )
     if task is not None:
-        task.add_context_entity(TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv.id))
+        task.add_shared_context_entities(TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv.id))
         task = await task.save(someone_typeid)
-    else:
-        # Stamp sender + recipient as participants so the reply path can
-        # resolve the other party's email without a Task to consult.
-        local_user = await User.get_local()
-        sender_email = (local_user.email if local_user else "") or ""
-        existing = list(conv.participants or [])
-        seen_emails = {(p.get("email") or "").lower() for p in existing if isinstance(p, dict)}
-        if sender_email and sender_email.lower() not in seen_emails:
-            existing.append({"user_id": sender_id or "", "email": sender_email, "name": sender_name or ""})
-        if recipient_email and recipient_email.lower() not in seen_emails:
-            existing.append({"user_id": "", "email": recipient_email, "name": ""})
-        if existing != list(conv.participants or []):
-            conv.participants = existing
-            conv = await conv.save(someone_typeid)
+
+    if participants is not None and list(participants) != list(conv.participants or []):
+        conv.participants = list(participants)
+        conv = await conv.save(someone_typeid)
 
     fm_context: list = []
     if task_typeid:
@@ -303,6 +345,9 @@ async def _create_conversation_and_fm(
 
     fm_text = message or (f"Task shared: {task.title}" if task else f"Conversation: {title}")
     fm_id = FlowMessage.allocate_id({"text": fm_text})
+    receiver_user_id = _participant_value(recipient_participant, "user_id")
+    receiver_address = receiver_user_id or recipient_email
+    receiver_address_type = "id" if receiver_user_id else ("email" if receiver_address else None)
     attachments: list[Attachment] = []
     if spec:
         attachments.append(Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.SPEC.value, id=spec.id))))
@@ -316,12 +361,12 @@ async def _create_conversation_and_fm(
         {
             "id": fm_id,
             "text": fm_text,
-            "context_entities": fm_context,
+            "shared_context_entities": fm_context,
             "attachment": attachments,
             "sender_id": sender_id,
             "sender_name": sender_name,
-            "receiver_address": recipient_email,
-            "receiver_address_type": "email",
+            "receiver_address": receiver_address,
+            "receiver_address_type": receiver_address_type,
         },
         conversation_id=conv.id,
         someone_typeid=someone_typeid,
@@ -342,7 +387,10 @@ async def _write_task_to_git(
     plan_id: Optional[str],
     sender_id: Optional[str],
     sender_name: str,
+    sender_email: str,
     recipient_email: Optional[str],
+    recipient_participant: Optional[dict],
+    participants: Optional[list[dict]],
     message: Optional[str],
     repo_id_val: str,
     someone_typeid: str,
@@ -378,7 +426,10 @@ async def _write_task_to_git(
         title=task_title,
         sender_id=sender_id,
         sender_name=sender_name,
+        sender_email=sender_email,
         recipient_email=recipient_email,
+        recipient_participant=recipient_participant,
+        participants=participants,
         message=message,
         someone_typeid=someone_typeid,
         project_id=task.project_id if task else None,
@@ -415,7 +466,10 @@ async def _create_local_conversation_and_fm(
     task_title: str,
     sender_id: Optional[str],
     sender_name: str,
+    sender_email: str,
     recipient_email: Optional[str],
+    recipient_participant: Optional[dict],
+    participants: Optional[list[dict]],
     message: Optional[str],
     someone_typeid: str,
     project_id: Optional[str] = None,
@@ -433,7 +487,10 @@ async def _create_local_conversation_and_fm(
         title=task_title,
         sender_id=sender_id,
         sender_name=sender_name,
+        sender_email=sender_email,
         recipient_email=recipient_email,
+        recipient_participant=recipient_participant,
+        participants=participants,
         message=message,
         someone_typeid=someone_typeid,
         project_id=project_id or (task.project_id if task else None),
@@ -456,6 +513,7 @@ async def _send_hub_notification(
     recipient_email: Optional[str],
     sender_id: Optional[str],
     sender_name: str,
+    participants: Optional[list[dict]],
     task_id: Optional[str],
     task_project_id: Optional[str],
     task_project_name: Optional[str],
@@ -491,6 +549,7 @@ async def _send_hub_notification(
             "recipient_email": recipient_email,
             "sender_id": sender_id,
             "sender_name": sender_name,
+            "participants": list(participants or []),
             "task_id": task_id or "",
             "task_title": task_title,
             "spec_id": spec.id if spec else None,
@@ -583,7 +642,7 @@ async def _upload_bundle_to_hub(hub_flow_message_id: str, fm: "FlowMessage", tas
         )
 
 
-async def _save_local_notification(
+async def _save_failure_notification(
     *,
     task_id: Optional[str],
     conversation_id: Optional[str],
@@ -593,10 +652,10 @@ async def _save_local_notification(
     sender_name: str,
     project_url: str,
     message: Optional[str],
-    hub_flow_message_id: Optional[str],
+    email_error: str,
     someone_typeid: str,
 ) -> Notification:
-    """Create and save a local Notification entity.
+    """Create and save a local Notification only for delivery failures.
 
     For Task-bound shares (A/C), notification_target is the Task. For
     Task-less shares (B), it falls back to the Conversation.
@@ -606,24 +665,25 @@ async def _save_local_notification(
     elif conversation_id:
         target = TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conversation_id)
     else:
-        raise ValueError("_save_local_notification requires task_id or conversation_id")
+        raise ValueError("_save_failure_notification requires task_id or conversation_id")
 
     notification = Notification.model_validate({
-        "notification_type": NotificationType.RESOURCE_ACTION,
+        "notification_type": NotificationType.ALERT,
         "notification_target": target,
         "notification_subtype": CrudAction.CREATE,
         "recipient_id": resolved_recipient_id,
         "sender_id": sender_id,
         "delivery_method": DeliveryMethod.EMAIL,
-        "notification_status": NotificationStatus.SENT if hub_flow_message_id else NotificationStatus.PENDING,
+        "notification_status": NotificationStatus.PENDING,
         "message": message,
         "metadata": {
             "project_url": project_url,
             "spec_id": spec_id,
             "sender_name": sender_name,
+            "email_error": email_error,
         },
     })
-    notification.id = hub_flow_message_id or Notification.allocate_id(notification.model_dump())
+    notification.id = Notification.allocate_id(notification.model_dump())
     return await notification.save(someone_typeid)
 
 
@@ -670,7 +730,10 @@ async def _share_via_bundle(
     task_title: str,
     sender_id: Optional[str],
     sender_name: str,
+    sender_email: str,
     recipient_email: Optional[str],
+    recipient_participant: Optional[dict],
+    participants: Optional[list[dict]],
     resolved_recipient_id: str,
     project_id: Optional[str],
     project_name: Optional[str],
@@ -685,7 +748,7 @@ async def _share_via_bundle(
     plan_id: Optional[str] = None,
     is_initial_share: bool = True,
 ) -> ApiResponse:
-    """Shared sender-side delivery: Conversation+FM → bundle pack → hub upload → local notification.
+    """Shared sender-side delivery: Conversation+FM → bundle pack → hub upload.
 
     Both ``share_task`` (with Spec+Task) and ``conversation-start-bundle`` (no Task)
     converge here so there is exactly one delivery codepath.
@@ -708,7 +771,10 @@ async def _share_via_bundle(
             plan_id=plan_id,
             sender_id=sender_id,
             sender_name=sender_name,
+            sender_email=sender_email,
             recipient_email=recipient_email,
+            recipient_participant=recipient_participant,
+            participants=participants,
             message=message,
             repo_id_val=repo_id_val,
             someone_typeid=someone_typeid,
@@ -726,7 +792,10 @@ async def _share_via_bundle(
             task_title=task_title,
             sender_id=sender_id,
             sender_name=sender_name,
+            sender_email=sender_email,
             recipient_email=recipient_email,
+            recipient_participant=recipient_participant,
+            participants=participants,
             message=message,
             someone_typeid=someone_typeid,
             project_id=project_id,
@@ -742,6 +811,7 @@ async def _share_via_bundle(
         recipient_email=recipient_email,
         sender_id=sender_id,
         sender_name=sender_name,
+        participants=participants,
         task_id=(task.id if task else None),
         task_project_id=(task.project_id if task else project_id),
         task_project_name=(task.project_name if task else project_name),
@@ -757,20 +827,21 @@ async def _share_via_bundle(
         is_initial_share=is_initial_share,
     )
 
-    notification = await _save_local_notification(
-        task_id=(task.id if task else None),
-        conversation_id=(conv.id if conv else None),
-        spec_id=(spec.id if spec else None),
-        resolved_recipient_id=resolved_recipient_id,
-        sender_id=sender_id,
-        sender_name=sender_name,
-        project_url=project_url,
-        message=message,
-        hub_flow_message_id=hub_flow_message_id,
-        someone_typeid=someone_typeid,
-    )
+    notification: Optional[Notification] = None
 
     if email_error:
+        notification = await _save_failure_notification(
+            task_id=(task.id if task else None),
+            conversation_id=(conv.id if conv else None),
+            spec_id=(spec.id if spec else None),
+            resolved_recipient_id=resolved_recipient_id,
+            sender_id=sender_id,
+            sender_name=sender_name,
+            project_url=project_url,
+            message=message,
+            email_error=email_error,
+            someone_typeid=someone_typeid,
+        )
         await _save_failure_bookmark(
             task_id=(task.id if task else ""),
             task_title=task_title,
@@ -787,7 +858,7 @@ async def _share_via_bundle(
         "spec_id": spec.id if spec else None,
         "task_id": task.id if task else None,
         "conversation_id": conv.id if conv else None,
-        "notification_id": notification.id,
+        "notification_id": notification.id if notification else None,
         "notify_url": f"{base}/flow_message/{hub_flow_message_id}" if hub_flow_message_id and base else None,
     })
 
@@ -795,6 +866,12 @@ async def _share_via_bundle(
 async def handle_send_notification(body: dict, someone_typeid: str) -> ApiResponse:
     """Create Spec + Task + Conversation, write to git repo, push, post to hub."""
     recipient_id = (body.get("recipient_id") or "").strip()
+    raw_participants = body.get("participants") or []
+    if not isinstance(raw_participants, list):
+        raw_participants = []
+    recipient_participant = raw_participants[0] if raw_participants and isinstance(raw_participants[0], dict) else {}
+    if not recipient_id:
+        recipient_id = _participant_value(recipient_participant, "user_id") or _participant_value(recipient_participant, "email")
     spec_title = (body.get("spec_title") or "").strip()
     spec_content = (body.get("spec_content") or "").strip()
     spec_type = (body.get("spec_type") or "plan").strip()
@@ -823,14 +900,19 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
     if spec_title and not task_title:
         task_title = spec_title
 
+    sender_participant = await User.current_sender_participant(body.get("sender_name"))
+    sender_id = sender_participant.get("user_id") or None
+    sender_name = sender_participant.get("name") or ""
+    sender_email = sender_participant.get("email") or ""
+
     try:
-        recipient_email, resolved_recipient_id = await _resolve_recipient(recipient_id)
+        recipient_email, resolved_recipient_id, recipient_participant = await _resolve_recipient(
+            recipient_id,
+            recipient_participant,
+        )
     except ValueError as e:
         return ApiFailResponse(message=str(e))
-
-    sender_id, sender_name = await User.local_sender_identity(body.get("sender_name"))
-    local_user = await User.get_local()
-    sender_email: str = (local_user.email or "") if local_user else ""
+    participants = _participants_for_conversation(sender_participant, raw_participants, recipient_participant)
 
     project_root = find_project_root(project_path) if project_path else None
     project_url = git_remote_url(project_root) if project_root else ""
@@ -868,7 +950,10 @@ async def handle_send_notification(body: dict, someone_typeid: str) -> ApiRespon
         task_title=task_title,
         sender_id=sender_id,
         sender_name=sender_name,
+        sender_email=sender_email,
         recipient_email=recipient_email,
+        recipient_participant=recipient_participant,
+        participants=participants,
         resolved_recipient_id=resolved_recipient_id,
         project_id=project_id_val,
         project_name=project_name_val,
@@ -894,6 +979,12 @@ async def handle_start_conversation_bundle(body: dict, someone_typeid: str) -> A
     Conversation materializes locally.
     """
     recipient_id = (body.get("recipient_id") or "").strip()
+    raw_participants = body.get("participants") or []
+    if not isinstance(raw_participants, list):
+        raw_participants = []
+    recipient_participant = raw_participants[0] if raw_participants and isinstance(raw_participants[0], dict) else {}
+    if not recipient_id:
+        recipient_id = _participant_value(recipient_participant, "user_id") or _participant_value(recipient_participant, "email")
     title = (body.get("title") or "").strip()
     message = (body.get("message") or body.get("initial_text") or "").strip() or None
     project_id_val = (body.get("project_id") or "").strip() or None
@@ -907,12 +998,19 @@ async def handle_start_conversation_bundle(body: dict, someone_typeid: str) -> A
     if not title and not message and not files:
         return ApiFailResponse(message="At least one of title, message, or files is required", status_code=400)
 
+    sender_participant = await User.current_sender_participant(body.get("sender_name"))
+    sender_id = sender_participant.get("user_id") or None
+    sender_name = sender_participant.get("name") or ""
+    sender_email = sender_participant.get("email") or ""
+
     try:
-        recipient_email, resolved_recipient_id = await _resolve_recipient(recipient_id)
+        recipient_email, resolved_recipient_id, recipient_participant = await _resolve_recipient(
+            recipient_id,
+            recipient_participant,
+        )
     except ValueError as e:
         return ApiFailResponse(message=str(e), status_code=400)
-
-    sender_id, sender_name = await User.local_sender_identity(body.get("sender_name"))
+    participants = _participants_for_conversation(sender_participant, raw_participants, recipient_participant)
 
     # Title used for bundle filename + shown to recipient. Fall back to a
     # truncated message preview when title is blank.
@@ -936,7 +1034,10 @@ async def handle_start_conversation_bundle(body: dict, someone_typeid: str) -> A
         task_title=conv_title,
         sender_id=sender_id,
         sender_name=sender_name,
+        sender_email=sender_email,
         recipient_email=recipient_email,
+        recipient_participant=recipient_participant,
+        participants=participants,
         resolved_recipient_id=resolved_recipient_id,
         project_id=project_id_val,
         project_name=project_name_val,
@@ -950,8 +1051,8 @@ async def handle_start_conversation_bundle(body: dict, someone_typeid: str) -> A
 
 
 async def _find_task_conversation(task: Task) -> Optional[Conversation]:
-    """Look up the Conversation for a task via its context_entities."""
-    conv_typeid = task.first_context_of_type(BuiltinEntityType.CONVERSATION.value)
+    """Look up the Conversation for a task via its shared context."""
+    conv_typeid = task.first_context_of_type(BuiltinEntityType.CONVERSATION.value, bucket="shared")
     if conv_typeid:
         conv = await Conversation.get_one({"id": conv_typeid.id})
         if conv:
@@ -966,8 +1067,9 @@ def _build_reply_flow_message(
     message: str,
     sender_id: Optional[str],
     sender_name: str,
+    recipient_participant: Optional[dict] = None,
     is_draft: bool = False,
-    context_entities: Optional[list[str]] = None,
+    shared_context_entities: Optional[list[str]] = None,
 ) -> "FlowMessage":
     """Build (but do not save) the FlowMessage entity for a conversation reply.
 
@@ -982,9 +1084,9 @@ def _build_reply_flow_message(
     if task_id:
         context.append(TypeId(type=BuiltinEntityType.TASK.value, id=task_id))
     context.append(TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv_id))
-    if context_entities:
+    if shared_context_entities:
         seen = {str(ce) for ce in context}
-        for raw in context_entities:
+        for raw in shared_context_entities:
             s = (raw or "").strip()
             if not s or s in seen:
                 continue
@@ -994,12 +1096,19 @@ def _build_reply_flow_message(
             except ValueError:
                 continue
 
+    receiver_user_id = _participant_value(recipient_participant, "user_id")
+    receiver_email = _participant_value(recipient_participant, "email")
+    receiver_address = receiver_user_id or receiver_email or None
+    receiver_address_type = "id" if receiver_user_id else ("email" if receiver_address else None)
+
     reply_fm = FlowMessage.model_validate({
         "text": message,
-        "context_entities": context,
+        "shared_context_entities": [str(c) if not isinstance(c, str) else c for c in context],
         "attachment": [],
         "sender_id": sender_id,
         "sender_name": sender_name,
+        "receiver_address": receiver_address,
+        "receiver_address_type": receiver_address_type,
         "conversation_id": conv_id,
         "is_draft": is_draft,
     })
@@ -1086,6 +1195,56 @@ async def _attach_uploaded_files(reply_fm: "FlowMessage", uploaded_files: list) 
         reply_fm.attachment = new_attachments
 
 
+def _parse_asset_references(raw: Any) -> list:
+    """Normalize ``asset_references`` body field into a list of typeid strings.
+
+    Multipart bodies arrive as a JSON-encoded string (``sendReply`` does
+    ``form.append('asset_references', JSON.stringify([...]))``); JSON bodies
+    arrive as an already-decoded list. A scalar string is wrapped in a list.
+    """
+    import json
+
+    if raw is None:
+        return []
+    if isinstance(raw, list):
+        return [str(x) for x in raw if isinstance(x, (str, bytes))]
+    if isinstance(raw, (bytes, bytearray)):
+        raw = raw.decode("utf-8", errors="replace")
+    if isinstance(raw, str):
+        s = raw.strip()
+        if not s:
+            return []
+        try:
+            parsed = json.loads(s)
+        except json.JSONDecodeError:
+            return [s]
+        if isinstance(parsed, list):
+            return [str(x) for x in parsed if isinstance(x, (str, bytes))]
+        if isinstance(parsed, str):
+            return [parsed]
+        return []
+    return []
+
+
+async def _attach_asset_references(reply_fm: "FlowMessage", asset_typeids: list) -> None:
+    """Append TYPE_ID attachments for each asset typeid string on the FlowMessage.
+
+    Mirrors ``_attach_uploaded_files`` for assets — the typeid is stored verbatim
+    in ``Attachment.data`` so downstream readers can resolve it via TypeId(...).
+    """
+    from flow_sdk.builtin.flow_message import Attachment, AttachmentType
+
+    new_attachments: list = list(reply_fm.attachment or [])
+    added_any = False
+    for tid in asset_typeids:
+        if not isinstance(tid, str) or not tid.strip():
+            continue
+        new_attachments.append(Attachment(attachment_type=AttachmentType.TYPE_ID, data=tid.strip()))
+        added_any = True
+    if added_any:
+        reply_fm.attachment = new_attachments
+
+
 async def _append_message_to_conversation(
     *,
     conv: Conversation,
@@ -1143,6 +1302,28 @@ def _resolve_reply_recipient_email(
     return ""
 
 
+def _resolve_reply_recipient_participant(
+    task: Optional[Task], conv: Optional[Conversation], local_user_email: str, local_user_id: str
+) -> dict:
+    """Return the other conversation participant, falling back to task emails."""
+    me_email = (local_user_email or "").lower()
+    me_id = local_user_id or ""
+    if conv is not None:
+        for raw in conv.participants or []:
+            if not isinstance(raw, dict):
+                continue
+            participant_user_id = _participant_value(raw, "user_id")
+            participant_email = _participant_value(raw, "email")
+            if participant_user_id and me_id and participant_user_id == me_id:
+                continue
+            if participant_email and me_email and participant_email.lower() == me_email:
+                continue
+            if participant_user_id or participant_email:
+                return raw
+    email = _resolve_reply_recipient_email(task, conv, local_user_email, local_user_id)
+    return {"email": email} if email else {}
+
+
 async def _send_reply_to_hub(
     *,
     reply_fm: "FlowMessage",
@@ -1152,6 +1333,7 @@ async def _send_reply_to_hub(
     sender_id: Optional[str],
     sender_name: str,
     recipient_email: str,
+    participants: Optional[list[dict]],
 ) -> None:
     """POST the reply notification to hub and upload the .flowmsg bundle (best-effort).
 
@@ -1171,6 +1353,7 @@ async def _send_reply_to_hub(
             "recipient_email": recipient_email,
             "sender_id": sender_id,
             "sender_name": sender_name,
+            "participants": list(participants or []),
             "task_id": (task.id if task else ""),
             "task_title": title,
             "message": message,
@@ -1184,24 +1367,197 @@ async def _send_reply_to_hub(
         logger.warning("[append_conversation] hub reply upload failed (non-fatal): %s", _hub_err, exc_info=True)
 
 
+async def _send_conversation_message_header(conv: "Conversation", reply_fm: "FlowMessage") -> None:
+    """Create the hub-side FlowMessage header via the conversation's
+    ``add_message`` action.
+
+    Unlike the legacy ``flow_message/send`` path, ``add_message`` runs
+    ``Conversation.add_child`` on the hub, so the FlowMessage is graph-linked
+    to its parent Conversation. Delivery receipts (``_bump_delivery_status``)
+    resolve that parent via ``get_ancestor`` — without the link they skip with
+    ``no_parent_conversation`` and the sender's checkmarks never advance. The
+    FM id is pinned to the local id so the body bundle uploaded next lands
+    under the same key.
+    """
+    try:
+        attachments = [a.model_dump(mode="python") for a in (reply_fm.attachment or [])]
+        shared_context_entities = [str(c) for c in (reply_fm.shared_context_entities or [])]
+        await conv.add_message(
+            reply_fm.text,
+            sender_name=reply_fm.sender_name or None,
+            sender_id=reply_fm.sender_id or None,
+            flow_message_id=reply_fm.id,
+            attachments=attachments or None,
+            shared_context_entities=shared_context_entities or None,
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning(
+            "[append_conversation] hub add_message header failed (non-fatal): %s", e, exc_info=True
+        )
+
+
+async def _upload_body_and_finalize(reply_fm: "FlowMessage", conv_id: str) -> None:
+    """Pack + upload the FlowMessage body bundle in a background task.
+
+    ``upload_body`` runs the hub PUT → fs/upload → set_body_status sequence,
+    flipping the hub-side body_status to READY (which fans the UPDATE to
+    receivers). This mirrors READY onto the local FM and refreshes the UI so
+    the sender's attachment chips unlock. On failure the body stays UPLOADING
+    and the manual ``upload_body`` action remains available for retry.
+    """
+    try:
+        from flow_sdk.core.network.resource_tracker import (  # noqa: PLC0415
+            make_flow_message_progress_emitter,
+        )
+        await reply_fm.upload_body(
+            on_progress=make_flow_message_progress_emitter(reply_fm.id, "upload"),
+        )
+        await reply_fm.save()
+        _notify_ui_conversation_updated(conv_id, "", reply_fm.id)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(
+            "[append_conversation] background body upload failed (non-fatal): %s", e, exc_info=True
+        )
+
+
+async def _hub_knows_conversation(conv_id: str) -> bool:
+    """Quick HTTP probe to decide whether the hub knows this conversation."""
+    try:
+        import httpx
+        from flow_sdk.cli.auth.credentials import load_credentials
+        from flow_sdk.cloud_client.client import ApiConfig
+
+        creds = load_credentials()
+        if not creds or not creds.api_key:
+            return False
+        api = ApiConfig.from_env()
+        url = api._get_full_url(f"/graph/conversation/{conv_id}")
+        headers = {"Authorization": f"Bearer {creds.api_key}", "Accept": "application/json"}
+        async with httpx.AsyncClient(timeout=3.0) as h:
+            r = await h.get(url, headers=headers)
+            if r.status_code != 200:
+                return False
+            body = r.json()
+            return (body or {}).get("status") == "SUCCESS" and bool((body or {}).get("data"))
+    except Exception:
+        return False
+
+
+async def _try_send_reply_via_hub(
+    *,
+    conv_id: str,
+    text: str,
+    sender_name: str,
+    sender_id: Optional[str],
+    someone_typeid: str,
+) -> Optional[ApiResponse]:
+    """If ``conv_id`` is a hub-mirrored conversation, push the reply through
+    the hub bridge so the other party gets it via their own bridge. Returns
+    the API response on success, ``None`` to fall through to local-only.
+    """
+    try:
+        from flow_sdk.cloud_client.hub_bridge import hub_ws_bridge
+        from flow_sdk.cloud_client.ws_client import hub_ws_manager
+    except Exception:
+        return None
+
+    if not hub_ws_manager.is_connected:
+        return None
+
+    if not hub_ws_bridge.is_hub_conversation(conv_id):
+        # Bridge hasn't seen an inbound event for this conv this session
+        # (e.g., it landed on a previous run and the in-memory set didn't
+        # survive restart). Probe the hub directly — if the hub knows the
+        # conv, treat it as hub-mirrored and remember for the rest of this
+        # session.
+        if not await _hub_knows_conversation(conv_id):
+            return None
+        hub_ws_bridge.remember_hub_conversation(conv_id)
+
+    try:
+        resp = await hub_ws_bridge.add_message(
+            conversation_id=conv_id,
+            text=text,
+            sender_name=sender_name or None,
+        )
+    except Exception as e:
+        logger.warning("[append_conversation] hub add_message failed: %s", e, exc_info=True)
+        return None
+
+    fm_payload = (resp or {}).get("data") or {}
+    hub_fm_id = fm_payload.get("id")
+    if not hub_fm_id:
+        logger.warning("[append_conversation] hub add_message returned no id; falling through")
+        return None
+
+    # Materialize the hub-confirmed message into the local store. Sender side
+    # only — hub fanout skips the sender, so this is the local UI's source of
+    # truth for this row.
+    try:
+        from flow_sdk.app.actions.materialize_flow_message import materialize_flow_message
+
+        payload = dict(fm_payload)
+        payload["id"] = hub_fm_id
+        payload["text"] = text
+        if sender_id and not payload.get("sender_id"):
+            payload["sender_id"] = sender_id
+        if sender_name and not payload.get("sender_name"):
+            payload["sender_name"] = sender_name
+        await materialize_flow_message(
+            payload,
+            conversation_id=conv_id,
+            someone_typeid=someone_typeid,
+            notify=True,
+        )
+    except Exception as e:
+        logger.warning("[append_conversation] hub-side reply materialize failed: %s", e, exc_info=True)
+        # Hub got the message; local UI will pick it up on the next refetch.
+
+    conv_after = await Conversation.get_one({"id": conv_id})
+    message_count = conv_after.message_count if conv_after else 0
+    _notify_ui_conversation_updated(conv_id, "", hub_fm_id)
+    return ApiSuccessResponse(data={
+        "task_id": "",
+        "conversation_id": conv_id,
+        "message_count": message_count,
+        "flow_message_id": hub_fm_id,
+    })
+
+
 def _notify_ui_conversation_updated(conv_id: str, task_id: str, fm_id: str) -> None:
-    """Fire-and-forget sync event so the UI refreshes the conversation panel."""
+    """Fire-and-forget sniffer EVENT so the UI refreshes the conversation panel.
+
+    Must be SyncOperation.EVENT — never CRUD. Sent as UPDATE it reached the
+    webhook receiver's ``_reflect_entity``, which loaded the Conversation
+    entity *while ``materialize_flow_message`` was still mid-flight* (before
+    the new pointer was projected into ``message_ids``), re-saved that stale
+    snapshot, and re-broadcast ``notify_updated()`` — clobbering the freshly
+    projected message list and leaving the UI exactly one message behind.
+    EVENT routes to the event handler / sniffer instead, which is all this
+    channel was ever for. Mirrors ``materialize_flow_message``'s own
+    ``conversation_updated`` event.
+    """
     try:
         send_resource_sync(
             type="conversation",
             id=conv_id,
-            operation=SyncOperation.UPDATE,
-            data={"event_data": {"conversation_id": conv_id, "task_id": task_id, "flow_message_id": fm_id}},
+            operation=SyncOperation.EVENT,
+            data={
+                "event_name": "conversation_updated",
+                "event_data": {"conversation_id": conv_id, "task_id": task_id, "flow_message_id": fm_id},
+            },
         )
     except Exception:
         pass
 
 
-async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResponse:
-    """Append a reply to a Conversation.
+async def handle_add_message(body: dict, someone_typeid: str) -> ApiResponse:
+    """Append a message to a Conversation — the single message-send handler.
 
-    Accepts EITHER `task_id` (legacy task-bound path: hub push + git commit) OR
-    `conversation_id` (project-scoped conversations: local-only — no hub, no git).
+    Exposed as the `conversation/<id>/add_message` action. Handles text-only
+    sends and attachment sends (files, images, prompts, asset references)
+    alike. Accepts EITHER `task_id` (task-bound path: hub push + git commit)
+    OR `conversation_id` (the normal conversation path).
     """
     task_id = (body.get("task_id") or "").strip()
     conversation_id = (body.get("conversation_id") or "").strip()
@@ -1214,16 +1570,30 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
     uploaded_files_preview = body.get("files") or []
     if not isinstance(uploaded_files_preview, list):
         uploaded_files_preview = [uploaded_files_preview]
-    context_entities = body.get("context_entities") or []
-    if isinstance(context_entities, str):
-        context_entities = [context_entities]
-    elif not isinstance(context_entities, list):
-        context_entities = []
+    asset_references = _parse_asset_references(body.get("asset_references"))
+    # Accept both the new ``shared_context_entities`` name and the legacy
+    # ``context_entities`` body key during transition (frontend may not be
+    # fully cut over yet). Treat both as wire-bound (shared).
+    shared_context_entities = (
+        body.get("shared_context_entities")
+        or body.get("context_entities")
+        or []
+    )
+    if isinstance(shared_context_entities, str):
+        shared_context_entities = [shared_context_entities]
+    elif not isinstance(shared_context_entities, list):
+        shared_context_entities = []
 
     if not task_id and not conversation_id:
         return ApiFailResponse(message="task_id or conversation_id is required")
-    if not message and not prompt_text_preview and not prompt_files_preview and not uploaded_files_preview:
-        return ApiFailResponse(message="message, prompt, or files required")
+    if (
+        not message
+        and not prompt_text_preview
+        and not prompt_files_preview
+        and not uploaded_files_preview
+        and not asset_references
+    ):
+        return ApiFailResponse(message="message, prompt, files, or asset_references required")
     if not message:
         # Synthesize a placeholder so the rest of the pipeline (which assumes a
         # non-empty text body) keeps working for prompt-only / files-only sends.
@@ -1243,7 +1613,16 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
         if not conv:
             return ApiFailResponse(message=f"Conversation not found: {conversation_id}")
 
-    sender_id, sender_name = await User.local_sender_identity(body.get("sender_name"))
+    sender_participant = await User.current_sender_participant(body.get("sender_name"))
+    sender_id = sender_participant.get("user_id") or None
+    sender_name = sender_participant.get("name") or ""
+    sender_email = sender_participant.get("email") or ""
+    recipient_participant = _resolve_reply_recipient_participant(
+        task,
+        conv,
+        sender_email,
+        sender_id or "",
+    )
 
     uploaded_files = body.get("files") or []
     if not isinstance(uploaded_files, list):
@@ -1253,6 +1632,28 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
     if not isinstance(prompt_files, list):
         prompt_files = [prompt_files]
 
+    # Hub-mirrored conversation: round-trip the reply through the hub so the
+    # other party receives it via their own bridge. Only when this is a plain
+    # text reply (no attachments / prompts / draft) — the hub action shape
+    # doesn't currently carry those, and the local-only path handles them.
+    if (
+        not task_id
+        and not is_draft
+        and not uploaded_files
+        and not prompt_text
+        and not prompt_files
+        and not asset_references
+    ):
+        hub_response = await _try_send_reply_via_hub(
+            conv_id=conv.id,
+            text=message,
+            sender_name=sender_name,
+            sender_id=sender_id,
+            someone_typeid=someone_typeid,
+        )
+        if hub_response is not None:
+            return hub_response
+
     effective_task_id: Optional[str] = task.id if task else None
 
     reply_fm = _build_reply_flow_message(
@@ -1261,15 +1662,48 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
         message=message,
         sender_id=sender_id,
         sender_name=sender_name,
+        recipient_participant=recipient_participant,
         is_draft=is_draft,
-        context_entities=context_entities,
+        shared_context_entities=shared_context_entities,
     )
 
     if uploaded_files:
         await _attach_uploaded_files(reply_fm, uploaded_files)
 
+    if asset_references:
+        await _attach_asset_references(reply_fm, asset_references)
+
     if prompt_text or prompt_files:
         await _attach_prompt(reply_fm, sender_id, prompt_text, prompt_files)
+
+    # Resolve the remote recipient up front — it gates both the hub round-trip
+    # and the body_status stamp. A purely-local conversation (no remote
+    # recipient, or logged out) keeps body_status=NA: there is no hub to
+    # upload a body to, so the attachment is served straight off local VFS.
+    recipient_email = recipient_participant.get("email") or _resolve_reply_recipient_email(
+        task,
+        conv,
+        sender_email,
+        sender_id or "",
+    )
+    # A conversation reply goes to the hub whenever there is another party.
+    # ``conv.remote`` is the load-bearing signal: a hub-mirrored conversation
+    # is cross-machine by definition, so every message in it must reach the
+    # hub. The local participant list is NOT reliable for this — a conversation
+    # received from the hub can land with an empty ``participants`` array, so
+    # gating on locally-resolved recipient_email/user_id silently dropped
+    # attachment sends (the text path sidesteps this via _try_send_reply_via_hub,
+    # which lets the hub resolve membership). The recipient_email / user_id
+    # checks remain as a fallback for not-yet-flagged conversations.
+    # The hub add_message header itself needs no email, only the conv id.
+    is_remote_send = is_logged_in() and bool(
+        getattr(conv, "remote", False)
+        or recipient_email
+        or _participant_value(recipient_participant, "user_id")
+    )
+    if is_remote_send and reply_fm.has_body():
+        from flow_sdk.builtin.flow_message import BodyStatus  # noqa: PLC0415
+        reply_fm.body_status = BodyStatus.UPLOADING
 
     reply_fm = await reply_fm.save(someone_typeid)
 
@@ -1292,27 +1726,21 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
         someone_typeid=someone_typeid,
     )
 
-    local_user = await User.get_local()
-    recipient_email = _resolve_reply_recipient_email(
-        task,
-        conv,
-        (local_user.email or "") if local_user else "",
-        (local_user.id or "") if local_user else "",
-    )
-    if recipient_email:
-        await _send_reply_to_hub(
-            reply_fm=reply_fm,
-            task=task,
-            conv_title=(conv.name or "") if conv else "",
-            message=message,
-            sender_id=sender_id,
-            sender_name=sender_name,
-            recipient_email=recipient_email,
-        )
-
-    _notify_ui_conversation_updated(conv.id, effective_task_id or "", reply_fm.id)
-
     if task:
+        # Legacy task-bound reply: hub flow_message/send + bundle upload, then
+        # the git commit. Left as-is — the Share Task flow is aligned separately.
+        if recipient_email:
+            await _send_reply_to_hub(
+                reply_fm=reply_fm,
+                task=task,
+                conv_title=(conv.name or "") if conv else "",
+                message=message,
+                sender_id=sender_id,
+                sender_name=sender_name,
+                recipient_email=recipient_email,
+                participants=list(conv.participants or []),
+            )
+        _notify_ui_conversation_updated(conv.id, effective_task_id or "", reply_fm.id)
         project_root_str = task.project_root
         if project_root_str:
             await git_add_commit_push(
@@ -1320,6 +1748,17 @@ async def handle_append_conversation(body: dict, someone_typeid: str) -> ApiResp
                 ["tasks"],
                 f"chore: update conversation for task '{task.title}'",
             )
+    else:
+        # Conversation path: refresh the sender's UI immediately, then create
+        # the hub-side header via add_message (graph-linked to the parent
+        # Conversation so delivery receipts work). The body bundle uploads in
+        # a background task — the HTTP response returns without waiting on it.
+        _notify_ui_conversation_updated(conv.id, "", reply_fm.id)
+        if is_remote_send:
+            await _send_conversation_message_header(conv, reply_fm)
+            from flow_sdk.builtin.flow_message import BodyStatus  # noqa: PLC0415
+            if reply_fm.body_status == BodyStatus.UPLOADING:
+                asyncio.create_task(_upload_body_and_finalize(reply_fm, conv.id))
 
     return ApiSuccessResponse(data={
         "task_id": effective_task_id or "",
@@ -1337,6 +1776,8 @@ async def send_notification() -> ApiResponse:
             return ApiFailResponse(message="No request info found")
         if not request_info.someone_typeid:
             return ApiFailResponse(message="No authenticated user in request context")
+        if not is_logged_in():
+            return ApiFailResponse(message="Cloud login required to send messages")
         body = await request_info.get_post_data() or {}
         return await handle_send_notification(body, request_info.someone_typeid)
     except Exception as e:
@@ -1358,26 +1799,13 @@ async def conversation_start_bundle() -> ApiResponse:
             return ApiFailResponse(message="No request info found")
         if not request_info.someone_typeid:
             return ApiFailResponse(message="No authenticated user in request context")
+        if not is_logged_in():
+            return ApiFailResponse(message="Cloud login required to start a conversation")
         body = await request_info.get_post_data() or {}
         return await handle_start_conversation_bundle(body, request_info.someone_typeid)
     except Exception as e:
         logger.error(f"[notification_action] conversation-start-bundle error: {e}", exc_info=True)
         return ApiFailResponse(message=f"Failed to start conversation: {str(e)}")
-
-
-@action.post(action_name="append-conversation", types=["notification"])
-async def append_conversation() -> ApiResponse:
-    try:
-        request_info = get_current_request_info()
-        if not request_info:
-            return ApiFailResponse(message="No request info found")
-        if not request_info.someone_typeid:
-            return ApiFailResponse(message="No authenticated user in request context")
-        body = await request_info.get_post_data() or {}
-        return await handle_append_conversation(body, request_info.someone_typeid)
-    except Exception as e:
-        logger.error(f"[notification_action] append-conversation error: {e}", exc_info=True)
-        return ApiFailResponse(message=f"Failed to append conversation: {str(e)}")
 
 
 async def handle_refresh_notifications(project_path: str) -> ApiResponse:

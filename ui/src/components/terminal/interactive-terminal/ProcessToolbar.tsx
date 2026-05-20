@@ -12,7 +12,7 @@ import { AgenticProcess, dataManager, Shell } from '@sdk';
 import { hasWorkerStarted, ProcessStatus, WorkerStatus } from '@sdk/process/agentic-types.js';
 import { ClaudeSessionRecord } from '@sdk/resource_management/fs_records/claude/claude-session.js';
 import { CommitMergeButton, OpenInWorktreeButton } from './WorktreeButtons';
-import { AskForAssistanceButton } from './AskForAssistanceButton';
+import { EntityActionsToolbar } from '@src/components/entity-actions/EntityActionsToolbar';
 import { AssetManagerButton } from '@src/components/asset-manager';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
@@ -26,12 +26,14 @@ import {
   DropdownMenuLabel,
 } from '@src/components/ui/dropdown-menu';
 import { BugPlay, ExternalLink, Filter, GitFork, Info, RotateCcw, ScrollText, SlidersHorizontal, SquareTerminal, X } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { useToast } from '@src/hooks/use-toast';
 import { ToastAction } from '@src/components/ui/toast';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { closeTerminalTargets } from '@src/hooks/useActiveTerminals';
 import { PTYViewer } from './pty-viewer';
 import { PTYEventsViewer } from './pty-events-viewer';
+import { CommandStatusViewer } from './command-status-viewer';
 import type { ColVisibility, TraceFilters } from './InteractiveTerminal';
 
 interface ProcessToolbarProps {
@@ -55,6 +57,7 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
   const { navigation } = useDockNavigation();
   const [showPtyViewer, setShowPtyViewer] = useState(false);
   const [showPtyEventsViewer, setShowPtyEventsViewer] = useState(false);
+  const [showCommandStatus, setShowCommandStatus] = useState(false);
 
   // Force re-render whenever any field on the process entity changes. Backend
   // mutates the entity in place via castAndDeepAssign, so without an explicit
@@ -113,7 +116,7 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
         duration: Infinity,
         action: (
           <div className="flex gap-2">
-            <ToastAction altText="Terminate" onClick={() => { void process.close(); dismiss(id); apiTimeoutToastId.current = null; }}>
+            <ToastAction altText="Terminate" onClick={() => { void closeTerminalTargets([process.typeId]); dismiss(id); apiTimeoutToastId.current = null; }}>
               Terminate
             </ToastAction>
             <ToastAction altText="Keep Waiting" onClick={() => { dismiss(id); apiTimeoutToastId.current = null; }}>
@@ -153,6 +156,19 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
   const anyCliActive = currentChrome || currentDanger || currentDebug;
   const anyTimeFieldActive = traceFilters.time || traceFilters.index || traceFilters.line || traceFilters.absLine || traceFilters.debugTime || traceFilters.refTime;
   const anyColActive = !colVis.trace || !colVis.time || !colVis.annotations || anyTimeFieldActive;
+
+  const processDisplayName = useMemo(() => {
+    const cd = process.context_data as Record<string, unknown> | undefined;
+    const dn = cd && typeof cd.display_name === 'string' ? cd.display_name.trim() : '';
+    if (dn) return dn;
+    const name = (process as { name?: string | null }).name;
+    if (typeof name === 'string' && name.trim().length > 0) return name.trim();
+    if (process.instruction_content) {
+      const trimmed = process.instruction_content.replace(/<!--.*?-->/g, '').trim();
+      if (trimmed.length > 0) return trimmed.substring(0, 30);
+    }
+    return 'Session';
+  }, [process.context_data, process.name, process.instruction_content]);
 
   const setTrace = (key: keyof TraceFilters) => (val: boolean) =>
     onTraceFiltersChange({ ...traceFilters, [key]: val });
@@ -292,6 +308,9 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
             <DropdownMenuItem onSelect={() => setShowPtyEventsViewer(true)}>
               <span className="text-amber-400 text-xs font-medium">PTY Events Viewer</span>
             </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => setShowCommandStatus(true)}>
+              <span className="text-amber-400 text-xs font-medium">Command Status</span>
+            </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
 
@@ -325,7 +344,20 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
           </TooltipContent>
         </Tooltip>
 
-        {/* Spacer */}
+        {/* Spacer (left) */}
+        <div className="flex-1" />
+
+        {/* Primary CTAs — Share + Favorite, centered as the strongest CTA. */}
+        {!embedded && (
+          <EntityActionsToolbar
+            typeId={process.typeId}
+            favoriteTitle={processDisplayName}
+            favoriteIcon="agentic_process"
+            variant="prominent"
+          />
+        )}
+
+        {/* Spacer (right) */}
         <div className="flex-1" />
 
         {/* Reusable asset manager — same component the chat side panel uses. */}
@@ -335,9 +367,6 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
         {!embedded && (
           <CommitMergeButton process={process} onInjectPrompt={handleInjectPrompt} />
         )}
-
-        {/* Ask for Assistance — hidden in embedded mode */}
-        {!embedded && <AskForAssistanceButton process={process} />}
 
         {/* Open terminal in current folder — hidden in embedded mode */}
         {!embedded && (
@@ -410,6 +439,7 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
 
       <PTYViewer open={showPtyViewer} onClose={() => setShowPtyViewer(false)} shell={shell ?? null} />
       <PTYEventsViewer open={showPtyEventsViewer} onClose={() => setShowPtyEventsViewer(false)} shell={shell ?? null} />
+      <CommandStatusViewer open={showCommandStatus} onClose={() => setShowCommandStatus(false)} process={process ?? null} />
     </TooltipProvider>
   );
 }
@@ -543,8 +573,16 @@ function useTimeDisplay(iso: string | null | undefined): string {
   return `${hh}:${mm}:${ss} (${ago})`;
 }
 
+function workerLabel(workerType: string | null | undefined): string {
+  const wt = (workerType ?? '').toLowerCase();
+  if (wt === 'codex') return 'Codex';
+  if (wt.startsWith('claude') || wt === '') return 'Claude';
+  return workerType ?? '';
+}
+
 function SessionInfoPopover({ process, sessionStartTime, lastMessageTime }: { process: AgenticProcess; sessionStartTime?: string | null; lastMessageTime?: string | null }) {
   const cliOpts = process.cliOptions;
+  const worker = workerLabel(process.worker_type);
   const workdir = process.workdir || '(not set)';
   const model = cliOpts.model || '(default)';
   const permMode = cliOpts.permission_mode;
@@ -554,6 +592,26 @@ function SessionInfoPopover({ process, sessionStartTime, lastMessageTime }: { pr
 
   const startDisplay = useTimeDisplay(sessionStartTime);
   const lastDisplay = useTimeDisplay(lastMessageTime);
+
+  const [sessionName, setSessionName] = useState<string | null>(null);
+  useEffect(() => {
+    const sid = process.session_id;
+    if (!sid) {
+      setSessionName(null);
+      return;
+    }
+    let cancelled = false;
+    void ClaudeSessionRecord.discover(sid, workdir && workdir !== '(not set)' ? { project: workdir } : undefined)
+      .then((record) => {
+        if (!cancelled) setSessionName(record?.name ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setSessionName(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [process.session_id, workdir]);
 
   // Build a copy-paste-into-terminal-and-run command. The session is already
   // running, so the right flag is `--resume <uuid>` (not `--session-id`, which
@@ -589,7 +647,8 @@ function SessionInfoPopover({ process, sessionStartTime, lastMessageTime }: { pr
     ['Started', startDisplay],
     ['Last message', lastDisplay],
     ['Working Dir', workdir],
-    ['Session ID', process.session_id || 'none'],
+    [`${worker} Session Name`, sessionName || (process.session_id ? '(loading…)' : 'none')],
+    [`${worker} Session ID`, process.session_id || 'none'],
     ['PTY ID', process.pty_pid || 'none (detached)'],
     ['Permission', permMode],
     ['Chrome', chrome ? 'enabled' : 'disabled'],
@@ -604,14 +663,14 @@ function SessionInfoPopover({ process, sessionStartTime, lastMessageTime }: { pr
       <PopoverTrigger asChild>
         <button
           className="inline-flex h-7 w-7 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-          aria-label="Session info"
+          aria-label={`${worker} session info`}
         >
           <Info className="h-3.5 w-3.5" />
         </button>
       </PopoverTrigger>
       <PopoverContent side="bottom" align="end" className="w-96 p-0">
         <div className="border-b px-3 py-2">
-          <h4 className="text-xs font-semibold">Session Details</h4>
+          <h4 className="text-xs font-semibold">{worker} Session Details</h4>
         </div>
         <div className="space-y-1 px-3 py-2">
           {rows.map(([label, value]) => (

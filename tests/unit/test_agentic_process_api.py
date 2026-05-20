@@ -196,7 +196,7 @@ async def test_fork_action_creates_sibling_with_fork_session_id():
         session_id="source-session-abc",
         workdir="/project",
         visible=False,
-        context_entities=[],
+        shared_context_entities=[],
     )
     fake_new_proc.save.assert_awaited_once_with(None)
     from flow_sdk.responses.response import ApiSuccessResponse
@@ -221,7 +221,7 @@ async def test_fork_action_visible_false_by_default():
         session_id="src-sess",
         workdir="/project",
         visible=False,
-        context_entities=[],
+        shared_context_entities=[],
     )
 
 
@@ -246,7 +246,7 @@ async def test_fork_action_visible_true_when_passed():
         session_id="src-sess",
         workdir="/project",
         visible=True,
-        context_entities=[],
+        shared_context_entities=[],
     )
 
 
@@ -256,7 +256,7 @@ async def test_fork_action_visible_true_when_passed():
 
 @pytest.mark.asyncio
 async def test_context_manager_calls_start_and_stop():
-    """async with AgenticProcess(...) calls start() on enter and exit() on __aexit__."""
+    """async with AgenticProcess(...) calls start_pty() on enter and exit() on __aexit__."""
     proc = _proc()
     start_called = []
     exit_called = []
@@ -271,7 +271,7 @@ async def test_context_manager_calls_start_and_stop():
         from flow_sdk.responses.response import ApiSuccessResponse
         return ApiSuccessResponse(data={})
 
-    with patch.object(AgenticProcess, "start", new_callable=AsyncMock, side_effect=_fake_start):
+    with patch.object(AgenticProcess, "start_pty", new_callable=AsyncMock, side_effect=_fake_start):
         with patch.object(AgenticProcess, "exit", new_callable=AsyncMock, side_effect=_fake_exit):
             async with proc:
                 pass
@@ -300,7 +300,7 @@ async def test_start_promotes_stuck_starting_process_to_live_when_pty_is_attacha
     with patch.object(AgenticProcess, "shell", new=AsyncMock(return_value=shell)), \
          patch.object(AgenticProcess, "save", new=AsyncMock()) as save, \
          patch.object(AgenticProcess, "get_project", new=AsyncMock()) as get_project:
-        result = await proc.start()
+        result = await proc.start_pty()
 
     assert isinstance(result, ApiSuccessResponse)
     assert proc.status == ProcessStatus.RUNNING.value
@@ -332,7 +332,7 @@ async def test_start_persists_visible_true_on_running_reattach():
     with patch.object(AgenticProcess, "shell", new=AsyncMock(return_value=shell)), \
          patch.object(AgenticProcess, "save", new=AsyncMock()) as save, \
          patch.object(AgenticProcess, "get_project", new=AsyncMock()) as get_project:
-        result = await proc.start(visible=True)
+        result = await proc.start_pty(visible=True)
 
     assert isinstance(result, ApiSuccessResponse)
     assert proc.visible is True

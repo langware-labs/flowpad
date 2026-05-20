@@ -1,3 +1,7 @@
+---
+id: 86c3a608-b106-5912-92de-7c83725a7741
+---
+
 # Workflow — Entity Create Smoke (WorkflowRecord default file_path regression)
 
 ## Summary

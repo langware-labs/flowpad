@@ -2,13 +2,22 @@ import { MarkdownEditor } from '@src/components/assets/editor/markdown/MarkdownE
 import { enableMcp, isMcpAvailable } from '@src/components/assets/utils';
 import type { ExtraSideTab } from '@src/components/milkdown-editor/EditorWithSidePanel';
 import { WorkflowRunsPanel } from '@src/components/workflows-view/WorkflowRunsPanel';
-import { WorkflowLearningView } from './learning/WorkflowLearningView';
+import { WorkflowRunnerView } from '@src/components/workflow-runner';
+import { useSpawnRunner } from '@src/components/workflow-runner/data/useSpawnRunner';
+// WorkflowTraceViewer was the legacy "full pane drill into one run" view —
+// replaced by the new <WorkflowRunnerView> mounted in the learning panel.
+// Per-run navigation now happens via the RunStrip at the bottom of the
+// runner view. `selectedRunId` URL param is preserved as a no-op for
+// rollback safety; will be removed after one release.
 import {
   workflowRunStore,
   type ProcessEntry,
 } from '@src/components/workflows-view/workflow-run-store';
-import { useProcessesForTarget } from '@src/components/entity-chat-panel';
+import { useProcessesForTarget } from '@src/components/entity-execution-panel';
+import { RunButton } from '@src/components/assets/editor/run/RunButton';
 import { Button } from '@src/components/ui/button';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -19,17 +28,19 @@ import {
   AlertDialogTitle,
 } from '@src/components/ui/alert-dialog';
 import { useToast } from '@src/hooks/use-toast';
-import { useEntitiesQuery } from '@src/hooks/entity-hooks';
+import { useEntityByPath } from '@src/hooks/use-entity-by-path';
 import {
   AgenticProcess,
   FSRef,
-  QueryRequest,
+  ProcessType,
   Workflow,
   dataContext,
 } from '@sdk';
 import { ClaudeCliOptions } from '@sdk/cli_workers/claude-cli';
-import { History, Loader2, Play } from 'lucide-react';
+import { History } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+
+const RUN_ID_PARAM = 'runId';
 
 interface WorkflowAssetEditorProps {
   /** FSRef to the workflow's source markdown file. */
@@ -38,33 +49,54 @@ interface WorkflowAssetEditorProps {
   workflow?: Workflow;
 }
 
-const stripLeadingSlash = (p: string | undefined | null): string =>
-  p ? (p.startsWith('/') ? p.slice(1) : p) : '';
-
 /**
  * Unified editor for workflow `.md` files. Mounted from both the wiki
  * (`AssetEditorRouter`) and the Workflows sidebar (`WorkflowsPage`) — one
  * surface, two entry points. Wraps `MarkdownEditor` and injects a `Run`
  * toolbar button + a `Runs` tab into its side drawer.
+ *
+ * Resolution: when mounted via `AssetEditorRouter`, the surrounding
+ * `<EntityResolutionGate>` has already resolved the workflow and passes it
+ * via `providedWorkflow`. Direct mounts (e.g. `WorkflowsPage`) also pass the
+ * pre-resolved entity. As a fallback for any future caller that omits the
+ * prop, `useEntityByPath` resolves it from `fsRef`.
  */
 export function WorkflowAssetEditor({ fsRef, workflow: providedWorkflow }: WorkflowAssetEditorProps) {
   const { toast } = useToast();
 
-  const request = useMemo(() => new QueryRequest({ type: Workflow.type }), []);
-  const { data: workflows = [] } = useEntitiesQuery<Workflow>(request, {
-    enabled: !providedWorkflow,
-  });
-  const resolvedWorkflow = useMemo(() => {
-    if (providedWorkflow) return providedWorkflow;
-    const key = stripLeadingSlash(fsRef.path);
-    return workflows.find((w) => stripLeadingSlash(w.asset_ref) === key) ?? null;
-  }, [providedWorkflow, workflows, fsRef.path]);
+  const { entity: discoveredWorkflow } = useEntityByPath<Workflow>(
+    providedWorkflow ? null : Workflow.type,
+    providedWorkflow ? null : fsRef,
+  );
+  const resolvedWorkflow = providedWorkflow ?? discoveredWorkflow;
 
-  const [activeSideTab, setActiveSideTab] = useState<string>('chat');
+  const [activeSideTab, setActiveSideTab] = useState<string>('editor');
   const [processEntry, setProcessEntry] = useState<ProcessEntry | null>(null);
   const [isStarting, setIsStarting] = useState(false);
   const [showMcpModal, setShowMcpModal] = useState(false);
   const [mcpEnabling, setMcpEnabling] = useState(false);
+
+  // When set, the main pane swaps from MarkdownEditor → WorkflowTraceViewer.
+  // URL-bound via ?runId=<id> on the same DockPointer so the selection is
+  // shareable + back-button-restorable, matching ?editorMode handling in
+  // MarkdownEditor. Param name is `runId` to mirror /dev/trace/:runId.
+  const { navigation, currentDock } = useDockNavigation();
+  const selectedRunId = currentDock?.options?.[RUN_ID_PARAM] ?? null;
+  const setSelectedRunId = useCallback(
+    (runId: string | null) => {
+      if (!currentDock) return;
+      const nextOptions = { ...(currentDock.options ?? {}) };
+      if (runId) {
+        nextOptions[RUN_ID_PARAM] = runId;
+      } else {
+        delete nextOptions[RUN_ID_PARAM];
+      }
+      navigation.openDock(
+        new DockPointer(currentDock.viewType, currentDock.pointer, nextOptions, currentDock.layout),
+      );
+    },
+    [currentDock, navigation],
+  );
 
   // WorkflowStrip's Play button stashes a live ProcessEntry here before
   // navigating — drain it on mount so we show the run in progress.
@@ -83,6 +115,7 @@ export function WorkflowAssetEditor({ fsRef, workflow: providedWorkflow }: Workf
   );
   const { processes: pastRunProcesses } = useProcessesForTarget(targetStr, {
     enabled: !!targetStr,
+    processType: ProcessType.Execution,
   });
 
   const runHistory = useMemo<ProcessEntry[]>(() => {
@@ -100,33 +133,15 @@ export function WorkflowAssetEditor({ fsRef, workflow: providedWorkflow }: Workf
     return sorted.map((p) => (liveId && p.id === liveId ? processEntry! : { process: p }));
   }, [pastRunProcesses, processEntry]);
 
+  const { spawn: spawnRunner } = useSpawnRunner();
   const doRun = useCallback(async () => {
-    if (!resolvedWorkflow?.asset_ref) return;
-    const systemSkills = dataContext.bootstrapInfo?.desktop_info?.paths?.system_skills;
-    const flowSkillPath = systemSkills
-      ? `/${systemSkills}/flow/SKILL.md`
-      : '~/.flow/system_assets/skills/flow/SKILL.md';
-    const instruction = `Run workflow at /${resolvedWorkflow.asset_ref} using the flow skill located at: ${flowSkillPath}`;
-    const workdir = dataContext.project?.fs_storage_mount_path;
-
-    const cliOptions = new ClaudeCliOptions({
-      permission_mode: 'bypassPermissions',
-      print_mode: true,
-      output_format: 'stream-json',
-      verbose: true,
-    });
-    const process = await new AgenticProcess({
-      cli_config: cliOptions.toJson(),
-      context_data: { project_id: dataContext.project?.id },
-      workdir,
-      visible: false,
-      target_vfs_path: resolvedWorkflow.typeId.toString(),
-    }).save([resolvedWorkflow.typeId]);
-
-    void process.prompt(instruction);
-    setProcessEntry({ process });
-    setActiveSideTab('runs');
-  }, [resolvedWorkflow]);
+    if (!resolvedWorkflow) return;
+    const process = await spawnRunner({ workflow: resolvedWorkflow });
+    if (process) {
+      setProcessEntry({ process });
+      setActiveSideTab('runs');
+    }
+  }, [resolvedWorkflow, spawnRunner]);
 
   const handleRun = useCallback(async () => {
     if (!resolvedWorkflow?.asset_ref) return;
@@ -164,21 +179,20 @@ export function WorkflowAssetEditor({ fsRef, workflow: providedWorkflow }: Workf
     [doRun, toast],
   );
 
-  if (!resolvedWorkflow) {
-    return (
-      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-        Loading workflow…
-      </div>
-    );
-  }
+  // The gate (`AssetEditorRouter`) only mounts us once the workflow is
+  // resolved; direct mounts (`WorkflowsPage`) pass `providedWorkflow`. The
+  // `useEntityByPath` fallback above covers stragglers — render nothing
+  // while it settles.
+  if (!resolvedWorkflow) return null;
 
   const isRunning = !!processEntry;
 
   const toolbar = (
-    <Button
-      size="sm"
+    <RunButton
       onClick={() => void handleRun()}
-      disabled={isRunning || isStarting || !resolvedWorkflow.asset_ref}
+      isRunning={isRunning}
+      isStarting={isStarting}
+      disabled={!resolvedWorkflow.asset_ref}
       title={
         !resolvedWorkflow.asset_ref
           ? 'No file linked'
@@ -186,14 +200,7 @@ export function WorkflowAssetEditor({ fsRef, workflow: providedWorkflow }: Workf
             ? 'Workflow running…'
             : 'Run workflow'
       }
-    >
-      {isRunning || isStarting ? (
-        <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-      ) : (
-        <Play className="mr-1 h-4 w-4" />
-      )}
-      {isRunning ? 'Running…' : isStarting ? 'Starting…' : 'Run'}
-    </Button>
+    />
   );
 
   const runsTab: ExtraSideTab = {
@@ -206,6 +213,7 @@ export function WorkflowAssetEditor({ fsRef, workflow: providedWorkflow }: Workf
         entries={runHistory}
         currentEntry={processEntry}
         computeNodeId={fsRef.typeId.id}
+        onSelectRun={setSelectedRunId}
       />
     ),
   };
@@ -224,8 +232,14 @@ export function WorkflowAssetEditor({ fsRef, workflow: providedWorkflow }: Workf
   );
   const showLearningMode = terminalRuns.length > 0;
   const learningPanel = showLearningMode ? (
-    <WorkflowLearningView workflow={resolvedWorkflow} runs={terminalRuns} />
+    <WorkflowRunnerView workflow={resolvedWorkflow} runs={terminalRuns} />
   ) : null;
+
+  // selectedRunId is now a soft hint — when set by a deep link from
+  // WorkflowRunsPanel, we drop into learning mode. The actual per-run
+  // selection lives in WorkflowRunnerView's useRunSelection (?runs= URL).
+  void selectedRunId;
+  void setSelectedRunId;
 
   return (
     <>
@@ -238,6 +252,11 @@ export function WorkflowAssetEditor({ fsRef, workflow: providedWorkflow }: Workf
         onActiveSideTabChange={setActiveSideTab}
         showLearningMode={showLearningMode}
         learningPanel={learningPanel}
+        onDelete={async () => {
+          await resolvedWorkflow.delete();
+          navigation.openDock(DockPointer.forAssetList(Workflow.type));
+        }}
+        deleteLabel={resolvedWorkflow.name ?? undefined}
       />
 
       <AlertDialog open={showMcpModal} onOpenChange={setShowMcpModal}>

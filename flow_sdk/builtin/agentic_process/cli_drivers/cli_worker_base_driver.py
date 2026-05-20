@@ -38,8 +38,10 @@ from typing import TYPE_CHECKING, Any, AsyncIterator, Protocol
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 
+from flow_sdk._compat import StrEnum
 from flow_sdk.builtin.compute_node import ComputeNode
 from flow_sdk.external_apis.llm.llm_drivers.flow_data import FlowData
+from flow_sdk.transcript_analyzer import TranscriptDescriptor
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
@@ -60,6 +62,12 @@ class WorkerExecutionInfo(BaseModel):
     name: str                # executable name, e.g. "claude"
     cmd: str | None          # first 200 chars of the shell command string
     started_at: str          # ISO timestamp
+
+
+class AgenticProcessContextKey(StrEnum):
+    """Internal ``AgenticProcess.context_data`` keys shared by drivers."""
+
+    WORKER_STARTED_AT = "_worker_started_at"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -263,6 +271,26 @@ class WorkerCLIOptions:
         return f"{cd_part}; {env_part}{cmd_part}"
 
 
+def restart_payload_from_cli_options(options: WorkerCLIOptions) -> dict[str, Any]:
+    """Return the worker CLI payload relevant for restart detection.
+
+    Runtime-only env vars are injected after the process identity is known but
+    are not user launch config, so they must not force a restart prompt.
+
+    ``resume`` is derived from (session_id, transcript-on-disk) by the driver's
+    ``cli_options`` and flips False→True as soon as the worker writes its first
+    JSONL line. Hashing it would race the snapshot captured at the end of
+    ``start_pty()`` against that write and light up a phantom restart glow on
+    fresh processes, so it's stripped here.
+    """
+    data = dict(options.to_json())
+    env_vars = dict(data.get("env_vars") or {})
+    env_vars.pop("FLOWPAD_EXECUTION_SCOPE", None)
+    data["env_vars"] = env_vars
+    data.pop("resume", None)
+    return data
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # factory — string-keyed dispatch to vendor CLI option classes
 # ─────────────────────────────────────────────────────────────────────────────
@@ -314,9 +342,17 @@ class WorkerDriver(Protocol):
         ``AgenticProcess.cmd_line`` and the spawn paths."""
         ...
 
+    def restart_snapshot(
+        self,
+        process: "AgenticProcess",
+        options: WorkerCLIOptions,
+    ) -> dict[str, Any]:
+        """Return this worker's canonical launch payload for restart hashing."""
+        ...
+
     # ── Per-turn execution ───────────────────────────────────────────────────
 
-    async def run_print_turn(
+    async def headless_prompt(
         self,
         process: "AgenticProcess",
         instruction: str,
@@ -340,6 +376,10 @@ class WorkerDriver(Protocol):
         ...
 
     # ── Transcript discovery ─────────────────────────────────────────────────
+
+    def transcript_descriptor(self, process: "AgenticProcess") -> TranscriptDescriptor | None:
+        """Resolved transcript path plus the native JSONL format metadata."""
+        ...
 
     def transcript_path(self, process: "AgenticProcess") -> Path | None:
         """Where this driver's worker writes its JSONL/event log for the
@@ -426,10 +466,12 @@ def get_driver(worker_type: Any) -> WorkerDriver:
 
 __all__ = [
     "AgenticContext",
+    "AgenticProcessContextKey",
     "AgenticWorker",
     "WorkerCLIOptions",
     "WorkerExecutionInfo",
     "WorkerDriver",
     "factory",
     "get_driver",
+    "restart_payload_from_cli_options",
 ]

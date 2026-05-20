@@ -103,7 +103,15 @@ def get_db_folder() -> Path:
 
 
 def get_logs_folder() -> Path:
-    folder = Path.home() / "Flowpad workspace" / ".flow" / "logs"
+    """Per-instance logs directory (call-time, via InstanceSettings).
+
+    Resolves to ``<flow_home>/instances/<instance_name>/logs`` so the dev
+    (port 9008) and prod (port 9007) backends keep their logs in separate
+    folders. This is what the ``open-logs`` action opens and what the UI
+    shows as the log folder path.
+    """
+    from flow_sdk.instance_settings import get_instance_settings
+    folder = get_instance_settings().logs_dir
     folder.mkdir(parents=True, exist_ok=True)
     return folder
 
@@ -308,7 +316,9 @@ async def clear_all_data() -> ClearAllResult:
 
     # 4. Close DB, delete file, reinitialize
     from flow_sdk.db.database import close_db, init_db  # noqa: PLC0415
-    from flow_sdk.db.drivers.db_driver import _driver_instances  # noqa: PLC0415
+    from flow_sdk.db.drivers.db_driver import _driver_instances, get_db_driver, LazyDBDriver  # noqa: PLC0415
+    from flow_sdk.db.db_entity import DBEntity  # noqa: PLC0415
+    from flow_sdk.db.db_relationship import DBRelationship  # noqa: PLC0415
 
     # Close the SQLiteDriver's own engine before wiping the file
     sqlite_driver = _driver_instances.get("sqlite")
@@ -320,14 +330,26 @@ async def clear_all_data() -> ClearAllResult:
     logger.info(f"Database file deleted: {db_path}")
     await init_db()
 
-    # Reopen the SQLiteDriver so it points to the new DB file
-    if sqlite_driver is not None:
-        await sqlite_driver.open()
+    # DBEntity._db / DBRelationship._db are LazyDBDriver descriptors that
+    # snapshot the active driver on first access. After ``init_db`` builds
+    # a fresh driver, point both class-level caches at it so reads/writes
+    # go through the new instance — otherwise we read from a closed driver
+    # whose connections were torn down above (silent split-brain).
+    new_driver = get_db_driver()
+    DBEntity._db = new_driver
+    DBRelationship._db = new_driver
 
-    # Invalidate bootstrap cache so the next bootstrap call recreates @local
-    # entities in the fresh DB rather than returning stale entity IDs.
-    from flow_sdk.server.routes.bootstrap import invalidate_bootstrap_cache  # noqa: PLC0415
+    # Invalidate the bootstrap cache and immediately rebuild the @local
+    # entities. Without the rebuild, subsequent requests addressed via
+    # `/compute_node/@local/...` cannot resolve `@local` (it has just been
+    # wiped) and the request middleware returns "Invalid request" until the
+    # client happens to call /bootstrap again.
+    from flow_sdk.server.routes.bootstrap import (  # noqa: PLC0415
+        bootstrap,
+        invalidate_bootstrap_cache,
+    )
     invalidate_bootstrap_cache()
+    await bootstrap()
 
     return ClearAllResult(
         backup_path=backup.backup_path,

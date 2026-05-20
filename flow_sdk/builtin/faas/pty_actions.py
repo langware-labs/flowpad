@@ -9,7 +9,6 @@ from __future__ import annotations
 import asyncio
 import base64
 import logging
-import re as _re
 import uuid
 from typing import TYPE_CHECKING, Callable
 
@@ -28,46 +27,21 @@ if TYPE_CHECKING:
 _PTY_CAP = 70
 _PTY_EVICT_COUNT = 10
 
-# ---------------------------------------------------------------------------
-# Session title tracking — captures Claude-generated tab titles in real time.
-# Keyed by shell_id (entity UUID).  Populated by on_pty_output() whenever an
-# ANSI OSC title escape is detected that isn't a Claude Code spinner frame.
-# ---------------------------------------------------------------------------
-_pty_session_titles: dict[str, str] = {}
-
-# Matches OSC 0 terminal title sequences: ESC ] 0 ; <title> BEL (or ST)
-_OSC_TITLE_RE = _re.compile(rb"\x1b\]0;([^\x07\x1b]+)(?:\x07|\x1b\\)")
-# Strips a leading spinner glyph + space (e.g. "✳ Morning coding session" → "Morning coding session")
-_SPINNER_PREFIX_RE = _re.compile(r"^[^\x00-\x7F] ")
-
-
-def _detect_osc_title(data: bytes) -> str | None:
-    """Extract the last meaningful session title from a raw PTY chunk, or None."""
-    matches = _OSC_TITLE_RE.findall(data)
-    for raw in reversed(matches):
-        try:
-            title = raw.decode("utf-8", errors="replace").strip()
-        except Exception:
-            continue
-        if "Claude Code" in title:
-            continue  # spinner-only frame ("⠂ Claude Code") — not a real title
-        title = _SPINNER_PREFIX_RE.sub("", title).strip()
-        if title:
-            return title
-    return None
-
-
-def get_pty_session_title(shell_id: str) -> str | None:
-    """Return the last Claude-generated title seen for *shell_id*, or None."""
-    return _pty_session_titles.get(shell_id)
-
-
 class PtyActionsMixin:
     """PTY session management implementation mixed into ComputeNode.
 
     All methods here are plain implementations — no @action decorators.
     ComputeNode keeps the @action stubs and delegates to these methods.
     """
+
+    @staticmethod
+    def _request_message_id(body: dict | None = None) -> str:
+        request_info = get_current_request_info()
+        if request_info and request_info.request_message_id:
+            return request_info.request_message_id
+        if body and body.get("message_id"):
+            return str(body["message_id"])
+        return str(uuid.uuid4())
 
     async def _pty_terminal_command(self):
         """Dispatch terminal operations via /terminal-command/<op> API.
@@ -323,20 +297,14 @@ class PtyActionsMixin:
         session_state_holder: list = []
 
         def on_pty_output(data: bytes):
-            logging.info(f"[PTY] on_pty_output (machine): {len(data)} bytes for session {shell_id}")
+            logging.debug(f"[PTY] on_pty_output (machine): {len(data)} bytes for session {shell_id}")
             current_pty_key = (self.id, self.node_provider_id, shell_id)
-
-            # Track Claude-generated session title (set via ANSI OSC escape after first prompt).
-            # Stored in module-level dict so AgenticProcess.close() can read it at close time.
-            _title = _detect_osc_title(data)
-            if _title and _pty_session_titles.get(shell_id) != _title:
-                _pty_session_titles[shell_id] = _title
 
             # Append to replay buffer (returns OutputChunk with seq and timestamp)
             chunk_record = replay_buffer.append(current_pty_key, data)
             seq = chunk_record.seq
             chunk_timestamp = chunk_record.timestamp
-            logging.info(f"[PTY] on_pty_output (machine): appended to replay buffer, seq={seq}")
+            logging.debug(f"[PTY] on_pty_output (machine): appended to replay buffer, seq={seq}")
 
             # Write to PTY stream file for persistence
             if session_state_holder:
@@ -360,7 +328,7 @@ class PtyActionsMixin:
                             seq,
                             chunk_timestamp,
                         )
-                    logging.info(
+                    logging.debug(
                         f"[PTY] on_pty_output (machine): sent to {len(current_session.connection_ids)} client(s)"
                     )
                 elif not current_session:
@@ -499,7 +467,7 @@ class PtyActionsMixin:
                 s.error_message = "PTY session not found"
                 await s.save()
 
-        active = [s for s in all_sessions if s.status not in ("closed", "error")]
+        active = [s for s in all_sessions if s.status not in ("closing", "closed", "error")]
         result = [s.model_dump(mode="json") for s in active]
 
         # Enrich with agentic_process_id from AgenticProcess
@@ -851,7 +819,7 @@ class PtyActionsMixin:
                     response_message_id=request_message_id,
                     content=pty_msg,
                 )
-                logging.info(f"[PTY] Sending PTY output to client: seq={seq}, size={len(data)} bytes")
+                logging.debug(f"[PTY] Sending PTY output to client: seq={seq}, size={len(data)} bytes")
                 await handler.send_message(response_msg.model_dump())
             except Exception as e:
                 logging.warning(f"Failed to send PTY output to client: {e}")
@@ -865,10 +833,7 @@ class PtyActionsMixin:
 
     async def _send_pty_input(self, body: dict) -> ApiResponse:
         """Send input to PTY session."""
-        request_info = get_current_request_info()
-        if not request_info or not request_info.request_message_id:
-            return ApiFailResponse(message="Invalid request context")
-        request_message_id = request_info.request_message_id
+        request_message_id = self._request_message_id(body)
 
         shell_id = body.get("shell_id")
         data = body.get("data", "")
@@ -923,10 +888,7 @@ class PtyActionsMixin:
 
     async def _resize_pty(self, body: dict) -> ApiResponse:
         """Resize PTY terminal."""
-        request_info = get_current_request_info()
-        if not request_info or not request_info.request_message_id:
-            return ApiFailResponse(message="Invalid request context")
-        request_message_id = request_info.request_message_id
+        request_message_id = self._request_message_id(body)
 
         shell_id = body.get("shell_id")
         try:

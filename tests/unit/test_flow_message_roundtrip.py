@@ -37,7 +37,7 @@ def _make_flow_message(fm_id: str = "aaaa1111-0000-0000-0000-000000000001") -> F
     fm = FlowMessage(
         text="Hello, world!",
         instruction="Do something",
-        context_entities=[{"type": "task", "id": _TASK_UUID}, {"type": "conversation", "id": _CONV_UUID}],
+        shared_context_entities=[{"type": "task", "id": _TASK_UUID}, {"type": "conversation", "id": _CONV_UUID}],
         attachment=[],
         sender_name="Alice",
         receiver_address="bob@example.com",
@@ -158,7 +158,7 @@ class TestUnpackBundle:
             "id": fm_id,
             "type": "flow_message",
             "text": "Received message",
-            "context_entities": [],
+            "shared_context_entities": [],
             "attachment": [],
         }
         zip_path = _write_flowmsg_zip(tmp_path, fm_data)
@@ -186,7 +186,7 @@ class TestUnpackBundle:
             "id": fm_id,
             "type": "flow_message",
             "text": "msg",
-            "context_entities": [],
+            "shared_context_entities": [],
             "attachment": [],
         }
         zip_path = _write_flowmsg_zip(tmp_path, fm_data)
@@ -217,7 +217,7 @@ class TestUnpackBundle:
             "id": fm_id,
             "type": "flow_message",
             "text": "overwrite me",
-            "context_entities": [],
+            "shared_context_entities": [],
             "attachment": [],
         }
         inner_fm_data = {"id": inner_id, "type": "flow_message", "text": "inner"}
@@ -262,7 +262,10 @@ class TestUnpackBundle:
             "id": fm_id,
             "type": "flow_message",
             "text": "msg with conv",
-            "context_entities": [{"type": "conversation", "id": conv_id}, {"type": "task", "id": task_id}],
+            "shared_context_entities": [
+                {"type": "conversation", "id": conv_id},
+                {"type": "task", "id": task_id},
+            ],
             "attachment": [],
         }
         zip_path = _write_flowmsg_zip(tmp_path, fm_data)
@@ -272,7 +275,7 @@ class TestUnpackBundle:
         canonical.parent.mkdir(parents=True, exist_ok=True)
         canonical.write_text("")
 
-        mock_conv = Conversation(context_entities=[f"task-{task_id}"])
+        mock_conv = Conversation(shared_context_entities=[f"task-{task_id}"])
         mock_conv.id = conv_id
 
         saved_fm = FlowMessage.model_validate(fm_data)

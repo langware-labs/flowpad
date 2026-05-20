@@ -1,3 +1,7 @@
+---
+id: ae88605f-7f35-59c9-a9a0-c72f8948cd98
+---
+
 test 1: Prompt index icon appears in agentic process terminal ribbon
 - navigate to {APP_URL}/dock/shell/new_terminal
 - click the "Start Claude" button to create a new agentic process

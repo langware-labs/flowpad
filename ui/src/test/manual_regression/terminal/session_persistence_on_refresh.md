@@ -1,3 +1,7 @@
+---
+id: 39aa5222-f820-522a-9d5c-e623e720fee0
+---
+
 # Manual Regression: Terminal Session Persistence on Refresh
 
 ## Setup

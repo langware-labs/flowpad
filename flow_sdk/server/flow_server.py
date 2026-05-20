@@ -87,11 +87,12 @@ class FlowServer:
         app.add_middleware(CORSMiddleware, **self._cors_config)
 
         # 5. Core routers
-        from .routes import bootstrap_router, health_router
+        from .routes import bootstrap_router, health_router, wiki_router
 
         app.include_router(bootstrap_router)
         app.include_router(health_router, prefix="/api/v1/health")
         app.include_router(health_router, prefix="/health")
+        app.include_router(wiki_router)
 
         # 6. User routers (in order added)
         for router, kwargs in self._routers:

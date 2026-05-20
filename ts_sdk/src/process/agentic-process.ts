@@ -9,6 +9,7 @@
  */
 
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
+import { isApiError } from '../ApiResponse';
 import { IEntity } from '../IEntity';
 import { FSRef, type FSRefJson } from '../fs/FSRef';
 import { ClaudeCliOptions } from '../cli_workers';
@@ -25,33 +26,72 @@ import { InstructionFile } from '../models/workflow/InstructionFile';
 import { ViewType } from '../utils/ui/view-types';
 import { VFSPath } from '../utils/vfs-path';
 import { AgenticContext, IAgenticProcessOptions, ISpawnWorkerOptions, PermissionMode } from './agentic-context';
+import type { ProcessType } from './process-types';
 import { ProcessIconKey, ProcessStatus, WorkerStatus, isWorkerRunning, isWorkerTerminal } from './agentic-types';
+import type {
+  TranscriptFormat as TranscriptFormatType,
+  TranscriptSource as TranscriptSourceType,
+} from '../transcript-analyzer';
 
 // ---------------------------------------------------------------------------
 // Auto-recovery dispatcher — mirrors Shell's static-listener pattern at
 // ts_sdk/src/entities/shell.ts:81-95. A single ConnectionManager listener and
-// a periodic poll fan out to every registered AgenticProcess; each instance's
-// ``reconnect()`` then short-circuits cheaply when nothing is wrong, so the
-// fan-out cost is one ``GET /os-status`` per registered process per tick.
+// a periodic poll drive a *single batched* os-status round-trip for every
+// registered AgenticProcess; results are fanned back out to each instance's
+// ``reconnectFromOsStatus(...)`` to make the per-process recovery decision.
+//
+// This is the consolidated form of what used to be one ``GET /os-status``
+// per registered process per tick — see ``compute_node/os-status-batch``.
 // ---------------------------------------------------------------------------
 const _agenticProcessRegistry = new Set<AgenticProcess>();
 let _agenticListenersRegistered = false;
 let _pollTimer: ReturnType<typeof setInterval> | null = null;
 const _POLL_INTERVAL_MS = 5000;
 
+interface OsStatusBatchResponse {
+  statuses: Record<string, AgenticProcessOSStatus>;
+  missing: string[];
+}
+
+/** One sweep: batch-fetch os-status for every registered AP and dispatch
+ *  recovery decisions. Falls back to per-AP probes only when there is no
+ *  compute_node context yet (early bootstrap), which is the same shape as
+ *  the legacy fan-out so behavior degrades gracefully. */
+async function _dispatchRecoverySweep(): Promise<void> {
+  if (_agenticProcessRegistry.size === 0) return;
+  const procs = Array.from(_agenticProcessRegistry);
+  const computeNodeId = dataContext.computeNode?.id;
+  if (!computeNodeId) {
+    for (const p of procs) void p.reconnect();
+    return;
+  }
+  const action = new ActionInfo('os-status-batch', 'compute_node', computeNodeId, 'POST');
+  action.bodyParameters = { process_ids: procs.map((p) => p.id) };
+  let result: OsStatusBatchResponse | null = null;
+  try {
+    result = await dataManager.callAction<{ process_ids: string[] }, OsStatusBatchResponse>(action);
+  } catch {
+    // Batch failed (compute_node unreachable, transient HTTP error). Skip
+    // this tick — the next one will retry. Per-AP ``getOsStatus()`` remains
+    // available for on-demand callers.
+    return;
+  }
+  const statuses = result?.statuses ?? {};
+  for (const p of procs) {
+    const s = statuses[p.id];
+    if (s) void p.reconnectFromOsStatus(s);
+  }
+}
+
 function _ensureAgenticStaticListeners(): void {
   if (_agenticListenersRegistered) return;
   _agenticListenersRegistered = true;
   void import('../websocket').then(({ ConnectionManager }) => {
     const cm = ConnectionManager.getInstance();
-    cm.on('on_reconnected', () => {
-      for (const proc of _agenticProcessRegistry) void proc.reconnect();
-    });
+    cm.on('on_reconnected', () => { void _dispatchRecoverySweep(); });
   });
   if (_pollTimer === null) {
-    _pollTimer = setInterval(() => {
-      for (const proc of _agenticProcessRegistry) void proc.reconnect();
-    }, _POLL_INTERVAL_MS);
+    _pollTimer = setInterval(() => { void _dispatchRecoverySweep(); }, _POLL_INTERVAL_MS);
   }
 }
 
@@ -166,29 +206,55 @@ export interface IAgenticProcess extends IEntity {
   asset_ref?: string;
   workdir?: string | null;
   context_data?: Record<string, unknown>;
-  context_entities?: TypeId[];
+  // ``shared_context_entities`` is inherited from IEntity (wire shape).
+  // ``privateContextEntities`` is exposed by the APIEntity getter — no
+  // field is declared here for it (local-only, never on the wire).
   favorite_index?: number | null;
   readonly status?: ProcessStatus;
   readonly worker_status?: WorkerStatus;
   session_id?: string | null;
+  /**
+   * URL-encoded cwd Claude CLI ran in — used to locate the session jsonl at
+   * ~/.claude/projects/<project_encoded_name>/<session_id>.jsonl. Populated
+   * server-side after the first claude turn lands; read by helpers like
+   * runLearningJob's transcriptPathForRunner.
+   */
+  project_encoded_name?: string | null;
+  /**
+   * USD cost of this process's session transcript so far. Computed
+   * server-side from the session jsonl via
+   * flow_sdk.transcript_analyzer.pricing.total_cost_usd; not persisted on
+   * the entity. Null when no session_id exists yet.
+   */
+  total_cost_usd?: number | null;
   use_worker_history?: boolean;
   /** False=direct PTY spawn (default), True=legacy zsh intermediary */
   shell_mode?: boolean;
   /** CLI worker vendor (e.g. 'claude', 'codex'). Drives icon selection. */
   worker_type?: string | null;
+  /** Discriminates how this process is being used (chat vs execution). */
+  process_type?: ProcessType | null;
   /** Shell entity ID linked to this process */
   shell_id?: string | null;
   /** Whether this process is visible in the tabs view */
   visible?: boolean;
   /** Sidecar plain shell PTY session ID */
   sidecar_shell_id?: string | null;
-  /** True when linked shell PTY OSC title events may update the display name */
-  pty_rename?: boolean;
+  /** True when PTY OSC title escapes may update `name`. Cleared the first time the user manually renames this tab. */
+  auto_rename?: boolean;
   /**
    * Derived: true when the worker is ready for a new user prompt.
    * Computed server-side via ``is_ready_for_input``. Read-only on the wire.
    */
   ready_for_input?: boolean;
+  /**
+   * Epoch-ms timestamp approximating when the worker became ready-for-input
+   * (transcript-file mtime). Stable across refresh so the UI pending-action
+   * store can compare against a persisted ack and avoid re-arming the glow
+   * for a transition the user has already seen. Null when not ready or when
+   * the transcript is unavailable.
+   */
+  ready_for_input_since?: number | null;
   /** @internal — use AgenticProcess.cliOptions getter/setter instead */
   cli_config?: Record<string, any>;
   /** Extra directories passed to Claude via --add-dir */
@@ -199,8 +265,8 @@ export interface IAgenticProcess extends IEntity {
   project_id?: string | null;
   /** CollaborationRoom this process was spawned in, if any */
   collaboration_room_id?: string | null;
-  /** VFS path the process is keyed to. Either an entity TypeId ("type-id") for entity-scoped chats, or "<typeid>/<sub_path>" for surface-scoped chats (e.g. per-doc chat keyed on the file path). */
-  target_vfs_path?: string | null;
+  /** VFS path the process is keyed to. Either an entity TypeId ("type-id") for entity-scoped processes, or "<typeid>/<sub_path>" for surface-scoped processes (e.g. a per-doc process keyed on the file path). */
+  target_typeid_str?: string | null;
   /**
    * True when a worker-relevant field changed since the last successful start()
    * while status==RUNNING. Backend sets this automatically via the save-hook;
@@ -301,6 +367,51 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     const process = await computeNode.createProcess(context);
     await process.watch();
     await process.executeInstruction(amdContent, { sync: false });
+    return process;
+  }
+
+  /**
+   * Spawn a visible AgenticProcess tab and (optionally) send an initial
+   * prompt. Mirrors the `Start Claude` / `Start Codex` openers in
+   * TabbedTerminal — use this from any UI surface outside the tab strip
+   * (e.g. an editor "discuss this doc" button) that needs to launch a
+   * harness tab pre-filled with a user prompt.
+   *
+   * @param workerType - `'claude_code'` or `'codex'`
+   * @param prompt - Optional initial user prompt. Delivered via the backend
+   *   `execute` action, which routes to `prompt()` → `send()` and writes the
+   *   text into the running PTY's stdin so the worker picks it up as its
+   *   first user message.
+   * @returns The spawned AgenticProcess (already navigated to).
+   */
+  static async openTab(
+    workerType: 'claude_code' | 'codex',
+    prompt?: string,
+  ): Promise<AgenticProcess> {
+    const computeNode = dataContext.computeNode;
+    if (!computeNode) throw new Error('[AgenticProcess.openTab] No local compute node');
+    const project = dataContext.project;
+    const process = await computeNode.createProcess(
+      {
+        workdir: project?.fs_storage_mount_path ?? undefined,
+        ...(project?.id ? { projectId: project.id } : {}),
+        workerType,
+      },
+      { visible: true, watchProcess: false },
+    );
+    process.openTerminalDock();
+    if (prompt) {
+      // Call backend `execute` action directly: bypasses the TS-side
+      // `isWorkerRunning` guard in executeInstruction() (the just-spawned PTY
+      // *is* running, which is exactly when we want to send to its stdin).
+      const actionInfo = new ActionInfo('execute', AgenticProcess.type, process.id, 'POST');
+      actionInfo.bodyParameters = { instruction: prompt };
+      try {
+        await dataManager.callAction(actionInfo);
+      } catch (err) {
+        console.error('[AgenticProcess.openTab] execute failed', err);
+      }
+    }
     return process;
   }
 
@@ -408,37 +519,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   }
 
   /**
-   * Open (or create) an AgenticProcess for a Claude CLI session ID.
-   *
-   * Uses ComputeNode.upsertSessionProcess to find an existing process linked
-   * to this session, or create one if none exists (without starting a PTY).
-   * Returns the process so the caller can navigate to its dockPointer.
-   *
-   * @param sessionId - Claude CLI session UUID
-   */
-  static async open(sessionId: string): Promise<AgenticProcess> {
-    const { dataContext } = await import('../FlowSync/context');
-    const computeNode = dataContext.computeNode;
-    if (!computeNode) throw new Error('[AgenticProcess.open] No compute node');
-    const { processId } = await computeNode.upsertSessionProcess(sessionId);
-    const process = await AgenticProcess.getById(processId);
-    if (!process) throw new Error(`[AgenticProcess.open] Process ${processId} not found after upsert`);
-    return process;
-  }
-
-  /**
-   * Find or create an AgenticProcess by worker session ID.
-   * Uses upsertSessionProcess — returns the existing process if one already
-   * has this session_id, otherwise creates a new one.
-   *
-   * @param workerType - 'claude' (reserved for future worker types)
-   * @param sessionId  - The Claude CLI session UUID
-   */
-  static async fromWorkerSessionId(workerType: 'claude', sessionId: string): Promise<AgenticProcess> {
-    return AgenticProcess.open(sessionId);
-  }
-
-  /**
    * Open (or create) an AgenticProcess for a Record and ensure it has a live PTY.
    *
    * If an entity already exists for the given record ID it is reused;
@@ -467,79 +547,31 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   }
 
   /**
-   * Get or create an AgenticProcess linked to a Claude CLI session.
-   * Resolves the session's working directory from ClaudeSessionRecord if not provided.
-   * Sets session_id so the process can be resumed via start().
+   * Resolve a worker/session/thread id to a ready-to-use AgenticProcess.
    *
-   * @param sessionId - The Claude CLI session UUID
-   * @param cwd - Optional working directory (resolved from session record if omitted)
-   * @param projectId - Optional project_id to stamp on the process. Pass the
-   *   session's *intrinsic* project (e.g. ``WorkerHistoryEntry.project_id``)
-   *   when restoring a session from history; the active dataContext project is
-   *   used as a fallback only when the caller cannot derive a better value.
+   * Single round-trip: backend auto-discovers worker_type (Claude or Codex),
+   * resolves cwd + project from the on-disk session record, upserts the
+   * AgenticProcess (heals existing or creates+starts a new one), and returns
+   * the full entity dict. We hydrate the dataManager cache directly — no
+   * follow-up `getById` needed.
+   *
+   * @param workerId - Claude session id, Codex thread id, or any future worker id.
+   * @returns The AgenticProcess entity, or `null` if no on-disk session matches.
    */
-  static async fromClaudeSession(
-    sessionId: string,
-    cwd?: string,
-    projectId?: string | null,
-  ): Promise<AgenticProcess> {
-    const { dataContext } = await import('../FlowSync/context');
+  static async getByWorkerId(workerId: string): Promise<AgenticProcess | null> {
     const computeNode = dataContext.computeNode;
-    if (!computeNode) throw new Error('[AgenticProcess.fromClaudeSession] No compute node');
+    if (!computeNode) throw new Error('[AgenticProcess.getByWorkerId] No compute node');
 
-    // Resolve workdir from the session record on disk.
-    // Best-effort: empty sessions have no JSONL yet, so cwd may be null.
-    // upsertSessionProcess is idempotent — if the process already exists it is
-    // returned immediately without needing workdir at all.
-    let resolvedCwd = cwd;
-    if (!resolvedCwd) {
-      const { ClaudeSessionRecord } = await import('../resource_management/fs_records/claude/claude-session.js');
-      const record = await ClaudeSessionRecord.discover(sessionId).catch(() => null);
-      resolvedCwd = record?.cwd ?? undefined;
+    const action = new ActionInfo('terminals', 'compute_node', computeNode.id, 'GET');
+    action.subpath = `get_by_worker_id/${workerId}`;
+    try {
+      const data = await dataManager.callAction<void, IAgenticProcess | null>(action);
+      if (!data) return null;
+      return dataManager.castAndDeepAssign<AgenticProcess>(data) as AgenticProcess;
+    } catch (e) {
+      if (isApiError(e) && e.response?.status === 404) return null;
+      throw e;
     }
-
-    // upsertSessionProcess is idempotent: finds existing process or creates a new one.
-    // Backend sets cli_config.resume=true if the transcript exists on disk.
-    const resolvedProjectId = projectId ?? dataContext.project?.id;
-    const { processId } = await computeNode.upsertSessionProcess(sessionId, {
-      ...(resolvedCwd ? { workdir: resolvedCwd } : {}),
-      ...(resolvedProjectId ? { projectId: resolvedProjectId } : {}),
-    });
-    const process = await AgenticProcess.getById(processId);
-    if (!process) throw new Error(`[AgenticProcess.fromClaudeSession] Process ${processId} not found`);
-    return process;
-  }
-
-  /**
-   * Get or create an AgenticProcess linked to a Codex CLI session (rollout thread).
-   * Mirrors fromClaudeSession but for the Codex worker. Resolves the rollout's
-   * working directory from CodexSessionRecord when not supplied; the backend
-   * stamps cli_config.resume=true so the next start() spawns
-   * ``codex exec resume <thread_id>``.
-   *
-   * @param sessionId - The Codex thread_id (UUID from session_meta.payload.id)
-   * @param cwd - Optional working directory (resolved from rollout if omitted)
-   * @param projectId - Optional intrinsic project_id; falls back to active project.
-   */
-  static async fromCodexSession(
-    sessionId: string,
-    cwd?: string,
-    projectId?: string | null,
-  ): Promise<AgenticProcess> {
-    const { dataContext } = await import('../FlowSync/context');
-    const computeNode = dataContext.computeNode;
-    if (!computeNode) throw new Error('[AgenticProcess.fromCodexSession] No compute node');
-
-    const resolvedCwd = cwd; // backend resolves from CodexSessionRecord when null
-    const resolvedProjectId = projectId ?? dataContext.project?.id;
-    const { processId } = await computeNode.upsertSessionProcess(sessionId, {
-      ...(resolvedCwd ? { workdir: resolvedCwd } : {}),
-      ...(resolvedProjectId ? { projectId: resolvedProjectId } : {}),
-      workerType: 'codex',
-    });
-    const process = await AgenticProcess.getById(processId);
-    if (!process) throw new Error(`[AgenticProcess.fromCodexSession] Process ${processId} not found`);
-    return process;
   }
 
   /**
@@ -654,14 +686,17 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /** Persisted context data for session restoration */
   context_data?: Record<string, unknown>;
 
-  /** TypeIds of entities this process is contextually about (task / conversation / spec / project / …). */
-  context_entities?: TypeId[];
+  // TypeIds of entities this process is contextually about (task /
+  // conversation / spec / project / …) now live on the base APIEntity as
+  // ``sharedContextEntities`` (wire-bound) and ``privateContextEntities``
+  // (local). The constructor populates them from the wire field
+  // ``shared_context_entities``.
 
   /** Optional pinning index for tab ordering */
   favorite_index?: number | null;
 
-  /** True when linked shell PTY OSC title events may update the display name. */
-  pty_rename: boolean = true;
+  /** True when PTY OSC title escapes may update `name`. Cleared the first time the user manually renames this tab. */
+  auto_rename: boolean = true;
 
   /** Backend-owned lifecycle status. */
   private _status: ProcessStatus = ProcessStatus.NEW;
@@ -676,14 +711,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
 
   private set status(value: ProcessStatus) {
     this._status = value;
-  }
-
-  get ptyRename(): boolean {
-    return this.pty_rename;
-  }
-
-  set ptyRename(value: boolean) {
-    this.pty_rename = value;
   }
 
   /** Transcript-derived worker status. Read-only outside this class. */
@@ -707,6 +734,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /** CLI worker vendor (e.g. 'claude', 'codex'). Drives icon selection. */
   worker_type?: string | null;
 
+  /** Discriminates how this process is being used (chat vs execution). */
+  process_type?: ProcessType | null;
+
   /** Shell entity ID linked to this process */
   shell_id?: string | null;
 
@@ -722,8 +752,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /** CollaborationRoom this process was spawned in, if any */
   collaboration_room_id: string | null = null;
 
-  /** VFS path the process is keyed to. Either an entity TypeId ("type-id") for entity-scoped chats, or "<typeid>/<sub_path>" for surface-scoped chats (e.g. per-doc chat keyed on the file path). */
-  target_vfs_path: string | null = null;
+  /** VFS path the process is keyed to. Either an entity TypeId ("type-id") for entity-scoped processes, or "<typeid>/<sub_path>" for surface-scoped processes (e.g. a per-doc process keyed on the file path). */
+  target_typeid_str: string | null = null;
 
   /**
    * True when a worker-relevant field changed since the last successful start()
@@ -928,14 +958,59 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     return out;
   }
 
+  /**
+   * Fetch the parsed worker transcript from the process-specific transcript source.
+   */
+  async getTranscript(): Promise<import('../transcript-analyzer').AgentTranscript> {
+    const {
+      AgentTranscript,
+      TranscriptFormat,
+      TranscriptSource,
+      fromJson,
+    } = await import('../transcript-analyzer');
+    const actionInfo = new ActionInfo('transcript', AgenticProcess.type, this.id, 'POST');
+    actionInfo.subpath = 'full';
+    const response = await dataManager.callAction<
+      unknown,
+      {
+        worker_type?: string | null;
+        session_id?: string | null;
+        path?: string | null;
+        transcript_path?: string | null;
+        transcript_format?: string | null;
+        transcript_source?: string | null;
+        entries?: Record<string, unknown>[] | null;
+      }
+    >(actionInfo);
+    const rawEntries = response?.entries ?? [];
+    const entries = rawEntries.map((entry) => fromJson(entry));
+    const format = Object.values(TranscriptFormat).includes(response?.transcript_format as never)
+      ? response?.transcript_format as TranscriptFormatType
+      : null;
+    const source = Object.values(TranscriptSource).includes(response?.transcript_source as never)
+      ? response?.transcript_source as TranscriptSourceType
+      : null;
+    const path = response?.path ?? response?.transcript_path ?? '';
+    return new AgentTranscript(
+      response?.worker_type ?? this.worker_type ?? '',
+      entries,
+      response?.session_id ?? this.session_id ?? '',
+      {
+        path,
+        transcript_format: format,
+        transcript_source: source,
+      },
+    );
+  }
+
   // ─────────────────────────────────────────────────────────────────────────
 
   /** Internal references (not serialized) */
   _instructionFile?: InstructionFile;
   _context?: AgenticContext;
 
-  /** Completion state */
-  private _completed: boolean = false;
+  /** Last error observed when ``workerStatus`` transitioned to a failure
+   *  state. Set by ``_handleError``; never set autonomously by the SDK. */
   private _error: Error | null = null;
 
   /** History loading state */
@@ -963,19 +1038,26 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this.use_worker_history = entity.use_worker_history;
     this.shell_mode = entity.shell_mode;
     this.worker_type = entity.worker_type ?? null;
+    this.process_type = entity.process_type ?? null;
     this.shell_id = entity.shell_id;
     this.visible = entity.visible;
     this.sidecar_shell_id = entity.sidecar_shell_id;
-    this.pty_rename = entity.pty_rename ?? true;
+    this.auto_rename = entity.auto_rename ?? true;
     this.project_id = entity.project_id ?? null;
     this.collaboration_room_id = entity.collaboration_room_id ?? null;
-    this.target_vfs_path = entity.target_vfs_path ?? null;
+    this.target_typeid_str = entity.target_typeid_str ?? null;
     this.exe_folder = entity.exe_folder ? FSRef.fromJson(entity.exe_folder) : null;
     this.input_folder = entity.input_folder ? FSRef.fromJson(entity.input_folder) : null;
     this.output_folder = entity.output_folder ? FSRef.fromJson(entity.output_folder) : null;
     this.assets_folder = entity.assets_folder ? FSRef.fromJson(entity.assets_folder) : null;
     this.plan_path = entity.plan_path ?? null;
   }
+
+  // NOTE: project_id projection moved server-side. The base Python
+  // ``Entity.get_implicit_private_context_entities`` projects project_id
+  // for every entity with one; AgenticProcess inherits the projection
+  // automatically. FE displays the merged ``private_context_entities``
+  // from the wire as-is.
 
   // ── Field declarations (populated by constructor / wire data) ──────────────
 
@@ -1037,10 +1119,13 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   }
 
   /**
-   * Whether this process has completed execution.
+   * Whether this process has reached a terminal worker_status (complete /
+   * error / interrupted). Derived from ``workerStatus`` — the SDK keeps no
+   * separate completion flag; backend's projection is the single source of
+   * truth and we mirror it.
    */
   get completed(): boolean {
-    return this._completed;
+    return isWorkerTerminal(this.workerStatus);
   }
 
   /**
@@ -1079,8 +1164,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       yield data;
     }
 
-    // If already completed, we're done
-    if (this._completed) {
+    // If the worker has already reached a terminal state, we're done.
+    if (isWorkerTerminal(this.workerStatus)) {
       return;
     }
 
@@ -1289,12 +1374,15 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
         // Close any open groups after loading history
         this.flowDataStream.closeOpenGroups();
 
-        // Check if the worker already reached a terminal state.
+        // History replay can reveal that the worker already reached a
+        // terminal state by the time we mounted. Fire the matching
+        // handler so consumers waiting on the ``complete`` / ``error``
+        // event resolve instead of hanging.
         if (isWorkerTerminal(this.workerStatus)) {
           if (this.workerStatus === WorkerStatus.COMPLETE) {
-            this._markComplete();
+            this._handleComplete();
           } else {
-            this._markError(new Error(`Process ended with worker status: ${this.workerStatus}`));
+            this._handleError(new Error(`Process ended with worker status: ${this.workerStatus}`));
           }
         }
 
@@ -1325,7 +1413,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * @throws Error if execution fails
    */
   async waitForComplete(): Promise<void> {
-    if (this._completed) {
+    if (isWorkerTerminal(this.workerStatus)) {
       if (this._error) throw this._error;
       return;
     }
@@ -1388,7 +1476,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * Symlink a skill folder into this process's assets dir so Claude Code
    * discovers it at startup. `sourcePath` is the absolute path of the skill
    * folder (parent of SKILL.md). Live edits to the source SKILL.md flow
-   * through to the next chat — no re-materialization needed.
+   * through to the next session — no re-materialization needed.
    */
   async loadEmbeddedSkill(sourcePath: string): Promise<void> {
     const actionInfo = new ActionInfo('load-embedded-skill', AgenticProcess.type, this.id, 'POST');
@@ -1427,8 +1515,12 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       const actionInfo = new ActionInfo('attach-embedded-asset', AgenticProcess.type, this.id, 'POST');
       actionInfo.bodyParameters = { entity_ref: ref.toString() };
       await dataManager.callAction(actionInfo);
+      // The WS broadcast lands embedded_asset_refs as plain stringified TypeIds
+      // (the server serializes them that way); avoid duplicating by comparing
+      // on the string form instead of property-by-property on TypeId.
+      const refStr = ref.toString();
       const current = this.embedded_asset_refs ?? [];
-      const has = current.some((r) => r.type === ref.type && r.id === ref.id);
+      const has = current.some((r) => String(r) === refStr);
       if (!has) this.embedded_asset_refs = [...current, ref];
     },
     detach: async (entityOrRef: { typeId?: TypeId } | TypeId | string): Promise<void> => {
@@ -1436,8 +1528,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       const actionInfo = new ActionInfo('detach-embedded-asset', AgenticProcess.type, this.id, 'POST');
       actionInfo.bodyParameters = { entity_ref: ref.toString() };
       await dataManager.callAction(actionInfo);
+      const refStr = ref.toString();
       this.embedded_asset_refs = (this.embedded_asset_refs ?? [])
-        .filter((r) => !(r.type === ref.type && r.id === ref.id));
+        .filter((r) => String(r) !== refStr);
     },
     list: (): TypeId[] => [...(this.embedded_asset_refs ?? [])],
   };
@@ -1530,8 +1623,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       throw new Error('Process is already running');
     }
 
-    // Reset completion flag for new instruction (multi-turn support)
-    this._completed = false;
+    // Clear the cached error from any prior turn. We do NOT touch
+    // ``workerStatus`` — that's backend-owned. ``headless_prompt`` on the
+    // server flips its projection to ``running`` and broadcasts, and the
+    // resulting entity-op is what the SDK mirrors as the new turn's edge.
     this._error = null;
 
     // Optimistically echo user message into the stream
@@ -1551,12 +1646,15 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
 
   /**
    * Wait for execution to complete.
-   * Listens for the 'complete' event which is emitted when status FlowData
-   * with complete=true is received (following Flow's pattern of state via FlowData).
+   *
+   * Listens for the ``complete`` / ``error`` events which fire when the
+   * SDK observes ``workerStatus`` transitioning to a terminal value via
+   * an entity-op broadcast. Backend is the sole authority on that
+   * transition; the SDK only reacts.
    */
   private async waitForExecutionComplete(): Promise<void> {
-    // If already completed, return immediately
-    if (this._completed) {
+    if (isWorkerTerminal(this.workerStatus)) {
+      if (this._error) throw this._error;
       return;
     }
 
@@ -1575,7 +1673,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
         }
       };
 
-      // Listen for completion event (emitted by _handleFlowData when status with complete=true is received)
       const unsubComplete = this.on('complete', () => {
         done('resolve');
       });
@@ -1584,9 +1681,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
         done('reject', err instanceof Error ? err : new Error(String(err)));
       });
 
-      // Check if already completed (race condition safety)
-      if (this._completed) {
-        done('resolve');
+      // Race: a terminal broadcast could land between the entry check above
+      // and listener installation. Re-check after subscribing.
+      if (isWorkerTerminal(this.workerStatus)) {
+        done(this._error ? 'reject' : 'resolve', this._error ?? undefined);
       }
     });
   }
@@ -1819,32 +1917,57 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     return status.ready;
   }
 
+  /** True iff this process is a valid target for an auto-recovery sweep.
+   *  Centralizes the skip predicates so the standalone ``reconnect()`` and
+   *  the batched ``reconnectFromOsStatus(...)`` agree on which states are
+   *  recovery-eligible.
+   *
+   *   - ``_userInitiatedStop``: user explicitly stopped this process.
+   *   - ``STARTING`` / ``STOPPING``: mid-transition — let the in-flight
+   *     call finish first.
+   *   - ``FAILED``: relaunching would loop because the worker can't start
+   *     with the current ``cli_options``.
+   */
+  private _isRecoveryEligible(): boolean {
+    if (this._userInitiatedStop) return false;
+    if (this.status === ProcessStatus.STARTING || this.status === ProcessStatus.STOPPING) return false;
+    if (this.status === ProcessStatus.FAILED) return false;
+    return true;
+  }
+
   /**
-   * Auto-recovery entry point. Driven by the static reconnect dispatcher on
-   * ConnectionManager ``on_reconnected`` events and a 5 s poll. Cheap when
-   * the process is healthy: one GET ``os-status`` and an early return.
+   * Decide and run recovery against a pre-fetched os-status payload. This is
+   * the per-AP half of the batched auto-recovery sweep — the dispatcher
+   * makes one ``compute_node/os-status-batch`` call and fans the results
+   * back out via this method, so no extra GETs are issued.
    *
-   * Skipped when:
-   *   - user explicitly stopped this process (``_userInitiatedStop``);
-   *   - status is mid-transition (``STARTING`` / ``STOPPING``) — let the
-   *     in-flight call finish first;
-   *   - status is ``FAILED`` — relaunching would loop because the worker
-   *     can't start with the current ``cli_options``.
+   * Concurrent triggers (poll tick arriving while ``on_reconnected`` is in
+   * flight) converge: the backend's per-process ``_OPEN_LOCKS`` mutex
+   * serializes ``open``, and a redundant ``start()`` is a cheap no-op once
+   * the first recovery has won.
    *
-   * Concurrent triggers (e.g. ``on_reconnected`` arriving while a poll is
-   * already in flight) converge: the backend's per-process ``_OPEN_LOCKS``
-   * mutex serializes ``open``, and the second ``isAlive()`` call sees the
-   * first recovery's result and short-circuits.
+   * @returns true iff a recovery ``start()`` was issued.
+   */
+  async reconnectFromOsStatus(status: AgenticProcessOSStatus): Promise<boolean> {
+    if (!this._isRecoveryEligible()) return false;
+    if (status.ready) return false;
+    await this.start({ visible: this.visible });
+    return true;
+  }
+
+  /**
+   * Standalone auto-recovery entry point. Issues its own ``os-status`` GET
+   * and applies the decision. Prefer the batched dispatcher
+   * (``_dispatchRecoverySweep``) for multi-AP sweeps; this method is kept
+   * for the early-bootstrap fallback (no compute_node context yet) and
+   * external callers that want a one-shot reconnect for a single process.
    *
    * @returns true iff a recovery ``start()`` was issued.
    */
   async reconnect(): Promise<boolean> {
-    if (this._userInitiatedStop) return false;
-    if (this.status === ProcessStatus.STARTING || this.status === ProcessStatus.STOPPING) return false;
-    if (this.status === ProcessStatus.FAILED) return false;
-    if (await this.isAlive()) return false;
-    await this.start({ visible: this.visible });
-    return true;
+    if (!this._isRecoveryEligible()) return false;
+    const status = await this.getOsStatus();
+    return this.reconnectFromOsStatus(status);
   }
 
   /**
@@ -2021,7 +2144,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     };
 
     const stateHandler = () => {
-      if (this._completed) {
+      if (isWorkerTerminal(this.workerStatus)) {
         stepComplete = true;
         if (resolver) {
           resolver(null);
@@ -2051,8 +2174,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
           continue;
         }
 
-        // If already completed, we're done
-        if (this._completed) {
+        // Worker already terminal — drain and exit.
+        if (isWorkerTerminal(this.workerStatus)) {
           break;
         }
 
@@ -2084,11 +2207,14 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    */
   _handleFlowData(data: FlowData): void {
     const elementType = data.attributes?.['element-type'];
-    const isComplete = data.attributes?.['complete'] === 'true';
 
     if (elementType === 'status' && typeof data.data === 'object' && data.data !== null) {
       const statusData = data.data as Record<string, unknown>;
-      if (statusData.status && typeof statusData.status === 'string') {
+      if (
+        statusData.status &&
+        typeof statusData.status === 'string' &&
+        statusData.status !== this.workerStatus
+      ) {
         const oldWorker = this.workerStatus;
         this.workerStatus = statusData.status as WorkerStatus;
         this.emit('state_change', {
@@ -2096,14 +2222,12 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
           oldValue: oldWorker,
           newValue: this.workerStatus,
         });
-        if (this.workerStatus === WorkerStatus.ERROR || this.workerStatus === WorkerStatus.INTERRUPTED) {
-          this._markError(new Error(`Process ended with worker status: ${this.workerStatus}`));
+        if (this.workerStatus === WorkerStatus.COMPLETE) {
+          this._handleComplete();
+        } else if (this.workerStatus === WorkerStatus.ERROR || this.workerStatus === WorkerStatus.INTERRUPTED) {
+          this._handleError(new Error(`Process ended with worker status: ${this.workerStatus}`));
         }
       }
-    }
-
-    if (elementType === 'status' && isComplete) {
-      this._markComplete();
     }
   }
 
@@ -2118,7 +2242,12 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * @internal
    */
   protected onEntityUpdate(data: Partial<IAgenticProcess>): void {
-    if (data.status) {
+    // Skip no-op transitions: castAndDeepAssign() runs this hook for every
+    // WS entity-op AND for every REST-response write-through, so the same
+    // status often arrives many times. Without the equality guard, downstream
+    // `state_change` listeners (ProcessToolbar, useProcessState, useActiveTerminals)
+    // would re-render at the broadcast frequency even when nothing changed.
+    if (data.status && data.status !== this.status) {
       const oldStatus = this.status;
       this.status = data.status as ProcessStatus;
       this.emit('state_change', {
@@ -2131,10 +2260,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       // object, benign name overlap.
       this.emit('status', this.status, oldStatus);
       if (this.status === ProcessStatus.FAILED && !isWorkerTerminal(this.workerStatus)) {
-        this._markError(new Error(`Process ended with lifecycle status: ${this.status}`));
+        this._handleError(new Error(`Process ended with lifecycle status: ${this.status}`));
       }
     }
-    if (data.worker_status) {
+    if (data.worker_status && data.worker_status !== this.workerStatus) {
       const oldWorker = this.workerStatus;
       this.workerStatus = data.worker_status as WorkerStatus;
       this.emit('state_change', {
@@ -2143,38 +2272,39 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
         newValue: this.workerStatus,
       });
       if (this.workerStatus === WorkerStatus.COMPLETE) {
-        this._markComplete();
+        this._handleComplete();
       } else if (this.workerStatus === WorkerStatus.ERROR || this.workerStatus === WorkerStatus.INTERRUPTED) {
-        this._markError(new Error(`Process ended with worker status: ${this.workerStatus}`));
+        this._handleError(new Error(`Process ended with worker status: ${this.workerStatus}`));
       }
     }
   }
 
   /**
-   * Mark process as complete.
-   * Closes all open groups and marks the flowDataStream as complete.
+   * Local-side reaction to ``workerStatus`` transitioning to COMPLETE.
+   * Frontend does NOT decide completion; backend's projection does. This
+   * just closes the stream and fires the ``complete`` event so consumers
+   * (``output()``, ``waitForExecutionComplete``) can resolve.
+   *
+   * Caller contract: only invoke on a real transition into COMPLETE. The
+   * existing call sites in ``_handleFlowData`` / ``onEntityUpdate`` are
+   * gated by ``newValue !== oldValue`` so this is naturally one-per-edge.
    * @internal
    */
-  _markComplete(): void {
-    if (!this._completed) {
-      this._completed = true;
-      // Close all open groups before marking complete
-      this.flowDataStream.closeOpenGroups();
-      this.flowDataStream.markComplete();
-      this.emit('complete');
-    }
+  _handleComplete(): void {
+    this.flowDataStream.closeOpenGroups();
+    this.flowDataStream.markComplete();
+    this.emit('complete');
   }
 
   /**
-   * Mark process as failed.
+   * Local-side reaction to ``workerStatus`` transitioning to a failure
+   * state. Same authority model as ``_handleComplete``: backend decides;
+   * SDK reacts.
    * @internal
    */
-  _markError(error: Error): void {
+  _handleError(error: Error): void {
     this._error = error;
-    if (!this._completed) {
-      this._completed = true;
-      this.emit('error', error);
-    }
+    this.emit('error', error);
   }
 
   /**

@@ -16,6 +16,7 @@
     "test:vitest:api": "vitest run --silent=false --allowOnly --bail 1 --project api",
     "test:vitest:react": "vitest run --silent=false --allowOnly --bail 1 --project react",
     "test:vitest:long": "vitest run --silent=false --allowOnly --bail 1 --project long",
+    "test:vitest:hub": "vitest run --silent=false --allowOnly --bail 1 --project hub",
     "test:vitest:long:claude": "FLOWPAD_DEFAULT_WORKER=claude vitest run --silent=false --allowOnly --bail 1 --project long",
     "test:vitest:long:codex": "FLOWPAD_DEFAULT_WORKER=codex vitest run --silent=false --allowOnly --bail 1 --project long",
     "test:vitest:long_all": "npm run test:vitest:unit && npm run test:vitest:api && npm run test:vitest:long",
@@ -24,6 +25,8 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^5.1.1",
+    "@excalidraw/excalidraw": "^0.18.1",
+    "@excalidraw/mermaid-to-excalidraw": "^1.1.2",
     "@lexical/react": "^0.32.1",
     "@milkdown/core": "^7.18.0",
     "@milkdown/ctx": "^7.18.0",

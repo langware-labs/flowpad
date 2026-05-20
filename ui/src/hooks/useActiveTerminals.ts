@@ -3,11 +3,13 @@ import {
   AgenticProcess,
   dataContext,
   dataManager,
+  Project,
   Shell,
   ShellStatus,
   TypeId,
 } from '@sdk';
-import { useCallback, useMemo, useSyncExternalStore } from 'react';
+import { subscribeToEntityOps } from '@sdk/react/hooks';
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 
 /** Discriminator for tab type. */
 export type TerminalTabType = 'plain' | 'claude';
@@ -15,17 +17,25 @@ export type TerminalTabType = 'plain' | 'claude';
 /**
  * One row in the tab strip.
  *
- * Strip contract (deliberately simple):
+ * Strip contract:
  *   terminalState ← initial REST fetch ← `refresh()`
- *   terminalState ← direct mutations ← `pushTerminal` / `removeTerminal` / `updateTerminal`
+ *   terminalState ← direct mutations  ← `pushTerminal` / `removeTerminal` / `updateTerminal`
+ *   terminalState ← membership-only refetch ← Shell / AgenticProcess WS events
  *
- * No WebSocket subscription, no merge ratchet, no implicit filtering. The list
- * the consumer renders is exactly what's in `terminalState`.
+ * Cross-session sync: WS events trigger a refetch of `terminals/list` ONLY
+ * when they can change strip membership — create/delete on either entity,
+ * and AgenticProcess update events where `visible` crossed the in-strip
+ * boundary. Non-membership updates (Shell status/name/tab_order, AP name,
+ * status, ready_for_input_since, etc.) do NOT refetch — per-row reads pull
+ * live data from the dataManager entity cache, which the SDK keeps warm via
+ * its own per-entity subscriptions.
  *
- * Per-row liveness (status badges, names, restart-required) is read from the
- * dataManager entity cache via `Shell.getByIdFromCache` / `AgenticProcess.
- * getByIdFromCache`. Those caches are kept warm by the SDK's per-entity
- * subscriptions, independently of this hook.
+ * Order invariant: a refetch is non-destructive to current tab order.
+ * Existing tabs keep their local index, refreshed in place; removed tabs
+ * drop out; new tabs are appended at the end (sorted among themselves by
+ * server `tab_order` for deterministic multi-add ordering). The server's
+ * `tab_order` is only consulted on the FIRST fetch (when there is no local
+ * order to preserve) and for ordering brand-new additions.
  */
 export interface TerminalTab {
   /** Canonical tab identity. Shell tabs use shell-<id>; process tabs use agentic_process-<id>. */
@@ -95,7 +105,8 @@ function toShellTab(s: WireShell): TerminalTab {
     shellId: s.id,
     processId: null,
     tabOrder: s.tab_order ?? cached?.tab_order ?? 0,
-    name: s.name ?? cached?.name ?? null,
+    // Pure shells own their own name. AgenticProcess-backed tabs use toProcessTab.
+    name: s.name ?? null,
     type: 'plain',
     isDisabled: isClosing,
     statusReason: isClosing ? 'Closing...' : '',
@@ -115,7 +126,9 @@ function toProcessTab(p: WireProcess): TerminalTab {
     shellId: linkedShellId,
     processId: p.id,
     tabOrder: linkedShell?.tab_order ?? 0,
-    name: p.name ?? linkedShell?.name ?? cached?.name ?? null,
+    // Source of truth: AgenticProcess.name. No fallback to shell — keeps the
+    // canonical name on the process even after shell restart/deletion.
+    name: p.name ?? null,
     type: 'claude',
     isDisabled: isClosing,
     statusReason: isClosing ? 'Closing...' : '',
@@ -152,9 +165,9 @@ export function terminalProcessId(tab: TerminalTab): string | null {
 
 let terminalState: TerminalTab[] = [];
 let initialFetchStarted = false;
-let activeTerminalsFetchVersion = 0;
+let wsSubscribed = false;
+let wsRefetchTimer: ReturnType<typeof setTimeout> | null = null;
 const listeners = new Set<() => void>();
-const closedTerminalKeys = new Set<string>();
 
 function notifyListeners(): void {
   for (const cb of listeners) cb();
@@ -166,10 +179,106 @@ function setTerminalState(next: TerminalTab[]): void {
   notifyListeners();
 }
 
+/** Coalesce bursty WS events into one refetch (e.g. a loop of REST creates). */
+function scheduleTerminalsRefetch(): void {
+  if (wsRefetchTimer) return;
+  wsRefetchTimer = setTimeout(() => {
+    wsRefetchTimer = null;
+    void fetchActiveTerminals();
+  }, 100);
+}
+
+/** Subscribe (once, module-scoped) to Shell + AgenticProcess WebSocket events
+ *  and refetch the strip ONLY on membership-changing events:
+ *
+ *  - create / delete on either entity: row may appear or disappear.
+ *  - AgenticProcess update where `visible` crossed the in-strip boundary:
+ *    the AP just toggled into or out of the strip. Detected by comparing
+ *    the current cached `visible` (the SDK updates the entity cache BEFORE
+ *    this listener fires — see use-entity-ops.ts) against whether the AP
+ *    is currently in `terminalState`.
+ *
+ *  Everything else (Shell update of status/name/tab_order/project_id; AP
+ *  update of name/status/ready_for_input_since/last_activity_at/...) is a
+ *  pure rendering change. Per-row reads pull live data from the entity
+ *  cache via `Shell.getByIdFromCache` / `AgenticProcess.getByIdFromCache`,
+ *  so no refetch is needed for those — and a refetch would be actively
+ *  harmful, since it costs a server round-trip and (before the
+ *  non-destructive merge) could re-order tabs.
+ *
+ *  The 100ms debounce in `scheduleTerminalsRefetch` coalesces bursts. The
+ *  listener lives for the lifetime of the app — never unsubscribed —
+ *  matching the same pattern as `pending-actions-store`. */
+function isApInStrip(apId: string): boolean {
+  for (const t of terminalState) {
+    if (t.processId === apId) return true;
+  }
+  return false;
+}
+
+function ensureWsSubscription(): void {
+  if (wsSubscribed) return;
+  wsSubscribed = true;
+  subscribeToEntityOps(
+    [Shell.type, AgenticProcess.type],
+    (typeId, op) => {
+      if (op === 'create' || op === 'delete') {
+        scheduleTerminalsRefetch();
+        return;
+      }
+      // op === 'update': only AP visibility crossings change membership.
+      if (typeId.type !== AgenticProcess.type) return;
+      const isVisible = !!processFromCache(typeId.id)?.visible;
+      if (isVisible !== isApInStrip(typeId.id)) {
+        scheduleTerminalsRefetch();
+      }
+    },
+  );
+}
+
 /**
- * One-shot fetch + write-through. Replaces `terminalState` wholesale with the
- * server's view. Also feeds the dataManager cache via `castAndDeepAssign` so
- * per-row entity reads (`shell.status` etc.) stay live.
+ * Non-destructive merge of a freshly-fetched strip into the current one.
+ *
+ *   - First fetch (prev empty): adopt the server's sort order (`byTabOrder`).
+ *   - Existing tabs (key present in both): kept in their current local index,
+ *     replaced in place with refreshed wire data (name, isDisabled, cached
+ *     refs). Server `tab_order` is intentionally ignored — once a tab has a
+ *     local position, only an explicit local reorder can move it.
+ *   - Removed tabs (in prev, not in fetched): dropped.
+ *   - New tabs (in fetched, not in prev): appended at the end, sorted among
+ *     themselves by `byTabOrder` for deterministic multi-add ordering.
+ *
+ * Why end-append: any insertion in the middle of `prev` would perturb the
+ * indices of existing tabs, which is the exact "tabs moving around" problem
+ * this function exists to prevent.
+ */
+function mergePreservingOrder(prev: TerminalTab[], fetched: TerminalTab[]): TerminalTab[] {
+  if (prev.length === 0) return fetched.slice().sort(byTabOrder);
+  const fetchedByKey = new Map<string, TerminalTab>();
+  for (const t of fetched) fetchedByKey.set(terminalTargetKey(t), t);
+  const kept: TerminalTab[] = [];
+  const keptKeys = new Set<string>();
+  for (const t of prev) {
+    const key = terminalTargetKey(t);
+    const refreshed = fetchedByKey.get(key);
+    if (refreshed) {
+      kept.push(refreshed);
+      keptKeys.add(key);
+    }
+  }
+  const additions: TerminalTab[] = [];
+  for (const t of fetched) {
+    if (!keptKeys.has(terminalTargetKey(t))) additions.push(t);
+  }
+  if (additions.length > 1) additions.sort(byTabOrder);
+  return kept.concat(additions);
+}
+
+/**
+ * One-shot fetch + write-through. Merges the server's view into
+ * `terminalState` non-destructively — see `mergePreservingOrder` for the
+ * order invariant. Also feeds the dataManager cache via `castAndDeepAssign`
+ * so per-row entity reads (`shell.status` etc.) stay live.
  *
  * Used by the hook for initial load and explicit refresh, and by route
  * loaders for default-tab resolution.
@@ -177,8 +286,8 @@ function setTerminalState(next: TerminalTab[]): void {
 export async function fetchActiveTerminals(): Promise<TerminalTab[]> {
   const computeNodeId = dataContext.computeNode?.id;
   if (!computeNodeId) return [];
-  const fetchVersion = ++activeTerminalsFetchVersion;
-  const action = new ActionInfo('active-terminals', 'compute_node', computeNodeId, 'GET');
+  const action = new ActionInfo('terminals', 'compute_node', computeNodeId, 'GET');
+  action.subpath = 'list';
   const result = await dataManager.callAction<unknown, ActiveTerminalsResponse>(action);
   if (!result) return [];
   // 1. Hydrate the entity cache so per-row reads (`shell.status`, `process.workerStatus`)
@@ -195,21 +304,43 @@ export async function fetchActiveTerminals(): Promise<TerminalTab[]> {
     ...result.pure_shells.map(toShellTab),
     ...result.visible_processes.map(toProcessTab),
   ];
-  if (fetchVersion !== activeTerminalsFetchVersion) return terminalState;
+  const next = mergePreservingOrder(terminalState, fetched);
+  setTerminalState(next);
+  return next;
+}
 
-  const fetchedKeys = new Set(fetched.map(terminalTargetKey));
-  for (const key of closedTerminalKeys) {
-    if (!fetchedKeys.has(key)) closedTerminalKeys.delete(key);
+export interface TerminalCloseResponse {
+  accepted: string[];
+  missing: string[];
+  invalid: string[];
+}
+
+export async function closeTerminalTargets(
+  targets: Array<TerminalTab | TypeId | string>,
+): Promise<TerminalCloseResponse> {
+  const keys = targets.map(terminalTargetKey);
+  const computeNodeId = dataContext.computeNode?.id;
+  if (!computeNodeId || keys.length === 0) {
+    return { accepted: [], missing: keys, invalid: [] };
   }
-
-  const incoming = fetched.filter((tab) => !closedTerminalKeys.has(terminalTargetKey(tab))).sort(byTabOrder);
-  setTerminalState(incoming);
-  return incoming;
+  const action = new ActionInfo('terminals', 'compute_node', computeNodeId, 'POST');
+  action.subpath = 'close';
+  action.bodyParameters = { targets: keys };
+  const result = await dataManager.callAction<{ targets: string[] }, TerminalCloseResponse>(action);
+  const accepted = result?.accepted ?? [];
+  if (accepted.length > 0) {
+    const closed = new Set(accepted);
+    setTerminalState(terminalState.filter((tab) => !closed.has(terminalTargetKey(tab))));
+  }
+  return {
+    accepted,
+    missing: result?.missing ?? [],
+    invalid: result?.invalid ?? [],
+  };
 }
 
 function pushTerminalShared(tab: TerminalTab): void {
   const key = terminalTargetKey(tab);
-  closedTerminalKeys.delete(key);
   setTerminalState(
     terminalState.some((t) => terminalTargetKey(t) === key)
       ? terminalState.map((t) => (terminalTargetKey(t) === key ? tab : t))
@@ -219,7 +350,6 @@ function pushTerminalShared(tab: TerminalTab): void {
 
 function removeTerminalShared(target: TerminalTab | TypeId | string): void {
   const key = terminalTargetKey(target);
-  closedTerminalKeys.add(key);
   setTerminalState(terminalState.filter((t) => terminalTargetKey(t) !== key));
 }
 
@@ -231,7 +361,7 @@ function updateTerminalShared(target: TerminalTab | TypeId | string, patch: Part
 /**
  * Optimistically insert a row built from a freshly-loaded process + its shell.
  * Called by route loaders so the strip reflects a newly-active process *before*
- * the next ``active-terminals`` refetch completes — closes the race window in
+ * the next terminals/list refetch completes — closes the race window in
  * which TabbedTerminal's self-heal effect would otherwise pick a stale tab.
  */
 export function pushLoadedProcessTab(process: AgenticProcess, shell: Shell): void {
@@ -240,7 +370,7 @@ export function pushLoadedProcessTab(process: AgenticProcess, shell: Shell): voi
     shellId: shell.id,
     processId: process.id,
     tabOrder: shell.tab_order ?? 0,
-    name: process.name ?? shell.name ?? null,
+    name: process.name ?? null,
     type: 'claude',
     isDisabled: shell.status === ShellStatus.CLOSING,
     statusReason: shell.status === ShellStatus.CLOSING ? 'Closing...' : '',
@@ -278,6 +408,7 @@ export interface UseTerminalsResult {
 export function useAllTerminals(): UseTerminalsResult {
   const subscribe = useCallback((onChange: () => void) => {
     listeners.add(onChange);
+    ensureWsSubscription();
     if (!initialFetchStarted) {
       initialFetchStarted = true;
       void fetchActiveTerminals();
@@ -301,16 +432,151 @@ export function useAllTerminals(): UseTerminalsResult {
  * pin (e.g. for collaboration spaces); omit to default to the active project
  * via ``dataContext.project?.id``.
  *
- * Tabs whose `projectId` is null have no project affiliation (e.g. a plain
- * shell created before any project context is set) and are surfaced in every
- * scoped view — excluding them everywhere would orphan them from the UI.
+ * Project consolidation (Path A, 2026-05-09): every Shell carries a real
+ * ``project_id`` (defaulting server-side to the bootstrap ``@local`` project
+ * when none was passed). The historical orphan-include rule —
+ * ``|| t.projectId == null`` — is gone; the strict per-project filter below
+ * is now safe because no tab's ``projectId`` is ever null in normal flows.
  */
 export function useProjectTerminals(projectId?: string | null): UseTerminalsResult {
   const all = useAllTerminals();
   const pid = projectId ?? dataContext.project?.id ?? null;
   const data = useMemo(
-    () => (pid == null ? all.data : all.data.filter((t) => t.projectId === pid || t.projectId == null)),
+    () => (pid == null ? all.data : all.data.filter((t) => t.projectId === pid)),
     [all.data, pid],
   );
   return { ...all, data };
+}
+
+// ─── Project-bucketed view (chip consumes this) ─────────────────────────────
+
+export type BucketState = 'loading' | 'live' | 'missing';
+
+export interface TerminalProjectBucket {
+  /** Stable bucket identity. For stranded buckets this is still the dangling
+   *  Shell.project_id — the row exists, the Project entity just doesn't. */
+  projectId: string;
+  /** Resolved Project entity. Non-null iff ``state === 'live'``. */
+  project: Project | null;
+  /** 'loading' = cache miss, fetch in flight or pending; 'live' = entity
+   *  resolved; 'missing' = backend confirmed 404 (stranded). */
+  state: BucketState;
+  tabs: TerminalTab[];
+  /** Resurrect the Project from a tab's workdir + rebind every dependent's
+   *  project_id (server-side, via compute_node/recover-orphaned-project).
+   *  Resolves to the recovered Project, or null on failure. Only meaningful
+   *  when ``state === 'missing'``. */
+  recover: () => Promise<Project | null>;
+}
+
+export interface UseTerminalProjectBucketsResult {
+  buckets: TerminalProjectBucket[];
+}
+
+function bucketProjectId(tab: TerminalTab): string | null {
+  return tab.projectId ?? tab.shell?.project_id ?? tab.agenticProcess?.project_id ?? null;
+}
+
+/**
+ * Bucket the global tab strip by ``project_id`` and resolve each bucket's
+ * Project entity. Single owner of the "which projects own which tabs" question
+ * — consumers (e.g. ProjectsCounterChip) render rows straight from this hook
+ * without doing their own bucketing or dangling-FK fallback.
+ *
+ * Three bucket states:
+ *   - ``loading``: cache miss, resolution in flight. Chip shows a placeholder.
+ *   - ``live``: Project entity is in cache; bucket carries it.
+ *   - ``missing``: backend returned 404 for the FK. Bucket exposes ``recover()``.
+ *
+ * Recovery is explicit — the hook does not auto-recover on mount (would re-enter
+ * the auto-action antipattern called out in feedback memory).
+ */
+export function useTerminalProjectBuckets(): UseTerminalProjectBucketsResult {
+  const { data: tabs } = useAllTerminals();
+
+  const grouped = useMemo(() => {
+    const byProject = new Map<string, TerminalTab[]>();
+    for (const tab of tabs) {
+      const pid = bucketProjectId(tab);
+      if (!pid) continue;
+      const bucket = byProject.get(pid);
+      if (bucket) bucket.push(tab);
+      else byProject.set(pid, [tab]);
+    }
+    return Array.from(byProject.entries());
+  }, [tabs]);
+
+  // Resolution status per project_id. Seeded from the cache so projects already
+  // hydrated by other paths skip the loading flash.
+  const [status, setStatus] = useState<ReadonlyMap<string, BucketState>>(() => new Map());
+
+  useEffect(() => {
+    const toCheck = grouped
+      .map(([id]) => id)
+      .filter((id) => {
+        const known = status.get(id);
+        if (known === 'live' || known === 'missing') return false;
+        return true;
+      });
+    if (toCheck.length === 0) return;
+    let cancelled = false;
+    void (async () => {
+      const results = await Promise.all(
+        toCheck.map(async (id): Promise<[string, BucketState]> => {
+          const cached = Project.getByIdFromCache<Project>(id);
+          if (cached) return [id, 'live'];
+          const fetched = await Project.getById<Project>(id).catch(() => null);
+          return [id, fetched ? 'live' : 'missing'];
+        }),
+      );
+      if (cancelled) return;
+      setStatus((prev) => {
+        let changed = false;
+        const next = new Map(prev);
+        for (const [id, s] of results) {
+          if (next.get(id) !== s) {
+            next.set(id, s);
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [grouped, status]);
+
+  const buckets = useMemo<TerminalProjectBucket[]>(() => {
+    return grouped.map(([projectId, bucketTabs]) => {
+      const cached = Project.getByIdFromCache<Project>(projectId) ?? null;
+      const resolved = status.get(projectId);
+      const state: BucketState = cached
+        ? 'live'
+        : resolved === 'missing'
+          ? 'missing'
+          : 'loading';
+      const project = state === 'live' ? cached : null;
+      const recover = async (): Promise<Project | null> => {
+        if (project) return project;
+        const computeNodeId = dataContext.computeNode?.id;
+        if (!computeNodeId) return null;
+        const recovered = await Project.recoverOrphaned(projectId, computeNodeId).catch(() => null);
+        if (!recovered) return null;
+        // Backend rebound dependents; clear the strand so the next render
+        // reflects the live project. The WS Shell/AP update events will
+        // re-fetch terminals/list and re-bucket under the recovered project_id.
+        setStatus((prev) => {
+          const next = new Map(prev);
+          next.delete(projectId);
+          next.set(recovered.id, 'live');
+          return next;
+        });
+        return recovered;
+      };
+      return { projectId, project, state, tabs: bucketTabs, recover };
+    });
+  }, [grouped, status]);
+
+  return { buckets };
 }

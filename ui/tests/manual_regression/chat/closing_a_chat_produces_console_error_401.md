@@ -1,3 +1,7 @@
+---
+id: da6ea7fe-39a5-5eb6-a586-ab4bbfa78cbb
+---
+
 test 1: Closing a shell terminal tab does not produce 401 console error (FLOWPAD-1642)
 - navigate to {APP_URL}/dock/shell/new_terminal
 - wait for terminal to be ready (element with active terminal panel `[data-testid="terminal-panel"][data-active="true"]` shows xterm)

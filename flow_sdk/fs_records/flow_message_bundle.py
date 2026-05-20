@@ -7,12 +7,15 @@ Bundle format (.flowmsg — a zip file):
       ├── spec-@<id>/spec.md                   (frontmatter + content)
       ├── task-@<id>/header.json               (task fields)
       ├── conversation-@<id>/conversation.jsonl (typed Pointer per line)
-      └── flow_message-@<id>/header.json       (FlowMessage fields as dict)
+      ├── flow_message-@<id>/header.json       (FlowMessage fields as dict)
+      ├── skill-@<id>/.claude/skills/<name>/…  (FS-rooted asset subtree)
+      └── agent-@<id>/.claude/agents/<name>.md (FS-rooted asset file)
 
 """
 from __future__ import annotations
 
 import json
+import logging
 import shutil
 import tempfile
 import zipfile
@@ -21,12 +24,14 @@ from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+logger = logging.getLogger(__name__)
+
 from flow_sdk.discovery.notify import send_resource_sync
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.fs_store import SyncOperation
 from flow_sdk.fs_store.type_id import TypeId
 
-_FM_FIELDS = {"type", "id", "text", "instruction", "context_entities", "attachment",
+_FM_FIELDS = {"type", "id", "text", "instruction", "shared_context_entities", "attachment",
               "sender_id", "sender_name", "receiver_address", "receiver_address_type"}
 
 _TASK_FIELDS = {"type", "id", "title", "description", "status", "task_type",
@@ -34,7 +39,7 @@ _TASK_FIELDS = {"type", "id", "title", "description", "status", "task_type",
                 "due_at", "start_date",
                 "project_id", "spec_type",
                 "shared_process_id",
-                "context_entities",
+                "shared_context_entities",
                 "active_form", "analysis_json_path", "analysis_path", "artifacts",
                 "branch", "classification_category", "classification_command",
                 "classification_path", "classification_title", "command",
@@ -207,6 +212,9 @@ async def _pack_conversation_attachment(
         # (see _resolve_reply_recipient_email): when there's no Task, the reply
         # routes to the participant whose email isn't the local user's.
         "participants": list(conv.participants or []),
+        # User-set display title (NewConversationDialog autofill). Receiver
+        # stores it on the local Conversation so both sides render the same row.
+        "title": (conv.title or None),
     }
     (conv_dir / "header.json").write_text(
         json.dumps(conv_header, default=_json_default, ensure_ascii=False),
@@ -239,6 +247,144 @@ async def _pack_attachment_entry(
         await _pack_conversation_attachment(entry_id, flow_message, attachment_dir)
     elif entry_type == BuiltinEntityType.FLOW_MESSAGE.value:
         await _pack_flow_message_entry(entry_id, attachment_dir)
+    elif entry_type in _FS_ROOTED_TYPES:
+        _pack_fs_rooted_attachment(entry_type, entry_id, attachment_dir)
+
+
+# ---------------------------------------------------------------------------
+# FS-rooted asset packing (skill, agent, …).
+#
+# These entity types are *filesystem-primary*: the canonical record is the
+# on-disk subtree under ``<root>/.claude/...``. Pack preserves that subtree
+# verbatim; unpack restores it and lets the FSIndexer rediscover the entity.
+# No type-specific serialization (header.json etc.) — the on-disk shape *is*
+# the record format.
+# ---------------------------------------------------------------------------
+
+_FS_ROOTED_TYPES = frozenset({
+    BuiltinEntityType.SKILL.value,
+    BuiltinEntityType.AGENT.value,
+})
+
+_CLAUDE_ANCHOR = ".claude"
+
+
+def _fs_rooted_record_for(entry_type: str, entry_id: str):
+    """Resolve a Skill/Agent record by id. Returns the record or None."""
+    if entry_type == BuiltinEntityType.SKILL.value:
+        from flow_sdk.fs_records.skill_record import SkillRecord
+        return SkillRecord.get(entry_id)
+    if entry_type == BuiltinEntityType.AGENT.value:
+        from flow_sdk.fs_records.agent_record import AgentRecord
+        return AgentRecord.get(entry_id)
+    return None
+
+
+def _claude_relative_path(asset_path: Path) -> Path:
+    """Return the asset's path relative to the nearest ``.claude`` anchor.
+
+    Example: ``/home/u/.claude/skills/foo/SKILL.md`` →
+    ``Path(".claude/skills/foo/SKILL.md")``.
+
+    Raises ``ValueError`` if ``.claude`` is not in the path — that's a real
+    misconfiguration (skill/agent outside the canonical layout), not a
+    silent-skip case.
+    """
+    parts = asset_path.parts
+    for i, p in enumerate(parts):
+        if p == _CLAUDE_ANCHOR:
+            return Path(*parts[i:])
+    raise ValueError(
+        f"FS-rooted asset path missing '{_CLAUDE_ANCHOR}' anchor: {asset_path}"
+    )
+
+
+def _ensure_asset_dest_root(asset_dest_root: Path | None) -> Path:
+    """Resolve the unpack destination for FS-rooted assets.
+
+    Called lazily — only when an FS-rooted entry is actually encountered, so
+    bundles without skill/agent attachments never allocate a temp dir.
+    """
+    if asset_dest_root is not None:
+        return asset_dest_root
+    chosen = Path(tempfile.mkdtemp(prefix="flowmsg_assets_"))
+    logger.info("[bundle] asset_dest_root unset; restoring FS-rooted assets to %s", chosen)
+    return chosen
+
+
+def _restore_fs_rooted_entry(
+    entry_dir: Path, asset_dest_root: Path, overwrite: bool,
+) -> bool:
+    """Copy ``attachment/<type>-@<id>/.claude/…`` into ``asset_dest_root/.claude/…``.
+
+    Returns True when at least one file was restored. Raises
+    ``FlowMessageExistsError`` on collision when ``overwrite=False``.
+    """
+    bundle_claude = entry_dir / _CLAUDE_ANCHOR
+    if not bundle_claude.is_dir():
+        return False
+    conflicts: list[dict] = []
+    copied_any = False
+    for src in bundle_claude.rglob("*"):
+        if not src.is_file():
+            continue
+        rel = src.relative_to(entry_dir)  # ".claude/skills/foo/SKILL.md"
+        dest = asset_dest_root / rel
+        if dest.exists() and not overwrite:
+            conflicts.append({"path": str(dest)})
+            continue
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dest)
+        copied_any = True
+    if conflicts:
+        raise FlowMessageExistsError(conflicts)
+    return copied_any
+
+
+async def _reindex_asset_dest_root(asset_dest_root: Path) -> None:
+    """Drive ``FSIndexer.index()`` against the restored ``.claude/`` subtree.
+
+    Uses ``build_default_indexer()`` for the full function registry and overrides
+    the roots per-call so we don't accidentally walk the user's real home dir.
+    """
+    from flow_sdk.fs_store.fs_ref import FSRef
+    from flow_sdk.fs_store.indexer import IndexerOptions
+    from flow_sdk.fs_store.indexer.builtin import build_default_indexer
+    from flow_sdk.fs_store.record_types import RecordType
+
+    indexer = build_default_indexer()
+    await indexer.index(
+        IndexerOptions(
+            roots=(FSRef(asset_dest_root, record_type=RecordType.USER_HOME_FOLDER, scope="user"),),
+            force=True,
+            verbose=False,
+        )
+    )
+
+
+def _pack_fs_rooted_attachment(
+    entry_type: str, entry_id: str, attachment_dir: Path,
+) -> None:
+    """Copy the asset's on-disk subtree (file or folder) into the bundle.
+
+    Bundle layout: ``attachment/<type>-@<id>/.claude/<relative-path>``. Format
+    is unchanged from the source — the indexer reads exactly the same shape
+    on disk in production, so unpack just needs to restore + reindex.
+    """
+    record = _fs_rooted_record_for(entry_type, entry_id)
+    if record is None or record.asset_ref is None:
+        return
+    src = Path(record.asset_ref._path)
+    if not src.exists():
+        return
+    rel = _claude_relative_path(src)
+    dest_root = attachment_dir / f"{entry_type}-@{entry_id}"
+    dest = dest_root / rel
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    if src.is_dir():
+        shutil.copytree(src, dest, dirs_exist_ok=True)
+    else:
+        shutil.copy2(src, dest)
 
 
 def _zip_bundle(tmp_root: Path, dest_dir: Path | None, fm_id: str | None) -> Path:
@@ -386,10 +532,18 @@ async def unpack_bundle(
     local_user_id: str,
     *,
     overwrite: bool = False,
+    asset_dest_root: Path | None = None,
 ) -> "FlowMessage":
     """Extract .flowmsg, materialize entities, return FlowMessage.
 
     Raises FlowMessageExistsError on conflict when overwrite=False.
+
+    FS-rooted assets (skill, agent, …) are restored as a literal ``.claude/…``
+    subtree under ``asset_dest_root``. When ``asset_dest_root`` is None, a
+    fresh ``tempfile.mkdtemp()`` is used so production callers don't have to
+    pick a real destination yet — restored assets are indexed but parked.
+    Tests pass an explicit ``asset_dest_root`` so they can assert on the
+    layout.
     """
     from flow_sdk._compat import UTC
     from flow_sdk.builtin.conversation import Conversation
@@ -397,7 +551,6 @@ async def unpack_bundle(
     from flow_sdk.builtin.spec import Spec
     from flow_sdk.builtin.task import Task
     from flow_sdk.builtin.user import User
-    from flow_sdk.fs_records.conversation_record import ConversationRecord
     from flow_sdk.fs_records.notification_scanner import (
         _create_conversation_from_disk,
         _create_spec_from_file,
@@ -446,6 +599,7 @@ async def unpack_bundle(
 
         conversation_id: str | None = None
         task_id: str = ""
+        fs_rooted_restored = False
         if attachment_dir.exists():
             for entry_dir in sorted(attachment_dir.iterdir(), key=_entry_sort_key):
                 if not entry_dir.is_dir():
@@ -453,6 +607,12 @@ async def unpack_bundle(
                 name = entry_dir.name
                 entry_type, _, entry_id = name.partition("-@")
                 if not entry_type or not entry_id:
+                    continue
+
+                if entry_type in _FS_ROOTED_TYPES:
+                    asset_dest_root = _ensure_asset_dest_root(asset_dest_root)
+                    if _restore_fs_rooted_entry(entry_dir, asset_dest_root, overwrite):
+                        fs_rooted_restored = True
                     continue
 
                 if entry_type == BuiltinEntityType.SPEC.value:
@@ -515,7 +675,7 @@ async def unpack_bundle(
                     jsonl_file = entry_dir / "conversation.jsonl"
                     if jsonl_file.exists():
                         task_id_for_conv = next(
-                            (TypeId(c).id for c in msg_data.get("context_entities", []) if TypeId(c).type == BuiltinEntityType.TASK.value),
+                            (TypeId(c).id for c in msg_data.get("shared_context_entities", []) if TypeId(c).type == BuiltinEntityType.TASK.value),
                             None,
                         ) or task_id
                         # The bundle's conversation header carries the sender's
@@ -526,7 +686,8 @@ async def unpack_bundle(
                         conv_header = _read_entity_header(entry_dir) or {}
                         bundle_remote_project_id = conv_header.get("project_id") or None
                         bundle_remote_project_name = conv_header.get("project_name") or None
-                        bundle_participants = conv_header.get("participants") or None
+                        bundle_participants = conv_header.get("participants") or []
+                        bundle_title = (conv_header.get("title") or "").strip() or None
                         # Copy conversation.jsonl to a permanent location before the
                         # temp dir is cleaned up — _create_conversation_from_disk
                         # stores data_path pointing at task_dir, so it must survive.
@@ -552,6 +713,7 @@ async def unpack_bundle(
                             remote_project_id=bundle_remote_project_id,
                             remote_project_name=bundle_remote_project_name,
                             participants=bundle_participants,
+                            title=bundle_title,
                         )
                         if conv:
                             conversation_id = conv.id
@@ -572,14 +734,17 @@ async def unpack_bundle(
                         inner_fm.id = fm_id
                         await inner_fm.save(owner_typeid)
 
+        # 4b. Re-index restored FS-rooted assets so DB rows + FTS5 entries land
+        # before any UI sync fires. Skipped when no FS-rooted entries were
+        # present in the bundle (zero-cost for vanilla spec/task bundles).
+        if fs_rooted_restored and asset_dest_root is not None:
+            await _reindex_asset_dest_root(asset_dest_root)
+
         # 5. Resolve FILE attachment paths and materialize the top-level FlowMessage
         # via the unified write path. ``materialize_flow_message`` saves the
         # FM, appends a typed Pointer to conversation.jsonl, projects
         # message_ids/message_count, and dispatches WS sync (FM CREATE then
         # Conversation UPDATE) — same sequence every other producer uses.
-        if top_fm_already_exists and not overwrite:
-            raise FlowMessageExistsError([{"type": BuiltinEntityType.FLOW_MESSAGE.value, "id": top_fm_id_check}])
-
         from flow_sdk.app.actions.materialize_flow_message import materialize_flow_message
 
         top_fm_id = msg_data.get("id") or FlowMessage.allocate_id(msg_data)
@@ -587,12 +752,13 @@ async def unpack_bundle(
         msg_data["id"] = top_fm_id
         if not msg_data.get("conversation_id") and conversation_id:
             msg_data["conversation_id"] = conversation_id
-
         target_conv_id = conversation_id or next(
-            (TypeId(c).id for c in msg_data.get("context_entities", [])
+            (TypeId(c).id for c in msg_data.get("shared_context_entities", [])
              if TypeId(c).type == BuiltinEntityType.CONVERSATION.value),
             None,
         )
+        if top_fm_already_exists and not overwrite and not conversation_id:
+            raise FlowMessageExistsError([{"type": BuiltinEntityType.FLOW_MESSAGE.value, "id": top_fm_id_check}])
         if not target_conv_id:
             # Bundle has no conversation pointer — fall back to a bare save.
             top_fm = FlowMessage.model_validate(msg_data)

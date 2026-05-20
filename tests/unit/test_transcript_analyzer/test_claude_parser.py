@@ -24,9 +24,10 @@ def test_parses_all_lines_with_one_warning_for_unknown(claude_jsonl):
         warnings.simplefilter("always")
         t = AgentTranscript("claude", claude_jsonl)
     # 12 raw lines; Bash is parsed as shell_command and its tool_result is
-    # folded into that operation. Each assistant turn (assistant_message + 2
-    # tool_use) also emits a synthetic TokenUsageEntry → 12 - 1 + 3 = 14.
-    assert len(t) == 14
+    # folded into that operation → -1. Each of the 3 assistant turns emits
+    # 4 per-dim UsageEntry (input + output + cache_read + cache_write_1h)
+    # → +12. Net: 12 - 1 + 12 = 23.
+    assert len(t) == 23
     # One synthetic unknown line at the end → exactly one warning.
     unknown_warnings = [w for w in caught if "unknown entry type" in str(w.message)]
     assert len(unknown_warnings) == 1
@@ -56,8 +57,9 @@ def test_entry_kind_breakdown(claude_jsonl):
     #   ExitPlanMode tool_use → 1 TOOL_USE
     #   system:stop_hook_summary → 1 SYSTEM
     #   synthetic unknown → 1 UNKNOWN
-    # Each assistant turn (assistant_message + 2 tool_use) carries usage
-    # data that the parser splits out as a separate TokenUsageEntry → 3 token_usage.
+    # Each assistant turn emits 4 per-dim UsageEntry (input + output +
+    # cache_read + cache_write_1h) from the realistic usage block in the
+    # fixture. 3 turns × 4 dims = 12 token_usage entries.
     assert counts == {
             "meta": 5,
             "user_message": 1,
@@ -66,7 +68,7 @@ def test_entry_kind_breakdown(claude_jsonl):
             "shell_command": 1,
             "system": 1,
             "unknown": 1,
-            "token_usage": 3,
+            "token_usage": 12,
     }
 
 
