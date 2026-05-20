@@ -1061,6 +1061,18 @@ async def _download_and_unpack_bundle(
         await unpack_bundle(
             tmp_path, local_user_id, overwrite=False, asset_dest_root=asset_dest_root,
         )
+        # Bundle bytes are on disk now. The FM's ``attachment[].local_path``
+        # is computed lazily by the model serializer from disk state, so the
+        # cached browser entity still reads ``local_path=null`` from the
+        # earlier WS create. Fan a fresh UPDATE so subscribers re-render with
+        # the populated path — without this, image attachments stay as a
+        # generic file chip until a manual refresh re-fetches the FM.
+        try:
+            refreshed = await FlowMessage.get_one({"id": fm_id})
+            if refreshed:
+                await refreshed.notify_updated()
+        except Exception as nerr:
+            logger.warning("[bundle] post-unpack notify failed fm=%s: %s", fm_id, nerr)
         return True
     except FlowMessageExistsError:
         return True  # already materialized — counts as success

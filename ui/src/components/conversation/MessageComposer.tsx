@@ -76,13 +76,15 @@ export function MessageComposer({ conversationId, disabled, onSent, queuedPrompt
       }
       return next;
     });
-    if (tooBig.length > 0) {
-      setError(
-        tooBig.length === 1
+    // Fresh pick replaces the previous size-rejection notice; if the new
+    // selection has no over-limit files the warning clears.
+    setError(
+      tooBig.length === 0
+        ? null
+        : tooBig.length === 1
           ? `"${tooBig[0]}" is over ${MAX_FILE_SIZE_LABEL} and was not attached.`
           : `${tooBig.length} files over ${MAX_FILE_SIZE_LABEL} were not attached: ${tooBig.join(', ')}.`,
-      );
-    }
+    );
   };
 
   const removeFile = (index: number) => {
