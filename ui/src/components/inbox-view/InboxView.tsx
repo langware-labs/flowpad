@@ -166,14 +166,14 @@ function ConversationListRow({ conv, isFocused, viewMode, onArchive, onToggleRea
     return () => onVisibilityChange(convId, false);
   }, [convId, isHidden, onVisibilityChange]);
 
-  if (isHidden) return null;
-
   // Gmail-style sender column: comma-joined names of everyone who has
   // participated in the thread, with the latest sender first so the most
   // recent author is the lead name. Deduped case-insensitively.
   // Falls back to ``Unknown`` when neither the latest message nor any
   // participant has a name; invitation rows always render the canonical
   // ``Invitation`` placeholder so the violet mail-plus icon reads cleanly.
+  // MUST run before the `isHidden` early return so the hook order stays
+  // stable across visibility flips (Rules of Hooks).
   const participantNames = useMemo(() => {
     if (isInvitationRow) {
       const inviter = (firstMessage?.sender_name || '').trim();
@@ -195,6 +195,9 @@ function ConversationListRow({ conv, isFocused, viewMode, onArchive, onToggleRea
     }
     return names.length > 0 ? names : ['Unknown'];
   }, [isInvitationRow, firstMessage?.sender_name, latestMessage?.sender_name, conv.participants]);
+
+  if (isHidden) return null;
+
   const senderLabel = participantNames.join(', ');
   const count = pointers.length;
   const subject = isInvitationRow
