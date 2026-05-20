@@ -222,6 +222,45 @@ if _assets_path and _assets_path.exists():
     app.mount("/assets", StaticFiles(directory=str(_assets_path)), name="assets")
 
 
+# ── Root-level public files ──────────────────────────────────────────────────
+# Files in ``ui/public/`` end up at the root of the built ``dist/`` (and thus
+# at the root of ``flow_sdk/server/static/``). These are referenced from places
+# the JS bundle can't fingerprint — ``index.html`` itself (favicon, og:image)
+# and the ``ws-test.html`` dev page. JSX-imported icons live in
+# ``ui/src/assets/`` instead and are served via the hashed ``/assets/`` mount.
+#
+# Explicit list (no broad ``mount("/", ...)``) keeps the public surface
+# auditable: adding a new file requires editing this set.
+_PUBLIC_ROOT_FILES: tuple[str, ...] = ("favicon.ico", "logo.png", "ws-test.html")
+
+
+def _serve_public_file(name: str):
+    """Build a GET handler that returns ``static_root / name`` or 404."""
+    static_root = _assets_path.parent if _assets_path else None
+
+    async def _handler():
+        from fastapi.responses import FileResponse, HTMLResponse
+
+        if static_root is None:
+            return HTMLResponse(content="not found", status_code=404)
+        candidate = static_root / name
+        if not candidate.exists():
+            return HTMLResponse(content="not found", status_code=404)
+        return FileResponse(candidate)
+
+    return _handler
+
+
+if _assets_path and _assets_path.exists():
+    for _public_name in _PUBLIC_ROOT_FILES:
+        app.add_api_route(
+            f"/{_public_name}",
+            _serve_public_file(_public_name),
+            methods=["GET"],
+            include_in_schema=False,
+        )
+
+
 # ── Mount SDK static files (/sdk/flowpad-sdk.js) ─────────────────────────────
 def _get_sdk_path() -> Path | None:
     if getattr(sys, "frozen", False):

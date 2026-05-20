@@ -124,13 +124,22 @@ export async function loadProjectRoute(pointer: string | undefined): Promise<voi
       if (roomId) await tagShellWithRoom(shell, roomId);
     } catch (e) {
       if (!(e instanceof ProcessLoadError)) throw e;
-      if (e.kind === 'not_found') {
+      if (e.kind === 'entity_not_found') {
         toast({
           title: 'Session not found',
           description: 'Agentic process does not exist.',
           variant: 'destructive',
         });
-      } else if (e.kind === 'start_failed') {
+      } else if (e.kind === 'network_error') {
+        toast({
+          title: 'Couldn’t reach backend',
+          description: 'Try again in a moment.',
+          variant: 'destructive',
+        });
+      } else if (
+        e.kind === 'runtime_terminated' ||
+        e.kind === 'pty_attach_failed'
+      ) {
         toast({ ...describeProcessStartError(e.cause ?? e), variant: 'destructive' });
       } else {
         toast({

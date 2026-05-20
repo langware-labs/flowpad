@@ -16,7 +16,9 @@ export default defineConfig(({ mode }) => {
       __AUTH_PROVIDER__: JSON.stringify(env.AUTH_PROVIDER || 'local'),
       __DEPLOY_ENV__: JSON.stringify(env.DEPLOY_ENV || 'local'),
       __IS_PACKAGE__: JSON.stringify(!!isPackage),
-      __FLOWPAD_DEV__: JSON.stringify(env.FLOWPAD_DEV === 'true'),
+      // dev mode is a runtime localStorage flag — see dev-mode-context.tsx.
+      // Don't bake it into the bundle; that turned every published wheel into
+      // a dev-mode-on artifact regardless of the user's runtime.
       __CHECK_REFRESH_TOKEN__: JSON.stringify(env.VITE_CHECK_REFRESH_TOKEN === 'true'),
     },
     build: {
