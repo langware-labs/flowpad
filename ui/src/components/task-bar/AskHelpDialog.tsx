@@ -100,6 +100,10 @@ export function AskHelpDialog({ open, onClose }: AskHelpDialogProps) {
         status: 'to_do',
         spec_type: 'request',
         sender_name: localUser?.name ?? undefined,
+        // See SendSpecNotificationDialog: ``shared_by_id`` gates the
+        // SharedTaskView render in TasksViewer. Without it, opening the task
+        // page shows the generic edit form with empty fields.
+        shared_by_id: localUser?.id ?? undefined,
         recipient_email: recipientEmails[0],
         project_id: projectId,
       });

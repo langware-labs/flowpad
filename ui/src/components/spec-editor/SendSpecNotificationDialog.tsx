@@ -179,6 +179,12 @@ export function SendPlanNotificationDialog({
         status: 'to_do',
         spec_type: 'plan',
         sender_name: senderName.trim() || undefined,
+        // ``shared_by_id`` flags this Task as the recipient-facing notification
+        // task on both sides. ``TasksViewer`` gates the SharedTaskView render
+        // on it being non-null, so without it the recipient (and the sender
+        // when they open the task page) see the generic edit form with empty
+        // fields instead of the spec-bearing shared-task layout.
+        shared_by_id: localUser?.id ?? undefined,
         recipient_email: recipientEmails[0],
         project_id: projectId,
         my_process_id: processId ?? null,
