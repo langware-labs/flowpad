@@ -352,7 +352,6 @@ class CloudManager extends EventEmitter {
 
     if (msg.status === 'success' && msg.user) {
       const user = await this._setLoggedIn(msg.user as Record<string, unknown>);
-      void this._refreshFromStatus();
       resolve({ status: 'logged_in', user });
     } else {
       const message = msg.message ?? 'Authentication was rejected';
