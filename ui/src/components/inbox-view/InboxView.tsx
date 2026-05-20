@@ -168,9 +168,31 @@ function ConversationListRow({ conv, isFocused, viewMode, onArchive, onToggleRea
 
   if (isHidden) return null;
 
-  const sender = isInvitationRow
-    ? 'Invitation'
-    : (latestMessage?.sender_name?.trim() || 'Unknown');
+  // Gmail-style sender column: comma-joined names of everyone who has
+  // participated in the thread, with the latest sender first so the most
+  // recent author is the lead name. Deduped case-insensitively.
+  // Falls back to ``Unknown`` when neither the latest message nor any
+  // participant has a name; invitation rows always render the canonical
+  // ``Invitation`` placeholder so the violet mail-plus icon reads cleanly.
+  const participantNames = useMemo(() => {
+    if (isInvitationRow) return ['Invitation'];
+    const names: string[] = [];
+    const seen = new Set<string>();
+    const pushName = (raw: string | null | undefined) => {
+      const trimmed = (raw || '').trim();
+      if (!trimmed) return;
+      const key = trimmed.toLowerCase();
+      if (seen.has(key)) return;
+      names.push(trimmed);
+      seen.add(key);
+    };
+    pushName(latestMessage?.sender_name);
+    for (const p of (conv.participants ?? [])) {
+      pushName(p?.name || (p?.email ? p.email.split('@')[0] : ''));
+    }
+    return names.length > 0 ? names : ['Unknown'];
+  }, [isInvitationRow, latestMessage?.sender_name, conv.participants]);
+  const senderLabel = participantNames.join(', ');
   const count = pointers.length;
   const subject = isInvitationRow
     ? 'You’ve been invited to a conversation'
@@ -187,6 +209,13 @@ function ConversationListRow({ conv, isFocused, viewMode, onArchive, onToggleRea
   const handleClick = () => {
     if (isInvitationRow) return; // primary action is Accept
     if (!conv.id) return;
+    // Auto-mark the latest message as read on open — Gmail behavior. Without
+    // this the row stays bold until the user clicks the explicit
+    // mark-read button, which makes the "is it read?" cue useless. Fire and
+    // forget; refetch in the handler will flip ``isUnread`` for the row.
+    if (latestMessage?.id && !latestMessage.is_read) {
+      void onToggleRead(latestMessage.id, true);
+    }
     navigation.openDock(DockPointer.forConversation(conv.id));
   };
 
@@ -221,14 +250,19 @@ function ConversationListRow({ conv, isFocused, viewMode, onArchive, onToggleRea
     >
       <span
         data-testid="inbox-row-sender"
-        className={`flex w-44 shrink-0 items-center gap-1 truncate ${isUnread ? 'font-semibold text-foreground' : 'text-muted-foreground'}`}
+        // ``title`` doubles as the trim-overflow tooltip. Browsers only show
+        // the native tooltip when the user hovers, so always setting it is
+        // cheap; when the visible label already shows the full list, the
+        // hover-text repeats it harmlessly.
+        title={senderLabel}
+        className={`flex w-44 shrink-0 items-center gap-1 ${isUnread ? 'font-semibold text-foreground' : 'text-muted-foreground'}`}
       >
         {isInvitationRow && (
           <MailPlus className="h-3.5 w-3.5 flex-shrink-0 text-violet-500" aria-label="invitation" />
         )}
-        <span className="truncate">{sender}</span>
+        <span className="min-w-0 flex-1 truncate">{senderLabel}</span>
         {!isInvitationRow && count > 1 && (
-          <span className="ml-1 font-normal text-muted-foreground">({count})</span>
+          <span className="ml-1 shrink-0 font-normal text-muted-foreground">({count})</span>
         )}
       </span>
       <span className="min-w-0 flex-1 truncate" data-testid="inbox-row-subject-line">
