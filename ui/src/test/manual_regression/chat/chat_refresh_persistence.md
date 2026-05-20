@@ -1,3 +1,7 @@
+---
+id: 8b382210-9ee7-547b-b598-91590abf8351
+---
+
 test 1: Session resets after page refresh
 - navigate to {APP_URL}/
 - fill landing input with "refresh test"

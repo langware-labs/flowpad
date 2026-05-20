@@ -13,7 +13,7 @@ import { AttachmentType } from '@sdk/entities/flow-message';
 import type { ITask } from '@sdk/entities/task';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useLocalUser } from './useLocalUser';
-import { buildContextEntityLines } from './prompt-building';
+import { buildSharedAndPrivateContextSection } from './prompt-building';
 
 interface UseMyProcessOptions {
   task: Task;
@@ -44,6 +44,7 @@ export async function buildReceiverContextPrompt(
   task: Task,
   conversationId: string,
   senderName: string | undefined,
+  privateTypeIds: readonly TypeId[] = [],
 ): Promise<string> {
   const conv = await dataManager.getByTypeId<Conversation>(new TypeId(Conversation.type, conversationId));
   const pointers = conv?.conversationMessageIds ?? [];
@@ -113,29 +114,33 @@ export async function buildReceiverContextPrompt(
     parts.push('', 'Other attachments:', ...otherFileLines);
   }
 
-  // Local on-disk paths for every Flowpad entity referenced in the
-  // conversation's context — same convention Approve & Execute uses
-  // (`<recordsRoot>/<type>/<type>-@<id>/metadata.json`). Collect from every
-  // FlowMessage's contextEntities plus the Task itself, dedupe by stringified
-  // TypeId, then emit via the shared helper.
-  const referencedTypeIds = new Map<string, TypeId>();
-  const addTypeId = (t: TypeId | null | undefined) => {
+  // Local on-disk paths for every Flowpad entity referenced in this
+  // conversation, split into Shared (what arrived on the FlowMessages and
+  // the Task) and Private (what the local user attached under Private
+  // Context). Same `<recordsRoot>/<type>/<type>-@<id>/metadata.json`
+  // convention Approve & Execute uses; the shared helper handles dedupe
+  // and the recordsRoot fallback.
+  const sharedTypeIds = new Map<string, TypeId>();
+  const addShared = (t: TypeId | null | undefined) => {
     if (!t) return;
     const key = t.toString();
-    if (!referencedTypeIds.has(key)) referencedTypeIds.set(key, t);
+    if (!sharedTypeIds.has(key)) sharedTypeIds.set(key, t);
   };
   for (const fm of messages) {
     if (!fm) continue;
-    for (const t of fm.contextEntities ?? []) addTypeId(t);
+    for (const t of fm.sharedContextEntities ?? []) addShared(t);
   }
-  for (const t of task.contextEntities ?? []) addTypeId(t);
-  const contextEntityLines = buildContextEntityLines(Array.from(referencedTypeIds.values()));
-  if (contextEntityLines.length > 0) {
-    parts.push(
-      '',
-      "Context entities saved locally (read each one's metadata.json for details):",
-      ...contextEntityLines,
-    );
+  for (const t of task.sharedContextEntities ?? []) addShared(t);
+  // Drop anything that's already in private to avoid duplicates across the
+  // two sections — private wins for the local user's view.
+  const privateKeys = new Set(privateTypeIds.map((t) => t.toString()));
+  for (const k of privateKeys) sharedTypeIds.delete(k);
+  const ctxSection = buildSharedAndPrivateContextSection(
+    Array.from(sharedTypeIds.values()),
+    privateTypeIds,
+  );
+  if (ctxSection) {
+    parts.push('', ctxSection);
   }
 
   // Closing instruction only fires when an actual Spec is attached — without

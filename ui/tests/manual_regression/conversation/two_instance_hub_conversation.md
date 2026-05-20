@@ -1,3 +1,7 @@
+---
+id: d542a5bb-cbb0-5ce3-8e7f-77d28df66db1
+---
+
 # Two-instance cloud-login isolation + real conversation through local hub
 
 Verifies that two flow-cli desktop instances on the same machine can hold

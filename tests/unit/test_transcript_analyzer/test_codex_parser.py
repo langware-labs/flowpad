@@ -15,6 +15,7 @@ from flow_sdk.transcript_analyzer import (
     UnknownEntry,
     UserMessageEntry,
 )
+from flow_sdk.transcript_analyzer import TranscriptFormat
 
 
 # ── stream-event shape ────────────────────────────────────────────────────────
@@ -22,6 +23,16 @@ from flow_sdk.transcript_analyzer import (
 
 def test_stream_session_id_from_thread_started(codex_stream_jsonl):
     t = AgentTranscript("codex", codex_stream_jsonl)
+    assert t.session_id == "019dddd0-1234-7000-9000-000000000001"
+
+
+def test_stream_parser_can_be_selected_by_format(codex_stream_jsonl):
+    t = AgentTranscript(
+        "codex",
+        codex_stream_jsonl,
+        transcript_format=TranscriptFormat.CODEX_STREAM,
+    )
+    assert t.prompts == []
     assert t.session_id == "019dddd0-1234-7000-9000-000000000001"
 
 
@@ -91,6 +102,45 @@ def test_stream_session_id_propagated_to_all_entries(codex_stream_jsonl):
 def test_rollout_session_id_from_session_meta(codex_rollout_jsonl):
     t = AgentTranscript("codex", codex_rollout_jsonl)
     assert t.session_id == "019cdd6b-49a7-7480-9da1-aaaaaaaaaaaa"
+
+
+def test_rollout_parser_can_be_selected_by_format(codex_rollout_jsonl):
+    t = AgentTranscript(
+        "codex",
+        codex_rollout_jsonl,
+        transcript_format=TranscriptFormat.CODEX_ROLLOUT,
+    )
+    prompts = t.prompts
+    assert len(prompts) == 1
+    assert prompts[0].text == "Add a small helper function that prints hello."
+
+
+def test_rollout_prompts_skip_codex_prelude_blocks(tmp_path):
+    transcript_path = tmp_path / "rollout.jsonl"
+    transcript_path.write_text(
+        "\n".join([
+            (
+                '{"timestamp":"2026-03-11T15:02:01.000Z","type":"session_meta",'
+                '"payload":{"id":"sid","cwd":"/repo"}}'
+            ),
+            (
+                '{"timestamp":"2026-03-11T15:02:02.000Z","type":"response_item",'
+                '"payload":{"type":"message","role":"user","content":['
+                '{"type":"input_text","text":"<codex-prelude>internal</codex-prelude>"},'
+                '{"type":"input_text","text":"Real user prompt"}]}}'
+            ),
+        ])
+        + "\n",
+        encoding="utf-8",
+    )
+
+    t = AgentTranscript(
+        "codex",
+        transcript_path,
+        transcript_format=TranscriptFormat.CODEX_ROLLOUT,
+    )
+
+    assert [p.text for p in t.prompts] == ["Real user prompt"]
 
 
 def test_rollout_user_and_assistant_messages(codex_rollout_jsonl):

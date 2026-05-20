@@ -11,7 +11,7 @@ from typer.testing import CliRunner
 
 from flow_sdk._version import __version__
 from flow_sdk.cli.flow_cli import app
-from flow_sdk.flowpad_types.enums import get_machine_id
+from flow_sdk.utils.machine_id import get_machine_id
 
 runner = CliRunner()
 
@@ -41,6 +41,28 @@ def test_upgrade_info_contains_version_hash():
     result = runner.invoke(app, ["upgrade", "--info"])
     data = json.loads(result.output.strip())
     assert data["version_hash"] == get_machine_id()
+
+
+def test_version_hash_stable_across_calls():
+    """get_machine_id is cache-backed — two calls return the SAME value
+    even after invoking the CLI between them (file-based cache)."""
+    first = get_machine_id()
+    runner.invoke(app, ["upgrade", "--info"])
+    second = get_machine_id()
+    assert first == second
+
+
+def test_version_hash_persisted_to_global_system_json():
+    """The value lives in <flow_home>/global/system.json keyed as
+    "machine_id" — cross-instance shared state survives instance
+    switches and package upgrades."""
+    from flow_sdk.instance_settings import get_instance_settings
+
+    val = get_machine_id()
+    cache_path = get_instance_settings().flow_home / "global" / "system.json"
+    assert cache_path.is_file(), f"cache not written at {cache_path}"
+    data = json.loads(cache_path.read_text())
+    assert data["machine_id"] == val
 
 
 def test_upgrade_info_contains_status_fields():

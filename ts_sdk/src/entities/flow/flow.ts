@@ -995,7 +995,10 @@ export class Flow extends APIEntity<Flow> {
   }
 
   get projectTypeId(): TypeId | undefined {
-    return this.expand?.auth_scopes?.flat().find((scope) => scope.type === 'project');
+    const projectStr = this.expand?.auth_scopes
+      ?.flat()
+      .find((scope) => scope.startsWith(`project${TypeId.DELIMITER}`));
+    return projectStr ? new TypeId(projectStr) : undefined;
   }
 
   get history(): FlowData[] {

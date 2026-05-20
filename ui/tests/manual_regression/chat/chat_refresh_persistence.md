@@ -1,3 +1,7 @@
+---
+id: 3c042acc-7361-5f80-a50e-6d39f937698d
+---
+
 test 1: Shell session tab persists after page refresh
 - navigate to {APP_URL}/dock/shell/new_terminal
 - wait for terminal to be ready (element with active terminal panel `[data-testid="terminal-panel"][data-active="true"]` shows xterm)

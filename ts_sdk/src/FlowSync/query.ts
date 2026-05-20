@@ -25,15 +25,28 @@ export class ExpressionNode {
     if (!data.operands) {
       const keys = Object.keys(data);
       if (keys.length === 1) {
+        // Single-key plain map → leaf $EQ with [key, value] operands.
         const objectKey = keys[0];
         this.operands = [objectKey, data[objectKey]];
       } else {
-        const opList = keys.map((key) => ({ [key]: data[key] }));
-        data = { operands: opList, op: '$AND' };
-        this.operands = data.operands;
+        // Multi-key plain map → $AND of $EQ children. Each {k:v} pair
+        // must itself be an ExpressionNode so `validateExpressionNode`'s
+        // recursion lands on a node with a real `op` instead of reading
+        // `op` off a plain object and throwing "Unsupported operation:
+        // undefined" on every WS data_op_msg fan-out.
+        this.operands = keys.map((key) => new ExpressionNode({ [key]: data[key] }));
+        data = { operands: this.operands, op: '$AND' };
       }
     } else {
-      this.operands = data.operands;
+      // Pre-shaped operands path (e.g. an explicit `{op, operands}` value
+      // or a deserialized filter). Wrap any plain-object operands so the
+      // tree is uniformly ExpressionNode-or-primitive-leaf — no half-typed
+      // nodes that pass `instanceof` casts but lack `op`/`operands`.
+      this.operands = data.operands.map((operand: any) => {
+        if (operand instanceof ExpressionNode) return operand;
+        if (typeof operand !== 'object' || operand === null) return operand;
+        return new ExpressionNode(operand);
+      });
     }
     this.op = data.op || '$EQ';
   }

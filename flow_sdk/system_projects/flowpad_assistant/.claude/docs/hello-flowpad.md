@@ -1,8 +1,9 @@
 ---
-title: "Hello from Flowpad"
+id: 2461e169-3e28-5cbf-9eb9-e40dc8643b05
+title: Hello from Flowpad
 ---
 
-# [CLAUDE.md](/dock/assets/wiki/CLAUDE.md)Hello from Flowpad
+# Hello from Flowpad
 
 Welcome to the Flowpad Assistant workspace. This is where you'll find
 docs, skills, and agents that ship with the SDK.

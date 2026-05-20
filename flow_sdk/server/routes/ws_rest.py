@@ -61,6 +61,14 @@ async def setup_rest_context(connection_id: str, message_json: dict) -> Executio
         context_name="WS_REST",
     )
 
+    # Publish the context BEFORE reading request info. get_current_request_info()
+    # resolves via the execution-context contextvar — if we set it only at the
+    # end (as before), the auth block below mutated a STALE RequestInfo from a
+    # prior WS message (or None on the first), leaving THIS request's
+    # request_info.user unset. handle_request then ran with no authenticated
+    # user, so every mutation action (e.g. add_message) failed auth.
+    set_execution_context(execution_context)
+
     # Set up local auth (allow all for minihub)
     req_info = get_current_request_info()
     if req_info:
@@ -100,7 +108,6 @@ async def setup_rest_context(connection_id: str, message_json: dict) -> Executio
         from flow_sdk.core.policy import PolicyResolver
         req_info.policies = PolicyResolver()
 
-    set_execution_context(execution_context)
     return execution_context
 
 
@@ -114,14 +121,15 @@ async def handle_rest_message(connection_id: str, websocket: WebSocket, message_
 
     try:
         execution_context = await setup_rest_context(connection_id, message_json)
-        req_info = get_current_request_info()
-        if not req_info:
-            raise RuntimeError("Request info not found")
+        async with execution_context.transaction_scope():
+            req_info = get_current_request_info()
+            if not req_info:
+                raise RuntimeError("Request info not found")
 
-        if not req_info.request:
-            raise RuntimeError("Request not found")
+            if not req_info.request:
+                raise RuntimeError("Request not found")
 
-        response = await handle_request(req_info.request)
+            response = await handle_request(req_info.request)
 
     except Exception as ex:
         logger.error(f"Error handling REST message: {ex}")
@@ -129,9 +137,6 @@ async def handle_rest_message(connection_id: str, websocket: WebSocket, message_
         response = ApiFailResponse[str](status_code=403, message="Request error", data=str(ex))
 
     finally:
-        if execution_context is not None:
-            await execution_context.cleanup()
-
         if isinstance(response, ApiResponse):
             json_data = response.model_dump()
 

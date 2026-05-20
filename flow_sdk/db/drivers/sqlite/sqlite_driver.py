@@ -665,42 +665,177 @@ class SQLiteDBDriver(DBDriver):
             logger.warning("fts_clear() failed: %s", e)
             return 0
 
-    async def count_entities_by_type(self, type_name: str | None = None) -> int:
-        """Count entities, optionally filtered by type."""
+    @staticmethod
+    def _scope_sql_clause(
+        scope: "object | None",
+        bindings: dict,
+    ) -> str:
+        """Translate the server-side ScopeFilter predicate (search_filters.py)
+        into a SQL fragment for ANDing into WHERE clauses.
+
+        Mirrors ``apply_scope_filter`` exactly:
+          - scope='user'    kept iff sf.user
+          - scope='project' kept iff project_id IN sf.projects
+          - scope is empty/missing → always kept (unscoped types)
+
+        Returns "" when scope is None (caller-side opt-out). Mutates
+        ``bindings`` to add any new bind parameters.
+        """
+        if scope is None:
+            return ""
+        keep_user = bool(getattr(scope, "user", False))
+        projects = tuple(getattr(scope, "projects", ()) or ())
+        clauses: list[str] = [
+            "json_extract(data, '$.scope') IS NULL",
+            "json_extract(data, '$.scope') = ''",
+        ]
+        if keep_user:
+            clauses.append("json_extract(data, '$.scope') = 'user'")
+        if projects:
+            placeholders = []
+            for i, pid in enumerate(projects):
+                key = f"__sf_pid_{i}"
+                bindings[key] = pid
+                placeholders.append(f":{key}")
+            clauses.append(
+                "(json_extract(data, '$.scope') = 'project' AND "
+                f"json_extract(data, '$.project_id') IN ({','.join(placeholders)}))"
+            )
+        # Without `user` and without any projects, the only kept rows are the
+        # unscoped ones (scope IS NULL / '').
+        return " AND (" + " OR ".join(clauses) + ")"
+
+    async def count_entities_by_type(
+        self,
+        type_name: str | None = None,
+        scope: "object | None" = None,
+    ) -> int:
+        """Count entities, optionally filtered by type and/or ScopeFilter."""
         if not self.session_factory:
             return 0
+        bindings: dict = {}
+        type_clause = ""
+        if type_name:
+            type_clause = "WHERE type = :type"
+            bindings["type"] = type_name
+        scope_clause = self._scope_sql_clause(scope, bindings)
+        if scope_clause and not type_clause:
+            # Need a WHERE for the AND-prefix to bind correctly.
+            scope_clause = " WHERE " + scope_clause.lstrip(" AND ")
+        sql = f"SELECT COUNT(*) FROM entities {type_clause}{scope_clause}"
         async with self._session_ctx() as session:
-            if type_name:
-                result = await session.execute(
-                    text("SELECT COUNT(*) FROM entities WHERE type = :type"), {"type": type_name}
-                )
-            else:
-                result = await session.execute(text("SELECT COUNT(*) FROM entities"))
+            result = await session.execute(text(sql), bindings)
             return result.scalar() or 0
 
-    async def delete_entities_by_type(self, type_name: str | None = None) -> int:
-        """Delete entities (and their FTS rows) by type. None = all entities."""
+    async def count_orphans_by_type(
+        self,
+        type_name: str | None = None,
+        scope: "object | None" = None,
+    ) -> int:
+        """Count orphan entities, optionally filtered by type and/or ScopeFilter.
+
+        Orphan = a row whose Layer 1 source file no longer exists. The flag
+        lives inside the JSON `data` blob (written by the indexer's
+        `_mark_orphans_in_db`), so we read it via `json_extract`. Same
+        pattern as `_load_entity_state_map` for scope/project_id.
+        """
         if not self.session_factory:
             return 0
+        bindings: dict = {}
+        type_clause = ""
+        if type_name:
+            type_clause = "type = :type AND "
+            bindings["type"] = type_name
+        scope_clause = self._scope_sql_clause(scope, bindings)
+        sql = (
+            f"SELECT COUNT(*) FROM entities WHERE {type_clause}"
+            f"json_extract(data, '$.orphan') = 1{scope_clause}"
+        )
         async with self._session_ctx() as session:
-            if type_name:
-                await session.execute(
-                    text(
-                        "DELETE FROM entities_fts WHERE entity_id IN "
-                        "(SELECT id FROM entities WHERE type = :type)"
-                    ),
-                    {"type": type_name},
-                )
-                result = await session.execute(
-                    text("DELETE FROM entities WHERE type = :type"), {"type": type_name}
-                )
-            else:
-                # Preserve named (builtin) entities like @local — only clear anonymous indexed records
-                await session.execute(text(
-                    "DELETE FROM entities_fts WHERE entity_id IN "
-                    "(SELECT id FROM entities WHERE uname IS NULL)"
-                ))
-                result = await session.execute(text("DELETE FROM entities WHERE uname IS NULL"))
+            result = await session.execute(text(sql), bindings)
+            return result.scalar() or 0
+
+    async def mark_orphans_by_type(
+        self,
+        type_name: str,
+        ids: list[str],
+        orphaned: bool,
+        orphan_since_iso: str | None = None,
+    ) -> int:
+        """Bulk-update the JSON `data.orphan` (and `data.orphan_since`) flag
+        on the given entity ids of a given type.
+
+        Direct SQL — bypasses the ORM's per-class `get_by_id` filter, which
+        otherwise misses rows for record types that have no typed entity
+        subclass registered (the typical case for fs_records like
+        `markdown`, `claude_session`, `skill`, etc.).
+
+        `orphan_since` is preserved if the row is already marked orphan; only
+        first-time orphans get the timestamp. When clearing the flag, both
+        the `orphan` boolean and the `orphan_since` key are removed/falsed.
+
+        Returns the number of rows actually changed.
+        """
+        if not ids or not self.session_factory:
+            return 0
+        placeholders = ",".join(f":id_{i}" for i in range(len(ids)))
+        bindings: dict[str, str | None] = {f"id_{i}": v for i, v in enumerate(ids)}
+        bindings["type"] = type_name
+        if orphaned:
+            bindings["since"] = orphan_since_iso
+            sql = (
+                "UPDATE entities "
+                "SET data = json_set("
+                "    json_set(data, '$.orphan', json('true')), "
+                "    '$.orphan_since', COALESCE(json_extract(data, '$.orphan_since'), :since)"
+                ") "
+                f"WHERE type = :type AND id IN ({placeholders}) "
+                "  AND (json_extract(data, '$.orphan') IS NULL "
+                "       OR json_extract(data, '$.orphan') != 1)"
+            )
+        else:
+            sql = (
+                "UPDATE entities "
+                "SET data = json_set("
+                "    json_remove(data, '$.orphan_since'), "
+                "    '$.orphan', json('false')"
+                ") "
+                f"WHERE type = :type AND id IN ({placeholders}) "
+                "  AND json_extract(data, '$.orphan') = 1"
+            )
+        async with self._session_ctx() as session:
+            r = await session.execute(text(sql), bindings)
+            return r.rowcount or 0
+
+    async def delete_entities_by_type(
+        self,
+        type_name: str | None = None,
+        scope: "object | None" = None,
+    ) -> int:
+        """Delete entities (and their FTS rows) by type, optionally narrowed
+        by ScopeFilter. None for both = all anonymous entities."""
+        if not self.session_factory:
+            return 0
+        bindings: dict = {}
+        if type_name:
+            bindings["type"] = type_name
+            base_where = "type = :type"
+        else:
+            # Preserve named (builtin) entities like @local — only clear anonymous indexed records
+            base_where = "uname IS NULL"
+        scope_clause = self._scope_sql_clause(scope, bindings)
+        where_clause = base_where + scope_clause
+        async with self._session_ctx() as session:
+            await session.execute(
+                text(
+                    f"DELETE FROM entities_fts WHERE entity_id IN "
+                    f"(SELECT id FROM entities WHERE {where_clause})"
+                ),
+                bindings,
+            )
+            result = await session.execute(
+                text(f"DELETE FROM entities WHERE {where_clause}"), bindings
+            )
             return result.rowcount or 0
 
     async def create_db(self):
@@ -1108,11 +1243,7 @@ class SQLiteDBDriver(DBDriver):
 
             schema = result.scalar_one_or_none()
             if not schema:
-                # B1-probe: when get_by_id misses, also surface what IS in the table for that id
-                # (regardless of type) and whether the type has any rows at all. Helps tell
-                # type-mismatch from absent-row from wrong-DB-file.
-                if property_key == "id":
-                    import logging as _logging
+                if property_key == "id" and logger.isEnabledFor(logging.DEBUG):
                     by_id_only = await session.execute(
                         select(EntitySchema.id, EntitySchema.type).where(EntitySchema.id == property_value)
                     )
@@ -1121,8 +1252,8 @@ class SQLiteDBDriver(DBDriver):
                         select(EntitySchema.id).where(EntitySchema.type == entity_type).limit(3)
                     )
                     sample_ids = [r[0] for r in by_type_count.all()]
-                    _logging.warning(
-                        f"[B1-probe] sqlite.get_by_prop miss: query type={entity_type!r} id={property_value!r} → "
+                    logger.debug(
+                        f"sqlite.get_by_prop miss: query type={entity_type!r} id={property_value!r} → "
                         f"rows_with_this_id_any_type={[(r[0], r[1]) for r in rows_for_id]} "
                         f"sample_ids_for_this_type={sample_ids}"
                     )

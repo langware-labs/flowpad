@@ -1,41 +1,39 @@
 ---
+id: 7953ed01-9be0-5756-b063-39298f6c5186
 name: flowpad-assistance
-description: |
-  Flowpad assistance — drives the Flowpad app on behalf of the user. Supported actions:
-    • context — read what the user is currently looking at (current project,
-      process, workspace, etc.) so other actions can compose without asking
-      for an id. Triggered by phrases like "current X", "this X", "the
-      one I'm in".
-    • navigate — drive the active browser tab to a Flowpad entity by TypeId
-      (e.g. "shell-<uuid>", "markdown-<uuid>", "project-<uuid>",
-      "agentic_process-<uuid>"). Triggered when the user asks to open, show,
-      navigate to, or jump to an entity. See ``navigate.md``.
-    • records — entities/records CRUD. Discover types via ``flow schema list``,
-      get the JSON shape via ``flow schema info <type>``, materialize a
-      record on disk, then run ``flow record index <path>`` to persist it.
-      Triggered by "create a task / skill / agent / workflow", "make a new
-      X", "add an X". See ``records.md``.
-    • search — Search local files, skills, agents, specs, plans and other
-      assets via ``flow record search <query> <time> <limit>`` (SQLite FTS5).
-      Use this whenever the user asks to find / look up / show / search for
-      something without giving an explicit TypeId. See ``search.md``.
+description: "Flowpad assistance — drives the Flowpad app on behalf of the user. Supported\
+  \ actions:\n  • context — read what the user is currently looking at (current project,\n\
+  \    process, workspace, etc.) so other actions can compose without asking\n   \
+  \ for an id. Triggered by phrases like \"current X\", \"this X\", \"the\n    one\
+  \ I'm in\".\n  • navigate — drive the active browser tab to a Flowpad entity by\
+  \ TypeId\n    (e.g. \"shell-<uuid>\", \"markdown-<uuid>\", \"project-<uuid>\",\n\
+  \    \"agentic_process-<uuid>\"). Triggered when the user asks to open, show,\n\
+  \    navigate to, or jump to an entity. See ``navigate.md``.\n  • records — entities/records\
+  \ CRUD. Discover types via ``flow schema list``,\n    get the JSON shape via ``flow\
+  \ schema info <type>``, materialize a\n    record on disk, then run ``flow record\
+  \ index <path>`` to persist it.\n    Triggered by \"create a task / skill / agent\
+  \ / workflow\", \"make a new\n    X\", \"add an X\". See ``records.md``.\n  • search\
+  \ — Search local files, skills, agents, specs, plans and other\n    assets via ``flow\
+  \ record search <query> <time> <limit>`` (SQLite FTS5).\n    Use this whenever the\
+  \ user asks to find / look up / show / search for\n    something without giving\
+  \ an explicit TypeId. See ``search.md``.\n"
 tags:
-  - flowpad
-  - ui
-  - navigation
-  - context
-  - records
-  - search
+- flowpad
+- ui
+- navigation
+- context
+- records
+- search
 allowed-tools:
-  - Bash(flow context list:*)
-  - Bash(flow navigate entity:*)
-  - Bash(flow schema list:*)
-  - Bash(flow schema info:*)
-  - Bash(flow record index:*)
-  - Bash(flow record search:*)
-  - Read
-  - Write
-  - Edit
+- Bash(flow context list:*)
+- Bash(flow navigate entity:*)
+- Bash(flow schema list:*)
+- Bash(flow schema info:*)
+- Bash(flow record index:*)
+- Bash(flow record search:*)
+- Read
+- Write
+- Edit
 ---
 
 # Flowpad assistance

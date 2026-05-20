@@ -1,3 +1,7 @@
+---
+id: 502000ee-9748-50be-8a2e-8f334b278ae2
+---
+
 # Terminal Toolbars
 
 Reference for the current terminal toolbar and session controls in the frontend.

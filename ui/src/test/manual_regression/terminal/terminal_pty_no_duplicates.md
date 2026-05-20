@@ -1,3 +1,7 @@
+---
+id: 306a8a4d-8c99-55ec-8e8f-c70a20e56af9
+---
+
 test 1: Claude CLI terminal has no duplicated lines or escape artifacts
 - navigate to /dock/shell/new_terminal then click the Start Claude button (data-testid="start-claude-button")
 - wait for the Claude CLI to start and display its banner

@@ -11,10 +11,13 @@ URL structure follows the Flowpad Hub API guidelines:
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional
+import uuid as _uuid
+from typing import Any, Awaitable, Callable, Optional
 
 import httpx
 
+from flow_sdk.cloud_client import ApiConfig, FlowpadClient
+from flow_sdk.cloud_client.client_hooks import HubAuthExpiredError
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 
 logger = logging.getLogger(__name__)
@@ -52,6 +55,11 @@ def _extract_reason(resp: httpx.Response) -> str:
     if text:
         return text[:300]
     return f"HTTP {resp.status_code}"
+
+
+# An async progress callback: ``await on_progress(bytes_done, bytes_total)``.
+# bytes_total is 0 when the size is unknown (no Content-Length on a download).
+ProgressCallback = Callable[[int, int], Awaitable[None]]
 
 
 def hub_base_url() -> Optional[str]:
@@ -111,15 +119,6 @@ def hub_graph_url(
     return f"{base}{full_path}"
 
 
-def _auth_headers() -> dict[str, str]:
-    import os
-    api_key = os.environ.get("FLOWPAD_CLOUD_API_KEY") or None
-    if not api_key:
-        from flow_sdk.cli.auth.hub_login import get_api_key
-        api_key = get_api_key()
-    return {"Authorization": f"Bearer {api_key}"} if api_key else {}
-
-
 async def hub_get(
     entity_type: BuiltinEntityType,
     entity_id: str | None = None,
@@ -129,6 +128,7 @@ async def hub_get(
     scope: list[tuple[str, str]] | None = None,
     params: dict[str, str] | None = None,
     raw: bool = False,
+    on_progress: ProgressCallback | None = None,
 ) -> Optional[dict[str, Any] | bytes]:
     """GET a hub graph endpoint. Returns the response on success, None on failure.
 
@@ -142,16 +142,51 @@ async def hub_get(
         scope:       Optional list of (entity_type, entity_id) pairs that prefix the path.
         params:      Optional query parameters (e.g. {"since": "<iso-timestamp>"}).
         raw:         If True, return raw bytes instead of parsing JSON (for file downloads).
+        on_progress: Optional async callback fired as bytes land — requires raw=True.
+                     When set the body is streamed (not buffered whole) and the
+                     callback receives (bytes_done, bytes_total); bytes_total is 0
+                     when the hub sends no Content-Length. Throttled to ~1% steps.
     """
     url = hub_graph_url(entity_type, entity_id, action, sub_path, scope=scope)
     if not url:
         logger.debug("[hub] FLOWPAD_HUB_URL not set — skipping GET %s/%s", entity_type, entity_id)
         return None
+    timeout = httpx.Timeout(connect=10, write=10, read=600, pool=5) if raw else httpx.Timeout(10)
+    if raw and on_progress is not None:
+        try:
+            async with FlowpadClient(ApiConfig.from_env()) as client:
+                logger.info("[hub] GET (stream) %s", url)
+                stream_cm = await client.open_stream("GET", url, params=params or {}, timeout=timeout)
+                async with stream_cm as resp:
+                    if resp.status_code != 200:
+                        logger.warning("[hub] GET %s returned %s", url, resp.status_code)
+                        return None
+                    total = int(resp.headers.get("Content-Length") or 0)
+                    buf = bytearray()
+                    reported = 0
+                    async for chunk in resp.aiter_bytes():
+                        buf.extend(chunk)
+                        done = len(buf)
+                        step = max(total // 100, 256 * 1024) if total else 256 * 1024
+                        if done - reported >= step or (total and done >= total):
+                            reported = done
+                            try:
+                                await on_progress(done, total)
+                            except Exception:  # noqa: BLE001
+                                pass
+                    if reported != len(buf):
+                        try:
+                            await on_progress(len(buf), total or len(buf))
+                        except Exception:  # noqa: BLE001
+                            pass
+                    return bytes(buf)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[hub] GET (stream) %s error (non-fatal): %s", url, e)
+            return None
     try:
-        timeout = httpx.Timeout(connect=10, write=10, read=600, pool=5) if raw else httpx.Timeout(10)
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        async with FlowpadClient(ApiConfig.from_env()) as client:
             logger.info("[hub] GET %s params=%s", url, params)
-            resp = await client.get(url, headers=_auth_headers(), params=params or {})
+            resp = await client.request("GET", url, params=params or {}, timeout=timeout)
             if resp.status_code == 200:
                 result = resp.content if raw else resp.json().get("data") or {}
                 return result
@@ -171,6 +206,7 @@ async def hub_post(
     *,
     scope: list[tuple[str, str]] | None = None,
     files: dict | None = None,
+    on_progress: ProgressCallback | None = None,
 ) -> Optional[dict[str, Any]]:
     """POST to a hub graph endpoint. Returns the response `data` dict on success.
 
@@ -186,22 +222,32 @@ async def hub_post(
         sub_path:    Optional sub-path appended after action (e.g. "upload/report.pdf" for fs).
         scope:       Optional list of (entity_type, entity_id) pairs that prefix the path.
         files:       If set, sends a multipart request instead of JSON (for file uploads).
+                     Shape: ``{field: (filename, bytes, content_type)}`` — single field.
+        on_progress: Optional async callback fired as upload bytes go out —
+                     requires files. When set the multipart envelope is hand-built
+                     and streamed so the callback receives (bytes_done, bytes_total)
+                     between chunks. Throttled to ~1% steps.
     """
     url = hub_graph_url(entity_type, entity_id, action, sub_path, scope=scope)
     if not url:
         logger.debug("[hub] FLOWPAD_HUB_URL not set — skipping POST %s/%s", entity_type, entity_id)
         return None
     timeout = httpx.Timeout(connect=10, write=600, read=60, pool=5) if files else httpx.Timeout(10)
+    if files and on_progress is not None:
+        return await _hub_post_streamed_upload(url, files, timeout, on_progress)
     try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        async with FlowpadClient(ApiConfig.from_env()) as client:
             logger.info(
                 "[hub] POST %s files=%s payload_keys=%s",
                 url, bool(files), list(payload.keys()) if not files and payload else None,
             )
             if files:
-                resp = await client.post(url, headers=_auth_headers(), files=files)
+                resp = await client.request("POST", url, files=files, timeout=timeout)
             else:
-                resp = await client.post(url, json=payload, headers=_auth_headers())
+                resp = await client.request("POST", url, json=payload, timeout=timeout)
+    except HubAuthExpiredError as e:
+        logger.warning("[hub] POST %s auth expired: %s", url, e)
+        raise HubError(401, "auth expired")
     except Exception as e:
         logger.warning("[hub] POST %s transport error: %s", url, e)
         raise HubError(0, str(e))
@@ -209,6 +255,111 @@ async def hub_post(
         return resp.json().get("data") or {}
     reason = _extract_reason(resp)
     logger.warning("[hub] POST %s returned %s: %s", url, resp.status_code, resp.text[:200])
+    raise HubError(resp.status_code, reason)
+
+
+async def _hub_post_streamed_upload(
+    url: str,
+    files: dict,
+    timeout: httpx.Timeout,
+    on_progress: ProgressCallback,
+) -> Optional[dict[str, Any]]:
+    """Hand-build a single-field multipart body and stream it to ``url``.
+
+    httpx's ``files=`` buffers the whole body before sending, so it can't
+    report progress. We build the ``multipart/form-data`` envelope ourselves
+    and yield it in chunks, firing ``on_progress`` between chunks — that is how
+    the body-bundle upload drives the sender's progress bar.
+    """
+    field, spec = next(iter(files.items()))
+    fname, content, ctype = spec
+    boundary = _uuid.uuid4().hex
+    preamble = (
+        f"--{boundary}\r\n"
+        f'Content-Disposition: form-data; name="{field}"; filename="{fname}"\r\n'
+        f"Content-Type: {ctype}\r\n\r\n"
+    ).encode()
+    epilogue = f"\r\n--{boundary}--\r\n".encode()
+    total = len(preamble) + len(content) + len(epilogue)
+    chunk_size = 256 * 1024
+    step = max(len(content) // 100, chunk_size)
+
+    async def _body():
+        yield preamble
+        mv = memoryview(content)
+        sent = 0
+        reported = 0
+        while sent < len(content):
+            piece = bytes(mv[sent:sent + chunk_size])
+            sent += len(piece)
+            yield piece
+            if sent - reported >= step or sent >= len(content):
+                reported = sent
+                try:
+                    await on_progress(len(preamble) + sent, total)
+                except Exception:  # noqa: BLE001
+                    pass
+        yield epilogue
+        try:
+            await on_progress(total, total)
+        except Exception:  # noqa: BLE001
+            pass
+
+    headers = {
+        "Content-Type": f"multipart/form-data; boundary={boundary}",
+        "Content-Length": str(total),
+    }
+    try:
+        async with FlowpadClient(ApiConfig.from_env()) as client:
+            logger.info("[hub] POST (stream) %s body=%dB", url, total)
+            resp = await client.request(
+                "POST", url, content=_body(), headers=headers, timeout=timeout,
+            )
+    except HubAuthExpiredError as e:
+        logger.warning("[hub] POST (stream) %s auth expired: %s", url, e)
+        raise HubError(401, "auth expired")
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[hub] POST (stream) %s transport error: %s", url, e)
+        raise HubError(0, str(e))
+    if resp.status_code == 200:
+        return resp.json().get("data") or {}
+    reason = _extract_reason(resp)
+    logger.warning("[hub] POST (stream) %s returned %s: %s", url, resp.status_code, resp.text[:200])
+    raise HubError(resp.status_code, reason)
+
+
+async def hub_delete(
+    entity_type: BuiltinEntityType,
+    entity_id: str,
+    action: str | None = None,
+    *,
+    scope: list[tuple[str, str]] | None = None,
+) -> Optional[dict[str, Any]]:
+    """DELETE a hub graph endpoint (entity-level or entity-action).
+
+    Returns the response ``data`` dict on success, None when FLOWPAD_HUB_URL
+    is not configured. Raises ``HubError`` on transport failure or non-200
+    so callers can classify (e.g. 403 owner-only) vs network errors.
+    """
+    url = hub_graph_url(entity_type, entity_id, action, scope=scope)
+    if not url:
+        logger.debug("[hub] FLOWPAD_HUB_URL not set — skipping DELETE %s/%s",
+                     entity_type, entity_id)
+        return None
+    try:
+        async with FlowpadClient(ApiConfig.from_env()) as client:
+            logger.info("[hub] DELETE %s", url)
+            resp = await client.request("DELETE", url, timeout=httpx.Timeout(10))
+    except HubAuthExpiredError as e:
+        logger.warning("[hub] DELETE %s auth expired: %s", url, e)
+        raise HubError(401, "auth expired")
+    except Exception as e:
+        logger.warning("[hub] DELETE %s transport error: %s", url, e)
+        raise HubError(0, str(e))
+    if resp.status_code == 200:
+        return resp.json().get("data") or {}
+    reason = _extract_reason(resp)
+    logger.warning("[hub] DELETE %s returned %s: %s", url, resp.status_code, resp.text[:200])
     raise HubError(resp.status_code, reason)
 
 
@@ -229,12 +380,15 @@ async def hub_put(
         logger.debug("[hub] FLOWPAD_HUB_URL not set — skipping PUT %s/%s", entity_type, entity_id)
         return None
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
+        async with FlowpadClient(ApiConfig.from_env()) as client:
             logger.info(
                 "[hub] PUT %s payload_keys=%s",
                 url, list(payload.keys()) if payload else None,
             )
-            resp = await client.put(url, json=payload, headers=_auth_headers())
+            resp = await client.request("PUT", url, json=payload, timeout=10)
+    except HubAuthExpiredError as e:
+        logger.warning("[hub] PUT %s auth expired: %s", url, e)
+        raise HubError(401, "auth expired")
     except Exception as e:
         logger.warning("[hub] PUT %s transport error: %s", url, e)
         raise HubError(0, str(e))
@@ -243,5 +397,4 @@ async def hub_put(
     reason = _extract_reason(resp)
     logger.warning("[hub] PUT %s returned %s: %s", url, resp.status_code, resp.text[:200])
     raise HubError(resp.status_code, reason)
-
 

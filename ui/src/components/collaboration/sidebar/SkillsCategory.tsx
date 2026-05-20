@@ -1,4 +1,4 @@
-import { config, Project, Skill, TypeId } from '@sdk';
+import { apiClient, Project, Skill, TypeId } from '@sdk';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -40,12 +40,8 @@ export function SkillsCategory({ projectId, onOpenTab }: Props) {
   const { data, isLoading } = useQuery<Skill[]>({
     queryKey: ['skills-include-system'],
     queryFn: async () => {
-      const url = `${config.SERVER_URL}${config.API_PREFIXES.graph}/skill?include_system=true`;
-      const resp = await fetch(url);
-      if (!resp.ok) throw new Error(`Failed to load skills: ${resp.status}`);
-      const body = await resp.json();
-      const rows = (body.data ?? []) as Partial<Skill>[];
-      return rows.map((row) => new Skill(row));
+      const rows = await apiClient.get<Partial<Skill>[]>('/graph/skill?include_system=true');
+      return (rows ?? []).map((row) => new Skill(row));
     },
     staleTime: 30_000,
   });

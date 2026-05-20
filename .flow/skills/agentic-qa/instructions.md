@@ -5,11 +5,106 @@
 - Backend: `http://localhost:9008` (port set via `LOCAL_SERVER_PORT=9008` in `.env.local`)
 - Frontend: `http://localhost:4098` (VITE_PORT=4098 in `.env.local`, NOT 4097)
 - Backend start command: `cd /Users/shlom/Documents/dev/flowpad-oss && LOCAL_SERVER_PORT=9008 uv run -m flow_sdk.server.run`
-- Backend reindex endpoint: `POST http://localhost:9008/api/v1/search/reindex/<record_type>`
+- Backend reindex endpoint: `POST http://localhost:9008/api/v1/graph/<type>/<id>/wiki/reindex` (per-entity). The path `/api/v1/search/reindex/<type>` does NOT exist (returns 405) — older docs reference it; the actual route was renamed and only the per-entity form remains as of 2026-05-19.
 - Platform: darwin (macOS)
 - Browser: chromium via MCP debugMcp (shared with user's interactive session — can cause tab contention when multiple testers run in parallel)
 
 ## Learnings
+
+### 2026-05-19 — Whiteboard validation cycle (8 scenarios / 27 sub-tests)
+
+**Real bug found + fixed: mermaid import dropped labels** — `ui/src/components/assets/editor/whiteboard/WhiteboardAssetEditor.tsx:341-365` (handleImport). `parseMermaidToExcalidraw()` returns `ExcalidrawElementSkeleton[]` — minimal shape that MUST be run through `lib.convertToExcalidrawElements(...)` before `api.updateScene()`. Raw skeletons render rectangles without text labels and arrows without start/endBinding, causing the mermaid auto-sync to emit `N1[Untitled]` + `%% loose elements: unbound-arrow` instead of the actual node labels.
+
+**Real bug found + fixed: asset tree icons hardcoded to FileText** — `ui/src/components/browseable-tree/adapters/assetTypeRoot.tsx` lines 140 + 285 hardcoded `<FileText />` for every asset CHILD row. The category HEADER (line 264) correctly resolved per-type icon via `resolveAssetIcon(type.icon)`, but children all showed FileText regardless of type — affecting skills, agents, markdown, AND whiteboards (pre-existing bug, surfaced by adding Whiteboard). Fixed by threading `type.icon` into `assetChild` + adding className override to `resolveAssetIcon` for the smaller leaf size.
+
+**No Cmd+K binding for QuickCreate** — confirmed via grep. The only Cmd+K handler is for the sidebar at `ui/src/components/ui/sidebar.tsx:81`. QuickCreate is click-only (`MiniDesktop` on landing, "+" buttons in asset lists). Scenarios that assume Cmd+K will fail.
+
+**Bare URL `/dock/assets/wiki/<name>` may not auto-mount WikiResolveView** — needs confirmation under single-tester conditions (cross-tester tab pollution disrupted the test). Click-from-markdown path works correctly. AssetsPage at `ui/src/components/assets/AssetsPage.tsx:551` mounts WikiResolveView, but the dock pane may need to be explicitly opened first.
+
+**Folder rename behavior unclear** — after `mv <folder> <folder>-renamed` the entity disappeared from `/api/v1/graph/whiteboard` entirely (instead of re-resolving via stable frontmatter id). Needs single-tester re-test to distinguish real indexer cache bug from contention-driven cleanup. The mintable-id frontmatter pattern is supposed to make rename safe.
+
+**DELETE endpoint preserves the on-disk folder by default** — `flow_sdk/fs_store/record.py:1964-1986` `Record.delete()` only removes the entity row + shadow `record_dir`; the live `asset_ref` folder is kept unless `delete_ref=True` is passed. This is shared behavior across all asset types. UI tests should assert "entity gone" not "folder gone".
+
+**EntityTypeBar is NOT on /dock/assets/list/<type>** — that bar lives only inside `AssetPickerPopover` (the asset-pick overlay). The standalone assets page uses BrowseableTree + table; URL-based type filter is the only filter.
+
+**Whiteboard editor save uses fsManager.writeFile (POST), not HTTP PUT** — `ts_sdk/src/services/fsService.ts:441` builds the write via `createFSAction(typeid, 'write', path, 'POST')`. Scenarios that instrument fetch for `method:'PUT'` board.json saves will measure zero events; hook `fsManager.writeFile` or `dataManager.callAction` instead.
+
+**Tab contention with parallel qa-testers — confirmed reproducible** — shared MCP Chrome session means `browser_tabs.select(index)` doesn't reliably pin focus; concurrent testers' tabs hijack each other within seconds. For scenarios driving multi-step UI, serialize testers (1 concurrent worker). Bash + API-only scenarios are safe to parallelize. Reaffirms the 2026-05-12 learning.
+
+**Mermaid v10+ emits double-curly diamond syntax** — `flow_sdk/fs_records/_whiteboard_mermaid.py` produces `N1{{OK?}}`, not single-curly `N1{OK?}`. Both are valid mermaid; scenarios should accept either form.
+
+### 2026-05-12 — Assets index + asset-picker-on-agents QA cycle (v0.2.21-fixes)
+
+**Real production bug — `ui/src/components/asset-manager/AssetManagerPopover.tsx:192-193`**
+Typing into the asset-manager list filter threw `TypeError: (d.posix_path ?? "").toLowerCase is not a function`, crashing the entire AgentAssetEditor + AssetsPage via the React error boundary. The `??` only coerces null/undefined; at least one `AssetDescriptor.posix_path` is a non-string at runtime (violates the SDK's `string | null` contract — likely a server-side producer drift). Fixed by coercing at the consumer with `typeof === 'string'` guards. Same defect class still exists at `AssetPickerPopover.tsx:74` (out-of-scope this cycle).
+
+**`browseable-chevron-asset-type:<type>` testids carry a filterSig suffix** — actual format is `browseable-chevron-asset-type:<type>:<scope>:<projectIds_joined>`. The bare literal selector never matches. Scenarios must use prefix-match: `[data-testid^="browseable-chevron-asset-type:<type>:"]`. Updated `wiki_folder_tree.md` and `agent_execution_asset_picker.md`. Pattern introduced in commit 1388c07 (per tester).
+
+**`project_dir` AND `user_dir` are BOTH read-only sources** in `READONLY_ASSET_SOURCES` (`ts_sdk/src/process/asset-descriptor.ts:52-57`). Writable sources are only `embedded` (private materialized copy) and `inline`. Test design implication: a fresh process has no editable skill rows because nothing is `embedded` yet — attaching a read-only skill *materializes* an `embedded` row for that typeid, and the detach button (gated by `attached && !readOnly` at `AssetManagerPopover.tsx:606`) renders on the embedded row. Scenarios that "pick the first non-read-only skill" pre-attach will always skip; pick any skill and assert the embedded row appears post-attach.
+
+**`assets_list_mode.md` described a phantom "Search-First UI"** — LayoutList/Network mode toggle + type pills never shipped. Actual UI is `BrowseableTree` (left) + `AssetListView` (right). Scenario fully rewritten this cycle.
+
+**Same `posix_path`/`sourcePath` non-string defect class across THREE consumers** — `AssetManagerPopover.tsx:192-193`, `AssetPickerPopover.tsx:74`, and `MarkdownEditor.tsx:194-195,224` all fixed this cycle with `typeof === 'string' ? x : ''` coercion. The underlying producer (server-side AssetDescriptor or FSRef) violates the SDK string contract; consumer coercion was the minimal-blast-radius fix. If a fourth crash of this class appears, hunt the producer next.
+
+**`browseable-chevron-asset-type:*` children load asynchronously** — even after the chevron's `title="Collapse"` (expanded state), level-2 treeitems may not be present yet. Adapter calls a separate endpoint. Either wait for treeitem level-2 to appear or click via the right-pane list view.
+
+**Port 9008 contention with Docker proxy** — A Docker container appears to claim port 9008 in parallel with the flowpad-oss backend; killed-then-restarted backends frequently hit `Errno 48 Address already in use` even when `lsof` shows no python listener. Symptom: server log says "Address already in use" while curl bootstrap eventually succeeds (Docker proxy forwards). If a restart loop is needed: pkill flow_sdk + uv run; rm `~/.flow/dev_server.pid`; sleep 6+ seconds for the kernel half-closed socket to drain; only then `uv run -m flow_sdk.server.run`.
+
+**MCP synthetic events do NOT trigger Radix close handlers** — `page.keyboard.press('Escape')` and dispatched pointerdown on document.body do not close a Radix Popover via MCP debugMcp. Validate Popover close behavior with a Playwright `.md.ts` instead.
+
+### 2026-05-07 — Full QA cycle (all 8 phases) on v0.2.20-process-fixes
+
+**Claude rotates `Try "..."` placeholder text in empty prompt** — broke `tests/long_tests/test_clean_claude_pty_stress.py` and `ui/tests/long_tests/clean_claude_pty.test.ts`. Both invariant extractors now treat any `^Try\b.*"` content as empty prompt.
+
+**Stress test stability under 50 cold Claude PTY spawns** — three issues fixed in `test_clean_claude_pty_stress.py`:
+1. `process.start()` raised `RuntimeError("No project found")` mid-loop because `get_project()`'s @local-project fallback intermittently fails. Fix: pass `project_id=local_project.id` explicitly.
+2. Fixed `SETTLE_SLEEP=1.5` was too tight under load — first PTY byte sometimes lagged. Replaced with poll loop up to `PTY_OUTPUT_DEADLINE=5.0`.
+3. Full Claude banner renders progressively under stress; single-retry insufficient. Replaced with poll loop up to `INVARIANT_DEADLINE=5.0`. Net: 50/50 iterations clean.
+
+**`INDEXABLE_TYPES` order shifts break position-based test slices** — `test_index_all_returns_total` hard-coded `limit_types=7` based on SKILL being at position 7. SKILL drifted to index 8 (position 9). Fix: derive position dynamically via `INDEXABLE_TYPES.index(RecordType.SKILL)+1`.
+
+**Codex agent invents own classification schema** — `test_agentic_process_classify_with_agent[codex]` saw `{intent, complexity, domain, task_type, outcome}` instead of `{category, ...}`. Extended fallback to promote `outcome`/`intent`/`task_type`/`domain` → `category`.
+
+**`DirectoryTree.tsx` selectedPath sync was async-coupled** — selection only synced after `expandParentsForPath` async folder load completed. In `directory-tree.test.tsx` where `loadFolderContents` doesn't resolve, selection never propagated. Fix: call `tree.selectItem(selectedPath)` synchronously alongside expansion.
+
+**Phase 8 manual regression triage** — drove 41 failures down to ~13 in 4 rerun rounds. Recurring patterns and one-line fixes:
+
+- **WelcomeModal Radix overlay blocks home-page clicks after DB clear** — `dismissSetupModal` helpers must also pre-set `localStorage['flowpad-index-approved']='1'`. The WelcomeModal opens when bootstrap returns `scanInfo.never_indexed=true`; its overlay intercepts pointer events on home buttons. Updated `chat/helpers.ts`, `terminal/helpers.ts`, `triggers/helpers.ts`, plus the inline setup() functions in search tests.
+- **Hardcoded `localhost:9007` in many test API calls** — actual port is 9008 in this env. `sed -i '' 's|localhost:9007|localhost:9008|g'` across all `.md.ts` files.
+- **Terminal ribbon shrunk from 5 → 4 buttons** — Shell + Queue removed, Dir added. Tests `git_status_panel.md.ts` and `prompt_index_panel.md.ts` rebased their nth() indices and `toHaveCount`.
+- **Schedule triggers without project_id are still filtered out of TriggersView** (re-confirmed from prior cycle's note) — tests creating triggers via API must POST with `project_id: <bootstrap default_project.id>`.
+- **DirectoryTree selection didn't sync until expansion completed** — `DirectoryTree.tsx` now calls `tree.selectItem(selectedPath)` synchronously alongside the async `expandParentsForPath`.
+- **`text=` selector substring-matches and trips strict-mode** — replace with `getByText(..., { exact: true }).first()` (e.g. "Schedule Triggers" header collided with "No schedule triggers yet."). For `[data-testid="annotation-gutter"]` (now duplicated in DOM), append `.first()`.
+- **Iterating tabs with `locator.nth(i).textContent()` deadlocks in a crowded tab strip** — switch to `evaluateAll` on `[data-testid^="tab-"]` and read DOM in one round-trip (`shell_tab_title_and_switch.md.ts`).
+- **Stale user typeid 404 after DB clear** — surfaces via `store.ts:Error fetching entity by type ID: user-...`. Tests that assert `console.errors === 0` need to filter out both the raw `404` line and the SDK wrapper.
+
+**Real product bugs left in Phase 8 (skipped or unfixed, tracked separately)**:
+- `routePlainShellPointer.cachedEntitiesByType` doesn't reliably surface a linked AgenticProcess on cold navigation → 2 tests skipped (`agentic_process_visible_restored_on_load`, `shell_url_recovers_linked_process`) and 1 related test (`_resume_revalidate_v3`) skipped.
+- `scan_records_viewer.md.ts` — 3 tests time out waiting for a `<table>` after clicking Rescan. API works (`/scan?limit_types=5` returns 17200 records); the per-type-loop variant the UI runs may stall on Vite proxy or WS event flow.
+
+**Original 41-failure tally — pre-fix**:
+- `element(s) not found` / `toBeVisible failed` — selector drift in general, terminal
+- triggers: `strict mode violation` — `text=Schedule Triggers` matches 2 elements (UI duplicated)
+- skills: 404 on `user-<uuid>` from `store.ts`
+- agentic-process: `page.waitForURL` timeout — navigation never resolves
+Each needs individual triage; not blocked by anything from phases 1-7.
+
+### 2026-05-07 — Headless chat surfaces validated post `_scan_create_process` fix
+
+**Real production bug — `flow_sdk/builtin/faas/scan_actions.py` `_scan_create_process`**
+Eagerly called `process.start(visible=visible)` for every new AgenticProcess regardless of `visible`. `start()`/`_perform_open` doesn't branch on `visible`, so headless chats (`EntityChatPanel`→`createProcess`, no `visible` flag → server default `false`) got a PTY-claude REPL spawned anyway. The REPL claimed `session_id` without writing a JSONL, so the next `/prompt` (which routes through `headless_prompt` for `visible=false`) found a stale session and exited non-zero — chat showed "Complete" with no assistant turn. Fix: gate the `start()` call on `if visible:`. Headless processes manage their full lifecycle per-turn via `headless_prompt`. Also deleted the unused `elevate-shell` action and updated 3 tests to pass `visible: true` explicitly when they exercise the PTY lifecycle.
+
+**One shared headless code path for ALL chat surfaces**
+The 7 chat surfaces (agent doc, agent persona, skill doc, skill persona, plain markdown, workflow, spec) all funnel through `EntityChatPanel.handleSend` → `computeNode.createProcess({...})` → server `_scan_create_process` → `headless_prompt`. Validating this shared path at the API level (`POST /createProcess` with `visible:false` → `POST /prompt`) covers all 7 surfaces transitively. Asked Claude for a one-word PONG; got `<flow-chat role="assistant">PONG</flow-chat>` in the stream — full chain works.
+
+**API-level validation beats UI for protocol-level fixes**
+The 4098 dev UI got stuck on the `LoadingScreen` ("Loading . . .") splash mid-session — `useAuth.someone` went null after some interaction (cause unrelated to the fix; possibly stale `flowpad-state` localStorage or cloud session expiry). For protocol/server-side fixes that share one code path across many UI surfaces, a direct API probe is faster and more deterministic than scripting every surface in the browser.
+
+**Stale agentic_process records linger in `~/.flow/records/agentic_process/` and block fresh-create flow on the same target**
+`EntityChatPanel`'s `useProcessesForTarget(targetStr)` auto-picks any existing process matching the target. The pre-fix bug left `worker_status=initializing` rows behind that the chat panel kept rebinding to even after the fix. To exercise the fixed path on a UI target with a stale row, `DELETE /api/v1/graph/agentic_process/<id>` first.
+
+**Two backends/UIs run side-by-side: 4097/9007 (`flowpad-app`) vs 4098/9008 (`flowpad-oss`)**
+The `flowpad-app` ports are a separate clone of the codebase. Fixes landed in `flowpad-oss` (this repo, `.env.local` says 9008/4098) do NOT propagate to the `flowpad-app` instance. If a user repros against 4097, validate the fix against 4098 (where the edit is loaded) — or ask the user to point both at the fixed repo.
 
 ### 2026-05-01 — Full QA cycle, Phases 1-7
 
@@ -145,3 +240,34 @@ After any field-rename / field-drop migration, grep `/tmp/flow-prod.log` for `no
 
 **FlowMessage.conversation_id is direct, not in context_entities — by design — 2026-05-02**
 The `context_entities` consolidation kept FlowMessage.conversation_id as a standalone field because the message structurally threads on it. When validating round-trips, don't flag it as "legacy field present" — that's the correct shape per the classification rule "qualifier-or-structural-meaning ⇒ direct field stays".
+
+## Learnings — 2026-05-08 tabs-matrix run
+
+**Parallel qa-testers are NOT safe in this MCP harness — 2026-05-08**
+All qa-tester teammates share ONE Chrome instance and ONE backend DB. The "one tab per tester" rule does not actually isolate them: testers' `browser_navigate` calls hijack each other's pages, and the per-test `desktop-db/clear` POSTs from one tester wipe the in-flight DOM of others. Run mode for matrices that depend on tab/state persistence MUST serialize testers (max 1 tester for these scenarios). Use multiple testers only when each scenario is fully self-contained on its own DOM and DB state.
+
+**`desktop-db/clear` endpoint returns "Invalid request" intermittently — 2026-05-08**
+`POST /api/v1/graph/compute_node/@local/desktop-db/clear` returned `{"status":"FAIL","message":"Invalid request"}` on multiple attempts during the tabs-matrix run, then started working later. It also throws `sqlite3 locking protocol` when called concurrently. Treat the reset as best-effort, not a hard precondition; capture state at test start instead of assuming clean.
+
+**Multi-project setup is unbootstrappable in current harness — 2026-05-08**
+No test fixture creates Proj-A/Proj-B/Proj-C/Proj-D. After db-clear the bootstrap creates a single `my_first_project`. Footer "Switch Project" needs interactive directory selection. Many cross-project scenarios become test-issue("multi-project setup unavailable in budget"). To cover those tests, a REST helper that creates Project entities + workdir directories should be added to the QA harness.
+
+**xterm input is fragile via MCP — 2026-05-08**
+`browser_type` rejects the xterm panel (not contenteditable). `browser_press_key` one-char-at-a-time often fails to reach the PTY. Tests that depend on shell-typed echo content for state markers cannot be reliably automated through MCP browser. Prefer URL/selector/state-presence assertions over typed-content assertions.
+
+**Footer missing `data-testid="footer"` — 2026-05-08**
+The interactive_tabs_project_filtering_matrix references `[data-testid="footer"]` but the actual rendered footer is a plain `<FOOTER>` element with no testid. Either add the testid to `ui/src/components/footer.tsx` or update the matrix to use `footer` element selector. Counted as test-issue across Section E (28-32).
+
+**Project chip pluralization — minor bug — 2026-05-08**
+`projects-counter-chip` aria-label is hardcoded `"<N> active projects with <M> terminals"` — says "1 active projects" instead of "1 active project". Bug in `ui/src/components/terminal/ProjectsCounterChip.tsx`.
+
+**`flowpad` CLI not on PATH in dev shell — 2026-05-08**
+Package `flowpad 0.2.8` is pip-installed but its console_script entry isn't on PATH. `which flowpad` → not found. Section F's CLI tests (X3-X5) classified test-issue. Either expose the entry or document the module-form fallback (`uv run -m flow_sdk.cli ...`) in the matrix and harness.
+
+## Learnings — 2026-05-12 (indexer + search validation)
+
+- **Parallel flowpad checkout pitfall**: `flowpad-app` (a sibling repo at `~/Documents/dev/flowpad-app`) often has its own backend bound to ports 9007/4097. Playwright tests under `ui/tests/e2e/index-search/` default to `API_URL=http://localhost:9007` and the playwright.config defaults `baseURL` to `VITE_PORT=4097`. Running with bare `npx playwright test` will silently target the wrong backend if both repos are active. ALWAYS pass `API_URL` and `VITE_PORT` explicitly when validating changes to flowpad-oss code — the env in `.env.local` (`LOCAL_SERVER_PORT=9008`, `VITE_PORT=4098`) must be forwarded into the playwright invocation. Two failures from this run (`scan_index_progress_events::aggregate scan response is coherent`, `search_filters_scope::GET /search?scope=user returns only user-scoped results`) were false positives caused by hitting the wrong backend.
+
+- **Pre-existing failures not caused by indexer/search work**: `search_filters_scope.md.ts:18` and `search_full_text.md.ts:156` look for testids (`search-tools-btn`, `search-results`) that exist in the UI (`RecordSearchBar.tsx`, `SearchView.tsx`) but aren't on the default `/` route the tests start from. `search_full_text.md.ts:58` expects a `text` property that neither `/api/v1/search` nor `/fs-records/search` returns. These tests need scenario updates, not backend fixes.
+
+- **Side note (low priority)**: When the indexer's skip-fresh re-stamps `scope`/`project_id`, it doesn't bump `updated_date`. If any downstream cache keys off `updated_date` to detect entity changes, a stale-scope re-stamp would be invisible to them. Captured here in case it shows up later.

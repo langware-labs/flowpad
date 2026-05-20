@@ -48,6 +48,13 @@ logger = logging.getLogger(__name__)
 # timeout (~10 s) so a stuck subprocess never wedges the chat.
 CANCEL_GRACE_SECONDS = 5.0
 
+# Per-line StreamReader limit. Default asyncio limit is 64 KiB which is too
+# small for stream-json events that wrap large tool results (e.g. a full
+# ``browser_snapshot`` of a real page can be several hundred KB on a single
+# JSON line). 4 MiB gives generous headroom without spending real memory
+# unless we actually receive that much data.
+STDOUT_LINE_LIMIT_BYTES = 4 * 1024 * 1024
+
 
 class ClaudeCLIStreamWorker(AgenticWorker):
     """Streaming Claude CLI worker using ``--output-format stream-json``.
@@ -83,6 +90,7 @@ class ClaudeCLIStreamWorker(AgenticWorker):
                 stdin=asyncio.subprocess.DEVNULL,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
+                limit=STDOUT_LINE_LIMIT_BYTES,
             )
         except Exception as e:
             logger.exception("ClaudeCLIStreamWorker: spawn failed")

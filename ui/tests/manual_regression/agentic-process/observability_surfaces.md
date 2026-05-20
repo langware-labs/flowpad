@@ -1,3 +1,7 @@
+---
+id: 4ad84cbc-f597-5149-9124-caf0112f51a6
+---
+
 test 1: PTY Viewer opens from the Columns & Trace dropdown (always available, no dev-mode gate)
 - navigate to {APP_URL}/dock/shell/new_terminal, then open the tab-opener "+" (data-testid="opener-plus-button") and pick the "Claude Code" row (data-testid="opener-menu-row-claude")
 - wait for the Claude banner

@@ -1,7 +1,8 @@
-import { config, createProjectConversation } from '@sdk';
+import { apiClient, createProjectConversation } from '@sdk';
 import { sendReply } from '@sdk/entities/notifications';
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
+import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
 import { useToast } from '@src/hooks/use-toast';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -34,12 +35,11 @@ const PLACEHOLDER =
   'research, summarize, or fix? The more context the better.';
 
 async function findFlowpadAssistantProjectId(): Promise<string | null> {
-  const url = `${config.SERVER_URL}${config.API_PREFIXES.graph}/project?include_system=true`;
   try {
-    const resp = await fetch(url, { credentials: 'include' });
-    if (!resp.ok) return null;
-    const body = (await resp.json()) as { data?: Array<{ id?: string; uname?: string | null }> };
-    const match = (body.data ?? []).find((p) => p.uname === FLOWPAD_ASSISTANT_UNAME);
+    const rows = await apiClient.get<Array<{ id?: string; uname?: string | null }>>(
+      '/graph/project?include_system=true',
+    );
+    const match = (rows ?? []).find((p) => p.uname === FLOWPAD_ASSISTANT_UNAME);
     return match?.id ?? null;
   } catch {
     return null;
@@ -49,6 +49,7 @@ async function findFlowpadAssistantProjectId(): Promise<string | null> {
 export function CommunityAssistanceDialog({ open, onClose }: CommunityAssistanceDialogProps) {
   const { navigation } = useDockNavigation();
   const { toast } = useToast();
+  const ensureCloudLogin = useCloudLoginGate();
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -68,6 +69,15 @@ export function CommunityAssistanceDialog({ open, onClose }: CommunityAssistance
     if (!canSend) return;
     setBusy(true);
     try {
+      // Posting the first message routes through the hub-backed
+      // append-conversation action, which the backend gates on cloud login.
+      // Run the OAuth flow first so a logged-out user is taken through
+      // sign-in and the send resumes on the same click.
+      const gate = await ensureCloudLogin();
+      if (!gate.ok) {
+        toast({ title: 'Sign in required', description: gate.error });
+        return;
+      }
       const projectId = await findFlowpadAssistantProjectId();
       if (!projectId) {
         toast({

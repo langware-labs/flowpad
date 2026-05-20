@@ -1,3 +1,7 @@
+---
+id: 5633647f-6bef-5ce0-af33-7476965aa9a2
+---
+
 test 1: Clicking a project row in the asset list navigates to the project's collab space (not the asset editor)
 - navigate to {APP_URL}/dock/assets/list/project
 - wait for at least one row with a <td> to render in the table

@@ -31,32 +31,73 @@ import json
 import re
 from typing import Any
 
+from flow_sdk._compat import StrEnum
+
 from ..entries import (
     AssistantMessageEntry,
-    FileEditEntry,
-    FileReadEntry,
-    FileWriteEntry,
+    CodexUsageEntry,
     MetaEntry,
-    ShellCommandEntry,
     SummaryEntry,
     SystemEntry,
-    TokenUsageEntry,
     ToolResultEntry,
     ToolUseEntry,
     UnknownEntry,
+    UsageEntry,
     UserMessageEntry,
-    WebFetchEntry,
 )
 from ..entry import TranscriptEntry
-from .._helpers import truncate_file_content
-from ._apply_patch import (
-    add_op_to_content,
-    parse_apply_patch,
-    update_op_to_hunks,
-)
 
 
-class CodexParser:
+class CodexLineType(StrEnum):
+    THREAD_STARTED = "thread.started"
+    TURN_STARTED = "turn.started"
+    TURN_COMPLETED = "turn.completed"
+    ITEM_STARTED = "item.started"
+    ITEM_COMPLETED = "item.completed"
+    SESSION_META = "session_meta"
+    RESPONSE_ITEM = "response_item"
+    EVENT_MSG = "event_msg"
+    TURN_CONTEXT = "turn_context"
+    COMPACTED = "compacted"
+    TOKEN_COUNT = "token_count"
+    TASK_STARTED = "task_started"
+    TASK_COMPLETE = "task_complete"
+
+
+class CodexResponseItemType(StrEnum):
+    MESSAGE = "message"
+    FUNCTION_CALL = "function_call"
+    FUNCTION_CALL_OUTPUT = "function_call_output"
+    CUSTOM_TOOL_CALL = "custom_tool_call"
+    CUSTOM_TOOL_CALL_OUTPUT = "custom_tool_call_output"
+    REASONING = "reasoning"
+    WEB_SEARCH_CALL = "web_search_call"
+    TOOL_SEARCH_CALL = "tool_search_call"
+    TOOL_SEARCH_OUTPUT = "tool_search_output"
+
+
+class CodexMessageRole(StrEnum):
+    USER = "user"
+    ASSISTANT = "assistant"
+    DEVELOPER = "developer"
+    SYSTEM = "system"
+
+
+def _coerce_line_type(value: object) -> CodexLineType | None:
+    try:
+        return CodexLineType(str(value or ""))
+    except ValueError:
+        return None
+
+
+def _coerce_response_item_type(value: object) -> CodexResponseItemType | None:
+    try:
+        return CodexResponseItemType(str(value or ""))
+    except ValueError:
+        return None
+
+
+class _CodexParserBase:
     worker_type = "codex"
 
     def __init__(self, session_id: str = "") -> None:
@@ -72,28 +113,27 @@ class CodexParser:
         # ``AssistantMessageEntry`` and ``TokenUsageEntry`` envelopes.
         self._current_model: str | None = None
 
-    def feed(self, raw: dict, line_index: int) -> list[TranscriptEntry]:
-        rtype = raw.get("type") or ""
-
+    def _capture_common_state(self, raw: dict, rtype: CodexLineType | None) -> None:
         # Capture session id whenever it shows up.
-        if rtype == "thread.started":
+        if rtype is CodexLineType.THREAD_STARTED:
             tid = str(raw.get("thread_id") or "")
             if tid:
                 self.session_id = tid
-        elif rtype == "session_meta":
+        elif rtype is CodexLineType.SESSION_META:
             payload = raw.get("payload") or {}
             sid = str(payload.get("id") or "")
             if sid and not self.session_id:
                 self.session_id = sid
 
         # Capture model from turn_context for downstream assistant lines.
-        if rtype == "turn_context":
+        if rtype is CodexLineType.TURN_CONTEXT:
             payload = raw.get("payload") or {}
             m = payload.get("model")
             if m:
                 self._current_model = str(m)
 
-        base = dict(
+    def _base(self, raw: dict, rtype: str, line_index: int) -> dict[str, Any]:
+        return dict(
             id=self._synth_id(raw, rtype, line_index),
             session_id=self.session_id,
             timestamp=str(raw.get("timestamp") or ""),
@@ -101,43 +141,21 @@ class CodexParser:
             parent_id=None,
         )
 
-        # ── Stream-event shape ──────────────────────────────────────────────
-        if rtype.startswith("thread.") or rtype.startswith("turn."):
-            return [SystemEntry(subtype=rtype, payload=raw, **base)]
-        if rtype == "item.started":
-            item = raw.get("item") or {}
-            return [MetaEntry(meta_kind="item.started", payload=item, **base)]
-        if rtype == "item.completed":
-            return self._parse_item_completed(raw, base)
-
-        # ── Rollout shape ───────────────────────────────────────────────────
-        if rtype == "session_meta":
-            return [MetaEntry(meta_kind="session_meta", payload=raw.get("payload") or {}, **base)]
-        if rtype == "response_item":
-            return self._parse_response_item(raw, base)
-        if rtype == "event_msg":
-            return self._parse_event_msg(raw, base)
-        if rtype == "turn_context":
-            return [SystemEntry(subtype="turn_context", payload=raw.get("payload") or raw, **base)]
-        if rtype == "compacted":
-            return self._parse_compacted(raw, base)
-        if rtype == "token_count":
-            payload = raw.get("payload") or raw
-            return [self._make_token_usage(payload, base)]
-        if rtype in {"task_started", "task_complete"}:
-            return [SystemEntry(subtype=rtype, payload=raw.get("payload") or raw, **base)]
-
-        return [UnknownEntry(raw_data=raw, **base)]
+    def _unknown(self, raw: dict, rtype: str, line_index: int) -> list[TranscriptEntry]:
+        return [UnknownEntry(raw_data=raw, **self._base(raw, rtype, line_index))]
 
     # ── helpers ──────────────────────────────────────────────────────────────
 
     def _synth_id(self, raw: dict, rtype: str, line_index: int) -> str:
-        item = raw.get("item") if rtype in ("item.completed", "item.started") else None
+        item = raw.get("item") if rtype in (
+            CodexLineType.ITEM_COMPLETED.value,
+            CodexLineType.ITEM_STARTED.value,
+        ) else None
         if isinstance(item, dict):
             iid = item.get("id")
             if iid:
                 return str(iid)
-        if rtype == "response_item":
+        if rtype == CodexLineType.RESPONSE_ITEM.value:
             payload = raw.get("payload") or {}
             pid = payload.get("id") if isinstance(payload, dict) else None
             if pid:
@@ -146,7 +164,12 @@ class CodexParser:
         return f"{thread}:{line_index}"
 
     @staticmethod
-    def _join_text_blocks(content: Any, *, kinds: tuple[str, ...] = ("input_text", "output_text")) -> str:
+    def _join_text_blocks(
+        content: Any,
+        *,
+        kinds: tuple[str, ...] = ("input_text", "output_text"),
+        skip_angle_blocks: bool = False,
+    ) -> str:
         if not isinstance(content, list):
             return ""
         parts: list[str] = []
@@ -154,7 +177,10 @@ class CodexParser:
             if isinstance(block, dict) and block.get("type") in kinds:
                 t = block.get("text")
                 if t:
-                    parts.append(str(t))
+                    text = str(t)
+                    if skip_angle_blocks and text.lstrip().startswith("<"):
+                        continue
+                    parts.append(text)
         return "\n".join(parts)
 
     @staticmethod
@@ -255,7 +281,14 @@ class CodexParser:
             return int(round(value))
         return None
 
-    def _make_token_usage(self, payload: dict, base: dict) -> TokenUsageEntry:
+    def _emit_usage(self, payload: dict, base: dict) -> list[TranscriptEntry]:
+        """Per-dim ``UsageEntry`` list + one ``CodexUsageEntry`` for cumulative totals.
+
+        Codex packs both per-turn (``last_token_usage``) and cumulative
+        (``total_token_usage``) into one ``token_count`` event. We emit
+        per-dim entries from ``last`` (so cost math sees only this turn's
+        spend) and one separate cumulative carrier for sanity-checking.
+        """
         info = payload.get("info") if isinstance(payload, dict) else None
         if not isinstance(info, dict):
             info = payload if isinstance(payload, dict) else {}
@@ -268,17 +301,50 @@ class CodexParser:
         turn_id = info.get("turn_id")
         if not turn_id and isinstance(payload, dict):
             turn_id = payload.get("turn_id")
-        return TokenUsageEntry(
-            input_tokens=last.get("input_tokens"),
-            output_tokens=last.get("output_tokens"),
-            cached_input_tokens=last.get("cached_input_tokens"),
-            reasoning_output_tokens=last.get("reasoning_output_tokens"),
-            total_input_tokens=total.get("input_tokens"),
-            total_output_tokens=total.get("output_tokens"),
-            turn_id=str(turn_id) if turn_id else None,
-            model=self._current_model,
-            **base,
+        turn_id_str = str(turn_id) if turn_id else None
+
+        out: list[TranscriptEntry] = []
+        base_id = base["id"]
+        base_envelope = {k: v for k, v in base.items() if k != "id"}
+        entry_id = f"{base_id}:usage"
+
+        def _emit(**fields: object) -> None:
+            count = fields.get("count")
+            if not isinstance(count, (int, float)) or count <= 0:
+                return
+            dim_id = f"{base_id}:usage:dim_{len(out)}"
+            out.append(UsageEntry(
+                id=dim_id,
+                entry_id=entry_id,
+                model=self._current_model,
+                **base_envelope,
+                **fields,  # type: ignore[arg-type]
+            ))
+
+        _emit(count=last.get("input_tokens") or 0, io="input", cache="none")
+        _emit(count=last.get("output_tokens") or 0, io="output")
+        _emit(count=last.get("cached_input_tokens") or 0, io="input", cache="read")
+        _emit(
+            count=last.get("reasoning_output_tokens") or 0,
+            io="output", reasoning=True,
         )
+
+        # Cumulative totals — one carrier per token_count event, even if
+        # all per-dim entries were zero. Useful for matching against
+        # OpenAI's own session totals.
+        if total or turn_id_str:
+            out.append(CodexUsageEntry(
+                id=f"{base_id}:usage:cumulative",
+                entry_id=entry_id,
+                model=self._current_model,
+                count=0,
+                io="input",
+                total_input_tokens=total.get("input_tokens"),
+                total_output_tokens=total.get("output_tokens"),
+                turn_id=turn_id_str,
+                **base_envelope,
+            ))
+        return out
 
     def _parse_compacted(self, raw: dict, base: dict) -> list[TranscriptEntry]:
         payload = raw.get("payload") or raw
@@ -339,29 +405,27 @@ class CodexParser:
 
     def _parse_response_item(self, raw: dict, base: dict) -> list[TranscriptEntry]:
         payload = raw.get("payload") or {}
-        ptype = payload.get("type")
+        ptype = _coerce_response_item_type(payload.get("type"))
         eid = payload.get("id")
         envelope: dict[str, Any] = {}
         if eid:
             envelope["entry_id"] = str(eid)
 
-        if ptype == "message":
+        if ptype is CodexResponseItemType.MESSAGE:
             return self._parse_response_message(payload, base, envelope)
-        if ptype == "function_call":
+        if ptype is CodexResponseItemType.FUNCTION_CALL:
             tool_name = str(payload.get("name") or "")
             call_id = str(payload.get("call_id") or "")
             if call_id and tool_name:
                 self._call_tool_name[call_id] = tool_name
-            tool_use_id = call_id or str(eid or base["id"])
-            tool_input = self._safe_json(payload.get("arguments") or {}) or {}
-            return self._build_semantic_function_call(
+            return [ToolUseEntry(
                 tool_name=tool_name,
-                tool_use_id=tool_use_id,
-                tool_input=tool_input if isinstance(tool_input, dict) else {"value": tool_input},
-                envelope=envelope,
-                base=base,
-            )
-        if ptype == "function_call_output":
+                tool_use_id=call_id or str(eid or base["id"]),
+                tool_input=self._safe_json(payload.get("arguments") or {}) or {},
+                **envelope,
+                **base,
+            )]
+        if ptype is CodexResponseItemType.FUNCTION_CALL_OUTPUT:
             call_id = str(payload.get("call_id") or "")
             output = payload.get("output")
             raw_text = "" if output is None else str(output)
@@ -378,21 +442,19 @@ class CodexParser:
                 **envelope,
                 **base,
             )]
-        if ptype == "custom_tool_call":
+        if ptype is CodexResponseItemType.CUSTOM_TOOL_CALL:
             tool_name = str(payload.get("name") or "custom_tool")
             call_id = str(payload.get("call_id") or "")
             if call_id and tool_name:
                 self._call_tool_name[call_id] = tool_name
-            tool_use_id = call_id or str(eid or base["id"])
-            raw_input = payload.get("input") if "input" in payload else payload.get("arguments")
-            return self._build_semantic_custom_tool(
+            return [ToolUseEntry(
                 tool_name=tool_name,
-                tool_use_id=tool_use_id,
-                raw_input=raw_input,
-                envelope=envelope,
-                base=base,
-            )
-        if ptype == "custom_tool_call_output":
+                tool_use_id=call_id or str(eid or base["id"]),
+                tool_input=self._safe_json(payload.get("input") or payload.get("arguments") or {}) or {},
+                **envelope,
+                **base,
+            )]
+        if ptype is CodexResponseItemType.CUSTOM_TOOL_CALL_OUTPUT:
             call_id = str(payload.get("call_id") or "")
             output = payload.get("output")
             raw_text = "" if output is None else str(output)
@@ -409,7 +471,7 @@ class CodexParser:
                 **envelope,
                 **base,
             )]
-        if ptype == "reasoning":
+        if ptype is CodexResponseItemType.REASONING:
             summary = payload.get("summary") or []
             thinking_parts: list[str] = []
             if isinstance(summary, list):
@@ -421,18 +483,9 @@ class CodexParser:
             if thinking_parts:
                 thinking = "\n".join(thinking_parts)
             elif payload.get("encrypted_content"):
-                # No plaintext summary on this reasoning item. The codex
-                # CLI default for ``model_reasoning_summary`` is ``none``
-                # in many invocations — pass ``-c model_reasoning_summary=auto``
-                # (or set it in ~/.codex/config.toml) to populate the
-                # ``summary`` array on subsequent runs.
-                #
-                # ``encrypted_content`` is NOT encrypted reasoning text — it's
-                # a server-side opaque session token used to retain context
-                # across turns when zero-data-retention is enforced. We
-                # don't surface it because it's not human-readable and not
-                # meant to be.
-                thinking = "[no plaintext reasoning summary — set model_reasoning_summary=auto on the codex CLI to capture it]"
+                # Plain-text summary unavailable; mark explicitly so the
+                # rendered entry isn't a blank assistant_message block.
+                thinking = "[encrypted reasoning, content dropped]"
             else:
                 thinking = None
             return [AssistantMessageEntry(
@@ -442,27 +495,25 @@ class CodexParser:
                 **envelope,
                 **base,
             )]
-        if ptype == "web_search_call":
+        if ptype is CodexResponseItemType.WEB_SEARCH_CALL:
             action = payload.get("action") or {}
-            query: str | None = None
-            url: str | None = None
+            tool_input: dict[str, Any] = {}
             if isinstance(action, dict):
-                q = action.get("query") or (action.get("queries") or [None])[0]
-                if isinstance(q, str) and q:
-                    query = q
-                if isinstance(action.get("url"), str):
-                    url = action.get("url")
+                if action.get("query"):
+                    tool_input["query"] = action["query"]
+                if action.get("queries"):
+                    tool_input["queries"] = action["queries"]
+                if action.get("type"):
+                    tool_input["action_type"] = action["type"]
             call_id = str(payload.get("call_id") or eid or base["id"])
-            self._call_tool_name[call_id] = "web_search"
-            return [WebFetchEntry(
-                url=url,
-                query=query,
+            return [ToolUseEntry(
                 tool_name="web_search",
                 tool_use_id=call_id,
+                tool_input=tool_input,
                 **envelope,
                 **base,
             )]
-        if ptype == "tool_search_call":
+        if ptype is CodexResponseItemType.TOOL_SEARCH_CALL:
             tool_input = self._safe_json(payload.get("arguments") or {}) or {}
             call_id = str(payload.get("call_id") or eid or base["id"])
             self._call_tool_name[call_id] = "tool_search"
@@ -473,7 +524,7 @@ class CodexParser:
                 **envelope,
                 **base,
             )]
-        if ptype == "tool_search_output":
+        if ptype is CodexResponseItemType.TOOL_SEARCH_OUTPUT:
             call_id = str(payload.get("call_id") or "")
             output = payload.get("output")
             raw_text = "" if output is None else str(output)
@@ -492,143 +543,8 @@ class CodexParser:
             )]
 
         return [MetaEntry(
-            meta_kind=f"response_item:{ptype}",
+            meta_kind=f"response_item:{payload.get('type') or ''}",
             payload=payload,
-            **envelope,
-            **base,
-        )]
-
-    # Codex tool names — kept as constants so a typo doesn't silently route
-    # a recognized tool into the catch-all bucket.
-    _TOOL_EXEC = "exec_command"
-    _TOOL_READ = ("read_file", "view_file")
-    _TOOL_WRITE = "write_file"
-    _TOOL_APPLY_PATCH = "apply_patch"
-
-    # ── semantic dispatchers (rollout function_call + custom_tool_call) ────
-
-    def _build_semantic_function_call(
-        self,
-        *,
-        tool_name: str,
-        tool_use_id: str,
-        tool_input: dict,
-        envelope: dict[str, Any],
-        base: dict,
-    ) -> list[TranscriptEntry]:
-        """Map a codex ``function_call`` onto a semantic entry.
-
-        Falls through to :class:`ToolUseEntry` for tools the parser doesn't
-        recognize so MCP / bespoke tools keep rendering through the
-        catch-all path.
-        """
-        common: dict[str, Any] = {
-            "tool_name": tool_name,
-            "tool_use_id": tool_use_id,
-            **envelope,
-            **base,
-        }
-        ti = tool_input if isinstance(tool_input, dict) else {}
-
-        if tool_name == self._TOOL_EXEC:
-            return [ShellCommandEntry(
-                command=str(ti.get("cmd") or ti.get("command") or ""),
-                cwd=str(ti.get("workdir") or "") or None,
-                **common,
-            )]
-        if tool_name in self._TOOL_READ:
-            return [FileReadEntry(
-                path=str(ti.get("path") or ti.get("file_path") or ""),
-                **common,
-            )]
-        if tool_name == self._TOOL_WRITE:
-            full_str = str(ti.get("content")) if ti.get("content") is not None else None
-            line_count = full_str.count("\n") + 1 if full_str else None
-            bytes_count = len(full_str.encode("utf-8")) if full_str else None
-            return [FileWriteEntry(
-                path=str(ti.get("path") or ti.get("file_path") or ""),
-                content=truncate_file_content(full_str),
-                bytes_count=bytes_count,
-                line_count=line_count,
-                is_new=True,
-                **common,
-            )]
-        return [ToolUseEntry(tool_input=ti, **common)]
-
-    def _build_semantic_custom_tool(
-        self,
-        *,
-        tool_name: str,
-        tool_use_id: str,
-        raw_input: Any,
-        envelope: dict[str, Any],
-        base: dict,
-    ) -> list[TranscriptEntry]:
-        """Map a codex ``custom_tool_call`` onto semantic entries.
-
-        ``apply_patch`` is the load-bearing case: its ``input`` is a
-        unified-diff-ish text blob that may carry multiple file ops (Add,
-        Update, Delete). One semantic entry is emitted per file op so the
-        renderer shows e.g. five Add File rows for a five-file add.
-        """
-        if tool_name == self._TOOL_APPLY_PATCH and isinstance(raw_input, str):
-            ops = parse_apply_patch(raw_input)
-            entries: list[TranscriptEntry] = []
-            for idx, op in enumerate(ops):
-                # Synthesize a stable id per op so the row keys don't
-                # collide. Result-folding still pairs by the shared
-                # tool_use_id (codex returns one output for the whole
-                # call); the folder keys on tool_use_id, not row id.
-                op_id = base["id"] if idx == 0 else f"{base['id']}:patch{idx}"
-                op_base = {**base, "id": op_id}
-                if op.op == "add":
-                    full_content = add_op_to_content(op)
-                    line_count = full_content.count("\n") + 1 if full_content else None
-                    bytes_count = len(full_content.encode("utf-8")) if full_content else None
-                    entries.append(FileWriteEntry(
-                        path=op.path,
-                        content=truncate_file_content(full_content),
-                        bytes_count=bytes_count,
-                        line_count=line_count,
-                        is_new=True,
-                        tool_name=tool_name,
-                        tool_use_id=tool_use_id,
-                        **envelope,
-                        **op_base,
-                    ))
-                elif op.op == "update":
-                    entries.append(FileEditEntry(
-                        path=op.path,
-                        hunks=update_op_to_hunks(op),
-                        tool_name=tool_name,
-                        tool_use_id=tool_use_id,
-                        **envelope,
-                        **op_base,
-                    ))
-                elif op.op == "delete":
-                    # No FileDeleteEntry yet — represent as an Edit with a
-                    # marker change_summary so the row still renders with
-                    # the file path. Future kind: replace with
-                    # FileDeleteEntry once the renderer supports it.
-                    entries.append(FileEditEntry(
-                        path=op.path,
-                        hunks=[],
-                        change_summary="(file deleted)",
-                        tool_name=tool_name,
-                        tool_use_id=tool_use_id,
-                        **envelope,
-                        **op_base,
-                    ))
-            if entries:
-                return entries
-        # Unknown custom tool — drop into the catch-all.
-        ti = self._safe_json(raw_input) if raw_input is not None else {}
-        if not isinstance(ti, dict):
-            ti = {"value": ti}
-        return [ToolUseEntry(
-            tool_name=tool_name,
-            tool_use_id=tool_use_id,
-            tool_input=ti,
             **envelope,
             **base,
         )]
@@ -639,17 +555,25 @@ class CodexParser:
         base: dict,
         envelope: dict[str, Any],
     ) -> list[TranscriptEntry]:
-        role = str(payload.get("role") or "")
+        role_raw = str(payload.get("role") or "")
+        try:
+            role = CodexMessageRole(role_raw)
+        except ValueError:
+            role = None
         content = payload.get("content") or []
-        if role == "user":
-            text = self._join_text_blocks(content, kinds=("input_text",)).strip()
+        if role is CodexMessageRole.USER:
+            text = self._join_text_blocks(
+                content,
+                kinds=("input_text",),
+                skip_angle_blocks=True,
+            ).strip()
             return [UserMessageEntry(
                 text=text,
-                role="user",
+                role=CodexMessageRole.USER.value,
                 **envelope,
                 **base,
             )]
-        if role == "assistant":
+        if role is CodexMessageRole.ASSISTANT:
             text = self._join_text_blocks(content, kinds=("output_text",)).strip()
             phase = payload.get("phase")
             return [AssistantMessageEntry(
@@ -659,15 +583,15 @@ class CodexParser:
                 **envelope,
                 **base,
             )]
-        if role in ("developer", "system"):
+        if role in (CodexMessageRole.DEVELOPER, CodexMessageRole.SYSTEM):
             return [SystemEntry(
-                subtype=f"{role}_message",
+                subtype=f"{role.value}_message",
                 payload=payload,
                 **envelope,
                 **base,
             )]
         return [MetaEntry(
-            meta_kind=f"response_item:message:{role}",
+            meta_kind=f"response_item:message:{role_raw}",
             payload=payload,
             **envelope,
             **base,
@@ -686,7 +610,7 @@ class CodexParser:
         if etype in ("agent_message", "user_message"):
             return []
         if etype == "token_count":
-            return [self._make_token_usage(payload, base)]
+            return self._emit_usage(payload, base)
         if etype in {
             "task_started",
             "task_complete",
@@ -748,3 +672,105 @@ class CodexParser:
             payload=payload,
             **base,
         )]
+
+
+class CodexStreamParser(_CodexParserBase):
+    """Parser for process-local ``codex exec --json`` stream transcripts."""
+
+    def feed(self, raw: dict, line_index: int) -> list[TranscriptEntry]:
+        rtype_raw = str(raw.get("type") or "")
+        rtype = _coerce_line_type(rtype_raw)
+        self._capture_common_state(raw, rtype)
+        base = self._base(raw, rtype_raw, line_index)
+
+        if rtype in {
+            CodexLineType.THREAD_STARTED,
+            CodexLineType.TURN_STARTED,
+            CodexLineType.TURN_COMPLETED,
+        }:
+            return [SystemEntry(subtype=rtype.value, payload=raw, **base)]
+        if rtype is CodexLineType.ITEM_STARTED:
+            item = raw.get("item") or {}
+            return [MetaEntry(meta_kind=CodexLineType.ITEM_STARTED.value, payload=item, **base)]
+        if rtype is CodexLineType.ITEM_COMPLETED:
+            return self._parse_item_completed(raw, base)
+        return [UnknownEntry(raw_data=raw, **base)]
+
+
+class CodexRolloutParser(_CodexParserBase):
+    """Parser for Codex rollout JSONL under ``~/.codex/sessions``."""
+
+    def feed(self, raw: dict, line_index: int) -> list[TranscriptEntry]:
+        rtype_raw = str(raw.get("type") or "")
+        rtype = _coerce_line_type(rtype_raw)
+        self._capture_common_state(raw, rtype)
+        base = self._base(raw, rtype_raw, line_index)
+
+        if rtype is CodexLineType.SESSION_META:
+            return [MetaEntry(
+                meta_kind=CodexLineType.SESSION_META.value,
+                payload=raw.get("payload") or {},
+                **base,
+            )]
+        if rtype is CodexLineType.RESPONSE_ITEM:
+            return self._parse_response_item(raw, base)
+        if rtype is CodexLineType.EVENT_MSG:
+            return self._parse_event_msg(raw, base)
+        if rtype is CodexLineType.TURN_CONTEXT:
+            return [SystemEntry(
+                subtype=CodexLineType.TURN_CONTEXT.value,
+                payload=raw.get("payload") or raw,
+                **base,
+            )]
+        if rtype is CodexLineType.COMPACTED:
+            return self._parse_compacted(raw, base)
+        if rtype is CodexLineType.TOKEN_COUNT:
+            payload = raw.get("payload") or raw
+            return self._emit_usage(payload, base)
+        if rtype in {CodexLineType.TASK_STARTED, CodexLineType.TASK_COMPLETE}:
+            return [SystemEntry(
+                subtype=rtype.value,
+                payload=raw.get("payload") or raw,
+                **base,
+            )]
+        return [UnknownEntry(raw_data=raw, **base)]
+
+
+class CodexParser:
+    """Backwards-compatible Codex parser that auto-detects the JSONL shape."""
+
+    worker_type = "codex"
+
+    def __init__(self, session_id: str = "") -> None:
+        self.session_id = session_id
+        self._delegate: _CodexParserBase | None = None
+
+    def feed(self, raw: dict, line_index: int) -> list[TranscriptEntry]:
+        if self._delegate is None:
+            self._delegate = self._select_delegate(raw)
+        entries = self._delegate.feed(raw, line_index)
+        self.session_id = self._delegate.session_id
+        return entries
+
+    def _select_delegate(self, raw: dict) -> _CodexParserBase:
+        rtype = _coerce_line_type(raw.get("type"))
+        if rtype in {
+            CodexLineType.THREAD_STARTED,
+            CodexLineType.TURN_STARTED,
+            CodexLineType.TURN_COMPLETED,
+            CodexLineType.ITEM_STARTED,
+            CodexLineType.ITEM_COMPLETED,
+        }:
+            return CodexStreamParser(session_id=self.session_id)
+        if rtype in {
+            CodexLineType.SESSION_META,
+            CodexLineType.RESPONSE_ITEM,
+            CodexLineType.EVENT_MSG,
+            CodexLineType.TURN_CONTEXT,
+            CodexLineType.COMPACTED,
+            CodexLineType.TOKEN_COUNT,
+            CodexLineType.TASK_STARTED,
+            CodexLineType.TASK_COMPLETE,
+        }:
+            return CodexRolloutParser(session_id=self.session_id)
+        return CodexRolloutParser(session_id=self.session_id)

@@ -1,23 +1,32 @@
 /**
  * Cloud login — single owner of cloud auth on the SDK side.
  *
- * Mirrors the DataManager pattern from FlowSync/store.ts (EventEmitter +
- * dataContext mirror). Frontend never picks env-mode vs browser-mode —
- * cloud_login.py decides server-side. UI calls `cloudManager.login()`,
- * the Promise resolves on a WS oauth event or rejects with a footer warning.
+ * Two orthogonal slots:
+ *   _login      — LoginSlot<HubLoginStatus>      (logged_out / logging_in / logged_in / login_failed)
+ *   _connection — ConnectionSlot<HubConnectionStatus>
+ *                (disconnected / connecting / connected / verified / auth_rejected / error)
+ *
+ * They never mutate each other. A WS-layer rejection (the 403 surface)
+ * flips _connection to 'auth_rejected' but leaves _login on 'logged_in'.
  */
 
 import { EventEmitter } from 'events';
 import apiClient from '../client';
 import { User } from '../entities/user';
 import { createCloudLoginFailedWarning } from '../models/UserWarning';
-import type { OAuthMessage } from '../websocket';
+import type { CloudConnectionStatusMessage, CloudLoginStatusMessage, OAuthMessage } from '../websocket';
 import { OAUTH_PROVIDERS } from './oauth/oauth-service';
 import { secretApprovalGate } from './secretApprovalGate';
 import { secretsService } from './secrets-service';
+import {
+  ConnectionSlot,
+  HubConnectionStatus,
+  HubLoginStatus,
+  LoginSlot,
+  makeConnectionSlot,
+  makeLoginSlot,
+} from './cloud_status';
 
-// Lazy imports break the cycle: context.ts can no longer import this module
-// at top level (it does dynamic-import for the cloudLogout delegate only).
 let _dataManagerCache: any = null;
 async function _dataManager() {
   if (!_dataManagerCache) _dataManagerCache = (await import('../APIEntity')).dataManager;
@@ -36,7 +45,7 @@ async function _dataContext() {
 }
 async function _currentUserKey() {
   if (!_contextEntitiesEnumCache) await _dataContext();
-  return _contextEntitiesEnumCache.CurrentUserTypeId;
+  return _contextEntitiesEnumCache.CloudUserTypeId;
 }
 
 export interface CloudLoginResult {
@@ -44,15 +53,53 @@ export interface CloudLoginResult {
   user: User;
 }
 
+// Back-compat alias — older imports still reach for this.
+export type HubWsStatus = HubConnectionStatus;
+
 interface DesktopInfoSeed {
   cloud_login_available?: boolean;
   cloud_url?: string | null;
+  // New nested shape (preferred).
+  login?: { status: HubLoginStatus; user: Record<string, unknown> | null; reason: string | null };
+  connection?: { status: HubConnectionStatus; error: string | null };
+  // Deprecated flat aliases — kept for one release.
+  hub_ws_connected?: boolean;
+  hub_ws_verified?: boolean;
+  hub_ws_status?: HubConnectionStatus;
+  hub_ws_error?: string | null;
+}
+
+export interface CloudStatusData extends DesktopInfoSeed {
+  logged_in?: boolean;
+  user?: Record<string, unknown> | null;
+}
+
+export interface CloudWsControlResult {
+  hub_ws_connected: boolean;
+  hub_ws_verified: boolean;
+  hub_ws_status: HubConnectionStatus;
+  hub_ws_error?: string | null;
+  connection?: { status: HubConnectionStatus; error: string | null };
+  verification?: {
+    verified: boolean;
+    local_user_id?: string;
+    hub_user_id?: string;
+    hub_user?: Record<string, unknown>;
+  };
+}
+
+function legacyConnectionStatus(d: Partial<DesktopInfoSeed | CloudWsControlResult>): HubConnectionStatus | null {
+  if (d.hub_ws_status) return d.hub_ws_status as HubConnectionStatus;
+  if (d.hub_ws_verified) return 'verified';
+  if (d.hub_ws_connected) return 'connected';
+  return null;
 }
 
 class CloudManager extends EventEmitter {
-  private _isLoggedIn = false;
+  private _login: LoginSlot<HubLoginStatus> = makeLoginSlot<HubLoginStatus>('logged_out');
   private _currentUser: User | null = null;
   private _cloudUrl = '';
+  private _connection: ConnectionSlot<HubConnectionStatus> = makeConnectionSlot<HubConnectionStatus>('disconnected');
   private _pending: { resolve: (r: CloudLoginResult) => void; reject: (e: Error) => void; off: () => void } | null = null;
   private _initialized = false;
 
@@ -60,14 +107,43 @@ class CloudManager extends EventEmitter {
   async bootstrap(seed: DesktopInfoSeed | null | undefined) {
     if (this._initialized) return;
     this._initialized = true;
-    this._isLoggedIn = !!seed?.cloud_login_available;
     this._cloudUrl = seed?.cloud_url ?? '';
+
+    if (seed?.login) {
+      this._applyLoginStatus(seed.login.status, seed.login.user, seed.login.reason, false);
+    } else if (seed?.cloud_login_available) {
+      this._applyLoginStatus('logged_in', null, null, false);
+    }
+    if (seed?.connection) {
+      this._applyConnectionStatus(seed.connection.status, seed.connection.error ?? null, false);
+    } else {
+      const legacy = legacyConnectionStatus(seed ?? {});
+      if (legacy) this._applyConnectionStatus(legacy, seed?.hub_ws_error ?? null, false);
+    }
     await this._mirrorToContext();
 
     const dm = await _dataManager();
     dm.on('on_oauth_msg', (msg: OAuthMessage) => this._onOAuthMessage(msg));
+    dm.on('on_cloud_login_status_msg', (msg: CloudLoginStatusMessage) => {
+      void this._onCloudLoginStatusMsg(msg);
+    });
+    dm.on('on_cloud_connection_status_msg', (msg: CloudConnectionStatusMessage) => {
+      this._onCloudConnectionStatusMsg(msg);
+    });
+    const { ConnectionManager } = await import('../websocket');
+    const cm = ConnectionManager.getInstance();
+    // Legacy fallback — back-compat for one release.
+    cm.on('on_auth_expired_msg', (msg: { reason?: string }) => {
+      void this._onCloudLoginStatusMsg({
+        message_type: 'cloud_login_status_msg',
+        status: 'logged_out',
+        user: null,
+        reason: msg.reason ?? 'rejected',
+      } as CloudLoginStatusMessage);
+    });
+    cm.on('on_hub_client_error_msg', (msg: Record<string, unknown>) => this._onHubClientError(msg));
 
-    if (this._isLoggedIn) await this._refreshFromStatus();
+    if (this.isLoggedIn) await this._refreshFromStatus();
   }
 
   async login(): Promise<CloudLoginResult> {
@@ -81,8 +157,9 @@ class CloudManager extends EventEmitter {
       this._pending = null;
     }
 
+    this._applyLoginStatus('logging_in', null, null);
+
     const promise = new Promise<CloudLoginResult>((resolve, reject) => {
-      // Subscribe BEFORE the POST — env-mode WS event may arrive instantly.
       const handler = async (msg: OAuthMessage) => {
         if (msg.oauth_request_id !== OAUTH_PROVIDERS.FLOWPAD_CLOUD) return;
         await this._handleOAuthCompletion(msg, resolve, reject);
@@ -96,6 +173,7 @@ class CloudManager extends EventEmitter {
       await apiClient.post('/cloud/login');
     } catch (err: any) {
       const message = err?.response?.data?.message ?? err?.message ?? 'Login request failed';
+      this._applyLoginStatus('login_failed', null, message);
       await this._pushFailureWarning(message);
       this._pending?.off();
       this._pending?.reject(new Error(message));
@@ -108,21 +186,129 @@ class CloudManager extends EventEmitter {
 
   async logout(): Promise<void> {
     const data = await apiClient.post<{ cloud_logout_url: string }>('/cloud/logout');
-    this._isLoggedIn = false;
-    this._currentUser = null;
-    const ctx = await _dataContext();
-    ctx.setContextEntityTypeId(await _currentUserKey(), null);
-    ctx.setCloudLoggedIn?.(false);
-    this.emit('logout_complete');
+    // Server broadcasts LOGGED_OUT + DISCONNECTED; mirror immediately for snappy UI.
+    await this._setLoggedOut();
     if (data?.cloud_logout_url) {
       const { BrowserAuthWindow } = await import('./oauth/oauth-window');
       new BrowserAuthWindow().open(data.cloud_logout_url);
     }
   }
 
-  get isLoggedIn() { return this._isLoggedIn; }
-  get currentUser() { return this._currentUser; }
-  get cloudUrl() { return this._cloudUrl; }
+  async connectHubWs(): Promise<CloudWsControlResult> {
+    if (!this.isLoggedIn) {
+      const message = 'Cloud login required before connecting hub WebSocket.';
+      await this._pushFailureWarning(message);
+      throw new Error(message);
+    }
+
+    this._applyConnectionStatus('connecting', null);
+    try {
+      const data = await apiClient.post<CloudWsControlResult>('/cloud/ws/connect');
+      this._applyConnectionFromResponse(data);
+      return data;
+    } catch (err: any) {
+      const message = this._errorMessage(err, 'Hub WebSocket connect failed');
+      this._applyConnectionStatus('error', message);
+      await this._pushFailureWarning(message);
+      throw new Error(message);
+    }
+  }
+
+  async disconnectHubWs(): Promise<CloudWsControlResult> {
+    try {
+      const data = await apiClient.post<CloudWsControlResult>('/cloud/ws/disconnect');
+      this._applyConnectionFromResponse(data);
+      return data;
+    } catch (err: any) {
+      const message = this._errorMessage(err, 'Hub WebSocket disconnect failed');
+      this._applyConnectionStatus('error', message);
+      await this._pushFailureWarning(message);
+      throw new Error(message);
+    }
+  }
+
+  async verifyHubWs(): Promise<CloudWsControlResult> {
+    if (!this.isLoggedIn) {
+      const message = 'Cloud login required before verifying hub WebSocket.';
+      await this._pushFailureWarning(message);
+      throw new Error(message);
+    }
+    try {
+      const data = await apiClient.post<CloudWsControlResult>('/cloud/ws/verify');
+      this._applyConnectionFromResponse(data);
+      return data;
+    } catch (err: any) {
+      const message = this._errorMessage(err, 'Hub WebSocket verification failed');
+      this._applyConnectionStatus('error', message);
+      await this._pushFailureWarning(message);
+      throw new Error(message);
+    }
+  }
+
+  async refreshStatus(): Promise<CloudStatusData | null> {
+    return this._refreshFromStatus();
+  }
+
+  /** @deprecated Listen to login_status_changed / connection_status_changed instead. */
+  async handleAuthExpired(reason = 'rejected'): Promise<void> {
+    await this._setLoggedOut();
+    this.emit('auth_expired', { reason, message: this._connection.error ?? '' });
+  }
+
+  // --- public read API ---
+
+  get isLoggedIn() {
+    return this._login.status === 'logged_in';
+  }
+  get currentUser() {
+    return this._currentUser;
+  }
+  get cloudUrl() {
+    return this._cloudUrl;
+  }
+
+  // New canonical getters
+  get loginStatus(): HubLoginStatus {
+    return this._login.status;
+  }
+  get loginSlot(): Readonly<LoginSlot<HubLoginStatus>> {
+    return this._login;
+  }
+  get connectionStatus(): HubConnectionStatus {
+    return this._connection.status;
+  }
+  get connectionSlot(): Readonly<ConnectionSlot<HubConnectionStatus>> {
+    return this._connection;
+  }
+
+  // Back-compat getters — derived from the slots.
+  get hubWsConnected() {
+    return this._connection.status === 'connected' || this._connection.status === 'verified';
+  }
+  get hubWsVerified() {
+    return this._connection.status === 'verified';
+  }
+  get hubWsStatus(): HubConnectionStatus {
+    return this._connection.status;
+  }
+  get hubWsError(): string | null {
+    return this._connection.error;
+  }
+  get cloudStatus(): CloudStatusData {
+    return {
+      logged_in: this.isLoggedIn,
+      user: this._currentUser ? (this._currentUser as unknown as Record<string, unknown>) : null,
+      cloud_url: this._cloudUrl,
+      // new nested
+      login: { status: this._login.status, user: this._login.user, reason: this._login.reason },
+      connection: { status: this._connection.status, error: this._connection.error },
+      // legacy flat
+      hub_ws_connected: this.hubWsConnected,
+      hub_ws_verified: this.hubWsVerified,
+      hub_ws_status: this._connection.status,
+      hub_ws_error: this._connection.error,
+    };
+  }
 
   // --- internals ---
 
@@ -131,7 +317,7 @@ class CloudManager extends EventEmitter {
       const initial = await secretsService.isEnabled();
       if (initial?.enabled) return true;
     } catch {
-      // probe failed (offline/server down) — fall through to the dialog
+      /* probe failed (offline/server down) — fall through to the dialog */
     }
     const approved = await secretApprovalGate.request();
     if (!approved) return false;
@@ -145,8 +331,6 @@ class CloudManager extends EventEmitter {
 
   private async _onOAuthMessage(msg: OAuthMessage) {
     if (msg.oauth_request_id !== OAUTH_PROVIDERS.FLOWPAD_CLOUD) return;
-    // If a login() Promise is in flight, _handleOAuthCompletion will own this msg —
-    // skip the manager-level fan-out to avoid double-firing _setLoggedIn.
     if (this._pending) return;
     if (msg.status === 'success' && msg.user) {
       await this._setLoggedIn(msg.user as Record<string, unknown>);
@@ -164,45 +348,159 @@ class CloudManager extends EventEmitter {
 
     if (msg.status === 'success' && msg.user) {
       const user = await this._setLoggedIn(msg.user as Record<string, unknown>);
+      void this._refreshFromStatus();
       resolve({ status: 'logged_in', user });
     } else {
       const message = msg.message ?? 'Authentication was rejected';
+      this._applyLoginStatus('login_failed', null, message);
       await this._pushFailureWarning(message);
       reject(new Error(message));
     }
   }
 
   private async _setLoggedIn(userDict: Record<string, unknown>): Promise<User> {
-    const cloudUser = new User(userDict);
-    // Idempotent: re-broadcasts of the same user are no-ops.
-    if (this._isLoggedIn && this._currentUser?.typeId?.toString() === cloudUser.typeId?.toString()) {
+    const dm = await _dataManager();
+    const cloudUser = dm.updateEntityFromJson<User>({ type: User.type, ...userDict });
+    if (this.isLoggedIn && this._currentUser?.typeId?.toString() === cloudUser.typeId?.toString()) {
       return this._currentUser;
     }
     cloudUser.markAsExpanded();
     this._currentUser = cloudUser;
-    this._isLoggedIn = true;
     const ctx = await _dataContext();
     ctx.setCloudLoggedIn?.(true);
     await ctx.setContextEntityTypeId(await _currentUserKey(), cloudUser.typeId);
+    this._applyLoginStatus('logged_in', userDict, null);
     this.emit('login_complete', { user: cloudUser });
     return cloudUser;
   }
 
-  private async _mirrorToContext() {
+  private async _setLoggedOut() {
+    this._currentUser = null;
     const ctx = await _dataContext();
-    ctx.setCloudLoggedIn?.(this._isLoggedIn);
+    await ctx.setContextEntityTypeId(await _currentUserKey(), null);
+    ctx.setCloudLoggedIn?.(false);
+    this._applyLoginStatus('logged_out', null, null);
+    // Connection state is owned by its own channel; logout-driven
+    // DISCONNECTED arrives via cloud_connection_status_msg.
+    this.emit('logout_complete');
   }
 
-  private async _refreshFromStatus() {
-    try {
-      const data = await apiClient.get<{ logged_in: boolean; user: Record<string, unknown>; cloud_url: string }>('/cloud/status');
-      if (data?.cloud_url) this._cloudUrl = data.cloud_url;
-      if (data?.logged_in && data.user) {
-        await this._setLoggedIn(data.user);
-      }
-    } catch {
-      // non-critical: manager state stays as seeded
+  /** Apply a new login slot value. Emits login_status_changed + cloud_status_changed. */
+  private _applyLoginStatus(
+    status: HubLoginStatus,
+    user: Record<string, unknown> | null,
+    reason: string | null,
+    emit = true,
+  ) {
+    const prev = this._login.status;
+    this._login = { status, user, reason };
+    void _dataContext().then((ctx) => ctx.setCloudLoginStatus?.(status));
+    if (emit) {
+      if (prev !== status) this.emit('login_status_changed', this._login);
+      this.emit('cloud_status_changed', this.cloudStatus);
     }
+  }
+
+  /** Apply a new connection slot value. Emits connection_status_changed + cloud_status_changed. */
+  private _applyConnectionStatus(
+    status: HubConnectionStatus,
+    error: string | null,
+    emit = true,
+  ) {
+    const prev = this._connection.status;
+    const prevError = this._connection.error;
+    this._connection = { status, error };
+    void _dataContext().then((ctx) => ctx.setCloudConnectionStatus?.(status));
+    if (emit) {
+      if (prev !== status || prevError !== error) this.emit('connection_status_changed', this._connection);
+      this.emit('cloud_status_changed', this.cloudStatus);
+    }
+  }
+
+  private _applyConnectionFromResponse(data: Partial<CloudWsControlResult> | null | undefined) {
+    if (!data) return;
+    if (data.connection) {
+      this._applyConnectionStatus(data.connection.status, data.connection.error ?? null);
+      return;
+    }
+    const legacy = legacyConnectionStatus(data);
+    if (legacy) this._applyConnectionStatus(legacy, data.hub_ws_error ?? null);
+  }
+
+  private async _mirrorToContext() {
+    const ctx = await _dataContext();
+    ctx.setCloudLoggedIn?.(this.isLoggedIn);
+  }
+
+  private async _refreshFromStatus(): Promise<CloudStatusData | null> {
+    try {
+      const data = await apiClient.get<CloudStatusData>('/cloud/status');
+      if (data?.cloud_url) this._cloudUrl = data.cloud_url;
+
+      // Prefer nested shape; fall back to legacy aliases.
+      if (data?.connection) {
+        this._applyConnectionStatus(data.connection.status, data.connection.error ?? null, false);
+      } else {
+        const legacy = legacyConnectionStatus(data ?? {});
+        if (legacy) this._applyConnectionStatus(legacy, data?.hub_ws_error ?? null, false);
+      }
+
+      if (data?.login) {
+        if (data.login.status === 'logged_in' && data.login.user) {
+          await this._setLoggedIn(data.login.user);
+        } else if (data.login.status === 'logged_out') {
+          await this._setLoggedOut();
+        } else {
+          this._applyLoginStatus(data.login.status, data.login.user, data.login.reason);
+        }
+      } else if (data?.logged_in && data.user) {
+        await this._setLoggedIn(data.user);
+      } else if (data?.logged_in === false) {
+        await this._setLoggedOut();
+      } else {
+        this.emit('cloud_status_changed', this.cloudStatus);
+      }
+      return data;
+    } catch {
+      return null;
+    }
+  }
+
+  private async _onCloudLoginStatusMsg(msg: CloudLoginStatusMessage) {
+    const status = msg.status;
+    const user = (msg.user ?? null) as Record<string, unknown> | null;
+    const reason = msg.reason ?? null;
+    if (status === 'logged_in' && user) {
+      await this._setLoggedIn(user);
+    } else if (status === 'logged_out') {
+      await this._setLoggedOut();
+    } else if (status === 'login_failed') {
+      this._applyLoginStatus('login_failed', null, reason);
+      this.emit('login_failed', { message: reason ?? 'Login failed' });
+    } else {
+      this._applyLoginStatus(status, user, reason);
+    }
+  }
+
+  private _onCloudConnectionStatusMsg(msg: CloudConnectionStatusMessage) {
+    this._applyConnectionStatus(msg.status, msg.error ?? null);
+  }
+
+  private _onHubClientError(msg: Record<string, unknown>) {
+    const method = String(msg.method ?? '');
+    const path = String(msg.path ?? '');
+    const status = String(msg.status_code ?? '');
+    const message = String(msg.message ?? 'Hub client error');
+    // Record the hub error on the connection slot only — login is unrelated.
+    const text = `${method} ${path} ${status}: ${message}`.trim();
+    this._connection = { ...this._connection, error: text };
+    this.emit('hub_client_error', msg);
+    this.emit('connection_status_changed', this._connection);
+    this.emit('cloud_status_changed', this.cloudStatus);
+  }
+
+  private _errorMessage(err: any, fallback: string): string {
+    return err?.response?.data?.message ?? err?.message ?? fallback;
   }
 
   private async _pushFailureWarning(message: string) {
@@ -215,7 +513,6 @@ class CloudManager extends EventEmitter {
 export const cloudManager = new CloudManager();
 export const cloudLogin = () => cloudManager.login();
 export const cloudLogout = () => cloudManager.logout();
-export const getCloudStatus = () =>
-  apiClient.get<{ logged_in: boolean; user: any; cloud_url: string }>('/cloud/status');
+export const getCloudStatus = () => apiClient.get<CloudStatusData>('/cloud/status');
 
 export default cloudManager;

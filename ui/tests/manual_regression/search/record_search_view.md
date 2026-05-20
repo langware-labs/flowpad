@@ -1,3 +1,7 @@
+---
+id: c6e72dc0-aacf-5a30-b269-8ae6ec88baff
+---
+
 test 1: Search view is accessible at /dock/search without a query
 - [browser] navigate to {APP_URL}/dock/search
 - [browser] wait for the page to load (networkidle)

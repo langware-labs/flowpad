@@ -68,6 +68,17 @@ async def _on_server_startup():
     settings = get_instance_settings()
     print(f"  Database path: {get_database_path()}")
 
+    # Development: mirror all logs to a file on disk in addition to the
+    # console, so a session can be inspected after the fact. No-op in prod.
+    try:
+        from flow_sdk.service_log import init_dev_file_logging
+
+        _dev_log = init_dev_file_logging()
+        if _dev_log:
+            print(f"  Dev file log: {_dev_log}")
+    except Exception as _e:  # noqa: BLE001
+        print(f"  Dev file log: failed to init ({_e})")
+
     if os.environ.get("FLOWPAD_SKIP_LOCK", "").lower() == "true":
         return
 
@@ -122,17 +133,17 @@ async def _start_notification_scanner() -> None:
 
 
 async def _start_cloud_ws_listener() -> None:
-    """Stub: real-time cloud push notifications not yet implemented.
+    """Start the outbound authenticated hub WebSocket listener when logged in."""
+    try:
+        from flow_sdk.cloud_client.hub_bridge import hub_ws_bridge
+        from flow_sdk.cloud_client.ws_client import hub_ws_manager
 
-    TODO: Connect to flowpad.ai cloud WebSocket to receive notification
-    push events in real time. For now, notifications reach the recipient via
-    the email deep-link → git pull → manifest scanner path.
-    """
-    import logging as _logging
-    _logging.getLogger(__name__).info(
-        "Cloud WS listener: not started (real-time push from cloud is a stub — "
-        "notifications arrive via email deep-link + git pull instead)"
-    )
+        # Install the bridge before starting the manager so the inbound
+        # dispatcher is ready to consume frames the moment the WS connects.
+        hub_ws_bridge.install()
+        await hub_ws_manager.start()
+    except Exception as e:
+        logging.getLogger(__name__).info("Cloud WS listener: failed to start (%s)", e)
 
 
 async def _shutdown_extras():
@@ -144,6 +155,13 @@ async def _shutdown_extras():
         from flow_sdk.server.scheduler import stop_scheduler
 
         stop_scheduler()
+    except Exception:
+        pass
+
+    try:
+        from flow_sdk.cloud_client.ws_client import hub_ws_manager
+
+        await hub_ws_manager.stop()
     except Exception:
         pass
 

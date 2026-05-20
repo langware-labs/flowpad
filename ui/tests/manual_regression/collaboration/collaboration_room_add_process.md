@@ -1,3 +1,7 @@
+---
+id: f6ec17c5-7756-5c92-a527-f18da4e15a45
+---
+
 # CollaborationRoom: add_process flow
 
 Verifies the end-to-end HTTP contract for creating a collaboration code on a

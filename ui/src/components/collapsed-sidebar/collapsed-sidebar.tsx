@@ -1,4 +1,5 @@
 import { ThemeToggle } from '@src/components/theme-toggle/theme-toggle';
+import { FlowpadAssistantButton } from '@src/components/floating-chat';
 import { useDevMode } from '@src/contexts/dev-mode-context';
 import { Button } from '@src/components/ui/button';
 import { useNavigationState } from '@src/hooks/use-navigation-state';
@@ -71,10 +72,10 @@ export function CollapsedSidebar() {
   const handleClick = useCallback(
     (viewType: ViewType | null) => {
       if (viewType === null) {
-        (window as Record<string, unknown>).__homeNavT0 = performance.now();
+        if (import.meta.env.DEV) (window as Record<string, unknown>).__homeNavT0 = performance.now();
         if (currentView) void navigate('/');
       } else {
-        if (viewType === ViewType.SHELL) {
+        if (import.meta.env.DEV && viewType === ViewType.SHELL) {
           (window as Record<string, unknown>).__shellNavT0 = performance.now();
           console.log('[PERF] +0ms shell icon clicked');
         }
@@ -201,6 +202,7 @@ export function CollapsedSidebar() {
             <Bug className="h-4 w-4" />
           </Button>
         )}
+        <FlowpadAssistantButton />
         <ThemeToggle />
         <UserDropdown />
       </div>

@@ -1,7 +1,7 @@
 /**
  * AskHelpDialog — Scenario B entry point.
  *
- * Slim alternative to `AskForAssistanceDialog`: no Spec, no transcript
+ * Slim alternative to `EntityShareDialog`: no Spec, no transcript
  * attachment, no PTY assumption. The user just supplies a task title, a
  * recipient email, and an optional note. The recipient drives the task
  * forward by replying with a PROMPT, which the sender approves headlessly.

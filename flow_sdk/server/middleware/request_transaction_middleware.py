@@ -4,7 +4,7 @@ import logging
 from contextvars import copy_context
 
 from starlette.requests import Request
-from starlette.responses import Response
+from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from flow_sdk.request_context.execution_context import (
@@ -26,7 +26,11 @@ async def _get_local_user_cached():
     if _LOCAL_USER_CACHE is not None:
         return _LOCAL_USER_CACHE
     from flow_sdk.builtin.user import User
-    user = await User.get_one({"uname": "local"})
+    try:
+        from flow_sdk.server.routes.bootstrap import get_or_create_local_user
+        user = await get_or_create_local_user()
+    except Exception:
+        user = await User.get_one({"uname": "local"})
     if user is not None:
         _LOCAL_USER_CACHE = user
     return user
@@ -42,10 +46,11 @@ class RequestTransactionMiddleware:
     def __init__(self, app: ASGIApp):
         self.app = app
 
-    async def _setup_local_auth(self, req_info):
+    async def _setup_local_auth(self, req_info) -> Response | None:
         """Set up auth for local minihub - allow all requests for the @local user."""
         from flow_sdk.request_context.auth_info import AuthResult
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+        from flow_sdk.responses.response import ApiFailResponse
 
         # Get or set the local user from the per-process cache (see
         # _get_local_user_cached above). This skips a BEGIN IMMEDIATE per
@@ -68,10 +73,14 @@ class RequestTransactionMiddleware:
                 else:
                     target_entity = await entity_model.get_by_typeid(req_info.target_entity_typeid)
                     if target_entity is None:
-                        logging.warning(
-                            f"[Middleware] entity_model.get_by_typeid returned None for "
-                            f"type={req_info.target_entity_typeid.type!r} id={req_info.target_entity_typeid.id} "
-                            f"uname={getattr(req_info.target_entity_typeid, 'uname', None)!r}"
+                        message = (
+                            f"Entity not found: {req_info.target_entity_typeid.type}/"
+                            f"{req_info.target_entity_typeid.id}"
+                        )
+                        logging.debug("[Middleware] %s", message)
+                        return JSONResponse(
+                            content=ApiFailResponse(message=message, status_code=404).model_dump(mode="json"),
+                            status_code=404,
                         )
             except Exception as e:
                 logging.warning(
@@ -94,6 +103,7 @@ class RequestTransactionMiddleware:
         # Set up minimal policies (required even for su mode)
         from flow_sdk.core.policy import PolicyResolver
         req_info.policies = PolicyResolver()
+        return None
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send):
         if scope["type"] != "http":
@@ -140,28 +150,16 @@ class RequestTransactionMiddleware:
             logging.debug(f"[Middleware] RequestInfo: action={req_info.action}, resource={req_info.resource_type}, target={req_info.target_entity_typeid}")
 
             # For local minihub, set up auth to allow all requests
-            await self._setup_local_auth(req_info)
+            early_response = await self._setup_local_auth(req_info)
         else:
             logging.debug("[Middleware] No RequestInfo set up")
+            early_response = None
 
         try:
-            await self.app(scope, receive, send)
-        except Exception as ex:
-            await execution_context.rollback_transaction()
-            raise ex
-        else:
-            # Success path: commit the per-request transaction so writes
-            # durably persist. cleanup() then closes the session.
-            await execution_context.commit_transaction()
+            async with execution_context.transaction_scope():
+                if early_response is not None:
+                    await early_response(scope, receive, send)
+                else:
+                    await self.app(scope, receive, send)
         finally:
-            # Cleanup (close session) — runs on both success and exception
-            # paths. Use the LOCAL `execution_context` we built at the top
-            # of __call__ so close() is guaranteed to run even if some
-            # inner code stomped the contextvar (which the previous
-            # `get_execution_context()` re-lookup defended against by
-            # accident — it returned None and skipped close, leaking the
-            # request session and its aiosqlite connection).
-            try:
-                await execution_context.cleanup()
-            finally:
-                set_execution_context(None)
+            set_execution_context(None)

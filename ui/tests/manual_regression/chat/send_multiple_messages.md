@@ -1,3 +1,7 @@
+---
+id: 0e919670-b103-5b71-bc08-51441ba569f1
+---
+
 test 1: Multiple shell commands can be typed without crashing the terminal
 - navigate to {APP_URL}/dock/shell/new_terminal
 - wait for terminal to be ready (element with active terminal panel `[data-testid="terminal-panel"][data-active="true"]` shows xterm)

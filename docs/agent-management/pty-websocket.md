@@ -1,3 +1,7 @@
+---
+id: f59c4fcb-2d75-5fab-81ac-bdff4302e9e0
+---
+
 # PTY, Shell State, and WebSocket Transport
 
 Reference for the current PTY stack: Shell-owned state, backend PTY sessions,
@@ -714,7 +718,7 @@ Current routing in `AgenticProcess.prompt(...)`:
 
 ```text
 visible=True  -> interactive PTY path
-visible=False -> self.driver.run_print_turn(...)
+visible=False -> self.driver.headless_prompt(...)
 ```
 
 Driver-specific headless implementations run CLI print/exec commands such as

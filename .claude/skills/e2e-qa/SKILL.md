@@ -1,7 +1,12 @@
 ---
+id: ae32bd1d-2fca-50c2-bf33-fa24a06aad61
 name: e2e-qa
 description: Team-based E2E QA system. QA Manager leads a team of testers and developers.
-tags: [testing, e2e, qa, regression]
+tags:
+- testing
+- e2e
+- qa
+- regression
 allowed-tools: Read, Write, Edit, Bash, Grep, Glob
 output-dir: ui/tests/manual_regression/_results
 scenarios-dir: ui/tests/manual_regression
@@ -127,7 +132,7 @@ TeamCreate(team_name="e2e-qa-analyze") # for analyze mode
 
 **qa-tester** (up to 3 for run mode; 1 for debug/validate):
 
-> **Tab ownership is mandatory.** Each qa-tester owns a private browser tab for the lifetime of the run — see ``agents/qa-tester.md`` "One tab per tester — never share". Without it, parallel testers race on the same DOM and corrupt each other's snapshots/clicks. The spawn prompt below makes the tester create + bind its own tab before claiming any task.
+> **Per-test tab allocation is mandatory.** A qa-tester does NOT use a single tab for its whole run. Instead, EVERY time it claims a task, it allocates a brand-new Chrome tab dedicated to that task — and keeps the tab open for the full task lifecycle (run → debug → fix → re-validate). The tab is closed only when the task is fully resolved (passed, fail accepted, or skip confirmed) and a new task begins. This prevents (a) cross-tester hijack on a shared Chrome session, and (b) cross-test contamination from leftover state of a prior test on the same tab. See ``agents/qa-tester.md`` "Per-test tab — one tab per task, lifecycle-bound" for the full protocol. The spawn prompt below points the tester at that protocol.
 
 ```
 Task(
@@ -138,9 +143,9 @@ Task(
     Read your full instructions at .claude/skills/e2e-qa/agents/qa-tester.md.
     Environment: APP_URL=http://localhost:${VITE_PORT}, API_URL=http://localhost:${LOCAL_SERVER_PORT}
     Output dir: <output-dir>/<timestamp>/
-    BEFORE claiming any task: create your own browser tab (mcp__debugMcp__browser_tabs new, or tabs_create_mcp) and record the id as MY_TAB_ID. Every browser_* call you make must operate on MY_TAB_ID — never share another tester's tab.
+    Per-test tab allocation: For EACH task you claim (Run:/Validate:/etc.), allocate a NEW browser tab via mcp__debugMcp__browser_tabs(new) (or tabs_create_mcp) and bind it as MY_TASK_TAB_ID for that task. Every browser_* call for that task must select MY_TASK_TAB_ID first. Keep this tab open through the task's full lifecycle — Run → (any) Debug → Fix → re-Validate — so the same DOM state can be inspected across iterations. Close MY_TASK_TAB_ID only when the task is completed (or marked skip-confirmed). Then claim the next task and allocate a fresh tab. Never reuse another tester's tab.
     Check TaskList and claim available 'Run:' or 'Validate:' tasks. Work through them until none remain.
-    On shutdown_request, close MY_TAB_ID before exiting.",
+    On shutdown_request, close any open task tabs before exiting.",
   run_in_background=true
 )
 ```

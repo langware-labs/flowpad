@@ -296,3 +296,4 @@ flow_sdk/server/static/
 # Dev skill planning artifacts
 .flow/skills/dev/feature_plans/
 .flow/skills/dev/instructions.md
+.claude/scheduled_tasks.lock

@@ -73,9 +73,9 @@ for (let i = 0; i < 4; i++) {
   page.expand = page.expand ?? { auth_scopes: [] };
 
   if (page.expand.auth_scopes) {
-    page.expand.auth_scopes.push([pageTypeId]);
+    page.expand.auth_scopes.push([pageTypeId.toString()]);
   } else {
-    page.expand.auth_scopes = [[pageTypeId]];
+    page.expand.auth_scopes = [[pageTypeId.toString()]];
   }
   mockPages.push(page);
 }

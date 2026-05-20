@@ -40,6 +40,7 @@ def _server_env(port: int, db_path: str) -> dict:
     env["MINIHUB_HOST"] = "127.0.0.1"
     env["LOCAL_SERVER_PORT"] = str(port)
     env["FLOWPAD_SKIP_LOCK"] = "true"  # bypass singleton guard when dev server is running
+    env["FLOWPAD_SKIP_DOTENV"] = "true"  # do not let .env.local override Popen-set LOCAL_SERVER_PORT/SQLITE_DATABASE_PATH
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
     env["PYTHONPATH"] = f"{repo_root}{os.pathsep}{env.get('PYTHONPATH', '')}"
     return env

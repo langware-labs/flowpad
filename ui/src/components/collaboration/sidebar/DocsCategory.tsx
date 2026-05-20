@@ -1,6 +1,6 @@
 import { ChevronRight, FileText, Folder } from 'lucide-react';
 import { useMemo, useEffect, useState } from 'react';
-import { config, Markdown, Project, TypeId } from '@sdk';
+import { apiClient, Markdown, Project, TypeId } from '@sdk';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { useQuery } from '@tanstack/react-query';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -66,9 +66,16 @@ function FolderRow({
   depth: number;
   onOpen: (d: Markdown) => void;
 }) {
-  // Auto-expand at the root and the first level (`.claude/docs`); deeper
-  // folders start collapsed so the menu doesn't explode on big trees.
-  const [open, setOpen] = useState<boolean>(depth < 2);
+  // Auto-expand:
+  //  - root + first level (depth < 2): preserves the existing UX.
+  //  - "thin chains": a folder whose only child is another folder. Lets
+  //    ``.claude/docs`` unfold so the system docs surface immediately.
+  //  - "leaf-with-few-files": a folder with no subfolders and ≤ 3 files.
+  //    Lets the final folder in a ``.claude/docs/`` chain show its file
+  //    rows without the user clicking through.
+  const isThinChain = node.folders.size === 1 && node.files.length === 0;
+  const isShallowLeaf = node.folders.size === 0 && node.files.length > 0 && node.files.length <= 3;
+  const [open, setOpen] = useState<boolean>(depth < 2 || isThinChain || isShallowLeaf);
   const hasChildren = node.folders.size > 0 || node.files.length > 0;
   const indent = { paddingLeft: `${depth * 12}px` };
 
@@ -145,12 +152,10 @@ export function DocsCategory({ projectId, onOpenTab }: Props) {
   const { data: rows = [], isLoading } = useQuery<Markdown[]>({
     queryKey: ['docs-include-system'],
     queryFn: async () => {
-      const url = `${config.SERVER_URL}${config.API_PREFIXES.graph}/markdown?include_system=true&limit=5000`;
-      const resp = await fetch(url);
-      if (!resp.ok) throw new Error(`Failed to load docs: ${resp.status}`);
-      const body = await resp.json();
-      const records = (body.data ?? []) as Partial<Markdown>[];
-      return records.map((row) => new Markdown(row));
+      const records = await apiClient.get<Partial<Markdown>[]>(
+        '/graph/markdown?include_system=true&limit=5000',
+      );
+      return (records ?? []).map((row) => new Markdown(row));
     },
     staleTime: 30_000,
   });

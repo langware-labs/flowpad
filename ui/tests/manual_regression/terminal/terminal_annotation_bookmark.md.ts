@@ -44,7 +44,7 @@ test.describe('terminal_annotation_bookmark', () => {
     await expect(page.locator('textarea[aria-label="Terminal input"]').first()).toBeVisible({ timeout: 10_000 });
 
     // Annotation gutter must NOT be present in a plain shell
-    const gutter = page.locator('[data-testid="annotation-gutter"]');
+    const gutter = page.locator('[data-testid="annotation-gutter"]').first();
     await expect(gutter).not.toBeAttached({ timeout: 3_000 });
   });
 
@@ -54,7 +54,7 @@ test.describe('terminal_annotation_bookmark', () => {
     await gotoAgenticProcessWithSession(page);
 
     // Annotation gutter must be present for an agentic process with worker_session_id
-    const gutter = page.locator('[data-testid="annotation-gutter"]');
+    const gutter = page.locator('[data-testid="annotation-gutter"]').first();
     await expect(gutter).toBeAttached({ timeout: 10_000 });
   });
 
@@ -73,7 +73,7 @@ test.describe('terminal_annotation_bookmark', () => {
     await page.locator('[data-testid="terminal-panels"]').waitFor({ state: 'visible', timeout: 30_000 });
 
     // Wait for annotation gutter
-    const gutter = page.locator('[data-testid="annotation-gutter"]');
+    const gutter = page.locator('[data-testid="annotation-gutter"]').first();
     await expect(gutter).toBeAttached({ timeout: 10_000 });
 
     // ── Step 2: Click first "+" button in annotation gutter ───────────────────

@@ -1,3 +1,7 @@
+---
+id: 6db114ca-da89-5322-9491-4406f7e4bbc2
+---
+
 test 1: Session Info popover opens only when a session exists and shows all expected rows
 - navigate to {APP_URL}/dock/shell/new_terminal
 - wait for the plain shell tab; do NOT click Start Claude

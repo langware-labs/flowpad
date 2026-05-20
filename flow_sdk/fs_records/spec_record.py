@@ -15,10 +15,31 @@ from typing import ClassVar, Iterator
 from flow_sdk.fs_store import Record, RecordType
 from flow_sdk.fs_store.fs_ref import FSRef
 
+from ._frontmatter import (
+    _extract_body,
+    _extract_frontmatter,
+    _render_frontmatter,
+    _yaml_load,
+)
+
 
 def _spec_id(path: Path) -> str:
     """UUID5 from resolved file path — stable across rescans."""
     return str(uuid.uuid5(uuid.NAMESPACE_URL, str(path.resolve())))
+
+
+def _read_spec_frontmatter_id(path: Path) -> str | None:
+    """Return `id` (or legacy `asset_id`) from frontmatter, or None."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    fm = _extract_frontmatter(text)
+    if not fm:
+        return None
+    fields = _yaml_load(fm) or {}
+    raw = fields.get("id") or fields.get("asset_id")
+    return str(raw).strip() if isinstance(raw, str) and raw.strip() else None
 
 
 def _spec_search_dirs() -> list[Path]:
@@ -63,7 +84,8 @@ class SpecRecord(Record):
                             spec_type = line.split(":", 1)[1].strip()
         except OSError:
             pass
-        rec = cls(id=_spec_id(path), name=name, spec_type=spec_type)
+        spec_id = _read_spec_frontmatter_id(path) or _spec_id(path)
+        rec = cls(id=spec_id, name=name, spec_type=spec_type)
         object.__setattr__(rec, "_asset_ref", FSRef(path))
         return rec
 
@@ -96,6 +118,44 @@ class SpecRecord(Record):
     async def from_fsref(cls, ref) -> list["SpecRecord"]:
         """Indexer entry point — construct from an FSRef emitted by spec_project_fn."""
         return [cls._from_md_file(ref._path)]
+
+    @classmethod
+    def getId(cls, ref) -> str:
+        """Read-only: prefer frontmatter `id` (or legacy `asset_id`); else uuid5(path)."""
+        existing = _read_spec_frontmatter_id(ref._path)
+        return existing if existing else _spec_id(ref._path)
+
+    @classmethod
+    def genId(cls, ref) -> str:
+        """Read existing id, or mint+write a stable one into the frontmatter.
+
+        Idempotent. Preserves the existing derived id (uuid5 of path) so DB
+        rows keyed by that value stay valid — see ``MarkdownRecord.genId``.
+        """
+        existing = _read_spec_frontmatter_id(ref._path)
+        if existing:
+            return existing
+        new_id = _spec_id(ref._path)
+        try:
+            text = ref._path.read_text(encoding="utf-8")
+        except OSError:
+            return new_id
+        fm = _extract_frontmatter(text)
+        body = _extract_body(text)
+        fields: dict = {}
+        if fm:
+            parsed = _yaml_load(fm)
+            if isinstance(parsed, dict):
+                fields.update(parsed)
+        merged = {"id": new_id, **{k: v for k, v in fields.items() if k not in ("id", "asset_id")}}
+        try:
+            ref._path.write_text(
+                _render_frontmatter(merged) + "\n\n" + body + ("\n" if body and not body.endswith("\n") else ""),
+                encoding="utf-8",
+            )
+        except OSError:
+            pass
+        return new_id
 
     def save(self) -> None:
         ar = object.__getattribute__(self, "_asset_ref")

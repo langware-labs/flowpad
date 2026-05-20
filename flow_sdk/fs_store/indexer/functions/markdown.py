@@ -58,7 +58,7 @@ async def markdown_flat_fn(
 # workflow_fn, command_fn). Skip emission to avoid double-indexing a SKILL.md
 # as both SKILL and MARKDOWN.
 _TYPED_RECORD_DIRS: frozenset[str] = frozenset({
-    "skills", "agents", "workflows", "commands",
+    "skills", "agents", "workflows", "commands", "whiteboards",
 })
 
 

@@ -1,3 +1,7 @@
+---
+id: f4afa785-c2e1-5c52-85e3-a4c970c9ea00
+---
+
 # Agent Management Specification
 
 This document is the current implementation-oriented reference for the
@@ -82,7 +86,7 @@ Flow:
 frontend process.prompt(text) or executeInstruction(...)
   -> POST agentic_process/<id>/prompt or execute
   -> backend AgenticProcess.prompt()
-  -> driver.run_print_turn(...)
+  -> driver.headless_prompt(...)
   -> worker CLI runs a print/headless turn
   -> FlowData is streamed to the caller
   -> transcript/history is still available through the driver

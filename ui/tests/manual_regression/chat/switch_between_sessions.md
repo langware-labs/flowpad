@@ -1,3 +1,7 @@
+---
+id: 095d859b-c624-5633-825c-f6dc98a1d1f2
+---
+
 test 1: Switch between multiple shell terminal tabs
 - navigate to {APP_URL}/dock/shell/new_terminal
 - wait for terminal to be ready (active terminal panel `[data-testid="terminal-panel"][data-active="true"]` shows xterm)

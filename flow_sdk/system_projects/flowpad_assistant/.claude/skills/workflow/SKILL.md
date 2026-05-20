@@ -1,5 +1,5 @@
 ---
-
+id: 015a7f80-e801-54ee-bda6-9d61675c36fa
 ---
 
 # workflow
@@ -16,4 +16,3 @@ Invoke this skill when the user wants to create, modify, or run a workflow.
 2. Define the workflow steps and their order.
 3. Create or update the workflow definition.
 4. Run or test the workflow as needed.
-

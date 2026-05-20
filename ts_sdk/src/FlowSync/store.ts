@@ -6,7 +6,7 @@ import apiClient, { apiStats, clearStats, GRAPH_API_PREFIX } from '../client';
 import config from '../config';
 import { IEntity } from '../IEntity';
 import { ActionInfo, BootstrapInfo, ScanInfo } from '../models';
-import { isTypeId, TypeId } from '../models/TypeId';
+import { TypeId } from '../models/TypeId';
 import { UserRole } from '../services/membershipService';
 import {
   ConnectionManager,
@@ -37,7 +37,7 @@ export enum EntityStatus {
 export interface EntityExpansion {
   roles?: UserRole[] | null;
   allowed_actions?: ActionType[] | null;
-  auth_scopes?: TypeId[][] | null;
+  auth_scopes?: string[][] | null;
   is_private?: boolean;
   expansions?: ExpansionType[] | null;
 }
@@ -996,6 +996,27 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     return actionInfo.castResponse ? (this.castAndDeepAssign(response) as unknown as Res) : response;
   }
 
+  /**
+   * Call an action over the WebSocket when the socket is OPEN, otherwise fall
+   * back to the REST path. The branch is decided up front from the connection
+   * state — there is no post-failure retry, so a non-idempotent mutation can
+   * never be sent twice.
+   *
+   * For non-file mutations (e.g. a text-only message send) the WS hop skips an
+   * HTTP round-trip when a live socket already exists; REST keeps the call
+   * working when it doesn't. Multipart/file actions must NOT use this — binary
+   * bodies don't travel over the WS rest_api_msg channel.
+   */
+  public async callActionPreferWS<_Req, Res>(
+    actionInfo: ActionInfo,
+    options?: import('../websocket').IWSRestOptions,
+  ): Promise<Res> {
+    if (ConnectionManager.getInstance().connected) {
+      return this.callActionOverWS<_Req, Res>(actionInfo, options);
+    }
+    return this.callAction<_Req, Res>(actionInfo);
+  }
+
   public getCachedQueryResults<U extends T>(request: QueryRequest): U[] | undefined {
     const watchedQuery = this.watchedQueries.getWatchedQuery(request);
     return watchedQuery?.results as U[] | undefined;
@@ -1325,54 +1346,37 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     return entity;
   }
 
-  // // Whitelist of fields that should always be converted to TypeId
-  // private static TYPEID_FIELD_WHITELIST = new Set([
-  //   'created_by',
-  //   'updated_by',
-  //   'parent_id',
-  //   'workspace_id',
-  //   'user_id',
-  //   'owner_id',
-  //   'install_target',
-  // ]);
-
-  // // Helper to check if a field should be converted to TypeId
-  // private shouldConvertToTypeId(target: any, key: string): boolean {
-  //   // First check: is it in the whitelist?
-  //   if (DataManager.TYPEID_FIELD_WHITELIST.has(key)) {
-  //     return true;
-  //   }
-
-  //   // Second check: does the entity's schema indicate this is a TypeId field?
-  //   // Check if target has a schema and if the field ends with _id or _by
-  //   if (target && typeof target === 'object' && 'getType' in target) {
-  //     try {
-  //       const schema = this.getSchema(target.getType());
-  //       if (schema) {
-  //         const property = schema.getProperty(key);
-  //         // Check if property has format: "type_id" or similar marker
-  //         if (property && (property as any).format === 'type_id') {
-  //           return true;
-  //         }
-  //       }
-  //     } catch (e) {
-  //       // Schema might not be loaded yet, continue
-  //     }
-  //   }
-
-  //   // Default: don't convert
-  //   return false;
-  // }
+  /**
+   * Field-name whitelist for the TypeId auto-coercion in `deepAssign`.
+   *
+   * The default heuristic — "if the value looks like a TypeId string, treat it
+   * as one" — corrupts plain-string fields whose values happen to match the
+   * `<type>-<id>` shape. The canonical example is `target_typeid_str` on
+   * `AgenticProcess` / `Run`: the Python schema declares it `str | None`, the
+   * on-disk record stores it as the string `"project-<uuid>"`, but
+   * `deepAssign` would otherwise wrap it into a TypeId object — breaking
+   * `useProcessesForTarget` queries (string match on the server, object
+   * mismatch on the client validator) and silently disabling the chat
+   * toolbar's history.
+   *
+   * The list below names every field whose value should NEVER be promoted to
+   * a TypeId, regardless of how it looks. Add new entries here when a plain
+   * string id field is introduced and its values can collide with the TypeId
+   * shape. Reference IDs (project_id, created_by, …) are intentionally NOT in
+   * this set — current consumers rely on the auto-coercion for those.
+   */
+  private static TYPEID_COERCION_DENYLIST: ReadonlySet<string> = new Set([
+    'target_typeid_str',
+    'message',
+    'text',
+    'instruction',
+    'title',
+    'sender_name',
+  ]);
 
   public deepAssign(target: any, source: any) {
     for (const key in source) {
-      // Check if source[key] is a TypeId FIRST, before checking if it's an object
-      // This handles TypeId objects in arrays (like auth_scopes) where the key is just an index
-      if (source[key] && isTypeId(source[key])) {
-        target[key] = new TypeId(source[key]);
-      } else if (typeof source[key] === 'object' && source[key] !== null) {
-        // For objects/arrays, recursively deep assign
-        // Initialize target[key] if it doesn't exist
+      if (typeof source[key] === 'object' && source[key] !== null) {
         if (!target[key]) {
           target[key] = Array.isArray(source[key]) ? [] : {};
         }

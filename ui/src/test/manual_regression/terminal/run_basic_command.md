@@ -1,3 +1,7 @@
+---
+id: 96cfd14e-5d0a-564a-8cee-bb150c74c1be
+---
+
 test 1: Type a command and validate output
 - navigate to the Shell view via sidebar
 - validate terminal is visible and ready

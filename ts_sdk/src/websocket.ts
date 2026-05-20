@@ -2,6 +2,13 @@ import { EventEmitter } from 'events';
 import { v4 as uuidv4 } from 'uuid';
 import config from './config'; // Import the 'config' module
 import { TypeId } from './models/TypeId';
+import {
+  ConnectionSlot,
+  HubConnectionStatus,
+  HubLoginStatus,
+  LocalConnectionStatus,
+  makeConnectionSlot,
+} from './services/cloud_status';
 import { defineGlobal } from './utils/globals';
 
 type MessageType =
@@ -16,22 +23,12 @@ type MessageType =
   | 'pty_output_msg'
   | 'flow_data_msg'
   | 'llm_config_msg'
+  | 'hub_client_error_msg'
+  | 'auth_expired_msg'
+  | 'cloud_login_status_msg'
+  | 'cloud_connection_status_msg'
   | 'ui_command';
 
-function convertToWebSocketUrl(url: string) {
-  // Create a URL object to parse the input URL
-  const parsedUrl = new URL(url);
-
-  // Replace the protocol
-  if (parsedUrl.protocol === 'http:') {
-    parsedUrl.protocol = 'ws:';
-  } else if (parsedUrl.protocol === 'https:') {
-    parsedUrl.protocol = 'wss:';
-  }
-
-  // Return the modified URL as a string
-  return parsedUrl.toString();
-}
 
 interface BaseMessage {
   message_type: MessageType;
@@ -87,6 +84,33 @@ export interface OAuthMessage extends BaseMessage {
   status: 'success' | 'error';
   message?: string | null;
   user?: Record<string, any> | null;
+}
+
+export interface HubClientErrorMessage extends BaseMessage {
+  message_type: 'hub_client_error_msg';
+  status_code: number;
+  method: string;
+  path: string;
+  message: string;
+  suppressed_count?: number;
+}
+
+export interface AuthExpiredMessage extends BaseMessage {
+  message_type: 'auth_expired_msg';
+  reason: string;
+}
+
+export interface CloudLoginStatusMessage extends BaseMessage {
+  message_type: 'cloud_login_status_msg';
+  status: HubLoginStatus;
+  user?: Record<string, unknown> | null;
+  reason?: string | null;
+}
+
+export interface CloudConnectionStatusMessage extends BaseMessage {
+  message_type: 'cloud_connection_status_msg';
+  status: HubConnectionStatus;
+  error?: string | null;
 }
 
 /**
@@ -186,6 +210,15 @@ export interface FlowDataMessage extends EntityMessage {
 
 export type DataOpType = 'create' | 'update' | 'delete';
 
+/** Enum form of {@link DataOpType}. Use these members instead of bare
+ *  'create' / 'update' / 'delete' string literals when matching a
+ *  data_op frame's ``op``. */
+export enum DataOp {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+}
+
 interface DataOpMessage extends EntityMessage {
   op: DataOpType;
   data?: { [key: string]: any }; // Use a dictionary to represent the data or define the specific structure if known
@@ -203,6 +236,36 @@ export class ConnectionManager extends EventEmitter {
   private baseReconnectDelay: number = 500; // ms
   private isReconnecting: boolean = false;
 
+  // Local WS connection slot — same enum vocabulary as the cloud side
+  // (narrower: no auth_rejected/verified since the local server is the
+  // user's own process). Mutated only at the socket lifecycle points
+  // below; broadcast via 'connection_status_changed'.
+  private _connection: ConnectionSlot<LocalConnectionStatus> = makeConnectionSlot<LocalConnectionStatus>('disconnected');
+
+  get connectionStatus(): LocalConnectionStatus {
+    return this._connection.status;
+  }
+
+  get connectionSlot(): Readonly<ConnectionSlot<LocalConnectionStatus>> {
+    return this._connection;
+  }
+
+  private setConnectionStatus(status: LocalConnectionStatus, error: string | null = null) {
+    const prev = this._connection.status;
+    const prevError = this._connection.error;
+    this._connection = { status, error };
+    void import('./FlowSync/context').then((mod) => mod.dataContext.setLocalConnectionStatus?.(status));
+    if (prev !== status || prevError !== error) {
+      this.emit('connection_status_changed', this._connection);
+    }
+  }
+
+  // In-flight connect promise. Set when a `new WebSocket(...)` is created and
+  // cleared on `open` or on `close-before-open` of that same socket. Lets
+  // concurrent callers (e.g. `waitForConnected`) await the same handshake
+  // instead of racing each other or seeing `undefined` during CONNECTING.
+  private _openPromise: Promise<void> | null = null;
+
   public resetReconnectState() {
     this.reconnectAttempts = 0;
     this.isReconnecting = false;
@@ -213,27 +276,36 @@ export class ConnectionManager extends EventEmitter {
     ConnectionManager.instance = this;
   }
 
-  public async connect() {
-    if (
-      this.socket &&
-      (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)
-    ) {
+  public async connect(): Promise<void> {
+    if (this.socket?.readyState === WebSocket.OPEN) {
       return;
     }
-    let resolve_promise: any;
-    let reject_promise: any;
-    const connected_promise = new Promise((resolve, reject) => {
+    // CONNECTING: another caller already started a handshake — return that
+    // promise so awaiters actually wait for `open`. Previously this branch
+    // returned `undefined`, which silently let downstream WS calls fire
+    // before the socket opened.
+    if (this.socket?.readyState === WebSocket.CONNECTING && this._openPromise) {
+      return this._openPromise;
+    }
+
+    let resolve_promise: () => void = () => {};
+    let reject_promise: (err: Error) => void = () => {};
+    const connected_promise = new Promise<void>((resolve, reject) => {
       resolve_promise = resolve;
       reject_promise = reject;
     });
+    this._openPromise = connected_promise;
+    this.setConnectionStatus('connecting');
     try {
-      const ws_url = `${config.SERVER_URL}${config.API_PREFIXES.connect}/${this.id}`;
-      const ws = new WebSocket(convertToWebSocketUrl(ws_url));
+      const ws_url = `${config.WS_URL}/${this.id}`;
+      const ws = new WebSocket(ws_url);
       this.socket = ws;
       ws.binaryType = 'arraybuffer';
       let didOpen = false;
       ws.addEventListener('open', (event) => {
         didOpen = true;
+        if (this._openPromise === connected_promise) this._openPromise = null;
+        this.setConnectionStatus('connected');
         this.onOpen(event);
         resolve_promise();
       });
@@ -257,6 +329,12 @@ export class ConnectionManager extends EventEmitter {
         // A newer connect() call may have already replaced it — don't clobber that.
         if (this.socket === ws) {
           this.socket = null;
+          if (this._openPromise === connected_promise) this._openPromise = null;
+        }
+        if (!didOpen) {
+          this.setConnectionStatus('error', `WebSocket closed before connecting (code: ${event.code})`);
+        } else {
+          this.setConnectionStatus('disconnected');
         }
         this.onClose(event);
         if (!didOpen) {
@@ -265,12 +343,51 @@ export class ConnectionManager extends EventEmitter {
       });
       ws.addEventListener('error', (event) => {
         console.error('WebSocket error:', event);
+        this.setConnectionStatus('error', 'WebSocket error');
       });
     } catch (e) {
       console.error('Error connecting to WebSocket server:', e);
-      reject_promise(e);
+      if (this._openPromise === connected_promise) this._openPromise = null;
+      this.setConnectionStatus('error', e instanceof Error ? e.message : String(e));
+      reject_promise(e instanceof Error ? e : new Error(String(e)));
     }
     return connected_promise;
+  }
+
+  /**
+   * Resolve once the socket is OPEN, with a hard timeout fence.
+   *
+   * Idempotent and safe under concurrency: multiple callers share the same
+   * in-flight `_openPromise`. Use this from any code path that is about to
+   * issue a WS-only action (e.g. `callActionOverWS`) and cannot block the
+   * UI indefinitely if the server is unreachable.
+   *
+   * Throws `Error('WebSocket connect timed out after Xms')` on timeout —
+   * does NOT mutate the underlying socket; a later attempt may still succeed.
+   */
+  public async waitForConnected(timeoutMs: number = 5000): Promise<void> {
+    if (this.connected) return;
+
+    // Kick a connect if none is in flight. connect() short-circuits when
+    // OPEN/CONNECTING, so this is cheap to call concurrently.
+    if (!this._openPromise) {
+      void this.connect();
+    }
+    const open = this._openPromise;
+    if (!open) return; // race: connect() resolved synchronously to OPEN
+
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () => reject(new Error(`WebSocket connect timed out after ${timeoutMs}ms`)),
+        timeoutMs,
+      );
+    });
+    try {
+      await Promise.race([open, timeout]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 
   onOpen(event: Event) {
@@ -355,9 +472,29 @@ export class ConnectionManager extends EventEmitter {
     if (data.message_type === 'llm_config_msg') {
       return this.onLlmConfigMessage(data as LlmConfigMessage);
     }
+    if (data.message_type === 'hub_client_error_msg') {
+      return this.onHubClientErrorMessage(data as HubClientErrorMessage);
+    }
+    if (data.message_type === 'auth_expired_msg') {
+      return this.onAuthExpiredMessage(data as AuthExpiredMessage);
+    }
+    if (data.message_type === 'cloud_login_status_msg') {
+      return this.onCloudLoginStatusMessage(data as CloudLoginStatusMessage);
+    }
+    if (data.message_type === 'cloud_connection_status_msg') {
+      return this.onCloudConnectionStatusMessage(data as CloudConnectionStatusMessage);
+    }
     if (data.message_type === 'ui_command') {
       return this.onUiCommandMessage(data as UiCommandMessage);
     }
+  }
+
+  onCloudLoginStatusMessage(data: CloudLoginStatusMessage) {
+    this.emit('on_cloud_login_status_msg', data);
+  }
+
+  onCloudConnectionStatusMessage(data: CloudConnectionStatusMessage) {
+    this.emit('on_cloud_connection_status_msg', data);
   }
 
   onUiCommandMessage(data: UiCommandMessage) {
@@ -423,6 +560,12 @@ export class ConnectionManager extends EventEmitter {
   }
   onLlmConfigMessage(data: LlmConfigMessage) {
     this.emit('on_llm_config_msg', data);
+  }
+  onHubClientErrorMessage(data: HubClientErrorMessage) {
+    this.emit('on_hub_client_error_msg', data);
+  }
+  onAuthExpiredMessage(data: AuthExpiredMessage) {
+    this.emit('on_auth_expired_msg', data);
   }
   onPtyOutputMessage(data: PtyOutputMessage) {
     this.emit('on_pty_output_msg', data);

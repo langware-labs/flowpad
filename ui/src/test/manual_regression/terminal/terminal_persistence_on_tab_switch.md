@@ -1,3 +1,7 @@
+---
+id: 1f385ad6-a315-58c3-937f-7c8593b621ac
+---
+
 test 1: Terminal state persists when switching views
 - navigate to the Shell view via sidebar
 - validate terminal is visible and ready

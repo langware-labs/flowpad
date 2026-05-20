@@ -6,6 +6,8 @@ from typing import Any, Dict, Optional
 import httpx
 from pydantic import BaseModel, Field
 
+from flow_sdk.cloud_client.client_hooks import HubAuthExpiredError, build_event_hooks, request_path
+from flow_sdk.cloud_client.error_reporter import hub_error_reporter
 from flow_sdk.config import API_PREFIX, FLOWPAD_CLOUD_URL, default_service_config
 
 
@@ -54,7 +56,13 @@ class ApiConfig(BaseModel):
 class FlowpadClient:
     """Async HTTP client for Flowpad API"""
 
-    def __init__(self, config: ApiConfig):
+    def __init__(
+        self,
+        config: ApiConfig,
+        api_key: str | None = None,
+        timeout: float | httpx.Timeout = 30.0,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ):
         """
         Initialize the Flowpad API client.
 
@@ -62,8 +70,10 @@ class FlowpadClient:
             config: API configuration
         """
         self.config = config
-        self._api_key: Optional[str] = None
+        self._api_key: Optional[str] = api_key
         self._client: Optional[httpx.AsyncClient] = None
+        self._timeout = timeout
+        self._transport = transport
 
     def set_api_key(self, api_key: str):
         """
@@ -75,9 +85,9 @@ class FlowpadClient:
         self._api_key = api_key
 
     def _get_headers(self) -> Dict[str, str]:
-        """Get headers including Bearer auth if API key is set"""
+        """Get default headers. Auth is normally injected by request hooks."""
         headers = {
-            "Content-Type": "application/json",
+            "Accept": "application/json",
         }
 
         if self._api_key:
@@ -89,7 +99,11 @@ class FlowpadClient:
         """Get or create the async HTTP client"""
         if self._client is None:
             self._client = httpx.AsyncClient(
-                base_url=self.config.api_base_url, headers=self._get_headers(), timeout=30.0
+                base_url=self.config.api_base_url,
+                headers=self._get_headers(),
+                timeout=self._timeout,
+                transport=self._transport,
+                event_hooks=build_event_hooks(),
             )
         else:
             # Update headers in case API key changed
@@ -120,10 +134,87 @@ class FlowpadClient:
             raise ValueError(f"API returned error status: {response_data}")
         return response_data["data"] if "data" in response_data else response_data
 
-    async def get(self, path: str) -> Any:
-        """Make a GET request and return the unwrapped response data."""
+    async def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        json: Any = None,
+        params: dict[str, Any] | None = None,
+        files: Any = None,
+        content: Any = None,
+        headers: dict[str, str] | None = None,
+        timeout: float | httpx.Timeout | None = None,
+    ) -> httpx.Response:
+        """Make a raw HTTP request with hub hooks attached.
+
+        ``content`` accepts raw bytes or an (async) byte iterator — used for
+        streamed uploads where the body is produced incrementally so a
+        progress callback can fire between chunks. ``headers`` merges over the
+        client defaults (e.g. a hand-built ``multipart/form-data`` boundary).
+        """
         client = await self._get_client()
-        return self._unwrap(await client.get(path))
+        try:
+            return await client.request(
+                method,
+                path,
+                json=json,
+                params=params,
+                files=files,
+                content=content,
+                headers=headers,
+                timeout=timeout,
+            )
+        except HubAuthExpiredError:
+            raise
+        except httpx.RequestError as e:
+            await hub_error_reporter.report(
+                status_code=0,
+                method=method.upper(),
+                path=self._request_path(e.request.url if e.request else path),
+                message=str(e),
+            )
+            raise
+
+    async def open_stream(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+        timeout: float | httpx.Timeout | None = None,
+    ):
+        """Return an httpx streaming-response context manager.
+
+        For large downloads consumed chunk-by-chunk (``resp.aiter_bytes()``)
+        instead of buffered whole into ``resp.content`` — lets a caller report
+        download progress as bytes land. Usage::
+
+            async with await client.open_stream("GET", url) as resp:
+                async for chunk in resp.aiter_bytes():
+                    ...
+        """
+        client = await self._get_client()
+        return client.stream(method, path, params=params, headers=headers, timeout=timeout)
+
+    @staticmethod
+    def _request_path(url_or_path: Any) -> str:
+        if isinstance(url_or_path, httpx.URL):
+            return request_path(url_or_path)
+        return str(url_or_path)
+
+    async def get(
+        self,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        raw: bool = False,
+        timeout: float | httpx.Timeout | None = None,
+    ) -> Any:
+        """Make a GET request and return the unwrapped response data."""
+        response = await self.request("GET", path, params=params, timeout=timeout)
+        return response.content if raw else self._unwrap(response)
 
     async def get_user(self) -> Dict[str, Any]:
         """Get the current user information.
@@ -137,10 +228,34 @@ class FlowpadClient:
             raise ValueError(f"Invalid user data: missing 'id' field. Got:\n{json.dumps(user_data, indent=2)}")
         return user_data
 
-    async def post(self, path: str, data: Dict[str, Any]) -> Any:
+    async def post(
+        self,
+        path: str,
+        data: Dict[str, Any] | None = None,
+        *,
+        files: Any = None,
+        timeout: float | httpx.Timeout | None = None,
+    ) -> Any:
         """Make a POST request and return the unwrapped response data."""
-        client = await self._get_client()
-        return self._unwrap(await client.post(path, json=data))
+        response = await self.request(
+            "POST",
+            path,
+            json=None if files else (data or {}),
+            files=files,
+            timeout=timeout,
+        )
+        return self._unwrap(response)
+
+    async def put(
+        self,
+        path: str,
+        data: Dict[str, Any] | None = None,
+        *,
+        timeout: float | httpx.Timeout | None = None,
+    ) -> Any:
+        """Make a PUT request and return the unwrapped response data."""
+        response = await self.request("PUT", path, json=data or {}, timeout=timeout)
+        return self._unwrap(response)
 
     async def __aenter__(self):
         """Async context manager entry"""

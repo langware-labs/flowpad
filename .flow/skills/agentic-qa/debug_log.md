@@ -1201,3 +1201,432 @@ Note: the error message format here (`"Entity not found: shell-<id>"`) is the `a
 ### Fixed: no
 
 
+---
+
+## 2026-05-08 RCA Cluster A — graph mutations not reflected in dock UI
+
+**Author:** debugger-A (e2e-qa-tabs-rca, task #1)
+**Source:** `ui/tests/manual_regression/_results/2026-05-08T17-52-45Z/terminal--interactive_tabs_project_filtering_matrix.json`
+**Scope:** 16 fails + 5 downstream test-issues. Below: 4 distinct root causes (A1–A4). 21 affected tests collapse to those 4 causes — the user's "this is mostly duplication" intuition is correct.
+
+### Root cause #A1 (HIGH confidence): `useActiveTerminals` has NO WebSocket subscription — the strip is fed only by REST `terminals/list` + locally-emitted mutations
+The whole tab-strip data layer (`terminalState`) is updated by exactly three paths: (a) initial fetch on first subscribe, (b) explicit `refresh()`, (c) direct mutations from `pushTerminal` / `removeTerminal` / `updateTerminal` invoked by *this* client's UI handlers. There is no DataOp/WS listener that reacts to Shell-create / Shell-close / AgenticProcess-create events from another client or REST caller.
+
+- **Evidence:**
+  - `ui/src/hooks/useActiveTerminals.ts:21-23` — header docstring explicitly states "**No WebSocket subscription**, no merge ratchet, no implicit filtering."
+  - `ui/src/hooks/useActiveTerminals.ts:151-199` — module-level `terminalState`, `setTerminalState`, `fetchActiveTerminals` — no DataOp/WS listener wiring anywhere in the file.
+  - `ui/src/hooks/useActiveTerminals.ts:273-291` — `useAllTerminals.subscribe` calls `fetchActiveTerminals()` exactly once on first subscribe (gated by `initialFetchStarted`); no re-fetch on backend events.
+  - `ui/src/hooks/useActiveTerminals.ts:303-311` — `useProjectTerminals` is a pure `useMemo` filter over `useAllTerminals().data`; nothing in this hook re-runs on backend mutation either.
+  - `ts_sdk/src/FlowSync/store.ts:370-435` — the WS DataOp pipeline (`onDataOp`) updates `dataManager.entities` cache and `watchedQueries` (entities created via `Shell.query` / `AgenticProcess.query`). `terminals/list` is an `ActionInfo`-based RPC (`useActiveTerminals.ts:178-181`), NOT a watched query — DataOps cannot reach it.
+  - `flow_sdk/builtin/faas/compute_node.py:469-539` — backend `_terminal_list` is a fresh server-side join (`ShellEntity.get_all` + `AgenticProcess.get_all` + reap pass). It runs only when the client GETs it; no broadcast on shell/process create.
+- **Symptom mapping (10 tests):**
+  - **8** (chip count desync — chip showed 0/0 with 2 REST shells visible in strip; embedded observation, even though test was marked pass)
+  - **35** (external POST /shell — "tab strip stayed at 0 tabs … hard refresh — new tab appeared" — exact textbook symptom of missing live-reactivity)
+  - **36** (external POST /agentic_process — explicitly noted "Same as test 35")
+  - **37** (external REST DELETE/close — explicitly "Same root cause as test 35")
+  - **38** (two browser windows — would be the cleanest demonstration of A1; blocked by harness limitation)
+  - **39** (mixed strip — 1 plain shell + 1 Claude AP + 1 Codex AP via REST; only the plain shell appears, "Hard refresh did NOT add them either"). NOTE: `compute_node.py:507` filters `[p for p in all_processes if getattr(p, "visible", False)]` — if REST POST /agentic_process did not set `visible=true`, the AP would never surface even after refresh. That is a *secondary* contributor to test 39; A1 is the primary one for the live-update side.
+  - **40** (depends on 39 setup)
+  - **41** (test-issue, depends on AP creation flow)
+  - **42** (test-issue — depends on AP being in strip)
+  - **49** (test-issue — process-bound dock route depends on AP-in-strip surfacing)
+- **Fix area (informational, NOT a fix):**
+  - `ui/src/hooks/useActiveTerminals.ts` — needs a DataOp/WS subscription side-channel, OR the chip+strip should be re-derived from `useQuery`-style watched queries on `Shell` + `AgenticProcess` types instead of the `terminals/list` RPC, OR the backend should broadcast a `terminals_changed` WS event that the hook listens for.
+
+---
+
+### Root cause #A2 (HIGH confidence): The Footer "Switch Project" modal sources from on-disk Claude-project enumeration plus filtered Project entities — it actively *excludes* `/tmp` paths, which is exactly where the tests' REST-created projects live
+The modal merges three sources: (a) `useClaudeProjectList` (a compute-node scan of on-disk Claude-CLI projects), (b) `Project.query()` (graph entities), (c) optional system projects. Crucially, when merging the graph entities into the merged list, the code **explicitly drops `/tmp` and `/private/tmp` paths** before calling `upsert`. REST-created Project entities for the tests use `fs_storage_mount_path` like `/tmp/proj-A` and `/tmp/proj-B`, so they are dropped on the floor.
+
+- **Evidence:**
+  - `ui/src/components/open-project-component/open-project-component.tsx:610-624` — the merge loop:
+    ```
+    for (const p of flowpadProjects) {
+      const path = p.fs_storage_mount_path;
+      if (!path || !p.name) continue;
+      if (/^\/tmp\/|^\/private\/tmp\//.test(path)) continue;   // ← excludes ALL /tmp Project entities
+      …
+      upsert({ id: `flowpad:${p.id}`, name: p.displayName, … });
+    }
+    ```
+  - `ui/src/components/open-project-component/open-project-component.tsx:528` — primary list source is `useClaudeProjectList` (filesystem scan), not the graph.
+  - `ui/src/hooks/use-claude-projects.ts:97` — `useClaudeProjectList` calls `listProjectsFromComputeNode(computeNode.id)`, an on-disk Claude-CLI projects scan; nothing about graph mutations.
+  - `ui/src/components/status-bar.tsx:1, 87-91, 134-138` — Footer "Switch Project" button → `OpenProjectComponent` (the same modal).
+  - `ui/src/components/footer.tsx:82` — Footer mounts `<StatusBar />` which owns the Switch Project button.
+- **Symptom mapping (1 fail + 1 dependency):**
+  - **28** (Footer Switch Project modal — "Proj-B does NOT appear in the modal. Cannot complete 'pick Proj-B'." — exactly the /tmp filter)
+  - **32** (Footer repo/branch — explicitly "Project-switch dependency fails (tests 21/28); footer cannot show Proj-B's repo/branch.") — depends on A2/A3 to make Proj-B current.
+- **Fix area (informational):**
+  - `ui/src/components/open-project-component/open-project-component.tsx:614` — the `/tmp` guard presumably hides internal/transient entities, but it also hides any legitimate Project whose mount_path lives under /tmp (the case for ad-hoc REST-test projects). Either drop the rule, gate it on a separate `system`/`internal` flag, or have tests use a non-/tmp workspace. The matrix's intent is end-to-end with REST-created data, so the test side is unlikely to change.
+
+---
+
+### Root cause #A3 (HIGH confidence): `ProjectsCounterChip` derives its row set from `useAllTerminals().data` — when tabs have `projectId == null`, they are EXCLUDED from the chip's project bucket count, so the chip shows 0/0 even when tabs exist
+The chip groups visible tabs by `tabProjectId(tab)` and skips any tab where the resolved id is null. Combined with the orphan-rule in `useProjectTerminals` (tabs with null projectId surface in *every* project view), a wave of REST-created shells whose `project_id` is `null` (or whose project_id was not propagated through `terminals/list`) renders as both "all tabs visible in the strip" AND "chip count = 0/0", which is exactly what tests 8, 14, 21–27 report. The chip then disables itself (`isEmpty`), making the popover unreachable — which cascades to ALL of Section D.
+
+- **Evidence:**
+  - `ui/src/components/terminal/ProjectsCounterChip.tsx:19-21` — `tabProjectId` returns `tab.projectId ?? tab.shell?.project_id ?? tab.agenticProcess?.project_id ?? null`.
+  - `ui/src/components/terminal/ProjectsCounterChip.tsx:32-40` — group loop: `if (!pid) continue;` — null-projectId tabs contribute zero buckets, zero increments.
+  - `ui/src/components/terminal/ProjectsCounterChip.tsx:56, 65-85` — `isEmpty = projectTotal === 0` makes the chip render as `<button disabled …>` with `cursor-default opacity-50` — **chip is unclickable**, popover unreachable.
+  - `ui/src/hooks/useActiveTerminals.ts:90-106, 108-127, 303-311` — orphan-rule: `data.filter((t) => t.projectId === pid || t.projectId == null)` keeps null-projectId tabs in every project view, so the strip *correctly* shows them as orphan-style rows even though the chip refuses to count them. Deliberate orphan policy (`useActiveTerminals.ts:298-302` docstring) but it produces the contradictory "5 tabs visible / 0 projects" surface.
+  - `flow_sdk/builtin/shell.py:54` — backend default for shell.project_id is `None`. Whether REST POSTs that go through `POST /graph/shell/` actually persist project_id depends on the request body; the chip *cannot* recover from null-projectId payloads regardless.
+- **Symptom mapping (8 fails):**
+  - **14** ("chip stays at 0 projects/0 terminals despite 2 projects with 5 shells … Chip is also disabled (cannot be clicked)")
+  - **21** ("Chip shows '0', aria-label='0 active projects with 0 terminals', disabled=true … Cannot click chip; cannot perform 'select OTHER project' step.")
+  - **22** ("Same root cause as test 21")
+  - **23** ("Chip is disabled; popover unreachable")
+  - **24** ("Same root cause: chip disabled, popover unreachable")
+  - **25** ("Same root cause: chip can't pick Proj-A/Proj-B")
+  - **26** ("Chip popover unreachable; cannot perform project switch")
+  - **27** ("Chip popover unreachable; cannot validate orphan visibility")
+  - **8** has a passing tab-strip but flags the chip-count desync explicitly — A3 again.
+- **Fix area (informational):**
+  - Server-side: ensure `terminals/list` payload preserves a non-null `project_id` per shell/process when the backing entity has one; verify `POST /graph/shell/` writes the request body's `project_id` to the row.
+  - Or client-side: `ProjectsCounterChip` may want to derive its project buckets from `Project.query()` directly (so even pre-tab-creation, freshly-created projects are countable) and merely overlay tab counts.
+
+---
+
+### Root cause #A4 (MEDIUM confidence): When `loadShell`'s primary path (`shell.project_id` truthy) doesn't fire, the fallback `systemTools.resolveProjectContext` silently no-ops on shells whose `workdir` is also unset — so the dock-loader's project-context auto-switch never lands
+`loadShell` (the loader primitive for `/dock/shell/<shell-id>`) DOES call `setContextEntityTypeId(CurrentProjectTypeId, …)` *only when `shell.project_id` is truthy*. If it's falsy, control falls to `systemTools.resolveProjectContext(shell.workdir)`. That function early-returns when workdir is undefined, and otherwise filters Project entities by path-prefix match. For a REST-created shell whose `workdir` was not stamped, both branches do nothing — `dataContext.project` stays at the bootstrap project.
+
+- **Evidence:**
+  - `ui/src/routes/loaders/load-shell.ts:96-125` — `loadShell` is the "pure" Shell loader; lines 116-122:
+    ```
+    if (shell.project_id) {
+      await dataContext.setContextEntityTypeId(
+        ContextEntitiesEnum.CurrentProjectTypeId,
+        new TypeId(Project.type, shell.project_id),
+      );
+    } else {
+      await systemTools.resolveProjectContext(shell.workdir ?? undefined, shell);
+    }
+    ```
+  - `ts_sdk/src/services/system-tools-service.ts:527-546` — `resolveProjectContext`: `if (!workdir) return;` (early-out), then path-prefix match on `workdir.startsWith(p.fs_storage_mount_path)`.
+  - `ui/src/routes/loaders/load-shell.ts:256-304` — `routePlainShellPointer` dispatches to `loadShell` when no AgenticProcess owns the shell.
+  - `ui/src/routes/loaders/main-loader.ts:75-92, 146-148` — `loadAgentApp` awaits `initSdk`, then routes shell view via `loadShellRoute(pointer)`. `initSdk` is memoised (`ts_sdk/src/main.ts:25-30, 82-90`) so on warm path, the bootstrap-project-set step does NOT re-run; only `loadShell` can re-set the project. If A3's null-project_id wire issue is real, A4 explains why test 12's footer never switches.
+- **Symptom mapping (1 fail):**
+  - **12** ("dataContext.project does NOT auto-switch as the matrix expects" — footer stays at "my_first_project" despite navigation to a Proj-B shell URL).
+- **Fix area (informational):**
+  - This is a *consequence* of A3 (or whatever upstream makes `shell.project_id` null in the wire payload). If A3 is fixed, A4 disappears. If A3 isn't tractable, an alternative is to make `resolveProjectContext` also try a Shell→Project graph traversal (find any Project whose `id` matches `shell.project_id`, even if a string-typed truthiness check failed, then set context).
+
+---
+
+### Test-issue cases that DO NOT match A1–A4:
+- **29** (Footer label fallback chain) — explicitly waiting on a working project switch (A2/A3); when those resolve, this is re-runnable.
+- **30** ('Select Project' red pill, force project=null) — harness limitation; not a code bug.
+- **38** (two browser windows in sync) — harness limitation; *would have been* the cleanest A1 demonstration.
+
+### Cross-cluster note
+- **Test 8's "chip count showed 0 ('0 active projects with 0 terminals') even though 2 tabs exist"** is A3 (chip disagrees with strip because shells have null projectId). The test is marked `pass` because the matrix's "unchanged" criterion was met, but the embedded observation is A3.
+
+### Confidence summary
+- A1: **HIGH** — directly stated in code comments, no DataOp wiring exists for the strip path. Verified by symptom evidence in tests 35–39.
+- A2: **HIGH** — the `/tmp` filter is literally in the merge loop. Test 28's note is a perfect mirror of the regex.
+- A3: **HIGH** — chip group loop's null skip + isEmpty disable is verbatim in source. Mirror in 7+ test notes.
+- A4: **MEDIUM** — depends on the assumption that `shell.project_id` was null in the wire payload (likely, but not directly observed in the test's network trace).
+
+### Fixed: no
+
+---
+
+## 2026-05-08 RCA Cluster C + matrix-wording
+
+**Author:** debugger-C (e2e-qa-tabs-rca, task #3)
+**Scope:** three matrix-wording / driveability questions for tests 19, 7+43, 30. RCA only. No code changes.
+
+### PART 1 — Test 19: Close-X middle tab activates LEFT, matrix expects RIGHT
+
+**Verdict: matrix is wrong (or under-specified). The app activates the *first* tab in `tab_order` (leftmost) — not the right neighbor — by definition of the fallback. There is no documented design intent for "next adjacent right".**
+
+**Code path on close:**
+1. `ui/src/components/terminal/TabbedTerminal.tsx:509-515` — `handleCloseTab` calls `closeTabs([session])`.
+2. `ui/src/components/terminal/TabbedTerminal.tsx:497-507` — `closeTabs` awaits backend `closeTerminalTargets`, then fires `onTabClose?.(result.accepted)`. The component itself never picks the next active tab.
+3. `ui/src/components/terminal/useStandardTabNav.ts:34-48` — the standard `onTabClose` consumer pops the closed key from an MRU stack. If MRU is non-empty it does **nothing** ("the loader will pick a default target once the closed terminal drops off the entity list"). If MRU is empty it navigates to `DockPointer.forShell()` (no pointer).
+4. `ui/src/routes/loaders/load-shell.ts:210-229` — `routeDefaultShell` calls `loadNextProcess({ projectId: dataContext.project?.id ?? null })`.
+5. `ui/src/routes/loaders/load-next-process.ts:148-200` — calls `resolveDefaultTab(tabs, tried)`.
+6. `ui/src/routes/loaders/load-shell.ts:138-166` — `resolveDefaultTab` tries previously-active target (gone, just closed), then previously-active shellId (also gone), then **`tabs.find(isPickable)`** — first pickable tab in the array (line 165).
+7. `ui/src/hooks/useActiveTerminals.ts:129-134` + `196` — `tabs` are sorted by `byTabOrder` ascending. So `tabs[0]` is the **leftmost** (lowest `tab_order`) tab.
+
+**Why the tester sees LEFT:** with 4 shells [t1,t2,t3,t4] and t2 active, after close `tabs = [t1,t3,t4]`. `previousTargetTypeId` and `previousShellId` no longer match anything pickable. Fallback returns `tabs[0] = t1` — the **leftmost** tab. This is *not* "left adjacent" semantically: for active=t3 with [t1,t2,t3,t4], closing also activates t1 (jumping past t2 to leftmost). The observed "left adjacent" in the 4-tab/active-#2 case is coincidence.
+
+**Documented intent:** none for left/right adjacency.
+- `docs/agent-management/tabs-management.md:96` — "`TabbedTerminal` falls back to the first visible tab only when context has no active shell yet" — generic, not close-specific.
+- `docs/agent-management/tabs-management.md:133-134` — "After the backend action, `onTabClose(shellId)` is emitted. The consumer chooses the next route." — silent on direction.
+- `useStandardTabNav.ts:11-12` — "After close, the next tab in the MRU stack becomes active; if the stack is empty, we fall back to the empty shell view." — MRU intent, not adjacency. (And MRU is only updated on `onTabClick`, line 21-32 — never on tab open or programmatic activation, so for a freshly-created strip MRU is empty after one click and the fallback runs.)
+- `CLAUDE.md` — silent on this.
+- `git log` on `useStandardTabNav.ts` and `load-shell.ts` — no commit messages mention left-vs-right intent.
+
+**Matrix line:** `ui/tests/manual_regression/terminal/interactive_tabs_project_filtering_matrix.md:241` — "validate the 3rd tab (now sitting in slot 2) becomes active". This expectation has no backing in the code or in any documented design intent. It assumes browser-tab convention; the code does the opposite.
+
+### PART 2 — Tests 7 & 43: REST PATCH on `name` is NOT the PTY-watcher path; user_renamed guard does not fire
+
+**Verdict: matrix wording is wrong. The proposed REST `PATCH /api/v1/graph/shell/<id> -d '{"name": ...}'` does not exercise the `user_renamed` guard. To validate the guard, the test must drive a real OSC title escape through the PTY (or, as a REST-only facsimile, hit the `update-display` action with `is_pty: true`).**
+
+**user_renamed write sites (where it's set true):**
+- `flow_sdk/builtin/shell.py:631-636` — `Shell.rename(name)` — explicitly sets `self.user_renamed = True` (used by user-initiated UI rename and `/rename` PTY command path).
+- `flow_sdk/builtin/shell.py:822-845` — `Shell.update_display` action: when `is_pty=False` (or absent), it sets `self.user_renamed = True` after applying the name (line 843-844).
+
+**user_renamed read site (the actual guard) — only one:**
+- `flow_sdk/builtin/shell.py:836-845` — inside `update_display` only:
+  ```py
+  is_pty = bool(body.get("is_pty", False))
+  if "name" in body:
+      incoming = body["name"]
+      is_blocked = is_pty and self.name and any(f in incoming for f in self._PTY_NAME_BLOCKLIST)
+      if is_pty and (self.user_renamed or is_blocked):
+          pass        # ← guard: drop the PTY-driven name update
+      else:
+          self.name = incoming
+          ...
+  ```
+  The guard fires only on the `is_pty=True` branch. The `update_display` action is bound to `POST /shell/<id>/update-display` (`@action.post(action_name="update-display")` at line 822).
+
+**Generic graph PATCH path (what the matrix uses):**
+- `flow_sdk/server/routes/graph.py:319-322` — catch-all router for graph paths (any HTTP verb).
+- `flow_sdk/actions/action_registry.py:184-199` — `get_action_from_method` maps `"PATCH"` → `"update"` (line 191-192).
+- `flow_sdk/core/entity/entity_model.py:560-572` — generic `update_by_id` calls `apply_field_updates(fields)` then `update()`. **No `user_renamed` check.** The PATCH writes `name` directly and does not consult `is_pty`.
+
+**Frontend PTY title-watcher path (the real one user_renamed protects):**
+- `ui/src/components/terminal/interactive-terminal/InteractiveTerminal.tsx:757-759` — xterm `term.onTitleChange((title) => onTitleChange?.(title))` — fires on OSC 0/1/2 escapes consumed by xterm.js.
+- `ui/src/components/terminal/TabbedTerminal.tsx:1108-1110` — wires `onTitleChange={(title) => onTabRename(session, title, false)}` (third arg `injectRename=false`).
+- `ui/src/components/terminal/TabbedTerminal.tsx:576-599` — `onTabRename(..., injectRename=false)` calls `shell.updateDisplay({ name, is_pty: !injectRename })` → `is_pty: true` → backend guard at `shell.py:839` fires.
+- `ts_sdk/src/entities/shell.ts:375-376` — `updateDisplay` posts to the `update-display` action (not generic PATCH).
+
+**Conclusion:** the matrix steps `curl -X PATCH "$API/api/v1/graph/shell/<id>" -d '{"name":"pty-title-from-pty"}'` (lines 146 and 427) hit the generic `update` action, which has no `user_renamed` guard. The PATCH overwrites `name` and the test fails by design — even when the app is correct.
+
+**Correct ways to drive a PTY title update for tests 7 / 43:**
+1. **Authentic xterm path** (recommended; exercises the real surface): in the live shell PTY, write the OSC 0 escape, e.g.
+   ```bash
+   printf '\033]0;pty-title-from-pty\a'
+   ```
+   This goes through xterm → `term.onTitleChange` → `onTabRename(session, title, false)` → `shell.updateDisplay({ name, is_pty: true })` → guard at `shell.py:839`. This requires the active tab to be mounted (only mounted xterm instances consume OSC).
+2. **Direct `update-display` action** (REST-only, bypasses xterm; still hits the guard):
+   ```bash
+   curl -X POST "$API/api/v1/graph/shell/<id>/update-display" \
+     -H 'content-type: application/json' \
+     -d '{"name":"pty-title-from-pty","is_pty":true}'
+   ```
+   This calls `Shell.update_display` with `is_pty=True` and triggers the guard at `shell.py:839`.
+
+There is no test-only backend endpoint specifically for simulating PTY title escapes — option 2 is the closest "REST" facsimile and matches the wire shape `Shell.updateDisplay` uses internally.
+
+### PART 3 — Test 30: forcing project=null IS driveable from headless MCP
+
+**Verdict: yes — the tester is wrong about driveability. `dataContext` is exposed on `window`, so `browser_evaluate` can flip the project to null without React devtools. The matrix step "from devtools" is misleading wording but the underlying mechanism is fully reachable.**
+
+**Evidence — dataContext is window-exposed:**
+- `ts_sdk/src/FlowSync/context.ts:1058-1060` — at module load:
+  ```ts
+  defineGlobal('context', dataContext);
+  defineGlobal('ctx', dataContext);
+  defineGlobal('dataContext', dataContext);
+  ```
+- `ts_sdk/src/utils/globals.ts:31-41` — `defineGlobal` uses `Object.defineProperty(window, name, { get() { return globalRegistry[name]; }, ... })`. So `window.dataContext`, `window.context`, `window.ctx` all return the live `FlowSyncContext` instance and are reachable via `browser_evaluate`.
+- `ts_sdk/src/FlowSync/context.ts:582-619` — `setContextEntityTypeId(entityKey, null)` is a public async method that calls `_onRemovedFromContext` (line 593), clears the observable map (line 604), writes null to localStorage (line 607), and emits `CONTEXT_CHANGED` (line 618). MobX-bound UI re-renders.
+- `ts_sdk/src/FlowSync/context.ts:90` — `CurrentProjectTypeId` is the string enum value `'CurrentProjectTypeId'`, so the eval call passes that string directly.
+
+**Driveable headless recipe (for matrix revision):**
+1. Navigate to `/dock/shell` (no pointer). `ui/src/routes/loaders/main-loader.ts:141-149` only calls `loadShellRoute(pointer)`; `routeDefaultShell` (`ui/src/routes/loaders/load-shell.ts:210-229`) does **not** touch `CurrentProjectTypeId`. Project context survives.
+2. In MCP `browser_evaluate`, run:
+   ```js
+   await window.dataContext.setContextEntityTypeId('CurrentProjectTypeId', null)
+   ```
+3. Do **not** navigate after this — the following loaders re-resolve project from the loaded entity and would overwrite the null:
+   - `ui/src/routes/loaders/load-process.ts:103,117`
+   - `ui/src/routes/loaders/load-shell.ts:118` (only for non-empty pointers; bare `/dock/shell` is safe)
+   - `ui/src/routes/loaders/load-conversation.ts:79,94`
+   - `ui/src/routes/loaders/load-tasks.ts:66,79`
+   - `ui/src/routes/loaders/main-loader.ts:126,178`
+   - `ui/src/routes/loaders/load-project.ts:80`
+
+**Caveat:** `setupProject()` (`ts_sdk/src/FlowSync/context.ts:840-877`) only runs at init from `initSdk`. Once cleared post-init, it stays null until a navigation re-resolves it. A page reload re-runs bootstrap; with no persisted project (we just nulled localStorage too), `setupProject` falls back to `projects[0]` (line 874). So the null state is *not* persistent across reloads — but for a single-page test run, the eval-based clear is sufficient.
+
+**Matrix wording suggestion (for the matrix author):** rephrase line 319 to something like:
+> force project = null: navigate to `/dock/shell` (no pointer), then `await window.dataContext.setContextEntityTypeId('CurrentProjectTypeId', null)` via `browser_evaluate`. Do not navigate again until assertions complete.
+
+### Fixed: no
+
+---
+
+## 2026-05-08 RCA Cluster B — URL not pushed to active tab id
+
+**Author:** debugger-B (e2e-qa-tabs-rca, task #2)
+**Source:** `ui/tests/manual_regression/_results/2026-05-08T17-52-45Z/terminal--interactive_tabs_project_filtering_matrix.json`
+**Scope:** 3 fails (tests 5, 6, 45) + 2 downstream test-issues (46, 47). All five collapse to **ONE** root cause (B1). RCA only — no code changes.
+
+### Root cause #B1 (HIGH confidence): The sidebar "Shell" button hard-resets navigation to bare `/dock/shell` (no pointer), and `routeDefaultShell` only emits a same-route PUSH `redirect()` after `loadShell()` has already mutated `dataContext` — the pre-mutation makes the URL update functionally invisible because the tab is already active, and the late PUSH does not survive the same-route revalidation cycle on hard-refresh
+
+The bug is not "the loader forgets to redirect"; the redirect line *exists* (`load-shell.ts:228`). The bug is structural: by the time `throw redirect(...)` runs, `loadNextProcess → loadShell` has already called `dataContext.setActiveShellId / setActiveTerminalTargetTypeId`, which is what `<TabbedTerminal>` reads to decide which panel to mount. The user sees "tab activated, panel mounted" *before* react-router gets the redirect Response. On hard-refresh (test 5), no upstream URL exists to compare against, so the same-route PUSH redirect is silently elided / not honored by react-router v7's loader-redirect path. On Home→Shell (tests 6, 45), the sidebar-Shell handler builds a `forTab(SHELL)` pointer with `pointer: undefined` and calls `openDock`, which shortcircuits via `currentDock?.equals(dock)` only on identity but *not* on "current URL is a SHELL URL with a more-specific pointer" — so it pushes bare `/dock/shell`, the loader then tries to push *another* same-route redirect, and the second push is dropped.
+
+**Crucial asymmetry vs. test 50 (PASSES):** the `routeNewTerminal` branch (`load-shell.ts:192-208`) uses `replace()` — which sets the `X-Remix-Replace` header and is honored by react-router as a `REPLACE` navigation type (`ui/node_modules/react-router/dist/development/chunk-EPOLDU6W.mjs:2681`). The `routeDefaultShell` branch (line 228) uses `redirect()` — same Response, no `X-Remix-Replace` header, treated as `PUSH`. PUSHes from a loader to the same route family that triggered the loader race against the still-running navigation, and on hard-refresh have no source URL to push from — so they get dropped silently. REPLACEs do not have that problem because they overwrite the current entry instead of appending.
+
+- **Evidence — sidebar Shell-button handler always navigates to bare `/dock/shell`:**
+  - `ui/src/components/collapsed-sidebar/collapsed-sidebar.tsx:42` — `{ title: 'Shell', icon: Terminal, viewType: ViewType.SHELL }` — main nav item.
+  - `ui/src/components/collapsed-sidebar/collapsed-sidebar.tsx:73-87` — `handleClick`: `navigation.openTab(viewType)` for the Shell item. Does NOT remember last active tab.
+  - `ui/src/navigation/NavigationActions.ts:163-168` — `openTab(tabType)`: builds `DockPointer.forTab(tabType, …)` and calls `openDock(pointer)`.
+  - `ui/src/navigation/DockPointer.ts:86-88` — `forTab(viewType, options, layout)`: returns `new DockPointer(viewType, undefined, options || {}, layout)` — **`pointer` is `undefined`**, so the resulting URL is bare `/dock/shell` regardless of any previously-active shell tab.
+  - This is the confirmed answer to manager's required question "does sidebar Shell remember the last active tab?": **no, it does not**. There is no MRU lookup on the sidebar path; the per-component MRU lives only in `useStandardTabNav.ts:18-22` and is consulted only on tab close, never on sidebar Shell click.
+
+- **Evidence — the loader DOES emit a redirect, but it's a PUSH, not a REPLACE:**
+  - `ui/src/routes/loaders/load-shell.ts:42-43` — imports both `redirect` and `replace` from `react-router`.
+  - `ui/src/routes/loaders/load-shell.ts:210-229` — `routeDefaultShell`:
+    ```
+    async function routeDefaultShell(): Promise<void> {
+      const result = await loadNextProcess({ projectId: dataContext.project?.id ?? null });
+      handleCleanups(result.cleaned);
+      if (!result.loaded) {
+        dataContext.setActiveShellId('');
+        dataContext.setActiveTerminalTargetTypeId(null);
+        ...
+        return;                                                  // ← line 220 — empty: NO redirect
+      }
+      _perfLog(`routeDefaultShell redirect → /dock/shell/${loadedToPointer(result.loaded)}`);
+      // Push (not replace): the user navigated *to* /dock/shell intentionally.
+      // Replacing here would erase that navigation step from history, so BACK
+      // would skip the user's previous page (home → terminal → BACK should
+      // return to home, not whatever was before home).
+      throw redirect(`/dock/shell/${loadedToPointer(result.loaded)}`);   // ← line 228 — PUSH redirect
+    }
+    ```
+  - **Every other branch in `load-shell.ts` uses `replace()` (REPLACE):**
+    - line 196: `throw replace('/dock/shell');` (no compute node fallback in `routeNewTerminal`)
+    - line 207: `throw replace(\`/dock/shell/${newShell.dockPointer.pointer}\`);` (test 50's path — passes)
+    - line 249: `throw replace('/dock/shell');` (process-pointer fallback to empty)
+    - line 252: `throw replace(\`/dock/shell/${loadedToPointer(next.loaded)}\`);` (process-pointer fallback to next)
+    - line 270: `throw replace(\`/dock/shell/${linkedProcess.dockPointer.pointer}\`);` (shell→process redirect)
+    - line 286: `throw replace(\`/dock/shell/${recovered.dockPointer.pointer}\`);` (worker-id recovery)
+    - line 299: `throw replace('/dock/shell');` (plain-shell fallback to empty)
+    - line 302: `throw replace(\`/dock/shell/${loadedToPointer(next.loaded)}\`);` (plain-shell fallback to next)
+  - **Only line 228 uses `redirect()`. That is the one branch the failing tests trigger.**
+
+- **Evidence — `redirect()` defaults to PUSH; `replace()` adds `X-Remix-Replace` and forces REPLACE:**
+  - `ui/node_modules/react-router/dist/development/chunk-EPOLDU6W.mjs:939-948` — `redirect(url, init=302)` returns `new Response(null, { status: 302, headers: { Location: url } })` — no `X-Remix-Replace` header.
+  - `ui/node_modules/react-router/dist/development/chunk-EPOLDU6W.mjs:955-959` — `replace(url, init)` is `redirect(url, init)` plus `response.headers.set("X-Remix-Replace", "true")`.
+  - `ui/node_modules/react-router/dist/development/chunk-EPOLDU6W.mjs:2681` — router decision: `let redirectNavigationType = replace2 === true || redirect2.response.headers.has("X-Remix-Replace") ? "REPLACE" : "PUSH";`. So `redirect()` → PUSH; `replace()` → REPLACE.
+
+- **Evidence — `loadShell` pre-mutates `dataContext` BEFORE the redirect throw, which is why the tab activates regardless of redirect outcome:**
+  - `ui/src/routes/loaders/load-shell.ts:96-125` — `loadShell` (the primitive `loadNextProcess` calls):
+    ```
+    await shell.start({ cols: ..., rows: ..., workdir: ... });
+    dataContext.setActiveShellId(shell.id);                      // line 112 — sets active id
+    dataContext.setActiveTerminalTargetTypeId(shell.typeId);     // line 113 — sets active target
+    dataContext.setWorkdir(...);                                 // line 114
+    await dataContext.setContextEntityTypeId(CurrentProcessTypeId, null);  // line 115
+    if (shell.project_id) {
+      await dataContext.setContextEntityTypeId(CurrentProjectTypeId, ...); // line 117-120
+    }
+    return shell;
+    ```
+  - `ui/src/components/terminal/TabbedTerminal.tsx:243-255` — TabbedTerminal reads:
+    ```
+    const fallbackActiveTargetTypeId =
+      contextAgenticProcess?.typeId ??
+      (contextShellId ? new TypeId(Shell.type, contextShellId) : null) ??
+      visibleSessions[0]?.targetTypeId ??
+      null;
+    const activeTargetTypeId = contextActiveTerminalTargetTypeId ?? fallbackActiveTargetTypeId;
+    ...
+    const hasActiveTab = Boolean(
+      activeTargetKey && visibleSessions.some((s) => terminalTargetKey(s) === activeTargetKey),
+    );
+    ```
+    `contextActiveTerminalTargetTypeId` comes from `useContext()` which is `dataContext.activeTerminalTargetTypeId` — set by `loadShell` line 113. So `hasActiveTab` is **true** as soon as the loader returns, and the panel mounts even though the URL hasn't changed.
+  - `ui/src/components/terminal/TabbedTerminal.tsx:286-292` — the URL self-heal effect:
+    ```
+    useEffect(() => {
+      if (visibleSessions.length === 0) return;
+      if (hasActiveTab) return;                                  // ← guarded out — never fires here
+      const firstSession = visibleSessions[0];
+      const pointer = firstSession.agenticProcess?.dockPointer ?? firstSession.shell?.dockPointer;
+      if (pointer) navigation.openDockPointer(pointer);
+    }, [hasActiveTab, visibleSessions, navigation]);
+    ```
+    Because `hasActiveTab` is true (loader pre-mutated dataContext), the self-heal does NOT push a URL. The component happily renders the active panel against bare `/dock/shell`. So even if the loader's PUSH `redirect()` is silently dropped, nothing else updates the URL.
+
+- **Evidence — the sidebar-Home→Shell flow has no upstream URL-restoration logic that would have pinned the URL to the previously-active tab id:**
+  - `ui/src/components/collapsed-sidebar/collapsed-sidebar.tsx:79-83` — `if (viewType === ViewType.SHELL) ... navigation.openTab(viewType);`. No MRU lookup.
+  - `ui/src/navigation/NavigationActions.ts:163-168` — `openTab` builds `forTab(SHELL)` (pointer=undefined). No "if last shell URL exists, restore it" logic.
+  - `ui/src/navigation/NavigationActions.ts:80-101` — `openDock` only short-circuits when `this.currentDock?.equals(dock)` — when going Home→Shell, `currentDock` is null (Home is `/`, `useDockNavigation.ts:46-65` returns null for non-dock URLs), so equality is false. It pushes bare `/dock/shell`.
+  - `ui/src/routes/loaders/load-shell.ts:153-164` — `resolveDefaultTab` *does* honor the previously-active target via `dataContext.activeTerminalTargetTypeId` and `dataContext.activeShellId`. But since dataContext is in-memory (not persisted, see `ts_sdk/src/FlowSync/context.ts:314,318`), and an SPA navigation Home→Shell does NOT reset module state, the in-memory active id IS still set when sidebar-Shell triggers the loader. So the loader picks the right tab and `loadShell` re-attaches it — but the URL update path is the same broken `redirect()` PUSH from line 228. Tabs come back, panel mounts; URL stays bare.
+
+- **Evidence — the only test that PASSES on this URL-update axis (test 50) uses `replace()`:**
+  - `ui/tests/manual_regression/_results/2026-05-08T17-52-45Z/terminal--interactive_tabs_project_filtering_matrix.json` — test 50 note: "Navigated to /dock/shell/new_terminal. Within ~2s URL resolved to /dock/shell/shell-c2333e1c... (a freshly-created shell)."
+  - `ui/src/routes/loaders/load-shell.ts:192-208` (`routeNewTerminal`) line 207: `throw replace(\`/dock/shell/${newShell.dockPointer.pointer}\`)` — REPLACE works.
+
+- **Symptom mapping (all 5 cases reduce to B1):**
+  - **5** ("Refresh on `/dock/shell` resolves a default tab" — fail). Hard-refresh on bare URL → `routeDefaultShell` runs → `loadShell` mutates dataContext → `throw redirect(...)` line 228 → react-router treats as same-route PUSH → silently dropped on initial-load path. Tester observed: "URL stayed at bare /dock/shell ... although the single tab was activated and terminal-panel mounted" — exactly the predicted signature.
+  - **6** ("Sidebar away-and-back keeps tabs alive" — fail). Click sidebar Shell → bare `/dock/shell` (line B1 evidence: sidebar uses `forTab(SHELL)`, no MRU). Loader `routeDefaultShell` finds the previous active via `dataContext.activeTerminalTargetTypeId` (still in memory), `loadShell` re-attaches it, throws PUSH redirect → dropped → URL stays bare. Tester: "URL on return is bare /dock/shell (NOT the previously active 2nd-tab URL)". Same as test 5.
+  - **45** ("Sidebar Home → Shell → Home preserves dock state" — fail). Same mechanism as test 6.
+  - **46** (test-issue: "Browser back/forward across tab clicks" — declared blocked because "History push/replace coupling for tab activation appears broken"). Direct dependency on B1 — when half the navigation entries are bare `/dock/shell` instead of `/dock/shell/shell-<uuid>`, the back/forward sequence is incoherent.
+  - **47** (test-issue: "Browser back from /dock/shell/... to /, then forward" — declared blocked, "Same root cause"). Same — Forward navigation lands on bare `/dock/shell`, not the recorded `/dock/shell/<id>`.
+
+- **Why the previous code worked (sanity check on the regression):**
+  - `git log -p -S "throw redirect" -- ui/src/routes/loaders/load-shell.ts` shows the pre-refactor (`b99c684`) `routeDefaultShell` ALSO used `throw redirect(...)` without REPLACE. So the behavior is **not a recent regression of this specific line**. What likely changed is that the *new* `loadNextProcess` primitive eagerly calls `loadShell` (which pre-mutates dataContext) inside the loader, where the pre-refactor code did NOT — it only resolved the next pointer and threw redirect, letting the *follow-up loader run* (after URL change) be the thing that called `loadShell`. With the old order, dataContext was NOT pre-mutated; if the redirect was silently dropped, `hasActiveTab` would be false and the TabbedTerminal self-heal effect (lines 286-292) WOULD fire `navigation.openDockPointer(...)` to push a real URL. The refactor inadvertently neutralized that fallback by making the loader pre-emptively set `dataContext.activeTerminalTargetTypeId`, which makes `hasActiveTab` true and prevents the self-heal — exposing the latent `redirect()`-vs-`replace()` PUSH-drop bug.
+
+- **Fix area (informational, NOT a fix):**
+  - **Primary:** `ui/src/routes/loaders/load-shell.ts:228` — change `throw redirect(...)` to `throw replace(...)`. This matches every other branch in the file and is honored by react-router as `REPLACE`. Cost: the comment ("Push (not replace): ... home → terminal → BACK should return to home") is the design tradeoff that drove the choice — accepting REPLACE means BACK from a freshly-resolved tab URL goes to whatever was before `/dock/shell`, not back to `/dock/shell` itself. That is the *correct* semantic ("don't put a placeholder bare URL in history that the user never sees"); `replace()` is what we want here.
+  - **Secondary (defense-in-depth):** the sidebar Shell-button handler in `ui/src/components/collapsed-sidebar/collapsed-sidebar.tsx:79-83` could lookup `dataContext.activeTerminalTargetTypeId` and call `navigation.openDock(<that-target>.dockPointer)` directly, so re-entering the dock via the sidebar restores the URL without depending on the loader redirect at all. This would cover tests 6 and 45 even if the loader-redirect fix were rolled back.
+
+### Confidence: HIGH
+The `redirect()` vs `replace()` asymmetry is verbatim in source — only line 228 uses `redirect`, and only the tests that hit line 228 fail on this axis. Test 50's pass on the structurally-identical `replace()` path is the controlling experiment. The pre-mutation of dataContext by `loadShell` (lines 112-114) explains why the tester observes "tab activated and panel mounted" despite the URL not updating, ruling out alternative hypotheses (loader didn't run; loader threw an error; etc.).
+
+### Fixed: no
+
+
+---
+
+## 2026-05-12 — agent_execution_asset_picker test 7 (list filter crash)
+
+### Scenario
+`ui/tests/manual_regression/assets/agent_execution_asset_picker.md` — test 7 "List filter narrows attached/listed rows".
+
+### Repro
+1. Navigate to `{APP_URL}/dock/assets/editor/agent/<any agent asset_ref>`.
+2. Click `data-testid="entity-execution-settings"` to open the Asset Manager popover.
+3. Type any non-empty string into `data-testid="asset-manager-list-filter"`.
+
+### Symptom
+Unhandled `TypeError: (d.posix_path ?? "").toLowerCase is not a function` at `AssetManagerPopover.tsx:192`. Error propagates through `RouterProvider → RootLayout`, hits the `RenderErrorBoundary`, and unmounts the entire `AgentAssetEditor` + `AssetsPage`. After the crash, `data-testid="asset-manager-popover"`, `agent-execution`, and the assets shell are gone from the DOM.
+
+### RCA (tester-supplied, confirmed via code read)
+`AssetManagerPopover.tsx:182-196` builds the filtered row list. Lines 192 and 193:
+```ts
+(d.posix_path ?? '').toLowerCase().includes(q) ||
+(d.source_dir ?? '').toLowerCase().includes(q)
+```
+The nullish-coalescing `??` only substitutes for `null`/`undefined`. The data set includes at least one `AssetDescriptor` whose `posix_path` is a non-string value (likely an object or array — common with FS records where `posix_path` may carry structured metadata). `.toLowerCase` is then undefined on that value, throwing the `TypeError`.
+
+### Fix area (informational, NOT a fix)
+Coerce to string before `.toLowerCase()`:
+```ts
+const posix = typeof d.posix_path === 'string' ? d.posix_path : '';
+const sourceDir = typeof d.source_dir === 'string' ? d.source_dir : '';
+return label.includes(q) || d.typeid.toLowerCase().includes(q) || d.source.toLowerCase().includes(q) || posix.toLowerCase().includes(q) || sourceDir.toLowerCase().includes(q);
+```
+Same coercion belongs around any other `.toLowerCase()` call that targets a descriptor's string-ish field if it's `string | undefined` at the type level but could be runtime non-string.
+
+### Confidence: HIGH
+Tester reproduced the crash live with a screenshot/log; line 192/193 is the only call site that matches the stack trace; coercion is the minimal-risk fix and matches the surrounding code that already guards via `??`.
+
+### Fixed: yes
+
+---
+
+## 2026-05-12 — agent_execution_asset_picker (UI validation follow-up): MarkdownEditor sourcePath crash
+
+### Scenario
+Live UI validation of the asset-picker-on-agents flow at `{APP_URL}/dock/assets/editor/agent/<asset_ref>`. The page mounted, the `entity-execution-settings` gear opened the `asset-manager-popover` (confirming the prior AssetManagerPopover.tsx:192 fix). Within a few seconds of interaction with the popover (any state change driving a re-render), the entire `AgentAssetEditor` tree unmounted via `RenderErrorBoundary`.
+
+### Symptom
+Unhandled `TypeError: sourcePath.split is not a function` at `ui/src/components/assets/editor/markdown/MarkdownEditor.tsx` (file lines 194-195, plus line 224). React tree unmounts.
+
+### RCA
+`AgentAssetEditor.tsx:40` passes `sourcePath = agent?.asset_ref ?? fsRef.path`. TS type says `string` but at runtime a non-string slips through (same defect class as `AssetManagerPopover.tsx:192-193` and `AssetPickerPopover.tsx:74` — the SDK producer can emit non-string for fields typed `string`).
+
+### Fix
+Coerce `sourcePath` to string once at the top of `MarkdownEditorContent`, then use the coerced `sourcePathStr` for `.split`/`.slice`/`.lastIndexOf` plus the `handleLinkClick` deps array.
+
+### Confidence: HIGH
+Browser console caught the exact trace pointing at MarkdownEditor; same `typeof === 'string'` pattern as the prior two consumer fixes. Typecheck clean. Page re-mount post-fix did not regress (no further TypeError noise; only the unrelated 404 noise documented in instructions.md).
+
+### Fixed: yes

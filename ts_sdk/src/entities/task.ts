@@ -29,14 +29,6 @@ export interface ITask extends IEntity {
   my_process_id?: string | null;
   /** Forked AgenticProcess that runs *approved* incoming prompts. Initiator-only. */
   shared_process_id?: string | null;
-  // NOTE: `remote_project_id` / `remote_project_name` moved to the Conversation
-  // entity. Task-bound conversations carry the same provenance there; task-less
-  // conversations need it too. Read from the task's child conversation when
-  // needed (`task.firstContextOfType('conversation')` → `conv.remote_project_id`).
-  // NOTE: spec_id, conversation_id, links — moved into context_entities (the
-  // unified TypeId list on IEntity). Use task.firstContextOfType('spec') /
-  // task.firstContextOfType('conversation') and task.addContextEntity(...) /
-  // task.removeContextEntity(...) instead.
 
   // Promoted from former `metadata` blob — first-class fields.
   active_form?: string | null;
@@ -186,21 +178,16 @@ export class Task extends APIEntity<Task> implements ITask {
     return new DockPointerData(ViewType.TASKS, this.id);
   }
 
-  /**
-   * Project the chip-relevant direct fields into the merged context view.
-   * The project, the assignee, and the user's two AgenticProcesses
-   * (my_process / shared_process) are surfaced; pure indexing/audit fields
-   * (workspace_id, reporter, target_entity) stay typed but are not
-   * chip-projected.
-   */
-  protected override _directFieldsAsTypeIds(): TypeId[] {
-    const out: TypeId[] = [];
-    if (this.project_id) out.push(new TypeId('project', this.project_id));
-    if (this.assignee) out.push(new TypeId('user', this.assignee));
-    if (this.my_process_id) out.push(new TypeId('agentic_process', this.my_process_id));
-    if (this.shared_process_id) out.push(new TypeId('agentic_process', this.shared_process_id));
-    return out;
-  }
+  // NOTE: Task's former FE-side projection of project_id / assignee /
+  // my_process_id / shared_process_id into the chip context lived here as
+  // ``_directFieldsAsTypeIds``. Implicit projection moved server-side
+  // (Python ``Entity.get_implicit_private_context_entities``): the backend
+  // computes the merged ``private_context_entities`` list and ships it
+  // over the wire. The FE never combines implicit + explicit any more.
+  // Currently only ``project_id`` is implicit; assignee / my_process_id /
+  // shared_process_id were dropped per "base returns project_id only for
+  // now" — reintroduce in Python's ``get_implicit_private_context_entities``
+  // override on Task if there's a confirmed UX need.
 
   // TODO: Remove getter and setter for descriptionPlainText when task is created with lexical description
   get descriptionPlainText(): string {

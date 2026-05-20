@@ -7,8 +7,10 @@ export interface InboxMessage {
   id: string;
   text: string;
   instruction?: string | null;
-  /** TypeId strings e.g. "task-abc123". Renamed from ``context`` to match the unified ``context_entities`` on the entity. */
-  context_entities: string[];
+  /** TypeId strings e.g. "task-abc123". Mirrors the wire-bound
+   *  ``shared_context_entities`` bucket on the entity — published context
+   *  that travels with the FlowMessage. */
+  shared_context_entities: string[];
   attachment: InboxAttachment[];
   sender_id?: string | null;
   sender_name?: string | null;
@@ -40,14 +42,6 @@ export async function listInboxMessages(): Promise<InboxMessage[]> {
   const action = new ActionInfo('inbox-list', null, null, 'GET');
   const result = await dataManager.callAction<null, InboxMessage[]>(action);
   return result ?? [];
-}
-
-/** Pull new messages from hub since last check */
-export async function fetchInboxFromHub(): Promise<FetchResult> {
-  const action = new ActionInfo('inbox-fetch', null, null, 'POST');
-  action.bodyParameters = {};
-  const result = await dataManager.callAction<Record<string, unknown>, FetchResult>(action);
-  return result ?? { created: 0, ids: [] };
 }
 
 /** Mark a single message read/unread or archived/unarchived */

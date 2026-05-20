@@ -15,15 +15,19 @@ const standardTabNavSource = readFileSync(
   'utf-8',
 );
 
-describe('terminal close-all race guard', () => {
-  it('filters locally closed tabs out of active-terminals refreshes', () => {
-    expect(activeTerminalsSource).toContain('closedTerminalKeys');
-    expect(activeTerminalsSource).toContain('!closedTerminalKeys.has(terminalTargetKey(tab))');
+describe('terminal close-all backend contract', () => {
+  it('lists terminals through the consolidated terminals/list action', () => {
+    expect(activeTerminalsSource).toContain("new ActionInfo('terminals', 'compute_node', computeNodeId, 'GET')");
+    expect(activeTerminalsSource).toContain("action.subpath = 'list'");
+    expect(activeTerminalsSource).not.toContain('active-terminals');
+    expect(activeTerminalsSource).not.toContain('closedTerminalKeys');
   });
 
-  it('closes batches without per-tab navigation', () => {
-    expect(tabbedTerminalSource).toContain('closeTab(key, { notify: false })');
-    expect(tabbedTerminalSource).toContain('onTabClose?.(closedKeys)');
+  it('closes batches with one terminals/close request and no per-tab entity close loop', () => {
+    expect(activeTerminalsSource).toContain("action.subpath = 'close'");
+    expect(activeTerminalsSource).toContain('action.bodyParameters = { targets: keys }');
+    expect(tabbedTerminalSource).toContain('closeTerminalTargets(keys)');
+    expect(tabbedTerminalSource).not.toContain('target.close()');
     expect(standardTabNavSource).toContain('string | string[]');
   });
 });

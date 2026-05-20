@@ -36,6 +36,7 @@ class WorkerHistoryEntry(BaseModel):
     project_cwd: Optional[str] = None
     last_active_time: datetime
     name: Optional[str] = None
+    last_prompt: Optional[str] = None
     git_branch: Optional[str] = None
     message_count: Optional[int] = None
     agentic_process_id: Optional[str] = None
@@ -65,11 +66,15 @@ def _pick_name(
     *,
     custom_title: Optional[str],
     slug: Optional[str],
-    last_user_message: Optional[str],
     display: Optional[str],
     session_id: str,
 ) -> Optional[str]:
-    for cand in (custom_title, slug, last_user_message, display):
+    """A real session title — never the last user prompt.
+
+    The prompt is returned separately via ``_pick_last_prompt`` so the UI can
+    render name + prompt as distinct lines.
+    """
+    for cand in (custom_title, slug, display):
         if not cand:
             continue
         v = cand.strip()
@@ -77,6 +82,15 @@ def _pick_name(
             continue
         return f"{v[:80]}…" if len(v) > 80 else v
     return None
+
+
+def _pick_last_prompt(value: Optional[str]) -> Optional[str]:
+    if not value:
+        return None
+    v = value.strip()
+    if not v:
+        return None
+    return f"{v[:120]}…" if len(v) > 120 else v
 
 
 def _project_id_for(cwd: Optional[str], encoded: Optional[str]) -> Optional[str]:
@@ -116,11 +130,17 @@ def _coerce_datetime(value: object) -> Optional[datetime]:
     return None
 
 
-def _build_agentic_process_index() -> dict[str, str]:
-    """Map ``worker_session_id → agentic_process record id`` (single disk scan)."""
+def _build_agentic_process_index() -> dict[str, tuple[str, Optional[str]]]:
+    """Map ``worker_session_id → (agentic_process_id, agentic_process_name)``.
+
+    The name is the entity's user-facing title (``AgenticProcessRecord.name``).
+    It is the only thing the UI should call ``name`` — Claude's auto-generated
+    ``slug`` is the first prompt, not a real title, and conflating the two
+    hides untitled sessions.
+    """
     from flow_sdk.fs_records.agentic_process_record import AgenticProcessRecord
 
-    index: dict[str, str] = {}
+    index: dict[str, tuple[str, Optional[str]]] = {}
     try:
         records = AgenticProcessRecord.discover()
     except Exception as e:
@@ -131,7 +151,9 @@ def _build_agentic_process_index() -> dict[str, str]:
         cli_config = data.get("cli_config") if isinstance(data.get("cli_config"), dict) else {}
         sid = rec.worker_session_id or data.get("session_id") or cli_config.get("session_id")
         if sid and sid not in index:
-            index[sid] = rec.id
+            raw_name = getattr(rec, "name", None)
+            name = raw_name.strip() if isinstance(raw_name, str) and raw_name.strip() else None
+            index[sid] = (rec.id, name)
     return index
 
 
@@ -211,8 +233,6 @@ def get_claude_worker_history(limit: int) -> list[WorkerHistoryEntry]:
 
         sd = object.__getattribute__(session, "__dict__")
         cwd = sd.get("cwd") or None
-        slug = sd.get("slug") or None
-        custom_title = sd.get("custom_title") or None
         project_encoded = sd.get("project_encoded_name") or jsonl_path.parent.name
 
         # ``git_branch``, ``message_count``, ``last_user_message`` are lazy
@@ -228,12 +248,24 @@ def get_claude_worker_history(limit: int) -> list[WorkerHistoryEntry]:
         except Exception as e:
             logger.debug("[worker_history] stats read failed for %s: %s", sid, e)
 
+        # Name priority: AgenticProcessRecord.name (user/upsert-set) >
+        # Claude's ``custom_title`` (set by ``/rename`` or Claude's own
+        # auto-summary, written as ``{"type":"custom-title"}`` lines) >
+        # ``slug`` (first-line envelope, auto-generated from the opening
+        # prompt). Without these fallbacks the row would be unnamed for
+        # any session that was never opened through Flowpad — that's the
+        # majority of on-disk Claude sessions. ``_pick_name`` filters out
+        # session_id / UUID-like values, so a trivial session still falls
+        # through to ``last_prompt`` rendering.
+        ap_id, ap_name = process_index.get(sid, (None, None))
         name = _pick_name(
-            custom_title=custom_title,
-            slug=slug,
-            last_user_message=last_user_message or history_prompt_index.get(sid),
-            display=None,
+            custom_title=ap_name,
+            slug=sd.get("custom_title") or None,
+            display=session.slug or None,
             session_id=sid,
+        )
+        last_prompt = _pick_last_prompt(
+            last_user_message or history_prompt_index.get(sid),
         )
 
         result.append(
@@ -245,9 +277,10 @@ def get_claude_worker_history(limit: int) -> list[WorkerHistoryEntry]:
                 project_cwd=cwd,
                 last_active_time=datetime.fromtimestamp(mtime, tz=timezone.utc),
                 name=name,
+                last_prompt=last_prompt,
                 git_branch=git_branch,
                 message_count=message_count,
-                agentic_process_id=process_index.get(sid),
+                agentic_process_id=ap_id,
             )
         )
 
@@ -306,13 +339,10 @@ def get_codex_worker_history(limit: int) -> list[WorkerHistoryEntry]:
         except Exception as e:
             logger.debug("[worker_history] codex stats read failed for %s: %s", sid, e)
 
-        name = _pick_name(
-            custom_title=None,
-            slug=None,
-            last_user_message=last_user_message,
-            display=None,
-            session_id=sid,
-        )
+        # Codex sessions never carry their own title — name comes from the
+        # AgenticProcess entity if one exists for this session, else None.
+        last_prompt = _pick_last_prompt(last_user_message)
+        ap_id, ap_name = process_index.get(sid, (None, None))
 
         result.append(
             WorkerHistoryEntry(
@@ -322,10 +352,11 @@ def get_codex_worker_history(limit: int) -> list[WorkerHistoryEntry]:
                 project_name=_basename(cwd),
                 project_cwd=cwd,
                 last_active_time=datetime.fromtimestamp(mtime, tz=timezone.utc),
-                name=name,
+                name=ap_name,
+                last_prompt=last_prompt,
                 git_branch=None,
                 message_count=message_count,
-                agentic_process_id=process_index.get(sid),
+                agentic_process_id=ap_id,
             )
         )
 

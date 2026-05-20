@@ -124,15 +124,10 @@ export class NavigationActions {
   }
 
   /**
-   * Open a dock pointer in a separate browser tab named "flowpad-shell".
-   *
-   * - Reuses the existing browser tab named "flowpad-shell" if one is open,
-   *   so repeated clicks land in the same secondary tab instead of spawning new ones.
-   * - Leaves the current tab (e.g. the conversation view) untouched.
-   *
-   * Useful for shell / Claude Code sessions launched from a non-shell view.
+   * Build the absolute deep-link URL for a dock pointer without navigating.
+   * Pure helper — used by share/copy-link flows and openInBrowserTab.
    */
-  openInBrowserTab(pointer: IDockPointer | DockPointer): void {
+  getDockUrl(pointer: IDockPointer | DockPointer): string {
     const base = pointer instanceof DockPointer ? pointer : new DockPointer(pointer);
     const { viewType, pointer: pointerValue, layout } = base.toUrlSegments();
     const searchParams = base.toSearchParams();
@@ -144,7 +139,20 @@ export class NavigationActions {
       Object.fromEntries(searchParams.entries()),
       layout,
     );
-    const absoluteUrl = `${window.location.origin}${fullUrl}`;
+    return `${window.location.origin}${fullUrl}`;
+  }
+
+  /**
+   * Open a dock pointer in a separate browser tab named "flowpad-shell".
+   *
+   * - Reuses the existing browser tab named "flowpad-shell" if one is open,
+   *   so repeated clicks land in the same secondary tab instead of spawning new ones.
+   * - Leaves the current tab (e.g. the conversation view) untouched.
+   *
+   * Useful for shell / Claude Code sessions launched from a non-shell view.
+   */
+  openInBrowserTab(pointer: IDockPointer | DockPointer): void {
+    const absoluteUrl = this.getDockUrl(pointer);
     const opened = window.open(absoluteUrl, 'flowpad-shell');
     if (opened) opened.focus();
   }
@@ -273,19 +281,18 @@ export class NavigationActions {
   }
 
   /**
-   * Open (or create) an AgenticProcess for a Claude CLI session UUID and navigate to it.
-   * Uses AgenticProcess.open() which calls upsertSessionProcess — finds existing or creates
-   * without starting a PTY. Then navigates to process.terminalDockPointer.
+   * Resolve a worker/session/thread id (Claude or Codex) and navigate to it.
+   * Backend auto-discovers worker_type. Returns null when the id is unknown
+   * to either Claude or Codex history; caller is expected to surface a toast.
    */
-  async openClaudeSession(sessionId: string): Promise<AgenticProcess | null> {
-    try {
-      const process = await AgenticProcess.fromClaudeSession(sessionId);
-      this.openDock(process.terminalDockPointer);
-      return process;
-    } catch (err) {
-      console.error('[NavigationActions.openClaudeSession]', err);
+  async openWorkerSession(workerId: string): Promise<AgenticProcess | null> {
+    const process = await AgenticProcess.getByWorkerId(workerId).catch((err) => {
+      console.error('[NavigationActions.openWorkerSession]', err);
       return null;
-    }
+    });
+    if (!process) return null;
+    this.openDock(process.dockPointer);
+    return process;
   }
 
   /**
@@ -327,7 +334,7 @@ export class NavigationActions {
       return {
         processId: agenticProcess.id,
         shellId: agenticProcess.shell_id ?? null,
-        dockPointer: agenticProcess.terminalDockPointer,
+        dockPointer: agenticProcess.dockPointer,
       };
     } catch (error) {
       console.error('[NavigationActions] Error creating AgenticProcess:', error);
@@ -363,6 +370,10 @@ export class NavigationActions {
           : dataContext.project?.fs_storage_mount_path) ||
         undefined;
       const newShell = Shell.create(cn, { name, workdir: cwd });
+      // Project consolidation (Path A, 2026-05-09): every Shell carries a
+      // real ``project_id``. Prefer the caller-pinned project, then the
+      // active dock project; the backend's Shell.save defaults to the
+      // bootstrap ``@local`` project if both are absent.
       const pinnedProjectId = options?.projectId ?? dataContext.project?.id ?? null;
       if (pinnedProjectId) newShell.project_id = pinnedProjectId;
       await newShell.save(cn.typeId);

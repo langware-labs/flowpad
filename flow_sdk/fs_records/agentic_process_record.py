@@ -110,6 +110,34 @@ class AgenticProcessRecord(Record):
     def assets_folder(self) -> FSRef | None:
         return FSRef(self.assets_dir) if self.record_dir is not None else None
 
+    @property
+    def total_cost_usd(self) -> float | None:
+        """USD cost of this process's session transcript so far.
+
+        Derives from the on-disk JSONL via
+        ``transcript_analyzer.pricing.total_cost_usd`` — no entity-side
+        storage; we recompute on every read. Cheap because the per-message
+        usage parser only touches each JSONL line once and we don't keep
+        the full entry list. Returns None if no session_id is known yet.
+        """
+        sid = (
+            object.__getattribute__(self, "__dict__").get("session_id")
+            or getattr(self, "session_id", None)
+        )
+        if not sid:
+            return None
+        worker_type = object.__getattribute__(self, "__dict__").get("worker_type") or "claude"
+        from flow_sdk.transcript_analyzer.pricing import total_cost_usd as _total
+        from flow_sdk.transcript_analyzer.resolver import (
+            resolve_session_jsonl,
+            TranscriptNotFoundError,
+        )
+        try:
+            path = resolve_session_jsonl(str(worker_type), str(sid))
+        except (TranscriptNotFoundError, ValueError):
+            return None
+        return _total(str(worker_type), path)
+
     def meta_dict(self) -> dict:
         """Inject the per-process execution folder refs onto the Entity row.
 
@@ -123,6 +151,14 @@ class AgenticProcessRecord(Record):
             ref = getattr(self, attr, None)
             if ref is not None:
                 result[attr] = ref.to_dict(type_id=type_id)
+        # Cost (derived from session jsonl). Float, None if no session yet.
+        try:
+            cost = self.total_cost_usd
+            if cost is not None:
+                result["total_cost_usd"] = cost
+        except Exception:
+            # Never break entity serialization over a transcript-read failure.
+            pass
         return result
 
     @property

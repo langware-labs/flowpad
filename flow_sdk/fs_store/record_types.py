@@ -82,6 +82,10 @@ class RecordType(StrEnum):
 
     # Codex CLI record types
     CODEX_SESSION = "codex_session"
+    # DEPRECATED 2026-05-09: Codex projects are now stored as RecordType.PROJECT
+    # with `codex_project=True` provenance flag. Kept here for backward
+    # compatibility of any external schema consumers; no class is registered
+    # against this type. To be removed in Phase 7 of the project consolidation.
     CODEX_PROJECT = "codex_project"
 
     # CLI log record types
@@ -110,6 +114,7 @@ class RecordType(StrEnum):
     MARKDOWN = "markdown"
     SPEC = "spec"
     CONVERSATION = "conversation"
+    WHITEBOARD = "whiteboard"
 
     COLLABORATION_ROOM = "collaboration_room"
 

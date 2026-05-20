@@ -74,7 +74,7 @@ const NEGATIVE: Array<[label: string, mutate: (p: AgenticProcess) => void]> = [
   ['tags',            (p) => { p.tags = ['a', 'b']; }],
   ['labels',          (p) => { p.labels = ['x']; }],
   ['visible',         (p) => { p.visible = true; }],
-  ['target_vfs_path', (p) => { p.target_vfs_path = 'markdown-deadbeef-dead-beef-dead-beefdeadbeef'; }],
+  ['target_typeid_str', (p) => { p.target_typeid_str = 'markdown-deadbeef-dead-beef-dead-beefdeadbeef'; }],
   ['plan_path',       (p) => { p.plan_path = '/tmp/some-plan.md'; }],
 ];
 
@@ -89,38 +89,43 @@ describe('AgenticProcess.restart_required (live SDK + WS, mirrors test_restart_r
     await apiTestSetup(getTestSignupInfo(), ctx.task.name);
   });
 
+  // Each test triggers a real PTY restart, so exit() during cleanup needs
+  // longer than the default 10s hookTimeout — especially when the long-test
+  // run is loaded enough that worker reaping waits a few seconds.
   afterEach(async () => {
     while (cleanup.length) {
       const p = cleanup.pop()!;
       try { await p.exit(); } catch { /* ignore */ }
       try { await p.delete(); } catch { /* ignore */ }
     }
-  });
+  }, 30_000);
 
-  it('full positive cycle: every tracked field flips True; real restart clears it', async () => {
+  // One real restart cycle per tracked field — split out of the original
+  // monolithic loop so each field gets its own 30s budget. The python
+  // counterpart in tests/long_tests/test_restart_required_ws.py is similarly
+  // parametrized per-field.
+  it.each(TRACKED)('tracked field %s flips True; real restart clears it', async (label, mutate) => {
     const proc = await setupRunningProcess();
     cleanup.push(proc);
 
-    for (const [label, mutate] of TRACKED) {
-      mutate(proc);
-      await proc.save();
-      await waitForEntity(
-        proc,
-        (p) => p.restart_required === true,
-        `${label}: flip ON`,
-      );
-      expect(proc.restart_required, label).toBe(true);
+    mutate(proc);
+    await proc.save();
+    await waitForEntity(
+      proc,
+      (p) => p.restart_required === true,
+      `${label}: flip ON`,
+    );
+    expect(proc.restart_required, label).toBe(true);
 
-      // Real restart through the SDK — backend's start() success path captures
-      // a fresh snapshot and clears restart_required.
-      await proc.restart();
-      await waitForEntity(
-        proc,
-        (p) => p.restart_required === false,
-        `${label}: cleared by restart`,
-      );
-      expect(proc.restart_required, `${label}: cleared`).toBe(false);
-    }
+    // Real restart through the SDK — backend's start() success path captures
+    // a fresh snapshot and clears restart_required.
+    await proc.restart();
+    await waitForEntity(
+      proc,
+      (p) => p.restart_required === false,
+      `${label}: cleared by restart`,
+    );
+    expect(proc.restart_required, `${label}: cleared`).toBe(false);
   }, TIMEOUT);
 
   it.each(NEGATIVE)('non-tracked field %s does not flip', async (label, mutate) => {

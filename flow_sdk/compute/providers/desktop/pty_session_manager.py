@@ -142,9 +142,9 @@ class PtySessionManager:
         """
         session = self.sessions.get(pty_key)
         if session:
-            logger.info(f"PTY session retrieved: pty_key={pty_key}")
+            logger.debug(f"PTY session retrieved: pty_key={pty_key}")
         else:
-            logger.info(f"PTY session not found: pty_key={pty_key}")
+            logger.debug(f"PTY session not found: pty_key={pty_key}")
         return session
 
     async def attach_session(self, pty_key: Tuple[str, str, str], connection_id: str) -> PtySessionState:

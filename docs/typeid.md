@@ -1,5 +1,5 @@
 ---
-
+id: e138f625-dc76-5c6d-a534-d7605a605ac2
 ---
 
 # TypeId Specification
@@ -353,4 +353,3 @@ In HTTP routes, the TypeId is split across path segments:
 | TypeScript | `ts_sdk/src/resource_management/fs_records/record-type-registry.ts` | FS record type registry                                 |
 | TypeScript | `ts_sdk/src/resource_management/fs_records/record-types.ts`         | `RecordType` enum                                       |
 | Tests      | `tests/unit/test_typeid.py`                                         | Python TypeId tests                                     |
-

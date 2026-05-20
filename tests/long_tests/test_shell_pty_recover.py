@@ -53,6 +53,7 @@ def _server_env(port: int, db_path: str) -> dict:
     env["MINIHUB_HOST"] = "127.0.0.1"
     env["LOCAL_SERVER_PORT"] = str(port)
     env["FLOWPAD_SKIP_LOCK"] = "true"
+    env["FLOWPAD_SKIP_DOTENV"] = "true"
     repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
     env["PYTHONPATH"] = f"{repo_root}{os.pathsep}{env.get('PYTHONPATH', '')}"
     return env
