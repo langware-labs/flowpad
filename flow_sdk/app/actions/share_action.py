@@ -57,8 +57,11 @@ async def share_entity() -> ApiSuccessResponse:
     if recipients is not None and not isinstance(recipients, list):
         raise HTTPException(status_code=400, detail="share: 'recipients' must be a list")
 
+    # ``entity.share()`` itself loads the existing local row by id and
+    # persists ``remote=True`` there. ``owner`` is the calling user's
+    # typeid; it attributes the local UPDATE so ``updated_by`` is sane.
     if recipients and isinstance(entity, Conversation):
-        await entity.share(recipients=recipients)
+        await entity.share(recipients=recipients, owner=request_info.someone_typeid)
         try:
             from flow_sdk.app.actions.flow_message_action import _learn_address_book  # noqa: PLC0415
             learn_entries: list[dict] = list(entity.participants or [])
@@ -69,7 +72,7 @@ async def share_entity() -> ApiSuccessResponse:
         except Exception as e:  # noqa: BLE001
             logger.warning("[share] address-book learning failed (non-fatal): %s", e)
     else:
-        await entity.share()
+        await entity.share(owner=request_info.someone_typeid)
     return ApiSuccessResponse(data=entity)
 
 
