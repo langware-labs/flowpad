@@ -202,12 +202,8 @@ export function AttachmentChip({
     setMenuOpen(false);
   };
 
-  const overlayVisibility = menuOpen
-    ? 'opacity-100 pointer-events-auto'
-    : 'opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto';
-
   const overlay = (
-    <div className={cn('absolute right-1 top-1 z-10 transition-opacity', overlayVisibility)}>
+    <div className="absolute right-1 top-1 z-10">
       <div className="flex items-center gap-0.5 rounded-md border border-border bg-background/95 p-0.5 shadow-sm backdrop-blur-sm">
         <a
           href={url}

@@ -1,13 +1,15 @@
 /**
  * ProseMirror commands that write the `dir` (and `align`) attrs on the
- * paragraph and heading nodes touched by the current selection.
+ * paragraph nodes touched by the current selection.
  *
  * Skip rules — both are honored by every command in this file:
  *   - Non-textblock nodes are ignored (their children are recursed into by
  *     `nodesBetween`, so we still see the inner textblocks).
- *   - Only `paragraph` and `heading` are targets in phase 3–4. Blockquote
- *     and list_item join in phase 7. `code_block` is never a target — code
- *     is direction-agnostic.
+ *   - Only `paragraph` is a target. Heading **was** in scope but its schema
+ *     override had to be removed (see ``schema.ts`` header for the Milkdown
+ *     plugin-manager bug). Heading direction inherits from any RTL
+ *     ancestor via CSS. ``code_block`` is never a target — code is
+ *     direction-agnostic.
  *
  * Setting attr to `null` is the "clear" path — the schema's `toMarkdown`
  * detects default-attr nodes and emits unwrapped CommonMark (see
@@ -20,7 +22,7 @@ import type { Command } from '@milkdown/prose/state';
 export type BidiDir = 'ltr' | 'rtl' | 'auto' | null;
 export type BidiAlign = 'start' | 'end' | 'center' | 'justify' | null;
 
-const BIDI_TARGET_TYPES: ReadonlySet<string> = new Set(['paragraph', 'heading']);
+const BIDI_TARGET_TYPES: ReadonlySet<string> = new Set(['paragraph']);
 
 function isBidiTarget(typeName: string): boolean {
   return BIDI_TARGET_TYPES.has(typeName);
