@@ -2133,14 +2133,21 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
             logger.info("[invitation-accept] hub returned 409 (already accepted) — running local cleanup")
         elif resp.status_code == 302:
             logger.info("[invitation-accept] hub returned 302 (redirect to landing) — running local cleanup")
-        # The accept response carries the chosen target's typeid. Two shapes:
-        #  - FlowMessage  → legacy bundle flow; we'll download + unpack below.
-        #  - Conversation → direct-share invite flow; we call ``join`` so the
-        #    caller enters ``Conversation.participants`` (which is what hub
-        #    fanout walks). Without that join, accept grants the ``member``
-        #    role but realtime delivery never reaches us.
+        # Resolve the chosen target's typeid. Three response shapes to handle:
+        #  - 200 + JSON body — legacy shape; ``data`` carries the target typeid.
+        #  - 302 + Location header — current shape (hub became browser-friendly);
+        #    no JSON body, ``Location`` points at ``/flow_message/<id>`` or the
+        #    invitation's ``callback_override`` path. We parse the redirect URL
+        #    to extract the FlowMessage id, then look up its conversation_id
+        #    via ``hub_get`` (matches what ``handle_open_flow_message`` does).
+        #  - 409 — already accepted; same JSON-or-empty story as the others. We
+        #    still try both shapes below and fall through if neither produces
+        #    a target.
         try:
-            target = (resp.json() or {}).get("data")
+            target = None
+            body_text = (resp.text or "").strip()
+            if body_text.startswith("{") or body_text.startswith("["):
+                target = (resp.json() or {}).get("data")
             fm_prefix = f"{BuiltinEntityType.FLOW_MESSAGE.value}-"
             conv_prefix = f"{BuiltinEntityType.CONVERSATION.value}-"
             if isinstance(target, str):
@@ -2155,6 +2162,47 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
                     linked_fm_id = t_id
                 elif t_type == BuiltinEntityType.CONVERSATION.value and t_id:
                     linked_conv_id = t_id
+            # Fallback: parse the Location header on a 302 redirect. Path
+            # shapes we expect: ``/flow_message/<id>`` (FM landing) or
+            # ``/conversation/<id>`` (legacy/conv landing). Anything else is
+            # treated as no-target.
+            if not linked_fm_id and not linked_conv_id:
+                location = resp.headers.get("location") or resp.headers.get("Location") or ""
+                if location:
+                    from urllib.parse import urlparse  # noqa: PLC0415
+                    path = urlparse(location).path or ""
+                    parts = [p for p in path.split("/") if p]
+                    # Skip a possible ``/app`` / SUBPATH prefix by scanning for
+                    # the entity-type segment instead of fixed indices.
+                    for i, seg in enumerate(parts[:-1]):
+                        if seg == BuiltinEntityType.FLOW_MESSAGE.value:
+                            linked_fm_id = parts[i + 1]
+                            break
+                        if seg == BuiltinEntityType.CONVERSATION.value:
+                            linked_conv_id = parts[i + 1]
+                            break
+            # When we only have the FlowMessage id, fetch its parent conv id
+            # so the join + msg-sync path runs (same as the email-accept flow).
+            # Hub FMs don't expose a top-level ``conversation_id`` field — the
+            # parent conv lives as a typeid in ``shared_context_entities``.
+            if linked_fm_id and not linked_conv_id:
+                try:
+                    fm_data = await hub_get(BuiltinEntityType.FLOW_MESSAGE, linked_fm_id)
+                    if isinstance(fm_data, dict):
+                        # 1. Top-level field (older shape / direct mirror).
+                        cid = (fm_data.get("conversation_id") or "").strip()
+                        # 2. ``shared_context_entities`` (canonical shape).
+                        if not cid:
+                            conv_prefix_str = f"{BuiltinEntityType.CONVERSATION.value}-"
+                            for raw in (fm_data.get("shared_context_entities") or []):
+                                s = raw if isinstance(raw, str) else str(raw)
+                                if s.startswith(conv_prefix_str):
+                                    cid = s[len(conv_prefix_str):]
+                                    break
+                        if cid:
+                            linked_conv_id = cid
+                except Exception as fetch_err:
+                    logger.debug("[invitation-accept] fm lookup for conv resolution failed: %s", fetch_err)
         except Exception as parse_err:
             logger.warning("[invitation-accept] could not parse target typeid: %s", parse_err)
     except Exception as e:
@@ -2219,6 +2267,25 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
                 bundle_unpacked = await _download_and_unpack_bundle(linked_fm_id, attachment_filename)
         except Exception as e:
             logger.warning("[invitation-accept] bundle download failed: %s", e)
+
+    # Live UI refresh: fire an explicit ``OperationType.UPDATE`` for the
+    # Conversation entity. The per-step sniffer EVENTs logged above as
+    # ``[hook_op] Unhandled event`` don't invalidate the UI's
+    # ``useEntity<Conversation>`` React-Query cache. ``notify_updated``
+    # dispatches a ``DataOpMessage(op=UPDATE)`` which IS what useEntity
+    # listens for.
+    # The per-step events fired above (materialize, sync) don't all carry the
+    # final ``shared_context_entities`` value (bundle-unpack stamps task/spec
+    # onto the conv last). Fire one explicit UPDATE on the now-settled
+    # Conversation so subscribers see the final state in one shot.
+    if linked_conv_id:
+        try:
+            from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
+            conv_final = await Conversation.get_one({"id": linked_conv_id})
+            if conv_final is not None:
+                await conv_final.notify_updated()
+        except Exception as e:
+            logger.debug("[invitation-accept] post-accept conv notify failed: %s", e)
 
     return ApiSuccessResponse(data={
         "invitation_id": inv_id,

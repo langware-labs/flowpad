@@ -13,6 +13,7 @@ import type { ConversationMessagePointer } from '@sdk/entities/conversation';
 import { toast } from 'sonner';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import type { DockPointer } from '@src/navigation/DockPointer';
+import { resolveWorkdir } from './apply-project-choice';
 import { buildReceiverContextPrompt } from './useMyProcess';
 
 interface UseImplementPlanOptions {
@@ -80,7 +81,7 @@ export function useImplementPlan({
     (messageId: string) => {
       if (!task) return;
       const run = async () => {
-        const workdir = task.project_root ?? undefined;
+        const workdir = await resolveWorkdir(task.project_id);
         if (!workdir) {
           toast.warning('Map this conversation to a local project first.');
           return;
