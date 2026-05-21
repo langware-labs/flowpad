@@ -615,8 +615,8 @@ export function HomeLanding() {
                 onChange={setDraftPrompt}
                 onSubmit={(msg) => void handleSessionSubmit(msg)}
               />
-              <div className="flex w-full items-center justify-between gap-2">
-                <div className="flex gap-2">
+              <div className="flex w-full flex-wrap items-center gap-2">
+                <div className="flex flex-wrap gap-2">
                   <Button
                     type="button"
                     variant="outline"
@@ -635,7 +635,7 @@ export function HomeLanding() {
                 </div>
                 <button
                   type="button"
-                  className="inline-flex h-6 items-center gap-1 rounded-full border border-violet-600/60 bg-transparent px-2.5 text-xs font-medium text-violet-600 transition-colors hover:bg-violet-50 dark:border-violet-400/60 dark:text-violet-400 dark:hover:bg-violet-950/40"
+                  className="ml-auto inline-flex h-6 shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-violet-600/60 bg-transparent px-2.5 text-xs font-medium text-violet-600 transition-colors hover:bg-violet-50 dark:border-violet-400/60 dark:text-violet-400 dark:hover:bg-violet-950/40"
                   onClick={() => setShowCommunityAssistance(true)}
                 >
                   <Users className="h-3 w-3" />

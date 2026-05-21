@@ -10,7 +10,10 @@ declare global {
 
 const DEV_MODE_KEY = 'devMode';
 
-let _devMode: boolean = localStorage.getItem(DEV_MODE_KEY) === 'true' || __FLOWPAD_DEV__;
+// Dev mode is a *user* toggle persisted in localStorage. It is NOT inherited
+// from any build-time constant — the published wheel must behave identically
+// regardless of the env the bundle was built in. Toggle with window.setDev().
+let _devMode: boolean = localStorage.getItem(DEV_MODE_KEY) === 'true';
 const _listeners = new Set<(val: boolean) => void>();
 
 function setDevMode(val: boolean): void {

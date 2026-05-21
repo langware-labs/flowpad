@@ -21,18 +21,75 @@ import { pushLoadedProcessTab } from '@src/hooks/useActiveTerminals';
 import { perfLog, perfTime } from './_perf';
 
 /**
- * Route wrappers pattern-match on `kind` to decide recovery behavior.
- * Never bubble a raw error past a route boundary — translate to redirect.
+ * Two-tier error classification — ``severity`` decides route control flow,
+ * ``kind`` carries diagnostics for the banner / toast.
+ *
+ *   * ``hard``  — the entity is unloadable at this URL. The route should
+ *                 fall back to ``loadNextProcess`` and ``replace()`` the URL
+ *                 to a sibling. Use only when the URL itself is dead.
+ *   * ``soft``  — the entity exists; only the runtime is broken (PTY died,
+ *                 shell record missing, project dangling, etc.). The route
+ *                 must NOT redirect — it should render the page so the user
+ *                 sees a banner with the matching recovery action on the URL
+ *                 they actually requested. This is what prevents the
+ *                 silent-redirect-after-backend-restart class of bugs.
+ *
+ * Previously every failure was treated as ``hard`` (single ``not_found`` /
+ * ``start_failed`` / ``no_shell`` / ``project_missing`` enum without
+ * severity). The route caught all of them uniformly and redirected. After
+ * a backend restart that killed PTYs but kept entities alive, every URL
+ * silently jumped to a stale cached sibling.
  */
+export type ProcessLoadErrorKind =
+  | 'entity_not_found'      // hard — entity row is gone
+  | 'network_error'         // hard — fetch failed (non-404). URL still valid; show Retry.
+  | 'runtime_terminated'    // soft — backend ``open`` returned null (process stopped/orphan)
+  | 'shell_entity_missing'  // soft — start succeeded but Shell entity can't be resolved
+  | 'pty_attach_failed'     // soft — PTY couldn't attach (compute node, mismatched pty_id, …)
+  | 'project_missing';      // soft — process.project_id points at a deleted Project
+
+export type ProcessLoadErrorSeverity = 'hard' | 'soft';
+
+const HARD_KINDS: ReadonlySet<ProcessLoadErrorKind> = new Set([
+  'entity_not_found',
+  'network_error',
+]);
+
 export class ProcessLoadError extends Error {
+  readonly severity: ProcessLoadErrorSeverity;
   constructor(
-    readonly kind: 'not_found' | 'start_failed' | 'no_shell' | 'project_missing',
+    readonly kind: ProcessLoadErrorKind,
     readonly processId: string,
     readonly shellId?: string | null,
     readonly cause?: unknown,
   ) {
     super(`process-load:${kind}`);
+    this.severity = HARD_KINDS.has(kind) ? 'hard' : 'soft';
   }
+}
+
+/**
+ * Map an exception thrown inside the runtime phase (``process.start`` /
+ * ``process.shell``) to the right ``soft`` kind. Pattern-matches on the
+ * server-supplied error messages — those are the only signals available
+ * without rewiring the SDK to throw typed errors of its own.
+ */
+function classifyRuntimeFailure(
+  processId: string,
+  process: AgenticProcess,
+  cause: unknown,
+): ProcessLoadError {
+  const msg = cause instanceof Error ? cause.message : String(cause ?? '');
+  if (/process may be terminated/i.test(msg)) {
+    return new ProcessLoadError('runtime_terminated', processId, process.shell_id ?? null, cause);
+  }
+  if (/Shell\s+\S+\s+not found after start/i.test(msg)) {
+    return new ProcessLoadError('shell_entity_missing', processId, process.shell_id ?? null, cause);
+  }
+  // Default: anything else thrown inside start/shell/attachPty is a PTY
+  // attachment failure — the most common case after a backend restart
+  // (entity exists, PTY child is dead).
+  return new ProcessLoadError('pty_attach_failed', processId, process.shell_id ?? null, cause);
 }
 
 export function describeProcessStartError(error: unknown): { title: string; description: string } {
@@ -63,17 +120,37 @@ export function describeProcessStartError(error: unknown): { title: string; desc
 export async function loadProcess(
   processId: string,
 ): Promise<{ process: AgenticProcess; shell: Shell }> {
+  // ── Entity phase (hard errors only) ────────────────────────────────────
+  // Split the fetch catch so a real network failure (timeout, abort,
+  // non-404 5xx) reports as ``network_error`` instead of being silently
+  // collapsed into ``entity_not_found``. The route uses both as hard
+  // (URL is unloadable now) but distinguishes them so the banner can
+  // offer Retry for transient hiccups vs. fall-through-to-sibling for
+  // deleted entities.
   const cached = AgenticProcess.getByIdFromCache<AgenticProcess>(processId);
   perfLog(`loadProcess cache=${cached ? 'hit' : 'miss'} processId=${processId.slice(0, 8)}`);
-  const process =
-    cached ??
-    (await perfTime('AgenticProcess.getById (network)', () =>
-      AgenticProcess.getById<AgenticProcess>(processId).catch(() => null),
-    ));
+  let process: AgenticProcess | null = cached ?? null;
   if (!process) {
-    throw new ProcessLoadError('not_found', processId);
+    try {
+      process = await perfTime('AgenticProcess.getById (network)', () =>
+        AgenticProcess.getById<AgenticProcess>(processId),
+      );
+    } catch (cause) {
+      // 404 → entity is genuinely gone; anything else → transient fetch
+      // failure that doesn't mean the URL is dead.
+      const status = (cause as { response?: { status?: number }; status?: number })?.response?.status
+        ?? (cause as { status?: number })?.status;
+      if (status === 404) {
+        throw new ProcessLoadError('entity_not_found', processId, null, cause);
+      }
+      throw new ProcessLoadError('network_error', processId, null, cause);
+    }
+  }
+  if (!process) {
+    throw new ProcessLoadError('entity_not_found', processId);
   }
 
+  // ── Runtime phase (soft errors — entity is fine, runtime isn't) ────────
   let shell: Shell | null = null;
   try {
     const cols = estimateCols(window.innerWidth);
@@ -83,11 +160,11 @@ export async function loadProcess(
     );
     shell = await perfTime('process.shell()', () => process.shell());
   } catch (cause) {
-    throw new ProcessLoadError('start_failed', processId, process.shell_id ?? null, cause);
+    throw classifyRuntimeFailure(processId, process, cause);
   }
 
   if (!shell) {
-    throw new ProcessLoadError('no_shell', processId, process.shell_id ?? null);
+    throw new ProcessLoadError('shell_entity_missing', processId, process.shell_id ?? null);
   }
 
   // Optimistically insert the row into the shared strip state so TabbedTerminal's

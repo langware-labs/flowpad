@@ -1,5 +1,6 @@
 import { APIEntity, FSRef, apiClient, systemTools } from '@sdk';
 import { EntityFactory } from '@sdk/schema/factory';
+import { useEntityOps } from '@sdk/react/hooks';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useMemo } from 'react';
 
@@ -189,6 +190,24 @@ export function useEntityByPath<T extends APIEntity<T>>(
     void queryClient.invalidateQueries({ queryKey: bulkKey });
     void queryClient.invalidateQueries({ queryKey: discoverKey });
   }, [queryClient, bulkKey, discoverKey]);
+
+  // Self-heal when a matching entity row arrives over the WS after we
+  // already settled on ``missing_asset``. The discover query caches
+  // NOT_FOUND with ``staleTime: Infinity`` so it never re-fires on its
+  // own; we invalidate both the bulk list and the path-keyed discover
+  // result so the next render re-runs the lookup and finds the freshly
+  // indexed row. Filter by ``type`` first to avoid invalidating on
+  // unrelated entity ops.
+  const onEntityOp = useCallback(
+    (_typeId: unknown, op: unknown, _data: unknown) => {
+      if (op !== 'create' && op !== 'update') return;
+      void queryClient.invalidateQueries({ queryKey: bulkKey });
+      void queryClient.invalidateQueries({ queryKey: discoverKey });
+    },
+    [queryClient, bulkKey, discoverKey],
+  );
+  const subscribedTypes = useMemo(() => (enabled ? [type] : []), [enabled, type]);
+  useEntityOps(subscribedTypes, onEntityOp as never);
 
   // Derive resolution state.
   const state: EntityResolutionState = useMemo(() => {

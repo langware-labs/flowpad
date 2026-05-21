@@ -74,7 +74,7 @@ def get_instance_settings() -> BaseInstanceSettings:
     elif name == "dev":
         instance = DevInstanceSettings.from_env()
     else:
-        instance = BaseInstanceSettings.from_env()
+        instance = BaseInstanceSettings.from_env(name=name)
     _INSTANCES[key] = instance
     return instance
 

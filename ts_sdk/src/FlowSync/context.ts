@@ -116,6 +116,24 @@ export interface CreateFlowOptions {
   chatOptions?: IChatOptionsValues;
 }
 
+/**
+ * Soft-runtime-failure descriptor for the currently-rendered terminal.
+ * Kept in sync with ``ProcessLoadErrorKind`` (ui/src/routes/loaders/
+ * load-process.ts). The duplication keeps the SDK from importing UI types.
+ */
+export type TerminalRuntimeErrorKind =
+  | 'runtime_terminated'
+  | 'shell_entity_missing'
+  | 'pty_attach_failed'
+  | 'project_missing'
+  | 'network_error';
+
+export interface TerminalRuntimeError {
+  kind: TerminalRuntimeErrorKind;
+  processId: string;
+  shellId: string | null;
+}
+
 class DataContext extends EventEmitter {
   stateItem = 'flowpad-state';
   persistedState: { [key: string]: TypeId } = {};
@@ -341,6 +359,27 @@ class DataContext extends EventEmitter {
     this.emit(ContextEventType.CONTEXT_CHANGED);
   }
 
+  /**
+   * Set the soft-runtime-failure descriptor for the currently-rendered
+   * terminal. Pass ``null`` on a successful load to clear any prior
+   * banner. No-ops when the value matches what's already stored
+   * (kind + processId equality is enough — same kind on same process
+   * means same banner).
+   */
+  setTerminalRuntimeError(err: TerminalRuntimeError | null): void {
+    const prev = this.terminalRuntimeError;
+    if (
+      (prev === null && err === null) ||
+      (prev !== null && err !== null && prev.kind === err.kind && prev.processId === err.processId)
+    ) {
+      return;
+    }
+    runInAction(() => {
+      this.terminalRuntimeError = err;
+    });
+    this.emit(ContextEventType.CONTEXT_CHANGED);
+  }
+
   // WebSocket connection - only set when connected
   connection: WebSocket | null = null;
 
@@ -357,6 +396,19 @@ class DataContext extends EventEmitter {
 
   // Active working directory — shown in the footer
   workdir: string | null = null;
+
+  // Soft (non-redirecting) runtime failure for the currently-rendered
+  // AgenticProcess terminal. The shell-dock route writes here when it
+  // encounters a recoverable runtime problem (PTY couldn't attach, process
+  // terminated, shell entity missing, project dangling, …) instead of
+  // silently redirecting to a sibling. The terminal view subscribes to
+  // this and renders a banner with the matching recovery action.
+  // ``null`` = no runtime error; the live PTY (if any) is good.
+  //
+  // ``kind`` mirrors ``ProcessLoadErrorKind`` in
+  // ``ui/src/routes/loaders/load-process.ts`` but is duplicated as a string
+  // union here to avoid an SDK→UI import.
+  terminalRuntimeError: TerminalRuntimeError | null = null;
 
   get activeEntityTypeId(): TypeId | null {
     return this.getContextEntityTypeId(ContextEntitiesEnum.CurrentActiveEntityTypeId);
@@ -435,6 +487,7 @@ class DataContext extends EventEmitter {
       activeShellId: observable,
       activeTerminalTargetTypeId: observable,
       workdir: observable,
+      terminalRuntimeError: observable,
       envName: computed,
       desktopInfo: computed,
       isDesktop: computed,

@@ -235,13 +235,35 @@ async function routeDefaultShell(): Promise<void> {
 async function routeProcessPointer(processId: string): Promise<void> {
   try {
     await loadProcess(processId);
+    // Successful load — clear any prior runtime-error banner.
+    dataContext.setTerminalRuntimeError(null);
     return;
   } catch (e) {
     if (!(e instanceof ProcessLoadError)) throw e;
-    // The direct-link target is broken — synthesize a CleanupRecord for it
-    // (so the UI counter includes it) and fall back to the next candidate.
-    // Use replace so the broken URL doesn't sit in history; otherwise BACK
-    // would pop right back to it and re-trigger this loader → flicker.
+
+    // Soft failure — the entity exists, only the runtime is broken (PTY
+    // died, shell entity missing, project dangling, …). DO NOT redirect:
+    // keep the user on their requested URL and surface a banner with
+    // per-kind recovery. This is what prevents the silent-jump-to-stale-
+    // sibling class of bugs after a backend restart.
+    if (e.severity === 'soft') {
+      dataContext.setActiveTerminalTargetTypeId(
+        new TypeId(AgenticProcess.type, processId),
+      );
+      dataContext.setTerminalRuntimeError({
+        kind: e.kind as Exclude<typeof e.kind, 'entity_not_found'>,
+        processId,
+        shellId: e.shellId ?? null,
+      });
+      // No toast — ``TerminalRuntimeErrorBanner`` (mounted in
+      // InteractiveTerminal) reads the dataContext slot and renders a
+      // persistent banner with the recovery action. A toast on top of
+      // that would be redundant.
+      return;
+    }
+
+    // Hard failure — the URL itself is dead. Fall back to the next
+    // candidate and ``replace()`` so BACK doesn't re-trigger this loader.
     const directCleanup = buildProcessCleanupForRoute(e);
     const next = await loadNextProcess({
       excludeIds: new Set([processId]),

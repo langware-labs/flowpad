@@ -3,7 +3,6 @@ import { File as FileIcon, MessageSquarePlus, Paperclip, Send, Trash2, X } from 
 import type { FlowMessage } from '@sdk';
 import { sendReply } from '@sdk/entities/notifications';
 import { AttachmentType, type Attachment } from '@sdk/entities/flow-message';
-import type { ITask } from '@sdk/entities/task';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
 import { toast } from 'sonner';
 import { cn } from '@src/lib/utils';
@@ -15,7 +14,6 @@ import { discardDraftFlowMessage } from './flow-message-drafts';
 
 interface DraftMessageComposerProps {
   fm: FlowMessage;
-  task?: ITask | null;
   conversationId?: string;
   /** Fires after successful send (draft promoted to real reply). */
   onAfterSend?: () => void;
@@ -33,7 +31,6 @@ function formatSize(bytes: number): string {
 
 export function DraftMessageComposer({
   fm,
-  task,
   conversationId,
   onAfterSend,
   onAfterDiscard,
@@ -101,13 +98,15 @@ export function DraftMessageComposer({
       }
       return next;
     });
-    if (tooBig.length > 0) {
-      setError(
-        tooBig.length === 1
+    // Fresh pick replaces the previous size-rejection notice; if the new
+    // selection has no over-limit files the warning clears.
+    setError(
+      tooBig.length === 0
+        ? null
+        : tooBig.length === 1
           ? `"${tooBig[0]}" is over ${MAX_FILE_SIZE_LABEL} and was not attached.`
           : `${tooBig.length} files over ${MAX_FILE_SIZE_LABEL} were not attached: ${tooBig.join(', ')}.`,
-      );
-    }
+    );
   };
 
   const removeFile = (index: number) => setFiles((prev) => prev.filter((_, i) => i !== index));
@@ -140,7 +139,7 @@ export function DraftMessageComposer({
           }
         : undefined;
       await sendReply(
-        { task: task ?? undefined, conversationId },
+        { conversationId },
         trimmed,
         files.length > 0 ? files : undefined,
         extras,

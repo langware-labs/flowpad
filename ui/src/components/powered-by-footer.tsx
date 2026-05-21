@@ -1,4 +1,4 @@
-import { BASE_PATH } from '@src/constants/basePath';
+import flowpadLogo from '@src/assets/logo.png';
 import { WarningsPopover } from '@src/components/warnings-popover';
 import { Agent, ArtifactType, TypeId } from '@sdk';
 import { useCurrentArtifacts } from '@src/hooks/flow-hooks';
@@ -88,7 +88,7 @@ export function Footer({ className = '' }: FooterProps) {
             }}
           >
             <img
-              src={`${BASE_PATH}logo.png`}
+              src={flowpadLogo}
               alt="Flowpad.ai Logo"
               className={`h-4 ${resolvedTheme === 'dark' ? 'brightness-0 invert' : ''}`}
             />

@@ -1,10 +1,10 @@
-import { BASE_PATH } from '@src/constants/basePath';
 import { Button } from '@src/components/ui/button';
 import { EntityExecutionPanel } from '@src/components/entity-execution-panel';
 import { ProcessType } from '@sdk';
 import { X } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
+import flowpadIcon from '@src/assets/flowpad-icon.png';
 import { useFloatingChat } from './FloatingChatContext';
 import { useFlowpadAssistantProject } from './useFlowpadAssistantProject';
 
@@ -196,7 +196,7 @@ export function FloatingChatWindow() {
   // Use the same dedicated round Flowpad icon as the trigger button for visual
   // continuity. siteConfig branding stays out of this surface — see the button
   // component for the rationale.
-  const logoSrc = `${BASE_PATH}flowpad-icon.png`;
+  const logoSrc = flowpadIcon;
 
   // Compute the entrance/exit transform that starts at the trigger button's
   // rect and ends at identity (the centered window position).
