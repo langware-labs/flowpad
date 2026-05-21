@@ -102,22 +102,16 @@ const PlanFileEditor: React.FC = () => {
     }
   }, [planBookmark, filePath, agenticProcess]);
 
-  // Auto-download file content if not cached
+  // Refetch on every nav — Update Plan rewrites the file via the agent.
+  const fsRef = useRef(fs);
+  fsRef.current = fs;
+  const computeNodeId = computeNodeTypeId?.id ?? null;
   useEffect(() => {
-    if (!filePath || !computeNodeTypeId) return;
-    if (cached) return;
-
-    const downloadContent = async () => {
-      if (!fs) return;
-      try {
-        await fs.download(filePath, false);
-      } catch (error) {
-        console.error('[SepcEditor] Error downloading plan:', filePath, error);
-      }
-    };
-
-    void downloadContent();
-  }, [filePath, computeNodeTypeId, cached, fs]);
+    if (!filePath || !computeNodeId || !fsRef.current) return;
+    void fsRef.current.refetch(filePath).catch((error) => {
+      console.error('[SpecEditor] Error refetching plan:', filePath, error);
+    });
+  }, [filePath, computeNodeId]);
 
   // Stable onChange ref — MilkdownEditor's useEditor depends on [onChange],
   // so a changing identity would re-initialize the editor and lose focus.

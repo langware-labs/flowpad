@@ -438,6 +438,180 @@ async def test_indexer_freshness_skip_avoids_redispatch(
 
 
 @pytest.mark.asyncio
+async def test_probe_session_end_to_end_scenario(tmp_path: Path, clean_db) -> None:
+    """End-to-end scenario lifted from scripts/analyze_this_session.py.
+
+    Mirrors the realistic pre-state we found probing a live session:
+      - AgenticProcess for the session is already in the DB (was created
+        when the process started).
+      - The plan .md file already exists on disk under `.claude/plans/`
+        with a slug-style filename, written by Claude Code.
+      - The ClaudePlan entity is NOT yet indexed.
+      - A transcript carrying a `tool_use ExitPlanMode` is processed.
+
+    The handler must: trigger the scoped PLAN reindex to create the
+    ClaudePlan entity, then cross-link both sides via private context
+    entities. Uses `force=True` like the probe to bypass freshness skip
+    on a single-shot dispatch.
+    """
+    session_id = "ff041ecd-bdb8-4bc4-b875-959a7913a958"
+    plan_slug = "we-would-like-the-snoopy-dijkstra"
+
+    home = tmp_path / "home"
+    plan_md = _write_plan_md(home, slug=plan_slug, body=f"# {plan_slug}\n")
+    jsonl = _write_transcript(
+        home,
+        session_id=session_id,
+        plan_file_path=str(plan_md),
+        encoded_project="-Users-shlom-Documents-dev-flowpad-oss",
+    )
+
+    proc = await _save_agentic_process(session_id)
+    assert await ClaudePlan.get_one({"asset_ref": str(plan_md)}) is None, (
+        "precondition: Plan entity must be absent so we can verify the "
+        "scoped reindex created it"
+    )
+
+    ti = TranscriptIndexer()
+    ti.add_handler(PlanHandler())
+    await ti(
+        [FSRef(jsonl, record_type=RecordType.CLAUDE_SESSION)],
+        IndexerOptions(verbose=False, force=True),
+    )
+
+    plan = await ClaudePlan.get_one({"asset_ref": str(plan_md)})
+    assert plan is not None, "PlanHandler should have triggered scoped PLAN reindex"
+    assert plan.asset_ref == str(plan_md)
+
+    proc_reloaded = await AgenticProcess.get_by_id(proc.id)
+    assert proc_reloaded is not None
+    assert proc_reloaded.session_id == session_id
+
+    plan_links = {(t.type, t.id) for t in plan.private_context_entities_}
+    proc_links = {(t.type, t.id) for t in proc_reloaded.private_context_entities_}
+    assert (AgenticProcess.get_type(), proc.id) in plan_links, (
+        f"plan -> agentic_process link missing; got {plan_links!r}"
+    )
+    assert (ClaudePlan.get_type(), plan.id) in proc_links, (
+        f"agentic_process -> plan link missing; got {proc_links!r}"
+    )
+
+
+def _write_plan_mode_exit_jsonl(home: Path, session_id: str, plan_path: str) -> Path:
+    """Write a 2-line JSONL that matches what a real session emits today:
+    one user message + one `plan_mode_exit` attachment with planFilePath.
+    """
+    project_dir = home / ".claude" / "projects" / "-real-shape-probe"
+    project_dir.mkdir(parents=True, exist_ok=True)
+    jsonl = project_dir / f"{session_id}.jsonl"
+    user_line = json.dumps({
+        "type": "user",
+        "uuid": "00000000-0000-4000-8000-0000000000c9",
+        "sessionId": session_id,
+        "timestamp": "2026-05-21T07:00:00.000Z",
+        "message": {"role": "user", "content": "hi"},
+    })
+    plan_exit_line = json.dumps({
+        "type": "attachment",
+        "uuid": "00000000-0000-4000-8000-0000000000ff",
+        "sessionId": session_id,
+        "timestamp": "2026-05-21T07:01:00.000Z",
+        "attachment": {
+            "type": "plan_mode_exit",
+            "planFilePath": plan_path,
+            "planExists": True,
+        },
+    })
+    jsonl.write_text(user_line + "\n" + plan_exit_line + "\n", encoding="utf-8")
+    return jsonl
+
+
+@pytest.mark.asyncio
+async def test_agentic_process_plan_open_event_links_plan(
+    tmp_path: Path, clean_db, monkeypatch,
+) -> None:
+    """End-to-end: AgenticProcess.transcript_index drives PlanHandler cross-link
+    over a real-shape JSONL with a plan_mode_exit attachment (the actual shape
+    sessions emit; see scripts/analyze_this_session.py).
+    """
+    session_id = "44444444-4444-4444-8444-444444444444"
+    home = tmp_path / "home"
+    plan_md = _write_plan_md(home, slug="ap-plan-open")
+    jsonl = _write_plan_mode_exit_jsonl(home, session_id, str(plan_md))
+
+    # Make ClaudeSessionRecord.get() find the test JSONL.
+    from flow_sdk.fs_records.claude import claude_session as cs_mod
+
+    def _fake_get(sid: str):
+        if sid != session_id:
+            return None
+        rec = cs_mod.ClaudeSessionRecord(session_id=session_id)
+        object.__setattr__(rec, "_source_file", str(jsonl))
+        return rec
+
+    monkeypatch.setattr(cs_mod.ClaudeSessionRecord, "get", staticmethod(_fake_get))
+
+    proc = await _save_agentic_process(session_id)
+    assert await ClaudePlan.get_one({"asset_ref": str(plan_md)}) is None
+
+    result = await proc.transcript_index()
+    assert result["status"] == "ok"
+    assert result["session_id"] == session_id
+
+    plan = await ClaudePlan.get_one({"asset_ref": str(plan_md)})
+    assert plan is not None
+    proc_reloaded = await AgenticProcess.get_by_id(proc.id)
+    plan_links = {(t.type, t.id) for t in plan.private_context_entities_}
+    proc_links = {(t.type, t.id) for t in proc_reloaded.private_context_entities_}
+    assert (AgenticProcess.get_type(), proc.id) in plan_links
+    assert (ClaudePlan.get_type(), plan.id) in proc_links
+
+
+@pytest.mark.asyncio
+async def test_agentic_process_plan_open_event_idempotent(
+    tmp_path: Path, clean_db, monkeypatch,
+) -> None:
+    session_id = "55555555-5555-4555-8555-555555555555"
+    home = tmp_path / "home"
+    plan_md = _write_plan_md(home, slug="ap-plan-open-idem")
+    jsonl = _write_plan_mode_exit_jsonl(home, session_id, str(plan_md))
+
+    from flow_sdk.fs_records.claude import claude_session as cs_mod
+
+    def _fake_get(sid: str):
+        if sid != session_id:
+            return None
+        rec = cs_mod.ClaudeSessionRecord(session_id=session_id)
+        object.__setattr__(rec, "_source_file", str(jsonl))
+        return rec
+
+    monkeypatch.setattr(cs_mod.ClaudeSessionRecord, "get", staticmethod(_fake_get))
+
+    proc = await _save_agentic_process(session_id)
+    await proc.transcript_index()
+    await proc.transcript_index()  # replay
+
+    plan = await ClaudePlan.get_one({"asset_ref": str(plan_md)})
+    proc_reloaded = await AgenticProcess.get_by_id(proc.id)
+    plan_links = [(t.type, t.id) for t in plan.private_context_entities_]
+    proc_links = [(t.type, t.id) for t in proc_reloaded.private_context_entities_]
+    assert plan_links.count((AgenticProcess.get_type(), proc.id)) == 1
+    assert proc_links.count((ClaudePlan.get_type(), plan.id)) == 1
+
+
+@pytest.mark.asyncio
+async def test_agentic_process_plan_open_event_no_session_skipped(
+    tmp_path: Path, clean_db,
+) -> None:
+    """AP with no session_id returns a clean skip — no exception."""
+    proc = AgenticProcess(id=str(uuid.uuid4()), session_id=None)
+    await proc.save()
+    result = await proc.transcript_index()
+    assert result["status"] == "skipped"
+    assert result["reason"] == "no session_id"
+
+
+@pytest.mark.asyncio
 async def test_indexer_force_redispatches(tmp_path: Path, clean_db) -> None:
     home = tmp_path / "home"
     plan_md = _write_plan_md(home)

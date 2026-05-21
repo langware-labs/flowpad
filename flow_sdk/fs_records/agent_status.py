@@ -374,7 +374,7 @@ def _tail_status(path: "str | _Path") -> WorkerStatus:
     if last_type == "progress":
         return WorkerStatus.TOOL_RUNNING
     if last_type == "user":
-        if last_user_ts and (_time.time() - last_user_ts) > 30:
+        if last_user_ts and (_time.time() - last_user_ts) > 90:
             return WorkerStatus.API_TIMEOUT
         return WorkerStatus.WAITING
 

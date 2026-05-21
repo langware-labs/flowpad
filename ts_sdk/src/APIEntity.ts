@@ -654,6 +654,22 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    */
   remote?: boolean;
 
+  /** POST /entity-event {event, payload}. Unknown events are a server-side no-op. */
+  public async entityEvent(event: string, payload: Record<string, unknown> = {}): Promise<unknown> {
+    return APIEntity.entityEvent(this.typeId, event, payload);
+  }
+
+  /** Static form for callsites that hold only a TypeId. */
+  public static async entityEvent(
+    typeId: TypeId,
+    event: string,
+    payload: Record<string, unknown> = {},
+  ): Promise<unknown> {
+    const info = new ActionInfo('entity-event', typeId.type, typeId.id, 'POST');
+    info.bodyParameters = { event, payload };
+    return await dataManager.callActionPreferWS<unknown, unknown>(info);
+  }
+
   public async delete(): Promise<void> {
     console.log(
       `🗑️ [APIEntity.delete] Starting deletion of ${this.typeId.type}:${this.typeId.id} (${this.constructor.name})`,

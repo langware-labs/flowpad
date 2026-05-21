@@ -1027,6 +1027,7 @@ class AgenticProcess(Entity):
             new_proc = AgenticProcess.fork(
                 session_id=self.session_id,
                 workdir=self.workdir,
+                project_id=self.project_id,
                 visible=visible,
                 shared_context_entities=list(self.shared_context_entities or []),
             )
@@ -2957,6 +2958,31 @@ class AgenticProcess(Entity):
             return None
         return ClaudeSessionRecord.get(session_id)
 
+    async def transcript_index(self, payload: dict | None = None) -> dict:
+        """Run the TranscriptIndexer (force=True) over this process's session JSONL.
+        Handlers are idempotent — replay is safe.
+        """
+        from flow_sdk.fs_store.indexer.index_function import IndexerOptions
+        from flow_sdk.fs_store.record_types import RecordType
+        from flow_sdk.fs_store.transcript_indexer import TranscriptIndexer
+        from flow_sdk.fs_store.transcript_indexer.handlers import PlanHandler
+
+        sid = self.session_id or ""
+        if not sid:
+            return {"status": "skipped", "reason": "no session_id"}
+        record = ClaudeSessionRecord.get(sid)
+        jsonl_path = getattr(record, "source_file", None) if record else None
+        if not jsonl_path or not Path(jsonl_path).exists():
+            return {"status": "skipped", "reason": "no transcript on disk", "session_id": sid}
+
+        ti = TranscriptIndexer()
+        ti.add_handler(PlanHandler())
+        await ti(
+            [FSRef(Path(jsonl_path), record_type=RecordType.CLAUDE_SESSION)],
+            IndexerOptions(verbose=False, force=True),
+        )
+        return {"status": "ok", "session_id": sid, "jsonl": str(jsonl_path)}
+
     async def _find_resumable_session(self, session_id: str) -> str | None:
         """Walk up the fork chain to find a session ID with a transcript on disk."""
         candidate: str | None = session_id
@@ -3065,5 +3091,6 @@ class AgenticProcess(Entity):
             asyncio.run_coroutine_threadsafe(_update_state(), main_loop)
 
         return _on_pty_exit
-# bench-marker 1777146382
-# bench-trigger-1777146659
+
+
+AgenticProcess.on_event("plan.open")(AgenticProcess.transcript_index)
