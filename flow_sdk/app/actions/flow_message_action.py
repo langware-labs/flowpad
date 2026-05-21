@@ -277,9 +277,12 @@ async def handle_open_flow_message(fm_id: str) -> ApiResponse:
         except Exception as e:
             logger.warning("[open_flow_message] failed to materialize bundle (non-fatal): %s", e)
 
-    # Resolve conversation_id / task_id from the now-local FlowMessage so the
-    # UI can navigate directly. Falls back to hub context if the FM didn't
-    # land locally (e.g. no attachment_filename).
+    # Resolve conversation_id / task_id. Try the local FM first (populated by
+    # ``_download_and_unpack_bundle`` above). When there's no bundle — e.g. a
+    # text-only first message from ``NewConversationDialog`` — the local FM
+    # never materializes; we additionally walk the conv's hub-side parent
+    # relationship so the deep link still carries conv_id and we can sync
+    # the conv content directly from the hub below.
     conversation_id = ""
     task_id = ""
     local_fm = await FlowMessage.get_one({"id": fm_id})
@@ -306,9 +309,25 @@ async def handle_open_flow_message(fm_id: str) -> ApiResponse:
                 conversation_id = s.split("-", 1)[1]
             elif s.startswith(f"{BuiltinEntityType.TASK.value}-") and not task_id:
                 task_id = s.split("-", 1)[1]
-        # Older hub payloads: task_id sometimes lives in meta or top-level.
         if not task_id:
             task_id = (meta.get("task_id") or (data or {}).get("task_id") or "").strip()
+        # When the FM isn't local and shared_context_entities didn't carry the
+        # parent conv (the NewConversationDialog text-only-first-message case),
+        # walk the FM's hub-side parents to find it.
+        if not conversation_id:
+            conversation_id = await _resolve_conversation_id_from_fm_parents(fm_id)
+
+    # When the conv is known but not yet on the recipient's local DB, sync it
+    # directly from the hub (the bundle-unpack path normally does this, but
+    # text-only first messages ship without a bundle).
+    if conversation_id:
+        try:
+            request_info = get_current_request_info()
+            someone_typeid = request_info.someone_typeid if request_info else None
+            if someone_typeid:
+                await _ensure_local_conversation_synced(conversation_id, someone_typeid)
+        except Exception as e:
+            logger.warning("[open_flow_message] conv sync failed (non-fatal): %s", e, exc_info=True)
 
     logger.warning(
         "[open_flow_message] fm_id=%s attachment_filename=%r repo_url=%r conv_id=%s task_id=%s",
@@ -1690,6 +1709,75 @@ async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> Non
             logger.warning("[conv-msg-fetch] %s: aborted: %s", conv_id[:8], e)
 
 
+async def _resolve_conversation_id_from_fm_parents(fm_id: str) -> str:
+    """Walk a hub-side FlowMessage's parent relationships to find its Conversation.
+
+    Used when the FM's ``shared_context_entities`` doesn't include the parent
+    conv (e.g. the text-only first message from ``NewConversationDialog``).
+    The hub's conv→FM relationship is the conversation's child-of link, so we
+    fetch the relationships and pick the first one whose ``from_typeid`` is a
+    Conversation.
+    """
+    try:
+        rels = await hub_get(
+            BuiltinEntityType.FLOW_MESSAGE,
+            fm_id,
+            "relationships",
+        )
+    except Exception as e:
+        logger.debug("[fm-parents] fm=%s relationships fetch failed: %s", fm_id, e)
+        return ""
+    if not isinstance(rels, list):
+        return ""
+    conv_prefix = f"{BuiltinEntityType.CONVERSATION.value}-"
+    for rel in rels:
+        if not isinstance(rel, dict):
+            continue
+        from_tid = (rel.get("from_typeid") or rel.get("from_entity") or "")
+        if isinstance(from_tid, dict):
+            if (from_tid.get("type") or "") == BuiltinEntityType.CONVERSATION.value:
+                return from_tid.get("id") or ""
+        elif isinstance(from_tid, str) and from_tid.startswith(conv_prefix):
+            return from_tid[len(conv_prefix):]
+    return ""
+
+
+async def _ensure_local_conversation_synced(conv_id: str, someone_typeid: str) -> None:
+    """Make sure the local DB has the conv + its messages.
+
+    Idempotent. Used by deep-link handlers (``handle_open_flow_message``) for
+    flows where the FM ships without a body bundle (e.g. text-only first
+    message from a fresh share) and the recipient would otherwise see a
+    placeholder or an empty conv.
+    """
+    from flow_sdk.builtin.conversation import Conversation as LocalConversation  # noqa: PLC0415
+
+    # Join the hub-side conv so we enter ``participants`` and start
+    # receiving WS fanout. Idempotent — already-a-member is a no-op.
+    try:
+        await hub_post(BuiltinEntityType.CONVERSATION, {}, conv_id, "join")
+    except Exception as e:
+        logger.debug("[conv-sync] join %s: %s", conv_id[:8], e)
+
+    # Materialize the local row from the hub if it's missing.
+    existing = await LocalConversation.get_one({"id": conv_id})
+    if existing is None:
+        try:
+            hub_conv = await hub_get(BuiltinEntityType.CONVERSATION, conv_id)
+            if isinstance(hub_conv, dict) and hub_conv.get("id"):
+                await LocalConversation.model_validate({
+                    "id": conv_id,
+                    "title": hub_conv.get("title"),
+                    "remote": True,
+                }).save(someone_typeid)
+        except Exception as e:
+            logger.debug("[conv-sync] materialize %s: %s", conv_id[:8], e)
+
+    # Pull any messages the WS bridge didn't fan out (everything from before
+    # the join in particular).
+    await _sync_conversation_messages(conv_id, someone_typeid)
+
+
 async def _sync_conversation_messages(conv_id: str, someone_typeid: str) -> None:
     """Materialize every hub-side message of a conversation into the local store.
 
@@ -2070,10 +2158,17 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
                 params={"invitation-id": inv_id},
                 timeout=10,
             )
-        if resp.status_code != 200:
+        # 409 means the hub already accepted this invitation — typically the
+        # recipient clicked the email link before opening the in-app Accept
+        # button. That's not an error: drop through to the local-side
+        # cleanup (mark accepted, join+sync the conversation) so the UI
+        # transitions to the real conv view instead of staying gated.
+        if resp.status_code not in (200, 409):
             return ApiFailResponse(
                 message=f"Accept failed ({resp.status_code}): {resp.text[:200]}"
             )
+        if resp.status_code == 409:
+            logger.info("[invitation-accept] hub returned 409 (already accepted) — running local cleanup")
         # The accept response carries the chosen target's typeid. Two shapes:
         #  - FlowMessage  → legacy bundle flow; we'll download + unpack below.
         #  - Conversation → direct-share invite flow; we call ``join`` so the
