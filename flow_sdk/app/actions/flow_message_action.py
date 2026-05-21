@@ -287,11 +287,9 @@ async def handle_open_flow_message(fm_id: str) -> ApiResponse:
     task_id = ""
     local_fm = await FlowMessage.get_one({"id": fm_id})
     if local_fm:
+        conversation_id = getattr(local_fm, "conversation_id", "") or ""
         for ctx in (local_fm.shared_context_entities or []):
-            t = getattr(ctx, "type", None)
-            if t == BuiltinEntityType.CONVERSATION.value and not conversation_id:
-                conversation_id = getattr(ctx, "id", "") or ""
-            elif t == BuiltinEntityType.TASK.value and not task_id:
+            if getattr(ctx, "type", None) == BuiltinEntityType.TASK.value and not task_id:
                 task_id = getattr(ctx, "id", "") or ""
     else:
         # Fall back to the hub's context list (string typeids like
@@ -311,11 +309,6 @@ async def handle_open_flow_message(fm_id: str) -> ApiResponse:
                 task_id = s.split("-", 1)[1]
         if not task_id:
             task_id = (meta.get("task_id") or (data or {}).get("task_id") or "").strip()
-        # When the FM isn't local and shared_context_entities didn't carry the
-        # parent conv (the NewConversationDialog text-only-first-message case),
-        # walk the FM's hub-side parents to find it.
-        if not conversation_id:
-            conversation_id = await _resolve_conversation_id_from_fm_parents(fm_id)
 
     # When the conv is known but not yet on the recipient's local DB, sync it
     # directly from the hub (the bundle-unpack path normally does this, but
@@ -1709,39 +1702,6 @@ async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> Non
             logger.warning("[conv-msg-fetch] %s: aborted: %s", conv_id[:8], e)
 
 
-async def _resolve_conversation_id_from_fm_parents(fm_id: str) -> str:
-    """Walk a hub-side FlowMessage's parent relationships to find its Conversation.
-
-    Used when the FM's ``shared_context_entities`` doesn't include the parent
-    conv (e.g. the text-only first message from ``NewConversationDialog``).
-    The hub's conv→FM relationship is the conversation's child-of link, so we
-    fetch the relationships and pick the first one whose ``from_typeid`` is a
-    Conversation.
-    """
-    try:
-        rels = await hub_get(
-            BuiltinEntityType.FLOW_MESSAGE,
-            fm_id,
-            "relationships",
-        )
-    except Exception as e:
-        logger.debug("[fm-parents] fm=%s relationships fetch failed: %s", fm_id, e)
-        return ""
-    if not isinstance(rels, list):
-        return ""
-    conv_prefix = f"{BuiltinEntityType.CONVERSATION.value}-"
-    for rel in rels:
-        if not isinstance(rel, dict):
-            continue
-        from_tid = (rel.get("from_typeid") or rel.get("from_entity") or "")
-        if isinstance(from_tid, dict):
-            if (from_tid.get("type") or "") == BuiltinEntityType.CONVERSATION.value:
-                return from_tid.get("id") or ""
-        elif isinstance(from_tid, str) and from_tid.startswith(conv_prefix):
-            return from_tid[len(conv_prefix):]
-    return ""
-
-
 async def _ensure_local_conversation_synced(conv_id: str, someone_typeid: str) -> None:
     """Make sure the local DB has the conv + its messages.
 
@@ -2158,17 +2118,21 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
                 params={"invitation-id": inv_id},
                 timeout=10,
             )
-        # 409 means the hub already accepted this invitation — typically the
-        # recipient clicked the email link before opening the in-app Accept
-        # button. That's not an error: drop through to the local-side
-        # cleanup (mark accepted, join+sync the conversation) so the UI
-        # transitions to the real conv view instead of staying gated.
-        if resp.status_code not in (200, 409):
+        # Hub responses we treat as "accept succeeded, run local cleanup":
+        #   200 — JSON success (legacy shape; carries the target typeid).
+        #   302 — RedirectResponse to the post-accept landing (current shape,
+        #         introduced when the hub became browser-friendly). The Location
+        #         points at /flow_message/<id> or callback_override.
+        #   409 — already accepted; the recipient clicked the email link first.
+        # Anything else is a real failure.
+        if resp.status_code not in (200, 302, 409):
             return ApiFailResponse(
                 message=f"Accept failed ({resp.status_code}): {resp.text[:200]}"
             )
         if resp.status_code == 409:
             logger.info("[invitation-accept] hub returned 409 (already accepted) — running local cleanup")
+        elif resp.status_code == 302:
+            logger.info("[invitation-accept] hub returned 302 (redirect to landing) — running local cleanup")
         # The accept response carries the chosen target's typeid. Two shapes:
         #  - FlowMessage  → legacy bundle flow; we'll download + unpack below.
         #  - Conversation → direct-share invite flow; we call ``join`` so the
