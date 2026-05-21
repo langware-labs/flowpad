@@ -86,6 +86,21 @@ async def ensure_conversation_entity(
             # Backfill title on first receive — keep an existing local override.
             conv.title = title_clean
             dirty = True
+        if parent_typeid is not None:
+            # Backfill the parent link on an existing local conv. Recipients
+            # often have a bare Conversation row materialized by the
+            # invitation-preview flow before the bundle unpack runs; that
+            # earlier row has no ``shared_context_entities``. Without this
+            # backfill, ``conversation.firstContextOfType('task')`` returns
+            # null on the recipient, ``useConversation`` resolves a null
+            # task, and the Implement Plan / Approve & Execute chips never
+            # render (they gate on task presence).
+            parent_str = str(parent_typeid)
+            existing_ctx = list(conv.shared_context_entities or [])
+            existing_strs = {str(t) for t in existing_ctx}
+            if parent_str not in existing_strs:
+                conv.shared_context_entities = existing_ctx + [parent_str]
+                dirty = True
         if dirty:
             conv = await conv.save(someone_typeid, notify=False)
 

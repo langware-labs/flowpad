@@ -76,14 +76,25 @@ export interface LoadNextProcessResult {
 
 function buildProcessCleanup(e: ProcessLoadError): CleanupRecord {
   switch (e.kind) {
-    case 'not_found':
+    case 'entity_not_found':
       return {
         kind: 'process_not_found',
         processId: e.processId,
         title: 'Session not found',
         description: 'Agentic process does not exist.',
       };
-    case 'start_failed': {
+    case 'network_error': {
+      const desc = describeProcessStartError(e.cause ?? e);
+      return {
+        kind: 'process_start_failed',
+        processId: e.processId,
+        shellId: e.shellId ?? undefined,
+        title: 'Couldn’t reach backend',
+        description: desc.description,
+      };
+    }
+    case 'runtime_terminated':
+    case 'pty_attach_failed': {
       const desc = describeProcessStartError(e.cause ?? e);
       return {
         kind: 'process_start_failed',
@@ -93,7 +104,7 @@ function buildProcessCleanup(e: ProcessLoadError): CleanupRecord {
         description: desc.description,
       };
     }
-    case 'no_shell':
+    case 'shell_entity_missing':
       return {
         kind: 'process_no_shell',
         processId: e.processId,

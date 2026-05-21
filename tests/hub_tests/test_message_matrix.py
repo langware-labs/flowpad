@@ -50,8 +50,7 @@ from flow_sdk.fs_store.indexer import FSIndexer, IndexerOptions
 from flow_sdk.fs_store.indexer.functions.agent import agent_fn
 from flow_sdk.fs_store.indexer.functions.skill import skill_fn
 from flow_sdk.fs_store.record_types import RecordType
-from flow_sdk.utils.hub import hub_get, hub_post
-
+from flow_sdk.utils.hub import hub_get
 
 REPO_OSS = Path("/Users/shlom/Documents/dev/flowpad-oss")
 REPO_APP = Path("/Users/shlom/Documents/dev/flowpad-app")
@@ -534,8 +533,9 @@ async def test_message_matrix_http_ws_upload_download(
 
         # REST body upload: zip alice's local .claude/ assets into a .flowmsg
         # blob and POST it via the production helper (exercises real path).
-        from flow_sdk.app.actions.notification_action import _upload_bundle_to_hub
-        await _upload_bundle_to_hub(hub_fm_id, fm_bundle, task_title="matrix-cell-3")
+        # ``fm.upload_body()`` is the production path used by the conversation
+        # transport: pack_bundle → POST flow_message/<id>/fs/upload → set_body_status.
+        await fm_bundle.upload_body()
 
         # GET the FM back and assert attachment_filename was stamped — proves
         # the body upload landed on the hub.

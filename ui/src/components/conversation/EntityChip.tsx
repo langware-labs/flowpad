@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { ExternalLink, FileCheck2, FileText, FolderOpen, MessageSquare, Sparkles, User } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { APIEntity, TypeId } from '@sdk';
@@ -173,13 +173,18 @@ function buildDockPointer(
       return DockPointer.forSpec(resolved.id);
     case 'conversation':
       return DockPointer.forConversation(resolved.id);
-    // Asset entities open in the Assets editor. They are addressed by VFS
-    // path; fall back to the entity id when the asset_ref isn't known yet
-    // (the Assets editor resolves an id ref the same way Skill.editorDockPointer does).
+    // Asset entities open in the Assets editor by VFS path. When
+    // ``assetRef`` is missing the chip data hasn't loaded yet (recipient is
+    // still fetching the entity row from a freshly arrived share); return
+    // null so the click is a no-op. ``ContextEntityChip`` defers the
+    // navigation until the entity resolves — falling back to ``resolved.id``
+    // here would bake the entity UUID into the URL, which the asset editor's
+    // path-keyed ``useEntityByPath`` can never resolve.
     case 'skill':
     case 'agent':
     case 'markdown':
-      return DockPointer.forAssetEditor(resolved.type, assetRef || resolved.id);
+      if (!assetRef) return null;
+      return DockPointer.forAssetEditor(resolved.type, assetRef);
     default:
       try {
         return DockPointer.fromUrl(resolved.type, resolved.id);
@@ -212,6 +217,8 @@ interface ContextEntityChipProps {
  * ``entity.privateContextEntities`` use this wrapper instead of
  * hand-constructing each chip.
  */
+const ASSET_CHIP_TYPES = new Set(['skill', 'agent', 'markdown']);
+
 export function ContextEntityChip({ typeId, inside, onClick, title, size }: ContextEntityChipProps) {
   const { data } = useEntity<APIEntity<any>>(typeId);
   const resolvedName = data?.displayName ?? typeId.toString();
@@ -219,11 +226,44 @@ export function ContextEntityChip({ typeId, inside, onClick, title, size }: Cont
   // the address the Assets editor opens. Forward it so the chip navigates to
   // the real file rather than falling back to the bare entity id.
   const assetRef = (data as unknown as { asset_ref?: string | null })?.asset_ref ?? null;
+
+  // Deferred-click handling for asset chips whose entity row hasn't arrived
+  // yet (typical right after Alice shares a skill — the FlowMessage shows up
+  // first, the Skill row is materialized once the eager bundle pull lands).
+  // Without this, clicking before ``assetRef`` resolves would either no-op
+  // (post-fix) or — pre-fix — bake the entity UUID into the URL, where the
+  // asset editor's path-keyed lookup would 404 and cache that forever.
+  const { navigation } = useDockNavigation();
+  const pendingNavRef = useRef(false);
+  const needsDeferral = ASSET_CHIP_TYPES.has(typeId.type) && !assetRef;
+
+  useEffect(() => {
+    if (!pendingNavRef.current) return;
+    if (!assetRef) return;
+    pendingNavRef.current = false;
+    const pointer = DockPointer.forAssetEditor(typeId.type, assetRef);
+    if (pointer) navigation.openDock(pointer);
+  }, [assetRef, typeId.type, navigation]);
+
+  // When the entity row isn't ready, swallow the click into a pending flag
+  // and let the effect above fire navigation as soon as ``assetRef`` lands.
+  // Otherwise let ``EntityChip`` route the click through its default
+  // ``buildDockPointer`` path.
+  const deferringOnClick = needsDeferral
+    ? () => {
+        if (onClick) {
+          onClick();
+          return;
+        }
+        pendingNavRef.current = true;
+      }
+    : onClick;
+
   return (
     <EntityChip
       entity={{ typeId, type: typeId.type, id: typeId.id, name: resolvedName, assetRef }}
       inside={inside}
-      onClick={onClick}
+      onClick={deferringOnClick}
       title={title}
       size={size}
     />

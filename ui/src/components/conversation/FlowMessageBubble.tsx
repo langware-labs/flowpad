@@ -115,7 +115,6 @@ export function FlowMessageBubble({
     return (
       <DraftMessageComposer
         fm={fm}
-        task={task}
         conversationId={fm.conversation_id ?? undefined}
         onAfterSend={onDraftSent}
         onAfterDiscard={onDraftSent}

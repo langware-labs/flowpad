@@ -70,7 +70,17 @@ const bidiInheritOnEnter: Command = (state, dispatch) => {
   const paragraphType = state.schema.nodes.paragraph;
   const newType: NodeType =
     atEnd && parentType === 'heading' ? paragraphType : parent.type;
-  const typesAfter = [{ type: newType, attrs: { ...newType.defaultAttrs, ...inherited } }];
+  // Only spread bidi attrs into types that actually declare them. Heading no
+  // longer carries dir/align (see ``schema.ts`` header — Milkdown plugin bug
+  // forces paragraph-only scope). Passing unknown attrs to ``node.create``
+  // would throw "Unsupported attribute".
+  const supportsBidi = 'dir' in (newType.spec.attrs ?? {});
+  const typesAfter = [{
+    type: newType,
+    attrs: supportsBidi
+      ? { ...newType.defaultAttrs, ...inherited }
+      : { ...newType.defaultAttrs },
+  }];
 
   const splitPos = tr.mapping.map($from.pos);
   if (!canSplit(tr.doc, splitPos, 1, typesAfter)) {
