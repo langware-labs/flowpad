@@ -1323,6 +1323,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       } else {
         this.deepAssign(cachedSource, source);
       }
+      this._rehydrateContextEntities(cachedSource, source);
       cachedSource.dirty = false;
       return cachedSource;
     }
