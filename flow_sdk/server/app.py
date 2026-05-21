@@ -117,6 +117,18 @@ async def _on_server_startup():
 
     await _start_notification_scanner()
     await _start_cloud_ws_listener()
+    await _start_fsop_watcher()
+
+
+async def _start_fsop_watcher() -> None:
+    """Start the FSOp watcher: catch up, then spawn one awatch task per trigger."""
+    try:
+        from flow_sdk.server.fsop_watcher import fsop_watcher
+
+        await fsop_watcher.start()
+        print(f"  FSOp watcher: started ({len(fsop_watcher)} trigger(s))")
+    except Exception:
+        logging.getLogger(__name__).exception("FSOp watcher: failed to start")
 
 
 async def _start_notification_scanner() -> None:
@@ -162,6 +174,14 @@ async def _shutdown_extras():
         from flow_sdk.cloud_client.ws_client import hub_ws_manager
 
         await hub_ws_manager.stop()
+    except Exception:
+        pass
+
+    # Stop FSOp watcher — cancel all per-trigger awatch tasks
+    try:
+        from flow_sdk.server.fsop_watcher import fsop_watcher
+
+        await fsop_watcher.stop()
     except Exception:
         pass
 
