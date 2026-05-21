@@ -1,6 +1,7 @@
 import type { Editor as MilkdownEditorInstance } from '@milkdown/core';
 import { EditorWithSidePanel, type ExtraSideTab } from '@src/components/milkdown-editor/EditorWithSidePanel';
 import { MilkdownEditor } from '@src/components/milkdown-editor/MilkdownEditor';
+import { ReviewSurface } from '@src/components/assets/editor/markdown/ReviewSurface';
 import { Button } from '@src/components/ui/button';
 import { WikiToolbar } from '@src/components/wiki-toolbar';
 import { useMarkdownContent } from '@src/hooks/use-markdown-content';
@@ -446,6 +447,8 @@ function MarkdownEditorContent({
                 onCursorLineChange={handleEditorLineChange}
                 initialLine={initialBodyLine}
               />
+            ) : viewMode === 'review' ? (
+              <ReviewSurface body={body} docTypeId={chatTarget} />
             ) : (
               <MilkdownEditor
                 content={body}

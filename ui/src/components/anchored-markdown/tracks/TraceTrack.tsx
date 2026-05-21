@@ -24,6 +24,7 @@ export interface TraceMark {
 
 export const TRACE_TRACK_WIDTH = 112;
 
+/** @deprecated Use buildMarkerTrack from '../tracks/MarkerTrack' with kind: 'trace' items. */
 export function buildTraceTrack(items: AnchoredItem<TraceMark>[]): AnchoredTrack<TraceMark> {
   return {
     id: 'trace',
@@ -33,6 +34,8 @@ export function buildTraceTrack(items: AnchoredItem<TraceMark>[]): AnchoredTrack
     renderItem: (item) => <TraceMarker mark={item.data} />,
   };
 }
+
+export { TraceMarker };
 
 function fmtDuration(ms: number): string {
   if (ms < 1000) return `${ms}ms`;
