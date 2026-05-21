@@ -821,8 +821,23 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
 
   async shell(): Promise<Shell | null> {
     if (!this.shell_id) return null;
+    const w = (typeof window !== 'undefined' ? window : undefined) as
+      | { __shellNavT0?: number }
+      | undefined;
+    const t0 = w?.__shellNavT0;
+    const stamp = (label: string, start: number) => {
+      if (t0 === undefined) return;
+      const now = performance.now();
+      // eslint-disable-next-line no-console
+      console.log(`[PERF] +${(now - t0).toFixed(0)}ms ${label} took ${(now - start).toFixed(1)}ms`);
+    };
+    const sImport = performance.now();
     const { Shell } = await import('../entities/shell');
-    return Shell.getById(this.shell_id);
+    stamp('process.shell: dynamic import("../entities/shell")', sImport);
+    const sGet = performance.now();
+    const result = await Shell.getById<Shell>(this.shell_id);
+    stamp('process.shell: Shell.getById', sGet);
+    return result;
   }
 
   /** The PTY connection for this process — delegates to the linked Shell. */

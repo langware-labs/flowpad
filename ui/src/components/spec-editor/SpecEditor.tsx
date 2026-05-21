@@ -90,11 +90,11 @@ const PlanFileEditor: React.FC = () => {
       await planBookmark.delete();
       setPlanBookmark(null);
     } else if (agenticProcess) {
-      const pointer = `${agenticProcess.typeId.toString()}/${filePath}`;
+      const planPointer = DockPointer.forPlan(agenticProcess.typeId, filePath).pointer;
       const b = new Bookmark({
         bookmark_type: 'plan',
         title: filePath.split('/').pop()?.replace(/\.md$/, '') ?? 'Plan',
-        data: { file_path: filePath, navigation_path: `/dock/plan/${pointer}` },
+        data: { file_path: filePath, navigation_path: `/dock/plan/${planPointer}` },
         status: 'open',
       });
       await b.save([]);
