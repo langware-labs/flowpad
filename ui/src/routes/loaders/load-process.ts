@@ -17,7 +17,7 @@ import {
   TypeId,
 } from '@sdk';
 import { estimateCols, estimateRows } from '@src/components/terminal/interactive-terminal/terminalConfig';
-import { pushLoadedProcessTab } from '@src/hooks/useActiveTerminals';
+import { ensureTerminalsFetched } from '@src/hooks/useActiveTerminals';
 import { perfLog, perfTime } from './_perf';
 
 /**
@@ -167,25 +167,34 @@ export async function loadProcess(
     throw new ProcessLoadError('shell_entity_missing', processId, process.shell_id ?? null);
   }
 
-  // Optimistically insert the row into the shared strip state so TabbedTerminal's
-  // self-heal effect doesn't fire during the gap before the next
-  // ``active-terminals`` refetch reflects the newly-visible process.
-  pushLoadedProcessTab(process, shell);
+  // Populate the strip from the server (idempotent — no-op after the first
+  // call in this session) so TabbedTerminal mounts with the full list, sorted
+  // by server `tab_order`. The previous approach pushed a single optimistic
+  // row before the fetch, which trapped that row at index 0 on hard refresh
+  // (the merge's preserve-order branch keyed off `prev.length === 0`). Doing
+  // the fetch here closes the self-heal race without seeding the order.
+  await perfTime('ensureTerminalsFetched', () => ensureTerminalsFetched());
 
-  dataContext.setActiveShellId(shell.id);
-  dataContext.setActiveTerminalTargetTypeId(new TypeId(AgenticProcess.type, processId));
-  dataContext.setWorkdir(
-    process.workdir ?? shell.workdir ?? dataContext.project?.fs_storage_mount_path ?? null,
-  );
-  await dataContext.setContextEntityTypeId(
-    ContextEntitiesEnum.CurrentProcessTypeId,
-    new TypeId(AgenticProcess.type, processId),
+  await perfTime('dataContext sync setters (shellId/target/workdir)', async () => {
+    dataContext.setActiveShellId(shell!.id);
+    dataContext.setActiveTerminalTargetTypeId(new TypeId(AgenticProcess.type, processId));
+    dataContext.setWorkdir(
+      process!.workdir ?? shell!.workdir ?? dataContext.project?.fs_storage_mount_path ?? null,
+    );
+  });
+  await perfTime('setContextEntityTypeId(CurrentProcessTypeId)', () =>
+    dataContext.setContextEntityTypeId(
+      ContextEntitiesEnum.CurrentProcessTypeId,
+      new TypeId(AgenticProcess.type, processId),
+    ),
   );
   if (process.project_id) {
     try {
-      await dataContext.setContextEntityTypeId(
-        ContextEntitiesEnum.CurrentProjectTypeId,
-        new TypeId(Project.type, process.project_id),
+      await perfTime('setContextEntityTypeId(CurrentProjectTypeId)', () =>
+        dataContext.setContextEntityTypeId(
+          ContextEntitiesEnum.CurrentProjectTypeId,
+          new TypeId(Project.type, process!.project_id!),
+        ),
       );
     } catch (cause) {
       // The stored project_id can dangle when the project was deleted under us.

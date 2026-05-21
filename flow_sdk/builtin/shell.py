@@ -715,11 +715,14 @@ class Shell(Entity):
             parts = str(compute_node_typeid).split("-", 1)
             cn_id = parts[1] if len(parts) == 2 else str(compute_node_typeid)
 
+        record_tab_order = record.data.get("tab_order")
         entity = cls(
             id=record.id,
             name=record.data.get("name"),
             workdir=record.data.get("workdir"),
-            tab_order=record.data.get("tab_order") or await cls.next_tab_order(),
+            # `is None` (not `or`): 0 is a legitimate tab_order. Truthiness
+            # silently re-stamped the first-ever shell to max+1 on every sync.
+            tab_order=record_tab_order if record_tab_order is not None else await cls.next_tab_order(),
             pty_pid=record.data.get("pty_pid"),
             created_at=record.data.get("created_at"),
             last_active_at=record.data.get("last_active_at"),

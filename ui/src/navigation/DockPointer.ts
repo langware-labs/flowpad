@@ -130,13 +130,18 @@ export class DockPointer implements IDockPointer {
    * @param filePath - Absolute file path to plan .md file
    */
   static forPlan(agenticProcessTypeId: TypeId, filePath: string, layout: Layout = Layout.DOCK): DockPointer {
-    const pointer = `${agenticProcessTypeId.toString()}/${filePath}`;
+    // Strip filePath's leading "/" so the typeid<->path delimiter isn't an
+    // embedded "//" in the URL (react-router normalizes "//" to "/",
+    // which would silently demote the absolute path to a relative one).
+    // parsePlanPointer re-adds it.
+    const relPath = filePath.startsWith('/') ? filePath.slice(1) : filePath;
+    const pointer = `${agenticProcessTypeId.toString()}/${relPath}`;
     return new DockPointer(ViewType.PLAN, pointer, undefined, layout);
   }
 
   /**
    * Parse a plan pointer into its agentic process TypeId and file path parts.
-   * Plan pointer format: "agentic_process-<uuid>/<absolute-file-path>"
+   * Plan pointer format: "agentic_process-<uuid>/<absolute-file-path-without-leading-slash>"
    * Returns null if the pointer doesn't start with a valid agentic_process TypeId.
    */
   static parsePlanPointer(pointer: string): { agenticProcessTypeId: TypeId; filePath: string } | null {
@@ -145,9 +150,10 @@ export class DockPointer implements IDockPointer {
     const firstSlash = pointer.indexOf('/');
     if (firstSlash < 0) return null;
     const rawTypeId = pointer.slice(0, firstSlash);
-    const filePath = pointer.slice(firstSlash + 1); // skip the delimiter "/"
-    if (!filePath) return null;
-    return { agenticProcessTypeId: new TypeId(rawTypeId), filePath };
+    const relPath = pointer.slice(firstSlash + 1); // skip the delimiter "/"
+    if (!relPath) return null;
+    // forPlan stripped the leading "/" — plan file paths are always absolute.
+    return { agenticProcessTypeId: new TypeId(rawTypeId), filePath: `/${relPath}` };
   }
 
   /**

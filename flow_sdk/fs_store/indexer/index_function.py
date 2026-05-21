@@ -228,6 +228,7 @@ class FSIndexer:
             roots=opts.roots,
             gitignore=opts.gitignore,
             project_id=opts.project_id,
+            force=opts.force,
         )
         refs = await self.scan(scan_opts)
 
