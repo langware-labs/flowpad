@@ -247,51 +247,6 @@ export async function createProjectConversation(
   return res!;
 }
 
-// ---------------------------------------------------------------------------
-// Cross-user conversations: bundle (.flowmsg) delivery, single codepath.
-//
-// Both task-bound shares (`share_task`) and homelanding-started conversations
-// (`conversation-start-bundle`) use the same `.flowmsg` bundle pipeline. The
-// recipient gets a pending Invitation linked to the share's first FlowMessage;
-// on accept, the bundle downloads and the local Conversation materializes.
-// ---------------------------------------------------------------------------
-
-export interface StartBundleConversationParams {
-  /** First remote participant. Kept for back-compat; prefer participants. */
-  recipient_id?: string;
-  /** Cross-user participants. user_id is the canonical key when known. */
-  participants?: ConversationParticipant[];
-  /** First message text. */
-  message?: string;
-  /** Display title; defaults to a truncated message preview when blank. */
-  title?: string;
-  /** Local Project this conversation is filed under (sender side). The bundle
-   *  also stamps it as remote_project_id on the receiver for project mapping. */
-  project_id?: string | null;
-  project_name?: string | null;
-  /** Display name on the first FlowMessage. Defaults to the local user's name. */
-  sender_name?: string | null;
-}
-
-export interface StartBundleConversationResult {
-  sent: boolean;
-  email_error?: string | null;
-  conversation_id?: string | null;
-  task_id?: string | null;
-  notification_id?: string | null;
-  notify_url?: string | null;
-}
-
-/** Start a Task-less conversation via the bundle delivery path (Scenario B). */
-export async function startBundleConversation(
-  params: StartBundleConversationParams,
-): Promise<StartBundleConversationResult> {
-  const action = new ActionInfo('conversation-start-bundle', null, null, 'POST');
-  action.bodyParameters = params;
-  const res = await dataManager.callAction<StartBundleConversationParams, StartBundleConversationResult>(action);
-  return res!;
-}
-
 export interface SyncFromHubResult {
   invitations: number;
   flow_messages: number;

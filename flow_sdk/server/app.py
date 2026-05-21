@@ -117,6 +117,7 @@ async def _on_server_startup():
 
     await _start_notification_scanner()
     await _start_cloud_ws_listener()
+    await _start_inbox_catchup()
 
 
 async def _start_notification_scanner() -> None:
@@ -130,6 +131,37 @@ async def _start_notification_scanner() -> None:
             _asyncio.create_task(scan_incoming_notifications(local_user.id))
     except Exception as e:
         print(f"  Notification scanner: failed to start ({e})")
+
+
+async def _start_inbox_catchup() -> None:
+    """Pull any FlowMessages that landed on the hub while the app was offline.
+
+    The hub WebSocket only pushes live events; it does not replay history on
+    (re)connect, so a user who closes the app overnight and reopens it would
+    otherwise see an empty inbox until something else (manual refresh, an
+    inbound live message, ...) triggers a fetch. This sweep closes that gap.
+    """
+    import asyncio as _asyncio
+
+    async def _run() -> None:
+        try:
+            from flow_sdk.app.actions.flow_message_action import handle_conversation_list
+            from flow_sdk.builtin.user import User as _User
+
+            local_user = await _User.get_one({"uname": "local"})
+            if not local_user:
+                return
+            resp = await handle_conversation_list(local_user.typeid)
+            data = getattr(resp, "data", None) or {}
+            dispatched = data.get("bg_fetch_dispatched") or []
+            if dispatched:
+                logging.getLogger(__name__).info(
+                    "Inbox catch-up: queued bundle fetch for %d conversation(s)", len(dispatched),
+                )
+        except Exception as exc:  # noqa: BLE001
+            logging.getLogger(__name__).info("Inbox catch-up skipped: %s", exc)
+
+    _asyncio.create_task(_run())
 
 
 async def _start_cloud_ws_listener() -> None:

@@ -327,7 +327,6 @@ export function ConversationView({
 
       {draftMessages.length === 0 && (
         <MessageComposer
-          task={task}
           conversationId={conversationId}
           onSent={() => void refetch()}
         />
