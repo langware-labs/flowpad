@@ -6,6 +6,7 @@ import {
   ProcessStatus,
   TypeId,
 } from '@sdk';
+import { resolveWorkdir } from './apply-project-choice';
 import { useEntity } from '@sdk/react/hooks';
 import { ActionInfo } from '@sdk/models/ActionInfo';
 import type { ITask } from '@sdk/entities/task';
@@ -126,16 +127,8 @@ export function useApproveAndExecute(
   const approveAndExecute = async (messageId: string, attachmentIndex: number) => {
     if (!messageId || !targetVfsPath) return;
 
-    let workdir: string | undefined;
-    if (useTaskScope) {
-      workdir = task.project_root ?? undefined;
-    } else if (conversation?.project_id) {
-      const project = await dataManager
-        .getByTypeId(new TypeId('project', conversation.project_id))
-        .catch(() => null);
-      workdir = (project as { fs_storage_mount_path?: string } | null)?.fs_storage_mount_path
-        ?? undefined;
-    }
+    const projectId = useTaskScope ? task.project_id : conversation?.project_id;
+    const workdir = await resolveWorkdir(projectId);
     if (!workdir) {
       toast.warning('Map this conversation to a local project first.');
       return;
