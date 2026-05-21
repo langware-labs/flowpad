@@ -1323,6 +1323,10 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       } else {
         this.deepAssign(cachedSource, source);
       }
+      // ``deepAssign`` re-adds the raw ``shared_context_entities`` /
+      // ``private_context_entities`` string arrays without the constructor's
+      // string→TypeId parse, leaving the internal ``_shared_context_entities_``
+      // / ``_private_context_entities_`` arrays (which the getters read) stale.
       this._rehydrateContextEntities(cachedSource, source);
       cachedSource.dirty = false;
       return cachedSource;
