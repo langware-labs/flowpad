@@ -13,6 +13,11 @@ def claude_jsonl() -> Path:
 
 
 @pytest.fixture()
+def claude_multi_block_jsonl() -> Path:
+    return _RESOURCES / "claude_multi_block_message.jsonl"
+
+
+@pytest.fixture()
 def codex_stream_jsonl() -> Path:
     return _RESOURCES / "codex_stream_events.jsonl"
 

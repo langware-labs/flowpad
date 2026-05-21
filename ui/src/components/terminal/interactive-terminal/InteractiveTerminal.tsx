@@ -516,7 +516,8 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const handleOpenLastPlan = useCallback(() => {
     if (!agenticProcessTypeId || !process?.plan_path) return;
     navigation.openPlan(agenticProcessTypeId, process.plan_path);
-  }, [process?.plan_path, agenticProcessTypeId, navigation]);
+    process.entityEvent('plan.open', { plan_path: process.plan_path }).catch(() => {});
+  }, [process, agenticProcessTypeId, navigation]);
 
   // On mount (and whenever the process identity changes), proactively call
   // getPlan() once so the button restores after a reload — the line trigger

@@ -26,11 +26,9 @@ def _worker_type_for(record_type: RecordType | None) -> str | None:
 
 
 async def _is_fresh(jsonl_path: Path, worker_type: str) -> bool:
-    """Return True when the transcript's entity row has an updated_date
-    at or after the JSONL's mtime, meaning a prior pass already processed
-    every entry currently on disk. Fires before from_fsref runs for this
-    pass (we're in the scan/walk phase), so the row's updated_date still
-    reflects the previous index() invocation — exactly what we want.
+    """True iff the transcript entity's updated_date >= JSONL mtime.
+    Both timestamps are floored to µs — APFS carries sub-µs precision
+    that datetime can't represent, so unflooring trips a false-newer.
     """
     try:
         mtime = jsonl_path.stat().st_mtime
@@ -47,7 +45,9 @@ async def _is_fresh(jsonl_path: Path, worker_type: str) -> bool:
     entity = await entity_cls.get_by_id(session_id)
     if entity is None or entity.updated_date is None:
         return False
-    return mtime <= entity.updated_date.timestamp()
+    mtime_us = int(mtime * 1_000_000)
+    entity_ts_us = int(entity.updated_date.timestamp() * 1_000_000)
+    return mtime_us <= entity_ts_us
 
 
 class TranscriptIndexer:

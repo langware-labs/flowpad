@@ -185,7 +185,7 @@ def test_tail_status_tool_running(tmp_path: Path):
 
 
 def test_tail_status_waiting(tmp_path: Path):
-    """Active file + last entry is a fresh user message (<30s) → WAITING."""
+    """Active file + last entry is a fresh user message (<90s) → WAITING."""
     f = tmp_path / "session.jsonl"
     now_iso = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime())
     _write_jsonl(f, [

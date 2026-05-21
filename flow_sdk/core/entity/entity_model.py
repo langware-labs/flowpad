@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import os
 
 DEFAULT_BROWSE_LIMIT = 20
@@ -145,6 +146,70 @@ class Entity(DBEntity):
         super().__init__(**kwargs)
         if self.env_vars is None:
             self.env_vars = EntityEnvVars[EnvVar]()
+
+    # Per-subclass entityEvent registry: event name → handler method name.
+    # Method-name (not bound) so subclass overrides resolve at call time.
+    _entity_event_handlers: ClassVar[dict[str, str]] = {}
+
+    @classmethod
+    def on_event(cls, event_name: str):
+        """Register a method as the handler for a named entityEvent.
+
+        Usage::
+
+            class AgenticProcess(Entity):
+                async def transcript_index(self, payload): ...
+
+            Entity.on_event("plan.open")(AgenticProcess.transcript_index)
+
+        Subclass-local: each subclass gets its own copy of the registry on
+        first registration so registrations don't leak across siblings.
+        """
+
+        def deco(fn):
+            handlers = cls.__dict__.get("_entity_event_handlers")
+            if handlers is None:
+                handlers = dict(getattr(cls, "_entity_event_handlers", {}))
+                cls._entity_event_handlers = handlers
+            handlers[event_name] = fn.__name__
+            return fn
+
+        return deco
+
+    @classmethod
+    def _lookup_event_handler(cls, event_name: str) -> str | None:
+        """Walk the MRO to find an event handler registered on self or a parent."""
+        for klass in cls.__mro__:
+            handlers = klass.__dict__.get("_entity_event_handlers")
+            if handlers and event_name in handlers:
+                return handlers[event_name]
+        return None
+
+    async def entity_event(self, request) -> "ApiResponse":
+        """Generic entity-addressed event dispatcher.
+
+        TS-side ``APIEntity.entityEvent(name, payload)`` lands here for any
+        entity type. Body: ``{"event": str, "payload": dict}``. Looks up the
+        method registered via ``Entity.on_event(<name>)(method)`` on this
+        instance's class (or any parent), and invokes it with the payload.
+        Unregistered events return a noop success — never a 404 — because
+        the wire surface is intentionally generic.
+        """
+        from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
+
+        body = await request.json() if hasattr(request, "json") else {}
+        if inspect.iscoroutine(body):
+            body = await body
+        event = str((body or {}).get("event") or "")
+        payload = (body or {}).get("payload") or {}
+        handler_name = type(self)._lookup_event_handler(event)
+        if not handler_name:
+            return ApiSuccessResponse(data={"status": "noop", "event": event})
+        handler = getattr(self, handler_name)
+        result = handler(payload)
+        if inspect.iscoroutine(result):
+            result = await result
+        return ApiSuccessResponse(data={"status": "ok", "event": event, "result": result})
 
     @classmethod
     async def search(
@@ -1347,3 +1412,15 @@ class Group(Entity):
     @staticmethod
     async def get_by_name(name="public") -> Optional["Group"]:
         return await Group.get_one({"name": name})
+
+
+from flow_sdk.actions.action_registry import action as _action_registry  # noqa: E402
+
+# Bare-name registration: ActionManager's fallback lookup resolves it for any Entity subclass.
+_action_registry.register(
+    action_name="entity-event",
+    function_name="entity_event",
+    handler=Entity.entity_event,
+    methods="post",
+    types="all",
+)

@@ -67,15 +67,12 @@ def build_default_indexer() -> FSIndexer:
     from flow_sdk.fs_store.indexer.functions.claude_hook import (
         claude_hook_fn, claude_hook_extras_fn,
     )
-    from flow_sdk.fs_store.transcript_indexer import TranscriptIndexer
-    from flow_sdk.fs_store.transcript_indexer.handlers import PlanHandler
 
+    # Transcript handlers are opt-in (full-JSONL parse is expensive — see
+    # flow_sdk/fs_store/transcript_indexer/).
     idx = FSIndexer(
         roots=default_roots(),
     )
-
-    transcript_indexer = TranscriptIndexer()
-    transcript_indexer.add_handler(PlanHandler())
 
     # USER_HOME_FOLDER expanders
     idx.add_function(RecordType.USER_HOME_FOLDER, claude_projects_fn)
@@ -97,10 +94,6 @@ def build_default_indexer() -> FSIndexer:
     # PROJECT (encoded ~/.claude/projects/<dir>) expanders
     idx.add_function(RecordType.PROJECT, claude_sessions_fn)
     idx.add_function(RecordType.PROJECT, claude_memory_fn)
-
-    # CLAUDE_SESSION leaf consumers: parsed transcript dispatched to
-    # registered TranscriptHandlers (cross-link Plan <-> AgenticProcess, etc.).
-    idx.add_function(RecordType.CLAUDE_SESSION, transcript_indexer)
 
     # REAL_PROJECT_CWD (decoded cwd) expanders
     idx.add_function(RecordType.REAL_PROJECT_CWD, claude_plan_fn)

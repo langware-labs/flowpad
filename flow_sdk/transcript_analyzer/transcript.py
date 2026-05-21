@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Iterator
 
 from .entries import (
+    AssistantMessageEntry,
     ExitPlanModeEntry,
     FileEditEntry,
     FileReadEntry,
@@ -97,7 +98,43 @@ class AgentTranscript:
                     out.extend(self._parser.feed(raw, idx))
         except OSError as exc:
             logger.debug("AgentTranscript: read failed %s: %s", self.path, exc)
+        out = self._fold_assistant_messages(out)
         return self._fold_tool_results(out)
+
+    @staticmethod
+    def _fold_assistant_messages(
+        entries: list[TranscriptEntry],
+    ) -> list[TranscriptEntry]:
+        """Merge same-entry_id AssistantMessageEntry rows (Claude writes one
+        line per content block sharing the same message.id). Semantic tool
+        entries keep their own row.
+        """
+        groups: dict[str, list[AssistantMessageEntry]] = {}
+        for e in entries:
+            if not isinstance(e, AssistantMessageEntry) or not e.entry_id:
+                continue
+            groups.setdefault(e.entry_id, []).append(e)
+
+        if not any(len(g) > 1 for g in groups.values()):
+            return entries
+
+        dropped_ids: set[int] = set()
+        for grp in groups.values():
+            if len(grp) <= 1:
+                continue
+            survivor = grp[0]
+            texts: list[str] = [survivor.text] if survivor.text else []
+            thinkings: list[str] = [survivor.thinking] if survivor.thinking else []
+            for extra in grp[1:]:
+                if extra.text:
+                    texts.append(extra.text)
+                if extra.thinking:
+                    thinkings.append(extra.thinking)
+                dropped_ids.add(id(extra))
+            survivor.text = "\n".join(texts) if texts else ""
+            survivor.thinking = "\n".join(thinkings) if thinkings else None
+
+        return [e for e in entries if id(e) not in dropped_ids]
 
     @staticmethod
     def _fold_tool_results(entries: list[TranscriptEntry]) -> list[TranscriptEntry]:
