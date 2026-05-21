@@ -33,20 +33,10 @@ class _ProbeEntity(Entity):
 _ProbeEntity.on_event("ping")(_ProbeEntity.on_ping)
 
 
-class _FakeRequest:
-    """Minimal duck-type for what entity_event reads from `request`."""
-
-    def __init__(self, body: dict[str, Any]) -> None:
-        self._body = body
-
-    async def json(self) -> dict[str, Any]:
-        return self._body
-
-
 @pytest.mark.asyncio
 async def test_entity_event_dispatches_to_registered_handler() -> None:
     ent = _ProbeEntity(id="probe-1")
-    resp = await ent.entity_event(_FakeRequest({"event": "ping", "payload": {"note": "hi"}}))
+    resp = await ent.entity_event(event="ping", payload={"note": "hi"})
     payload = resp.data if hasattr(resp, "data") else resp
     assert payload["status"] == "ok"
     assert payload["event"] == "ping"
@@ -58,7 +48,7 @@ async def test_entity_event_dispatches_to_registered_handler() -> None:
 @pytest.mark.asyncio
 async def test_entity_event_unknown_event_returns_noop() -> None:
     ent = _ProbeEntity(id="probe-2")
-    resp = await ent.entity_event(_FakeRequest({"event": "unregistered.event", "payload": {}}))
+    resp = await ent.entity_event(event="unregistered.event")
     payload = resp.data if hasattr(resp, "data") else resp
     assert payload["status"] == "noop"
     assert payload["event"] == "unregistered.event"
@@ -73,7 +63,7 @@ async def test_entity_event_registrations_are_subclass_isolated() -> None:
         type: str = APIField(default="sibling_entity")
 
     sibling = _Sibling(id="sib-1")
-    resp = await sibling.entity_event(_FakeRequest({"event": "ping", "payload": {}}))
+    resp = await sibling.entity_event(event="ping")
     payload = resp.data if hasattr(resp, "data") else resp
     # No `ping` handler registered on _Sibling → noop, not _ProbeEntity.on_ping.
     assert payload["status"] == "noop"

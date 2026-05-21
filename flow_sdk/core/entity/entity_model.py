@@ -185,23 +185,19 @@ class Entity(DBEntity):
                 return handlers[event_name]
         return None
 
-    async def entity_event(self, request) -> "ApiResponse":
+    async def entity_event(self, event: str = "", payload: dict | None = None) -> "ApiResponse":
         """Generic entity-addressed event dispatcher.
 
         TS-side ``APIEntity.entityEvent(name, payload)`` lands here for any
-        entity type. Body: ``{"event": str, "payload": dict}``. Looks up the
-        method registered via ``Entity.on_event(<name>)(method)`` on this
-        instance's class (or any parent), and invokes it with the payload.
-        Unregistered events return a noop success — never a 404 — because
-        the wire surface is intentionally generic.
+        entity type. Body params: ``event`` (str), ``payload`` (dict). Looks
+        up the method registered via ``Entity.on_event(<name>)(method)`` on
+        this instance's class (or any parent), and invokes it. Unregistered
+        events return a noop success — never a 404 — because the wire
+        surface is intentionally generic.
         """
         from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
 
-        body = await request.json() if hasattr(request, "json") else {}
-        if inspect.iscoroutine(body):
-            body = await body
-        event = str((body or {}).get("event") or "")
-        payload = (body or {}).get("payload") or {}
+        payload = payload or {}
         handler_name = type(self)._lookup_event_handler(event)
         if not handler_name:
             return ApiSuccessResponse(data={"status": "noop", "event": event})
