@@ -1,7 +1,7 @@
 import { Button } from '@src/components/ui/button';
-import { BASE_PATH } from '@src/constants/basePath';
 import { cn } from '@src/lib/utils';
 import { useRef } from 'react';
+import flowpadIcon from '@src/assets/flowpad-icon.png';
 import { useFloatingChat } from './FloatingChatContext';
 
 /**
@@ -12,10 +12,10 @@ import { useFloatingChat } from './FloatingChatContext';
  * the button position into center (and back to it on close).
  *
  * The button always renders the dedicated round Flowpad icon
- * (`ui/public/flowpad-icon.png`) — agents may ship their own wordmark via
- * `site_config.branding.logo_url`, but a wide wordmark crops badly inside a
- * 32×32 round chip, so we keep the assistant button visually anchored to the
- * Flowpad brand here regardless of the active agent.
+ * (bundled at `ui/src/assets/flowpad-icon.png`) — agents may ship their own
+ * wordmark via `site_config.branding.logo_url`, but a wide wordmark crops badly
+ * inside a 32×32 round chip, so we keep the assistant button visually anchored
+ * to the Flowpad brand here regardless of the active agent.
  */
 export function FlowpadAssistantButton() {
   const { open, toggle } = useFloatingChat();
@@ -40,7 +40,7 @@ export function FlowpadAssistantButton() {
       )}
     >
       <img
-        src={`${BASE_PATH}flowpad-icon.png`}
+        src={flowpadIcon}
         alt="Flowpad Assistant"
         className="h-full w-full object-contain"
       />
