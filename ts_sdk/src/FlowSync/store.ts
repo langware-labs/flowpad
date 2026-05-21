@@ -1393,6 +1393,33 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     return target;
   }
 
+  /**
+   * Re-parse wire-bound context arrays on update. APIEntity's constructor
+   * converts ``shared_context_entities`` / ``private_context_entities`` from
+   * string typeids to ``TypeId`` instances stored in ``_shared_context_entities_``
+   * / ``_private_context_entities_`` and deletes the raw fields. ``deepAssign``
+   * doesn't re-run the constructor, so an incoming UPDATE that ships new
+   * ``shared_context_entities`` strings leaves the internal arrays stale.
+   * Call this after ``deepAssign`` to keep them in sync.
+   *
+   * Only acts when the incoming ``source`` carries the raw field (so we don't
+   * clobber a previously-populated internal array on partial updates).
+   */
+  private _rehydrateContextEntities(target: any, source: any): void {
+    if (!source || typeof source !== 'object') return;
+    const rehydrate = (wireField: string, internalField: string) => {
+      if (!(wireField in source)) return;
+      const wireValue = source[wireField] ?? target[wireField];
+      if (!Array.isArray(wireValue)) return;
+      target[internalField] = wireValue.map((v: unknown) =>
+        v instanceof TypeId ? v : new TypeId(String(v)),
+      );
+      delete target[wireField];
+    };
+    rehydrate('shared_context_entities', '_shared_context_entities_');
+    rehydrate('private_context_entities', '_private_context_entities_');
+  }
+
   private mergeArrays<T>(arr1?: T[] | null, arr2?: T[] | null): T[] | null {
     if (!arr1 && !arr2) return null;
     return [...new Set([...(arr1 ?? []), ...(arr2 ?? [])])];
