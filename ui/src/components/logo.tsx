@@ -3,6 +3,7 @@ import { ensureValidUrl } from '@src/utils/navigation';
 import { ISiteConfig } from '@sdk';
 import { useTheme } from 'next-themes';
 import { useCallback } from 'react';
+import flowpadLogo from '@src/assets/logo.png';
 
 function isAbsoluteUrl(url: string) {
   return /^https?:\/\//i.test(url);
@@ -38,7 +39,7 @@ export function Logo({ siteConfig, onClick }: { siteConfig: ISiteConfig | null |
   return (
     <a href={siteConfig?.domain ? ensureValidUrl(siteConfig.domain) : '#'} onClick={handleClick}>
       <img
-        src="logo.png"
+        src={flowpadLogo}
         alt={siteConfig?.branding?.company_name || 'Logo'}
         className="max-h-8 max-w-32 object-contain"
       />
