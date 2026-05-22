@@ -600,6 +600,14 @@ class Entity(DBEntity):
             for e in await wiki.outgoing(self.type, self.id)
         ]
 
+    def tooltip_summary(self) -> dict[str, str | None]:
+        """Per-entity hover summary for favorite tiles / bookmark cards.
+
+        Default: name only. Subclasses override to add a subtitle (e.g.
+        AgenticProcess returns its last prompt).
+        """
+        return {"name": self.name, "subtitle": None}
+
     @staticmethod
     def api_visible_by_type(entity_type: str):
         return SchemaRegistry.get_entity_cls(entity_type).api_visible()

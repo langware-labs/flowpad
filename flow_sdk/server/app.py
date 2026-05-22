@@ -58,6 +58,7 @@ from .routes import (
     compute_register_router,
     dep_graph_router,
     version_router,
+    favorites_router,
 )
 
 
@@ -324,6 +325,7 @@ server.add_router(agent_records_router)
 server.add_router(transcripts_router)
 server.add_router(dep_graph_router)
 server.add_router(version_router)
+server.add_router(favorites_router)
 
 server.on_startup(_on_server_startup)
 server.on_shutdown(_shutdown_extras)

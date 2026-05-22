@@ -429,6 +429,18 @@ class AgenticProcess(Entity):
         ),
     )
 
+    def tooltip_summary(self) -> dict[str, str | None]:
+        # cli_config.last_prompt is the eventual home for the most recent prompt,
+        # but nothing writes it today — fall back to instruction_content (the
+        # initial instruction, also what ProcessToolbar renders as the prompt
+        # banner). Strip so whitespace-only values don't render an empty line.
+        cfg = self.cli_config if isinstance(self.cli_config, dict) else {}
+        raw = cfg.get("last_prompt") or self.instruction_content or ""
+        if not isinstance(raw, str):
+            return {"name": self.name, "subtitle": None}
+        subtitle = raw.strip() or None
+        return {"name": self.name, "subtitle": subtitle}
+
     @model_validator(mode="after")
     def _bubble_process_type_from_context_data(self) -> "AgenticProcess":
         """Lift `process_type` from `context_data` onto the top-level field.
