@@ -7,7 +7,7 @@ import warnings
 import pytest
 
 from flow_sdk.transcript_analyzer import (
-    AgentTranscript,
+    AgentTranscriptFile,
     AssistantMessageEntry,
     EntryKind,
     ExitPlanModeEntry,
@@ -22,7 +22,7 @@ from flow_sdk.transcript_analyzer import (
 def test_parses_all_lines_with_one_warning_for_unknown(claude_jsonl):
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        t = AgentTranscript("claude", claude_jsonl)
+        t = AgentTranscriptFile("claude", claude_jsonl)
     # 12 raw lines; Bash is parsed as shell_command and its tool_result is
     # folded into that operation → -1. Each of the 3 assistant turns emits
     # 4 per-dim UsageEntry (input + output + cache_read + cache_write_1h)
@@ -35,7 +35,7 @@ def test_parses_all_lines_with_one_warning_for_unknown(claude_jsonl):
 
 
 def test_session_id_propagates_from_first_line(claude_jsonl):
-    t = AgentTranscript("claude", claude_jsonl)
+    t = AgentTranscriptFile("claude", claude_jsonl)
     assert t.session_id == "11111111-1111-4111-8111-111111111111"
     # Every entry that carries sessionId in its raw line should have it.
     for e in t.entries:
@@ -44,7 +44,7 @@ def test_session_id_propagates_from_first_line(claude_jsonl):
 
 
 def test_entry_kind_breakdown(claude_jsonl):
-    t = AgentTranscript("claude", claude_jsonl)
+    t = AgentTranscriptFile("claude", claude_jsonl)
     counts: dict[str, int] = {}
     for e in t.entries:
         counts[e.kind.value] = counts.get(e.kind.value, 0) + 1
@@ -73,7 +73,7 @@ def test_entry_kind_breakdown(claude_jsonl):
 
 
 def test_latest_tool_use_resolves_exit_plan_mode(claude_jsonl):
-    t = AgentTranscript("claude", claude_jsonl)
+    t = AgentTranscriptFile("claude", claude_jsonl)
     plan = t.latest_tool_use("ExitPlanMode")
     assert plan is not None
     assert isinstance(plan, ExitPlanModeEntry)
@@ -83,14 +83,14 @@ def test_latest_tool_use_resolves_exit_plan_mode(claude_jsonl):
 
 
 def test_latest_tool_use_for_unknown_tool_returns_none(claude_jsonl):
-    t = AgentTranscript("claude", claude_jsonl)
+    t = AgentTranscriptFile("claude", claude_jsonl)
     assert t.latest_tool_use("DoesNotExist") is None
 
 
 def test_unknown_entry_carries_raw_data(claude_jsonl):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        t = AgentTranscript("claude", claude_jsonl)
+        t = AgentTranscriptFile("claude", claude_jsonl)
     unknowns = [e for e in t.entries if isinstance(e, UnknownEntry)]
     assert len(unknowns) == 1
     raw = unknowns[0].raw_data
@@ -102,7 +102,7 @@ def test_unknown_entry_carries_raw_data(claude_jsonl):
 def test_known_entries_have_raw_data_none(claude_jsonl):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        t = AgentTranscript("claude", claude_jsonl)
+        t = AgentTranscriptFile("claude", claude_jsonl)
     # All non-UnknownEntry entries should have raw_data is None per the
     # design (parsers extract what they need at parse time).
     for e in t.entries:
@@ -112,14 +112,14 @@ def test_known_entries_have_raw_data_none(claude_jsonl):
 
 
 def test_filter_by_kind(claude_jsonl):
-    t = AgentTranscript("claude", claude_jsonl)
+    t = AgentTranscriptFile("claude", claude_jsonl)
     assistants = list(t.filter(kind=EntryKind.ASSISTANT_MESSAGE))
     assert all(isinstance(e, AssistantMessageEntry) for e in assistants)
     assert len(assistants) == 1
 
 
 def test_filter_by_tool_name(claude_jsonl):
-    t = AgentTranscript("claude", claude_jsonl)
+    t = AgentTranscriptFile("claude", claude_jsonl)
     bashes = list(t.filter(tool_name="Bash"))
     assert len(bashes) == 1
     assert isinstance(bashes[0], ShellCommandEntry)
@@ -128,7 +128,7 @@ def test_filter_by_tool_name(claude_jsonl):
 
 
 def test_shell_command_folds_tool_result_fields(claude_jsonl):
-    t = AgentTranscript("claude", claude_jsonl)
+    t = AgentTranscriptFile("claude", claude_jsonl)
     commands = [e for e in t.entries if isinstance(e, ShellCommandEntry)]
     assert len(commands) == 1
     cmd = commands[0]
@@ -137,14 +137,14 @@ def test_shell_command_folds_tool_result_fields(claude_jsonl):
 
 
 def test_user_message_entry_fields(claude_jsonl):
-    t = AgentTranscript("claude", claude_jsonl)
+    t = AgentTranscriptFile("claude", claude_jsonl)
     users = [e for e in t.entries if isinstance(e, UserMessageEntry)]
     assert len(users) == 1
     assert users[0].text  # non-empty after sanitization
 
 
 def test_meta_kind_propagation(claude_jsonl):
-    t = AgentTranscript("claude", claude_jsonl)
+    t = AgentTranscriptFile("claude", claude_jsonl)
     metas = [e for e in t.entries if isinstance(e, MetaEntry)]
     kinds = sorted(e.meta_kind for e in metas)
     assert kinds == [
@@ -157,7 +157,7 @@ def test_meta_kind_propagation(claude_jsonl):
 
 
 def test_system_entry_subtype(claude_jsonl):
-    t = AgentTranscript("claude", claude_jsonl)
+    t = AgentTranscriptFile("claude", claude_jsonl)
     systems = [e for e in t.entries if isinstance(e, SystemEntry)]
     assert len(systems) == 1
     assert systems[0].subtype == "stop_hook_summary"
@@ -174,7 +174,7 @@ def test_system_entry_subtype(claude_jsonl):
 def test_multi_block_message_folds_to_one_assistant_entry(claude_multi_block_jsonl):
     """thinking+text+tool_use sharing a msg_id → one AssistantMessageEntry
     carrying both text and thinking, plus one paired semantic tool entry."""
-    t = AgentTranscript("claude", claude_multi_block_jsonl)
+    t = AgentTranscriptFile("claude", claude_multi_block_jsonl)
 
     # Fixture composition:
     #   1 user prompt
@@ -253,7 +253,7 @@ def test_plan_mode_exit_attachment_becomes_exit_plan_mode_entry(tmp_path):
     jsonl = tmp_path / f"{sid}.jsonl"
     jsonl.write_text(json.dumps(user_line) + "\n" + json.dumps(plan_exit_line) + "\n", encoding="utf-8")
 
-    t = AgentTranscript("claude", jsonl)
+    t = AgentTranscriptFile("claude", jsonl)
     matches = [e for e in t.entries if isinstance(e, ExitPlanModeEntry)]
     assert len(matches) == 1
     assert matches[0].plan_file_path == plan_path
@@ -276,7 +276,7 @@ def test_plan_mode_attachment_without_planFilePath_is_not_promoted(tmp_path):
     }
     jsonl = tmp_path / f"{sid}.jsonl"
     jsonl.write_text(json.dumps(line) + "\n", encoding="utf-8")
-    t = AgentTranscript("claude", jsonl)
+    t = AgentTranscriptFile("claude", jsonl)
     assert not [e for e in t.entries if isinstance(e, ExitPlanModeEntry)]
     metas = [e for e in t.entries if isinstance(e, MetaEntry) and e.meta_kind == "attachment"]
     assert len(metas) == 1
@@ -289,7 +289,7 @@ def test_multi_block_no_duplicate_entry_ids(claude_multi_block_jsonl):
     multiple AssistantMessageEntry rows = parser fragmentation = downstream
     forced to dedup with brittle heuristics. The parser owns folding.
     """
-    t = AgentTranscript("claude", claude_multi_block_jsonl)
+    t = AgentTranscriptFile("claude", claude_multi_block_jsonl)
     am_ids = [e.entry_id for e in t.entries if isinstance(e, AssistantMessageEntry)]
     assert len(am_ids) == len(set(am_ids)), (
         f"AssistantMessageEntry entry_ids must be unique; got {am_ids}"

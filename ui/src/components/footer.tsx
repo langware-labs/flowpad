@@ -4,6 +4,7 @@ import { usePendingCompletionSound } from '@src/components/footer/usePendingComp
 import { PoweredBy } from '@src/components/powered-by';
 import { IndexerStatusPill } from '@src/components/search-index/IndexerStatusPill';
 import { StatusBar } from '@src/components/status-bar';
+import { VersionPopover } from '@src/components/version-popover';
 import { WarningsPopover } from '@src/components/warnings-popover';
 import { Agent, ArtifactType, FLOWPAD_ASSISTANT_PROJECT_UNAME, TypeId } from '@sdk';
 import { useCurrentArtifacts, useEntity } from '@sdk/react/hooks';
@@ -109,9 +110,7 @@ export function Footer({ className = '' }: FooterProps) {
             <span>Flowpad docs</span>
           </button>
           <ClaudeUsageChip />
-          {version && (
-            <span className="font-mono text-[10px] text-muted-foreground">v{version}</span>
-          )}
+          {version && <VersionPopover currentVersion={version} />}
           <PoweredBy />
         </div>
       </div>
