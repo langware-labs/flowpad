@@ -18,20 +18,41 @@ from flow_sdk.builtin.trigger import Trigger, TriggerType
 _log = logging.getLogger(__name__)
 
 
-async def _fire(trigger: Trigger, changed_path: Path, change_type: Any) -> None:
+async def _fire(
+    trigger: Trigger,
+    changed_path: Path,
+    change_type: Any,
+    *,
+    is_test: bool = False,
+) -> None:
     """Apply a file-change event to a trigger.
 
     Mirrors `_fire_schedule_job` (trigger.py): bumps counter, sets last_triggered
     + last_seen_*, persists the bookkeeping via `await trigger.update()` so the
     UI counter reflects the fire, then dispatches actions + writes TriggerLogRecord.
+
+    ``is_test=True`` is passed by ``Trigger.test_action`` (the "Test" button's
+    synthetic fire). Actions still run for real — same precedent as schedule's
+    test path — but the log entry is marked ``is_test=True`` and its
+    ``event_kind`` becomes ``"test"`` so the invocations panel can render it
+    distinctly from organic file events.
     """
     if not trigger.enabled:
         return
 
-    trigger.counter += 1
-    trigger.last_triggered = datetime.now(timezone.utc)
+    # Test fires must not mutate the persisted trigger row: counter is the
+    # "real fires" count surfaced in the UI list/detail, last_triggered is the
+    # "last real event" surfaced everywhere. The invocations log row alone
+    # (with is_test=True + event_kind="test") is the user-facing feedback.
+    if not is_test:
+        trigger.counter += 1
+        trigger.last_triggered = datetime.now(timezone.utc)
 
-    if trigger.watch_path and str(changed_path) == trigger.watch_path:
+    # Skip last_seen_* updates for test fires. last_seen_* anchors catch-up
+    # replay on next boot — a synthetic test would otherwise settle the
+    # fingerprint to current file state and mask an organic change that
+    # awatch may have missed since the previous real fire.
+    if not is_test and trigger.watch_path and str(changed_path) == trigger.watch_path:
         try:
             st = changed_path.stat()
             trigger.last_seen_mtime = st.st_mtime
@@ -70,11 +91,17 @@ async def _fire(trigger: Trigger, changed_path: Path, change_type: Any) -> None:
         TriggerLogRecord.append_entry(
             trigger.name,
             {
+                # Legacy fields — keep populated so existing log readers
+                # (TriggerLogViewer lens, hook-shape invocation rows) continue
+                # rendering even before the UI consumes the structured fields.
                 "hook_event": "file_change",
-                "trigger": True,
-                # TriggerLogRecord whitelists fields; encode change_type+path in `reason`.
                 "reason": f"File {change_type}: {changed_path}",
-                "is_test": False,
+                # Structured fields — Chunk C contract; nullable for back-compat.
+                "event_kind": "test" if is_test else "file_change",
+                "changed_path": str(changed_path),
+                "change_type": str(change_type),
+                "trigger": True,
+                "is_test": is_test,
                 "rule_name": trigger.name,
                 "actions": [{"action_type": str(a.action_type)} for a in trigger.actions],
                 "agentic_process_id": None,

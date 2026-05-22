@@ -11,6 +11,12 @@ export interface TriggerLogEntry {
   rule_name: string;
   actions: string[];
   agentic_process_id?: string | null;
+  // Structured fields (nullable for back-compat with pre-Chunk-C entries).
+  // `event_kind` is the typed discriminator the UI switches on; legacy
+  // entries without it fall through to the hook-shape rendering.
+  event_kind?: 'hook' | 'schedule_fire' | 'file_change' | 'test' | null;
+  changed_path?: string | null;
+  change_type?: string | null;
 }
 
 const POLL_INTERVAL_MS = 5000;
