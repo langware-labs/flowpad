@@ -282,11 +282,6 @@ export function AnnotationIndexSquare({
                   onClick={() => {
                     if (planFilePath && agenticProcessTypeId) {
                       navigation.openPlan(agenticProcessTypeId, planFilePath);
-                      APIEntity.entityEvent(
-                        agenticProcessTypeId,
-                        'plan.open',
-                        { plan_path: planFilePath },
-                      ).catch(() => {});
                     } else if (line !== undefined) {
                       scrollToLine(line);
                     }
@@ -822,11 +817,6 @@ function AnnotationCell({
             onClick={() => {
               if (agenticProcessTypeId) {
                 navigation.openPlan(agenticProcessTypeId, filePath);
-                APIEntity.entityEvent(
-                  agenticProcessTypeId,
-                  'plan.open',
-                  { plan_path: filePath },
-                ).catch(() => {});
               }
               setOpen(false);
             }}

@@ -56,6 +56,8 @@ from .routes import (
     webhook_api_router,
     websocket_router,
     compute_register_router,
+    dep_graph_router,
+    version_router,
 )
 
 
@@ -118,7 +120,21 @@ async def _on_server_startup():
     await _start_notification_scanner()
     await _start_cloud_ws_listener()
     await _start_inbox_catchup()
+    await _seed_service_triggers()
     await _start_fsop_watcher()
+    await _start_transcript_streamer()
+
+
+async def _seed_service_triggers() -> None:
+    """Upsert built-in system triggers (toplog filter watcher, etc.). Must run
+    before `_start_fsop_watcher()` so the watcher's startup walk finds them."""
+    try:
+        from flow_sdk.server.builtin_triggers import set_service_triggers
+
+        await set_service_triggers()
+        print("  System triggers: upserted")
+    except Exception:
+        logging.getLogger(__name__).exception("System triggers: failed to seed")
 
 
 async def _start_fsop_watcher() -> None:
@@ -130,6 +146,61 @@ async def _start_fsop_watcher() -> None:
         print(f"  FSOp watcher: started ({len(fsop_watcher)} trigger(s))")
     except Exception:
         logging.getLogger(__name__).exception("FSOp watcher: failed to start")
+
+
+async def _start_transcript_streamer() -> None:
+    """T6: Start the TranscriptStreamer's idle sweeper, then kick off a one-shot
+    catch-up walk over existing JSONLs in the background.
+
+    Catch-up closes the "modified while server was down" gap: FSOp can't fire
+    for files that haven't changed since startup, and folder-mode FSOp catch-up
+    is intentionally skipped. The walk lazily constructs a streamer per file
+    (full initial parse via ``AgentTranscriptFile.__init__``), then
+    ``parse_delta()`` flushes everything as one chunk to subscribers.
+
+    The walk runs as a background task (not awaited in the lifespan) so the
+    server reaches the listen phase immediately — users may have thousands
+    of historical JSONLs (~7-8K is realistic), and parsing them all serially
+    would block boot for minutes. Subscribers are idempotent, so a live FSOp
+    event for the same file racing the catch-up walk is safe.
+    """
+    try:
+        import asyncio as _asyncio
+
+        from flow_sdk.transcript_streamer import transcript_streamer_registry
+
+        await transcript_streamer_registry.start_idle_sweeper()
+        _asyncio.create_task(_transcript_catch_up_walk(), name="transcript-catch-up")
+        print("  Transcript streamer: started (catch-up scheduled in background)")
+    except Exception:
+        logging.getLogger(__name__).exception("Transcript streamer: failed to start")
+
+
+async def _transcript_catch_up_walk() -> None:
+    """Background catch-up walk over every JSONL under the watched dirs."""
+    try:
+        from flow_sdk.instance_settings import get_instance_settings
+        from flow_sdk.transcript_streamer import transcript_streamer_registry
+
+        settings = get_instance_settings()
+        roots = [settings.claude_projects_dir, settings.codex_sessions_dir]
+        scanned = 0
+        for root in roots:
+            if not root.exists():
+                continue
+            for jsonl in root.rglob("*.jsonl"):
+                try:
+                    await transcript_streamer_registry.notify_change(jsonl)
+                    scanned += 1
+                except Exception:
+                    logging.getLogger(__name__).exception(
+                        "Transcript streamer catch-up failed for %s", jsonl
+                    )
+        logging.getLogger(__name__).info(
+            "Transcript streamer catch-up: scanned %d JSONL(s)", scanned
+        )
+    except Exception:
+        logging.getLogger(__name__).exception("Transcript streamer catch-up failed")
 
 
 async def _start_notification_scanner() -> None:
@@ -217,6 +288,15 @@ async def _shutdown_extras():
     except Exception:
         pass
 
+    # Stop the TranscriptStreamer idle sweeper. Streamer dict drops with the
+    # process — no other cleanup needed.
+    try:
+        from flow_sdk.transcript_streamer import transcript_streamer_registry
+
+        await transcript_streamer_registry.stop_idle_sweeper()
+    except Exception:
+        pass
+
     print("Shutting down minihub server...")
     clear_server_info()
     print("Shutdown complete.")
@@ -242,6 +322,8 @@ server.add_router(debug_router)
 server.add_router(navigate_router)
 server.add_router(agent_records_router)
 server.add_router(transcripts_router)
+server.add_router(dep_graph_router)
+server.add_router(version_router)
 
 server.on_startup(_on_server_startup)
 server.on_shutdown(_shutdown_extras)

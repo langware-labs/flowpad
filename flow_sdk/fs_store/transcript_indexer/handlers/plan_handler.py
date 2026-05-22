@@ -4,7 +4,6 @@ import logging
 from pathlib import Path
 from typing import ClassVar
 
-from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.transcript_analyzer.entries.exit_plan_mode import ExitPlanModeEntry
 from flow_sdk.transcript_analyzer.entry import EntryKind, TranscriptEntry
 
@@ -14,15 +13,11 @@ logger = logging.getLogger(__name__)
 
 
 class PlanHandler:
-    """Cross-link ClaudePlan <-> AgenticProcess via private_context_entities.
+    """Cross-link ClaudePlan ↔ AgenticProcess via private_context_entities.
 
-    For every ExitPlanMode tool_use in the transcript:
-      1. Resolve plan file path from entry.plan_file_path; skip if absent or missing.
-      2. Look up the ClaudePlan entity by `asset_ref == plan_path`. If missing,
-         trigger a scoped PLAN reindex of that single file and re-look up.
-      3. Look up the AgenticProcess by entry.session_id. If absent, skip.
-      4. Append each TypeId to the other's private_context_entities_ (idempotent)
-         and save when something actually changed.
+    Thin adapter — delegates to the shared
+    :func:`flow_sdk.transcript_analyzer.plan_cross_link.cross_link_plan_to_process`
+    helper. See that module's docstring for the canonical contract.
     """
 
     match_kind: ClassVar[EntryKind | None] = EntryKind.TOOL_USE
@@ -31,43 +26,9 @@ class PlanHandler:
     async def handle(self, entry: TranscriptEntry, ctx: TranscriptContext) -> None:
         if not isinstance(entry, ExitPlanModeEntry):
             return
-        plan_path = entry.plan_file_path
-        if not plan_path or not Path(plan_path).exists():
-            return
+        from flow_sdk.transcript_analyzer.plan_cross_link import cross_link_plan_to_process
 
-        from flow_sdk.builtin.agentic_process import AgenticProcess
-        from flow_sdk.builtin.claude_memory_entities import ClaudePlan
-        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter
-
-        plan = await ClaudePlan.get_one({"asset_ref": plan_path})
-        if plan is None:
-            await _index_single_plan(Path(plan_path))
-            plan = await ClaudePlan.get_one({"asset_ref": plan_path})
-            if plan is None:
-                logger.debug(
-                    "PlanHandler: scoped PLAN reindex of %s yielded no entity", plan_path
-                )
-                return
-
-        procs = await AgenticProcess.get_all(
-            entities_filter=QueryFilter(
-                match=ExpressionNode(session_id=entry.session_id)
-            )
-        )
-        if not procs:
-            return
-        proc = procs[0]
-
-        changed_plan = plan.add_private_context_entities(
-            TypeId(type=AgenticProcess.get_type(), id=proc.id)
-        )
-        changed_proc = proc.add_private_context_entities(
-            TypeId(type=ClaudePlan.get_type(), id=plan.id)
-        )
-        if changed_plan:
-            await plan.save()
-        if changed_proc:
-            await proc.save()
+        await cross_link_plan_to_process(entry.plan_file_path, entry.session_id)
 
 
 async def _index_single_plan(plan_md_path: Path) -> None:

@@ -1,7 +1,7 @@
 """Unified transcript analyzer for agentic workers.
 
 Public surface:
-    AgentTranscript(worker_type, path) — parses a transcript JSONL file
+    AgentTranscriptFile(worker_type, path) — parses a transcript JSONL file
                                          into a typed entry stream.
     EntryKind                          — filter tag.
     TranscriptEntry + subclasses       — entry hierarchy.
@@ -31,10 +31,10 @@ from .entries import (
 from .entry import EntryKind, TranscriptEntry
 from .formats import TranscriptDescriptor, TranscriptFormat, TranscriptSource
 from .process_entry import ObservationKind, ProcessEntry
-from .transcript import AgentTranscript
+from .transcript import AgentTranscriptFile
 
 __all__ = [
-    "AgentTranscript",
+    "AgentTranscriptFile",
     "AgentSpawnEntry",
     "AssistantMessageEntry",
     "CodexUsageEntry",

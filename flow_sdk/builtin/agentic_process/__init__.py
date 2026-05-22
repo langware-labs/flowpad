@@ -17,6 +17,11 @@ from flow_sdk.builtin.agentic_process._shared import (
 )
 from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
 
+# Register the TranscriptStreamer subscriber at package import. Must happen
+# before _on_server_startup runs `_start_transcript_streamer()` so the catch-up
+# walk has the subscriber installed for its first dispatch.
+from flow_sdk.builtin.agentic_process import transcript_subscriber as _transcript_subscriber  # noqa: F401
+
 __all__ = [
     "WorkerStatus",
     "ProcessStatus",

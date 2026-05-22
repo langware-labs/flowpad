@@ -52,7 +52,7 @@ from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 if TYPE_CHECKING:
     from flow_sdk.builtin.faas.compute_node import ComputeNode
     from flow_sdk.builtin.shell import Shell
-    from flow_sdk.transcript_analyzer import AgentTranscript
+    from flow_sdk.transcript_analyzer import AgentTranscriptFile
     from flow_sdk.transcript_analyzer.entries.tool_use import ToolUseEntry
 
 logger = logging.getLogger(__name__)
@@ -225,63 +225,6 @@ def _write_plan_frontmatter(file_path: str, fields: dict) -> None:
         )
         new_content = f"---\n{lines}\n---\n{content}"
     p.write_text(new_content, encoding="utf-8")
-
-
-def _render_codex_plan_markdown(tool_input: dict) -> str:
-    """Render a codex ``update_plan`` tool_input dict to a markdown checklist.
-
-    Codex's plan-mode emits plans as ``{explanation, plan: [{step, status}]}``
-    where ``status`` ∈ ``pending``/``in_progress``/``completed``. We render
-    completed steps as ticked, in-progress with an explicit marker, and
-    pending as unticked.
-    """
-    explanation = str(tool_input.get("explanation") or "").strip()
-    steps = tool_input.get("plan") or []
-    lines: list[str] = ["# Plan", ""]
-    if explanation:
-        lines.append(explanation)
-        lines.append("")
-    if isinstance(steps, list):
-        for step in steps:
-            if not isinstance(step, dict):
-                continue
-            text = str(step.get("step") or "").strip()
-            status = str(step.get("status") or "").strip().lower()
-            if not text:
-                continue
-            if status == "completed":
-                lines.append(f"- [x] {text}")
-            elif status == "in_progress":
-                lines.append(f"- [ ] **(in progress)** {text}")
-            else:
-                lines.append(f"- [ ] {text}")
-    return "\n".join(lines) + "\n"
-
-
-def _materialize_codex_update_plan(entry: "ToolUseEntry", session_key: str) -> str:
-    """Write a codex ``update_plan`` tool_use to ``<flow_home>/plans/codex/<key>.md``.
-
-    Codex's plan is structured JSON in the ``function_call`` args, not a
-    file claude-style. The flowpad UI's "Open last plan" button still
-    expects a file path, so we render and write each plan update into a
-    flowpad-managed location keyed on the session id (or the agentic
-    process id when the session id is missing). The file is overwritten
-    on every call so step-status updates are visible immediately.
-
-    Returns the absolute path written, or "" if rendering failed.
-    """
-    from flow_sdk.instance_settings import get_instance_settings
-
-    try:
-        plan_dir = get_instance_settings().flow_home / "plans" / "codex"
-        plan_dir.mkdir(parents=True, exist_ok=True)
-        safe_key = (session_key or "session").replace("/", "_").replace("\\", "_")
-        plan_path = plan_dir / f"{safe_key}.md"
-        plan_path.write_text(_render_codex_plan_markdown(entry.tool_input or {}), encoding="utf-8")
-        return str(plan_path)
-    except Exception:
-        logger.exception("AgenticProcess: failed to materialize codex update_plan to disk")
-        return ""
 
 
 async def _index_additional_dir(path: str) -> None:
@@ -1512,7 +1455,7 @@ class AgenticProcess(Entity):
         descriptor = self.transcript
         return descriptor.path if descriptor else None
 
-    def _load_transcript(self, descriptor=None) -> "AgentTranscript | None":
+    def _load_transcript(self, descriptor=None) -> "AgentTranscriptFile | None":
         """Worker-agnostic transcript loader.
 
         Resolves the JSONL via the vendor driver and parses it through the
@@ -1520,13 +1463,13 @@ class AgenticProcess(Entity):
         session is attached or the file is missing. Per-request load — no
         caching; eager parse is fast enough for current sizes.
         """
-        from flow_sdk.transcript_analyzer import AgentTranscript
+        from flow_sdk.transcript_analyzer import AgentTranscriptFile
 
         descriptor = descriptor or self.transcript
         if descriptor is None or not descriptor.path.exists():
             return None
         try:
-            return AgentTranscript(
+            return AgentTranscriptFile(
                 self.driver.name,
                 descriptor.path,
                 session_id=descriptor.session_id,
@@ -1589,19 +1532,18 @@ class AgenticProcess(Entity):
         return ApiFailResponse(message=f"unknown transcript sub-path: {sub_path_raw!r}")
 
     async def _transcript_plan(
-        self, transcript: "AgentTranscript | None",
+        self, transcript: "AgentTranscriptFile | None",
     ) -> ApiSuccessResponse | ApiFailResponse:
         """Resolve the latest plan, persist ``plan_path`` (existence-gated),
         and return the indexed Markdown.
 
         Resolution order for the path:
-          1. ``transcript.latest_plan`` — re-resolved every call so codex
-             ``update_plan`` step-status updates are reflected immediately.
-             - Claude (``ExitPlanModeEntry``): use the on-disk
-               ``plan_file_path`` claude already wrote.
-             - Codex (``update_plan`` ``ToolUseEntry``): render the inline
-               structured plan to ``<flow_home>/plans/codex/<session>.md``
-               and use that path.
+          1. ``transcript.latest_plan`` — an ``ExitPlanModeEntry`` emitted by
+             either worker's parser (Claude from its ``ExitPlanMode`` tool;
+             Codex synthesized from a ``<proposed_plan>`` marker).
+             ``plan_file_path`` is the on-disk file the worker wrote — Claude
+             writes directly; Codex's stream worker writes when it sees the
+             marker on its JSONL stream.
           2. ``self.plan_path`` if already set (cache fallback).
           3. Most recent ``plan_mode`` attachment's ``planFilePath`` (Claude
              interactive PTY plan-mode).
@@ -1619,11 +1561,6 @@ class AgenticProcess(Entity):
             latest = transcript.latest_plan
             if isinstance(latest, ExitPlanModeEntry):
                 plan_file_path = latest.plan_file_path
-            elif latest is not None and latest.tool_name == "update_plan":
-                # Codex's plan lives inline in the function_call args; the
-                # UI's plan button expects a file path, so we materialize
-                # the rendered markdown into a flowpad-managed location.
-                plan_file_path = _materialize_codex_update_plan(latest, transcript.session_id or self.id)
 
         if not plan_file_path:
             plan_file_path = self.plan_path or ""
@@ -1670,11 +1607,11 @@ class AgenticProcess(Entity):
             return ApiFailResponse(message=str(e))
 
     def _transcript_prompts(
-        self, transcript: "AgentTranscript | None",
+        self, transcript: "AgentTranscriptFile | None",
     ) -> ApiSuccessResponse:
         """Return the user-prompt list straight from the transcript.
 
-        Filters applied by ``AgentTranscript.prompts`` (sidechain, empty,
+        Filters applied by ``AgentTranscriptFile.prompts`` (sidechain, empty,
         Claude Code synthetic markers). Output shape mirrors the entry's
         ``to_dict()`` envelope so the TS analyzer mirror's ``fromJson``
         factory can hydrate ``UserMessageEntry`` instances directly.
@@ -1687,7 +1624,7 @@ class AgenticProcess(Entity):
 
     def _transcript_full(
         self,
-        transcript: "AgentTranscript | None",
+        transcript: "AgentTranscriptFile | None",
         descriptor=None,
     ) -> ApiSuccessResponse:
         if transcript is None or descriptor is None:
@@ -1713,7 +1650,7 @@ class AgenticProcess(Entity):
             "entries": [e.to_dict() for e in transcript.entries],
         })
 
-    def _transcript_header(self, transcript: "AgentTranscript") -> dict[str, Any]:
+    def _transcript_header(self, transcript: "AgentTranscriptFile") -> dict[str, Any]:
         meta = transcript._session_meta_payload()
         if not meta:
             return {}
@@ -2958,30 +2895,44 @@ class AgenticProcess(Entity):
             return None
         return ClaudeSessionRecord.get(session_id)
 
-    async def transcript_index(self, payload: dict | None = None) -> dict:
-        """Run the TranscriptIndexer (force=True) over this process's session JSONL.
-        Handlers are idempotent — replay is safe.
+    async def _on_transcript_stream_chunk(self, jsonl_path: Path, entries: list) -> None:
+        """T7: TranscriptStreamer subscriber entry-point on this AP.
+
+        Called by the global ``transcript_streamer_registry`` dispatcher (via
+        ``transcript_subscriber._route_to_ap``) every time the streamer parses
+        a delta from this AP's session JSONL. Walks the delta for
+        ``ExitPlanModeEntry`` instances; on detection, emits the ``plan.create``
+        outbound event and runs the cross-link helper.
+
+        Other entry types are ignored in v1 — additional handlers (token usage,
+        anomaly detection, etc.) can either subscribe globally or extend this
+        method.
         """
-        from flow_sdk.fs_store.indexer.index_function import IndexerOptions
-        from flow_sdk.fs_store.record_types import RecordType
-        from flow_sdk.fs_store.transcript_indexer import TranscriptIndexer
-        from flow_sdk.fs_store.transcript_indexer.handlers import PlanHandler
+        from flow_sdk.transcript_analyzer.entries.exit_plan_mode import ExitPlanModeEntry
 
-        sid = self.session_id or ""
-        if not sid:
-            return {"status": "skipped", "reason": "no session_id"}
-        record = ClaudeSessionRecord.get(sid)
-        jsonl_path = getattr(record, "source_file", None) if record else None
-        if not jsonl_path or not Path(jsonl_path).exists():
-            return {"status": "skipped", "reason": "no transcript on disk", "session_id": sid}
+        for entry in entries:
+            if isinstance(entry, ExitPlanModeEntry) and entry.plan_file_path:
+                await self.emit_entity_event(
+                    "plan.create",
+                    {"plan_file_path": entry.plan_file_path, "session_id": self.session_id},
+                )
+                await self.on_plan_created(entry)
 
-        ti = TranscriptIndexer()
-        ti.add_handler(PlanHandler())
-        await ti(
-            [FSRef(Path(jsonl_path), record_type=RecordType.CLAUDE_SESSION)],
-            IndexerOptions(verbose=False, force=True),
+    async def on_plan_created(self, entry) -> None:
+        """T7: Connect a freshly-detected plan to this AgenticProcess.
+
+        Delegates to the shared
+        :func:`flow_sdk.transcript_analyzer.plan_cross_link.cross_link_plan_to_process`
+        helper — single source of truth shared with PlanHandler (indexer) and
+        ``listen.py:_create_plan_annotation`` (hook). Sets ``plan_path`` if
+        unset and cross-links via ``private_context_entities`` both directions.
+        """
+        from flow_sdk.transcript_analyzer.plan_cross_link import cross_link_plan_to_process
+
+        await cross_link_plan_to_process(
+            entry.plan_file_path,
+            self.session_id or entry.session_id,
         )
-        return {"status": "ok", "session_id": sid, "jsonl": str(jsonl_path)}
 
     async def _find_resumable_session(self, session_id: str) -> str | None:
         """Walk up the fork chain to find a session ID with a transcript on disk."""
@@ -3091,6 +3042,3 @@ class AgenticProcess(Entity):
             asyncio.run_coroutine_threadsafe(_update_state(), main_loop)
 
         return _on_pty_exit
-
-
-AgenticProcess.on_event("plan.open")(AgenticProcess.transcript_index)

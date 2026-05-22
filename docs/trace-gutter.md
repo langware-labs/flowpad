@@ -168,10 +168,10 @@ Backend path:
 
 1. `AgenticProcess.transcript_action()` receives action `transcript` with sub-path `prompts`.
 2. `_load_transcript()` resolves the active driver's JSONL transcript path.
-3. `AgentTranscript(worker_type, path)` parses the transcript.
+3. `AgentTranscriptFile(worker_type, path)` parses the transcript.
 4. `_transcript_prompts()` returns `[e.to_dict() for e in transcript.prompts]`.
 
-`AgentTranscript.prompts` filters out:
+`AgentTranscriptFile.prompts` filters out:
 
 - sidechain user entries
 - empty or whitespace-only text
@@ -215,5 +215,5 @@ overlay list with collision avoidance for events that bucket to the same row.
 | `ui/src/types/trace-event.ts` | Vendor-neutral `TraceEvent` and FlowData mapper. |
 | `ts_sdk/src/process/agentic-process.ts` | `loadHistory()`, `getPrompts()`, and `getPlan()` frontend actions. |
 | `flow_sdk/builtin/agentic_process/agentic_process.py` | Backend `get-history` and `transcript/{plan,prompts}` actions. |
-| `flow_sdk/transcript_analyzer/transcript.py` | `AgentTranscript.prompts` filtering logic. |
+| `flow_sdk/transcript_analyzer/transcript.py` | `AgentTranscriptFile.prompts` filtering logic. |
 | `flow_sdk/app/actions/listen.py` | Hook conversion, sniffer broadcast, per-process FlowData routing, prompt annotations. |

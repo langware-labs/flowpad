@@ -157,10 +157,10 @@ class Entity(DBEntity):
 
         Usage::
 
-            class AgenticProcess(Entity):
-                async def transcript_index(self, payload): ...
+            class MyEntity(Entity):
+                async def handle_ping(self, payload): ...
 
-            Entity.on_event("plan.open")(AgenticProcess.transcript_index)
+            Entity.on_event("ping")(MyEntity.handle_ping)
 
         Subclass-local: each subclass gets its own copy of the registry on
         first registration so registrations don't leak across siblings.
@@ -1034,6 +1034,31 @@ class Entity(DBEntity):
         }
 
         await send_flow_data_to_entity(self.typeid, frontend_flow_data)
+
+    async def emit_entity_event(self, event: str, payload: dict | None = None) -> None:
+        """Outbound entity event — push a typed event to all WS watchers of this entity.
+
+        Counterpart to :meth:`entity_event` (which dispatches inbound events from
+        TS to a registered handler). Used by code paths that want to notify the
+        frontend that "something happened to this entity" without changing entity
+        fields (e.g. ``plan.create`` when a plan is detected mid-session). The
+        ordinary ``save()``-time entity-update broadcast covers field changes;
+        this surface adds a named-event channel for things that aren't field
+        mutations.
+
+        Wire format (via ``emit_flow_data``):
+            element_type = "entity_event"
+            data_type    = "json"
+            attributes   = {"event": <name>, "payload": {...}, ...}
+        """
+        await self.emit_flow_data({
+            "attributes": {
+                "element-type": "entity_event",
+                "data-type": "json",
+                "event": event,
+                "payload": payload or {},
+            },
+        })
 
     async def save_relationship(self, to_e, relationship_or_str, direction=RelationshipDirection.Outgoing, create=True):
         """Override save_relationship to invalidate cache when relationships are saved."""

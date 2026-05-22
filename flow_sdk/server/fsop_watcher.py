@@ -19,7 +19,12 @@ _log = logging.getLogger(__name__)
 
 
 async def _fire(trigger: Trigger, changed_path: Path, change_type: Any) -> None:
-    """Apply a file-change event to a trigger (in-memory only; caller persists)."""
+    """Apply a file-change event to a trigger.
+
+    Mirrors `_fire_schedule_job` (trigger.py): bumps counter, sets last_triggered
+    + last_seen_*, persists the bookkeeping via `await trigger.update()` so the
+    UI counter reflects the fire, then dispatches actions + writes TriggerLogRecord.
+    """
     if not trigger.enabled:
         return
 
@@ -27,13 +32,20 @@ async def _fire(trigger: Trigger, changed_path: Path, change_type: Any) -> None:
     trigger.last_triggered = datetime.now(timezone.utc)
 
     if trigger.watch_path and str(changed_path) == trigger.watch_path:
-        if changed_path.exists():
+        try:
             st = changed_path.stat()
             trigger.last_seen_mtime = st.st_mtime
             trigger.last_seen_size = st.st_size
-        else:
+        except FileNotFoundError:
             trigger.last_seen_mtime = None
             trigger.last_seen_size = None
+
+    # Persist counter/last_triggered/last_seen_* so the UI reflects the fire.
+    if trigger.id:
+        try:
+            await trigger.update()
+        except Exception:
+            _log.exception("Trigger %s: failed to persist counter/last_triggered", trigger.name)
 
     # Per-action try so one bad handler doesn't skip the rest.
     for action in trigger.actions:
