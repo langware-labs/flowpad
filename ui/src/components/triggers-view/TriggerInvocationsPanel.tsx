@@ -16,11 +16,20 @@ interface Props {
 
 const EVENT_LABELS: Record<string, string> = {
   schedule_fire: 'Scheduled',
+  file_change: 'File change',
   UserPromptSubmit: 'Prompt',
   PreToolUse: 'Pre-tool',
   PostToolUse: 'Post-tool',
   Stop: 'Stop',
 };
+
+/** Trim a long path to a readable head…tail when shown inline. */
+function shortenPath(p: string, max = 56): string {
+  if (p.length <= max) return p;
+  const head = Math.floor(max * 0.45);
+  const tail = max - head - 1;
+  return `${p.slice(0, head)}…${p.slice(p.length - tail)}`;
+}
 
 function formatTs(ts: string): string {
   try {
@@ -134,9 +143,26 @@ export function TriggerInvocationsPanel({ trigger }: Props) {
                       </Tooltip>
                     )}
                   </div>
-                  {entry.reason && (
+                  {/* Type-aware row body. Falls back to the legacy reason
+                      string when no structured fields are present (pre-Chunk-C
+                      entries + hook entries). */}
+                  {(entry.event_kind === 'file_change' || entry.event_kind === 'test') && entry.changed_path ? (
+                    <div className="flex items-center gap-1.5">
+                      {entry.change_type && (
+                        <Badge variant="outline" className="h-4 px-1 text-[9px]">
+                          {entry.change_type}
+                        </Badge>
+                      )}
+                      <span
+                        className="truncate font-mono text-[10px] text-muted-foreground"
+                        title={entry.changed_path}
+                      >
+                        {shortenPath(entry.changed_path)}
+                      </span>
+                    </div>
+                  ) : entry.reason ? (
                     <p className="text-[10px] text-muted-foreground truncate">{entry.reason}</p>
-                  )}
+                  ) : null}
                 </div>
               );
             })}

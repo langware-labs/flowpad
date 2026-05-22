@@ -431,6 +431,12 @@ class Trigger(Entity):
 
         if trigger_type == "schedule":
             await entity._register_schedule_job()
+        elif trigger_type == "fsop":
+            # Mirror the schedule pattern: hand the freshly-saved trigger to
+            # the FSOp watcher so its awatch task is spawned immediately
+            # (without waiting for the next server boot).
+            from flow_sdk.server.fsop_watcher import fsop_watcher
+            await fsop_watcher.on_trigger_saved(entity)
 
         return ApiSuccessResponse(data=entity)
 
@@ -462,6 +468,12 @@ class Trigger(Entity):
 
         if self.trigger_type == "schedule":
             await self._reschedule_job()
+        elif self.trigger_type == "fsop":
+            # Re-spawn the watcher's task — config (watch_path / recursive /
+            # glob / actions) may have changed; on_trigger_saved cancels the
+            # existing task and starts a fresh one.
+            from flow_sdk.server.fsop_watcher import fsop_watcher
+            await fsop_watcher.on_trigger_saved(self)
 
         return ApiSuccessResponse(data=self)
 
@@ -475,6 +487,12 @@ class Trigger(Entity):
                     scheduler.remove_job(self.id)
             except Exception as e:
                 logger.debug(f"APScheduler remove_job error (may not exist): {e}")
+        elif self.trigger_type == "fsop" and self.id:
+            try:
+                from flow_sdk.server.fsop_watcher import fsop_watcher
+                await fsop_watcher.on_trigger_deleted(self.id)
+            except Exception as e:
+                logger.debug(f"FSOpWatcher on_trigger_deleted error (may not be running): {e}")
 
         await self.delete()
         return ApiSuccessResponse(data={"deleted": True})
@@ -583,6 +601,21 @@ class Trigger(Entity):
             # Reload to get updated counter
             updated = await Trigger.get_by_id(self.id)
             return ApiSuccessResponse(data={"status": "fired", "counter": updated.counter if updated else self.counter})
+
+        if self.trigger_type == "fsop":
+            # Synthetic FSOp fire: real action dispatch (callback / script runs
+            # for real, marked is_test=True in the invocations log so it's
+            # visually distinguishable). Matches the precedent set by schedule:
+            # "Test" really runs the action. Lets the user verify wiring.
+            if not self.enabled:
+                return ApiFailResponse(message="Trigger is disabled — enable it before testing.")
+            if not self.watch_path:
+                return ApiFailResponse(message="Trigger has no watch_path configured.")
+            from pathlib import Path as _Path
+            from flow_sdk.server.fsop_watcher import _fire as _fsop_fire
+            await _fsop_fire(self, _Path(self.watch_path), "test", is_test=True)
+            updated = await Trigger.get_by_id(self.id) if self.id else self
+            return ApiSuccessResponse(data={"status": "fired", "counter": updated.counter if updated else self.counter, "is_test": True})
 
         # Hook trigger test
         if not self.path:
