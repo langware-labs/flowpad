@@ -11,6 +11,7 @@ import { SessionsView } from '@src/components/sessions-view/sessions-view';
 import { BASE_PATH } from '@src/constants/basePath';
 import AgentRedirect from '@src/pages/agent-redirect';
 import FlowPage from '@src/pages/flow-page/flow-page';
+import GraphPage from '@src/pages/graph-page/graph-page';
 import KeychainApproval from '@src/pages/keychain-approval';
 import LandingPage from '@src/pages/landing-page/landing-page';
 import NotFound from '@src/pages/NotFound';
@@ -91,6 +92,7 @@ export const router = createBrowserRouter(
       {/* Root dock routes - use default agent from bootstrap */}
       <Route path="dock" element={<AgentLayout />} loader={loadAgentApp} shouldRevalidate={shouldRevalidateDockShell}>
         <Route index element={<Navigate to="/" replace />} />
+        <Route path="graph" element={<GraphPage />} />
         <Route path=":viewType" element={<FlowPage />} />
         <Route path=":viewType/*" element={<FlowPage />} />
       </Route>

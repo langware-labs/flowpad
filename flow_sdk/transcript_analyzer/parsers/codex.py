@@ -36,6 +36,7 @@ from flow_sdk._compat import StrEnum
 from ..entries import (
     AssistantMessageEntry,
     CodexUsageEntry,
+    ExitPlanModeEntry,
     MetaEntry,
     SummaryEntry,
     SystemEntry,
@@ -46,6 +47,25 @@ from ..entries import (
     UserMessageEntry,
 )
 from ..entry import TranscriptEntry
+
+# Codex Plan Mode emits the finalized plan inside an assistant message wrapped
+# in ``<proposed_plan>...</proposed_plan>``. We synthesize an
+# ``ExitPlanModeEntry`` from that marker so downstream code (PlanHandler,
+# ``AgentTranscriptFile.latest_plan``, the UI "Open last plan" button) treats Codex
+# plans identically to Claude's ``ExitPlanMode`` tool_use entries.
+PROPOSED_PLAN_RE = re.compile(r"<proposed_plan>(.*?)</proposed_plan>", re.DOTALL)
+
+
+def _codex_plan_path_for_session(session_id: str) -> str:
+    """Deterministic plan-file path used by both the stream worker (writer)
+    and the parser (reader). Returns empty string when ``session_id`` is empty
+    so the caller can avoid emitting a bogus path.
+    """
+    if not session_id:
+        return ""
+    from flow_sdk.instance_settings import get_instance_settings
+
+    return str(get_instance_settings().claude_plans_dir / f"codex-{session_id}.md")
 
 
 class CodexLineType(StrEnum):
@@ -143,6 +163,34 @@ class _CodexParserBase:
 
     def _unknown(self, raw: dict, rtype: str, line_index: int) -> list[TranscriptEntry]:
         return [UnknownEntry(raw_data=raw, **self._base(raw, rtype, line_index))]
+
+    def _maybe_synthesize_plan_entry(
+        self, text: str, base: dict
+    ) -> list[TranscriptEntry]:
+        """Synthesize ``ExitPlanModeEntry`` from a ``<proposed_plan>`` block.
+
+        Codex Plan Mode finalizes the plan inside an assistant message wrapped
+        in ``<proposed_plan>...</proposed_plan>``. We map that to the same
+        ``ExitPlanModeEntry`` Claude's parser emits so the downstream contract
+        stays uniform: ``tool_name == "ExitPlanMode"``,
+        ``tool_input == {"plan": body, "planFilePath": <deterministic path>}``.
+
+        The on-disk file is written by the Codex stream worker as soon as it
+        sees the same marker; the path here is computed from ``session_id``
+        with the same convention so the two agree without side-channel state.
+        """
+        m = PROPOSED_PLAN_RE.search(text or "")
+        if not m:
+            return []
+        body = m.group(1).strip()
+        plan_path = _codex_plan_path_for_session(self.session_id)
+        use_id = f"{base['id']}:exit_plan_mode"
+        return [ExitPlanModeEntry(
+            tool_name="ExitPlanMode",
+            tool_use_id=use_id,
+            tool_input={"plan": body, "planFilePath": plan_path},
+            **{**base, "id": use_id},
+        )]
 
     # ── helpers ──────────────────────────────────────────────────────────────
 
@@ -370,7 +418,11 @@ class _CodexParserBase:
         itype = item.get("type")
         if itype == "agent_message":
             text = str(item.get("text") or "")
-            return [AssistantMessageEntry(text=text, model=self._current_model, **base)]
+            out: list[TranscriptEntry] = [
+                AssistantMessageEntry(text=text, model=self._current_model, **base)
+            ]
+            out.extend(self._maybe_synthesize_plan_entry(text, base))
+            return out
         if itype == "command_execution":
             cmd = str(item.get("command") or "")
             output = str(item.get("aggregated_output") or "")
@@ -576,13 +628,15 @@ class _CodexParserBase:
         if role is CodexMessageRole.ASSISTANT:
             text = self._join_text_blocks(content, kinds=("output_text",)).strip()
             phase = payload.get("phase")
-            return [AssistantMessageEntry(
+            out: list[TranscriptEntry] = [AssistantMessageEntry(
                 text=text,
                 phase=str(phase) if phase else None,
                 model=self._current_model,
                 **envelope,
                 **base,
             )]
+            out.extend(self._maybe_synthesize_plan_entry(text, base))
+            return out
         if role in (CodexMessageRole.DEVELOPER, CodexMessageRole.SYSTEM):
             return [SystemEntry(
                 subtype=f"{role.value}_message",
