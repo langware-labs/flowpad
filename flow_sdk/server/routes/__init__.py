@@ -26,6 +26,7 @@ from .transcripts import router as transcripts_router
 from .wiki import router as wiki_router
 from .dep_graph import router as dep_graph_router
 from .version import router as version_router
+from .favorites import router as favorites_router
 
 __all__ = [
     "bootstrap_router",
@@ -54,4 +55,5 @@ __all__ = [
     "wiki_router",
     "dep_graph_router",
     "version_router",
+    "favorites_router",
 ]

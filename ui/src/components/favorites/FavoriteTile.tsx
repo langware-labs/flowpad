@@ -1,8 +1,10 @@
 import type { Bookmark } from '@sdk';
+import type { FavoriteSummary } from '@src/hooks/use-favorite-summaries';
 import { useFavorites } from '@src/hooks/use-favorites';
 import { cn } from '@src/lib/utils';
 import { canNavigateFavorite, navigateToFavorite } from '@src/navigation/favorite-nav';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import {
   Bookmark as BookmarkIcon,
   Box,
@@ -66,6 +68,8 @@ function resolveIcon(bookmark: Bookmark): LucideIcon {
 
 interface FavoriteTileProps {
   bookmark: Bookmark;
+  /** Live tooltip data from the batch summary endpoint. */
+  summary?: FavoriteSummary;
 }
 
 /**
@@ -73,12 +77,13 @@ interface FavoriteTileProps {
  * "+" button (h-16 w-16). Main click navigates; the star overlay in the
  * top-right removes the favorite (hard delete).
  */
-export function FavoriteTile({ bookmark }: FavoriteTileProps) {
+export function FavoriteTile({ bookmark, summary }: FavoriteTileProps) {
   const { navigation } = useDockNavigation();
   const { removeFavorite } = useFavorites();
 
   const Icon = resolveIcon(bookmark);
-  const title = bookmark.displayName;
+  const title = summary?.name || bookmark.displayName;
+  const subtitle = summary?.subtitle ?? null;
   const navigable = canNavigateFavorite(bookmark);
 
   const handleClick = useCallback(() => {
@@ -94,25 +99,38 @@ export function FavoriteTile({ bookmark }: FavoriteTileProps) {
     [bookmark, removeFavorite],
   );
 
+  const tooltipName = navigable ? title : `${title} (missing)`;
+
   return (
     <div className="group relative">
-      <button
-        type="button"
-        onClick={handleClick}
-        title={navigable ? title : `${title} (missing)`}
-        aria-label={title}
-        className={cn(
-          'flex h-16 w-16 flex-col items-center justify-center gap-1 rounded-md border border-border bg-background text-muted-foreground transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
-          navigable
-            ? 'hover:border-primary hover:bg-accent hover:text-foreground cursor-pointer'
-            : 'opacity-60 cursor-not-allowed',
-        )}
-      >
-        <Icon className="h-6 w-6" />
-        <span className="max-w-[56px] truncate text-[10px] font-medium leading-none">
-          {title}
-        </span>
-      </button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            onClick={handleClick}
+            aria-label={tooltipName}
+            className={cn(
+              'flex h-16 w-16 flex-col items-center justify-center gap-1 rounded-md border border-border bg-background text-muted-foreground transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              navigable
+                ? 'hover:border-primary hover:bg-accent hover:text-foreground cursor-pointer'
+                : 'opacity-60 cursor-not-allowed',
+            )}
+          >
+            <Icon className="h-6 w-6" />
+            <span className="max-w-[56px] truncate text-[10px] font-medium leading-none">
+              {title}
+            </span>
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" className="max-w-xs">
+          <div className="text-xs font-medium">{tooltipName}</div>
+          {subtitle && (
+            <div className="mt-0.5 line-clamp-3 text-[11px] opacity-80">
+              {subtitle}
+            </div>
+          )}
+        </TooltipContent>
+      </Tooltip>
 
       <button
         type="button"
