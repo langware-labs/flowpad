@@ -95,7 +95,7 @@ Source: `useAnnotationGutter` queries `Memo` entities (`memo_type === 'terminal_
 - `prompt` / `plan`: scan xterm buffer via `adapter.getLineText(absRow)` for `content` — same approach as `buildSegmentsFromAnchors()`
 
 Prompt text for the prompt index is special: the canonical list comes from
-`AgenticProcess.getPrompts()` -> `transcript/prompts` -> `AgentTranscript.prompts`.
+`AgenticProcess.getPrompts()` -> `transcript/prompts` -> `AgentTranscriptFile.prompts`.
 Prompt annotations are only row anchors for click-to-scroll behavior.
 
 ---

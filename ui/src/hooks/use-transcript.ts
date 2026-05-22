@@ -30,7 +30,7 @@ interface UseTranscriptReturn {
  * Fetch and parse a worker transcript via the generic backend route.
  *
  * The hook is the single data path used by `GenericTranscriptViewer`.
- * Server-side `AgentTranscript(worker_type, path)` parses the JSONL and
+ * Server-side `AgentTranscriptFile(worker_type, path)` parses the JSONL and
  * returns typed entries; we just hand the JSON to `parseTranscriptResponse`
  * for runtime validation. Re-fetches when `workerType` or `path` changes.
  */

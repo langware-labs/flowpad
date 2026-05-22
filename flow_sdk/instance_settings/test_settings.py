@@ -88,6 +88,7 @@ class TestInstanceSettings(BaseInstanceSettings):
             monitor_log_path=flow_home / "monitor.log",
             inbox_last_fetch_path=flow_home / ".inbox_last_fetch.json",
             conversation_last_sync_path=flow_home / ".conversation_last_sync.json",
+            toplog_config_path=flow_home / "toplog.json",
             db_driver=os.environ.get(ENV_DESKTOP_DB, DEFAULT_DB_DRIVER).lower(),
             user_home=sandbox,
             claude_home=claude_home,

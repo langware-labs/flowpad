@@ -6,7 +6,7 @@ from pathlib import Path
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
-from flow_sdk.transcript_analyzer.transcript import AgentTranscript
+from flow_sdk.transcript_analyzer.transcript import AgentTranscriptFile
 
 from .handler import TranscriptContext, TranscriptHandler
 
@@ -55,7 +55,7 @@ class TranscriptIndexer:
 
     Wired into FSIndexer as an IndexerFunc for `RecordType.CLAUDE_SESSION`.
     Returns `[]` (side-effect only — no children). Routing piggybacks on
-    `AgentTranscript.filter()` so matcher logic lives in the analyzer.
+    `AgentTranscriptFile.filter()` so matcher logic lives in the analyzer.
     """
 
     def __init__(self) -> None:
@@ -84,7 +84,7 @@ class TranscriptIndexer:
             return
         if not opts.force and await _is_fresh(jsonl_path, worker_type):
             return
-        transcript = AgentTranscript(worker_type, str(jsonl_path))
+        transcript = AgentTranscriptFile(worker_type, str(jsonl_path))
         ctx = TranscriptContext(jsonl_path=jsonl_path, transcript=transcript)
         for handler in self._handlers:
             for entry in transcript.filter(

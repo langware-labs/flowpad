@@ -5,13 +5,13 @@ from pathlib import Path
 from typing import ClassVar, Protocol
 
 from flow_sdk.transcript_analyzer.entry import EntryKind, TranscriptEntry
-from flow_sdk.transcript_analyzer.transcript import AgentTranscript
+from flow_sdk.transcript_analyzer.transcript import AgentTranscriptFile
 
 
 @dataclass(frozen=True, slots=True)
 class TranscriptContext:
     jsonl_path: Path
-    transcript: AgentTranscript
+    transcript: AgentTranscriptFile
 
 
 class TranscriptHandler(Protocol):

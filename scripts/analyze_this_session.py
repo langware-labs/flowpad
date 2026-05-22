@@ -7,7 +7,7 @@ JSONL: ~/.claude/projects/-Users-shlom-Documents-dev-flowpad-oss/<sid>.jsonl
 Notable real-world finding: this session was driven through plan-mode
 attachments (`"attachment":{"type":"plan_mode",...}`) rather than explicit
 `tool_use:ExitPlanMode` lines. The current analyzer only models the
-`tool_use` shape, so `AgentTranscript` parses zero ExitPlanModeEntry from
+`tool_use` shape, so `AgentTranscriptFile` parses zero ExitPlanModeEntry from
 this transcript. The probe surfaces that finding, then exercises the
 indexer pipeline end-to-end against a synthetic 2-line transcript whose
 tool_use ExitPlanMode carries this session's id and the actual plan path
@@ -34,7 +34,7 @@ from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.transcript_indexer import TranscriptIndexer
 from flow_sdk.fs_store.transcript_indexer.handlers import PlanHandler
 from flow_sdk.transcript_analyzer.entries.exit_plan_mode import ExitPlanModeEntry
-from flow_sdk.transcript_analyzer.transcript import AgentTranscript
+from flow_sdk.transcript_analyzer.transcript import AgentTranscriptFile
 
 SESSION_ID = "ff041ecd-bdb8-4bc4-b875-959a7913a958"
 ENCODED_PROJECT = "-Users-shlom-Documents-dev-flowpad-oss"
@@ -128,13 +128,13 @@ async def main() -> int:
     assert JSONL.exists(), f"missing transcript: {JSONL}"
 
     # ── 1. Analyzer probe over the real session JSONL ───────────────────────
-    hr("Step 1 — AgentTranscript probe over the real session JSONL")
-    transcript = AgentTranscript("claude", JSONL)
+    hr("Step 1 — AgentTranscriptFile probe over the real session JSONL")
+    transcript = AgentTranscriptFile("claude", JSONL)
     exit_plans = [e for e in transcript.entries if isinstance(e, ExitPlanModeEntry)]
     print(f"transcript path:       {JSONL}")
     print(f"transcript entries:    {len(transcript.entries)}")
     print(f"tool_use ExitPlanMode: {len(exit_plans)}")
-    print(f"AgentTranscript.session_id: {transcript.session_id}")
+    print(f"AgentTranscriptFile.session_id: {transcript.session_id}")
 
     # ── 1b. Raw scan: this session used plan_mode attachments ──────────────
     hr("Step 1b — raw plan_mode attachment scan (not yet parsed by analyzer)")
