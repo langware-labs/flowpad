@@ -281,73 +281,6 @@ async def _index_session_on_close(session_id: str, display_name: str | None = No
         logger.debug("[AgenticProcess] failed to index session %s on close", session_id, exc_info=True)
 
 
-async def _poll_for_completion(agentic_process_id: str, _session_id: str | None) -> None:
-    """Background task: poll the transcript until terminal worker_status, then save.
-
-    Called from AgenticProcess.start_pty() after launching the worker. The
-    transcript path and tail-status calculation are driver-owned so Claude and
-    Codex visible processes follow the same status flow.
-    """
-    TERMINAL = {WorkerStatus.COMPLETE, WorkerStatus.ERROR, WorkerStatus.INTERRUPTED}
-
-    await asyncio.sleep(1)  # give the worker time to start and write the first JSONL entry
-    for _ in range(1800):  # poll up to 30 min (1800 * 1 s)
-        await asyncio.sleep(1)
-        try:
-            # Fetch entity fresh from DB — use module-level AgenticProcess via
-            # globals() to avoid forward-reference issues (class defined below).
-            _AgenticProcess = globals().get("AgenticProcess")
-            if _AgenticProcess is None:
-                return
-            proc = await _AgenticProcess.get_by_id(agentic_process_id)
-            if proc is None:
-                return  # entity deleted
-
-            new_status = proc._discover_status_from_transcript()
-            if new_status is None:
-                continue  # transcript not written yet
-            try:
-                status_enum = WorkerStatus(str(new_status))
-            except ValueError:
-                continue
-
-            if status_enum == WorkerStatus.API_TIMEOUT:
-                await proc._on_timeout()
-                continue  # keep polling — visible may recover; invisible will go INACTIVE
-
-            if status_enum not in TERMINAL:
-                continue  # still running or unknown
-
-            if proc.status in {
-                ProcessStatus.STOPPING.value,
-                ProcessStatus.STOPPED.value,
-                ProcessStatus.FAILED.value,
-            }:
-                return  # already up to date — WS was already sent
-
-            if await proc.is_running():
-                await proc.notify_updated()
-                logger.info(
-                    "AgenticProcess %s: completion monitor broadcast worker_status=%s with lifecycle=%s",
-                    agentic_process_id,
-                    new_status,
-                    proc.status,
-                )
-                return
-
-            proc.status = ProcessStatus.STOPPED.value
-            await proc.save()
-            logger.info(
-                "AgenticProcess %s: completion monitor set lifecycle=%s worker_status=%s",
-                agentic_process_id,
-                proc.status,
-                new_status,
-            )
-            return
-        except Exception:
-            logger.debug("_poll_for_completion error for %s", agentic_process_id, exc_info=True)
-
-
 def _build_run_result(proc: "AgenticProcess") -> "RunResult":
     """Build a RunResult from the process state after wait() completes."""
     from flow_sdk.builtin.agentic_process._shared import RunResult
@@ -826,12 +759,11 @@ class AgenticProcess(Entity):
             if execution_info is not None:
                 self._record_worker_started_at(execution_info.started_at)
 
-            if not worker_is_alive:
-                # Start background task to detect completion via transcript polling.
-                asyncio.create_task(
-                    _poll_for_completion(self.id, self.session_id),
-                    name=f"completion-monitor-{self.id[:8]}",
-                )
+            # Completion detection is now driven by the TranscriptStreamer
+            # subscriber (transcript_subscriber.py → on_transcript_change →
+            # _flush_transcript_change). Lifecycle flips to STOPPED/FAILED
+            # are handled by _on_pty_exit on real worker process death.
+            # No 1 Hz polling task needed any more.
 
             self.status = ProcessStatus.RUNNING.value
             # Capture snapshot of the freshly-launched config and clear the
@@ -2895,28 +2827,105 @@ class AgenticProcess(Entity):
             return None
         return ClaudeSessionRecord.get(session_id)
 
-    async def _on_transcript_stream_chunk(self, jsonl_path: Path, entries: list) -> None:
-        """T7: TranscriptStreamer subscriber entry-point on this AP.
+    # Bursty turn writes ~10-50 entries in 1s; cap at 1000 so a pathological
+    # writer can't grow the buffer without bound.
+    _DEBOUNCE_BUFFER_CAP = 1000
+    # Coalesce a burst of JSONL writes into one flush so the FE gets at most
+    # one entity-update broadcast per second per AP.
+    _DEBOUNCE_SECONDS = 1.0
 
-        Called by the global ``transcript_streamer_registry`` dispatcher (via
-        ``transcript_subscriber._route_to_ap``) every time the streamer parses
-        a delta from this AP's session JSONL. Walks the delta for
-        ``ExitPlanModeEntry`` instances; on detection, emits the ``plan.create``
-        outbound event and runs the cross-link helper.
+    async def on_transcript_change(self, jsonl_path: "Path", entries: list) -> None:
+        """TranscriptStreamer subscriber entry-point on this AP.
 
-        Other entry types are ignored in v1 — additional handlers (token usage,
-        anomaly detection, etc.) can either subscribe globally or extend this
-        method.
+        Buffers entries and arms a 1-second debounce timer; the streamer fires
+        at filesystem speed but the FE only sees one broadcast per quiescent
+        window per AP. The flush (:meth:`_flush_transcript_change`) handles
+        plan detection, status transition detection, and notify_updated.
+
+        ``jsonl_path`` is informational only — the canonical path is resolved
+        by :meth:`_discover_status_from_transcript` via the driver, which also
+        carries the headless ``_turn_in_flight`` short-circuit and visible-PTY
+        liveness reconciliation that ``driver.tail_status`` alone misses.
         """
-        from flow_sdk.transcript_analyzer.entries.exit_plan_mode import ExitPlanModeEntry
+        pending = getattr(self, "_pending_entries", None)
+        if pending is None:
+            object.__setattr__(self, "_pending_entries", [])
+            pending = self._pending_entries
+        pending.extend(entries)
+        if len(pending) > self._DEBOUNCE_BUFFER_CAP:
+            overflow = len(pending) - self._DEBOUNCE_BUFFER_CAP
+            del pending[:overflow]
+            logger.warning(
+                "AgenticProcess %s: on_transcript_change buffer overflow (dropped %d entries)",
+                self.id, overflow,
+            )
 
-        for entry in entries:
-            if isinstance(entry, ExitPlanModeEntry) and entry.plan_file_path:
-                await self.emit_entity_event(
-                    "plan.create",
-                    {"plan_file_path": entry.plan_file_path, "session_id": self.session_id},
-                )
-                await self.on_plan_created(entry)
+        task = getattr(self, "_debounce_task", None)
+        if task is None or task.done():
+            object.__setattr__(
+                self, "_debounce_task",
+                asyncio.create_task(
+                    self._flush_transcript_change(),
+                    name=f"ap-flush-{self.id[:8]}",
+                ),
+            )
+
+    async def _flush_transcript_change(self) -> None:
+        """Run after the debounce window on this AP's transcript.
+
+        Drains the buffer, processes plan detection (per-entry), re-derives
+        worker_status via :meth:`_discover_status_from_transcript` (the same
+        wrapper the serializer + get_status use, so the broadcast can never
+        disagree with what consumers compute on demand), and broadcasts only
+        on a status transition. Migrates the API_TIMEOUT → ``_on_timeout``
+        invocation from the deleted ``_poll_for_completion``.
+
+        The in-memory ``self.status`` may be ~1s stale after the sleep but
+        the only stale path is "AP was stopped externally during the window"
+        — covered by the lifecycle guard below. notify_updated broadcasts
+        the in-memory state; downstream observers are idempotent.
+        """
+        try:
+            await asyncio.sleep(self._DEBOUNCE_SECONDS)
+
+            if self.status != ProcessStatus.RUNNING.value:
+                return
+
+            entries = list(getattr(self, "_pending_entries", []))
+            object.__setattr__(self, "_pending_entries", [])
+
+            from flow_sdk.transcript_analyzer.entries.exit_plan_mode import ExitPlanModeEntry
+            for entry in entries:
+                if isinstance(entry, ExitPlanModeEntry) and entry.plan_file_path:
+                    await self.emit_entity_event(
+                        "plan.create",
+                        {"plan_file_path": entry.plan_file_path, "session_id": self.session_id},
+                    )
+                    await self.on_plan_created(entry)
+
+            # Single source of truth: same helper the serializer/get_status use.
+            current = self._discover_status_from_transcript()
+            previous = getattr(self, "_last_broadcast_status", None)
+            if current == previous:
+                return
+            object.__setattr__(self, "_last_broadcast_status", current)
+
+            if current == WorkerStatus.API_TIMEOUT:
+                try:
+                    await self._on_timeout()
+                except Exception:
+                    logger.debug(
+                        "AgenticProcess %s: _on_timeout failed", self.id, exc_info=True,
+                    )
+
+            await self.notify_updated()
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.debug(
+                "AgenticProcess %s: _flush_transcript_change failed",
+                self.id, exc_info=True,
+            )
 
     async def on_plan_created(self, entry) -> None:
         """T7: Connect a freshly-detected plan to this AgenticProcess.
