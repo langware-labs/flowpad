@@ -64,7 +64,7 @@ export function SharedTaskView({ task, conversationId, onClose }: SharedTaskView
         return;
       }
       await sendReply(
-        { task, conversationId: conversationTypeId.id },
+        { conversationId: conversationTypeId.id },
         '',
         undefined,
         {

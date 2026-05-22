@@ -32,7 +32,8 @@ from flow_sdk.fs_store import SyncOperation
 from flow_sdk.fs_store.type_id import TypeId
 
 _FM_FIELDS = {"type", "id", "text", "instruction", "shared_context_entities", "attachment",
-              "sender_id", "sender_name", "receiver_address", "receiver_address_type"}
+              "sender_id", "sender_name", "receiver_address", "receiver_address_type",
+              "conversation_id", "kind"}
 
 _TASK_FIELDS = {"type", "id", "title", "description", "status", "task_type",
                 "priority", "shared_by_id",
@@ -757,6 +758,26 @@ async def unpack_bundle(
              if TypeId(c).type == BuiltinEntityType.CONVERSATION.value),
             None,
         )
+        # Lightweight bundles (no Conversation attachment dir, no
+        # shared_context_entities entry) still reference the parent
+        # conversation as a TypeId attachment — recover it from there so the
+        # FM materializes via the conversation path instead of orphan-saving.
+        if not target_conv_id:
+            for att in msg_data.get("attachment", []) or []:
+                if not isinstance(att, dict):
+                    continue
+                if att.get("attachment_type") != "type_id":
+                    continue
+                ref = att.get("data") or ""
+                try:
+                    tid = TypeId(ref)
+                except Exception:
+                    continue
+                if tid.type == BuiltinEntityType.CONVERSATION.value:
+                    target_conv_id = tid.id
+                    if not msg_data.get("conversation_id"):
+                        msg_data["conversation_id"] = target_conv_id
+                    break
         if top_fm_already_exists and not overwrite and not conversation_id:
             raise FlowMessageExistsError([{"type": BuiltinEntityType.FLOW_MESSAGE.value, "id": top_fm_id_check}])
         if not target_conv_id:

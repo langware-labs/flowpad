@@ -108,6 +108,10 @@ class Conversation(Entity):
         invitation via ``GET /graph/invitation/pending``, accepts via
         ``GET /graph/members/accept``, and then ``POST /graph/conversation/<id>/join``
         themselves (wired in ``flow_message_action.handle_invitation_accept``).
+
+        Persisting ``remote=True`` to the local DB is the caller's
+        responsibility (``share_action.share_entity`` does the local row
+        UPDATE immediately after ``share()`` returns).
         """
         from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
         from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
@@ -118,6 +122,14 @@ class Conversation(Entity):
         creds = load_credentials()
         if not creds or not creds.api_key:
             raise RuntimeError("Cloud login required")
+
+        # Post-accept landing: point at the conversation's first FlowMessage on
+        # the hub — that URL renders MessageLanding, which hosts the "Open in
+        # Flowpad" button. Computed once per share; same value for every
+        # recipient. Falls back to None (hub default = entity URL) when the
+        # conversation has no messages yet.
+        callback_override = self._first_message_landing_path()
+
         async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
             # Caller joins so the creator enters ``participants``.
             await client.post(f"/graph/conversation/{self.id}/join", {})
@@ -125,22 +137,47 @@ class Conversation(Entity):
             for email in recipients:
                 if not email or not isinstance(email, str):
                     continue
+                body: dict = {
+                    "recipient_email": email,
+                    "invitation_targets": [
+                        {"typeid": f"conversation-{self.id}", "role": "member"},
+                    ],
+                }
+                if callback_override:
+                    body["callback_override"] = callback_override
                 await client.post(
                     f"/graph/conversation/{self.id}/members",
-                    {
-                        "recipient_email": email,
-                        "invitation_targets": [
-                            {"typeid": f"conversation-{self.id}", "role": "member"},
-                        ],
-                        # Stamp the target conv typeid in ``message`` so the
-                        # recipient can disambiguate this invitation from
-                        # earlier stale ones sharing the same email — the
-                        # ``InvitedThrough`` relationship isn't exposed on the
-                        # ``Invitation`` GET payload.
-                        "message": f"conversation-{self.id}",
-                    },
+                    body,
                 )
         return self
+
+    def _first_message_landing_path(self) -> Optional[str]:
+        """Return ``/flow_message/<id>`` for the earliest FM in this conv, or None.
+
+        Parses ``self.message_ids`` (JSON-encoded list of Pointers ordered
+        oldest-first by jsonl append order). Strips the local ``@`` marker
+        so the path matches hub-side ids.
+        """
+        if not self.message_ids:
+            return None
+        try:
+            import json  # noqa: PLC0415
+            msgs = json.loads(self.message_ids)
+        except (json.JSONDecodeError, TypeError):
+            return None
+        if not isinstance(msgs, list) or not msgs:
+            return None
+        try:
+            from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
+            tid = TypeId(msgs[0].get("typeid", ""))
+        except (ValueError, AttributeError, TypeError):
+            return None
+        if tid.type != "flow_message" or not tid.id:
+            return None
+        msg_id = tid.id.lstrip("@")
+        if not msg_id:
+            return None
+        return f"/flow_message/{msg_id}"
 
     async def add_message(
         self,

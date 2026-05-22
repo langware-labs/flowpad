@@ -1,12 +1,28 @@
 /**
- * Schema extensions for per-block `dir` / `align` on paragraph + heading.
- * Round-trip storage: a blank-line-wrapped `<p dir="rtl">…</p>` HTML block;
- * `bidi/parser.ts` collapses the opening/closing pair into attrs on
- * `node.data.bidi`. With no attrs set, output is byte-identical to plain
+ * Schema extension for per-block `dir` / `align` on paragraph.
+ *
+ * Round-trip storage: a blank-line-wrapped ``<p dir="rtl">…</p>`` HTML block;
+ * ``bidi/parser.ts`` collapses the opening/closing pair into attrs on
+ * ``node.data.bidi``. With no attrs set, output is byte-identical to plain
  * commonmark (no wrapper, no stray whitespace).
+ *
+ * **Heading is intentionally NOT extended.** A Milkdown bug in
+ * ``@milkdown/utils`` makes two ``$nodeSchema`` / ``extendSchema`` overrides
+ * on commonmark base nodes (paragraph + heading) coexist incorrectly — the
+ * resulting ProseMirror schema sends ``_NodeType.createAndFill`` /
+ * ``_ContentMatch.fillBefore`` into infinite recursion at editor mount,
+ * crashing every editor in the app with ``RangeError: Maximum call stack
+ * size exceeded``. Each override alone is fine; both together always crash,
+ * regardless of order, even for verbatim plain redefines.
+ *
+ * Workaround until upstream is fixed: extend paragraph only. Headings still
+ * render in the correct direction because CSS ``direction`` inherits from
+ * any RTL paragraph/container above them; an ``<h1 dir>`` that needs to be
+ * different from the surrounding paragraph is not supported until the
+ * Milkdown bug is resolved.
  */
 
-import { paragraphSchema, paragraphAttr, headingSchema } from '@milkdown/preset-commonmark';
+import { paragraphSchema, paragraphAttr } from '@milkdown/preset-commonmark';
 import { editorViewCtx } from '@milkdown/core';
 import type { MilkdownPlugin } from '@milkdown/ctx';
 import type { Node as PMNode } from '@milkdown/prose/model';
@@ -111,82 +127,17 @@ export const bidiParagraphSchema = paragraphSchema.extendSchema((prev) => (ctx) 
   };
 });
 
-// ── heading ──────────────────────────────────────────────────────────────────
-
-export const bidiHeadingSchema = headingSchema.extendSchema((prev) => (ctx) => {
-  const base = prev(ctx);
-  return {
-    ...base,
-    attrs: {
-      ...(base.attrs ?? {}),
-      dir: { default: null },
-      align: { default: null },
-    },
-    parseDOM: (base.parseDOM ?? []).map((rule) => ({
-      ...rule,
-      getAttrs: (dom: unknown) => {
-        const prevAttrs =
-          typeof rule.getAttrs === 'function'
-            ? rule.getAttrs(dom as HTMLElement) || {}
-            : { ...(rule.attrs ?? {}) };
-        if (!(dom instanceof HTMLElement)) return prevAttrs as Record<string, unknown>;
-        return {
-          ...prevAttrs,
-          dir: normalizeDir(dom.getAttribute('dir')),
-          align: parseAlignFromStyle(dom.getAttribute('style')),
-        };
-      },
-    })),
-    toDOM: (node) => {
-      // Call the original toDOM to preserve the id/heading-id generator
-      // contract, then layer bidi attrs on top of its attribute object.
-      const original = base.toDOM!(node) as [string, Record<string, string>, 0];
-      const [tag, attrs, hole] = original;
-      return [tag, { ...attrs, ...buildBidiDomAttrs(node) }, hole];
-    },
-    parseMarkdown: {
-      match: ({ type }) => type === 'heading',
-      runner: (state, mdNode, type) => {
-        const depth = (mdNode as { depth?: number }).depth ?? 1;
-        const bidi = (mdNode as { data?: { bidi?: { dir?: BidiDir; align?: BidiAlign } } }).data?.bidi;
-        const extra = bidi
-          ? { dir: normalizeDir(bidi.dir), align: normalizeAlign(bidi.align) }
-          : {};
-        state.openNode(type, { level: depth, ...extra });
-        if (mdNode.children) state.next(mdNode.children);
-        state.closeNode();
-      },
-    },
-    toMarkdown: {
-      match: (node) => node.type.name === 'heading',
-      runner: (state, node) => {
-        if (!hasBidiOverride(node)) {
-          // Default path — preserve the original commonmark behavior verbatim.
-          state.openNode('heading', undefined, { depth: node.attrs.level });
-          state.next(node.content);
-          state.closeNode();
-          return;
-        }
-        const level = Number(node.attrs.level) || 1;
-        state.addNode('html', undefined, buildOpeningTag(`h${level}`, node));
-        state.openNode('heading', undefined, { depth: level });
-        state.next(node.content);
-        state.closeNode();
-        state.addNode('html', undefined, `</h${level}>`);
-      },
-    },
-  };
-});
-
 // ── Registration ─────────────────────────────────────────────────────────────
 
 /**
  * Spread into the editor's plugin list AFTER the commonmark preset.
- * The remark transformer (see `parser.ts`) must also be registered or the
- * `<p dir="...">` opening/closing tags in source markdown will round-trip
- * as raw HTML blocks instead of attrs on paragraph/heading nodes.
+ * The remark transformer (see ``parser.ts``) must also be registered or the
+ * ``<p dir="...">`` opening/closing tags in source markdown will round-trip
+ * as raw HTML blocks instead of attrs on paragraph nodes.
+ *
+ * Heading override is omitted — see file header for the Milkdown bug that
+ * forces this workaround.
  */
 export const bidiSchemaPlugins: MilkdownPlugin[] = [
   ...bidiParagraphSchema,
-  ...bidiHeadingSchema,
 ];
