@@ -10,6 +10,8 @@ export interface WorkspaceSettings {
   show_system_skills: boolean;
   default_terminal: TerminalType;
   buffer_sync_updates: boolean;
+  notification_sound_enabled: boolean;
+  notification_sound_key: string;
 }
 
 /**
@@ -24,6 +26,8 @@ const DEFAULT_SETTINGS: WorkspaceSettings = {
   show_system_skills: true,
   default_terminal: TerminalType.BUILTIN_XTERM,
   buffer_sync_updates: false,
+  notification_sound_enabled: true,
+  notification_sound_key: 'supershort-ping',
 };
 
 const DEBOUNCE_MS = 500;
@@ -104,6 +108,28 @@ export class WorkspaceSetting extends EventEmitter {
   set bufferSyncUpdates(value: boolean) {
     if (this._settings.buffer_sync_updates !== value) {
       this._settings.buffer_sync_updates = value;
+      this._handleUpdate();
+    }
+  }
+
+  get notificationSoundEnabled(): boolean {
+    return this._settings.notification_sound_enabled;
+  }
+
+  set notificationSoundEnabled(value: boolean) {
+    if (this._settings.notification_sound_enabled !== value) {
+      this._settings.notification_sound_enabled = value;
+      this._handleUpdate();
+    }
+  }
+
+  get notificationSoundKey(): string {
+    return this._settings.notification_sound_key;
+  }
+
+  set notificationSoundKey(value: string) {
+    if (this._settings.notification_sound_key !== value) {
+      this._settings.notification_sound_key = value;
       this._handleUpdate();
     }
   }
@@ -220,22 +246,22 @@ export class WorkspaceSetting extends EventEmitter {
   }
 
   /**
-   * Update multiple settings at once
-   * Triggers a single debounced save
+   * Update multiple settings at once. Triggers a single debounced save.
+   *
+   * Iterates the keys of `updates` rather than enumerating each field,
+   * so adding a new field to `WorkspaceSettings` doesn't require touching
+   * this method (the previous hardcoded version silently dropped fields
+   * it didn't know about — `buffer_sync_updates` and any later additions).
    */
   update(updates: Partial<WorkspaceSettings>): void {
     let changed = false;
-
-    if (updates.show_system_skills !== undefined && updates.show_system_skills !== this._settings.show_system_skills) {
-      this._settings.show_system_skills = updates.show_system_skills;
+    for (const key of Object.keys(updates) as Array<keyof WorkspaceSettings>) {
+      const value = updates[key];
+      if (value === undefined) continue;
+      if (this._settings[key] === value) continue;
+      Object.assign(this._settings, { [key]: value });
       changed = true;
     }
-
-    if (updates.default_terminal !== undefined && updates.default_terminal !== this._settings.default_terminal) {
-      this._settings.default_terminal = updates.default_terminal;
-      changed = true;
-    }
-
     if (changed) {
       this._handleUpdate();
     }

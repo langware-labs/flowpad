@@ -1,4 +1,6 @@
 import { ClaudeUsageChip } from '@src/components/claude-usage-chip/ClaudeUsageChip';
+import { PendingActionsChip } from '@src/components/footer/PendingActionsChip';
+import { usePendingCompletionSound } from '@src/components/footer/usePendingCompletionSound';
 import { PoweredBy } from '@src/components/powered-by';
 import { IndexerStatusPill } from '@src/components/search-index/IndexerStatusPill';
 import { StatusBar } from '@src/components/status-bar';
@@ -34,6 +36,7 @@ export function Footer({ className = '' }: FooterProps) {
   const { data: projectArtifacts } = useCurrentArtifacts();
   const { navigation } = useDockNavigation();
   useColorPalette(agent?.site_config);
+  usePendingCompletionSound();
 
   // Extract repo and branch info from artifacts
   const repoInfo = useMemo(() => {
@@ -93,6 +96,7 @@ export function Footer({ className = '' }: FooterProps) {
 
         {/* Usage chip + version + Powered by on the right */}
         <div className="ml-auto flex items-center gap-2">
+          <PendingActionsChip />
           <IndexerStatusPill />
           <button
             type="button"
