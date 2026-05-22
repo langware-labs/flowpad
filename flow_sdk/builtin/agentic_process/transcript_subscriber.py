@@ -12,7 +12,7 @@ The dispatch contract:
     - We resolve the AgenticProcess by ``session_id``; if none exists, the
       file is from an unmanaged session (e.g. a transcript on disk with no
       paired AP) and we no-op.
-    - The AP's :meth:`_on_transcript_stream_chunk` handles per-entry routing.
+    - The AP's :meth:`on_transcript_change` handles per-entry routing.
 """
 from __future__ import annotations
 
@@ -51,13 +51,15 @@ async def _route_to_ap(
     if not aps:
         # Unmanaged session — transcript exists but no AP paired with it.
         return
-    ap = aps[0]
-    try:
-        await ap._on_transcript_stream_chunk(jsonl_path, new_entries)
-    except Exception:
-        _log.exception(
-            "transcript_subscriber: _on_transcript_stream_chunk raised on AP %s", ap.id
-        )
+    # Dispatch to every matching AP (forked / shared sessions are rare but
+    # real — same JSONL can back multiple AgenticProcess entities).
+    for ap in aps:
+        try:
+            await ap.on_transcript_change(jsonl_path, new_entries)
+        except Exception:
+            _log.exception(
+                "transcript_subscriber: on_transcript_change raised on AP %s", ap.id
+            )
 
 
 # Register at module load. The AP package's __init__ imports this submodule
