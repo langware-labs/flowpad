@@ -836,7 +836,15 @@ class Entity(DBEntity):
         Generic, type-agnostic: the body is this entity's serialized dump,
         the URL is constructed via ``build_hub_url(self.type)``, auth is
         taken from the stored hub credentials. Returns ``self`` after
-        flipping the ``remote`` field when the subclass declares one.
+        flipping the ``remote`` field on the in-memory entity when the
+        subclass declares one.
+
+        The caller is responsible for persisting ``remote=True`` to the
+        local DB — typically by loading the on-disk row and saving it
+        immediately after ``share()`` returns. ``self`` here is often a
+        transient instance reconstructed from a request body and not
+        bound to a DB row, so we deliberately do not call ``self.save()``
+        from inside ``share()``.
 
         Raises ``RuntimeError`` if not cloud-logged-in or the hub rejects.
         """
@@ -854,10 +862,31 @@ class Entity(DBEntity):
         #    the hub; the hub stamps these from the auth token. Leaving them in
         #    triggers the hub's role-lookup with an unknown user → 404.
         #  - ``created_date`` / ``updated_date`` — hub stamps timestamps itself.
+        #  - ``remote``      — local "do I have a hub counterpart" flag; meaningless on the hub.
+        #  - ``system``      — local "ships in an SDK system project" flag.
+        #  - ``orphan``      — local FS-indexer "source asset missing" flag.
+        #  - ``message_count`` — SDK projection from the conversation jsonl pointer index.
+        #  - ``tags``        — local-only labels; the hub doesn't read them.
+        #  - ``project_id``  — sender's local project; recipients resolve their
+        #    own project mapping, so the hub deliberately doesn't store this.
+        #  - ``participants`` — initial sender-side list (email-only entries).
+        #    The hub builds the real participants list via ``/members`` invites
+        #    + ``/join``, which stamps a real ``user_id`` per joiner.
+        # All of the above were producing ``None API field !!!`` errors on the
+        # hub at create because the hub schema doesn't declare them. They
+        # have no hub semantics; the SDK simply shouldn't be sending them.
         body = self.model_dump(
             mode="json",
             exclude_none=True,
-            exclude={"private_context_entities_", "created_by", "updated_by", "created_date", "updated_date"},
+            exclude={
+                "private_context_entities_",
+                "private_context_entities",   # Pydantic computed field — backend computes it
+                "created_by", "updated_by",
+                "created_date", "updated_date",
+                "remote", "system", "orphan",
+                "message_count",
+                "tags", "project_id", "participants",
+            },
         )
 
         path = build_hub_url(self.get_type())
