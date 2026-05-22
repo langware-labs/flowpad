@@ -319,10 +319,10 @@ export function UserDropdown() {
       />
 
       <Dialog open={isAccountDialogOpen} onOpenChange={setIsAccountDialogOpen}>
-        <DialogContent className="flex h-[520px] max-w-md flex-col">
+        <DialogContent className="flex h-[520px] max-w-lg flex-col">
           <DialogHeader className="shrink-0">
-            <DialogTitle>Account Details</DialogTitle>
-            <DialogDescription>View your account information and user details</DialogDescription>
+            <DialogTitle>Settings</DialogTitle>
+            <DialogDescription>Configure your account, app preferences, and notifications</DialogDescription>
           </DialogHeader>
           {currentUser && <AccountInfo user={currentUser} />}
         </DialogContent>
@@ -389,7 +389,7 @@ export function UserDropdown() {
                   data-testid="agent-page-account-details-button"
                 >
                   <UserIcon className="mr-2 h-4 w-4" />
-                  Account Details
+                  Settings
                 </DropdownMenuItem>
                 {/* Logout below = *cloud* logout. A local-only user (no cloud
                     login) is anonymous — the Login branch should fire. If you
