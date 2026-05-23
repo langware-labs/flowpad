@@ -30,11 +30,7 @@ async def cross_link_file_to_process(
     transition, etc.) see the new ``private_context_entities_`` entry —
     otherwise they would overwrite this cross-link.
     """
-    if not file_path or proc is None:
-        return None
     md_path_str = str(file_path)
-    if not md_path_str.endswith(".md"):
-        return None
 
     # Lazy imports keep this module importable from non-server contexts.
     from flow_sdk.builtin.agentic_process import AgenticProcess

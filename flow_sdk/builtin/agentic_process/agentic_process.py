@@ -2923,13 +2923,20 @@ class AgenticProcess(Entity):
         from flow_sdk.transcript_analyzer.entries.file_write import FileWriteEntry
         from flow_sdk.transcript_analyzer.file_cross_link import cross_link_file_to_process
 
+        # Dedup cross-link calls per (path) within one flush — Claude/Codex
+        # often write+read the same .md file multiple times in a turn, and the
+        # helper hits the DB once per call (5 markdown-subclass lookups each).
+        cross_linked: set[str] = set()
         for entry in entries:
             if isinstance(entry, ExitPlanModeEntry) and entry.plan_file_path:
+                # Order matters: cross-link save first so the entity-update
+                # WS broadcast precedes plan.create. Consumers reading
+                # AP.private_context_entities on the event see the link.
+                await self.on_plan_created(entry)
                 await self.emit_entity_event(
                     "plan.create",
                     {"plan_file_path": entry.plan_file_path, "session_id": self.session_id},
                 )
-                await self.on_plan_created(entry)
                 continue
 
             if isinstance(entry, (FileReadEntry, FileWriteEntry, FileEditEntry)):
@@ -2937,11 +2944,16 @@ class AgenticProcess(Entity):
                 if not path or not path.endswith(".md"):
                     continue
                 op = "read" if isinstance(entry, FileReadEntry) else "write"
+                # Cross-link save before the file.{op} broadcast — WS messages
+                # are delivered in send order, so a consumer subscribed to both
+                # sees the cross-link applied before acting on file.{op}.
+                if path not in cross_linked:
+                    await cross_link_file_to_process(path, self)
+                    cross_linked.add(path)
                 await self.emit_entity_event(
                     f"file.{op}",
                     {"path": path, "tool_name": getattr(entry, "tool_name", "")},
                 )
-                await cross_link_file_to_process(path, self)
 
     async def _flush_transcript_change(self) -> None:
         """Run after the debounce window on this AP's transcript.
@@ -3034,6 +3046,7 @@ class AgenticProcess(Entity):
         await cross_link_plan_to_process(
             entry.plan_file_path,
             self.session_id or entry.session_id,
+            proc=self,
         )
 
     async def _find_resumable_session(self, session_id: str) -> str | None:
