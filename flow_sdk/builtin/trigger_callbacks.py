@@ -3,7 +3,7 @@
 Consumers register named Python handlers at module init time:
 
     @trigger_callbacks.register("toplog_config_changed", meaning="reload toplog state")
-    async def _on_change(trigger, changed_path, change_type):
+    async def _on_change(trigger, changes: list[ChangeEvent]):
         ...
 
 A Trigger with `action_type=CALLBACK` and `callback_name="toplog_config_changed"`

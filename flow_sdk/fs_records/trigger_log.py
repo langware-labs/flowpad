@@ -62,6 +62,12 @@ class TriggerLogRecord(Record):
             "event_kind": entry_dict.get("event_kind"),       # hook|schedule_fire|file_change|test|None
             "changed_path": entry_dict.get("changed_path"),   # FSOp: str|None
             "change_type": entry_dict.get("change_type"),     # FSOp: added|modified|deleted|test|None
+            # Batch fields — populated by FSOp fires; one row per debounce window.
+            # `changes` is capped (see _LOG_CAP in fsop_watcher); `changes_total`
+            # is the un-capped event count.
+            "changes": entry_dict.get("changes"),                       # FSOp: list[{path, change_type}]|None
+            "changes_total": entry_dict.get("changes_total"),           # FSOp: int|None
+            "changes_truncated": entry_dict.get("changes_truncated"),   # FSOp: int|None
             "trigger": entry_dict.get("trigger", False),
             "reason": entry_dict.get("reason", ""),
             "is_test": entry_dict.get("is_test", False),

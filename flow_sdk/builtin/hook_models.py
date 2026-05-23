@@ -18,6 +18,8 @@ from typing import Any, Optional
 
 from pydantic import BaseModel
 
+from flow_sdk.builtin.change_event import ChangeEvent
+
 _log = logging.getLogger(__name__)
 
 _DEFAULT_SCRIPT_TIMEOUT_S = 30.0
@@ -116,10 +118,8 @@ class WebhookHandleResult(BaseModel):
 class TriggerActionHandler(ABC):
     """Base class for trigger action handlers.
 
-    The handler signature accepts the trigger plus optional event context. Legacy
-    handlers (NOP, NOTIFY_ENTITY) ignore the extras. New handlers (RUN_SCRIPT,
-    CALLBACK) consume them. Existing dispatch sites passing only `(trigger,)`
-    continue to work via the default kwarg values.
+    All handlers receive a `changes: list[ChangeEvent]`. Schedule/hook fires
+    pass an empty list; FSOp fires pass 1..N events per debounce window.
     """
 
     @abstractmethod
@@ -127,8 +127,7 @@ class TriggerActionHandler(ABC):
         self,
         trigger: Any,
         action: Optional["TriggerAction"] = None,
-        changed_path: Any = None,
-        change_type: Any = None,
+        changes: Optional[list["ChangeEvent"]] = None,
     ) -> None:
         """Execute the action on the trigger."""
         pass
@@ -137,26 +136,31 @@ class TriggerActionHandler(ABC):
 class NopActionHandler(TriggerActionHandler):
     """Handler for NOP action - does nothing."""
 
-    async def execute(self, trigger: Any, action: Optional["TriggerAction"] = None, changed_path: Any = None, change_type: Any = None) -> None:
-        """Execute NOP action - no operation."""
+    async def execute(self, trigger: Any, action: Optional["TriggerAction"] = None, changes: Optional[list["ChangeEvent"]] = None) -> None:
         pass
 
 
 class NotifyEntityActionHandler(TriggerActionHandler):
-    """Handler for NOTIFY_ENTITY action - increments counter."""
+    """Handler for NOTIFY_ENTITY action — bumps trigger.counter by 1 ONLY when
+    invoked from a context that didn't already count (i.e. HOOK triggers via
+    `Trigger.execute_action`, which calls `handler.execute(self)` with no
+    `changes` kwarg). FSOp `_fire` and Schedule `_fire_schedule_job` both pass
+    an explicit `changes` list (possibly empty) AND already incremented the
+    counter themselves — double-counting them was a pre-existing bug that the
+    batch refactor would have amplified to `2 * len(changes)`.
+    """
 
-    async def execute(self, trigger: Any, action: Optional["TriggerAction"] = None, changed_path: Any = None, change_type: Any = None) -> None:
-        """Execute NOTIFY_ENTITY action - increments counter."""
-        trigger.counter += 1
+    async def execute(self, trigger: Any, action: Optional["TriggerAction"] = None, changes: Optional[list["ChangeEvent"]] = None) -> None:
+        if changes is None:
+            trigger.counter += 1
 
 
 class CallbackActionHandler(TriggerActionHandler):
     """Handler for CALLBACK action — dispatches to a Python handler registered
     via `@trigger_callbacks.register(name)`.
 
-    Looks up `action.callback_name` in the registry; if found, invokes it with
-    `(trigger, changed_path, change_type)`. Sync handlers are called directly;
-    async handlers are awaited. Missing callback name → warning logged, no crash.
+    Invokes `cb(trigger, changes)`. Sync handlers are called directly; async
+    handlers are awaited. Missing callback name → warning logged, no crash.
     Exceptions raised by the user's handler propagate out — the fire-loop is
     responsible for isolating them and continuing to the next action.
     """
@@ -165,8 +169,7 @@ class CallbackActionHandler(TriggerActionHandler):
         self,
         trigger: Any,
         action: Optional["TriggerAction"] = None,
-        changed_path: Any = None,
-        change_type: Any = None,
+        changes: Optional[list["ChangeEvent"]] = None,
     ) -> None:
         if action is None or action.callback_name is None:
             _log.warning("CALLBACK action on %s has no callback_name", getattr(trigger, "name", "?"))
@@ -181,7 +184,7 @@ class CallbackActionHandler(TriggerActionHandler):
                 action.callback_name,
             )
             return
-        result = cb(trigger, changed_path, change_type)
+        result = cb(trigger, changes or [])
         if inspect.isawaitable(result):
             await result
 
@@ -197,63 +200,100 @@ def _ensure_executable(path: Path) -> None:
 async def _exec_script(
     script_path: Path,
     trigger: Any,
-    changed_path: Any,
-    change_type: Any,
+    changes: Optional[list["ChangeEvent"]],
     timeout_seconds: float = _DEFAULT_SCRIPT_TIMEOUT_S,
 ) -> RunResult:
     """Run an external script via asyncio.create_subprocess_exec.
 
-    Passes TRIGGER_ID / TRIGGER_NAME / CHANGED_PATH / CHANGE_TYPE as env vars so
-    the script can read what fired it. Captures stdout/stderr (truncated to
-    _SCRIPT_OUTPUT_CAP). Kills the process at `timeout_seconds`.
+    Env vars: TRIGGER_ID / TRIGGER_NAME / CHANGES_COUNT / FIRST_CHANGED_PATH /
+    FIRST_CHANGE_TYPE for quick access; the full batch is serialized to a
+    tempfile (cross-platform via tempfile.NamedTemporaryFile) and its path
+    passed via CHANGES_JSON_PATH so scripts that need the batch can read it.
+
+    Captures stdout/stderr (truncated to _SCRIPT_OUTPUT_CAP). Kills the
+    process at `timeout_seconds`. Cleans up the tempfile after the subprocess.
     """
-    env = {
-        **os.environ,
-        "TRIGGER_ID": str(getattr(trigger, "id", "")),
-        "TRIGGER_NAME": str(getattr(trigger, "name", "")),
-        "CHANGED_PATH": str(changed_path) if changed_path is not None else "",
-        "CHANGE_TYPE": str(change_type) if change_type is not None else "",
-    }
-    proc = await asyncio.create_subprocess_exec(
-        str(script_path),
-        env=env,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        cwd=str(Path(script_path).parent),
-    )
-    t0 = time.monotonic()
-    timed_out = False
+    import json
+    import tempfile
+
+    changes = changes or []
+    first = changes[0] if changes else None
+    payload = [{"path": str(c.path), "change_type": c.change_type} for c in changes]
+
+    # Captured up-front so the outer finally can clean up even if
+    # tempfile setup or json.dump/flush raises midway.
+    changes_json_path: str | None = None
     try:
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout_seconds)
-    except asyncio.TimeoutError:
-        proc.kill()
-        timed_out = True
+        tmp = tempfile.NamedTemporaryFile(
+            mode="w", suffix=".json", delete=False, encoding="utf-8"
+        )
+        # tmp.name is valid as soon as NamedTemporaryFile returns; capture it
+        # before the dump so a json.dump / flush failure still hits cleanup.
+        changes_json_path = tmp.name
         try:
-            stdout, stderr = await proc.communicate()
-        except Exception:
-            stdout, stderr = b"", b""
-    duration_ms = int((time.monotonic() - t0) * 1000)
-    return RunResult(
-        stdout=stdout.decode(errors="replace")[:_SCRIPT_OUTPUT_CAP] if stdout else "",
-        stderr=stderr.decode(errors="replace")[:_SCRIPT_OUTPUT_CAP] if stderr else "",
-        returncode=proc.returncode,
-        duration_ms=duration_ms,
-        timed_out=timed_out,
-        script_path=str(script_path),
-    )
+            json.dump(payload, tmp)
+            tmp.flush()
+        finally:
+            tmp.close()
+
+        env = {
+            **os.environ,
+            "TRIGGER_ID": str(getattr(trigger, "id", "")),
+            "TRIGGER_NAME": str(getattr(trigger, "name", "")),
+            "CHANGES_COUNT": str(len(changes)),
+            "FIRST_CHANGED_PATH": str(first.path) if first else "",
+            "FIRST_CHANGE_TYPE": first.change_type if first else "",
+            "CHANGES_JSON_PATH": changes_json_path,
+        }
+        proc = await asyncio.create_subprocess_exec(
+            str(script_path),
+            env=env,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=str(Path(script_path).parent),
+        )
+        t0 = time.monotonic()
+        timed_out = False
+        try:
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=timeout_seconds)
+        except asyncio.TimeoutError:
+            proc.kill()
+            timed_out = True
+            try:
+                stdout, stderr = await proc.communicate()
+            except Exception:
+                stdout, stderr = b"", b""
+        duration_ms = int((time.monotonic() - t0) * 1000)
+        return RunResult(
+            stdout=stdout.decode(errors="replace")[:_SCRIPT_OUTPUT_CAP] if stdout else "",
+            stderr=stderr.decode(errors="replace")[:_SCRIPT_OUTPUT_CAP] if stderr else "",
+            returncode=proc.returncode,
+            duration_ms=duration_ms,
+            timed_out=timed_out,
+            script_path=str(script_path),
+        )
+    finally:
+        if changes_json_path is not None:
+            try:
+                os.unlink(changes_json_path)
+            except OSError:
+                pass
 
 
 class RunScriptActionHandler(TriggerActionHandler):
     """Subprocess-execute a script. Source order: external `action.script_path` →
     embedded `trigger.data_dir / action.script_filename` → warn + no-op.
+
+    One subprocess per fire (i.e. per debounce batch), not per event. The full
+    batch is delivered via CHANGES_JSON_PATH; FIRST_* env vars give quick access
+    to the head of the batch for simple scripts.
     """
 
     async def execute(
         self,
         trigger: Any,
         action: Optional["TriggerAction"] = None,
-        changed_path: Any = None,
-        change_type: Any = None,
+        changes: Optional[list["ChangeEvent"]] = None,
         timeout_seconds: float = _DEFAULT_SCRIPT_TIMEOUT_S,
     ) -> Optional[RunResult]:
         if action is None:
@@ -265,7 +305,7 @@ class RunScriptActionHandler(TriggerActionHandler):
             ext = Path(action.script_path)
             if ext.exists():
                 return await _exec_script(
-                    ext, trigger, changed_path, change_type, timeout_seconds=timeout_seconds
+                    ext, trigger, changes, timeout_seconds=timeout_seconds
                 )
             # External path was set but file is missing — fall through to embedded.
 
@@ -290,7 +330,7 @@ class RunScriptActionHandler(TriggerActionHandler):
             # Ensure +x before exec (embedded files won't have it from write_file).
             _ensure_executable(embedded)
             return await _exec_script(
-                embedded, trigger, changed_path, change_type, timeout_seconds=timeout_seconds
+                embedded, trigger, changes, timeout_seconds=timeout_seconds
             )
 
         _log.warning(

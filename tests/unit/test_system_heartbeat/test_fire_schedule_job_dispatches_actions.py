@@ -29,7 +29,7 @@ async def test_callback_action_dispatched_on_schedule_fire(initialize_test_db) -
     runs: list[str] = []
 
     @trigger_callbacks.register("test_schedule_cb")
-    async def _cb(_trigger, _changed_path, _change_type) -> None:
+    async def _cb(_trigger, _changes) -> None:
         runs.append("cb-fired")
 
     trigger = await Trigger(
@@ -56,11 +56,11 @@ async def test_one_failing_action_does_not_skip_siblings(initialize_test_db) -> 
     runs: list[str] = []
 
     @trigger_callbacks.register("cb_crash")
-    async def _crash(_t, _p, _c) -> None:
+    async def _crash(_t, _changes) -> None:
         raise RuntimeError("intentional")
 
     @trigger_callbacks.register("cb_ok")
-    async def _ok(_t, _p, _c) -> None:
+    async def _ok(_t, _changes) -> None:
         runs.append("ok")
 
     trigger = await Trigger(

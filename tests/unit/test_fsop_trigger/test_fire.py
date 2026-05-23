@@ -12,6 +12,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from flow_sdk.builtin import trigger_callbacks
+from flow_sdk.builtin.change_event import ChangeEvent
 from flow_sdk.builtin.hook_models import ActionType, TriggerAction
 from flow_sdk.builtin.trigger import Trigger, TriggerType
 from flow_sdk.server.fsop_watcher import _fire
@@ -67,14 +68,14 @@ def _make_trigger(
 async def test_fire_bumps_counter(trigger_log_dir):
     t = _make_trigger(watch_path="/tmp/x")
     assert t.counter == 0
-    await _fire(t, Path("/tmp/x"), "modified")
+    await _fire(t, [ChangeEvent(path=Path("/tmp/x"), change_type="modified")])
     assert t.counter == 1
 
 
 async def test_fire_updates_last_triggered(trigger_log_dir):
     t = _make_trigger(watch_path="/tmp/x")
     assert t.last_triggered is None
-    await _fire(t, Path("/tmp/x"), "modified")
+    await _fire(t, [ChangeEvent(path=Path("/tmp/x"), change_type="modified")])
     assert t.last_triggered is not None
 
 
@@ -86,7 +87,7 @@ async def test_fire_updates_last_seen_for_file_mode(tmp_path, trigger_log_dir):
     target.write_text("hello")
     t = _make_trigger(watch_path=str(target))
 
-    await _fire(t, target, "modified")
+    await _fire(t, [ChangeEvent(path=target, change_type="modified")])
     st = target.stat()
     assert t.last_seen_mtime == st.st_mtime
     assert t.last_seen_size == st.st_size
@@ -100,7 +101,7 @@ async def test_fire_clears_last_seen_when_file_deleted(tmp_path, trigger_log_dir
     t.last_seen_size = 1
 
     target.unlink()
-    await _fire(t, target, "deleted")
+    await _fire(t, [ChangeEvent(path=target, change_type="deleted")])
     assert t.last_seen_mtime is None
     assert t.last_seen_size is None
 
@@ -113,7 +114,7 @@ async def test_fire_does_not_update_last_seen_for_folder_mode(tmp_path, trigger_
     child.write_text("c")
     t = _make_trigger(watch_path=str(folder))
 
-    await _fire(t, child, "modified")
+    await _fire(t, [ChangeEvent(path=child, change_type="modified")])
     assert t.last_seen_mtime is None  # folder mode skips file-fingerprint
     assert t.last_seen_size is None
 
@@ -123,7 +124,7 @@ async def test_fire_does_not_update_last_seen_for_folder_mode(tmp_path, trigger_
 
 async def test_disabled_trigger_no_fire(trigger_log_dir):
     t = _make_trigger(watch_path="/tmp/x", enabled=False)
-    await _fire(t, Path("/tmp/x"), "modified")
+    await _fire(t, [ChangeEvent(path=Path("/tmp/x"), change_type="modified")])
     assert t.counter == 0
     assert t.last_triggered is None
 
@@ -151,7 +152,7 @@ async def test_fire_dispatches_each_action_in_order(trigger_log_dir):
         ],
     )
 
-    await _fire(t, Path("/tmp/x"), "modified")
+    await _fire(t, [ChangeEvent(path=Path("/tmp/x"), change_type="modified")])
     assert calls == ["a", "b"]
 
 
@@ -176,14 +177,14 @@ async def test_fire_continues_after_action_failure(trigger_log_dir):
     )
 
     # _fire must not propagate the inner exception
-    await _fire(t, Path("/tmp/x"), "modified")
+    await _fire(t, [ChangeEvent(path=Path("/tmp/x"), change_type="modified")])
     assert calls == ["good"]
     assert t.counter == 1  # counter still bumped
 
 
 async def test_fire_with_empty_actions_just_bumps_counter(trigger_log_dir):
     t = _make_trigger(watch_path="/tmp/x", actions=[])
-    await _fire(t, Path("/tmp/x"), "modified")
+    await _fire(t, [ChangeEvent(path=Path("/tmp/x"), change_type="modified")])
     assert t.counter == 1
 
 
@@ -192,7 +193,7 @@ async def test_fire_with_empty_actions_just_bumps_counter(trigger_log_dir):
 
 async def test_fire_writes_trigger_log_entry(trigger_log_dir):
     t = _make_trigger(name="log_test", watch_path="/tmp/x")
-    await _fire(t, Path("/tmp/x"), "modified")
+    await _fire(t, [ChangeEvent(path=Path("/tmp/x"), change_type="modified")])
 
     log_file = trigger_log_dir / "log_test" / "calls.jsonl"
     assert log_file.exists()
