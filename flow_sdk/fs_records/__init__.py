@@ -15,6 +15,7 @@ from .agent_status import is_idle as is_worker_idle
 from .agent_status import is_terminal as is_worker_terminal
 from .artifact import Artifact as Artifact
 from .markdown_record import MarkdownRecord as MarkdownRecord
+from .markdown_index_record import MarkdownIndexRecord as MarkdownIndexRecord
 from .annotation_record import AnnotationRecord as AnnotationRecord
 from .app_secret import AppSecretRecord as AppSecretRecord
 from .bookmark import BookmarkRecord as BookmarkRecord

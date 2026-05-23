@@ -570,6 +570,14 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
+   * Create dock pointer for the LLM Indexers lens — lists MarkdownIndex
+   * entities, lets the user run / view each indexer.
+   */
+  static forLlmIndexers(layout: Layout = Layout.DOCK): DockPointer {
+    return DockPointer.forLens('fs-records', 'llm-indexers', '', layout);
+  }
+
+  /**
    * Create a dock pointer for the transcript lens, dispatching by worker.
    *
    * - claude: ref is `<projectEncodedName>/<sessionId>` (legacy claude viewer).

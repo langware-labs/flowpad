@@ -318,6 +318,7 @@ class BuiltinEntityType(Enum):
     PROCESS_RESULT = "process_result"
     WORKFLOW = "workflow"
     SKILL = "skill"
+    MARKDOWN_INDEX = "markdown_index"
     WHITEBOARD = "whiteboard"
     SHELL = "shell"
     CRON_EVENT = "cron_event"

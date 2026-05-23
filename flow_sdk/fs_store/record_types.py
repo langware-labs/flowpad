@@ -112,6 +112,7 @@ class RecordType(StrEnum):
     WORKFLOW = "workflow"
 
     MARKDOWN = "markdown"
+    MARKDOWN_INDEX = "markdown_index"
     SPEC = "spec"
     CONVERSATION = "conversation"
     WHITEBOARD = "whiteboard"

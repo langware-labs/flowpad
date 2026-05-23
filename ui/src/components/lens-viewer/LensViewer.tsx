@@ -7,6 +7,7 @@ import { ClaudeContextViewer } from './ClaudeContextViewer';
 import { ClaudeErrorsViewer } from './ClaudeErrorsViewer';
 import { ClaudeTasksViewer } from './ClaudeTasksViewer';
 import { FsRecordsScannerViewer } from './FsRecordsScannerViewer';
+import { LlmIndexersViewer } from './LlmIndexersViewer';
 import { TranscriptViewer } from './shared/transcript-features';
 import { HeartbeatEventsViewer } from './HeartbeatEventsViewer';
 import { TriggerLogViewer } from './TriggerLogViewer';
@@ -131,6 +132,8 @@ export function LensViewer() {
       return <ClaudeContextViewer />;
     case 'fs-records/scan':
       return <FsRecordsScannerViewer />;
+    case 'fs-records/llm-indexers':
+      return <LlmIndexersViewer />;
     case 'trigger/log':
       return <TriggerLogViewer triggerId={lensParts.ref} />;
     default:

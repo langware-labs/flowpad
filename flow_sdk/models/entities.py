@@ -110,4 +110,9 @@ try:
 except ImportError as e:
     print(f"[WARN] Failed to import claude memory entities: {e}")
 
+try:
+    from flow_sdk.builtin.markdown_index import MarkdownIndex  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import MarkdownIndex: {e}")
+
 __all__ = []
