@@ -9,10 +9,15 @@ Hierarchy:
     └── ClaudeMd      — CLAUDE.md files (type="claude_md")
 """
 
-from typing import ClassVar, List
+from typing import ClassVar, List, Type
 
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.core import Entity
+from flow_sdk.core.entity.context_data_schemas import (
+    ClaudeMdContextData,
+    MarkdownContextData,
+    PlanContextData,
+)
 
 
 class Markdown(Entity):
@@ -32,6 +37,11 @@ class Markdown(Entity):
     parent_path: str = APIField(default="")
     vault_root: str = APIField(default="")
     _api_visible: ClassVar[bool] = True
+    # Sidecar shape when another entity puts a `markdown-<id>` /
+    # `claude_memory-<id>` / `claude_rules-<id>` / `docs-<id>` reference in
+    # its context bucket. The carried path lets the dock loader self-heal
+    # a 404 by single-file-indexing this markdown file.
+    context_data_schema: ClassVar[Type] = MarkdownContextData
 
 
 class Docs(Markdown):
@@ -62,6 +72,7 @@ class ClaudePlan(Markdown):
     asset_type: str = APIField(default="plan")
     _api_visible: ClassVar[bool] = True
     _icon: ClassVar[str] = "FileText"
+    context_data_schema: ClassVar[Type] = PlanContextData
 
 
 class ClaudeMd(Markdown):
@@ -71,3 +82,4 @@ class ClaudeMd(Markdown):
     filename: str = APIField(default="")
     _api_visible: ClassVar[bool] = True
     _icon: ClassVar[str] = "BookOpen"
+    context_data_schema: ClassVar[Type] = ClaudeMdContextData

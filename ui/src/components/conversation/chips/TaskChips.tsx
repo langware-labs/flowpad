@@ -139,11 +139,14 @@ export function TaskChips({
         // through here automatically once the WS broadcast updates the
         // entity. Tooltip falls back to EntityChip's default
         // "Open <Type>: <name>".
+        const sidecar = task.getContextEntryData(typeId);
+        const hintPath = typeof sidecar?.path === 'string' ? sidecar.path : undefined;
         return (
           <ContextEntityChip
             key={key}
             typeId={typeId}
             inside={conversationContainer}
+            hintPath={hintPath}
           />
         );
       })}

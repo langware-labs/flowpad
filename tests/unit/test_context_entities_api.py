@@ -14,6 +14,7 @@ Per-entity ``_direct_fields_as_typeids`` overrides for Task / Spec /
 Conversation / CollaborationRoom still feed only the *private* view.
 """
 
+from flow_sdk.builtin.claude_memory_entities import ClaudePlan  # noqa: F401 — registers ClaudePlan for SchemaRegistry lookups in the schema-validation test below
 from flow_sdk.builtin.collaboration_room import CollaborationRoom
 from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.builtin.spec import Spec
@@ -323,3 +324,87 @@ def test_private_context_excluded_from_share_dump():
     assert "private_context_entities_" not in body
     # Shared lands on the wire as plain ``shared_context_entities``.
     assert SPEC_ID_2 in str(body.get("shared_context_entities", []))
+
+
+# ── Per-type sidecar data + schema validation (v1.1) ─────────────────
+
+
+def test_add_context_entry_data_validates_against_target_schema(monkeypatch):
+    """ClaudePlan declares ``context_data_schema = PlanContextData``
+    (``{path: str}``). Good data: stored as-is, no warning. Missing path:
+    Pydantic validation fails, we WARN, but the bad data is still stored
+    so the hint reaches the dock loader (best-effort contract).
+
+    We monkeypatch ``service_log.warn`` rather than using caplog because
+    the ``flow_sdk.service_log`` logger has its own handler and doesn't
+    propagate predictably under pytest's caplog harness.
+    """
+    import flow_sdk.service_log as service_log_module
+
+    captured: list[str] = []
+    monkeypatch.setattr(service_log_module, "warn", lambda msg: captured.append(msg))
+
+    task = Task(title="t")
+    plan_tid = TypeId(type="plan", id=PLAN_ID_1)
+    plan_typeid_str = f"plan-{PLAN_ID_1}"
+
+    # Good data — schema validates, dict stored, no warning.
+    task.add_private_context_entities(plan_tid, data={"path": "/tmp/foo.md"})
+    assert task.private_context_entity_data == {
+        plan_typeid_str: {"path": "/tmp/foo.md"}
+    }
+    assert not any("context_entry_data validation failed" in m for m in captured)
+
+    # Bad data — schema rejects, warning emitted, but data is STILL stored
+    # so the dock loader gets the hint anyway.
+    task2 = Task(title="t2")
+    task2.add_private_context_entities(plan_tid, data={"not_path": 123})
+    assert task2.private_context_entity_data == {
+        plan_typeid_str: {"not_path": 123}
+    }
+    assert any(
+        "context_entry_data validation failed for plan-" in m for m in captured
+    )
+
+
+def test_share_dump_excludes_both_sidecar_fields():
+    """The hub push body (``share()``) must NOT include either sidecar
+    field — the stored ``path`` is an absolute local-FS path that's both
+    PII for peers and meaningless off-host. This test mirrors the
+    exclude set used in ``Entity.share()`` to lock the contract."""
+    task = Task(title="t")
+    plan_tid = TypeId(type="plan", id=PLAN_ID_1)
+    spec_tid = TypeId(type="spec", id=SPEC_ID_1)
+
+    task.add_shared_context_entities(spec_tid, data={"path": "/Users/alice/local.md"})
+    task.add_private_context_entities(plan_tid, data={"path": "/Users/alice/plan.md"})
+
+    body = task.model_dump(
+        mode="json",
+        exclude_none=True,
+        exclude={
+            "private_context_entities_",
+            "private_context_entities",
+            "private_context_entity_data",
+            "shared_context_entity_data",
+            "created_by", "updated_by",
+            "created_date", "updated_date",
+        },
+    )
+    # Typeids still travel — they're machine-agnostic identifiers.
+    assert SPEC_ID_1 in str(body.get("shared_context_entities", []))
+    # Sidecar payloads do NOT — neither bucket.
+    assert "shared_context_entity_data" not in body
+    assert "private_context_entity_data" not in body
+
+
+def test_add_context_entry_data_passes_through_for_unschema_d_type():
+    """Types without ``context_data_schema`` (e.g. Task) accept any dict
+    without validation — no schema declared, no warning, free-form
+    storage."""
+    task = Task(title="t")
+    # Reference a Task typeid that has no context_data_schema declared.
+    other_task_tid = TypeId(type="task", id=TASK_ID_1)
+    task.add_private_context_entities(other_task_tid, data={"anything": "goes", "n": 7})
+    key = f"task-{TASK_ID_1}"
+    assert task.private_context_entity_data[key] == {"anything": "goes", "n": 7}

@@ -1,7 +1,8 @@
-from typing import ClassVar
+from typing import ClassVar, Type
 
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.core import Entity
+from flow_sdk.core.entity.context_data_schemas import SkillContextData
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 
 
@@ -24,3 +25,7 @@ class Skill(Entity):
     asset_ref: str = APIField(default="")
     _api_visible: ClassVar[bool] = True
     _icon: ClassVar[str] = "Sparkles"
+    # Sidecar shape when another entity puts a `skill-<id>` reference in its
+    # context bucket — carries the SKILL.md path for the dock loader's 404
+    # self-heal.
+    context_data_schema: ClassVar[Type] = SkillContextData

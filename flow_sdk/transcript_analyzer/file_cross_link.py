@@ -52,11 +52,14 @@ async def cross_link_file_to_process(
         _log.debug("cross_link_file_to_process: no markdown entity for %s — skipped", md_path_str)
         return None
 
+    # The AP-side entry carries the markdown path so a chip click that 404s
+    # (entity not yet indexed) can self-heal via single-file-index.
     changed_md = md_entity.add_private_context_entities(
         TypeId(type=AgenticProcess.get_type(), id=proc.id)
     )
     changed_proc = proc.add_private_context_entities(
-        TypeId(type=type(md_entity).get_type(), id=md_entity.id)
+        TypeId(type=type(md_entity).get_type(), id=md_entity.id),
+        data={"path": md_path_str},
     )
     if changed_md:
         try:

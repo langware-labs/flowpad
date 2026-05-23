@@ -31,24 +31,8 @@ class PlanHandler:
         await cross_link_plan_to_process(entry.plan_file_path, entry.session_id)
 
 
-async def _index_single_plan(plan_md_path: Path) -> None:
-    """Scoped PLAN-only indexer pass for one .md file.
-
-    `claude_plan_fn` looks for `<root>/.claude/plans/*.md`. Plan files live
-    under `~/.claude/plans/` or `<project>/.claude/plans/`, so walking up two
-    parents from the .md file lands on the correct root in either layout.
-    `force=True` bypasses skip-fresh.
-    """
-    from flow_sdk.fs_store.fs_ref import FSRef
-    from flow_sdk.fs_store.indexer.functions.claude_plan import claude_plan_fn
-    from flow_sdk.fs_store.indexer.index_function import FSIndexer, IndexerOptions
-    from flow_sdk.fs_store.record_types import RecordType
-
-    plan_root = plan_md_path.parent.parent.parent
-    idx = FSIndexer(
-        roots=[FSRef(plan_root, record_type=RecordType.USER_HOME_FOLDER)]
-    )
-    idx.add_function(RecordType.USER_HOME_FOLDER, claude_plan_fn)
-    await idx.index(
-        IndexerOptions(types=[RecordType.PLAN], force=True, verbose=False)
-    )
+# Re-export so existing callers (plan_cross_link.py:77) keep working without
+# import-path changes. The implementation now lives in single_file_indexers.py
+# alongside the markdown / skill / claude_md / claude_memory / claude_rules /
+# command equivalents — all share the same generic _index_single_file helper.
+from .single_file_indexers import _index_single_plan as _index_single_plan  # noqa: F401

@@ -273,6 +273,12 @@ async def test_plan_handler_creates_cross_link(tmp_path: Path, clean_db) -> None
     assert (AgenticProcess.get_type(), proc.id) in plan_links
     assert (ClaudePlan.get_type(), plan.id) in proc_links
 
+    # The AP-side context entry must carry the plan's path so the dock loader
+    # can self-heal a 404 by single-file-indexing without a reverse-id lookup.
+    plan_typeid = f"{ClaudePlan.get_type()}-{plan.id}"
+    proc_sidecar = proc_reloaded.private_context_entity_data or {}
+    assert proc_sidecar.get(plan_typeid, {}).get("path") == str(plan_md)
+
 
 @pytest.mark.asyncio
 async def test_plan_handler_idempotent_on_replay(tmp_path: Path, clean_db) -> None:
@@ -543,4 +549,72 @@ async def test_indexer_force_redispatches(tmp_path: Path, clean_db) -> None:
     await idx.index(IndexerOptions(verbose=False, force=True))
     assert counter.count == 2, (
         f"force=True should re-fire the handler (count={counter.count})"
+    )
+
+
+# ── v1.2: per-type single-file self-heal indexers ──────────────────────────
+#
+# These cover the registry expanded in flow_sdk/server/routes/graph.py for the
+# dock loader's ?hint_path=... self-heal path.
+
+
+@pytest.mark.asyncio
+async def test_index_single_markdown_creates_row(tmp_path: Path, clean_db) -> None:
+    """A fresh .md under .claude/docs/ should become a Docs entity row when
+    _index_single_markdown is invoked on its path. Mirrors the production
+    self-heal flow: the chip carries data.path → graph.py registry dispatch
+    → row exists on retry."""
+    from flow_sdk.builtin.claude_memory_entities import Docs
+    from flow_sdk.fs_store.transcript_indexer.handlers.single_file_indexers import (
+        _index_single_markdown,
+    )
+
+    home = tmp_path / "home"
+    docs = home / ".claude" / "docs"
+    docs.mkdir(parents=True)
+    md = docs / "self-heal-smoke.md"
+    md.write_text("# self-heal smoke\n\nbody\n", encoding="utf-8")
+
+    # Sanity: no row exists yet.
+    pre = await Docs.get_one({"asset_ref": str(md)})
+    assert pre is None
+
+    await _index_single_markdown(md)
+
+    post = await Docs.get_one({"asset_ref": str(md)})
+    assert post is not None, (
+        "_index_single_markdown should have created a Docs row for the fresh file"
+    )
+    assert post.asset_ref == str(md)
+
+
+@pytest.mark.asyncio
+async def test_index_single_skill_creates_row(tmp_path: Path, clean_db) -> None:
+    """A fresh skill folder under .claude/skills/<name>/ should become a Skill
+    entity row when _index_single_skill is invoked on either the dir or the
+    SKILL.md inside it. The chip self-heal harvests one or the other."""
+    from flow_sdk.builtin.skill import Skill
+    from flow_sdk.fs_store.transcript_indexer.handlers.single_file_indexers import (
+        _index_single_skill,
+    )
+
+    home = tmp_path / "home"
+    skill_dir = home / ".claude" / "skills" / "smoke-skill"
+    skill_dir.mkdir(parents=True)
+    skill_md = skill_dir / "SKILL.md"
+    skill_md.write_text(
+        "---\nname: smoke-skill\ndescription: smoke\n---\n\nbody\n",
+        encoding="utf-8",
+    )
+
+    pre = await Skill.get_one({"asset_ref": str(skill_dir)})
+    assert pre is None
+
+    # Hint can be the SKILL.md path (typical when the cross-link harvested a
+    # file path) — the wrapper normalizes to the dir.
+    await _index_single_skill(skill_md)
+
+    post = await Skill.get_one({"asset_ref": str(skill_dir)})
+    assert post is not None, (
+        "_index_single_skill should have created a Skill row for the fresh skill folder"
     )
