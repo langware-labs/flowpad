@@ -113,6 +113,16 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    * Read via ``privateContextEntities`` (identity getter).
    */
   private _private_context_entities_: TypeId[] = [];
+  /**
+   * Per-entry sidecar storage harvested by the backend at detection time.
+   * Keyed by ``str(typeid)`` (e.g. ``"plan-b034e56e-..."``). Mirrors the
+   * Python-side ``shared_context_entity_data`` / ``private_context_entity_data``
+   * fields. For file-backed types this typically holds ``{path}`` so a dock
+   * loader 404 can self-heal via ``?hint_path=...`` without a reverse-id
+   * lookup. Read via ``getContextEntryData(typeid)``.
+   */
+  private _shared_context_entity_data: Record<string, Record<string, unknown>> = {};
+  private _private_context_entity_data: Record<string, Record<string, unknown>> = {};
   _isLoaded: boolean = false;
   static nextInstanceIndex: number = 0;
   _instanceIndex: number = APIEntity.nextInstanceIndex++;
@@ -389,6 +399,26 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
       );
     }
     delete (this as any).private_context_entities;
+
+    // Per-entry sidecar data (shared + private buckets). Same lift-into-
+    // private-storage / drop-public-alias dance as the typeid arrays above
+    // so toJSON's dynamic iterator doesn't double-emit them.
+    const fromWireSharedData = (this as any).shared_context_entity_data as
+      | Record<string, Record<string, unknown>>
+      | undefined;
+    if (fromWireSharedData && typeof fromWireSharedData === 'object') {
+      this._shared_context_entity_data = { ...fromWireSharedData };
+    }
+    delete (this as any).shared_context_entity_data;
+
+    const fromWirePrivateData = (this as any).private_context_entity_data as
+      | Record<string, Record<string, unknown>>
+      | undefined;
+    if (fromWirePrivateData && typeof fromWirePrivateData === 'object') {
+      this._private_context_entity_data = { ...fromWirePrivateData };
+    }
+    delete (this as any).private_context_entity_data;
+
     const proxy = getProxy(this);
     dataManager.register_new_entity(this.typeId, proxy);
     return proxy;
@@ -461,6 +491,9 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
       // the dynamic-property iterator below; the ``privateContextEntities``
       // getter folds them in at read time on this client only.
       shared_context_entities: this._shared_context_entities_.map((t) => t.toString()),
+      // Per-entry sidecar — only the shared bucket survives toJSON, matching
+      // the backend's share() exclusion of the private one.
+      shared_context_entity_data: { ...this._shared_context_entity_data },
     };
 
     // Dynamically add all enumerable properties of the instance
@@ -852,6 +885,21 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    *  projection. */
   public get privateContextEntities(): TypeId[] {
     return [...this._private_context_entities_];
+  }
+
+  /**
+   * Return the per-entry sidecar data harvested by the backend at detection
+   * time (e.g. ``{path: "/Users/.../foo.md"}`` for file-backed entries).
+   * Checks the private sidecar first (matches the backend precedence), then
+   * shared. Returns ``undefined`` when no data was harvested for the typeid.
+   *
+   * Use this when rendering a chip that may navigate to an entity that
+   * hasn't been indexed yet — pass ``data.path`` as ``?hint_path=...`` to
+   * the entity GET so the BE can self-heal the 404 by single-file-indexing.
+   */
+  public getContextEntryData(typeid: TypeId | string): Record<string, unknown> | undefined {
+    const key = typeid instanceof TypeId ? typeid.toString() : typeid;
+    return this._private_context_entity_data[key] ?? this._shared_context_entity_data[key];
   }
 
   // NOTE: ``addContextEntities`` / ``removeContextEntities`` /

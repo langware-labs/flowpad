@@ -105,11 +105,14 @@ async def cross_link_plan_to_process(
         plan_path_changed = True
 
     # (4) Cross-link via private_context_entities (both directions, dedup'd).
+    # The AP-side entry carries the plan's path so a chip click that 404s
+    # (entity not yet indexed) can self-heal via single-file-index.
     changed_plan = plan.add_private_context_entities(
         TypeId(type=AgenticProcess.get_type(), id=proc.id)
     )
     changed_proc_link = proc.add_private_context_entities(
-        TypeId(type=ClaudePlan.get_type(), id=plan.id)
+        TypeId(type=ClaudePlan.get_type(), id=plan.id),
+        data={"path": plan_path_str},
     )
 
     # (5) Save each side only when something actually changed.

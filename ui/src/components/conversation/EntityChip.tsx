@@ -4,6 +4,7 @@ import type { LucideIcon } from 'lucide-react';
 import { APIEntity, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { useChipPrewarm } from '@src/navigation/useChipPrewarm';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 
 /**
@@ -159,7 +160,7 @@ export function EntityChip({ entity, inside, onClick, title, size = 'chip' }: En
  * router validates and 404s gracefully if there is no matching view —
  * silent no-ops on click are worse than a visible "unknown view" page.
  */
-function buildDockPointer(
+export function buildDockPointer(
   resolved: { type: string; id: string },
   inside: { type: string; id: string } | undefined,
   assetRef?: string,
@@ -206,6 +207,14 @@ interface ContextEntityChipProps {
   onClick?: () => void;
   title?: string;
   size?: 'chip' | 'inline';
+  /** Sidecar `data.path` harvested by the BE at cross-link time for this
+   *  typeid (looked up on the parent entity via
+   *  ``parent.getContextEntryData(typeId)?.path``). When set, the chip
+   *  fires `GET /graph/<type>/<id>?hint_path=<path>` before navigation so
+   *  the dock view finds a self-healed row even if the indexer hasn't
+   *  walked this file yet. Optional — when undefined the chip behaves
+   *  exactly as it did pre-v1.2 (direct navigation, possible 404). */
+  hintPath?: string;
 }
 
 /**
@@ -219,7 +228,7 @@ interface ContextEntityChipProps {
  */
 const ASSET_CHIP_TYPES = new Set(['skill', 'agent', 'markdown']);
 
-export function ContextEntityChip({ typeId, inside, onClick, title, size }: ContextEntityChipProps) {
+export function ContextEntityChip({ typeId, inside, onClick, title, size, hintPath }: ContextEntityChipProps) {
   const { data } = useEntity<APIEntity<any>>(typeId);
   const resolvedName = data?.displayName ?? typeId.toString();
   // Asset entities (skill / agent / markdown) carry an `asset_ref` VFS path —
@@ -234,6 +243,7 @@ export function ContextEntityChip({ typeId, inside, onClick, title, size }: Cont
   // (post-fix) or — pre-fix — bake the entity UUID into the URL, where the
   // asset editor's path-keyed lookup would 404 and cache that forever.
   const { navigation } = useDockNavigation();
+  const prewarm = useChipPrewarm();
   const pendingNavRef = useRef(false);
   const needsDeferral = ASSET_CHIP_TYPES.has(typeId.type) && !assetRef;
 
@@ -245,25 +255,48 @@ export function ContextEntityChip({ typeId, inside, onClick, title, size }: Cont
     if (pointer) navigation.openDock(pointer);
   }, [assetRef, typeId.type, navigation]);
 
-  // When the entity row isn't ready, swallow the click into a pending flag
-  // and let the effect above fire navigation as soon as ``assetRef`` lands.
-  // Otherwise let ``EntityChip`` route the click through its default
-  // ``buildDockPointer`` path.
-  const deferringOnClick = needsDeferral
-    ? () => {
-        if (onClick) {
-          onClick();
-          return;
-        }
-        pendingNavRef.current = true;
+  // On click:
+  //   * If `onClick` was overridden, prewarm then defer to it.
+  //   * If the chip needs deferral (asset chip without resolved assetRef),
+  //     ARM `pendingNavRef` SYNCHRONOUSLY before awaiting prewarm — otherwise
+  //     the deferral useEffect (deps: [assetRef, typeId.type, navigation])
+  //     can fire on assetRef arrival during the await with pendingNavRef
+  //     still false, and won't re-run later when the flag flips. Then
+  //     await prewarm; the effect picks up navigation when assetRef lands.
+  //   * Otherwise, do the default type+id navigation via buildDockPointer
+  //     (exported so we don't duplicate its dispatch table here).
+  const handleClick = async () => {
+    if (onClick) {
+      await prewarm(typeId, hintPath);
+      onClick();
+      return;
+    }
+    if (needsDeferral) {
+      pendingNavRef.current = true;
+      await prewarm(typeId, hintPath);
+      // If assetRef already arrived while we awaited, fire navigation now
+      // since the effect's last run was before pendingNavRef was set.
+      if (assetRef) {
+        pendingNavRef.current = false;
+        const pointer = DockPointer.forAssetEditor(typeId.type, assetRef);
+        if (pointer) navigation.openDock(pointer);
       }
-    : onClick;
+      return;
+    }
+    await prewarm(typeId, hintPath);
+    const pointer = buildDockPointer(
+      { type: typeId.type, id: typeId.id },
+      inside,
+      assetRef ?? undefined,
+    );
+    if (pointer) navigation.openDock(pointer);
+  };
 
   return (
     <EntityChip
       entity={{ typeId, type: typeId.type, id: typeId.id, name: resolvedName, assetRef }}
       inside={inside}
-      onClick={deferringOnClick}
+      onClick={handleClick}
       title={title}
       size={size}
     />

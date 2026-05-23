@@ -14,6 +14,7 @@ import type { APIEntity } from '@sdk';
 import { Skill, Spec, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { useChipPrewarm } from '@src/navigation/useChipPrewarm';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ICON_BY_TYPE } from '../conversation/EntityChip';
 
@@ -108,6 +109,21 @@ export function EntityContextPanel({ entity }: EntityContextPanelProps) {
   }, [entity]);
 
   const { navigation } = useDockNavigation();
+  const prewarm = useChipPrewarm();
+
+  /**
+   * Chip click → optionally pre-warm the BE self-heal, then navigate. When
+   * the parent entity harvested a path for this typeid (file-backed types:
+   * plan, markdown, skill, etc.), `prewarm` fires a GET with `?hint_path=`
+   * so a not-yet-indexed row exists by the time the dock view loads.
+   */
+  const openChip = async (typeId: TypeId, assetRef: string | null | undefined) => {
+    const sidecar = entity.getContextEntryData(typeId);
+    const hintPath = typeof sidecar?.path === 'string' ? sidecar.path : undefined;
+    await prewarm(typeId, hintPath);
+    const ptr = dockPointerFor(typeId, assetRef);
+    if (ptr) navigation.openDock(ptr);
+  };
 
   const handleSubmit = async (event?: FormEvent<HTMLFormElement>) => {
     event?.preventDefault();
@@ -178,8 +194,7 @@ export function EntityContextPanel({ entity }: EntityContextPanelProps) {
                 key={typeId.toString()}
                 typeId={typeId}
                 onOpen={(assetRef) => {
-                  const ptr = dockPointerFor(typeId, assetRef);
-                  if (ptr) navigation.openDock(ptr);
+                  void openChip(typeId, assetRef);
                 }}
               />
             ))}
@@ -198,8 +213,7 @@ export function EntityContextPanel({ entity }: EntityContextPanelProps) {
                 key={typeId.toString()}
                 typeId={typeId}
                 onOpen={(assetRef) => {
-                  const ptr = dockPointerFor(typeId, assetRef);
-                  if (ptr) navigation.openDock(ptr);
+                  void openChip(typeId, assetRef);
                 }}
               />
             ))}
