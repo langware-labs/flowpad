@@ -351,13 +351,18 @@ async function routePlainShellPointer(pointer: string): Promise<void> {
 // failures that originated outside `loadNextProcess`. Phrasing matches.
 function buildProcessCleanupForRoute(e: ProcessLoadError): CleanupRecord {
   switch (e.kind) {
-    case 'not_found':
+    case 'entity_not_found':
       return { kind: 'process_not_found', processId: e.processId, title: 'Session not found', description: 'Agentic process does not exist.' };
-    case 'start_failed': {
+    case 'network_error': {
+      const desc = describeProcessStartError(e.cause ?? e);
+      return { kind: 'process_start_failed', processId: e.processId, shellId: e.shellId ?? undefined, title: 'Couldn’t reach backend', description: desc.description };
+    }
+    case 'runtime_terminated':
+    case 'pty_attach_failed': {
       const desc = describeProcessStartError(e.cause ?? e);
       return { kind: 'process_start_failed', processId: e.processId, shellId: e.shellId ?? undefined, title: desc.title, description: desc.description };
     }
-    case 'no_shell':
+    case 'shell_entity_missing':
       return { kind: 'process_no_shell', processId: e.processId, shellId: e.shellId ?? undefined, title: 'Session unavailable', description: 'No shell is linked to this process.' };
     case 'project_missing':
       return { kind: 'process_project_missing', processId: e.processId, shellId: e.shellId ?? undefined, title: 'Project not found', description: 'Could not recover this session’s project.' };
