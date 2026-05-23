@@ -1,5 +1,6 @@
 import { RecordSearchBar } from '@src/components/record-search-bar/RecordSearchBar';
 import { SearchResultCard } from '@src/components/record-search-bar/SearchResultCard';
+import { ScopeFilterBar } from '@src/components/scope-filter/ScopeFilterBar';
 import { SearchCalibrationPanel } from '@src/components/search-calibration/SearchCalibrationPanel';
 import { ActivityIndicator } from '@src/components/search-index/ActivityIndicator';
 import { IndexNowModal } from '@src/components/search-index/IndexNowModal';
@@ -8,10 +9,12 @@ import { Badge } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@src/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
-import { dataManager, systemTools } from '@sdk';
+import { dataContext, dataManager, systemTools } from '@sdk';
 import { SearchCalibration, SearchFilters, loadStoredCalibration, saveCalibration, useRecordSearch } from '@src/hooks/use-record-search';
 import { useIndexStatus } from '@src/hooks/use-index-status';
 import { useSystemTools } from '@src/hooks/use-system-tools';
+import { defaultScopeFilter, type ScopeFilter } from '@src/lib/scope-filter';
+import { projectIdForPath } from '@src/components/assets/utils';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { AlertCircle, FileSearch, Menu, PackageSearch, SlidersHorizontal } from 'lucide-react';
@@ -79,6 +82,13 @@ export function SearchView() {
 
   const { busy, resetAndRescan } = useSystemTools();
 
+  const currentProjectId = projectIdForPath(dataContext.project?.fs_storage_mount_path);
+  const [scope, setScope] = useState<ScopeFilter>(() => defaultScopeFilter(currentProjectId));
+  // Re-seed scope when the active project changes so the picker tracks context.
+  useEffect(() => {
+    setScope(defaultScopeFilter(currentProjectId));
+  }, [currentProjectId]);
+
   // Re-seed progress state from backend after page refresh so the footer
   // indicator reappears mid-job. The modal stays closed until the user opens
   // it explicitly via the footer indicator.
@@ -87,8 +97,8 @@ export function SearchView() {
   }, []);
 
   const handleRebuildIndex = useCallback(() => {
-    void resetAndRescan();
-  }, [resetAndRescan]);
+    void resetAndRescan(scope);
+  }, [resetAndRescan, scope]);
 
   const [scanInfo, setScanInfo] = useState(() => dataManager.scanInfo);
   useEffect(() => dataManager.onScanInfoChange(setScanInfo), []);
@@ -134,7 +144,7 @@ export function SearchView() {
     currentDock?.options?.time_end,
   ]);
 
-  const { results, isLoading, error, indexerReady, latencyMs } = useRecordSearch(query, filters, calibration);
+  const { results, isLoading, error, indexerReady, latencyMs } = useRecordSearch(query, filters, calibration, scope);
 
   // Push query/filter changes to URL so browser history and sharing work
   const handleQueryChange = useCallback(
@@ -214,6 +224,10 @@ export function SearchView() {
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
+      </div>
+
+      <div className="shrink-0">
+        <ScopeFilterBar scope={scope} currentProjectId={currentProjectId} onScopeChange={setScope} />
       </div>
 
       {/* Search bar row — with refresh button */}

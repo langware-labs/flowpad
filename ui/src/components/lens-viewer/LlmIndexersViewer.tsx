@@ -9,7 +9,7 @@
  * Mirrors the existing useSpawnRunner pattern; AgenticProcess is reused as-is.
  */
 
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ListTree, Play, FileText, Loader2, RefreshCw } from 'lucide-react';
 import {
   AgenticProcess,
@@ -19,13 +19,30 @@ import {
   dataContext,
 } from '@sdk';
 import { ClaudeCliOptions } from '@sdk/cli_workers/claude-cli';
+import { projectIdForPath } from '@src/components/assets/utils';
+import { ScopeFilterBar } from '@src/components/scope-filter/ScopeFilterBar';
+import { useAllProjects } from '@src/hooks/use-all-projects';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { useToast } from '@src/hooks/use-toast';
+import { defaultScopeFilter, type ScopeFilter } from '@src/lib/scope-filter';
 import { Button } from '@src/components/ui/button';
 import { ScrollArea } from '@src/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+
+/** Strip trailing slashes so equal-and-startswith comparisons are stable. */
+function normalizePath(p: string): string {
+  return p.replace(/\/+$/, '');
+}
+
+/** True when ``child`` lives at-or-under ``parent`` (path-segment aware). */
+function isInsidePath(child: string, parent: string): boolean {
+  const c = normalizePath(child);
+  const p = normalizePath(parent);
+  if (!p) return false;
+  return c === p || c.startsWith(p + '/');
+}
 
 function statusLabel(latestProcessId: string | undefined): { label: string; tone: 'idle' | 'running' | 'done' | 'error' } {
   if (!latestProcessId) return { label: 'never run', tone: 'idle' };
@@ -48,7 +65,31 @@ export function LlmIndexersViewer() {
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const request = useMemo(() => new QueryRequest({ type: MarkdownIndex.type }), []);
-  const { data: indexes = [], isLoading, refetch } = useEntitiesQuery<MarkdownIndex>(request);
+  const { data: allIndexes = [], isLoading, refetch } = useEntitiesQuery<MarkdownIndex>(request);
+
+  const currentProjectId = projectIdForPath(dataContext.project?.fs_storage_mount_path);
+  const [scope, setScope] = useState<ScopeFilter>(() => defaultScopeFilter(currentProjectId));
+  useEffect(() => {
+    setScope(defaultScopeFilter(currentProjectId));
+  }, [currentProjectId]);
+
+  // Project mount paths drive the in-scope check: an index whose vault_root
+  // lives under a selected project is in-scope; an index whose vault_root
+  // is outside every project's mount path is "user-area" and follows scope.user.
+  // Project IDs in `scope.projects` are the records form (uuid5(DNS,
+  // "project:<mount>")) — useAllProjects gives us the mount via `cwd`, so we
+  // re-derive that form to compare apples to apples.
+  const { projects: allProjects } = useAllProjects();
+  const indexes = useMemo(() => {
+    return allIndexes.filter((idx) => {
+      const vr = idx.vault_root;
+      // Configuration rows with no vault_root: treat as user-area.
+      if (!vr) return scope.user;
+      const matching = allProjects.find((p) => p.cwd && isInsidePath(vr, p.cwd));
+      if (matching) return scope.projects.includes(projectIdForPath(matching.cwd) ?? '');
+      return scope.user;
+    });
+  }, [allIndexes, allProjects, scope]);
 
   const runRebuild = useCallback(async (index: MarkdownIndex) => {
     if (!index.vault_root) {
@@ -131,20 +172,27 @@ export function LlmIndexersViewer() {
             </span>
           )}
         </div>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-7 gap-1.5 text-xs"
-              onClick={() => void refetch()}
-            >
-              <RefreshCw className="h-3.5 w-3.5" />
-              Refresh
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Reload the MarkdownIndex list.</TooltipContent>
-        </Tooltip>
+        <div className="flex items-center gap-2">
+          <ScopeFilterBar
+            scope={scope}
+            currentProjectId={currentProjectId}
+            onScopeChange={setScope}
+          />
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 gap-1.5 text-xs"
+                onClick={() => void refetch()}
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                Refresh
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Reload the MarkdownIndex list.</TooltipContent>
+          </Tooltip>
+        </div>
       </div>
 
       <ScrollArea className="flex-1">
