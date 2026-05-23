@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from flow_sdk.builtin import trigger_callbacks
+from flow_sdk.builtin.change_event import ChangeEvent
 from flow_sdk.builtin.hook_models import ActionType, TriggerAction
 from flow_sdk.builtin.trigger import TriggerType
 from flow_sdk.transcript_streamer.registry import transcript_streamer_registry
@@ -28,11 +29,14 @@ _log = logging.getLogger(__name__)
             "to the per-session TranscriptStreamer. The streamer parses the "
             "delta and dispatches typed entries to registered subscribers.",
 )
-async def _route(_trigger: Any, changed_path: Any, _change_type: Any) -> None:
-    try:
-        await transcript_streamer_registry.notify_change(Path(changed_path))
-    except Exception:
-        _log.exception("transcript_streamer route: notify_change failed for %s", changed_path)
+async def _route(_trigger: Any, changes: list[ChangeEvent]) -> None:
+    # Per-path notify_change preserves session routing — different paths belong
+    # to different streamers, so batching downstream isn't useful.
+    for ch in changes:
+        try:
+            await transcript_streamer_registry.notify_change(Path(ch.path))
+        except Exception:
+            _log.exception("transcript_streamer route: notify_change failed for %s", ch.path)
 
 
 def transcript_watcher_trigger_specs(settings: Any) -> list[dict[str, Any]]:

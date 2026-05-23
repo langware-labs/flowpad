@@ -11,6 +11,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from flow_sdk.builtin.change_event import ChangeEvent
 from flow_sdk.builtin.hook_models import (
     ActionType,
     RunScriptActionHandler,
@@ -28,6 +29,10 @@ def _make_fake_trigger(name: str = "t", trigger_id: str = "test-id-001") -> Magi
     t.name = name
     t.id = trigger_id
     return t
+
+
+def _changes(path: str = "/tmp/x", change_type: str = "modified") -> list[ChangeEvent]:
+    return [ChangeEvent(path=Path(path), change_type=change_type)]
 
 
 def _make_script(tmp_path: Path, name: str, body: str) -> Path:
@@ -50,7 +55,7 @@ async def test_external_path_executes(tmp_path):
 
     handler = RunScriptActionHandler()
     action = TriggerAction(action_type=ActionType.RUN_SCRIPT, script_path=str(script))
-    await handler.execute(_make_fake_trigger(), action=action, changed_path="/tmp/x", change_type="modified")
+    await handler.execute(_make_fake_trigger(), action=action, changes=_changes("/tmp/x", "modified"))
 
     assert marker.exists(), "script should have created marker file"
 
@@ -61,7 +66,7 @@ async def test_external_path_stdout_captured(tmp_path):
 
     handler = RunScriptActionHandler()
     action = TriggerAction(action_type=ActionType.RUN_SCRIPT, script_path=str(script))
-    result = await handler.execute(_make_fake_trigger(), action=action, changed_path="/tmp/x", change_type="modified")
+    result = await handler.execute(_make_fake_trigger(), action=action, changes=_changes("/tmp/x", "modified"))
 
     assert result is not None, "handler must return a RunResult"
     assert "hello-stdout" in result.stdout
@@ -72,7 +77,7 @@ async def test_external_path_stderr_captured(tmp_path):
 
     handler = RunScriptActionHandler()
     action = TriggerAction(action_type=ActionType.RUN_SCRIPT, script_path=str(script))
-    result = await handler.execute(_make_fake_trigger(), action=action, changed_path="/tmp/x", change_type="modified")
+    result = await handler.execute(_make_fake_trigger(), action=action, changes=_changes("/tmp/x", "modified"))
     assert "oops" in result.stderr
 
 
@@ -81,7 +86,7 @@ async def test_external_path_returncode_zero_on_success(tmp_path):
 
     handler = RunScriptActionHandler()
     action = TriggerAction(action_type=ActionType.RUN_SCRIPT, script_path=str(script))
-    result = await handler.execute(_make_fake_trigger(), action=action, changed_path="/tmp/x", change_type="modified")
+    result = await handler.execute(_make_fake_trigger(), action=action, changes=_changes("/tmp/x", "modified"))
     assert result.returncode == 0
     assert result.timed_out is False
 
@@ -91,17 +96,18 @@ async def test_external_path_returncode_nonzero(tmp_path):
 
     handler = RunScriptActionHandler()
     action = TriggerAction(action_type=ActionType.RUN_SCRIPT, script_path=str(script))
-    result = await handler.execute(_make_fake_trigger(), action=action, changed_path="/tmp/x", change_type="modified")
+    result = await handler.execute(_make_fake_trigger(), action=action, changes=_changes("/tmp/x", "modified"))
     assert result.returncode == 7
 
 
 async def test_external_path_env_vars_set(tmp_path):
-    """Script receives TRIGGER_ID, TRIGGER_NAME, CHANGED_PATH, CHANGE_TYPE env vars."""
+    """Script receives TRIGGER_ID, TRIGGER_NAME, CHANGES_COUNT, FIRST_CHANGED_PATH,
+    FIRST_CHANGE_TYPE, CHANGES_JSON_PATH env vars."""
     out = tmp_path / "env.txt"
     script = _make_script(
         tmp_path,
         "s.sh",
-        f"#!/usr/bin/env bash\necho id=$TRIGGER_ID > {out}\necho name=$TRIGGER_NAME >> {out}\necho path=$CHANGED_PATH >> {out}\necho type=$CHANGE_TYPE >> {out}\n",
+        f"#!/usr/bin/env bash\necho id=$TRIGGER_ID > {out}\necho name=$TRIGGER_NAME >> {out}\necho count=$CHANGES_COUNT >> {out}\necho path=$FIRST_CHANGED_PATH >> {out}\necho type=$FIRST_CHANGE_TYPE >> {out}\necho json=$CHANGES_JSON_PATH >> {out}\n",
     )
 
     handler = RunScriptActionHandler()
@@ -109,15 +115,18 @@ async def test_external_path_env_vars_set(tmp_path):
     await handler.execute(
         _make_fake_trigger(name="my_trigger", trigger_id="abc-123"),
         action=action,
-        changed_path="/path/to/file",
-        change_type="modified",
+        changes=_changes("/path/to/file", "modified"),
     )
 
     contents = out.read_text()
     assert "id=abc-123" in contents
     assert "name=my_trigger" in contents
+    assert "count=1" in contents
     assert "path=/path/to/file" in contents
     assert "type=modified" in contents
+    # CHANGES_JSON_PATH is set to a tempfile path; just check it's non-empty.
+    json_line = next(ln for ln in contents.splitlines() if ln.startswith("json="))
+    assert len(json_line) > len("json=")
 
 
 async def test_external_path_missing_logs_warning_no_crash(caplog, tmp_path):
@@ -126,7 +135,7 @@ async def test_external_path_missing_logs_warning_no_crash(caplog, tmp_path):
     handler = RunScriptActionHandler()
     action = TriggerAction(action_type=ActionType.RUN_SCRIPT, script_path=str(tmp_path / "missing.sh"))
     # Should not raise
-    await handler.execute(_make_fake_trigger(), action=action, changed_path="/x", change_type="modified")
+    await handler.execute(_make_fake_trigger(), action=action, changes=_changes("/x", "modified"))
 
 
 async def test_external_path_short_timeout_killed(tmp_path):
@@ -139,8 +148,7 @@ async def test_external_path_short_timeout_killed(tmp_path):
     result = await handler.execute(
         _make_fake_trigger(),
         action=action,
-        changed_path="/x",
-        change_type="modified",
+        changes=_changes("/x", "modified"),
         timeout_seconds=1.0,
     )
     assert result.timed_out is True
@@ -152,5 +160,5 @@ async def test_external_path_duration_recorded(tmp_path):
     script = _make_script(tmp_path, "s.sh", '#!/usr/bin/env bash\nexit 0\n')
     handler = RunScriptActionHandler()
     action = TriggerAction(action_type=ActionType.RUN_SCRIPT, script_path=str(script))
-    result = await handler.execute(_make_fake_trigger(), action=action, changed_path="/x", change_type="modified")
+    result = await handler.execute(_make_fake_trigger(), action=action, changes=_changes("/x", "modified"))
     assert result.duration_ms >= 0

@@ -87,8 +87,8 @@ async def test_file_change_fires(tmp_path, trigger_log_dir):
     calls: list[Path] = []
 
     @trigger_callbacks.register("cb_file")
-    async def on_change(trigger, changed_path, change_type):
-        calls.append(Path(changed_path))
+    async def on_change(trigger, changes):
+        calls.append(changes[0].path)
 
     t = _make_callback_trigger(target, callback_name="cb_file")
 
@@ -124,8 +124,8 @@ async def test_unrelated_file_in_same_dir_no_fire(tmp_path, trigger_log_dir):
     calls: list[Path] = []
 
     @trigger_callbacks.register("cb_unrelated")
-    async def on_change(trigger, changed_path, change_type):
-        calls.append(Path(changed_path))
+    async def on_change(trigger, changes):
+        calls.append(changes[0].path)
 
     t = _make_callback_trigger(target, callback_name="cb_unrelated")
 
@@ -159,8 +159,8 @@ async def test_cancel_stops_loop(tmp_path, trigger_log_dir):
     calls: list[Path] = []
 
     @trigger_callbacks.register("cb_cancel")
-    async def on_change(trigger, changed_path, change_type):
-        calls.append(Path(changed_path))
+    async def on_change(trigger, changes):
+        calls.append(changes[0].path)
 
     t = _make_callback_trigger(target, callback_name="cb_cancel")
     task = asyncio.create_task(_run_watch_for(t))
@@ -192,8 +192,8 @@ async def test_folder_change_fires_on_child(tmp_path, trigger_log_dir):
     calls: list[Path] = []
 
     @trigger_callbacks.register("cb_folder")
-    async def on_change(trigger, changed_path, change_type):
-        calls.append(Path(changed_path))
+    async def on_change(trigger, changes):
+        calls.append(changes[0].path)
 
     t = _make_callback_trigger(folder, callback_name="cb_folder")
     task = asyncio.create_task(_run_watch_for(t))
@@ -223,8 +223,8 @@ async def test_folder_recursive_false_ignores_subtree(tmp_path, trigger_log_dir)
     calls: list[Path] = []
 
     @trigger_callbacks.register("cb_nonrec")
-    async def on_change(trigger, changed_path, change_type):
-        calls.append(Path(changed_path))
+    async def on_change(trigger, changes):
+        calls.append(changes[0].path)
 
     t = _make_callback_trigger(folder, callback_name="cb_nonrec", recursive=False)
     task = asyncio.create_task(_run_watch_for(t))
@@ -255,7 +255,7 @@ async def test_watcher_spawns_task_for_trigger(tmp_path, trigger_log_dir):
     t.id = "singleton-1"
 
     @trigger_callbacks.register("cb_singleton")
-    async def on_change(trigger, changed_path, change_type):
+    async def on_change(trigger, changes):
         pass
 
     watcher = FSOpWatcher()

@@ -134,11 +134,9 @@ async def _fire_schedule_job(trigger_id: str) -> None:
         entity.last_run = datetime.now(timezone.utc)
         await entity.update()
 
-        # Dispatch actions via the shared registry. ``changed_path`` and
-        # ``change_type`` are FSOp-specific event context — schedule fires
-        # don't have them, so we pass None and rely on the handler to be
-        # lenient (CallbackActionHandler is; RUN_SCRIPT propagates them as
-        # empty env vars).
+        # Dispatch actions via the shared registry. ``changes`` is empty for
+        # schedule fires — FSOp fires populate it via _fire(trigger, batch).
+        # RUN_SCRIPT then reports CHANGES_COUNT=0 / FIRST_*="" to the script.
         for action in entity.actions:
             try:
                 handler = get_action_handler(action.action_type)
@@ -148,7 +146,8 @@ async def _fire_schedule_job(trigger_id: str) -> None:
                         entity.name, action.action_type,
                     )
                     continue
-                await handler.execute(entity, action=action, changed_path=None, change_type=None)
+                # Schedule fires carry no file changes; pass an empty list.
+                await handler.execute(entity, action=action, changes=[])
             except Exception:
                 logger.exception(
                     "Schedule trigger %s: action %s raised during dispatch",
@@ -229,6 +228,10 @@ class Trigger(Entity):
     watch_glob: Optional[str] = APIField(None, description="For folder watches: glob filter, e.g. '*.json' (FSOp only)")
     last_seen_mtime: Optional[float] = APIField(None, description="File mtime at last fire (FSOp file triggers — used for restart catch-up)")
     last_seen_size: Optional[int] = APIField(None, description="File size at last fire (FSOp file triggers — used for restart catch-up)")
+    step_ms: int = APIField(50, description="awatch poll interval in ms (FSOp only). Lower = snappier; higher = less CPU. Default matches watchfiles' default.")
+    debounce_ms: int = APIField(1600, description="awatch debounce in ms — max wait before yielding a coalesced batch (FSOp only). Raise on noisy paths (npm install bursts).")
+    respect_gitignore: bool = APIField(default=False, description="If True, walk for .gitignore files under watch_path and drop matching events (FSOp only).")
+    ignore_patterns: list[str] = APIField(default_factory=list, description="Extra gitignore-style ignore patterns (FSOp only). Applied in addition to .gitignore.")
 
     _api_visible: ClassVar[bool] = True
     _unique: ClassVar[list[str]] = []
@@ -644,8 +647,10 @@ class Trigger(Entity):
             if not self.watch_path:
                 return ApiFailResponse(message="Trigger has no watch_path configured.")
             from pathlib import Path as _Path
+            from flow_sdk.builtin.change_event import ChangeEvent
             from flow_sdk.server.fsop_watcher import _fire as _fsop_fire
-            await _fsop_fire(self, _Path(self.watch_path), "test", is_test=True)
+            test_event = ChangeEvent(path=_Path(self.watch_path), change_type="test")
+            await _fsop_fire(self, [test_event], is_test=True)
             updated = await Trigger.get_by_id(self.id) if self.id else self
             return ApiSuccessResponse(data={"status": "fired", "counter": updated.counter if updated else self.counter, "is_test": True})
 

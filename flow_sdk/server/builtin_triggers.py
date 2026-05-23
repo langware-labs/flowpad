@@ -15,6 +15,7 @@ import logging
 from typing import Any
 
 from flow_sdk.builtin import trigger_callbacks
+from flow_sdk.builtin.change_event import ChangeEvent
 from flow_sdk.builtin.hook_models import ActionType, TriggerAction
 from flow_sdk.builtin.trigger import Trigger, TriggerType
 from flow_sdk.instance_settings import get_instance_settings
@@ -32,14 +33,15 @@ _log = logging.getLogger(__name__)
             "the new state to UI clients. Stub while toplog Slice A is parked — "
             "the trigger's counter still increments on every fire.",
 )
-async def _toplog_filter_apply(trigger: Trigger, changed_path: Any, change_type: Any) -> None:
+async def _toplog_filter_apply(trigger: Trigger, changes: list[ChangeEvent]) -> None:
     # When toplog Slice A lands, this re-reads the filter and applies it to
     # `logging.getLogger("toplog.*")` + broadcasts over WS. Until then the fire
     # path itself (counter bump → entity update → WS) is the demonstration surface.
-    _log.info(
-        "builtin_toplog_filter_apply: %s changed (%s); toplog Slice A parked",
-        changed_path, change_type,
-    )
+    for ch in changes:
+        _log.info(
+            "builtin_toplog_filter_apply: %s changed (%s); toplog Slice A parked",
+            ch.path, ch.change_type,
+        )
 
 
 # ── Spec list ────────────────────────────────────────────────────────────────

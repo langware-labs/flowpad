@@ -56,7 +56,7 @@ async def test_dispatch_runs_all_tasks() -> None:
     async def _b() -> None:
         runs.append("b")
 
-    await sh._dispatch_heartbeat(None, None, None)
+    await sh._dispatch_heartbeat(None, [])
     assert sorted(runs) == ["a", "b"]
 
 
@@ -73,7 +73,7 @@ async def test_dispatch_isolates_task_failures(caplog) -> None:
         runs.append("survivor")
 
     with caplog.at_level("ERROR"):
-        await sh._dispatch_heartbeat(None, None, None)
+        await sh._dispatch_heartbeat(None, [])
     assert runs == ["survivor"]
     assert any("heartbeat task 'crashy' raised" in r.message for r in caplog.records)
 
@@ -93,6 +93,6 @@ async def test_dispatch_enforces_per_task_timeout(monkeypatch, caplog) -> None:
         fast_ran.append("fast")
 
     with caplog.at_level("WARNING"):
-        await sh._dispatch_heartbeat(None, None, None)
+        await sh._dispatch_heartbeat(None, [])
     assert fast_ran == ["fast"]
     assert any("exceeded" in r.message and "budget" in r.message for r in caplog.records)

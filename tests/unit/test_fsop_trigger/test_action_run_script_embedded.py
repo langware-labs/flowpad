@@ -12,6 +12,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from flow_sdk.builtin.change_event import ChangeEvent
 from flow_sdk.builtin.hook_models import (
     ActionType,
     RunScriptActionHandler,
@@ -22,6 +23,10 @@ from flow_sdk.builtin.trigger import Trigger, TriggerType
 
 # do not increase timeout without approval
 pytestmark = pytest.mark.timeout(30)
+
+
+def _changes(path: str = "/tmp/x", change_type: str = "modified") -> list[ChangeEvent]:
+    return [ChangeEvent(path=Path(path), change_type=change_type)]
 
 
 @pytest.fixture
@@ -80,7 +85,7 @@ async def test_embedded_runs_from_data_dir(records_data_root, tmp_path):
 
     handler = RunScriptActionHandler()
     action = TriggerAction(action_type=ActionType.RUN_SCRIPT, script_filename="build.sh")
-    result = await handler.execute(t, action=action, changed_path="/x", change_type="modified")
+    result = await handler.execute(t, action=action, changes=_changes("/x", "modified"))
 
     assert marker.exists(), "embedded script should have created marker"
     assert result is not None
@@ -98,7 +103,7 @@ async def test_embedded_chmod_x_applied(records_data_root):
 
     handler = RunScriptActionHandler()
     action = TriggerAction(action_type=ActionType.RUN_SCRIPT, script_filename="s.sh")
-    result = await handler.execute(t, action=action, changed_path="/x", change_type="m")
+    result = await handler.execute(t, action=action, changes=_changes("/x", "m"))
     # Should not fail with permission denied
     assert result is not None
     assert result.returncode == 0
@@ -114,7 +119,7 @@ async def test_embedded_respects_shebang(records_data_root, tmp_path):
     )
     handler = RunScriptActionHandler()
     action = TriggerAction(action_type=ActionType.RUN_SCRIPT, script_filename="s.py")
-    result = await handler.execute(t, action=action, changed_path="/x", change_type="m")
+    result = await handler.execute(t, action=action, changes=_changes("/x", "m"))
     assert result.returncode == 0
     assert marker.exists()
     assert marker.read_text() == "py"
@@ -138,7 +143,7 @@ async def test_external_path_takes_precedence_over_embedded(records_data_root, t
         script_path=str(ext_script),
         script_filename="emb.sh",
     )
-    await handler.execute(t, action=action, changed_path="/x", change_type="m")
+    await handler.execute(t, action=action, changes=_changes("/x", "m"))
 
     assert external_marker.exists(), "external script should run when its path exists"
     assert not embedded_marker.exists(), "embedded should be skipped when external exists"
@@ -156,7 +161,7 @@ async def test_missing_external_falls_back_to_embedded(records_data_root, tmp_pa
         script_path=str(tmp_path / "does_not_exist.sh"),
         script_filename="emb.sh",
     )
-    result = await handler.execute(t, action=action, changed_path="/x", change_type="m")
+    result = await handler.execute(t, action=action, changes=_changes("/x", "m"))
     assert result is not None
     assert marker.exists(), "embedded fallback should have run"
 
@@ -166,7 +171,7 @@ async def test_no_external_no_embedded_warns_no_crash(records_data_root, caplog)
     t = _make_trigger_with_data(records_data_root)
     handler = RunScriptActionHandler()
     action = TriggerAction(action_type=ActionType.RUN_SCRIPT)
-    result = await handler.execute(t, action=action, changed_path="/x", change_type="m")
+    result = await handler.execute(t, action=action, changes=_changes("/x", "m"))
     assert result is None  # nothing to run
 
 
@@ -175,5 +180,5 @@ async def test_embedded_missing_file_no_crash(records_data_root, caplog):
     t = _make_trigger_with_data(records_data_root)
     handler = RunScriptActionHandler()
     action = TriggerAction(action_type=ActionType.RUN_SCRIPT, script_filename="nonexistent.sh")
-    result = await handler.execute(t, action=action, changed_path="/x", change_type="m")
+    result = await handler.execute(t, action=action, changes=_changes("/x", "m"))
     assert result is None

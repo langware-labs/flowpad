@@ -110,12 +110,43 @@ function FieldRow({ label, value, mono = false, copyable = false }: {
 }
 
 function WatchSection({ trigger }: { trigger: ITrigger }) {
+  // step_ms / debounce_ms / respect_gitignore / ignore_patterns aren't yet on
+  // the generated ITrigger type — read through an extended view so display
+  // works without a TS regen.
+  const ext = trigger as ITrigger & {
+    step_ms?: number;
+    debounce_ms?: number;
+    respect_gitignore?: boolean;
+    ignore_patterns?: string[];
+  };
+  const ignore = ext.ignore_patterns ?? [];
   return (
     <section className="space-y-1.5">
       <SectionLabel>Watch</SectionLabel>
       <FieldRow label="path" value={trigger.watch_path} mono copyable />
       <FieldRow label="recursive" value={String(trigger.recursive ?? false)} />
       <FieldRow label="glob" value={trigger.watch_glob || '—'} mono />
+      <FieldRow
+        label="pacing"
+        value={`step: ${ext.step_ms ?? 50}ms · debounce: ${ext.debounce_ms ?? 1600}ms`}
+        mono
+      />
+      <FieldRow
+        label="gitignore"
+        value={ext.respect_gitignore ? 'respected' : 'not respected'}
+      />
+      <FieldRow
+        label="ignore patterns"
+        value={ignore.length === 0
+          ? '—'
+          : (
+            <span className="flex flex-wrap gap-1">
+              {ignore.map((p, i) => (
+                <Badge key={i} variant="outline" className="h-4 px-1 text-[9px] font-mono">{p}</Badge>
+              ))}
+            </span>
+          )}
+      />
     </section>
   );
 }

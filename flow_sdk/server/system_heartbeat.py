@@ -70,7 +70,7 @@ def _registered_tasks() -> dict[str, HeartbeatTask]:
             "Iterates registered housekeeping tasks; failure isolation per task; "
             "per-task soft timeout of 5 s.",
 )
-async def _dispatch_heartbeat(_trigger: Any, _changed_path: Any, _change_type: Any) -> None:
+async def _dispatch_heartbeat(_trigger: Any, _changes: Any) -> None:
     # Snapshot the task list — a task registering or unregistering mid-tick
     # (e.g. hot-reload during dev) must not affect this tick's iteration.
     for name, task in list(_tasks.items()):
