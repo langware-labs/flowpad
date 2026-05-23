@@ -35,21 +35,27 @@ _log = logging.getLogger(__name__)
 async def cross_link_plan_to_process(
     plan_file_path: str | Path,
     session_id: str,
+    proc: Optional["AgenticProcess"] = None,
 ) -> Tuple[Optional["ClaudePlan"], Optional["AgenticProcess"]]:
     """Idempotently connect a plan file to its AgenticProcess.
+
+    When ``proc`` is provided (streamer-driven path on the AP itself), mutate
+    that live instance — querying by session_id returns a DETACHED copy whose
+    saved fields get overwritten by the live AP's subsequent save() calls
+    (see file_cross_link for the same invariant). Pre-hook + indexer call
+    sites pass session_id only.
 
     Steps:
       1. Resolve ``ClaudePlan`` by ``asset_ref``. If missing, run the scoped
          one-file PLAN reindex (``_index_single_plan``) and re-resolve.
-      2. Resolve ``AgenticProcess`` by ``session_id``.
+      2. Resolve ``AgenticProcess`` from ``proc`` arg or by ``session_id``.
       3. Set ``ap.plan_path`` if absent or stale (this is the scalar field the
          UI's "Open Plan" button reads — invariant ``hasPlan = !!plan_path``).
       4. Append each side to the other's ``private_context_entities_`` (dedup
          by ``(type, id)``).
       5. ``save()`` each side only when something changed.
 
-    Returns the resolved ``(plan, ap)`` — either may be ``None`` if unresolvable,
-    in which case earlier steps simply short-circuited.
+    Returns the resolved ``(plan, ap)`` — either may be ``None`` if unresolvable.
     """
     if not plan_file_path:
         return (None, None)
@@ -57,7 +63,7 @@ async def cross_link_plan_to_process(
     plan_path_str = str(plan_path)
     if not plan_path.exists():
         return (None, None)
-    if not session_id:
+    if proc is None and not session_id:
         return (None, None)
 
     # Late imports — this module is below the entity layer (transcript_analyzer)
@@ -81,13 +87,15 @@ async def cross_link_plan_to_process(
             _log.debug("cross_link_plan_to_process: scoped reindex of %s yielded no entity", plan_path_str)
             return (None, None)
 
-    # (2) Resolve AgenticProcess by session_id.
-    procs = await AgenticProcess.get_all(
-        entities_filter=QueryFilter(match=ExpressionNode(session_id=session_id))
-    )
-    if not procs:
-        return (plan, None)
-    proc = procs[0]
+    # (2) Resolve AgenticProcess — caller's live instance preferred over a
+    # detached DB copy (see docstring).
+    if proc is None:
+        procs = await AgenticProcess.get_all(
+            entities_filter=QueryFilter(match=ExpressionNode(session_id=session_id))
+        )
+        if not procs:
+            return (plan, None)
+        proc = procs[0]
 
     # (3) Set plan_path scalar if not already set to this path. The save() WS
     # broadcast is what lights up the "Open Plan" button in the live UI.

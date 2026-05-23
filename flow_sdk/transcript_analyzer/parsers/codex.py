@@ -507,44 +507,43 @@ class _CodexParserBase:
             if call_id and tool_name:
                 self._call_tool_name[call_id] = tool_name
             tool_use_id = call_id or str(eid or base["id"])
+            raw_input = payload.get("input") or payload.get("arguments") or ""
 
             # apply_patch decomposes into one File*Entry per file op so
             # downstream consumers can isinstance-check uniformly with Claude's
             # native Write/Edit. Delete ops have no FileDeleteEntry — skipped.
-            if tool_name == "apply_patch":
-                patch_text = payload.get("input") or payload.get("arguments") or ""
-                if isinstance(patch_text, str) and patch_text:
-                    file_entries: list[TranscriptEntry] = []
-                    for op in parse_apply_patch(patch_text):
-                        if op.op == "add":
-                            content = add_op_to_content(op)
-                            trailing = 0 if not content or content.endswith("\n") else 1
-                            file_entries.append(FileWriteEntry(
-                                path=op.path,
-                                content=content,
-                                bytes_count=len(content.encode("utf-8")),
-                                line_count=content.count("\n") + trailing,
-                                is_new=True,
-                                tool_name="apply_patch",
-                                tool_use_id=tool_use_id,
-                                **envelope, **base,
-                            ))
-                        elif op.op == "update":
-                            file_entries.append(FileEditEntry(
-                                path=op.path,
-                                hunks=update_op_to_hunks(op),
-                                tool_name="apply_patch",
-                                tool_use_id=tool_use_id,
-                                **envelope, **base,
-                            ))
-                    if file_entries:
-                        return file_entries
-                    # Zero parseable ops → fall through to generic ToolUseEntry.
+            if tool_name == "apply_patch" and isinstance(raw_input, str) and raw_input:
+                file_entries: list[TranscriptEntry] = []
+                for op in parse_apply_patch(raw_input):
+                    if op.op == "add":
+                        content = add_op_to_content(op)
+                        trailing = 0 if not content or content.endswith("\n") else 1
+                        file_entries.append(FileWriteEntry(
+                            path=op.path,
+                            content=content,
+                            bytes_count=len(content.encode("utf-8")),
+                            line_count=content.count("\n") + trailing,
+                            is_new=True,
+                            tool_name="apply_patch",
+                            tool_use_id=tool_use_id,
+                            **envelope, **base,
+                        ))
+                    elif op.op == "update":
+                        file_entries.append(FileEditEntry(
+                            path=op.path,
+                            hunks=update_op_to_hunks(op),
+                            tool_name="apply_patch",
+                            tool_use_id=tool_use_id,
+                            **envelope, **base,
+                        ))
+                if file_entries:
+                    return file_entries
+                # Zero parseable ops → fall through to generic ToolUseEntry.
 
             return [ToolUseEntry(
                 tool_name=tool_name,
                 tool_use_id=tool_use_id,
-                tool_input=self._safe_json(payload.get("input") or payload.get("arguments") or {}) or {},
+                tool_input=self._safe_json(raw_input or {}) or {},
                 **envelope,
                 **base,
             )]
