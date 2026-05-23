@@ -24,10 +24,11 @@
     "test:vitest:watch": "vitest"
   },
   "dependencies": {
-    "@hookform/resolvers": "^5.1.1",
     "@excalidraw/excalidraw": "^0.18.1",
     "@excalidraw/mermaid-to-excalidraw": "^1.1.2",
+    "@hookform/resolvers": "^5.1.1",
     "@lexical/react": "^0.32.1",
+    "@mcp-ui/client": "^7.1.1",
     "@milkdown/core": "^7.18.0",
     "@milkdown/ctx": "^7.18.0",
     "@milkdown/plugin-emoji": "^7.18.0",

@@ -15,7 +15,6 @@ export * from './shell';
 export * from './SkillManager';
 export * from './ActivationManager';
 export * from './WorkspaceSetting';
-export * from './mcp-ui';
 export * from './hooksSnifferService';
 export * from './snifferManager';
 export * from './sniffer-hook';
