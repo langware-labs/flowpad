@@ -168,7 +168,7 @@ class ClaudePlanRecord(Record):
             return "0" * 16
 
     @classmethod
-    async def from_fsref(cls, ref) -> list["ClaudePlanRecord"]:
+    def _from_fsref_sync(cls, ref) -> list["ClaudePlanRecord"]:
         """Indexer entry point — construct from an FSRef emitted by claude_plan_fn."""
         return [cls._from_md_file(ref._path)]
 

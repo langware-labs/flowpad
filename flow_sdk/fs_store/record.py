@@ -11,6 +11,7 @@ Single base class with:
 
 from __future__ import annotations
 
+import asyncio
 import copy
 import hashlib
 import json
@@ -1000,11 +1001,22 @@ class Record:
     async def from_fsref(cls, ref: "FSRef") -> list["Record"]:
         """Construct record(s) from an FSRef emitted by the indexer.
 
-        Override on every terminal record class. Returns a list so types
-        like CLAUDE_HOOK (1 settings.json -> N records) share one signature.
+        Thin async entry point: hands the sync parse body off to a worker
+        thread so the event loop stays responsive during an indexer run.
+        Subclasses override ``_from_fsref_sync`` (not this method) — the
+        bodies are pure file I/O + parsing, no async work.
+        """
+        return await asyncio.to_thread(cls._from_fsref_sync, ref)
+
+    @classmethod
+    def _from_fsref_sync(cls, ref: "FSRef") -> list["Record"]:
+        """Sync core of ``from_fsref``. Override on every terminal record class.
+
+        Returns a list so types like CLAUDE_HOOK (1 settings.json -> N records)
+        share one signature.
         """
         raise NotImplementedError(
-            f"{cls.__name__} has no from_fsref parser — override required"
+            f"{cls.__name__} has no _from_fsref_sync parser — override required"
         )
 
     @classmethod

@@ -1,7 +1,7 @@
 import { RecordSearchBar } from '@src/components/record-search-bar/RecordSearchBar';
 import { SearchResultCard } from '@src/components/record-search-bar/SearchResultCard';
 import { SearchCalibrationPanel } from '@src/components/search-calibration/SearchCalibrationPanel';
-import { ActivityProgressModal } from '@src/components/search-index/ActivityProgressModal';
+import { ActivityIndicator } from '@src/components/search-index/ActivityIndicator';
 import { IndexNowModal } from '@src/components/search-index/IndexNowModal';
 import { IndexRecommendedBanner } from '@src/components/search-index/IndexRecommendedBanner';
 import { Badge } from '@src/components/ui/badge';
@@ -14,38 +14,12 @@ import { useIndexStatus } from '@src/hooks/use-index-status';
 import { useSystemTools } from '@src/hooks/use-system-tools';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { SystemActivity, IndexProgressTable } from '@sdk';
-import { AlertCircle, FileSearch, Loader2, Menu, PackageSearch, SlidersHorizontal } from 'lucide-react';
+import { AlertCircle, FileSearch, Menu, PackageSearch, SlidersHorizontal } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 
 const LS_KEY = 'flowpad-search-filters';
 const _INDEX_APPROVED_KEY = 'flowpad-index-approved';
 const _SCAN_DISMISSED_KEY = 'flowpad-scan-dismissed';
-
-function activityPhaseLabel(activity: SystemActivity): string {
-  switch (activity) {
-    case 'archive': return 'Archiving…';
-    case 'clear': return 'Clearing index…';
-    case 'load_from_archive': return 'Restoring…';
-    case 'scan': return 'Scanning';
-    case 'index': return 'Indexing';
-  }
-}
-
-function activityLabel(activity: SystemActivity, table: IndexProgressTable | null): string {
-  const counts = table
-    ? (table.total > 0 ? `${table.done}/${table.total}` : `${table.done}`)
-    : null;
-  switch (activity) {
-    case 'archive': return 'Archiving…';
-    case 'clear': return 'Clearing index…';
-    case 'load_from_archive': return 'Restoring…';
-    case 'scan':
-      return counts ? `Scanning… ${counts}` : 'Scanning…';
-    case 'index':
-      return counts ? `Indexing… ${counts}` : 'Indexing…';
-  }
-}
 
 function loadStoredFilters(): SearchFilters {
   try {
@@ -103,8 +77,7 @@ export function SearchView() {
   });
   const [calibration, setCalibration] = useState<SearchCalibration>(loadStoredCalibration);
 
-  const { currentActivity, progressTable, busy, resetAndRescan } = useSystemTools();
-  const [progressOpen, setProgressOpen] = useState(false);
+  const { busy, resetAndRescan } = useSystemTools();
 
   // Re-seed progress state from backend after page refresh so the footer
   // indicator reappears mid-job. The modal stays closed until the user opens
@@ -275,38 +248,8 @@ export function SearchView() {
         </Tooltip>
       </div>
 
-      {/* Activity strip — shown while any system activity is running */}
-      {currentActivity && (
-        <button
-          onClick={() => setProgressOpen(true)}
-          className="shrink-0 flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-1.5 text-xs hover:bg-muted/60 transition-colors w-full text-left"
-        >
-          <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0 text-primary" />
-          <span className="text-muted-foreground shrink-0">{activityPhaseLabel(currentActivity)}</span>
-          {progressTable?.current && (
-            <span className="font-mono text-foreground truncate max-w-[180px]">
-              {progressTable.current}
-            </span>
-          )}
-          {progressTable && (
-            <>
-              <span className="ml-auto text-muted-foreground shrink-0 tabular-nums">
-                {progressTable.total > 0
-                  ? `${progressTable.done.toLocaleString()}/${progressTable.total.toLocaleString()}`
-                  : progressTable.done.toLocaleString()}
-              </span>
-              {progressTable.total > 0 && (
-                <div className="h-1 w-20 rounded-full bg-muted overflow-hidden shrink-0">
-                  <div
-                    className="h-full bg-primary rounded-full transition-all"
-                    style={{ width: `${(progressTable.done / progressTable.total) * 100}%` }}
-                  />
-                </div>
-              )}
-            </>
-          )}
-        </button>
-      )}
+      <ActivityIndicator variant="strip" />
+
 
       {/* Stale banner — between search bar and calibration panel */}
       {indexState === 'stale' && statusState.phase === 'ready' && (
@@ -383,13 +326,6 @@ export function SearchView() {
         />
       )}
 
-      {/* Activity progress detail modal */}
-      <ActivityProgressModal
-        open={progressOpen}
-        onOpenChange={setProgressOpen}
-        table={progressTable}
-        title={currentActivity ? activityLabel(currentActivity, progressTable) : 'Activity'}
-      />
     </div>
   );
 }

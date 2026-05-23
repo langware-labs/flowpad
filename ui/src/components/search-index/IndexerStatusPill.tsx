@@ -1,44 +1,19 @@
-import { Loader2, RefreshCw } from 'lucide-react';
+import { RefreshCw } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { useIndexStatus } from '@src/hooks/use-index-status';
 import { useSystemTools } from '@src/hooks/use-system-tools';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
-import type { IndexProgressTable, SystemActivity } from '@sdk';
+import type { SystemActivity } from '@sdk';
+import { ActivityIndicator } from './ActivityIndicator';
 
 /**
- * Single footer-pill replacement for the old StatusBar IndexingIndicator
- * (active-only, opens modal) AND the standalone "last indexed" pill
- * (idle-only, opens scanner page). One surface, one click target.
- *
- * Active state: spinner + `Scanning N · type` / `Indexing N/M (P%) · type`.
- * Idle state:   refresh icon + `indexed Xm ago` / `never indexed`.
- *
- * Refetches index-status whenever activity transitions to idle so the
- * label catches up without a page navigation.
+ * Footer pill. Active: spinner + progress label, click opens the progress
+ * modal. Idle: refresh icon + "indexed Xm ago", click opens Records Scanner.
+ * Refetches index-status on activity→idle so the label updates without a
+ * remount.
  */
-
-function phaseLabel(activity: SystemActivity): string {
-  switch (activity) {
-    case 'archive': return 'Archiving';
-    case 'clear': return 'Clearing index';
-    case 'load_from_archive': return 'Restoring';
-    case 'scan': return 'Scanning';
-    case 'index': return 'Indexing';
-  }
-}
-
-function activeLabel(activity: SystemActivity, table: IndexProgressTable | null): string {
-  const phase = phaseLabel(activity);
-  if (!table) return phase;
-  const current = table.current ?? '…';
-  if (table.total > 0) {
-    const pct = Math.round((table.done / table.total) * 100);
-    return `${phase} ${table.done}/${table.total} (${pct}%) · ${current}`;
-  }
-  return `${phase} ${table.done} · ${current}`;
-}
 
 function idleLabel(iso: string | null): string {
   const ago = formatTimeAgo(iso);
@@ -47,12 +22,12 @@ function idleLabel(iso: string | null): string {
 
 function idleTooltip(iso: string | null): string {
   return iso
-    ? `Last indexed: ${new Date(iso).toLocaleString()} — click to open Indexing info`
-    : 'Never indexed — click to open Indexing info';
+    ? `Last indexed: ${new Date(iso).toLocaleString()}`
+    : 'Never indexed';
 }
 
 export function IndexerStatusPill() {
-  const { currentActivity, progressTable } = useSystemTools();
+  const { currentActivity } = useSystemTools();
   const { state: indexStatus, refresh } = useIndexStatus();
   const { navigation } = useDockNavigation();
 
@@ -67,24 +42,9 @@ export function IndexerStatusPill() {
     prevActivity.current = currentActivity;
   }, [currentActivity, refresh]);
 
-  const onClick = () => navigation.openDock(DockPointer.forFsRecordsScanner());
-
-  // Active: spinner + live progress label.
+  // Active: defer to the shared indicator (opens the singleton modal on click).
   if (currentActivity) {
-    const label = activeLabel(currentActivity, progressTable);
-    return (
-      <button
-        type="button"
-        onClick={onClick}
-        className="flex items-center gap-1 rounded-sm px-1.5 text-[10px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-        title={`${label} — click to open Indexing info`}
-        aria-label={label}
-        data-testid="footer-indexer-status"
-      >
-        <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />
-        <span className="max-w-[320px] truncate tabular-nums">{label}</span>
-      </button>
-    );
+    return <ActivityIndicator variant="pill" />;
   }
 
   // Idle: never render during the initial fetch to avoid flicker.
@@ -94,11 +54,11 @@ export function IndexerStatusPill() {
   return (
     <button
       type="button"
-      onClick={onClick}
+      onClick={() => navigation.openDock(DockPointer.forFsRecordsScanner())}
       className="flex items-center gap-1 rounded-sm px-1.5 text-[10px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-      title={idleTooltip(iso)}
-      aria-label={idleTooltip(iso)}
-      data-testid="footer-indexer-status"
+      title={`${idleTooltip(iso)} — click to open Records Scanner`}
+      aria-label={`${idleLabel(iso)} — open Records Scanner`}
+      data-testid="footer-indexing-indicator"
     >
       <RefreshCw className="h-3.5 w-3.5 shrink-0" />
       <span>{idleLabel(iso)}</span>

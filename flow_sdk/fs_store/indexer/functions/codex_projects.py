@@ -48,7 +48,7 @@ def _scan_cwd(jsonl: Path) -> str | None:
     return None
 
 
-async def codex_projects_fn(
+def codex_projects_fn(
     nodes: list[FSRef],
     opts: IndexerOptions,
 ) -> list[FSRef]:

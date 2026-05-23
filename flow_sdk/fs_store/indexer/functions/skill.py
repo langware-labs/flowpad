@@ -14,7 +14,7 @@ from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 
 
-async def skill_fn(
+def skill_fn(
     nodes: list[FSRef],
     opts: IndexerOptions,
 ) -> list[FSRef]:

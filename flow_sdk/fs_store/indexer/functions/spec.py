@@ -13,7 +13,7 @@ from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 
 
-async def spec_project_fn(
+def spec_project_fn(
     nodes: list[FSRef],
     opts: IndexerOptions,
 ) -> list[FSRef]:

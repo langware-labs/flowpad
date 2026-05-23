@@ -301,7 +301,7 @@ class WhiteboardRecord(Record):
         return rec
 
     @classmethod
-    async def from_fsref(cls, ref) -> list["WhiteboardRecord"]:
+    def _from_fsref_sync(cls, ref) -> list["WhiteboardRecord"]:
         """Indexer entry point — construct from an FSRef emitted by whiteboard_fn."""
         from flow_sdk.fs_store.fs_ref import FSRef as _FSRef
         rec = cls.load_record(ref._path)

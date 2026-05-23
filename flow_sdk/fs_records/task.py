@@ -47,7 +47,7 @@ class TaskResource(Record):
         super().__init__(**kwargs)
 
     @classmethod
-    async def from_fsref(cls, ref) -> list["TaskResource"]:
+    def _from_fsref_sync(cls, ref) -> list["TaskResource"]:
         """Indexer entry point — parse `<task_dir>/manifest.json` into a TaskResource.
 
         Task id lives inside the JSON (`task_id` field), not in the directory

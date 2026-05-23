@@ -419,7 +419,7 @@ class ClaudeSessionRecord(Record):
         return self._parse_fts()[1]
 
     @classmethod
-    async def from_fsref(cls, ref) -> list["ClaudeSessionRecord"]:
+    def _from_fsref_sync(cls, ref) -> list["ClaudeSessionRecord"]:
         """Indexer entry point — construct from an FSRef emitted by claude_sessions_fn."""
         return [cls.from_jsonl(ref._path)]
 
