@@ -1,3 +1,7 @@
+---
+id: 60d728c7-55f7-5cc0-8247-138c11713b4f
+---
+
 # AgenticWorkerSpec — adoption checklist for a new CLI agent worker
 
 Used to decide whether a candidate CLI agent can replace Claude Code in our
