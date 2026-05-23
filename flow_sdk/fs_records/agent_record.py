@@ -228,7 +228,13 @@ class AgentRecord(Record):
         body = _extract_body(text)
 
         agent_name = name or fields.pop("name", None) or "unnamed"
-        data: dict[str, Any] = {"id": agent_name, "name": agent_name}
+        # Prefer frontmatter `id` (or legacy `asset_id`) over name-derived id —
+        # keeps getId(ref) == from_fsref(ref).id (Phase 7a invariant). Mirrors
+        # read_record/load_record which were patched in 25932d3f.
+        raw_id = fields.pop("id", None) or fields.pop("asset_id", None)
+        agent_id = raw_id.strip() if isinstance(raw_id, str) and raw_id.strip() else agent_name
+
+        data: dict[str, Any] = {"id": agent_id, "name": agent_name}
         for key in _AGENTS_SPEC_FIELDS:
             if key in fields:
                 data[key] = fields[key]

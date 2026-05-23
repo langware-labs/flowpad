@@ -282,6 +282,7 @@ async def _create_plan_annotation(tool_input: dict, session_id: str) -> None:
     try:
         from flow_sdk.builtin.agentic_process import AgenticProcess
         from flow_sdk.builtin.annotation import Annotation
+        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter
         from flow_sdk.transcript_analyzer.plan_cross_link import cross_link_plan_to_process
 
         plan_text = tool_input.get("plan", "")
@@ -298,10 +299,21 @@ async def _create_plan_annotation(tool_input: dict, session_id: str) -> None:
             # Drain the cache to avoid cross-session drift.
             _last_file_op_path_by_session.pop(session_id, None)
 
-        # Cross-link + plan_path set in one call — supersets the per-path
-        # logic that used to live inline here.
-        _plan, agentic_process = await cross_link_plan_to_process(plan_file_path, session_id)
-        agentic_process_id = agentic_process.id if agentic_process else ""
+        # Cross-link is best-effort: no-op when plan_file_path is empty or
+        # doesn't exist on disk. Its return value is NOT the source of
+        # truth for the annotation's target_id — resolved separately below.
+        await cross_link_plan_to_process(plan_file_path, session_id)
+
+        # Resolve AgenticProcess by session_id directly so the annotation has
+        # a non-empty target_id even when the plan file is unknown (older
+        # Claude Code versions, or no prior Write op cached). Restores the
+        # pre-873f0989 behaviour without re-inlining the cross-link logic.
+        agentic_process_id = ""
+        procs = await AgenticProcess.get_all(
+            entities_filter=QueryFilter(match=ExpressionNode(session_id=session_id))
+        )
+        if procs:
+            agentic_process_id = procs[0].id
 
         # Annotation row for the gutter — UI-specific, stays local.
         now_iso = datetime.now(timezone.utc).isoformat()
