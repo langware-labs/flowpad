@@ -3,6 +3,7 @@ import louvain from 'graphology-communities-louvain';
 import { initIconRegistry } from '../icons/iconRegistry';
 import { iconDataUriForType } from '../icons/iconToDataUri';
 import { hexForType } from '../ui/typeColors';
+import { paletteForTheme, type EdgeKind, type Theme } from './themeColors';
 
 type DepGraphNode = {
   type: string;
@@ -14,7 +15,7 @@ type DepGraphNode = {
 type DepGraphEdge = {
   from: { type: string; id: string };
   to: { type: string; id: string };
-  kind: 'child' | 'context_shared' | 'context_private' | 'parent';
+  kind: EdgeKind;
 };
 type DepGraphResponse = {
   nodes: DepGraphNode[];
@@ -25,18 +26,13 @@ type DepGraphResponse = {
 export type LoadOptions = {
   apiUrl?: string;
   dropOrphans?: boolean;
-};
-
-export const EDGE_KIND_COLOR: Record<DepGraphEdge['kind'], string> = {
-  child: 'rgba(99, 102, 241, 0.55)',
-  context_shared: 'rgba(16, 185, 129, 0.65)',
-  context_private: 'rgba(245, 158, 11, 0.75)',
-  parent: 'rgba(167, 139, 250, 0.55)',
+  theme?: Theme;
 };
 
 export async function loadDepGraph(opts: LoadOptions = {}): Promise<Graph> {
   const apiUrl = opts.apiUrl ?? '/api/v1/dep_graph';
   const dropOrphans = opts.dropOrphans ?? true;
+  const palette = paletteForTheme(opts.theme ?? 'dark');
 
   const [, res] = await Promise.all([initIconRegistry(), fetch(apiUrl)]);
   if (!res.ok) throw new Error(`dep_graph fetch failed: ${res.status}`);
@@ -63,6 +59,7 @@ export async function loadDepGraph(opts: LoadOptions = {}): Promise<Graph> {
       isGhost: n.is_ghost,
       x: Math.cos(angle) * radius,
       y: Math.sin(angle) * radius,
+      // Final size is set in the post-louvain pass below.
       size: 8,
       color: hexForType(n.type),
       community: 0,
@@ -77,7 +74,7 @@ export async function loadDepGraph(opts: LoadOptions = {}): Promise<Graph> {
     if (!graph.hasNode(src) || !graph.hasNode(tgt) || src === tgt) continue;
     if (graph.hasEdge(src, tgt)) continue;
     graph.addUndirectedEdgeWithKey(`e-${i}`, src, tgt, {
-      color: EDGE_KIND_COLOR[e.kind] ?? 'rgba(255,255,255,0.18)',
+      color: palette.edgeKindColor[e.kind] ?? palette.defaultEdgeColor,
       size: 0.6,
       curvature: 0.18,
       kind: e.kind,
@@ -86,6 +83,7 @@ export async function loadDepGraph(opts: LoadOptions = {}): Promise<Graph> {
 
   louvain.assign(graph);
 
+  // Fold size sizing into a single post-louvain pass over the now-built graph.
   graph.forEachNode((node) => {
     const degree = graph.degree(node);
     graph.mergeNodeAttributes(node, {

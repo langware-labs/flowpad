@@ -17,7 +17,7 @@ import {
   Workflow,
   type LucideIcon,
 } from 'lucide-react';
-import { lucideByName } from './lucideByName';
+import { lucideByName } from '@src/lib/lucide-by-name';
 
 const FALLBACK: Record<string, LucideIcon> = {
   project: FolderOpen,
