@@ -1,5 +1,5 @@
 ---
-id: 67be85bd-4c36-5fdb-b06b-9c808b63bf1e
+id: 60d728c7-55f7-5cc0-8247-138c11713b4f
 ---
 
 # AgenticWorkerSpec — adoption checklist for a new CLI agent worker
