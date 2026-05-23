@@ -59,6 +59,32 @@ _CREATION_HINTS: dict[str, dict] = {
         },
         "after_index": "Resulting TypeId is `task-<task_id>` — pass it to `flow navigate entity` to open.",
     },
+    "markdown_index": {
+        "location": "<source_dir>/index.md",
+        "manifest_fields": {
+            "type": "markdown_index (literal)",
+            "title": "human-readable folder name",
+            "inputs_hash": "sha256 of (template_version + prompt_version + sorted source file hashes + sorted child index.md hashes) — set by rebuild agent",
+            "template_version": "int (default 1)",
+            "prompt_version": "int (default 1)",
+            "parent_ref": "TypeId of the parent markdown_index entity (one folder up), or empty for root",
+            "file_count": "int — direct source files in this folder (excluding index.md itself)",
+            "subfolder_count": "int — child folders that also have an index.md",
+            "latest_process_ref": "TypeId of the most recent AgenticProcess that rebuilt this index",
+        },
+        "example": {
+            "type": "markdown_index",
+            "title": "auth",
+            "inputs_hash": "",
+            "template_version": 1,
+            "prompt_version": 1,
+            "parent_ref": "",
+            "file_count": 0,
+            "subfolder_count": 0,
+            "latest_process_ref": "",
+        },
+        "after_index": "Resulting TypeId is `markdown_index-<uuid>`. Trigger a rebuild via the LLM Indexers panel or by spawning an AgenticProcess with context_data.kind='markdown_index_rebuild' targeted at this TypeId.",
+    },
 }
 
 

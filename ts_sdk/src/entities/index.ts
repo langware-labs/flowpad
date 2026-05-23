@@ -44,6 +44,7 @@ export * from './workflow';
 export * from './skill';
 export * from './whiteboard';
 export * from './markdown';
+export * from './markdown-index';
 export * from './plan';
 export * from './claude-md';
 export * from './claude-memory';
