@@ -139,6 +139,16 @@ _NON_TERMINAL_WORKER_STATUSES = frozenset({
     WorkerStatus.UNKNOWN,
 })
 
+# Underlying terminal statuses eligible for the PENDING_USER / INACTIVE
+# projection in ``_discover_status_from_transcript``. INACTIVE / API_TIMEOUT
+# are excluded — they're already terminal-with-cause and don't get the
+# user-facing 5-min grace window.
+_PROJECTABLE_TERMINAL = frozenset({
+    WorkerStatus.COMPLETE,
+    WorkerStatus.ERROR,
+    WorkerStatus.INTERRUPTED,
+})
+
 
 def _shell_worker_pid_alive(shell_id: str) -> bool:
     """Sync OS-pid liveness check for a shell's last-launched worker process.
@@ -426,6 +436,15 @@ class AgenticProcess(Entity):
             "Absolute path to the latest plan markdown produced by this process, "
             "or null if none yet. Persists across reloads so the 'Open Plan' UI "
             "affordance survives a refresh without re-running the line trigger."
+        ),
+    )
+    terminal_at: datetime | None = APIField(
+        default=None,
+        description=(
+            "Timestamp at which worker_status first entered a terminal state "
+            "(COMPLETE/ERROR/INTERRUPTED). Used by the serializer to project to "
+            "WorkerStatus.PENDING_USER for the first 5 minutes and INACTIVE after. "
+            "Cleared when the worker resumes (next non-terminal underlying status)."
         ),
     )
 
@@ -2421,6 +2440,15 @@ class AgenticProcess(Entity):
             and not _shell_worker_pid_alive(self.shell_id)
         ):
             return WorkerStatus.INACTIVE
+
+        # Project terminal underlying status to PENDING_USER (recent) or
+        # INACTIVE (aged > 5min) based on ``terminal_at``. The 5-minute window
+        # used to be FE-derived from ``ready_for_input_since``; this brings
+        # the decision backend-side so every consumer (serializer, get_status,
+        # is_ready_for_input) sees the same projected value.
+        if derived in _PROJECTABLE_TERMINAL and self.terminal_at is not None:
+            age = (datetime.now(timezone.utc) - self.terminal_at).total_seconds()
+            return WorkerStatus.PENDING_USER if age < 300 else WorkerStatus.INACTIVE
         return derived
 
     @action.all(action_name="status")
@@ -2918,6 +2946,34 @@ class AgenticProcess(Entity):
             # Single source of truth: same helper the serializer/get_status use.
             current = self._discover_status_from_transcript()
             previous = getattr(self, "_last_broadcast_status", None)
+
+            # Maintain terminal_at: set on transition INTO a clean terminal
+            # (COMPLETE/ERROR/INTERRUPTED), clear on transition OUT. Used by
+            # the projection layer to surface PENDING_USER for 5 min before
+            # collapsing to INACTIVE. Not set for INACTIVE/API_TIMEOUT — those
+            # are stuck / already-aged states, not the "session just finished"
+            # case the user-facing PendingUser window is meant for.
+            _CLEAN_TERMINAL = {
+                WorkerStatus.COMPLETE, WorkerStatus.ERROR, WorkerStatus.INTERRUPTED,
+            }
+            if current in _CLEAN_TERMINAL and self.terminal_at is None:
+                self.terminal_at = datetime.now(timezone.utc)
+                try:
+                    await self.save()
+                except Exception:
+                    logger.debug(
+                        "AgenticProcess %s: terminal_at save failed", self.id, exc_info=True,
+                    )
+            elif current not in _CLEAN_TERMINAL and current != WorkerStatus.PENDING_USER \
+                    and self.terminal_at is not None:
+                self.terminal_at = None
+                try:
+                    await self.save()
+                except Exception:
+                    logger.debug(
+                        "AgenticProcess %s: terminal_at clear failed", self.id, exc_info=True,
+                    )
+
             if current == previous:
                 return
             object.__setattr__(self, "_last_broadcast_status", current)
