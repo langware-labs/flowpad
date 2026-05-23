@@ -48,8 +48,8 @@ export function ScopeFilterBar({
   const options: ScopeBarOption<ChipKey>[] = useMemo(() => [
     {
       value: 'both',
-      label: 'Both',
-      title: 'Both user assets and selected projects assets',
+      label: 'All',
+      title: 'User assets plus selected projects',
     },
     {
       value: 'user',

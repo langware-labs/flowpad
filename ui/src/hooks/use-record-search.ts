@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import apiClient from '@sdk/client';
 import { RecordType } from '@sdk/resource_management/fs_records';
+import { applyScopeToParams, scopeFilterKey, type ScopeFilter } from '@src/lib/scope-filter';
 
 const SEARCH_PATH = '/graph/compute_node/@local/fs-records/search';
 const DEFAULT_SEARCH_LIMIT = 20;
@@ -92,6 +93,10 @@ export function useRecordSearch(
   query: string,
   filters: SearchFilters = {},
   calibration: SearchCalibration = {},
+  // Optional ScopeFilter (user + projects). Separate from `filters.scope`,
+  // which is the legacy enum-style scope tag. When provided, the backend's
+  // _handle_fs_records_search narrows the search by user / project entities.
+  scopeFilter: ScopeFilter | null = null,
   debounceMs = 300,
 ): UseRecordSearchResult {
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -122,6 +127,7 @@ export function useRecordSearch(
       if (filters.status) params.set('status', filters.status);
       if (filters.scope) params.set('scope', filters.scope);
       if (filters.include_system) params.set('include_system', 'true');
+      if (scopeFilter) applyScopeToParams(params, scopeFilter);
       if (col_weights) params.set('col_weights', col_weights.join(','));
       if (recency_boost) params.set('recency_boost', String(recency_boost));
       if (recency_factor) params.set('recency_factor', String(recency_factor));
@@ -155,7 +161,7 @@ export function useRecordSearch(
       cancelledRef.current = true;
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [query, filters.record_type, filters.status, filters.scope, filters.time_preset, filters.time_start, filters.time_end, filters.include_system, col_weights, recency_boost, recency_factor, overfetch, type_scores, debounceMs]);
+  }, [query, filters.record_type, filters.status, filters.scope, filters.time_preset, filters.time_start, filters.time_end, filters.include_system, scopeFilter ? scopeFilterKey(scopeFilter) : null, col_weights, recency_boost, recency_factor, overfetch, type_scores, debounceMs]);
 
   return { results, isLoading, error, indexerReady, latencyMs };
 }
