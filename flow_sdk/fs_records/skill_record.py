@@ -295,7 +295,7 @@ class SkillRecord(Record):
         return rec
 
     @classmethod
-    async def from_fsref(cls, ref) -> list["SkillRecord"]:
+    def _from_fsref_sync(cls, ref) -> list["SkillRecord"]:
         """Indexer entry point — construct from an FSRef emitted by skill_fn."""
         from flow_sdk.fs_store.fs_ref import FSRef as _FSRef
         rec = cls.load_record(ref._path)

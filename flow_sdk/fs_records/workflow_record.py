@@ -141,7 +141,7 @@ class WorkflowRecord(Record):
         return cls(file_path=path)
 
     @classmethod
-    async def from_fsref(cls, ref) -> list["WorkflowRecord"]:
+    def _from_fsref_sync(cls, ref) -> list["WorkflowRecord"]:
         """Indexer entry point — construct from an FSRef emitted by workflow_fn.
 
         Honors ``id`` (or legacy ``asset_id``) from frontmatter when present so

@@ -131,7 +131,7 @@ class CodexSessionRecord(Record):
         return stats.get("search_content")
 
     @classmethod
-    async def from_fsref(cls, ref) -> list["CodexSessionRecord"]:
+    def _from_fsref_sync(cls, ref) -> list["CodexSessionRecord"]:
         """Indexer entry — construct from an FSRef pointing at a rollout JSONL."""
         return [cls.from_jsonl(ref._path)]
 

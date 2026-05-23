@@ -166,7 +166,7 @@ class ClaudeHookRecord(Record):
         return str(uuid.uuid5(uuid.NAMESPACE_URL, f"hook_source:{ref._path.resolve()}"))
 
     @classmethod
-    async def from_fsref(cls, ref) -> list["ClaudeHookRecord"]:
+    def _from_fsref_sync(cls, ref) -> list["ClaudeHookRecord"]:
         """Indexer entry point — parse one settings-like file into N hook records.
 
         Dispatch on file shape:

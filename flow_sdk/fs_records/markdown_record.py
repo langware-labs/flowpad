@@ -377,7 +377,7 @@ class MarkdownRecord(Record):
         return result
 
     @classmethod
-    async def from_fsref(cls, ref) -> list["MarkdownRecord"]:
+    def _from_fsref_sync(cls, ref) -> list["MarkdownRecord"]:
         """Indexer entry point — construct from an FSRef emitted by markdown_fn.
 
         Stamps `project_id` (FSRef inheritance, with a system-projects path

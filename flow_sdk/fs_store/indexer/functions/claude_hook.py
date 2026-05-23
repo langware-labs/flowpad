@@ -28,7 +28,7 @@ from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 
 
-async def claude_hook_fn(
+def claude_hook_fn(
     nodes: list[FSRef],
     opts: IndexerOptions,
 ) -> list[FSRef]:
@@ -55,7 +55,7 @@ async def claude_hook_fn(
     return out
 
 
-async def claude_hook_extras_fn(
+def claude_hook_extras_fn(
     nodes: list[FSRef],
     opts: IndexerOptions,
 ) -> list[FSRef]:

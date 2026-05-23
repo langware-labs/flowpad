@@ -7,6 +7,8 @@ for the contract.
 
 from __future__ import annotations
 
+import asyncio
+import inspect
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -37,6 +39,11 @@ _PROGRESS_HIDDEN_TYPES: set[RecordType] = {
 }
 
 _PROGRESS_THROTTLE_S = 0.2
+
+# Per chunk node budget for FSIndexer.scan(): amortizes asyncio.to_thread
+# dispatch cost across many node visits while still yielding the event loop
+# frequently enough that progress emits + other requests stay responsive.
+_SCAN_CHUNK_NODES = 256
 
 
 class OrphanAction(str, Enum):
@@ -115,9 +122,25 @@ class IndexResult:
 
 
 class IndexerFunc(Protocol):
-    async def __call__(
+    # Walkers are typically sync — pure file I/O, no async resources — and
+    # FSIndexer.scan() runs them via ``asyncio.to_thread`` so the gitignore-
+    # aware DFS doesn't park the event loop for an entire indexer pass.
+    # A walker that genuinely needs async (DB lookups, real HTTP) may instead
+    # expose ``async def __call__``; scan() detects and awaits it directly.
+    def __call__(
         self, nodes: list[FSRef], opts: IndexerOptions
     ) -> list[FSRef]: ...
+
+
+def _is_async_walker(fn: Any) -> bool:
+    """True when ``fn`` is a coroutine function or a class instance whose
+    ``__call__`` is. Used by scan() to choose between direct-await and
+    thread-pool dispatch.
+    """
+    if inspect.iscoroutinefunction(fn):
+        return True
+    call = getattr(fn, "__call__", None)
+    return call is not None and inspect.iscoroutinefunction(call)
 
 
 async def _load_entity_state_map(
@@ -822,25 +845,63 @@ class FSIndexer:
 
         await emit(force=True)
 
+        # Chunked DFS: process up to _SCAN_CHUNK_NODES sync-walker visits per
+        # thread-pool roundtrip so per-call to_thread overhead doesn't pile up
+        # over thousands of nodes. The event loop still runs between chunks
+        # (~5x/s at typical walk speed) — that's where ``emit()`` lives.
+        # Async walkers (rare; e.g. tests that register TranscriptIndexer)
+        # are accumulated inside the chunk and awaited on the main loop after
+        # the chunk returns.
+        functions = self._functions
+
+        def _process_chunk(
+            max_nodes: int,
+        ) -> tuple[list[tuple[FSRef, Any]], bool]:
+            """One sync DFS chunk. Mutates ``stack``/``visited``/``seen``/
+            ``per_type_counts`` in place. Returns (pending_async_calls,
+            hit_limit) — the caller awaits each pending async walker on the
+            main loop, then extends the stack from its children.
+            """
+            nonlocal current_rt
+            pending: list[tuple[FSRef, Any]] = []
+            processed = 0
+            hit_limit = False
+            while stack and processed < max_nodes:
+                node = stack.pop()
+                key = (node.path, node.record_type)
+                if key in seen:
+                    continue
+                seen.add(key)
+                visited.append(node)
+                if opts.verbose:
+                    print(f"[indexer] visit type={node.record_type} path={node.path}")
+                if node.record_type is not None:
+                    per_type_counts[node.record_type] = per_type_counts.get(node.record_type, 0) + 1
+                    current_rt = node.record_type
+                fns = functions.get(node.record_type, []) if node.record_type is not None else []
+                for fn in fns:
+                    if _is_async_walker(fn):
+                        pending.append((node, fn))
+                    else:
+                        children = fn([node], opts)
+                        stack.extend(reversed(children))
+                if opts.limit is not None and len(visited) >= opts.limit:
+                    hit_limit = True
+                    break
+                processed += 1
+            return pending, hit_limit
+
         while stack:
-            node = stack.pop()
-            key = (node.path, node.record_type)
-            if key in seen:
-                continue
-            seen.add(key)
-            visited.append(node)
-            if opts.verbose:
-                print(f"[indexer] visit type={node.record_type} path={node.path}")
-            if node.record_type is not None:
-                per_type_counts[node.record_type] = per_type_counts.get(node.record_type, 0) + 1
-                current_rt = node.record_type
-            fns = self._functions.get(node.record_type, []) if node.record_type is not None else []
-            for fn in fns:
+            pending, hit_limit = await asyncio.to_thread(
+                _process_chunk, _SCAN_CHUNK_NODES,
+            )
+            # Drain any async walkers seen inside the chunk on the main loop.
+            for node, fn in pending:
                 children = await fn([node], opts)
                 stack.extend(reversed(children))
-            if opts.limit is not None and len(visited) >= opts.limit:
-                break
             await emit()
+            if hit_limit:
+                break
 
         current_rt = None
         if on_progress is not None:

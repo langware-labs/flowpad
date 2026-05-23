@@ -115,7 +115,7 @@ class SpecRecord(Record):
         return "0" * 16
 
     @classmethod
-    async def from_fsref(cls, ref) -> list["SpecRecord"]:
+    def _from_fsref_sync(cls, ref) -> list["SpecRecord"]:
         """Indexer entry point — construct from an FSRef emitted by spec_project_fn."""
         return [cls._from_md_file(ref._path)]
 
