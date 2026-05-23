@@ -472,6 +472,55 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
+   * Create a DockPointer for a named app (skill UI). Mounts at /dock/apps/<uname>/<routerPath>.
+   * The pointer encodes "<uname>/<routerPath>"; the host splits at the first slash.
+   * `routerPath` is opaque to the host — interpreted by the app itself.
+   */
+  static forApp(
+    uname: string,
+    routerPath: string = '',
+    options?: Record<string, string>,
+    layout: Layout = Layout.DOCK,
+  ): DockPointer {
+    const pointer = routerPath ? `${uname}/${routerPath}` : uname;
+    return new DockPointer(ViewType.APPS, pointer, options, layout);
+  }
+
+  /** Split an APPS pointer into its `{ uname, routerPath }` parts. */
+  static parseAppPointer(pointer: string | undefined): { uname: string; routerPath: string } | null {
+    if (!pointer) return null;
+    const idx = pointer.indexOf('/');
+    if (idx < 0) return { uname: pointer, routerPath: '' };
+    return { uname: pointer.slice(0, idx), routerPath: pointer.slice(idx + 1) };
+  }
+
+  /**
+   * Create a DockPointer for the built-in dep-graph viewer at /dock/graph/<type>/<id>.
+   * Pointer encodes "<type>/<id>"; the viewer focuses on that entity (local-mode root).
+   * Omit the typeId to open the full graph with no focus.
+   * Options support `depth` (1-3) and `selected` (a node key to highlight).
+   */
+  static forGraph(
+    typeId?: TypeId | null,
+    options?: { depth?: number; selected?: string },
+    layout: Layout = Layout.DOCK,
+  ): DockPointer {
+    const pointer = typeId ? `${typeId.type}/${typeId.id}` : undefined;
+    const queryOptions: Record<string, string> = {};
+    if (options?.depth) queryOptions.depth = String(options.depth);
+    if (options?.selected) queryOptions.selected = options.selected;
+    return new DockPointer(ViewType.GRAPH, pointer, Object.keys(queryOptions).length ? queryOptions : undefined, layout);
+  }
+
+  /** Split a GRAPH pointer into its `{ type, id }` parts. */
+  static parseGraphPointer(pointer: string | undefined): { type: string; id: string } | null {
+    if (!pointer) return null;
+    const idx = pointer.indexOf('/');
+    if (idx < 0) return null;
+    return { type: pointer.slice(0, idx), id: pointer.slice(idx + 1) };
+  }
+
+  /**
    * Parse a lens pointer into its parts
    * @param pointer - The full pointer string (e.g., "claude/transcript/abc123")
    */

@@ -4,6 +4,8 @@ import { fsManager, VFSPath } from '@sdk';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { SANDBOX_URL } from '@src/lib/mcp-sandbox';
+import { isInternalDockUrl, parseDockUrlToPointer } from '@src/components/app-host/dock-url-helpers';
+import '@src/lib/mcp-host.css';
 
 const DEFAULT_PAGE = 'index';
 const DEFAULT_COMPONENT = 'main';
@@ -74,13 +76,23 @@ async function handleMessage() {
   return {};
 }
 
-async function handleOpenLink({ url }: { url: string }) {
-  window.open(url, '_blank', 'noopener,noreferrer');
-  return {};
-}
-
 export function ShowView() {
-  const { currentDock } = useDockNavigation();
+  const { currentDock, navigation } = useDockNavigation();
+
+  const handleOpenLink = useCallback(
+    async ({ url }: { url: string }) => {
+      if (isInternalDockUrl(url)) {
+        const pointer = parseDockUrlToPointer(url);
+        if (pointer) {
+          navigation.openDock(pointer);
+          return {};
+        }
+      }
+      window.open(url, '_blank', 'noopener,noreferrer');
+      return {};
+    },
+    [navigation],
+  );
   const [html, setHtml] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -142,7 +154,7 @@ export function ShowView() {
   }
 
   return (
-    <div className="h-full w-full">
+    <div className="flowpad-app-host">
       <AppRenderer
         html={html}
         toolName={params.component}

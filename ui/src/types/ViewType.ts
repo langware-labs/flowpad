@@ -224,6 +224,18 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     tabLocation: 'dedicated',
     canAddAsTab: false,
   },
+  [ViewType.APPS]: {
+    title: 'App',
+    iconName: 'Sparkles',
+    tabLocation: 'dedicated',
+    canAddAsTab: false,
+  },
+  [ViewType.GRAPH]: {
+    title: 'Graph',
+    iconName: 'Workflow',
+    tabLocation: 'dedicated',
+    canAddAsTab: true,
+  },
   [ViewType.LENS]: {
     title: 'Lens',
     iconName: 'Eye',

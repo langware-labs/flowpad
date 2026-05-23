@@ -91,6 +91,17 @@ include = ["flow_sdk*"]
     "server/static/**/*",
 ]
 
+# Keep skill UI source + the built main.html, but never ship node_modules,
+# the intermediate vite dist/, or build/test caches. Without these excludes
+# the wheel inflates by hundreds of MB per skill that has a ui/ project.
+[tool.setuptools.exclude-package-data]
+"flow_sdk" = [
+    "system_projects/**/node_modules/**",
+    "system_projects/**/ui/dist/**",
+    "system_projects/**/package-lock.json",
+    "system_projects/**/.vite/**",
+]
+
 [tool.ruff]
 line-length = 120
 extend-exclude = [
