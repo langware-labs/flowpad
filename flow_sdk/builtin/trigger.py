@@ -114,11 +114,19 @@ def _parse_interval_expr(expr: str) -> int:
 async def _fire_schedule_job(trigger_id: str) -> None:
     """Callback executed by APScheduler when a schedule trigger fires.
 
-    If the trigger has an `instruction`, spawn an AgenticProcess marked with
-    trigger_id so the invocation can be opened/queried later.
+    Dispatches via the action handler registry (same path as FSOp's ``_fire``
+    in ``server/fsop_watcher.py:_fire``) so any ``actions`` declared on the
+    Trigger entity run — CALLBACK and RUN_SCRIPT included. Per-action try/except
+    so one bad handler can't skip the rest.
+
+    Legacy ``instruction`` path is preserved as a back-compat fallback for
+    schedule triggers that pre-date the actions list (it spawns an
+    AgenticProcess with the prompt).
     """
     try:
+        from flow_sdk.builtin.hook_models import get_action_handler
         from flow_sdk.fs_records.trigger_log import TriggerLogRecord
+
         entity = await Trigger.get_by_id(trigger_id)
         if not (entity and entity.enabled):
             return
@@ -126,6 +134,30 @@ async def _fire_schedule_job(trigger_id: str) -> None:
         entity.last_run = datetime.now(timezone.utc)
         await entity.update()
 
+        # Dispatch actions via the shared registry. ``changed_path`` and
+        # ``change_type`` are FSOp-specific event context — schedule fires
+        # don't have them, so we pass None and rely on the handler to be
+        # lenient (CallbackActionHandler is; RUN_SCRIPT propagates them as
+        # empty env vars).
+        for action in entity.actions:
+            try:
+                handler = get_action_handler(action.action_type)
+                if handler is None:
+                    logger.warning(
+                        "Schedule trigger %s: no handler for action_type=%s",
+                        entity.name, action.action_type,
+                    )
+                    continue
+                await handler.execute(entity, action=action, changed_path=None, change_type=None)
+            except Exception:
+                logger.exception(
+                    "Schedule trigger %s: action %s raised during dispatch",
+                    entity.name, action.action_type,
+                )
+
+        # Legacy back-compat: schedule triggers with ``instruction`` set spawn
+        # an AgenticProcess. Pre-dates the actions list; kept so existing
+        # user-created schedules keep working.
         process_id: Optional[str] = None
         if entity.instruction:
             try:
@@ -149,7 +181,7 @@ async def _fire_schedule_job(trigger_id: str) -> None:
             "reason": f"Scheduled ({entity.sched_trigger_type or 'cron'}): {entity.expr}",
             "is_test": False,
             "rule_name": entity.name,
-            "actions": [],
+            "actions": [{"action_type": str(a.action_type)} for a in entity.actions],
             "agentic_process_id": process_id,
         })
         logger.debug(f"Schedule trigger {entity.name} fired (counter={entity.counter}, process_id={process_id})")

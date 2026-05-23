@@ -50,6 +50,28 @@ async def test_transcript_route_callback_registered_at_import():
     assert trigger_callbacks.get("builtin_transcript_streamer_route") is not None
 
 
+async def test_heartbeat_callback_is_registered():
+    """H2: importing system_heartbeat triggers the @register decorator at module load."""
+    # Force the lazy import that set_service_triggers does
+    from flow_sdk.server.builtin_triggers import _service_trigger_specs
+    _service_trigger_specs()
+    assert trigger_callbacks.get("builtin_heartbeat_dispatch") is not None
+
+
+async def test_creates_system_heartbeat_trigger(initialize_test_db):
+    """H3: set_service_triggers installs the system heartbeat SCHEDULE trigger."""
+    await set_service_triggers()
+
+    t = await Trigger.get_by_uname("builtin_system_heartbeat")
+    assert t is not None
+    assert t.trigger_type == TriggerType.SCHEDULE
+    assert t.sched_trigger_type == "cron"
+    assert t.expr == "* * * * *"
+    assert len(t.actions) == 1
+    assert t.actions[0].action_type == ActionType.CALLBACK
+    assert t.actions[0].callback_name == "builtin_heartbeat_dispatch"
+
+
 async def test_creates_transcript_watchers(initialize_test_db):
     """T5: Claude + Codex transcript watcher triggers are installed by set_service_triggers."""
     settings = get_instance_settings()
