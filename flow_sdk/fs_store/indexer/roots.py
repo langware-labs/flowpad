@@ -59,6 +59,48 @@ def lookup_project_id_by_uname(uname: str) -> str | None:
         conn.close()
 
 
+def classify_path(path: str | Path) -> str | None:
+    """Classify a filesystem path into a scope tag matching ``default_roots()``.
+
+    Returns ``"system"`` when ``path`` lives under the SDK-shipped system
+    project, ``"user"`` when under InstanceSettings.user_home, ``"project"``
+    when under ``Path.cwd()``, else ``None``. Used by HTTP create handlers to
+    stamp scope at create time so POST-created records match indexer-discovered
+    ones.
+    """
+    if not path:
+        return None
+    try:
+        target = Path(path).resolve()
+    except (OSError, ValueError):
+        return None
+
+    try:
+        from flow_sdk.config import flowpad_assistant_project_root  # noqa: PLC0415
+        system_root = flowpad_assistant_project_root().resolve()
+        if target == system_root or system_root in target.parents:
+            return "system"
+    except Exception:
+        pass
+
+    try:
+        from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+        user_home = get_instance_settings().user_home.resolve()
+        if target == user_home or user_home in target.parents:
+            return "user"
+    except Exception:
+        pass
+
+    try:
+        cwd = Path.cwd().resolve()
+        if target == cwd or cwd in target.parents:
+            return "project"
+    except OSError:
+        pass
+
+    return None
+
+
 def default_roots() -> list[FSRef]:
     """Return the three canonical roots plus any env-supplied extras.
 

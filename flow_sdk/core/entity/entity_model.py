@@ -390,7 +390,9 @@ class Entity(DBEntity):
             entity.type = record_type
             all_updates = {**data, **record_domain, **stamp}
             for k, v in all_updates.items():
-                if k in ("id",) or not hasattr(entity, k):
+                # Restrict to declared model fields so read-only computed
+                # properties leaked in by stale metadata don't crash setattr.
+                if k in ("id",) or k not in entity.__class__.model_fields:
                     continue
                 field = entity.__class__.model_fields.get(k)
                 if field is not None:

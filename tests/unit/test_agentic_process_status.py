@@ -91,6 +91,7 @@ EXPECTED_WORKER_VALUES = {
     "tool_running",
     "api_error",
     "api_timeout",
+    "pending_user",
     "unknown",
 }
 

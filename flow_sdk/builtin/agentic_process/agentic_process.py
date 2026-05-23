@@ -588,10 +588,21 @@ class AgenticProcess(Entity):
         self.context_data = context
 
     async def _get_local_compute_node(self):
-        """Return the local compute node used for shell creation and recovery."""
+        """Return the local compute node used for shell creation and recovery.
+
+        Retry once on None — the @local compute_node is bootstrap-created and
+        never deleted, so a None result is always a transient cache/DB-contention
+        miss under heavy parallel writes (see Cluster #10 in debug_log.md). The
+        retry invalidates any stale uname_cache entry before the second lookup.
+        """
         from flow_sdk.builtin.faas.compute_node import ComputeNode
 
-        return await ComputeNode.get_by_uname("local")
+        cn = await ComputeNode.get_by_uname("local")
+        if cn is None:
+            from flow_sdk.core.cache.entity_cache import uname_cache
+            uname_cache.invalidate("compute_node", "local")
+            cn = await ComputeNode.get_by_uname("local")
+        return cn
 
     async def _drop_stale_shell(
         self,
