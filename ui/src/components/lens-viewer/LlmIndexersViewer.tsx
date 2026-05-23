@@ -24,7 +24,7 @@ import { ScopeFilterBar } from '@src/components/scope-filter/ScopeFilterBar';
 import { useAllProjects } from '@src/hooks/use-all-projects';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { useToast } from '@src/hooks/use-toast';
-import { defaultScopeFilter, type ScopeFilter } from '@src/lib/scope-filter';
+import { useDefaultScopeFilter } from '@src/hooks/use-default-scope-filter';
 import { Button } from '@src/components/ui/button';
 import { ScrollArea } from '@src/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
@@ -67,11 +67,7 @@ export function LlmIndexersViewer() {
   const request = useMemo(() => new QueryRequest({ type: MarkdownIndex.type }), []);
   const { data: allIndexes = [], isLoading, refetch } = useEntitiesQuery<MarkdownIndex>(request);
 
-  const currentProjectId = projectIdForPath(dataContext.project?.fs_storage_mount_path);
-  const [scope, setScope] = useState<ScopeFilter>(() => defaultScopeFilter(currentProjectId));
-  useEffect(() => {
-    setScope(defaultScopeFilter(currentProjectId));
-  }, [currentProjectId]);
+  const [scope, setScope, currentProjectId] = useDefaultScopeFilter();
 
   // Project mount paths drive the in-scope check: an index whose vault_root
   // lives under a selected project is in-scope; an index whose vault_root

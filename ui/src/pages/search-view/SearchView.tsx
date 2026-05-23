@@ -13,8 +13,7 @@ import { dataContext, dataManager, systemTools } from '@sdk';
 import { SearchCalibration, SearchFilters, loadStoredCalibration, saveCalibration, useRecordSearch } from '@src/hooks/use-record-search';
 import { useIndexStatus } from '@src/hooks/use-index-status';
 import { useSystemTools } from '@src/hooks/use-system-tools';
-import { defaultScopeFilter, type ScopeFilter } from '@src/lib/scope-filter';
-import { projectIdForPath } from '@src/components/assets/utils';
+import { useDefaultScopeFilter } from '@src/hooks/use-default-scope-filter';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { AlertCircle, FileSearch, Menu, PackageSearch, SlidersHorizontal } from 'lucide-react';
@@ -82,12 +81,7 @@ export function SearchView() {
 
   const { busy, resetAndRescan } = useSystemTools();
 
-  const currentProjectId = projectIdForPath(dataContext.project?.fs_storage_mount_path);
-  const [scope, setScope] = useState<ScopeFilter>(() => defaultScopeFilter(currentProjectId));
-  // Re-seed scope when the active project changes so the picker tracks context.
-  useEffect(() => {
-    setScope(defaultScopeFilter(currentProjectId));
-  }, [currentProjectId]);
+  const [scope, setScope, currentProjectId] = useDefaultScopeFilter();
 
   // Re-seed progress state from backend after page refresh so the footer
   // indicator reappears mid-job. The modal stays closed until the user opens

@@ -2,7 +2,9 @@ import { MousePointer2, Target } from 'lucide-react';
 import { EntityIcon } from './EntityIcon';
 import { hexForType } from './typeColors';
 import type { NodeData } from '../graph/graphEngine';
-import { EDGE_KIND_COLOR } from '../graph/loadDepGraph';
+import { paletteForTheme, type EdgeKind } from '../graph/themeColors';
+
+const EDGE_KIND_COLOR = paletteForTheme('dark').edgeKindColor;
 
 type Props = {
   node: NodeData | null;
@@ -72,7 +74,7 @@ export function PropertyPanel({ node, localRootKey, onNeighborClick, onFocus }: 
             <div key={kind} className="edge-kind-row">
               <span
                 className="dot"
-                style={{ background: EDGE_KIND_COLOR[kind as keyof typeof EDGE_KIND_COLOR] ?? '#94a3b8' }}
+                style={{ background: EDGE_KIND_COLOR[kind as EdgeKind] ?? '#94a3b8' }}
               />
               <span className="name">{kind}</span>
               <span className="num">{n}</span>

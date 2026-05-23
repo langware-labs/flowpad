@@ -5,11 +5,13 @@
 
 export type Theme = 'light' | 'dark';
 
+export type EdgeKind = 'child' | 'context_shared' | 'context_private' | 'parent';
+
 export interface GraphPalette {
   labelColor: string;
   defaultNodeColor: string;
   defaultEdgeColor: string;
-  edgeKindColor: Record<'child' | 'context_shared' | 'context_private' | 'parent', string>;
+  edgeKindColor: Record<EdgeKind, string>;
   hoverEdgeColor: string;
   hoverEdgeSize: number;
   dimEdgeColor: string;
