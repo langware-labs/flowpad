@@ -2910,6 +2910,39 @@ class AgenticProcess(Entity):
                 ),
             )
 
+    async def _process_transcript_entries(self, entries: list) -> None:
+        """Per-entry side effects: plan.create + file-op cross-link emission.
+
+        Extracted from :meth:`_flush_transcript_change` so unit tests can drive
+        the loop without manipulating the AP's lifecycle ``status`` field.
+        FileEditEntry maps to ``file.write`` (semantically: contents changed).
+        """
+        from flow_sdk.transcript_analyzer.entries.exit_plan_mode import ExitPlanModeEntry
+        from flow_sdk.transcript_analyzer.entries.file_edit import FileEditEntry
+        from flow_sdk.transcript_analyzer.entries.file_read import FileReadEntry
+        from flow_sdk.transcript_analyzer.entries.file_write import FileWriteEntry
+        from flow_sdk.transcript_analyzer.file_cross_link import cross_link_file_to_process
+
+        for entry in entries:
+            if isinstance(entry, ExitPlanModeEntry) and entry.plan_file_path:
+                await self.emit_entity_event(
+                    "plan.create",
+                    {"plan_file_path": entry.plan_file_path, "session_id": self.session_id},
+                )
+                await self.on_plan_created(entry)
+                continue
+
+            if isinstance(entry, (FileReadEntry, FileWriteEntry, FileEditEntry)):
+                path = getattr(entry, "path", None)
+                if not path or not path.endswith(".md"):
+                    continue
+                op = "read" if isinstance(entry, FileReadEntry) else "write"
+                await self.emit_entity_event(
+                    f"file.{op}",
+                    {"path": path, "tool_name": getattr(entry, "tool_name", "")},
+                )
+                await cross_link_file_to_process(path, self)
+
     async def _flush_transcript_change(self) -> None:
         """Run after the debounce window on this AP's transcript.
 
@@ -2933,15 +2966,7 @@ class AgenticProcess(Entity):
 
             entries = list(getattr(self, "_pending_entries", []))
             object.__setattr__(self, "_pending_entries", [])
-
-            from flow_sdk.transcript_analyzer.entries.exit_plan_mode import ExitPlanModeEntry
-            for entry in entries:
-                if isinstance(entry, ExitPlanModeEntry) and entry.plan_file_path:
-                    await self.emit_entity_event(
-                        "plan.create",
-                        {"plan_file_path": entry.plan_file_path, "session_id": self.session_id},
-                    )
-                    await self.on_plan_created(entry)
+            await self._process_transcript_entries(entries)
 
             # Single source of truth: same helper the serializer/get_status use.
             current = self._discover_status_from_transcript()
