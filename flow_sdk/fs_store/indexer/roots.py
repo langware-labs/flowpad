@@ -76,13 +76,28 @@ def default_roots() -> list[FSRef]:
             record_type=RecordType.USER_HOME_FOLDER,
             scope=Scope.USER.value,
         ),
-        FSRef(
-            cwd,
-            record_type=RecordType.CWD_ROOT,
-            scope=Scope.PROJECT.value,
-            project_id=Project.derive_id_for_path(cwd),
-        ),
     ]
+
+    # Only register the CWD as a project root when it isn't the user's home
+    # directory. The desktop app can launch the backend with cwd=$HOME; treating
+    # $HOME as a project root makes project_folder_walker_fn recurse the whole
+    # home tree (Desktop, ~/Library/Mobile Documents, other-app containers, the
+    # media library) — each first access trips a macOS TCC prompt attributed to
+    # Flowpad. USER_HOME_FOLDER already covers home via targeted expanders, so a
+    # home-rooted CWD_ROOT adds nothing but that recursive walk.
+    try:
+        cwd_is_home = cwd.resolve() == settings.user_home.resolve()
+    except OSError:
+        cwd_is_home = False
+    if not cwd_is_home:
+        roots.append(
+            FSRef(
+                cwd,
+                record_type=RecordType.CWD_ROOT,
+                scope=Scope.PROJECT.value,
+                project_id=Project.derive_id_for_path(cwd),
+            )
+        )
 
     try:
         from flow_sdk.config import (

@@ -59,6 +59,16 @@ const KEYCHAIN_ACCOUNT = 'flowpad_api_key';
 const CRED_HANDOFF_FILENAME = 'credentials';
 const CRED_HANDOFF_DIR = path.join(os.homedir(), '.flow');
 
+// Working directory for the `flow start` backend. The FS indexer treats its
+// CWD as a project root and walks the entire subtree (see
+// flow_sdk/fs_store/indexer/roots.py + project_folder_walker.py). If that root
+// is the home directory, the walk descends into ~/Desktop, ~/Library/Mobile
+// Documents (iCloud), other apps' containers, and the media library — each
+// first access trips a macOS TCC prompt attributed to Flowpad. Anchor the
+// backend to a dedicated, app-owned folder instead. Mirrors flow_sdk.config's
+// "~/Flowpad workspace".
+const BACKEND_CWD = path.join(os.homedir(), 'Flowpad workspace');
+
 const UpdateStatus = Object.freeze({
   REQUIRED: 'required',
   NOT_REQUIRED: 'not_required',
@@ -337,55 +347,46 @@ class UvManager {
   }
 
   /**
-   * Synchronous, filesystem-only check for the flow binary.
-   * No subprocess calls — this is the key to instant startup.
-   * Returns absolute path if found, null otherwise.
+   * Synchronous, filesystem-only check for the flow binary that *we* installed
+   * via `uv tool install flowpad`. No subprocess calls — this is the key to
+   * instant startup. Returns absolute path if found, null otherwise.
+   *
+   * We deliberately only look at uv's canonical tool location (and its shim in
+   * ~/.local/bin if it resolves back to that venv). Any other `flow` on the
+   * system — Homebrew, framework Python, pip --user, an unrelated tool that
+   * happens to share the name — is ignored: returning the wrong binary here
+   * would launch a completely different process as our backend.
    */
   getInstalledFlowBin() {
     const home = os.homedir();
-    const candidates = [];
+    const uvVenvRoot = IS_WIN
+      ? path.join(home, 'AppData', 'Roaming', 'uv', 'tools', PYPI_PACKAGE)
+      : path.join(home, '.local', 'share', 'uv', 'tools', PYPI_PACKAGE);
+    const uvVenvBin = IS_WIN
+      ? path.join(uvVenvRoot, 'Scripts', 'flow.exe')
+      : path.join(uvVenvRoot, 'bin', 'flow');
 
-    // uv tool bin dir (all platforms)
-    candidates.push(path.join(home, '.local', 'bin'));
-
-    if (IS_WIN) {
-      // pip --user Scripts for each minor version
-      for (let minor = 10; minor <= 14; minor++) {
-        candidates.push(
-          path.join(home, 'AppData', 'Roaming', 'Python', `Python3${minor}`, 'Scripts')
-        );
-      }
-      // python.org installer Scripts dirs
-      const localProgs = path.join(home, 'AppData', 'Local', 'Programs', 'Python');
-      for (let minor = 10; minor <= 14; minor++) {
-        candidates.push(path.join(localProgs, `Python3${minor}`, 'Scripts'));
-      }
-      // Windows Store / App Exec aliases
-      candidates.push(path.join(home, 'AppData', 'Local', 'Microsoft', 'WindowsApps'));
-    } else if (IS_MAC) {
-      // Homebrew (Apple Silicon + Intel)
-      candidates.push('/opt/homebrew/bin');
-      candidates.push('/usr/local/bin');
-      // python.org framework installer
-      for (let minor = 10; minor <= 14; minor++) {
-        candidates.push(`/Library/Frameworks/Python.framework/Versions/3.${minor}/bin`);
-      }
-    } else {
-      // Linux
-      candidates.push('/usr/local/bin');
-      candidates.push('/usr/bin');
-      candidates.push('/snap/bin');
+    if (fs.existsSync(uvVenvBin)) {
+      this.log.info(`[uv] Found flowpad binary at canonical uv path: ${uvVenvBin}`);
+      return uvVenvBin;
     }
 
+    // uv also drops a shim in ~/.local/bin pointing at the venv binary above.
+    // Accept it only if realpath confirms it belongs to the flowpad uv tool.
+    const shimDir = path.join(home, '.local', 'bin');
     const names = IS_WIN ? ['flow.exe', 'flow.cmd', 'flow'] : ['flow'];
-
-    for (const dir of candidates) {
-      for (const name of names) {
-        const candidate = path.join(dir, name);
-        if (fs.existsSync(candidate)) {
-          this.log.info(`[uv] Found existing flow binary: ${candidate}`);
+    for (const name of names) {
+      const candidate = path.join(shimDir, name);
+      if (!fs.existsSync(candidate)) continue;
+      try {
+        const resolved = fs.realpathSync(candidate);
+        if (resolved === uvVenvBin || resolved.startsWith(uvVenvRoot + path.sep)) {
+          this.log.info(`[uv] Found flowpad binary via shim: ${candidate} -> ${resolved}`);
           return candidate;
         }
+        this.log.info(`[uv] Ignoring ${candidate}: resolves to ${resolved}, not the flowpad uv tool`);
+      } catch {
+        // realpath failed (broken symlink, permissions); skip.
       }
     }
 
@@ -612,9 +613,16 @@ class UvManager {
       const { cmd: flowCmd, args: flowArgs } = this._flowCmd(['start']);
       const useShell = needsShellOnWin(flowCmd);
       const cmdToRun = useShell ? quoteWinCmd(flowCmd) : flowCmd;
+      // Ensure the app-owned workspace exists so spawn() doesn't ENOENT on the
+      // cwd, and so the backend never falls back to walking the home tree.
+      try {
+        fs.mkdirSync(BACKEND_CWD, { recursive: true });
+      } catch (e) {
+        this.log.warn(`[uv] could not create backend cwd ${BACKEND_CWD}: ${e.message}`);
+      }
       const child = spawn(cmdToRun, flowArgs, {
         env,
-        cwd: os.homedir(),
+        cwd: BACKEND_CWD,
         detached: false,
         stdio: ['ignore', 'pipe', 'pipe'],
         shell: useShell,
