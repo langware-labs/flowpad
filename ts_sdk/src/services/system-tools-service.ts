@@ -476,22 +476,25 @@ export class SystemToolsService extends EventEmitter {
   }
 
   /**
-   * Compound reset + rescan:
+   * Compound reset + rescan — full reindex from scratch.
+   *
    *   1. Archive (DB + records snapshot)
-   *   2. Clear index (FTS + entity records)
+   *   2. Clear index (FTS + all anonymous entities; @local is preserved)
    *   3. Aggregate scan — backend streams IndexProgressTable snapshots
    *   4. Aggregate index — backend streams IndexProgressTable snapshots
+   *
+   * The whole flow is intentionally unscoped: clear-index wipes every
+   * anonymous entity (no scope kwarg accepted), so the project ids the
+   * caller might pass for narrowing the scan/index would all refer to rows
+   * that were just deleted — scan's project-id-to-mount-path lookup would
+   * 404 ("Project '<id>' not found") and abort the rebuild. The scan
+   * rediscovers projects from disk; downstream UI re-resolves via bootstrap.
    *
    * Each phase's backend WS feed drives ``progressTable`` directly; we just
    * flag the local ``currentActivity`` so the footer label phases through
    * Archiving → Clearing → Scanning → Indexing.
    */
-  async resetAndRescan(scope?: { user: boolean; projects: string[] }): Promise<void> {
-    // Build the unified scope-filter query string once and reuse on every hop.
-    const scopeQs = scope
-      ? `&user=${scope.user ? 'true' : 'false'}&projects=${encodeURIComponent(scope.projects.join(','))}`
-      : '';
-
+  async resetAndRescan(): Promise<void> {
     let capturedScanResult: LastScanResult | null = null;
     try {
       this._setActivity('archive');
@@ -503,13 +506,13 @@ export class SystemToolsService extends EventEmitter {
 
       this._setActivity('scan');
       const scanData = await apiClient.get(
-        `${FS_RECORDS_BASE}/scan?trigger=manual${scopeQs}`,
+        `${FS_RECORDS_BASE}/scan?trigger=manual`,
       );
       const scanResult = scanData as unknown as LastScanResult;
       if (scanResult?.types) capturedScanResult = scanResult;
 
       this._setActivity('index');
-      await apiClient.post(`${FS_RECORDS_BASE}/index?_=1${scopeQs}`);
+      await apiClient.post(`${FS_RECORDS_BASE}/index?_=1`);
     } finally {
       if (capturedScanResult) this.lastScanResult = capturedScanResult;
       this._setActivity(null);

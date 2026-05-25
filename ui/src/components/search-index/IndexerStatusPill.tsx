@@ -1,4 +1,4 @@
-import { RefreshCw } from 'lucide-react';
+import { Loader2, RefreshCw } from 'lucide-react';
 import { useEffect, useRef } from 'react';
 import { useIndexStatus } from '@src/hooks/use-index-status';
 import { useSystemTools } from '@src/hooks/use-system-tools';
@@ -6,13 +6,14 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
 import type { SystemActivity } from '@sdk';
-import { ActivityIndicator } from './ActivityIndicator';
+import { activityFooterLabel } from './activity-labels';
 
 /**
- * Footer pill. Active: spinner + progress label, click opens the progress
- * modal. Idle: refresh icon + "indexed Xm ago", click opens Records Scanner.
- * Refetches index-status on activity→idle so the label updates without a
- * remount.
+ * Footer pill. Always navigates to Records Scanner on click — the destination
+ * page renders the live activity bar, so the user lands on a single screen
+ * that surfaces both in-progress jobs and historical index status. Active:
+ * spinner + progress label. Idle: refresh icon + "indexed Xm ago". Refetches
+ * index-status on activity→idle so the label updates without a remount.
  */
 
 function idleLabel(iso: string | null): string {
@@ -27,7 +28,7 @@ function idleTooltip(iso: string | null): string {
 }
 
 export function IndexerStatusPill() {
-  const { currentActivity } = useSystemTools();
+  const { currentActivity, progressTable } = useSystemTools();
   const { state: indexStatus, refresh } = useIndexStatus();
   const { navigation } = useDockNavigation();
 
@@ -42,9 +43,23 @@ export function IndexerStatusPill() {
     prevActivity.current = currentActivity;
   }, [currentActivity, refresh]);
 
-  // Active: defer to the shared indicator (opens the singleton modal on click).
+  const openScanner = () => navigation.openDock(DockPointer.forFsRecordsScanner());
+
   if (currentActivity) {
-    return <ActivityIndicator variant="pill" />;
+    const label = activityFooterLabel(currentActivity, progressTable);
+    return (
+      <button
+        type="button"
+        onClick={openScanner}
+        className="flex items-center gap-1 rounded-sm px-1.5 text-[10px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+        title={`${label} — click to open Records Scanner`}
+        aria-label={label}
+        data-testid="footer-indexing-indicator"
+      >
+        <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary" />
+        <span className="max-w-[320px] truncate tabular-nums">{label}</span>
+      </button>
+    );
   }
 
   // Idle: never render during the initial fetch to avoid flicker.
@@ -54,7 +69,7 @@ export function IndexerStatusPill() {
   return (
     <button
       type="button"
-      onClick={() => navigation.openDock(DockPointer.forFsRecordsScanner())}
+      onClick={openScanner}
       className="flex items-center gap-1 rounded-sm px-1.5 text-[10px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
       title={`${idleTooltip(iso)} — click to open Records Scanner`}
       aria-label={`${idleLabel(iso)} — open Records Scanner`}

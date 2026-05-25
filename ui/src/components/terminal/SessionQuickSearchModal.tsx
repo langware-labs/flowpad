@@ -1,16 +1,32 @@
 import { AgenticProcess } from '@sdk';
-import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from '@src/components/ui/command';
-import { Dialog, DialogContent, DialogTitle } from '@src/components/ui/dialog';
+import apiClient from '@sdk/client';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { CodexIcon } from '@src/components/icons/CodexIcon';
+import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from '@src/components/ui/command';
+import { Dialog, DialogContent, DialogTitle } from '@src/components/ui/dialog';
+import type { SearchResult } from '@src/hooks/use-record-search';
 import { toast } from '@src/hooks/use-toast';
 import { useWorkerHistory, type WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Loader2 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 const HISTORY_LIMIT = 50;
+const SEARCH_LIMIT_PER_TYPE = 25;
+const SEARCH_DEBOUNCE_MS = 250;
+const SEARCH_PATH = '/graph/compute_node/@local/fs-records/search';
+const SESSION_TYPES = ['claude_session', 'codex_session'] as const;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+interface SessionRow {
+  key: string;
+  workerType: 'claude' | 'codex';
+  workerId: string;
+  agenticProcessId: string | null;
+  title: string;
+  subtitle: string;
+  timestamp: string | null;
+}
 
 interface SessionQuickSearchModalProps {
   open: boolean;
@@ -31,11 +47,7 @@ function timeAgo(iso: string | null | undefined): string {
   return `${days}d ago`;
 }
 
-function entryKey(e: WorkerHistoryEntry): string {
-  return `${e.worker_type}:${e.worker_id}`;
-}
-
-function displayName(e: WorkerHistoryEntry): string {
+function historyDisplayName(e: WorkerHistoryEntry): string {
   const name = (e.name ?? '').trim();
   if (name && !UUID_RE.test(name) && name !== e.worker_id) return name;
   const prompt = (e.last_prompt ?? '').trim();
@@ -43,45 +55,153 @@ function displayName(e: WorkerHistoryEntry): string {
   return 'Untitled session';
 }
 
+function historyToRow(e: WorkerHistoryEntry): SessionRow {
+  return {
+    key: `${e.worker_type}:${e.worker_id}`,
+    workerType: e.worker_type,
+    workerId: e.worker_id,
+    agenticProcessId: e.agentic_process_id,
+    title: historyDisplayName(e),
+    subtitle: e.project_name ?? '',
+    timestamp: e.last_active_time,
+  };
+}
+
+// Reverse the encoding the indexer uses for claude projects, e.g.
+// "-Users-shlom-Documents-dev-flowpad-oss" → "flowpad-oss".
+function projectNameFromAssetRef(assetRef: string): string {
+  const parts = assetRef.split('/');
+  parts.pop(); // filename
+  const encoded = parts.pop() ?? '';
+  if (!encoded) return '';
+  const last = encoded.split('-').filter(Boolean).pop() ?? '';
+  return last;
+}
+
+function workerIdFromSearchResult(r: SearchResult): string {
+  const stem = (r.asset_ref?.split('/').pop() ?? '').replace(/\.jsonl$/i, '');
+  if (r.record_type === 'codex_session' && stem.startsWith('rollout-')) {
+    const segs = stem.slice('rollout-'.length).split('-');
+    if (segs.length >= 5) return segs.slice(-5).join('-');
+  }
+  if (stem) return stem;
+  return r.record_id.replace(/^(claude_session|codex_session)-/, '');
+}
+
+function searchResultDisplayName(r: SearchResult): string {
+  const title = (r.fts_title ?? '').trim();
+  if (title && !UUID_RE.test(title)) return title;
+  const name = (r.name ?? '').trim();
+  if (name && !UUID_RE.test(name)) return name;
+  const desc = (r.fts_description ?? '').trim();
+  if (desc) return desc.length > 80 ? `${desc.slice(0, 80)}…` : desc;
+  return 'Untitled session';
+}
+
+function searchResultToRow(r: SearchResult): SessionRow {
+  const workerType: 'claude' | 'codex' = r.record_type === 'codex_session' ? 'codex' : 'claude';
+  return {
+    key: r.record_id,
+    workerType,
+    workerId: workerIdFromSearchResult(r),
+    agenticProcessId: null,
+    title: searchResultDisplayName(r),
+    subtitle: projectNameFromAssetRef(r.asset_ref ?? ''),
+    timestamp: r.modified_at || null,
+  };
+}
+
 export function SessionQuickSearchModal({ open, onOpenChange }: SessionQuickSearchModalProps) {
   const { navigation } = useDockNavigation();
-  const { entries, isLoading } = useWorkerHistory(HISTORY_LIMIT, { enabled: open });
+  const { entries, isLoading: isHistoryLoading } = useWorkerHistory(HISTORY_LIMIT, { enabled: open });
   const [query, setQuery] = useState('');
+  const [searchRows, setSearchRows] = useState<SessionRow[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
   const [opening, setOpening] = useState<string | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reqIdRef = useRef(0);
 
-  const visible = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const filtered = q
-      ? entries.filter((e) => {
-          const hay = [e.name, e.last_prompt, e.project_name]
-            .filter(Boolean)
-            .join(' ')
-            .toLowerCase();
-          return hay.includes(q);
-        })
-      : entries;
-    return [...filtered].sort((a, b) => {
-      const ta = a.last_active_time ? Date.parse(a.last_active_time) : 0;
-      const tb = b.last_active_time ? Date.parse(b.last_active_time) : 0;
-      return tb - ta;
-    });
-  }, [entries, query]);
+  useEffect(() => {
+    if (!open) {
+      setQuery('');
+      setOpening(null);
+      setSearchRows([]);
+      setIsSearching(false);
+    }
+  }, [open]);
 
-  const handleSelect = async (entry: WorkerHistoryEntry) => {
-    const key = entryKey(entry);
-    setOpening(key);
+  const trimmed = query.trim();
+  useEffect(() => {
+    if (!open) return;
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (!trimmed) {
+      setSearchRows([]);
+      setIsSearching(false);
+      return;
+    }
+    setIsSearching(true);
+    const controller = new AbortController();
+    const myReqId = ++reqIdRef.current;
+    debounceRef.current = setTimeout(() => {
+      const promises = SESSION_TYPES.map((rt) => {
+        const params = new URLSearchParams({
+          q: trimmed,
+          limit: String(SEARCH_LIMIT_PER_TYPE),
+          record_type: rt,
+        });
+        return apiClient
+          .get<{ results?: SearchResult[] }>(`${SEARCH_PATH}?${params.toString()}`, { signal: controller.signal })
+          .then((d) => d?.results ?? [])
+          .catch(() => [] as SearchResult[]);
+      });
+      Promise.all(promises).then((groups) => {
+        if (myReqId !== reqIdRef.current || controller.signal.aborted) return;
+        const rows = groups
+          .flat()
+          .map(searchResultToRow)
+          .sort((a, b) => {
+            const ta = a.timestamp ? Date.parse(a.timestamp) : 0;
+            const tb = b.timestamp ? Date.parse(b.timestamp) : 0;
+            return tb - ta;
+          });
+        setSearchRows(rows);
+        setIsSearching(false);
+      });
+    }, SEARCH_DEBOUNCE_MS);
+
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      controller.abort();
+    };
+  }, [trimmed, open]);
+
+  const historyRows = useMemo<SessionRow[]>(() => {
+    return [...entries]
+      .sort((a, b) => {
+        const ta = a.last_active_time ? Date.parse(a.last_active_time) : 0;
+        const tb = b.last_active_time ? Date.parse(b.last_active_time) : 0;
+        return tb - ta;
+      })
+      .map(historyToRow);
+  }, [entries]);
+
+  const visible = trimmed ? searchRows : historyRows;
+  const isLoading = trimmed ? isSearching : isHistoryLoading;
+
+  const handleSelect = async (row: SessionRow) => {
+    setOpening(row.key);
     try {
       let process: AgenticProcess | null = null;
-      if (entry.agentic_process_id) {
+      if (row.agenticProcessId) {
         try {
-          process = (await AgenticProcess.getById(entry.agentic_process_id)) ?? null;
+          process = (await AgenticProcess.getById(row.agenticProcessId)) ?? null;
         } catch {
           process = null;
         }
       }
       if (!process) {
         try {
-          process = await AgenticProcess.getByWorkerId(entry.worker_id);
+          process = await AgenticProcess.getByWorkerId(row.workerId);
         } catch {
           process = null;
         }
@@ -89,7 +209,7 @@ export function SessionQuickSearchModal({ open, onOpenChange }: SessionQuickSear
       if (!process) {
         toast({
           title: 'Session not found',
-          description: `Session ${entry.worker_id} is not in Claude or Codex history.`,
+          description: `Session ${row.workerId} is not in Claude or Codex history.`,
           variant: 'destructive',
         });
         return;
@@ -100,13 +220,6 @@ export function SessionQuickSearchModal({ open, onOpenChange }: SessionQuickSear
       setOpening(null);
     }
   };
-
-  useEffect(() => {
-    if (!open) {
-      setQuery('');
-      setOpening(null);
-    }
-  }, [open]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -125,33 +238,33 @@ export function SessionQuickSearchModal({ open, onOpenChange }: SessionQuickSear
           <CommandList className="max-h-[420px]">
             {isLoading && visible.length === 0 ? (
               <div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" /> Loading…
+                <Loader2 className="h-4 w-4 animate-spin" />
+                {trimmed ? 'Searching…' : 'Loading history'}
               </div>
             ) : visible.length === 0 ? (
-              <CommandEmpty>{query.trim() ? 'No matching sessions.' : 'No recent sessions.'}</CommandEmpty>
+              <CommandEmpty>{trimmed ? 'No matching sessions.' : 'No recent sessions.'}</CommandEmpty>
             ) : (
-              visible.map((e) => {
-                const key = entryKey(e);
-                const Icon = e.worker_type === 'codex' ? CodexIcon : ClaudeIcon;
-                const iconClass = e.worker_type === 'codex' ? 'text-emerald-500' : 'text-orange-500';
+              visible.map((row) => {
+                const Icon = row.workerType === 'codex' ? CodexIcon : ClaudeIcon;
+                const iconClass = row.workerType === 'codex' ? 'text-emerald-500' : 'text-orange-500';
                 return (
                   <CommandItem
-                    key={key}
-                    value={`${key} ${e.name ?? ''} ${e.last_prompt ?? ''} ${e.project_name ?? ''}`}
-                    onSelect={() => void handleSelect(e)}
+                    key={row.key}
+                    value={`${row.key} ${row.title} ${row.subtitle}`}
+                    onSelect={() => void handleSelect(row)}
                     data-testid="session-quick-search-result"
                   >
                     <Icon className={`h-3.5 w-3.5 shrink-0 ${iconClass}`} />
                     <span className="flex min-w-0 flex-1 flex-col overflow-hidden">
-                      <span className="truncate text-sm">{displayName(e)}</span>
-                      {e.project_name && (
-                        <span className="truncate text-[10px] text-muted-foreground/70">{e.project_name}</span>
+                      <span className="truncate text-sm">{row.title}</span>
+                      {row.subtitle && (
+                        <span className="truncate text-[10px] text-muted-foreground/70">{row.subtitle}</span>
                       )}
                     </span>
-                    {opening === key ? (
+                    {opening === row.key ? (
                       <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" />
                     ) : (
-                      <span className="shrink-0 text-xs text-muted-foreground">{timeAgo(e.last_active_time)}</span>
+                      <span className="shrink-0 text-xs text-muted-foreground">{timeAgo(row.timestamp)}</span>
                     )}
                   </CommandItem>
                 );

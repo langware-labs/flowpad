@@ -5,11 +5,11 @@ import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
 import { ScopeBar, type ScopeBarOption } from '@src/components/ui/scope-bar';
 import { cn } from '@src/lib/utils';
-import { FolderOpen, Layers, Pencil } from 'lucide-react';
+import { CircleSlash, FolderOpen, Layers, Pencil } from 'lucide-react';
 import { useCallback } from 'react';
 
 export type ScopeKind = 'user' | 'project' | 'folder';
-export type HarnessKind = 'claude' | 'codex' | 'all';
+export type HarnessKind = 'all' | 'claude' | 'codex' | 'none';
 
 export interface Scope {
   kind: ScopeKind;
@@ -40,9 +40,10 @@ const SCOPE_OPTIONS: ScopeBarOption<ScopeKind>[] = [
 ];
 
 const HARNESS_OPTIONS: { value: HarnessKind; title: string; Icon: React.ComponentType<{ className?: string }> }[] = [
+  { value: 'all', title: 'All harnesses', Icon: Layers },
   { value: 'claude', title: 'Claude Code', Icon: ClaudeIcon },
   { value: 'codex', title: 'Codex', Icon: CodexIcon },
-  { value: 'all', title: 'All harnesses', Icon: Layers },
+  { value: 'none', title: 'None (project root)', Icon: CircleSlash },
 ];
 
 export function ScopeSelection({
@@ -105,8 +106,8 @@ export function ScopeSelection({
       </div>
 
       <div className="flex items-center gap-2">
-        <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Harness</span>
-        <div className="flex items-center gap-1" role="radiogroup" aria-label="Harness">
+        <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Harness path</span>
+        <div className="flex items-center gap-1" role="radiogroup" aria-label="Harness path">
           {HARNESS_OPTIONS.map(({ value, title, Icon }) => {
             const active = value === harness;
             return (
