@@ -1,5 +1,5 @@
 ---
-id: e1a0f701-7f37-52c4-8fcb-9bcdb7d14077
+id: "e1a0f701-7f37-52c4-8fcb-9bcdb7d14077"
 ---
 
 # VFS Path Specification
@@ -12,12 +12,12 @@ VFS (Virtual File System) paths provide a universal URI scheme for addressing fi
 vfs://{type}-{id}/{entity_sub_path}
 ```
 
-| Component | Required | Description |
-|-----------|----------|-------------|
-| `vfs://` | No | Protocol prefix. May be omitted — paths are valid without it. |
-| `{type}` | Yes | Entity type: `compute_node`, `agent`, `project`, `workspace`, `user` |
-| `{id}` | Yes | Entity identifier (see [ID Formats](#id-formats) below) |
-| `{entity_sub_path}` | No | Path within the entity's storage. No leading `/`, forward slashes only. |
+| Component           | Required | Description                                                             |
+| ------------------- | -------- | ----------------------------------------------------------------------- |
+| `vfs://`            | No       | Protocol prefix. May be omitted — paths are valid without it.           |
+| `{type}`            | Yes      | Entity type: `compute_node`, `agent`, `project`, `workspace`, `user`    |
+| `{id}`              | Yes      | Entity identifier (see [ID Formats](#id-formats) below)                 |
+| `{entity_sub_path}` | No       | Path within the entity's storage. No leading `/`, forward slashes only. |
 
 The `{type}-{id}` portion is a standard [TypeId](../flow_sdk/api/type_id.py).
 
@@ -25,12 +25,12 @@ The `{type}-{id}` portion is a standard [TypeId](../flow_sdk/api/type_id.py).
 
 The `{id}` segment supports four identifier formats:
 
-| Format | Pattern | Example |
-|--------|---------|---------|
-| UUID | `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` | `compute_node-550e8400-e29b-41d4-a716-446655440000` |
-| Named | `@{name}` | `agent-@local` |
-| Namespace | `{PREFIX}-{value}` | `workspace-WORKSPACE-123` |
-| Prop ID | `{key}.{value}` | `user-email.john_doe` |
+| Format    | Pattern                                | Example                                             |
+| --------- | -------------------------------------- | --------------------------------------------------- |
+| UUID      | `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx` | `compute_node-550e8400-e29b-41d4-a716-446655440000` |
+| Named     | `@{name}`                              | `agent-@local`                                      |
+| Namespace | `{PREFIX}-{value}`                     | `workspace-WORKSPACE-123`                           |
+| Prop ID   | `{key}.{value}`                        | `user-email.john_doe`                               |
 
 In desktop/local mode the named id `@local` is used for all bootstrap entities.
 
@@ -72,10 +72,10 @@ The TypeScript `VFSPath` does **not** auto-resolve — it sets `type` and `id` t
 
 All paths stored internally use forward slashes with no leading slash:
 
-| OS Input | Normalized `entitySubPath` |
-|----------|---------------------------|
-| `/Users/shlom/file.md` (macOS/Linux) | `Users/shlom/file.md` |
-| `C:\Users\shlom\file.md` (Windows) | `Users/shlom/file.md` |
+| OS Input                             | Normalized `entitySubPath` |
+| ------------------------------------ | -------------------------- |
+| `/Users/shlom/file.md` (macOS/Linux) | `Users/shlom/file.md`      |
+| `C:\Users\shlom\file.md` (Windows)   | `Users/shlom/file.md`      |
 
 Windows drive letters (`C:\`, `D:\`) are stripped. Backslashes are converted to forward slashes.
 
@@ -113,37 +113,44 @@ HTTP Request
 
 ## Supported FS Actions
 
-| Action | Method | Description |
-|--------|--------|-------------|
-| `browse` | GET | List directory contents → `FSItem[]` |
-| `download` | GET | Stream file content |
-| `download_zip` | GET | Download directory as ZIP archive |
-| `upload` | POST | Upload files (multipart form) |
-| `upload_zip` | POST | Upload and extract ZIP archive |
-| `write` | POST | Write content to a file |
-| `mkdir` | POST | Create a directory |
-| `delete` | DELETE | Delete a file or directory |
-| `rename` | POST | Rename a file or directory |
-| `copy` | POST | Copy a file or directory |
-| `move` | POST | Move a file or directory |
-| `open` | GET | Open file with system default app |
-| `create_symlink` | POST | Create a symbolic link |
-| `resolve_symlink` | GET | Resolve a symbolic link target |
-| `import_item` | POST | Import an item into entity storage |
+| Action            | Method | Description                          |
+| ----------------- | ------ | ------------------------------------ |
+| `browse`          | GET    | List directory contents → `FSItem[]` |
+| `download`        | GET    | Stream file content                  |
+| `download_zip`    | GET    | Download directory as ZIP archive    |
+| `upload`          | POST   | Upload files (multipart form)        |
+| `upload_zip`      | POST   | Upload and extract ZIP archive       |
+| `write`           | POST   | Write content to a file              |
+| `mkdir`           | POST   | Create a directory                   |
+| `delete`          | DELETE | Delete a file or directory           |
+| `rename`          | POST   | Rename a file or directory           |
+| `copy`            | POST   | Copy a file or directory             |
+| `move`            | POST   | Move a file or directory             |
+| `open`            | GET    | Open file with system default app    |
+| `create_symlink`  | POST   | Create a symbolic link               |
+| `resolve_symlink` | GET    | Resolve a symbolic link target       |
+| `import_item`     | POST   | Import an item into entity storage   |
 
 ## Implementations
 
-| Language | File | Class |
-|----------|------|-------|
-| Python | `flow_sdk/api/fs/fs_api.py` | `VFSPath`, `EntityFSReqInfo` |
-| TypeScript | `ts_sdk/src/utils/vfs-path.ts` | `VFSPath` |
+| Language   | File                           | Class                        |
+| ---------- | ------------------------------ | ---------------------------- |
+| Python     | `flow_sdk/api/fs/fs_api.py`    | `VFSPath`, `EntityFSReqInfo` |
+| TypeScript | `ts_sdk/src/utils/vfs-path.ts` | `VFSPath`                    |
 
 Supporting files:
 
-- FS action dispatcher: `flow_sdk/actions/fs/main_fs_action.py`
-- FS action handlers: `flow_sdk/actions/fs/fs_actions.py`
-- Storage driver: `flow_sdk/storage/local_fs_driver.py`
-- FS item entity: `flow_sdk/builtin/fs_entities.py`
-- TS FS service: `ts_sdk/src/services/fsService.ts`
-- TS FS store: `ts_sdk/src/stores/fsStore.ts`
-- Unit tests: `ui/tests/unit/vfs-path.test.ts`, `tests/api/test_unit_fs.py`
+* FS action dispatcher: `flow_sdk/actions/fs/main_fs_action.py`
+
+* FS action handlers: `flow_sdk/actions/fs/fs_actions.py`
+
+* Storage driver: `flow_sdk/storage/local_fs_driver.py`
+
+* FS item entity: `flow_sdk/builtin/fs_entities.py`
+
+* TS FS service: `ts_sdk/src/services/fsService.ts`
+
+* TS FS store: `ts_sdk/src/stores/fsStore.ts`
+
+* Unit tests: `ui/tests/unit/vfs-path.test.ts`, `tests/api/test_unit_fs.py`
+

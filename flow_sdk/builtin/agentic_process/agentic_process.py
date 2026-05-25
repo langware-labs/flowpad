@@ -2128,10 +2128,11 @@ class AgenticProcess(Entity):
             return None
 
     def _finalized_restart_cli_options(self) -> WorkerCLIOptions:
-        """Build the launch options used for worker restart comparison.
-
-        This mirrors the persisted/process-derived CLI inputs used by
-        ``start_pty()`` but intentionally excludes runtime-only env injection.
+        """Launch-options snapshot for restart-comparison hashing. Excludes
+        runtime env injection + resume-gated transcript cwd lookup — those are
+        derived from transcript state that drifts between start-time and
+        save-time, which would light a phantom restart glow. The live launch
+        path applies them; the hash strips ``resume`` via ``restart_payload_from_cli_options``.
         """
         driver = self._restart_driver()
         if driver is None:
@@ -2139,20 +2140,9 @@ class AgenticProcess(Entity):
         cmd = driver.cli_options(self)
 
         # Server-restart resume: process had a shell but cli_config didn't
-        # encode resume. This is part of the effective launch shape.
+        # encode resume. Effective launch shape; stripped from the hash.
         if not getattr(cmd, "resume", False) and self.session_id:
             cmd.resume = self._is_exist_claude_resume_session(self.session_id)
-
-        # Claude-only transcript cwd plumbing. Keep this sync and reproducible
-        # so start-time and save-time snapshots use the same persisted inputs.
-        if hasattr(cmd, "fork_session_id"):
-            fork_session_id = getattr(cmd, "fork_session_id", None)
-            if fork_session_id or (getattr(cmd, "resume", False) and self.session_id):
-                lookup_id = fork_session_id or self.session_id
-                session_rec = self._discover_claude_record_session(lookup_id)
-                if session_rec and session_rec.cwd:
-                    cmd.env_vars["CLAUDE_PROJECT_DIR"] = session_rec.cwd
-                    cmd.workdir = session_rec.cwd
 
         return cmd
 

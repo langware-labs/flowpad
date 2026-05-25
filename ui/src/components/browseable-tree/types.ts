@@ -1,6 +1,17 @@
 import type { ReactNode } from 'react';
 import type { DockPointer } from '@src/navigation/DockPointer';
 
+export interface BrowseableDragData {
+  /** Adapter-specific discriminator. */
+  kind: string;
+  /** Stable id of the dragged row. */
+  id: string;
+  /** Human-readable label used for drag feedback and validation messages. */
+  label: string;
+  /** Adapter-specific payload. Keep this JSON-serializable. */
+  [key: string]: unknown;
+}
+
 /**
  * Browseable — generic node in a tree menu.
  *
@@ -39,8 +50,12 @@ export interface Browseable {
    *  - `'unknown'`: show a chevron optimistically; resolve on first expand */
   hasChildren: boolean | 'unknown';
 
-  /** Lazy loader; called at most once per expand. Cached by `id` in the tree. */
-  listChildren?: () => Promise<Browseable[]>;
+  /** Lazy loader; called at most once per expand. Cached by `id` in the tree.
+   *  When called with `{ refresh: true }`, the adapter MUST bypass any caches
+   *  it controls (e.g. fsStore's browseCache) so the result reflects fresh
+   *  on-disk state. The tree uses this on deep-link auto-expand when the
+   *  target leaf is missing from the parent's previously-loaded children. */
+  listChildren?: (opts?: { refresh?: boolean }) => Promise<Browseable[]>;
 
   /** Click == navigate to this pointer. `null` means header-only row
    *  (clicking just toggles the chevron). */
@@ -48,6 +63,15 @@ export interface Browseable {
 
   /** Inline hover actions. Side effects only. */
   toolbar?: ToolbarAction[];
+
+  /** Internal tree drag payload. When present, the row can be dragged. */
+  dragData?: BrowseableDragData;
+
+  /** Return true when this row can accept the currently-dragged row. */
+  canDrop?: (dragData: BrowseableDragData) => boolean;
+
+  /** Side effect for a successful drop. */
+  onDrop?: (dragData: BrowseableDragData) => void | Promise<void>;
 }
 
 /**

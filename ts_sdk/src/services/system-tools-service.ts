@@ -16,6 +16,12 @@ export interface IndexTypeResult {
   indexed: number;
 }
 
+export interface IndexTypeOptions {
+  /** Bypass skip-fresh so rows are re-parsed even when source mtime did not change. */
+  force?: boolean;
+  orphanAction?: 'index' | 'ignore' | 'delete';
+}
+
 /** Returned by `systemTools.discoverByPath()`. */
 export interface DiscoverByPathResult {
   type: string;
@@ -384,12 +390,15 @@ export class SystemToolsService extends EventEmitter {
   async indexType(
     typeName: string,
     scope?: { user: boolean; projects: string[] },
+    options?: IndexTypeOptions,
   ): Promise<IndexTypeResult> {
     const qs = new URLSearchParams({ type: typeName });
     if (scope) {
       qs.set('user', scope.user ? 'true' : 'false');
       qs.set('projects', scope.projects.join(','));
     }
+    if (options?.force) qs.set('force', 'true');
+    if (options?.orphanAction) qs.set('orphan_action', options.orphanAction);
     const res = await apiClient.post<IndexTypeResult>(
       `${FS_RECORDS_BASE}/index?${qs.toString()}`,
     );
