@@ -59,6 +59,16 @@ const KEYCHAIN_ACCOUNT = 'flowpad_api_key';
 const CRED_HANDOFF_FILENAME = 'credentials';
 const CRED_HANDOFF_DIR = path.join(os.homedir(), '.flow');
 
+// Working directory for the `flow start` backend. The FS indexer treats its
+// CWD as a project root and walks the entire subtree (see
+// flow_sdk/fs_store/indexer/roots.py + project_folder_walker.py). If that root
+// is the home directory, the walk descends into ~/Desktop, ~/Library/Mobile
+// Documents (iCloud), other apps' containers, and the media library — each
+// first access trips a macOS TCC prompt attributed to Flowpad. Anchor the
+// backend to a dedicated, app-owned folder instead. Mirrors flow_sdk.config's
+// "~/Flowpad workspace".
+const BACKEND_CWD = path.join(os.homedir(), 'Flowpad workspace');
+
 const UpdateStatus = Object.freeze({
   REQUIRED: 'required',
   NOT_REQUIRED: 'not_required',
@@ -603,9 +613,16 @@ class UvManager {
       const { cmd: flowCmd, args: flowArgs } = this._flowCmd(['start']);
       const useShell = needsShellOnWin(flowCmd);
       const cmdToRun = useShell ? quoteWinCmd(flowCmd) : flowCmd;
+      // Ensure the app-owned workspace exists so spawn() doesn't ENOENT on the
+      // cwd, and so the backend never falls back to walking the home tree.
+      try {
+        fs.mkdirSync(BACKEND_CWD, { recursive: true });
+      } catch (e) {
+        this.log.warn(`[uv] could not create backend cwd ${BACKEND_CWD}: ${e.message}`);
+      }
       const child = spawn(cmdToRun, flowArgs, {
         env,
-        cwd: os.homedir(),
+        cwd: BACKEND_CWD,
         detached: false,
         stdio: ['ignore', 'pipe', 'pipe'],
         shell: useShell,
