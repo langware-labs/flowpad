@@ -829,6 +829,18 @@ async def get_or_create_local_workspace(desktop_user: Optional[Entity] = None) -
     return workspace
 
 
+def _local_compute_node_id() -> str:
+    """Deterministic id for the @local compute_node, derived from the host machine id.
+
+    uuid5(NAMESPACE_DNS, "compute_node:local:<machine_id>") gives a stable id per
+    machine — dev DB recreations (and any other reinit) bring back the same id, so
+    cached references in the UI, persisted localStorage typeids, and stale WS
+    payloads keep resolving instead of pointing at a dead UUID.
+    """
+    from flow_sdk.utils.machine_id import get_machine_id  # noqa: PLC0415
+    return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"compute_node:local:{get_machine_id()}"))
+
+
 async def get_or_create_local_compute_node(
     local_project: Optional[Entity] = None,
     desktop_user: Optional[Entity] = None,
@@ -845,8 +857,19 @@ async def get_or_create_local_compute_node(
     Migrated from FlowPad: flowpad/hub/core/desktop_loader.py (init_local_compute_node)
     """
     os_root = get_os_root_path()
+    local_id = _local_compute_node_id()
 
-    compute_node = await get_local_entity(ComputeNode)
+    # Resolve by deterministic id first; fall back to the legacy uname='local'
+    # lookup for databases written before stable-id was introduced.
+    compute_node = await ComputeNode.get_by_id(local_id)
+    if compute_node is None:
+        compute_node = await get_local_entity(ComputeNode)
+        if compute_node is not None and compute_node.id != local_id:
+            logging.warning(
+                "@local compute_node has legacy random id %s; expected stable %s. "
+                "Keeping existing row to preserve references — wipe the DB to migrate.",
+                compute_node.id, local_id,
+            )
     already_existed = compute_node is not None
     if compute_node:
         logging.info(f"@local compute node already exists: {compute_node.id}")
@@ -864,6 +887,7 @@ async def get_or_create_local_compute_node(
     else:
         logging.info("Creating @local compute node for desktop environment")
         compute_node = ComputeNode(
+            id=local_id,
             type="compute_node",
             uname="local",
             name="@local",

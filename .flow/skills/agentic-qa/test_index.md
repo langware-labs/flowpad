@@ -1,148 +1,188 @@
-# Manual Regression Test Index
-_Generated Tue May 12 01:43:24 IDT 2026_
+# Test Index
 
-## agentic-process (12 specs)
-- `agentic-process/conversation_view_three_spawn_branches.md`
-- `agentic-process/embedded_close_preserves_process.md`
-- `agentic-process/fork_action_from_search_dock.md`
-- `agentic-process/new_claude_session_no_console_errors.md` [md.ts]
-- `agentic-process/observability_surfaces.md`
-- `agentic-process/open_shell_from_process_workdir.md`
-- `agentic-process/process_restart_and_cli_flags.md`
-- `agentic-process/process_terminal_shell_tab_navigates_url.md` [md.ts]
-- `agentic-process/processtoolbar_fork.md`
-- `agentic-process/resume_session_from_recent.md`
-- `agentic-process/session_info_popover.md`
-- `agentic-process/worktree_lifecycle.md`
+> Last updated: 2026-05-24 (QA cycle start)
+> Scope: .md scenarios only. .md.ts-only files without a .md spec are not counted.
 
-## assets (3 specs)
-- `assets/agent_execution_asset_picker.md`
-- `assets/assets_list_mode.md`
-- `assets/wiki_folder_tree.md` [md.ts]
+## agentic-process (12 scenarios)
+| Scenario | Playwright | Fast Path |
+|----------|------------|-----------|
+| conversation_view_three_spawn_branches.md | no | no |
+| embedded_close_preserves_process.md | no | no |
+| fork_action_from_search_dock.md | no | no |
+| new_claude_session_no_console_errors.md | yes | no |
+| observability_surfaces.md | no | no |
+| open_shell_from_process_workdir.md | no | no |
+| process_restart_and_cli_flags.md | no | no |
+| process_terminal_shell_tab_navigates_url.md | yes | no |
+| processtoolbar_fork.md | no | no |
+| resume_session_from_recent.md | no | no |
+| session_info_popover.md | no | no |
+| worktree_lifecycle.md | no | no |
 
-## chat (14 specs)
-- `chat/chat_input_controls.md` [md.ts]
-- `chat/chat_refresh_persistence.md` [md.ts]
-- `chat/chat_tab_switching.md` [md.ts]
-- `chat/closing_a_chat_produces_console_error_401.md`
-- `chat/doc_chat_per_type.md`
-- `chat/landing_to_new_chat.md` [md.ts]
-- `chat/new_session_is_not_opened.md`
-- `chat/new_sessions_always_opened_with_session_1_header.md`
-- `chat/opening_project_in_explorer_console_error_404.md`
-- `chat/prompting_from_app_homepage_does_not_start_new_session.md`
-- `chat/return_to_home.md` [md.ts]
-- `chat/send_multiple_messages.md` [md.ts]
-- `chat/sessions_disappear_after_page_refresh.md`
-- `chat/switch_between_sessions.md`
+## assets (3 scenarios)
+| Scenario | Playwright | Fast Path |
+|----------|------------|-----------|
+| agent_execution_asset_picker.md | no | no |
+| assets_list_mode.md | no | no |
+| wiki_folder_tree.md | yes | no |
 
-## cli-log (1 specs)
-- `cli-log/cli_log_viewer.md`
+## chat (14 scenarios)
+| Scenario | Playwright | Fast Path |
+|----------|------------|-----------|
+| chat_input_controls.md | yes | no |
+| chat_refresh_persistence.md | yes | no |
+| chat_tab_switching.md | yes | no |
+| closing_a_chat_produces_console_error_401.md | no | no |
+| doc_chat_per_type.md | no | no |
+| landing_to_new_chat.md | yes | no |
+| new_session_is_not_opened.md | no | no |
+| new_sessions_always_opened_with_session_1_header.md | no | no |
+| opening_project_in_explorer_console_error_404.md | no | no |
+| prompting_from_app_homepage_does_not_start_new_session.md | no | no |
+| return_to_home.md | yes | no |
+| send_multiple_messages.md | yes | no |
+| sessions_disappear_after_page_refresh.md | no | no |
+| switch_between_sessions.md | no | no |
 
-## collaboration (4 specs)
-- `collaboration/collaboration_room_add_process.md`
-- `collaboration/flowpad_assistant_docs_panel.md`
-- `collaboration/project_room_new_doc.md`
-- `collaboration/project_row_opens_collab_space.md`
+## cli-log (1 scenarios)
+| Scenario | Playwright | Fast Path |
+|----------|------------|-----------|
+| cli_log_viewer.md | no | yes |
 
-## conversation (1 specs)
-- `conversation/two_instance_hub_conversation.md`
+## collaboration (4 scenarios)
+| Scenario | Playwright | Fast Path |
+|----------|------------|-----------|
+| collaboration_room_add_process.md | no | no |
+| flowpad_assistant_docs_panel.md | no | no |
+| project_room_new_doc.md | no | no |
+| project_row_opens_collab_space.md | no | no |
 
-## editor (13 specs)
-- `editor/ami_creating_a_folder_crashes_desktop_app_agent_id_is_missin.md`
-- `editor/console_error_404_request_failed_with_status_code_404_when_c.md`
-- `editor/console_error_500_failed_to_load_resource_tab_hooks_in_syste.md`
-- `editor/editor_download_all_files_console_error.md`
-- `editor/editor_tab_download_all_files_fails_to_create_zip.md`
-- `editor/editorfiles_tab_creating_a_new_file_doesnt_show_the_file_in.md`
-- `editor/execute_flow_error_theme_vs_dark_not_found_you_may_need_to_l.md`
-- `editor/files_tab_download_directory_does_nothing.md`
-- `editor/files_tab_shows_local_c_as_root_and_doesnt_show_the_temp_wor.md`
-- `editor/milkdown_no_wiki_back_button.md`
-- `editor/milkdown_selection_toolbar.md`
-- `editor/new_prompt_save_indefinitely.md`
-- `editor/uploading_a_file_doesnt_show_up_in_the_side_bar.md`
+## conversation (1 scenarios)
+| Scenario | Playwright | Fast Path |
+|----------|------------|-----------|
+| two_instance_hub_conversation.md | no | no |
 
-## general (7 specs)
-- `general/console_error_482_failed_to_start_in_app_hompage.md`
-- `general/current_activity_recent_sessions.md` [md.ts]
-- `general/execute_flow_hangs_indefinitely.md` [md.ts]
-- `general/heartbeat_sniffer_hook_events_e2e.md`
-- `general/mac_desktop_app_hompage_error_500_failed_to_load_system_reso.md`
-- `general/refreshing_any_tab_other_than_main_app_error_404_agent_id_mi.md`
-- `general/usage_cost_failed_to_fetch_cost_overview.md`
+## editor (13 scenarios)
+| Scenario | Playwright | Fast Path |
+|----------|------------|-----------|
+| ami_creating_a_folder_crashes_desktop_app_agent_id_is_missin.md | no | no |
+| console_error_404_request_failed_with_status_code_404_when_c.md | no | no |
+| console_error_500_failed_to_load_resource_tab_hooks_in_syste.md | no | no |
+| editor_download_all_files_console_error.md | no | no |
+| editor_tab_download_all_files_fails_to_create_zip.md | no | no |
+| editorfiles_tab_creating_a_new_file_doesnt_show_the_file_in.md | no | no |
+| execute_flow_error_theme_vs_dark_not_found_you_may_need_to_l.md | no | no |
+| files_tab_download_directory_does_nothing.md | no | no |
+| files_tab_shows_local_c_as_root_and_doesnt_show_the_temp_wor.md | no | no |
+| milkdown_no_wiki_back_button.md | no | no |
+| milkdown_selection_toolbar.md | no | no |
+| new_prompt_save_indefinitely.md | no | no |
+| uploading_a_file_doesnt_show_up_in_the_side_bar.md | no | no |
 
-## search (7 specs)
-- `search/rebuild_index_ui.md`
-- `search/record_search_from_home.md` [md.ts]
-- `search/record_search_view.md` [md.ts]
-- `search/scan_records_viewer.md` [md.ts]
-- `search/search_bar.md` [md.ts]
-- `search/search_limit_param.md` [md.ts]
-- `search/search_scan_info_stats.md` [md.ts]
+## general (7 scenarios)
+| Scenario | Playwright | Fast Path |
+|----------|------------|-----------|
+| console_error_482_failed_to_start_in_app_hompage.md | no | no |
+| current_activity_recent_sessions.md | yes | no |
+| execute_flow_hangs_indefinitely.md | yes | no |
+| heartbeat_sniffer_hook_events_e2e.md | no | no |
+| mac_desktop_app_hompage_error_500_failed_to_load_system_reso.md | no | no |
+| refreshing_any_tab_other_than_main_app_error_404_agent_id_mi.md | no | no |
+| usage_cost_failed_to_fetch_cost_overview.md | no | no |
 
-## setup (1 specs)
-- `setup/llm_not_configured_shows_up_after_configuring_llm.md` [md.ts]
+## markdown_index (1 scenarios)
+| Scenario | Playwright | Fast Path |
+|----------|------------|-----------|
+| smoke.md | no | no |
 
-## skills (6 specs)
-- `skills/console_error_404_skill_page.md`
-- `skills/skill_editor_error_skillparseerror_invalid_skillmd_format_mi.md`
-- `skills/skills_failed_to_run_skill_console_error_482.md`
-- `skills/skills_run_hangs_indefinitely.md` [md.ts]
-- `skills/user_skills_failed_to_generate_plan_console_error_404.md`
-- `skills/user_skills_failed_to_generate_plan_console_error_500.md`
+## search (7 scenarios)
+| Scenario | Playwright | Fast Path |
+|----------|------------|-----------|
+| rebuild_index_ui.md | no | no |
+| record_search_from_home.md | yes | no |
+| record_search_view.md | yes | yes |
+| scan_records_viewer.md | yes | no |
+| search_bar.md | yes | no |
+| search_limit_param.md | yes | no |
+| search_scan_info_stats.md | yes | no |
 
-## sniffer (5 specs)
-- `sniffer/sniffer_auto_enable_on_restart.md`
-- `sniffer/sniffer_bootstrap_init_state.md`
-- `sniffer/sniffer_event_capture.md`
-- `sniffer/sniffer_shared_state_single_backend_call.md`
-- `sniffer/sniffer_spa_navigation_preserves_state.md`
+## setup (1 scenarios)
+| Scenario | Playwright | Fast Path |
+|----------|------------|-----------|
+| llm_not_configured_shows_up_after_configuring_llm.md | yes | no |
 
-## terminal (26 specs)
-- `terminal/ctrlc_doesnt_copy_in_shell_tab.md` [md.ts]
-- `terminal/flow_shell_tab_location.md`
-- `terminal/git_status_panel.md` [md.ts]
-- `terminal/in_claude_ctrlv_does_not_paste.md` [md.ts]
-- `terminal/interactive_tabs_project_filtering_matrix.md`
-- `terminal/multiple_terminal_tabs.md` [md.ts]
-- `terminal/navigate_to_shell.md` [md.ts]
-- `terminal/prompt_index_panel.md` [md.ts]
-- `terminal/run_basic_command.md` [md.ts]
-- `terminal/shell_starts_in_acceptable_time.md`
-- `terminal/shell_tabs_remain_open_after_closing.md`
-- `terminal/shell_terminals_looks_empty.md`
-- `terminal/terminal_annotation_bookmark.md` [md.ts]
-- `terminal/terminal_clear_and_scrollback.md` [md.ts]
-- `terminal/terminal_command_history.md` [md.ts]
-- `terminal/terminal_ctrl_c.md` [md.ts]
-- `terminal/terminal_persistence_on_tab_switch.md` [md.ts]
-- `terminal/terminal_pty_no_duplicates.md` [md.ts]
-- `terminal/terminal_pty_output_clean.md` [md.ts]
-- `terminal/terminal_resize.md` [md.ts]
-- `terminal/terminal_scroll_sync.md` [md.ts]
-- `terminal/terminal_tab_rename.md` [md.ts]
-- `terminal/time_gutter_and_prompt_annotations.md`
-- `terminal/visible_process_still_pty.md`
-- `terminal/web_app_artifact_not_created_when_prompted.md` [md.ts]
-- `terminal/when_claude_runs_in_shell_and_is_thinking_not_all_the_output.md` [md.ts]
+## skills (6 scenarios)
+| Scenario | Playwright | Fast Path |
+|----------|------------|-----------|
+| console_error_404_skill_page.md | no | no |
+| skill_editor_error_skillparseerror_invalid_skillmd_format_mi.md | no | no |
+| skills_failed_to_run_skill_console_error_482.md | no | no |
+| skills_run_hangs_indefinitely.md | yes | no |
+| user_skills_failed_to_generate_plan_console_error_404.md | no | no |
+| user_skills_failed_to_generate_plan_console_error_500.md | no | no |
 
-## triggers (1 specs)
-- `triggers/trigger_process_target_typeid_str.md`
+## sniffer (4 scenarios)
+| Scenario | Playwright | Fast Path |
+|----------|------------|-----------|
+| sniffer_bootstrap_init_state.md | no | no |
+| sniffer_event_capture.md | no | no |
+| sniffer_shared_state_single_backend_call.md | no | no |
+| sniffer_spa_navigation_preserves_state.md | no | no |
 
-## whiteboard (8 specs)
-- `whiteboard/smoke.md`
-- `whiteboard/create_persist.md`
-- `whiteboard/mermaid_sync.md`
-- `whiteboard/wiki_integration.md`
-- `whiteboard/ui_ux.md`
-- `whiteboard/scope.md`
-- `whiteboard/edge_cases.md`
-- `whiteboard/multi_tab.md` [skip:harness]
+## terminal (26 scenarios)
+| Scenario | Playwright | Fast Path |
+|----------|------------|-----------|
+| ctrlc_doesnt_copy_in_shell_tab.md | yes | no |
+| flow_shell_tab_location.md | no | no |
+| git_status_panel.md | yes | no |
+| in_claude_ctrlv_does_not_paste.md | yes | no |
+| interactive_tabs_project_filtering_matrix.md | no | no |
+| multiple_terminal_tabs.md | yes | no |
+| navigate_to_shell.md | yes | no |
+| prompt_index_panel.md | yes | no |
+| run_basic_command.md | yes | no |
+| shell_starts_in_acceptable_time.md | no | no |
+| shell_tabs_remain_open_after_closing.md | no | no |
+| shell_terminals_looks_empty.md | no | no |
+| terminal_annotation_bookmark.md | yes | no |
+| terminal_clear_and_scrollback.md | yes | no |
+| terminal_command_history.md | yes | no |
+| terminal_ctrl_c.md | yes | no |
+| terminal_persistence_on_tab_switch.md | yes | no |
+| terminal_pty_no_duplicates.md | yes | no |
+| terminal_pty_output_clean.md | yes | no |
+| terminal_resize.md | yes | no |
+| terminal_scroll_sync.md | yes | no |
+| terminal_tab_rename.md | yes | no |
+| time_gutter_and_prompt_annotations.md | no | no |
+| visible_process_still_pty.md | no | no |
+| web_app_artifact_not_created_when_prompted.md | yes | no |
+| when_claude_runs_in_shell_and_is_thinking_not_all_the_output.md | yes | no |
 
-## workflow (2 specs)
-- `workflow/workflow_entity_create.md`
-- `workflow/workflow_run_button.md`
+## triggers (1 scenarios)
+| Scenario | Playwright | Fast Path |
+|----------|------------|-----------|
+| trigger_process_target_typeid_str.md | no | no |
 
----
-**Total: across categories.**
+## whiteboard (8 scenarios)
+| Scenario | Playwright | Fast Path |
+|----------|------------|-----------|
+| create_persist.md | no | no |
+| edge_cases.md | no | no |
+| mermaid_sync.md | no | no |
+| multi_tab.md | no | no |
+| scope.md | no | no |
+| smoke.md | no | no |
+| ui_ux.md | no | no |
+| wiki_integration.md | no | no |
+
+## workflow (2 scenarios)
+| Scenario | Playwright | Fast Path |
+|----------|------------|-----------|
+| workflow_entity_create.md | no | no |
+| workflow_run_button.md | no | no |
+
+## Totals
+
+- Categories: 17
+- Total scenarios: 111

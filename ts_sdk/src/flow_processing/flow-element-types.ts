@@ -35,6 +35,10 @@ export const FlowElementTypes = {
   ENV_VAR: 'env-var',
   NOTIFICATION: 'notification',
 
+  // Transport envelope: Python Entity.emit_entity_event(event, payload). Not
+  // a renderable element — APIEntity.handleFlowData routes it to onEntityEvent.
+  ENTITY_EVENT: 'entity_event',
+
   // File system
   WRITE: 'write',
 

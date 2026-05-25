@@ -216,50 +216,51 @@ def _merge_project(
 
 
 async def list_projects_from_indexer() -> dict[str, Any]:
-    """Return one project row per canonical cwd using FSIndexer project records.
+    """Return one project row per canonical cwd.
 
-    The returned provenance flags are derived from the current indexer scan,
-    not from historical record state, so a project can accurately be Claude,
-    Codex, both, or neither when merged with other project sources in the UI.
+    Single source of truth: ``get_all_projects()`` (Claude scan ∪ Codex scan ∪
+    Project entity table, deduped + creates missing Project entities). This
+    function then enriches each row with per-worker session counts read off
+    disk — same shape the UI expected from the legacy implementation.
     """
-    refs = await _project_indexer().scan(IndexerOptions(verbose=False))
-    project_refs = [ref for ref in refs if ref.record_type == RecordType.PROJECT]
+    from flow_sdk.fs_records._claude_projects import _claude_projects_dir
+    from flow_sdk.fs_records.all_projects import get_all_projects
+
+    all_projects = await get_all_projects(create_missing=True)
+    codex_activity = _codex_activity_by_cwd()
+    claude_root = _claude_projects_dir()
 
     projects_by_cwd: dict[str, dict[str, Any]] = {}
-    codex_activity = _codex_activity_by_cwd()
-
-    for ref in project_refs:
-        ref_path = Path(ref._path)
-        is_claude = _is_claude_project_ref(ref_path)
-        if is_claude:
-            cwd = decode_claude_project_dir(ref_path)
-            if cwd is None:
-                continue
-            canonical = canonical_posix_path(cwd)
-            if not ProjectFsRecord._is_valid_cwd(canonical):
-                continue
-            session_count, modified_at = _claude_session_stats(ref_path)
-            _merge_project(
-                projects_by_cwd,
-                canonical,
-                claude=True,
-                encoded_name=ref_path.name,
-                session_count=session_count,
-                modified_at=modified_at,
-            )
-            continue
-
-        canonical = canonical_posix_path(ref_path)
+    for info in all_projects:
+        canonical = info.cwd
         if not ProjectFsRecord._is_valid_cwd(canonical):
             continue
-        activity = codex_activity.get(canonical, {})
-        _merge_project(
-            projects_by_cwd,
-            canonical,
-            codex=True,
-            session_count=_int_field(activity.get("session_count")),
-            modified_at=activity.get("modified_at"),
-        )
+        if "claude" in info.worker_types:
+            encoded = canonical.replace("/", "-")
+            session_count, modified_at = _claude_session_stats(claude_root / encoded)
+            _merge_project(
+                projects_by_cwd, canonical,
+                claude=True, encoded_name=encoded,
+                session_count=session_count, modified_at=modified_at,
+            )
+        if "codex" in info.worker_types:
+            activity = codex_activity.get(canonical, {})
+            _merge_project(
+                projects_by_cwd, canonical,
+                codex=True,
+                session_count=_int_field(activity.get("session_count")),
+                modified_at=activity.get("modified_at"),
+            )
+        if canonical not in projects_by_cwd:
+            # Entity-only project (no Claude/Codex worker history yet)
+            _merge_project(
+                projects_by_cwd, canonical,
+                modified_at=str(info.modified_at) if info.modified_at else None,
+            )
+        # Override id / name with the canonical entity values
+        row = projects_by_cwd[canonical]
+        row["id"] = info.project_id or row["id"]
+        row["name"] = info.name or row["name"]
 
     projects = list(projects_by_cwd.values())
     projects.sort(key=lambda item: item.get("modified_at") or "", reverse=True)

@@ -1261,6 +1261,19 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     this.flowDataStream.ingest(flowData);
     this.emit('flow_data', flowData);
   }
+
+  /**
+   * Mirror of Python `Entity.emit_entity_event` arriving over the WS transport.
+   * Dispatched by `DataManager.onFlowData` for envelopes with
+   * `element_type === 'entity_event'` — these never enter the flow-data stream
+   * or renderer. Default impl re-emits as the `'entity_event'` event so callers
+   * can subscribe via `entity.on('entity_event', (event, payload) => ...)`.
+   * Subclasses may override for entity-specific dispatch (e.g. a typed handler
+   * registry).
+   */
+  onEntityEvent(event: string, payload: Record<string, unknown>): void {
+    this.emit('entity_event', event, payload);
+  }
 }
 
 // Create the singleton DataManager instance

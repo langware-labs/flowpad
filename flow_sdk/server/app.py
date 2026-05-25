@@ -59,6 +59,7 @@ from .routes import (
     dep_graph_router,
     version_router,
     favorites_router,
+    markdown_index_router,
 )
 
 
@@ -326,6 +327,7 @@ server.add_router(transcripts_router)
 server.add_router(dep_graph_router)
 server.add_router(version_router)
 server.add_router(favorites_router)
+server.add_router(markdown_index_router, prefix="/api/v1")
 
 server.on_startup(_on_server_startup)
 server.on_shutdown(_shutdown_extras)

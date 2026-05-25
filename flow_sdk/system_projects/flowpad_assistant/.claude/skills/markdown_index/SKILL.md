@@ -74,19 +74,29 @@ absolute minimum of LLM calls.
      (a file inside `$SUMMARIES_DIR`, named `<content_hash>.summary.md`).
 
 4. **For each folder in `stale_folders_post_order`** (LEAVES FIRST — order matters):
-   - `Read` `$SKILL_DIR/index.template.md`.
    - For each direct source file in the folder: `Read` its cached summary from
-     `<cache_dir>/file_summaries/<content_hash>.summary.md`.
-   - For each subfolder with an `index.md`: `Read` only the `## Self-Summary`
-     block from that child's `index.md` (do NOT re-summarise the child — quote
-     verbatim).
-   - Render `prompts/folder_index.prompt.md` with template + summaries + child
-     self-summaries.
-   - Compute the folder's `inputs_hash` (already provided by the planner — use
-     that value verbatim; do NOT recompute).
-   - `Write` `<folder>/index.md` = frontmatter (with the new `inputs_hash`,
-     `generated_at` = current UTC ISO, `latest_process_ref` = the AgenticProcess
-     TypeId if you know it) + the assembled body.
+     the file's `summary_path` (already absolute in the planner output).
+   - For each subfolder with an `index.md.json`: `Read` ONLY the JSON sidecar
+     (`<subfolder>/index.md.json`), pull its `self_summary` field, and use it
+     verbatim. Do NOT re-summarise the child; never parse the child's `.md`.
+   - Render `prompts/folder_index.prompt.md` to produce a **single JSON object**
+     conforming to `IndexMdJson` (schema in
+     `flow_sdk/fs_records/markdown_index_render.py`). Required fields:
+     `typeid`, `parent_ref`, `vault_root`, `folder_rel_path`, `folder_name`,
+     `inputs_hash` (use the planner's value verbatim), `self_summary` (≤ 60 words),
+     `files[]` (each with `name`, `rel_path`, `title`, `summary`, `content_hash`),
+     `subfolders[]` (each with `name`, `rel_path`, `self_summary`, `child_typeid`,
+     `child_inputs_hash`), `generated_at` (UTC ISO now), `latest_process_ref`.
+   - `Write` the JSON to `<folder>/index.md.json`.
+   - Run the deterministic renderer to materialize `<folder>/index.md`:
+
+     ```bash
+     uv run python -m flow_sdk.fs_records.markdown_index_render \
+       "<folder>/index.md.json" "<folder>/index.md"
+     ```
+
+     The agent never writes the .md directly — same JSON always produces the
+     same MD bytes, so the Merkle hash stays stable.
 
 5. After all folders are rewritten, emit ONE final line:
    ```
@@ -95,11 +105,14 @@ absolute minimum of LLM calls.
 
 ## Notes
 
+- **JSON is the source; MD is the rendered view.** The agent writes
+  `index.md.json`; the deterministic Python renderer produces `index.md`. Never
+  hand-write the markdown — it must always match what the renderer would emit.
 - **Never recompute the `inputs_hash` yourself.** The planner is the only writer
   of input hashes. Mismatches between your assembled hash and the planner's
   break the cache.
-- **Post-order is non-negotiable.** A parent's index quotes its child's
-  `Self-Summary` — the child must be fresh first.
+- **Post-order is non-negotiable.** A parent's JSON quotes its child's
+  `self_summary` — the child must be fresh first.
 - **Do not delete `index.md` files** for empty folders unless the folder itself
   was removed. The planner reports an empty `files`/`subfolders` list rather
   than a deletion.
