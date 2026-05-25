@@ -112,7 +112,7 @@ async def test_markdown_index_cold_build(
     assert root_index.id, "root MarkdownIndex must have an id after save()"
 
     process = await make_process(
-        target_typeid_str=root_index.typeId.to_str(),
+        target_typeid_str=str(root_index.typeid),
         context_data={
             "kind": "markdown_index_rebuild",
             "markdown_index_id": root_index.id,
@@ -121,7 +121,7 @@ async def test_markdown_index_cold_build(
     )
     assert is_ready_for_input(process) is False
 
-    await process.prompt(_rebuild_instruction(docs_root, root_index.typeId.to_str()))
+    await process.prompt(_rebuild_instruction(docs_root, str(root_index.typeid)))
 
     # do not increase timeout without approval
     async for entry in process.stream_transcript(timeout=28):
@@ -179,14 +179,14 @@ async def test_markdown_index_incremental(
 
     # First (cold) run — populate the tree.
     process = await make_process(
-        target_typeid_str=root_index.typeId.to_str(),
+        target_typeid_str=str(root_index.typeid),
         context_data={
             "kind": "markdown_index_rebuild",
             "markdown_index_id": root_index.id,
         },
         workdir=str(docs_root),
     )
-    await process.prompt(_rebuild_instruction(docs_root, root_index.typeId.to_str()))
+    await process.prompt(_rebuild_instruction(docs_root, str(root_index.typeid)))
     async for _ in process.stream_transcript(timeout=28):
         pass
 
@@ -203,14 +203,14 @@ async def test_markdown_index_incremental(
 
     # Second (warm) run.
     process2 = await make_process(
-        target_typeid_str=root_index.typeId.to_str(),
+        target_typeid_str=str(root_index.typeid),
         context_data={
             "kind": "markdown_index_rebuild",
             "markdown_index_id": root_index.id,
         },
         workdir=str(docs_root),
     )
-    await process2.prompt(_rebuild_instruction(docs_root, root_index.typeId.to_str()))
+    await process2.prompt(_rebuild_instruction(docs_root, str(root_index.typeid)))
     async for _ in process2.stream_transcript(timeout=28):
         pass
 

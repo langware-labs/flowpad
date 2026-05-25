@@ -30,6 +30,7 @@ import type { ScopeFilter } from '@src/lib/scope-filter';
 import { projectIdForPath } from './utils';
 import { ScopeFilterBar } from '@src/components/scope-filter/ScopeFilterBar';
 import { AssetListView } from './AssetListView';
+import { MarkdownIndexPanel } from './MarkdownIndexPanel';
 import { BrowseableTree } from '@src/components/browseable-tree';
 import { assetTypeRoot } from '@src/components/browseable-tree/adapters/assetTypeRoot';
 import { markdownFolderRoot } from '@src/components/browseable-tree/adapters/markdownFolderRoot';
@@ -552,23 +553,26 @@ export function AssetsPage() {
           ) : isEditorMode && currentDock?.pointer ? (
             <AssetEditorRouter pointer={currentDock.pointer} />
           ) : isFolderMode ? (
-            <div className="flex h-full flex-col">
-              <FolderBreadcrumb
-                crumbs={folderCrumbs}
-                onNavigate={(p) => navigation.openDock(p)}
-                onClear={() => navigation.openDock(DockPointer.forAssetList('markdown'))}
-              />
-              <div className="min-h-0 flex-1">
-                <AssetListView
-                  recordType="markdown"
-                  onNew={creatableTypes.has('markdown') ? () => handleNew('markdown') : undefined}
-                  refreshKey={refreshKey}
-                  onRowClick={hasEditor('markdown') ? handleRowClick : undefined}
-                  filter={listFilter}
-                  onFilterChange={setAssetFilter}
-                  onProjectFilter={handleProjectFilter}
+            <div className="flex h-full">
+              <div className="flex min-w-0 flex-1 flex-col">
+                <FolderBreadcrumb
+                  crumbs={folderCrumbs}
+                  onNavigate={(p) => navigation.openDock(p)}
+                  onClear={() => navigation.openDock(DockPointer.forAssetList('markdown'))}
                 />
+                <div className="min-h-0 flex-1">
+                  <AssetListView
+                    recordType="markdown"
+                    onNew={creatableTypes.has('markdown') ? () => handleNew('markdown') : undefined}
+                    refreshKey={refreshKey}
+                    onRowClick={hasEditor('markdown') ? handleRowClick : undefined}
+                    filter={listFilter}
+                    onFilterChange={setAssetFilter}
+                    onProjectFilter={handleProjectFilter}
+                  />
+                </div>
               </div>
+              {folderAbsPath && <MarkdownIndexPanel folderAbsPath={folderAbsPath} />}
             </div>
           ) : selectedType ? (
             <AssetListView
