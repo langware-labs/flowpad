@@ -70,6 +70,27 @@ async def share_entity() -> ApiSuccessResponse:
             logger.warning("[share] address-book learning failed (non-fatal): %s", e)
     else:
         await entity.share()
+
+    # Persist ``remote=True`` on the on-disk row so downstream consumers
+    # (notably ``handle_add_message``'s ``is_remote_send`` gate) treat the
+    # entity as hub-bound. ``entity`` above is a transient instance built
+    # from the request body and not bound to a DB row, so we re-load by id
+    # and save THAT.
+    if "remote" in entity_model.model_fields:
+        try:
+            local_row = await entity_model.get_one({"id": target.id})
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[share] local row lookup failed (non-fatal): %s", e)
+            local_row = None
+        if local_row is not None and getattr(local_row, "remote", None) is not True:
+            local_row.remote = True
+            try:
+                await local_row.save(request_info.someone_typeid)
+            except Exception as e:  # noqa: BLE001
+                logger.warning(
+                    "[share] persisting remote=True on local %s %s failed (non-fatal): %s",
+                    target.type, target.id, e,
+                )
     return ApiSuccessResponse(data=entity)
 
 

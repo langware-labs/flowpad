@@ -97,8 +97,8 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
     if (name) setSenderName(name);
   }, [cloudUser?.email, cloudUser?.name, localUser?.name]);
 
-  // Cross-user mode: any participant with a user id or email triggers the bundle
-  // delivery flow (startBundleConversation). Otherwise we keep the
+  // Cross-user mode: any participant with a user id or email triggers the
+  // conversation transport (conv.share + sendReply). Otherwise we keep the
   // project-local-only path.
   const hasRemoteParticipant = participants.some(
     (p) => !!p.user_id || (!!p.email && p.email.includes('@')),
