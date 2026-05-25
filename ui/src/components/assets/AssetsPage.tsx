@@ -10,7 +10,7 @@ import { useToast } from '@src/hooks/use-toast';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { navigateToResult } from '@src/navigation/record-type-nav';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { dataContext, RecordType, systemTools } from '@sdk';
+import { dataContext, fsManager, fsStore, RecordType, systemTools, TypeId } from '@sdk';
 import apiClient from '@sdk/client';
 import { BookOpen, ChevronRight, PackageSearch, PanelLeft, PanelLeftClose, X } from 'lucide-react';
 import {
@@ -32,8 +32,14 @@ import { ScopeFilterBar } from '@src/components/scope-filter/ScopeFilterBar';
 import { AssetListView } from './AssetListView';
 import { MarkdownIndexPanel } from './MarkdownIndexPanel';
 import { BrowseableTree } from '@src/components/browseable-tree';
+import { refreshNode } from '@src/components/browseable-tree/refresh-store';
 import { assetTypeRoot } from '@src/components/browseable-tree/adapters/assetTypeRoot';
-import { markdownFolderRoot } from '@src/components/browseable-tree/adapters/markdownFolderRoot';
+import {
+  markdownFolderNodeId,
+  markdownFolderRoot,
+  type MarkdownDragItem,
+  type MarkdownFolderTarget,
+} from '@src/components/browseable-tree/adapters/markdownFolderRoot';
 import { useAssetTypes, type AssetTypeVault } from '@src/hooks/use-asset-types';
 import { useSystemTools } from '@src/hooks/use-system-tools';
 import type { SearchResult } from '@src/hooks/use-asset-search';
@@ -146,6 +152,51 @@ const SIDEBAR_DEFAULT_WIDTH = 224;
 const SIDEBAR_MIN_WIDTH = 160;
 const SIDEBAR_MAX_WIDTH = 560;
 
+function normalizeTreePath(path: string): string {
+  return path.replace(/^\/+/, '').replace(/\/+$/, '');
+}
+
+function basenamePath(path: string): string {
+  const trimmed = path.replace(/\/+$/, '');
+  const idx = trimmed.lastIndexOf('/');
+  return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
+}
+
+function dirnamePath(path: string): string {
+  const trimmed = path.replace(/\/+$/, '');
+  const idx = trimmed.lastIndexOf('/');
+  if (idx < 0) return '';
+  if (idx === 0) return '/';
+  return trimmed.slice(0, idx);
+}
+
+function parseAssetEditorPointer(pointer: string | undefined): { typeName: string; absPath: string } | null {
+  if (!pointer?.startsWith('editor/')) return null;
+  const rest = pointer.slice('editor/'.length);
+  const slash = rest.indexOf('/');
+  if (slash < 0) return null;
+  const typeName = rest.slice(0, slash);
+  const path = rest.slice(slash + 1);
+  if (!typeName || !path) return null;
+  return { typeName, absPath: `/${path.replace(/^\/+/, '')}` };
+}
+
+function joinRelPath(parent: string, name: string): string {
+  const base = normalizeTreePath(parent);
+  const cleanName = name.replace(/^\/+/, '').replace(/\/+$/, '');
+  return base ? `${base}/${cleanName}` : cleanName;
+}
+
+function joinAbsPath(parent: string, name: string): string {
+  const base = parent.replace(/\/+$/, '');
+  const cleanName = name.replace(/^\/+/, '').replace(/\/+$/, '');
+  return base && base !== '/' ? `${base}/${cleanName}` : `/${cleanName}`;
+}
+
+function isValidFolderName(name: string): boolean {
+  return !!name && name !== '.' && name !== '..' && !/[\\/]/.test(name);
+}
+
 /** Breadcrumb rendered above the folder-filtered AssetListView. Each crumb
  *  except the last navigates to that ancestor; the last is the current page.
  *  A right-aligned X button clears the filter back to the full list. */
@@ -215,6 +266,8 @@ export function AssetsPage() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [newTypeTarget, setNewTypeTarget] = useState<string | null>(null);
   const [newTypeDialogOpen, setNewTypeDialogOpen] = useState(false);
+  const [newFolderTarget, setNewFolderTarget] = useState<MarkdownFolderTarget | null>(null);
+  const [newFolderDialogOpen, setNewFolderDialogOpen] = useState(false);
   // Use the canonical synthetic project_id (uuid5 of mount_path) so the
   // selection round-trips with what the indexer stamps on records and what
   // the picker emits — independent of how dataContext bootstraps the Project.
@@ -343,6 +396,114 @@ export function AssetsPage() {
     setNewTypeDialogOpen(true);
   }, []);
 
+  const handleCreateFolder = useCallback((target: MarkdownFolderTarget) => {
+    setNewFolderTarget(target);
+    setNewFolderDialogOpen(true);
+  }, []);
+
+  const handleNewFolderConfirm = useCallback(async (rawName: string) => {
+    const name = rawName.trim();
+    if (!newFolderTarget || !isValidFolderName(name)) {
+      toast({ title: 'Invalid folder name', variant: 'destructive' });
+      return;
+    }
+
+    const typeId = new TypeId(newFolderTarget.typeid);
+    const folderRelPath = joinRelPath(newFolderTarget.relPath, name);
+
+    try {
+      if (await fsManager.exists(typeId, folderRelPath)) {
+        toast({ title: 'Folder already exists', variant: 'destructive' });
+        return;
+      }
+      await fsManager.mkdir(typeId, folderRelPath);
+      fsStore.getState().invalidate(typeId, newFolderTarget.relPath || '/', 'browse');
+      refreshNode(markdownFolderNodeId(newFolderTarget.typeid, newFolderTarget.absPath));
+      setRefreshKey((k) => k + 1);
+      toast({ title: 'Folder created' });
+    } catch (err) {
+      console.error('[AssetsPage] Failed to create folder:', err);
+      toast({ title: 'Failed to create folder', variant: 'destructive' });
+    } finally {
+      setNewFolderTarget(null);
+    }
+  }, [newFolderTarget, toast]);
+
+  const handleMoveMarkdownItem = useCallback(async (
+    item: MarkdownDragItem,
+    target: MarkdownFolderTarget,
+  ) => {
+    const name = basenamePath(item.relPath) || item.label;
+    if (!name) return;
+
+    const typeId = new TypeId(item.typeid);
+    const sourceRel = normalizeTreePath(item.relPath);
+    const destRel = joinRelPath(target.relPath, name);
+    const destAbs = joinAbsPath(target.absPath, name);
+    const sourceParentRel = dirnamePath(sourceRel);
+    const sourceParentAbs = dirnamePath(item.absPath);
+
+    if (sourceRel === destRel) return;
+
+    try {
+      if (await fsManager.exists(typeId, destRel)) {
+        toast({ title: 'Destination already has an item with that name', variant: 'destructive' });
+        return;
+      }
+
+      await fsManager.move(typeId, sourceRel, destRel);
+
+      const store = fsStore.getState();
+      store.invalidate(typeId, sourceRel, 'all');
+      store.invalidate(typeId, destRel, 'all');
+      store.invalidate(typeId, sourceParentRel || '/', 'browse');
+      store.invalidate(typeId, target.relPath || '/', 'browse');
+      refreshNode(markdownFolderNodeId(item.typeid, sourceParentAbs));
+      refreshNode(markdownFolderNodeId(item.typeid, target.absPath));
+
+      const activeEditor = parseAssetEditorPointer(currentDock?.pointer);
+      const sourceAbs = item.absPath.replace(/\/+$/, '');
+      const activeEditorInMovedFolder = !!(
+        activeEditor &&
+        item.kind === 'markdown-folder' &&
+        activeEditor.typeName === item.typeName &&
+        activeEditor.absPath.startsWith(`${sourceAbs}/`)
+      );
+      if (activeEditor?.typeName === item.typeName && activeEditor.absPath === sourceAbs) {
+        navigation.openDock(DockPointer.forAssetEditor(item.typeName, destAbs));
+      } else if (activeEditorInMovedFolder && activeEditor) {
+        const suffix = activeEditor.absPath.slice(sourceAbs.length).replace(/^\/+/, '');
+        const nextAbs = suffix ? `${destAbs}/${suffix}` : destAbs;
+        navigation.openDock(DockPointer.forAssetEditor(item.typeName, nextAbs));
+      } else if (item.kind === 'markdown-folder' && currentDock?.pointer) {
+        const folder = DockPointer.parseAssetFolderPointer(currentDock.pointer);
+        if (folder && folder.typeName === item.typeName && folder.typeid === item.typeid) {
+          const currentRel = normalizeTreePath(folder.relPath);
+          if (currentRel === sourceRel || currentRel.startsWith(`${sourceRel}/`)) {
+            const suffix = currentRel.slice(sourceRel.length).replace(/^\/+/, '');
+            const nextRel = suffix ? `${destRel}/${suffix}` : destRel;
+            navigation.openDock(DockPointer.forAssetFolder(item.typeName, item.typeid, nextRel));
+          }
+        }
+      }
+
+      setRefreshKey((k) => k + 1);
+
+      try {
+        await indexType('markdown', assetFilter.scope, { force: true });
+      } catch (err) {
+        console.error('[AssetsPage] Markdown reindex after move failed:', err);
+        toast({ title: 'Moved, but reindex failed', variant: 'destructive' });
+        return;
+      }
+
+      toast({ title: 'Moved' });
+    } catch (err) {
+      console.error('[AssetsPage] Failed to move markdown item:', err);
+      toast({ title: 'Failed to move item', variant: 'destructive' });
+    }
+  }, [assetFilter.scope, currentDock?.pointer, indexType, navigation, toast]);
+
   const wikiRoots = useMemo(
     () =>
       visibleTypes.map((t) => {
@@ -350,6 +511,8 @@ export function AssetsPage() {
           return markdownFolderRoot(t, {
             indexType,
             onNew: handleNew,
+            onCreateFolder: handleCreateFolder,
+            onMoveItem: handleMoveMarkdownItem,
             onScanComplete: handleScanComplete,
             filter: assetFilter,
           });
@@ -362,7 +525,16 @@ export function AssetsPage() {
           onScanComplete: handleScanComplete,
         });
       }),
-    [visibleTypes, indexType, handleNew, creatableTypes, assetFilter, handleScanComplete],
+    [
+      visibleTypes,
+      indexType,
+      handleNew,
+      handleCreateFolder,
+      handleMoveMarkdownItem,
+      creatableTypes,
+      assetFilter,
+      handleScanComplete,
+    ],
   );
 
   // Resolve the absolute path of the selected folder (from vault metadata),
@@ -600,6 +772,15 @@ export function AssetsPage() {
         placeholder="Name"
         confirmLabel="Create"
         onConfirm={(name) => void handleNewConfirm(name)}
+      />
+      <InputDialog
+        open={newFolderDialogOpen}
+        onOpenChange={setNewFolderDialogOpen}
+        title="New Folder"
+        description={`Create a folder in ${newFolderTarget?.label ?? 'this folder'}.`}
+        placeholder="Folder name"
+        confirmLabel="Create"
+        onConfirm={(name) => void handleNewFolderConfirm(name)}
       />
     </div>
   );

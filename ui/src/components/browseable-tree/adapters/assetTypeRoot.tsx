@@ -16,7 +16,11 @@ import { config } from '@sdk';
 export interface AssetTypeRootDeps {
   /** Per-row refresh callback, e.g. systemTools.indexType from useSystemTools.
    *  Receives the active filter so per-type scans can scope to the same. */
-  indexType: (typeName: string, scope?: { user: boolean; projects: string[] }) => Promise<{ indexed?: number } | void>;
+  indexType: (
+    typeName: string,
+    scope?: { user: boolean; projects: string[] },
+    options?: { force?: boolean; orphanAction?: 'index' | 'ignore' | 'delete' },
+  ) => Promise<{ indexed?: number } | void>;
   /** Called when the "New" toolbar button is clicked for a creatable type. */
   onNew?: (typeName: string) => void;
   /** Types that can be created via "New"; others render without the plus button. */
