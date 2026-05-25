@@ -15,22 +15,22 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+from flow_sdk._compat import UTC
 from flow_sdk.actions.action_registry import action
 from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.builtin.flow_message import Attachment, AttachmentType, FlowMessage, FlowMessageKind
 from flow_sdk.builtin.spec import Spec
-from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.builtin.task import Task
 from flow_sdk.builtin.user import User
-from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.fs_records.conversation_record import ConversationRecord
 from flow_sdk.fs_records.flow_message_bundle import FlowMessageExistsError
 from flow_sdk.fs_store.record_types import RecordType
+from flow_sdk.fs_store.type_id import TypeId
+from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.request_context.methods import get_current_request_info
-from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse, ApiResponse
-from flow_sdk._compat import UTC
-from flow_sdk.utils.hub import hub_get, hub_post, hub_base_url
+from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
+from flow_sdk.utils.hub import hub_base_url, hub_get, hub_post
 
 logger = logging.getLogger(__name__)
 
@@ -277,18 +277,19 @@ async def handle_open_flow_message(fm_id: str) -> ApiResponse:
         except Exception as e:
             logger.warning("[open_flow_message] failed to materialize bundle (non-fatal): %s", e)
 
-    # Resolve conversation_id / task_id from the now-local FlowMessage so the
-    # UI can navigate directly. Falls back to hub context if the FM didn't
-    # land locally (e.g. no attachment_filename).
+    # Resolve conversation_id / task_id. Try the local FM first (populated by
+    # ``_download_and_unpack_bundle`` above). When there's no bundle — e.g. a
+    # text-only first message from ``NewConversationDialog`` — the local FM
+    # never materializes; we additionally walk the conv's hub-side parent
+    # relationship so the deep link still carries conv_id and we can sync
+    # the conv content directly from the hub below.
     conversation_id = ""
     task_id = ""
     local_fm = await FlowMessage.get_one({"id": fm_id})
     if local_fm:
+        conversation_id = getattr(local_fm, "conversation_id", "") or ""
         for ctx in (local_fm.shared_context_entities or []):
-            t = getattr(ctx, "type", None)
-            if t == BuiltinEntityType.CONVERSATION.value and not conversation_id:
-                conversation_id = getattr(ctx, "id", "") or ""
-            elif t == BuiltinEntityType.TASK.value and not task_id:
+            if getattr(ctx, "type", None) == BuiltinEntityType.TASK.value and not task_id:
                 task_id = getattr(ctx, "id", "") or ""
     else:
         # Fall back to the hub's context list (string typeids like
@@ -306,9 +307,20 @@ async def handle_open_flow_message(fm_id: str) -> ApiResponse:
                 conversation_id = s.split("-", 1)[1]
             elif s.startswith(f"{BuiltinEntityType.TASK.value}-") and not task_id:
                 task_id = s.split("-", 1)[1]
-        # Older hub payloads: task_id sometimes lives in meta or top-level.
         if not task_id:
             task_id = (meta.get("task_id") or (data or {}).get("task_id") or "").strip()
+
+    # When the conv is known but not yet on the recipient's local DB, sync it
+    # directly from the hub (the bundle-unpack path normally does this, but
+    # text-only first messages ship without a bundle).
+    if conversation_id:
+        try:
+            request_info = get_current_request_info()
+            someone_typeid = request_info.someone_typeid if request_info else None
+            if someone_typeid:
+                await _ensure_local_conversation_synced(conversation_id, someone_typeid)
+        except Exception as e:
+            logger.warning("[open_flow_message] conv sync failed (non-fatal): %s", e, exc_info=True)
 
     logger.warning(
         "[open_flow_message] fm_id=%s attachment_filename=%r repo_url=%r conv_id=%s task_id=%s",
@@ -741,7 +753,6 @@ async def _hub_decline_invitation(invitation_id: str) -> None:
     """Class-level action — pending recipients have no entity role yet, so
     the hub registers ``decline`` as a class-action like ``pending``. We pass
     the invitation_id in the body."""
-    from flow_sdk.utils.hub import hub_post  # noqa: PLC0415
     await hub_post(
         BuiltinEntityType.INVITATION,
         {"invitation_id": invitation_id},
@@ -755,7 +766,6 @@ async def _hub_delete_conversation(conv_id: str) -> None:
 
 
 async def _hub_leave_conversation(conv_id: str) -> None:
-    from flow_sdk.utils.hub import hub_post  # noqa: PLC0415
     await hub_post(
         BuiltinEntityType.CONVERSATION, {}, entity_id=conv_id, action="leave",
     )
@@ -773,8 +783,8 @@ async def handle_conversation_delete_archived(someone_typeid: str) -> ApiRespons
         "scanned": <int>,
       }
     """
-    from flow_sdk.utils.hub import HubError, hub_base_url  # noqa: PLC0415
     from flow_sdk.builtin.invitation import Invitation as LocalInvitation  # noqa: PLC0415
+    from flow_sdk.utils.hub import HubError, hub_base_url  # noqa: PLC0415
 
     convs = await Conversation.get_all({})
     targets = [c for c in (convs or []) if c.archived_at is not None]
@@ -918,8 +928,8 @@ async def handle_invitation_decline(
     (along with the embedded Conversation + preview message that the
     new invitation pipeline materialized).
     """
-    from flow_sdk.utils.hub import HubError, hub_base_url  # noqa: PLC0415
     from flow_sdk.builtin.invitation import Invitation as LocalInvitation  # noqa: PLC0415
+    from flow_sdk.utils.hub import HubError, hub_base_url  # noqa: PLC0415
 
     if not invitation_id:
         return ApiFailResponse(message="invitation_id is required")
@@ -1063,6 +1073,18 @@ async def _download_and_unpack_bundle(
         await unpack_bundle(
             tmp_path, local_user_id, overwrite=False, asset_dest_root=asset_dest_root,
         )
+        # Bundle bytes are on disk now. The FM's ``attachment[].local_path``
+        # is computed lazily by the model serializer from disk state, so the
+        # cached browser entity still reads ``local_path=null`` from the
+        # earlier WS create. Fan a fresh UPDATE so subscribers re-render with
+        # the populated path — without this, image attachments stay as a
+        # generic file chip until a manual refresh re-fetches the FM.
+        try:
+            refreshed = await FlowMessage.get_one({"id": fm_id})
+            if refreshed:
+                await refreshed.notify_updated()
+        except Exception as nerr:
+            logger.warning("[bundle] post-unpack notify failed fm=%s: %s", fm_id, nerr)
         return True
     except FlowMessageExistsError:
         return True  # already materialized — counts as success
@@ -1316,22 +1338,18 @@ async def handle_send_draft(fm_id: str, someone_typeid: str) -> ApiResponse:
     """Promote a draft FlowMessage to a real reply.
 
     1. Validate `is_draft=True`.
-    2. Append a pointer to `<task-dir>/conversation.jsonl` and bump
+    2. Append a pointer to `conversation.jsonl` and bump
        `Conversation.message_ids` / `message_count`.
     3. Flip `is_draft=False`; save.
-    4. POST to hub + upload bundle (best-effort).
-    5. Git-commit the conversation pointer change when the task lives in a
-       project repo (mirrors the original-reply path in
-       `notification_action.handle_add_message`).
+    4. Notify the UI; the hub-side header is created by
+       ``_send_conversation_message_header`` when the conversation is remote.
     """
     from flow_sdk.app.actions.notification_action import (
         _append_message_to_conversation,
-        _find_task_conversation,
         _notify_ui_conversation_updated,
-        _resolve_reply_recipient_email,
-        _send_reply_to_hub,
+        _send_conversation_message_header,
     )
-    from flow_sdk.utils.git import git_add_commit_push
+    from flow_sdk.cli.auth.hub_login import is_logged_in
 
     fm = await FlowMessage.get_one({"id": fm_id})
     if not fm:
@@ -1345,14 +1363,8 @@ async def handle_send_draft(fm_id: str, someone_typeid: str) -> ApiResponse:
     if not conv:
         return ApiFailResponse(message=f"Conversation not found: {fm.conversation_id}")
 
-    task: Optional[Task] = None
-    task_typeid = conv.first_context_of_type(BuiltinEntityType.TASK.value)
-    if task_typeid:
-        task = await Task.get_one({"id": task_typeid.id})
-
     conv = await _append_message_to_conversation(
         conv=conv,
-        task_id=task.id if task else None,
         fm_id=fm.id,
         someone_typeid=someone_typeid,
     )
@@ -1360,48 +1372,10 @@ async def handle_send_draft(fm_id: str, someone_typeid: str) -> ApiResponse:
     fm.is_draft = False
     fm = await fm.save(someone_typeid)
 
-    if task:
-        from flow_sdk.app.actions.notification_action import _resolve_reply_recipient_participant
+    if getattr(conv, "remote", False) and is_logged_in():
+        await _send_conversation_message_header(conv, fm)
 
-        sender_participant = await User.current_sender_participant(fm.sender_name)
-        sender_id = sender_participant.get("user_id") or None
-        if not sender_id:
-            sender_id = fm.sender_id
-        sender_name = sender_participant.get("name") or ""
-        sender_email = sender_participant.get("email") or ""
-        recipient_participant = _resolve_reply_recipient_participant(
-            task,
-            conv,
-            sender_email,
-            sender_id or "",
-        )
-        recipient_email = recipient_participant.get("email") or _resolve_reply_recipient_email(
-            task,
-            conv,
-            sender_email,
-            sender_id or "",
-        )
-        await _send_reply_to_hub(
-            reply_fm=fm,
-            task=task,
-            conv_title=(conv.name or "") if conv else "",
-            message=fm.text or "",
-            sender_id=sender_id,
-            sender_name=sender_name,
-            recipient_email=recipient_email,
-            participants=list(conv.participants or []),
-        )
-
-    _notify_ui_conversation_updated(conv.id, task.id if task else "", fm.id)
-
-    if task:
-        project_root_str = task.project_root
-        if project_root_str:
-            await git_add_commit_push(
-                Path(project_root_str),
-                ["tasks"],
-                f"chore: update conversation for task '{task.title}'",
-            )
+    _notify_ui_conversation_updated(conv.id, "", fm.id)
 
     return ApiSuccessResponse(data={
         "flow_message_id": fm.id,
@@ -1578,11 +1552,23 @@ async def _materialize_invitation(
         except Exception as e:  # noqa: BLE001
             logger.warning("[inv-materialize] preview msg failed: %s", e)
     else:
-        # Defensive: even with no preview, ensure there's an invitation-kind
-        # message so the UI's invitation-row branch matches. Synthesize one
-        # locally so accept-flow stays consistent with older hub builds.
+        # No real ``preview_message`` embedded by the hub (sender hasn't sent
+        # an actual message yet, or this is a re-poll of the same invite).
+        # Synthesize an invitation-kind FM so the UI's invitation-row branch
+        # matches. The text is ``local_inv.message`` (the inviter's note)
+        # when present, falling back to a generic placeholder otherwise.
+        #
+        # The id is derived deterministically from the invitation id so that
+        # when ``_materialize_invitation`` re-runs (the WS nudge and the
+        # ``pending`` poll both fire it for the same invite),
+        # ``materialize_flow_message`` upserts the same row instead of
+        # minting a fresh duplicate each time.
+        import uuid as _uuid  # noqa: PLC0415
+        synth_fm_id = str(_uuid.uuid5(_uuid.NAMESPACE_OID, f"invitation-preview-{inv_id}"))
+        message_text = (local_inv.message or "").strip()
         synth_payload = {
-            "text": (local_inv.message or "You've been invited to a conversation"),
+            "id": synth_fm_id,
+            "text": (message_text or "You've been invited to a conversation"),
             "kind": FlowMessageKind.INVITATION.value,
             "shared_context_entities": [invitation_typeid],
             "remote": False,
@@ -1716,6 +1702,42 @@ async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> Non
             logger.warning("[conv-msg-fetch] %s: aborted: %s", conv_id[:8], e)
 
 
+async def _ensure_local_conversation_synced(conv_id: str, someone_typeid: str) -> None:
+    """Make sure the local DB has the conv + its messages.
+
+    Idempotent. Used by deep-link handlers (``handle_open_flow_message``) for
+    flows where the FM ships without a body bundle (e.g. text-only first
+    message from a fresh share) and the recipient would otherwise see a
+    placeholder or an empty conv.
+    """
+    from flow_sdk.builtin.conversation import Conversation as LocalConversation  # noqa: PLC0415
+
+    # Join the hub-side conv so we enter ``participants`` and start
+    # receiving WS fanout. Idempotent — already-a-member is a no-op.
+    try:
+        await hub_post(BuiltinEntityType.CONVERSATION, {}, conv_id, "join")
+    except Exception as e:
+        logger.debug("[conv-sync] join %s: %s", conv_id[:8], e)
+
+    # Materialize the local row from the hub if it's missing.
+    existing = await LocalConversation.get_one({"id": conv_id})
+    if existing is None:
+        try:
+            hub_conv = await hub_get(BuiltinEntityType.CONVERSATION, conv_id)
+            if isinstance(hub_conv, dict) and hub_conv.get("id"):
+                await LocalConversation.model_validate({
+                    "id": conv_id,
+                    "title": hub_conv.get("title"),
+                    "remote": True,
+                }).save(someone_typeid)
+        except Exception as e:
+            logger.debug("[conv-sync] materialize %s: %s", conv_id[:8], e)
+
+    # Pull any messages the WS bridge didn't fan out (everything from before
+    # the join in particular).
+    await _sync_conversation_messages(conv_id, someone_typeid)
+
+
 async def _sync_conversation_messages(conv_id: str, someone_typeid: str) -> None:
     """Materialize every hub-side message of a conversation into the local store.
 
@@ -1728,9 +1750,12 @@ async def _sync_conversation_messages(conv_id: str, someone_typeid: str) -> None
 
     Called after an invitation accept: the hub WS only fanouts messages from
     join-time forward, so the inviter's pre-accept messages (notably the
-    first one) need this explicit pull. Unlike ``_fetch_conversation_messages``
-    (legacy ``.flowmsg`` bundle path), this is the text-only path — the hub
-    payload is materialized directly with no bundle download.
+    first one) need this explicit pull. After materializing each FM's row,
+    if the hub payload advertises a body bundle (``attachment_filename``)
+    the bundle is pulled and unpacked here so embedded TYPE_ID attachments
+    (Task / Spec / etc.) materialize on the recipient — without this step
+    the recipient would see only the FM text and miss any shared entities
+    the sender attached.
     """
     from flow_sdk.app.actions.materialize_flow_message import (  # noqa: PLC0415
         materialize_flow_message,
@@ -1757,6 +1782,17 @@ async def _sync_conversation_messages(conv_id: str, someone_typeid: str) -> None
             logger.warning(
                 "[conv-sync] conv=%s fm=%s materialize failed: %s",
                 conv_id[:8], raw_fm.get("id"), fm_err,
+            )
+            continue
+        attachment_filename = (raw_fm.get("attachment_filename") or "").strip()
+        if not attachment_filename:
+            continue
+        try:
+            await _download_and_unpack_bundle(raw_fm["id"], attachment_filename)
+        except Exception as b_err:  # noqa: BLE001
+            logger.warning(
+                "[conv-sync] conv=%s fm=%s bundle download failed: %s",
+                conv_id[:8], raw_fm.get("id"), b_err,
             )
 
 
@@ -2082,18 +2118,36 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
                 params={"invitation-id": inv_id},
                 timeout=10,
             )
-        if resp.status_code != 200:
+        # Hub responses we treat as "accept succeeded, run local cleanup":
+        #   200 — JSON success (legacy shape; carries the target typeid).
+        #   302 — RedirectResponse to the post-accept landing (current shape,
+        #         introduced when the hub became browser-friendly). The Location
+        #         points at /flow_message/<id> or callback_override.
+        #   409 — already accepted; the recipient clicked the email link first.
+        # Anything else is a real failure.
+        if resp.status_code not in (200, 302, 409):
             return ApiFailResponse(
                 message=f"Accept failed ({resp.status_code}): {resp.text[:200]}"
             )
-        # The accept response carries the chosen target's typeid. Two shapes:
-        #  - FlowMessage  → legacy bundle flow; we'll download + unpack below.
-        #  - Conversation → direct-share invite flow; we call ``join`` so the
-        #    caller enters ``Conversation.participants`` (which is what hub
-        #    fanout walks). Without that join, accept grants the ``member``
-        #    role but realtime delivery never reaches us.
+        if resp.status_code == 409:
+            logger.info("[invitation-accept] hub returned 409 (already accepted) — running local cleanup")
+        elif resp.status_code == 302:
+            logger.info("[invitation-accept] hub returned 302 (redirect to landing) — running local cleanup")
+        # Resolve the chosen target's typeid. Three response shapes to handle:
+        #  - 200 + JSON body — legacy shape; ``data`` carries the target typeid.
+        #  - 302 + Location header — current shape (hub became browser-friendly);
+        #    no JSON body, ``Location`` points at ``/flow_message/<id>`` or the
+        #    invitation's ``callback_override`` path. We parse the redirect URL
+        #    to extract the FlowMessage id, then look up its conversation_id
+        #    via ``hub_get`` (matches what ``handle_open_flow_message`` does).
+        #  - 409 — already accepted; same JSON-or-empty story as the others. We
+        #    still try both shapes below and fall through if neither produces
+        #    a target.
         try:
-            target = (resp.json() or {}).get("data")
+            target = None
+            body_text = (resp.text or "").strip()
+            if body_text.startswith("{") or body_text.startswith("["):
+                target = (resp.json() or {}).get("data")
             fm_prefix = f"{BuiltinEntityType.FLOW_MESSAGE.value}-"
             conv_prefix = f"{BuiltinEntityType.CONVERSATION.value}-"
             if isinstance(target, str):
@@ -2108,6 +2162,47 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
                     linked_fm_id = t_id
                 elif t_type == BuiltinEntityType.CONVERSATION.value and t_id:
                     linked_conv_id = t_id
+            # Fallback: parse the Location header on a 302 redirect. Path
+            # shapes we expect: ``/flow_message/<id>`` (FM landing) or
+            # ``/conversation/<id>`` (legacy/conv landing). Anything else is
+            # treated as no-target.
+            if not linked_fm_id and not linked_conv_id:
+                location = resp.headers.get("location") or resp.headers.get("Location") or ""
+                if location:
+                    from urllib.parse import urlparse  # noqa: PLC0415
+                    path = urlparse(location).path or ""
+                    parts = [p for p in path.split("/") if p]
+                    # Skip a possible ``/app`` / SUBPATH prefix by scanning for
+                    # the entity-type segment instead of fixed indices.
+                    for i, seg in enumerate(parts[:-1]):
+                        if seg == BuiltinEntityType.FLOW_MESSAGE.value:
+                            linked_fm_id = parts[i + 1]
+                            break
+                        if seg == BuiltinEntityType.CONVERSATION.value:
+                            linked_conv_id = parts[i + 1]
+                            break
+            # When we only have the FlowMessage id, fetch its parent conv id
+            # so the join + msg-sync path runs (same as the email-accept flow).
+            # Hub FMs don't expose a top-level ``conversation_id`` field — the
+            # parent conv lives as a typeid in ``shared_context_entities``.
+            if linked_fm_id and not linked_conv_id:
+                try:
+                    fm_data = await hub_get(BuiltinEntityType.FLOW_MESSAGE, linked_fm_id)
+                    if isinstance(fm_data, dict):
+                        # 1. Top-level field (older shape / direct mirror).
+                        cid = (fm_data.get("conversation_id") or "").strip()
+                        # 2. ``shared_context_entities`` (canonical shape).
+                        if not cid:
+                            conv_prefix_str = f"{BuiltinEntityType.CONVERSATION.value}-"
+                            for raw in (fm_data.get("shared_context_entities") or []):
+                                s = raw if isinstance(raw, str) else str(raw)
+                                if s.startswith(conv_prefix_str):
+                                    cid = s[len(conv_prefix_str):]
+                                    break
+                        if cid:
+                            linked_conv_id = cid
+                except Exception as fetch_err:
+                    logger.debug("[invitation-accept] fm lookup for conv resolution failed: %s", fetch_err)
         except Exception as parse_err:
             logger.warning("[invitation-accept] could not parse target typeid: %s", parse_err)
     except Exception as e:
@@ -2120,9 +2215,9 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
     # bridge's async ``_handle_conversation_op`` materialization.
     if linked_conv_id:
         try:
+            from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
             from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
             from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
-            from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
 
             creds = load_credentials()
             if creds and creds.api_key:
@@ -2172,6 +2267,25 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
                 bundle_unpacked = await _download_and_unpack_bundle(linked_fm_id, attachment_filename)
         except Exception as e:
             logger.warning("[invitation-accept] bundle download failed: %s", e)
+
+    # Live UI refresh: fire an explicit ``OperationType.UPDATE`` for the
+    # Conversation entity. The per-step sniffer EVENTs logged above as
+    # ``[hook_op] Unhandled event`` don't invalidate the UI's
+    # ``useEntity<Conversation>`` React-Query cache. ``notify_updated``
+    # dispatches a ``DataOpMessage(op=UPDATE)`` which IS what useEntity
+    # listens for.
+    # The per-step events fired above (materialize, sync) don't all carry the
+    # final ``shared_context_entities`` value (bundle-unpack stamps task/spec
+    # onto the conv last). Fire one explicit UPDATE on the now-settled
+    # Conversation so subscribers see the final state in one shot.
+    if linked_conv_id:
+        try:
+            from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
+            conv_final = await Conversation.get_one({"id": linked_conv_id})
+            if conv_final is not None:
+                await conv_final.notify_updated()
+        except Exception as e:
+            logger.debug("[invitation-accept] post-accept conv notify failed: %s", e)
 
     return ApiSuccessResponse(data={
         "invitation_id": inv_id,

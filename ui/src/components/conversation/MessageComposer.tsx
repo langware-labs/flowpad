@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react';
 import { File, MessageSquarePlus, Send, X } from 'lucide-react';
 import { sendReply } from '@sdk/entities/notifications';
 import { AttachmentType, type Attachment } from '@sdk/entities/flow-message';
-import type { ITask } from '@sdk/entities/task';
 import type { AssetDescriptor } from '@sdk';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
 import { cn } from '@src/lib/utils';
@@ -12,9 +11,7 @@ import { PromptComposerDialog, type QueuedPrompt } from './PromptComposerDialog'
 import { PromptApprovalRow } from './PromptApprovalRow';
 
 interface MessageComposerProps {
-  /** Task-bound: triggers hub push + git commit on send. Project-scoped sends omit it. */
-  task?: ITask | null;
-  /** Project-scoped conversation id (used when no task is present). */
+  /** Conversation to append to. */
   conversationId?: string;
   disabled?: boolean;
   onSent?: () => void;
@@ -30,7 +27,7 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function MessageComposer({ task, conversationId, disabled, onSent, queuedPrompt, onQueuedPromptChange }: MessageComposerProps) {
+export function MessageComposer({ conversationId, disabled, onSent, queuedPrompt, onQueuedPromptChange }: MessageComposerProps) {
   const ensureCloudLogin = useCloudLoginGate();
   const [text, setText] = useState('');
   const [files, setFiles] = useState<File[]>([]);
@@ -79,13 +76,15 @@ export function MessageComposer({ task, conversationId, disabled, onSent, queued
       }
       return next;
     });
-    if (tooBig.length > 0) {
-      setError(
-        tooBig.length === 1
+    // Fresh pick replaces the previous size-rejection notice; if the new
+    // selection has no over-limit files the warning clears.
+    setError(
+      tooBig.length === 0
+        ? null
+        : tooBig.length === 1
           ? `"${tooBig[0]}" is over ${MAX_FILE_SIZE_LABEL} and was not attached.`
           : `${tooBig.length} files over ${MAX_FILE_SIZE_LABEL} were not attached: ${tooBig.join(', ')}.`,
-      );
-    }
+    );
   };
 
   const removeFile = (index: number) => {
@@ -120,7 +119,7 @@ export function MessageComposer({ task, conversationId, disabled, onSent, queued
         extras.assetReferences = assetRefs.map((a) => a.typeid);
       }
       await sendReply(
-        { task, conversationId },
+        { conversationId },
         trimmed,
         files.length > 0 ? files : undefined,
         Object.keys(extras).length > 0 ? extras : undefined,

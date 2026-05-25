@@ -11,6 +11,27 @@ export interface ApplyProjectResult {
 }
 
 /**
+ * Resolve a Project's filesystem workdir (``fs_storage_mount_path``) by
+ * looking it up directly from the Project entity — NOT from
+ * ``task.project_root``, which is a denormalized cache that auto-derived
+ * tasks (Plan/spec-derive flow) leave null even after ``project_id`` is
+ * stamped.
+ *
+ * Returns ``undefined`` when ``projectId`` is missing, the project can't be
+ * loaded, or it has no ``fs_storage_mount_path``. Callers use the undefined
+ * branch to gate "Map this conversation to a local project first" toasts.
+ */
+export async function resolveWorkdir(
+  projectId: string | null | undefined,
+): Promise<string | undefined> {
+  if (!projectId) return undefined;
+  const project = await dataManager
+    .getByTypeId<Project>(new TypeId(Project.type, projectId))
+    .catch(() => null);
+  return project?.fs_storage_mount_path ?? undefined;
+}
+
+/**
  * Stamp a chosen Project onto a Task and its Conversation. Idempotent —
  * calling repeatedly with the same project just rewrites the same fields.
  *

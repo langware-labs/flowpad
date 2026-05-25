@@ -30,6 +30,7 @@ import {
 import { toast } from 'sonner';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { resolveWorkdir } from './apply-project-choice';
 import { fileAttachmentUrl } from './attachment-url';
 import { ICON_BY_TYPE } from './EntityChip';
 import { buildAssistancePrompt } from './prompt-building';
@@ -304,7 +305,7 @@ export function ConversationContextPanel({
   const startSession = useCallback(
     async (buildInstruction: () => Promise<string>) => {
       if (!anchorMessageId || !task || starting) return;
-      const workdir = task.project_root ?? undefined;
+      const workdir = await resolveWorkdir(task.project_id);
       if (!workdir) {
         toast.warning('Map this conversation to a local project first.');
         return;

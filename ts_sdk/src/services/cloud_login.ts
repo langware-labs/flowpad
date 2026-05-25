@@ -142,6 +142,10 @@ class CloudManager extends EventEmitter {
       } as CloudLoginStatusMessage);
     });
     cm.on('on_hub_client_error_msg', (msg: Record<string, unknown>) => this._onHubClientError(msg));
+    // Resync after a local-WS reconnect: connection-status broadcasts that
+    // landed while the socket was down would otherwise be lost forever,
+    // leaving the avatar stuck on whatever state we saw last.
+    cm.on('on_reconnected', () => { void this._refreshFromStatus(); });
 
     if (this.isLoggedIn) await this._refreshFromStatus();
   }
@@ -348,7 +352,6 @@ class CloudManager extends EventEmitter {
 
     if (msg.status === 'success' && msg.user) {
       const user = await this._setLoggedIn(msg.user as Record<string, unknown>);
-      void this._refreshFromStatus();
       resolve({ status: 'logged_in', user });
     } else {
       const message = msg.message ?? 'Authentication was rejected';
