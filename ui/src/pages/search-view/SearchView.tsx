@@ -91,8 +91,8 @@ export function SearchView() {
   }, []);
 
   const handleRebuildIndex = useCallback(() => {
-    void resetAndRescan(scope);
-  }, [resetAndRescan, scope]);
+    void resetAndRescan();
+  }, [resetAndRescan]);
 
   const [scanInfo, setScanInfo] = useState(() => dataManager.scanInfo);
   useEffect(() => dataManager.onScanInfoChange(setScanInfo), []);

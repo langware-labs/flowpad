@@ -303,8 +303,8 @@ export function AssetsPage() {
   }, []);
 
   const handleRebuildIndex = useCallback(() => {
-    void resetAndRescan(assetFilter.scope);
-  }, [resetAndRescan, assetFilter]);
+    void resetAndRescan();
+  }, [resetAndRescan]);
 
   const handleSearchSubmit = useCallback(() => {
     const q = searchQuery.trim();

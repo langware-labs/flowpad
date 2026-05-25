@@ -41,9 +41,8 @@ function projectPrefix(project: Project | null): string | null {
 function defaultPathFor(scope: Scope, descriptor: QuickCreateDescriptor, harness: HarnessKind): string {
   if (scope.kind === 'folder') return scope.folderPath ?? '';
   const sub = subFolderFor(descriptor, harness, scope.kind);
-  if (scope.kind === 'user') return `~/${sub}`;
-  const prefix = projectPrefix(scope.project);
-  return prefix ? `${prefix}/${sub}` : sub;
+  const prefix = scope.kind === 'user' ? '~' : projectPrefix(scope.project);
+  return [prefix, sub].filter(Boolean).join('/') || sub;
 }
 
 function initialScope(project: Project | null): Scope {
@@ -65,7 +64,7 @@ export function QuickCreateDialog({ open, onOpenChange, type }: QuickCreateDialo
 
   const [name, setName] = useState('');
   const [scope, setScope] = useState<Scope>(() => initialScope(project ?? null));
-  const [harness, setHarness] = useState<HarnessKind>('claude');
+  const [harness, setHarness] = useState<HarnessKind>('all');
   const [path, setPath] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
@@ -83,8 +82,8 @@ export function QuickCreateDialog({ open, onOpenChange, type }: QuickCreateDialo
       const next = initialScope(project ?? null);
       setName('');
       setScope(next);
-      setHarness('claude');
-      setPath(defaultPathFor(next, descriptor, 'claude'));
+      setHarness('all');
+      setPath(defaultPathFor(next, descriptor, 'all'));
       setIsSubmitting(false);
       requestAnimationFrame(() => nameRef.current?.focus());
     }
