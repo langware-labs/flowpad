@@ -1,0 +1,28 @@
+import { ViewType } from '@sdk';
+import type { SpotlightProfile } from './types';
+
+const terminalProfile: SpotlightProfile = {
+  id: 'terminal',
+  label: 'Search sessions',
+  placeholder: 'Search sessions…',
+  // No `defaultEntityType` — the entity chip starts on "All" so the multi-type
+  // fan-out hits both claude_session and codex_session in parallel (matches the
+  // behavior of the deleted SessionQuickSearchModal). claude and codex are two
+  // record-types of the same conceptual "session" entity; both must surface.
+  allowedEntityTypes: ['claude_session', 'codex_session'],
+  showTerminalHistory: true,
+  routeViaTerminal: true,
+};
+
+const defaultProfile: SpotlightProfile = {
+  id: 'default',
+  label: 'Search',
+  placeholder: 'Search…',
+};
+
+export function resolveProfile(viewType: ViewType | undefined): SpotlightProfile {
+  if (viewType === ViewType.SHELL) return terminalProfile;
+  return defaultProfile;
+}
+
+export { defaultProfile, terminalProfile };

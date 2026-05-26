@@ -6,7 +6,7 @@ import { RecordType } from '@sdk';
 import { CornerDownLeft, Search, SlidersHorizontal, X } from 'lucide-react';
 import { KeyboardEvent, useCallback, useRef, useState } from 'react';
 
-const RECORD_TYPES = [
+export const RECORD_TYPES = [
   'bookmark', 'claude_session', 'codex_session', RecordType.SKILL, RecordType.AGENT, 'claude_hook', RecordType.COMMAND,
   RecordType.ANNOTATION, 'comment', RecordType.TASK, 'workflow', RecordType.MARKDOWN, RecordType.PLAN,
   RecordType.CLAUDE_MD, 'claude_memory', 'claude_rules', RecordType.PROJECT, 'codex_project',
@@ -19,14 +19,14 @@ const TIME_PRESETS = [
 ] as const;
 const STATUSES = ['active', 'closed', 'archived'];
 
-const TYPE_DISPLAY_NAMES: Record<string, string> = {
+export const TYPE_DISPLAY_NAMES: Record<string, string> = {
   claude_session: 'session',
   claude_hook: 'hook',
   codex_session: 'codex',
   codex_project: 'codex project',
 };
 
-const TYPE_COLORS: Record<string, string> = {
+export const TYPE_COLORS: Record<string, string> = {
   bookmark: 'bg-violet-500/20 text-violet-700 dark:text-violet-300',
   claude_session: 'bg-blue-500/20 text-blue-700 dark:text-blue-300',
   codex_session: 'bg-green-500/20 text-green-700 dark:text-green-300',
