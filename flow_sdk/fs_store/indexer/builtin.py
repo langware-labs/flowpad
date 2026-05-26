@@ -42,7 +42,6 @@ def build_default_indexer() -> FSIndexer:
     from flow_sdk.fs_store.indexer.functions.claude_sessions import claude_sessions_fn
     from flow_sdk.fs_store.indexer.functions.codex_projects import codex_projects_fn
     from flow_sdk.fs_store.indexer.functions.codex_sessions import codex_sessions_fn
-    from flow_sdk.fs_store.indexer.functions.real_project_cwd import real_project_cwd_fn
     from flow_sdk.fs_store.indexer.functions.claude_plan import claude_plan_fn
     from flow_sdk.fs_store.indexer.functions.claude_md import (
         claude_md_in_claude_subdir_fn, claude_md_in_project_root_fn,
@@ -74,60 +73,76 @@ def build_default_indexer() -> FSIndexer:
         roots=default_roots(),
     )
 
-    # USER_HOME_FOLDER expanders
-    idx.add_function(RecordType.USER_HOME_FOLDER, claude_projects_fn)
-    idx.add_function(RecordType.USER_HOME_FOLDER, real_project_cwd_fn)
-    idx.add_function(RecordType.USER_HOME_FOLDER, claude_plan_fn)
-    idx.add_function(RecordType.USER_HOME_FOLDER, claude_md_in_claude_subdir_fn)
-    idx.add_function(RecordType.USER_HOME_FOLDER, claude_rules_fn)
-    idx.add_function(RecordType.USER_HOME_FOLDER, skill_fn)
-    idx.add_function(RecordType.USER_HOME_FOLDER, whiteboard_fn)
-    idx.add_function(RecordType.USER_HOME_FOLDER, agent_fn)
-    idx.add_function(RecordType.USER_HOME_FOLDER, workflow_fn)
-    idx.add_function(RecordType.USER_HOME_FOLDER, command_fn)
-    idx.add_function(RecordType.USER_HOME_FOLDER, markdown_flat_fn)
-    idx.add_function(RecordType.USER_HOME_FOLDER, claude_hook_fn)
-    idx.add_function(RecordType.USER_HOME_FOLDER, claude_hook_extras_fn)
-    idx.add_function(RecordType.USER_HOME_FOLDER, codex_projects_fn)
-    idx.add_function(RecordType.USER_HOME_FOLDER, codex_sessions_fn)
+    # USER_HOME_FOLDER expanders.
+    #
+    # NOTE: ``real_project_cwd_fn`` is intentionally NOT registered here.
+    # Project-cwd fanout was previously implicit (any scan over USER_HOME would
+    # silently discover + walk every Claude/Codex project tree), which made
+    # ``?limit_types=N`` and ``scope_filter=None`` mean "walk the universe".
+    # Project-cwd roots are now contributed explicitly by the scope filter via
+    # ``_resolve_scoped_roots``: callers that want all-projects pass
+    # ``ScopeFilter`` materialised by ``get_all_scope_filter()``, narrower
+    # callers pass a narrower filter, and the indexer only walks what the
+    # caller actually asked for.
+    # output_type annotations let scan() skip a function when no requested
+    # type is reachable from its output (e.g. ``?type=skill`` skips every
+    # function whose output is FOLDER / MARKDOWN / TASK / …).
+    idx.add_function(RecordType.USER_HOME_FOLDER, claude_projects_fn, RecordType.PROJECT)
+    idx.add_function(RecordType.USER_HOME_FOLDER, claude_plan_fn, RecordType.PLAN)
+    idx.add_function(RecordType.USER_HOME_FOLDER, claude_md_in_claude_subdir_fn, RecordType.CLAUDE_MD)
+    idx.add_function(RecordType.USER_HOME_FOLDER, claude_rules_fn, RecordType.CLAUDE_RULES)
+    idx.add_function(RecordType.USER_HOME_FOLDER, skill_fn, RecordType.SKILL)
+    idx.add_function(RecordType.USER_HOME_FOLDER, whiteboard_fn, RecordType.WHITEBOARD)
+    idx.add_function(RecordType.USER_HOME_FOLDER, agent_fn, RecordType.AGENT)
+    idx.add_function(RecordType.USER_HOME_FOLDER, workflow_fn, RecordType.WORKFLOW)
+    idx.add_function(RecordType.USER_HOME_FOLDER, command_fn, RecordType.COMMAND)
+    idx.add_function(RecordType.USER_HOME_FOLDER, markdown_flat_fn, RecordType.MARKDOWN)
+    idx.add_function(RecordType.USER_HOME_FOLDER, claude_hook_fn, RecordType.CLAUDE_HOOK)
+    idx.add_function(RecordType.USER_HOME_FOLDER, claude_hook_extras_fn, RecordType.CLAUDE_HOOK)
+    # codex_projects_fn consolidates codex cwds into RecordType.PROJECT
+    # (CODEX_PROJECT is a deprecated alias). Annotating it CODEX_PROJECT here
+    # makes the type-gating dispatcher skip it for ``?type=project`` queries
+    # and silently drop every Codex-discovered project.
+    idx.add_function(RecordType.USER_HOME_FOLDER, codex_projects_fn, RecordType.PROJECT)
+    idx.add_function(RecordType.USER_HOME_FOLDER, codex_sessions_fn, RecordType.CODEX_SESSION)
 
     # PROJECT (encoded ~/.claude/projects/<dir>) expanders
-    idx.add_function(RecordType.PROJECT, claude_sessions_fn)
-    idx.add_function(RecordType.PROJECT, claude_memory_fn)
+    idx.add_function(RecordType.PROJECT, claude_sessions_fn, RecordType.CLAUDE_SESSION)
+    idx.add_function(RecordType.PROJECT, claude_memory_fn, RecordType.CLAUDE_MEMORY)
 
     # REAL_PROJECT_CWD (decoded cwd) expanders
-    idx.add_function(RecordType.REAL_PROJECT_CWD, claude_plan_fn)
-    idx.add_function(RecordType.REAL_PROJECT_CWD, claude_md_in_project_root_fn)
-    idx.add_function(RecordType.REAL_PROJECT_CWD, claude_rules_fn)
-    idx.add_function(RecordType.REAL_PROJECT_CWD, spec_project_fn)
-    idx.add_function(RecordType.REAL_PROJECT_CWD, skill_fn)
-    idx.add_function(RecordType.REAL_PROJECT_CWD, whiteboard_fn)
-    idx.add_function(RecordType.REAL_PROJECT_CWD, agent_fn)
-    idx.add_function(RecordType.REAL_PROJECT_CWD, workflow_fn)
-    idx.add_function(RecordType.REAL_PROJECT_CWD, project_folder_walker_fn)
-    idx.add_function(RecordType.REAL_PROJECT_CWD, task_fn)
-    idx.add_function(RecordType.REAL_PROJECT_CWD, claude_hook_fn)
+    idx.add_function(RecordType.REAL_PROJECT_CWD, claude_plan_fn, RecordType.PLAN)
+    idx.add_function(RecordType.REAL_PROJECT_CWD, claude_md_in_project_root_fn, RecordType.CLAUDE_MD)
+    idx.add_function(RecordType.REAL_PROJECT_CWD, claude_rules_fn, RecordType.CLAUDE_RULES)
+    idx.add_function(RecordType.REAL_PROJECT_CWD, spec_project_fn, RecordType.SPEC)
+    idx.add_function(RecordType.REAL_PROJECT_CWD, skill_fn, RecordType.SKILL)
+    idx.add_function(RecordType.REAL_PROJECT_CWD, whiteboard_fn, RecordType.WHITEBOARD)
+    idx.add_function(RecordType.REAL_PROJECT_CWD, agent_fn, RecordType.AGENT)
+    idx.add_function(RecordType.REAL_PROJECT_CWD, workflow_fn, RecordType.WORKFLOW)
+    idx.add_function(RecordType.REAL_PROJECT_CWD, project_folder_walker_fn, RecordType.FOLDER)
+    idx.add_function(RecordType.REAL_PROJECT_CWD, task_fn, RecordType.TASK)
+    idx.add_function(RecordType.REAL_PROJECT_CWD, claude_hook_fn, RecordType.CLAUDE_HOOK)
 
     # SYSTEM_ROOT (flowpad_assistant) expanders
-    idx.add_function(RecordType.SYSTEM_ROOT, skill_fn)
-    idx.add_function(RecordType.SYSTEM_ROOT, whiteboard_fn)
-    idx.add_function(RecordType.SYSTEM_ROOT, agent_fn)
-    idx.add_function(RecordType.SYSTEM_ROOT, project_folder_walker_fn)
+    idx.add_function(RecordType.SYSTEM_ROOT, skill_fn, RecordType.SKILL)
+    idx.add_function(RecordType.SYSTEM_ROOT, whiteboard_fn, RecordType.WHITEBOARD)
+    idx.add_function(RecordType.SYSTEM_ROOT, agent_fn, RecordType.AGENT)
+    idx.add_function(RecordType.SYSTEM_ROOT, project_folder_walker_fn, RecordType.FOLDER)
 
     # CWD_ROOT expanders
-    idx.add_function(RecordType.CWD_ROOT, claude_plan_fn)
-    idx.add_function(RecordType.CWD_ROOT, claude_rules_fn)
-    idx.add_function(RecordType.CWD_ROOT, skill_fn)
-    idx.add_function(RecordType.CWD_ROOT, whiteboard_fn)
-    idx.add_function(RecordType.CWD_ROOT, agent_fn)
-    idx.add_function(RecordType.CWD_ROOT, workflow_fn)
-    idx.add_function(RecordType.CWD_ROOT, command_fn)
-    idx.add_function(RecordType.CWD_ROOT, project_folder_walker_fn)
+    idx.add_function(RecordType.CWD_ROOT, claude_plan_fn, RecordType.PLAN)
+    idx.add_function(RecordType.CWD_ROOT, claude_rules_fn, RecordType.CLAUDE_RULES)
+    idx.add_function(RecordType.CWD_ROOT, skill_fn, RecordType.SKILL)
+    idx.add_function(RecordType.CWD_ROOT, whiteboard_fn, RecordType.WHITEBOARD)
+    idx.add_function(RecordType.CWD_ROOT, agent_fn, RecordType.AGENT)
+    idx.add_function(RecordType.CWD_ROOT, workflow_fn, RecordType.WORKFLOW)
+    idx.add_function(RecordType.CWD_ROOT, command_fn, RecordType.COMMAND)
+    idx.add_function(RecordType.CWD_ROOT, project_folder_walker_fn, RecordType.FOLDER)
 
     # FOLDER (transient scaffold emitted by project_folder_walker_fn) expanders
-    idx.add_function(RecordType.FOLDER, markdown_in_folder_fn)
-    idx.add_function(RecordType.FOLDER, workflow_frontmatter_fn)
-    idx.add_function(RecordType.CWD_ROOT, claude_hook_fn)
+    idx.add_function(RecordType.FOLDER, markdown_in_folder_fn, RecordType.MARKDOWN)
+    idx.add_function(RecordType.FOLDER, workflow_frontmatter_fn, RecordType.WORKFLOW)
+    idx.add_function(RecordType.CWD_ROOT, claude_hook_fn, RecordType.CLAUDE_HOOK)
 
     return idx
 
