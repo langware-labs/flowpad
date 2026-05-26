@@ -13,7 +13,7 @@ describe('ScopeFilterBar', () => {
         onScopeChange={() => {}}
       />,
     );
-    expect(screen.getByText('Both')).toBeDefined();
+    expect(screen.getByText('All')).toBeDefined();
     expect(screen.getByText('User')).toBeDefined();
     expect(screen.getByText('Project')).toBeDefined();
   });

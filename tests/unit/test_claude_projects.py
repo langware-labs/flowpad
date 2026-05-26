@@ -106,12 +106,14 @@ def test_yields_real_path_from_jsonl(tmp_path: Path, monkeypatch: pytest.MonkeyP
 def test_falls_back_to_decode_when_no_jsonl(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Falls back to hyphen-decode when _real_path_from_jsonl returns None.
 
-    Uses Path.home() as the target because it has no hyphens in the path and
-    is guaranteed to exist — tmp_path contains pytest-generated hyphens that
-    would make the naive decode produce the wrong path.
+    Uses Path.home() as the target because it round-trips through the naive
+    hyphen-decode (only ``/`` and ``_`` segments — no embedded ``-``). Under
+    the conftest HOME sandbox, ``Path.home()`` resolves inside
+    ``tempfile.gettempdir()``, so ``include_temp=True`` is required to keep
+    ``is_temp_path`` from filtering the decoded path out.
 
-    `_INVALID_PROJECT_ROOTS` is emptied for this test so the fallback path is
-    what we actually exercise, not the safety filter that drops `/` / `$HOME`.
+    ``_INVALID_PROJECT_ROOTS`` is emptied for this test so the fallback path is
+    what we actually exercise, not the safety filter that drops ``/`` / ``$HOME``.
     """
     projects_root = tmp_path / ".claude" / "projects"
     real_dir = Path.home().resolve()
@@ -133,7 +135,7 @@ def test_falls_back_to_decode_when_no_jsonl(tmp_path: Path, monkeypatch: pytest.
         "flow_sdk.fs_records._claude_projects._invalid_project_roots",
         lambda: set(),
     )
-    result = list(iter_claude_project_paths())
+    result = list(iter_claude_project_paths(include_temp=True))
     assert result == [real_dir]
 
 
