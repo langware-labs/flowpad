@@ -214,6 +214,105 @@ async def test_reinit_db_no_env_writes(
 
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
+def test_minihub_host_empty_string_preserved(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """An explicit empty ``MINIHUB_HOST=`` must be preserved, not coerced
+    back to ``DEFAULT_MINIHUB_HOST``. The C2 implementation used a truthy-or
+    fallback that silently dropped empty-string overrides."""
+    _clean_instance_env(monkeypatch)
+    monkeypatch.setenv("FLOW_HOME", str(tmp_path))
+    monkeypatch.setenv("FLOW_INSTANCE", "prod")
+    monkeypatch.setenv("MINIHUB_HOST", "")
+
+    from flow_sdk.instance_settings import (
+        get_instance_settings,
+        reset_instance_settings,
+    )
+
+    reset_instance_settings()
+    assert get_instance_settings().host == ""
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+def test_test_instance_settings_reads_new_env_fields(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """TestInstanceSettings.from_env must honor the 7 fields added in C2.
+
+    Pre-fix it constructed the dataclass directly and silently used the
+    defaults regardless of env."""
+    _clean_instance_env(monkeypatch)
+    monkeypatch.setenv("FLOWPAD_TEST", "true")
+    monkeypatch.setenv("FLOWPAD_TEST_SANDBOX", str(tmp_path / "sandbox"))
+    monkeypatch.setenv("FLOWPAD_HUB_URL", "https://hub.example")
+    monkeypatch.setenv("FLOWPAD_CLOUD_API_KEY", "key-123")
+    monkeypatch.setenv("FLOWPAD_CLOUD_API_URL", "https://cloud.example")
+    monkeypatch.setenv("FLOWPAD_DOCKER_PUBLIC_URL", "https://docker.example")
+    monkeypatch.setenv("MINIHUB_HOST", "127.0.0.1")
+    monkeypatch.setenv("MINIHUB_RELOAD", "true")
+    monkeypatch.setenv("VITE_PORT", "5173")
+
+    from flow_sdk.instance_settings import (
+        get_instance_settings,
+        reset_instance_settings,
+    )
+
+    reset_instance_settings()
+    settings = get_instance_settings()
+
+    assert settings.instance_name == "test"
+    assert settings.hub_url == "https://hub.example"
+    assert settings.cloud_api_key == "key-123"
+    assert settings.cloud_api_url == "https://cloud.example"
+    assert settings.docker_public_url == "https://docker.example"
+    assert settings.host == "127.0.0.1"
+    assert settings.reload_enabled is True
+    assert settings.vite_port == 5173
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+def test_open_sqlite_escapes_special_chars_in_path(tmp_path: Path) -> None:
+    """open_sqlite must URI-escape special chars so paths containing ``?``,
+    ``#``, ``%``, or spaces don't corrupt the SQLite URI."""
+    from flow_sdk.db.drivers.sqlite.connection import open_sqlite
+
+    weird = tmp_path / "with ? and #.db"
+    conn = open_sqlite(weird)
+    try:
+        conn.execute("CREATE TABLE t(x)")
+        conn.execute("INSERT INTO t VALUES (?)", ("hello",))
+        conn.commit()
+        row = conn.execute("SELECT x FROM t").fetchone()
+        assert row[0] == "hello"
+    finally:
+        conn.close()
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+def test_open_sqlite_propagates_pragma_syntax_error_in_rw_mode(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A syntactically broken pragma must surface in rw mode rather than
+    being silently swallowed. (SQLite ignores *unknown* pragma names — they
+    are no-ops — but malformed SQL still raises sqlite3.OperationalError,
+    which IS a DatabaseError subclass, so this catches the typical typo
+    classes that real refactors would introduce.)"""
+    import sqlite3
+
+    from flow_sdk.db.drivers.sqlite import connection as conn_mod
+
+    monkeypatch.setattr(
+        conn_mod,
+        "_SYNC_PRAGMAS",
+        ("PRAGMA totally not valid sql",),  # syntax error, not just unknown
+        raising=True,
+    )
+    with pytest.raises(sqlite3.DatabaseError):
+        conn_mod.open_sqlite(tmp_path / "broken.db")
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
 @pytest.mark.asyncio
 async def test_reinit_db_rebinds_lazy_db_driver(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path

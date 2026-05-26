@@ -104,11 +104,13 @@ def override_db_path(new_path: "Path | str") -> None:
     ``reinit_db`` call site permanently poisoned the process env for the
     rest of its lifetime.
 
-    Does NOT clear ``_driver_instances`` — that is the caller's
-    responsibility (``reinit_db`` does it explicitly). Conflating the
-    driver-clear with this settings override would break test fixtures
-    that share a session-scoped driver across ``reset_instance_settings``
-    calls.
+    **Drops the cached SQLite driver** so the next ``get_db_driver()``
+    rebuilds against the new path. Without this, the previously-cached
+    driver keeps serving its snapshotted path and the override is a no-op
+    for DB access. The driver-clear is scoped to the sqlite key only;
+    other driver kinds (neo4j, networkx) are not affected and the broader
+    instance-cache reset is left alone — ``reset_instance_settings`` is
+    still the only path that wipes the singleton cache.
     """
     from dataclasses import replace as _replace  # noqa: PLC0415
 
@@ -117,6 +119,14 @@ def override_db_path(new_path: "Path | str") -> None:
     key = (name, flow_home)
     current = _INSTANCES.get(key) or get_instance_settings()
     _INSTANCES[key] = _replace(current, db_path=Path(new_path))
+    # Lazy import — db_driver imports back into instance_settings via
+    # the SQLite connection helpers. Swallow ImportError so override is
+    # usable from very-early code paths that haven't pulled in db yet.
+    try:
+        from flow_sdk.db.drivers.db_driver import _driver_instances  # noqa: PLC0415
+        _driver_instances.pop("sqlite", None)
+    except ImportError:
+        pass
 
 
 def override_records_root(new_path: "Path | str") -> None:

@@ -3,6 +3,7 @@
 import sqlite3
 from pathlib import Path
 from typing import Literal
+from urllib.parse import quote as _urlquote
 
 from sqlalchemy import Boolean, Column, DateTime, Index, Integer, String, Text, event, text
 from sqlalchemy.ext.asyncio import AsyncEngine
@@ -165,8 +166,9 @@ def install_pragmas_and_immediate(engine: AsyncEngine) -> None:
             "PRAGMA mmap_size=268435456",
             # foreign_keys intentionally OFF: existing schema doesn't declare
             # FK constraints in the SQL DDL; they're enforced at app level.
-            # Turning this on changes nothing for existing data and risks
-            # surprising failures on legacy rows.
+            # Set explicitly so the sync ``open_sqlite`` and this async
+            # ``_on_connect`` pragma set are documented-identical.
+            "PRAGMA foreign_keys=OFF",
         ):
             cursor.execute(stmt)
         cursor.close()
@@ -180,12 +182,16 @@ def install_pragmas_and_immediate(engine: AsyncEngine) -> None:
 # ``_on_connect`` set so a process that touches the same DB through both
 # paths never mixes WAL with rollback-journal — the secondary corruption
 # vector identified during the env-mirror RCA. ``foreign_keys=OFF`` matches
-# the async side's documented choice (see ``_on_connect`` for the rationale).
+# the async side's documented choice (see ``_on_connect`` for the rationale);
+# we set it explicitly here so the symmetry is documented in code rather than
+# relying on SQLite's default.
 _SYNC_PRAGMAS: tuple[str, ...] = (
     "PRAGMA journal_mode=WAL",
     "PRAGMA synchronous=NORMAL",
     "PRAGMA busy_timeout=15000",
     "PRAGMA temp_store=MEMORY",
+    "PRAGMA cache_size=-64000",
+    "PRAGMA mmap_size=268435456",
     "PRAGMA foreign_keys=OFF",
 )
 
@@ -212,16 +218,25 @@ def open_sqlite(
     # ``uri=file:?mode=rwc`` both create-on-open. Match the raw default so
     # callers migrating from plain ``sqlite3.connect`` see no behavior change.
     sqlite_mode = "rwc" if mode == "rw" else mode
-    uri = f"file:{path}?mode={sqlite_mode}"
+    # Build a valid SQLite URI:
+    #  - resolve to an absolute path with forward slashes (Windows backslashes
+    #    are NOT valid in SQLite URI paths)
+    #  - percent-encode `?`, `#`, `%`, ` `, etc. so they don't end the path
+    #    component or be interpreted as URI control chars
+    abs_path = Path(path).expanduser().resolve()
+    encoded_path = _urlquote(abs_path.as_posix(), safe="/:")
+    uri = f"file:{encoded_path}?mode={sqlite_mode}"
     conn = sqlite3.connect(uri, uri=True)
     conn.row_factory = sqlite3.Row
     for stmt in _SYNC_PRAGMAS:
         try:
             conn.execute(stmt)
         except sqlite3.DatabaseError:
-            # journal_mode / foreign_keys can't be set on a read-only DB.
-            # Don't fail the open — the caller asked for read-only on purpose.
-            pass
+            # Several pragmas (journal_mode=WAL, foreign_keys writes, ...) are
+            # legitimately refused on a read-only handle. Swallow ONLY in that
+            # case so typos in the pragma list still surface during dev.
+            if mode != "ro":
+                raise
     return conn
 
 
