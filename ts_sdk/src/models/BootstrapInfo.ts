@@ -69,6 +69,22 @@ export interface ScanInfo {
   stale: boolean;
 }
 
+/**
+ * One-time, UI-facing notice produced during bootstrap (e.g. the per-instance
+ * secrets file was reset after its keychain encryption key was lost). Surfaced
+ * as a startup toast. Absent on a normal bootstrap.
+ */
+export interface BootstrapNotice {
+  /** Stable id so the UI can de-dupe / dismiss (e.g. "secrets-reset"). */
+  id: string;
+  /** Severity, drives toast styling. */
+  level: 'info' | 'warning' | 'error';
+  /** Short headline. */
+  title: string;
+  /** Friendly explanation of what happened and what to do next. */
+  message: string;
+}
+
 export interface BootstrapInfo {
   schemas?: any[];
   user?: User;
@@ -90,4 +106,6 @@ export interface BootstrapInfo {
   sniffer_hook?: AgentHook;
   scan_info?: ScanInfo;
   records_root?: string;
+  /** One-time startup notice (e.g. secrets were reset). Absent normally. */
+  notice?: BootstrapNotice;
 }
