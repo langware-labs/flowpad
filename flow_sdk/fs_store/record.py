@@ -70,11 +70,16 @@ def get_default_records_data_root() -> Path:
 
 
 def set_default_records_root(path: Path) -> None:
-    """Test-only: redirect records_root via FS_RECORD_PATH + InstanceSettings rebuild."""
-    from flow_sdk.instance_settings import reset_instance_settings  # noqa: PLC0415
+    """Test-only: redirect records_root via the InstanceSettings override helper.
 
-    os.environ["FS_RECORD_PATH"] = str(path)
-    reset_instance_settings()
+    No env writes — env is an input, never a channel (same contract as
+    ``override_db_path``). End-state is identical to the prior env-write +
+    reset pattern (``settings.records_root == path``), so the 40+ fixtures
+    calling this keep working unchanged.
+    """
+    from flow_sdk.instance_settings import override_records_root  # noqa: PLC0415
+
+    override_records_root(path)
 
 
 def set_default_records_data_root(path: Path) -> None:

@@ -20,8 +20,9 @@ logger = logging.getLogger(__name__)
 
 
 def _get_ui_port() -> int:
-    import os
-    return int(os.environ.get("VITE_PORT") or os.environ.get("LOCAL_SERVER_PORT", "9007"))
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+    s = get_instance_settings()
+    return s.vite_port if s.vite_port is not None else s.port
 
 
 _REDIRECT_HTML = """<!DOCTYPE html>

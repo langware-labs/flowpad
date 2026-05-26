@@ -41,13 +41,13 @@ class TransactionHandler:
 from dataclasses import dataclass
 
 from .connection import (
-    DEVELOPMENT,
     Base,
     EntitySchema,
     RelationshipSchema,
     get_database_path,
     get_database_url,
     install_pragmas_and_immediate,
+    is_development,
 )
 
 
@@ -286,7 +286,6 @@ class SQLiteDBDriver(DBDriver):
         super().__init__(cfg or DBConfig())
         self.engine: Optional[AsyncEngine] = None
         self.session_factory: Optional[async_sessionmaker] = None
-        self.development: bool = DEVELOPMENT
         self.initialized_types: Set[str] = set()
 
     # ==================== Connection Management ====================
@@ -878,8 +877,8 @@ class SQLiteDBDriver(DBDriver):
         await handler.close()
 
     def set_db_name(self, db_name: str):
-        """Set database name (path for SQLite)."""
-        if self.development:
+        """Set database name (path for SQLite). Deprecated — use reinit_db."""
+        if is_development():
             import tempfile
 
             # Convert Neo4j-style db name to SQLite file path

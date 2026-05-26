@@ -119,6 +119,23 @@ def override_db_path(new_path: "Path | str") -> None:
     _INSTANCES[key] = _replace(current, db_path=Path(new_path))
 
 
+def override_records_root(new_path: "Path | str") -> None:
+    """Hot-swap the cached InstanceSettings' ``records_root`` to ``new_path``.
+
+    Test-helper companion to ``override_db_path``: same contract, same
+    no-env-write discipline. Used by ``flow_sdk.fs_store.record.
+    set_default_records_root`` (called by 40+ test fixtures) so the
+    helper redirects the singleton without poisoning ``FS_RECORD_PATH``.
+    """
+    from dataclasses import replace as _replace  # noqa: PLC0415
+
+    name = _resolve_instance_name_from_env()
+    flow_home = _resolve_flow_home_from_env()
+    key = (name, flow_home)
+    current = _INSTANCES.get(key) or get_instance_settings()
+    _INSTANCES[key] = _replace(current, records_root=Path(new_path))
+
+
 def _resolve_instance_name_from_env() -> str:
     """Pick the active instance name.
 
@@ -180,4 +197,5 @@ __all__ = [
     "get_instance_settings",
     "reset_instance_settings",
     "override_db_path",
+    "override_records_root",
 ]

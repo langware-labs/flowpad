@@ -192,17 +192,15 @@ async def _handle_auth(provider: str, request_info) -> ApiResponse:
 
 async def _get_flowpad_cloud_oauth_auth() -> ApiResponse:
     """Generate Flowpad cloud login URL."""
-    import os
-
     from flow_sdk.cli.auth.cloud_urls import get_login_url
     from flow_sdk.instance_settings import get_instance_settings
 
-    public_url = os.environ.get("FLOWPAD_DOCKER_PUBLIC_URL", "").strip()
+    settings = get_instance_settings()
     callback_path = "/auth/login_callback"
-    if public_url:
-        callback_url = f"{public_url}{callback_path}"
+    if settings.docker_public_url:
+        callback_url = f"{settings.docker_public_url}{callback_path}"
     else:
-        callback_url = f"http://127.0.0.1:{get_instance_settings().port}{callback_path}"
+        callback_url = f"http://127.0.0.1:{settings.port}{callback_path}"
 
     return ApiSuccessResponse(
         data=OauthClientRequestInfo(

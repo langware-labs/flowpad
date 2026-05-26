@@ -66,10 +66,6 @@ def flowpad_assistant_project_root() -> Path:
     return system_projects_root() / FLOWPAD_ASSISTANT_DIRNAME
 
 
-def _is_dev_mode() -> bool:
-    return os.environ.get("FLOWPAD_DEV", "").lower() == "true"
-
-
 def _active_server_json_path() -> Path:
     """Per-instance server.json path. InstanceSettings handles the dev/prod split."""
     return _server_json_path()

@@ -494,7 +494,8 @@ def wait_for_login_callback(timeout_sec: int = None):
         timeout_str = get_config_value("login_callback_timeout")
         timeout_sec = int(timeout_str) if timeout_str else 30
 
-    port = int(os.environ.get("LOCAL_SERVER_PORT", "9007"))
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+    port = get_instance_settings().port
 
     # Start server in daemon thread
     server_thread = threading.Thread(target=start_server, args=(port,), daemon=True)
@@ -515,6 +516,7 @@ def wait_for_login_callback(timeout_sec: int = None):
 
 if __name__ == "__main__":
     setup_defaults()
-    port = int(os.environ.get("LOCAL_SERVER_PORT", "9007"))
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+    port = get_instance_settings().port
     print(f"Starting minihub server on http://127.0.0.1:{port}")
     start_server(port)
