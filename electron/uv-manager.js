@@ -43,22 +43,6 @@ const PYPI_PACKAGE = 'flowpad';
 
 const API_PREFIX = '/api/v1';
 
-// Keychain entry for the Flowpad API key. Must match
-// flow_sdk.cli.auth.AuthConstants on the Python side.
-const KEYCHAIN_SERVICE = 'Flowpad.ai';
-const KEYCHAIN_ACCOUNT = 'flowpad_api_key';
-
-// Python writes/truncates this file inside ~/.flow/ when the user logs
-// in or out. The signed Electron app mirrors changes into the OS keychain
-// at backend start so the entry's ACL is owned by FlowPad. We use ~/.flow/
-// instead of ~/Library/Application Support/FlowPad/ to avoid macOS
-// Sequoia's "would like to access data from other apps" prompt.
-//   file with content → pending login (write keychain, delete file)
-//   file empty        → pending logout (clear keychain, delete file)
-//   file missing      → nothing to do
-const CRED_HANDOFF_FILENAME = 'credentials';
-const CRED_HANDOFF_DIR = path.join(os.homedir(), '.flow');
-
 // Working directory for the `flow start` backend. The FS indexer treats its
 // CWD as a project root and walks the entire subtree (see
 // flow_sdk/fs_store/indexer/roots.py + project_folder_walker.py). If that root
@@ -578,11 +562,10 @@ class UvManager {
       // Ensure port 9007 is free before starting
       await this.ensurePortFree(9007);
 
-      // Load the Flowpad API key from the OS keychain via the signed Electron
-      // app. Apply any pending login/logout written by Python in a previous
-      // session (handoff file in ~/.flow/credentials), then read keychain.
-      const apiKey = await this._loadAndSyncCredential();
-
+      // Credentials are managed entirely by the backend now: it stores hub
+      // login/secrets in the per-instance encrypted sodot file, keyed by the
+      // `Flowpad.ai.sod_key` keychain entry it reads/writes directly. The
+      // Electron app no longer mirrors a credential into the OS keychain.
       const env = {
         ...process.env,
         PATH: this._enrichedPath(),
@@ -593,9 +576,6 @@ class UvManager {
         FLOWPAD_NO_BROWSER: '1',
         FLOWPAD_DESKTOP: '1',
       };
-      if (apiKey) {
-        env.FLOWPAD_CLAUDE_CREDENTIALS = JSON.stringify(apiKey);
-      }
 
       if (IS_WIN) {
         env.USERPROFILE = env.USERPROFILE || os.homedir();
@@ -924,100 +904,6 @@ class UvManager {
     await this._uv(['tool', 'install', `${PYPI_PACKAGE}@latest`, '--force'], { timeout: 120000 });
     this._flowBin = await this._resolveFlowBin();
     this.log.info('[uv] Upgrade complete');
-  }
-
-  /**
-   * Lazily load the keytar module. Returns null if it's not installed or
-   * fails to load (e.g. native binding mismatch). All keychain operations
-   * are best-effort — failures are logged and treated as "no credential".
-   */
-  _keytar() {
-    if (this._keytarCached !== undefined) return this._keytarCached;
-    try {
-      this._keytarCached = require('keytar');
-    } catch (err) {
-      this.log.warn(`[uv] keytar not available: ${err.message}`);
-      this._keytarCached = null;
-    }
-    return this._keytarCached;
-  }
-
-  _credentialHandoffPath() {
-    return path.join(CRED_HANDOFF_DIR, CRED_HANDOFF_FILENAME);
-  }
-
-  /**
-   * Read the handoff file. Returns:
-   *   { kind: 'set', value: '<api-key>' }  — pending login
-   *   { kind: 'delete' }                   — pending logout (empty file)
-   *   null                                 — no pending op
-   */
-  _readHandoffFile() {
-    let raw;
-    try {
-      raw = fs.readFileSync(this._credentialHandoffPath(), 'utf8');
-    } catch (err) {
-      if (err.code !== 'ENOENT') {
-        this.log.warn(`[uv] Failed to read credential handoff: ${err.message}`);
-      }
-      return null;
-    }
-    const value = raw.trim();
-    return value ? { kind: 'set', value } : { kind: 'delete' };
-  }
-
-  _deleteHandoffFile() {
-    try {
-      fs.unlinkSync(this._credentialHandoffPath());
-    } catch (err) {
-      if (err.code !== 'ENOENT') {
-        this.log.warn(`[uv] could not remove handoff file: ${err.message}`);
-      }
-    }
-  }
-
-  /**
-   * Apply any pending login/logout that Python wrote to the handoff file
-   * in a previous session, then return the current keychain value. Once
-   * applied, the handoff file is removed; keychain becomes the source of
-   * truth and reads are silent on subsequent launches.
-   */
-  async _loadAndSyncCredential() {
-    const keytar = this._keytar();
-    const pending = this._readHandoffFile();
-
-    if (pending && keytar) {
-      try {
-        if (pending.kind === 'set') {
-          await keytar.setPassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT, pending.value);
-          this.log.info('[uv] applied pending login to keychain');
-        } else {
-          await keytar.deletePassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT);
-          this.log.info('[uv] applied pending logout to keychain');
-        }
-        this._deleteHandoffFile();
-      } catch (err) {
-        this.log.warn(`[uv] keychain sync failed: ${err.message}`);
-      }
-    }
-
-    if (!keytar) {
-      // Without keytar we can still pass through a pending login for the
-      // current session — Python's in-process cache will pick it up.
-      return pending && pending.kind === 'set' ? pending.value : null;
-    }
-
-    try {
-      const current = await keytar.getPassword(KEYCHAIN_SERVICE, KEYCHAIN_ACCOUNT);
-      if (current) {
-        this.log.info('[uv] Loaded Flowpad credential from keychain');
-        return current;
-      }
-    } catch (err) {
-      this.log.warn(`[uv] keychain read failed: ${err.message}`);
-    }
-    this.log.info('[uv] No Flowpad credential found');
-    return null;
   }
 }
 

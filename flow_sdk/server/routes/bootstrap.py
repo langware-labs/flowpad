@@ -1418,6 +1418,27 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
         await asyncio.to_thread(setup_desktop_filesystem)
         _t.time("setup_desktop_filesystem")
 
+        # Recover from an undecryptable secrets file (lost/changed keychain key)
+        # before anything tries to read secrets. Returns a UI notice on reset.
+        from flow_sdk.cli.auth.secrets import (  # noqa: PLC0415
+            clear_app_secret_metadata,
+            recover_orphaned_sodot,
+        )
+        notice: Optional[dict] = None
+        try:
+            notice = await asyncio.to_thread(recover_orphaned_sodot)
+        except Exception as e:
+            logging.warning(f"[bootstrap] sodot recovery probe failed (non-fatal): {e}")
+        _t.time("recover_orphaned_sodot")
+        if notice is not None:
+            # Secrets were reset — drop the now-orphaned metadata records so the
+            # secrets list doesn't show entries whose values are gone.
+            try:
+                await clear_app_secret_metadata()
+            except Exception as e:
+                logging.warning(f"[bootstrap] Failed to clear app-secret metadata (non-fatal): {e}")
+            _t.time("clear_app_secret_metadata")
+
         # Get or create local entities using Entity API
         # Order matters: user first (owner), then project, workspace, compute node
         user = await get_or_create_local_user()
@@ -1518,6 +1539,7 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
             scan_info=scan_info,
             sniffer_hook=entity_to_dict(sniffer_hook) if sniffer_hook else None,
             records_root=str(get_instance_settings().records_root),
+            notice=notice,
         )
 
         _t.done(0.5)
