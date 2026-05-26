@@ -81,7 +81,19 @@ async def reinit_db(new_path: str) -> None:
             pass
 
     # Construct a fresh driver against the new ``settings.db_path``.
-    await get_db_driver().open()
+    new_driver = get_db_driver()
+    await new_driver.open()
+
+    # Rebind the LazyDBDriver class-level caches so future ``DBEntity._db``
+    # / ``DBRelationship._db`` reads point at the new driver instead of the
+    # old closed instance. Without this, the LazyDBDriver descriptor (which
+    # replaced itself with the OLD driver on first access) keeps returning
+    # the closed driver — same split-brain pattern as the TestClient incident
+    # documented in memory/project_testclient_close_db_split_brain.md.
+    from flow_sdk.db.db_entity import DBEntity  # noqa: PLC0415
+    from flow_sdk.db.db_relationship import DBRelationship  # noqa: PLC0415
+    DBEntity._db = new_driver
+    DBRelationship._db = new_driver
 
     from flow_sdk.core.cache.entity_cache import entity_cache, uname_cache
     entity_cache.clear()
