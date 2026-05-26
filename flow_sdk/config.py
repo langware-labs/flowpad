@@ -726,21 +726,22 @@ class ServiceConfig(BaseSettings):
 
         settings = get_instance_settings()
 
-        # Configure SQLite-specific paths only when using SQLite
+        # Configure SQLite-specific paths only when using SQLite.
+        # InstanceSettings is the single source of truth — we ensure the
+        # directories exist but never echo back into os.environ. Writing to
+        # env at validator-time poisoned the SoT and caused the live
+        # split-instance "database disk image is malformed" incident: the
+        # validator fires at module-import time (before .env.local loads),
+        # pinning SQLITE_DATABASE_PATH / FS_RECORD_PATH to whatever instance
+        # the ambient env resolved to. Later readers re-read the poisoned
+        # env and silently used the wrong instance's DB / records.
         if self.db_driver == DBDriver.SQLITE.value:
             settings.db_dir.mkdir(parents=True, exist_ok=True)
-            sqlite_db_path = str(settings.db_path)
-            # Mirror the resolved path into SQLITE_DATABASE_PATH for downstream code
-            # (sqlite driver, tests). InstanceSettings already honored any pre-existing
-            # explicit override; this just keeps the env-var contract intact.
-            os.environ[ENV_SQLITE_DATABASE_PATH] = sqlite_db_path
-            db_info = f"SQLite at {sqlite_db_path}"
+            db_info = f"SQLite at {settings.db_path}"
         else:
             db_info = f"{self.db_driver} database driver"
 
-        # Records root — same single-source pattern.
         settings.records_root.mkdir(parents=True, exist_ok=True)
-        os.environ[ENV_FS_RECORD_PATH] = str(settings.records_root)
 
         # Force local compute provider for desktop
         self.default_compute_provider = ComputeProviderType.LOCAL_MACHINE
