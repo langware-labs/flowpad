@@ -43,8 +43,6 @@ export interface ProjectResourceListItem {
   path?: string;
   /** Session ID (for lens navigation) */
   sessionId?: string;
-  /** Project encoded name (for lens navigation) */
-  projectEncodedName?: string;
   /** Machine path to session directory (for transcript lens) */
   sessionPath?: string;
   /** Machine path to tasks directory (for task lens) */

@@ -135,8 +135,8 @@ async def test_scan_create_process_headless_does_not_eagerly_start():
 @pytest.mark.asyncio
 async def test_scan_upsert_session_process_creates_fresh_when_no_existing():
     """When no existing AgenticProcess matches session_id, a new one is built
-    with session_id, use_worker_history=True, context_data, project_id,
-    project_encoded_name — no source_vfs_path."""
+    with session_id, use_worker_history=True, context_data, project_id —
+    no source_vfs_path."""
     node = _make_compute_node()
     info = _make_request_info({
         "sessionId": "sess-new-1",

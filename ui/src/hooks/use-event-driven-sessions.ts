@@ -113,13 +113,14 @@ export function useEventDrivenSessions({ snifferEvents, seedItems, fetchProject 
           name: title ?? sid,
           type: 'claude_session',
           sessionId: sid,
-          projectEncodedName: encodedName,
           sessionPath: event.transcript_path ?? undefined,
           path: event.hook_data?.cwd ?? undefined,
           modifiedAt: event.timestamp,
         });
         latestChanged = true;
-        // Also queue a project fetch to enrich with metadata (messageCount, status, slug name)
+        // Also queue a project fetch to enrich with metadata (messageCount, status, slug name).
+        // ``encodedName`` here is the Claude dir name observed in the
+        // transcript path — used only as the scan-API key.
         if (encodedName && !fetchedProjects.has(encodedName)) {
           toFetch.add(encodedName);
         }

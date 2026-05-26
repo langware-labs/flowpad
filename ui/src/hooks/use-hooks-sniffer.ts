@@ -368,7 +368,7 @@ export function useHooksSniffer() {
         const transcriptEntryPath: string = payload.transcript_path || '';
         const parsedTranscriptEntry = transcriptEntryPath ? parseTranscriptPath(transcriptEntryPath) : null;
         const transcriptEntryPointer = parsedTranscriptEntry
-          ? { ref: `${parsedTranscriptEntry.projectEncodedName}/${parsedTranscriptEntry.sessionId}`, options: { ts: item.timestamp } }
+          ? { ref: parsedTranscriptEntry.sessionId, options: { ts: item.timestamp } }
           : null;
         payload.entry.tools.forEach((tool: any, toolIdx: number) => {
           parsed.push({

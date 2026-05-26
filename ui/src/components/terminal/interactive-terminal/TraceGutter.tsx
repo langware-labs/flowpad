@@ -26,7 +26,6 @@ interface TraceGutterProps {
   viewportY: number;
   rows: number;
   cellHeight: number;
-  projectEncodedName?: string;
   expanded: boolean;
   onOpen: () => void;
   onClose: () => void;
@@ -55,7 +54,6 @@ export const TraceGutter = React.memo(function TraceGutter({
   totalTraceEvents,
   historicalCount,
   liveCount,
-  projectEncodedName,
   expanded,
   onOpen,
   onClose,
@@ -157,7 +155,7 @@ export const TraceGutter = React.memo(function TraceGutter({
             </div>
             <div className="overflow-y-auto">
               {(selectedEntries ?? entries).map((entry) => (
-                <ExpandedEventLine key={entry.event.id} entry={entry} projectEncodedName={projectEncodedName} />
+                <ExpandedEventLine key={entry.event.id} entry={entry} />
               ))}
             </div>
           </div>
@@ -282,10 +280,8 @@ function GutterDot({
 
 function ExpandedEventLine({
   entry,
-  projectEncodedName,
 }: {
   entry: TraceGutterEntry;
-  projectEncodedName?: string;
 }) {
   const { navigation } = useDockNavigation();
   const Icon = getEventIcon(entry.event.event_type, entry.event);
@@ -300,7 +296,7 @@ function ExpandedEventLine({
       ? entry.event.event_type.slice(0, 15) + '\u2026'
       : entry.event.event_type;
 
-  const lensPointer = getTranscriptLensPointer(entry.event, projectEncodedName);
+  const lensPointer = getTranscriptLensPointer(entry.event);
 
   const handleOpenLens = (e: React.MouseEvent) => {
     e.stopPropagation();
