@@ -1,4 +1,6 @@
-"""Validation utilities and patterns."""
+"""Validation utilities and patterns.
 
-# UUID v4 pattern for validation (as string for use in regex composition)
-UUID_PATTERN = r'[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}'
+Re-exports from the canonical identifier module.
+Single source of truth: flow_sdk/api/api_types/identifier.py
+"""
+from flow_sdk.api.api_types.identifier import UUID_PATTERN  # noqa: F401

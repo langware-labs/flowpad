@@ -449,7 +449,16 @@ def build_app_paths() -> AppPaths:
     system_skills = str(_assistant_root / ".claude" / "skills")
     system_agents = str(_assistant_root / ".claude" / "agents")
     logs = f"{home}/.flow/logs"
-    settings = f"{workspace}/.flow/settings.json"
+    # Per-instance preferences. Lives under instance_dir so multiple instances
+    # (oss / prod / app / dev) don't clobber each other's UI prefs. The same
+    # absolute path on disk, expressed VFS-relative (no leading slash, no drive).
+    preferences_abs = str(get_instance_settings().instance_dir / "preferences.json")
+    if platform.system() == "Windows":
+        preferences = preferences_abs.replace("\\", "/")
+        if len(preferences) >= 2 and preferences[1] == ":":
+            preferences = preferences[2:].lstrip("/")
+    else:
+        preferences = preferences_abs.lstrip("/")
 
     return AppPaths(
         root=root,
@@ -461,7 +470,7 @@ def build_app_paths() -> AppPaths:
         system_skills=system_skills,
         system_agents=system_agents,
         logs=logs,
-        settings=settings,
+        preferences=preferences,
     )
 
 
@@ -1256,15 +1265,17 @@ async def _ensure_welcome_favorite(user: User) -> None:
 
 
 def setup_desktop_filesystem() -> None:
-    """Create desktop filesystem structure (.flow/logs, .flow/system_skills, settings.json).
+    """Create desktop filesystem structure.
 
-    Sets up the workspace directory tree at ~/Flowpad workspace/:
+    Workspace directory tree at ~/Flowpad workspace/:
       - .claude/skills/         (skills folder)
-      - .flow/logs/             (log files)
-      - .flow/system_skills/    (system skills -- copied from source if available)
-      - .flow/settings.json     (default settings)
 
-    Migrated from FlowPad: flowpad/hub/core/desktop_loader.py (init_desktop_entities)
+    Per-instance logs under instance_settings.logs_dir:
+      - server/, monitor/, main_desktop/
+
+    Per-instance UI preferences:
+      - <instance_dir>/preferences.json  (defaults written if missing;
+        legacy ~/Flowpad workspace/.flow/settings.json migrated on first run)
     """
     workspace_path = Path(AGENT_MOUNT_FOLDER)
 
@@ -1286,17 +1297,42 @@ def setup_desktop_filesystem() -> None:
             logging.warning(f"Failed to create logs subdirectory {subdir}: {e}")
     logging.info(f"Logs folder ensured at: {logs_base}")
 
-    # Create settings.json with defaults (only if file doesn't exist)
-    settings_path = workspace_path / ".flow" / "settings.json"
+    # Per-instance UI preferences. Defaults must stay in sync with
+    # DEFAULT_PREFERENCES in ts_sdk/src/services/InstancePreferences.ts.
+    # Legacy location: <workspace>/.flow/settings.json — migrated below.
+    prefs_path = get_instance_settings().instance_dir / "preferences.json"
+    legacy_settings_path = workspace_path / ".flow" / "settings.json"
     try:
-        if not settings_path.exists():
-            default_settings = {"show_system_skills": True}
-            settings_path.write_text(json.dumps(default_settings, indent=2))
-            logging.info(f"Settings file created at: {settings_path}")
+        prefs_path.parent.mkdir(parents=True, exist_ok=True)
+        if prefs_path.exists():
+            logging.info(f"Preferences file already exists at: {prefs_path}")
+        elif legacy_settings_path.exists():
+            # One-time migration: copy the shared workspace settings into the
+            # per-instance preferences file. Old file is left intact for any
+            # other instances that haven't migrated yet. Explicit utf-8 so a
+            # Windows host with cp1252 default doesn't mojibake the JSON.
+            prefs_path.write_text(
+                legacy_settings_path.read_text(encoding="utf-8"),
+                encoding="utf-8",
+            )
+            logging.info(
+                f"Migrated preferences {legacy_settings_path} → {prefs_path}"
+            )
         else:
-            logging.info(f"Settings file already exists at: {settings_path}")
+            default_prefs = {
+                "show_system_skills": True,
+                "default_terminal": "builtin_xterm",
+                "buffer_sync_updates": False,
+                "notification_sound_enabled": True,
+                "notification_sound_key": "supershort-ping",
+            }
+            prefs_path.write_text(
+                json.dumps(default_prefs, indent=2),
+                encoding="utf-8",
+            )
+            logging.info(f"Preferences file created at: {prefs_path}")
     except Exception as e:
-        logging.warning(f"Failed to create settings file: {e}")
+        logging.warning(f"Failed to create preferences file: {e}")
 
 
 # ---------------------------------------------------------------------------
