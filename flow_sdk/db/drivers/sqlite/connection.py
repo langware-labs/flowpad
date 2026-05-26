@@ -1,5 +1,9 @@
 """SQLite connection and schema definitions for async SQLAlchemy."""
 
+import sqlite3
+from pathlib import Path
+from typing import Literal
+
 from sqlalchemy import Boolean, Column, DateTime, Index, Integer, String, Text, event, text
 from sqlalchemy.ext.asyncio import AsyncEngine
 from sqlalchemy.orm import DeclarativeBase
@@ -170,5 +174,54 @@ def install_pragmas_and_immediate(engine: AsyncEngine) -> None:
     @event.listens_for(engine.sync_engine, "begin")
     def _on_begin(conn):
         conn.exec_driver_sql("BEGIN IMMEDIATE")
+
+
+# Sync-side pragmas applied by ``open_sqlite``. Mirror the async engine's
+# ``_on_connect`` set so a process that touches the same DB through both
+# paths never mixes WAL with rollback-journal — the secondary corruption
+# vector identified during the env-mirror RCA. ``foreign_keys=OFF`` matches
+# the async side's documented choice (see ``_on_connect`` for the rationale).
+_SYNC_PRAGMAS: tuple[str, ...] = (
+    "PRAGMA journal_mode=WAL",
+    "PRAGMA synchronous=NORMAL",
+    "PRAGMA busy_timeout=15000",
+    "PRAGMA temp_store=MEMORY",
+    "PRAGMA foreign_keys=OFF",
+)
+
+
+def open_sqlite(
+    path: "Path | str | None" = None,
+    *,
+    mode: Literal["rw", "ro"] = "rw",
+) -> sqlite3.Connection:
+    """Open a sync SQLite connection with the project's standard pragmas.
+
+    All raw ``sqlite3.connect`` sites in ``flow_sdk/`` route through this
+    helper so the WAL + busy_timeout discipline is uniform — mixing pragma
+    configurations on the same file is a documented SQLite corruption vector.
+
+    ``path=None`` resolves to the current instance's main DB via
+    ``get_database_path()``. ``mode="ro"`` opens read-only; on a read-only
+    handle SQLite refuses ``journal_mode=WAL`` and ``foreign_keys`` writes,
+    so we swallow those ``sqlite3.DatabaseError``s cleanly.
+    """
+    if path is None:
+        path = get_database_path()
+    # ``mode=rw`` refuses to create the file; raw ``sqlite3.connect(path)`` and
+    # ``uri=file:?mode=rwc`` both create-on-open. Match the raw default so
+    # callers migrating from plain ``sqlite3.connect`` see no behavior change.
+    sqlite_mode = "rwc" if mode == "rw" else mode
+    uri = f"file:{path}?mode={sqlite_mode}"
+    conn = sqlite3.connect(uri, uri=True)
+    conn.row_factory = sqlite3.Row
+    for stmt in _SYNC_PRAGMAS:
+        try:
+            conn.execute(stmt)
+        except sqlite3.DatabaseError:
+            # journal_mode / foreign_keys can't be set on a read-only DB.
+            # Don't fail the open — the caller asked for read-only on purpose.
+            pass
+    return conn
 
 

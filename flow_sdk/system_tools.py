@@ -93,7 +93,15 @@ def get_db_path() -> Path:
 
 
 def get_backup_folder() -> Path:
-    folder = Path.home() / ".flowpad" / "backups"
+    """Per-instance backup directory.
+
+    Backups live under ``<instance_dir>/backups`` (not the legacy shared
+    ``~/.flowpad/backups``). Two instances on the same machine (e.g.
+    ``app`` and ``oss``) used to collide on identical timestamps + filenames
+    in the shared folder; moving under ``instance_dir`` keeps them isolated.
+    """
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+    folder = get_instance_settings().instance_dir / "backups"
     folder.mkdir(parents=True, exist_ok=True)
     return folder
 
@@ -270,13 +278,15 @@ def validate_db(db_path: Path | None = None) -> bool:
     """
     import sqlite3 as stdlib_sqlite3  # noqa: PLC0415
 
+    from flow_sdk.db.drivers.sqlite.connection import open_sqlite  # noqa: PLC0415
+
     path = db_path or get_db_path()
     if not path.exists():
         logger.warning(f"validate_db: file not found at {path}")
         return False
 
     try:
-        conn = stdlib_sqlite3.connect(str(path))
+        conn = open_sqlite(path)
         try:
             rows = conn.execute("PRAGMA integrity_check").fetchall()
             # SQLite returns [('ok',)] when healthy; any other rows mean corruption.
@@ -432,14 +442,14 @@ async def restore(backup_path: str) -> RestoreResult:
 
 
 async def get_database_stats() -> DatabaseStatsResult:
-    import sqlite3 as stdlib_sqlite3  # noqa: PLC0415
+    from flow_sdk.db.drivers.sqlite.connection import open_sqlite  # noqa: PLC0415
 
     db_path = get_db_path()
     if not db_path.exists():
         raise FileNotFoundError("Database file does not exist")
 
     file_size = db_path.stat().st_size
-    conn = stdlib_sqlite3.connect(str(db_path))
+    conn = open_sqlite(db_path)
     try:
         cur = conn.cursor()
         cur.execute("SELECT COUNT(*) FROM entities")

@@ -876,16 +876,6 @@ class SQLiteDBDriver(DBDriver):
         await handler.rollback()
         await handler.close()
 
-    def set_db_name(self, db_name: str):
-        """Set database name (path for SQLite). Deprecated — use reinit_db."""
-        if is_development():
-            import tempfile
-
-            # Convert Neo4j-style db name to SQLite file path
-            db_file = f"flowpad_{db_name}.db"
-            self.config.database = os.path.join(tempfile.gettempdir(), db_file)
-            logger.info(f"SQLite database path set to: {self.config.database}")
-
     def validate_schema(self, schemas: List[Dict[str, Any]]) -> None:
         """Validate that entity schemas match database schema.
 
