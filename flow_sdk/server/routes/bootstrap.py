@@ -429,18 +429,32 @@ def build_app_paths() -> AppPaths:
     """
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
     root = get_os_root_path()
-    # Get home path relative to root (strip leading slash for VFS)
-    home_abs = str(get_instance_settings().user_home)
-    if platform.system() == "Windows":
-        # On Windows: strip drive letter (e.g., "C:\") and normalize backslashes to forward slashes
-        # "C:\Users\tamir" -> "Users/tamir"
-        home = home_abs.replace("\\", "/")
-        if len(home) >= 2 and home[1] == ":":
-            home = home[2:].lstrip("/")
-    else:
-        # On Unix: just strip leading slash
-        # "/Users/tamir" -> "Users/tamir"
-        home = home_abs.lstrip("/")
+
+    def _vfs_relative(abs_path: str) -> str:
+        """Normalize an OS-absolute path into a VFS-relative form (no leading slash).
+
+        On Unix: `lstrip("/")`.
+        On Windows: backslashes → forward slashes, then handle three shapes:
+        - Drive-letter (`C:/Users/x`): strip the drive prefix.
+        - UNC (`//server/share/x`): drop the leading `//` but keep `server/share`
+          so the host prefix survives; the OS layer can reassemble UNC from it.
+        - Other shapes: just `lstrip("/")`.
+        """
+        if platform.system() != "Windows":
+            return abs_path.lstrip("/")
+        norm = abs_path.replace("\\", "/")
+        if len(norm) >= 2 and norm[1] == ":":
+            return norm[2:].lstrip("/")
+        if norm.startswith("//"):
+            logging.warning(
+                "UNC path %r encountered — VFS support for UNC paths is limited; "
+                "consider mapping the share to a drive letter.",
+                abs_path,
+            )
+            return norm[2:]
+        return norm.lstrip("/")
+
+    home = _vfs_relative(str(get_instance_settings().user_home))
     workspace = f"{home}/Flowpad workspace"
     skills = f"{workspace}/.claude/skills"
     user_skills = f"{home}/.claude/skills"
@@ -451,14 +465,10 @@ def build_app_paths() -> AppPaths:
     logs = f"{home}/.flow/logs"
     # Per-instance preferences. Lives under instance_dir so multiple instances
     # (oss / prod / app / dev) don't clobber each other's UI prefs. The same
-    # absolute path on disk, expressed VFS-relative (no leading slash, no drive).
-    preferences_abs = str(get_instance_settings().instance_dir / "preferences.json")
-    if platform.system() == "Windows":
-        preferences = preferences_abs.replace("\\", "/")
-        if len(preferences) >= 2 and preferences[1] == ":":
-            preferences = preferences[2:].lstrip("/")
-    else:
-        preferences = preferences_abs.lstrip("/")
+    # absolute path on disk, expressed VFS-relative.
+    preferences = _vfs_relative(
+        str(get_instance_settings().instance_dir / "preferences.json")
+    )
 
     return AppPaths(
         root=root,
@@ -1302,35 +1312,70 @@ def setup_desktop_filesystem() -> None:
     # Legacy location: <workspace>/.flow/settings.json — migrated below.
     prefs_path = get_instance_settings().instance_dir / "preferences.json"
     legacy_settings_path = workspace_path / ".flow" / "settings.json"
+
+    # Single source of truth for the default-stub shape. The set of known keys
+    # also bounds what we migrate from a legacy settings.json — anything else
+    # is silently dropped instead of riding along forever as dead weight.
+    default_prefs = {
+        "show_system_skills": True,
+        "default_terminal": "builtin_xterm",
+        "buffer_sync_updates": False,
+        "notification_sound_enabled": False,
+        "notification_sound_key": "supershort-ping",
+    }
+    known_pref_keys = set(default_prefs.keys())
+
+    def _read_existing_prefs(path: Path) -> Optional[dict]:
+        """Return the parsed dict, or None if file is missing/malformed/non-object."""
+        if not path.exists():
+            return None
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        return parsed if isinstance(parsed, dict) else None
+
+    def _migrated_from_legacy() -> Optional[dict]:
+        """Parse legacy settings.json and project onto the new preferences shape.
+
+        Returns the merged dict or None when legacy is missing/malformed —
+        callers fall back to defaults rather than copy garbage.
+        """
+        if not legacy_settings_path.exists():
+            return None
+        legacy = _read_existing_prefs(legacy_settings_path)
+        if legacy is None:
+            logging.warning(
+                f"Legacy settings at {legacy_settings_path} is not valid JSON "
+                f"or not a dict; falling back to defaults"
+            )
+            return None
+        return {**default_prefs, **{k: v for k, v in legacy.items() if k in known_pref_keys}}
+
     try:
         prefs_path.parent.mkdir(parents=True, exist_ok=True)
-        if prefs_path.exists():
-            logging.info(f"Preferences file already exists at: {prefs_path}")
-        elif legacy_settings_path.exists():
-            # One-time migration: copy the shared workspace settings into the
-            # per-instance preferences file. Old file is left intact for any
-            # other instances that haven't migrated yet. Explicit utf-8 so a
-            # Windows host with cp1252 default doesn't mojibake the JSON.
-            prefs_path.write_text(
-                legacy_settings_path.read_text(encoding="utf-8"),
-                encoding="utf-8",
-            )
-            logging.info(
-                f"Migrated preferences {legacy_settings_path} → {prefs_path}"
-            )
+
+        existing = _read_existing_prefs(prefs_path)
+        # Treat a previously-written default stub as "no user edits yet" so the
+        # legacy migration still runs if it became available after a stub was
+        # written by an earlier bootstrap.
+        existing_is_stub = existing == default_prefs
+
+        if existing is None or existing_is_stub:
+            migrated = _migrated_from_legacy()
+            payload = migrated if migrated is not None else default_prefs
+            prefs_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+            if migrated is not None:
+                logging.info(
+                    f"Migrated preferences {legacy_settings_path} → {prefs_path} "
+                    f"(filtered to {len(known_pref_keys)} known keys)"
+                )
+            elif existing is None:
+                logging.info(f"Preferences file created at: {prefs_path}")
+            else:
+                logging.info(f"Preferences file refreshed (was default stub): {prefs_path}")
         else:
-            default_prefs = {
-                "show_system_skills": True,
-                "default_terminal": "builtin_xterm",
-                "buffer_sync_updates": False,
-                "notification_sound_enabled": True,
-                "notification_sound_key": "supershort-ping",
-            }
-            prefs_path.write_text(
-                json.dumps(default_prefs, indent=2),
-                encoding="utf-8",
-            )
-            logging.info(f"Preferences file created at: {prefs_path}")
+            logging.info(f"Preferences file already exists at: {prefs_path}")
     except Exception as e:
         logging.warning(f"Failed to create preferences file: {e}")
 

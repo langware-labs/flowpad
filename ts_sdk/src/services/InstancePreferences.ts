@@ -26,7 +26,7 @@ const DEFAULT_PREFERENCES: InstancePreferencesData = {
   show_system_skills: true,
   default_terminal: TerminalType.BUILTIN_XTERM,
   buffer_sync_updates: false,
-  notification_sound_enabled: true,
+  notification_sound_enabled: false,
   notification_sound_key: 'supershort-ping',
 };
 
