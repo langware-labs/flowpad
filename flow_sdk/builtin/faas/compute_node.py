@@ -750,7 +750,10 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             for s in dep_shells:
                 s.project_id = recovered.id
             for p in dep_procs:
-                p._bind_project_id(recovered.id)
+                # Force-rebind: every dep_proc here has the dangling FK and may
+                # be session-bound — the polite `_bind_project_id` would be
+                # silently refused by the freeze for those.
+                p._force_rebind_project_id(recovered.id)
             await asyncio.gather(
                 *(s.save() for s in dep_shells),
                 *(p.save() for p in dep_procs),

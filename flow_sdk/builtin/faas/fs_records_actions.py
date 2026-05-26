@@ -665,9 +665,10 @@ class FsRecordsActionsMixin:
         POST /fs-records/index                       → index all registered types
         POST /fs-records/index?type=X                → index one type
         POST /fs-records/index?rebuild=true          → clear + re-index
-        POST /fs-records/index?project_id=<id>       → scope to a single project's
-                                                       fs_storage_mount_path subtree
-                                                       (one REAL_PROJECT_CWD root).
+        POST /fs-records/index?user=&projects=A,B    → narrow to a ScopeFilter
+                                                       (canonical wire format —
+                                                       matches search, scan,
+                                                       index-status, clear).
 
         Backed by ``FSIndexer.index()``. Emits ``progress_report`` FlowData
         events per type via the shared indexer's ``on_progress`` callback.
@@ -695,19 +696,27 @@ class FsRecordsActionsMixin:
         limit_types = int(limit_types_raw) if limit_types_raw.isdigit() else None
         limit_per_type_raw = qp.get("limit_per_type", "").strip()
         limit_per_type = int(limit_per_type_raw) if limit_per_type_raw.isdigit() else None
-        # Unified ScopeFilter from wire format `?user=true&projects=A,B`.
-        # Legacy single-project param `?project_id=…` is kept as a back-compat
-        # shim — promoted into ScopeFilter.projects when the new params are absent.
+        # Unified ScopeFilter from canonical wire format `?user=…&projects=A,B`.
         from flow_sdk.server.search_filters import ScopeFilter  # noqa: PLC0415
+        # Surface stale callers still using the legacy `?project_id=<id>` shim
+        # — it now silently triggers a full-tree walk (scope_filter=None).
+        # Logging the hit lets us debug runaway scans without re-introducing
+        # the shim and undoing the canonical-wire-format standardisation.
         legacy_project_id = qp.get("project_id", "").strip() or None
-        if qp.get("user") is not None or qp.get("projects") is not None:
-            scope_filter = ScopeFilter.from_query_params(qp)
-        elif legacy_project_id:
-            scope_filter = ScopeFilter(user=False, projects=(legacy_project_id,))
-        else:
-            scope_filter = None
-        # Some downstream sites still want the singular project_id (effective_project_id).
-        project_id = legacy_project_id or (
+        if legacy_project_id and qp.get("user") is None and qp.get("projects") is None:
+            logging.warning(
+                "fs-records/index received legacy ?project_id=%s — ignored. "
+                "Callers must use canonical ?user=&projects= ScopeFilter format.",
+                legacy_project_id,
+            )
+        scope_filter = (
+            ScopeFilter.from_query_params(qp)
+            if (qp.get("user") is not None or qp.get("projects") is not None)
+            else None
+        )
+        # Single-project narrowing — derived from the ScopeFilter, used below
+        # to short-circuit non-project indexer work paths.
+        project_id = (
             scope_filter.projects[0]
             if (scope_filter and len(scope_filter.projects) == 1)
             else None

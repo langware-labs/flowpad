@@ -126,12 +126,15 @@ export type TerminalRuntimeErrorKind =
   | 'shell_entity_missing'
   | 'pty_attach_failed'
   | 'project_missing'
-  | 'network_error';
+  | 'network_error'
+  | 'project_mismatch';
 
 export interface TerminalRuntimeError {
   kind: TerminalRuntimeErrorKind;
   processId: string;
   shellId: string | null;
+  actualProjectId?: string | null;
+  actualCwd?: string | null;
 }
 
 class DataContext extends EventEmitter {

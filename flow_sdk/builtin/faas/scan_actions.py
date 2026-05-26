@@ -351,6 +351,20 @@ class ScanActionsMixin:
                 except Exception:
                     pass
 
+            # Default workdir to the project's mount path when only project_id
+            # was supplied. Worktree callers (and any flow that needs a workdir
+            # distinct from the project root) keep working because they pass
+            # an explicit workdir, which we don't overwrite.
+            if project_id and not workdir:
+                try:
+                    from flow_sdk.builtin.project import Project
+
+                    proj = await Project.get_by_id(project_id)
+                    if proj is not None and proj.fs_storage_mount_path:
+                        workdir = str(proj.fs_storage_mount_path)
+                except Exception:
+                    pass
+
             process = AgenticProcess(
                 worker_type=worker_type.value,
                 instruction_content="",
@@ -541,34 +555,43 @@ class ScanActionsMixin:
                 process = existing[0]
                 changed = False
                 context_data = dict(process.context_data or {})
+                # Track which fields actually moved so we can mirror exactly
+                # those changes into context_data and the linked Shell —
+                # honouring the binding freeze on session-bound processes.
+                workdir_bound = False
+                project_bound = False
                 if workdir and process.workdir != workdir:
                     process.workdir = workdir
-                    changed = True
-                if workdir and context_data.get("workdir") != workdir:
-                    context_data["workdir"] = workdir
-                    changed = True
+                    if process.workdir == workdir:
+                        workdir_bound = True
+                        changed = True
                 if project_id and process.project_id != project_id:
-                    process._bind_project_id(project_id)
-                    changed = True
-                if project_id and context_data.get("project_id") != project_id:
+                    if process._bind_project_id(project_id):
+                        project_bound = True
+                        changed = True
+                if workdir_bound and context_data.get("workdir") != workdir:
+                    context_data["workdir"] = workdir
+                if project_bound and context_data.get("project_id") != project_id:
                     context_data["project_id"] = project_id
-                    changed = True
                 if session_name and not process.name:
                     process.name = session_name
                     changed = True
                 if changed:
                     process.context_data = context_data
                     await process.save()
-                if process.shell_id and (workdir or project_id):
+                # Only propagate to the linked Shell for fields that actually
+                # moved on the process — otherwise the Shell would silently
+                # drift away from a frozen process binding.
+                if process.shell_id and (workdir_bound or project_bound):
                     try:
                         from flow_sdk.builtin.shell import Shell
 
                         shell = await Shell.get_by_id(process.shell_id)
                         shell_changed = False
-                        if shell and workdir and shell.workdir != workdir:
+                        if shell and workdir_bound and shell.workdir != workdir:
                             shell.workdir = workdir
                             shell_changed = True
-                        if shell and project_id and shell.project_id != project_id:
+                        if shell and project_bound and shell.project_id != project_id:
                             shell.project_id = project_id
                             shell_changed = True
                         if shell and shell_changed:
@@ -598,6 +621,20 @@ class ScanActionsMixin:
             # Create new process directly on this compute node
             owner = request_info.someone_typeid if request_info else None
 
+            # Default workdir to the project's mount path when only project_id
+            # was supplied. Worktree callers pass their own workdir and aren't
+            # affected. (Rule 2: at create-time the binding is project-rooted
+            # unless the caller explicitly overrides.)
+            if project_id and not workdir:
+                try:
+                    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+                    proj = await Project.get_by_id(project_id)
+                    if proj is not None and proj.fs_storage_mount_path:
+                        workdir = str(proj.fs_storage_mount_path)
+                except Exception:
+                    pass
+
             context_data = {}
             if workdir:
                 context_data["workdir"] = workdir
@@ -610,6 +647,7 @@ class ScanActionsMixin:
                 use_worker_history=True,
                 context_data=context_data,
                 project_id=project_id or None,
+                workdir=workdir or None,
                 visible=True,
                 **({"name": session_name} if session_name else {}),
             )
