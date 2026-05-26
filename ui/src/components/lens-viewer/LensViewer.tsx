@@ -17,7 +17,7 @@ import { TriggerLogViewer } from './TriggerLogViewer';
  *
  * URL structure: /dock/lens/{category}/{type}/{ref}
  * Examples:
- * - /dock/lens/claude/transcript/{projectEncodedName}/{sessionId}
+ * - /dock/lens/claude/transcript/{sessionId}
  * - /dock/lens/claude/tasks/{sessionId}
  */
 export function LensViewer() {
@@ -113,7 +113,6 @@ export function LensViewer() {
         <ClaudeTasksViewer
           sessionId={lensParts.ref}
           selectedActiveForm={currentDock?.options?.active_form}
-          projectEncodedName={currentDock?.options?.project}
         />
       );
     case 'heartbeat/events':

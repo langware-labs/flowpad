@@ -141,6 +141,12 @@ export interface ClaudeMdItem extends SystemProfileItem {
  */
 export interface ProjectItem extends SystemProfileItem {
   type: ItemType.PROJECT | string;
+  /**
+   * Claude project directory name observed at ~/.claude/projects/<name>/.
+   * Scanner-emitted transient — used as the API key when scanning Claude's
+   * project-scoped resources. NOT stored on any Flow record.
+   */
+  encoded_name: string;
   cwd: string;
   session_count: number;
   total_messages: number;
@@ -837,6 +843,12 @@ export async function openResourceExternal(
 export interface ProjectListItem {
   id: string;
   name: string;
+  /**
+   * Claude project directory name observed at ~/.claude/projects/<name>/.
+   * Scanner-emitted transient — used as the API key when scanning Claude's
+   * project-scoped resources. NOT stored on any Flow record.
+   */
+  encoded_name: string;
   cwd: string | null;
   session_count: number;
   claude_session_count?: number;

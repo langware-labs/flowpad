@@ -1432,7 +1432,6 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
                     viewportY={viewportY}
                     rows={rows}
                     cellHeight={metricsCellHeight}
-                    projectEncodedName={dataContext.project?.fs_storage_mount_path?.replace(/\//g, '-')}
                     expanded={gutterExpanded}
                     onOpen={() => setGutterExpanded(true)}
                     onClose={() => setGutterExpanded(false)}

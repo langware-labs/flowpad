@@ -161,7 +161,7 @@ def test_collect_claude_skips_scratch_encoded_dirs(monkeypatch, tmp_path):
 
         def __getattribute__(self, name):
             if name == "__dict__":
-                return {"cwd": object.__getattribute__(self, "_cwd"), "project_encoded_name": None, "custom_title": None}
+                return {"cwd": object.__getattribute__(self, "_cwd"), "custom_title": None}
             return object.__getattribute__(self, name)
 
         @classmethod
@@ -186,7 +186,6 @@ def test_agentic_process_only_entries_skips_scratch_workdir():
         session_id="sid-scratch",
         workdir="/private/var/folders/t7/fixture-XXX",
         project_id=None,
-        project_encoded_name=None,
         name=None,
         worker_type=None,
         updated_date=datetime(2026, 5, 23, 14, 0, tzinfo=timezone.utc),
@@ -196,7 +195,6 @@ def test_agentic_process_only_entries_skips_scratch_workdir():
         session_id="sid-real",
         workdir="/Users/shlom/Documents/dev/flowpad-oss",
         project_id="proj-real",
-        project_encoded_name=None,
         name="real work",
         worker_type=None,
         updated_date=datetime(2026, 5, 23, 13, 0, tzinfo=timezone.utc),

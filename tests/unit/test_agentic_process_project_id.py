@@ -3,7 +3,7 @@
 These tests verify PLANNED behaviour and are expected to FAIL until the feature
 is implemented:
   - AgenticProcess entity has project_id as an APIField
-  - AgenticProcessRecord has a project_id stored property (like project_encoded_name)
+  - AgenticProcessRecord has a project_id stored property
   - Setting project_id on the record marks it dirty and persists the value
 """
 

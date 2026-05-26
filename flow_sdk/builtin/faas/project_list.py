@@ -68,6 +68,31 @@ def _project_id_for_cwd(cwd: str) -> str:
     return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"project:{canonical_posix_path(cwd)}"))
 
 
+def _index_claude_dirs_by_cwd(claude_root: Path) -> dict[str, Path]:
+    """Build {canonical_cwd: claude_dir} by reading each child's JSONL once.
+
+    Claude's encoded-dir name is lossy (``/`` / `` `` / ``_`` → ``-``), so going
+    cwd → dir via path encoding fails for paths with spaces or underscores. The
+    ground truth is each child's JSONL ``cwd`` field, which
+    ``decode_claude_project_dir`` already exposes.
+    """
+    from flow_sdk.fs_records._claude_projects import decode_claude_project_dir
+    out: dict[str, Path] = {}
+    if not claude_root.is_dir():
+        return out
+    for child in claude_root.iterdir():
+        if not child.is_dir():
+            continue
+        real = decode_claude_project_dir(child)
+        if real is None:
+            continue
+        try:
+            out[str(real.resolve())] = child
+        except OSError:
+            continue
+    return out
+
+
 def _claude_session_stats(project_dir: Path) -> tuple[int, str | None]:
     session_files = list(project_dir.glob("*.jsonl"))
     if session_files:
@@ -161,6 +186,7 @@ def _merge_project(
     *,
     claude: bool = False,
     codex: bool = False,
+    claude_dir_name: str | None = None,
     session_count: int = 0,
     modified_at: str | None = None,
 ) -> None:
@@ -171,6 +197,11 @@ def _merge_project(
             "type": PROJECT_RESOURCE_TYPE,
             "name": _display_name(cwd),
             "cwd": cwd,
+            # `encoded_name` is the Claude project dir name OBSERVED on disk
+            # (~/.claude/projects/<name>/). It's a scanner-emitted transient,
+            # never stored on Flow records — used by clients only to identify
+            # which Claude directory to scan for hooks / mcp / agents / etc.
+            "encoded_name": claude_dir_name or "",
             "session_count": 0,
             "claude_session_count": 0,
             "codex_session_count": 0,
@@ -181,6 +212,8 @@ def _merge_project(
             "worker_types": [],
         },
     )
+    if claude_dir_name and not item.get("encoded_name"):
+        item["encoded_name"] = claude_dir_name
     if claude:
         item["claude"] = True
         item["claude_session_count"] = (
@@ -218,7 +251,10 @@ async def list_projects_from_indexer() -> dict[str, Any]:
 
     all_projects = await get_all_projects(create_missing=True)
     codex_activity = _codex_activity_by_cwd()
-    claude_root = _claude_projects_dir()
+    # One pass over claude_root → cwd lookup; otherwise the per-project search
+    # below would re-scan and re-decode every JSONL N times (lossy encoder
+    # forces JSONL inspection).
+    claude_dirs = _index_claude_dirs_by_cwd(_claude_projects_dir())
 
     projects_by_cwd: dict[str, dict[str, Any]] = {}
     for info in all_projects:
@@ -226,17 +262,16 @@ async def list_projects_from_indexer() -> dict[str, Any]:
         if not ProjectFsRecord._is_valid_cwd(canonical):
             continue
         if "claude" in info.worker_types:
-            # Internal-only Claude dir lookup. NOTE: this encoder is lossy
-            # (doesn't handle spaces / underscores); for paths that contain
-            # those, the dir won't be found and session_count is 0. A robust
-            # lookup would walk ``claude_root`` and match each child's cwd.
-            claude_dir = canonical.replace("/", "-")
-            session_count, modified_at = _claude_session_stats(claude_root / claude_dir)
-            _merge_project(
-                projects_by_cwd, canonical,
-                claude=True,
-                session_count=session_count, modified_at=modified_at,
-            )
+            claude_dir = claude_dirs.get(str(Path(canonical).resolve()))
+            if claude_dir is not None:
+                session_count, modified_at = _claude_session_stats(claude_dir)
+                _merge_project(
+                    projects_by_cwd, canonical,
+                    claude=True, claude_dir_name=claude_dir.name,
+                    session_count=session_count, modified_at=modified_at,
+                )
+            else:
+                _merge_project(projects_by_cwd, canonical, claude=True)
         if "codex" in info.worker_types:
             activity = codex_activity.get(canonical, {})
             _merge_project(
