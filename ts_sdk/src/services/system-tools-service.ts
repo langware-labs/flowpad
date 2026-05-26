@@ -544,13 +544,16 @@ export class SystemToolsService extends EventEmitter {
    * Project-scoped fast scan: indexer walks only the project's
    * `fs_storage_mount_path` subtree (one REAL_PROJECT_CWD root). Same
    * skip-fresh + WS progress + index_end settle path as `fastScan()`.
+   *
+   * Wire format matches the canonical ScopeFilter encoding
+   * (`?user=false&projects=<id>`) so the backend takes one parse path
+   * regardless of which client sent the request.
    */
   async fastScanProject(projectId: string): Promise<void> {
     this._setActivity('index');
     try {
-      await apiClient.post(
-        `${FS_RECORDS_BASE}/index?project_id=${encodeURIComponent(projectId)}`,
-      );
+      const qs = new URLSearchParams({ user: 'false', projects: projectId });
+      await apiClient.post(`${FS_RECORDS_BASE}/index?${qs.toString()}`);
       void dataManager.refreshScanInfo();
     } finally {
       if (this.currentActivity === 'index') this._setActivity(null);
@@ -566,9 +569,12 @@ export class SystemToolsService extends EventEmitter {
   async hardRefreshProject(projectId: string): Promise<void> {
     this._setActivity('index');
     try {
-      await apiClient.post(
-        `${FS_RECORDS_BASE}/index?project_id=${encodeURIComponent(projectId)}&force=true`,
-      );
+      const qs = new URLSearchParams({
+        user: 'false',
+        projects: projectId,
+        force: 'true',
+      });
+      await apiClient.post(`${FS_RECORDS_BASE}/index?${qs.toString()}`);
       void dataManager.refreshScanInfo();
     } finally {
       if (this.currentActivity === 'index') this._setActivity(null);

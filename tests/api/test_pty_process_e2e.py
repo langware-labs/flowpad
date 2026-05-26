@@ -116,11 +116,20 @@ async def test_upsert_session_process(bootstrapped_client):
 
 
 @pytest.mark.asyncio
-async def test_upsert_session_process_heals_existing_workdir(
+async def test_upsert_session_process_does_not_rebind_started_process(
     bootstrapped_client,
     tmp_path: Path,
 ):
-    """Existing session processes adopt the history cwd on a later upsert."""
+    """A later upsert with a different workdir / projectId is a no-op for a
+    process whose ``session_id`` is already set.
+
+    The binding between an AgenticProcess and the Claude transcript on disk is
+    keyed by ``(workdir, project_id)``. Once a session has started, rebinding
+    to a different project silently drifts the record away from where the
+    jsonl actually lives (see 4c5bd6e4 incident) — the resume command runs
+    from the wrong cwd and Claude can't find the conversation. The upsert
+    must therefore refuse the rebind and preserve the original binding.
+    """
     bootstrap = await bootstrapped_client.get("/api/v1/graph/bootstrap")
     assert bootstrap.status_code == 200
     compute_node_id = _get_default_compute_node_id(bootstrap.json())
@@ -136,7 +145,9 @@ async def test_upsert_session_process_heals_existing_workdir(
     process_id = created["id"]
     before = await bootstrapped_client.get(f"/api/v1/graph/agentic_process/{process_id}")
     assert before.status_code == 200, before.text
-    stale_project_id = ApiResponse(**before.json()).data["project_id"]
+    original = ApiResponse(**before.json()).data
+    original_workdir = original["workdir"]
+    original_project_id = original["project_id"]
 
     target_cwd = str(tmp_path / "worktree")
     Path(target_cwd).mkdir()
@@ -145,28 +156,19 @@ async def test_upsert_session_process_heals_existing_workdir(
         json={
             "sessionId": test_session_id,
             "workdir": target_cwd,
-            "projectId": stale_project_id,
+            "projectId": original_project_id,
         },
     )
     assert healed.status_code == 200, healed.text
     healed_data = ApiResponse(**healed.json()).data
-    assert healed_data["id"] == process_id
+    assert healed_data["id"] == process_id  # idempotent — same process
 
     response = await bootstrapped_client.get(f"/api/v1/graph/agentic_process/{process_id}")
     assert response.status_code == 200, response.text
     process_entity = ApiResponse(**response.json()).data
-    assert process_entity["workdir"] == target_cwd
-    assert process_entity["context_data"]["workdir"] == target_cwd
-    assert process_entity["project_id"] != stale_project_id
-    assert process_entity["context_data"]["project_id"] == process_entity["project_id"]
-
-    shell_response = await bootstrapped_client.get(
-        f"/api/v1/graph/shell/{process_entity['shell_id']}"
-    )
-    assert shell_response.status_code == 200, shell_response.text
-    shell_entity = ApiResponse(**shell_response.json()).data
-    assert shell_entity["workdir"] == target_cwd
-    assert shell_entity["project_id"] == process_entity["project_id"]
+    # Binding is frozen — neither workdir nor project_id moved.
+    assert process_entity["workdir"] == original_workdir
+    assert process_entity["project_id"] == original_project_id
 
 
 def _write_fake_claude_jsonl(session_id: str, cwd: str) -> Path:

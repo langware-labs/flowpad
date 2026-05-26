@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from functools import cached_property
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, List
+from typing import TYPE_CHECKING, Any, Callable, ClassVar, List
 from uuid import uuid4
 
 from pydantic import SerializationInfo, model_serializer, model_validator
@@ -459,6 +459,61 @@ class AgenticProcess(Entity):
         subtitle = raw.strip() or None
         return {"name": self.name, "subtitle": subtitle}
 
+    # ── Binding freeze ────────────────────────────────────────────────────────
+    # Once an AgenticProcess has a ``session_id``, its ``project_id`` and
+    # ``workdir`` are frozen: the Claude/Codex transcript on disk is keyed to
+    # those values, and any later rewrite silently drifts the record away from
+    # where the jsonl actually lives (see 4c5bd6e4 incident — heal/recover
+    # paths re-stamped these fields against the active dock's project, while
+    # the session had been started elsewhere).
+    #
+    # ``_binding_lock_armed`` is flipped True by ``_arm_binding_lock`` after
+    # construction. Until armed, all writes pass through — Pydantic
+    # construction must be able to set the fields freely. Once armed,
+    # ``__setattr__`` refuses writes to ``project_id`` / ``workdir`` when
+    # ``session_id`` is set and the new value differs from the current one.
+    # The marker lives in ``__dict__`` (not a model field), so it isn't
+    # serialised and re-loaded entities re-arm via the same validator.
+
+    _BINDING_FROZEN_FIELDS: ClassVar[frozenset[str]] = frozenset(("project_id", "workdir"))
+
+    @model_validator(mode="after")
+    def _arm_binding_lock(self) -> "AgenticProcess":
+        # ``object.__setattr__`` bypasses our hook so the marker is set
+        # unconditionally even though the field isn't declared on the model.
+        object.__setattr__(self, "_binding_lock_armed", True)
+        return self
+
+    def __setattr__(self, key: str, value: Any) -> None:
+        # The freeze only refuses **rebinds** — writes that change one
+        # truthy value to a *different* truthy value — once
+        # ``session_id`` is set. Initialization from None (the
+        # ``get_project()`` lazy-fill path) and same-value writes are
+        # allowed; this prevents the silent re-stamp class of bugs while
+        # leaving normal lifecycle fills working.
+        #
+        # The lock is armed by ``_arm_binding_lock`` after construction,
+        # so Pydantic field assignment during ``__init__`` always passes
+        # through.
+        if (
+            key in AgenticProcess._BINDING_FROZEN_FIELDS
+            and self.__dict__.get("_binding_lock_armed")
+            and self.__dict__.get("session_id")
+        ):
+            current = self.__dict__.get(key)
+            if current and value and current != value:
+                logger.info(
+                    "[AgenticProcess %s] refused rebind of %s: binding frozen by session_id=%s "
+                    "(current=%r attempted=%r)",
+                    self.__dict__.get("id", "<no-id>"),
+                    key,
+                    self.__dict__.get("session_id"),
+                    current,
+                    value,
+                )
+                return
+        super().__setattr__(key, value)
+
     @model_validator(mode="after")
     def _bubble_process_type_from_context_data(self) -> "AgenticProcess":
         """Lift `process_type` from `context_data` onto the top-level field.
@@ -888,13 +943,45 @@ class AgenticProcess(Entity):
             return exit_result
         return await self.start_pty()
 
-    def _bind_project_id(self, project_id: str) -> None:
-        """Set ``project_id`` and append the matching Project TypeId to the
-        process's shared context."""
+    def _bind_project_id(self, project_id: str) -> bool:
+        """Polite bind: set ``project_id`` (honouring the freeze) and append
+        the matching Project TypeId on success.
+
+        Returns ``True`` if the binding landed, ``False`` if the freeze
+        refused the write. Callers that need to write through the freeze
+        (e.g. project-recovery, where the new id is known-correct) must
+        use ``_force_rebind_project_id`` instead.
+        """
         self.project_id = project_id
+        if self.project_id != project_id:
+            return False  # write was refused by the binding-freeze guard
         self.add_shared_context_entities(
             TypeId(type=BuiltinEntityType.PROJECT.value, id=project_id)
         )
+        return True
+
+    def _force_rebind_project_id(self, project_id: str) -> None:
+        """Bypass the binding-freeze and set ``project_id`` unconditionally.
+
+        Use only when the caller has confirmed the new id is correct
+        (e.g. ``Project.recover_by_path`` resurrected the dangling FK and
+        the new Project entity is the canonical replacement). Also appends
+        the matching Project TypeId to shared context.
+        """
+        object.__setattr__(self, "project_id", project_id)
+        self.add_shared_context_entities(
+            TypeId(type=BuiltinEntityType.PROJECT.value, id=project_id)
+        )
+
+    def _force_rebind_workdir(self, workdir: str) -> None:
+        """Bypass the binding-freeze and set ``workdir`` unconditionally.
+
+        Use only when the caller has confirmed the new path is correct
+        (e.g. the on-disk transcript moved). Most heal/upsert paths must
+        leave ``workdir`` alone on session-bound processes — see the freeze
+        comment at the top of this class.
+        """
+        object.__setattr__(self, "workdir", workdir)
 
     # NOTE: per-subclass project-id projection that used to live here moved
     # to ``Entity.get_implicit_private_context_entities`` in the base. Every
@@ -919,7 +1006,10 @@ class AgenticProcess(Entity):
             project = await Project.recover_by_path(self.workdir)
             if not project:
                 return ApiFailResponse(message=f"Could not recover a project for {self.workdir}")
-            self._bind_project_id(project.id)
+            # Recovery legitimately replaces a dangling FK with the canonical
+            # Project — bypass the freeze so session-bound processes (the only
+            # ones that ever need recovery) actually move.
+            self._force_rebind_project_id(project.id)
             await self.save()
             return ApiSuccessResponse(data={"project": project.model_dump(mode="json")})
         except Exception as e:
