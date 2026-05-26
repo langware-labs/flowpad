@@ -17,16 +17,16 @@ from __future__ import annotations
 
 import keyring
 
-from flow_sdk.cli.auth.secrets import write_secret
+from flow_sdk.cli.auth.secrets import (
+    clear_app_secret_metadata,
+    recover_orphaned_sodot,
+    write_secret,
+)
 from flow_sdk.fs_records.app_secret import AppSecretRecord
 from flow_sdk.instance_settings import reset_instance_settings
 from flow_sdk.instance_settings.base_settings import (
     SOD_KEY_KEYCHAIN_SERVICE,
     _reset_sod_key_cache,
-)
-from flow_sdk.server.routes.bootstrap import (
-    clear_app_secret_metadata,
-    recover_orphaned_sodot,
 )
 
 
