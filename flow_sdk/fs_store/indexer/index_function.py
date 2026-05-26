@@ -301,15 +301,65 @@ class FSIndexer:
         roots: list[FSRef] | None = None,
     ) -> None:
         self._roots: list[FSRef] = list(roots) if roots is not None else []
-        self._functions: dict[RecordType, list[IndexerFunc]] = {}
+        # Each entry: (fn, output_type | None). ``output_type`` is the
+        # ``RecordType`` the function emits; ``None`` means "unknown / multiple
+        # types" and the dispatcher must always run it (legacy fallback).
+        self._functions: dict[RecordType, list[tuple[IndexerFunc, RecordType | None]]] = {}
 
     def add_function(
-        self, record_type: RecordType, fn: IndexerFunc
+        self,
+        record_type: RecordType,
+        fn: IndexerFunc,
+        output_type: RecordType | None = None,
     ) -> None:
-        self._functions.setdefault(record_type, []).append(fn)
+        """Register ``fn`` on input ``record_type``.
+
+        ``output_type`` declares the ``RecordType`` ``fn`` emits — used by
+        ``scan()`` to skip the function when ``opts.types`` is set and the
+        function's output can't reach any requested type. ``None`` means
+        "unknown" and disables the skip (the function always runs).
+        """
+        self._functions.setdefault(record_type, []).append((fn, output_type))
 
     def add_root(self, node: FSRef) -> None:
         self._roots.append(node)
+
+    def _compute_needed_output_types(
+        self, requested: tuple[RecordType, ...]
+    ) -> set[RecordType] | None:
+        """Reverse-reachability over the registration graph.
+
+        Returns the set of output ``RecordType``s whose walk transitively
+        produces a record in ``requested``. ``None`` means "no annotation —
+        run every function" (legacy callers that didn't pass output_type).
+
+        The graph: an edge ``T_in -> T_out`` exists for each
+        ``add_function(T_in, fn, output_type=T_out)``. Walking backward from
+        ``requested`` (BFS over reversed edges) yields the closure of useful
+        types — any function whose ``output_type`` isn't in this closure can
+        be skipped without losing records.
+        """
+        # Reverse adjacency: T_out -> {T_in such that an edge T_in -> T_out exists}.
+        reverse: dict[RecordType, set[RecordType]] = {}
+        any_unannotated = False
+        for t_in, fns in self._functions.items():
+            for _fn, t_out in fns:
+                if t_out is None:
+                    any_unannotated = True
+                    continue
+                reverse.setdefault(t_out, set()).add(t_in)
+        if any_unannotated:
+            # Mixed registration: be safe and don't skip anything.
+            return None
+        needed: set[RecordType] = set(requested)
+        frontier: list[RecordType] = list(requested)
+        while frontier:
+            t = frontier.pop()
+            for parent in reverse.get(t, ()):
+                if parent not in needed:
+                    needed.add(parent)
+                    frontier.append(parent)
+        return needed
 
     async def index(
         self, opts: IndexerOptions | None = None
@@ -980,6 +1030,18 @@ class FSIndexer:
         # the chunk returns.
         functions = self._functions
 
+        # Type-gate the dispatcher: when opts.types is set, build the closure
+        # of output types whose walk transitively produces a requested type
+        # (reverse-BFS over the registration graph). A function whose
+        # ``output_type`` isn't in that closure can be skipped without losing
+        # records — e.g. ``project_folder_walker_fn`` (FOLDER) is skippable
+        # when the caller only asked for CLAUDE_SESSION, since no chain leads
+        # from FOLDER to CLAUDE_SESSION. Functions registered without an
+        # ``output_type`` annotation disable the skip (legacy safe default).
+        needed_output_types: set[RecordType] | None = None
+        if opts.types is not None:
+            needed_output_types = self._compute_needed_output_types(tuple(opts.types))
+
         def _process_chunk(
             max_nodes: int,
         ) -> tuple[list[tuple[FSRef, Any]], bool]:
@@ -1005,7 +1067,13 @@ class FSIndexer:
                     per_type_counts[node.record_type] = per_type_counts.get(node.record_type, 0) + 1
                     current_rt = node.record_type
                 fns = functions.get(node.record_type, []) if node.record_type is not None else []
-                for fn in fns:
+                for fn, out_type in fns:
+                    if (
+                        needed_output_types is not None
+                        and out_type is not None
+                        and out_type not in needed_output_types
+                    ):
+                        continue
                     if _is_async_walker(fn):
                         pending.append((node, fn))
                     else:
