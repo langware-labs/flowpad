@@ -9,8 +9,12 @@ export interface SpotlightRow {
   timestamp?: string | null;
   /** When set, click routes through navigateToResult(searchResult, navigation). */
   searchResult?: SearchResult;
-  /** Overrides searchResult-based routing (used by worker-history rows and terminal profile FTS rows). */
-  onActivate?: (navigation: NavigationActions) => void | Promise<void>;
+  /** Primary click handler. Returns `true` if it navigated (or otherwise
+   *  fully handled the click), `false` if the caller should fall through to
+   *  `searchResult` + `navigateToResult`. Used by worker-history rows and
+   *  terminal-profile FTS rows so a missing AgenticProcess falls back to the
+   *  transcript lens instead of a dead-end toast. */
+  onActivate?: (navigation: NavigationActions) => Promise<boolean> | boolean;
 }
 
 export interface SpotlightInitialInfo {

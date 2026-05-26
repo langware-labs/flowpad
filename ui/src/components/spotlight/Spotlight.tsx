@@ -109,9 +109,13 @@ export function Spotlight() {
   const handleSelect = async (row: SpotlightRow) => {
     setOpening(row.key);
     try {
-      if (row.onActivate) {
-        await row.onActivate(navigation);
-      } else if (row.searchResult) {
+      // Try onActivate first; if it signals false (e.g. terminal-profile row
+      // whose AgenticProcess has been pruned), fall through to the shared
+      // record-type-nav router using `searchResult` (typically opens the
+      // transcript lens). This avoids a dead-end toast when a graceful
+      // fallback is available.
+      const handled = row.onActivate ? await row.onActivate(navigation) : false;
+      if (!handled && row.searchResult) {
         await navigateToResult(row.searchResult, navigation);
       }
       closeSpotlight();
@@ -172,7 +176,7 @@ export function Spotlight() {
               visible.map((row) => (
                 <CommandItem
                   key={row.key}
-                  value={`${row.key} ${row.title} ${row.subtitle ?? ''}`}
+                  value={row.key}
                   onSelect={() => void handleSelect(row)}
                   data-testid="spotlight-result"
                   data-record-type={row.recordType}
