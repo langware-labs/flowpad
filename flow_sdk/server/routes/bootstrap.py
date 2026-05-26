@@ -510,6 +510,104 @@ async def validate_cloud_token(token: Optional[str] = None) -> bool:
     return False
 
 
+def recover_orphaned_sodot() -> Optional[dict]:
+    """Detect and recover from an undecryptable per-instance secrets file.
+
+    The ``sodot`` file is encrypted with a Fernet key kept in the OS keychain
+    (``Flowpad.ai.sod_key`` / instance name). If that key goes missing — e.g.
+    the user migrated machines and copied ``~/.flow`` but not the keychain, the
+    keychain was reset, or the entry was deleted — ``_fetch_or_create_sod_key``
+    silently mints a *new* key. The existing ``sodot`` then can no longer be
+    decrypted, every secret read raises ``InvalidToken``, and because writes are
+    read-modify-write even re-login fails. The secrets are unrecoverable, so the
+    only clean fix is to delete the stale ``sodot`` and start fresh.
+
+    This runs only when consent was previously granted (the consent marker
+    exists) — it never triggers a first-time keychain prompt. When the file
+    decrypts fine, it's a no-op.
+
+    Returns a UI notice dict when a reset was performed, else None. Synchronous
+    (file IO + keychain + login-record reset); call via ``asyncio.to_thread``.
+    """
+    from flow_sdk.instance_settings import get_instance_settings, SecretsNotEnabledError  # noqa: PLC0415
+    from flow_sdk.cli.auth.secrets import is_secrets_enabled  # noqa: PLC0415
+
+    settings = get_instance_settings()
+
+    # No consent ⇒ never touch the keychain; nothing to recover.
+    if not is_secrets_enabled():
+        return None
+
+    sodot_path = settings.sodot_path
+    if not sodot_path.exists():
+        return None
+
+    # Probe: accessing `.sod` mints a fresh key if the keychain entry is gone,
+    # then `.list()` forces a decrypt of the existing file. A healthy file
+    # decrypts cleanly; an orphaned one raises InvalidToken (or similar).
+    try:
+        settings.sod.list()
+        return None  # decrypts fine → healthy, leave it alone
+    except SecretsNotEnabledError:
+        return None  # consent was revoked between the check and here
+    except Exception as decrypt_error:
+        logging.warning(
+            f"[bootstrap] sodot at {sodot_path} no longer decrypts "
+            f"({type(decrypt_error).__name__}); the keychain key was lost or "
+            f"changed. Resetting secrets so login/secret entry can start clean."
+        )
+
+    # Delete the stale secrets file and its lock sibling.
+    lock_path = sodot_path.with_suffix(".lock")
+    for path in (sodot_path, lock_path):
+        try:
+            path.unlink(missing_ok=True)
+        except OSError as e:
+            logging.warning(f"[bootstrap] Failed to delete {path} during sodot recovery: {e}")
+
+    # The stored hub token is gone with the file — clear the file-based login
+    # record so the UI reflects logged-out state instead of a phantom session.
+    try:
+        from flow_sdk.cli.app_config import set_user  # noqa: PLC0415
+        set_user({})
+    except Exception as e:
+        logging.warning(f"[bootstrap] Failed to clear user record during sodot recovery: {e}")
+
+    return {
+        "id": "secrets-reset",
+        "level": "warning",
+        "title": "Saved secrets were reset",
+        "message": (
+            "We couldn't unlock your saved secrets — the encryption key in your "
+            "system keychain was changed or removed (this can happen after "
+            "migrating to a new machine or resetting the keychain). Your stored "
+            "login and API keys have been cleared. Please sign in again and "
+            "re-enter any API keys."
+        ),
+    }
+
+
+async def clear_app_secret_metadata() -> None:
+    """Delete all AppSecretRecord metadata after a sodot reset.
+
+    The secret *values* lived in the now-deleted sodot; the metadata records
+    (name/description) live separately in the fs_store. Without this the
+    secrets list would show entries whose values are gone. Idempotent — safe
+    to call when there are no records. Best-effort: a failure to delete one
+    record is logged and skipped rather than aborting recovery.
+    """
+    from flow_sdk.fs_records.app_secret import AppSecretRecord  # noqa: PLC0415
+
+    for record in AppSecretRecord.discover():
+        try:
+            await record.delete()
+        except Exception as e:
+            logging.warning(
+                f"[bootstrap] Failed to delete app-secret record "
+                f"{getattr(record, 'name', '?')!r} during recovery: {e}"
+            )
+
+
 async def is_cloud_login_available() -> bool:
     """Check if cloud login is available.
 
@@ -1418,6 +1516,23 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
         await asyncio.to_thread(setup_desktop_filesystem)
         _t.time("setup_desktop_filesystem")
 
+        # Recover from an undecryptable secrets file (lost/changed keychain key)
+        # before anything tries to read secrets. Returns a UI notice on reset.
+        notice: Optional[dict] = None
+        try:
+            notice = await asyncio.to_thread(recover_orphaned_sodot)
+        except Exception as e:
+            logging.warning(f"[bootstrap] sodot recovery probe failed (non-fatal): {e}")
+        _t.time("recover_orphaned_sodot")
+        if notice is not None:
+            # Secrets were reset — drop the now-orphaned metadata records so the
+            # secrets list doesn't show entries whose values are gone.
+            try:
+                await clear_app_secret_metadata()
+            except Exception as e:
+                logging.warning(f"[bootstrap] Failed to clear app-secret metadata (non-fatal): {e}")
+            _t.time("clear_app_secret_metadata")
+
         # Get or create local entities using Entity API
         # Order matters: user first (owner), then project, workspace, compute node
         user = await get_or_create_local_user()
@@ -1518,6 +1633,7 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
             scan_info=scan_info,
             sniffer_hook=entity_to_dict(sniffer_hook) if sniffer_hook else None,
             records_root=str(get_instance_settings().records_root),
+            notice=notice,
         )
 
         _t.done(0.5)
