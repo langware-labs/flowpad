@@ -41,7 +41,11 @@ export class InstancePreferences extends EventEmitter {
   private _loaded = false;
   private _loadPromise: Promise<void> | null = null;
   private _saveTimeout: ReturnType<typeof setTimeout> | null = null;
-  private _pendingSave = false;
+  // Two-flag save state.
+  // `_dirty` means there are in-memory changes not yet flushed to disk.
+  // `_savingInFlight` guards against concurrent writes (out-of-order risk).
+  private _dirty = false;
+  private _savingInFlight = false;
   private _version = 0;
 
   get isLoaded(): boolean {
@@ -164,42 +168,74 @@ export class InstancePreferences extends EventEmitter {
     this.emit(InstancePreferencesEvent.PREFERENCES_LOADED, this._prefs);
   }
 
+  /** Force-flush any pending debounced save and wait for it to land. */
   async saveJson(): Promise<void> {
-    const typeId = this.computeNodeTypeId;
-    const path = this.preferencesPath;
-
-    if (!typeId || !path) {
-      console.warn('[InstancePreferences] Cannot save: no compute node or preferences path');
-      return;
+    if (this._saveTimeout) {
+      clearTimeout(this._saveTimeout);
+      this._saveTimeout = null;
     }
-
-    try {
-      const content = JSON.stringify(this._prefs, null, 2);
-      await fsManager.writeFile(typeId, path, content);
-      this.emit(InstancePreferencesEvent.PREFERENCES_CHANGED, this._prefs);
-    } catch (error) {
-      console.error('[InstancePreferences] Save failed:', error);
-    }
+    await this._flushSave();
   }
 
   private _handleUpdate(): void {
     this._version++;
+    this._dirty = true;
+    this._scheduleFlush();
+  }
 
-    if (this._pendingSave) {
-      return;
-    }
-
-    this._pendingSave = true;
-
+  /**
+   * Trailing debounce: every call resets the timer to DEBOUNCE_MS in the
+   * future. Sustained editing ends with exactly one save, fired
+   * DEBOUNCE_MS after the *last* mutation — not after the first.
+   */
+  private _scheduleFlush(): void {
     if (this._saveTimeout) {
       clearTimeout(this._saveTimeout);
     }
-
     this._saveTimeout = setTimeout(() => {
-      this._pendingSave = false;
       this._saveTimeout = null;
-      void this.saveJson();
+      void this._flushSave();
     }, DEBOUNCE_MS);
+  }
+
+  private async _flushSave(): Promise<void> {
+    if (!this._dirty) return;
+    if (this._savingInFlight) {
+      // A save is already running. Re-arm so we save the latest state
+      // *after* the in-flight write completes, avoiding overlapping writes
+      // that could land out of order.
+      this._scheduleFlush();
+      return;
+    }
+
+    const typeId = this.computeNodeTypeId;
+    const path = this.preferencesPath;
+    if (!typeId || !path) {
+      console.warn('[InstancePreferences] Cannot save: no compute node or preferences path');
+      // Keep _dirty=true so the next mutation (or a later flush once the
+      // context is ready) retries. Don't silently lose pending writes.
+      return;
+    }
+
+    // Snapshot before await so concurrent mutations during the write don't
+    // bleed into the bytes we're persisting. Optimistically clear _dirty;
+    // any mutation during the write will re-set it via _handleUpdate.
+    const snapshot: InstancePreferencesData = { ...this._prefs };
+    this._dirty = false;
+    this._savingInFlight = true;
+    try {
+      const content = JSON.stringify(snapshot, null, 2);
+      await fsManager.writeFile(typeId, path, content);
+      this.emit(InstancePreferencesEvent.PREFERENCES_CHANGED, snapshot);
+    } catch (error) {
+      // Save failed — preserve the dirty state so the next mutation (or an
+      // explicit saveJson() call) retries. Don't auto-retry on a timer:
+      // that risks tight loops against a persistently-failing endpoint.
+      this._dirty = true;
+      console.error('[InstancePreferences] Save failed, prefs remain dirty:', error);
+    } finally {
+      this._savingInFlight = false;
+    }
   }
 
   /**
