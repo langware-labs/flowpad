@@ -47,7 +47,7 @@ def _discover_port() -> int:
     server_info = read_server_info()
     if server_info:
         return server_info.port
-    return int(os.environ.get("LOCAL_SERVER_PORT", "9007"))
+    return get_instance_settings().port
 
 
 @app.callback(invoke_without_command=True)
@@ -230,7 +230,7 @@ def start(ctx: typer.Context):
     if ctx.invoked_subcommand is not None:
         return
 
-    port = int(os.environ.get("LOCAL_SERVER_PORT", "9007"))
+    port = get_instance_settings().port
     _start_service(port)
 
     # Skip browser open when launched from Electron (it has its own BrowserWindow)
@@ -267,7 +267,7 @@ def service():
 
     Example: flow start service
     """
-    port = int(os.environ.get("LOCAL_SERVER_PORT", "9007"))
+    port = get_instance_settings().port
     _start_service(port)
 
 
@@ -347,7 +347,7 @@ def trace():
     from flow_sdk.server.reporters import PrintReporter
     from flow_sdk.server.state import reporter_registry
 
-    port = int(os.environ.get("LOCAL_SERVER_PORT", "9007"))
+    port = get_instance_settings().port
 
     typer.echo(f"Starting Flow trace server on port {port}...")
 
@@ -857,7 +857,7 @@ def hooks_report(
                         if verbose:
                             typer.echo(f"  Request failed: {e}")
             else:
-                port = int(os.environ.get("LOCAL_SERVER_PORT", "9007"))
+                port = get_instance_settings().port
                 fallback_url = f"http://127.0.0.1:{port}/api/hooks/report"
                 if verbose:
                     typer.echo(f"\nNo server.json found, using legacy fallback (port {port})")

@@ -1,7 +1,5 @@
 """SQLite connection and schema definitions for async SQLAlchemy."""
 
-import os
-
 from sqlalchemy import Boolean, Column, DateTime, Index, Integer, String, Text, event, text
 from sqlalchemy.ext.asyncio import AsyncEngine
 from sqlalchemy.orm import DeclarativeBase
@@ -17,7 +15,17 @@ def get_database_path() -> str:
     return str(get_instance_settings().db_path)
 
 
-DEVELOPMENT = os.environ.get("FLOWPAD_DEV", "true").lower() == "true"
+def is_development() -> bool:
+    """Return whether the current instance is the dev instance.
+
+    Delegates to InstanceSettings (single source of truth). Replaces the
+    legacy ``DEVELOPMENT`` module-level constant that snapshotted
+    ``FLOWPAD_DEV`` at import time — same class-of-bug as the config.py
+    env-mirror corruption: the value froze before ``.env.local`` could
+    load, locking the instance to whatever ambient env said.
+    """
+    from flow_sdk.instance_settings import get_instance_settings
+    return get_instance_settings().is_dev
 
 
 class Base(DeclarativeBase):

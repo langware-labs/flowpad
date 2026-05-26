@@ -1594,7 +1594,7 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
             sandbox_compute_node=entity_to_dict(sandbox_compute_node) if sandbox_compute_node else None,
             docker_available=docker_available,
             docker_compute_nodes=[entity_to_dict(cn) for cn in docker_cns],
-            env=EnvInfo(env_name="desktop", cloud_api_url=os.environ.get("FLOWPAD_CLOUD_API_URL"), version=__version__),
+            env=EnvInfo(env_name="desktop", cloud_api_url=get_instance_settings().cloud_api_url, version=__version__),
             desktop_info=desktop_info,
             scan_info=scan_info,
             sniffer_hook=entity_to_dict(sniffer_hook) if sniffer_hook else None,

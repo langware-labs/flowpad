@@ -113,16 +113,14 @@ def _resolve_recipe_dir(version: str) -> Path | None:
 
 
 def _resolve_status_dir() -> Path:
-    """Return the per-instance status directory.
+    """Return the per-instance status directory via InstanceSettings.
 
-    Falls back to ``~/.flow/global/migrations`` if instance settings
-    aren't available (e.g. during very early boot).
+    ``instance_settings`` is a leaf module; always importable by the time
+    migrations run. The legacy ``Path.home() / ".flow"`` fallback was a
+    latent SoT violation.
     """
-    try:
-        from flow_sdk.instance_settings import get_instance_settings
-        return get_instance_settings().migrations_status_dir
-    except Exception:
-        return Path.home() / ".flow" / "global" / "migrations"
+    from flow_sdk.instance_settings import get_instance_settings
+    return get_instance_settings().migrations_status_dir
 
 
 def _render_entry(entry: Any) -> None:

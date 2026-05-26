@@ -33,9 +33,10 @@ async def _on_request(request: httpx.Request) -> None:
     if "Authorization" in request.headers or _is_public_auth_path(request.url.path):
         return
 
-    env_api_key = os.environ.get("FLOWPAD_CLOUD_API_KEY") or None
-    if env_api_key:
-        request.headers["Authorization"] = f"Bearer {env_api_key}"
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+    api_key = get_instance_settings().cloud_api_key
+    if api_key:
+        request.headers["Authorization"] = f"Bearer {api_key}"
         return
 
     creds = load_credentials()
