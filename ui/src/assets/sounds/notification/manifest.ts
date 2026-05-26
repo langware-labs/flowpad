@@ -4,7 +4,7 @@
  * Add or remove a `.mp3` file in this folder and the picker updates with
  * no code changes. Filenames follow `<freesoundId>_<author>_<slug>.mp3`
  * (see CREDITS.md) — we strip the id+author prefix to derive a stable,
- * human-readable key. The key is what's persisted in WorkspaceSettings,
+ * human-readable key. The key is what's persisted in InstancePreferences,
  * so it survives Vite build-hash changes on the URL.
  */
 

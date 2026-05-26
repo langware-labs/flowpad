@@ -14,7 +14,7 @@ export * from './fsService';
 export * from './shell';
 export * from './SkillManager';
 export * from './ActivationManager';
-export * from './WorkspaceSetting';
+export * from './InstancePreferences';
 export * from './hooksSnifferService';
 export * from './snifferManager';
 export * from './sniffer-hook';
