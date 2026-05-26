@@ -252,7 +252,7 @@ class BaseInstanceSettings:
             cloud_api_key=os.environ.get(ENV_FLOWPAD_CLOUD_API_KEY) or None,
             cloud_api_url=os.environ.get(ENV_FLOWPAD_CLOUD_API_URL) or None,
             docker_public_url=(os.environ.get(ENV_FLOWPAD_DOCKER_PUBLIC_URL) or "").strip() or None,
-            host=os.environ.get(ENV_MINIHUB_HOST) or DEFAULT_MINIHUB_HOST,
+            host=cls._resolve_host(),
             reload_enabled=os.environ.get(ENV_MINIHUB_RELOAD, "").lower() == "true",
             vite_port=cls._resolve_vite_port(),
         )
@@ -337,6 +337,18 @@ class BaseInstanceSettings:
         if env and env.isdigit():
             return int(env)
         return None
+
+    @staticmethod
+    def _resolve_host() -> str:
+        """Return MINIHUB_HOST exactly as the user set it, or the default.
+
+        Uses an explicit ``is None`` check so an intentional
+        ``MINIHUB_HOST=""`` (e.g. to defer to uvicorn's default binding
+        behavior) is preserved rather than silently coerced to
+        ``DEFAULT_MINIHUB_HOST`` by a truthy-or check.
+        """
+        env = os.environ.get(ENV_MINIHUB_HOST)
+        return env if env is not None else DEFAULT_MINIHUB_HOST
 
     # -----------------------------------------------------------------
     # Cross-instance shared paths (computed; not per-instance prefixed)

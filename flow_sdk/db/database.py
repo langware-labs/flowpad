@@ -70,15 +70,20 @@ async def reinit_db(new_path: str) -> None:
     let subsequent re-resolves silently re-read the stale value.
     """
     expanded = os.path.expanduser(new_path)
-    from flow_sdk.instance_settings import override_db_path  # noqa: PLC0415
-    override_db_path(expanded)
 
-    driver = _driver_instances.pop("sqlite", None)
+    # Close the existing driver BEFORE override_db_path runs — override_db_path
+    # pops the sqlite key from _driver_instances as part of its contract, so
+    # if we deferred the close until after override, the driver reference
+    # would be gone and the engine would leak its aiosqlite worker threads.
+    driver = _driver_instances.get("sqlite")
     if driver is not None:
         try:
             await driver.close()
         except Exception:
             pass
+
+    from flow_sdk.instance_settings import override_db_path  # noqa: PLC0415
+    override_db_path(expanded)
 
     # Construct a fresh driver against the new ``settings.db_path``.
     new_driver = get_db_driver()

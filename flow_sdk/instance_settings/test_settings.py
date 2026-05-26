@@ -22,10 +22,17 @@ from pathlib import Path
 
 from .base_settings import (
     DEFAULT_DB_DRIVER,
+    DEFAULT_MINIHUB_HOST,
     ENV_CODEX_HOME,
     ENV_DESKTOP_DB,
     ENV_FLOWPAD_CLAUDE_HOME,
+    ENV_FLOWPAD_CLOUD_API_KEY,
+    ENV_FLOWPAD_CLOUD_API_URL,
+    ENV_FLOWPAD_DOCKER_PUBLIC_URL,
+    ENV_FLOWPAD_HUB_URL,
     ENV_FS_RECORD_PATH,
+    ENV_MINIHUB_HOST,
+    ENV_MINIHUB_RELOAD,
     ENV_SQLITE_DATABASE_PATH,
     BaseInstanceSettings,
 )
@@ -112,6 +119,13 @@ class TestInstanceSettings(BaseInstanceSettings):
             cloud_user_email=os.environ.get("FLOWPAD_CLOUD_USER_EMAIL") or None,
             cloud_user_pass=os.environ.get("FLOWPAD_CLOUD_USER_PASSWORD") or None,
             cloud_login_timeout_seconds=cls._resolve_login_timeout(),
+            hub_url=os.environ.get(ENV_FLOWPAD_HUB_URL) or None,
+            cloud_api_key=os.environ.get(ENV_FLOWPAD_CLOUD_API_KEY) or None,
+            cloud_api_url=os.environ.get(ENV_FLOWPAD_CLOUD_API_URL) or None,
+            docker_public_url=(os.environ.get(ENV_FLOWPAD_DOCKER_PUBLIC_URL) or "").strip() or None,
+            host=cls._resolve_host(),
+            reload_enabled=os.environ.get(ENV_MINIHUB_RELOAD, "").lower() == "true",
+            vite_port=cls._resolve_vite_port(),
         )
 
     @staticmethod

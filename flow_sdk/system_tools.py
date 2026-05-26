@@ -181,6 +181,21 @@ async def backup_db() -> BackupResult:
 # ---------------------------------------------------------------------------
 
 
+def _scan_backup_folder(folder: Path) -> list[Path]:
+    """Collect candidate backup files from a single folder."""
+    candidates: list[Path] = []
+    if not folder.exists():
+        return candidates
+    for entry in folder.iterdir():
+        if entry.is_file() and entry.name.startswith("flowpad_db_"):
+            candidates.append(entry)
+        elif entry.is_dir() and entry.name.startswith("archive_"):
+            db_inside = entry / "flowpad_db"
+            if db_inside.exists():
+                candidates.append(db_inside)
+    return candidates
+
+
 def find_last_valid_db_backup() -> Path | None:
     """Return the path of the most recent valid DB file from the backups folder.
 
@@ -188,18 +203,25 @@ def find_last_valid_db_backup() -> Path | None:
       - flowpad_db_YYYYMMDD_HHMMSS        (plain backup files)
       - archive_YYYYMMDD_HHMMSS/flowpad_db (archive folders)
 
-    Returns None if no valid backup is found.
+    Looks first in the per-instance folder (``<instance_dir>/backups``).
+    If nothing valid is found, falls back to the legacy shared folder
+    (``~/.flowpad/backups``) so installations that upgraded from a layout
+    where backups lived in the shared location can still recover. Without
+    the fallback, ``ensure_db`` would silently reinitialise a fresh DB on
+    first post-upgrade boot and lose recoverable user history.
+
+    Returns None if no valid backup is found in either folder.
     """
     backup_folder = get_backup_folder()
-    candidates: list[Path] = []
+    legacy_folder = Path.home() / ".flowpad" / "backups"
 
-    for entry in backup_folder.iterdir():
-        if entry.is_file() and entry.name.startswith("flowpad_db_"):
-            candidates.append(entry)
-        elif entry.is_dir() and entry.name.startswith("archive_"):
-            db_inside = entry / "flowpad_db"
-            if db_inside.exists():
-                candidates.append(db_inside)
+    folders: list[Path] = [backup_folder]
+    if legacy_folder != backup_folder and legacy_folder.exists():
+        folders.append(legacy_folder)
+
+    candidates: list[Path] = []
+    for folder in folders:
+        candidates.extend(_scan_backup_folder(folder))
 
     # Sort newest-first by the timestamp embedded in the parent name
     candidates.sort(key=lambda p: p.parent.name if p.name == "flowpad_db" else p.name, reverse=True)
