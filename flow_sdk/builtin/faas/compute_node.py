@@ -765,6 +765,61 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             "rebound": rebound,
         })
 
+    @action.post(action_name="create-project-from-git")
+    async def _create_project_from_git(self) -> ApiResponse:
+        """Clone a git URL into the desktop workspace and materialize a Project.
+
+        Body:
+            { "project_url": "<url>", "target_name": "<optional override>" }
+
+        Collision policy: if the derived (or supplied) folder name already
+        exists under AGENT_MOUNT_FOLDER, refuse and return the next-free
+        suggestion in ``data.suggested_name``. The caller re-submits with
+        ``target_name`` set to accept the suggestion.
+        """
+        from flow_sdk.builtin.project import Project
+        from flow_sdk.config import AGENT_MOUNT_FOLDER
+        from flow_sdk.utils.git import derive_repo_leaf_from_url, git_clone
+
+        request_info = get_current_request_info()
+        body = await request_info.get_post_data() if request_info else {}
+        project_url = (body or {}).get("project_url")
+        target_name = (body or {}).get("target_name")
+        if not isinstance(project_url, str) or not project_url.strip():
+            return ApiFailResponse(message="project_url (str) is required", status_code=400)
+
+        leaf = (target_name or derive_repo_leaf_from_url(project_url)).strip()
+        if not leaf:
+            return ApiFailResponse(
+                message=f"Could not derive a folder name from URL: {project_url}",
+                status_code=400,
+            )
+
+        target_dir = os.path.join(AGENT_MOUNT_FOLDER, leaf)
+        if os.path.exists(target_dir):
+            # If caller explicitly chose this name, refuse — they need to pick another.
+            # Otherwise propose the next-free `<leaf>-N` so the dialog can offer it.
+            suggested = leaf
+            n = 2
+            while os.path.exists(os.path.join(AGENT_MOUNT_FOLDER, f"{leaf}-{n}")):
+                n += 1
+            suggested = f"{leaf}-{n}"
+            return ApiFailResponse(
+                message=f"'{leaf}' already exists in workspace",
+                data={"suggested_name": suggested, "attempted_name": leaf},
+                status_code=409,
+            )
+
+        ok, msg = await git_clone(project_url, target_dir)
+        if not ok:
+            return ApiFailResponse(message=msg, status_code=400)
+
+        project = Project(name=target_dir)
+        await project.save()
+        await project.setup_for_desktop()
+
+        return ApiSuccessResponse(data={"project": project.model_dump(mode="json")})
+
     @action.get(action_name="session-transcript")
     async def _session_transcript(self): return await self._pty_session_transcript()
 
