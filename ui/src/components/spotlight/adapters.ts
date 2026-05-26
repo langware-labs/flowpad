@@ -60,11 +60,21 @@ export function searchResultDisplayName(r: SearchResult): string {
   return 'Untitled session';
 }
 
+/** Resolve a worker_id to an AgenticProcess and open its live terminal dock.
+ *  Returns `true` when navigation actually happened, `false` when no process
+ *  was found (caller can then fall back to a record-type-nav path like the
+ *  transcript lens). Caller is responsible for toasting on `false` if there's
+ *  no fallback — when there IS a fallback the toast would be misleading.
+ *
+ *  @param hasFallback when true, suppress the "Session not found" toast on
+ *    miss because the caller will navigate elsewhere.
+ */
 async function resolveProcessAndOpenTerminal(
   navigation: NavigationActions,
   workerId: string,
   agenticProcessId?: string | null,
-): Promise<void> {
+  hasFallback = false,
+): Promise<boolean> {
   let process: AgenticProcess | null = null;
   if (agenticProcessId) {
     try {
@@ -81,14 +91,17 @@ async function resolveProcessAndOpenTerminal(
     }
   }
   if (!process) {
-    toast({
-      title: 'Session not found',
-      description: `Session ${workerId} is not in Claude or Codex history.`,
-      variant: 'destructive',
-    });
-    return;
+    if (!hasFallback) {
+      toast({
+        title: 'Session not found',
+        description: `Session ${workerId} is not in Claude or Codex history.`,
+        variant: 'destructive',
+      });
+    }
+    return false;
   }
   navigation.openDock(process.terminalDockPointer);
+  return true;
 }
 
 export function searchResultToRow(r: SearchResult): SpotlightRow {
@@ -105,14 +118,18 @@ export function searchResultToRow(r: SearchResult): SpotlightRow {
 }
 
 /** Variant used by the terminal profile: routes click through terminalDockPointer
- *  instead of the shared record-type-nav (which would open the transcript). */
+ *  for the live PTY, and falls back to the shared record-type-nav (transcript
+ *  lens) when the process record has been pruned. Keeps `searchResult` so
+ *  Spotlight's click handler can chain to `navigateToResult` if `onActivate`
+ *  returns false. */
 export function searchResultToTerminalRow(r: SearchResult): SpotlightRow {
   const base = searchResultToRow(r);
   const workerId = workerIdFromSearchResult(r);
   return {
     ...base,
-    onActivate: (navigation) => resolveProcessAndOpenTerminal(navigation, workerId),
-    searchResult: undefined,
+    // hasFallback=true: suppress the "not found" toast because the caller
+    // will navigate to the transcript via searchResult.
+    onActivate: (navigation) => resolveProcessAndOpenTerminal(navigation, workerId, undefined, true),
   };
 }
 
