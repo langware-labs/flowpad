@@ -12,14 +12,14 @@ import json
 import warnings
 
 from flow_sdk.fs_records.claude.transcript_records import create_transcript_entry
-from flow_sdk.transcript_analyzer import AgentTranscript, UnknownEntry
+from flow_sdk.transcript_analyzer import AgentTranscriptFile, UnknownEntry
 
 
 def test_id_set_matches_record_path_for_known_lines(claude_jsonl):
     # Analyzer side.
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
-        t = AgentTranscript("claude", claude_jsonl)
+        t = AgentTranscriptFile("claude", claude_jsonl)
     analyzer_ids = {e.id for e in t.entries if not isinstance(e, UnknownEntry)}
 
     # Record side — same fixture, line by line, skip the synthetic unknown
@@ -46,7 +46,7 @@ def test_id_set_matches_record_path_for_known_lines(claude_jsonl):
                 content = (raw.get("message") or {}).get("content") or []
                 if any(isinstance(block, dict) and block.get("type") == "tool_result" for block in content):
                     # Tool result rows are folded into the semantic operation
-                    # entry by AgentTranscript, so their own record id is not
+                    # entry by AgentTranscriptFile, so their own record id is not
                     # expected to appear as a separate analyzer entry.
                     continue
             if rec.entry_uuid:

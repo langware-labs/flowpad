@@ -66,6 +66,21 @@ export default defineConfig(({ mode }) => {
       warmup: {
         clientFiles: ['./src/main.tsx', './src/**/*.tsx', './src/!(test)/**/*.ts'],
       },
+      // Skill-UI iframes (AppHost) load from this origin and call relative
+      // `/api/*` URLs from inside the sandbox. In Electron/wheel this is
+      // same-origin with the backend (no proxy needed); in `npm run dev` the
+      // backend is on a different port, so proxy it here.
+      proxy: {
+        '/api/v1/connect/ws': {
+          target: `ws://localhost:${env.LOCAL_SERVER_PORT || '9007'}`,
+          ws: true,
+          changeOrigin: true,
+        },
+        '/api': {
+          target: `http://localhost:${env.LOCAL_SERVER_PORT || '9007'}`,
+          changeOrigin: true,
+        },
+      },
     },
     optimizeDeps: {
       exclude: ['playwright-core', 'playwright'],

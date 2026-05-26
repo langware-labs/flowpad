@@ -6,6 +6,7 @@ import { TooltipProvider } from '@src/components/ui/tooltip';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster as Sonner, toast } from 'sonner';
 import { Toaster } from '@src/components/ui/toaster';
+import { ActivityProgressModalRoot } from '@src/components/search-index/ActivityProgressModalRoot';
 import { CleanupModal } from '@src/components/recovery/cleanup-modal';
 import { DeleteAssetModal } from '@src/components/assets/delete-asset-modal';
 import { useEffect, useRef, useState } from 'react';
@@ -199,6 +200,7 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
         <Sonner />
         <CleanupModal />
         <DeleteAssetModal />
+        <ActivityProgressModalRoot />
         <GlobalEvents />
         <DesktopSetupModalHandler />
         <SecretApprovalDialog />

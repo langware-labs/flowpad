@@ -131,7 +131,12 @@ def get_database_paths() -> DatabasePathsResult:
 
 
 async def clear_index(types: list[str] | None = None) -> ClearIndexResult:
-    """Clear FTS index + indexed entity records. Optionally scoped to specific types."""
+    """Clear FTS index + record-backed entities. Optionally scoped to specific types.
+
+    ``SchemaRegistry.clear_index`` is the authoritative implementation and is
+    careful to delete only schema-registered record types (not arbitrary
+    anonymous entities like user-created projects/workspaces).
+    """
     from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
     result = await SchemaRegistry.clear_index(types)

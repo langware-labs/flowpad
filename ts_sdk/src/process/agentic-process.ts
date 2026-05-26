@@ -214,13 +214,6 @@ export interface IAgenticProcess extends IEntity {
   readonly worker_status?: WorkerStatus;
   session_id?: string | null;
   /**
-   * URL-encoded cwd Claude CLI ran in — used to locate the session jsonl at
-   * ~/.claude/projects/<project_encoded_name>/<session_id>.jsonl. Populated
-   * server-side after the first claude turn lands; read by helpers like
-   * runLearningJob's transcriptPathForRunner.
-   */
-  project_encoded_name?: string | null;
-  /**
    * USD cost of this process's session transcript so far. Computed
    * server-side from the session jsonl via
    * flow_sdk.transcript_analyzer.pricing.total_cost_usd; not persisted on
@@ -821,8 +814,23 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
 
   async shell(): Promise<Shell | null> {
     if (!this.shell_id) return null;
+    const w = (typeof window !== 'undefined' ? window : undefined) as
+      | { __shellNavT0?: number }
+      | undefined;
+    const t0 = w?.__shellNavT0;
+    const stamp = (label: string, start: number) => {
+      if (t0 === undefined) return;
+      const now = performance.now();
+      // eslint-disable-next-line no-console
+      console.log(`[PERF] +${(now - t0).toFixed(0)}ms ${label} took ${(now - start).toFixed(1)}ms`);
+    };
+    const sImport = performance.now();
     const { Shell } = await import('../entities/shell');
-    return Shell.getById(this.shell_id);
+    stamp('process.shell: dynamic import("../entities/shell")', sImport);
+    const sGet = performance.now();
+    const result = await Shell.getById<Shell>(this.shell_id);
+    stamp('process.shell: Shell.getById', sGet);
+    return result;
   }
 
   /** The PTY connection for this process — delegates to the linked Shell. */

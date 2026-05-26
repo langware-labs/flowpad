@@ -7,6 +7,7 @@ import { ClaudeContextViewer } from './ClaudeContextViewer';
 import { ClaudeErrorsViewer } from './ClaudeErrorsViewer';
 import { ClaudeTasksViewer } from './ClaudeTasksViewer';
 import { FsRecordsScannerViewer } from './FsRecordsScannerViewer';
+import { LlmIndexersViewer } from './LlmIndexersViewer';
 import { TranscriptViewer } from './shared/transcript-features';
 import { HeartbeatEventsViewer } from './HeartbeatEventsViewer';
 import { TriggerLogViewer } from './TriggerLogViewer';
@@ -16,7 +17,7 @@ import { TriggerLogViewer } from './TriggerLogViewer';
  *
  * URL structure: /dock/lens/{category}/{type}/{ref}
  * Examples:
- * - /dock/lens/claude/transcript/{projectEncodedName}/{sessionId}
+ * - /dock/lens/claude/transcript/{sessionId}
  * - /dock/lens/claude/tasks/{sessionId}
  */
 export function LensViewer() {
@@ -112,7 +113,6 @@ export function LensViewer() {
         <ClaudeTasksViewer
           sessionId={lensParts.ref}
           selectedActiveForm={currentDock?.options?.active_form}
-          projectEncodedName={currentDock?.options?.project}
         />
       );
     case 'heartbeat/events':
@@ -131,6 +131,8 @@ export function LensViewer() {
       return <ClaudeContextViewer />;
     case 'fs-records/scan':
       return <FsRecordsScannerViewer />;
+    case 'fs-records/llm-indexers':
+      return <LlmIndexersViewer />;
     case 'trigger/log':
       return <TriggerLogViewer triggerId={lensParts.ref} />;
     default:

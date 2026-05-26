@@ -707,7 +707,7 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
       if (!parsed) return;
       const options: Record<string, string> = {};
       if (timestamp) options.ts = timestamp;
-      navigation.openLens('claude', 'transcript', `${parsed.projectEncodedName}/${parsed.sessionId}`, options);
+      navigation.openLens('claude', 'transcript', parsed.sessionId, options);
     },
     [navigation],
   );

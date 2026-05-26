@@ -377,6 +377,11 @@ class ProjectFsRecord(Record):
     async def from_fsref(cls, ref) -> list["ProjectFsRecord"]:
         """Indexer entry — upsert by canonical cwd inferred from the FSRef.
 
+        Overrides the base ``Record.from_fsref`` directly (rather than the
+        usual ``_from_fsref_sync`` override) because the body needs to await
+        ``upsert_for_cwd`` — this is the rare from_fsref that does real DB
+        work and must stay on the event loop.
+
         Provenance is inferred from the FSRef path structure:
           * ``.../.claude/projects/<encoded>`` → Claude (decode encoded → real cwd)
           * Otherwise → Codex (path IS the absolute cwd already)

@@ -1,13 +1,13 @@
 /**
- * AgentTranscript — typed view of an agent's transcript.
+ * AgentTranscriptFile — typed view of an agent's transcript.
  *
  * Mirrors flow_sdk/transcript_analyzer/transcript.py — but with no parsing
  * logic (the JSONL is parsed server-side; this class hydrates the REST
  * response shape).
  */
 
-import { EntryKind, TranscriptEntry } from './entry';
 import { ToolUseEntry } from './entries/tool_use';
+import { EntryKind, TranscriptEntry } from './entry';
 
 export enum TranscriptFormat {
   CLAUDE_JSONL = 'claude_jsonl',
@@ -20,7 +20,7 @@ export enum TranscriptSource {
   WORKER_SESSION = 'worker_session',
 }
 
-export class AgentTranscript {
+export class AgentTranscriptFile {
   worker_type: string;
   entries: TranscriptEntry[];
   session_id: string;

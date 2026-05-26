@@ -1,16 +1,15 @@
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { CodexIcon } from '@src/components/icons/CodexIcon';
-import { useClaudeProjectList, getProjectDisplayName } from '@src/hooks/use-claude-projects';
+import { getProjectDisplayName } from '@src/hooks/use-claude-projects';
+import { useAllProjects } from '@src/hooks/use-all-projects';
 import {
   ContextEntitiesEnum,
   dataContext,
-  FLOWPAD_ASSISTANT_PROJECT_UNAME,
   type ProjectListItem,
   Project,
   QueryRequest,
 } from '@sdk';
-import apiClient from '@sdk/client';
 import { useProject } from '@sdk/react/hooks';
 import { useDevMode } from '@src/contexts/dev-mode-context';
 import { Button } from '@src/components/ui/button';
@@ -533,17 +532,19 @@ export function OpenProjectComponent({
 }: OpenProjectComponentProps) {
   const { project: currentProject } = useProject();
   const { toast } = useToast();
-  const { projects: scanProjects, isLoading: isLoadingScanProjects } = useClaudeProjectList({ enabled: open });
   const { computeNode } = useAgentContext();
 
   const [showCreate, setShowCreate] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [openingProjectId, setOpeningProjectId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [flowpadProjects, setFlowpadProjects] = useState<Project[]>([]);
-  const [systemProjects, setSystemProjects] = useState<{ id: string; name: string; uname?: string; fs_storage_mount_path?: string; displayName?: string }[]>([]);
   const [showSystem, setShowSystem] = useState<boolean>(loadShowSystemFlag);
   const devMode = useDevMode();
+
+  const { projects: mergedProjects, isLoading: isLoadingScanProjects } = useAllProjects({
+    enabled: open,
+    includeSystem: showSystem,
+  });
 
   const defaultWorkspacePath = useMemo(() => dataContext.bootstrapInfo?.desktop_info?.paths?.workspace || '', []);
 
@@ -558,109 +559,8 @@ export function OpenProjectComponent({
       setError(null);
       setIsSubmitting(false);
       setOpeningProjectId(null);
-      return;
     }
-    Project.query(new QueryRequest({ type: Project.type, scope: [] }))
-      .then(setFlowpadProjects)
-      .catch(() => {});
   }, [open]);
-
-  // Fetch system projects via direct HTTP (bypassing Project.query so include_system
-  // lands on the top-level query string rather than inside the QueryFilter.match).
-  useEffect(() => {
-    if (!open || !showSystem) {
-      setSystemProjects([]);
-      return;
-    }
-    apiClient
-      .get('/graph/project/?include_system=true')
-      .then((data: unknown) => {
-        const list = Array.isArray((data as { data?: unknown[] })?.data)
-          ? ((data as { data: unknown[] }).data as Array<Record<string, unknown>>)
-          : Array.isArray(data)
-            ? (data as unknown as Array<Record<string, unknown>>)
-            : [];
-        setSystemProjects(
-          list
-            .filter((p) => !!p.system)
-            .map((p) => ({
-              id: String(p.id ?? ''),
-              name: String(p.name ?? ''),
-              uname: typeof p.uname === 'string' ? p.uname : undefined,
-              fs_storage_mount_path: typeof p.fs_storage_mount_path === 'string' ? p.fs_storage_mount_path : undefined,
-              displayName: typeof p.name === 'string' ? p.name : undefined,
-            })),
-        );
-      })
-      .catch(() => setSystemProjects([]));
-  }, [open, showSystem]);
-
-  // Merge scanned Claude projects with flowpad Project entities, then deduplicate
-  // by canonical path. Scanned entries are preferred (they have real session counts
-  // and filesystem timestamps). Flowpad-only entries (no Claude session yet) are
-  // appended with session_count=0 and modified_at=null (treated as today by the filter).
-  const mergedProjects = useMemo((): ProjectListItem[] => {
-    const byPath = new Map<string, ProjectListItem>();
-
-    const upsert = (item: ProjectListItem) => {
-      const key = item.cwd ? canonicalPathKey(normalizePath(item.cwd)) : null;
-      if (!key) return;
-      const existing = byPath.get(key);
-      // Keep entry with more sessions; on tie prefer non-null modified_at
-      if (!existing || item.session_count > existing.session_count ||
-          (item.session_count === existing.session_count && item.modified_at && !existing.modified_at)) {
-        byPath.set(key, item);
-      }
-    };
-
-    for (const p of scanProjects) upsert(p);
-
-    for (const p of flowpadProjects) {
-      const path = p.fs_storage_mount_path;
-      // Skip blank, internal, and session/record-path entities. Note: the
-      // historical `/tmp/` exclusion was removed as part of the project
-      // consolidation (Path A, 2026-05-09) — `/tmp` is a perfectly valid
-      // user-chosen mount path, and the indexer-driven auto-adopt now
-      // surfaces those folders as legitimate Projects.
-      if (!path || !p.name) continue;
-      if (/[/\\](\.flow|flow\/sessions|flow\/records)[/\\]/.test(path)) continue;
-      upsert({
-        id: `flowpad:${p.id}`,
-        name: p.displayName,
-        encoded_name: p.id,
-        cwd: path,
-        session_count: 0,
-        claude_session_count: 0,
-        codex_session_count: 0,
-        claude: false,
-        codex: false,
-        worker_types: [],
-        modified_at: null,
-      });
-    }
-
-    // System projects are only appended when the "Show system" checkbox is on.
-    for (const p of systemProjects) {
-      const path = p.fs_storage_mount_path;
-      if (!path || !p.name) continue;
-      upsert({
-        id: `flowpad:${p.id}`,
-        name: p.displayName || p.name,
-        encoded_name: p.id,
-        cwd: path,
-        session_count: 0,
-        claude_session_count: 0,
-        codex_session_count: 0,
-        claude: false,
-        codex: false,
-        worker_types: [],
-        modified_at: null,
-        system: true,
-      });
-    }
-
-    return Array.from(byPath.values());
-  }, [scanProjects, flowpadProjects, systemProjects]);
 
   const currentProjectPath = useMemo(
     () => normalizePath(currentProject?.fs_storage_mount_path || currentProject?.name || ''),

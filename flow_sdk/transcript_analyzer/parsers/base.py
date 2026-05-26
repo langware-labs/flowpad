@@ -1,6 +1,6 @@
 """``Parser`` Protocol — what every per-worker parser implements.
 
-Stateful by design: a parser instance is owned by one ``AgentTranscript``
+Stateful by design: a parser instance is owned by one ``AgentTranscriptFile``
 parse and may cache cross-line state (e.g. codex caches ``thread_id`` from
 ``thread.started`` to populate ``session_id`` on subsequent lines).
 """

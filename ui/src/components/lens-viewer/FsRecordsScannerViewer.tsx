@@ -2,11 +2,13 @@ import apiClient from '@sdk/client';
 import { dataContext } from '@sdk';
 import { RecordSearchBar } from '@src/components/record-search-bar/RecordSearchBar';
 import { SearchResultCard } from '@src/components/record-search-bar/SearchResultCard';
-import { ActivityProgressBar, ActivityProgressModal } from '@src/components/search-index/ActivityProgressModal';
+import { ActivityIndicator } from '@src/components/search-index/ActivityIndicator';
 import { useIndexStatus } from '@src/hooks/use-index-status';
 import { useSystemTools } from '@src/hooks/use-system-tools';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { RefreshCw, ChevronDown, ChevronRight, Search, Database, FileSearch, Trash2, ScanSearch, Ghost, RotateCw, Hammer } from 'lucide-react';
+import { RefreshCw, ChevronDown, ChevronRight, Search, Database, FileSearch, Trash2, ScanSearch, Ghost, RotateCw, Hammer, ListTree } from 'lucide-react';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { SweepOrphansDialog } from '@src/components/search-index/SweepOrphansDialog';
 import { Button } from '@src/components/ui/button';
@@ -268,6 +270,7 @@ export function FsRecordsScannerViewer() {
   // Unified scope chip — same component, same shape, same wire format as the
   // assets page. Drives every action and every count on this page so the
   // user sees one consistent view of "what scope am I operating on".
+  const { navigation } = useDockNavigation();
   const currentProjectId = projectIdForPath(dataContext.project?.fs_storage_mount_path);
   const [scope, setScope] = useState<ScopeFilter>(() => defaultScopeFilter(currentProjectId));
   const scopeIsDefault = scopeFilterEqual(scope, defaultScopeFilter(currentProjectId));
@@ -337,7 +340,6 @@ export function FsRecordsScannerViewer() {
   const [indexingTypes, setIndexingTypes] = useState<Set<string>>(new Set());
   const [clearingTypes, setClearingTypes] = useState<Set<string>>(new Set());
   const [indexedResults, setIndexedResults] = useState<Record<string, number>>({});
-  const [progressModalOpen, setProgressModalOpen] = useState(false);
 
   // "Scan Stats" — one-shot aggregate scan that surfaces FS counts + sizes
   // alongside the index-driven row data. The scan call doesn't write to FTS,
@@ -551,7 +553,7 @@ export function FsRecordsScannerViewer() {
   // Aggregate "last indexed" for the totals bar.
   const lastIndexedAt = indexStatus.phase === 'ready' ? indexStatus.status.last_indexed_at : null;
   const lastIndexedLabel = formatTimeAgo(lastIndexedAt);
-  const currentActiveType = progressTable?.current ?? null;
+  const currentActiveType = currentActivity ? (progressTable?.current ?? null) : null;
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -702,6 +704,28 @@ export function FsRecordsScannerViewer() {
               </p>
             </TooltipContent>
           </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 gap-1.5 text-xs"
+                onClick={() => navigation.openDock(DockPointer.forLlmIndexers())}
+                data-testid="toolbar-llm-indexers"
+              >
+                <ListTree className="h-3.5 w-3.5" />
+                LLM Indexers
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-xs">
+              <p className="font-medium">LLM Indexers</p>
+              <p className="mt-1 text-xs opacity-90">
+                Browse and run LLM-generated folder indexes (MarkdownIndex entities).
+                Each indexer (re)builds a Merkle tree of <code>index.md</code> files over a docs root.
+              </p>
+              <p className="mt-1 text-xs opacity-70">Runs as an AgenticProcess — see per-row status + transcript.</p>
+            </TooltipContent>
+          </Tooltip>
           <AlertDialog>
             <AlertDialogTrigger asChild>
               <Button
@@ -738,17 +762,8 @@ export function FsRecordsScannerViewer() {
         </div>
       </div>
 
-      {/* Single progress bar — driven by useSystemTools, fires for ANY
-          activity (scan/index/clear), not just 'index'. Same source as the
-          footer pill. */}
-      {currentActivity && progressTable && (
-        <div className="shrink-0 border-b px-5 py-2">
-          <ActivityProgressBar
-            table={progressTable}
-            onClick={() => setProgressModalOpen(true)}
-          />
-        </div>
-      )}
+      <ActivityIndicator variant="bar" className="shrink-0 border-b px-5 py-2" />
+
 
       {/* Semantic search bar */}
       <div className="shrink-0 border-b px-5 py-2">
@@ -928,22 +943,6 @@ export function FsRecordsScannerViewer() {
           </div>
         </>
       )}
-
-      {/* Progress modal — shared with the footer pill's click target. */}
-      <ActivityProgressModal
-        open={progressModalOpen}
-        onOpenChange={setProgressModalOpen}
-        table={progressTable}
-        title={
-          currentActivity === 'scan'
-            ? 'Scanning'
-            : currentActivity === 'index'
-              ? 'Indexing'
-              : currentActivity === 'clear'
-                ? 'Clearing index'
-                : 'Activity'
-        }
-      />
 
       {/* Sweep Orphans dialog — explainer + per-type breakdown + sweep action.
           Driven by the toolbar Scan Orphans button OR a row-cell click on a

@@ -286,6 +286,85 @@ async def handle_request(
     return response
 
 
+_SELF_HEAL_INDEXERS: dict[str, Any] | None = None
+
+
+def _get_self_heal_indexers() -> dict[str, Any]:
+    """Per-type single-file indexers used by the 404 self-heal path. Built
+    lazily so import cost only lands when an actual self-heal happens.
+
+    v1 wires PLAN only (the original RCA target). Other file-backed types
+    (markdown, claude_md, claude_command, skill, claude_memory, claude_rules)
+    can be added when the chip→loader→hint_path wiring on the FE starts
+    sending hints for them.
+    """
+    global _SELF_HEAL_INDEXERS
+    if _SELF_HEAL_INDEXERS is not None:
+        return _SELF_HEAL_INDEXERS
+    out: dict[str, Any] = {}
+    try:
+        from flow_sdk.fs_store.transcript_indexer.handlers.single_file_indexers import (
+            _index_single_claude_md,
+            _index_single_claude_memory,
+            _index_single_claude_rules,
+            _index_single_command,
+            _index_single_markdown,
+            _index_single_plan,
+            _index_single_skill,
+        )
+        out["plan"] = _index_single_plan
+        out["markdown"] = _index_single_markdown
+        out["skill"] = _index_single_skill
+        out["claude_md"] = _index_single_claude_md
+        out["claude_memory"] = _index_single_claude_memory
+        out["claude_rules"] = _index_single_claude_rules
+        out["command"] = _index_single_command
+    except Exception:
+        pass
+    _SELF_HEAL_INDEXERS = out
+    return out
+
+
+async def _try_self_heal_missing_entity(
+    request: Request,
+    request_info,
+) -> Any | None:
+    """If the GET 404'd and the caller passed ``?hint_path=<file>``, run a
+    single-file index for the target type and retry the lookup. Returns the
+    rehydrated entity on success, None otherwise.
+
+    Per the no-auto-walk rule (feedback_no_auto_indexing.md), this only
+    fires when the caller explicitly provided a path hint — chip clicks
+    that originated from a context entry carrying ``data.path``.
+    """
+    target_typeid = request_info.target_entity_typeid
+    if not target_typeid:
+        return None
+    hint_path = request.query_params.get("hint_path")
+    if not hint_path:
+        return None
+    indexers = _get_self_heal_indexers()
+    indexer = indexers.get(target_typeid.type)
+    if indexer is None:
+        return None
+    from pathlib import Path
+    p = Path(hint_path)
+    if not p.exists():
+        return None
+    try:
+        await indexer(p)
+    except Exception as exc:
+        service_log.warn(
+            f"self-heal index failed for {target_typeid} at {hint_path}: {exc}"
+        )
+        return None
+    # Reset the per-request cache so the retry actually rehydrates.
+    request_info._target_entity = None
+    if request_info.auth_result is not None:
+        request_info.auth_result.target = None
+    return await request_info.get_target_entity()
+
+
 async def fill_self_cls_param_if_needed(args, first_param, request_info):
     # Check if we need to pass 'self' or 'cls'
     if first_param.name == "self":
@@ -296,6 +375,11 @@ async def fill_self_cls_param_if_needed(args, first_param, request_info):
             )
         if not request_info.direct_resource_type:
             target_entity = await request_info.get_target_entity()
+            if target_entity is None:
+                # 404 self-heal: ?hint_path=<file> → single-file index + retry.
+                target_entity = await _try_self_heal_missing_entity(
+                    request_info.request, request_info
+                )
             if target_entity is None:
                 raise HTTPException(
                     status_code=404,

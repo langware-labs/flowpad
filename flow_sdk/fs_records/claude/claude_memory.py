@@ -76,7 +76,7 @@ class ClaudeMemoryRecord(Record):
             return None
 
     @classmethod
-    async def from_fsref(cls, ref) -> list["ClaudeMemoryRecord"]:
+    def _from_fsref_sync(cls, ref) -> list["ClaudeMemoryRecord"]:
         """Indexer entry point — construct from an FSRef emitted by claude_memory_fn.
 
         ref._path is `<encoded_project_dir>/memory/<name>.md`. The parent

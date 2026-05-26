@@ -24,7 +24,7 @@ from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 
 
-async def workflow_fn(
+def workflow_fn(
     nodes: list[FSRef],
     opts: IndexerOptions,
 ) -> list[FSRef]:
@@ -48,7 +48,7 @@ async def workflow_fn(
 _FM_PEEK_BYTES = 4 * 1024
 
 
-async def workflow_frontmatter_fn(
+def workflow_frontmatter_fn(
     nodes: list[FSRef],
     opts: IndexerOptions,
 ) -> list[FSRef]:

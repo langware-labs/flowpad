@@ -11,7 +11,6 @@ import {
   ContextEntitiesEnum,
   dataContext,
   initSdk,
-  Project,
   QueryRequest,
   systemTools,
   Trigger,
@@ -23,7 +22,7 @@ import { TimeIt } from '@src/utils/timeit';
 import { redirect, type LoaderFunctionArgs as LoaderArgs } from 'react-router';
 import { getBrokenViewUrl, loadFlowFromParams } from './loaders';
 import { loadShellRoute, resolveDefaultTab } from './load-shell';
-import { loadProjectRoute } from './load-project';
+import { loadProject, loadProjectRoute } from './load-project';
 import { loadConversationRoute } from './load-conversation';
 import { loadTasksRoute } from './load-tasks';
 import { describeProcessStartError } from './load-process';
@@ -122,9 +121,8 @@ export async function loadAgentApp(args: LoaderArgs) {
       await dataContext.setActiveEntityTypeId(new TypeId(AgenticProcess.type, sessionProcessId));
       const process = await AgenticProcess.getById(sessionProcessId).catch(() => null);
       if (process?.project_id) {
-        await dataContext.setContextEntityTypeId(
-          ContextEntitiesEnum.CurrentProjectTypeId,
-          new TypeId(Project.type, process.project_id),
+        await loadProject(process.project_id).catch(() =>
+          systemTools.resolveProjectContext(process.workdir, process),
         );
       } else {
         await systemTools.resolveProjectContext(process?.workdir, process ?? undefined);
@@ -174,9 +172,8 @@ export async function loadAgentApp(args: LoaderArgs) {
         await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProcessTypeId, parsed.agenticProcessTypeId);
         const process = await AgenticProcess.getById(parsed.agenticProcessTypeId.id).catch(() => null);
         if (process?.project_id) {
-          await dataContext.setContextEntityTypeId(
-            ContextEntitiesEnum.CurrentProjectTypeId,
-            new TypeId(Project.type, process.project_id),
+          await loadProject(process.project_id).catch(() =>
+            systemTools.resolveProjectContext(process.workdir, process),
           );
         } else {
           await systemTools.resolveProjectContext(process?.workdir, process ?? undefined);

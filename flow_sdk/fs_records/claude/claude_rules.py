@@ -77,7 +77,7 @@ class ClaudeRulesRecord(Record):
             return None
 
     @classmethod
-    async def from_fsref(cls, ref) -> list["ClaudeRulesRecord"]:
+    def _from_fsref_sync(cls, ref) -> list["ClaudeRulesRecord"]:
         """Indexer entry point — construct from an FSRef emitted by claude_rules_fn."""
         return [cls._from_md_file(ref._path, scope=ref.scope or "user")]
 

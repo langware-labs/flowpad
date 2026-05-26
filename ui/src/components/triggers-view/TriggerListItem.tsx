@@ -2,14 +2,20 @@ import { Badge } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { cn } from '@src/lib/utils';
-import { ActionInfo, dataManager, type ITrigger } from '@sdk';
-import { FlaskConical, ScrollText } from 'lucide-react';
+import { ActionInfo, dataManager, Trigger as TriggerEntity, type ITrigger } from '@sdk';
+import { useEntity } from '@sdk/react/hooks';
+import { FlaskConical } from 'lucide-react';
 import { useState } from 'react';
+import { scopeColor } from './scope-colors';
 
-const SCOPE_COLORS: Record<string, string> = {
-  system: 'bg-muted text-muted-foreground',
-  user: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-  project: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
+/** Per-trigger-type label for the Test button tooltip. Each source has very
+ * different "Test" semantics — schedule spawns an agentic process for real;
+ * hook synthesizes a fake hook event; FSOp fires the callback with a
+ * synthetic path. Same icon, different real-world effect — surface that. */
+const TEST_TOOLTIPS: Record<string, string> = {
+  hook: 'Synthesize event',
+  schedule: 'Run now (spawns a process)',
+  fsop: 'Fire (synthetic test)',
 };
 
 interface Props {
@@ -17,11 +23,14 @@ interface Props {
   isSelected: boolean;
   onSelect: () => void;
   onOpenLog: () => void;
-  onLogModeChange: (mode: string) => void;
 }
 
-export function TriggerListItem({ trigger, isSelected, onSelect, onOpenLog, onLogModeChange }: Props) {
+export function TriggerListItem({ trigger, isSelected, onSelect, onOpenLog }: Props) {
   const [testing, setTesting] = useState(false);
+  // `useEntitiesQuery` fires only on add/remove; per-entity field updates
+  // (counter, last_triggered) need this single-entity subscription to re-render.
+  const { data: live } = useEntity<TriggerEntity>(trigger.id ? trigger.typeId : null);
+  const t = live ?? trigger;
 
   const handleTest = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -46,7 +55,6 @@ export function TriggerListItem({ trigger, isSelected, onSelect, onOpenLog, onLo
       const action = new ActionInfo('meta', 'trigger', trigger.id, 'PATCH');
       action.bodyParameters = { log_mode: mode };
       await dataManager.callAction(action);
-      onLogModeChange(mode);
     } catch {
       // ignore
     }
@@ -61,13 +69,16 @@ export function TriggerListItem({ trigger, isSelected, onSelect, onOpenLog, onLo
       onClick={onSelect}
     >
       <div className="flex items-center gap-1.5">
-        <span className={cn('rounded px-1 py-0.5 text-[10px] font-medium', SCOPE_COLORS[trigger.scope || 'user'] ?? SCOPE_COLORS['user'])}>
+        <span className={cn('rounded px-1 py-0.5 text-[10px] font-medium', scopeColor(trigger.scope))}>
           {trigger.scope || 'user'}
         </span>
         <span className="flex-1 truncate font-medium">{trigger.displayName}</span>
 
         <div className="flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
-          {/* Test button */}
+          {/* Test button — tooltip is type-aware (schedule spawns a real
+              process; hook synthesizes; fsop fires synthetically). The per-row
+              Log icon is intentionally removed; TriggerInvocationsPanel in the
+              right panel is the canonical surface for invocations. */}
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -80,22 +91,9 @@ export function TriggerListItem({ trigger, isSelected, onSelect, onOpenLog, onLo
                 <FlaskConical className="h-3 w-3" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Test trigger</TooltipContent>
-          </Tooltip>
-
-          {/* Log button */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-5 w-5"
-                onClick={(e) => { e.stopPropagation(); onOpenLog(); }}
-              >
-                <ScrollText className="h-3 w-3" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>View trigger log</TooltipContent>
+            <TooltipContent>
+              {TEST_TOOLTIPS[trigger.trigger_type ?? 'hook'] ?? 'Test trigger'}
+            </TooltipContent>
           </Tooltip>
 
           {/* Log mode select — hook triggers only */}
@@ -122,7 +120,8 @@ export function TriggerListItem({ trigger, isSelected, onSelect, onOpenLog, onLo
         </div>
       )}
 
-      {/* Schedule metadata */}
+      {/* Schedule metadata — cron expr + next run. The disabled/paused badge
+          is rendered uniformly in the universal stats line below. */}
       {trigger.trigger_type === 'schedule' && (
         <div className="flex flex-wrap items-center gap-1">
           {trigger.expr && (
@@ -133,11 +132,40 @@ export function TriggerListItem({ trigger, isSelected, onSelect, onOpenLog, onLo
               → {new Date(trigger.next_run).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
             </span>
           )}
-          {trigger.enabled === false && (
-            <Badge variant="secondary" className="h-4 px-1 text-[9px]">paused</Badge>
-          )}
         </div>
       )}
+
+      {/* FSOp-specific metadata: watched path. Type-specific because hook +
+          schedule have their own per-type rows above; everyone shares the
+          universal stats line below. */}
+      {t.trigger_type === 'fsop' && t.watch_path && (
+        <div className="flex items-center gap-1.5">
+          <span
+            className="truncate font-mono text-[10px] text-muted-foreground"
+            title={t.watch_path}
+          >
+            {t.watch_path}
+          </span>
+        </div>
+      )}
+
+      {/* Universal stats line — counter + last triggered + disabled state.
+          Renders for every trigger type (live via useEntity); the prior
+          FSOp-only `fires:` badge is folded in so hook/schedule rows also
+          show their counter and last fire. */}
+      <div className="flex items-center gap-1.5">
+        <Badge variant="outline" className="h-4 px-1 text-[9px] font-mono">
+          fires: {t.counter ?? 0}
+        </Badge>
+        {t.last_triggered && (
+          <span className="text-[10px] text-muted-foreground">
+            last {new Date(t.last_triggered).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+          </span>
+        )}
+        {t.enabled === false && (
+          <Badge variant="secondary" className="h-4 px-1 text-[9px]">disabled</Badge>
+        )}
+      </div>
     </div>
   );
 }

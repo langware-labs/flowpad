@@ -2,7 +2,7 @@ import { ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { Button } from '@src/components/ui/button';
-import type { Browseable, BrowseableTreeProps, ToolbarAction } from './types';
+import type { Browseable, BrowseableDragData, BrowseableTreeProps, ToolbarAction } from './types';
 import { useBrowseableTree } from './useBrowseableTree';
 import { subscribeRefresh } from './refresh-store';
 
@@ -32,6 +32,7 @@ export function BrowseableTree(props: BrowseableTreeProps) {
 
   const tree = useBrowseableTree(roots);
   const lastResolvedRef = useRef<string | null>(null);
+  const [dragData, setDragData] = useState<BrowseableDragData | null>(null);
 
   const handleNavigate = useCallback(
     (pointer: DockPointer) => {
@@ -58,7 +59,7 @@ export function BrowseableTree(props: BrowseableTreeProps) {
       lastResolvedRef.current = key;
       requestAnimationFrame(() => {
         const el = document.querySelector(`[data-browseable-id="${CSS.escape(leaf.id)}"]`);
-        el?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        el?.scrollIntoView({ block: 'center' });
       });
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -106,6 +107,9 @@ export function BrowseableTree(props: BrowseableTreeProps) {
             tree={tree}
             activePointer={activePointer}
             onNavigate={handleNavigate}
+            dragData={dragData}
+            onDragStart={setDragData}
+            onDragEnd={() => setDragData(null)}
           />
         ))}
       </div>
@@ -119,12 +123,26 @@ interface RowProps {
   tree: ReturnType<typeof useBrowseableTree>;
   activePointer: DockPointer | null;
   onNavigate: (p: DockPointer) => void;
+  dragData: BrowseableDragData | null;
+  onDragStart: (data: BrowseableDragData) => void;
+  onDragEnd: () => void;
 }
 
-function BrowseableRow({ node, level, tree, activePointer, onNavigate }: RowProps) {
+function BrowseableRow({
+  node,
+  level,
+  tree,
+  activePointer,
+  onNavigate,
+  dragData,
+  onDragStart,
+  onDragEnd,
+}: RowProps) {
   const expanded = tree.isExpanded(node.id);
   const loadState = tree.getLoadState(node.id);
   const children = tree.getChildren(node.id);
+  const [isDropTarget, setIsDropTarget] = useState(false);
+  const [isDropping, setIsDropping] = useState(false);
 
   const isSelected = !!(
     node.pointer &&
@@ -156,17 +174,85 @@ function BrowseableRow({ node, level, tree, activePointer, onNavigate }: RowProp
     [node, tree],
   );
 
+  const canAcceptDrop = !!(
+    dragData &&
+    node.onDrop &&
+    (!node.canDrop || node.canDrop(dragData))
+  );
+
+  const handleDragStart = useCallback(
+    (e: React.DragEvent) => {
+      if (!node.dragData) return;
+      e.stopPropagation();
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('application/x-flowpad-browseable', JSON.stringify(node.dragData));
+      e.dataTransfer.setData('text/plain', node.label);
+      onDragStart(node.dragData);
+    },
+    [node.dragData, node.label, onDragStart],
+  );
+
+  const handleDragEnd = useCallback(() => {
+    setIsDropTarget(false);
+    onDragEnd();
+  }, [onDragEnd]);
+
+  const handleDragOver = useCallback(
+    (e: React.DragEvent) => {
+      if (!canAcceptDrop) return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.dataTransfer.dropEffect = 'move';
+      setIsDropTarget(true);
+    },
+    [canAcceptDrop],
+  );
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    if (e.currentTarget.contains(e.relatedTarget as Node | null)) return;
+    setIsDropTarget(false);
+  }, []);
+
+  const handleDrop = useCallback(
+    async (e: React.DragEvent) => {
+      if (!canAcceptDrop || !dragData || !node.onDrop) return;
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDropTarget(false);
+      setIsDropping(true);
+      try {
+        await node.onDrop(dragData);
+      } finally {
+        setIsDropping(false);
+        onDragEnd();
+      }
+    },
+    [canAcceptDrop, dragData, node, onDragEnd],
+  );
+
   return (
     <div data-browseable-id={node.id}>
       <div
-        className={`group relative flex cursor-pointer items-center gap-1 rounded-md p-1.5 text-xs transition-colors ${
+        className={`group relative flex items-center gap-1 rounded-md p-1.5 text-xs transition-colors ${
           isSelected ? 'bg-accent text-accent-foreground font-medium' : 'hover:bg-muted'
+        } ${node.pointer ? 'cursor-pointer' : 'cursor-default'} ${
+          node.dragData ? 'active:cursor-grabbing' : ''
+        } ${
+          isDropTarget ? 'bg-primary/10 ring-1 ring-primary/40' : ''
+        } ${
+          isDropping ? 'opacity-60' : ''
         }`}
         style={{ marginLeft: `${level * 14}px` }}
         role="treeitem"
         aria-level={level + 1}
         aria-selected={isSelected}
         aria-expanded={hasChildrenHint ? expanded : undefined}
+        draggable={!!node.dragData}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={(e) => { void handleDrop(e); }}
       >
         <div className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
           {hasChildrenHint ? (
@@ -245,6 +331,9 @@ function BrowseableRow({ node, level, tree, activePointer, onNavigate }: RowProp
               tree={tree}
               activePointer={activePointer}
               onNavigate={onNavigate}
+              dragData={dragData}
+              onDragStart={onDragStart}
+              onDragEnd={onDragEnd}
             />
           ))}
         </div>

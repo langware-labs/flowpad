@@ -10,7 +10,7 @@ import { AgentHook } from './agent-hook';
 export interface ITrigger extends IEntity {
   name: string;
   description?: string;
-  trigger_type?: 'hook' | 'schedule';
+  trigger_type?: 'hook' | 'schedule' | 'fsop';
   // Hook trigger fields
   mask: Record<string, any>;
   action: TriggerAction;
@@ -29,6 +29,12 @@ export interface ITrigger extends IEntity {
   instruction?: string;
   workdir?: string;
   project_id?: string | null;
+  // FSOp trigger fields
+  watch_path?: string;
+  recursive?: boolean;
+  watch_glob?: string;
+  last_seen_mtime?: number;
+  last_seen_size?: number;
 }
 
 /**
@@ -40,7 +46,7 @@ export class Trigger extends APIEntity<Trigger> implements ITrigger {
 
   name: string = '';
   description?: string;
-  trigger_type: 'hook' | 'schedule' = 'hook';
+  trigger_type: 'hook' | 'schedule' | 'fsop' = 'hook';
   // Hook trigger fields
   mask: Record<string, any> = {};
   action: TriggerAction;
@@ -59,6 +65,12 @@ export class Trigger extends APIEntity<Trigger> implements ITrigger {
   instruction?: string;
   workdir?: string;
   project_id?: string | null;
+  // FSOp trigger fields
+  watch_path?: string;
+  recursive?: boolean;
+  watch_glob?: string;
+  last_seen_mtime?: number;
+  last_seen_size?: number;
 
   constructor(entity: Partial<ITrigger> = {}) {
     super(entity);
@@ -81,6 +93,11 @@ export class Trigger extends APIEntity<Trigger> implements ITrigger {
     this.instruction = entity.instruction;
     this.workdir = entity.workdir;
     this.project_id = entity.project_id ?? null;
+    this.watch_path = entity.watch_path;
+    this.recursive = entity.recursive;
+    this.watch_glob = entity.watch_glob;
+    this.last_seen_mtime = entity.last_seen_mtime;
+    this.last_seen_size = entity.last_seen_size;
   }
 
   /**

@@ -65,7 +65,7 @@ export function getTranscriptDockPointer(
   if (hookData.transcript_path) {
     const parsed = parseTranscriptPath(hookData.transcript_path);
     if (parsed) {
-      return { ref: `${parsed.projectEncodedName}/${parsed.sessionId}`, options };
+      return { ref: parsed.sessionId, options };
     }
   }
   return null;

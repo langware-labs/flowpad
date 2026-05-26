@@ -23,17 +23,17 @@ export interface ScopeFilter {
 export const EMPTY_SCOPE_FILTER: ScopeFilter = { user: true, projects: [] };
 
 /**
- * The default a user-facing surface should land on when there's a current
- * project in context: include user + the current project, so the "Project"
- * chip count is meaningful from the first render. Pass `null`/`undefined`
- * for surfaces without a project context — falls through to EMPTY_SCOPE_FILTER.
+ * The default a user-facing surface should land on. When a current project
+ * is in context, default to the Project chip (project only, no user scope)
+ * so scan/index/list operations start narrowest. Pass `null`/`undefined`
+ * for project-less surfaces — falls through to EMPTY_SCOPE_FILTER (user-only).
  *
  * Centralized here so no consumer has to re-implement "seed from
  * currentProjectId" — every UI that holds a ScopeFilter starts from this.
  */
 export function defaultScopeFilter(currentProjectId?: string | null): ScopeFilter {
   if (!currentProjectId) return { ...EMPTY_SCOPE_FILTER };
-  return { user: true, projects: [currentProjectId] };
+  return { user: false, projects: [currentProjectId] };
 }
 
 /** Equality on ScopeFilter (order-insensitive on `projects`). */

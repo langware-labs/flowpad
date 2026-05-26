@@ -1,4 +1,4 @@
-import { ContextEntitiesEnum, dataContext, Project } from '@sdk';
+import { ContextEntitiesEnum, dataContext, Project, QueryRequest } from '@sdk';
 import { useProject } from '@sdk/react/hooks';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { NewProjectDialog, ProjectSelectorModal } from '@src/components/project-selector';
@@ -12,7 +12,8 @@ import {
   DialogTitle,
 } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
-import { useProjects } from '@src/hooks/use-projects';
+import { useAllProjects } from '@src/hooks/use-all-projects';
+import { getProjectDisplayName } from '@src/hooks/use-claude-projects';
 import { useToast } from '@src/hooks/use-toast';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Loader2 } from 'lucide-react';
@@ -28,6 +29,10 @@ interface QuickCreateDialogProps {
   type: string | null;
 }
 
+function canonicalPath(path: string): string {
+  return path.trim().replace(/\\/g, '/').replace(/\/+$/, '').replace(/^\/+/, '');
+}
+
 function projectPrefix(project: Project | null): string | null {
   if (!project) return null;
   return project.displayName ?? project.name ?? null;
@@ -36,9 +41,8 @@ function projectPrefix(project: Project | null): string | null {
 function defaultPathFor(scope: Scope, descriptor: QuickCreateDescriptor, harness: HarnessKind): string {
   if (scope.kind === 'folder') return scope.folderPath ?? '';
   const sub = subFolderFor(descriptor, harness, scope.kind);
-  if (scope.kind === 'user') return `~/${sub}`;
-  const prefix = projectPrefix(scope.project);
-  return prefix ? `${prefix}/${sub}` : sub;
+  const prefix = scope.kind === 'user' ? '~' : projectPrefix(scope.project);
+  return [prefix, sub].filter(Boolean).join('/') || sub;
 }
 
 function initialScope(project: Project | null): Scope {
@@ -55,12 +59,12 @@ export function QuickCreateDialog({ open, onOpenChange, type }: QuickCreateDialo
   const { navigation } = useDockNavigation();
   const { project } = useProject();
   const { computeNode } = useAgentContext();
-  const { projects: allProjects, isLoading: isLoadingProjects } = useProjects();
+  const { projects: allProjects, isLoading: isLoadingProjects } = useAllProjects({ enabled: open });
   const { restore, commit } = useProjectSnapshot(open);
 
   const [name, setName] = useState('');
   const [scope, setScope] = useState<Scope>(() => initialScope(project ?? null));
-  const [harness, setHarness] = useState<HarnessKind>('claude');
+  const [harness, setHarness] = useState<HarnessKind>('all');
   const [path, setPath] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
@@ -78,8 +82,8 @@ export function QuickCreateDialog({ open, onOpenChange, type }: QuickCreateDialo
       const next = initialScope(project ?? null);
       setName('');
       setScope(next);
-      setHarness('claude');
-      setPath(defaultPathFor(next, descriptor, 'claude'));
+      setHarness('all');
+      setPath(defaultPathFor(next, descriptor, 'all'));
       setIsSubmitting(false);
       requestAnimationFrame(() => nameRef.current?.focus());
     }
@@ -122,53 +126,58 @@ export function QuickCreateDialog({ open, onOpenChange, type }: QuickCreateDialo
 
   const projectItems = useMemo(
     () =>
-      (allProjects ?? []).map((p) => ({
-        id: p.id,
-        name: p.displayName,
-        path: p.fs_storage_mount_path ?? '',
-        modifiedAt: p.updated_date ?? null,
-      })),
+      allProjects
+        .filter((p) => !!p.cwd)
+        .map((p) => ({
+          id: canonicalPath(p.cwd),
+          name: getProjectDisplayName(p),
+          path: p.cwd,
+          modifiedAt: p.modified_at ?? null,
+        })),
     [allProjects],
   );
 
+  const currentProjectKey = useMemo(
+    () => canonicalPath(project?.fs_storage_mount_path ?? ''),
+    [project?.fs_storage_mount_path],
+  );
+
+  const ensureProjectAndSetContext = useCallback(async (rawPath: string) => {
+    if (!dataContext.someone) throw new Error('You must be logged in');
+    const normalized = rawPath.trim().replace(/\\/g, '/').replace(/\/+$/, '');
+    if (!normalized) throw new Error('Please provide a valid project path');
+    const pathKey = canonicalPath(normalized);
+
+    const freshProjects = await Project.query(
+      new QueryRequest({ type: Project.type, query: null, scope: [], name: 'quick-create-project-dedup' }),
+    );
+    let target = freshProjects.find((p) => canonicalPath(p.fs_storage_mount_path ?? '') === pathKey) ?? null;
+    if (!target) {
+      target = await new Project({ name: normalized }).save([dataContext.someone]);
+    }
+    await target.setupForDesktop();
+    await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, target.typeId);
+    await dataContext.refreshProject();
+    dataContext.setWorkdir(target.fs_storage_mount_path ?? null);
+  }, []);
+
   const handleProjectPick = useCallback(
-    async (id: string) => {
-      const picked = allProjects?.find((p) => p.id === id);
-      if (!picked) return;
-      await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, picked.typeId);
-      await dataContext.refreshProject();
-      dataContext.setWorkdir(picked.fs_storage_mount_path ?? null);
+    async (pickedKey: string) => {
+      const picked = allProjects.find((p) => canonicalPath(p.cwd) === pickedKey);
+      if (!picked?.cwd) return;
+      await ensureProjectAndSetContext(picked.cwd);
     },
-    [allProjects],
+    [allProjects, ensureProjectAndSetContext],
   );
 
   const handleCreateProject = useCallback(
     async (rawName: string, rawParent: string) => {
-      if (!dataContext.someone) throw new Error('You must be logged in');
       const cleanName = rawName.trim();
       const cleanParent = rawParent.trim().replace(/\\/g, '/').replace(/\/+$/, '');
       if (!cleanName || !cleanParent) throw new Error('Name and parent folder required');
-      const fullPath = `${cleanParent}/${cleanName}`;
-      const pathKey = fullPath.replace(/^\/+/, '');
-
-      const existing =
-        allProjects?.find((p) => {
-          const path = (p.fs_storage_mount_path ?? '').replace(/\\/g, '/').replace(/\/+$/, '');
-          return path.replace(/^\/+/, '') === pathKey;
-        }) ?? null;
-
-      let target: Project;
-      if (existing) {
-        target = existing;
-      } else {
-        target = await new Project({ name: fullPath }).save([dataContext.someone]);
-      }
-      await target.setupForDesktop();
-      await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, target.typeId);
-      await dataContext.refreshProject();
-      dataContext.setWorkdir(target.fs_storage_mount_path ?? null);
+      await ensureProjectAndSetContext(`${cleanParent}/${cleanName}`);
     },
-    [allProjects],
+    [ensureProjectAndSetContext],
   );
 
   const handlePickFolder = useCallback(async (): Promise<string | null> => {
@@ -286,7 +295,7 @@ export function QuickCreateDialog({ open, onOpenChange, type }: QuickCreateDialo
         open={projectPickerOpen}
         onOpenChange={setProjectPickerOpen}
         projects={projectItems}
-        selectedId={scope.project?.id ?? null}
+        selectedId={currentProjectKey || null}
         onSelect={(id) => void handleProjectPick(id)}
         isLoading={isLoadingProjects}
         onCreateNew={() => {

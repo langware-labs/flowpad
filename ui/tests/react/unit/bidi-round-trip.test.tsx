@@ -90,7 +90,10 @@ describe('bidi round-trip', () => {
     await editor2.destroy();
   });
 
-  it('heading with dir="rtl" and text-align: end', async () => {
+  // Skipped: heading bidi attrs are intentionally absent until upstream Milkdown
+  // fixes the @milkdown/utils extendSchema recursion bug — see
+  // ui/src/components/milkdown-editor/plugins/bidi/schema.ts header.
+  it.skip('heading with dir="rtl" and text-align: end', async () => {
     const md = '<h2 dir="rtl" style="text-align: end">\n\nכותרת\n\n</h2>\n';
     const editor = await makeEditor(md);
     const attrs = getParagraphAttrs(editor);
@@ -251,7 +254,10 @@ describe('bidi round-trip', () => {
     await editor.destroy();
   });
 
-  it('Enter at end of an RTL heading: new paragraph inherits dir', async () => {
+  // Skipped: relies on heading carrying dir attr — see header above. The
+  // enter-inherit handler is gated on the attr existing in the schema, so this
+  // scenario cannot work until the heading schema extension is restored.
+  it.skip('Enter at end of an RTL heading: new paragraph inherits dir', async () => {
     const editor = await makeEditor('<h2 dir="rtl">\n\nכותרת\n\n</h2>\n');
     editor.action((ctx) => {
       const view = ctx.get(editorViewCtx);

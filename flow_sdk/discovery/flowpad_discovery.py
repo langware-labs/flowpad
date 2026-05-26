@@ -292,27 +292,36 @@ def is_webhook_rate_limited() -> bool:
     return _active_state().is_rate_limited()
 
 
+def _enumerate_server_json_paths() -> list[Path]:
+    """Return ``server.json`` paths for every instance under ``<flow_home>/instances/``.
+    Enumeration (vs. a hardcoded prod+dev pair) keeps oss/app instances visible to a
+    CLI subprocess invoked without FLOW_INSTANCE.
+    """
+    from flow_sdk.instance_settings import BaseInstanceSettings
+    flow_home = BaseInstanceSettings._resolve_flow_home()
+    instances_root = flow_home / "instances"
+    if not instances_root.is_dir():
+        return []
+    paths: list[Path] = []
+    for instance_dir in instances_root.iterdir():
+        if not instance_dir.is_dir():
+            continue
+        sj = instance_dir / "server.json"
+        if sj.exists():
+            paths.append(sj)
+    return paths
+
+
 def read_all_server_infos() -> list[FlowpadServerInfo]:
-    """Read both prod and dev server JSON files, return all valid entries.
+    """Read every instance's server JSON file, return all valid entries.
 
     Fast path — no health check. Skips missing or corrupt files.
 
     Returns:
         List of FlowpadServerInfo for all currently written server files.
     """
-    # Discovery enumerates BOTH instances by design (cross-mode discovery).
-    # Resolve the canonical paths via the per-instance settings classes.
-    from flow_sdk.instance_settings import (
-        BaseInstanceSettings,
-        DevInstanceSettings,
-    )
-    candidate_paths = [
-        BaseInstanceSettings.from_env().server_json_path,
-        DevInstanceSettings.from_env().server_json_path,
-    ]
-
     infos = []
-    for path in candidate_paths:
+    for path in _enumerate_server_json_paths():
         try:
             data = json.loads(path.read_text())
             infos.append(FlowpadServerInfo(
@@ -327,21 +336,13 @@ def read_all_server_infos() -> list[FlowpadServerInfo]:
 
 
 def discover_all_flowpads() -> list[FlowpadDiscoveryResult]:
-    """Run health-checked discovery against both prod and dev states.
+    """Run health-checked discovery against every instance state.
 
     Returns:
         List of FlowpadDiscoveryResult with status RUNNING only.
     """
-    from flow_sdk.instance_settings import (
-        BaseInstanceSettings,
-        DevInstanceSettings,
-    )
-    candidate_paths = [
-        BaseInstanceSettings.from_env().server_json_path,
-        DevInstanceSettings.from_env().server_json_path,
-    ]
     results = []
-    for path in candidate_paths:
+    for path in _enumerate_server_json_paths():
         state = _states.get(path) or _ServerState(path)
         _states[path] = state
         r = state.get_discovery_result()

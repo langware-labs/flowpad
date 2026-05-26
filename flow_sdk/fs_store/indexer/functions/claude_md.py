@@ -22,7 +22,7 @@ from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 
 
-async def claude_md_in_claude_subdir_fn(
+def claude_md_in_claude_subdir_fn(
     nodes: list[FSRef], opts: IndexerOptions,
 ) -> list[FSRef]:
     """<root>/.claude/CLAUDE.md + .claude/CLAUDE.local.md."""
@@ -42,7 +42,7 @@ async def claude_md_in_claude_subdir_fn(
     return out
 
 
-async def claude_md_in_project_root_fn(
+def claude_md_in_project_root_fn(
     nodes: list[FSRef], opts: IndexerOptions,
 ) -> list[FSRef]:
     """<root>/CLAUDE.md, <root>/CLAUDE.local.md, <root>/.claude/CLAUDE.md."""

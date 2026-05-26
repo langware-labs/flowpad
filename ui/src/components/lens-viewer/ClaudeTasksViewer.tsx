@@ -16,7 +16,6 @@ interface TaskData {
 interface Props {
   sessionId: string;
   selectedActiveForm?: string;
-  projectEncodedName?: string;
 }
 
 const STATUS_CONFIG = {
@@ -124,7 +123,7 @@ function TaskCard({
   );
 }
 
-export function ClaudeTasksViewer({ sessionId, selectedActiveForm, projectEncodedName }: Props) {
+export function ClaudeTasksViewer({ sessionId, selectedActiveForm }: Props) {
   const { navigation } = useDockNavigation();
   const [tasks, setTasks] = useState<TaskData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -278,9 +277,9 @@ export function ClaudeTasksViewer({ sessionId, selectedActiveForm, projectEncode
           <CheckCircle2 className="h-4 w-4 text-primary" />
           <span className="text-sm font-medium">Session Tasks</span>
           <span className="text-xs text-muted-foreground">({sessionId.slice(0, 8)}...)</span>
-          {projectEncodedName && (
+          {sessionId && (
             <button
-              onClick={() => navigation.openLens('claude', 'transcript', `${projectEncodedName}/${sessionId}`)}
+              onClick={() => navigation.openLens('claude', 'transcript', sessionId)}
               className="flex items-center gap-1 rounded bg-primary/10 px-1.5 py-0.5 text-xs text-primary hover:bg-primary/20"
               title="View session transcript"
             >

@@ -21,6 +21,7 @@ Key functions brought over:
 """
 
 import asyncio
+import functools
 import json
 import logging
 import os
@@ -669,9 +670,24 @@ async def get_or_create_local_user() -> User:
 
     Migrated from FlowPad: flowpad/hub/core/desktop_loader.py (init_desktop_user)
     """
+    local_id = _local_entity_id("user")
+
+    # Stable-id lookup first so wipes recover without changing the @local user's
+    # id. Falls through to label/uname paths for legacy random-id rows.
+    existing_by_id = await User.get_by_id(local_id)
+    if existing_by_id:
+        logging.info(f"@local user already exists (by stable id): {existing_by_id.id}")
+        return existing_by_id
+
     # Check if desktop user already exists (by label)
     desktop_user = await get_desktop_user()
     if desktop_user:
+        if desktop_user.id != local_id:
+            logging.warning(
+                "@local user has legacy random id %s; expected stable %s. "
+                "Keeping existing row to preserve references — wipe the DB to migrate.",
+                desktop_user.id, local_id,
+            )
         # Handle existing desktop user with no email - update with default email
         if not desktop_user.email:
             default_email = get_default_desktop_email()
@@ -692,6 +708,12 @@ async def get_or_create_local_user() -> User:
     # Also check by uname for backward compatibility with pre-migration entities
     existing_by_uname = await get_local_entity(User)
     if existing_by_uname:
+        if existing_by_uname.id != local_id:
+            logging.warning(
+                "@local user (uname='local') has legacy random id %s; expected stable %s. "
+                "Keeping existing row to preserve references — wipe the DB to migrate.",
+                existing_by_uname.id, local_id,
+            )
         # Ensure it has the desktop label
         if DESKTOP_LABEL not in (existing_by_uname.labels or []):
             existing_by_uname.add_label(DESKTOP_LABEL)
@@ -726,6 +748,7 @@ async def get_or_create_local_user() -> User:
     name = git_name or email.split("@")[0].replace(".", " ").title()
 
     user = User(
+        id=local_id,
         type="user",
         uname="local",
         name=name,
@@ -764,13 +787,26 @@ async def get_or_create_local_project(desktop_user: Optional[Entity] = None) -> 
 
     Migrated from FlowPad: flowpad/hub/core/desktop_loader.py (init_local_project)
     """
+    local_id = _local_entity_id("project")
+
+    project = await Project.get_by_id(local_id)
+    if project:
+        logging.info(f"@local project already exists (by stable id): {project.id}")
+        return project
     project = await get_local_entity(Project)
     if project:
+        if project.id != local_id:
+            logging.warning(
+                "@local project has legacy random id %s; expected stable %s. "
+                "Keeping existing row to preserve references — wipe the DB to migrate.",
+                project.id, local_id,
+            )
         logging.info(f"@local project already exists: {project.id}")
         return project
 
     logging.info("Creating @local project for desktop environment")
     project = Project(
+        id=local_id,
         type="project",
         uname="local",
         name="my_first_project",
@@ -802,13 +838,26 @@ async def get_or_create_local_workspace(desktop_user: Optional[Entity] = None) -
 
     Migrated from FlowPad: flowpad/hub/core/desktop_loader.py (init_local_workspace)
     """
+    local_id = _local_entity_id("workspace")
+
+    workspace = await Workspace.get_by_id(local_id)
+    if workspace:
+        logging.info(f"@local workspace already exists (by stable id): {workspace.id}")
+        return workspace
     workspace = await get_local_entity(Workspace)
     if workspace:
+        if workspace.id != local_id:
+            logging.warning(
+                "@local workspace has legacy random id %s; expected stable %s. "
+                "Keeping existing row to preserve references — wipe the DB to migrate.",
+                workspace.id, local_id,
+            )
         logging.info(f"@local workspace already exists: {workspace.id}")
         return workspace
 
     logging.info("Creating @local workspace for desktop environment")
     workspace = Workspace(
+        id=local_id,
         type="workspace",
         uname="local",
         name="Local Desktop Workspace",
@@ -829,6 +878,15 @@ async def get_or_create_local_workspace(desktop_user: Optional[Entity] = None) -
     return workspace
 
 
+@functools.lru_cache(maxsize=8)
+def _local_entity_id(entity_type: str) -> str:
+    """Deterministic per-machine id: ``uuid5(NAMESPACE_DNS, "<type>:local:<machine_id>")``.
+    Stable across DB recreations + clear-index so cached UI/WS typeids keep resolving.
+    """
+    from flow_sdk.utils.machine_id import get_machine_id  # noqa: PLC0415
+    return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{entity_type}:local:{get_machine_id()}"))
+
+
 async def get_or_create_local_compute_node(
     local_project: Optional[Entity] = None,
     desktop_user: Optional[Entity] = None,
@@ -845,8 +903,19 @@ async def get_or_create_local_compute_node(
     Migrated from FlowPad: flowpad/hub/core/desktop_loader.py (init_local_compute_node)
     """
     os_root = get_os_root_path()
+    local_id = _local_entity_id("compute_node")
 
-    compute_node = await get_local_entity(ComputeNode)
+    # Resolve by deterministic id first; fall back to the legacy uname='local'
+    # lookup for databases written before stable-id was introduced.
+    compute_node = await ComputeNode.get_by_id(local_id)
+    if compute_node is None:
+        compute_node = await get_local_entity(ComputeNode)
+        if compute_node is not None and compute_node.id != local_id:
+            logging.warning(
+                "@local compute_node has legacy random id %s; expected stable %s. "
+                "Keeping existing row to preserve references — wipe the DB to migrate.",
+                compute_node.id, local_id,
+            )
     already_existed = compute_node is not None
     if compute_node:
         logging.info(f"@local compute node already exists: {compute_node.id}")
@@ -864,6 +933,7 @@ async def get_or_create_local_compute_node(
     else:
         logging.info("Creating @local compute node for desktop environment")
         compute_node = ComputeNode(
+            id=local_id,
             type="compute_node",
             uname="local",
             name="@local",

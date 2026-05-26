@@ -16,11 +16,64 @@ interface Props {
 
 const EVENT_LABELS: Record<string, string> = {
   schedule_fire: 'Scheduled',
+  file_change: 'File change',
   UserPromptSubmit: 'Prompt',
   PreToolUse: 'Pre-tool',
   PostToolUse: 'Post-tool',
   Stop: 'Stop',
 };
+
+/** Trim a long path to a readable head…tail when shown inline. */
+function shortenPath(p: string, max = 56): string {
+  if (p.length <= max) return p;
+  const head = Math.floor(max * 0.45);
+  const tail = max - head - 1;
+  return `${p.slice(0, head)}…${p.slice(p.length - tail)}`;
+}
+
+function BatchedChangesRow({
+  changes, total, truncated,
+}: {
+  changes: { path: string; change_type: string }[];
+  total: number;
+  truncated: number;
+}) {
+  // Show "N file events" header + first 5 inline; remainder is implicit via
+  // total/truncated counts. Tighter than dumping all 50 capped paths.
+  const PREVIEW = 5;
+  const preview = changes.slice(0, PREVIEW);
+  const remaining = total - preview.length;
+  return (
+    <div className="flex flex-col gap-0.5">
+      <div className="flex items-center gap-1.5">
+        <Badge variant="outline" className="h-4 px-1 text-[9px]">
+          {total} file events
+        </Badge>
+        {truncated > 0 && (
+          <Badge variant="outline" className="h-4 px-1 text-[9px] text-muted-foreground">
+            +{truncated} not stored
+          </Badge>
+        )}
+      </div>
+      <ul className="ml-1 space-y-0.5">
+        {preview.map((c, i) => (
+          <li key={i} className="flex items-center gap-1.5">
+            <span className="text-[9px] text-muted-foreground">{c.change_type}</span>
+            <span
+              className="truncate font-mono text-[10px] text-muted-foreground"
+              title={c.path}
+            >
+              {shortenPath(c.path, 48)}
+            </span>
+          </li>
+        ))}
+        {remaining > 0 && (
+          <li className="text-[10px] text-muted-foreground">+{remaining} more</li>
+        )}
+      </ul>
+    </div>
+  );
+}
 
 function formatTs(ts: string): string {
   try {
@@ -134,7 +187,35 @@ export function TriggerInvocationsPanel({ trigger }: Props) {
                       </Tooltip>
                     )}
                   </div>
-                  {entry.reason && (
+                  {/* Type-aware row body. Falls back to the legacy reason
+                      string when no structured fields are present (pre-batch
+                      entries + hook entries). */}
+                  {(entry.event_kind === 'file_change' || entry.event_kind === 'test') && (
+                    (entry.changes_total ?? 0) > 1 ? (
+                      <BatchedChangesRow
+                        changes={entry.changes ?? []}
+                        total={entry.changes_total ?? 0}
+                        truncated={entry.changes_truncated ?? 0}
+                      />
+                    ) : entry.changed_path ? (
+                      <div className="flex items-center gap-1.5">
+                        {entry.change_type && (
+                          <Badge variant="outline" className="h-4 px-1 text-[9px]">
+                            {entry.change_type}
+                          </Badge>
+                        )}
+                        <span
+                          className="truncate font-mono text-[10px] text-muted-foreground"
+                          title={entry.changed_path}
+                        >
+                          {shortenPath(entry.changed_path)}
+                        </span>
+                      </div>
+                    ) : entry.reason ? (
+                      <p className="text-[10px] text-muted-foreground truncate">{entry.reason}</p>
+                    ) : null
+                  )}
+                  {entry.event_kind !== 'file_change' && entry.event_kind !== 'test' && entry.reason && (
                     <p className="text-[10px] text-muted-foreground truncate">{entry.reason}</p>
                   )}
                 </div>

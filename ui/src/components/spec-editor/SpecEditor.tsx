@@ -90,11 +90,11 @@ const PlanFileEditor: React.FC = () => {
       await planBookmark.delete();
       setPlanBookmark(null);
     } else if (agenticProcess) {
-      const pointer = `${agenticProcess.typeId.toString()}/${filePath}`;
+      const planPointer = DockPointer.forPlan(agenticProcess.typeId, filePath).pointer;
       const b = new Bookmark({
         bookmark_type: 'plan',
         title: filePath.split('/').pop()?.replace(/\.md$/, '') ?? 'Plan',
-        data: { file_path: filePath, navigation_path: `/dock/plan/${pointer}` },
+        data: { file_path: filePath, navigation_path: `/dock/plan/${planPointer}` },
         status: 'open',
       });
       await b.save([]);
@@ -102,22 +102,16 @@ const PlanFileEditor: React.FC = () => {
     }
   }, [planBookmark, filePath, agenticProcess]);
 
-  // Auto-download file content if not cached
+  // Refetch on every nav — Update Plan rewrites the file via the agent.
+  const fsRef = useRef(fs);
+  fsRef.current = fs;
+  const computeNodeId = computeNodeTypeId?.id ?? null;
   useEffect(() => {
-    if (!filePath || !computeNodeTypeId) return;
-    if (cached) return;
-
-    const downloadContent = async () => {
-      if (!fs) return;
-      try {
-        await fs.download(filePath, false);
-      } catch (error) {
-        console.error('[SepcEditor] Error downloading plan:', filePath, error);
-      }
-    };
-
-    void downloadContent();
-  }, [filePath, computeNodeTypeId, cached, fs]);
+    if (!filePath || !computeNodeId || !fsRef.current) return;
+    void fsRef.current.refetch(filePath).catch((error) => {
+      console.error('[SpecEditor] Error refetching plan:', filePath, error);
+    });
+  }, [filePath, computeNodeId]);
 
   // Stable onChange ref — MilkdownEditor's useEditor depends on [onChange],
   // so a changing identity would re-initialize the editor and lose focus.

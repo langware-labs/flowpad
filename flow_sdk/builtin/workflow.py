@@ -54,6 +54,24 @@ class Workflow(Entity):
 
         content = abs_path.read_text(encoding="utf-8")
 
-        process = AgenticProcess(workerType=WorkerType.CLAUDE_CODE)
+        # worker_type is snake_case on the model; the previous camelCase kwarg
+        # was silently dropped by Pydantic, leaving the field as None.
+        process = AgenticProcess(worker_type=WorkerType.CLAUDE_CODE)
+        # save() creates the AgenticProcessRecord on disk so the record-derived
+        # execution folders resolve. The entity-side fields are plain APIFields
+        # with default=None; meta_dict injects them at serialization but direct
+        # attribute access (process.output_folder) reads the field default. Stamp
+        # them onto the entity here so callers see the canonical paths without
+        # going through .to_dict().
+        await process.save()
+        from flow_sdk.fs_records.agentic_process_record import AgenticProcessRecord
+        record = AgenticProcessRecord(id=process.id)
+        default_dir = record.default_path
+        if default_dir is not None:
+            record.path = str(default_dir)
+            for attr in ("exe_folder", "input_folder", "output_folder", "assets_folder"):
+                ref = getattr(record, attr, None)
+                if ref is not None:
+                    setattr(process, attr, ref)
         await process.prompt(content)
         return process

@@ -173,7 +173,7 @@ def _write_fake_claude_jsonl(session_id: str, cwd: str) -> Path:
     """Drop a minimal Claude transcript under the test sandbox claude_projects_dir.
 
     Mirrors `tests/api/test_agentic_process_resume_after_restart._make_fake_jsonl`
-    but parameterizes the cwd so we can verify project_encoded_name flows through.
+    but parameterizes the cwd so we can verify the project flow end-to-end.
     Caller is responsible for passing a canonical (realpath-resolved) cwd —
     `Project.recover_by_path` canonicalizes internally and would otherwise return
     a Project with a different encoded name (e.g. `/tmp` → `/private/tmp` on macOS).
@@ -247,7 +247,6 @@ async def test_find_session_claude(bootstrapped_client, tmp_path):
         assert data["session_id"] == session_id
         assert data["worker_type"] == "claude"
         assert data["transcript_path"] == str(jsonl_path)
-        assert data["project_encoded_name"] == cwd.replace("/", "-")
         assert data["cwd"] == cwd
     finally:
         jsonl_path.unlink(missing_ok=True)
@@ -277,7 +276,6 @@ async def test_find_session_codex(bootstrapped_client, tmp_path):
         assert data["session_id"] == thread_id
         assert data["worker_type"] == "codex"
         assert data["transcript_path"] == str(rollout_path)
-        assert data["project_encoded_name"] is None
         assert data["cwd"] == cwd
     finally:
         rollout_path.unlink(missing_ok=True)

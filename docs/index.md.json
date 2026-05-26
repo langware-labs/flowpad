@@ -1,0 +1,272 @@
+{
+  "schema_version": 1,
+  "typeid": "markdown_index-flowpad-oss-docs-demo",
+  "parent_ref": "",
+  "vault_root": "/Users/shlom/Documents/dev/flowpad-oss/docs",
+  "folder_rel_path": "",
+  "folder_name": "docs",
+  "inputs_hash": "sha256:flowpad-oss-docs-demo",
+  "template_version": 1,
+  "prompt_version": 1,
+  "self_summary": "Flowpad-oss documentation root — 30 top-level guides plus 2 subtree(s). Synthetic JSON to demo the LLM Index panel.",
+  "files": [
+    {
+      "name": "CLAUDE.md",
+      "rel_path": "CLAUDE.md",
+      "title": "Claude",
+      "summary": "Synthetic placeholder summary for CLAUDE.md (7653 bytes).",
+      "content_hash": "sha256:demo_CLAUDE.md",
+      "size_bytes": 7653
+    },
+    {
+      "name": "agent-management-spec.md",
+      "rel_path": "agent-management-spec.md",
+      "title": "Agent Management Spec",
+      "summary": "Synthetic placeholder summary for agent-management-spec.md (8673 bytes).",
+      "content_hash": "sha256:demo_agent-management-spec.md",
+      "size_bytes": 8673
+    },
+    {
+      "name": "agentic-process.md",
+      "rel_path": "agentic-process.md",
+      "title": "Agentic Process",
+      "summary": "Synthetic placeholder summary for agentic-process.md (7138 bytes).",
+      "content_hash": "sha256:demo_agentic-process.md",
+      "size_bytes": 7138
+    },
+    {
+      "name": "agents-management.md",
+      "rel_path": "agents-management.md",
+      "title": "Agents Management",
+      "summary": "Synthetic placeholder summary for agents-management.md (5526 bytes).",
+      "content_hash": "sha256:demo_agents-management.md",
+      "size_bytes": 5526
+    },
+    {
+      "name": "api-routing.md",
+      "rel_path": "api-routing.md",
+      "title": "Api Routing",
+      "summary": "Synthetic placeholder summary for api-routing.md (19321 bytes).",
+      "content_hash": "sha256:demo_api-routing.md",
+      "size_bytes": 19321
+    },
+    {
+      "name": "claude-session-manager.md",
+      "rel_path": "claude-session-manager.md",
+      "title": "Claude Session Manager",
+      "summary": "Synthetic placeholder summary for claude-session-manager.md (6026 bytes).",
+      "content_hash": "sha256:demo_claude-session-manager.md",
+      "size_bytes": 6026
+    },
+    {
+      "name": "contributing.md",
+      "rel_path": "contributing.md",
+      "title": "Contributing",
+      "summary": "Synthetic placeholder summary for contributing.md (3490 bytes).",
+      "content_hash": "sha256:demo_contributing.md",
+      "size_bytes": 3490
+    },
+    {
+      "name": "data-management.md",
+      "rel_path": "data-management.md",
+      "title": "Data Management",
+      "summary": "Synthetic placeholder summary for data-management.md (17257 bytes).",
+      "content_hash": "sha256:demo_data-management.md",
+      "size_bytes": 17257
+    },
+    {
+      "name": "debugMCP-setup.md",
+      "rel_path": "debugMCP-setup.md",
+      "title": "Debugmcp Setup",
+      "summary": "Synthetic placeholder summary for debugMCP-setup.md (3388 bytes).",
+      "content_hash": "sha256:demo_debugMCP-setup.md",
+      "size_bytes": 3388
+    },
+    {
+      "name": "dev_setup.md",
+      "rel_path": "dev_setup.md",
+      "title": "Dev Setup",
+      "summary": "Synthetic placeholder summary for dev_setup.md (2179 bytes).",
+      "content_hash": "sha256:demo_dev_setup.md",
+      "size_bytes": 2179
+    },
+    {
+      "name": "discovery.md",
+      "rel_path": "discovery.md",
+      "title": "Discovery",
+      "summary": "Synthetic placeholder summary for discovery.md (7965 bytes).",
+      "content_hash": "sha256:demo_discovery.md",
+      "size_bytes": 7965
+    },
+    {
+      "name": "electron.md",
+      "rel_path": "electron.md",
+      "title": "Electron",
+      "summary": "Synthetic placeholder summary for electron.md (14597 bytes).",
+      "content_hash": "sha256:demo_electron.md",
+      "size_bytes": 14597
+    },
+    {
+      "name": "frontend-debug-cheatsheet.md",
+      "rel_path": "frontend-debug-cheatsheet.md",
+      "title": "Frontend Debug Cheatsheet",
+      "summary": "Synthetic placeholder summary for frontend-debug-cheatsheet.md (9033 bytes).",
+      "content_hash": "sha256:demo_frontend-debug-cheatsheet.md",
+      "size_bytes": 9033
+    },
+    {
+      "name": "fs-ref.md",
+      "rel_path": "fs-ref.md",
+      "title": "Fs Ref",
+      "summary": "Synthetic placeholder summary for fs-ref.md (5764 bytes).",
+      "content_hash": "sha256:demo_fs-ref.md",
+      "size_bytes": 5764
+    },
+    {
+      "name": "fs_store.md",
+      "rel_path": "fs_store.md",
+      "title": "Fs Store",
+      "summary": "Synthetic placeholder summary for fs_store.md (20385 bytes).",
+      "content_hash": "sha256:demo_fs_store.md",
+      "size_bytes": 20385
+    },
+    {
+      "name": "intro.md",
+      "rel_path": "intro.md",
+      "title": "Intro",
+      "summary": "Synthetic placeholder summary for intro.md (1416 bytes).",
+      "content_hash": "sha256:demo_intro.md",
+      "size_bytes": 1416
+    },
+    {
+      "name": "listen_webhook.md",
+      "rel_path": "listen_webhook.md",
+      "title": "Listen Webhook",
+      "summary": "Synthetic placeholder summary for listen_webhook.md (16739 bytes).",
+      "content_hash": "sha256:demo_listen_webhook.md",
+      "size_bytes": 16739
+    },
+    {
+      "name": "llm_wiki.md",
+      "rel_path": "llm_wiki.md",
+      "title": "Llm Wiki",
+      "summary": "Synthetic placeholder summary for llm_wiki.md (18562 bytes).",
+      "content_hash": "sha256:demo_llm_wiki.md",
+      "size_bytes": 18562
+    },
+    {
+      "name": "playwright-usage.md",
+      "rel_path": "playwright-usage.md",
+      "title": "Playwright Usage",
+      "summary": "Synthetic placeholder summary for playwright-usage.md (1184 bytes).",
+      "content_hash": "sha256:demo_playwright-usage.md",
+      "size_bytes": 1184
+    },
+    {
+      "name": "pty-sync.md",
+      "rel_path": "pty-sync.md",
+      "title": "Pty Sync",
+      "summary": "Synthetic placeholder summary for pty-sync.md (18850 bytes).",
+      "content_hash": "sha256:demo_pty-sync.md",
+      "size_bytes": 18850
+    },
+    {
+      "name": "pty-terminal-spec.md",
+      "rel_path": "pty-terminal-spec.md",
+      "title": "Pty Terminal Spec",
+      "summary": "Synthetic placeholder summary for pty-terminal-spec.md (30569 bytes).",
+      "content_hash": "sha256:demo_pty-terminal-spec.md",
+      "size_bytes": 30569
+    },
+    {
+      "name": "pypi-deploy.md",
+      "rel_path": "pypi-deploy.md",
+      "title": "Pypi Deploy",
+      "summary": "Synthetic placeholder summary for pypi-deploy.md (2585 bytes).",
+      "content_hash": "sha256:demo_pypi-deploy.md",
+      "size_bytes": 2585
+    },
+    {
+      "name": "record-entity-sync.md",
+      "rel_path": "record-entity-sync.md",
+      "title": "Record Entity Sync",
+      "summary": "Synthetic placeholder summary for record-entity-sync.md (5716 bytes).",
+      "content_hash": "sha256:demo_record-entity-sync.md",
+      "size_bytes": 5716
+    },
+    {
+      "name": "session_share_spec.md",
+      "rel_path": "session_share_spec.md",
+      "title": "Session Share Spec",
+      "summary": "Synthetic placeholder summary for session_share_spec.md (9245 bytes).",
+      "content_hash": "sha256:demo_session_share_spec.md",
+      "size_bytes": 9245
+    },
+    {
+      "name": "shell-claude-session-api.md",
+      "rel_path": "shell-claude-session-api.md",
+      "title": "Shell Claude Session Api",
+      "summary": "Synthetic placeholder summary for shell-claude-session-api.md (4678 bytes).",
+      "content_hash": "sha256:demo_shell-claude-session-api.md",
+      "size_bytes": 4678
+    },
+    {
+      "name": "system_agents.md",
+      "rel_path": "system_agents.md",
+      "title": "System Agents",
+      "summary": "Synthetic placeholder summary for system_agents.md (12044 bytes).",
+      "content_hash": "sha256:demo_system_agents.md",
+      "size_bytes": 12044
+    },
+    {
+      "name": "trace-gutter.md",
+      "rel_path": "trace-gutter.md",
+      "title": "Trace Gutter",
+      "summary": "Synthetic placeholder summary for trace-gutter.md (8823 bytes).",
+      "content_hash": "sha256:demo_trace-gutter.md",
+      "size_bytes": 8823
+    },
+    {
+      "name": "typeid.md",
+      "rel_path": "typeid.md",
+      "title": "Typeid",
+      "summary": "Synthetic placeholder summary for typeid.md (15888 bytes).",
+      "content_hash": "sha256:demo_typeid.md",
+      "size_bytes": 15888
+    },
+    {
+      "name": "vfs.md",
+      "rel_path": "vfs.md",
+      "title": "Vfs",
+      "summary": "Synthetic placeholder summary for vfs.md (5525 bytes).",
+      "content_hash": "sha256:demo_vfs.md",
+      "size_bytes": 5525
+    },
+    {
+      "name": "ניסוי_.md",
+      "rel_path": "ניסוי_.md",
+      "title": "ניסוי ",
+      "summary": "Synthetic placeholder summary for ניסוי_.md (82 bytes).",
+      "content_hash": "sha256:demo_ניסוי_.md",
+      "size_bytes": 82
+    }
+  ],
+  "subfolders": [
+    {
+      "name": "agent-management",
+      "rel_path": "agent-management",
+      "self_summary": "Subtree under agent-management/ — see drilled-down index for details.",
+      "child_typeid": "markdown_index-demo-agent-management",
+      "child_inputs_hash": "sha256:child_agent-management"
+    },
+    {
+      "name": "data-management",
+      "rel_path": "data-management",
+      "self_summary": "Subtree under data-management/ — see drilled-down index for details.",
+      "child_typeid": "markdown_index-demo-data-management",
+      "child_inputs_hash": "sha256:child_data-management"
+    }
+  ],
+  "generated_at": "2026-05-24T19:22:27.484827",
+  "latest_process_ref": "agentic_process-synthetic"
+}

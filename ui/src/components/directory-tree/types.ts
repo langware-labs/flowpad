@@ -171,6 +171,8 @@ export interface DirectoryTreeState {
   renamingPath: string | null;
   /** New name value during rename */
   renameValue: string;
+  /** True while performRename is awaiting the backend; used to guard onBlur. */
+  renameCommitting?: boolean;
   /** Loading states per path (vfs_abs_path) */
   loadingPaths: Set<string>;
 }

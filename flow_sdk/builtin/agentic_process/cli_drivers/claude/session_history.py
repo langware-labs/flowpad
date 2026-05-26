@@ -1,6 +1,6 @@
 """Load Claude session history as FlowData carrying typed ProcessEntries.
 
-Replaces the old per-block reshape — now delegates to ``AgentTranscript``
+Replaces the old per-block reshape — now delegates to ``AgentTranscriptFile``
 (canonical parser) and wraps each entry in a
 ``ProcessEntry(observation_kind='replay')`` riding on
 ``FlowData.process_entry``.
@@ -23,7 +23,7 @@ from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
     FlowElementType,
 )
 from flow_sdk.transcript_analyzer._helpers import extract_text
-from flow_sdk.transcript_analyzer import AgentTranscript
+from flow_sdk.transcript_analyzer import AgentTranscriptFile
 from flow_sdk.transcript_analyzer.process_entry import ProcessEntry
 from flow_sdk.transcript_analyzer.resolver import (
     TranscriptNotFoundError,
@@ -88,7 +88,7 @@ def load_session_history(session_id: str) -> list[FlowData]:
         logger.warning("load_session_history: no JSONL for session %s", session_id)
         return []
     try:
-        transcript = AgentTranscript("claude", path)
+        transcript = AgentTranscriptFile("claude", path)
     except Exception:
         logger.exception("load_session_history: parse failed for %s", path)
         return []

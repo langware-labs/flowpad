@@ -37,7 +37,16 @@ class WorkerStatus(StrEnum):
     COMPLETE     = "complete"     # finished cleanly (end_turn / last-prompt)
     ERROR        = "error"        # abnormal end (stop_sequence / crash)
     INTERRUPTED  = "interrupted"  # user interrupted (Escape / Ctrl-C)
-    INACTIVE     = "inactive"     # stale file >5 min with no terminal signal (assumed dead)
+    INACTIVE     = "inactive"     # stale file >5 min with no terminal signal,
+                                  # OR terminal+aged >5 min since terminal_at
+                                  # (drop-from-active-list semantics — single
+                                  # value regardless of cause)
+
+    # Backend-derived from terminal + ``AgenticProcess.terminal_at`` age. The
+    # 5-minute window after a session completes during which the UI keeps the
+    # session visible in the active list. After 5 min the projection layer in
+    # ``_discover_status_from_transcript`` flips it to INACTIVE.
+    PENDING_USER = "pending_user"
 
     # Active — transcript-derivable
     WAITING      = "waiting"      # user message received, Claude has not yet responded
@@ -374,7 +383,7 @@ def _tail_status(path: "str | _Path") -> WorkerStatus:
     if last_type == "progress":
         return WorkerStatus.TOOL_RUNNING
     if last_type == "user":
-        if last_user_ts and (_time.time() - last_user_ts) > 30:
+        if last_user_ts and (_time.time() - last_user_ts) > 90:
             return WorkerStatus.API_TIMEOUT
         return WorkerStatus.WAITING
 

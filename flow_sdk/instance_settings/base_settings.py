@@ -88,6 +88,9 @@ class BaseInstanceSettings:
     inbox_last_fetch_path: Path
     conversation_last_sync_path: Path
 
+    # ---- Toplog filter file (watched by the builtin FSOp toplog trigger) ----
+    toplog_config_path: Path
+
     # ---- Database ----
     db_driver: str               # "sqlite" | "neo4j" | "networkx"
 
@@ -202,6 +205,7 @@ class BaseInstanceSettings:
             monitor_log_path=instance_dir / "logs" / "monitor.log",
             inbox_last_fetch_path=instance_dir / "inbox.json",
             conversation_last_sync_path=instance_dir / "conversation_sync.json",
+            toplog_config_path=instance_dir / "toplog.json",
             db_driver=os.environ.get(ENV_DESKTOP_DB, DEFAULT_DB_DRIVER).lower(),
             user_home=Path.home(),
             claude_home=claude_home,

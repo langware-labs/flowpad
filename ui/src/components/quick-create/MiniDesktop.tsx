@@ -1,5 +1,9 @@
 import { FavoriteTile } from '@src/components/favorites/FavoriteTile';
 import { useFavorites } from '@src/hooks/use-favorites';
+import {
+  favoriteSummaryKey,
+  useFavoriteSummaries,
+} from '@src/hooks/use-favorite-summaries';
 import { Plus } from 'lucide-react';
 import { useState } from 'react';
 import { QuickCreateDialog } from './QuickCreateDialog';
@@ -14,6 +18,7 @@ export function MiniDesktop() {
   const [activeType, setActiveType] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const { favorites } = useFavorites();
+  const summaries = useFavoriteSummaries(favorites);
 
   const handlePick = (type: string) => {
     setActiveType(type);
@@ -34,9 +39,15 @@ export function MiniDesktop() {
         </button>
       </QuickCreateMenu>
 
-      {favorites.map((fav) => (
-        <FavoriteTile key={fav.id} bookmark={fav} />
-      ))}
+      {favorites.map((fav) => {
+        const type = fav.data?.entity_type;
+        const id = fav.data?.entity_id;
+        const summary =
+          typeof type === 'string' && typeof id === 'string'
+            ? summaries.get(favoriteSummaryKey(type, id))
+            : undefined;
+        return <FavoriteTile key={fav.id} bookmark={fav} summary={summary} />;
+      })}
 
       <QuickCreateDialog
         open={dialogOpen}

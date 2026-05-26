@@ -210,18 +210,39 @@ export function useBrowseableTree(roots: BrowseableRoot[]) {
         return { ...prev, expandedIds };
       });
 
-      // For each expandable node that doesn't yet have cached children,
-      // trigger a fresh load. We don't try to stitch a partial chain into
-      // the cache; the adapter's listChildren is the source of truth.
+      // Load each expandable node; capture the parent-of-leaf's children so
+      // the freshness check below sees them without a stale closure read.
+      const leaf = chain[chain.length - 1];
+      const parent = chain.length >= 2 ? chain[chain.length - 2] : null;
+      let parentChildren: Browseable[] | null = null;
       for (const node of nodesToExpand) {
         if (!node.listChildren) continue;
         const existing = state.loadStates.get(node.id);
-        if (existing?.status !== 'ready') {
-          await loadChildren(node);
+        const children =
+          existing?.status === 'ready'
+            ? existing.children
+            : await loadChildren(node);
+        if (parent && node.id === parent.id) parentChildren = children;
+      }
+
+      // Deep-link freshness: leaf missing from parent's listing → just-created
+      // file the cached listing pre-dates. Force-refresh past both caches.
+      if (parent && parent.listChildren && parentChildren) {
+        const leafPresent = parentChildren.some((c) => c.id === leaf.id);
+        if (!leafPresent) {
+          inflight.current.delete(parent.id);
+          setLoadState(parent.id, { status: 'loading' });
+          try {
+            const refreshed = await parent.listChildren({ refresh: true });
+            setLoadState(parent.id, { status: 'ready', children: refreshed });
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            setLoadState(parent.id, { status: 'error', message });
+          }
         }
       }
 
-      return chain[chain.length - 1];
+      return leaf;
     },
     [roots, state.loadStates, loadChildren],
   );

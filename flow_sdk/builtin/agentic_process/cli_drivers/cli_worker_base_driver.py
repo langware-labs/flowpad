@@ -282,12 +282,21 @@ def restart_payload_from_cli_options(options: WorkerCLIOptions) -> dict[str, Any
     JSONL line. Hashing it would race the snapshot captured at the end of
     ``start_pty()`` against that write and light up a phantom restart glow on
     fresh processes, so it's stripped here.
+
+    ``fork_session_id`` is the same shape of derived/transient input: it points
+    at the parent session at fork time, then gets stripped from ``cli_config``
+    as soon as the new session materialises on disk (see
+    ``ClaudeDriver.headless_prompt``'s fork-strip and ``cli_options``'s
+    ``fork_session_id = None`` on resume). Hashing it would flip
+    ``restart_required`` purely as a side effect of that strip, so it's
+    excluded for the same reason as ``resume``.
     """
     data = dict(options.to_json())
     env_vars = dict(data.get("env_vars") or {})
     env_vars.pop("FLOWPAD_EXECUTION_SCOPE", None)
     data["env_vars"] = env_vars
     data.pop("resume", None)
+    data.pop("fork_session_id", None)
     return data
 
 

@@ -1,5 +1,9 @@
 # QA Instructions & Learnings
 
+## Cycle-Level Defaults
+
+- **Phase 3 (`tests/long_tests/`): always pass `--ignore=tests/long_tests/stress_matrix/`.** The `stress_matrix/` subdir requires `ANTHROPIC_API_KEY` AND Docker; its session-scoped conftest calls `pytest.exit("INVALID_API_KEY: ...", returncode=2)` on missing key, which aborts the ENTIRE Phase 3 collection before any test runs. Stress matrix is opt-in only (real API credits, real containers) — never include it in a routine QA cycle unless the user explicitly requests it (e.g. "run stress matrix" / "include stress matrix"). User confirmed default-off on 2026-05-24.
+
 ## Testing Environment
 
 - Backend: `http://localhost:9008` (port set via `LOCAL_SERVER_PORT=9008` in `.env.local`)

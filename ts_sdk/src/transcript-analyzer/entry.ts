@@ -5,7 +5,7 @@
  *
  * The class hierarchy under entries/ is the canonical type discriminator —
  * EntryKind is a tag exposed for ergonomic filtering on
- * AgentTranscript.filter({kind: ...}).
+ * AgentTranscriptFile.filter({kind: ...}).
  */
 
 export enum EntryKind {

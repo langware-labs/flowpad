@@ -1153,10 +1153,16 @@ async def _process_single_hub_message(raw: dict) -> str | None:
     """Download and unpack the .flowmsg bundle for one hub FlowMessage.
 
     Returns the fm_id if the bundle was processed (or was already materialized),
-    or None if the message was skipped (no bundle) or the download/unpack failed.
+    or None if the message was skipped or the download/unpack failed.
 
-    Every FlowMessage sent through flowpad includes a bundle — messages without
-    one are not produced by any current send path and are skipped.
+    Two paths:
+      1. ``attachment_filename`` set → standard bundle download + unpack.
+      2. No bundle (text-only or TYPE_ID-only attachments) → materialise the
+         FlowMessage row directly from the hub payload so the conversation
+         view can render it. Older versions skipped these entirely, which
+         dropped every hub message from the sender's own catch-up (their
+         locally-sent messages never produce a bundle) and every pure-text
+         reply from a peer.
     """
     fm_id = (raw.get("id") or "").strip()
     if not fm_id:
@@ -1164,10 +1170,49 @@ async def _process_single_hub_message(raw: dict) -> str | None:
     if await FlowMessage.get_one({"id": fm_id}):
         return fm_id
     attachment_filename = (raw.get("attachment_filename") or "").strip()
-    if not attachment_filename:
+    if attachment_filename:
+        success = await _download_and_unpack_bundle(fm_id, attachment_filename)
+        return fm_id if success else None
+    # Bundle-less: persist the FM payload as-is, then append the pointer to
+    # the conversation's message_ids JSON projection. We DO NOT route through
+    # materialize_flow_message / _append_message_to_conversation here —
+    # those are the local-send path which owns id allocation and would mint
+    # a fresh FM with a new UUID if the upsert lookup misses for any reason
+    # (we saw it produce duplicate rows for every hub message). The
+    # catch-up contract is the opposite: the hub-side id is authoritative
+    # and must round-trip unchanged into both the entities table AND the
+    # conv's pointer list.
+    try:
+        fm = FlowMessage.model_validate(raw)
+        await fm.save()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[fm-process] bundle-less fm=%s save failed: %s", fm_id[:8], e)
         return None
-    success = await _download_and_unpack_bundle(fm_id, attachment_filename)
-    return fm_id if success else None
+    conv_id = (raw.get("conversation_id") or "").strip()
+    if conv_id:
+        try:
+            # Canonical write path for the message_ids / message_count
+            # projection — same pattern materialize_flow_message uses on
+            # the local-send side. We write the pointer to the on-disk
+            # conversation.jsonl and let ConversationRecord.sync_to_db
+            # bump the projection on the Conversation entity (direct
+            # writes are blocked by Conversation.__setattr__'s projection
+            # guard at conversation.py:252).
+            rec = ConversationRecord.from_jsonl(
+                ConversationRecord.default_jsonl_path(conv_id),
+                parent_id="", record_id=conv_id, parent_type=RecordType.PROJECT,
+            )
+            existing_ids = {p.id for p in rec.message_pointers()}
+            if fm_id not in existing_ids:
+                ts = raw.get("created_date") or ""
+                rec.append_message_pointer(fm_id, ts)
+                await rec.sync_to_db(notify=False)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(
+                "[fm-process] pointer-append for conv=%s fm=%s failed: %s",
+                conv_id[:8], fm_id[:8], e,
+            )
+    return fm_id
 
 
 async def handle_inbox_fetch(someone_typeid: str) -> ApiResponse:
@@ -1658,13 +1703,45 @@ async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> Non
             if not isinstance(hub_conv, dict):
                 return
             raw_ids = hub_conv.get("message_ids")
-            if not raw_ids:
-                return
-            try:
-                hub_pointers = _json.loads(raw_ids) if isinstance(raw_ids, str) else raw_ids
-            except (ValueError, TypeError):
-                logger.warning("[conv-msg-fetch] %s: bad message_ids payload", conv_id[:8])
-                return
+            hub_pointers: list[dict] | None = None
+            if raw_ids:
+                try:
+                    hub_pointers = _json.loads(raw_ids) if isinstance(raw_ids, str) else raw_ids
+                except (ValueError, TypeError):
+                    logger.warning("[conv-msg-fetch] %s: bad message_ids payload", conv_id[:8])
+                    return
+            if not hub_pointers:
+                # Fallback: the hub's Conversation entity doesn't always maintain
+                # a denormalized ``message_ids`` projection (the hub side just
+                # adds children via add_child). Enumerate the conversation's
+                # ``flow_message`` children directly so the local catch-up still
+                # works. Same dedup-by-fm-id path follows.
+                # Use ``action='flow_message'`` to hit the children-list route
+                # ``/conversation/<id>/flow_message``. hub_get's url builder
+                # requires an action segment before any sub_path.
+                children = await hub_get(
+                    BuiltinEntityType.CONVERSATION, conv_id, action="flow_message",
+                )
+                # hub_get returns the unwrapped `data` (dict) when 200; for a
+                # children listing this is typically a list. Coerce defensively.
+                child_list: list[dict] = []
+                if isinstance(children, list):
+                    child_list = children
+                elif isinstance(children, dict):
+                    # Some responses wrap as {"data": [...]} or {"items": [...]}
+                    for k in ("data", "items", "results"):
+                        v = children.get(k)
+                        if isinstance(v, list):
+                            child_list = v
+                            break
+                if not child_list:
+                    return
+                hub_pointers = [
+                    {"typeid": f"flow_message-{m['id']}", "ts": m.get("created_date") or ""}
+                    for m in child_list if isinstance(m, dict) and m.get("id")
+                ]
+                if not hub_pointers:
+                    return
             try:
                 rec = ConversationRecord.from_jsonl(
                     ConversationRecord.default_jsonl_path(conv_id),
@@ -1692,6 +1769,12 @@ async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> Non
                 try:
                     raw_fm = await hub_get(BuiltinEntityType.FLOW_MESSAGE, fm_id)
                     if isinstance(raw_fm, dict):
+                        # Hub's FM payload doesn't carry conversation_id (the
+                        # graph edge is the source of truth on the hub). The
+                        # local-side _process_single_hub_message + pointer-
+                        # append flow needs it to know which conversation.jsonl
+                        # to update. Inject from the caller's scope.
+                        raw_fm.setdefault("conversation_id", conv_id)
                         await _process_single_hub_message(raw_fm)
                 except Exception as e:  # noqa: BLE001
                     logger.warning(
@@ -1946,10 +2029,18 @@ async def handle_conversation_list(someone_typeid: str) -> ApiResponse:
             logger.warning("[conv-list] upsert conv=%s failed: %s",
                            (hub_conv.get("id") or "?")[:8], e)
             continue
-        hub_count = int(hub_conv.get("message_count") or 0)
+        # The hub's Conversation entity doesn't always populate message_count
+        # (it's denormalized — kept current only on instances that maintain
+        # it). When the hub reports None, treat as "unknown" and dispatch the
+        # fetch unconditionally; _fetch_conversation_messages falls back to
+        # enumerating the conversation's flow_message children when the hub's
+        # message_ids projection is also empty.
+        raw_hub_count = hub_conv.get("message_count")
+        hub_count_unknown = raw_hub_count is None
+        hub_count = int(raw_hub_count or 0)
         local_conv = local_index.get(hub_conv.get("id"))
         local_count = int((local_conv.message_count if local_conv else 0) or 0)
-        if hub_count > local_count:
+        if hub_count_unknown or hub_count > local_count:
             conv_id = hub_conv.get("id")
             if conv_id:
                 _dispatch_conversation_message_fetch(conv_id, someone_typeid)

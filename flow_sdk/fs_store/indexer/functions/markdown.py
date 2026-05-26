@@ -43,7 +43,7 @@ def _emit_md_rglob(
         out.append(FSRef(md, record_type=RecordType.MARKDOWN, parent=parent))
 
 
-async def markdown_flat_fn(
+def markdown_flat_fn(
     nodes: list[FSRef], opts: IndexerOptions,
 ) -> list[FSRef]:
     """<root>/.claude/docs/**/*.md — flat, no docs-subdir search."""
@@ -73,7 +73,7 @@ def _has_typed_ancestor(folder: Path) -> bool:
         p = p.parent
 
 
-async def markdown_in_folder_fn(
+def markdown_in_folder_fn(
     nodes: list[FSRef], opts: IndexerOptions,
 ) -> list[FSRef]:
     """For each walked FOLDER, emit its direct ``*.md`` children.

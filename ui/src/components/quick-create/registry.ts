@@ -52,6 +52,7 @@ function leafOf(subFolder: string): string {
 
 /** Resolve the sub-folder for a (descriptor, harness, scope) tuple. */
 export function subFolderFor(descriptor: QuickCreateDescriptor, harness: HarnessKind, scope: ScopeKind): string {
+  if (harness === 'none') return '';
   if (harness === 'all') return `assets/${leafOf(descriptor.defaultSubFolder)}`;
   if (harness === 'codex') {
     if (scope === 'user') return descriptor.codexUserSubFolder ?? descriptor.codexProjectSubFolder ?? descriptor.defaultSubFolder;

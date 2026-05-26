@@ -300,8 +300,8 @@ def aggregate_sessions_by_time_window(sessions: list[dict], window_type: str = "
         w["tokens_by_model"][model] = w["tokens_by_model"].get(model, 0) + session_tokens
         w["sessions_by_model"][model] = w["sessions_by_model"].get(model, 0) + 1
 
-        # Project breakdown
-        project = session.get("project_encoded_name") or "unknown"
+        # Project breakdown (keyed by cwd; sessions always have a cwd from the JSONL)
+        project = session.get("cwd") or "unknown"
         w["cost_by_project"][project] = w["cost_by_project"].get(project, 0) + costs["total_cost"]
         w["sessions_by_project"][project] = w["sessions_by_project"].get(project, 0) + 1
 
@@ -393,11 +393,11 @@ def aggregate_sessions_by_project(sessions: list[dict]) -> dict[str, dict]:
         sessions: List of session dicts with token data
 
     Returns:
-        Dict mapping project_encoded_name to cost summary
+        Dict mapping cwd to cost summary
     """
     projects: dict[str, dict] = defaultdict(
         lambda: {
-            "project_encoded_name": "",
+            "cwd": "",
             "session_count": 0,
             "message_count": 0,
             "tool_use_count": 0,
@@ -416,9 +416,9 @@ def aggregate_sessions_by_project(sessions: list[dict]) -> dict[str, dict]:
     )
 
     for session in sessions:
-        project = session.get("project_encoded_name") or "unknown"
+        project = session.get("cwd") or "unknown"
         p = projects[project]
-        p["project_encoded_name"] = project
+        p["cwd"] = project
 
         input_tokens = session.get("input_tokens", 0) or 0
         output_tokens = session.get("output_tokens", 0) or 0
@@ -537,7 +537,7 @@ def get_cost_overview(sessions: list[dict]) -> dict:
         sessions_with_costs.append(
             {
                 "session_id": session.get("name") or session.get("id"),
-                "project_encoded_name": session.get("project_encoded_name"),
+                "cwd": session.get("cwd"),
                 "cost_usd": costs["total_cost"],
                 "input_tokens": input_tokens,
                 "output_tokens": output_tokens,

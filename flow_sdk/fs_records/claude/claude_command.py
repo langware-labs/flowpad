@@ -64,7 +64,7 @@ class ClaudeCommandFsRecord(Record):
         # points them at one; leave _asset_ref unset.
 
     @classmethod
-    async def from_fsref(cls, ref) -> list["ClaudeCommandFsRecord"]:
+    def _from_fsref_sync(cls, ref) -> list["ClaudeCommandFsRecord"]:
         """Indexer entry point — construct from an FSRef emitted by command_fn."""
         md_file = ref._path
         try:

@@ -499,11 +499,10 @@ class ScanActionsMixin:
             cli_factory_key = "codex" if is_codex else "claude"
             wt_enum = WorkerType.CODEX if is_codex else WorkerType.CLAUDE_CODE
 
-            # Resolve workdir + project + project_encoded_name from the session record.
+            # Resolve workdir + project_id from the session record.
             # Transcript cwd is the authoritative restore location; project_id is
             # derived from it so worktrees / nested checkouts don't collapse into
             # the active dock project.
-            project_encoded_name = None
             session_name: str | None = None
             try:
                 from flow_sdk.builtin.project import Project
@@ -518,7 +517,6 @@ class ScanActionsMixin:
                     rec_cwd = getattr(session_rec, "cwd", None)
                     if rec_cwd and not workdir:
                         workdir = rec_cwd
-                    project_encoded_name = getattr(session_rec, "project_encoded_name", None)
                     rec_name = getattr(session_rec, "name", None) or ""
                     if rec_name and rec_name != session_id:
                         session_name = rec_name
@@ -527,11 +525,6 @@ class ScanActionsMixin:
                     project = await Project.recover_by_path(workdir)
                     if project:
                         project_id = project.id
-                        project_encoded_name = project.project_encoded_name or project_encoded_name
-                elif project_id:
-                    project = await Project.get_by_id(project_id)
-                    if project and not project_encoded_name:
-                        project_encoded_name = project.project_encoded_name
             except Exception:
                 logging.debug(
                     "ComputeNode %s upsertSessionProcess session context resolve failed for %s",
@@ -559,9 +552,6 @@ class ScanActionsMixin:
                     changed = True
                 if project_id and context_data.get("project_id") != project_id:
                     context_data["project_id"] = project_id
-                    changed = True
-                if project_encoded_name and process.project_encoded_name != project_encoded_name:
-                    process.project_encoded_name = project_encoded_name
                     changed = True
                 if session_name and not process.name:
                     process.name = session_name
@@ -620,7 +610,6 @@ class ScanActionsMixin:
                 use_worker_history=True,
                 context_data=context_data,
                 project_id=project_id or None,
-                project_encoded_name=project_encoded_name or None,
                 visible=True,
                 **({"name": session_name} if session_name else {}),
             )
@@ -738,8 +727,7 @@ class ScanActionsMixin:
             worker_type: optional — "claude" | "codex" to skip the other lookup.
 
         Returns ApiSuccessResponse with:
-            session_id, worker_type, transcript_path, project_encoded_name
-            (claude only — None for codex), cwd, project_id, session_name.
+            session_id, worker_type, transcript_path, cwd, project_id, session_name.
 
         Returns ApiFailResponse(status_code=404) when not found in either history.
         """
@@ -783,11 +771,6 @@ class ScanActionsMixin:
                 or getattr(rec, "source_file", None)
                 or None
             )
-            project_encoded_name = (
-                getattr(rec, "project_encoded_name", None) or None
-                if worker_type == "claude"
-                else None
-            )
 
             project_id: str | None = None
             if cwd:
@@ -795,10 +778,6 @@ class ScanActionsMixin:
                     project = await Project.recover_by_path(cwd)
                     if project:
                         project_id = project.id
-                        if worker_type == "claude":
-                            project_encoded_name = (
-                                project.project_encoded_name or project_encoded_name
-                            )
                 except Exception:
                     logging.debug(
                         "ComputeNode %s findSession project recover failed for %s",
@@ -812,7 +791,6 @@ class ScanActionsMixin:
                     "session_id": session_id,
                     "worker_type": worker_type,
                     "transcript_path": str(transcript_path) if transcript_path else None,
-                    "project_encoded_name": project_encoded_name,
                     "cwd": cwd,
                     "project_id": project_id,
                     "session_name": session_name,

@@ -516,7 +516,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const handleOpenLastPlan = useCallback(() => {
     if (!agenticProcessTypeId || !process?.plan_path) return;
     navigation.openPlan(agenticProcessTypeId, process.plan_path);
-  }, [process?.plan_path, agenticProcessTypeId, navigation]);
+  }, [process, agenticProcessTypeId, navigation]);
 
   // On mount (and whenever the process identity changes), proactively call
   // getPlan() once so the button restores after a reload — the line trigger
@@ -1432,7 +1432,6 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
                     viewportY={viewportY}
                     rows={rows}
                     cellHeight={metricsCellHeight}
-                    projectEncodedName={dataContext.project?.fs_storage_mount_path?.replace(/\//g, '-')}
                     expanded={gutterExpanded}
                     onOpen={() => setGutterExpanded(true)}
                     onClose={() => setGutterExpanded(false)}

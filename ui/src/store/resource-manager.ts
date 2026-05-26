@@ -125,9 +125,11 @@ interface ResourceManagerState {
 // ─────────────────────────────────────────────────────────────────
 
 function getParentId(item: SystemProfileItem): string | undefined {
-  // Type-specific parent extraction
+  // Type-specific parent extraction. Sessions group by cwd (path is the
+  // natural project key now that `project_encoded_name` is no longer carried
+  // on Flow records); todos group by their session_id.
   const anyItem = item as unknown as Record<string, unknown>;
-  if ('project_encoded_name' in anyItem) return anyItem.project_encoded_name as string;
+  if ('cwd' in anyItem && anyItem.cwd) return anyItem.cwd as string;
   if ('session_id' in anyItem) return anyItem.session_id as string;
   return undefined;
 }
