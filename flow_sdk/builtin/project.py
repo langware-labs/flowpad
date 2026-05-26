@@ -315,13 +315,6 @@ class Project(Entity):
         return proj
 
     @property
-    def project_encoded_name(self) -> str | None:
-        """Encoded project path used to locate transcript files."""
-        if not self.fs_storage_mount_path:
-            return None
-        return str(self.fs_storage_mount_path).replace("/", "-")
-
-    @property
     def main_ref(self):
         """FSRef pointing to the project working directory."""
         if not self.fs_storage_mount_path:

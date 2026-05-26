@@ -343,7 +343,6 @@ class AgenticProcess(Entity):
     use_worker_history: bool = APIField(default=False)
     shell_mode: bool = APIField(default=False, description="False=direct PTY spawn (default), True=legacy zsh intermediary")
     project_id: str | None = APIField(default=None)
-    project_encoded_name: str | None = APIField(default=None)
     collaboration_room_id: str | None = APIField(
         default=None,
         description="CollaborationRoom this process was spawned in, if any",
@@ -2798,7 +2797,7 @@ class AgenticProcess(Entity):
     # ── Project ───────────────────────────────────────────────────────────────
 
     async def get_project(self) -> None:
-        """Resolve project_id, workdir, and project_encoded_name from DB ancestry."""
+        """Resolve project_id and workdir from DB ancestry."""
         from flow_sdk.builtin.project import Project
 
         if not self.project_id:
@@ -2818,13 +2817,10 @@ class AgenticProcess(Entity):
                 )
             self._bind_project_id(local_project.id)
 
-        if self.project_id and (not self.workdir or not self.project_encoded_name):
+        if self.project_id and not self.workdir:
             project = await Project.get_by_id(self.project_id)
             if project and project.fs_storage_mount_path:
-                if not self.workdir:
-                    self.workdir = str(project.fs_storage_mount_path)
-                if not self.project_encoded_name:
-                    self.project_encoded_name = project.project_encoded_name
+                self.workdir = str(project.fs_storage_mount_path)
 
     @action.get(action_name="input-dir")
     async def get_input_dir(self):

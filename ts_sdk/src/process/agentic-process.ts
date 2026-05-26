@@ -214,13 +214,6 @@ export interface IAgenticProcess extends IEntity {
   readonly worker_status?: WorkerStatus;
   session_id?: string | null;
   /**
-   * URL-encoded cwd Claude CLI ran in — used to locate the session jsonl at
-   * ~/.claude/projects/<project_encoded_name>/<session_id>.jsonl. Populated
-   * server-side after the first claude turn lands; read by helpers like
-   * runLearningJob's transcriptPathForRunner.
-   */
-  project_encoded_name?: string | null;
-  /**
    * USD cost of this process's session transcript so far. Computed
    * server-side from the session jsonl via
    * flow_sdk.transcript_analyzer.pricing.total_cost_usd; not persisted on

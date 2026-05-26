@@ -414,12 +414,7 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
             }
             disabled={!hasTranscript}
             onClick={() => {
-              void (async () => {
-                const sessionId = process.session_id!;
-                const record = await ClaudeSessionRecord.discover(sessionId).catch(() => null);
-                const projectEncodedName = record?.project_encoded_name ?? workdir.replace(/\//g, '-');
-                navigation.openLens('claude', 'transcript', `${projectEncodedName}/${sessionId}`);
-              })();
+              navigation.openLens('claude', 'transcript', process.session_id!);
             }}
           />
         )}

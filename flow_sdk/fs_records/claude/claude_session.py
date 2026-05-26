@@ -115,7 +115,6 @@ class ClaudeSessionRecord(Record):
     tools_used: list = _SessionStatsProp("tools_used", default=None, list_key="tools_used")
     has_plan: bool = _SessionStatsProp("has_plan", default=False)
     last_stop_reason: str | None = _SessionStatsProp("last_stop_reason", default=None)
-    project_encoded_name: str = _SessionStatsProp("project_encoded_name", default="")
     last_user_message: str | None = _SessionStatsProp("last_user_message", default=None)
     modified_at: str | None = _SessionStatsProp("modified_at", default=None)
     task_path: str | None = _SessionStatsProp("task_path", default=None)
@@ -522,9 +521,7 @@ class ClaudeSessionRecord(Record):
         return None
 
     @classmethod
-    def from_jsonl(
-        cls, path: str | Path, *, project_encoded_name: str | None = None
-    ) -> Self:
+    def from_jsonl(cls, path: str | Path) -> Self:
         """Build a session record from a JSONL transcript file path.
 
         O(1) read cost regardless of transcript size:
@@ -598,7 +595,6 @@ class ClaudeSessionRecord(Record):
         except OSError:
             pass
 
-        derived_encoded = project_encoded_name or path.parent.name
         return cls(
             session_id=session_id,
             slug=slug,
@@ -608,7 +604,6 @@ class ClaudeSessionRecord(Record):
             jsonl_path=str(path),
             source_file=str(path),
             path=str(path),
-            project_encoded_name=derived_encoded,
         )
 
 

@@ -11,7 +11,6 @@ import {
   AgenticProcess,
   ContextEntitiesEnum,
   dataContext,
-  Project,
   Shell,
   systemTools,
   TypeId,
@@ -19,6 +18,7 @@ import {
 import { estimateCols, estimateRows } from '@src/components/terminal/interactive-terminal/terminalConfig';
 import { ensureTerminalsFetched } from '@src/hooks/useActiveTerminals';
 import { perfLog, perfTime } from './_perf';
+import { loadProject } from './load-project';
 
 /**
  * Two-tier error classification — ``severity`` decides route control flow,
@@ -150,6 +150,31 @@ export async function loadProcess(
     throw new ProcessLoadError('entity_not_found', processId);
   }
 
+  // ── Project phase — URL-first: resolve the owning project into context
+  // BEFORE any runtime side effect. `process.start()` and its downstream
+  // (claude-session discovery, CWD selection for `claude --resume`, etc.)
+  // read `dataContext.project`; if that still reflects the previously-active
+  // project, the PTY launches in the wrong CWD and Claude can't find the
+  // transcript. Doing the project write here makes every consumer URL-first.
+  if (process.project_id) {
+    try {
+      await perfTime('loadProject', () => loadProject(process!.project_id!));
+    } catch (cause) {
+      // The stored project_id can dangle when the project was deleted under
+      // us. Recover via the backend's 3-phase recover_by_path, then continue.
+      const status = (cause as { response?: { status?: number }; status?: number })?.response?.status
+        ?? (cause as { status?: number })?.status;
+      if (status !== 404) throw cause;
+      const recovered = await process.recoverProject().catch(() => null);
+      if (!recovered) {
+        throw new ProcessLoadError('project_missing', processId, process.shell_id ?? null, cause);
+      }
+      await loadProject(recovered.id);
+    }
+  } else {
+    await systemTools.resolveProjectContext(process.workdir, process);
+  }
+
   // ── Runtime phase (soft errors — entity is fine, runtime isn't) ────────
   let shell: Shell | null = null;
   try {
@@ -188,32 +213,6 @@ export async function loadProcess(
       new TypeId(AgenticProcess.type, processId),
     ),
   );
-  if (process.project_id) {
-    try {
-      await perfTime('setContextEntityTypeId(CurrentProjectTypeId)', () =>
-        dataContext.setContextEntityTypeId(
-          ContextEntitiesEnum.CurrentProjectTypeId,
-          new TypeId(Project.type, process!.project_id!),
-        ),
-      );
-    } catch (cause) {
-      // The stored project_id can dangle when the project was deleted under us.
-      // Recover via the backend's 3-phase recover_by_path, then continue.
-      const status = (cause as { response?: { status?: number }; status?: number })?.response?.status
-        ?? (cause as { status?: number })?.status;
-      if (status !== 404) throw cause;
-      const recovered = await process.recoverProject().catch(() => null);
-      if (!recovered) {
-        throw new ProcessLoadError('project_missing', processId, process.shell_id ?? null, cause);
-      }
-      await dataContext.setContextEntityTypeId(
-        ContextEntitiesEnum.CurrentProjectTypeId,
-        new TypeId(Project.type, recovered.id),
-      );
-    }
-  } else {
-    await systemTools.resolveProjectContext(process.workdir, process);
-  }
 
   return { process, shell };
 }

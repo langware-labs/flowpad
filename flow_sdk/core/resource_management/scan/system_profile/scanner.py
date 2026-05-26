@@ -346,7 +346,7 @@ def scan_item(item_type: str, **kwargs) -> list | dict | None:
 
 
 def _iter_session_file_stats() -> list[tuple[int, int, str, str]]:
-    """Collect (mtime_ns, size_bytes, project_encoded_name, filename) for all sessions."""
+    """Collect (mtime_ns, size_bytes, claude_project_dir_name, filename) for all sessions."""
     stats: list[tuple[int, int, str, str]] = []
     projects_dir = _claude_home() / "projects"
 
@@ -491,13 +491,14 @@ COLLECTORS: dict[str, Any] = {
 # Also support simple names for backwards compatibility
 COLLECTORS.update(_COLLECTORS)
 
-# Parent key mapping for child resources (sessions belong to projects, todos to sessions)
+# Parent key mapping for child resources (sessions belong to projects, todos to sessions).
+# claude_session emits `cwd` (path) as its grouping key; callers pass cwd as parent_id.
 PARENT_KEY_MAP: dict[str, str] = {
-    get_system_resource_type("claude_session"): "project_encoded_name",
+    get_system_resource_type("claude_session"): "cwd",
     get_system_resource_type("codex_session"): "project_id",
     get_system_resource_type("todo_file"): "session_id",
     # Also support simple names
-    "claude_session": "project_encoded_name",
+    "claude_session": "cwd",
     "codex_session": "project_id",
     "todo_file": "session_id",
 }
@@ -564,7 +565,7 @@ def scan_resources(
     Args:
         resource_type: Resource type (e.g., 'hook', 'mcp_server', 'session', or full prefix like 'system_resource_claude_hook')
         time_window: {"start": "2024-01-01T00:00:00", "end": "2024-01-02T00:00:00"}
-        parent_id: For child resources (sessions→project_encoded_name, todos→session_id)
+        parent_id: For child resources (sessions→cwd, todos→session_id)
         limit: Max items to return (default 100)
         offset: Pagination offset (default 0)
 
@@ -723,10 +724,7 @@ def _scan_sessions_optimized(
         source_file = item.get("source_file") or item.get("path")
         if source_file:
             try:
-                record = ClaudeSessionRecord.from_jsonl(
-                    Path(source_file),
-                    project_encoded_name=item.get("project_encoded_name"),
-                )
+                record = ClaudeSessionRecord.from_jsonl(Path(source_file))
                 d = record.meta_dict()
                 d["resource_type"] = full_type
                 enriched_items.append(d)
@@ -808,9 +806,7 @@ def get_sessions_for_project(
         if limit > 0 and len(sessions) >= limit:
             break
         try:
-            record = ClaudeSessionRecord.from_jsonl(
-                jsonl_file, project_encoded_name=project_encoded_name
-            )
+            record = ClaudeSessionRecord.from_jsonl(jsonl_file)
             d = record.meta_dict()
             # Skip empty/broken sessions with no conversation content
             if not (
@@ -1053,7 +1049,6 @@ def scan_project(
     project_cwd = get_project_cwd(project_dir)
 
     result = {
-        "project_encoded_name": project_encoded_name,
         "project_cwd": project_cwd,
         "scanned_at": datetime.now().isoformat(),
     }

@@ -219,7 +219,6 @@ def _parse_jsonl_stats(path: Path) -> dict:
         "tools_used": sorted(tools),
         "has_plan": has_plan,
         "last_stop_reason": last_stop_reason,
-        "project_encoded_name": path.parent.name,
         "last_user_message": last_user_message,
         "modified_at": modified_at,
         "task_path": task_path,
