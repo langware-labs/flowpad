@@ -90,6 +90,35 @@ def reset_instance_settings() -> None:
 _reset_for_tests = reset_instance_settings
 
 
+def override_db_path(new_path: "Path | str") -> None:
+    """Hot-swap the cached InstanceSettings' ``db_path`` to ``new_path``.
+
+    Used by ``reinit_db`` for the UI's "DB Settings" → switch-database flow.
+    Mutates the cached frozen dataclass via ``dataclasses.replace`` and
+    re-caches under the same ``(name, flow_home)`` key, so subsequent
+    ``get_instance_settings().db_path`` reads see the new path.
+
+    **No env writes** — env is an input, never a channel. Writing
+    ``SQLITE_DATABASE_PATH`` to ``os.environ`` was the live-incident
+    poison channel (config.py validator) and the same pattern at the
+    ``reinit_db`` call site permanently poisoned the process env for the
+    rest of its lifetime.
+
+    Does NOT clear ``_driver_instances`` — that is the caller's
+    responsibility (``reinit_db`` does it explicitly). Conflating the
+    driver-clear with this settings override would break test fixtures
+    that share a session-scoped driver across ``reset_instance_settings``
+    calls.
+    """
+    from dataclasses import replace as _replace  # noqa: PLC0415
+
+    name = _resolve_instance_name_from_env()
+    flow_home = _resolve_flow_home_from_env()
+    key = (name, flow_home)
+    current = _INSTANCES.get(key) or get_instance_settings()
+    _INSTANCES[key] = _replace(current, db_path=Path(new_path))
+
+
 def _resolve_instance_name_from_env() -> str:
     """Pick the active instance name.
 
@@ -150,4 +179,5 @@ __all__ = [
     "SecretsNotEnabledError",
     "get_instance_settings",
     "reset_instance_settings",
+    "override_db_path",
 ]

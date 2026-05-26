@@ -277,10 +277,13 @@ class SQLiteDBDriver(DBDriver):
     )
 
     def __init__(self, cfg: Optional[DBConfig] = None):
-        if not cfg:
-            cfg = DBConfig()
-            cfg.database = get_database_path()
-        super().__init__(cfg)
+        # Do NOT snapshot the per-instance db path here — defer to ``open()``
+        # so a ``reinit_db`` / ``override_db_path`` swap is picked up by a
+        # freshly-constructed driver. Callers that pass an explicit
+        # ``DBConfig(database=...)`` (e.g. the session-scoped test driver)
+        # keep their override because ``open()`` only resolves when
+        # ``config.database`` is falsy.
+        super().__init__(cfg or DBConfig())
         self.engine: Optional[AsyncEngine] = None
         self.session_factory: Optional[async_sessionmaker] = None
         self.development: bool = DEVELOPMENT
@@ -295,6 +298,9 @@ class SQLiteDBDriver(DBDriver):
         from sqlalchemy.ext.asyncio import create_async_engine
         from sqlalchemy.pool import NullPool
 
+        # Lazy per-instance resolution — see ``__init__`` for rationale.
+        if not self.config.database:
+            self.config.database = get_database_path()
         db_path = self.config.database or ":memory:"
         url = get_database_url(db_path)
         # NullPool: every operation opens a fresh aiosqlite connection
