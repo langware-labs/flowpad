@@ -125,10 +125,15 @@ def is_valid_identifier(identifier: str) -> bool:
 
 
 def get_identifier_type(identifier: str) -> IdentifierType:
-    """Determine the type of an identifier."""
+    """Determine the type of an identifier.
+
+    Uses `is_valid_uuid` (version-agnostic) so `@local` entity ids minted via
+    `uuid.uuid5(NAMESPACE_DNS, …)` route as `IdentifierType.UUID`, matching the
+    broadened `UUID_PATTERN` used by URL/VFS regex matchers.
+    """
     if not identifier:
         return IdentifierType.UNKNOWN
-    if is_valid_uuid4(identifier):
+    if is_valid_uuid(identifier):
         return IdentifierType.UUID
     if is_valid_key(identifier):
         return IdentifierType.NAMESPACE
