@@ -211,3 +211,38 @@ async def test_reinit_db_no_env_writes(
     assert get_instance_settings().db_path == new_db
     from flow_sdk.db.drivers.sqlite.connection import get_database_path
     assert get_database_path() == str(new_db)
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+@pytest.mark.asyncio
+async def test_reinit_db_rebinds_lazy_db_driver(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """reinit_db must rebind DBEntity._db / DBRelationship._db.
+
+    Pre-fix, reinit_db popped the old driver from ``_driver_instances`` and
+    opened a fresh one, but ``DBEntity._db`` (set by ``LazyDBDriver.__get__``
+    on first access) still pointed at the OLD closed driver. Any subsequent
+    ``DBEntity._db.<method>`` call hit the closed instance.
+    """
+    from flow_sdk.db.database import reinit_db
+    from flow_sdk.db.db_entity import DBEntity
+    from flow_sdk.db.db_relationship import DBRelationship
+    from flow_sdk.db.drivers.db_driver import _driver_instances, get_db_driver
+
+    # Warm the LazyDBDriver descriptor so DBEntity._db is the current driver.
+    starting_driver = get_db_driver()
+    DBEntity._db = starting_driver  # mirror what initialize_test_db does
+    DBRelationship._db = starting_driver
+
+    new_db = tmp_path / "rebind.db"
+    await reinit_db(str(new_db))
+
+    rebound_driver = _driver_instances.get("sqlite")
+    assert rebound_driver is not None, "reinit_db left _driver_instances empty"
+    assert DBEntity._db is rebound_driver, (
+        "DBEntity._db still points at the pre-reinit driver — split-brain"
+    )
+    assert DBRelationship._db is rebound_driver, (
+        "DBRelationship._db still points at the pre-reinit driver — split-brain"
+    )
