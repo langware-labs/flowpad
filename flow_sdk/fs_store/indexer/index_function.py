@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import logging
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -21,6 +22,7 @@ from flow_sdk.fs_store.indexer.progress_table import (
     TypeProgressRow,
 )
 from flow_sdk.fs_store.record_types import RecordType
+from flow_sdk.server.search_filters import ScopeFilter
 
 
 # DFS waypoints the walker visits to reach leaf record types. Either they
@@ -93,6 +95,15 @@ class IndexerOptions:
     # Orphan detection is automatic — happens after the main index loop using
     # the freshness-check `valid_map` we already preload (no extra DB query).
     orphan_action: OrphanAction = OrphanAction.INDEX
+    # When set, the orphan candidate set is intersected with this filter
+    # before reporting and acting. Orphan-ness is still determined globally
+    # (a record is orphan iff its Layer 1 source is missing); the filter
+    # only narrows which orphans the caller cares about — same semantics as
+    # `flow_sdk.server.search_filters.apply_scope_filter`. None = no narrowing.
+    # For the filter to make sense on a scoped run, the walk should still be
+    # global so `seen_ids` reflects all references; callers wiring scope-aware
+    # cleanup pass `roots=None` together with this filter.
+    scope_filter: ScopeFilter | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -206,6 +217,84 @@ async def _load_entity_state_map(
     return out
 
 
+# Sentinel returned by ``_read_disk_record_scope`` when metadata.json is
+# missing / unreadable / non-dict. Distinct from genuinely-unscoped
+# (``("", "")``) so the predicate can default to "do NOT match a narrowing
+# scope filter" rather than letting unknown-provenance records sneak through
+# every filter and become destructive-action targets.
+_SCOPE_UNREADABLE: tuple[None, None] = (None, None)
+
+
+def _read_disk_record_scope(
+    type_name: str, eid: str,
+) -> tuple[str, str] | tuple[None, None]:
+    """Return ``(scope, project_id)`` from a records-dir orphan's metadata.json.
+
+    Used only when an orphan candidate has no DB row, so the scope/project_id
+    can't be read from ``valid_map``. Returns ``_SCOPE_UNREADABLE`` (``(None,
+    None)``) when the file is missing / unreadable / non-dict — caller treats
+    that as "unknown provenance" and refuses to match a narrowing filter
+    (safer for DELETE: corrupt metadata can't bleed cross-scope).
+    """
+    import json  # noqa: PLC0415
+    from flow_sdk.fs_store.record import (  # noqa: PLC0415
+        _META_JSON,
+        get_default_records_root,
+        record_stem,
+    )
+
+    path = get_default_records_root() / type_name / record_stem(type_name, eid) / _META_JSON
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except (FileNotFoundError, OSError):
+        return _SCOPE_UNREADABLE
+    try:
+        blob = json.loads(raw)
+    except json.JSONDecodeError:
+        return _SCOPE_UNREADABLE
+    if not isinstance(blob, dict):
+        return _SCOPE_UNREADABLE
+    data = blob.get("data", blob) if isinstance(blob.get("data"), dict) else blob
+    return (str(data.get("scope") or ""), str(data.get("project_id") or ""))
+
+
+def _scope_filter_keeps(
+    sf: ScopeFilter,
+    type_name: str,
+    eid: str,
+    valid_map: dict[str, dict[str, tuple[float, str, str]]],
+    disk_ids: set[str],
+) -> bool:
+    """Predicate: should this orphan id survive the scope filter?
+
+    Mirrors ``flow_sdk.server.search_filters.apply_scope_filter`` for known
+    records — user-scope iff ``sf.user``, project-scope iff ``project_id in
+    sf.projects``, genuinely-unscoped always kept. For records whose
+    metadata.json is missing / unreadable / corrupt we return False (do NOT
+    keep) so a narrowing DELETE can't bleed across scopes via corrupt records
+    of unknown provenance.
+    """
+    scope: str | None
+    pid: str | None
+    state = valid_map.get(type_name, {}).get(eid)
+    if state is not None:
+        scope, pid = state[1], state[2]
+    elif eid in disk_ids:
+        scope, pid = _read_disk_record_scope(type_name, eid)
+    else:
+        # Id came from neither the DB nor the records dir — shouldn't happen
+        # in practice, but err on the safe side under a narrowing filter.
+        return False
+    if scope is None:
+        # Metadata unreadable → unknown provenance → don't match the filter.
+        return False
+    if scope == "user":
+        return sf.user
+    if scope == "project":
+        return pid in set(sf.projects)
+    return True
+
+
 class FSIndexer:
     def __init__(
         self,
@@ -252,6 +341,7 @@ class FSIndexer:
             gitignore=opts.gitignore,
             project_id=opts.project_id,
             force=opts.force,
+            scope_filter=opts.scope_filter,
         )
         refs = await self.scan(scan_opts)
 
@@ -473,41 +563,77 @@ class FSIndexer:
             #
             #   orphan_ids = (records_dir_ids | db_row_ids) - seen_ids
             #
-            # Project-scoped runs (opts.project_id != None) are skipped because
-            # both valid_map and the records-dir walk are global, but seen_ids
-            # only covers refs from the project subtree.
+            # ``opts.scope_filter`` is applied on top: orphan-ness is determined
+            # globally (so a cross-scope reference still rescues a record), but
+            # only orphans whose (scope, project_id) match the filter are
+            # reported and acted on. The callers wiring this on top must use a
+            # global walk (roots=None) so ``seen_ids`` is global; otherwise
+            # records referenced from outside the walked subtree would falsely
+            # appear orphan.
+            #
+            # SAFETY GUARD: a destructive orphan_action with a narrowed walk
+            # (custom roots) and no scope_filter would silently wipe records
+            # referenced from outside the walked subtree. Refuse — fall back
+            # to INDEX (non-destructive) and emit a warning. The caller's
+            # ScopeFilter-aware wrapper is responsible for either widening the
+            # walk to global or supplying a scope_filter.
+            effective_orphan_action = opts.orphan_action
+            if (
+                effective_orphan_action != OrphanAction.INDEX
+                and opts.roots is not None
+                and opts.scope_filter is None
+            ):
+                logging.warning(
+                    "Refusing destructive orphan_action=%s on narrowed walk without a scope_filter: "
+                    "cross-scope references would be misclassified as orphan. Falling back to INDEX.",
+                    effective_orphan_action,
+                )
+                effective_orphan_action = OrphanAction.INDEX
             orphan_records: dict[RecordType, list[str]] = {}
             orphan_id_sources: dict[RecordType, dict[str, dict[str, bool]]] = {}
-            if opts.project_id is None:
-                orphan_filter_types = self._resolve_orphan_filter_types(
-                    opts.types, valid_map
-                )
-                # Map type → set of ids found by walking the records dir on disk.
-                disk_ids_per_type = self._discover_records_dir_ids(orphan_filter_types)
+            orphan_filter_types = self._resolve_orphan_filter_types(
+                opts.types, valid_map
+            )
+            # Map type → set of ids found by walking the records dir on disk.
+            disk_ids_per_type = self._discover_records_dir_ids(orphan_filter_types)
 
-                for type_name in orphan_filter_types:
-                    try:
-                        rt = RecordType(type_name)
-                    except ValueError:
-                        continue
+            for type_name in orphan_filter_types:
+                try:
+                    rt = RecordType(type_name)
+                except ValueError:
+                    continue
 
-                    db_ids = set(valid_map.get(type_name, {}).keys())
-                    disk_ids = disk_ids_per_type.get(type_name, set())
-                    all_ids = db_ids | disk_ids
+                db_ids = set(valid_map.get(type_name, {}).keys())
+                disk_ids = disk_ids_per_type.get(type_name, set())
+                all_ids = db_ids | disk_ids
 
-                    seen = seen_ids.get(rt, set())
-                    missing = sorted(all_ids - seen)
+                seen = seen_ids.get(rt, set())
+                missing = sorted(all_ids - seen)
+                if not missing:
+                    continue
+
+                if opts.scope_filter is not None:
+                    missing = [
+                        eid for eid in missing
+                        if _scope_filter_keeps(
+                            opts.scope_filter,
+                            type_name,
+                            eid,
+                            valid_map,
+                            disk_ids,
+                        )
+                    ]
                     if not missing:
                         continue
 
-                    orphan_records[rt] = missing
-                    orphan_id_sources[rt] = {
-                        eid: {
-                            "in_db": eid in db_ids,
-                            "on_disk": eid in disk_ids,
-                        }
-                        for eid in missing
+                orphan_records[rt] = missing
+                orphan_id_sources[rt] = {
+                    eid: {
+                        "in_db": eid in db_ids,
+                        "on_disk": eid in disk_ids,
                     }
+                    for eid in missing
+                }
 
             for rt, ids in orphan_records.items():
                 acc = per_type_counts.setdefault(
@@ -525,9 +651,9 @@ class FSIndexer:
                 db_removed = 0
                 disk_removed = 0
 
-                if opts.orphan_action != OrphanAction.INDEX:
+                if effective_orphan_action != OrphanAction.INDEX:
                     db_removed, disk_removed = await self._apply_orphan_action(
-                        rt, ids, opts.orphan_action,
+                        rt, ids, effective_orphan_action,
                         id_sources=orphan_id_sources.get(rt, {}),
                     )
 

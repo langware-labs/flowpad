@@ -728,9 +728,21 @@ class FsRecordsActionsMixin:
 
         # Resolve ScopeFilter → narrowed roots. When the filter is None,
         # fall back to the indexer's default_roots() (full walk).
-        custom_roots = await self._resolve_scoped_roots(scope_filter)
-        if isinstance(custom_roots, ApiFailResponse):
-            return custom_roots
+        #
+        # Orphan-aware runs (orphan_action != INDEX) intentionally walk the
+        # full root set even when a scope is selected: orphan-ness is defined
+        # globally (a record is orphan iff its source is missing anywhere),
+        # so ``seen_ids`` must cover all references. The scope filter is then
+        # re-applied inside the indexer to narrow which orphans get reported
+        # and acted on. Without this, a record physically inside project A
+        # but referenced from project B would be falsely flagged as orphan
+        # when the user picks scope=A.
+        if orphan_action != OrphanAction.INDEX:
+            custom_roots = None
+        else:
+            custom_roots = await self._resolve_scoped_roots(scope_filter)
+            if isinstance(custom_roots, ApiFailResponse):
+                return custom_roots
 
         # Type filter + validation
         types_filter: list[RecordType] | None = None
@@ -784,6 +796,7 @@ class FsRecordsActionsMixin:
                 force=force,
                 project_id=effective_project_id,
                 orphan_action=orphan_action,
+                scope_filter=scope_filter,
             ))
         finally:
             self._complete_activity("index")
