@@ -236,13 +236,18 @@ export function SessionQuickSearchModal({ open, onOpenChange }: SessionQuickSear
             data-testid="session-quick-search-input"
           />
           <CommandList className="max-h-[420px]">
-            {isLoading && visible.length === 0 ? (
+            {trimmed && isSearching && visible.length === 0 ? (
               <div className="flex items-center justify-center gap-2 py-6 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                {trimmed ? 'Searching…' : 'Loading history'}
+                <Loader2 className="h-4 w-4 animate-spin" /> Searching…
               </div>
             ) : visible.length === 0 ? (
-              <CommandEmpty>{trimmed ? 'No matching sessions.' : 'No recent sessions.'}</CommandEmpty>
+              <CommandEmpty className="py-6 text-sm text-muted-foreground">
+                {trimmed
+                  ? 'No matching sessions.'
+                  : isHistoryLoading
+                    ? 'Loading history…'
+                    : 'Type to search, or pick from recent sessions.'}
+              </CommandEmpty>
             ) : (
               visible.map((row) => {
                 const Icon = row.workerType === 'codex' ? CodexIcon : ClaudeIcon;

@@ -57,12 +57,6 @@ def _display_name(cwd: str, record_name: str | None = None) -> str:
     return os.path.basename(trimmed) or cwd
 
 
-def _encoded_name_for(cwd: str, encoded_path: str | None) -> str:
-    if encoded_path:
-        return encoded_path
-    return cwd.replace("/", "-") or cwd
-
-
 def _int_field(value: Any) -> int:
     try:
         return int(value or 0)
@@ -167,7 +161,6 @@ def _merge_project(
     *,
     claude: bool = False,
     codex: bool = False,
-    encoded_name: str | None = None,
     session_count: int = 0,
     modified_at: str | None = None,
 ) -> None:
@@ -177,7 +170,6 @@ def _merge_project(
             "id": _project_id_for_cwd(cwd),
             "type": PROJECT_RESOURCE_TYPE,
             "name": _display_name(cwd),
-            "encoded_name": _encoded_name_for(cwd, encoded_name),
             "cwd": cwd,
             "session_count": 0,
             "claude_session_count": 0,
@@ -189,8 +181,6 @@ def _merge_project(
             "worker_types": [],
         },
     )
-    if encoded_name:
-        item["encoded_name"] = encoded_name
     if claude:
         item["claude"] = True
         item["claude_session_count"] = (
@@ -236,11 +226,15 @@ async def list_projects_from_indexer() -> dict[str, Any]:
         if not ProjectFsRecord._is_valid_cwd(canonical):
             continue
         if "claude" in info.worker_types:
-            encoded = canonical.replace("/", "-")
-            session_count, modified_at = _claude_session_stats(claude_root / encoded)
+            # Internal-only Claude dir lookup. NOTE: this encoder is lossy
+            # (doesn't handle spaces / underscores); for paths that contain
+            # those, the dir won't be found and session_count is 0. A robust
+            # lookup would walk ``claude_root`` and match each child's cwd.
+            claude_dir = canonical.replace("/", "-")
+            session_count, modified_at = _claude_session_stats(claude_root / claude_dir)
             _merge_project(
                 projects_by_cwd, canonical,
-                claude=True, encoded_name=encoded,
+                claude=True,
                 session_count=session_count, modified_at=modified_at,
             )
         if "codex" in info.worker_types:

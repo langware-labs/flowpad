@@ -24,7 +24,6 @@ import {
   ContextEntitiesEnum,
   dataContext,
   dataManager,
-  Project,
   QueryRequest,
   Shell,
   ShellStatus,
@@ -47,6 +46,7 @@ import {
   loadProcess,
   ProcessLoadError,
 } from './load-process';
+import { loadProject } from './load-project';
 import {
   loadNextProcess,
   type CleanupRecord,
@@ -103,6 +103,18 @@ export async function loadShell(shellId: string): Promise<Shell> {
   if (shell.status === ShellStatus.ERROR) {
     throw new ShellLoadError('error_status', shellId, shell.error_message ?? null);
   }
+
+  // ── Project phase — URL-first: resolve project into context BEFORE
+  // `shell.start()` runs, so anything downstream reads the right project.
+  if (shell.project_id) {
+    await loadProject(shell.project_id).catch(() => {
+      // Dangling project_id — fall through to workdir-based resolve below.
+      return systemTools.resolveProjectContext(shell.workdir ?? undefined, shell);
+    });
+  } else {
+    await systemTools.resolveProjectContext(shell.workdir ?? undefined, shell);
+  }
+
   try {
     await perfTime('shell.start (PTY attach)', () =>
       shell.start({ cols: Shell.DEFAULT_COLS, rows: Shell.DEFAULT_ROWS, workdir: shell.workdir ?? undefined }),
@@ -115,14 +127,6 @@ export async function loadShell(shellId: string): Promise<Shell> {
   dataContext.setActiveTerminalTargetTypeId(shell.typeId);
   dataContext.setWorkdir(shell.workdir ?? dataContext.project?.fs_storage_mount_path ?? null);
   await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProcessTypeId, null);
-  if (shell.project_id) {
-    await dataContext.setContextEntityTypeId(
-      ContextEntitiesEnum.CurrentProjectTypeId,
-      new TypeId(Project.type, shell.project_id),
-    );
-  } else {
-    await systemTools.resolveProjectContext(shell.workdir ?? undefined, shell);
-  }
   return shell;
 }
 

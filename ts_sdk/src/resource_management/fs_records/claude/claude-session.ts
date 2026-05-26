@@ -39,7 +39,6 @@ export interface ClaudeSessionRecordData {
   start_time?: string;
 
   // Fields from enriched scan (from_jsonl)
-  project_encoded_name?: string | null;
   last_user_message?: string | null;
   task_path?: string | null;
   modified_at?: string | null;

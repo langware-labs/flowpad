@@ -211,7 +211,6 @@ def _build_slug_session_map() -> dict[str, list[dict]]:
                 slug_map[slug].append(
                     {
                         "session_id": session_id,
-                        "project_encoded_name": project_encoded_name,
                     }
                 )
 
@@ -272,7 +271,6 @@ def get_plans() -> list[dict]:
                 "slug": slug,
                 "session_ids": session_ids,
                 "session_count": session_count,
-                "project_encoded_name": project_encoded_name,
             }
         )
 
@@ -391,7 +389,6 @@ def get_todos() -> list[dict]:
                     "session_id": session_id,
                     "agent_id": agent_id,
                     "is_sub_agent": is_sub_agent,
-                    "project_encoded_name": project_encoded_name,
                     "entry_count": len(entries),
                     "completed_count": completed_count,
                     "pending_count": pending_count,

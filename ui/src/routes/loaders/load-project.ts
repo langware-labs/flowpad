@@ -32,6 +32,29 @@ function recoveryUrl(projectId: string, roomId: string | null): string {
 }
 
 /**
+ * Load a Project by id: fetch the entity via dataManager and write
+ * `CurrentProjectTypeId` into context. Nothing else.
+ *
+ * This is the URL-first project primitive: every loader that lands on an
+ * entity owned by a project (shell, agentic_process, conversation, plan, …)
+ * must call this before any runtime side effect, so `dataContext.project`
+ * reflects the URL-resolved owner — not whatever was active before.
+ *
+ * Throws if the project can't be fetched. Callers decide how to recover
+ * (e.g. process.recoverProject() for dangling project_id refs).
+ */
+export async function loadProject(projectId: string): Promise<Project> {
+  const project = await dataManager.getByTypeId<Project>(
+    new TypeId(Project.type, projectId),
+  );
+  await dataContext.setContextEntityTypeId(
+    ContextEntitiesEnum.CurrentProjectTypeId,
+    new TypeId(Project.type, projectId),
+  );
+  return project;
+}
+
+/**
  * After the shell is loaded, stamp it with the owning room id so the
  * room-scoped `useActiveTerminals` filter picks it up. `loadProcess`
  * creates a fresh Shell on reload (old PTY gone), so we can't rely on the
@@ -65,7 +88,7 @@ export async function loadProjectRoute(pointer: string | undefined): Promise<voi
   // calls hit immediately (no render blank → re-render).
   let project: Project | null = null;
   try {
-    project = await dataManager.getByTypeId<Project>(new TypeId(Project.type, projectId));
+    project = await loadProject(projectId);
   } catch {
     toast({
       title: 'Project not found',
@@ -76,10 +99,6 @@ export async function loadProjectRoute(pointer: string | undefined): Promise<voi
     throw redirect('/');
   }
 
-  await dataContext.setContextEntityTypeId(
-    ContextEntitiesEnum.CurrentProjectTypeId,
-    new TypeId(Project.type, projectId),
-  );
   if (project?.fs_storage_mount_path) {
     dataContext.setWorkdir(project.fs_storage_mount_path);
   }
