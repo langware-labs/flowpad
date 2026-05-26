@@ -195,6 +195,7 @@ async def test_fork_action_creates_sibling_with_fork_session_id():
     mock_fork.assert_called_once_with(
         session_id="source-session-abc",
         workdir="/project",
+        project_id=None,
         visible=False,
         shared_context_entities=[],
     )
@@ -220,6 +221,7 @@ async def test_fork_action_visible_false_by_default():
     mock_fork.assert_called_once_with(
         session_id="src-sess",
         workdir="/project",
+        project_id=None,
         visible=False,
         shared_context_entities=[],
     )
@@ -245,7 +247,30 @@ async def test_fork_action_visible_true_when_passed():
     mock_fork.assert_called_once_with(
         session_id="src-sess",
         workdir="/project",
+        project_id=None,
         visible=True,
+        shared_context_entities=[],
+    )
+
+
+@pytest.mark.asyncio
+async def test_fork_action_propagates_project_id():
+    """fork_action() forwards self.project_id so the sibling keeps the parent's project."""
+    source = _proc(session_id="src-sess", workdir="/project", project_id="proj-xyz")
+
+    fake_new_proc = MagicMock()
+    fake_new_proc.save = AsyncMock()
+    fake_new_proc.to_dict = MagicMock(return_value={"id": "x"})
+
+    with patch.object(AgenticProcess, "fork", return_value=fake_new_proc) as mock_fork, \
+         patch("flow_sdk.builtin.agentic_process.agentic_process.get_current_request_info", return_value=None):
+        await source.fork_action()
+
+    mock_fork.assert_called_once_with(
+        session_id="src-sess",
+        workdir="/project",
+        project_id="proj-xyz",
+        visible=False,
         shared_context_entities=[],
     )
 

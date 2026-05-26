@@ -52,7 +52,6 @@ class AgenticProcessRecord(Record):
             kwargs["pty_pid"] = kwargs.pop("pty_session_id")
         kwargs.setdefault("pty_pid", None)
         kwargs.setdefault("shell_id", None)
-        kwargs.setdefault("project_encoded_name", None)
         kwargs.setdefault("project_id", None)
         super().__init__(**kwargs)
 
@@ -160,16 +159,6 @@ class AgenticProcessRecord(Record):
             # Never break entity serialization over a transcript-read failure.
             pass
         return result
-
-    @property
-    def project_encoded_name(self) -> str | None:
-        return object.__getattribute__(self, "__dict__").get("project_encoded_name")
-
-    @project_encoded_name.setter
-    def project_encoded_name(self, value: str | None) -> None:
-        object.__getattribute__(self, "__dict__")["project_encoded_name"] = value
-        dirty = object.__getattribute__(self, "_dirty_keys")
-        dirty.add("project_encoded_name")
 
     @property
     def project_id(self) -> str | None:

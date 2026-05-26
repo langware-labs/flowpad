@@ -1,14 +1,9 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { CheckCircle2, Circle, Loader2 } from 'lucide-react';
 import type { IndexProgressTable, TypeProgressRow } from '@sdk';
+import { rowState } from './activity-labels';
 
 export type { IndexProgressTable, TypeProgressRow };
-
-function rowState(row: TypeProgressRow, current: string | null): 'done' | 'current' | 'pending' {
-  if (current === row.type_name) return 'current';
-  if (row.total > 0 && row.done >= row.total) return 'done';
-  return 'pending';
-}
 
 export function ActivityProgressBar({
   table,

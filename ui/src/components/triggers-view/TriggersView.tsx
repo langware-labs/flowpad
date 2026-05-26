@@ -3,7 +3,7 @@ import { Button } from '@src/components/ui/button';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Plus } from 'lucide-react';
 import { type ITrigger } from '@sdk';
 import { useTriggers } from '@src/hooks/useTriggers';
@@ -11,21 +11,38 @@ import { useProject } from '@src/hooks/useProject';
 import { TriggersList } from './TriggersList';
 import { TriggerEditor } from './TriggerEditor';
 import { ScheduleTriggerEditor } from './ScheduleTriggerEditor';
+import { FsopTriggerDetail } from './FsopTriggerDetail';
 import { TriggerInvocationsPanel } from './TriggerInvocationsPanel';
 
 export function TriggersView() {
-  const { triggers: allTriggers, isLoading: loading } = useTriggers();
+  const { triggers, isLoading: loading } = useTriggers();
   const { project } = useProject();
-  // Schedule triggers are project-scoped; hook triggers are global (system/user).
-  const triggers = useMemo(() => {
-    return allTriggers.filter(t => {
-      if (t.trigger_type !== 'schedule') return true;
-      return t.project_id === project?.id;
-    });
-  }, [allTriggers, project?.id]);
+  // Filtering (by scope + current project + include-system) lives in TriggersList
+  // so all trigger types follow the same rule. TriggersView just passes the
+  // full set + the current project id down.
   const [selectedTrigger, setSelectedTrigger] = useState<ITrigger | null>(null);
   const [isCreatingSchedule, setIsCreatingSchedule] = useState(false);
   const { navigation } = useDockNavigation();
+
+  // Reset selection when the user switches project — the previously-selected
+  // trigger may no longer match the new project's scope filter, and keeping
+  // it would surface a stale trigger in the center/right panels.
+  //
+  // Guarded against the `undefined → loaded` transition on first mount: if
+  // `useProject()` hasn't resolved yet, project is undefined; once it loads
+  // the effect would fire and clobber any selection / in-progress creation
+  // the user kicked off in the meantime. We only reset on actual id changes
+  // between two non-undefined values.
+  const prevProjectIdRef = useRef<string | undefined>(project?.id);
+  useEffect(() => {
+    const prev = prevProjectIdRef.current;
+    const curr = project?.id;
+    prevProjectIdRef.current = curr;
+    if (prev !== undefined && curr !== undefined && prev !== curr) {
+      setSelectedTrigger(null);
+      setIsCreatingSchedule(false);
+    }
+  }, [project?.id]);
 
   const openLog = useCallback((trigger: ITrigger) => {
     if (trigger.id) {
@@ -68,27 +85,41 @@ export function TriggersView() {
               New Schedule Trigger
             </Button>
             <p className="max-w-xs text-center text-xs text-muted-foreground/70">
-              Hook triggers live as rules in <code className="rounded bg-muted px-1">~/.flow/rules/</code>
+              Hook triggers come from rule files under{' '}
+              <code className="rounded bg-muted px-1">~/.flow/skill_rules/</code>.{' '}
+              FSOp triggers are installed by the system or via the API.
             </p>
           </div>
         );
       }
       return (
         <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-          Select a trigger to edit
+          Select a trigger to view
         </div>
       );
     }
-    if (selectedTrigger.trigger_type === 'schedule') {
-      return (
-        <ScheduleTriggerEditor
-          trigger={selectedTrigger}
-          onSaved={handleScheduleSaved}
-          onCancel={() => setSelectedTrigger(null)}
-        />
-      );
+    // Dispatch on trigger_type — each source has a fundamentally different
+    // authoring artifact (code / form / config). Falling through to the hook
+    // code editor for non-hook triggers used to render the callback's source
+    // module as if it were the user's trigger.py — the "shows my code" bug.
+    switch (selectedTrigger.trigger_type) {
+      case 'schedule':
+        return (
+          <ScheduleTriggerEditor
+            trigger={selectedTrigger}
+            onSaved={handleScheduleSaved}
+            onCancel={() => setSelectedTrigger(null)}
+          />
+        );
+      case 'fsop':
+        // `key` forces remount when the selected FSOp trigger changes.
+        // Without it, child state (CallbackSourceCollapsible's loaded/content)
+        // persists across triggers and shows stale source.
+        return <FsopTriggerDetail key={selectedTrigger.id} trigger={selectedTrigger} />;
+      case 'hook':
+      default:
+        return <TriggerEditor trigger={selectedTrigger} />;
     }
-    return <TriggerEditor trigger={selectedTrigger} />;
   };
 
   return (
@@ -105,9 +136,9 @@ export function TriggersView() {
             selectedTrigger={selectedTrigger}
             onSelect={(t) => { setSelectedTrigger(t); setIsCreatingSchedule(false); }}
             onOpenLog={openLog}
-            onLogModeChange={() => {/* cache updates via useEntitiesQuery */}}
             onNewSchedule={handleNewSchedule}
             isCreatingSchedule={isCreatingSchedule}
+            currentProjectId={project?.id ?? null}
           />
         </div>
       </div>

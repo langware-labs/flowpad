@@ -1,6 +1,6 @@
 """CLI: ``python -m flow_sdk.transcript_analyzer.pricing.report <jsonl>``.
 
-Loads a transcript via ``AgentTranscript`` (worker auto-inferred from path
+Loads a transcript via ``AgentTranscriptFile`` (worker auto-inferred from path
 hints), groups usage entries by (model, io, cache, cache_tier, reasoning,
 tool) and prints a table with token counts + USD cost. Total at the bottom.
 """
@@ -11,7 +11,7 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
-from ..transcript import AgentTranscript
+from ..transcript import AgentTranscriptFile
 from . import pricing_for
 
 
@@ -26,7 +26,7 @@ def _infer_worker(path: Path) -> str:
 def report(jsonl: Path | str) -> str:
     path = Path(jsonl)
     worker = _infer_worker(path)
-    t = AgentTranscript(worker, path)
+    t = AgentTranscriptFile(worker, path)
     by_dim: dict[tuple, dict] = defaultdict(lambda: {"count": 0, "cost": 0.0})
     grand_total = 0.0
     for e in t.usage:

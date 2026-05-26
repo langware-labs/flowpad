@@ -199,7 +199,6 @@ class TodoFileItem(SystemProfileItem):
     session_id: str = Field(default="", description="Session ID this todo file belongs to")
     agent_id: str = Field(default="", description="Agent ID (same as session_id for main agent)")
     is_sub_agent: bool = Field(default=False, description="Whether this is a sub-agent todo file")
-    project_encoded_name: str | None = Field(default=None, description="Project encoded name for filtering")
     entry_count: int = Field(default=0, description="Number of todo entries in the file")
     completed_count: int = Field(default=0)
     pending_count: int = Field(default=0)

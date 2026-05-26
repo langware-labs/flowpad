@@ -71,6 +71,41 @@ def _basename(path: Optional[str]) -> Optional[str]:
     return name or None
 
 
+# Encoded-name prefixes for cwd paths that produce throwaway sessions: pytest
+# tmpdirs, file-op-e2e fixtures, flow-cli scratch sessions. They flood the
+# top-N-by-mtime slice during a QA cycle and crowd out real user work.
+_SCRATCH_ENCODED_PREFIXES: tuple[str, ...] = (
+    "-private-var-folders-",
+    "-var-folders-",
+    "-private-tmp-",
+    "-tmp-",
+    "-history-merge-test-",  # ui/tests/long_tests/history_merge.test.ts fixtures
+    f"-Users-{Path.home().name}--flow-sessions-",
+    f"-Users-{Path.home().name}--flow-dev-records-workflow-",
+)
+
+# Same set keyed by absolute path — applied to codex sessions whose dir layout
+# is date-sharded, so we only know the cwd after parsing the rollout envelope.
+_SCRATCH_CWD_PREFIXES: tuple[str, ...] = (
+    "/private/var/folders/",
+    "/var/folders/",
+    "/private/tmp/",
+    "/tmp/",
+    f"{Path.home()}/.flow/sessions/",
+    f"{Path.home()}/.flow/dev/records/workflow/",
+)
+
+
+def _is_scratch_encoded_dir(encoded_name: str) -> bool:
+    return any(encoded_name.startswith(p) for p in _SCRATCH_ENCODED_PREFIXES)
+
+
+def _is_scratch_cwd(cwd: Optional[str]) -> bool:
+    if not cwd:
+        return False
+    return any(cwd.startswith(p) for p in _SCRATCH_CWD_PREFIXES)
+
+
 def _pick_name(
     *,
     custom_title: Optional[str],
@@ -208,9 +243,11 @@ def _collect_claude_entries_sync(
         return []
 
     # Stat every JSONL, sort by mtime desc, keep the top ``over_fetch``.
+    # Skip scratch encoded dirs (tmp/var-folders/flow-sessions) at walk time so
+    # transient test sessions don't crowd real user work out of the slice.
     candidates: list[tuple[float, Path]] = []
     for proj_dir in projects_dir.iterdir():
-        if not proj_dir.is_dir():
+        if not proj_dir.is_dir() or _is_scratch_encoded_dir(proj_dir.name):
             continue
         for jsonl in proj_dir.glob("*.jsonl"):
             try:
@@ -218,9 +255,10 @@ def _collect_claude_entries_sync(
             except OSError:
                 continue
     candidates.sort(key=lambda x: -x[0])
-    # Each JSONL has a unique session_id, so no dedup loss — small +5 buffer for
-    # the rare skip (parse failure / empty session_id).
-    candidates = candidates[: limit + 5]
+    # Each JSONL has a unique session_id, so no dedup loss. Over-fetch
+    # generously so the top-N has room for project-scoped filtering on the
+    # client and for sessions whose envelope parse rejects them below.
+    candidates = candidates[: max(limit + 5, limit * 4 + 50)]
 
     history_prompt_index = _build_history_latest_prompt_index()
 
@@ -241,6 +279,10 @@ def _collect_claude_entries_sync(
 
         sd = object.__getattribute__(session, "__dict__")
         cwd = sd.get("cwd") or None
+        if _is_scratch_cwd(cwd):
+            # Belt-and-suspenders for sessions whose encoded dir name slipped
+            # past the scratch prefix check (e.g. unusual path encodings).
+            continue
         project_encoded = sd.get("project_encoded_name") or jsonl_path.parent.name
 
         # ``git_branch``, ``message_count``, ``last_user_message`` are lazy
@@ -312,7 +354,10 @@ def _collect_codex_entries_sync(
         except OSError:
             continue
     candidates.sort(key=lambda x: -x[0])
-    candidates = candidates[: limit + 5]
+    # Same generous over-fetch as Claude; scratch filter is applied post-parse
+    # because codex rollouts live in date-sharded dirs (cwd known only after
+    # reading the envelope).
+    candidates = candidates[: max(limit + 5, limit * 4 + 50)]
 
     result: list[WorkerHistoryEntry] = []
     seen: set[str] = set()
@@ -331,6 +376,8 @@ def _collect_codex_entries_sync(
 
         sd = object.__getattribute__(session, "__dict__")
         cwd = sd.get("cwd") or None
+        if _is_scratch_cwd(cwd):
+            continue
 
         message_count: Optional[int] = None
         last_user_message: Optional[str] = None
@@ -414,6 +461,25 @@ def _agentic_process_only_entries(
         if key in seen:
             continue
 
+        # Skip transient APs: scratch workdir, bare-home workdir (no project
+        # context), or no project anchor at all. These come from test fixtures
+        # (file-op-e2e, compute_node tests, hundreds of zombie APs whose
+        # updated_date is constantly "right now") and crowd out real sessions.
+        # Real sessions whose cwd really is $HOME still surface via the JSONL
+        # walk in ``_collect_claude_entries_sync`` — that path requires a
+        # transcript, which is the actual signal of real work.
+        workdir = getattr(proc, "workdir", None) or None
+        if _is_scratch_cwd(workdir):
+            continue
+        if workdir:
+            try:
+                if Path(workdir).resolve() == Path.home().resolve():
+                    continue
+            except (OSError, ValueError):
+                pass
+        if not workdir and not getattr(proc, "project_id", None):
+            continue
+
         last_active = _coerce_datetime(getattr(proc, "updated_date", None)) or datetime.now(
             tz=timezone.utc
         )
@@ -423,9 +489,9 @@ def _agentic_process_only_entries(
                 worker_type=worker_type,
                 worker_id=sid,
                 project_id=proc.project_id
-                or _project_id_for(None, proc.project_encoded_name),
-                project_name=None,
-                project_cwd=None,
+                or _project_id_for(workdir, proc.project_encoded_name),
+                project_name=_basename(workdir) or (proc.project_encoded_name or None),
+                project_cwd=workdir,
                 last_active_time=last_active,
                 name=getattr(proc, "name", None) or None,
                 git_branch=None,

@@ -44,8 +44,6 @@ export interface FindSessionResult {
   session_id: string;
   worker_type: WorkerKind;
   transcript_path: string | null;
-  /** Encoded project dir name under `~/.claude/projects/`. Null for codex. */
-  project_encoded_name: string | null;
   cwd: string | null;
   project_id: string | null;
   session_name: string | null;

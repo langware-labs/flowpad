@@ -141,6 +141,11 @@ export interface ClaudeMdItem extends SystemProfileItem {
  */
 export interface ProjectItem extends SystemProfileItem {
   type: ItemType.PROJECT | string;
+  /**
+   * Claude project directory name observed at ~/.claude/projects/<name>/.
+   * Scanner-emitted transient — used as the API key when scanning Claude's
+   * project-scoped resources. NOT stored on any Flow record.
+   */
   encoded_name: string;
   cwd: string;
   session_count: number;
@@ -171,8 +176,6 @@ export interface PlanItem extends SystemProfileItem {
   session_ids: string[];
   /** Number of sessions using this plan */
   session_count: number;
-  /** Project this plan belongs to (derived from sessions) */
-  project_encoded_name?: string | null;
 }
 
 /**
@@ -223,8 +226,6 @@ export interface TodoFileItem extends SystemProfileItem {
   agent_id: string;
   /** Whether this is a sub-agent todo file */
   is_sub_agent: boolean;
-  /** Project encoded name for filtering */
-  project_encoded_name?: string | null;
   /** Number of todo entries in the file */
   entry_count: number;
   /** Number of completed entries */
@@ -299,7 +300,7 @@ export interface TranscriptStats {
  */
 export interface SessionCostBreakdown {
   session_id: string;
-  project_encoded_name?: string | null;
+  cwd?: string | null;
   cost_usd: number;
   input_tokens: number;
   output_tokens: number;
@@ -374,7 +375,7 @@ export interface CostByModel {
  * Cost summary for a specific project.
  */
 export interface CostByProject {
-  project_encoded_name: string;
+  cwd: string;
   session_count: number;
   message_count: number;
   tool_use_count: number;
@@ -842,6 +843,11 @@ export async function openResourceExternal(
 export interface ProjectListItem {
   id: string;
   name: string;
+  /**
+   * Claude project directory name observed at ~/.claude/projects/<name>/.
+   * Scanner-emitted transient — used as the API key when scanning Claude's
+   * project-scoped resources. NOT stored on any Flow record.
+   */
   encoded_name: string;
   cwd: string | null;
   session_count: number;
@@ -871,7 +877,6 @@ export interface ListProjectsResponse {
  * Response from scan-project API.
  */
 export interface ScanProjectResponse {
-  project_encoded_name: string;
   project_cwd: string | null;
   scanned_at: string;
   sessions: ClaudeSessionRecordData[];
@@ -970,7 +975,6 @@ export async function scanProjectFromComputeNode(
   }
   return (
     result.data || {
-      project_encoded_name: projectEncodedName,
       project_cwd: null,
       scanned_at: new Date().toISOString(),
       sessions: [],

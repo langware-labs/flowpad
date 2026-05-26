@@ -50,11 +50,24 @@ class TriggerLogRecord(Record):
         log_file = TriggerLogRecord._log_file(rule_name)
         log_file.parent.mkdir(parents=True, exist_ok=True)
 
-        # Build full entry
+        # Build full entry. `event_kind`/`changed_path`/`change_type` are
+        # structured fields added so the UI can render type-aware columns
+        # (file_change rows show the change_type chip + path; schedule_fire
+        # rows link the spawned process; legacy hook rows continue to render
+        # via `hook_event` + `reason`). All three are nullable for back-compat.
         entry = {
             "id": entry_dict.get("id", str(uuid.uuid4())),
             "ts": entry_dict.get("ts", datetime.now(timezone.utc).isoformat()),
             "hook_event": entry_dict.get("hook_event", ""),
+            "event_kind": entry_dict.get("event_kind"),       # hook|schedule_fire|file_change|test|None
+            "changed_path": entry_dict.get("changed_path"),   # FSOp: str|None
+            "change_type": entry_dict.get("change_type"),     # FSOp: added|modified|deleted|test|None
+            # Batch fields — populated by FSOp fires; one row per debounce window.
+            # `changes` is capped (see _LOG_CAP in fsop_watcher); `changes_total`
+            # is the un-capped event count.
+            "changes": entry_dict.get("changes"),                       # FSOp: list[{path, change_type}]|None
+            "changes_total": entry_dict.get("changes_total"),           # FSOp: int|None
+            "changes_truncated": entry_dict.get("changes_truncated"),   # FSOp: int|None
             "trigger": entry_dict.get("trigger", False),
             "reason": entry_dict.get("reason", ""),
             "is_test": entry_dict.get("is_test", False),

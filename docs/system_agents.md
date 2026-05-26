@@ -1,5 +1,5 @@
 ---
-id: 10c7d57b-09db-5a20-9ffd-b5475f2edff4
+id: "10c7d57b-09db-5a20-9ffd-b5475f2edff4"
 ---
 
 # System Agents
@@ -61,18 +61,18 @@ System prompt body goes here...
 
 **Frontmatter fields** (all optional except `description`):
 
-| Field | Type | Default | Maps to CLI |
-|-------|------|---------|-------------|
-| `description` | str | — | `--agents` JSON |
-| `model` | str | — | `--model` |
-| `permission_mode` | str | `bypassPermissions` | `--dangerously-skip-permissions` |
-| `max_turns` | int | — | `maxTurns` in `--agents` JSON |
-| `tools` | list | — | `tools` in `--agents` JSON |
-| `disallowed_tools` | list | — | `disallowedTools` in `--agents` JSON |
-| `skills` | list | — | `skills` in `--agents` JSON |
-| `mcp_servers` | dict | — | `mcpServers` in `--agents` JSON |
-| `hooks` | dict | — | `hooks` in `--agents` JSON |
-| `memory` | dict | — | `memory` in `--agents` JSON |
+| Field              | Type | Default             | Maps to CLI                          |
+| ------------------ | ---- | ------------------- | ------------------------------------ |
+| `description`      | str  | —                   | `--agents` JSON                      |
+| `model`            | str  | —                   | `--model`                            |
+| `permission_mode`  | str  | `bypassPermissions` | `--dangerously-skip-permissions`     |
+| `max_turns`        | int  | —                   | `maxTurns` in `--agents` JSON        |
+| `tools`            | list | —                   | `tools` in `--agents` JSON           |
+| `disallowed_tools` | list | —                   | `disallowedTools` in `--agents` JSON |
+| `skills`           | list | —                   | `skills` in `--agents` JSON          |
+| `mcp_servers`      | dict | —                   | `mcpServers` in `--agents` JSON      |
+| `hooks`            | dict | —                   | `hooks` in `--agents` JSON           |
+| `memory`           | dict | —                   | `memory` in `--agents` JSON          |
 
 **Loading priority** (`AgentRecord.load_agent(name, project_dir)`):
 
@@ -151,6 +151,7 @@ execution = agent.run(env, "Analyze session abc-123")
 ```
 
 `agent.run(env, instruction)` does three things:
+
 1. Appends the output directory path to `CLAUDE.md`
 2. Copies the agent `.md` into the env's `.claude/agents/`
 3. Calls `execution.prepare()` which creates `TaskResource`, `AgenticProcess`, and `RelationshipRecord`
@@ -206,9 +207,12 @@ env = ClaudeCLIWorker.build_env(context)
 ```
 
 The `execute()` method launches `claude` via `asyncio.create_subprocess_exec` and yields `FlowData` chunks:
-- `STATUS` — session started
-- `CHAT` — stdout output (complete response)
-- `ERROR` — if subprocess fails or claude binary not found
+
+* `STATUS` — session started
+
+* `CHAT` — stdout output (complete response)
+
+* `ERROR` — if subprocess fails or claude binary not found
 
 There is also `ClaudeCodeAgenticWorker` (`flow_sdk/builtin/agentic_process/cli_drivers/claude/code_agentic_worker.py`) which uses the `claude_agent_sdk` Python package directly instead of subprocess. It supports multi-turn sessions, pause/resume, and streaming input injection. It requires `claude_agent_sdk` as an optional dependency.
 
@@ -216,7 +220,7 @@ There is also `ClaudeCodeAgenticWorker` (`flow_sdk/builtin/agentic_process/cli_d
 
 After execution, agents write output to `execution.output_dir`. Currently the `artifacts` property recognizes:
 
-- **SkillRecords** — subdirectories containing `SKILL.md` with YAML frontmatter
+* **SkillRecords** — subdirectories containing `SKILL.md` with YAML frontmatter
 
 ```
 output/
@@ -237,7 +241,7 @@ execution.install_output_skills(
 # Copies skill dirs to <project>/.claude/skills/ or ~/.claude/skills/
 ```
 
----
+***
 
 ## Existing System Agents
 
@@ -248,18 +252,22 @@ execution.install_output_skills(
 **Purpose:** Reviews agentic session transcripts for quality improvement.
 
 **Configuration:**
-- Model: `sonnet`
-- Permission mode: `bypassPermissions`
-- Max turns: 30
+
+* Model: `sonnet`
+
+* Permission mode: `bypassPermissions`
+
+* Max turns: 30
 
 **What it does:**
+
 1. Identifies automation opportunities (repeatable tasks that could be scripted)
 2. Finds preventable errors (mistakes and how to prevent recurrence)
 3. Flags behavior corrections (inefficiencies and suggested guardrails)
 
 **Output:** Writes `analysis.md` — a structured markdown report with Summary, Automation Opportunities, Preventable Errors, and Behavior Corrections sections.
 
----
+***
 
 ## Adding a New System Agent
 
@@ -382,9 +390,15 @@ env.cleanup()
 
 ### Checklist
 
-- [ ] Agent `.md` file with YAML frontmatter in `flow_sdk/system_assets/agents/<name>/`
-- [ ] Filename matches directory name
-- [ ] `description` field in frontmatter (required for agent listings)
-- [ ] Unit test: agent loads via `load_system_agent()`
-- [ ] Pipeline test: `agent.run()` sets up env correctly
-- [ ] Output section in prompt tells agent where to write results
+* [ ] Agent `.md` file with YAML frontmatter in `flow_sdk/system_assets/agents/<name>/`
+
+* [ ] Filename matches directory name
+
+* [ ] `description` field in frontmatter (required for agent listings)
+
+* [ ] Unit test: agent loads via `load_system_agent()`
+
+* [ ] Pipeline test: `agent.run()` sets up env correctly
+
+* [ ] Output section in prompt tells agent where to write results
+

@@ -1,4 +1,15 @@
-import { AgenticProcess, dataContext, getDisplayStatus, isProcessRunning, isReadyForInput, ProcessStatus, Shell, TypeId, ViewType, type ComputeNode } from '@sdk';
+import {
+  AgenticProcess,
+  dataContext,
+  getDisplayStatus,
+  isProcessRunning,
+  isReadyForInput,
+  ProcessStatus,
+  Shell,
+  TypeId,
+  ViewType,
+  type ComputeNode,
+} from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
@@ -15,7 +26,12 @@ import { InputDialog } from '@src/components/ui/input-dialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { useResumeInTerminal } from '@src/hooks/use-resume-in-terminal';
 import { toast } from '@src/hooks/use-toast';
-import { acknowledgePending, formatTimeAgo, useLastStatusChange, usePendingSessionIds } from '@src/store/pending-actions-store';
+import {
+  acknowledgePending,
+  formatTimeAgo,
+  useLastStatusChange,
+  usePendingSessionIds,
+} from '@src/store/pending-actions-store';
 import {
   closeTerminalTargets,
   terminalProcessId,
@@ -33,6 +49,7 @@ import {
   FolderGit2,
   History,
   Loader2,
+  Search,
   SquareTerminal,
   X,
 } from 'lucide-react';
@@ -40,6 +57,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { allowRename } from './rename-rules';
 import { HistoryModal } from './HistoryModal';
 import InteractiveTerminal from './interactive-terminal';
+import { SessionQuickSearchModal } from './SessionQuickSearchModal';
 import { ProjectsCounterChip } from './ProjectsCounterChip';
 import { TerminalOpenerToolbar } from './openers/TerminalOpenerToolbar';
 import type { OpenerDescriptor } from './openers/tab_opener_types';
@@ -52,6 +70,16 @@ const ClaudeResumeIcon: React.FC<{ className?: string }> = ({ className }) => (
 );
 
 import type { TerminalTab } from '@src/hooks/useActiveTerminals';
+
+function isCodexProcess(process?: AgenticProcess | null): boolean {
+  return process?.worker_type?.trim().toLowerCase() === 'codex';
+}
+
+function shouldAutoSavePtyTitle(session: TerminalTab, process?: AgenticProcess | null): boolean {
+  const resolvedProcess = process ?? session.agenticProcess ?? null;
+  if (!resolvedProcess) return session.targetTypeId.type === Shell.type;
+  return !isCodexProcess(resolvedProcess);
+}
 
 interface TabbedTerminalProps {
   className?: string;
@@ -140,10 +168,7 @@ const ProcessInfoTooltip: React.FC<{ process: AgenticProcess; statusReason?: str
         />
         <span className="text-[11px] font-semibold capitalize text-foreground">{status}</span>
         {lastStatusChangedAt !== null && (
-          <span
-            className="text-[10px] text-muted-foreground"
-            data-testid="tab-status-ago"
-          >
+          <span className="text-[10px] text-muted-foreground" data-testid="tab-status-ago">
             {formatTimeAgo(lastStatusChangedAt)}
           </span>
         )}
@@ -197,12 +222,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
   // CollaborationSpace strips that pin to a different project; otherwise the
   // hook defaults to ``dataContext.project?.id``.
   const tabsProjectId = spawnProjectId ?? contextProject?.id ?? null;
-  const {
-    data: projectTabs,
-    pushTerminal,
-    updateTerminal,
-    refresh: refreshTabs,
-  } = useProjectTerminals(spawnProjectId);
+  const { data: projectTabs, pushTerminal, updateTerminal, refresh: refreshTabs } = useProjectTerminals(spawnProjectId);
   const sessions = useMemo(() => {
     if (collaborationRoomId == null) return projectTabs;
     return projectTabs.filter((t) => t.shell?.collaboration_room_id === collaborationRoomId);
@@ -233,6 +253,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
   const tabContainerRef = useRef<HTMLDivElement>(null);
   const tabRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
+  const [sessionSearchOpen, setSessionSearchOpen] = useState(false);
   const [resumeByIdOpen, setResumeByIdOpen] = useState(false);
   const { resumeInTerminal } = useResumeInTerminal();
   const [hasTabOverflow, setHasTabOverflow] = useState(false);
@@ -254,9 +275,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
     if (DockPointer.isAgenticProcessPointer(pointer)) {
       return new TypeId(AgenticProcess.type, DockPointer.extractAgenticProcessId(pointer));
     }
-    const shellId = pointer.startsWith(Shell.type + '-')
-      ? pointer.slice(Shell.type.length + 1)
-      : pointer;
+    const shellId = pointer.startsWith(Shell.type + '-') ? pointer.slice(Shell.type.length + 1) : pointer;
     return new TypeId(Shell.type, shellId);
   }, [currentDock?.viewType, currentDock?.pointer]);
 
@@ -268,8 +287,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
     (contextShellId ? new TypeId(Shell.type, contextShellId) : null) ??
     visibleSessions[0]?.targetTypeId ??
     null;
-  const activeTargetTypeId =
-    urlActiveTargetTypeId ?? contextActiveTerminalTargetTypeId ?? fallbackActiveTargetTypeId;
+  const activeTargetTypeId = urlActiveTargetTypeId ?? contextActiveTerminalTargetTypeId ?? fallbackActiveTargetTypeId;
   const activeTargetKey = activeTargetTypeId?.toString() ?? '';
   const hasActiveTab = Boolean(
     activeTargetKey && visibleSessions.some((session) => terminalTargetKey(session) === activeTargetKey),
@@ -312,8 +330,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
     // default ``dockPointer`` is read-only (lens/transcript); the terminal pane
     // wants ``terminalDockPointer`` so the shell-id vs agentic_process-id route
     // resolves correctly and the actual PTY surfaces.
-    const pointer =
-      firstSession.agenticProcess?.terminalDockPointer ?? firstSession.shell?.dockPointer;
+    const pointer = firstSession.agenticProcess?.terminalDockPointer ?? firstSession.shell?.dockPointer;
     if (pointer) navigation.openDockPointer(pointer);
   }, [hasActiveTab, visibleSessions, navigation]);
 
@@ -353,12 +370,9 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
         AgenticProcess.getByIdFromCache<AgenticProcess>(result.processId) ??
         (await AgenticProcess.getById(result.processId)) ??
         undefined;
-      const shell =
-        result.shellId
-          ? Shell.getByIdFromCache<Shell>(result.shellId) ??
-            (await Shell.getById(result.shellId)) ??
-            undefined
-          : undefined;
+      const shell = result.shellId
+        ? (Shell.getByIdFromCache<Shell>(result.shellId) ?? (await Shell.getById(result.shellId)) ?? undefined)
+        : undefined;
       // Atomic create: backend spawned the Shell + PTY before responding,
       // so result.shellId is always populated. Push directly into terminalState.
       const newTab: TerminalTab = {
@@ -530,7 +544,6 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
     const isFirstScrollForKey = lastScrolledKeyRef.current !== activeTargetKey;
     lastScrolledKeyRef.current = activeTargetKey;
     selectTab(activeTargetKey, { navigate: false, behavior: isFirstScrollForKey ? 'auto' : 'smooth' });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTargetKey, hasActiveTab, selectTab, visibleSessions.length]);
 
   useEffect(() => {
@@ -622,17 +635,23 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
     }
   };
 
-  const onTabRename = (session: (typeof visibleSessions)[number], newName: string, fromPty = false): void => {
+  const onTabRename = (
+    session: (typeof visibleSessions)[number],
+    newName: string,
+    fromPty = false,
+    processOverride?: AgenticProcess | null,
+  ): void => {
     // Source of truth: AgenticProcess for process-backed tabs, Shell for pure shells.
     // Whichever owns the tab owns its name + auto_rename. No cross-entity propagation.
     const source = session.agenticProcess ?? session.shell;
     if (!source) return;
     if (!allowRename(newName)) return;
-    if (fromPty && !source.auto_rename) return;       // user already pinned this tab
-    if (source.name === newName) return;              // no-op — no flip, no save, no /rename
+    if (fromPty && !shouldAutoSavePtyTitle(session, processOverride)) return;
+    if (fromPty && !source.auto_rename) return; // user already pinned this tab
+    if (source.name === newName) return; // no-op — no flip, no save, no /rename
 
     const previousName = session.name;
-    updateTerminal(session, { name: newName });       // optimistic; reconciles via WS data_op
+    updateTerminal(session, { name: newName }); // optimistic; reconciles via WS data_op
 
     source.name = newName;
     if (!fromPty) source.auto_rename = false;
@@ -901,7 +920,8 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
               const displayName = getDisplayName(session);
               const isDisabled = session.isDisabled;
               const workerType = sessionProcess?.worker_type?.toLowerCase() ?? '';
-              const providerKind = session.targetTypeId.type === Shell.type ? 'shell' : workerType === 'codex' ? 'codex' : 'claude';
+              const providerKind =
+                session.targetTypeId.type === Shell.type ? 'shell' : workerType === 'codex' ? 'codex' : 'claude';
               const ProviderIcon =
                 providerKind === 'codex' ? CodexIcon : providerKind === 'claude' ? ClaudeIcon : SquareTerminal;
               const providerIconClassName =
@@ -1058,9 +1078,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
                 when tabs overflow. Placement is unconditional, so it does not
                 oscillate with hasTabOverflow. */}
             {tabEndToolbar && (
-              <div className="sticky right-0 z-10 flex items-center self-stretch bg-muted">
-                {tabEndToolbar}
-              </div>
+              <div className="sticky right-0 z-10 flex items-center self-stretch bg-muted">{tabEndToolbar}</div>
             )}
           </div>
 
@@ -1079,6 +1097,26 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
             </Button>
           )}
 
+          {/* Quick-search sessions — opens a cmdk modal that resolves the
+              picked session to its terminalDockPointer. Always visible. */}
+          <TooltipProvider delayDuration={600}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-7 w-7 shrink-0 rounded-md"
+                  onClick={() => setSessionSearchOpen(true)}
+                  aria-label="Search sessions"
+                  data-testid="session-search-button"
+                >
+                  <Search className="h-3.5 w-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Search sessions</TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+
           {/* Close All button — shown when 2+ tabs are open. Tab count badge
               hints at the destructive scope before clicking. */}
           {visibleSessions.length >= 2 && (
@@ -1094,7 +1132,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
                     data-testid="close-all-tabs-button"
                   >
                     <X className="h-3.5 w-3.5" />
-                    <span className="inline-flex h-4 min-w-[1.125rem] items-center justify-center rounded-full bg-foreground/10 px-1 text-[10px] font-semibold leading-none tabular-nums text-foreground">
+                    <span className="inline-flex h-4 min-w-[1.125rem] items-center justify-center rounded-full bg-foreground/10 px-1 text-[10px] font-semibold tabular-nums leading-none text-foreground">
                       {visibleSessions.length}
                     </span>
                   </Button>
@@ -1160,6 +1198,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
                 terminalProcessId(session) && contextAgenticProcess?.id === terminalProcessId(session)
                   ? contextAgenticProcess
                   : session.agenticProcess;
+              const autoSavePtyTitle = shouldAutoSavePtyTitle(session, sessionProcess);
 
               return (
                 <div
@@ -1177,10 +1216,14 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
                       className="h-full"
                       active={isActive}
                       process={sessionProcess}
-                      onTitleChange={(title) => {
-                        if (session.isDisabled) return;
-                        onTabRename(session, title, true);
-                      }}
+                      onTitleChange={
+                        autoSavePtyTitle
+                          ? (title) => {
+                              if (session.isDisabled) return;
+                              onTabRename(session, title, true, sessionProcess);
+                            }
+                          : undefined
+                      }
                     />
                   )}
                 </div>
@@ -1189,6 +1232,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
           )}
         </div>
       </div>
+      <SessionQuickSearchModal open={sessionSearchOpen} onOpenChange={setSessionSearchOpen} />
       <HistoryModal
         open={historyModalOpen}
         onOpenChange={setHistoryModalOpen}
@@ -1205,7 +1249,11 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
                 processId = process?.id ?? null;
               }
               if (!processId) {
-                toast({ title: 'Session not found', description: `Session ${entry.worker_id} is not in Claude or Codex history.`, variant: 'destructive' });
+                toast({
+                  title: 'Session not found',
+                  description: `Session ${entry.worker_id} is not in Claude or Codex history.`,
+                  variant: 'destructive',
+                });
                 return;
               }
               await navigation.openShellProcess(processId);

@@ -55,13 +55,6 @@ function codexThreadIdFromResult(result: SearchResult): string {
   return result.record_id.replace(/^codex_session-/, '');
 }
 
-/** Extract the project encoded name from a session search result's asset_ref */
-function projectEncodedNameFromResult(result: SearchResult): string {
-  // asset_ref: "/.../.claude/projects/<project_encoded>/<uuid>.jsonl"
-  const parts = result.asset_ref.split('/');
-  parts.pop(); // remove filename
-  return parts.pop() ?? '';
-}
 
 
 export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
@@ -167,7 +160,6 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
     dockPointer: (r) => new AgenticProcess({
       id: r.record_id,
       session_id: (r as any).session_id ?? undefined,
-      project_encoded_name: (r as any).project_encoded_name ?? undefined,
     }).searchDockPointer,
   },
   project: {
@@ -211,9 +203,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
         icon: FileText,
         name: 'Transcript',
         action: (r, navigation) => {
-          const sessionId = sessionIdFromResult(r);
-          const projectEncodedName = projectEncodedNameFromResult(r);
-          navigation.openLens('claude', 'transcript', `${projectEncodedName}/${sessionId}`);
+          navigation.openLens('claude', 'transcript', sessionIdFromResult(r));
         },
       },
       {

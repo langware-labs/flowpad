@@ -73,6 +73,18 @@ class RequestTransactionMiddleware:
                 else:
                     target_entity = await entity_model.get_by_typeid(req_info.target_entity_typeid)
                     if target_entity is None:
+                        # 404 self-heal: when the caller passes ?hint_path=...
+                        # (chip click for a context entry whose row isn't in
+                        # the DB yet), run the per-type single-file indexer
+                        # and retry. See flow_sdk/server/routes/graph.py
+                        # _try_self_heal_missing_entity for the registry.
+                        from flow_sdk.server.routes.graph import (  # noqa: PLC0415
+                            _try_self_heal_missing_entity,
+                        )
+                        target_entity = await _try_self_heal_missing_entity(
+                            req_info.request, req_info
+                        )
+                    if target_entity is None:
                         # TODO - this is a patch, remove it
                         # ``open`` deep-link actions can land on entities the
                         # local DB hasn't synced yet — a fresh invitee clicking

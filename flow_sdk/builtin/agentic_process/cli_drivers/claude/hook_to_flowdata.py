@@ -2,7 +2,7 @@
 ``ProcessEntry``.
 
 Sibling of ``event_to_flowdata.py`` (live worker stdout) and the JSONL
-replay path (``AgentTranscript``). All three deliver the same wrapper shape
+replay path (``AgentTranscriptFile``). All three deliver the same wrapper shape
 to downstream consumers — the only difference is the wrapper's
 ``observation_kind`` (``hook_pre``/``hook_post``/``synthesized`` here vs.
 ``live`` for the worker stream vs. ``replay`` for JSONL).

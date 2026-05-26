@@ -28,7 +28,7 @@ import { useAuth, useProject } from '@sdk/react/hooks';
 import { useAgentContext } from '@src/contexts/agent-context';
 import { useToast } from '@src/hooks/use-toast';
 import { useSystemTools } from '@src/hooks/use-system-tools';
-import { ActivityProgressModal } from '@src/components/search-index/ActivityProgressModal';
+import { ActivityIndicator } from '@src/components/search-index/ActivityIndicator';
 import { WelcomeModal } from '@src/components/search-index/WelcomeModal';
 import { NewConversationDialog } from '@src/components/new-conversation-dialog/NewConversationDialog';
 import { JoinConversationDialog } from '@src/components/join-room-dialog/JoinConversationDialog';
@@ -43,7 +43,7 @@ import type React from 'react';
 import { SearchFilters, SearchResult } from '@src/hooks/use-record-search';
 import { navigateToResult } from '@src/navigation/record-type-nav';
 import { InlineSearchResults } from './InlineSearchResults';
-import { Loader2, PackageSearch, X, CheckCircle2, Hammer, Inbox, RefreshCw, Users } from 'lucide-react';
+import { PackageSearch, X, CheckCircle2, Hammer, Inbox, RefreshCw, Users } from 'lucide-react';
 import { useInboxStore } from '@src/store/use-inbox-store';
 import { listInboxMessages } from '@src/components/inbox-view/inbox-api';
 import { fetchConversations } from '@sdk';
@@ -182,8 +182,7 @@ export function HomeLanding() {
   );
 
   const devMode = useDevMode();
-  const { busy, resetAndRescan, clearIndex, currentActivity, progressTable, scanInfo, lastScanResult } = useSystemTools();
-  const [progressOpen, setProgressOpen] = useState(false);
+  const { busy, resetAndRescan, clearIndex, scanInfo, lastScanResult } = useSystemTools();
   const [showWelcome, setShowWelcome] = useState(false);
   const [postScanResult, setPostScanResult] = useState<LastScanResult | null>(null);
 
@@ -648,44 +647,11 @@ export function HomeLanding() {
               <MiniDesktop />
             </div>
 
-            {/* Activity strip — shown while any system activity is running */}
-            {currentActivity && (
-              <button
-                onClick={() => setProgressOpen(true)}
-                className="w-full max-w-3xl flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-1.5 text-xs hover:bg-muted/60 transition-colors text-left"
-              >
-                <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0 text-primary" />
-                <span className="text-muted-foreground shrink-0">
-                  {currentActivity === 'archive' ? 'Archiving…'
-                    : currentActivity === 'clear' ? 'Clearing index…'
-                    : currentActivity === 'load_from_archive' ? 'Restoring…'
-                    : currentActivity === 'scan' ? 'Scanning'
-                    : 'Indexing'}
-                </span>
-                {progressTable?.current && (
-                  <span className="font-mono text-foreground truncate max-w-[180px]">
-                    {progressTable.current}
-                  </span>
-                )}
-                {progressTable && (
-                  <>
-                    <span className="ml-auto text-muted-foreground shrink-0 tabular-nums">
-                      {progressTable.total > 0
-                        ? `${progressTable.done.toLocaleString()}/${progressTable.total.toLocaleString()}`
-                        : progressTable.done.toLocaleString()}
-                    </span>
-                    {progressTable.total > 0 && (
-                      <div className="h-1 w-20 rounded-full bg-muted overflow-hidden shrink-0">
-                        <div
-                          className="h-full bg-primary rounded-full transition-all"
-                          style={{ width: `${(progressTable.done / progressTable.total) * 100}%` }}
-                        />
-                      </div>
-                    )}
-                  </>
-                )}
-              </button>
-            )}
+            <ActivityIndicator
+              variant="strip"
+              className="w-full max-w-3xl flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-1.5 text-xs hover:bg-muted/60 transition-colors text-left"
+            />
+
           </div>
 
           {/* Post-scan results panel — shown after scan completes when user hasn't searched yet */}
@@ -772,21 +738,6 @@ export function HomeLanding() {
         onClose={() => setShowCommunityAssistance(false)}
       />
       <LoginDialog open={showLoginDialog} onOpenChange={closeLoginDialog} />
-
-      {/* Activity progress detail modal */}
-      <ActivityProgressModal
-        open={progressOpen}
-        onOpenChange={setProgressOpen}
-        table={progressTable}
-        title={currentActivity ? (
-          currentActivity === 'archive' ? 'Archiving…'
-          : currentActivity === 'clear' ? 'Clearing index…'
-          : currentActivity === 'load_from_archive' ? 'Restoring…'
-          : currentActivity === 'scan'
-            ? `Scanning… ${progressTable ? progressTable.done.toLocaleString() : 0}`
-            : `Indexing… ${progressTable && progressTable.total > 0 ? `${progressTable.done}/${progressTable.total}` : (progressTable?.done ?? 0)}`
-        ) : 'Activity'}
-      />
 
       {/* Incoming task dialog — pull/clone flow for shared tasks */}
       {pendingTask && (

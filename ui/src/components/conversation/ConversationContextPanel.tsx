@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { useChipPrewarm } from '@src/navigation/useChipPrewarm';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { resolveWorkdir } from './apply-project-choice';
 import { fileAttachmentUrl } from './attachment-url';
@@ -402,6 +403,7 @@ function SharedContextSection({
   onSelectEntity,
 }: SharedContextSectionProps) {
   const { navigation } = useDockNavigation();
+  const prewarm = useChipPrewarm();
   const containerInside = useMemo(() => ({ type: Conversation.type, id: conversationId }), [conversationId]);
 
   const isEmpty =
@@ -438,7 +440,8 @@ function SharedContextSection({
                     ? () => onSelectEntity(rowKey, entry.originMessageIds)
                     : undefined
                 }
-                onOpen={(assetRef) => {
+                onOpen={async (assetRef) => {
+                  await prewarm(entry.typeId, entry.hintPath);
                   const ptr = dockPointerFor(entry.typeId, containerInside, assetRef);
                   if (ptr) navigation.openDock(ptr);
                 }}
@@ -681,6 +684,7 @@ function PrivateContextSection({
   starting,
 }: PrivateContextSectionProps) {
   const { navigation } = useDockNavigation();
+  const prewarm = useChipPrewarm();
   const containerInside = useMemo(() => ({ type: Conversation.type, id: conversationId }), [conversationId]);
   const [adding, setAdding] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -856,7 +860,10 @@ function PrivateContextSection({
           {projectTypeId && (
             <ProjectRow
               typeId={projectTypeId}
-              onOpen={() => {
+              onOpen={async () => {
+                const sidecar = conversation?.getContextEntryData(projectTypeId);
+                const hintPath = typeof sidecar?.path === 'string' ? sidecar.path : undefined;
+                await prewarm(projectTypeId, hintPath);
                 const ptr = dockPointerFor(projectTypeId, containerInside);
                 if (ptr) navigation.openDock(ptr);
               }}
@@ -875,8 +882,14 @@ function PrivateContextSection({
                     ? () => onSelectEntity(rowKey, t.originMessageIds)
                     : undefined
                 }
-                onView={() => {
+                onView={async () => {
                   if (!t.task.typeId) return;
+                  // Tasks rarely carry a path sidecar (they're opaque), but
+                  // run the lookup anyway so any future schema for Task
+                  // automatically rides through this path.
+                  const sidecar = conversation?.getContextEntryData(t.task.typeId);
+                  const hintPath = typeof sidecar?.path === 'string' ? sidecar.path : undefined;
+                  await prewarm(t.task.typeId, hintPath);
                   const ptr = dockPointerFor(t.task.typeId, containerInside);
                   if (ptr) navigation.openDock(ptr);
                 }}

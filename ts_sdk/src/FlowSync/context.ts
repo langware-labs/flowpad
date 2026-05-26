@@ -651,17 +651,37 @@ class DataContext extends EventEmitter {
     // No need to update observable or emit here to avoid double updates/emissions
   }
   async _onAddedToContext(_entityKey: ContextEntitiesEnum, typeId: TypeId): Promise<void> {
+    // Per-step perf prints tied to the shell-nav T0 marker set by tab clicks.
+    // Lets us see exactly which awaited step inside the context-set tail eats
+    // the milliseconds (load vs loadHistory vs loadContextEntity).
+    const w = (typeof window !== 'undefined' ? window : undefined) as
+      | { __shellNavT0?: number }
+      | undefined;
+    const t0 = w?.__shellNavT0;
+    const stamp = (label: string, start: number) => {
+      if (t0 === undefined) return;
+      const now = performance.now();
+      // eslint-disable-next-line no-console
+      console.log(`[PERF] +${(now - t0).toFixed(0)}ms ${label} took ${(now - start).toFixed(1)}ms`);
+    };
+
     let entity = dataManager.getByTypeIdFromCache(typeId);
     if (!entity) {
+      const s = performance.now();
       entity = await this.loadContextEntity(typeId);
+      stamp(`_onAddedToContext(${_entityKey}) loadContextEntity (cache miss)`, s);
     } else {
+      const s = performance.now();
       await entity.load(); // tests mock flows never being fetched
+      stamp(`_onAddedToContext(${_entityKey}) entity.load (cache hit)`, s);
       // Check if cached entity has required expansions
       const entityConstructor = EntityFactory.getEntityConstructor(typeId.type);
       const expansionRequest = (entityConstructor as typeof APIEntity).getLoadingExpansions();
       if (!entity.isExpanded(expansionRequest)) {
+        const s2 = performance.now();
         // Entity exists in cache but doesn't have required expansions, reload it
         await this.loadContextEntity(typeId);
+        stamp(`_onAddedToContext(${_entityKey}) loadContextEntity (re-expand)`, s2);
       }
     }
     if (_entityKey === ContextEntitiesEnum.CurrentFlowTypeId && entity) {
@@ -673,7 +693,9 @@ class DataContext extends EventEmitter {
     // Load history for process entities when added to context
     if (_entityKey === ContextEntitiesEnum.CurrentProcessTypeId && entity instanceof AgenticProcess) {
       defineGlobal('process', entity);
+      const s = performance.now();
       await entity.loadHistory();
+      stamp(`_onAddedToContext(${_entityKey}) entity.loadHistory`, s);
     }
   }
 

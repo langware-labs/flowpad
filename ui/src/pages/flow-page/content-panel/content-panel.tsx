@@ -17,6 +17,8 @@ import { MarkdownViewer } from '@src/components/markdown-viewer';
 import { ProcessTerminal } from '@src/components/process-terminal';
 import { SettingsView } from '@src/components/settings-view/SettingsView';
 import { ShowView } from '@src/components/show-view/ShowView';
+import { AppHost } from '@src/components/app-host/AppHost';
+import { GraphView } from '@src/components/graph-view/GraphView';
 import { FilterName, getAllFilterDefinitions } from '@src/components/simple-file-manager';
 import { TasksViewer } from '@src/components/tasks-viewer/TasksViewer';
 import { HomeLanding } from '@src/pages/home-landing';
@@ -430,6 +432,20 @@ export function ContentPanel() {
             className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
           >
             <ShowView />
+          </TabsContent>
+
+          <TabsContent
+            value={ViewType.APPS}
+            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
+          >
+            <AppHost />
+          </TabsContent>
+
+          <TabsContent
+            value={ViewType.GRAPH}
+            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
+          >
+            <GraphView />
           </TabsContent>
 
           <TabsContent

@@ -2,7 +2,7 @@
 
 ``GET /api/v1/transcripts/{worker_type}?path=<absolute_path>``
 
-Loads a worker JSONL transcript via :class:`AgentTranscript` (worker-agnostic
+Loads a worker JSONL transcript via :class:`AgentTranscriptFile` (worker-agnostic
 parser) and returns the typed entries plus the extracted session header.
 The UI's ``GenericTranscriptViewer`` consumes the response — both claude
 and codex paths flow through the same shape.
@@ -21,7 +21,7 @@ from flow_sdk.transcript_analyzer.resolver import (
     TranscriptNotFoundError,
     resolve_session_jsonl,
 )
-from flow_sdk.transcript_analyzer.transcript import AgentTranscript
+from flow_sdk.transcript_analyzer.transcript import AgentTranscriptFile
 
 logger = logging.getLogger(__name__)
 
@@ -38,10 +38,10 @@ def _error(status_code: int, code: str, message: str) -> JSONResponse:
     )
 
 
-def _build_header(transcript: AgentTranscript) -> dict:
+def _build_header(transcript: AgentTranscriptFile) -> dict:
     """Pull session_meta-style fields onto the response header.
 
-    Mirrors the scan that :meth:`AgentTranscript.to_string` does so the UI
+    Mirrors the scan that :meth:`AgentTranscriptFile.to_string` does so the UI
     can render a stable header strip (cwd, git, cli_version, originator,
     model_provider) without reaching into MetaEntry payloads.
     """
@@ -86,7 +86,7 @@ async def get_transcript(worker_type: str, path: str = ""):
         return _error(404, "NOT_FOUND", f"Transcript not found: {path!r}")
 
     try:
-        transcript = AgentTranscript(worker_type, p)
+        transcript = AgentTranscriptFile(worker_type, p)
     except Exception as exc:  # noqa: BLE001 — surface the parser failure verbatim
         logger.exception("transcripts: parse failed for %s", path)
         return _error(500, "PARSE_FAILED", str(exc))
@@ -125,7 +125,7 @@ async def get_worker_session_transcript(worker_type: str, session_id: str):
         return _error(400, "INVALID_ARG", str(exc))
 
     try:
-        transcript = AgentTranscript(worker_type, path)
+        transcript = AgentTranscriptFile(worker_type, path)
     except Exception as exc:  # noqa: BLE001
         logger.exception("transcripts: parse failed for %s", path)
         return _error(500, "PARSE_FAILED", str(exc))

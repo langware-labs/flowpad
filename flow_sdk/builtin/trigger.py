@@ -1,9 +1,12 @@
 import logging
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, ClassVar, Optional, Union
 
+from pydantic import model_validator
 from starlette.requests import Request
 
+from flow_sdk._compat import StrEnum
 from flow_sdk.flowpad_types.enums.entity_enums import BuiltInRelationshipTypes, RelationshipDirection
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.api.messages import HttpMethod
@@ -26,6 +29,46 @@ from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 
 logger = logging.getLogger(__name__)
+
+
+class TriggerType(StrEnum):
+    """Discriminator for Trigger entities. New values: extend here + handle in lifecycle hooks."""
+
+    HOOK = "hook"
+    SCHEDULE = "schedule"
+    FSOP = "fsop"
+
+
+def _allowlisted_roots() -> list[Path]:
+    """Roots under which FSOp triggers are allowed to watch: $HOME + the OS
+    tempdir (resolved so macOS /var/folders symlink expansion matches input)."""
+    import tempfile as _tempfile
+
+    roots: list[Path] = [Path.home().resolve(), Path(_tempfile.gettempdir()).resolve()]
+    # Dedup while preserving order.
+    seen: set[Path] = set()
+    return [r for r in roots if not (r in seen or seen.add(r))]
+
+
+def _validate_watch_path(path: Optional[str]) -> None:
+    """Reject FSOp watch_paths outside the allowlist. None/empty is allowed.
+
+    Raises ValueError if `path` resolves to a location outside any allowlisted
+    root. Prevents "/etc/hosts"-style accidents at trigger save time.
+    """
+    if not path:
+        return
+    resolved = Path(path).resolve()
+    roots = _allowlisted_roots()
+    for root in roots:
+        try:
+            resolved.relative_to(root)
+            return  # under an allowed root
+        except ValueError:
+            continue
+    raise ValueError(
+        f"watch_path {path!r} not in allowlist; allowed roots: {[str(r) for r in roots]}"
+    )
 
 
 # ── APScheduler helpers (shared pattern with cron_event.py) ──────────────────
@@ -71,11 +114,19 @@ def _parse_interval_expr(expr: str) -> int:
 async def _fire_schedule_job(trigger_id: str) -> None:
     """Callback executed by APScheduler when a schedule trigger fires.
 
-    If the trigger has an `instruction`, spawn an AgenticProcess marked with
-    trigger_id so the invocation can be opened/queried later.
+    Dispatches via the action handler registry (same path as FSOp's ``_fire``
+    in ``server/fsop_watcher.py:_fire``) so any ``actions`` declared on the
+    Trigger entity run — CALLBACK and RUN_SCRIPT included. Per-action try/except
+    so one bad handler can't skip the rest.
+
+    Legacy ``instruction`` path is preserved as a back-compat fallback for
+    schedule triggers that pre-date the actions list (it spawns an
+    AgenticProcess with the prompt).
     """
     try:
+        from flow_sdk.builtin.hook_models import get_action_handler
         from flow_sdk.fs_records.trigger_log import TriggerLogRecord
+
         entity = await Trigger.get_by_id(trigger_id)
         if not (entity and entity.enabled):
             return
@@ -83,6 +134,29 @@ async def _fire_schedule_job(trigger_id: str) -> None:
         entity.last_run = datetime.now(timezone.utc)
         await entity.update()
 
+        # Dispatch actions via the shared registry. ``changes`` is empty for
+        # schedule fires — FSOp fires populate it via _fire(trigger, batch).
+        # RUN_SCRIPT then reports CHANGES_COUNT=0 / FIRST_*="" to the script.
+        for action in entity.actions:
+            try:
+                handler = get_action_handler(action.action_type)
+                if handler is None:
+                    logger.warning(
+                        "Schedule trigger %s: no handler for action_type=%s",
+                        entity.name, action.action_type,
+                    )
+                    continue
+                # Schedule fires carry no file changes; pass an empty list.
+                await handler.execute(entity, action=action, changes=[])
+            except Exception:
+                logger.exception(
+                    "Schedule trigger %s: action %s raised during dispatch",
+                    entity.name, action.action_type,
+                )
+
+        # Legacy back-compat: schedule triggers with ``instruction`` set spawn
+        # an AgenticProcess. Pre-dates the actions list; kept so existing
+        # user-created schedules keep working.
         process_id: Optional[str] = None
         if entity.instruction:
             try:
@@ -106,7 +180,7 @@ async def _fire_schedule_job(trigger_id: str) -> None:
             "reason": f"Scheduled ({entity.sched_trigger_type or 'cron'}): {entity.expr}",
             "is_test": False,
             "rule_name": entity.name,
-            "actions": [],
+            "actions": [{"action_type": str(a.action_type)} for a in entity.actions],
             "agentic_process_id": process_id,
         })
         logger.debug(f"Schedule trigger {entity.name} fired (counter={entity.counter}, process_id={process_id})")
@@ -121,12 +195,18 @@ class Trigger(Entity):
     name: str = APIField()
     description: Optional[str] = APIField(None)
 
-    # Trigger type: 'hook' (default, filesystem-based) or 'schedule' (APScheduler)
-    trigger_type: str = APIField(default="hook")
+    # Trigger type: 'hook' (filesystem-based), 'schedule' (APScheduler), or 'fsop' (file/folder watch).
+    trigger_type: TriggerType = APIField(default=TriggerType.HOOK)
 
     # Hook trigger fields
     mask: dict[str, Any] = APIField(default_factory=dict, description="JSON mask for matching hook data")
+    # Legacy singular action. Kept for backwards-compat with existing dispatch code
+    # (trigger.py:230). New code reads `actions` instead. Always synced with
+    # actions[0] when actions is non-empty (see _sync_action_and_actions).
     action: TriggerAction = APIField(default_factory=lambda: TriggerAction(action_type=ActionType.NOP))
+    # Plural actions — the new canonical list. Each fired event dispatches every
+    # action in order via its action handler.
+    actions: list[TriggerAction] = APIField(default_factory=list, description="List of actions to dispatch on fire")
     enabled: bool = APIField(default=True)
     last_triggered: Optional[datetime] = APIField(None, description="Timestamp of last trigger match")
     counter: int = APIField(default=0, description="Counter incremented when trigger action is executed")
@@ -142,8 +222,87 @@ class Trigger(Entity):
     instruction: Optional[str] = APIField(None, description="Prompt sent to the agentic process when this trigger fires (schedule triggers only)")
     workdir: Optional[str] = APIField(None, description="Working directory for the spawned agentic process (schedule triggers only)")
 
+    # FSOp trigger fields
+    watch_path: Optional[str] = APIField(None, description="Absolute file or folder path watched (FSOp triggers only)")
+    recursive: bool = APIField(default=False, description="For folder watches: descend into subtree (FSOp only)")
+    watch_glob: Optional[str] = APIField(None, description="For folder watches: glob filter, e.g. '*.json' (FSOp only)")
+    last_seen_mtime: Optional[float] = APIField(None, description="File mtime at last fire (FSOp file triggers — used for restart catch-up)")
+    last_seen_size: Optional[int] = APIField(None, description="File size at last fire (FSOp file triggers — used for restart catch-up)")
+    step_ms: int = APIField(50, description="awatch poll interval in ms (FSOp only). Lower = snappier; higher = less CPU. Default matches watchfiles' default.")
+    debounce_ms: int = APIField(1600, description="awatch debounce in ms — max wait before yielding a coalesced batch (FSOp only). Raise on noisy paths (npm install bursts).")
+    respect_gitignore: bool = APIField(default=False, description="If True, walk for .gitignore files under watch_path and drop matching events (FSOp only).")
+    ignore_patterns: list[str] = APIField(default_factory=list, description="Extra gitignore-style ignore patterns (FSOp only). Applied in addition to .gitignore.")
+
     _api_visible: ClassVar[bool] = True
     _unique: ClassVar[list[str]] = []
+
+    @model_validator(mode="before")
+    @classmethod
+    def _sync_action_and_actions(cls, data: Any) -> Any:
+        """Bidirectional sync between legacy `action` and new `actions`.
+
+        - If `actions` is given and non-empty, it wins. `action` is back-synced to actions[0]
+          so legacy dispatch code at trigger.py:230 keeps reading the same thing.
+        - If only `action` is given (legacy record JSON), populate `actions = [action]`.
+        - If neither is given, both stay at their defaults: action=NOP, actions=[].
+        """
+        if not isinstance(data, dict):
+            return data
+        actions_in = data.get("actions")
+        action_in = data.get("action")
+
+        def _coerce(item: Any) -> TriggerAction:
+            if isinstance(item, TriggerAction):
+                return item
+            if isinstance(item, dict):
+                return TriggerAction(**item)
+            return item
+
+        if actions_in:
+            coerced = [_coerce(a) for a in actions_in]
+            data["actions"] = coerced
+            data["action"] = coerced[0]  # back-sync for legacy access
+        elif action_in is not None:
+            coerced = _coerce(action_in)
+            data["action"] = coerced
+            data["actions"] = [coerced]
+        return data
+
+    # ── Data folder (for embedded RUN_SCRIPT bodies) ──────────────────────────
+
+    @property
+    def data_dir(self) -> Path:
+        """Per-trigger data folder. Holds files referenced by `script_filename`
+        and any other blob attachments associated with this trigger record.
+
+        Path: ``<records_data_root>/trigger/trigger-@<id>/``. Created on first access.
+        Matches the fs-record convention at `flow_sdk/fs_store/record.py:105`.
+        """
+        # Import lazily so the function works in tests that monkeypatch the root.
+        from flow_sdk.fs_store.record import get_default_records_data_root, record_stem
+
+        root = get_default_records_data_root()
+        path = root / "trigger" / record_stem("trigger", self.id or "unsaved")
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def write_file(self, filename: str, content: str) -> None:
+        """Write a text file into this trigger's data folder."""
+        (self.data_dir / filename).write_text(content)
+
+    def read_file(self, filename: str) -> Optional[str]:
+        """Read a text file from this trigger's data folder. Returns None if missing."""
+        path = self.data_dir / filename
+        if not path.exists():
+            return None
+        return path.read_text()
+
+    # ── Discovery ─────────────────────────────────────────────────────────────
+
+    @classmethod
+    async def list_by_type(cls, trigger_type: "TriggerType") -> list["Trigger"]:
+        """List all Trigger entities of the given type."""
+        return await cls.get_all({"trigger_type": trigger_type.value})
 
     # ── Schedule job management ───────────────────────────────────────────────
 
@@ -307,6 +466,12 @@ class Trigger(Entity):
 
         if trigger_type == "schedule":
             await entity._register_schedule_job()
+        elif trigger_type == "fsop":
+            # Mirror the schedule pattern: hand the freshly-saved trigger to
+            # the FSOp watcher so its awatch task is spawned immediately
+            # (without waiting for the next server boot).
+            from flow_sdk.server.fsop_watcher import fsop_watcher
+            await fsop_watcher.on_trigger_saved(entity)
 
         return ApiSuccessResponse(data=entity)
 
@@ -338,6 +503,12 @@ class Trigger(Entity):
 
         if self.trigger_type == "schedule":
             await self._reschedule_job()
+        elif self.trigger_type == "fsop":
+            # Re-spawn the watcher's task — config (watch_path / recursive /
+            # glob / actions) may have changed; on_trigger_saved cancels the
+            # existing task and starts a fresh one.
+            from flow_sdk.server.fsop_watcher import fsop_watcher
+            await fsop_watcher.on_trigger_saved(self)
 
         return ApiSuccessResponse(data=self)
 
@@ -351,6 +522,12 @@ class Trigger(Entity):
                     scheduler.remove_job(self.id)
             except Exception as e:
                 logger.debug(f"APScheduler remove_job error (may not exist): {e}")
+        elif self.trigger_type == "fsop" and self.id:
+            try:
+                from flow_sdk.server.fsop_watcher import fsop_watcher
+                await fsop_watcher.on_trigger_deleted(self.id)
+            except Exception as e:
+                logger.debug(f"FSOpWatcher on_trigger_deleted error (may not be running): {e}")
 
         await self.delete()
         return ApiSuccessResponse(data={"deleted": True})
@@ -459,6 +636,23 @@ class Trigger(Entity):
             # Reload to get updated counter
             updated = await Trigger.get_by_id(self.id)
             return ApiSuccessResponse(data={"status": "fired", "counter": updated.counter if updated else self.counter})
+
+        if self.trigger_type == "fsop":
+            # Synthetic FSOp fire: real action dispatch (callback / script runs
+            # for real, marked is_test=True in the invocations log so it's
+            # visually distinguishable). Matches the precedent set by schedule:
+            # "Test" really runs the action. Lets the user verify wiring.
+            if not self.enabled:
+                return ApiFailResponse(message="Trigger is disabled — enable it before testing.")
+            if not self.watch_path:
+                return ApiFailResponse(message="Trigger has no watch_path configured.")
+            from pathlib import Path as _Path
+            from flow_sdk.builtin.change_event import ChangeEvent
+            from flow_sdk.server.fsop_watcher import _fire as _fsop_fire
+            test_event = ChangeEvent(path=_Path(self.watch_path), change_type="test")
+            await _fsop_fire(self, [test_event], is_test=True)
+            updated = await Trigger.get_by_id(self.id) if self.id else self
+            return ApiSuccessResponse(data={"status": "fired", "counter": updated.counter if updated else self.counter, "is_test": True})
 
         # Hook trigger test
         if not self.path:

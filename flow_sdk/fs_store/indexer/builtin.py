@@ -68,6 +68,8 @@ def build_default_indexer() -> FSIndexer:
         claude_hook_fn, claude_hook_extras_fn,
     )
 
+    # Transcript handlers are opt-in (full-JSONL parse is expensive — see
+    # flow_sdk/fs_store/transcript_indexer/).
     idx = FSIndexer(
         roots=default_roots(),
     )

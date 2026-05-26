@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import os
 
 DEFAULT_BROWSE_LIMIT = 20
@@ -126,9 +127,45 @@ class Entity(DBEntity):
         ),
     )
 
+    # Sidecar storage for per-entry data harvested at detection time. Keyed by
+    # ``str(typeid)`` (e.g. "plan-b034e56e-..."). For file-backed types (Plan,
+    # Markdown, Skill, ClaudeMd, ClaudeCommand) we store ``{"path": ...}`` so
+    # the dock loader can self-heal a 404 by single-file-indexing the file.
+    #
+    # BOTH fields are LOCAL-ONLY despite the "shared/private" prefix — the
+    # prefix tracks which typeid bucket the entry indexes, not its wire
+    # visibility. The harvested ``path`` is always an absolute filesystem
+    # path on the writer's machine; replicating it to other peers via the
+    # hub would leak the writer's local FS layout (PII) and the path would
+    # be meaningless on the receiver anyway. ``share()`` excludes both. If
+    # a future cross-link wants to carry a hub-portable hint (URL, content
+    # hash, anchor), add a separate field with a translatable schema.
+    shared_context_entity_data: dict[str, dict] = APIField(
+        default_factory=dict,
+        description=(
+            "Per-entry sidecar for shared_context_entities. Keyed by str(typeid). "
+            "Local-only despite the 'shared' prefix — see field comment."
+        ),
+    )
+    private_context_entity_data: dict[str, dict] = APIField(
+        default_factory=dict,
+        description=(
+            "Per-entry sidecar for private_context_entities_. Same shape as "
+            "shared_context_entity_data; both excluded from share()/hub push."
+        ),
+    )
+
     # Display name — overridden with required `str` on many subclasses
     name: str | None = APIField(default=None, description="Display name")
     _icon: ClassVar[str | None] = None
+
+    # Per-type schema for the sidecar ``{shared,private}_context_entity_data``
+    # values when this Entity's typeid is referenced from another entity's
+    # context bucket. None means "no declared shape" — sidecar writes against
+    # this type pass through without validation. Subclasses override to
+    # declare a Pydantic model (e.g. PlanContextData) and ``_add_to_bucket``
+    # validates incoming data best-effort against it.
+    context_data_schema: ClassVar[type | None] = None
 
     # Optional per-instance FS storage configuration
     # If not set, falls back to class default via get_default_fs_storage_provider()
@@ -145,6 +182,66 @@ class Entity(DBEntity):
         super().__init__(**kwargs)
         if self.env_vars is None:
             self.env_vars = EntityEnvVars[EnvVar]()
+
+    # Per-subclass entityEvent registry: event name → handler method name.
+    # Method-name (not bound) so subclass overrides resolve at call time.
+    _entity_event_handlers: ClassVar[dict[str, str]] = {}
+
+    @classmethod
+    def on_event(cls, event_name: str):
+        """Register a method as the handler for a named entityEvent.
+
+        Usage::
+
+            class MyEntity(Entity):
+                async def handle_ping(self, payload): ...
+
+            Entity.on_event("ping")(MyEntity.handle_ping)
+
+        Subclass-local: each subclass gets its own copy of the registry on
+        first registration so registrations don't leak across siblings.
+        """
+
+        def deco(fn):
+            handlers = cls.__dict__.get("_entity_event_handlers")
+            if handlers is None:
+                handlers = dict(getattr(cls, "_entity_event_handlers", {}))
+                cls._entity_event_handlers = handlers
+            handlers[event_name] = fn.__name__
+            return fn
+
+        return deco
+
+    @classmethod
+    def _lookup_event_handler(cls, event_name: str) -> str | None:
+        """Walk the MRO to find an event handler registered on self or a parent."""
+        for klass in cls.__mro__:
+            handlers = klass.__dict__.get("_entity_event_handlers")
+            if handlers and event_name in handlers:
+                return handlers[event_name]
+        return None
+
+    async def entity_event(self, event: str = "", payload: dict | None = None) -> "ApiResponse":
+        """Generic entity-addressed event dispatcher.
+
+        TS-side ``APIEntity.entityEvent(name, payload)`` lands here for any
+        entity type. Body params: ``event`` (str), ``payload`` (dict). Looks
+        up the method registered via ``Entity.on_event(<name>)(method)`` on
+        this instance's class (or any parent), and invokes it. Unregistered
+        events return a noop success — never a 404 — because the wire
+        surface is intentionally generic.
+        """
+        from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
+
+        payload = payload or {}
+        handler_name = type(self)._lookup_event_handler(event)
+        if not handler_name:
+            return ApiSuccessResponse(data={"status": "noop", "event": event})
+        handler = getattr(self, handler_name)
+        result = handler(payload)
+        if inspect.iscoroutine(result):
+            result = await result
+        return ApiSuccessResponse(data={"status": "ok", "event": event, "result": result})
 
     @classmethod
     async def search(
@@ -329,7 +426,9 @@ class Entity(DBEntity):
             entity.type = record_type
             all_updates = {**data, **record_domain, **stamp}
             for k, v in all_updates.items():
-                if k in ("id",) or not hasattr(entity, k):
+                # Restrict to declared model fields so read-only computed
+                # properties leaked in by stale metadata don't crash setattr.
+                if k in ("id",) or k not in entity.__class__.model_fields:
                     continue
                 field = entity.__class__.model_fields.get(k)
                 if field is not None:
@@ -538,6 +637,14 @@ class Entity(DBEntity):
             }
             for e in await wiki.outgoing(self.type, self.id)
         ]
+
+    def tooltip_summary(self) -> dict[str, str | None]:
+        """Per-entity hover summary for favorite tiles / bookmark cards.
+
+        Default: name only. Subclasses override to add a subtitle (e.g.
+        AgenticProcess returns its last prompt).
+        """
+        return {"name": self.name, "subtitle": None}
 
     @staticmethod
     def api_visible_by_type(entity_type: str):
@@ -820,6 +927,12 @@ class Entity(DBEntity):
             exclude={
                 "private_context_entities_",
                 "private_context_entities",   # Pydantic computed field — backend computes it
+                # Both sidecars are local-only — they carry absolute filesystem
+                # paths from the writer's machine that are PII to peers and
+                # meaningless off-host. See the field comments at the top of
+                # this class for the full rationale.
+                "private_context_entity_data",
+                "shared_context_entity_data",
                 "created_by", "updated_by",
                 "created_date", "updated_date",
                 "remote", "system", "orphan",
@@ -973,6 +1086,31 @@ class Entity(DBEntity):
         }
 
         await send_flow_data_to_entity(self.typeid, frontend_flow_data)
+
+    async def emit_entity_event(self, event: str, payload: dict | None = None) -> None:
+        """Outbound entity event — push a typed event to all WS watchers of this entity.
+
+        Counterpart to :meth:`entity_event` (which dispatches inbound events from
+        TS to a registered handler). Used by code paths that want to notify the
+        frontend that "something happened to this entity" without changing entity
+        fields (e.g. ``plan.create`` when a plan is detected mid-session). The
+        ordinary ``save()``-time entity-update broadcast covers field changes;
+        this surface adds a named-event channel for things that aren't field
+        mutations.
+
+        Wire format (via ``emit_flow_data``):
+            element_type = "entity_event"
+            data_type    = "json"
+            attributes   = {"event": <name>, "payload": {...}, ...}
+        """
+        await self.emit_flow_data({
+            "attributes": {
+                "element-type": "entity_event",
+                "data-type": "json",
+                "event": event,
+                "payload": payload or {},
+            },
+        })
 
     async def save_relationship(self, to_e, relationship_or_str, direction=RelationshipDirection.Outgoing, create=True):
         """Override save_relationship to invalidate cache when relationships are saved."""
@@ -1156,52 +1294,135 @@ class Entity(DBEntity):
         return out
 
     _BUCKET_FIELDS = {"shared": "shared_context_entities", "private": "private_context_entities_"}
+    _BUCKET_DATA_FIELDS = {"shared": "shared_context_entity_data", "private": "private_context_entity_data"}
 
-    def _add_to_bucket(self, bucket: Literal["shared", "private"], type_ids: tuple[Any, ...]) -> bool:
+    def _add_to_bucket(
+        self,
+        bucket: Literal["shared", "private"],
+        type_ids: tuple[Any, ...],
+        data: dict | None = None,
+    ) -> bool:
+        """Append typeids to a bucket, dedup by (type, id). Optionally attach
+        per-entry sidecar ``data`` (applied to every typeid in ``type_ids``).
+        Returns True if anything changed — either a new typeid added OR the
+        sidecar data was added/updated for an existing typeid.
+
+        Sidecar validation is best-effort: when the target type's class
+        declares a ``context_data_schema``, ``data`` is run through it. On
+        mismatch we warn but still store the data (sidecar is a hint for the
+        404 self-heal; a malformed hint only degrades to the pre-fix 404
+        behavior, never crashes).
+        """
         incoming = self._normalize_typeids(type_ids)
         if not incoming:
             return False
         field = self._BUCKET_FIELDS[bucket]
+        data_field = self._BUCKET_DATA_FIELDS[bucket]
         current = list(getattr(self, field))
         seen = {(t.type, t.id) for t in current}
-        added = False
+        sidecar = dict(getattr(self, data_field) or {})
+        changed = False
         for t in incoming:
             key = (t.type, t.id)
-            if key in seen:
-                continue
-            current.append(t)
-            seen.add(key)
-            added = True
-        if added:
+            if key not in seen:
+                current.append(t)
+                seen.add(key)
+                changed = True
+            if data is not None:
+                tid_str = str(t)
+                validated = self._validate_context_entry_data(t, data)
+                if sidecar.get(tid_str) != validated:
+                    sidecar[tid_str] = validated
+                    changed = True
+        if changed:
             setattr(self, field, current)
-        return added
+            setattr(self, data_field, sidecar)
+        return changed
+
+    @staticmethod
+    def _validate_context_entry_data(target_typeid: TypeId, data: dict) -> dict:
+        """Run sidecar ``data`` through the target type's declared
+        ``context_data_schema`` when one exists. Returns the (possibly
+        coerced) dict; on validation error logs a warning and returns the
+        original dict unchanged so the hint still reaches the dock loader.
+        """
+        try:
+            target_cls = SchemaRegistry.get_entity_cls(target_typeid.type)
+        except Exception:
+            target_cls = None
+        schema = getattr(target_cls, "context_data_schema", None) if target_cls else None
+        if schema is None:
+            return dict(data)
+        try:
+            validated = schema.model_validate(data)
+            return validated.model_dump()
+        except ValidationError as exc:
+            service_log.warn(
+                f"context_entry_data validation failed for {target_typeid} "
+                f"against {schema.__name__}: {exc}. Storing as-is."
+            )
+            return dict(data)
 
     def _remove_from_bucket(self, bucket: Literal["shared", "private"], type_ids: tuple[Any, ...]) -> bool:
         targets = self._normalize_typeids(type_ids)
         if not targets:
             return False
         field = self._BUCKET_FIELDS[bucket]
+        data_field = self._BUCKET_DATA_FIELDS[bucket]
         drop = {(t.type, t.id) for t in targets}
         current: list[TypeId] = getattr(self, field)
         kept = [t for t in current if (t.type, t.id) not in drop]
         if len(kept) == len(current):
             return False
         setattr(self, field, kept)
+        # Clean up sidecar entries for removed typeids.
+        sidecar = getattr(self, data_field) or {}
+        if sidecar:
+            drop_strs = {str(t) for t in targets}
+            pruned = {k: v for k, v in sidecar.items() if k not in drop_strs}
+            if len(pruned) != len(sidecar):
+                setattr(self, data_field, pruned)
         return True
 
-    def add_shared_context_entities(self, *type_ids: "TypeId | list[TypeId] | None") -> bool:
-        """Append TypeIds to ``shared_context_entities`` (idempotent, deduped by (type, id))."""
-        return self._add_to_bucket("shared", type_ids)
+    def add_shared_context_entities(
+        self,
+        *type_ids: "TypeId | list[TypeId] | None",
+        data: dict | None = None,
+    ) -> bool:
+        """Append TypeIds to ``shared_context_entities`` (idempotent, deduped
+        by (type, id)). Optional ``data`` is stored in
+        ``shared_context_entity_data`` keyed by str(typeid); applied to every
+        typeid in this call. Last-writer-wins on data conflicts."""
+        return self._add_to_bucket("shared", type_ids, data=data)
 
     def remove_shared_context_entities(self, *type_ids: "TypeId | list[TypeId] | None") -> bool:
         return self._remove_from_bucket("shared", type_ids)
 
-    def add_private_context_entities(self, *type_ids: "TypeId | list[TypeId] | None") -> bool:
-        """Append TypeIds to ``private_context_entities_`` (idempotent, deduped by (type, id))."""
-        return self._add_to_bucket("private", type_ids)
+    def add_private_context_entities(
+        self,
+        *type_ids: "TypeId | list[TypeId] | None",
+        data: dict | None = None,
+    ) -> bool:
+        """Append TypeIds to ``private_context_entities_`` (idempotent,
+        deduped by (type, id)). Optional ``data`` is stored in
+        ``private_context_entity_data`` keyed by str(typeid); applied to every
+        typeid in this call. Last-writer-wins on data conflicts."""
+        return self._add_to_bucket("private", type_ids, data=data)
 
     def remove_private_context_entities(self, *type_ids: "TypeId | list[TypeId] | None") -> bool:
         return self._remove_from_bucket("private", type_ids)
+
+    def get_context_entry_data(self, typeid: "TypeId | str") -> dict | None:
+        """Return the sidecar data dict for a typeid, or None if not present.
+        Checks both shared and private sidecars (private wins on collision —
+        consistent with the read-time precedence of explicit private storage).
+        """
+        key = str(typeid)
+        priv = self.private_context_entity_data or {}
+        if key in priv:
+            return priv[key]
+        shared = self.shared_context_entity_data or {}
+        return shared.get(key)
 
     def _bucket_view(self, bucket: Literal["shared", "private", "both"]) -> List[TypeId]:
         if bucket == "shared":
@@ -1376,3 +1597,15 @@ class Group(Entity):
     @staticmethod
     async def get_by_name(name="public") -> Optional["Group"]:
         return await Group.get_one({"name": name})
+
+
+from flow_sdk.actions.action_registry import action as _action_registry  # noqa: E402
+
+# Bare-name registration: ActionManager's fallback lookup resolves it for any Entity subclass.
+_action_registry.register(
+    action_name="entity-event",
+    function_name="entity_event",
+    handler=Entity.entity_event,
+    methods="post",
+    types="all",
+)

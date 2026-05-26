@@ -25,7 +25,7 @@ def _is_temp_encoded(encoded: str) -> bool:
     return not ProjectFsRecord._is_valid_cwd(decoded)
 
 
-async def claude_projects_fn(
+def claude_projects_fn(
     nodes: list[FSRef],
     opts: IndexerOptions,
 ) -> list[FSRef]:

@@ -98,12 +98,21 @@ except ImportError as e:
 # These have more complex dependencies - skip for now
 # from builtin.page import Page  # noqa: F401
 # from builtin.task import Task  # noqa: F401
-# from builtin.comment import Comment  # noqa: F401
 # from builtin.question import Question  # noqa: F401
+
+try:
+    from flow_sdk.builtin.comment import Comment  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import Comment: {e}")
 
 try:
     from flow_sdk.builtin.claude_memory_entities import Markdown, Docs, ClaudeMemory, ClaudeRules, ClaudePlan, ClaudeMd  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import claude memory entities: {e}")
+
+try:
+    from flow_sdk.builtin.markdown_index import MarkdownIndex  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import MarkdownIndex: {e}")
 
 __all__ = []

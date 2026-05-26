@@ -5,8 +5,12 @@ import type { AnchoredTrack, LineAnchorProvider } from './types';
 
 interface AnchoredSurfaceProps {
   provider: LineAnchorProvider;
-  leftTracks?: AnchoredTrack[];
-  rightTracks?: AnchoredTrack[];
+  // `AnchoredTrack<any>[]` so callers can mix tracks with different item-payload
+  // types (e.g. StatusTrack<StepViewModel> + AttentionTrack<StackPayload> +
+  // unified MarkerTrack<MarkerItem>). The default `AnchoredTrack<unknown>[]`
+  // is too narrow for typed tracks because `renderItem` is contravariant.
+  leftTracks?: AnchoredTrack<any>[];
+  rightTracks?: AnchoredTrack<any>[];
   /** The body content (markdown, editor, etc.) — rendered in the middle column. */
   children: React.ReactNode;
   className?: string;

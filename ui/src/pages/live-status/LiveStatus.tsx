@@ -165,14 +165,16 @@ export function LiveStatus() {
 
     // Filter sessions by project (sessions don't have scope, they belong to projects)
     let sessions = data.sessions;
-    if (scopeFilter === 'project' && selectedProject) {
-      sessions = sessions.filter((s) => s.project_encoded_name === selectedProject.encoded_name);
+    if (scopeFilter === 'project' && selectedProject?.cwd) {
+      sessions = sessions.filter((s) => s.cwd === selectedProject.cwd);
     }
 
-    // Filter todos by project (todos don't have scope, they belong to sessions/projects)
+    // Filter todos by project. Todos no longer carry a project field directly —
+    // resolve via their session_id → that session's cwd.
     let todos = data.todos || [];
-    if (scopeFilter === 'project' && selectedProject) {
-      todos = todos.filter((t) => t.project_encoded_name === selectedProject.encoded_name);
+    if (scopeFilter === 'project' && selectedProject?.cwd) {
+      const sessionCwds = new Map(data.sessions.map((s) => [s.session_id, s.cwd]));
+      todos = todos.filter((t) => sessionCwds.get(t.session_id) === selectedProject.cwd);
     }
 
     return {
@@ -373,7 +375,7 @@ function SummarySection({ data, onNavigate }: { data: SystemProfile; onNavigate:
 
       {/* Shared Summary Dashboard - shows all stats including Projects card */}
       <SummaryDashboard
-        projectEncodedName={null} // Always show aggregated
+        projectCwd={null} // Always show aggregated
         showProjectsCard={true} // Show Projects card in Summary tab
         onNavigate={onNavigate}
       />
@@ -425,13 +427,6 @@ function formatDuration(ms: number): string {
   const hours = Math.floor(mins / 60);
   const remainMins = mins % 60;
   return remainMins > 0 ? `${hours}h ${remainMins}m` : `${hours}h`;
-}
-
-/**
- * Encode a project absolute path the same way Claude CLI does (replace / with -).
- */
-function encodeProjectPath(absPath: string): string {
-  return absPath.replace(/\//g, '-');
 }
 
 /**
@@ -503,9 +498,8 @@ function TranscriptsSection({
   const stats = useMemo(() => computeStatsFromHistory(entries), [entries]);
 
   const handleEntryClick = (entry: HistoryEntryResponse) => {
-    if (!entry.project || !entry.session_id) return;
-    const encoded = encodeProjectPath(entry.project);
-    navigation.openLens('claude', 'transcript', `${encoded}/${entry.session_id}`);
+    if (!entry.session_id) return;
+    navigation.openLens('claude', 'transcript', entry.session_id);
   };
 
   if (isLoading) {
@@ -1067,9 +1061,8 @@ function SessionsSection({
   }, [selectedItemId]);
 
   const handleEntryClick = (entry: HistoryEntryResponse) => {
-    if (!entry.project || !entry.session_id) return;
-    const encoded = encodeProjectPath(entry.project);
-    navigation.openLens('claude', 'transcript', `${encoded}/${entry.session_id}`);
+    if (!entry.session_id) return;
+    navigation.openLens('claude', 'transcript', entry.session_id);
   };
 
   if (loading) {
@@ -1243,7 +1236,7 @@ function ProjectsSection() {
           />
         ) : (
           // Show aggregated summary when no project selected
-          <SummaryDashboard projectEncodedName={null} showProjectsCard={false} onNavigate={handleNavigate} />
+          <SummaryDashboard projectCwd={null} showProjectsCard={false} onNavigate={handleNavigate} />
         )}
       </div>
     </div>

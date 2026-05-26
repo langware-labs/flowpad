@@ -27,8 +27,8 @@ import { useMemo } from 'react';
  * Props for the SummaryDashboard component
  */
 export interface SummaryDashboardProps {
-  /** When set, shows project-specific data filtered by encoded_name; otherwise shows aggregated */
-  projectEncodedName?: string | null;
+  /** When set, shows project-specific data filtered by cwd; otherwise shows aggregated */
+  projectCwd?: string | null;
   /** Show Projects card (true in Summary tab, false in Projects tab) */
   showProjectsCard?: boolean;
   /** Navigate to a tab */
@@ -58,7 +58,7 @@ interface StatCardConfig {
  * - Summary tab: Shows all stats including Projects card
  * - Projects tab: Shows project-filtered stats without Projects card
  */
-export function SummaryDashboard({ projectEncodedName, showProjectsCard = true, onNavigate }: SummaryDashboardProps) {
+export function SummaryDashboard({ projectCwd, showProjectsCard = true, onNavigate }: SummaryDashboardProps) {
   // Fetch all resource types using the lazy loading hooks
   const { items: projects, isLoading: projectsLoading } = useResources<ProjectItem>(SystemResourceType.PROJECT);
   const { items: sessions, isLoading: sessionsLoading } = useResources<ClaudeSessionRecordData>(SystemResourceType.SESSION);
@@ -69,9 +69,9 @@ export function SummaryDashboard({ projectEncodedName, showProjectsCard = true, 
   const { items: plugins, isLoading: pluginsLoading } = useResources<PluginItem>(SystemResourceType.PLUGIN);
   const { items: todos, isLoading: todosLoading } = useResources<TodoFileItem>(SystemResourceType.TODO);
 
-  // Filter items by project if projectEncodedName is set
+  // Filter items by project if projectCwd is set
   const filteredCounts = useMemo(() => {
-    if (!projectEncodedName) {
+    if (!projectCwd) {
       // No filter - return all counts
       return {
         projects: projects.length,
@@ -85,20 +85,17 @@ export function SummaryDashboard({ projectEncodedName, showProjectsCard = true, 
       };
     }
 
-    // Find the selected project to get its cwd for path-based filtering
-    const selectedProject = projects.find((p) => p.encoded_name === projectEncodedName);
-    const projectCwd = selectedProject?.cwd;
-    const projectPrefix = projectCwd ? `${projectCwd}/.claude/` : null;
+    const projectPrefix = `${projectCwd}/.claude/`;
 
-    // Filter sessions by project_encoded_name
-    const filteredSessions = sessions.filter((s) => s.project_encoded_name === projectEncodedName);
+    // Filter sessions by cwd
+    const filteredSessions = sessions.filter((s) => s.cwd === projectCwd);
 
-    // Filter todos by project_encoded_name
-    const filteredTodos = todos.filter((t) => t.project_encoded_name === projectEncodedName);
+    // Filter todos via the session they belong to.
+    const sessionCwds = new Map(sessions.map((s) => [s.session_id, s.cwd]));
+    const filteredTodos = todos.filter((t) => sessionCwds.get(t.session_id) === projectCwd);
 
     // Filter path-based items by project prefix
     const filterByPath = <T extends { source_file?: string | null; path?: string | null }>(items: T[]): T[] => {
-      if (!projectPrefix) return [];
       return items.filter((item) => {
         const path = item.source_file || item.path || '';
         return path.startsWith(projectPrefix);
@@ -115,7 +112,7 @@ export function SummaryDashboard({ projectEncodedName, showProjectsCard = true, 
       plugins: filterByPath(plugins).length,
       todos: filteredTodos.length,
     };
-  }, [projectEncodedName, projects, sessions, hooks, skills, commands, agents, plugins, todos]);
+  }, [projectCwd, projects, sessions, hooks, skills, commands, agents, plugins, todos]);
 
   // Build stat cards configuration
   const statCards: StatCardConfig[] = [
@@ -211,13 +208,13 @@ export function SummaryDashboard({ projectEncodedName, showProjectsCard = true, 
   return (
     <div className="space-y-4">
       {/* Project context header (when filtered) */}
-      {projectEncodedName && (
+      {projectCwd && (
         <div className="flex items-center gap-2 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2">
           <Activity className="h-4 w-4 text-primary" />
           <span className="text-xs text-muted-foreground">
             Showing stats for project:{' '}
             <span className="font-medium text-foreground">
-              {projects.find((p) => p.encoded_name === projectEncodedName)?.name || projectEncodedName}
+              {projects.find((p) => p.cwd === projectCwd)?.name || projectCwd}
             </span>
           </span>
         </div>
@@ -256,7 +253,7 @@ export function SummaryDashboard({ projectEncodedName, showProjectsCard = true, 
       </div>
 
       {/* Empty state hint */}
-      {!projectEncodedName && projects.length === 0 && !projectsLoading && (
+      {!projectCwd && projects.length === 0 && !projectsLoading && (
         <p className="text-center text-xs text-muted-foreground">
           No Claude Code data found. Run Claude Code in a project to see stats here.
         </p>

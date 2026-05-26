@@ -10,10 +10,9 @@ import {
   parseTypeid,
 } from './asset-row-helpers';
 import { EntityTypeBar, type EntityTypeFilter } from './EntityTypeBar';
-import { ScopeBar, type ScopeBarOption } from '@src/components/ui/scope-bar';
+import { ScopeFilterBar } from '@src/components/scope-filter/ScopeFilterBar';
+import { useDefaultScopeFilter } from '@src/hooks/use-default-scope-filter';
 import { Boxes, Lock, Search, type LucideIcon } from 'lucide-react';
-
-type PickerScope = 'all' | 'user' | 'project';
 
 interface AssetPickerPopoverProps {
   /** Popover trigger (typically a Run button); passed to PopoverTrigger asChild. */
@@ -81,7 +80,7 @@ export function AssetPickerPopover({
   );
   const [query, setQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<EntityTypeFilter>('all');
-  const [scopeFilter, setScopeFilter] = useState<PickerScope>('all');
+  const [scope, setScope, currentProjectId] = useDefaultScopeFilter();
 
   // process: null → useProcessAssets returns the synthetic Agent + Skill list
   // pulled from the global entity queries. No process needs to exist yet.
@@ -99,7 +98,6 @@ export function AssetPickerPopover({
     if (!next) {
       setQuery('');
       setTypeFilter('all');
-      setScopeFilter('all');
     }
   }, [setOpen]);
 
@@ -127,8 +125,11 @@ export function AssetPickerPopover({
         const { type } = parseTypeid(d.typeid);
         if (type !== typeFilter) return false;
       }
-      if (scopeFilter === 'user' && d.source !== 'user_dir') return false;
-      if (scopeFilter === 'project' && d.source !== 'project_dir') return false;
+      if (d.project_id) {
+        if (!scope.projects.includes(d.project_id)) return false;
+      } else if (!scope.user) {
+        return false;
+      }
       if (q) {
         const label = displayLabelForTypeid(d.typeid).toLowerCase();
         return (
@@ -139,16 +140,7 @@ export function AssetPickerPopover({
       }
       return true;
     });
-  }, [descriptors, filter, query, typeFilter, scopeFilter]);
-
-  const scopeOptions: ScopeBarOption<PickerScope>[] = useMemo(
-    () => [
-      { value: 'all', label: 'All' },
-      { value: 'user', label: 'User' },
-      { value: 'project', label: 'Project' },
-    ],
-    [],
-  );
+  }, [descriptors, filter, query, typeFilter, scope]);
 
   const handlePick = useCallback(
     (d: AssetDescriptor) => {
@@ -156,7 +148,6 @@ export function AssetPickerPopover({
       setOpen(false);
       setQuery('');
       setTypeFilter('all');
-      setScopeFilter('all');
     },
     [onPick, setOpen],
   );
@@ -177,7 +168,11 @@ export function AssetPickerPopover({
         className="flex items-center border-b px-3 py-2"
         data-testid="asset-picker-scope-bar"
       >
-        <ScopeBar value={scopeFilter} options={scopeOptions} onChange={setScopeFilter} />
+        <ScopeFilterBar
+          scope={scope}
+          currentProjectId={currentProjectId}
+          onScopeChange={setScope}
+        />
       </div>
       <div className="border-b px-3 py-2">
         <div className="flex items-center gap-1.5">

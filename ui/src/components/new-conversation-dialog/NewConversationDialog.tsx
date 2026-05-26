@@ -1,22 +1,16 @@
-import {
-  Conversation,
-  ConversationParticipant,
-  cloudManager,
-  createProjectConversation,
-  getErrorMessagesFromAxios,
-} from '@sdk';
-import type { AssetDescriptor } from '@sdk';
-import { sendReply } from '@sdk/entities/notifications';
+import { ConversationParticipant, hasRemoteParticipant } from '@sdk';
+import type { AssetDescriptor, ConversationSendPayload } from '@sdk';
+import { useAuth } from '@sdk/react/hooks';
 import { useContext as useDataContext } from '@src/hooks/useContext';
-import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
 import { useProjects } from '@src/hooks/use-projects';
+import { useSendToConversation, type SendTarget } from '@src/hooks/use-send-to-conversation';
+import { useAutoTitle } from '@src/hooks/use-auto-title';
 import { AutofillInput } from '@src/components/ui/autofill-input';
 import { Button } from '@src/components/ui/button';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
 import { FileAttachmentPicker } from '@src/components/conversation/FileAttachmentPicker';
 import { AttachMenu } from '@src/components/conversation/AttachMenu';
 import { MAX_FILE_SIZE_BYTES } from '@src/components/conversation/constants';
-import { useLocalUser } from '@src/components/conversation/useLocalUser';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import {
   Select,
@@ -28,7 +22,7 @@ import {
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { MessageSquarePlus, Pencil } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 
 interface NewConversationDialogProps {
   open: boolean;
@@ -39,33 +33,18 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
   const { navigation } = useDockNavigation();
   const ctx = useDataContext();
   const { projects = [] } = useProjects();
-  const { localUser } = useLocalUser();
-  const ensureCloudLogin = useCloudLoginGate();
+  const { cloudUser, localUser } = useAuth();
+  const { send, busy, error, resetDraft } = useSendToConversation();
 
   const [projectId, setProjectId] = useState<string>('');
   const [participants, setParticipants] = useState<ConversationParticipant[]>([]);
-  const [cloudUser, setCloudUser] = useState(cloudManager.currentUser);
   const [initialMessage, setInitialMessage] = useState('');
   const [title, setTitle] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [assetRefs, setAssetRefs] = useState<AssetDescriptor[]>([]);
   const [senderName, setSenderName] = useState('');
   const [editingName, setEditingName] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  // Synchronous re-entry lock. ``busy`` is React state and updates only on
-  // the next render, so rapid double-clicks can both clear the ``canCreate``
-  // guard before it flips — this ref blocks the second call immediately.
-  const submittingRef = useRef(false);
-  // Holds the in-flight Conversation across retries. ``new Conversation()``
-  // mints a fresh uuid each call, so retrying a failed create with a new
-  // object POSTs a brand-new (empty) hub conversation every time, orphaning
-  // the previous ones. Reusing the same instance keeps the id stable so the
-  // hub create is an upsert, not a duplicate. Reset per dialog session.
-  const draftConvRef = useRef<Conversation | null>(null);
-
-  // Default the project picker to the current project on open.
   useEffect(() => {
     if (!open) return;
     setParticipants([]);
@@ -73,146 +52,47 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
     setTitle('');
     setFiles([]);
     setAssetRefs([]);
-    setError(null);
     setEditingName(false);
     setProjectId(ctx.project?.id ?? projects[0]?.id ?? '');
-    draftConvRef.current = null;
-  }, [open, ctx.project?.id, projects]);
+    resetDraft();
+  }, [open, ctx.project?.id, projects, resetDraft]);
 
-  useEffect(() => {
-    if (!open) return;
-    const syncCloudUser = () => setCloudUser(cloudManager.currentUser);
-    syncCloudUser();
-    cloudManager.on('login_complete', syncCloudUser);
-    cloudManager.on('logout_complete', syncCloudUser);
-    return () => {
-      cloudManager.off('login_complete', syncCloudUser);
-      cloudManager.off('logout_complete', syncCloudUser);
-    };
-  }, [open]);
-
-  // Default sender name from the cloud user for cross-user communication.
   useEffect(() => {
     const name = cloudUser?.name || cloudUser?.email || localUser?.name || '';
     if (name) setSenderName(name);
   }, [cloudUser?.email, cloudUser?.name, localUser?.name]);
 
-  // Cross-user mode: any participant with a user id or email triggers the
-  // conversation transport (conv.share + sendReply). Otherwise we keep the
-  // project-local-only path.
-  const hasRemoteParticipant = participants.some(
-    (p) => !!p.user_id || (!!p.email && p.email.includes('@')),
-  );
-
-  // Slack-style autofill: "<my name>, <participant1>, ... - <Mon D>". Open-dialog
-  // sets the date once so the autofill is stable across re-renders within a session.
-  const myLabel = cloudUser?.name || cloudUser?.email || ctx.user?.name || ctx.user?.email || 'You';
-  const openedAt = useMemo(() => new Date(), [open]);
-  const dateSuffix = useMemo(() => {
-    const day = openedAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    const time = openedAt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
-    return `${day} ${time}`;
-  }, [openedAt]);
-  const autofillTitle = useMemo(() => {
-    if (participants.length === 0) return `New conversation - ${dateSuffix}`;
-    const others = participants.map((p) => p.name || p.email || 'unknown').join(', ');
-    return `${myLabel}, ${others} - ${dateSuffix}`;
-  }, [participants, myLabel, dateSuffix]);
-  // Dialog heading mirrors the autofill so the header stays a live preview.
+  const isRemote = hasRemoteParticipant(participants);
+  const autofillTitle = useAutoTitle(open, participants);
   const placeholderTitle = autofillTitle;
 
-  // Cross-user bundle conversations don't require a Project; local-only ones do.
-  // The initial message is required — a conversation always starts with a message.
   const canCreate =
     !busy
-    && (hasRemoteParticipant || !!projectId)
+    && (isRemote || !!projectId)
     && participants.length > 0
     && !!initialMessage.trim();
 
   const handleCreate = async () => {
-    if (!canCreate || submittingRef.current) return;
-    submittingRef.current = true;
-    setBusy(true);
-    setError(null);
-    try {
-      const hasFiles = files.length > 0;
-      const hasAssetRefs = assetRefs.length > 0;
-      const message = initialMessage.trim();
-      const effectiveTitle = title.trim() || autofillTitle;
-
-      let conversationId: string | null;
-
-      if (hasRemoteParticipant) {
-        // Cross-user create routes through hub; require cloud login first so a
-        // logged-out user is taken through OAuth and the create resumes on the
-        // same click instead of failing silently.
-        const gate = await ensureCloudLogin();
-        if (!gate.ok) {
-          setError(gate.error);
-          return;
-        }
-        // Standard share + invite pattern: create the conversation locally,
-        // ``conv.share(recipients)`` POSTs to the hub and sends one
-        // ``MembershipRequest`` per recipient via ``/members``. Recipients see
-        // a pending invitation in their UI; on accept their local backend
-        // ``conversation/<id>/join``s so they enter ``participants`` and start
-        // receiving WS fanout.
-        const recipientEmails = participants
-          .map((p) => (p.email || '').trim())
-          .filter((email): email is string => !!email && email.includes('@'));
-        if (recipientEmails.length === 0) {
-          throw new Error('At least one recipient email is required');
-        }
-        // Reuse the Conversation across retries so the id stays stable — a
-        // fresh id would POST another empty hub conversation and orphan the
-        // one a prior failed attempt already created.
-        const conv = draftConvRef.current ?? new Conversation({ title: effectiveTitle, participants });
-        conv.title = effectiveTitle;
-        conv.participants = participants;
-        draftConvRef.current = conv;
-        await conv.save();
-        await conv.share(recipientEmails);
-        if (!hasFiles && !hasAssetRefs && message) {
-          // Text-only initial message. Goes through the single send path
-          // (conversation/<id>/add_message) — same endpoint the file branch
-          // below uses, so first message and replies share one code path.
-          await sendReply({ conversationId: conv.id }, message);
-        }
-        conversationId = conv.id;
-      } else {
-        const result = await createProjectConversation({
-          project_id: projectId,
-          participants,
-          title: effectiveTitle,
-        });
-        conversationId = result.conversation_id;
-      }
-
-      if ((hasFiles || hasAssetRefs) && conversationId) {
-        await sendReply(
-          { conversationId },
-          message,
-          files,
-          hasAssetRefs ? { assetReferences: assetRefs.map((a) => a.typeid) } : undefined,
-        );
-      }
-
-      // Fully created — drop the draft so a subsequent create in the same
-      // dialog session starts a fresh conversation.
-      draftConvRef.current = null;
-      if (conversationId) {
-        navigation.openDock(DockPointer.forConversation(conversationId));
-      }
+    if (!canCreate) return;
+    const effectiveTitle = title.trim() || autofillTitle;
+    const target: SendTarget = {
+      kind: 'new',
+      params: {
+        project_id: isRemote ? null : projectId,
+        participants,
+        title: effectiveTitle,
+      },
+    };
+    const payload: ConversationSendPayload = {
+      text: initialMessage.trim(),
+      files: files.length > 0 ? files : undefined,
+      assetReferences:
+        assetRefs.length > 0 ? assetRefs.map((a) => a.typeid) : undefined,
+    };
+    const conversationId = await send(target, payload);
+    if (conversationId) {
+      navigation.openDock(DockPointer.forConversation(conversationId));
       onClose();
-    } catch (err: unknown) {
-      // Axios errors carry the backend's `message` field on `error.response.data`;
-      // `err.message` would just be "Request failed with status code 400".
-      const fromAxios = await getErrorMessagesFromAxios(err);
-      const msg = fromAxios || (err instanceof Error ? err.message : '') || 'Failed to create conversation';
-      setError(msg);
-    } finally {
-      submittingRef.current = false;
-      setBusy(false);
     }
   };
 
@@ -227,7 +107,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
         </DialogHeader>
 
         <div className="flex flex-col gap-4 text-sm">
-          {hasRemoteParticipant && (
+          {isRemote && (
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <span className="font-medium">From:</span>
               {editingName ? (
@@ -284,11 +164,11 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
               and shipped as remote_project_id for the receiver's mapping). */}
           <div className="flex flex-col gap-1.5">
             <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
-              Project{hasRemoteParticipant ? ' (optional)' : ''}
+              Project{isRemote ? ' (optional)' : ''}
             </label>
             <Select value={projectId} onValueChange={setProjectId}>
               <SelectTrigger>
-                <SelectValue placeholder={hasRemoteParticipant ? 'No project' : 'Select a project'} />
+                <SelectValue placeholder={isRemote ? 'No project' : 'Select a project'} />
               </SelectTrigger>
               <SelectContent>
                 {projects.map((p) => (
@@ -323,7 +203,7 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
               className="min-h-[80px] rounded-md border border-input bg-transparent px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               value={initialMessage}
               onChange={(e) => setInitialMessage(e.target.value)}
-              placeholder={hasRemoteParticipant ? 'Say hi…' : 'Type your first message…'}
+              placeholder={isRemote ? 'Say hi…' : 'Type your first message…'}
               data-testid="initial-message-input"
             />
           </div>
@@ -369,6 +249,3 @@ export function NewConversationDialog({ open, onClose }: NewConversationDialogPr
     </Dialog>
   );
 }
-
-// Re-export for type completeness
-export type { Conversation };

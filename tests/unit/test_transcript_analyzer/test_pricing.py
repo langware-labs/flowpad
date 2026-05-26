@@ -23,7 +23,7 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.transcript_analyzer import AgentTranscript, EntryKind, UsageEntry
+from flow_sdk.transcript_analyzer import AgentTranscriptFile, EntryKind, UsageEntry
 
 _RESOURCES = Path(__file__).parent.parent / "resources" / "transcripts" / "cost"
 
@@ -46,7 +46,7 @@ COST_BENCHMARKS = [
 def test_transcript_cost_matches_manual_calc(filename: str, expected_usd: float):
     path = _RESOURCES / filename
     assert path.exists(), f"fixture missing: {path}"
-    t = AgentTranscript("claude", path)
+    t = AgentTranscriptFile("claude", path)
     actual = t.cost()
     assert actual == pytest.approx(expected_usd, abs=0.001), (
         f"{filename}: cost {actual:.4f} != expected {expected_usd:.4f}"
@@ -55,7 +55,7 @@ def test_transcript_cost_matches_manual_calc(filename: str, expected_usd: float)
 
 def test_usage_property_filters_to_per_dim_entries():
     """``transcript.usage`` only yields ``UsageEntry`` instances, never aggregates."""
-    t = AgentTranscript("claude", _RESOURCES / "chat_run1.jsonl")
+    t = AgentTranscriptFile("claude", _RESOURCES / "chat_run1.jsonl")
     usage = t.usage
     assert len(usage) > 0
     assert all(isinstance(e, UsageEntry) for e in usage)
@@ -64,7 +64,7 @@ def test_usage_property_filters_to_per_dim_entries():
 
 def test_per_dim_split_includes_cache_and_io_axes():
     """Each Claude turn with cache_creation_1h emits ≥3 entries (input + output + cache_read + cache_write_1h)."""
-    t = AgentTranscript("claude", _RESOURCES / "nav_run1.jsonl")
+    t = AgentTranscriptFile("claude", _RESOURCES / "nav_run1.jsonl")
     dims_seen = {(e.io, e.cache, e.cache_tier) for e in t.usage}
     # Real Sonnet 4.6 transcript should exercise the bare-input / output /
     # cache_read / cache_write_1h rows in the price table.
@@ -76,7 +76,7 @@ def test_per_dim_split_includes_cache_and_io_axes():
 
 def test_usage_in_span_filters_by_timestamp():
     """``usage_in_span`` returns only entries whose timestamp falls in [enter, done]."""
-    t = AgentTranscript("claude", _RESOURCES / "nav_run1.jsonl")
+    t = AgentTranscriptFile("claude", _RESOURCES / "nav_run1.jsonl")
     usage = t.usage
     assert len(usage) >= 2
     # Pick a window from the middle of the usage timeline.
@@ -91,7 +91,7 @@ def test_usage_in_span_filters_by_timestamp():
 
 def test_cost_in_span_is_subset_of_total_cost():
     """Spanning the full transcript via ``cost_in_span`` matches ``cost()``."""
-    t = AgentTranscript("claude", _RESOURCES / "term_run2.jsonl")
+    t = AgentTranscriptFile("claude", _RESOURCES / "term_run2.jsonl")
     usage = [e for e in t.usage if e.timestamp]
     if not usage:
         pytest.skip("transcript has no timestamped usage entries")

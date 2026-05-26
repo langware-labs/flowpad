@@ -256,25 +256,23 @@ export function getOneLiner(event: TraceEvent): string {
  * Compute the transcript lens pointer for a TraceEvent.
  *
  * - Sniffer events: returns the pre-computed transcriptDockPointer (includes SessionStart guard).
- * - Transcript-source events: computes on-the-fly using the projectEncodedName from context,
- *   since transcript entries don't carry a transcript_path.
+ * - Transcript-source events: built from the event's session_id; the lens
+ *   resolves the JSONL path server-side via ClaudeSessionRecord.discover.
  *
  * Returns null when not enough information is available.
  */
 export function getTranscriptLensPointer(
   event: TraceEvent,
-  projectEncodedName?: string,
 ): { ref: string; options: Record<string, string> } | null {
   // Sniffer events: pre-computed at parse time (SessionStart already filtered out)
   if (event.source === FlowDataSource.Sniffer) return event.transcriptDockPointer;
 
-  // Transcript-source events need projectEncodedName from the viewer's context
-  if (event.source === FlowDataSource.History && projectEncodedName && event.session_id) {
+  if (event.source === FlowDataSource.History && event.session_id) {
     const options: Record<string, string> = {};
     const match = event.id.match(/^transcript-([0-9a-f-]{36})(?:-tool-\d+)?$/);
     if (match) options.transcript_entry_id = match[1];
     else if (event.timestamp) options.ts = event.timestamp;
-    return { ref: `${projectEncodedName}/${event.session_id}`, options };
+    return { ref: event.session_id, options };
   }
 
   return null;

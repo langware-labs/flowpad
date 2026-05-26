@@ -219,6 +219,10 @@ class DBBaseRecord(BaseModel):
         keys_to_remove.extend(self._db_exclude)
         db_exclude_keys = [key for key, _ in self.__dict__.items() if self.is_db_excluded(key)]
         keys_to_remove.extend(db_exclude_keys)
+        # Pydantic computed fields are read-only properties; persisting them and
+        # round-tripping back through Record.sync_from_entity → meta_dict →
+        # Entity.from_record blows up on setattr to the computed property.
+        keys_to_remove.extend(getattr(type(self), "model_computed_fields", {}).keys())
 
         # Dump the current instance's data skipping custom serializers like in Entity
         data = self.model_dump(context={"skip_api_serializer": True}, exclude_none=True, exclude=set(keys_to_remove))
@@ -314,6 +318,7 @@ class BuiltinEntityType(Enum):
     PROCESS_RESULT = "process_result"
     WORKFLOW = "workflow"
     SKILL = "skill"
+    MARKDOWN_INDEX = "markdown_index"
     WHITEBOARD = "whiteboard"
     SHELL = "shell"
     CRON_EVENT = "cron_event"
