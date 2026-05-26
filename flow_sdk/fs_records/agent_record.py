@@ -498,16 +498,17 @@ class AgentRecord(Record):
 
     @staticmethod
     def load_system_agent(name: str) -> AgentRecord | None:
-        """Load from system_assets/agents/<name>/."""
-        import flow_sdk
+        """Load a SDK-shipped system agent by name from the Flowpad Assistant project."""
+        from flow_sdk.config import flowpad_assistant_project_root
 
-        source = Path(flow_sdk.__file__).parent / "system_assets" / "available" / "agents" / name
-        if source.is_dir():
-            return AgentRecord.load_from_dir(source)
-        # Also check workspace
-        workspace = Path.home() / "Flowpad workspace" / ".flow" / "system_assets" / "agents" / name
-        if workspace.is_dir():
-            return AgentRecord.load_from_dir(workspace)
+        agents_dir = flowpad_assistant_project_root() / ".claude" / "agents"
+        md = agents_dir / f"{name}.md"
+        if md.is_file():
+            return AgentRecord.from_file(md)
+        # Back-compat: directory layout (legacy installs / workspace clones).
+        subdir = agents_dir / name
+        if subdir.is_dir():
+            return AgentRecord.load_from_dir(subdir)
         return None
 
     @staticmethod

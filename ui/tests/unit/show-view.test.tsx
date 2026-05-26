@@ -27,24 +27,28 @@ vi.mock('@mcp-ui/client', () => ({
   }),
 }));
 
-vi.mock('@sdk', () => ({
-  fsManager: { download: (...args: unknown[]) => mocks.downloadMock(...args) },
-  VFSPath: {
-    parse: (raw: string) => {
-      const stripped = raw.replace(/^(ui|vfs):\/\//, '');
-      const idx = stripped.indexOf('/');
-      if (idx < 0) {
-        return { typeId: { type: 'unknown', id: stripped }, entitySubPath: '', type: 'unknown', id: stripped };
-      }
-      const left = stripped.slice(0, idx);
-      const entitySubPath = stripped.slice(idx + 1);
-      const dashIdx = left.indexOf('-');
-      const type = left.slice(0, dashIdx);
-      const id = left.slice(dashIdx + 1);
-      return { typeId: { type, id }, entitySubPath, type, id };
+vi.mock('@sdk', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@sdk')>();
+  return {
+    ...actual,
+    fsManager: { download: (...args: unknown[]) => mocks.downloadMock(...args) },
+    VFSPath: {
+      parse: (raw: string) => {
+        const stripped = raw.replace(/^(ui|vfs):\/\//, '');
+        const idx = stripped.indexOf('/');
+        if (idx < 0) {
+          return { typeId: { type: 'unknown', id: stripped }, entitySubPath: '', type: 'unknown', id: stripped };
+        }
+        const left = stripped.slice(0, idx);
+        const entitySubPath = stripped.slice(idx + 1);
+        const dashIdx = left.indexOf('-');
+        const type = left.slice(0, dashIdx);
+        const id = left.slice(dashIdx + 1);
+        return { typeId: { type, id }, entitySubPath, type, id };
+      },
     },
-  },
-}));
+  };
+});
 
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => mocks.useDockNavigationMock(),
