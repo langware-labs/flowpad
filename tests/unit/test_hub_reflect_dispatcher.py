@@ -107,9 +107,16 @@ async def test_reflect_to_hub_forwards_get_and_mirrors_participants(monkeypatch)
     import flow_sdk.server.routes._hub_reflect as mod
 
     captured = {}
+    # Hub-native shape — ``user_email`` / ``user_name`` get normalized by the
+    # dispatcher to ``email`` / ``name`` before returning to caller and
+    # mirroring onto the local row.
     hub_payload = [
-        {"user_id": "u-alice", "email": "alice@example.com", "name": "Alice", "role": "owner"},
-        {"user_id": "u-bob", "email": "bob@example.com", "name": "Bob", "role": "member"},
+        {"user_id": "u-alice", "user_email": "alice@example.com", "user_name": "Alice", "role": "owner", "status": "approved"},
+        {"user_id": "u-bob", "user_email": "bob@example.com", "user_name": "Bob", "role": "member", "status": "approved"},
+    ]
+    expected_normalized = [
+        {"user_id": "u-alice", "email": "alice@example.com", "name": "Alice", "picture": None, "role": "owner", "status": "approved"},
+        {"user_id": "u-bob", "email": "bob@example.com", "name": "Bob", "picture": None, "role": "member", "status": "approved"},
     ]
 
     async def fake_hub_get(entity_type, entity_id=None, action=None, **kwargs):
@@ -130,11 +137,11 @@ async def test_reflect_to_hub_forwards_get_and_mirrors_participants(monkeypatch)
 
     result = await mod.reflect_to_hub(a, e, {})
 
-    assert result == hub_payload
+    assert result == expected_normalized
     assert captured["id"] == e.id
     assert captured["action"] == "members"
     assert captured["et"].value == "conversation"
-    assert e.participants == hub_payload  # local row mirrored
+    assert e.participants == expected_normalized  # local row mirrored to normalized shape
     assert captured.get("saved") is True
 
 

@@ -12,7 +12,12 @@ off and exercises the read / remove / type-agnostic surface.
 
 Hub-side endpoint shape (what these tests assume):
     GET /api/v1/graph/conversation/{id}/members
-        → 200 { status: SUCCESS, data: [{user_id, email, name, role}] }
+        → 200 { status: SUCCESS, data: [{user_id, user_name, user_email, user_picture, role, status, ...}] }
+
+The flow_sdk dispatcher (``_hub_reflect.py``) normalizes ``user_email``/
+``user_name``/``user_picture`` to the client-side ``email``/``name``/``picture``
+shape, so TS callers see the simpler form. These tests hit the hub directly
+and therefore assert the hub-native field names.
 
 Tests SKIP rather than fail when the hub returns 404, so this file
 documents what the hub still needs to expose without blocking CI on the
@@ -152,12 +157,22 @@ async def test_members_after_share_lists_both_with_roles(
     assert bob_id in by_id, f"bob missing from members: {members}"
     for m in (by_id[alice_id], by_id[bob_id]):
         assert m.get("role"), f"participant has no role: {m}"
-        assert "email" in m, f"participant missing email key: {m}"
-        assert "name" in m, f"participant missing name key: {m}"
+        assert "user_email" in m, f"participant missing user_email key: {m}"
+        assert "user_name" in m, f"participant missing user_name key: {m}"
 
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)
+@pytest.mark.xfail(
+    reason=(
+        "Hub-side bug: Conversation.leave returns 200 but the leaver's role "
+        "is not actually revoked, so they still appear in get_approved_members. "
+        "Root cause: bare ``except Exception: pass`` around ``self.remove_role`` "
+        "in hub builtin/conversation.py:leave swallows the real failure. "
+        "Fix lives in the hub repo, not flow_sdk."
+    ),
+    strict=False,
+)
 async def test_members_after_leave_excludes_leaver(
     hub_base_url, hub_login_payload, isolated_hub_keyring
 ):
@@ -236,9 +251,9 @@ async def test_members_action_returns_role_per_participant(
 
     assert members, "expected at least one member"
     for m in members:
-        # Keys are the canonical Participant shape — TS Participant interface
-        # in ts_sdk/src/entities/members.ts must stay in sync.
-        for key in ("user_id", "email", "name", "role"):
+        # Hub-native shape — dispatcher normalizes ``user_email``/``user_name``
+        # → ``email``/``name`` on the client side.
+        for key in ("user_id", "user_email", "user_name", "role"):
             assert key in m, f"members entry missing {key!r}: {m}"
         # Role must be a non-empty string — every member has a hub-side role.
         assert isinstance(m["role"], str) and m["role"], f"empty/non-string role on member: {m}"
