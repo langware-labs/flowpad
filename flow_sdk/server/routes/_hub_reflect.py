@@ -49,7 +49,8 @@ def _entity_type_enum(entity: Entity) -> BuiltinEntityType | None:
 async def reflect_to_hub(a: Action, entity: Entity, body: dict[str, Any]) -> Any:
     """Forward the action call to the hub and mirror the response into the local row.
 
-    Returns the hub's response payload (the unwrapped ``data`` dict/list).
+    Returns the hub's response payload (the unwrapped ``data`` dict/list),
+    after normalizing per-action shapes (e.g. ``members`` field rename).
     Raises ``HubError`` on failure — caller decides whether to fall through
     to the local handler.
     """
@@ -66,8 +67,35 @@ async def reflect_to_hub(a: Action, entity: Entity, body: dict[str, Any]) -> Any
     else:
         hub_resp = await hub_post(et, body or {}, entity.id, action=a.action_name)
 
-    await mirror_hub_response_into_local(entity, a.action_name, hub_resp)
-    return hub_resp
+    normalized = _normalize_hub_response(a.action_name, hub_resp)
+    await mirror_hub_response_into_local(entity, a.action_name, normalized)
+    return normalized
+
+
+def _normalize_hub_response(action_name: str, hub_resp: Any) -> Any:
+    """Translate hub field names into the canonical client shape.
+
+    The hub's ``Membership`` response uses ``user_email`` / ``user_name`` /
+    ``user_picture``; the client and ``Conversation.participants`` cache
+    expect ``email`` / ``name`` / ``picture``. Normalizing here means
+    callers (TS SDK, local mirror, downstream UI) all see one shape.
+    """
+    if action_name != "members" or not isinstance(hub_resp, list):
+        return hub_resp
+    out: list[dict] = []
+    for entry in hub_resp:
+        if not isinstance(entry, dict):
+            out.append(entry)
+            continue
+        out.append({
+            "user_id": entry.get("user_id"),
+            "email": entry.get("email") or entry.get("user_email"),
+            "name": entry.get("name") or entry.get("user_name"),
+            "picture": entry.get("picture") or entry.get("user_picture"),
+            "role": entry.get("role"),
+            "status": entry.get("status"),
+        })
+    return out
 
 
 async def mirror_hub_response_into_local(
