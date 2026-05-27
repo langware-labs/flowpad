@@ -64,28 +64,47 @@ async function _fetchReposPage(provider: GitProvider, page: number): Promise<Lis
 
 /**
  * Returns the full list of repositories the user has access to via the given
- * provider. Internally fetches page 1, then fires the remaining pages in
- * parallel based on the Link-header next_page cursor returned by the server.
+ * provider. Walks pages sequentially using the server-supplied next_page
+ * cursor; with per_page=100 a 500-repo account takes 5 sequential round-trips.
+ *
+ * Guarantees:
+ *  - Starts the walk from page 1, then advances using `first.next_page` (so the
+ *    second request hits the page the server pointed at, not a hardcoded `2`).
+ *  - Monotonicity: each next cursor must be strictly greater than the current
+ *    page; otherwise the walk stops. This prevents a misbehaving server from
+ *    pinning us in an infinite loop.
+ *  - Partial success: if a mid-walk fetch throws (transient 5xx, network blip)
+ *    the accumulated pages so far are still returned, so the picker shows what
+ *    we know rather than an empty list. The first-page error still propagates
+ *    so the caller can render an explicit error state.
+ *  - Safety cap at 50 pages (≈5000 repos).
  */
 export async function getRepos(provider: GitProvider): Promise<RepoSummary[]> {
   const first = await _fetchReposPage(provider, 1);
-  if (first.next_page == null) return first.repos;
-  // Pages 2..N — fire in parallel. We don't know the total page count up front;
-  // probe until we see a page with next_page=null.
   const all: RepoSummary[] = [...first.repos];
-  let page = 2;
-  // GitHub's next_page only tells us the NEXT page; to keep this bounded and
-  // simple we walk sequentially with a 100/page step. With per_page=100 this
-  // means a 500-repo account does 5 sequential requests — fine. A future tweak
-  // can probe the `last` rel in the Link header for true parallelism.
-  while (true) {
-    const next = await _fetchReposPage(provider, page);
+  let cursor = first.next_page;
+  let lastPage = 1;
+  const HARD_CAP = 50;
+  while (cursor != null && cursor > lastPage && lastPage < HARD_CAP) {
+    let next: ListReposPage;
+    try {
+      next = await _fetchReposPage(provider, cursor);
+    } catch (err) {
+      // Surface partial results rather than dropping everything we accumulated.
+      console.warn('[git-providers] mid-walk fetch failed; returning partial repos', err);
+      return all;
+    }
     all.push(...next.repos);
-    if (next.next_page == null) break;
-    page = next.next_page;
-    if (page > 50) break; // safety cap @ 5000 repos
+    lastPage = cursor;
+    cursor = next.next_page;
   }
   return all;
+}
+
+function _isBranchSummary(x: unknown): x is BranchSummary {
+  if (!x || typeof x !== 'object') return false;
+  const o = x as Record<string, unknown>;
+  return typeof o.name === 'string';
 }
 
 export async function getBranches(repo: {
@@ -97,9 +116,18 @@ export async function getBranches(repo: {
   const info = new ActionInfo('repo', user.type, user.id, 'POST');
   info.subpath = 'branches';
   info.bodyParameters = { provider: repo.provider, owner: repo.owner, name: repo.name };
-  const res = await dataManager.callAction<unknown, BranchSummary[] | { data: BranchSummary[] }>(info);
-  // Backend returns ApiSuccessResponse(data=[{...}]) → dataManager unwraps once.
-  if (Array.isArray(res)) return res;
+  // Backend returns ApiSuccessResponse(data=[{name, protected}, …]); the
+  // dataManager unwraps `.data` once so we get the bare array here. Validate
+  // the shape so a future schema drift doesn't silently feed garbage into the
+  // picker.
+  const res = await dataManager.callAction<unknown, unknown>(info);
+  if (Array.isArray(res)) {
+    return res.filter(_isBranchSummary).map((b) => ({
+      name: b.name,
+      protected: Boolean(b.protected),
+    }));
+  }
+  console.warn('[git-providers] unexpected /repo/branches response shape', res);
   return [];
 }
 

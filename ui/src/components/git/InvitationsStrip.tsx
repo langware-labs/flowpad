@@ -3,6 +3,7 @@ import { Button } from '@src/components/ui/button';
 import { useGitInvitations, useRespondInvitation } from '@src/hooks/use-git-providers';
 import { useToast } from '@src/hooks/use-toast';
 import { Loader2, MailPlus } from 'lucide-react';
+import { useState } from 'react';
 
 interface InvitationsStripProps {
   provider: GitProvider;
@@ -17,10 +18,16 @@ export function InvitationsStrip({ provider, enabled = true }: InvitationsStripP
   const { data: invitations, isLoading } = useGitInvitations(provider, enabled);
   const respond = useRespondInvitation(provider);
   const { toast } = useToast();
+  // Per-row in-flight tracker so only the clicked invitation's buttons spin.
+  // The shared `respond.isPending` from react-query would otherwise grey out
+  // every row's buttons when one is mid-flight, blocking the user from
+  // responding to multiple invitations in quick succession.
+  const [pendingId, setPendingId] = useState<number | null>(null);
 
   if (isLoading || !invitations || invitations.length === 0) return null;
 
   const handleRespond = (id: number, action: 'accept' | 'decline', fullName: string) => {
+    setPendingId(id);
     respond.mutate(
       { id, action },
       {
@@ -37,6 +44,9 @@ export function InvitationsStrip({ provider, enabled = true }: InvitationsStripP
             variant: 'destructive',
           });
         },
+        onSettled: () => {
+          setPendingId((cur) => (cur === id ? null : cur));
+        },
       },
     );
   };
@@ -48,33 +58,36 @@ export function InvitationsStrip({ provider, enabled = true }: InvitationsStripP
         Pending repo invitations ({invitations.length})
       </div>
       <ul className="flex flex-col gap-1">
-        {invitations.map((inv) => (
-          <li key={inv.id} className="flex items-center gap-2 text-xs">
-            <span className="flex-1 truncate font-mono">{inv.repo.full_name}</span>
-            <span className="text-muted-foreground">from @{inv.inviter_login}</span>
-            <span className="rounded bg-muted px-1.5 py-px text-[10px] uppercase text-muted-foreground">
-              {inv.permissions}
-            </span>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-6 px-2 text-xs"
-              disabled={respond.isPending}
-              onClick={() => handleRespond(inv.id, 'accept', inv.repo.full_name)}
-            >
-              {respond.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Accept'}
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-6 px-2 text-xs"
-              disabled={respond.isPending}
-              onClick={() => handleRespond(inv.id, 'decline', inv.repo.full_name)}
-            >
-              Decline
-            </Button>
-          </li>
-        ))}
+        {invitations.map((inv) => {
+          const isRowPending = pendingId === inv.id;
+          return (
+            <li key={inv.id} className="flex items-center gap-2 text-xs">
+              <span className="flex-1 truncate font-mono">{inv.repo.full_name}</span>
+              <span className="text-muted-foreground">from @{inv.inviter_login}</span>
+              <span className="rounded bg-muted px-1.5 py-px text-[10px] uppercase text-muted-foreground">
+                {inv.permissions}
+              </span>
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-6 px-2 text-xs"
+                disabled={isRowPending}
+                onClick={() => handleRespond(inv.id, 'accept', inv.repo.full_name)}
+              >
+                {isRowPending ? <Loader2 className="h-3 w-3 animate-spin" /> : 'Accept'}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 px-2 text-xs"
+                disabled={isRowPending}
+                onClick={() => handleRespond(inv.id, 'decline', inv.repo.full_name)}
+              >
+                Decline
+              </Button>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

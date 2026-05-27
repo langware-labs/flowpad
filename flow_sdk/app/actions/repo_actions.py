@@ -7,8 +7,10 @@ Routes:
   GET/POST /api/v1/graph/repo/branches?repo_url=...
 """
 
+import asyncio
 import logging
-from typing import Optional
+import re
+from typing import Any, Optional
 
 import requests
 from pydantic import BaseModel, ConfigDict
@@ -29,6 +31,10 @@ class RepoActions:
     INVITATIONS = "invitations"
     INVITATION_ACCEPT = "invitation-accept"
     INVITATION_DECLINE = "invitation-decline"
+    # GitRepo entity materialization — creates a shareable {provider, full_name,
+    # branch, ...} entity from the picker selection so it can be attached to a
+    # FlowMessage via TYPE_ID.
+    MATERIALIZE = "materialize"
 
 
 GITHUB_PROVIDER = "github"
@@ -62,17 +68,53 @@ allowed_repo_actions = [
     RepoActions.INVITATIONS,
     RepoActions.INVITATION_ACCEPT,
     RepoActions.INVITATION_DECLINE,
+    RepoActions.MATERIALIZE,
 ]
 
 
-def _role_from_permissions(perms: dict | None) -> str:
-    """Map GitHub's permissions object to a flat role string."""
-    perms = perms or {}
-    if perms.get("admin"):
-        return "admin"
-    if perms.get("push"):
-        return "write"
+def _role_from_permissions(perms: Any) -> str:
+    """Map GitHub's permissions value to a flat role string.
+
+    Tolerates: dict with {admin,push,pull} flags (most common), bare string
+    ('admin'/'write'/'read'/'maintain'/'triage'), or None/missing (→ 'read').
+    A surprising shape never raises — degrades to the safest role.
+    """
+    if isinstance(perms, dict):
+        if perms.get("admin") or perms.get("maintain"):
+            return "admin"
+        if perms.get("push"):
+            return "write"
+        return "read"
+    if isinstance(perms, str):
+        p = perms.strip().lower()
+        if p in ("admin", "owner", "maintain"):
+            return "admin"
+        if p in ("write", "push"):
+            return "write"
+        return "read"
     return "read"
+
+
+# A safe path segment for a GitHub owner or repo name. GitHub itself permits
+# `A-Za-z0-9_.-` and disallows leading hyphen / dot, length 1-39 (owners) /
+# 1-100 (repos). We're permissive on length but strict on the character set
+# and lead-character so the value can't escape the URL path.
+_GITHUB_SLUG_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]*$")
+
+# A safe git ref name. Disallows leading dash (which would be parsed as a git
+# CLI option), `..`, `~`, `^`, `:`, `?`, `*`, `[`, `\`, control chars. GitHub
+# enforces a stricter subset than git itself, but this is good enough to keep
+# argv clean.
+_GIT_REF_NAME_RE = re.compile(r"^(?!-)[A-Za-z0-9._/-]+$")
+
+
+def _safe_slug(value: str | None) -> str | None:
+    """Return value if it matches the safe slug regex, else None."""
+    if not value or not isinstance(value, str):
+        return None
+    if ".." in value or "/" in value or value.startswith("."):
+        return None
+    return value if _GITHUB_SLUG_RE.match(value) else None
 
 
 def _parse_next_page_from_link(link_header: str | None) -> int | None:
@@ -87,7 +129,6 @@ def _parse_next_page_from_link(link_header: str | None) -> int | None:
         if 'rel="next"' not in chunk:
             continue
         # Extract the page number from the URL inside <…>
-        import re
         m = re.search(r"[?&]page=(\d+)", chunk)
         if m:
             try:
@@ -95,6 +136,60 @@ def _parse_next_page_from_link(link_header: str | None) -> int | None:
             except ValueError:
                 return None
     return None
+
+
+def _classify_github_error(response) -> ApiResponse | None:
+    """Inspect a GitHub HTTP response and map errors to a uniform ApiFailResponse.
+
+    Returns None if the response is OK (2xx). Otherwise returns the response
+    callers should bubble up — distinguishing auth (401), rate-limit (403 with
+    X-RateLimit-Remaining=0 or X-RateLimit-Used==Limit), permission denial
+    (other 403), expired/gone (404/410), and other errors. The 'reconnect'
+    string is canonical across all callers so the UI can pattern-match.
+    """
+    status = response.status_code
+    if 200 <= status < 300:
+        return None
+    body_snippet = (response.text or "")[:300]
+    if status == 401:
+        return ApiFailResponse(
+            message="GitHub authentication failed. Please reconnect.",
+            data={"reason": "auth_invalid", "status": 401},
+        )
+    if status == 403:
+        # Distinguish rate-limit from a real permission denial.
+        remaining = response.headers.get("X-RateLimit-Remaining")
+        if remaining is not None and remaining.strip() == "0":
+            reset = response.headers.get("X-RateLimit-Reset", "")
+            return ApiFailResponse(
+                message="GitHub rate limit reached. Try again shortly.",
+                data={"reason": "rate_limited", "status": 403, "reset": reset},
+            )
+        # Secondary rate-limit (abuse detection) returns 403 + Retry-After.
+        retry_after = response.headers.get("Retry-After")
+        if retry_after:
+            return ApiFailResponse(
+                message="GitHub rate limit reached. Try again shortly.",
+                data={"reason": "rate_limited", "status": 403, "retry_after": retry_after},
+            )
+        return ApiFailResponse(
+            message="GitHub permission denied. Token may not grant access to this resource.",
+            data={"reason": "forbidden", "status": 403},
+        )
+    if status == 404:
+        return ApiFailResponse(
+            message="GitHub resource not found. The invitation/repo may have been removed.",
+            data={"reason": "not_found", "status": 404},
+        )
+    if status == 410:
+        return ApiFailResponse(
+            message="GitHub invitation is no longer available.",
+            data={"reason": "gone", "status": 410},
+        )
+    return ApiFailResponse(
+        message=f"GitHub API error ({status}): {body_snippet}",
+        data={"reason": "github_error", "status": status},
+    )
 
 
 class RepoReqInfo(BaseModel):
@@ -217,12 +312,20 @@ async def _fetch_branches_from_github(api_url: str, headers: dict) -> ApiRespons
         # per_page=100 is GitHub's max; without it the default is 30, which
         # silently truncates feature-heavy repos and hides the default branch.
         # Repos with >100 branches need pagination — out of scope for v1.
-        response = requests.get(
+        # Sync `requests.get` is offloaded to a worker thread so the FastAPI
+        # event loop stays responsive while we wait on GitHub.
+        response = await asyncio.to_thread(
+            requests.get,
             api_url,
             headers=headers,
             params={"per_page": 100},
             timeout=GithubApiRequestConsts.REQUEST_TIMEOUT,
         )
+        # Route auth/rate-limit/etc. errors through the shared classifier so
+        # the UI sees the same reason/status across list, invitations, branches.
+        classified = _classify_github_error(response)
+        if classified is not None:
+            return classified
         return _build_branches_response(response)
     except requests.exceptions.Timeout:
         return ApiFailResponse(message="Request to GitHub API timed out")
@@ -239,19 +342,31 @@ async def get_branches_list(
     owner: str | None = None,
     name: str | None = None,
 ) -> ApiResponse:
-    """List branches. Accepts either a full ``repo_info.repo_url`` OR explicit ``owner`` + ``name``."""
+    """List branches. Accepts either a full ``repo_info.repo_url`` OR explicit ``owner`` + ``name``.
+
+    Owner/name path segments are validated against ``_GITHUB_SLUG_RE`` so a
+    crafted ``owner='foo/../../user/repos'`` can't redirect the GitHub API URL
+    to a different endpoint.
+    """
     api_url: str
-    if owner and name:
-        api_url = f"{GithubApiRequestConsts.API_BASE_URL}/{owner}/{name}/branches"
+    if owner is not None or name is not None:
+        safe_owner = _safe_slug(owner)
+        safe_name = _safe_slug(name)
+        if not safe_owner or not safe_name:
+            return ApiFailResponse(
+                message="owner and name must be valid GitHub slugs",
+                status_code=400,
+            )
+        api_url = f"{GithubApiRequestConsts.API_BASE_URL}/{safe_owner}/{safe_name}/branches"
     elif repo_info.repo_url:
         try:
             api_url, _o, _n = _parse_github_url(repo_info.repo_url)
         except ValueError as e:
-            return ApiFailResponse(message=str(e))
+            return ApiFailResponse(message=str(e), status_code=400)
         except Exception as e:
-            return ApiFailResponse(message=f"Failed to parse repository URL: {str(e)}")
+            return ApiFailResponse(message=f"Failed to parse repository URL: {str(e)}", status_code=400)
     else:
-        return ApiFailResponse(message="Repository URL or owner+name is required")
+        return ApiFailResponse(message="Repository URL or owner+name is required", status_code=400)
 
     token = await _get_github_token(request_info)
     headers = _prepare_github_headers(token)
@@ -268,6 +383,9 @@ async def list_user_repos(request_info: RequestInfo, page: int = 1) -> ApiRespon
     Returns ``{repos: RepoSummary[], next_page: int | null, page: int}`` so the
     TS SDK can fire pages 2..N in parallel after seeing page 1's Link header.
     """
+    # Clamp to a sane positive page number — a caller passing 0 or a negative
+    # would otherwise produce an unexpected GitHub response shape.
+    page = max(1, int(page))
     token = await _get_github_token(request_info)
     if not token:
         return ApiFailResponse(message="GitHub not connected")
@@ -280,7 +398,10 @@ async def list_user_repos(request_info: RequestInfo, page: int = 1) -> ApiRespon
             "sort": "updated",
             "affiliation": "owner,collaborator,organization_member",
         }
-        response = requests.get(
+        # Offload the sync HTTP call to a worker thread so the event loop
+        # stays responsive — see the matching change in _fetch_branches_from_github.
+        response = await asyncio.to_thread(
+            requests.get,
             GithubApiRequestConsts.USER_REPOS_URL,
             headers=headers,
             params=params,
@@ -291,10 +412,9 @@ async def list_user_repos(request_info: RequestInfo, page: int = 1) -> ApiRespon
     except requests.exceptions.RequestException as e:
         return ApiFailResponse(message=f"Failed to list repos: {e}")
 
-    if response.status_code == 401 or response.status_code == 403:
-        return ApiFailResponse(message="GitHub authentication failed. Please reconnect.")
-    if response.status_code != 200:
-        return ApiFailResponse(message=f"GitHub API error ({response.status_code}): {response.text[:300]}")
+    classified = _classify_github_error(response)
+    if classified is not None:
+        return classified
 
     raw_repos = response.json() or []
     repos = []
@@ -324,15 +444,17 @@ async def list_invitations(request_info: RequestInfo) -> ApiResponse:
         return ApiFailResponse(message="GitHub not connected")
     headers = _prepare_github_headers(token)
     try:
-        response = requests.get(
+        response = await asyncio.to_thread(
+            requests.get,
             GithubApiRequestConsts.INVITATIONS_URL,
             headers=headers,
             timeout=GithubApiRequestConsts.REQUEST_TIMEOUT,
         )
     except requests.exceptions.RequestException as e:
         return ApiFailResponse(message=f"Failed to list invitations: {e}")
-    if response.status_code != 200:
-        return ApiFailResponse(message=f"GitHub API error ({response.status_code}): {response.text[:300]}")
+    classified = _classify_github_error(response)
+    if classified is not None:
+        return classified
 
     items = []
     for inv in response.json() or []:
@@ -364,14 +486,21 @@ async def respond_to_invitation(request_info: RequestInfo, invitation_id: int, a
     url = f"{GithubApiRequestConsts.INVITATIONS_URL}/{invitation_id}"
     try:
         if accept:
-            response = requests.patch(url, headers=headers, timeout=GithubApiRequestConsts.REQUEST_TIMEOUT)
+            response = await asyncio.to_thread(
+                requests.patch, url, headers=headers, timeout=GithubApiRequestConsts.REQUEST_TIMEOUT
+            )
         else:
-            response = requests.delete(url, headers=headers, timeout=GithubApiRequestConsts.REQUEST_TIMEOUT)
+            response = await asyncio.to_thread(
+                requests.delete, url, headers=headers, timeout=GithubApiRequestConsts.REQUEST_TIMEOUT
+            )
     except requests.exceptions.RequestException as e:
         return ApiFailResponse(message=f"Invitation response failed: {e}")
     # GitHub returns 204 No Content on success for both endpoints.
     if response.status_code in (200, 204):
         return ApiSuccessResponse(data={"ok": True, "id": invitation_id, "accepted": accept})
+    classified = _classify_github_error(response)
+    if classified is not None:
+        return classified
     return ApiFailResponse(message=f"GitHub API error ({response.status_code}): {response.text[:300]}")
 
 
@@ -401,7 +530,13 @@ async def repo() -> ApiResponse:
         repo_url = body.get(RequestFields.REPO_URL)
         owner = body.get(RequestFields.OWNER)
         name = body.get(RequestFields.NAME)
-        page = int(body.get(RequestFields.PAGE, 1)) if body.get(RequestFields.PAGE) else 1
+        # `int(...)` on an attacker-supplied string can raise — catch and
+        # return a 400 instead of a 500 from the catch-all middleware.
+        raw_page = body.get(RequestFields.PAGE, 1)
+        try:
+            page = max(1, int(raw_page)) if raw_page not in (None, "") else 1
+        except (TypeError, ValueError):
+            return ApiFailResponse(message="page must be a positive integer", status_code=400)
         invitation_id = body.get(RequestFields.INVITATION_ID)
         provider = _provider_from_body(body)
 
@@ -422,14 +557,18 @@ async def repo() -> ApiResponse:
             return await list_user_repos(current_request_info, page=page)
         if repo_info.repo_action == RepoActions.INVITATIONS:
             return await list_invitations(current_request_info)
-        if repo_info.repo_action == RepoActions.INVITATION_ACCEPT:
-            if not invitation_id:
-                return ApiFailResponse(message="invitation_id required")
-            return await respond_to_invitation(current_request_info, int(invitation_id), accept=True)
-        if repo_info.repo_action == RepoActions.INVITATION_DECLINE:
-            if not invitation_id:
-                return ApiFailResponse(message="invitation_id required")
-            return await respond_to_invitation(current_request_info, int(invitation_id), accept=False)
+        if repo_info.repo_action in (RepoActions.INVITATION_ACCEPT, RepoActions.INVITATION_DECLINE):
+            if invitation_id in (None, ""):
+                return ApiFailResponse(message="invitation_id required", status_code=400)
+            try:
+                inv_id_int = int(invitation_id)
+            except (TypeError, ValueError):
+                return ApiFailResponse(message="invitation_id must be an integer", status_code=400)
+            return await respond_to_invitation(
+                current_request_info,
+                inv_id_int,
+                accept=(repo_info.repo_action == RepoActions.INVITATION_ACCEPT),
+            )
 
         return ApiSuccessResponse(data=[])
     except RuntimeError as e:
