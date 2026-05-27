@@ -105,6 +105,8 @@ async def oauth_main() -> ApiResponse:
         if oauth_action_str == OAuthAction.Disconnect:
             if provider == OAuthProvider.FLOWPAD_CLOUD:
                 return await _handle_flowpad_cloud_disconnect()
+            if provider == "github":
+                return await _handle_github_disconnect()
             return ApiSuccessResponse(
                 message=f"OAuth {provider} disconnected (desktop stub)",
                 data={"remaining_attachment_count": 0},
@@ -121,7 +123,7 @@ async def _handle_status(provider: str) -> ApiResponse:
     """Check OAuth connection status for a provider.
 
     Desktop mode: checks if Anthropic auth is available via detect_claude_code_auth.
-    For other providers, returns MISSING status.
+    For GitHub, reads the github_credentials SOD entry. For other providers, returns MISSING.
     """
     try:
         if provider == "anthropic":
@@ -139,6 +141,17 @@ async def _handle_status(provider: str) -> ApiResponse:
                 )
             except ImportError:
                 pass
+
+        if provider == "github":
+            token = await _get_github_token_for_current_user()
+            return ApiSuccessResponse(
+                message="Connection status checked",
+                data={
+                    "status": "available" if token else "missing",
+                    "has_token": bool(token),
+                    "is_attached": bool(token),
+                },
+            )
 
         # Default: no credentials available
         return ApiSuccessResponse(
@@ -242,3 +255,44 @@ async def _handle_wait_callback(provider: str, state: str) -> ApiResponse:
     then exchanges it for a token and saves credentials.
     """
     return await wait_for_desktop_oauth_callback(state)
+
+
+async def _get_github_token_for_current_user() -> str | None:
+    """Look up the current request's user and return their github_credentials SOD entry, or None."""
+    try:
+        from flow_sdk.builtin.user import User
+        from flow_sdk.request_context.methods import get_user_credentials
+
+        request_info = get_current_request_info()
+        if not request_info or not getattr(request_info, "user", None):
+            return None
+        user = await User.get_by_typeid(request_info.user)
+        if not user:
+            return None
+        # Same FK convention as the write side in _save_github_token_to_sod.
+        return await get_user_credentials(user, "github_credentials", user.id)
+    except Exception as e:
+        logger.warning(f"github token lookup failed: {e}")
+        return None
+
+
+async def _handle_github_disconnect() -> ApiResponse:
+    """Delete the user's github_credentials SOD entry."""
+    try:
+        from flow_sdk.builtin.user import User
+        from flow_sdk.request_context.methods import delete_user_credentials
+
+        request_info = get_current_request_info()
+        if not request_info or not getattr(request_info, "user", None):
+            return ApiFailResponse(message="No request user")
+        user = await User.get_by_typeid(request_info.user)
+        if not user:
+            return ApiFailResponse(message="User not found")
+        await delete_user_credentials(user, "github_credentials", user.id)
+        return ApiSuccessResponse(
+            message="GitHub disconnected",
+            data={"remaining_attachment_count": 0},
+        )
+    except Exception as e:
+        logger.exception(f"GitHub disconnect error: {e}")
+        return ApiFailResponse(message=f"GitHub disconnect error: {e}")

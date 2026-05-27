@@ -277,10 +277,13 @@ async def set_user_credentials(user, name: str, value: Any, foreign_key: str):
     return await sod_store.write_user_sod(_sod_key(user, name), value, foreign_key)
 
 
-async def delete_user_credentials(user, name: str):
-    """Delete user credentials from SOD storage."""
+async def delete_user_credentials(user, name: str, foreign_key: str | None = None):
+    """Delete user credentials from SOD storage.
+
+    ``foreign_key`` mirrors set/get so callers can target the exact composed key.
+    """
     sod_store: SodDriver = get_current_sod_store()
-    return await sod_store.delete_user_sod(_sod_key(user, name))
+    return await sod_store.delete_user_sod(_sod_key(user, name), foreign_key)
 
 
 async def get_entity_credentials(entity, name: str) -> Any:

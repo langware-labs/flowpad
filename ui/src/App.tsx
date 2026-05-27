@@ -11,6 +11,7 @@ import { CleanupModal } from '@src/components/recovery/cleanup-modal';
 import { DeleteAssetModal } from '@src/components/assets/delete-asset-modal';
 import { useEffect, useRef, useState } from 'react';
 import { DesktopSetupModal, DESKTOP_SETUP_REASON_AUTH_FAILURE } from '@src/components/desktop-setup-modal';
+import { GitHubDeviceFlowModal } from '@src/components/oauth/GitHubDeviceFlowModal';
 import SecretApprovalDialog from '@src/components/secret-approval-dialog';
 import { initNotificationListener } from '@src/store/use-notification-store';
 import { SnifferProvider } from '@src/contexts/SnifferContext';
@@ -206,6 +207,7 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
         <ActivityProgressModalRoot />
         <GlobalEvents />
         <DesktopSetupModalHandler />
+        <GitHubDeviceFlowModal />
         <SecretApprovalDialog />
         <SnifferProvider>
           <FloatingChatProvider>
