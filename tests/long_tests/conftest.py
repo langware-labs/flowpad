@@ -11,8 +11,6 @@ worker-specific symbol.
 """
 
 import os
-import pwd
-import sys
 from typing import Awaitable, Callable
 
 import pytest
@@ -24,8 +22,13 @@ import pytest
 # long tests still need sandbox HOME so the file walker doesn't recurse the
 # user's real projects tree.
 #
-# Resolve via ``pwd`` so the real path survives the parent override.
-_REAL_HOME = pwd.getpwuid(os.getuid()).pw_dir
+# We read the pre-sandbox HOME from ``FLOWPAD_PRE_SANDBOX_HOME``, which the
+# parent ``tests/conftest.py`` stashes BEFORE its own ``HOME`` override. That
+# is the only reliable source: ``pwd.getpwuid(os.getuid()).pw_dir`` returns
+# the passwd-entry home (wrong under ``sudo -u`` / CI service accounts) and
+# ``pwd`` doesn't exist on Windows at all. The env-var handshake works on
+# every platform CLAUDE.md says we support.
+_REAL_HOME = os.environ.get("FLOWPAD_PRE_SANDBOX_HOME") or os.path.expanduser("~")
 _SANDBOX_HOME = os.environ["HOME"]
 
 # Test modules whose tests spawn real Claude/Codex CLI subprocesses and need
@@ -48,12 +51,24 @@ _REAL_HOME_TEST_MODULES = frozenset({
 def _real_home_for_cli_subprocess_tests(request):
     """Restore real ``$HOME`` for tests that spawn real Claude/Codex CLI subprocesses.
 
+    Scope of this fixture is **subprocess auth only**: the CLI inherits the
+    swapped ``$HOME`` via ``os.environ`` propagation and reads its credentials
+    from the user's real ``~/.claude/.credentials.json``. **In-process**
+    flow_sdk state stays anchored to the sandbox — ``InstanceSettings`` was
+    built under sandbox HOME at flow_sdk import time and its cached
+    ``claude_projects_dir`` / ``codex_sessions_dir`` do NOT track this swap.
+    Code that calls ``Path.home()`` at request time (e.g. ``resolver.py`` after
+    its lazy refactor) DOES see the swap.
+
+    If a test in the allowlist needs to assert on in-process Claude project
+    enumeration, expect zero results: the indexer still walks the sandbox.
+
     Tests in ``_REAL_HOME_TEST_MODULES`` need the user's real ``.claude/`` so
     the CLI subprocess inherits working auth. All other long tests keep the
     sandbox HOME from the parent conftest so the indexer doesn't walk the
     real projects tree.
     """
-    module_stem = request.node.fspath.purebasename
+    module_stem = request.path.stem
     if module_stem in _REAL_HOME_TEST_MODULES:
         os.environ["HOME"] = _REAL_HOME
         try:

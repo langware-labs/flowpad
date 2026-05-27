@@ -27,6 +27,12 @@ vi.mock('@mcp-ui/client', () => ({
   }),
 }));
 
+// Partial mock — overrides `fsManager` + `VFSPath` but spreads the rest of
+// the @sdk barrel so transitive importers (e.g. DockPointer's ViewType
+// enum) still resolve. This is wider than ShowView strictly needs; any
+// future @sdk module that adds an import-time side effect (network calls,
+// singleton bootstrapping) will leak into this jsdom test. If that bites,
+// reach for a per-symbol `vi.importActual` rather than widening further.
 vi.mock('@sdk', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@sdk')>();
   return {

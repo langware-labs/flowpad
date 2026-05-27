@@ -43,6 +43,13 @@ from pathlib import Path as _Path  # noqa: E402
 _TEST_HOME = _Path(tempfile.gettempdir()) / "flowpad_test_home"
 for _sub in (".claude", ".codex", ".flow"):
     (_TEST_HOME / _sub).mkdir(parents=True, exist_ok=True)
+# Stash the pre-sandbox HOME so child conftests can hand it to subprocess
+# environments that need real CLI auth (e.g. tests/long_tests/conftest.py
+# restoring HOME for tests that spawn the real Claude/Codex CLI). This is
+# the actual user-facing HOME on POSIX, macOS, AND Windows — `pwd.getpwuid`
+# returns the passwd-entry home which can diverge under `sudo -u` / CI
+# service accounts, and `pwd` doesn't exist on Windows at all.
+os.environ["FLOWPAD_PRE_SANDBOX_HOME"] = os.environ.get("HOME") or os.path.expanduser("~")
 os.environ["HOME"] = str(_TEST_HOME)
 
 
