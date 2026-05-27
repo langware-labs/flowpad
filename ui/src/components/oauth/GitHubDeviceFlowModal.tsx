@@ -3,6 +3,7 @@ import {
   copyToClipboard,
   dataManager,
   OAuthEventType,
+  oauthService,
   type OAuthDeviceFlowPayload,
 } from '@sdk';
 import { Button } from '@src/components/ui/button';
@@ -65,12 +66,28 @@ export function GitHubDeviceFlowModal() {
   }, []);
 
   // Auto-copy + auto-open on first render of a new payload.
+  // Both operations are best-effort — browsers can reject `window.open` and
+  // `clipboard.writeText` outside a transient user-activation context (which we
+  // are, because this runs after an async round-trip to /oauth/{provider}/auth).
+  // On failure we surface a toast so the user knows to use the explicit
+  // Copy / Open buttons (which DO carry an activation, since they're click handlers).
   useEffect(() => {
     if (!payload || openedRef.current) return;
     openedRef.current = true;
-    void copyToClipboard(payload.user_code);
+    void copyToClipboard(payload.user_code).catch(() => {
+      toast({
+        title: 'Could not auto-copy the code',
+        description: 'Click "Copy code" below to copy it manually.',
+        duration: 4000,
+      });
+    });
+    // window.open may be blocked by popup blockers when invoked from a useEffect
+    // (no active user gesture). openExternal swallows the return value, so we
+    // can't reliably detect a block; the dialog body uses softer copy ("Click
+    // below to open" rather than "We opened it") so the user always has a
+    // first-class manual path.
     openExternal(payload.verification_uri);
-  }, [payload]);
+  }, [payload, toast]);
 
   // Countdown to expiry.
   useEffect(() => {
@@ -112,9 +129,15 @@ export function GitHubDeviceFlowModal() {
   }, [payload]);
 
   const handleClose = useCallback(() => {
+    // Tell the backend to stop polling so it doesn't keep talking to GitHub
+    // for the rest of the device-code's lifetime (~15 min). Best-effort; the
+    // session will time out naturally if this RPC fails.
+    if (payload?.state) {
+      void oauthService.cancelDeviceFlow(payload.provider, payload.state);
+    }
     setPayload(null);
     setError(null);
-  }, []);
+  }, [payload]);
 
   if (!payload) return null;
 
@@ -128,8 +151,8 @@ export function GitHubDeviceFlowModal() {
         <DialogHeader>
           <DialogTitle>Connect GitHub</DialogTitle>
           <DialogDescription>
-            Enter the code below at <span className="font-mono">github.com/login/device</span> to authorize.
-            We opened the page for you in a new tab.
+            Click <span className="font-medium">Open github.com/login/device</span> below, then paste
+            the code shown. The code is copied to your clipboard automatically when possible.
           </DialogDescription>
         </DialogHeader>
 

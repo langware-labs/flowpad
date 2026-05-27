@@ -468,9 +468,7 @@ class Entity(DBEntity):
         """Return the fs-record associated with this entity, or None if none exists."""
         from flow_sdk.fs_store import Record  # noqa: PLC0415 — lazy, avoids circular import
         type_name = self.get_type()
-        record_cls = SchemaRegistry.get_record_cls(type_name)
-        if record_cls is None:
-            return None
+        record_cls = SchemaRegistry.get_record_cls(type_name) or Record
         return record_cls.get(self.id)
 
     async def updateSearchIndex(self) -> None:
@@ -517,11 +515,16 @@ class Entity(DBEntity):
         type_name = entity.get_type()
         record_cls = SchemaRegistry.get_record_cls(type_name)
         if record_cls is None:
-            service_log.debug(f"_store: no Record class registered for entity type '{type_name}'")
-            return None
+            # Parser-fn-migrated types have no record subclass. Use base Record
+            # for storage; upsert_main_ref will no-op (no default_body stub) but
+            # all other CRUD/sync paths work via the generic on-disk format.
+            from flow_sdk.fs_store.record import Record as _BaseRecord
+            record_cls = _BaseRecord
         record = record_cls.get(entity.id)
         if record is None:
-            record = record_cls(id=entity.id)
+            # Pass type= explicitly so the fallback base Record (parser_fn-only
+            # types) has the type set; subclasses already pin it via _record_type.
+            record = record_cls(id=entity.id, type=type_name)
         # Propagate any pre-resolved asset_ref string from the entity (set in
         # _prepare_for_storage) onto the record so main_ref resolves correctly.
         if record.asset_ref is None:
@@ -617,8 +620,9 @@ class Entity(DBEntity):
         from flow_sdk import wiki
 
         if body is None:
-            rec_cls = SchemaRegistry.get_record_cls(self.type)
-            rec = rec_cls.get(self.id) if rec_cls is not None else None
+            from flow_sdk.fs_store import Record as _BaseRecord
+            rec_cls = SchemaRegistry.get_record_cls(self.type) or _BaseRecord
+            rec = rec_cls.get(self.id)
             if rec is None:
                 rec = await self.get_record()
             if rec is not None:
@@ -1571,9 +1575,16 @@ class Entity(DBEntity):
 
         try:
             from flow_sdk.request_context.methods import delete_user_credentials  # noqa: PLC0415
-            await delete_user_credentials(self, provider_id)
+            # Pass self.id as foreign_key to match the device-flow write convention
+            # in flow_sdk.app.actions.desktop_oauth._save_github_token_to_sod —
+            # otherwise the composed SOD key diverges and the token is silently
+            # leaked on disk after a user-initiated revocation.
+            await delete_user_credentials(self, provider_id, self.id)
         except Exception as e:
-            service_log.error(f"Error deleting OAuth credentials {e}")
+            # ERROR (not warn): a swallowed FK ValueError here means a user
+            # believed they revoked a credential but the SOD blob is still
+            # on disk — a real security regression worth surfacing in logs.
+            service_log.error(f"Failed to delete OAuth credentials for {provider_id}: {e}", exc_info=True)
 
         self.env_vars.values.remove(env_var_to_remove)
         await self.update()

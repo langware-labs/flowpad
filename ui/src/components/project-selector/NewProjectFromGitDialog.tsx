@@ -32,15 +32,26 @@ export interface NewProjectFromGitDialogProps {
   ) => Promise<{ ok: true } | { ok: false; suggestedName: string; attemptedName: string }>;
 }
 
-async function fetchGithubStatus(): Promise<boolean> {
+async function fetchGithubStatus(): Promise<boolean | null> {
+  // Returns:
+  //   true  → connected
+  //   false → genuinely missing
+  //   null  → couldn't determine (bootstrap not ready / network error)
+  // The caller treats null as "show the disconnected banner but don't be loud".
+  const userTypeId = dataContext.userTypeId;
+  if (!userTypeId?.id) {
+    // Bootstrap hasn't populated the user yet — skip the call rather than fire
+    // a malformed /api/v1/graph/user/oauth/github/status (no id), which would
+    // 404 silently and falsely report "not connected" for connected users.
+    return null;
+  }
   try {
-    const userTypeId = dataContext.userTypeId;
-    const info = new ActionInfo('oauth', userTypeId?.type ?? 'user', userTypeId?.id ?? '', 'GET');
+    const info = new ActionInfo('oauth', userTypeId.type, userTypeId.id, 'GET');
     info.subpath = 'github/status';
     const res = await dataManager.callAction<unknown, { has_token?: boolean; status?: string }>(info);
     return Boolean(res?.has_token);
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -51,13 +62,33 @@ export function NewProjectFromGitDialog({ open, onOpenChange, onCreate }: NewPro
   const [suggestion, setSuggestion] = useState<{ suggestedName: string; attemptedName: string } | null>(null);
   const [githubConnected, setGithubConnected] = useState<boolean>(false);
 
+  // Re-poll on every open AND whenever userTypeId becomes available — handles
+  // the bootstrap race where the dialog mounts before dataContext.userTypeId is
+  // populated (fetchGithubStatus returns null in that case).
   useEffect(() => {
-    if (open) {
-      setUrl('');
-      setIsSubmitting(false);
-      setSuggestion(null);
-      void fetchGithubStatus().then(setGithubConnected);
-    }
+    if (!open) return;
+    setUrl('');
+    setIsSubmitting(false);
+    setSuggestion(null);
+
+    let cancelled = false;
+    const poll = async () => {
+      const result = await fetchGithubStatus();
+      if (cancelled) return;
+      if (result === null) {
+        // Couldn't determine — retry briefly. The userTypeId usually arrives
+        // within the first second of bootstrap.
+        setTimeout(() => {
+          if (!cancelled) void poll();
+        }, 500);
+        return;
+      }
+      setGithubConnected(result);
+    };
+    void poll();
+    return () => {
+      cancelled = true;
+    };
   }, [open]);
 
   // Refresh status on a successful GitHub connect broadcast.
@@ -65,7 +96,9 @@ export function NewProjectFromGitDialog({ open, onOpenChange, onCreate }: NewPro
     if (!open) return;
     const handler = (msg: { auth_method?: string; status?: string }) => {
       if (msg.auth_method === 'github' && msg.status === 'success') {
-        void fetchGithubStatus().then(setGithubConnected);
+        void fetchGithubStatus().then((r) => {
+          if (r !== null) setGithubConnected(r);
+        });
       }
     };
     connectionManager.on('on_llm_config_msg', handler);
