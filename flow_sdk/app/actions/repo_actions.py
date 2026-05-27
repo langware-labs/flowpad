@@ -114,7 +114,10 @@ async def _get_github_token(request_info: RequestInfo) -> Optional[str]:
         if not user:
             return None
 
-        github_credentials = await get_user_credentials(user, "github_credentials", None)
+        # foreign_key matches the write side in desktop_oauth.py (_save_github_token_to_sod)
+        # so the SOD lookup hits the same key whether or not the request has a
+        # cloud-side user_foreign_key bound to the context.
+        github_credentials = await get_user_credentials(user, "github_credentials", user.id)
         if not github_credentials:
             return None
 

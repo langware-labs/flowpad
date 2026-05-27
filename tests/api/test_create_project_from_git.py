@@ -85,7 +85,15 @@ async def test_create_project_from_git_accepts_suggested(bootstrapped_client):
     cn_id = _cn_id(bootstrap.json())
 
     leaf = "twice-cloned"
-    (Path(AGENT_MOUNT_FOLDER) / leaf).mkdir(parents=True, exist_ok=True)
+    base = Path(AGENT_MOUNT_FOLDER) / leaf
+    suggested = Path(AGENT_MOUNT_FOLDER) / f"{leaf}-2"
+    base.mkdir(parents=True, exist_ok=True)
+    # Clean up the suggestion-target from any prior leaked run so the test is
+    # idempotent — without this, a prior pass leaves the folder behind and the
+    # next run trips the collision check.
+    if suggested.exists():
+        import shutil
+        shutil.rmtree(suggested)
 
     with patch("flow_sdk.utils.git.git_clone", side_effect=_fake_git_clone):
         r = await bootstrapped_client.post(
