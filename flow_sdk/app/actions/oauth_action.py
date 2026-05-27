@@ -14,6 +14,7 @@ from flow_sdk.core import action
 from flow_sdk.api.oauth_api import OAuthAction, OAuthErrorCode, OAuthProvider, OauthClientRequestInfo
 from flow_sdk.app.actions.desktop_oauth import (
     _desktop_oauth_sessions,
+    cancel_github_device_flow,
     get_desktop_oauth_auth_url,
     handle_desktop_oauth_callback,
     wait_for_desktop_oauth_callback,
@@ -90,6 +91,14 @@ async def oauth_main() -> ApiResponse:
                 return ApiFailResponse(message="State parameter required for wait-callback")
             return await _handle_wait_callback(provider, state)
 
+        # Cancel — explicit teardown for device-flow sessions (used by UI Cancel button).
+        if oauth_action_str == "cancel":
+            state = request_info.request_parameters.get("state") if request_info.request_parameters else None
+            if not state:
+                return ApiFailResponse(message="State parameter required for cancel")
+            cancelled = cancel_github_device_flow(state) if provider == "github" else False
+            return ApiSuccessResponse(data={"cancelled": cancelled})
+
         # Attach
         if oauth_action_str == OAuthAction.Attach:
             return ApiSuccessResponse(message=f"OAuth {provider} attached (desktop stub)")
@@ -143,13 +152,26 @@ async def _handle_status(provider: str) -> ApiResponse:
                 pass
 
         if provider == "github":
-            token = await _get_github_token_for_current_user()
+            token, error = await _get_github_token_for_current_user()
+            if error is not None:
+                # SOD driver outage / FK ValueError / DB error — distinct from "no token".
+                return ApiSuccessResponse(
+                    message="Connection status checked",
+                    data={
+                        "status": "error",
+                        "has_token": False,
+                        "is_attached": False,
+                        "auth_method": "github",
+                        "error": error,
+                    },
+                )
             return ApiSuccessResponse(
                 message="Connection status checked",
                 data={
                     "status": "available" if token else "missing",
                     "has_token": bool(token),
                     "is_attached": bool(token),
+                    "auth_method": "github",
                 },
             )
 
@@ -160,13 +182,22 @@ async def _handle_status(provider: str) -> ApiResponse:
                 "status": "missing",
                 "has_token": False,
                 "is_attached": False,
+                "auth_method": "none",
             },
         )
     except Exception as e:
+        # Unexpected error path (above branches handle their own errors). Surface
+        # status="error" so the UI can distinguish from a genuine "no credential".
         logger.warning(f"OAuth status check error for {provider}: {e}")
         return ApiSuccessResponse(
             message="Connection status checked",
-            data={"status": "missing", "has_token": False, "is_attached": False},
+            data={
+                "status": "error",
+                "has_token": False,
+                "is_attached": False,
+                "auth_method": provider if provider in {"anthropic", "github"} else "none",
+                "error": str(e),
+            },
         )
 
 
@@ -257,23 +288,32 @@ async def _handle_wait_callback(provider: str, state: str) -> ApiResponse:
     return await wait_for_desktop_oauth_callback(state)
 
 
-async def _get_github_token_for_current_user() -> str | None:
-    """Look up the current request's user and return their github_credentials SOD entry, or None."""
+async def _get_github_token_for_current_user() -> tuple[str | None, str | None]:
+    """Look up the current request's user and return ``(token, error)``.
+
+    Returns ``(token, None)`` on success (token may be None if no SOD entry).
+    Returns ``(None, error_str)`` when something went wrong — so callers can
+    distinguish a genuine 'no credential' from an infrastructure failure."""
     try:
         from flow_sdk.builtin.user import User
         from flow_sdk.request_context.methods import get_user_credentials
 
         request_info = get_current_request_info()
         if not request_info or not getattr(request_info, "user", None):
-            return None
+            return None, None  # no request user → treat as missing (not an error)
         user = await User.get_by_typeid(request_info.user)
         if not user:
-            return None
+            return None, None
         # Same FK convention as the write side in _save_github_token_to_sod.
-        return await get_user_credentials(user, "github_credentials", user.id)
+        try:
+            token = await get_user_credentials(user, "github_credentials", user.id)
+            return token, None
+        except KeyError:
+            # Standard "no SOD entry" — distinct from infrastructure errors below.
+            return None, None
     except Exception as e:
         logger.warning(f"github token lookup failed: {e}")
-        return None
+        return None, str(e)
 
 
 async def _handle_github_disconnect() -> ApiResponse:

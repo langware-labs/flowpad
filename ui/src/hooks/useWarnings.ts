@@ -94,6 +94,19 @@ export function useWarnings() {
       auth_method: string;
       auth_data?: ClaudeCodeAuthStatus;
     }) => {
+      // The `on_llm_config_msg` channel is shared by several OAuth providers
+      // (Anthropic loopback, GitHub device flow, etc.). Only Anthropic broadcasts
+      // carry Claude-relevant auth_data and should update the Claude config cache.
+      // Filtering here prevents a GitHub device-flow event (which carries
+      // auth_method='github' and no auth_data) from wiping the cached Anthropic
+      // claude_code_auth blob.
+      if (
+        message.auth_method !== 'oauth' &&
+        message.auth_method !== 'api_key' &&
+        message.auth_method !== 'none'
+      ) {
+        return;
+      }
       // Update the query cache with the new auth status
       queryClient.setQueryData(['is-llm-configured', user.typeId?.toString()], {
         is_configured: message.is_configured,
