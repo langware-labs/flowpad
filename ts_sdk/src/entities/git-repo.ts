@@ -1,78 +1,72 @@
-import { dataManager } from '../APIEntity';
-import { ActionInfo } from '../models';
-import { ComputeNode } from './compute-node';
+import { APIEntity, registerEntity } from '../APIEntity';
+import { IEntity } from '../IEntity';
 
-export interface GitStatusFile {
-  status: string;
-  path: string;
-  insertions: number | null;
-  deletions: number | null;
-}
+export type GitProviderId = 'github' | 'gitlab' | 'bitbucket';
 
-export interface GitStatus {
-  error: string | null;
-  branch: string | null;
-  ahead: number;
-  behind: number;
-  files: GitStatusFile[];
+export interface IGitRepo extends IEntity {
+  /** "github" — v1 only supports GitHub. */
+  provider?: GitProviderId;
+  owner?: string;
+  /** Repo name (without owner). */
+  name?: string;
+  /** "owner/repo" — canonical display id. */
+  full_name?: string;
+  /** Repo's mainline branch, used for fallback labels. */
+  default_branch?: string;
+  /** The branch this shared location represents (the "current git location"). */
+  branch?: string;
+  /** Commit SHA at share time (snapshot, optional). */
+  head_commit?: string | null;
+  /** Public web URL (github.com/owner/repo). */
+  html_url?: string;
+  description?: string | null;
+  private?: boolean;
+  fork?: boolean;
 }
 
 /**
- * Thin client-side wrapper for git operations on a specific working directory.
+ * Shareable "git location" entity — represents a repo + branch the sender
+ * wants the recipient to work on. Same wire pattern as Markdown/Spec:
+ * created locally, attached to a FlowMessage as a `type_id` reference,
+ * rendered as a chip on the recipient side, opens an accept-modal on click.
  *
- * All methods delegate to ComputeNode server actions via the graph API under
- * the unified `git-ops` endpoint.
- * The `computeNodeId` defaults to `@local` (the local machine).
- *
- * @example
- * ```typescript
- * const git = new GitRepo('/home/user/my-repo');
- * const status   = await git.getStatus();
- * const branch   = await git.getBranch();
- * const isRepo   = await git.isInit();
- * const isLinked = await git.isLinkedWorktree();
- * ```
+ * Non-secret metadata only. For the workdir-bound git ops helper, see
+ * `./git-workdir.ts` (`GitWorkdir`).
  */
-export class GitRepo {
-  constructor(
-    public readonly workDir: string,
-    public readonly computeNodeId: string = '@local',
-  ) {}
+@registerEntity
+export class GitRepo extends APIEntity<GitRepo> implements IGitRepo {
+  provider?: GitProviderId;
+  owner?: string;
+  name?: string;
+  full_name?: string;
+  default_branch?: string;
+  branch?: string;
+  head_commit?: string | null;
+  html_url?: string;
+  description?: string | null;
+  private?: boolean;
+  fork?: boolean;
+  static type: string = 'git_repo';
 
-  private async _call<T>(subpath: string): Promise<T> {
-    const action = new ActionInfo('git-ops', ComputeNode.type, this.computeNodeId);
-    action.subpath = subpath;
-    action.queryParameters = { workdir: this.workDir };
-    return dataManager.callAction<void, T>(action);
+  constructor(entity: Partial<IGitRepo> = {}) {
+    super(entity);
+    this.provider = entity.provider ?? 'github';
+    this.owner = entity.owner ?? '';
+    this.name = entity.name ?? '';
+    this.full_name = entity.full_name ?? '';
+    this.default_branch = entity.default_branch ?? 'main';
+    this.branch = entity.branch ?? '';
+    this.head_commit = entity.head_commit ?? null;
+    this.html_url = entity.html_url ?? '';
+    this.description = entity.description ?? null;
+    this.private = entity.private ?? false;
+    this.fork = entity.fork ?? false;
   }
 
-  /** Full git status (branch, ahead/behind, per-file insertions/deletions). */
-  async getStatus(): Promise<GitStatus> {
-    return this._call<GitStatus>('status');
-  }
-
-  /** Current branch name, or null if detached / not a git repo. */
-  async getBranch(): Promise<string | null> {
-    return (await this._call<{ branch: string | null }>('branch')).branch;
-  }
-
-  /** True if workDir is inside a git repository. */
-  async isInit(): Promise<boolean> {
-    return (await this._call<{ isInit: boolean }>('is-init')).isInit ?? false;
-  }
-
-  /**
-   * True if workDir is a *linked* worktree (not the main worktree).
-   *
-   * Server runs `git rev-parse --git-dir` and checks whether the output
-   * contains `.git/worktrees/`.
-   */
-  async isLinkedWorktree(): Promise<boolean> {
-    return (await this._call<{ isLinkedWorktree: boolean }>('is-linked-worktree')).isLinkedWorktree ?? false;
-  }
-
-  /** True if the repo has at least one commit (HEAD exists). */
-  async hasCommit(): Promise<boolean> {
-    return (await this._call<{ hasCommit?: boolean }>('has-commit')).hasCommit ?? false;
+  /** "owner/repo · branch" — what the chip label and modal header show. */
+  get displayLabel(): string {
+    if (this.full_name && this.branch) return `${this.full_name} · ${this.branch}`;
+    if (this.full_name) return this.full_name;
+    return this.name ?? '';
   }
 }
