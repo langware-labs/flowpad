@@ -11,7 +11,13 @@ export function PoweredBy({ className = '' }: PoweredByProps) {
   return (
     <div className={`flex items-end ${className}`}>
       <span className="mr-2 text-[10px] text-muted-foreground">Powered by</span>
-      <a href="https://flowpad.ai">
+      <a
+        href="https://flowpad.ai"
+        onDoubleClick={(e) => {
+          e.preventDefault();
+          window.open(window.location.href, '_blank', 'noopener,noreferrer');
+        }}
+      >
         <img
           src={flowpadLogo}
           alt="Flowpad.ai Logo"
