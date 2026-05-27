@@ -253,3 +253,107 @@ async def test_branches_accepts_owner_name(bootstrapped_client, github_user_with
     assert isinstance(data, list)
     assert len(data) == 2
     assert any(b["name"] == "main" for b in data)
+
+
+# ── Security/validation regression tests for the code-review fixes ────────────
+
+
+# do not increase timeout without approval
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+@pytest.mark.parametrize("bad_owner", [
+    "foo/../../user/repos",   # path traversal
+    "../etc/passwd",          # leading ..
+    "-rf",                    # CLI-flag-shape
+    "foo bar",                # space
+    "",                       # empty
+    "foo%2Fbar",              # url-encoded slash
+])
+async def test_branches_rejects_unsafe_owner(bootstrapped_client, github_user_with_token, bad_owner):
+    user = github_user_with_token
+    # If sanitization fails, no HTTP call is made; assert by patching to raise.
+    with patch.object(ra.requests, "get", side_effect=AssertionError("should not reach GitHub")):
+        r = await bootstrapped_client.post(
+            f"/api/v1/graph/user/{user.id}/repo/branches",
+            json={"provider": "github", "owner": bad_owner, "name": "flowpad"},
+        )
+    assert r.status_code == 400, r.text
+    assert "slug" in r.json()["message"].lower() or "owner" in r.json()["message"].lower()
+
+
+# do not increase timeout without approval
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_repo_list_401_returns_reconnect_reason(bootstrapped_client, github_user_with_token):
+    user = github_user_with_token
+    with patch.object(
+        ra.requests, "get",
+        return_value=_mock_response(401, json_body={"message": "Bad credentials"}),
+    ):
+        r = await bootstrapped_client.post(
+            f"/api/v1/graph/user/{user.id}/repo/list",
+            json={"provider": "github"},
+        )
+    body = r.json()
+    assert body["status"] == "FAIL"
+    assert body["data"]["reason"] == "auth_invalid"
+    assert body["data"]["status"] == 401
+
+
+# do not increase timeout without approval
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_repo_list_403_rate_limit(bootstrapped_client, github_user_with_token):
+    user = github_user_with_token
+    headers = {"X-RateLimit-Remaining": "0", "X-RateLimit-Reset": "1700000000"}
+    with patch.object(
+        ra.requests, "get",
+        return_value=_mock_response(403, json_body={}, headers=headers),
+    ):
+        r = await bootstrapped_client.post(
+            f"/api/v1/graph/user/{user.id}/repo/list",
+            json={"provider": "github"},
+        )
+    body = r.json()
+    assert body["status"] == "FAIL"
+    assert body["data"]["reason"] == "rate_limited"
+
+
+# do not increase timeout without approval
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_role_from_permissions_accepts_non_dict():
+    # Non-dict (None / str) should degrade gracefully, never raise.
+    assert ra._role_from_permissions(None) == "read"
+    assert ra._role_from_permissions("admin") == "admin"
+    assert ra._role_from_permissions("write") == "write"
+    assert ra._role_from_permissions("triage") == "read"
+    assert ra._role_from_permissions({"admin": True}) == "admin"
+    assert ra._role_from_permissions({"push": True}) == "write"
+    assert ra._role_from_permissions(42) == "read"  # truly surprising → safe default
+
+
+# do not increase timeout without approval
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_repo_list_invalid_page_returns_400(bootstrapped_client, github_user_with_token):
+    user = github_user_with_token
+    r = await bootstrapped_client.post(
+        f"/api/v1/graph/user/{user.id}/repo/list",
+        json={"provider": "github", "page": "abc"},
+    )
+    assert r.status_code == 400
+    assert "page" in r.json()["message"].lower()
+
+
+# do not increase timeout without approval
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)
+async def test_invitation_accept_invalid_id_returns_400(bootstrapped_client, github_user_with_token):
+    user = github_user_with_token
+    r = await bootstrapped_client.post(
+        f"/api/v1/graph/user/{user.id}/repo/invitation-accept",
+        json={"provider": "github", "invitation_id": "not-a-number"},
+    )
+    assert r.status_code == 400
+    assert "invitation_id" in r.json()["message"].lower()

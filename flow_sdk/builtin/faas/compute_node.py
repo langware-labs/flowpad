@@ -790,6 +790,18 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         branch = (body or {}).get("branch") or None
         if not isinstance(project_url, str) or not project_url.strip():
             return ApiFailResponse(message="project_url (str) is required", status_code=400)
+        # A branch ref is passed straight into git's argv as the value of `--branch`.
+        # The subprocess call is argv-style (no shell), so this is structurally
+        # safe against command injection — but a malformed ref still produces a
+        # confusing error, and rejecting it here keeps the failure mode clean.
+        if branch is not None:
+            import re as _re
+            _GIT_REF_RE = _re.compile(r"^(?!-)[A-Za-z0-9._/-]+$")
+            if not isinstance(branch, str) or not _GIT_REF_RE.match(branch) or ".." in branch or "@{" in branch:
+                return ApiFailResponse(
+                    message=f"Invalid branch name: {branch!r}",
+                    status_code=400,
+                )
 
         leaf = (target_name or derive_repo_leaf_from_url(project_url)).strip()
         if not leaf:

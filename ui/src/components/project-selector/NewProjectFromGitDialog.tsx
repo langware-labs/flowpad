@@ -169,9 +169,32 @@ export function NewProjectFromGitDialog({ open, onOpenChange, onCreate }: NewPro
     setBranch(b.name);
   }, []);
 
+  // Block ESC / outside-click / `×` close while a clone is in flight — those
+  // would otherwise unmount the dialog mid-fetch, dropping the toast surface
+  // for collision/error responses and leaving the user confused about what
+  // happened. The footer Cancel button is separately disabled in JSX below.
+  const handleOpenChange = useCallback(
+    (next: boolean) => {
+      if (!next && isSubmitting) return;
+      onOpenChange(next);
+    },
+    [isSubmitting, onOpenChange],
+  );
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl">
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent
+        className="sm:max-w-2xl"
+        onEscapeKeyDown={(e) => {
+          if (isSubmitting) e.preventDefault();
+        }}
+        onPointerDownOutside={(e) => {
+          if (isSubmitting) e.preventDefault();
+        }}
+        onInteractOutside={(e) => {
+          if (isSubmitting) e.preventDefault();
+        }}
+      >
         <DialogHeader>
           <DialogTitle>Clone project from git</DialogTitle>
         </DialogHeader>
