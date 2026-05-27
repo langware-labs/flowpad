@@ -31,9 +31,7 @@ from flow_sdk.actions import action
 from flow_sdk.builtin.project import Project
 from flow_sdk.responses.response import ApiResponse, ApiSuccessResponse
 from flow_sdk.utils.git import (
-    find_project_root,
     git_current_branch,
-    git_remote_url,
     git_repo_full_name,
 )
 
@@ -118,7 +116,13 @@ async def project_git_state(self: Project) -> ApiResponse:
     # All subprocess work runs off the event loop so a slow disk doesn't
     # hold up the request.
     def _gather() -> dict:
-        repo_root = find_project_root(workdir)
+        # Only treat the workdir itself as the repo root. A `.git` in any
+        # ancestor (typical monorepo layout where a project's workdir is a
+        # subdir of a larger repo) does NOT count — checking out a branch
+        # there would switch the entire ancestor repo, including paths
+        # outside this project. The modal should classify those workdirs
+        # as CLONE-eligible, not "same repo".
+        repo_root: str | None = workdir if os.path.isdir(os.path.join(workdir, ".git")) else None
         if not repo_root:
             return {
                 "has_repo": False,
