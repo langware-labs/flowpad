@@ -477,6 +477,98 @@ async def list_invitations(request_info: RequestInfo) -> ApiResponse:
     return ApiSuccessResponse(data={"invitations": items})
 
 
+async def materialize_repo(
+    request_info: RequestInfo,
+    *,
+    provider: str,
+    full_name: str,
+    branch: str,
+    head_commit: Optional[str] = None,
+    owner: Optional[str] = None,
+    name: Optional[str] = None,
+) -> ApiResponse:
+    """Create a ``GitRepo`` entity from the picker's selection.
+
+    Body shape (caller responsibility):
+      {provider: "github", full_name: "owner/repo", branch: "main",
+       head_commit?: "<sha>", owner?: "...", name?: "..."}
+
+    Identity: every call creates a NEW ``GitRepo`` with a fresh ``uuid4``
+    id. Two senders sharing the same upstream repo produce two distinct
+    TypeIds (security: no deterministic discovery from a public URL).
+
+    Enrichment: when the user is GitHub-connected, we re-fetch the live
+    repo metadata to populate ``html_url`` / ``description`` / ``private``
+    / ``fork`` / ``default_branch`` — saves the sender from supplying
+    those, and gives recipients a consistent picture even when the sender
+    sent a stale local copy. When the user isn't connected or the GitHub
+    call fails, we fall back to body fields (provider, owner, name,
+    full_name, branch) only and ship the entity in degraded form.
+    """
+    from flow_sdk.builtin.git_repo import GitRepo
+
+    if not full_name:
+        return ApiFailResponse(message="full_name required", status_code=400)
+    if not branch:
+        return ApiFailResponse(message="branch required", status_code=400)
+    if provider != GITHUB_PROVIDER:
+        return ApiFailResponse(message=f"Provider '{provider}' not yet supported")
+
+    # Derive owner/name from full_name if not provided.
+    derived_owner, _, derived_name = full_name.partition("/")
+    owner = owner or derived_owner
+    name = name or derived_name
+
+    repo = GitRepo(
+        provider=provider,
+        owner=owner,
+        name=name,
+        full_name=full_name,
+        branch=branch,
+        head_commit=head_commit,
+        default_branch=branch,  # placeholder; overwritten on enrichment success
+    )
+
+    # Enrichment — best-effort. Failure does NOT block materialization.
+    token = await _get_github_token(request_info)
+    if token:
+        url = f"{GithubApiRequestConsts.API_BASE_URL}/{full_name}"
+        headers = _prepare_github_headers(token)
+        try:
+            response = await asyncio.to_thread(
+                requests.get, url, headers=headers,
+                timeout=GithubApiRequestConsts.REQUEST_TIMEOUT,
+            )
+            if response.status_code == 200:
+                data = response.json() or {}
+                repo.html_url = data.get("html_url") or ""
+                repo.description = data.get("description") or None
+                repo.private = bool(data.get("private"))
+                repo.fork = bool(data.get("fork"))
+                repo.default_branch = data.get("default_branch") or branch
+            else:
+                logger.info("[repo/materialize] GitHub enrich for %s returned %s — using body fields only",
+                            full_name, response.status_code)
+        except Exception as e:  # noqa: BLE001
+            logger.info("[repo/materialize] GitHub enrich for %s failed: %s — using body fields only",
+                        full_name, e)
+
+    try:
+        await repo.save()
+    except Exception as e:  # noqa: BLE001
+        logger.error("[repo/materialize] save failed for %s: %s", full_name, e)
+        return ApiFailResponse(message=f"Failed to save GitRepo: {e}")
+
+    return ApiSuccessResponse(data={
+        "typeid": f"{repo.type}-{repo.id}",
+        "id": repo.id,
+        "full_name": repo.full_name,
+        "branch": repo.branch,
+        "html_url": repo.html_url,
+        "private": repo.private,
+    })
+
+
 async def respond_to_invitation(request_info: RequestInfo, invitation_id: int, accept: bool) -> ApiResponse:
     """PATCH (accept) or DELETE (decline) a repository invitation."""
     token = await _get_github_token(request_info)
@@ -568,6 +660,19 @@ async def repo() -> ApiResponse:
                 current_request_info,
                 inv_id_int,
                 accept=(repo_info.repo_action == RepoActions.INVITATION_ACCEPT),
+            )
+        if repo_info.repo_action == RepoActions.MATERIALIZE:
+            full_name = body.get("full_name") or ""
+            branch = body.get("branch") or ""
+            head_commit = body.get("head_commit") or None
+            return await materialize_repo(
+                current_request_info,
+                provider=provider,
+                full_name=full_name,
+                branch=branch,
+                head_commit=head_commit,
+                owner=owner,
+                name=name,
             )
 
         return ApiSuccessResponse(data=[])
