@@ -38,6 +38,7 @@ export interface ConversationParticipant {
   user_id?: string | null;
   email?: string | null;
   name?: string | null;
+  role?: string | null;
 }
 
 export interface IConversation extends IEntity {
