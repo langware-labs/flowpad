@@ -9,3 +9,5 @@ from . import share_action
 from . import context_share_action
 from . import wiki_action
 from . import members_action
+from . import project_git_state_action
+from . import git_repo_actions
