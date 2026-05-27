@@ -83,11 +83,12 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
     async (
       url: string,
       acceptSuggested?: string,
+      branch?: string,
     ): Promise<{ ok: true } | { ok: false; suggestedName: string; attemptedName: string }> => {
       if (!computeNode) {
         throw new Error('No compute node available');
       }
-      const result = await Project.createFromGitUrl(computeNode.id, url, acceptSuggested);
+      const result = await Project.createFromGitUrl(computeNode.id, url, acceptSuggested, branch);
       if (result.kind === 'ok') {
         await selectExisting(result.project);
         return { ok: true };

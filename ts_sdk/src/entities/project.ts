@@ -306,6 +306,7 @@ export class Project extends APIEntity<Project> {
     computeNodeId: string,
     projectUrl: string,
     targetName?: string,
+    branch?: string,
   ): Promise<
     | { kind: 'ok'; project: Project }
     | { kind: 'collision'; suggestedName: string; attemptedName: string }
@@ -315,6 +316,7 @@ export class Project extends APIEntity<Project> {
     action.bodyParameters = {
       project_url: projectUrl,
       ...(targetName ? { target_name: targetName } : {}),
+      ...(branch ? { branch } : {}),
     };
     try {
       const response = await dataManager.callAction<

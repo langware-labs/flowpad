@@ -1,3 +1,4 @@
+export * from './git-providers';
 export * from './system-tools-service';
 export * from './secrets-service';
 export * from './secretApprovalGate';

@@ -770,7 +770,9 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         """Clone a git URL into the desktop workspace and materialize a Project.
 
         Body:
-            { "project_url": "<url>", "target_name": "<optional override>" }
+            { "project_url": "<url>",
+              "target_name": "<optional override>",
+              "branch":      "<optional ref to check out at clone time>" }
 
         Collision policy: if the derived (or supplied) folder name already
         exists under AGENT_MOUNT_FOLDER, refuse and return the next-free
@@ -785,6 +787,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         body = await request_info.get_post_data() if request_info else {}
         project_url = (body or {}).get("project_url")
         target_name = (body or {}).get("target_name")
+        branch = (body or {}).get("branch") or None
         if not isinstance(project_url, str) or not project_url.strip():
             return ApiFailResponse(message="project_url (str) is required", status_code=400)
 
@@ -810,7 +813,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                 status_code=409,
             )
 
-        ok, msg = await git_clone(project_url, target_dir)
+        ok, msg = await git_clone(project_url, target_dir, branch=branch)
         if not ok:
             return ApiFailResponse(message=msg, status_code=400)
 

@@ -1,4 +1,7 @@
-import { ActionInfo, connectionManager, dataContext, dataManager, oauthService } from '@sdk';
+import { ActionInfo, connectionManager, dataContext, dataManager, oauthService, type RepoSummary } from '@sdk';
+import { BranchPicker } from '@src/components/git/BranchPicker';
+import { InvitationsStrip } from '@src/components/git/InvitationsStrip';
+import { RepoPicker } from '@src/components/git/RepoPicker';
 import { Button } from '@src/components/ui/button';
 import {
   Dialog,
@@ -9,7 +12,7 @@ import {
 } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
 import { useToast } from '@src/hooks/use-toast';
-import { CheckCircle2, Github, Loader2 } from 'lucide-react';
+import { CheckCircle2, GitBranch, Github, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 
 export interface NewProjectFromGitDialogProps {
@@ -22,6 +25,9 @@ export interface NewProjectFromGitDialogProps {
    * after a previous collision — pass it through as the target name override
    * so the backend uses it verbatim.
    *
+   * `branch` is set when the user picked one via the BranchPicker (or the
+   * paste-URL field accepts a #branch suffix in a future iteration).
+   *
    * Resolve with `{ ok: false, suggestedName }` to keep the dialog open and
    * render the "use `<suggested>`?" accept banner. Resolve with `{ ok: true }`
    * to let the dialog close. Throw to surface an error toast and stay open.
@@ -29,6 +35,7 @@ export interface NewProjectFromGitDialogProps {
   onCreate: (
     url: string,
     acceptSuggested?: string,
+    branch?: string,
   ) => Promise<{ ok: true } | { ok: false; suggestedName: string; attemptedName: string }>;
 }
 
@@ -58,9 +65,12 @@ async function fetchGithubStatus(): Promise<boolean | null> {
 export function NewProjectFromGitDialog({ open, onOpenChange, onCreate }: NewProjectFromGitDialogProps) {
   const { toast } = useToast();
   const [url, setUrl] = useState('');
+  const [branch, setBranch] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [suggestion, setSuggestion] = useState<{ suggestedName: string; attemptedName: string } | null>(null);
   const [githubConnected, setGithubConnected] = useState<boolean>(false);
+  // Picker state: null = step 1 (repo table). Non-null = step 2 (branches for this repo).
+  const [pickedRepo, setPickedRepo] = useState<RepoSummary | null>(null);
 
   // Re-poll on every open AND whenever userTypeId becomes available — handles
   // the bootstrap race where the dialog mounts before dataContext.userTypeId is
@@ -68,6 +78,8 @@ export function NewProjectFromGitDialog({ open, onOpenChange, onCreate }: NewPro
   useEffect(() => {
     if (!open) return;
     setUrl('');
+    setBranch(null);
+    setPickedRepo(null);
     setIsSubmitting(false);
     setSuggestion(null);
 
@@ -126,7 +138,7 @@ export function NewProjectFromGitDialog({ open, onOpenChange, onCreate }: NewPro
       if (isSubmitting || !url.trim()) return;
       setIsSubmitting(true);
       try {
-        const res = await onCreate(url.trim(), acceptSuggested);
+        const res = await onCreate(url.trim(), acceptSuggested, branch ?? undefined);
         if (res.ok) {
           onOpenChange(false);
         } else {
@@ -141,12 +153,25 @@ export function NewProjectFromGitDialog({ open, onOpenChange, onCreate }: NewPro
         setIsSubmitting(false);
       }
     },
-    [isSubmitting, url, onCreate, onOpenChange, toast],
+    [isSubmitting, url, branch, onCreate, onOpenChange, toast],
   );
+
+  const handlePickRepo = useCallback((repo: RepoSummary) => {
+    setPickedRepo(repo);
+    setBranch(null); // require explicit branch choice after picking a different repo
+    // Pre-fill the URL field so the user can see what they picked even before
+    // choosing a branch; selecting a branch only updates the branch chip.
+    setUrl(`${repo.html_url}.git`);
+    if (suggestion) setSuggestion(null);
+  }, [suggestion]);
+
+  const handlePickBranch = useCallback((b: { name: string }) => {
+    setBranch(b.name);
+  }, []);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Clone project from git</DialogTitle>
         </DialogHeader>
@@ -172,20 +197,37 @@ export function NewProjectFromGitDialog({ open, onOpenChange, onCreate }: NewPro
               </Button>
             </div>
           )}
-          <Input
-            placeholder="https://github.com/owner/repo.git"
-            value={url}
-            onChange={(e) => {
-              setUrl(e.target.value);
-              if (suggestion) setSuggestion(null);
-            }}
-            autoFocus
-            spellCheck={false}
-            className="font-mono text-xs"
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && canSubmit) void submit();
-            }}
-          />
+          {/* URL input (always visible) */}
+          <div className="flex items-center gap-2">
+            <Input
+              placeholder="https://github.com/owner/repo.git"
+              value={url}
+              onChange={(e) => {
+                setUrl(e.target.value);
+                if (suggestion) setSuggestion(null);
+              }}
+              autoFocus
+              spellCheck={false}
+              className="font-mono text-xs"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && canSubmit) void submit();
+              }}
+            />
+            {branch && (
+              <div className="flex items-center gap-1 rounded-md border border-border bg-muted px-2 py-1 text-xs">
+                <GitBranch className="h-3 w-3" />
+                <span className="font-mono">{branch}</span>
+                <button
+                  type="button"
+                  className="ml-1 text-muted-foreground hover:text-foreground"
+                  onClick={() => setBranch(null)}
+                  title="Clear branch (uses default)"
+                >
+                  ×
+                </button>
+              </div>
+            )}
+          </div>
           {suggestion && (
             <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs">
               <div className="mb-1.5">
@@ -213,6 +255,27 @@ export function NewProjectFromGitDialog({ open, onOpenChange, onCreate }: NewPro
               Cloning…
             </div>
           )}
+
+          {/* Picker section: only when connected. URL input above remains the
+              manual-paste path; this is the discoverable browse path. */}
+          {githubConnected && (
+            <>
+              <div className="my-1 border-t border-border" />
+              <InvitationsStrip provider="github" enabled={open} />
+              {pickedRepo ? (
+                <BranchPicker
+                  repo={pickedRepo}
+                  onSelect={handlePickBranch}
+                  onBack={() => {
+                    setPickedRepo(null);
+                    setBranch(null);
+                  }}
+                />
+              ) : (
+                <RepoPicker provider="github" onSelect={handlePickRepo} enabled={open} />
+              )}
+            </>
+          )}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isSubmitting}>
@@ -220,7 +283,7 @@ export function NewProjectFromGitDialog({ open, onOpenChange, onCreate }: NewPro
           </Button>
           <Button onClick={() => void submit()} disabled={!canSubmit}>
             {isSubmitting && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
-            Clone
+            Clone{branch ? ` @ ${branch}` : ''}
           </Button>
         </DialogFooter>
       </DialogContent>
