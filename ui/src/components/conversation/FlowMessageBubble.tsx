@@ -16,6 +16,7 @@ import { Download } from 'lucide-react';
 import { MessageBubble } from './MessageBubble';
 import { AttachmentChip, AttachmentChipState } from './AttachmentChip';
 import { ContextEntityChip } from './EntityChip';
+import { GitRepoChip } from '@src/components/git/GitRepoChip';
 import { fileAttachmentUrl } from './attachment-url';
 import { useLocalUser } from './useLocalUser';
 import { localBundleUrl } from './flow-message-drafts';
@@ -235,7 +236,15 @@ export function FlowMessageBubble({
       )}
       {assetAttachments.length > 0 && (
         <div className="flex flex-wrap gap-1">
-          {assetAttachments.map((typeId) => (
+          {assetAttachments.map((typeId) => {
+            // ``git_repo`` chips open the accept-and-work modal directly
+            // (clone / checkout / pull against the recipient's project),
+            // bypassing the generic dock-pointer route.
+            if (typeId.type === 'git_repo') {
+              return (
+                <GitRepoChip key={`asset:${typeId.type}-${typeId.id}`} typeId={typeId} />
+              );
+            }
             // No hintPath wired here: asset attachments are TYPE_ID
             // pointers on the FlowMessage, but the corresponding path
             // sidecar is harvested on the AgenticProcess (see
@@ -243,12 +252,14 @@ export function FlowMessageBubble({
             // Looking it up on `fm` would always return undefined.
             // Closing this gap requires either harvesting on the FM too
             // or looking up via the AP — separate follow-up.
-            <ContextEntityChip
-              key={`asset:${typeId.type}-${typeId.id}`}
-              typeId={typeId}
-              inside={{ type: 'conversation', id: fm.conversation_id ?? '' }}
-            />
-          ))}
+            return (
+              <ContextEntityChip
+                key={`asset:${typeId.type}-${typeId.id}`}
+                typeId={typeId}
+                inside={{ type: 'conversation', id: fm.conversation_id ?? '' }}
+              />
+            );
+          })}
         </div>
       )}
       {showBundleChip && (
