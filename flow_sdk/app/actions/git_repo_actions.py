@@ -41,7 +41,14 @@ StatusEmit = Callable[[str], Awaitable[None]]
 
 
 def _run(args: list[str], cwd: str, timeout: int = 120) -> subprocess.CompletedProcess:
-    return subprocess.run(args, cwd=cwd, capture_output=True, text=True, timeout=timeout)
+    # Force English / C output so we can substring-match git's own messages
+    # ("nothing to commit", "your branch is ahead", …) regardless of the
+    # user's shell locale. Without this, locale-translated output silently
+    # bypasses our special cases.
+    env = {**os.environ, "LC_ALL": "C", "LANG": "C"}
+    return subprocess.run(
+        args, cwd=cwd, capture_output=True, text=True, timeout=timeout, env=env,
+    )
 
 
 def _make_status_emitter(repo: GitRepo) -> StatusEmit:
@@ -54,8 +61,10 @@ def _make_status_emitter(repo: GitRepo) -> StatusEmit:
         try:
             from flow_sdk.api.messages import DataOpMessage, OperationType  # noqa: PLC0415
             from flow_sdk.core.network.resource_tracker import handle_entity_op  # noqa: PLC0415
-            payload = repo.model_dump()
-            payload["status"] = text
+            # Minimal payload — the modal only reads `status`, and the
+            # GitRepo's full fields are unchanged across this action's
+            # lifecycle. Shipping the whole entity per emit wastes WS bytes.
+            payload = {"id": repo.id, "type": repo.type, "status": text}
             await handle_entity_op(
                 DataOpMessage(data=payload, op=OperationType.UPDATE, to_entity=repo.typeid)
             )

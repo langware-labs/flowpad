@@ -17,6 +17,14 @@ interface GitRepoChipProps {
  * ``ContextEntityChip`` because the latter routes to the entity's dock view
  * (``/dock/git_repo/<id>``) and we want clicks to land directly on the
  * modal instead.
+ *
+ * v1 caveat: when the recipient's local DB doesn't have the GitRepo
+ * entity (the common case — the entity is created on the sender's side
+ * and the hub doesn't yet store ``git_repo``), ``useEntity`` returns null
+ * and the label falls back to the bare uuid. Tracked as an open hub-side
+ * dependency in the plan; the v2 fix is either hub storage for git_repo
+ * or piggy-backing the RepoSummary fields on the attachment payload so
+ * the chip + modal can render without a backing entity.
  */
 export function GitRepoChip({ typeId }: GitRepoChipProps) {
   const { data: repo } = useEntity<GitRepo>(typeId);
@@ -24,7 +32,7 @@ export function GitRepoChip({ typeId }: GitRepoChipProps) {
 
   const label = repo
     ? `${repo.full_name || repo.name || typeId.id}${repo.branch ? ` · ${repo.branch}` : ''}`
-    : typeId.id;
+    : `Repo · ${typeId.id.slice(0, 8)}…`;  // friendlier fallback than a bare uuid
 
   return (
     <>

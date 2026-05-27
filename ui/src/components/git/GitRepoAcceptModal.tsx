@@ -168,11 +168,17 @@ export function GitRepoAcceptModal({ gitRepoTypeId, open, onClose }: GitRepoAcce
 
   // ─── Post-success: is the local state finally compatible with the shared
   //     repo+branch? Use the same reducer on the latest snapshot.
+  //
+  //     Launch row appears in two cases:
+  //       1. User just ran a git action and the local state ended UP_TO_DATE
+  //          or PULL (i.e. clone/checkout/pull/commit-and-pull succeeded).
+  //       2. The project was *already* UP_TO_DATE on first open — no action
+  //          needed, but the user still wants "Start session" / "Open
+  //          terminal" without doing pointless git work first.
   const finalState = deriveRepoState(projectGit, gitRepo ?? null);
   const ready =
-    committed &&
-    (finalState === 'UP_TO_DATE' || finalState === 'PULL') &&
-    !busy;
+    !busy &&
+    (finalState === 'UP_TO_DATE' || (committed && finalState === 'PULL'));
 
   const handleStartSession = async () => {
     if (!selectedProject?.fs_storage_mount_path) return;
@@ -251,7 +257,14 @@ export function GitRepoAcceptModal({ gitRepoTypeId, open, onClose }: GitRepoAcce
             <label className="text-muted-foreground">Project</label>
             <select
               value={selectedProjectId ?? ''}
-              onChange={(e) => { setSelectedProjectId(e.target.value); setCommitted(false); setStatusLine(''); }}
+              onChange={(e) => {
+                setSelectedProjectId(e.target.value);
+                setCommitted(false);
+                setStatusLine('');
+                // Stale commit messages from one project should not bleed
+                // into another's COMMIT_AND_PULL flow.
+                setCommitMessage('');
+              }}
               disabled={busy}
               className="rounded border border-border bg-background px-2 py-1 text-xs disabled:opacity-50"
               data-testid="git-repo-accept-project-select"

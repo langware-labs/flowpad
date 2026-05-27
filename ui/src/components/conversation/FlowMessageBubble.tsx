@@ -1,4 +1,4 @@
-import { FlowMessage, TypeId, User } from '@sdk';
+import { FlowMessage, GitRepo, TypeId, User } from '@sdk';
 import { isValidIdentifier } from '@sdk/models/TypeId';
 import { useEntity } from '@sdk/react/hooks';
 import { useState } from 'react';
@@ -240,7 +240,7 @@ export function FlowMessageBubble({
             // ``git_repo`` chips open the accept-and-work modal directly
             // (clone / checkout / pull against the recipient's project),
             // bypassing the generic dock-pointer route.
-            if (typeId.type === 'git_repo') {
+            if (typeId.type === GitRepo.type) {
               return (
                 <GitRepoChip key={`asset:${typeId.type}-${typeId.id}`} typeId={typeId} />
               );
