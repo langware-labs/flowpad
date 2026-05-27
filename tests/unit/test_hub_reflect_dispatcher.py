@@ -115,8 +115,8 @@ async def test_reflect_to_hub_forwards_get_and_mirrors_participants(monkeypatch)
         {"user_id": "u-bob", "user_email": "bob@example.com", "user_name": "Bob", "role": "member", "status": "approved"},
     ]
     expected_normalized = [
-        {"user_id": "u-alice", "email": "alice@example.com", "name": "Alice", "picture": None, "role": "owner", "status": "approved"},
-        {"user_id": "u-bob", "email": "bob@example.com", "name": "Bob", "picture": None, "role": "member", "status": "approved"},
+        {"user_id": "u-alice", "role": "owner", "status": "approved", "email": "alice@example.com", "name": "Alice"},
+        {"user_id": "u-bob", "role": "member", "status": "approved", "email": "bob@example.com", "name": "Bob"},
     ]
 
     async def fake_hub_get(entity_type, entity_id=None, action=None, **kwargs):
@@ -203,6 +203,77 @@ async def test_reflect_to_hub_skips_unknown_entity_type(monkeypatch):
 
     with pytest.raises(HubError):
         await mod.reflect_to_hub(a, e, {})
+
+
+@pytest.mark.timeout(30)
+def test_normalize_preserves_hub_only_fields():
+    """invitation_id, invitation_method, picture, and any future hub-added key
+    must pass through the normalizer unchanged so downstream callers (pending-
+    invite UX, role-management UI) don't lose data at the dispatcher boundary."""
+    from flow_sdk.server.routes._hub_reflect import _normalize_hub_response
+
+    hub_resp = [
+        {
+            "user_id": "u-1",
+            "user_email": "alice@example.com",
+            "user_name": "Alice",
+            "user_picture": "https://cdn/alice.png",
+            "role": "owner",
+            "status": "approved",
+            "invitation_id": "inv-123",
+            "invitation_method": "email",
+            "joined_at": "2026-05-27T10:00:00Z",  # hypothetical future field
+        }
+    ]
+    out = _normalize_hub_response("members", hub_resp)
+    assert len(out) == 1
+    e = out[0]
+    # Hub legacy keys translated to client form.
+    assert e["email"] == "alice@example.com"
+    assert e["name"] == "Alice"
+    assert e["picture"] == "https://cdn/alice.png"
+    # Pass-through keys preserved.
+    assert e["invitation_id"] == "inv-123"
+    assert e["invitation_method"] == "email"
+    assert e["joined_at"] == "2026-05-27T10:00:00Z"
+    assert e["role"] == "owner"
+    assert e["status"] == "approved"
+    # Legacy keys removed (replaced by client form).
+    assert "user_email" not in e
+    assert "user_name" not in e
+    assert "user_picture" not in e
+
+
+@pytest.mark.timeout(30)
+def test_normalize_client_key_wins_over_hub_legacy():
+    """If a (future) hub emits both ``email`` and ``user_email`` during a
+    migration, the client-form key wins so the renamed contract stays
+    authoritative."""
+    from flow_sdk.server.routes._hub_reflect import _normalize_hub_response
+
+    out = _normalize_hub_response(
+        "members",
+        [{"email": "client@example.com", "user_email": "legacy@example.com"}],
+    )
+    assert out[0]["email"] == "client@example.com"
+    assert "user_email" not in out[0]
+
+
+@pytest.mark.timeout(30)
+def test_normalize_passes_through_non_list_and_non_members():
+    """Empty dict (hub returns no data), non-members actions, and non-dict
+    entries must round-trip unchanged."""
+    from flow_sdk.server.routes._hub_reflect import _normalize_hub_response
+
+    # Non-members action: untouched.
+    assert _normalize_hub_response("rename", {"title": "x"}) == {"title": "x"}
+    # Members action but non-list (hub returned {} via the empty-list coercion
+    # in hub.py:191 — caller will handle this defensively).
+    assert _normalize_hub_response("members", {}) == {}
+    # Members action with a non-dict entry (defensive: don't crash).
+    out = _normalize_hub_response("members", [{"user_email": "a@x.com"}, "weird"])
+    assert out[0]["email"] == "a@x.com"
+    assert out[1] == "weird"
 
 
 @pytest.mark.asyncio

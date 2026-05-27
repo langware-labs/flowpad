@@ -79,22 +79,36 @@ def _normalize_hub_response(action_name: str, hub_resp: Any) -> Any:
     ``user_picture``; the client and ``Conversation.participants`` cache
     expect ``email`` / ``name`` / ``picture``. Normalizing here means
     callers (TS SDK, local mirror, downstream UI) all see one shape.
+
+    Unknown keys (``invitation_id``, ``invitation_method``, anything the
+    hub adds later) pass through unchanged so future consumers don't need
+    a coordinated dispatcher update.
     """
     if action_name != "members" or not isinstance(hub_resp, list):
         return hub_resp
+
+    _HUB_TO_CLIENT = {
+        "user_email": "email",
+        "user_name": "name",
+        "user_picture": "picture",
+    }
+
     out: list[dict] = []
     for entry in hub_resp:
         if not isinstance(entry, dict):
             out.append(entry)
             continue
-        out.append({
-            "user_id": entry.get("user_id"),
-            "email": entry.get("email") or entry.get("user_email"),
-            "name": entry.get("name") or entry.get("user_name"),
-            "picture": entry.get("picture") or entry.get("user_picture"),
-            "role": entry.get("role"),
-            "status": entry.get("status"),
-        })
+        # Pass through every non-renamed key verbatim (preserves invitation_id,
+        # invitation_method, status, role, and any hub-added field).
+        normalized: dict = {k: v for k, v in entry.items() if k not in _HUB_TO_CLIENT}
+        # Then fill the client-form names from the legacy hub keys, but don't
+        # overwrite a client-form key the entry already had (e.g. if a future
+        # hub starts emitting both forms during a migration, the client form
+        # wins).
+        for hub_key, client_key in _HUB_TO_CLIENT.items():
+            if hub_key in entry and client_key not in normalized:
+                normalized[client_key] = entry[hub_key]
+        out.append(normalized)
     return out
 
 

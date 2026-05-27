@@ -171,7 +171,7 @@ async def test_members_after_share_lists_both_with_roles(
         "in hub builtin/conversation.py:leave swallows the real failure. "
         "Fix lives in the hub repo, not flow_sdk."
     ),
-    strict=False,
+    strict=True,
 )
 async def test_members_after_leave_excludes_leaver(
     hub_base_url, hub_login_payload, isolated_hub_keyring
