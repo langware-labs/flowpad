@@ -96,6 +96,26 @@ const DesktopSetupModalHandler = () => {
 const AppContent = ({ children }: { children: React.ReactNode }) => {
   const { user, someone } = useAuth();
   const analyticsTrackingRef = useRef(false);
+  const noticeShownRef = useRef(false);
+
+  // Surface a one-time bootstrap notice (e.g. the secrets file was reset after
+  // its keychain key was lost) as a friendly startup toast. Set server-side in
+  // the bootstrap response; absent on a normal boot.
+  useEffect(() => {
+    if (noticeShownRef.current) return;
+    const notice = dataContext.bootstrapInfo?.notice;
+    if (!notice) return;
+    noticeShownRef.current = true;
+
+    const fire = notice.level === 'error' ? toast.error
+      : notice.level === 'warning' ? toast.warning
+      : toast.info;
+    fire(notice.title, {
+      id: notice.id,
+      description: notice.message,
+      duration: 12000,
+    });
+  }, [someone]);
 
   const GlobalEvents = () => {
     void useGlobalEvents();
