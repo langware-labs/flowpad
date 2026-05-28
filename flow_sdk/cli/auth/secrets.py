@@ -21,6 +21,8 @@ Phase C of the InstanceSettings consolidation. The legacy keychain
 
 from __future__ import annotations
 
+import logging
+
 from flow_sdk.fs_records.app_secret import AppSecretRecord
 from flow_sdk.instance_settings import (
     SecretsNotEnabledError,
@@ -118,3 +120,96 @@ def get_secrets() -> list[dict]:
             "created_at": getattr(record, "created_date", None),
         })
     return out
+
+
+def recover_orphaned_sodot() -> dict | None:
+    """Detect and recover from an undecryptable per-instance secrets file.
+
+    The ``sodot`` file is encrypted with a Fernet key kept in the OS keychain
+    (``Flowpad.ai.sod_key`` / instance name). If that key goes missing — e.g.
+    the user migrated machines and copied ``~/.flow`` but not the keychain, the
+    keychain was reset, or the entry was deleted — ``_fetch_or_create_sod_key``
+    silently mints a *new* key. The existing ``sodot`` then can no longer be
+    decrypted, every secret read raises ``InvalidToken``, and because writes are
+    read-modify-write even re-login fails. The secrets are unrecoverable, so the
+    only clean fix is to delete the stale ``sodot`` and start fresh.
+
+    This runs only when consent was previously granted (the consent marker
+    exists) — it never triggers a first-time keychain prompt. When the file
+    decrypts fine, it's a no-op.
+
+    Returns a UI notice dict when a reset was performed, else None. Synchronous
+    (file IO + keychain + login-record reset); call via ``asyncio.to_thread``.
+    """
+    settings = get_instance_settings()
+
+    # No consent ⇒ never touch the keychain; nothing to recover.
+    if not is_secrets_enabled():
+        return None
+
+    sodot_path = settings.sodot_path
+    if not sodot_path.exists():
+        return None
+
+    # Probe: accessing `.sod` mints a fresh key if the keychain entry is gone,
+    # then `.list()` forces a decrypt of the existing file. A healthy file
+    # decrypts cleanly; an orphaned one raises InvalidToken (or similar).
+    try:
+        settings.sod.list()
+        return None  # decrypts fine → healthy, leave it alone
+    except SecretsNotEnabledError:
+        return None  # consent was revoked between the check and here
+    except Exception as decrypt_error:
+        logging.warning(
+            f"[secrets] sodot at {sodot_path} no longer decrypts "
+            f"({type(decrypt_error).__name__}); the keychain key was lost or "
+            f"changed. Resetting secrets so login/secret entry can start clean."
+        )
+
+    # Delete the stale secrets file and its lock sibling.
+    lock_path = sodot_path.with_suffix(".lock")
+    for path in (sodot_path, lock_path):
+        try:
+            path.unlink(missing_ok=True)
+        except OSError as e:
+            logging.warning(f"[secrets] Failed to delete {path} during sodot recovery: {e}")
+
+    # The stored hub token is gone with the file — clear the file-based login
+    # record so the UI reflects logged-out state instead of a phantom session.
+    try:
+        from flow_sdk.cli.app_config import set_user  # noqa: PLC0415
+        set_user({})
+    except Exception as e:
+        logging.warning(f"[secrets] Failed to clear user record during sodot recovery: {e}")
+
+    return {
+        "id": "secrets-reset",
+        "level": "warning",
+        "title": "Saved secrets were reset",
+        "message": (
+            "We couldn't unlock your saved secrets — the encryption key in your "
+            "system keychain was changed or removed (this can happen after "
+            "migrating to a new machine or resetting the keychain). Your stored "
+            "login and API keys have been cleared. Please sign in again and "
+            "re-enter any API keys."
+        ),
+    }
+
+
+async def clear_app_secret_metadata() -> None:
+    """Delete all AppSecretRecord metadata after a sodot reset.
+
+    The secret *values* lived in the now-deleted sodot; the metadata records
+    (name/description) live separately in the fs_store. Without this the
+    secrets list would show entries whose values are gone. Idempotent — safe
+    to call when there are no records. Best-effort: a failure to delete one
+    record is logged and skipped rather than aborting recovery.
+    """
+    for record in AppSecretRecord.discover():
+        try:
+            await record.delete()
+        except Exception as e:
+            logging.warning(
+                f"[secrets] Failed to delete app-secret record "
+                f"{getattr(record, 'name', '?')!r} during recovery: {e}"
+            )

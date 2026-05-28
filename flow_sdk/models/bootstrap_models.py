@@ -75,6 +75,9 @@ class BootstrapInfo(BaseModel):
     sniffer_hook: Optional[Dict[str, Any]] = None
     scan_info: Optional[Dict[str, Any]] = None
     records_root: Optional[str] = None
+    # One-time, UI-facing notice surfaced as a toast on startup (e.g. the
+    # secrets file was reset after the keychain key was lost). None normally.
+    notice: Optional[Dict[str, Any]] = None
 
 
 __all__ = ["AppPaths", "EnvInfo", "LmInfo", "BootstrapInfo"]
