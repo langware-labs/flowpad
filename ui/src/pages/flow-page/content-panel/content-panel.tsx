@@ -28,7 +28,6 @@ import { SearchView } from '@src/pages/search-view/SearchView';
 import { ConnectionStatus, dataContext, navigator, ShellStatus, type OAuthConnection } from '@sdk';
 import { useAuth, useContext } from '@sdk/react/hooks';
 import { AssetsPage } from '@src/components/assets/AssetsPage';
-import { CollaborationPage } from '@src/components/collaboration';
 import { ConnectionsManager } from '@src/components/connections-manager';
 import { ConversationRoute } from '@src/components/conversation';
 import { InboxView } from '@src/components/inbox-view/InboxView';
@@ -521,7 +520,7 @@ export function ContentPanel() {
             value={ViewType.PROJECT}
             className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
           >
-            <CollaborationPage />
+            <AssetsPage />
           </TabsContent>
 
           <TabsContent

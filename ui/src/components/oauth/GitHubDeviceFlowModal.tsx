@@ -16,8 +16,8 @@ import {
   DialogTitle,
 } from '@src/components/ui/dialog';
 import { useToast } from '@src/hooks/use-toast';
-import { Copy, ExternalLink, Loader2 } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { ExternalLink, Loader2 } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
 
 interface LlmConfigMsg {
   message_type?: string;
@@ -40,16 +40,17 @@ function openExternal(url: string) {
 /**
  * Single global mount in App.tsx. Listens for `OAuthEventType.DEVICE_FLOW_START`
  * (currently fired only for GitHub) and renders a modal showing the user_code +
- * a button to open `verification_uri`. Auto-copies the code and opens the URL
- * on first render. Self-closes on `on_llm_config_msg` SUCCESS for the matching
- * `oauth_request_id`, or when the user hits Cancel.
+ * a single button that copies the code and opens `verification_uri`. The dialog
+ * does NOT open the URL until the user clicks — that way the copy happens
+ * inside a user-gesture (so paste works on the GitHub page). Self-closes on
+ * `on_llm_config_msg` SUCCESS for the matching `oauth_request_id`, or when the
+ * user hits Cancel.
  */
 export function GitHubDeviceFlowModal() {
   const { toast } = useToast();
   const [payload, setPayload] = useState<OAuthDeviceFlowPayload | null>(null);
   const [remaining, setRemaining] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
-  const openedRef = useRef<boolean>(false);
 
   // Listen for device-flow start events.
   useEffect(() => {
@@ -57,37 +58,12 @@ export function GitHubDeviceFlowModal() {
       setPayload(p);
       setError(null);
       setRemaining(p.expires_in);
-      openedRef.current = false;
     };
     dataManager.on(OAuthEventType.DEVICE_FLOW_START, onStart);
     return () => {
       dataManager.off(OAuthEventType.DEVICE_FLOW_START, onStart);
     };
   }, []);
-
-  // Auto-copy + auto-open on first render of a new payload.
-  // Both operations are best-effort — browsers can reject `window.open` and
-  // `clipboard.writeText` outside a transient user-activation context (which we
-  // are, because this runs after an async round-trip to /oauth/{provider}/auth).
-  // On failure we surface a toast so the user knows to use the explicit
-  // Copy / Open buttons (which DO carry an activation, since they're click handlers).
-  useEffect(() => {
-    if (!payload || openedRef.current) return;
-    openedRef.current = true;
-    void copyToClipboard(payload.user_code).catch(() => {
-      toast({
-        title: 'Could not auto-copy the code',
-        description: 'Click "Copy code" below to copy it manually.',
-        duration: 4000,
-      });
-    });
-    // window.open may be blocked by popup blockers when invoked from a useEffect
-    // (no active user gesture). openExternal swallows the return value, so we
-    // can't reliably detect a block; the dialog body uses softer copy ("Click
-    // below to open" rather than "We opened it") so the user always has a
-    // first-class manual path.
-    openExternal(payload.verification_uri);
-  }, [payload, toast]);
 
   // Countdown to expiry.
   useEffect(() => {
@@ -117,16 +93,24 @@ export function GitHubDeviceFlowModal() {
     };
   }, [payload, toast]);
 
-  const handleCopy = useCallback(async () => {
+  // Single combined action: copy first (inside the user-gesture click handler,
+  // so the clipboard write is allowed and paste will work on the GitHub page),
+  // then open the verification URL. If the copy fails we still open the page —
+  // the user can read the code from the dialog and type it manually.
+  const handleCopyAndOpen = useCallback(async () => {
     if (!payload) return;
-    await copyToClipboard(payload.user_code);
-    toast({ title: 'Code copied', duration: 1500 });
-  }, [payload, toast]);
-
-  const handleOpen = useCallback(() => {
-    if (!payload) return;
+    try {
+      await copyToClipboard(payload.user_code);
+      toast({ title: 'Code copied — paste it on the GitHub page', duration: 2500 });
+    } catch {
+      toast({
+        title: 'Could not copy the code',
+        description: 'Type it manually on the GitHub page.',
+        duration: 4000,
+      });
+    }
     openExternal(payload.verification_uri);
-  }, [payload]);
+  }, [payload, toast]);
 
   const handleClose = useCallback(() => {
     // Tell the backend to stop polling so it doesn't keep talking to GitHub
@@ -151,8 +135,9 @@ export function GitHubDeviceFlowModal() {
         <DialogHeader>
           <DialogTitle>Connect GitHub</DialogTitle>
           <DialogDescription>
-            Click <span className="font-medium">Open github.com/login/device</span> below, then paste
-            the code shown. The code is copied to your clipboard automatically when possible.
+            Your one-time code is below. Click <span className="font-medium">Copy code &amp; open
+            GitHub</span> — we&rsquo;ll copy it to your clipboard and open the GitHub activation
+            page so you can paste it there.
           </DialogDescription>
         </DialogHeader>
 
@@ -162,13 +147,9 @@ export function GitHubDeviceFlowModal() {
           </div>
 
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => void handleCopy()}>
-              <Copy className="mr-1.5 h-3.5 w-3.5" />
-              Copy code
-            </Button>
-            <Button variant="outline" size="sm" onClick={handleOpen}>
+            <Button size="sm" onClick={() => void handleCopyAndOpen()}>
               <ExternalLink className="mr-1.5 h-3.5 w-3.5" />
-              Open github.com/login/device
+              Copy code &amp; open GitHub
             </Button>
           </div>
 
