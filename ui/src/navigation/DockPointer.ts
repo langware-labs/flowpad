@@ -350,6 +350,42 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
+   * Split a project pointer into `{ projectId, assetSubPointer }`.
+   *
+   * The sub-pointer is the same shape AssetsPage already accepts at
+   * `/dock/assets/<sub>` (e.g. `editor/<typeid>`, `list/<typeName>`,
+   * `folder/<typeid>/<relPath>`, `wiki/<name>`) — so the project view can
+   * reuse AssetsPage's existing selection parser without inventing new shapes.
+   */
+  static splitProjectPointer(
+    pointer: string | undefined | null,
+  ): { projectId: string | null; assetSubPointer: string } {
+    if (!pointer) return { projectId: null, assetSubPointer: '' };
+    const slash = pointer.indexOf('/');
+    if (slash < 0) return { projectId: pointer, assetSubPointer: '' };
+    return {
+      projectId: pointer.slice(0, slash),
+      assetSubPointer: pointer.slice(slash + 1),
+    };
+  }
+
+  /**
+   * Rebase a `ViewType.ASSETS` pointer onto `/dock/project/<projectId>` so
+   * navigation initiated by an assets-shaped builder (`forAssetEditor`,
+   * `forAssetFolder`, `forAssetList`, `forAssetWiki`) stays inside the project
+   * shell. Non-ASSETS pointers and falsy `projectId` pass through unchanged —
+   * call sites can use this unconditionally.
+   */
+  static rebaseAssetsOntoProject(
+    p: DockPointer,
+    projectId: string | null | undefined,
+  ): DockPointer {
+    if (!projectId || p.viewType !== ViewType.ASSETS) return p;
+    const sub = p.pointer ? `${projectId}/${p.pointer}` : projectId;
+    return new DockPointer(ViewType.PROJECT, sub, p.options, p.layout);
+  }
+
+  /**
    * Create dock pointer for the inbox, optionally focused on a specific conversation
    * and/or message via query params.
    *
