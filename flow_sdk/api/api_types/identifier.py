@@ -3,8 +3,12 @@ import uuid
 from enum import Enum
 from typing import Any, Optional, Tuple, TypeGuard
 
-# UUID_PATTERN imported from .validation, defining locally
-UUID_PATTERN = r"[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}"
+# Single source of truth for UUID matching across the codebase.
+# Version-agnostic (matches v1/v3/v4/v5/v7/etc.) so @local entity ids minted by
+# `_local_entity_id` via `uuid.uuid5(NAMESPACE_DNS, …)` parse correctly in
+# URL/VFS path matchers. Case stays lowercase to keep parity with Python's
+# `str(uuid.UUID(...))` canonical form — downstream cache keys assume lowercase.
+UUID_PATTERN = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
 
 type_id_delimiter = "-"
 prop_id_delimiter = "."
@@ -121,10 +125,15 @@ def is_valid_identifier(identifier: str) -> bool:
 
 
 def get_identifier_type(identifier: str) -> IdentifierType:
-    """Determine the type of an identifier."""
+    """Determine the type of an identifier.
+
+    Uses `is_valid_uuid` (version-agnostic) so `@local` entity ids minted via
+    `uuid.uuid5(NAMESPACE_DNS, …)` route as `IdentifierType.UUID`, matching the
+    broadened `UUID_PATTERN` used by URL/VFS regex matchers.
+    """
     if not identifier:
         return IdentifierType.UNKNOWN
-    if is_valid_uuid4(identifier):
+    if is_valid_uuid(identifier):
         return IdentifierType.UUID
     if is_valid_key(identifier):
         return IdentifierType.NAMESPACE

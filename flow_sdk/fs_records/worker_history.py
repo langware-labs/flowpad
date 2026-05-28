@@ -488,9 +488,8 @@ def _agentic_process_only_entries(
             WorkerHistoryEntry(
                 worker_type=worker_type,
                 worker_id=sid,
-                project_id=proc.project_id
-                or _project_id_for(workdir, proc.project_encoded_name),
-                project_name=_basename(workdir) or (proc.project_encoded_name or None),
+                project_id=proc.project_id or _project_id_for(workdir, None),
+                project_name=_basename(workdir),
                 project_cwd=workdir,
                 last_active_time=last_active,
                 name=getattr(proc, "name", None) or None,

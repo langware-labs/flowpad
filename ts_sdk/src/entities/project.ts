@@ -294,6 +294,56 @@ export class Project extends APIEntity<Project> {
   }
 
   /**
+   * Clone a git URL into the desktop workspace and materialize a Project.
+   * Dispatches to the compute_node `create-project-from-git` action.
+   *
+   * Returns one of:
+   *   { kind: 'ok', project }                          — clone succeeded
+   *   { kind: 'collision', suggestedName, attemptedName } — folder existed
+   *   { kind: 'error', message }                        — clone or network failure
+   */
+  static async createFromGitUrl(
+    computeNodeId: string,
+    projectUrl: string,
+    targetName?: string,
+    branch?: string,
+  ): Promise<
+    | { kind: 'ok'; project: Project }
+    | { kind: 'collision'; suggestedName: string; attemptedName: string }
+    | { kind: 'error'; message: string }
+  > {
+    const action = new ActionInfo('create-project-from-git', 'compute_node', computeNodeId, 'POST');
+    action.bodyParameters = {
+      project_url: projectUrl,
+      ...(targetName ? { target_name: targetName } : {}),
+      ...(branch ? { branch } : {}),
+    };
+    try {
+      const response = await dataManager.callAction<
+        { project_url: string; target_name?: string },
+        { project: unknown }
+      >(action);
+      if (!response?.project) return { kind: 'error', message: 'No project returned' };
+      const project = dataManager.updateEntityFromJson<Project>(
+        response.project as Record<string, unknown>,
+      );
+      return { kind: 'ok', project };
+    } catch (err: unknown) {
+      const ax = err as { response?: { status?: number; data?: { data?: unknown; message?: string } }; message?: string };
+      if (ax.response?.status === 409) {
+        const payload = ax.response.data?.data as { suggested_name?: string; attempted_name?: string } | undefined;
+        return {
+          kind: 'collision',
+          suggestedName: payload?.suggested_name ?? '',
+          attemptedName: payload?.attempted_name ?? '',
+        };
+      }
+      const message = ax.response?.data?.message ?? ax.message ?? 'Unknown error';
+      return { kind: 'error', message };
+    }
+  }
+
+  /**
    * Recover a Project that's been deleted but still has dependents (Shells /
    * AgenticProcesses with ``project_id == orphanedId``). The backend picks any
    * dependent's ``workdir``, runs ``Project.recover_by_path`` (same 3-phase

@@ -76,3 +76,11 @@ That means, on every click handler that changes "what is shown":
 4. **Loaders must be fast.** If a loader awaits a WS-bound or PTY-bound side effect, move that side effect into a `useEffect` on the mounted view. The loader resolves entity identity; the view does its own attach/connect on mount. Don't compensate for a slow loader with optimistic-write hacks elsewhere — fix the loader.
 
 If you find yourself writing `dataContext.set*(...)` immediately before `navigation.openDock(...)` in a click path, stop. That is the broken pattern. Delete the writes and make the active-key derivation URL-first.
+
+## Test timeouts (non-negotiable)
+
+**NEVER raise a test timeout to make a test pass. EVER. No exceptions without explicit user approval, every time.**
+
+Applies to every form: `@pytest.mark.timeout(N)`, `--timeout=N`, `stream_transcript(timeout=…)`, Playwright `expect.timeout` / `actionTimeout` / `testTimeout`, any `waitFor(timeout=…)`, any in-test polling budget.
+
+If a test fails on time, the production code is too slow or stalls — that's the bug. Fix the slow path; keep the cap. Moving a test into `tests/long_tests/` does NOT grant license to bump its in-file timeout — the cap stays unless the user says otherwise. If you genuinely believe an exception is warranted, STOP and ask before editing. Don't add `@pytest.mark.flaky` / `reruns` as a workaround either.

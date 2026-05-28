@@ -2210,30 +2210,40 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
                 timeout=10,
             )
         # Hub responses we treat as "accept succeeded, run local cleanup":
-        #   200 — JSON success (legacy shape; carries the target typeid).
-        #   302 — RedirectResponse to the post-accept landing (current shape,
-        #         introduced when the hub became browser-friendly). The Location
-        #         points at /flow_message/<id> or callback_override.
-        #   409 — already accepted; the recipient clicked the email link first.
-        # Anything else is a real failure.
-        if resp.status_code not in (200, 302, 409):
+        #   200 — JSON success: ``data`` carries the chosen target typeid.
+        #   409 — already accepted (recipient clicked the email link first).
+        #         No usable body, but server-side state is what we want and
+        #         local cleanup still has work to do (mark accepted, sync).
+        #
+        # A 302 from this endpoint ALWAYS means the hub bounced us to
+        # ``/login.html`` because the request was unauthenticated — the
+        # accept did NOT execute. Probed against app.flowpad.ai on
+        # 2026-05-28: 302 → ``/login.html?target_path=...`` for both
+        # missing and invalid Authorization headers. Earlier this code
+        # accepted 302 as success and ran local cleanup, which wrote
+        # ``accepted=True`` locally for an invitation the hub never
+        # accepted — causing every downstream conversation-scoped call to
+        # return 401 ("no valid access for role ['member']").
+        if resp.status_code not in (200, 409):
+            if resp.status_code == 302:
+                location = resp.headers.get("location") or resp.headers.get("Location") or ""
+                return ApiFailResponse(
+                    message=(
+                        "Accept failed: hub redirected us to login (request was "
+                        f"unauthenticated). location={location[:200]}"
+                    ),
+                )
             return ApiFailResponse(
                 message=f"Accept failed ({resp.status_code}): {resp.text[:200]}"
             )
         if resp.status_code == 409:
             logger.info("[invitation-accept] hub returned 409 (already accepted) — running local cleanup")
-        elif resp.status_code == 302:
-            logger.info("[invitation-accept] hub returned 302 (redirect to landing) — running local cleanup")
-        # Resolve the chosen target's typeid. Three response shapes to handle:
-        #  - 200 + JSON body — legacy shape; ``data`` carries the target typeid.
-        #  - 302 + Location header — current shape (hub became browser-friendly);
-        #    no JSON body, ``Location`` points at ``/flow_message/<id>`` or the
-        #    invitation's ``callback_override`` path. We parse the redirect URL
-        #    to extract the FlowMessage id, then look up its conversation_id
-        #    via ``hub_get`` (matches what ``handle_open_flow_message`` does).
-        #  - 409 — already accepted; same JSON-or-empty story as the others. We
-        #    still try both shapes below and fall through if neither produces
-        #    a target.
+        # Resolve the chosen target's typeid from the JSON ``data`` field.
+        # Two shapes the hub has used:
+        #  - ``data: "<type>-<id>"`` — typeid string.
+        #  - ``data: {"type": "<type>", "id": "<id>"}`` — dict form.
+        # 409 sometimes ships no body; we fall through and look up the conv
+        # via the FM relationship below.
         try:
             target = None
             body_text = (resp.text or "").strip()
@@ -2253,25 +2263,6 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
                     linked_fm_id = t_id
                 elif t_type == BuiltinEntityType.CONVERSATION.value and t_id:
                     linked_conv_id = t_id
-            # Fallback: parse the Location header on a 302 redirect. Path
-            # shapes we expect: ``/flow_message/<id>`` (FM landing) or
-            # ``/conversation/<id>`` (legacy/conv landing). Anything else is
-            # treated as no-target.
-            if not linked_fm_id and not linked_conv_id:
-                location = resp.headers.get("location") or resp.headers.get("Location") or ""
-                if location:
-                    from urllib.parse import urlparse  # noqa: PLC0415
-                    path = urlparse(location).path or ""
-                    parts = [p for p in path.split("/") if p]
-                    # Skip a possible ``/app`` / SUBPATH prefix by scanning for
-                    # the entity-type segment instead of fixed indices.
-                    for i, seg in enumerate(parts[:-1]):
-                        if seg == BuiltinEntityType.FLOW_MESSAGE.value:
-                            linked_fm_id = parts[i + 1]
-                            break
-                        if seg == BuiltinEntityType.CONVERSATION.value:
-                            linked_conv_id = parts[i + 1]
-                            break
             # When we only have the FlowMessage id, fetch its parent conv id
             # so the join + msg-sync path runs (same as the email-accept flow).
             # Hub FMs don't expose a top-level ``conversation_id`` field — the

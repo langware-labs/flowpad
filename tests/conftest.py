@@ -19,6 +19,41 @@ os.environ["TESTING"] = "true"
 
 
 # -----------------------------------------------------------------------------
+# CRITICAL: sandbox HOME before any flow_sdk import.
+#
+# Several flow_sdk modules still hard-code `Path.home() / ".claude"` (e.g.
+# transcript_analyzer/resolver.py, fs_records/claude/claude_settings/__init__.py,
+# fs_records/claude/claude_debug_log.py, builtin/faas/claude_code_auth.py,
+# server/routes/bootstrap.py). They bypass InstanceSettings.claude_home — the
+# contract violation flagged at flow_sdk/core/.../system_profile/utils.py:9.
+#
+# Overriding HOME redirects every Path.home() call (including those direct
+# ones AND the InstanceSettings defaults at base_settings.py:210) into an
+# empty sandbox. Without this, the indexer's default_roots() walks the real
+# user home: 61 real projects × project_folder_walker_fn recursion =
+# 272k folder waypoints, 93s wall — blowing every pytest.mark.timeout(30)
+# in test_record_get_id.py / test_index_handler.py / test_scan_handler.py.
+#
+# Done BEFORE the flow_sdk import below so module-level `Path.home()`
+# evaluations (e.g. resolver.py:20's `Final[Path]`) pick up the sandbox.
+# -----------------------------------------------------------------------------
+import tempfile  # noqa: E402
+from pathlib import Path as _Path  # noqa: E402
+
+_TEST_HOME = _Path(tempfile.gettempdir()) / "flowpad_test_home"
+for _sub in (".claude", ".codex", ".flow"):
+    (_TEST_HOME / _sub).mkdir(parents=True, exist_ok=True)
+# Stash the pre-sandbox HOME so child conftests can hand it to subprocess
+# environments that need real CLI auth (e.g. tests/long_tests/conftest.py
+# restoring HOME for tests that spawn the real Claude/Codex CLI). This is
+# the actual user-facing HOME on POSIX, macOS, AND Windows — `pwd.getpwuid`
+# returns the passwd-entry home which can diverge under `sudo -u` / CI
+# service accounts, and `pwd` doesn't exist on Windows at all.
+os.environ["FLOWPAD_PRE_SANDBOX_HOME"] = os.environ.get("HOME") or os.path.expanduser("~")
+os.environ["HOME"] = str(_TEST_HOME)
+
+
+# -----------------------------------------------------------------------------
 # CRITICAL: force keyring to an in-memory backend BEFORE any flow_sdk import.
 #
 # pytest sets PYTEST_CURRENT_TEST per-test, which makes flow_sdk's instance

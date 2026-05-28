@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { File as FileIcon, MessageSquarePlus, Paperclip, Send, Trash2, X } from 'lucide-react';
+import { File as FileIcon, GitBranch, MessageSquarePlus, Paperclip, Send, Trash2, X } from 'lucide-react';
 import type { FlowMessage } from '@sdk';
 import { sendReply } from '@sdk/entities/notifications';
 import { AttachmentType, type Attachment } from '@sdk/entities/flow-message';
@@ -11,6 +11,12 @@ import { PromptComposerDialog, type QueuedPrompt } from './PromptComposerDialog'
 import { PromptApprovalRow } from './PromptApprovalRow';
 import { useLocalUser } from './useLocalUser';
 import { discardDraftFlowMessage } from './flow-message-drafts';
+import { AttachRepoButton } from './AttachRepoButton';
+
+interface AttachedRepo {
+  typeId: string;
+  label: string;
+}
 
 interface DraftMessageComposerProps {
   fm: FlowMessage;
@@ -38,6 +44,7 @@ export function DraftMessageComposer({
   const initialText = fm.text ?? '';
   const [text, setText] = useState(initialText);
   const [files, setFiles] = useState<File[]>([]);
+  const [attachedRepos, setAttachedRepos] = useState<AttachedRepo[]>([]);
   const [queuedPrompt, setQueuedPrompt] = useState<QueuedPrompt | null>(null);
   const [showPromptDialog, setShowPromptDialog] = useState(false);
   const [sending, setSending] = useState(false);
@@ -138,11 +145,14 @@ export function DraftMessageComposer({
             promptFiles: effectivePrompt.files.length > 0 ? effectivePrompt.files : undefined,
           }
         : undefined;
+      const mergedExtras = attachedRepos.length > 0
+        ? { ...(extras ?? {}), assetReferences: attachedRepos.map((r) => r.typeId) }
+        : extras;
       await sendReply(
         { conversationId },
         trimmed,
         files.length > 0 ? files : undefined,
-        extras,
+        mergedExtras,
       );
       onAfterSend?.();
     } catch (err: unknown) {
@@ -189,7 +199,8 @@ export function DraftMessageComposer({
     if (!isBusy) addFiles(e.dataTransfer.files);
   };
 
-  const canSend = (!!text.trim() || !!queuedPrompt || files.length > 0) && !isBusy;
+  const canSend =
+    (!!text.trim() || !!queuedPrompt || files.length > 0 || attachedRepos.length > 0) && !isBusy;
   const senderName = fm.sender_name?.trim() || (localUser?.name ?? 'You');
   const initial = (senderName.trim()[0] ?? '?').toUpperCase();
 
@@ -242,6 +253,14 @@ export function DraftMessageComposer({
               disabled={isBusy}
               onChange={(e) => addFiles(e.target.files)}
               onClick={(e) => ((e.target as HTMLInputElement).value = '')}
+            />
+            <AttachRepoButton
+              disabled={isBusy}
+              onAttach={(typeId, label) =>
+                setAttachedRepos((prev) =>
+                  prev.some((r) => r.typeId === typeId) ? prev : [...prev, { typeId, label }],
+                )
+              }
             />
             {canAddPrompt && (
               <button
@@ -312,6 +331,30 @@ export function DraftMessageComposer({
                 <button
                   type="button"
                   onClick={() => removeFile(i)}
+                  disabled={isBusy}
+                  className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-destructive disabled:pointer-events-none"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        {attachedRepos.length > 0 && (
+          <ul className="space-y-1" data-testid="attached-repos">
+            {attachedRepos.map((r) => (
+              <li
+                key={r.typeId}
+                className="flex items-center gap-2 rounded border border-slate-500/40 bg-slate-500/10 px-2 py-1 text-xs"
+              >
+                <GitBranch className="h-3 w-3 shrink-0 text-slate-600 dark:text-slate-300" />
+                <span className="flex-1 truncate text-foreground" title={r.label}>{r.label}</span>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setAttachedRepos((prev) => prev.filter((x) => x.typeId !== r.typeId))
+                  }
                   disabled={isBusy}
                   className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-destructive disabled:pointer-events-none"
                 >

@@ -330,6 +330,7 @@ class BuiltinEntityType(Enum):
     NOTIFICATION = "notification"
     BOOKMARK = "bookmark"
     RUN = "run"
+    GIT_REPO = "git_repo"
 
 
 class EntityChild(BaseModel, Generic[RecordType]):

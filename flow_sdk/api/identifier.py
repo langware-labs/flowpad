@@ -1,4 +1,4 @@
-# Backward-compat re-export — canonical location is flow_sdk.fs_store.identifier
+# Backward-compat re-export — canonical location is flow_sdk.api.api_types.identifier
 from flow_sdk.fs_store.identifier import *  # noqa: F401, F403
 from flow_sdk.fs_store.identifier import (
     IdentifierType,

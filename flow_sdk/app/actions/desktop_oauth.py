@@ -19,7 +19,8 @@ import logging
 import os
 import secrets
 import socket
-from typing import Optional, Tuple
+import time
+from typing import Any, Optional, Tuple
 from urllib.parse import quote
 
 import httpx
@@ -42,10 +43,40 @@ ANTHROPIC_AUTH_URL = "https://claude.ai/oauth/authorize"
 ANTHROPIC_TOKEN_URL = "https://console.anthropic.com/v1/oauth/token"
 ANTHROPIC_SCOPES = ["user:profile", "user:inference", "user:sessions:claude_code"]
 
+# GitHub OAuth Device Flow (RFC 8628). No client_secret — register OAuth App,
+# enable Device Flow, then set GITHUB_CLIENT_ID env var or replace the default.
+GITHUB_CLIENT_ID_DEFAULT = "Ov23li9fNEH5ulTFINOZ"  # flowpad.ai - dev (langware-labs)
+GITHUB_DEVICE_CODE_URL = "https://github.com/login/device/code"
+GITHUB_TOKEN_URL = "https://github.com/login/oauth/access_token"
+GITHUB_SCOPES = ["repo", "read:org"]
+GITHUB_DEVICE_GRANT = "urn:ietf:params:oauth:grant-type:device_code"
+
 
 def _get_anthropic_client_id() -> str:
     """Get Anthropic OAuth client ID from env var or default."""
     return os.getenv("ANTHROPIC_CLIENT_ID", ANTHROPIC_CLIENT_ID_DEFAULT)
+
+
+def _get_github_client_id() -> str:
+    """Get GitHub OAuth client ID from env var or default."""
+    return os.getenv("GITHUB_CLIENT_ID", GITHUB_CLIENT_ID_DEFAULT)
+
+
+def _coerce_int(value: Any, default: int) -> int:
+    """Defensive int() that tolerates None/non-numeric/missing — returns ``default`` on failure.
+
+    Used for parsing optional numeric fields from third-party JSON (e.g. GitHub's
+    device-flow response) where ``int(None)`` / ``int("abc")`` would otherwise
+    escape as an unhandled exception."""
+    try:
+        return int(value) if value is not None else default
+    except (TypeError, ValueError):
+        return default
+
+
+# Cap for slow_down growth (RFC 8628 §3.5 mandates +5s per slow_down, no upper
+# bound; we cap to keep the modal countdown from outracing the next poll).
+GITHUB_POLL_INTERVAL_CAP_SECONDS = 30
 
 
 class DesktopOAuthSession:
@@ -60,12 +91,25 @@ class DesktopOAuthSession:
         self.redirect_uri = redirect_uri
         self.user_id = user_id
         self.provider = provider
+        # Loopback flow fields (Anthropic)
         self.callback_code: Optional[str] = None
         self.callback_state: Optional[str] = None
         self.callback_error: Optional[str] = None
         self.callback_server: Optional[asyncio.Task] = None
         self.callback_port: Optional[int] = None
         self.callback_event: asyncio.Event = asyncio.Event()
+        # Device flow fields (GitHub) — set only on the github branch
+        self.device_code: Optional[str] = None
+        self.user_code: Optional[str] = None
+        self.verification_uri: Optional[str] = None
+        self.expires_at_monotonic: Optional[float] = None  # time.monotonic() reference (clock-skew safe)
+        self.poll_interval: int = 5  # seconds; bumped on slow_down, capped at GITHUB_POLL_INTERVAL_CAP_SECONDS
+        # Set by /oauth/github/cancel — polling loop honors at its next iteration.
+        self.cancel_event: Optional[asyncio.Event] = None
+        # If save_to_sod fails after a successful authorization, the token is
+        # retained here so it can be recovered without forcing the user back
+        # through github.com. (Operator inspection / future /retry-save action.)
+        self.pending_access_token: Optional[str] = None
 
     @staticmethod
     def _find_free_port() -> int:
@@ -226,10 +270,15 @@ def _build_anthropic_auth_url(
 
 
 async def get_desktop_oauth_auth_url(provider: str, user_id: str) -> ApiResponse:
-    """Generate OAuth authorization URL for desktop mode with localhost callback.
+    """Start a desktop OAuth flow for the given provider.
 
-    Ported from FlowPad: flowpad/hub/app/actions/oauth/desktop_oauth.py
+    Anthropic → loopback redirect + PKCE (returns ``{kind: "loopback", url, port, state}``).
+    GitHub    → RFC 8628 device flow      (returns ``{kind: "device", user_code,
+                                                      verification_uri, expires_in,
+                                                      interval, state}``).
     """
+    if provider == "github":
+        return await _start_github_device_flow(user_id)
     if provider != "anthropic":
         return ApiFailResponse(message=f"Desktop OAuth not supported for provider: {provider}")
 
@@ -275,6 +324,7 @@ async def get_desktop_oauth_auth_url(provider: str, user_id: str) -> ApiResponse
 
     return ApiSuccessResponse(
         data={
+            "kind": "loopback",
             "url": auth_url,
             "port": callback_port,
             "state": state,
@@ -282,14 +332,305 @@ async def get_desktop_oauth_auth_url(provider: str, user_id: str) -> ApiResponse
     )
 
 
-async def wait_for_desktop_oauth_callback(state: str, timeout: int = OAUTH_CALLBACK_TIMEOUT) -> ApiResponse:
-    """Wait for OAuth callback via localhost server, exchange code for token, and save credentials.
+async def _start_github_device_flow(user_id: str) -> ApiResponse:
+    """Initiate GitHub Device Flow (RFC 8628). No client_secret, no callback server."""
+    import time
 
-    Ported from FlowPad: flowpad/hub/app/actions/oauth/desktop_oauth.py
-    """
+    client_id = _get_github_client_id()
+    if client_id.startswith("REPLACE_WITH_"):
+        return ApiFailResponse(
+            message="GitHub OAuth not configured. Register an OAuth App with Device Flow "
+            "enabled at https://github.com/settings/applications/new and set GITHUB_CLIENT_ID."
+        )
+
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                GITHUB_DEVICE_CODE_URL,
+                data={"client_id": client_id, "scope": " ".join(GITHUB_SCOPES)},
+                headers={"Accept": "application/json"},
+                timeout=15.0,
+            )
+            if response.status_code != 200:
+                return ApiFailResponse(
+                    message=f"GitHub device-code request failed ({response.status_code}): {response.text[:300]}"
+                )
+            body = response.json()
+    except Exception as e:
+        logger.warning(f"GitHub device-code request error: {e}")
+        return ApiFailResponse(message=f"GitHub device-code request error: {e}")
+
+    device_code = body.get("device_code")
+    user_code = body.get("user_code")
+    verification_uri = body.get("verification_uri") or body.get("verification_uri_complete")
+    expires_in = _coerce_int(body.get("expires_in"), 900)
+    interval = _coerce_int(body.get("interval"), 5)
+    if not (device_code and user_code and verification_uri):
+        return ApiFailResponse(message=f"GitHub returned unexpected device-code body: {body}")
+
+    state = secrets.token_urlsafe(32)
+    session = DesktopOAuthSession(
+        state=state,
+        code_verifier="",  # n/a for device flow
+        redirect_uri="",   # n/a for device flow
+        user_id=user_id,
+        provider="github",
+    )
+    session.device_code = device_code
+    session.user_code = user_code
+    session.verification_uri = verification_uri
+    session.expires_at_monotonic = time.monotonic() + expires_in
+    session.poll_interval = interval
+    session.cancel_event = asyncio.Event()
+    _desktop_oauth_sessions[state] = session
+
+    logger.info(f"GitHub device flow started for user {user_id}, user_code={user_code}")
+
+    return ApiSuccessResponse(
+        data={
+            "kind": "device",
+            "user_code": user_code,
+            "verification_uri": verification_uri,
+            "expires_in": expires_in,
+            "interval": interval,
+            "state": state,
+        }
+    )
+
+
+async def _exchange_github_device_code(session: DesktopOAuthSession) -> dict:
+    """One poll iteration. Returns {kind: 'pending'|'slow_down'|'denied'|'expired'|'success'|'error', ...}.
+
+    Pure HTTP — caller decides what to do (loop / broadcast / save). All network
+    failures are coerced to ``{kind: 'transient', message: ...}`` so the polling
+    loop can decide whether to retry (transient) vs abort (error)."""
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                GITHUB_TOKEN_URL,
+                data={
+                    "client_id": _get_github_client_id(),
+                    "device_code": session.device_code,
+                    "grant_type": GITHUB_DEVICE_GRANT,
+                },
+                headers={"Accept": "application/json"},
+                timeout=15.0,
+            )
+    except Exception as e:
+        # Network blip, DNS failure, timeout — keep the poll alive; caller retries.
+        return {"kind": "transient", "message": f"{type(e).__name__}: {e}"}
+    if response.status_code != 200:
+        return {"kind": "error", "message": f"HTTP {response.status_code}: {response.text[:300]}"}
+    try:
+        body = response.json()
+    except Exception as e:
+        return {"kind": "error", "message": f"Malformed JSON from token endpoint: {e}"}
+    err = body.get("error")
+    if err == "authorization_pending":
+        return {"kind": "pending"}
+    if err == "slow_down":
+        return {"kind": "slow_down"}
+    if err == "expired_token":
+        return {"kind": "expired"}
+    if err == "access_denied":
+        return {"kind": "denied"}
+    if err:
+        return {"kind": "error", "message": err}
+    token = body.get("access_token")
+    if not token:
+        return {"kind": "error", "message": f"No access_token in success body: {body}"}
+    return {"kind": "success", "access_token": token, "token_type": body.get("token_type"), "scope": body.get("scope")}
+
+
+async def _save_github_token_to_sod(user_id: str, access_token: str) -> bool:
+    """Persist the token under ``github_credentials`` for the original session user.
+
+    Prefers the session-pinned ``user_id`` (the requester captured at /auth time)
+    over any current request context so a long-poll that crosses request
+    boundaries (re-signin, token rotation, different /wait-callback caller)
+    can't bind the grant to the wrong account."""
+    try:
+        from flow_sdk.builtin.user import User
+        from flow_sdk.request_context.methods import (
+            get_current_request_info,
+            set_user_credentials,
+        )
+
+        user = None
+        # Path B FIRST: the user captured when the device flow was initiated.
+        # This is the only resolution that's stable across the full poll window.
+        if user_id:
+            try:
+                user = await User.get_by_id(user_id)
+            except Exception:
+                user = None
+        # Path A fallback: the current request's user. Only used if Path B fails
+        # outright (e.g. the original user was deleted) — accepts the rebinding
+        # risk only when the alternative is total token loss.
+        if not user:
+            request_info = get_current_request_info()
+            if request_info and getattr(request_info, "user", None):
+                try:
+                    user = await User.get_by_typeid(request_info.user)
+                except Exception:
+                    user = None
+        if not user:
+            logger.warning(f"_save_github_token_to_sod: no user found for id={user_id!r}")
+            return False
+        await set_user_credentials(user, "github_credentials", access_token, user.id)
+        return True
+    except Exception as e:
+        logger.error(f"_save_github_token_to_sod failed: {e}")
+        return False
+
+
+async def _poll_github_device_until_done(
+    session: DesktopOAuthSession,
+    http_timeout: Optional[float] = None,
+) -> ApiResponse:
+    """Poll GitHub's token endpoint until success / denied / expired / cancelled / http-timeout.
+
+    Honors slow_down (RFC 8628 §3.5: +5s per occurrence) with a hard cap at
+    ``GITHUB_POLL_INTERVAL_CAP_SECONDS`` so the modal countdown can't outrun
+    polling. Uses ``time.monotonic()`` for the deadline so wall-clock skew
+    (NTP step, sleep/resume) can't extend the window arbitrarily.
+
+    ``http_timeout``: if set, the loop exits with ``status="polling"`` after
+    this many seconds — without consuming the device-code session. The caller
+    (wait-callback HTTP handler) returns to the client well under any proxy
+    keep-alive limit; the user can re-issue wait-callback to resume polling
+    against the same session, or the WebSocket broadcast remains the
+    out-of-band signal."""
+
+    started_monotonic = time.monotonic()
+
+    async def _broadcast_error(message: str) -> ApiResponse:
+        await _broadcast_llm_config_msg(
+            is_configured=False, auth_method="github",
+            oauth_request_id=session.state, status=OAuthMessageStatus.ERROR,
+        )
+        _desktop_oauth_sessions.pop(session.state, None)
+        return ApiFailResponse(message=message)
+
+    while True:
+        # http_timeout check — return "polling" WITHOUT popping the session so a
+        # re-issued wait-callback can resume against the same device_code.
+        if (
+            http_timeout is not None
+            and time.monotonic() - started_monotonic >= http_timeout
+        ):
+            return ApiSuccessResponse(
+                data={"status": "polling", "state": session.state},
+                message="GitHub device flow still polling; WebSocket broadcast will fire on completion",
+            )
+        # 0. Cancellation check (set by /oauth/github/cancel).
+        if session.cancel_event is not None and session.cancel_event.is_set():
+            return await _broadcast_error("GitHub device flow cancelled")
+
+        # 1. Deadline check before sleeping AND after sleeping, against monotonic.
+        if (
+            session.expires_at_monotonic is not None
+            and time.monotonic() >= session.expires_at_monotonic
+        ):
+            return await _broadcast_error("GitHub device code expired before authorization")
+
+        # 2. Sleep capped at remaining lifetime so we don't sleep past expiry.
+        remaining = (
+            (session.expires_at_monotonic - time.monotonic())
+            if session.expires_at_monotonic is not None
+            else session.poll_interval
+        )
+        sleep_for = max(0.1, min(session.poll_interval, remaining))
+        # Make the sleep cancellable by the cancel_event: race the sleep vs the
+        # cancel signal so cancellation is honored within poll_interval.
+        if session.cancel_event is not None:
+            cancel_wait = asyncio.create_task(session.cancel_event.wait())
+            sleep_task = asyncio.create_task(asyncio.sleep(sleep_for))
+            done, pending = await asyncio.wait(
+                {cancel_wait, sleep_task}, return_when=asyncio.FIRST_COMPLETED,
+            )
+            for t in pending:
+                t.cancel()
+            if session.cancel_event.is_set():
+                return await _broadcast_error("GitHub device flow cancelled")
+        else:
+            await asyncio.sleep(sleep_for)
+
+        # 3. Token exchange — network failures are transient, retry next loop.
+        result = await _exchange_github_device_code(session)
+        kind = result["kind"]
+
+        if kind == "pending":
+            continue
+        if kind == "transient":
+            # Network blip, DNS failure, timeout — keep polling without bumping
+            # interval (slow_down is the explicit rate-limit signal, not this).
+            logger.warning(f"GitHub poll transient error, will retry: {result.get('message')}")
+            continue
+        if kind == "slow_down":
+            session.poll_interval = min(
+                session.poll_interval + 5, GITHUB_POLL_INTERVAL_CAP_SECONDS,
+            )
+            continue
+        if kind == "denied":
+            return await _broadcast_error("User denied GitHub authorization")
+        if kind == "expired":
+            return await _broadcast_error("GitHub device code expired")
+        if kind == "error":
+            return await _broadcast_error(f"GitHub device flow error: {result.get('message')}")
+        if kind == "success":
+            # Stash the token on the session BEFORE attempting to persist; if save
+            # fails we keep it around (and the session itself) so a later
+            # /retry-save can recover the grant without forcing the user back
+            # through github.com.
+            session.pending_access_token = result["access_token"]
+            saved = await _save_github_token_to_sod(session.user_id, result["access_token"])
+            await _broadcast_llm_config_msg(
+                is_configured=saved, auth_method="github",
+                oauth_request_id=session.state,
+                status=OAuthMessageStatus.SUCCESS if saved else OAuthMessageStatus.ERROR,
+            )
+            if not saved:
+                logger.error(
+                    f"GitHub OAuth authorized for user_id={session.user_id!r} but token "
+                    f"could not be persisted to SOD; token retained on session "
+                    f"state={session.state!r} for /retry-save (token NOT logged)."
+                )
+                # Keep the session alive so /retry-save can find the pending_access_token.
+                return ApiFailResponse(message="Authorized but could not persist token; retry available")
+            session.pending_access_token = None
+            _desktop_oauth_sessions.pop(session.state, None)
+            return ApiSuccessResponse(message="GitHub connected")
+
+
+def cancel_github_device_flow(state: str) -> bool:
+    """Signal a running github device-flow poll to abort.
+
+    Returns True if the session was found and a cancel signal was raised.
+    The background task will exit at its next loop iteration (within
+    poll_interval seconds), broadcast an ERROR LlmConfigMessage, and remove
+    itself from ``_desktop_oauth_sessions``."""
+    session = _desktop_oauth_sessions.get(state)
+    if session is None or session.cancel_event is None:
+        return False
+    session.cancel_event.set()
+    return True
+
+
+async def wait_for_desktop_oauth_callback(state: str, timeout: int = OAUTH_CALLBACK_TIMEOUT) -> ApiResponse:
+    """Wait for OAuth callback / device-flow polling to complete and save credentials."""
     session = _desktop_oauth_sessions.get(state)
     if not session:
         return ApiFailResponse(message="OAuth session not found")
+
+    # GitHub device flow: poll inline, bounded by the documented timeout so the
+    # HTTP request resolves well under any proxy keep-alive limit. If the user
+    # hasn't authorized within ``timeout`` seconds, the loop returns "polling"
+    # WITHOUT consuming the session — a re-issued wait-callback resumes against
+    # the same device_code. The WebSocket broadcast remains the canonical
+    # signal whenever polling eventually finishes.
+    if session.provider == "github":
+        return await _poll_github_device_until_done(session, http_timeout=timeout)
 
     try:
         result = await session.wait_for_callback(timeout)

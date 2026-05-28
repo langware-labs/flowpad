@@ -1,7 +1,7 @@
-import { ContextEntitiesEnum, dataContext, Project, QueryRequest } from '@sdk';
+import { dataContext, Project } from '@sdk';
 import { useProject } from '@sdk/react/hooks';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
-import { NewProjectDialog, ProjectSelectorModal } from '@src/components/project-selector';
+import { NewProjectDialog, ProjectSelectorModal, useEnsureProject } from '@src/components/project-selector';
 import { Button } from '@src/components/ui/button';
 import {
   Dialog,
@@ -142,32 +142,15 @@ export function QuickCreateDialog({ open, onOpenChange, type }: QuickCreateDialo
     [project?.fs_storage_mount_path],
   );
 
-  const ensureProjectAndSetContext = useCallback(async (rawPath: string) => {
-    if (!dataContext.someone) throw new Error('You must be logged in');
-    const normalized = rawPath.trim().replace(/\\/g, '/').replace(/\/+$/, '');
-    if (!normalized) throw new Error('Please provide a valid project path');
-    const pathKey = canonicalPath(normalized);
-
-    const freshProjects = await Project.query(
-      new QueryRequest({ type: Project.type, query: null, scope: [], name: 'quick-create-project-dedup' }),
-    );
-    let target = freshProjects.find((p) => canonicalPath(p.fs_storage_mount_path ?? '') === pathKey) ?? null;
-    if (!target) {
-      target = await new Project({ name: normalized }).save([dataContext.someone]);
-    }
-    await target.setupForDesktop();
-    await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, target.typeId);
-    await dataContext.refreshProject();
-    dataContext.setWorkdir(target.fs_storage_mount_path ?? null);
-  }, []);
+  const ensureProject = useEnsureProject();
 
   const handleProjectPick = useCallback(
     async (pickedKey: string) => {
       const picked = allProjects.find((p) => canonicalPath(p.cwd) === pickedKey);
       if (!picked?.cwd) return;
-      await ensureProjectAndSetContext(picked.cwd);
+      await ensureProject(picked.cwd);
     },
-    [allProjects, ensureProjectAndSetContext],
+    [allProjects, ensureProject],
   );
 
   const handleCreateProject = useCallback(
@@ -175,9 +158,9 @@ export function QuickCreateDialog({ open, onOpenChange, type }: QuickCreateDialo
       const cleanName = rawName.trim();
       const cleanParent = rawParent.trim().replace(/\\/g, '/').replace(/\/+$/, '');
       if (!cleanName || !cleanParent) throw new Error('Name and parent folder required');
-      await ensureProjectAndSetContext(`${cleanParent}/${cleanName}`);
+      await ensureProject(`${cleanParent}/${cleanName}`);
     },
-    [ensureProjectAndSetContext],
+    [ensureProject],
   );
 
   const handlePickFolder = useCallback(async (): Promise<string | null> => {

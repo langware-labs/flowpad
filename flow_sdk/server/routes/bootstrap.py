@@ -429,18 +429,32 @@ def build_app_paths() -> AppPaths:
     """
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
     root = get_os_root_path()
-    # Get home path relative to root (strip leading slash for VFS)
-    home_abs = str(get_instance_settings().user_home)
-    if platform.system() == "Windows":
-        # On Windows: strip drive letter (e.g., "C:\") and normalize backslashes to forward slashes
-        # "C:\Users\tamir" -> "Users/tamir"
-        home = home_abs.replace("\\", "/")
-        if len(home) >= 2 and home[1] == ":":
-            home = home[2:].lstrip("/")
-    else:
-        # On Unix: just strip leading slash
-        # "/Users/tamir" -> "Users/tamir"
-        home = home_abs.lstrip("/")
+
+    def _vfs_relative(abs_path: str) -> str:
+        """Normalize an OS-absolute path into a VFS-relative form (no leading slash).
+
+        On Unix: `lstrip("/")`.
+        On Windows: backslashes → forward slashes, then handle three shapes:
+        - Drive-letter (`C:/Users/x`): strip the drive prefix.
+        - UNC (`//server/share/x`): drop the leading `//` but keep `server/share`
+          so the host prefix survives; the OS layer can reassemble UNC from it.
+        - Other shapes: just `lstrip("/")`.
+        """
+        if platform.system() != "Windows":
+            return abs_path.lstrip("/")
+        norm = abs_path.replace("\\", "/")
+        if len(norm) >= 2 and norm[1] == ":":
+            return norm[2:].lstrip("/")
+        if norm.startswith("//"):
+            logging.warning(
+                "UNC path %r encountered — VFS support for UNC paths is limited; "
+                "consider mapping the share to a drive letter.",
+                abs_path,
+            )
+            return norm[2:]
+        return norm.lstrip("/")
+
+    home = _vfs_relative(str(get_instance_settings().user_home))
     workspace = f"{home}/Flowpad workspace"
     skills = f"{workspace}/.claude/skills"
     user_skills = f"{home}/.claude/skills"
@@ -449,7 +463,12 @@ def build_app_paths() -> AppPaths:
     system_skills = str(_assistant_root / ".claude" / "skills")
     system_agents = str(_assistant_root / ".claude" / "agents")
     logs = f"{home}/.flow/logs"
-    settings = f"{workspace}/.flow/settings.json"
+    # Per-instance preferences. Lives under instance_dir so multiple instances
+    # (oss / prod / app / dev) don't clobber each other's UI prefs. The same
+    # absolute path on disk, expressed VFS-relative.
+    preferences = _vfs_relative(
+        str(get_instance_settings().instance_dir / "preferences.json")
+    )
 
     return AppPaths(
         root=root,
@@ -461,7 +480,7 @@ def build_app_paths() -> AppPaths:
         system_skills=system_skills,
         system_agents=system_agents,
         logs=logs,
-        settings=settings,
+        preferences=preferences,
     )
 
 
@@ -1256,15 +1275,17 @@ async def _ensure_welcome_favorite(user: User) -> None:
 
 
 def setup_desktop_filesystem() -> None:
-    """Create desktop filesystem structure (.flow/logs, .flow/system_skills, settings.json).
+    """Create desktop filesystem structure.
 
-    Sets up the workspace directory tree at ~/Flowpad workspace/:
+    Workspace directory tree at ~/Flowpad workspace/:
       - .claude/skills/         (skills folder)
-      - .flow/logs/             (log files)
-      - .flow/system_skills/    (system skills -- copied from source if available)
-      - .flow/settings.json     (default settings)
 
-    Migrated from FlowPad: flowpad/hub/core/desktop_loader.py (init_desktop_entities)
+    Per-instance logs under instance_settings.logs_dir:
+      - server/, monitor/, main_desktop/
+
+    Per-instance UI preferences:
+      - <instance_dir>/preferences.json  (defaults written if missing;
+        legacy ~/Flowpad workspace/.flow/settings.json migrated on first run)
     """
     workspace_path = Path(AGENT_MOUNT_FOLDER)
 
@@ -1286,17 +1307,77 @@ def setup_desktop_filesystem() -> None:
             logging.warning(f"Failed to create logs subdirectory {subdir}: {e}")
     logging.info(f"Logs folder ensured at: {logs_base}")
 
-    # Create settings.json with defaults (only if file doesn't exist)
-    settings_path = workspace_path / ".flow" / "settings.json"
+    # Per-instance UI preferences. Defaults must stay in sync with
+    # DEFAULT_PREFERENCES in ts_sdk/src/services/InstancePreferences.ts.
+    # Legacy location: <workspace>/.flow/settings.json — migrated below.
+    prefs_path = get_instance_settings().instance_dir / "preferences.json"
+    legacy_settings_path = workspace_path / ".flow" / "settings.json"
+
+    # Single source of truth for the default-stub shape. The set of known keys
+    # also bounds what we migrate from a legacy settings.json — anything else
+    # is silently dropped instead of riding along forever as dead weight.
+    default_prefs = {
+        "show_system_skills": True,
+        "default_terminal": "builtin_xterm",
+        "buffer_sync_updates": False,
+        "notification_sound_enabled": False,
+        "notification_sound_key": "supershort-ping",
+    }
+    known_pref_keys = set(default_prefs.keys())
+
+    def _read_existing_prefs(path: Path) -> Optional[dict]:
+        """Return the parsed dict, or None if file is missing/malformed/non-object."""
+        if not path.exists():
+            return None
+        try:
+            parsed = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        return parsed if isinstance(parsed, dict) else None
+
+    def _migrated_from_legacy() -> Optional[dict]:
+        """Parse legacy settings.json and project onto the new preferences shape.
+
+        Returns the merged dict or None when legacy is missing/malformed —
+        callers fall back to defaults rather than copy garbage.
+        """
+        if not legacy_settings_path.exists():
+            return None
+        legacy = _read_existing_prefs(legacy_settings_path)
+        if legacy is None:
+            logging.warning(
+                f"Legacy settings at {legacy_settings_path} is not valid JSON "
+                f"or not a dict; falling back to defaults"
+            )
+            return None
+        return {**default_prefs, **{k: v for k, v in legacy.items() if k in known_pref_keys}}
+
     try:
-        if not settings_path.exists():
-            default_settings = {"show_system_skills": True}
-            settings_path.write_text(json.dumps(default_settings, indent=2))
-            logging.info(f"Settings file created at: {settings_path}")
+        prefs_path.parent.mkdir(parents=True, exist_ok=True)
+
+        existing = _read_existing_prefs(prefs_path)
+        # Treat a previously-written default stub as "no user edits yet" so the
+        # legacy migration still runs if it became available after a stub was
+        # written by an earlier bootstrap.
+        existing_is_stub = existing == default_prefs
+
+        if existing is None or existing_is_stub:
+            migrated = _migrated_from_legacy()
+            payload = migrated if migrated is not None else default_prefs
+            prefs_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+            if migrated is not None:
+                logging.info(
+                    f"Migrated preferences {legacy_settings_path} → {prefs_path} "
+                    f"(filtered to {len(known_pref_keys)} known keys)"
+                )
+            elif existing is None:
+                logging.info(f"Preferences file created at: {prefs_path}")
+            else:
+                logging.info(f"Preferences file refreshed (was default stub): {prefs_path}")
         else:
-            logging.info(f"Settings file already exists at: {settings_path}")
+            logging.info(f"Preferences file already exists at: {prefs_path}")
     except Exception as e:
-        logging.warning(f"Failed to create settings file: {e}")
+        logging.warning(f"Failed to create preferences file: {e}")
 
 
 # ---------------------------------------------------------------------------
@@ -1534,7 +1615,7 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
             sandbox_compute_node=entity_to_dict(sandbox_compute_node) if sandbox_compute_node else None,
             docker_available=docker_available,
             docker_compute_nodes=[entity_to_dict(cn) for cn in docker_cns],
-            env=EnvInfo(env_name="desktop", cloud_api_url=os.environ.get("FLOWPAD_CLOUD_API_URL"), version=__version__),
+            env=EnvInfo(env_name="desktop", cloud_api_url=get_instance_settings().cloud_api_url, version=__version__),
             desktop_info=desktop_info,
             scan_info=scan_info,
             sniffer_hook=entity_to_dict(sniffer_hook) if sniffer_hook else None,

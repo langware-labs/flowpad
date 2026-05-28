@@ -197,11 +197,17 @@ def _merge_project(
             "type": PROJECT_RESOURCE_TYPE,
             "name": _display_name(cwd),
             "cwd": cwd,
-            # `encoded_name` is the Claude project dir name OBSERVED on disk
-            # (~/.claude/projects/<name>/). It's a scanner-emitted transient,
-            # never stored on Flow records — used by clients only to identify
-            # which Claude directory to scan for hooks / mcp / agents / etc.
-            "encoded_name": claude_dir_name or "",
+            # `encoded_name` is a unique-per-project opaque id used by UI
+            # selectors / React keys / activity-map lookups. When Claude has
+            # walked this cwd we use the OBSERVED on-disk dir name from
+            # ~/.claude/projects/<name>/ (matches Claude's actual encoding,
+            # including spaces/underscores); otherwise we fall back to a
+            # lossy synthetic derived from cwd so every row still has a
+            # distinct, stable value (cwds are unique per project). The
+            # synthetic isn't a valid Claude dir name — clients must NOT use
+            # it to locate transcripts; that path goes through
+            # ClaudeSessionRecord.discover() / _index_claude_dirs_by_cwd.
+            "encoded_name": claude_dir_name or cwd.replace("/", "-"),
             "session_count": 0,
             "claude_session_count": 0,
             "codex_session_count": 0,
@@ -212,7 +218,9 @@ def _merge_project(
             "worker_types": [],
         },
     )
-    if claude_dir_name and not item.get("encoded_name"):
+    if claude_dir_name and item.get("encoded_name") != claude_dir_name:
+        # Upgrade synthetic fallback to the observed Claude dir name once
+        # we discover it (e.g. codex merge happened first, claude second).
         item["encoded_name"] = claude_dir_name
     if claude:
         item["claude"] = True

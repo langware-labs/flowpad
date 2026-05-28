@@ -71,8 +71,13 @@ describe('fs-records scan', () => {
   });
 
   it('GET /fs-records/scan returns aggregate stats', async () => {
-    // Use limit_types=5 so this test completes quickly on machines with large datasets
-    const response = await apiClient.get<unknown>(`${CN_FS_BASE}/scan?limit_types=5`);
+    // user-only scope keeps the walk bounded to USER_HOME expanders (Claude/Codex
+    // session + plan metadata) on machines with many discovered project cwds.
+    // Omitting the scope filter is now explicit "all known projects" via
+    // get_all_scope_filter() and recursively walks every project tree.
+    const response = await apiClient.get<unknown>(
+      `${CN_FS_BASE}/scan?limit_types=5&user=true&projects=`,
+    );
     const data = unwrapData(response);
     expect(data).toHaveProperty('types');
     expect(data).toHaveProperty('grand_total');

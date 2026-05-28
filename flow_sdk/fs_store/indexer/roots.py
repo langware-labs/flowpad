@@ -38,12 +38,14 @@ def lookup_project_id_by_uname(uname: str) -> str | None:
     the project hasn't been created yet, or on any DB-access error.
     """
     import sqlite3
+
+    from flow_sdk.db.drivers.sqlite.connection import open_sqlite  # noqa: PLC0415
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
     db_path = get_instance_settings().db_path
     if not db_path:
         return None
     try:
-        conn = sqlite3.connect(str(db_path))
+        conn = open_sqlite(db_path)
     except sqlite3.Error:
         return None
     try:

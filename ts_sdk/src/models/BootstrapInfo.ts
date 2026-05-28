@@ -36,8 +36,8 @@ export interface AppPaths {
   system_agents: string;
   /** Logs folder ("Users/shlom/Flowpad workspace/.flow/logs") */
   logs: string;
-  /** Settings file ("Users/shlom/Flowpad workspace/.flow/settings.json") */
-  settings: string;
+  /** Per-instance UI preferences file ("Users/shlom/.flow/instances/<name>/preferences.json") */
+  preferences: string;
 }
 
 /**

@@ -13,6 +13,7 @@ import { ChipsExcludeProvider } from './chips/ChipsExcludeContext';
 import { taskChipKeys } from './chips/keys';
 import { ConversationBottomRibbon, type ConversationSideTab } from './ConversationBottomRibbon';
 import { ConversationContextPanel } from './ConversationContextPanel';
+import { MembersAvatarStack } from './MembersAvatarStack';
 
 interface ConversationPanelProps {
   /** Optional. Project-scoped conversations have no task. */
@@ -205,6 +206,9 @@ export function ConversationPanel({
           {headerLabel !== null && (
             <div className={headerWrapper}>
               <span>{headerLabel}</span>
+              <MembersAvatarStack
+                typeId={new TypeId(Conversation.type, conversationId)}
+              />
             </div>
           )}
           <div className={`${bodyWrapper} min-h-0 flex-1 overflow-y-auto`}>

@@ -38,8 +38,8 @@ def build_dep_graph(conn: sqlite3.Connection | None = None) -> DepGraphResult:
     init_schema(conn)
     reset(conn)
 
-    src = sqlite3.connect(f"file:{get_database_path()}?mode=ro", uri=True)
-    src.row_factory = sqlite3.Row
+    from flow_sdk.db.drivers.sqlite.connection import open_sqlite  # noqa: PLC0415
+    src = open_sqlite(get_database_path(), mode="ro")
     nodes: list[Node] = []
     edges: list[Edge] = []
     try:

@@ -135,6 +135,32 @@ async def get_all_projects(
     )
 
 
+async def get_all_scope_filter(
+    *,
+    include_temp: bool = False,
+    create_missing: bool = True,
+) -> "ScopeFilter":
+    """Build the canonical ``ScopeFilter`` covering user + every known project.
+
+    This is the explicit replacement for the silent "no filter = walk the
+    universe" pattern. Callers that previously passed ``scope_filter=None``
+    into the indexer (and got an implicit fanout via the
+    ``real_project_cwd_fn`` expander on ``USER_HOME_FOLDER``) should call this
+    helper instead — the returned filter materialises every Claude/Codex
+    project cwd as an explicit ``REAL_PROJECT_CWD`` root via
+    ``_resolve_scoped_roots``, so the work the scan does becomes visible at
+    the route boundary instead of buried inside the indexer registration table.
+    """
+    from flow_sdk.server.search_filters import ScopeFilter  # noqa: PLC0415
+    projects = await get_all_projects(
+        include_temp=include_temp, create_missing=create_missing
+    )
+    return ScopeFilter(
+        user=True,
+        projects=tuple(p.project_id for p in projects if p.project_id),
+    )
+
+
 async def _materialize(info: ProjectInfo) -> None:
     """Save a fresh ``Project`` for ``info.cwd``; mutate ``info.project_id``."""
     from flow_sdk.builtin.project import Project

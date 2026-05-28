@@ -8,6 +8,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ViewType } from '@src/types/ViewType';
 import { Sidebar, SidebarContent, SidebarGroup, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@src/components/ui/sidebar';
 import { useInboxStore } from '@src/store/use-inbox-store';
+import { useSpotlightStore } from '@src/store/use-spotlight-store';
 import {
   ArrowLeft,
   RefreshCw,
@@ -25,6 +26,7 @@ import {
   // KeyRound,
   // MessagesSquare,
   // PlaySquare,
+  Search,
   // Settings,
   // Sparkles,
   // Workflow,
@@ -202,6 +204,16 @@ export function CollapsedSidebar() {
             <Bug className="h-4 w-4" />
           </Button>
         )}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8"
+          onClick={() => useSpotlightStore.getState().openSpotlight()}
+          title="Search (⌘K)"
+          data-testid="sidebar-search-button"
+        >
+          <Search className="h-4 w-4" />
+        </Button>
         <FlowpadAssistantButton />
         <ThemeToggle />
         <UserDropdown />

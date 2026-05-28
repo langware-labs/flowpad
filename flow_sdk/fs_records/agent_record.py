@@ -16,7 +16,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, ClassVar
 from flow_sdk.fs_store import Record, RecordType
-from flow_sdk.fs_store.record import Scope, _META_JSON
+from flow_sdk.fs_store.record import _META_JSON
 from flow_sdk.instance_settings import get_instance_settings
 
 
@@ -469,26 +469,6 @@ class AgentRecord(Record):
 
     # -- Loader helpers ----------------------------------------------------
 
-    @classmethod
-    def discover(cls, scope: Scope | None = None, **kwargs: Any) -> list["AgentRecord"]:
-        """Discover all agent .md files from user and project .claude/agents/ folders."""
-        results: list[AgentRecord] = []
-        seen: set[str] = set()
-        limit = kwargs.get("limit")
-        for agents_dir in _agent_search_dirs():
-            for f in sorted(agents_dir.glob("*.md")):
-                key = str(f.resolve())
-                if key in seen:
-                    continue
-                seen.add(key)
-                try:
-                    results.append(cls.from_file(f))
-                    if limit is not None and len(results) >= limit:
-                        return results
-                except Exception:
-                    continue
-        return results
-
     @staticmethod
     def load_from_dir(agent_dir: Path) -> AgentRecord | None:
         """Load an AgentRecord from a directory, bootstrapping from .md if needed."""
@@ -498,16 +478,46 @@ class AgentRecord(Record):
 
     @staticmethod
     def load_system_agent(name: str) -> AgentRecord | None:
-        """Load from system_assets/agents/<name>/."""
-        import flow_sdk
+        """Load a SDK-shipped system agent by name.
 
-        source = Path(flow_sdk.__file__).parent / "system_assets" / "available" / "agents" / name
-        if source.is_dir():
-            return AgentRecord.load_from_dir(source)
-        # Also check workspace
-        workspace = Path.home() / "Flowpad workspace" / ".flow" / "system_assets" / "agents" / name
-        if workspace.is_dir():
-            return AgentRecord.load_from_dir(workspace)
+        Lookup order:
+          1. ``<flowpad_assistant_project_root>/.claude/agents/<name>.md`` —
+             the canonical SDK-bundled location (file layout).
+          2. Legacy workspace install:
+             ``~/Flowpad workspace/.flow/system_assets/agents/<name>/`` —
+             where pre-rewrite installs put directory-layout agents. Kept
+             so user-edited overrides in existing workspace clones still
+             load after the SDK upgrade.
+
+        Returns ``None`` if neither path resolves OR if the resolved
+        artefact fails to parse — callers rely on the soft-None contract
+        (see ``Agent.load_system_agent`` consumers).
+        """
+        from flow_sdk.config import flowpad_assistant_project_root
+
+        agents_dir = flowpad_assistant_project_root() / ".claude" / "agents"
+        md = agents_dir / f"{name}.md"
+        if md.is_file():
+            try:
+                return AgentRecord.from_file(md)
+            except (OSError, ValueError, UnicodeDecodeError) as exc:
+                # Soft-fail: a corrupt frontmatter / unreadable file shouldn't
+                # crash the loader. Matches the legacy ``load_from_dir``
+                # contract which silently returned None on parse errors.
+                import logging
+                logging.warning("load_system_agent: failed to parse %s: %s", md, exc)
+                return None
+        # Back-compat: legacy workspace install (directory layout).
+        legacy = (
+            Path.home()
+            / "Flowpad workspace"
+            / ".flow"
+            / "system_assets"
+            / "agents"
+            / name
+        )
+        if legacy.is_dir():
+            return AgentRecord.load_from_dir(legacy)
         return None
 
     @staticmethod

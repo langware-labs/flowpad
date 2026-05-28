@@ -70,7 +70,7 @@ class Conversation(Entity):
     remote_project_name: Optional[str] = APIField(None)
     message_count: int = APIField(0)
     message_ids: Optional[str] = APIField(None)  # JSON-encoded [{"typeid": ..., "ts": ...}]
-    participants: list[dict] = APIField(default_factory=list)  # [{user_id, email, name}]
+    participants: list[dict] = APIField(default_factory=list)  # [{user_id, email, name, role}]
     # When False, hub suppresses delivery_status fan-out to the original
     # sender (delivered/received UPDATE frames are filtered by hub-side
     # Conversation._fanout_status_update). Co-recipients still see them.

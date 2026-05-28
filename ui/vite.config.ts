@@ -56,6 +56,7 @@ export default defineConfig(({ mode }) => {
     server: {
       host: 'localhost',
       port: parseInt(env.VITE_PORT || '4097'),
+      strictPort: true,
       fs: {
         allow: [
           path.resolve(__dirname, './'),
