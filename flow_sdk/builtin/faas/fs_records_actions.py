@@ -46,7 +46,19 @@ class FsRecordsActionsMixin:
           - {user=True,  projects=[ids]}       → USER_HOME + per-project roots
           - {user=False, projects=[]}          → None (degenerate; default_roots())
 
-        Returns ``ApiFailResponse`` on per-project resolution error.
+        Per-project resolution policy:
+          - 404 ApiFailResponse when the Project entity does not exist
+            (caller-supplied id is unknown).
+          - silently skip with ``logging.debug`` when the entity exists but
+            its ``fs_storage_mount_path`` is missing or no longer a directory
+            (stale entity from a moved/deleted project — surfaces zero results
+            for that project instead of 4xx-ing the whole request).
+
+        If every requested project gets skipped AND ``sf.user`` is False (so
+        the only requested roots are now empty), returns an empty tuple — the
+        indexer walks NOTHING. This preserves the narrowing intent: a caller
+        who explicitly asked for a project list shouldn't silently widen to
+        ``default_roots()`` just because the projects are all stale.
         """
         from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
         from flow_sdk.fs_store.indexer.roots import default_roots  # noqa: PLC0415
@@ -76,16 +88,23 @@ class FsRecordsActionsMixin:
                     )
                 mount = getattr(proj, "fs_storage_mount_path", None)
                 if not mount:
-                    return ApiFailResponse(
-                        message=f"Project '{pid}' has no fs_storage_mount_path",
-                        status_code=400,
+                    # Stale entity with no mount — skip silently (matches the
+                    # legacy ``project_folder_walker_fn`` skip-on-missing
+                    # behaviour). Erroring out 400s every scan whenever a
+                    # single stale project entity has a missing mount.
+                    logging.debug(
+                        "fs-records/_resolve_scoped_roots: skipping project %s — no fs_storage_mount_path",
+                        pid,
                     )
+                    continue
                 mount_path = _Path(str(mount))
                 if not mount_path.is_dir():
-                    return ApiFailResponse(
-                        message=f"Project mount path '{mount}' is not a directory",
-                        status_code=400,
+                    logging.debug(
+                        "fs-records/_resolve_scoped_roots: skipping project %s — mount %r is not a directory",
+                        pid,
+                        mount,
                     )
+                    continue
                 roots.append(
                     FSRef(
                         mount_path,
@@ -96,6 +115,15 @@ class FsRecordsActionsMixin:
                 )
 
         if not roots:
+            # Distinguish two empty-result cases. When the caller passed a
+            # narrowing filter that we managed to consume (sf had user or
+            # projects set) but every entry got skipped, we MUST return an
+            # empty tuple — returning None would let the indexer fall back to
+            # ``default_roots()`` and walk a wider tree than the caller asked
+            # for. The degenerate {user=False, projects=()} input does fall
+            # back to None (matches the documented mapping).
+            if sf.user or sf.projects:
+                return tuple()
             return None
         return tuple(roots)
 
@@ -255,12 +283,27 @@ class FsRecordsActionsMixin:
         limit_per_type = int(limit_per_type_raw) if limit_per_type_raw.isdigit() else None
 
         # Unified ScopeFilter from wire format `?user=true&projects=A,B`.
-        # Absent params → None → indexer uses default_roots() (full scan).
+        # Absent params → explicit "everything known" filter built from
+        # get_all_projects(), so the walk fans out via _resolve_scoped_roots
+        # instead of the silent USER_HOME_FOLDER → real_project_cwd_fn
+        # expander discovery.
+        from flow_sdk.fs_records.all_projects import get_all_scope_filter  # noqa: PLC0415
         from flow_sdk.server.search_filters import ScopeFilter  # noqa: PLC0415
+        scope_explicit = qp.get("user") is not None or qp.get("projects") is not None
+        # ``create_missing=True`` matches the legacy behaviour of the silent
+        # ``real_project_cwd_fn`` expander (which also called
+        # ``get_all_projects(create_missing=True)`` on every walk). It also
+        # avoids 404s in ``_resolve_scoped_roots`` for cwds whose Project
+        # entity hasn't been materialised yet: with ``create_missing=False``
+        # ``get_all_projects`` still returns a synthetic UUID5 project_id via
+        # ``Project.derive_id_for_path`` but the entity row doesn't exist, so
+        # ``Project.get_one`` would 404 the whole scan. The materialisation
+        # side-effect is pre-existing; this change only makes it explicit at
+        # the route boundary instead of implicit during the walk.
         scope_filter = (
             ScopeFilter.from_query_params(qp)
-            if (qp.get("user") is not None or qp.get("projects") is not None)
-            else None
+            if scope_explicit
+            else await get_all_scope_filter()
         )
         scoped_roots = await self._resolve_scoped_roots(scope_filter)
         if isinstance(scoped_roots, ApiFailResponse):
@@ -357,7 +400,13 @@ class FsRecordsActionsMixin:
             _load_entity_state_map,
         )
 
-        do_diff = scope_filter is None
+        # Diff classification needs ``seen_ids`` to cover every relevant root,
+        # so it only runs on a full-coverage scan. Pre-fix, that was signalled
+        # by ``scope_filter is None`` (the "no scope = walk default_roots()"
+        # branch). After the route now resolves the no-scope case to an
+        # explicit ``get_all_scope_filter()``, the predicate is "the caller
+        # did not pass an explicit scope param" (``not scope_explicit``).
+        do_diff = not scope_explicit
         if do_diff:
             _driver = _get_db_driver()
             _indexable_names = {str(t) for t in INDEXABLE_TYPES}
@@ -665,9 +714,10 @@ class FsRecordsActionsMixin:
         POST /fs-records/index                       → index all registered types
         POST /fs-records/index?type=X                → index one type
         POST /fs-records/index?rebuild=true          → clear + re-index
-        POST /fs-records/index?project_id=<id>       → scope to a single project's
-                                                       fs_storage_mount_path subtree
-                                                       (one REAL_PROJECT_CWD root).
+        POST /fs-records/index?user=&projects=A,B    → narrow to a ScopeFilter
+                                                       (canonical wire format —
+                                                       matches search, scan,
+                                                       index-status, clear).
 
         Backed by ``FSIndexer.index()``. Emits ``progress_report`` FlowData
         events per type via the shared indexer's ``on_progress`` callback.
@@ -695,19 +745,28 @@ class FsRecordsActionsMixin:
         limit_types = int(limit_types_raw) if limit_types_raw.isdigit() else None
         limit_per_type_raw = qp.get("limit_per_type", "").strip()
         limit_per_type = int(limit_per_type_raw) if limit_per_type_raw.isdigit() else None
-        # Unified ScopeFilter from wire format `?user=true&projects=A,B`.
-        # Legacy single-project param `?project_id=…` is kept as a back-compat
-        # shim — promoted into ScopeFilter.projects when the new params are absent.
+        # Unified ScopeFilter from canonical wire format `?user=…&projects=A,B`.
         from flow_sdk.server.search_filters import ScopeFilter  # noqa: PLC0415
+        # Surface stale callers still using the legacy `?project_id=<id>` shim
+        # — it now silently triggers a full-tree walk (scope_filter=None).
+        # Logging the hit lets us debug runaway scans without re-introducing
+        # the shim and undoing the canonical-wire-format standardisation.
         legacy_project_id = qp.get("project_id", "").strip() or None
-        if qp.get("user") is not None or qp.get("projects") is not None:
-            scope_filter = ScopeFilter.from_query_params(qp)
-        elif legacy_project_id:
-            scope_filter = ScopeFilter(user=False, projects=(legacy_project_id,))
-        else:
-            scope_filter = None
-        # Some downstream sites still want the singular project_id (effective_project_id).
-        project_id = legacy_project_id or (
+        if legacy_project_id and qp.get("user") is None and qp.get("projects") is None:
+            logging.warning(
+                "fs-records/index received legacy ?project_id=%s — ignored. "
+                "Callers must use canonical ?user=&projects= ScopeFilter format.",
+                legacy_project_id,
+            )
+        from flow_sdk.fs_records.all_projects import get_all_scope_filter  # noqa: PLC0415
+        scope_filter = (
+            ScopeFilter.from_query_params(qp)
+            if (qp.get("user") is not None or qp.get("projects") is not None)
+            else await get_all_scope_filter()
+        )
+        # Single-project narrowing — derived from the ScopeFilter, used below
+        # to short-circuit non-project indexer work paths.
+        project_id = (
             scope_filter.projects[0]
             if (scope_filter and len(scope_filter.projects) == 1)
             else None
@@ -728,9 +787,21 @@ class FsRecordsActionsMixin:
 
         # Resolve ScopeFilter → narrowed roots. When the filter is None,
         # fall back to the indexer's default_roots() (full walk).
-        custom_roots = await self._resolve_scoped_roots(scope_filter)
-        if isinstance(custom_roots, ApiFailResponse):
-            return custom_roots
+        #
+        # Orphan-aware runs (orphan_action != INDEX) intentionally walk the
+        # full root set even when a scope is selected: orphan-ness is defined
+        # globally (a record is orphan iff its source is missing anywhere),
+        # so ``seen_ids`` must cover all references. The scope filter is then
+        # re-applied inside the indexer to narrow which orphans get reported
+        # and acted on. Without this, a record physically inside project A
+        # but referenced from project B would be falsely flagged as orphan
+        # when the user picks scope=A.
+        if orphan_action != OrphanAction.INDEX:
+            custom_roots = None
+        else:
+            custom_roots = await self._resolve_scoped_roots(scope_filter)
+            if isinstance(custom_roots, ApiFailResponse):
+                return custom_roots
 
         # Type filter + validation
         types_filter: list[RecordType] | None = None
@@ -784,6 +855,7 @@ class FsRecordsActionsMixin:
                 force=force,
                 project_id=effective_project_id,
                 orphan_action=orphan_action,
+                scope_filter=scope_filter,
             ))
         finally:
             self._complete_activity("index")
@@ -912,8 +984,16 @@ class FsRecordsActionsMixin:
         # until the indexer materialises it. This is the recovery path
         # for ``useEntityByPath``: file exists on disk, isn't yet in
         # the index → re-index this single type, then look again.
+        #
+        # default_roots() no longer auto-expands USER_HOME → REAL_PROJECT_CWD
+        # (the silent ``real_project_cwd_fn`` fanout was removed). We
+        # therefore have to enumerate project roots explicitly via the new
+        # scope filter so project-rooted record types (TASK, SPEC, project-
+        # root SKILL/AGENT/WORKFLOW/CLAUDE_MD/CLAUDE_RULES) are reachable
+        # from this recovery path.
         if found is None:
             try:
+                from flow_sdk.fs_records.all_projects import get_all_scope_filter  # noqa: PLC0415
                 from flow_sdk.fs_store.indexer import (  # noqa: PLC0415
                     IndexerOptions,
                     get_shared_indexer,
@@ -921,7 +1001,13 @@ class FsRecordsActionsMixin:
                 from flow_sdk.fs_store.record_types import RecordType as _RT  # noqa: PLC0415
                 rt = _RT(record_type)
                 indexer = get_shared_indexer()
-                await indexer.index(IndexerOptions(types=[rt]))
+                discover_sf = await get_all_scope_filter()
+                discover_roots = await self._resolve_scoped_roots(discover_sf)
+                if isinstance(discover_roots, ApiFailResponse):
+                    discover_roots = None  # fall back to default_roots()
+                await indexer.index(
+                    IndexerOptions(types=[rt], roots=discover_roots),
+                )
             except Exception as e:
                 return ApiFailResponse(
                     message=f"Re-index failed for {record_type}: {e}",

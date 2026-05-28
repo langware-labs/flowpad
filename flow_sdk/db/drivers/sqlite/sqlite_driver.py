@@ -41,13 +41,13 @@ class TransactionHandler:
 from dataclasses import dataclass
 
 from .connection import (
-    DEVELOPMENT,
     Base,
     EntitySchema,
     RelationshipSchema,
     get_database_path,
     get_database_url,
     install_pragmas_and_immediate,
+    is_development,
 )
 
 
@@ -277,14 +277,23 @@ class SQLiteDBDriver(DBDriver):
     )
 
     def __init__(self, cfg: Optional[DBConfig] = None):
-        if not cfg:
-            cfg = DBConfig()
-            cfg.database = get_database_path()
-        super().__init__(cfg)
+        # Do NOT snapshot the per-instance db path here — defer to ``open()``
+        # so a ``reinit_db`` / ``override_db_path`` swap is picked up by a
+        # freshly-constructed driver. Callers that pass an explicit
+        # ``DBConfig(database=...)`` (e.g. the session-scoped test driver)
+        # keep their override because ``open()`` only resolves when
+        # ``config.database`` is falsy.
+        super().__init__(cfg or DBConfig())
         self.engine: Optional[AsyncEngine] = None
         self.session_factory: Optional[async_sessionmaker] = None
-        self.development: bool = DEVELOPMENT
         self.initialized_types: Set[str] = set()
+        # Track whether ``config.database`` was provided by the caller vs.
+        # lazy-resolved from settings on first ``open()``. ``close()`` drops
+        # the lazy-resolved value so a subsequent ``open()`` re-reads the
+        # current ``get_database_path()`` instead of pinning the stale path.
+        # Callers passing explicit ``DBConfig(database=...)`` keep their
+        # override across close/reopen cycles.
+        self._database_was_lazy: bool = not bool(self.config.database)
 
     # ==================== Connection Management ====================
 
@@ -295,6 +304,10 @@ class SQLiteDBDriver(DBDriver):
         from sqlalchemy.ext.asyncio import create_async_engine
         from sqlalchemy.pool import NullPool
 
+        # Lazy per-instance resolution — see ``__init__`` for rationale.
+        if not self.config.database:
+            self.config.database = get_database_path()
+            self._database_was_lazy = True
         db_path = self.config.database or ":memory:"
         url = get_database_url(db_path)
         # NullPool: every operation opens a fresh aiosqlite connection
@@ -381,6 +394,12 @@ class SQLiteDBDriver(DBDriver):
             # Dispose the engine — closes all pooled connections + worker threads.
             await self.engine.dispose()
             self.engine = None
+        # Drop the lazily-resolved path so the next ``open()`` re-reads
+        # ``get_database_path()`` — picks up any ``override_db_path`` swap
+        # that landed after the previous open. Callers who passed an
+        # explicit ``DBConfig(database=...)`` keep their override.
+        if self._database_was_lazy:
+            self.config.database = None
 
     # ==================== FTS5 Full-Text Search ====================
 
@@ -870,16 +889,6 @@ class SQLiteDBDriver(DBDriver):
         """Rollback a transaction."""
         await handler.rollback()
         await handler.close()
-
-    def set_db_name(self, db_name: str):
-        """Set database name (path for SQLite)."""
-        if self.development:
-            import tempfile
-
-            # Convert Neo4j-style db name to SQLite file path
-            db_file = f"flowpad_{db_name}.db"
-            self.config.database = os.path.join(tempfile.gettempdir(), db_file)
-            logger.info(f"SQLite database path set to: {self.config.database}")
 
     def validate_schema(self, schemas: List[Dict[str, Any]]) -> None:
         """Validate that entity schemas match database schema.

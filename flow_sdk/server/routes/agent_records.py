@@ -189,7 +189,10 @@ async def index_record(req: IndexRecordRequest):
     if not p.exists():
         return _error(404, "NOT_FOUND", f"Path does not exist: {p}")
 
+    from flow_sdk.fs_records.all_projects import get_all_scope_filter  # noqa: PLC0415
+    from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
     from flow_sdk.fs_store.indexer import IndexerOptions, get_shared_indexer  # noqa: PLC0415
+    from flow_sdk.fs_store.indexer.roots import default_roots  # noqa: PLC0415
     from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
 
     record_types: list[RecordType] | None = None
@@ -201,9 +204,41 @@ async def index_record(req: IndexRecordRequest):
             except ValueError:
                 return _error(400, "INVALID_ARG", f"Unknown record type: {t}")
 
+    # default_roots() no longer auto-expands USER_HOME → REAL_PROJECT_CWD —
+    # we removed the silent ``real_project_cwd_fn`` fanout. To preserve the
+    # docstring's "walk the user's known roots" semantic for this endpoint
+    # (an agent doesn't know which project cwd it's running inside), we
+    # explicitly enumerate every known project via get_all_scope_filter and
+    # union them with default_roots so user/system/cwd records still index.
+    sf = await get_all_scope_filter(create_missing=True)
+    project_roots: tuple[FSRef, ...] = tuple()
+    if sf.projects:
+        from flow_sdk.builtin.project import Project  # noqa: PLC0415
+        from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
+        from pathlib import Path as _Path  # noqa: PLC0415
+        per_project: list[FSRef] = []
+        for pid in sf.projects:
+            proj = await Project.get_one(QueryFilter.parse({"id": pid}))
+            if proj is None:
+                continue
+            mount = getattr(proj, "fs_storage_mount_path", None)
+            if not mount:
+                continue
+            mount_path = _Path(str(mount))
+            if not mount_path.is_dir():
+                continue
+            per_project.append(FSRef(
+                mount_path,
+                record_type=RecordType.REAL_PROJECT_CWD,
+                scope="project",
+                project_id=pid,
+            ))
+        project_roots = tuple(per_project)
+    all_roots = tuple(default_roots()) + project_roots
+
     try:
         result = await get_shared_indexer().index(
-            IndexerOptions(verbose=False, types=record_types),
+            IndexerOptions(verbose=False, types=record_types, roots=all_roots),
         )
     except Exception as e:  # noqa: BLE001
         logger.exception("agent record/index failed for path=%s", p)

@@ -33,9 +33,17 @@ ENV_SQLITE_DATABASE_PATH = "SQLITE_DATABASE_PATH"
 ENV_FS_RECORD_PATH = "FS_RECORD_PATH"
 ENV_FLOWPAD_CLAUDE_HOME = "FLOWPAD_CLAUDE_HOME"
 ENV_CODEX_HOME = "CODEX_HOME"
+ENV_FLOWPAD_HUB_URL = "FLOWPAD_HUB_URL"
+ENV_MINIHUB_HOST = "MINIHUB_HOST"
+ENV_MINIHUB_RELOAD = "MINIHUB_RELOAD"
+ENV_VITE_PORT = "VITE_PORT"
+ENV_FLOWPAD_CLOUD_API_KEY = "FLOWPAD_CLOUD_API_KEY"
+ENV_FLOWPAD_CLOUD_API_URL = "FLOWPAD_CLOUD_API_URL"
+ENV_FLOWPAD_DOCKER_PUBLIC_URL = "FLOWPAD_DOCKER_PUBLIC_URL"
 
 DEFAULT_PROD_PORT = 9007
 DEFAULT_DB_DRIVER = "sqlite"
+DEFAULT_MINIHUB_HOST = "0.0.0.0"
 
 # Phase B additions — instance identity + sod accessor.
 INSTANCE_NAME_RE = re.compile(r"^[a-z0-9_-]{1,32}$")
@@ -128,6 +136,17 @@ class BaseInstanceSettings:
 
     # ---- Cloud login: max wait for browser-mode callback. Override via CLOUD_LOGIN_TIMEOUT_SECONDS. ----
     cloud_login_timeout_seconds: float = 300.0
+
+    # ---- Hub & cloud endpoints (env-driven; None when unset). ----
+    hub_url: str | None = None
+    cloud_api_key: str | None = None
+    cloud_api_url: str | None = None
+    docker_public_url: str | None = None
+
+    # ---- Dev-server binding / reload — read once from MINIHUB_*/VITE_* env. ----
+    host: str = DEFAULT_MINIHUB_HOST
+    reload_enabled: bool = False
+    vite_port: int | None = None
 
     # ---- Sniffer: single source of truth for whether the desktop bootstrap
     # auto-installs the Claude-Code hooks into ~/.claude/settings.json.
@@ -229,6 +248,13 @@ class BaseInstanceSettings:
             cloud_user_email=os.environ.get("FLOWPAD_CLOUD_USER_EMAIL") or None,
             cloud_user_pass=os.environ.get("FLOWPAD_CLOUD_USER_PASSWORD") or None,
             cloud_login_timeout_seconds=cls._resolve_login_timeout(),
+            hub_url=os.environ.get(ENV_FLOWPAD_HUB_URL) or None,
+            cloud_api_key=os.environ.get(ENV_FLOWPAD_CLOUD_API_KEY) or None,
+            cloud_api_url=os.environ.get(ENV_FLOWPAD_CLOUD_API_URL) or None,
+            docker_public_url=(os.environ.get(ENV_FLOWPAD_DOCKER_PUBLIC_URL) or "").strip() or None,
+            host=cls._resolve_host(),
+            reload_enabled=os.environ.get(ENV_MINIHUB_RELOAD, "").lower() == "true",
+            vite_port=cls._resolve_vite_port(),
         )
 
     # -----------------------------------------------------------------
@@ -304,6 +330,25 @@ class BaseInstanceSettings:
         if env and env.isdigit():
             return int(env)
         return default_port
+
+    @staticmethod
+    def _resolve_vite_port() -> int | None:
+        env = os.environ.get(ENV_VITE_PORT)
+        if env and env.isdigit():
+            return int(env)
+        return None
+
+    @staticmethod
+    def _resolve_host() -> str:
+        """Return MINIHUB_HOST exactly as the user set it, or the default.
+
+        Uses an explicit ``is None`` check so an intentional
+        ``MINIHUB_HOST=""`` (e.g. to defer to uvicorn's default binding
+        behavior) is preserved rather than silently coerced to
+        ``DEFAULT_MINIHUB_HOST`` by a truthy-or check.
+        """
+        env = os.environ.get(ENV_MINIHUB_HOST)
+        return env if env is not None else DEFAULT_MINIHUB_HOST
 
     # -----------------------------------------------------------------
     # Cross-instance shared paths (computed; not per-instance prefixed)

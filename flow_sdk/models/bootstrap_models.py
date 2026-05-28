@@ -24,7 +24,7 @@ class AppPaths(BaseModel):
     system_agents: str  # System agents folder ("Users/shlom/Flowpad workspace/.flow/system_assets/agents")
     user_agents: str = ""  # Personal agents folder ("Users/shlom/.claude/agents")
     logs: str  # Logs folder ("Users/shlom/Flowpad workspace/.flow/logs")
-    settings: str  # Settings file ("Users/shlom/Flowpad workspace/.flow/settings.json")
+    preferences: str  # Per-instance UI preferences file ("Users/shlom/.flow/instances/<name>/preferences.json")
 
 
 class EnvInfo(BaseModel):

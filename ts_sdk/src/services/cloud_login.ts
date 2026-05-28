@@ -74,6 +74,23 @@ export interface CloudStatusData extends DesktopInfoSeed {
   user?: Record<string, unknown> | null;
 }
 
+/**
+ * Last hub HTTP error captured from a `hub_client_error_msg` WS broadcast.
+ *
+ * Lives on its own slot (not on the connection-status slot) — a 4xx/5xx from
+ * a hub HTTP call is a request-level failure, not a WebSocket connectivity
+ * problem. Surfaced through the warnings system so the user can see + copy
+ * the full detail; auto-cleared on explicit dismiss.
+ */
+export interface HubClientErrorInfo {
+  method: string;
+  path: string;
+  statusCode: number;
+  message: string;
+  /** ms since epoch when the error was observed on the UI side. */
+  ts: number;
+}
+
 export interface CloudWsControlResult {
   hub_ws_connected: boolean;
   hub_ws_verified: boolean;
@@ -100,6 +117,7 @@ class CloudManager extends EventEmitter {
   private _currentUser: User | null = null;
   private _cloudUrl = '';
   private _connection: ConnectionSlot<HubConnectionStatus> = makeConnectionSlot<HubConnectionStatus>('disconnected');
+  private _lastHubError: HubClientErrorInfo | null = null;
   private _pending: { resolve: (r: CloudLoginResult) => void; reject: (e: Error) => void; off: () => void } | null = null;
   private _initialized = false;
 
@@ -492,14 +510,27 @@ class CloudManager extends EventEmitter {
   private _onHubClientError(msg: Record<string, unknown>) {
     const method = String(msg.method ?? '');
     const path = String(msg.path ?? '');
-    const status = String(msg.status_code ?? '');
+    const statusCode = Number(msg.status_code ?? 0);
     const message = String(msg.message ?? 'Hub client error');
-    // Record the hub error on the connection slot only — login is unrelated.
-    const text = `${method} ${path} ${status}: ${message}`.trim();
-    this._connection = { ...this._connection, error: text };
+    // Record on its own slot — request-level HTTP errors do NOT belong on
+    // the connection slot (that's for WS connectivity state). Putting them
+    // there clobbered the real WS error message and made unrelated 404s
+    // surface in Settings as "connection error".
+    this._lastHubError = { method, path, statusCode, message, ts: Date.now() };
     this.emit('hub_client_error', msg);
-    this.emit('connection_status_changed', this._connection);
-    this.emit('cloud_status_changed', this.cloudStatus);
+    this.emit('last_hub_error_changed', this._lastHubError);
+  }
+
+  /** Most recent hub HTTP error, or null if none / dismissed. */
+  get lastHubError(): HubClientErrorInfo | null {
+    return this._lastHubError;
+  }
+
+  /** Dismiss the last hub HTTP error — clears the warning. */
+  clearLastHubError(): void {
+    if (this._lastHubError === null) return;
+    this._lastHubError = null;
+    this.emit('last_hub_error_changed', null);
   }
 
   private _errorMessage(err: any, fallback: string): string {

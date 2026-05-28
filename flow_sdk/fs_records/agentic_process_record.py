@@ -44,6 +44,14 @@ class AgenticProcessRecord(Record):
     is_active: bool = PropertyRecord(ttl=30, discovery=_check_session_active)
     queue: dict = PropertyRecord(ttl=5, discovery=_read_queue)
 
+    # `project_encoded_name` is a legacy denormalized field that disagreed
+    # with `project_id` whenever the binding moved (see 4c5bd6e4 incident).
+    # AgenticProcess uses `project_id` as the single source of truth; the
+    # encoded directory name is derived from the bound Project on demand.
+    # Stripped on both construction (__init__) and on-disk hydrate
+    # (from_dict) so stale values fall off the record the next time it saves.
+    _LEGACY_KEYS: ClassVar[frozenset[str]] = frozenset({"project_encoded_name"})
+
     def __init__(self, **kwargs: Any):
         kwargs.setdefault("type", RecordType.AGENTIC_PROCESS)
         kwargs.setdefault("status", ProcessStatus.NEW)
@@ -53,7 +61,18 @@ class AgenticProcessRecord(Record):
         kwargs.setdefault("pty_pid", None)
         kwargs.setdefault("shell_id", None)
         kwargs.setdefault("project_id", None)
+        for key in self._LEGACY_KEYS:
+            kwargs.pop(key, None)
         super().__init__(**kwargs)
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "AgenticProcessRecord":
+        # ``Record.from_dict`` bypasses ``__init__`` (uses ``cls.__new__`` +
+        # direct ``__dict__`` writes), so strip legacy keys here too — the
+        # on-disk hydrate path is the one that needs the cleanup.
+        if any(k in data for k in cls._LEGACY_KEYS):
+            data = {k: v for k, v in data.items() if k not in cls._LEGACY_KEYS}
+        return super().from_dict(data)  # type: ignore[return-value]
 
     # ── Execution-folder layout ──────────────────────────────────────────────
     # Per-process artifacts live under `<record_dir>/execution/{input,output,assets}/`.

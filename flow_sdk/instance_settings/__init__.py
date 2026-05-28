@@ -90,6 +90,62 @@ def reset_instance_settings() -> None:
 _reset_for_tests = reset_instance_settings
 
 
+def override_db_path(new_path: "Path | str") -> None:
+    """Hot-swap the cached InstanceSettings' ``db_path`` to ``new_path``.
+
+    Used by ``reinit_db`` for the UI's "DB Settings" → switch-database flow.
+    Mutates the cached frozen dataclass via ``dataclasses.replace`` and
+    re-caches under the same ``(name, flow_home)`` key, so subsequent
+    ``get_instance_settings().db_path`` reads see the new path.
+
+    **No env writes** — env is an input, never a channel. Writing
+    ``SQLITE_DATABASE_PATH`` to ``os.environ`` was the live-incident
+    poison channel (config.py validator) and the same pattern at the
+    ``reinit_db`` call site permanently poisoned the process env for the
+    rest of its lifetime.
+
+    **Drops the cached SQLite driver** so the next ``get_db_driver()``
+    rebuilds against the new path. Without this, the previously-cached
+    driver keeps serving its snapshotted path and the override is a no-op
+    for DB access. The driver-clear is scoped to the sqlite key only;
+    other driver kinds (neo4j, networkx) are not affected and the broader
+    instance-cache reset is left alone — ``reset_instance_settings`` is
+    still the only path that wipes the singleton cache.
+    """
+    from dataclasses import replace as _replace  # noqa: PLC0415
+
+    name = _resolve_instance_name_from_env()
+    flow_home = _resolve_flow_home_from_env()
+    key = (name, flow_home)
+    current = _INSTANCES.get(key) or get_instance_settings()
+    _INSTANCES[key] = _replace(current, db_path=Path(new_path))
+    # Lazy import — db_driver imports back into instance_settings via
+    # the SQLite connection helpers. Swallow ImportError so override is
+    # usable from very-early code paths that haven't pulled in db yet.
+    try:
+        from flow_sdk.db.drivers.db_driver import _driver_instances  # noqa: PLC0415
+        _driver_instances.pop("sqlite", None)
+    except ImportError:
+        pass
+
+
+def override_records_root(new_path: "Path | str") -> None:
+    """Hot-swap the cached InstanceSettings' ``records_root`` to ``new_path``.
+
+    Test-helper companion to ``override_db_path``: same contract, same
+    no-env-write discipline. Used by ``flow_sdk.fs_store.record.
+    set_default_records_root`` (called by 40+ test fixtures) so the
+    helper redirects the singleton without poisoning ``FS_RECORD_PATH``.
+    """
+    from dataclasses import replace as _replace  # noqa: PLC0415
+
+    name = _resolve_instance_name_from_env()
+    flow_home = _resolve_flow_home_from_env()
+    key = (name, flow_home)
+    current = _INSTANCES.get(key) or get_instance_settings()
+    _INSTANCES[key] = _replace(current, records_root=Path(new_path))
+
+
 def _resolve_instance_name_from_env() -> str:
     """Pick the active instance name.
 
@@ -150,4 +206,6 @@ __all__ = [
     "SecretsNotEnabledError",
     "get_instance_settings",
     "reset_instance_settings",
+    "override_db_path",
+    "override_records_root",
 ]

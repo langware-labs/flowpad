@@ -115,4 +115,9 @@ try:
 except ImportError as e:
     print(f"[WARN] Failed to import MarkdownIndex: {e}")
 
+try:
+    from flow_sdk.builtin.git_repo import GitRepo  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import GitRepo: {e}")
+
 __all__ = []

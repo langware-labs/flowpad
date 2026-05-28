@@ -3,6 +3,8 @@ from __future__ import annotations
 import sqlite3
 from pathlib import Path
 
+from flow_sdk.db.drivers.sqlite.connection import open_sqlite
+
 
 def dep_graph_db_path() -> Path:
     from flow_sdk.instance_settings import get_instance_settings
@@ -35,9 +37,7 @@ CREATE INDEX IF NOT EXISTS idx_dep_edges_from ON dep_edges(from_type, from_id);
 def open_dep_graph_db(path: Path | None = None) -> sqlite3.Connection:
     path = path or dep_graph_db_path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(str(path))
-    conn.row_factory = sqlite3.Row
-    return conn
+    return open_sqlite(path)
 
 
 def init_schema(conn: sqlite3.Connection) -> None:

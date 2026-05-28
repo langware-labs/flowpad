@@ -174,15 +174,14 @@ def _write_cache(cache_path: Path, machine_id: str, provenance: str) -> None:
 # ----------------------------------------------------------------------
 
 def _resolve_flow_home() -> Path:
-    """Pull from InstanceSettings so we honor FLOW_HOME redirection."""
-    try:
-        from flow_sdk.instance_settings import get_instance_settings
-        return get_instance_settings().flow_home
-    except Exception:
-        # Bootstrap-safe fallback — used if instance_settings isn't
-        # importable yet (e.g. very early test fixtures).
-        env = os.environ.get("FLOW_HOME")
-        return Path(env) if env else Path.home() / ".flow"
+    """Pull from InstanceSettings — the single source of truth for FLOW_HOME.
+
+    ``instance_settings`` is a leaf module with no flow_sdk imports of its
+    own, so it is always importable by the time this helper is called.
+    Reproducing the FLOW_HOME read here was a latent SoT violation.
+    """
+    from flow_sdk.instance_settings import get_instance_settings
+    return get_instance_settings().flow_home
 
 
 def _flow_version() -> str:

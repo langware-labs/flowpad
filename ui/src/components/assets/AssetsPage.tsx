@@ -29,6 +29,8 @@ import { defaultScopeFilter } from '@src/lib/scope-filter';
 import type { ScopeFilter } from '@src/lib/scope-filter';
 import { projectIdForPath } from './utils';
 import { ScopeFilterBar } from '@src/components/scope-filter/ScopeFilterBar';
+import { ProjectScopeBadge } from './ProjectScopeBadge';
+import { ViewType } from '@src/types/ViewType';
 import { AssetListView } from './AssetListView';
 import { MarkdownIndexPanel } from './MarkdownIndexPanel';
 import { BrowseableTree } from '@src/components/browseable-tree';
@@ -272,14 +274,36 @@ export function AssetsPage() {
   // selection round-trips with what the indexer stamps on records and what
   // the picker emits — independent of how dataContext bootstraps the Project.
   const currentProjectId = projectIdForPath(dataContext.project?.fs_storage_mount_path);
+  // When hosted under `/dock/project/<id>`, the project is locked from the URL.
+  // The first segment of the pointer is the projectId; the rest is the same
+  // sub-pointer shape AssetsPage already uses under `/dock/assets/<sub>`.
+  const isProjectView = currentDock?.viewType === ViewType.PROJECT;
+  const { projectId: urlProjectId, assetSubPointer } = isProjectView
+    ? DockPointer.splitProjectPointer(currentDock?.pointer)
+    : { projectId: null, assetSubPointer: currentDock?.pointer ?? '' };
+  // Memoized so downstream `useMemo`/`useCallback` deps stay stable across
+  // renders — without this, every render rebuilt `wikiRoots`, `listFilter`,
+  // and `handleMoveMarkdownItem` because the spread produced a fresh object.
+  const lockedScope = useMemo(
+    () => (urlProjectId ? defaultScopeFilter(urlProjectId) : null),
+    [urlProjectId],
+  );
+  const effectivePointer = isProjectView ? assetSubPointer : (currentDock?.pointer ?? '');
   // Initial scope seeded from the current project so the Project chip's count
   // is accurate from the first render. Seeding lives in `defaultScopeFilter`
   // (lib/scope-filter.ts) so every surface gets the same context-aware default
   // instead of each consumer reinventing it.
   const [assetFilter, setAssetFilter] = useState<AssetFilter>(() => ({
     ...DEFAULT_ASSET_FILTER,
-    scope: defaultScopeFilter(currentProjectId),
+    scope: lockedScope ?? defaultScopeFilter(currentProjectId),
   }));
+  // When locked, force the scope from the URL every render. Without this,
+  // useState would hold the seed from the first mount and the asset list
+  // would not refilter if the user navigates to a different project URL.
+  const effectiveFilter = useMemo<AssetFilter>(
+    () => (lockedScope ? { ...assetFilter, scope: lockedScope } : assetFilter),
+    [lockedScope, assetFilter],
+  );
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFilters, setSearchFilters] = useState<SearchFilters>({});
   const [selectedResultIndex, setSelectedResultIndex] = useState(-1);
@@ -360,8 +384,27 @@ export function AssetsPage() {
   }, [sidebarWidth]);
 
   const handleScopeChange = useCallback((scope: ScopeFilter) => {
+    if (lockedScope) return;
     setAssetFilter(prev => ({ ...prev, scope }));
-  }, []);
+  }, [lockedScope]);
+
+  // Asset-shaped pointers (`forAssetEditor`, `forAssetFolder`, `forAssetList`)
+  // open at `/dock/assets/<sub>`. Under `/dock/project/<id>` we must rebase
+  // them onto the project URL or every tree click, breadcrumb, or row click
+  // would jump out of the project shell.
+  const navigateAsset = useCallback((p: DockPointer) => {
+    navigation.openDock(DockPointer.rebaseAssetsOntoProject(p, urlProjectId));
+  }, [navigation, urlProjectId]);
+
+  // BrowseableTree's adapters key selection off `ViewType.ASSETS` pointers,
+  // so in project view we synthesize one from the sub-pointer. Memoized so
+  // the tree's `expandParentsForPointer` effect doesn't re-run every render.
+  const treeActivePointer = useMemo<DockPointer | null>(() => {
+    if (isProjectView) {
+      return new DockPointer(ViewType.ASSETS, effectivePointer || undefined);
+    }
+    return currentDock ?? null;
+  }, [isProjectView, effectivePointer, currentDock]);
 
   const {
     mode,
@@ -369,7 +412,7 @@ export function AssetsPage() {
     folderTypeid,
     folderRelPath,
     wikiName,
-  } = parseAssetPointer(currentDock?.pointer);
+  } = parseAssetPointer(effectivePointer);
   const isEditorMode = mode === 'editor';
   const isFolderMode = mode === 'folder';
   const isWikiMode = mode === 'wiki';
@@ -461,7 +504,7 @@ export function AssetsPage() {
       refreshNode(markdownFolderNodeId(item.typeid, sourceParentAbs));
       refreshNode(markdownFolderNodeId(item.typeid, target.absPath));
 
-      const activeEditor = parseAssetEditorPointer(currentDock?.pointer);
+      const activeEditor = parseAssetEditorPointer(effectivePointer);
       const sourceAbs = item.absPath.replace(/\/+$/, '');
       const activeEditorInMovedFolder = !!(
         activeEditor &&
@@ -470,19 +513,19 @@ export function AssetsPage() {
         activeEditor.absPath.startsWith(`${sourceAbs}/`)
       );
       if (activeEditor?.typeName === item.typeName && activeEditor.absPath === sourceAbs) {
-        navigation.openDock(DockPointer.forAssetEditor(item.typeName, destAbs));
+        navigateAsset(DockPointer.forAssetEditor(item.typeName, destAbs));
       } else if (activeEditorInMovedFolder && activeEditor) {
         const suffix = activeEditor.absPath.slice(sourceAbs.length).replace(/^\/+/, '');
         const nextAbs = suffix ? `${destAbs}/${suffix}` : destAbs;
-        navigation.openDock(DockPointer.forAssetEditor(item.typeName, nextAbs));
-      } else if (item.kind === 'markdown-folder' && currentDock?.pointer) {
-        const folder = DockPointer.parseAssetFolderPointer(currentDock.pointer);
+        navigateAsset(DockPointer.forAssetEditor(item.typeName, nextAbs));
+      } else if (item.kind === 'markdown-folder' && effectivePointer) {
+        const folder = DockPointer.parseAssetFolderPointer(effectivePointer);
         if (folder && folder.typeName === item.typeName && folder.typeid === item.typeid) {
           const currentRel = normalizeTreePath(folder.relPath);
           if (currentRel === sourceRel || currentRel.startsWith(`${sourceRel}/`)) {
             const suffix = currentRel.slice(sourceRel.length).replace(/^\/+/, '');
             const nextRel = suffix ? `${destRel}/${suffix}` : destRel;
-            navigation.openDock(DockPointer.forAssetFolder(item.typeName, item.typeid, nextRel));
+            navigateAsset(DockPointer.forAssetFolder(item.typeName, item.typeid, nextRel));
           }
         }
       }
@@ -490,7 +533,7 @@ export function AssetsPage() {
       setRefreshKey((k) => k + 1);
 
       try {
-        await indexType('markdown', assetFilter.scope, { force: true });
+        await indexType('markdown', effectiveFilter.scope, { force: true });
       } catch (err) {
         console.error('[AssetsPage] Markdown reindex after move failed:', err);
         toast({ title: 'Moved, but reindex failed', variant: 'destructive' });
@@ -502,7 +545,7 @@ export function AssetsPage() {
       console.error('[AssetsPage] Failed to move markdown item:', err);
       toast({ title: 'Failed to move item', variant: 'destructive' });
     }
-  }, [assetFilter.scope, currentDock?.pointer, indexType, navigation, toast]);
+  }, [effectiveFilter.scope, effectivePointer, indexType, navigateAsset, toast]);
 
   const wikiRoots = useMemo(
     () =>
@@ -514,14 +557,14 @@ export function AssetsPage() {
             onCreateFolder: handleCreateFolder,
             onMoveItem: handleMoveMarkdownItem,
             onScanComplete: handleScanComplete,
-            filter: assetFilter,
+            filter: effectiveFilter,
           });
         }
         return assetTypeRoot(t, {
           indexType,
           onNew: handleNew,
           creatableTypes,
-          filter: assetFilter,
+          filter: effectiveFilter,
           onScanComplete: handleScanComplete,
         });
       }),
@@ -532,7 +575,7 @@ export function AssetsPage() {
       handleCreateFolder,
       handleMoveMarkdownItem,
       creatableTypes,
-      assetFilter,
+      effectiveFilter,
       handleScanComplete,
     ],
   );
@@ -554,10 +597,10 @@ export function AssetsPage() {
 
   const listFilter = useMemo<AssetFilter>(() => {
     if (isFolderMode && folderAbsPath) {
-      return { ...assetFilter, parentPath: folderAbsPath };
+      return { ...effectiveFilter, parentPath: folderAbsPath };
     }
-    return assetFilter;
-  }, [assetFilter, isFolderMode, folderAbsPath]);
+    return effectiveFilter;
+  }, [effectiveFilter, isFolderMode, folderAbsPath]);
 
   const handleNewConfirm = useCallback(async (name: string) => {
     if (!name.trim() || !newTypeTarget) return;
@@ -571,7 +614,7 @@ export function AssetsPage() {
       const res = await descriptor.create({ project: dataContext.project ?? null, name });
       toast({ title: res.toastTitle });
       if (res.pointer) {
-        navigation.openDock(res.pointer);
+        navigateAsset(res.pointer);
         setNewTypeTarget(null);
         return;
       }
@@ -581,7 +624,7 @@ export function AssetsPage() {
       toast({ title: 'Failed to create', variant: 'destructive' });
     }
     setNewTypeTarget(null);
-  }, [newTypeTarget, navigation, toast]);
+  }, [newTypeTarget, navigateAsset, toast]);
 
   const handleRowClick = useCallback((result: SearchResult) => {
     // Projects open in their collaboration space (the "project room"), not
@@ -599,10 +642,11 @@ export function AssetsPage() {
       });
       return;
     }
-    navigation.openDock(DockPointer.forAssetEditor(result.record_type, path));
-  }, [navigation, toast]);
+    navigateAsset(DockPointer.forAssetEditor(result.record_type, path));
+  }, [navigateAsset, navigation, toast]);
 
   const handleProjectFilter = useCallback(async (label: string) => {
+    if (lockedScope) return;
     try {
       const data = await apiClient.get('/search?record_type=project&limit=200') as { results?: { record_id: string; name: string }[] } | null;
       const projects = data?.results ?? [];
@@ -616,7 +660,7 @@ export function AssetsPage() {
     } catch {
       // ignore
     }
-  }, []);
+  }, [lockedScope]);
 
   return (
     <div className="flex h-full flex-col">
@@ -677,11 +721,15 @@ export function AssetsPage() {
             </TooltipTrigger>
             <TooltipContent>Refresh search data</TooltipContent>
           </Tooltip>
-          <ScopeFilterBar
-            scope={assetFilter.scope}
-            currentProjectId={currentProjectId}
-            onScopeChange={handleScopeChange}
-          />
+          {lockedScope && urlProjectId ? (
+            <ProjectScopeBadge projectId={urlProjectId} />
+          ) : (
+            <ScopeFilterBar
+              scope={effectiveFilter.scope}
+              currentProjectId={currentProjectId}
+              onScopeChange={handleScopeChange}
+            />
+          )}
         </div>
       </div>
 
@@ -697,9 +745,9 @@ export function AssetsPage() {
           <div className="h-full overflow-y-auto" style={{ width: sidebarWidth }}>
             <BrowseableTree
               roots={wikiRoots}
-              activePointer={currentDock ?? null}
+              activePointer={treeActivePointer}
               isLoading={typesLoading && wikiRoots.length === 0}
-              onNavigate={(p) => navigation.openDock(p)}
+              onNavigate={navigateAsset}
             />
           </div>
         </div>
@@ -722,15 +770,15 @@ export function AssetsPage() {
         <div className="min-w-0 flex-1">
           {isWikiMode && wikiName ? (
             <WikiResolveView name={wikiName} />
-          ) : isEditorMode && currentDock?.pointer ? (
-            <AssetEditorRouter pointer={currentDock.pointer} />
+          ) : isEditorMode && effectivePointer ? (
+            <AssetEditorRouter pointer={effectivePointer} />
           ) : isFolderMode ? (
             <div className="flex h-full">
               <div className="flex min-w-0 flex-1 flex-col">
                 <FolderBreadcrumb
                   crumbs={folderCrumbs}
-                  onNavigate={(p) => navigation.openDock(p)}
-                  onClear={() => navigation.openDock(DockPointer.forAssetList('markdown'))}
+                  onNavigate={navigateAsset}
+                  onClear={() => navigateAsset(DockPointer.forAssetList('markdown'))}
                 />
                 <div className="min-h-0 flex-1">
                   <AssetListView
@@ -752,7 +800,7 @@ export function AssetsPage() {
               onNew={creatableTypes.has(selectedType) ? () => handleNew(selectedType) : undefined}
               refreshKey={refreshKey}
               onRowClick={hasEditor(selectedType) ? handleRowClick : undefined}
-              filter={assetFilter}
+              filter={effectiveFilter}
               onFilterChange={setAssetFilter}
               onProjectFilter={handleProjectFilter}
             />
