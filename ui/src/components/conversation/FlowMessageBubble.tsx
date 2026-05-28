@@ -12,7 +12,7 @@ import {
   downloadFlowMessageUrl,
   downloadFlowMessageBody,
 } from '@sdk/entities/flow-message';
-import { Download } from 'lucide-react';
+import { AlertCircle, Download, X } from 'lucide-react';
 import { MessageBubble } from './MessageBubble';
 import { AttachmentChip, AttachmentChipState } from './AttachmentChip';
 import { ContextEntityChip } from './EntityChip';
@@ -23,6 +23,7 @@ import { localBundleUrl } from './flow-message-drafts';
 import { DraftMessageComposer } from './DraftMessageComposer';
 import { participantLabelByUserId } from './participant-display';
 import { useFlowMessageProgress } from './useFlowMessageProgress';
+import { useFlowMessageDownloadError } from './useFlowMessageDownloadError';
 import { cn } from '@src/lib/utils';
 
 /** Attachment TypeId types the conversation send path injects as structural
@@ -96,6 +97,10 @@ export function FlowMessageBubble({
   const [downloading, setDownloading] = useState(false);
   // Live body upload/download bar — null when no transfer is in flight.
   const progress = useFlowMessageProgress(messageId);
+  // Per-message download failure — surfaced inline so the user can tell
+  // *which* bubble produced the error in the warnings popover.
+  const { error: downloadError, dismiss: dismissDownloadError } =
+    useFlowMessageDownloadError(messageId);
 
   if (!fm) {
     // The pointer to this FlowMessage is in the conversation.jsonl, but the
@@ -215,8 +220,32 @@ export function FlowMessageBubble({
   const progressPct =
     progress && progress.bytesTotal > 0 ? Math.round(progress.fraction * 100) : null;
 
-  const footer = hasAttachments ? (
+  const footer = hasAttachments || downloadError ? (
     <div className="mt-2 space-y-1.5">
+      {downloadError && (
+        <div
+          className="flex items-start gap-2 rounded-md border border-orange-500/30 bg-orange-500/10 px-2 py-1.5 text-[11px] text-orange-700 dark:text-orange-300"
+          role="alert"
+        >
+          <AlertCircle className="mt-0.5 h-3 w-3 shrink-0" />
+          <div className="min-w-0 flex-1">
+            <div className="font-medium">Could not download</div>
+            <div className="break-all text-[10px] text-orange-700/80 dark:text-orange-300/80">
+              {downloadError.method} {downloadError.path} {downloadError.statusCode}
+              : {downloadError.message}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={dismissDownloadError}
+            className="shrink-0 rounded p-0.5 text-orange-700/70 hover:bg-orange-500/20 hover:text-orange-700 dark:text-orange-300/70 dark:hover:text-orange-200"
+            title="Dismiss"
+            aria-label="Dismiss download error"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </div>
+      )}
       {progress && (
         <div className="flex items-center gap-2">
           <div className="h-1 flex-1 overflow-hidden rounded-full bg-muted">
