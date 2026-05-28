@@ -22,19 +22,27 @@ Phase C of the InstanceSettings consolidation. The legacy keychain
 from __future__ import annotations
 
 import logging
+import os
 
 from flow_sdk.fs_records.app_secret import AppSecretRecord
 from flow_sdk.instance_settings import (
     SecretsNotEnabledError,
     get_instance_settings,
 )
-from flow_sdk.instance_settings.base_settings import _fetch_or_create_sod_key
+from flow_sdk.instance_settings.base_settings import ENV_SOD_KEY, _fetch_or_create_sod_key
 
 
 def is_secrets_enabled() -> bool:
     """Non-prompting check: has the user approved keychain access for this
     instance? Pure file probe on the consent marker; never touches the
-    keychain or the sod file."""
+    keychain or the sod file.
+
+    When ``SOD_KEY`` is provided in the environment (signed Electron
+    launcher), the env-provision itself counts as enabled — the consent
+    marker is auto-created on first ``.sod`` access. Returning True here
+    is what lets ``bootstrap.py`` proceed to that first access on launch."""
+    if os.environ.get(ENV_SOD_KEY):
+        return True
     return get_instance_settings().consent_marker_path.exists()
 
 

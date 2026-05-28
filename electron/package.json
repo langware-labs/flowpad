@@ -4,7 +4,7 @@
   "author": "Langware Labs",
   "homepage": "https://github.com/langware-labs/flowpad",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.2.22",
   "main": "main.js",
   "scripts": {
     "dev": "concurrently -k \"npm run dev:backend\" \"wait-on http://localhost:9007/api/v1/graph/bootstrap && npm run dev:electron\"",

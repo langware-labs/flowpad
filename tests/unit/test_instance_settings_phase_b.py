@@ -46,7 +46,7 @@ def isolate_env(monkeypatch):
     "default" resolution must set FLOW_INSTANCE=prod explicitly to win over
     the auto-set PYTEST_CURRENT_TEST (FLOW_INSTANCE has highest precedence).
     """
-    for k in ("FLOW_INSTANCE", "FLOWPAD_DEV", "FLOWPAD_TEST", "FLOW_HOME"):
+    for k in ("FLOW_INSTANCE", "FLOWPAD_DEV", "FLOWPAD_TEST", "FLOW_HOME", "SOD_KEY"):
         monkeypatch.delenv(k, raising=False)
     reset_instance_settings()
     yield
@@ -265,6 +265,61 @@ def test_sod_keychain_key_cached_across_calls(monkeypatch, tmp_path):
     for _ in range(5):
         _ = s.sod
     assert call_count == {"get": 1, "set": 1}
+
+
+# ----------------------------------------------------------------------
+# SOD_KEY env bypass — signed Electron launcher hands off the key
+# ----------------------------------------------------------------------
+
+def test_sod_env_key_bypasses_keychain(monkeypatch, tmp_path):
+    """When SOD_KEY env is set, .sod returns a working storage without
+    ever calling keyring, and the consent marker is auto-created."""
+    monkeypatch.setenv("FLOW_HOME", str(tmp_path))
+    monkeypatch.setenv("FLOW_INSTANCE", "prod")
+
+    from cryptography.fernet import Fernet
+    monkeypatch.setenv("SOD_KEY", Fernet.generate_key().decode())
+
+    call_count = {"get": 0, "set": 0}
+
+    def _boom_get(*_a, **_kw):
+        call_count["get"] += 1
+        raise AssertionError("keyring.get_password must not be called when SOD_KEY env is set")
+
+    def _boom_set(*_a, **_kw):
+        call_count["set"] += 1
+        raise AssertionError("keyring.set_password must not be called when SOD_KEY env is set")
+
+    import keyring
+    monkeypatch.setattr(keyring, "get_password", _boom_get)
+    monkeypatch.setattr(keyring, "set_password", _boom_set)
+
+    s = get_instance_settings()
+    assert not s.consent_marker_path.exists()
+
+    sod = s.sod
+    sod.write("k", "v")
+    assert sod.read("k") == "v"
+
+    # Marker auto-created on first .sod access; keychain never touched.
+    assert s.consent_marker_path.exists()
+    assert call_count == {"get": 0, "set": 0}
+
+
+def test_is_secrets_enabled_true_when_env_set(monkeypatch, tmp_path):
+    """SOD_KEY env set => is_secrets_enabled() returns True even with no
+    marker file (lets bootstrap proceed to the first .sod access, where
+    the marker actually gets touched)."""
+    monkeypatch.setenv("FLOW_HOME", str(tmp_path))
+    monkeypatch.setenv("FLOW_INSTANCE", "prod")
+
+    from cryptography.fernet import Fernet
+    monkeypatch.setenv("SOD_KEY", Fernet.generate_key().decode())
+
+    from flow_sdk.cli.auth.secrets import is_secrets_enabled
+    s = get_instance_settings()
+    assert not s.consent_marker_path.exists()
+    assert is_secrets_enabled() is True
 
 
 # ----------------------------------------------------------------------

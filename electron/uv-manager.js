@@ -43,6 +43,12 @@ const PYPI_PACKAGE = 'flowpad';
 
 const API_PREFIX = '/api/v1';
 
+// Keychain entry for the per-instance Fernet key that encrypts the sodot
+// file. Owning the read in the signed Electron app means the OS prompt is
+// attributed to Flowpad rather than the bundled, unsigned Python process.
+// Must match flow_sdk/instance_settings/base_settings.py:SOD_KEY_KEYCHAIN_SERVICE.
+const SOD_KEY_KEYCHAIN_SERVICE = 'Flowpad.ai.sod_key';
+
 // Working directory for the `flow start` backend. The FS indexer treats its
 // CWD as a project root and walks the entire subtree (see
 // flow_sdk/fs_store/indexer/roots.py + project_folder_walker.py). If that root
@@ -562,10 +568,13 @@ class UvManager {
       // Ensure port 9007 is free before starting
       await this.ensurePortFree(9007);
 
-      // Credentials are managed entirely by the backend now: it stores hub
-      // login/secrets in the per-instance encrypted sodot file, keyed by the
-      // `Flowpad.ai.sod_key` keychain entry it reads/writes directly. The
-      // Electron app no longer mirrors a credential into the OS keychain.
+      // Read the per-instance Fernet key from the OS keychain via the signed
+      // Electron app — the prompt is attributed to Flowpad. If present, pass
+      // it through as SOD_KEY so Python short-circuits its own keychain
+      // access. If missing, the React SecretApprovalDialog will fire on first
+      // secret use; Python writes the entry then and the next launch finds it.
+      const sodKey = await this._loadSodKey();
+
       const env = {
         ...process.env,
         PATH: this._enrichedPath(),
@@ -576,6 +585,9 @@ class UvManager {
         FLOWPAD_NO_BROWSER: '1',
         FLOWPAD_DESKTOP: '1',
       };
+      if (sodKey) {
+        env.SOD_KEY = sodKey;
+      }
 
       if (IS_WIN) {
         env.USERPROFILE = env.USERPROFILE || os.homedir();
@@ -904,6 +916,47 @@ class UvManager {
     await this._uv(['tool', 'install', `${PYPI_PACKAGE}@latest`, '--force'], { timeout: 120000 });
     this._flowBin = await this._resolveFlowBin();
     this.log.info('[uv] Upgrade complete');
+  }
+
+  /**
+   * Lazily load the keytar module. Returns null if it's not installed or
+   * fails to load (e.g. native binding mismatch). All keychain operations
+   * are best-effort — failures are logged and treated as "no key", letting
+   * the React SecretApprovalDialog handle first-time approval.
+   */
+  _keytar() {
+    if (this._keytarCached !== undefined) return this._keytarCached;
+    try {
+      this._keytarCached = require('keytar');
+    } catch (err) {
+      this.log.warn(`[uv] keytar not available: ${err.message}`);
+      this._keytarCached = null;
+    }
+    return this._keytarCached;
+  }
+
+  /**
+   * Read the per-instance Fernet key from the OS keychain. Account name
+   * mirrors flow_sdk's instance-name resolution (FLOW_INSTANCE, default
+   * "prod"). Returns null on miss, keytar-unavailable, or any error —
+   * caller treats that as "no key", and the React SecretApprovalDialog
+   * handles first-time approval.
+   */
+  async _loadSodKey() {
+    const keytar = this._keytar();
+    if (!keytar) return null;
+    const account = process.env.FLOW_INSTANCE || 'prod';
+    try {
+      const key = await keytar.getPassword(SOD_KEY_KEYCHAIN_SERVICE, account);
+      if (key) {
+        this.log.info(`[uv] Loaded Flowpad sod_key from keychain (${account})`);
+        return key;
+      }
+    } catch (err) {
+      this.log.warn(`[uv] keychain read failed: ${err.message}`);
+    }
+    this.log.info('[uv] No sod_key in keychain — SecretApprovalDialog will fire on first secret use');
+    return null;
   }
 }
 
