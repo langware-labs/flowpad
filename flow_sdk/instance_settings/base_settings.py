@@ -33,6 +33,11 @@ ENV_SQLITE_DATABASE_PATH = "SQLITE_DATABASE_PATH"
 ENV_FS_RECORD_PATH = "FS_RECORD_PATH"
 ENV_FLOWPAD_CLAUDE_HOME = "FLOWPAD_CLAUDE_HOME"
 ENV_CODEX_HOME = "CODEX_HOME"
+# When set, supplies the per-instance Fernet key directly and short-circuits
+# the OS keychain path entirely. Used by the signed Electron launcher so the
+# keychain prompt is attributed to Flowpad (the signed binary) rather than
+# the bundled, unsigned Python process. Presence also implies prior consent.
+ENV_SOD_KEY = "SOD_KEY"
 
 DEFAULT_PROD_PORT = 9007
 DEFAULT_DB_DRIVER = "sqlite"
@@ -363,33 +368,50 @@ class BaseInstanceSettings:
         not yet been called for this instance. This is the single
         structural guard that prevents accidental keychain prompts from
         upstream code paths.
+
+        When ``SOD_KEY`` is set in the environment (the signed Electron
+        launcher's contract), env-provision counts as prior consent: the
+        marker is auto-created on first access instead of raising.
         """
         if not self.consent_marker_path.exists():
-            raise SecretsNotEnabledError(
-                f"Secrets not enabled for instance {self.instance_name!r}. "
-                f"Call enable_secrets() first."
-            )
+            if os.environ.get(ENV_SOD_KEY):
+                self.instance_dir.mkdir(parents=True, exist_ok=True)
+                self.consent_marker_path.touch(mode=0o600)
+            else:
+                raise SecretsNotEnabledError(
+                    f"Secrets not enabled for instance {self.instance_name!r}. "
+                    f"Call enable_secrets() first."
+                )
         from flow_sdk.sod.file_sod import FileSodStorage
         key = _fetch_or_create_sod_key(self.instance_name)
         return FileSodStorage(key=key, file_path=self.sodot_path)
 
 
 def _fetch_or_create_sod_key(instance_name: str) -> bytes:
-    """Return the Fernet key for ``instance_name`` from the OS keychain.
+    """Return the Fernet key for ``instance_name``.
 
-    Generates a new key on first use and stores it under
-    ``Flowpad.ai.sod_key`` / ``<instance_name>``. This is the ONLY function
-    permitted to trigger a fresh OS keychain prompt — and it should only
-    be called from ``enable_secrets()`` or, after consent, from the
-    ``InstanceSettings.sod`` accessor (which itself gates on the consent
-    marker, so the first call has always been preceded by the
-    enable_secrets-triggered prompt).
+    Resolution order:
 
-    Cached per-process: the keychain is hit at most once per instance per
-    process, even across many ``instance.sod`` accesses.
+    1. Per-process cache (``_SOD_KEY_CACHE``).
+    2. ``SOD_KEY`` env var — set by the signed Electron launcher so the
+       keychain prompt is attributed to Flowpad rather than the bundled
+       Python. When set, the OS keychain is not touched at all.
+    3. OS keychain entry ``Flowpad.ai.sod_key`` / ``<instance_name>``;
+       generated and stored on first use.
+
+    The keychain path is the ONLY one that can trigger a fresh OS prompt,
+    and it should only be reached from ``enable_secrets()`` or, after
+    consent, from the ``InstanceSettings.sod`` accessor (which itself
+    gates on the consent marker).
     """
     if instance_name in _SOD_KEY_CACHE:
         return _SOD_KEY_CACHE[instance_name]
+
+    env_key = os.environ.get(ENV_SOD_KEY)
+    if env_key:
+        key_bytes = env_key.encode()
+        _SOD_KEY_CACHE[instance_name] = key_bytes
+        return key_bytes
 
     import keyring
     from cryptography.fernet import Fernet
