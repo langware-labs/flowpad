@@ -44,6 +44,26 @@ async function fetchFromBackend(): Promise<LocalUser | null> {
   return null;
 }
 
+// The local user is a single global value, so subscribe to cloud auth changes
+// ONCE at module scope (not once per hook instance). Previously every
+// useLocalUser() consumer added its own login_complete/logout_complete
+// listener to the cloudManager singleton — N bubbles meant N identical
+// listeners, tripping MaxListenersExceededWarning. The shared `_listeners` Set
+// already fans state to all hooks; this keeps the emitter at one listener each.
+let _authSubscribed = false;
+
+function ensureAuthSubscription(): void {
+  if (_authSubscribed) return;
+  _authSubscribed = true;
+  const refresh = () => {
+    _loading = null;
+    if (!cloudManager.isLoggedIn) _current = null;
+    void ensureLoaded();
+  };
+  cloudManager.on('login_complete', refresh);
+  cloudManager.on('logout_complete', refresh);
+}
+
 function ensureLoaded(): Promise<LocalUser | null> {
   const cloud = cloudLocalUser();
   if (cloud) {
@@ -68,19 +88,11 @@ export function useLocalUser(): { localUser: LocalUser | null; updateName: (name
   const [localUser, setLocalUser] = useState<LocalUser | null>(_current);
 
   useEffect(() => {
-    const refresh = () => {
-      _loading = null;
-      if (!cloudManager.isLoggedIn) _current = null;
-      void ensureLoaded();
-    };
+    ensureAuthSubscription();
     _listeners.add(setLocalUser);
     void ensureLoaded();
-    cloudManager.on('login_complete', refresh);
-    cloudManager.on('logout_complete', refresh);
     return () => {
       _listeners.delete(setLocalUser);
-      cloudManager.off('login_complete', refresh);
-      cloudManager.off('logout_complete', refresh);
     };
   }, []);
 

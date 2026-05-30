@@ -55,8 +55,8 @@ This backs up and wipes the DB + FTS index so each test starts from a clean boot
   ```
   cd ui && VITE_PORT=4097 npx playwright test --config tests/manual_regression/<category>/playwright.config.ts <scenario>.md.ts
   ```
-- Exit code 0 → write pass result with `"execution_method": "playwright"`, skip to TODO #7
-- Non-zero → record the Playwright output as the error, continue to fast-path or full execution
+- Exit code 0 → the fast version PASSED. Write pass result with `"execution_method": "playwright"`, skip to TODO #7. Trust it — do not also run the full `.md`.
+- Non-zero → the fast version is a STALE CACHE. Do **not** rerun it and do **not** patch it to go green. Record its output as evidence and drop to the full `.md` (TODO #5). After the full `.md` is resolved, update this `.md.ts` from what you learned and re-validate it (see [Updating a stale .md.ts](#updating-a-stale-mdts)).
 
 ### 4. Check for Fast Path
 - Look for `_fast_paths/<category>/<name>.fast.ts`
@@ -64,7 +64,8 @@ This backs up and wipes the DB + FTS index so each test starts from a clean boot
 - Exit code 0 → write pass result with `fast_path_used: true`, skip to TODO #7
 - Non-zero → continue to full execution, set `fast_path_stale: true`
 
-### 5. Execute Each Test Block (MCP browser automation)
+### 5. Execute the Full `.md` (MCP browser automation)
+Run this when there is no `.md.ts`, or when the `.md.ts`/fast-path failed (stale cache). The `.md` is the source of truth.
 - Run each test block sequentially
 - For each step, execute per type (`[browser]` or `[bash]`) using the verb mapping (see [Browser Step Execution](#browser-step-execution) and [Bash Step Execution](#bash-step-execution))
 - Record step status, duration, and error messages
@@ -165,6 +166,12 @@ cd ui && VITE_PORT=4097 npx playwright test \
 ### Result mapping
 - Exit code 0 → all tests in the scenario passed
 - Non-zero → parse Playwright output for failure details. Each `test('...')` block maps to a test in the JSON result.
+
+### Updating a stale `.md.ts`
+Treat the `.md.ts` (and any `.fast.ts`) as a **cache** of the full `.md` run, not as an authority:
+1. **Fast version passes** → trust it, move on.
+2. **Fast version fails** → do not rerun or patch it. Run the full `.md` instead (the source of truth).
+3. **Once the full `.md` is resolved** (passes after any fix, or is confirmed a real reported failure), fold the learnings back into the `.md.ts` — corrected selectors, timing, steps — so it matches reality, then re-run the updated `.md.ts` and confirm it now passes. Only then is the task done. Never edit a `.md.ts` just to make it green without going through the full `.md` first.
 
 ---
 

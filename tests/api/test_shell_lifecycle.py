@@ -6,7 +6,7 @@ Tests CRUD operations via the graph API for Shell entities.
 import pytest
 
 from flow_sdk.builtin.agentic_process import AgenticProcess
-from flow_sdk.fs_records.agentic_process_lifecycle import ProcessStatus
+from flow_sdk.builtin.process_lifecycle import ProcessStatus
 from flow_sdk.responses.response import ApiResponse
 
 

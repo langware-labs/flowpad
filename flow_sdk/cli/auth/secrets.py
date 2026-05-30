@@ -23,50 +23,71 @@ from __future__ import annotations
 
 import logging
 
-from flow_sdk.fs_records.app_secret import AppSecretRecord
+from flow_sdk.fs_store.fs_record import FSRecord
+from flow_sdk.fs_store.record_types import RecordType
+
+
+def _get_app_secret(name: str) -> FSRecord | None:
+    try:
+        return FSRecord.load(RecordType.APP_SECRET, name)
+    except FileNotFoundError:
+        return None
+
+
+def _list_app_secrets() -> list[FSRecord]:
+    """List all app_secret FSRecords by scanning the shadow root."""
+    return FSRecord.discover(str(RecordType.APP_SECRET))
 from flow_sdk.instance_settings import (
     SecretsNotEnabledError,
     get_instance_settings,
 )
-from flow_sdk.instance_settings.base_settings import _fetch_or_create_sod_key
 
 
 def is_secrets_enabled() -> bool:
-    """Non-prompting check: has the user approved keychain access for this
-    instance? Pure file probe on the consent marker; never touches the
-    keychain or the sod file."""
+    """Non-prompting check: is the per-instance secret store set up?
+
+    True when ``SOD_ENC_KEY`` is supplied (env key ⇒ consent, no keychain) OR
+    the consent marker exists. Pure env+file probe; never touches the keychain
+    or decrypts the sod file. The marker is now auto-created on first secret
+    use (see ``InstanceSettings.sod_key``), decoupled from cloud login.
+    """
+    import os  # noqa: PLC0415
+
+    from flow_sdk.instance_settings.base_settings import ENV_SOD_ENC_KEY  # noqa: PLC0415
+
+    if os.environ.get(ENV_SOD_ENC_KEY):
+        return True
     return get_instance_settings().consent_marker_path.exists()
 
 
 def enable_secrets() -> bool:
-    """Trigger the single OS keychain prompt and record consent.
+    """Pre-warm the per-instance secret store at a controlled moment (e.g.
+    behind the keychain-approval dialog) and record the consent sentinel.
 
-    Bypasses the ``InstanceSettings.sod`` accessor (which gates on the
-    consent marker we're about to create).
+    No longer a precondition — ``instance.sod`` is always available and
+    auto-creates the marker on first use. This simply resolves the key now
+    (the single keychain prompt) so later access is silent, and ensures the
+    ``.secrets_enabled`` marker exists. Routed through ``instance.sod_key`` so
+    it shares the one per-process memo (no extra keychain hit).
 
-    **Idempotent and keychain-free when already enabled.** If the consent
-    marker already exists we short-circuit immediately, never touching
-    the keychain. This matters in two cases:
-
-      1. Defensive call sites (e.g. ``cloud_login._finalize_login``) that
-         call this before every save — under the old design they would
-         re-prompt the OS keychain on every login.
-      2. Recovery from an interrupted enable: if the keychain key was
-         already written but the consent marker write was interrupted,
-         a second call re-uses the cached key via ``_SOD_KEY_CACHE`` and
-         only touches the marker.
-
-    Returns True on success, False if the keychain step raised.
+    **Idempotent and keychain-free when already enabled.** Returns True on
+    success, False if the keychain step raised.
     """
     s = get_instance_settings()
     if s.consent_marker_path.exists():
         return True
-    s.instance_dir.mkdir(parents=True, exist_ok=True)
     try:
-        _fetch_or_create_sod_key(s.instance_name)
+        _ = s.sod_key  # resolves env/keychain, memoizes, auto-creates marker on mint
     except Exception:
         return False
-    s.consent_marker_path.touch(mode=0o600)
+    # Ensure the marker for the env-key path too (sod_key only writes it on a
+    # keychain mint, not when SOD_ENC_KEY supplied the key).
+    try:
+        s.instance_dir.mkdir(parents=True, exist_ok=True)
+        if not s.consent_marker_path.exists():
+            s.consent_marker_path.touch(mode=0o600)
+    except OSError:
+        return False
     return True
 
 
@@ -87,37 +108,41 @@ def read_secret(name: str) -> str | None:
 
 
 def write_secret(name: str, value: str, description: str = "") -> None:
-    """Store the value in the per-instance sod and upsert the
-    AppSecretRecord metadata. Requires consent to have been granted —
-    raises :class:`SecretsNotEnabledError` otherwise."""
+    """Store the value in the per-instance sod and upsert the app_secret
+    FSRecord metadata. Requires consent to have been granted — raises
+    :class:`SecretsNotEnabledError` otherwise."""
     get_instance_settings().sod.write(name, value)
-    existing = AppSecretRecord.get(name)
+    existing = _get_app_secret(name)
     if existing is not None:
-        existing.description = description
+        existing.__dict__["description"] = description
         existing.save()
     else:
-        AppSecretRecord(id=name, name=name, description=description).save()
+        FSRecord(type=RecordType.APP_SECRET, id=name, name=name, description=description).save()
 
 
 async def delete_secret(name: str) -> None:
-    """Remove the sod entry and delete the AppSecretRecord."""
+    """Remove the sod entry and delete the app_secret FSRecord shadow."""
     try:
         get_instance_settings().sod.delete(name)
     except SecretsNotEnabledError:
         pass
-    record = AppSecretRecord.get(name)
+    record = _get_app_secret(name)
     if record is not None:
-        await record.delete()
+        import shutil
+        try:
+            shutil.rmtree(record.shadow_dir)
+        except OSError:
+            pass
 
 
 def get_secrets() -> list[dict]:
     """List secret metadata. Never reads sod values."""
     out: list[dict] = []
-    for record in AppSecretRecord.discover():
+    for record in _list_app_secrets():
         out.append({
-            "name": record.name,
-            "description": getattr(record, "description", "") or "",
-            "created_at": getattr(record, "created_date", None),
+            "name": record.__dict__.get("name"),
+            "description": record.__dict__.get("description") or "",
+            "created_at": record.__dict__.get("created_date"),
         })
     return out
 
@@ -151,20 +176,43 @@ def recover_orphaned_sodot() -> dict | None:
     if not sodot_path.exists():
         return None
 
-    # Probe: accessing `.sod` mints a fresh key if the keychain entry is gone,
-    # then `.list()` forces a decrypt of the existing file. A healthy file
-    # decrypts cleanly; an orphaned one raises InvalidToken (or similar).
+    # Probe: `.list()` forces a decrypt of the existing file. Only a GENUINE
+    # decrypt failure (wrong/lost key → InvalidToken) means the file is
+    # unrecoverable and may be reset. A keychain-ACCESS error (locked / denied)
+    # is TRANSIENT — the key is intact, it just can't be read right now —
+    # so it must NEVER trigger the destructive reset (see the 2026-05-30 prod
+    # logout: a momentarily-locked keychain raised KeyringLocked and the old
+    # broad `except` wiped the whole sodot).
+    from cryptography.fernet import InvalidToken  # noqa: PLC0415
+    from keyring.errors import KeyringError  # noqa: PLC0415 — KeyringLocked subclasses this
+
     try:
         settings.sod.list()
         return None  # decrypts fine → healthy, leave it alone
     except SecretsNotEnabledError:
         return None  # consent was revoked between the check and here
-    except Exception as decrypt_error:
+    except KeyringError as e:
+        # Keychain locked / access denied — transient. Do NOT delete anything.
         logging.warning(
-            f"[secrets] sodot at {sodot_path} no longer decrypts "
-            f"({type(decrypt_error).__name__}); the keychain key was lost or "
-            f"changed. Resetting secrets so login/secret entry can start clean."
+            f"[secrets] keychain unavailable while probing sodot at {sodot_path} "
+            f"({type(e).__name__}); NOT resetting — unlock the keychain and retry."
         )
+        return None
+    except InvalidToken:
+        # Genuine: the Fernet key truly changed/was lost, so the existing sodot
+        # can never be decrypted. Reset is the only clean fix.
+        logging.warning(
+            f"[secrets] sodot at {sodot_path} no longer decrypts (InvalidToken); "
+            f"the keychain key was lost or changed. Resetting secrets so "
+            f"login/secret entry can start clean."
+        )
+    except Exception as unexpected:
+        # Unknown failure — do NOT delete on a guess; surface and bail.
+        logging.warning(
+            f"[secrets] unexpected error probing sodot at {sodot_path} "
+            f"({type(unexpected).__name__}); NOT resetting."
+        )
+        return None
 
     # Delete the stale secrets file and its lock sibling.
     lock_path = sodot_path.with_suffix(".lock")
@@ -190,8 +238,9 @@ def recover_orphaned_sodot() -> dict | None:
             "We couldn't unlock your saved secrets — the encryption key in your "
             "system keychain was changed or removed (this can happen after "
             "migrating to a new machine or resetting the keychain). Your stored "
-            "login and API keys have been cleared. Please sign in again and "
-            "re-enter any API keys."
+            "login, API keys, and connected integrations (e.g. GitHub, MCP "
+            "servers) have been cleared. Please sign in again and reconnect any "
+            "integrations."
         ),
     }
 
@@ -205,11 +254,13 @@ async def clear_app_secret_metadata() -> None:
     to call when there are no records. Best-effort: a failure to delete one
     record is logged and skipped rather than aborting recovery.
     """
-    for record in AppSecretRecord.discover():
+    import shutil
+
+    for record in _list_app_secrets():
         try:
-            await record.delete()
+            shutil.rmtree(record.shadow_dir)
         except Exception as e:
             logging.warning(
                 f"[secrets] Failed to delete app-secret record "
-                f"{getattr(record, 'name', '?')!r} during recovery: {e}"
+                f"{record.__dict__.get('name', '?')!r} during recovery: {e}"
             )

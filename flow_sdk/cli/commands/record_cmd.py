@@ -82,46 +82,76 @@ def index_record(
     if not path:
         _fail(EXIT_INVALID_ARG, "INVALID_ARG", "path is required")
 
-    type_list: list[str] | None = None
-    if types:
-        type_list = [t.strip() for t in types.split(",") if t.strip()]
+    # The generic indexer walks the full known-root set regardless of `path`;
+    # we keep `path` as the agent's sanity check (and to preserve the
+    # NOT_FOUND contract the old agent endpoint enforced server-side).
+    if not os.path.exists(os.path.expanduser(path)):
+        _fail(EXIT_NOT_FOUND, "NOT_FOUND", f"Path does not exist: {path}")
+
+    type_list = [t.strip() for t in types.split(",") if t.strip()] if types else []
 
     port = _discover_port()
-    url = f"http://127.0.0.1:{port}/api/v1/agent/record/index"
-    body = {"path": path}
-    if type_list:
-        body["types"] = type_list
+    # Drive the canonical generic indexer directly — there is no agent-specific
+    # index endpoint. The action filters one type per call, so iterate the
+    # requested subset (preserving "only parse named types"); with no --types,
+    # a single unfiltered call indexes everything.
+    url = f"http://127.0.0.1:{port}/api/v1/graph/compute_node/@local/fs-records/index"
+    calls: list[dict] = [{"type": t} for t in type_list] or [{}]
 
-    try:
-        resp = requests.post(url, json=body, timeout=120)
-    except requests.exceptions.RequestException as e:
-        _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Cannot reach Flowpad server at {url}: {e}")
-        return
-    try:
-        out = resp.json()
-    except ValueError:
-        _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Bad response: {resp.text[:200]}")
-        return
+    per_type: dict[str, Any] = {}
+    total_indexed = 0
+    total_errors = 0
+    duration_ms = 0.0
 
-    if resp.status_code == 200 and out.get("ok"):
-        _ok(
-            {
-                "path": out.get("path"),
-                "total_indexed": out.get("total_indexed"),
-                "total_errors": out.get("total_errors"),
-                "duration_ms": out.get("duration_ms"),
-                "per_type": out.get("per_type") or {},
+    for params in calls:
+        try:
+            resp = requests.post(url, params=params, timeout=120)
+        except requests.exceptions.RequestException as e:
+            _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Cannot reach Flowpad server at {url}: {e}")
+            return
+        try:
+            out = resp.json()
+        except ValueError:
+            _fail(EXIT_CONNECTION_ERROR, "CONNECTION_ERROR", f"Bad response: {resp.text[:200]}")
+            return
+
+        if resp.status_code != 200 or out.get("status") != "SUCCESS":
+            # Map the generic graph envelope onto the CLI's stable error codes.
+            msg = str(out.get("message") or out.get("error") or f"HTTP {resp.status_code}")
+            if resp.status_code == 400:
+                _fail(EXIT_INVALID_ARG, "INVALID_ARG", msg)
+            elif resp.status_code == 409:
+                _fail(EXIT_INDEX_FAILED, "INDEX_BUSY", msg)
+            else:
+                _fail(EXIT_INDEX_FAILED, "INDEX_FAILED", msg)
+            return
+
+        data = out.get("data") or {}
+        # Full index → {types: [...], new, errors, duration_ms};
+        # single-type   → flat {type, indexed, errors}.
+        rows = data.get("types")
+        if rows is None and data.get("type"):
+            rows = [data]
+        for row in rows or []:
+            t = str(row.get("type"))
+            per_type[t] = {
+                "indexed": int(row.get("new", row.get("indexed", 0)) or 0),
+                "errors": int(row.get("errors", 0) or 0),
+                "skipped": int(row.get("skipped", 0) or 0),
             }
-        )
-        return
+        total_indexed += int(data.get("new", data.get("indexed", 0)) or 0)
+        total_errors += int(data.get("errors", 0) or 0)
+        duration_ms += float(data.get("duration_ms", 0.0) or 0.0)
 
-    error_code = str(out.get("error_code") or "UNKNOWN")
-    mapping = {
-        "NOT_FOUND": EXIT_NOT_FOUND,
-        "INVALID_ARG": EXIT_INVALID_ARG,
-        "INDEX_FAILED": EXIT_INDEX_FAILED,
-    }
-    _fail(mapping.get(error_code, EXIT_CONNECTION_ERROR), error_code, str(out.get("error") or "unknown"))
+    _ok(
+        {
+            "path": os.path.expanduser(path),
+            "total_indexed": total_indexed,
+            "total_errors": total_errors,
+            "duration_ms": duration_ms,
+            "per_type": per_type,
+        }
+    )
 
 
 # ─────────────────────────────────────────────────────────────────────────────

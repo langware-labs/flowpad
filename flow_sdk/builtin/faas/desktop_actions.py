@@ -9,7 +9,7 @@ import platform
 from starlette.responses import RedirectResponse
 
 from flow_sdk.config import AGENT_MOUNT_FOLDER
-from flow_sdk.core.resource_management.scan.system_profile.types import SystemProfile
+from flow_sdk.builtin.faas.system_profile_types import SystemProfile
 from flow_sdk.flowpad_types.machine_status import ExecutionEnvironmentStatus, MachineStatus
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse

@@ -182,15 +182,12 @@ async def handle_record_action():
     if entity is None:
         raise HTTPException(status_code=404, detail="Entity not found")
 
-    rec_cls = SchemaRegistry.get_record_cls(entity.type)
-    if rec_cls is None:
-        return ApiFailResponse(message=f"No Record class for type {entity.type}")
-
     rec = await entity.get_record()
     if rec is None:
         # Try by uname as well
         if getattr(entity, "uname", None):
-            rec = rec_cls.get(entity.uname)
+            from flow_sdk.fs_store.fs_record import FSRecord
+            rec = FSRecord.load_or_none(entity.type, entity.uname)
     if rec is None:
         return ApiFailResponse(message="Record not found", status_code=404)
 

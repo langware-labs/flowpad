@@ -14,13 +14,23 @@ def get_scheduler():
     global _scheduler
     if _scheduler is None:
         try:
+            from pathlib import Path
             from apscheduler.schedulers.asyncio import AsyncIOScheduler
             from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
             from flow_sdk.db.drivers.sqlite.connection import get_database_path
 
+            # Persist scheduler jobs in their OWN SQLite file, NOT the app DB.
+            # SQLite is single-writer-per-file: when the jobstore shared the app
+            # DB, its per-wakeup update_job writes contended with app writes and
+            # raised "database is locked" under load. A dedicated file removes
+            # the contention at its source (the scheduler is the sole writer)
+            # while keeping job persistence across restarts. Per-instance,
+            # since get_database_path() is per-instance.
+            jobstore_path = str(Path(get_database_path()).with_name("scheduler_jobs.db"))
+
             _scheduler = AsyncIOScheduler(
                 jobstores={
-                    "default": SQLAlchemyJobStore(url=f"sqlite:///{get_database_path()}")
+                    "default": SQLAlchemyJobStore(url=f"sqlite:///{jobstore_path}")
                 },
                 job_defaults={"misfire_grace_time": 60},
             )

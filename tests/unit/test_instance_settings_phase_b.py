@@ -19,7 +19,6 @@ import pytest
 from flow_sdk.instance_settings import (
     BaseInstanceSettings,
     DevInstanceSettings,
-    SecretsNotEnabledError,
     TestInstanceSettings,
     _resolve_flow_home_from_env,
     _resolve_instance_name_from_env,
@@ -193,12 +192,25 @@ def test_consent_marker_path(monkeypatch, tmp_path):
 # sod accessor — consent gate
 # ----------------------------------------------------------------------
 
-def test_sod_raises_without_consent(monkeypatch, tmp_path):
+def test_sod_available_without_consent_and_no_keychain_on_empty_read(monkeypatch, tmp_path):
+    """The store is always available (decoupled from login/consent), and reading
+    a never-written store resolves NO key — so it never touches the keychain."""
     monkeypatch.setenv("FLOW_HOME", str(tmp_path))
     monkeypatch.setenv("FLOW_INSTANCE", "prod")
+    monkeypatch.delenv("SOD_ENC_KEY", raising=False)
+
+    import keyring
+
+    def _explode(*_, **__):
+        raise AssertionError("empty-store read must not touch the keychain")
+
+    monkeypatch.setattr(keyring, "get_password", _explode)
+    monkeypatch.setattr(keyring, "set_password", _explode)
+
     s = get_instance_settings()
-    with pytest.raises(SecretsNotEnabledError):
-        _ = s.sod
+    sod = s.sod  # available, no raise
+    assert sod is not None
+    assert sod.read("never-written") is None  # lazy: no key resolved, no keychain
 
 
 def test_sod_returns_file_sod_storage_with_consent(monkeypatch, tmp_path):
@@ -232,12 +244,14 @@ def test_sod_returns_file_sod_storage_with_consent(monkeypatch, tmp_path):
     assert ("Flowpad.ai.sod_key", "prod") in storage
 
 
-def test_sod_keychain_key_cached_across_calls(monkeypatch, tmp_path):
-    """Two `.sod` accesses should hit the keychain exactly once (cache)."""
+def test_sod_keychain_key_minted_once_then_memoized(monkeypatch, tmp_path):
+    """The key is resolved lazily on the first real write (mint = 1 get + 1 set)
+    and memoized on the instance — subsequent ops never re-touch the keychain.
+    Merely obtaining `.sod` resolves nothing."""
     monkeypatch.setenv("FLOW_HOME", str(tmp_path))
     monkeypatch.setenv("FLOW_INSTANCE", "prod")
+    monkeypatch.delenv("SOD_ENC_KEY", raising=False)
 
-    from cryptography.fernet import Fernet
     storage: dict[tuple[str, str], str] = {}
     call_count = {"get": 0, "set": 0}
 
@@ -254,17 +268,23 @@ def test_sod_keychain_key_cached_across_calls(monkeypatch, tmp_path):
     monkeypatch.setattr(keyring, "set_password", _set)
 
     s = get_instance_settings()
-    s.instance_dir.mkdir(parents=True)
-    s.consent_marker_path.touch()
 
-    # First access: 1 get (cache miss), 1 set (generate key)
-    _ = s.sod
+    # Obtaining the store and reading an empty store resolve no key.
+    sod = s.sod
+    assert sod.read("nope") is None
+    assert call_count == {"get": 0, "set": 0}
+
+    # First real write mints the key once: 1 get (miss) + 1 set (generate).
+    sod.write("k", "v")
     assert call_count == {"get": 1, "set": 1}
 
-    # Subsequent accesses: no further keychain calls
+    # All subsequent reads/writes reuse the memoized key — no more keychain.
     for _ in range(5):
-        _ = s.sod
+        _ = s.sod.read("k")
+        s.sod.write("k2", "v2")
     assert call_count == {"get": 1, "set": 1}
+    # And the marker was auto-created on first use (decoupled from login).
+    assert s.consent_marker_path.exists()
 
 
 # ----------------------------------------------------------------------

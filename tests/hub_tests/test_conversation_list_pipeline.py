@@ -282,13 +282,13 @@ async def test_single_flight_per_conversation(hub_base_url, hub_login_payload):
 
 
 async def test_invitations_through_same_pipeline(hub_base_url, hub_login_payload):
-    """A pending invitation should land as a kind='invitation' placeholder
-    Conversation after a single conversation-list call."""
+    """A pending invitation should materialize a local Conversation (kind=
+    ``invitation`` on its first FlowMessage) after a single conversation-list
+    call. The hub embeds the real Conversation in the invitation response;
+    placeholder-id synthesis was removed in the conv refactor — we look up
+    the conversation by its embedded id instead."""
     api_key = _stash_credentials(hub_login_payload)
-    from flow_sdk.app.actions.flow_message_action import (
-        handle_conversation_list,
-        _invitation_placeholder_conv_id,
-    )
+    from flow_sdk.app.actions.flow_message_action import handle_conversation_list
     from flow_sdk.builtin.conversation import Conversation
     from flow_sdk.builtin.invitation import Invitation
     from flow_sdk.builtin.flow_message import FlowMessage
@@ -322,33 +322,28 @@ async def test_invitations_through_same_pipeline(hub_base_url, hub_login_payload
     someone = await _local_user_typeid()
     await handle_conversation_list(someone)
 
-    # Placeholder conversation_id is derived deterministically from the
-    # invitation id — but we don't know the invitation id yet. Fetch the
-    # locally-materialized Invitation row to read it.
     invs = await Invitation.get_all({})
     pending = [i for i in (invs or []) if not i.accepted and i.recipient_email == recipient_email]
     assert pending, "no pending Invitation row materialized locally"
 
-    placeholder_ids = [_invitation_placeholder_conv_id(i.id) for i in pending if i.id]
-    placeholders = [await Conversation.get_one({"id": pid}) for pid in placeholder_ids]
-    placeholders = [p for p in placeholders if p is not None]
-    assert placeholders, "no placeholder Conversation materialized for pending invitations"
+    # The hub now embeds the real Conversation. Look it up by the conv id
+    # we created above.
+    conv = await Conversation.get_one({"id": conv_id})
+    assert conv is not None, "embedded Conversation not materialized locally"
 
-    # Each placeholder should have an invitation-kind first FlowMessage.
-    for p in placeholders:
+    ptrs = []
+    try:
+        ptrs = [
+            {"typeid": x["typeid"], "ts": x["ts"]}
+            for x in __import__("json").loads(conv.message_ids or "[]")
+        ]
+    except Exception:
         ptrs = []
-        try:
-            ptrs = [
-                {"typeid": x["typeid"], "ts": x["ts"]}
-                for x in __import__("json").loads(p.message_ids or "[]")
-            ]
-        except Exception:
-            ptrs = []
-        assert ptrs, f"placeholder {p.id} has no message pointers"
-        first_id = ptrs[0]["typeid"].split("-", 1)[-1].lstrip("@")
-        first = await FlowMessage.get_one({"id": first_id})
-        assert first is not None and first.kind == "invitation", \
-            f"placeholder first msg kind expected 'invitation', got {first.kind if first else None}"
+    assert ptrs, f"conversation {conv.id} has no message pointers"
+    first_id = ptrs[0]["typeid"].split("-", 1)[-1].lstrip("@")
+    first = await FlowMessage.get_one({"id": first_id})
+    assert first is not None and first.kind == "invitation", \
+        f"first msg kind expected 'invitation', got {first.kind if first else None}"
 
 
 # ---------------------------------------------------------------------------
@@ -384,18 +379,15 @@ async def test_no_dupes_on_repeated_calls(hub_base_url, hub_login_payload):
 
 
 async def test_ws_bridge_still_drives_realtime(hub_base_url, hub_login_payload):
-    """The WS bridge's _handle_conversation_op + _handle_flow_message_op
-    still exist and are wired the same way. We don't run a live ws session
-    here (separate test already covers that — test_two_client_loop); we
-    assert the install() entry-point is callable and the handlers are
-    registered as expected. Catch-up via conversation-list is defensive,
-    not replacement."""
-    from flow_sdk.cloud_client.hub_bridge import (
-        _handle_conversation_op, _handle_flow_message_op, install,
-    )
-    assert callable(_handle_conversation_op)
-    assert callable(_handle_flow_message_op)
-    assert callable(install)
+    """The WS bridge's ``_handle_conversation_op`` + ``_handle_flow_message_op``
+    are still wired on ``HubWsBridge``. We don't run a live ws session here
+    (separate test already covers that — test_two_client_loop); we assert the
+    methods are present and the install() entry-point is callable. Catch-up
+    via conversation-list is defensive, not replacement."""
+    from flow_sdk.cloud_client.hub_bridge import HubWsBridge
+    assert callable(getattr(HubWsBridge, "_handle_conversation_op", None))
+    assert callable(getattr(HubWsBridge, "_handle_flow_message_op", None))
+    assert callable(getattr(HubWsBridge, "install", None))
 
 
 # ---------------------------------------------------------------------------

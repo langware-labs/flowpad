@@ -6,13 +6,14 @@ separate sod entries: ``api_key``, ``refresh_token``, ``expires_at`` (as
 string), ``user`` (as JSON string). The accessor is
 ``get_instance_settings().sod`` — see ``flow_sdk/instance_settings``.
 
-The consent gate on ``instance.sod`` means ``save_credentials`` will raise
-``SecretsNotEnabledError`` if called before ``enable_secrets()``. The
-canonical login flow already calls ``enable_secrets`` before reaching
-save (via the bootstrap explanation page → user approval → re-invoked
-callback path); the no-op defensive call in
-``cloud_login._finalize_login`` keeps the invariant load-bearing for any
-non-canonical caller.
+``instance.sod`` is now always available — the Fernet key resolves lazily
+(``SOD_ENC_KEY`` env, else keychain auto-mint) on first real read/write, and
+the ``.secrets_enabled`` marker is auto-created on first use. So login is just
+one more writer into the shared per-instance ``sodot``; it is no longer a
+precondition for the store, and ``save_credentials`` no longer depends on a
+prior ``enable_secrets()`` call. The defensive ``enable_secrets`` in
+``cloud_login._finalize_login`` is retained only to pre-time the keychain
+prompt at a friendly moment.
 
 Phase C of the InstanceSettings consolidation. The legacy OS keychain
 ``Flowpad.ai.app_secrets/flowpad_api_key[:<instance>]`` entries are no
@@ -102,9 +103,9 @@ class UserHubCredentials(BaseModel):
 def save_credentials(creds: UserHubCredentials) -> None:
     """Persist ``creds`` to the per-instance sodot file.
 
-    Raises :class:`flow_sdk.instance_settings.SecretsNotEnabledError` if
-    secrets have not been enabled (consent marker missing). Callers
-    upstream of login should call ``enable_secrets()`` first.
+    The store is always available; the first write here resolves the Fernet
+    key (env or keychain auto-mint) and auto-creates the consent marker. No
+    prior ``enable_secrets()`` is required.
     """
     sod = _sod()
     sod.write(SOD_API_KEY, creds.api_key)

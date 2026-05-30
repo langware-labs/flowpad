@@ -10,7 +10,7 @@ import uuid
 import pytest
 
 from flow_sdk.builtin.shell import Shell
-from flow_sdk.fs_store.record import (
+from flow_sdk.fs_store.record_paths import (
     get_default_records_data_root,
     get_default_records_root,
     set_default_records_data_root,
@@ -41,9 +41,10 @@ def use_tmp_records_root(tmp_path, monkeypatch):
     orig_data_root = get_default_records_data_root()
     set_default_records_root(tmp_path)
     set_default_records_data_root(tmp_path)
-    import flow_sdk.fs_records.shell_record as _shell_mod
+    import flow_sdk.builtin.shell as _shell_mod
     monkeypatch.setattr(
-        _shell_mod, "get_default_records_data_root", lambda: tmp_path
+        _shell_mod, "get_default_records_data_root", lambda: tmp_path,
+        raising=False,
     )
     yield tmp_path
     set_default_records_root(orig_root)
@@ -110,14 +111,15 @@ async def test_shell_read_empty_when_no_file():
 @pytest.mark.asyncio
 async def test_shell_read_returns_file_bytes(tmp_path):
     """read returns the exact bytes written to the .pty stream file."""
-    from flow_sdk.fs_records.shell_record import ShellRecord
+    from flow_sdk.fs_store.fs_record import FSRecord
+    from flow_sdk.builtin.shell import shell_pty_stream_path
 
     shell = _shell()
     shell.pty_pid = shell.id
 
-    record = ShellRecord(id=shell.id, pty_pid=shell.id)
+    record = FSRecord(type="shell", id=shell.id, pty_pid=shell.id)
     record.save()
-    pty_path = record.pty_stream_path
+    pty_path = shell_pty_stream_path(record.id, shell.id)
     pty_path.parent.mkdir(parents=True, exist_ok=True)
     pty_path.write_bytes(b"hello\r\nworld\r\n")
 

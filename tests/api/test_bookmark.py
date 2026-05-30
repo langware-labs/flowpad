@@ -9,8 +9,6 @@ import uuid
 
 import pytest
 
-# Import record class to trigger auto-registration in the type_registry.
-from flow_sdk.fs_records.bookmark import BookmarkRecord  # noqa: F401
 from flow_sdk.fs_store import get_default_records_root, set_default_records_root
 
 LISTEN_URL = "/api/v1/webhook/listen"

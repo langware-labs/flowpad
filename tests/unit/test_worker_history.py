@@ -6,8 +6,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from flow_sdk.fs_records import worker_history as wh
-from flow_sdk.fs_records.worker_history import WorkerHistoryEntry, WorkerType
+from flow_sdk.builtin import worker_history as wh
+from flow_sdk.builtin.worker_history import WorkerHistoryEntry, WorkerType
 
 
 def _entry(worker_type: WorkerType, worker_id: str, timestamp: str) -> WorkerHistoryEntry:
@@ -170,8 +170,8 @@ def test_collect_claude_skips_scratch_encoded_dirs(monkeypatch, tmp_path):
             raw = _json.loads(path.read_text().splitlines()[0])
             return cls(raw["sessionId"], raw.get("cwd"))
 
-    import flow_sdk.fs_records.claude.claude_session as cs
-    monkeypatch.setattr(cs, "ClaudeSessionRecord", _StubSession)
+    import flow_sdk.fs_store.indexer.functions.claude_sessions as cs
+    monkeypatch.setattr(cs, "extract_claude_session_from_path", _StubSession.from_jsonl)
 
     rows = wh._collect_claude_entries_sync(limit=10, process_index={})
     ids = {r.worker_id for r in rows}

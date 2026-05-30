@@ -82,8 +82,6 @@ class Task(Entity):
     team_space_id: Optional[str] = APIField(None)
     worker_session_id: Optional[str] = APIField(None)
 
-    _api_visible: ClassVar[bool] = True
-
     # NOTE: per-subclass implicit context projections (project_id /
     # assignee / my_process_id / shared_process_id) used to live here as
     # ``_direct_fields_as_typeids``. Implicit projection moved entirely to

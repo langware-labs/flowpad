@@ -35,7 +35,7 @@ async def real_project_cwd_fn(
     nodes: list[FSRef],
     opts: IndexerOptions,
 ) -> list[FSRef]:
-    from flow_sdk.fs_records.all_projects import get_all_projects
+    from flow_sdk.fs_store.operations.all_projects import get_all_projects
     from flow_sdk.fs_store.scope import Scope
 
     projects = await get_all_projects(

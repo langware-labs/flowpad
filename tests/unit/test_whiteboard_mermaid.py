@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.fs_records._whiteboard_mermaid import excalidraw_to_mermaid
+from flow_sdk.fs_store.indexer.functions._whiteboard_mermaid import excalidraw_to_mermaid
 
 
 CORPUS_DIR = Path(__file__).resolve().parent.parent / "fixtures" / "mermaid_corpus"

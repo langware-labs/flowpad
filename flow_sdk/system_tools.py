@@ -271,13 +271,17 @@ def ensure_db() -> bool:
 
 
 def _write_db_corruption_error(db_path: Path) -> None:
-    """Write a RecordError recording the DB corruption incident."""
+    """Write a record_error FSRecord recording the DB corruption incident."""
+    import uuid as _uuid  # noqa: PLC0415
     from datetime import datetime, timezone  # noqa: PLC0415
 
-    from flow_sdk.fs_records.record_error import RecordError  # noqa: PLC0415
+    from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
+    from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
 
     try:
-        rec = RecordError(
+        rec = FSRecord(
+            type=RecordType.RECORD_ERROR,
+            id=str(_uuid.uuid4()),
             trigger="ensure_db",
             error_type="DatabaseCorruption",
             error_message=(
@@ -287,9 +291,9 @@ def _write_db_corruption_error(db_path: Path) -> None:
             occurred_at=datetime.now(timezone.utc).isoformat(),
         )
         rec.save()
-        logger.info("ensure_db: corruption RecordError written")
+        logger.info("ensure_db: corruption record_error written")
     except Exception as e:
-        logger.error(f"ensure_db: failed to write RecordError: {e}")
+        logger.error(f"ensure_db: failed to write record_error: {e}")
 
 
 def validate_db(db_path: Path | None = None) -> bool:
@@ -401,7 +405,7 @@ async def clear_all_data() -> ClearAllResult:
 
 async def archive() -> ArchiveResult:
     """Create a full archive: DB backup + records snapshot in a timestamped folder."""
-    from flow_sdk.fs_store.record import get_default_records_root  # noqa: PLC0415
+    from flow_sdk.fs_store.record_paths import get_default_records_root  # noqa: PLC0415
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     archive_dir = get_backup_folder() / f"archive_{timestamp}"

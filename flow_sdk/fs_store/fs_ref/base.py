@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 def _read_existing_frontmatter(path: Path) -> dict:
     """Read and parse existing YAML frontmatter from a .md file. Returns {} on error."""
     try:
-        from flow_sdk.fs_records._frontmatter import _extract_frontmatter, _yaml_load
+        from flow_sdk.fs_store.indexer._frontmatter import _extract_frontmatter, _yaml_load
 
         text = path.read_text(encoding="utf-8")
         fm = _extract_frontmatter(text)
@@ -39,6 +39,7 @@ class FSRef:
         scope: str | None = None,
         type_id: str = "compute_node-@local",
         project_id: str | None = None,
+        json_path: str | None = None,
     ) -> None:
         self._path = Path(path).resolve()
         self._read_only_flag: bool = read_only
@@ -47,6 +48,16 @@ class FSRef:
         self._scope: str | None = scope
         self._type_id: str = type_id
         self._project_id: str | None = project_id
+        # RFC 6901 JSON Pointer into ``_path`` for file-internal references.
+        # When set, this FSRef points at a *fragment* of the file, not the
+        # whole file (e.g. one hook inside settings.json). Enables recursive
+        # walkers that descend into file content. None for regular file/dir refs.
+        self._json_path: str | None = json_path
+
+    @property
+    def json_path(self) -> str | None:
+        """RFC 6901 JSON Pointer if this ref points at a fragment of a file."""
+        return self._json_path
 
     @property
     def record_type(self) -> "RecordType | None":
@@ -121,7 +132,7 @@ class FSRef:
         """Write markdown file preserving (or injecting) frontmatter fields."""
         if self.read_only:
             raise IOError(f"FSRef at {self.path!r} is read-only")
-        from flow_sdk.fs_records._frontmatter import _render_frontmatter
+        from flow_sdk.fs_store.indexer._frontmatter import _render_frontmatter
 
         if self._path.exists():
             existing_fm = _read_existing_frontmatter(self._path)

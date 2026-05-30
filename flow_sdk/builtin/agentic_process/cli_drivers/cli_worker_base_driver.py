@@ -46,7 +46,7 @@ from flow_sdk.transcript_analyzer import TranscriptDescriptor
 if TYPE_CHECKING:
     from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
     from flow_sdk.builtin.agentic_process.events import AgenticProcessEventName
-    from flow_sdk.fs_records.agent_status import WorkerStatus
+    from flow_sdk.builtin.worker_status import WorkerStatus
     from flow_sdk.responses.response import ApiResponse
 
 

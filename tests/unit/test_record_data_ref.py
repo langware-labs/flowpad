@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from flow_sdk.fs_store.record import get_default_records_data_root, record_stem, set_default_records_data_root
+from flow_sdk.fs_store.record_paths import get_default_records_data_root, record_stem, set_default_records_data_root
 from flow_sdk.fs_store.record_ref import RecordDataRef, RecordRef
 
 

@@ -1,1 +1,0 @@
-"""Collectors package."""

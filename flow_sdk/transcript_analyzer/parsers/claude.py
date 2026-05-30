@@ -63,6 +63,10 @@ _META_TYPES = frozenset({
     "permission-mode",
     "last-prompt",
     "custom-title",
+    # Newer Claude Code session-envelope lines (no chat content).
+    "mode",
+    "agent-name",
+    "bridge-session",
 })
 
 _ATTACHMENT_TYPE_PLAN_MODE_EXIT = "plan_mode_exit"

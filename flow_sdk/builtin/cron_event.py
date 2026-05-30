@@ -80,7 +80,6 @@ class CronEvent(Entity):
     last_run: Optional[datetime] = APIField(None)
     next_run: Optional[datetime] = APIField(None)
 
-    _api_visible: ClassVar[bool] = True
     _unique: ClassVar[list[str]] = []
 
     # ── Read (list / get-by-id) ──────────────────────────────────────────────

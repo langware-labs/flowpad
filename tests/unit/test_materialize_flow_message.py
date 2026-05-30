@@ -21,7 +21,7 @@ from flow_sdk.app.actions.materialize_flow_message import (
 )
 from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.builtin.flow_message import FlowMessage
-from flow_sdk.fs_records.conversation_record import ConversationRecord
+from flow_sdk.fs_store.operations.conversation import default_jsonl_path
 from flow_sdk.fs_store.pointer import Pointer
 from flow_sdk.fs_store.type_id import TypeId
 
@@ -35,11 +35,11 @@ _FM_ID = "cccc1111-2222-3333-4444-555555555553"
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_appends_one_pointer_and_projects_count(monkeypatch, tmp_path):
     monkeypatch.setattr(
-        "flow_sdk.fs_store.record.get_default_records_data_root",
+        "flow_sdk.fs_store.record_paths.get_default_records_data_root",
         lambda: tmp_path,
     )
 
-    canonical = ConversationRecord.default_jsonl_path(_CONV_ID)
+    canonical = default_jsonl_path(_CONV_ID)
     canonical.parent.mkdir(parents=True, exist_ok=True)
     canonical.write_text("")
 
@@ -55,8 +55,8 @@ async def test_appends_one_pointer_and_projects_count(monkeypatch, tmp_path):
         patch.object(FlowMessage, "get_one", new=AsyncMock(return_value=None)),
         patch.object(FlowMessage, "save", new=AsyncMock(return_value=saved_fm)),
         patch.object(Conversation, "get_one", new=AsyncMock(return_value=conv)),
-        patch.object(
-            ConversationRecord, "_project_pointers_to_entity",
+        patch(
+            "flow_sdk.app.actions.materialize_flow_message.project_pointers_to_entity",
             new=AsyncMock(return_value=None),
         ),
         patch("flow_sdk.app.actions.materialize_flow_message.send_resource_sync"),
@@ -79,11 +79,11 @@ async def test_appends_one_pointer_and_projects_count(monkeypatch, tmp_path):
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_idempotent_on_same_fm_id(monkeypatch, tmp_path):
     monkeypatch.setattr(
-        "flow_sdk.fs_store.record.get_default_records_data_root",
+        "flow_sdk.fs_store.record_paths.get_default_records_data_root",
         lambda: tmp_path,
     )
 
-    canonical = ConversationRecord.default_jsonl_path(_CONV_ID)
+    canonical = default_jsonl_path(_CONV_ID)
     canonical.parent.mkdir(parents=True, exist_ok=True)
     canonical.write_text("")
 
@@ -96,8 +96,8 @@ async def test_idempotent_on_same_fm_id(monkeypatch, tmp_path):
         patch.object(FlowMessage, "get_one", new=AsyncMock(return_value=existing_fm)),
         patch.object(FlowMessage, "save", new=AsyncMock(return_value=existing_fm)),
         patch.object(Conversation, "get_one", new=AsyncMock(return_value=conv)),
-        patch.object(
-            ConversationRecord, "_project_pointers_to_entity",
+        patch(
+            "flow_sdk.app.actions.materialize_flow_message.project_pointers_to_entity",
             new=AsyncMock(return_value=None),
         ),
         patch("flow_sdk.app.actions.materialize_flow_message.send_resource_sync"),
@@ -121,11 +121,11 @@ async def test_idempotent_on_same_fm_id(monkeypatch, tmp_path):
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 async def test_notify_dispatches_fm_create_then_conversation_update(monkeypatch, tmp_path):
     monkeypatch.setattr(
-        "flow_sdk.fs_store.record.get_default_records_data_root",
+        "flow_sdk.fs_store.record_paths.get_default_records_data_root",
         lambda: tmp_path,
     )
 
-    canonical = ConversationRecord.default_jsonl_path(_CONV_ID)
+    canonical = default_jsonl_path(_CONV_ID)
     canonical.parent.mkdir(parents=True, exist_ok=True)
     canonical.write_text("")
 
@@ -142,8 +142,8 @@ async def test_notify_dispatches_fm_create_then_conversation_update(monkeypatch,
         patch.object(FlowMessage, "get_one", new=AsyncMock(return_value=None)),
         patch.object(FlowMessage, "save", new=AsyncMock(return_value=saved_fm)),
         patch.object(Conversation, "get_one", new=AsyncMock(return_value=conv)),
-        patch.object(
-            ConversationRecord, "_project_pointers_to_entity",
+        patch(
+            "flow_sdk.app.actions.materialize_flow_message.project_pointers_to_entity",
             new=AsyncMock(return_value=None),
         ),
         patch(

@@ -18,7 +18,6 @@ import { ProcessTerminal } from '@src/components/process-terminal';
 import { SettingsView } from '@src/components/settings-view/SettingsView';
 import { ShowView } from '@src/components/show-view/ShowView';
 import { AppHost } from '@src/components/app-host/AppHost';
-import { GraphView } from '@src/components/graph-view/GraphView';
 import { FilterName, getAllFilterDefinitions } from '@src/components/simple-file-manager';
 import { TasksViewer } from '@src/components/tasks-viewer/TasksViewer';
 import { HomeLanding } from '@src/pages/home-landing';
@@ -55,7 +54,16 @@ import { useSendMessageStore } from '@src/store/use-send-message-store';
 import { useSurveyStore } from '@src/store/use-survey-store';
 import { ViewType } from '@src/types/ViewType';
 import { LogIn } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+
+// Lazy-loaded: GraphView pulls in sigma.js + @sigma/node-image, which run
+// WebGL init (gl.getParameter) at module load. Importing it eagerly crashes
+// the entire app in any WebGL-less context (headless browsers, GPU-disabled
+// CI, software-render fallbacks). Loading it only when the graph tab opens
+// keeps app bootstrap independent of WebGL availability.
+const GraphView = lazy(() =>
+  import('@src/components/graph-view/GraphView').then((m) => ({ default: m.GraphView })),
+);
 import { UserDropdown } from './user-dropdown/user-dropdown';
 
 export function ContentPanel() {
@@ -444,7 +452,9 @@ export function ContentPanel() {
             value={ViewType.GRAPH}
             className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
           >
-            <GraphView />
+            <Suspense fallback={null}>
+              <GraphView />
+            </Suspense>
           </TabsContent>
 
           <TabsContent
