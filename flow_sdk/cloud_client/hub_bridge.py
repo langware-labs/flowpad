@@ -443,6 +443,7 @@ class HubWsBridge:
             local_user = await User.get_local()
             someone_typeid = local_user.typeid if local_user else None
             prev_body_status = getattr(existing, "body_status", None)
+            from flow_sdk.builtin.flow_message import delivery_advances  # noqa: PLC0415
             for field in (
                 "delivery_status",
                 "delivered_at",
@@ -452,8 +453,17 @@ class HubWsBridge:
                 "body_status",
                 "attachment_filename",
             ):
-                if field in data:
-                    setattr(existing, field, data[field])
+                if field not in data:
+                    continue
+                if field == "delivery_status" and not delivery_advances(
+                    getattr(existing, "delivery_status", None), data[field]
+                ):
+                    # Monotonic: never let a lower-ranked (or unknown) status
+                    # downgrade the local row — e.g. a body-status UPDATE that
+                    # carries a stale "created", or an out-of-order frame, must
+                    # not knock "sent"/"delivered" backward.
+                    continue
+                setattr(existing, field, data[field])
             await existing.save(someone_typeid, notify=True)
             # Body just landed on the hub — pull it now so asset chips become
             # clickable without a refresh. ``_maybe_eager_pull_bundle`` is a

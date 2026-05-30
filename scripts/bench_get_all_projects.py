@@ -13,8 +13,8 @@ import time
 from collections import Counter
 from pathlib import Path
 
-from flow_sdk.fs_records._claude_projects import iter_claude_project_paths
-from flow_sdk.fs_records.all_projects import (
+from flow_sdk.fs_store.indexer.functions._claude_projects import iter_claude_project_paths
+from flow_sdk.fs_store.operations.all_projects import (
     ProjectInfo,
     get_all_projects,
     iter_codex_project_paths,
@@ -95,7 +95,7 @@ async def instrumented(*, create_missing: bool = True) -> dict:
     # Phase 4: materialize
     t = time.perf_counter()
     if create_missing and to_create:
-        from flow_sdk.fs_records.all_projects import _materialize
+        from flow_sdk.fs_store.operations.all_projects import _materialize
         await asyncio.gather(*(_materialize(info) for info in to_create))
     times["4_materialize"] = _ms(t)
 

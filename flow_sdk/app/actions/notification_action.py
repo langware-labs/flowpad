@@ -583,7 +583,7 @@ async def handle_refresh_notifications(project_path: str) -> ApiResponse:
     if project_root:
         await git_pull(project_root)
     try:
-        from flow_sdk.fs_records.notification_scanner import scan_incoming_notifications
+        from flow_sdk.app.actions.notification_scanner import scan_incoming_notifications
         local_user = await User.get_one({"uname": "local"})
         if local_user:
             await _asyncio.ensure_future(scan_incoming_notifications(local_user.id))

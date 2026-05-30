@@ -425,8 +425,8 @@ async def test_agentic_process_recovery_no_http(tmp_path):
     """
     from flow_sdk.db.database import init_db
     from flow_sdk.builtin.agentic_process import AgenticProcess
-    from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
-    from flow_sdk.fs_store.record import set_default_records_root, get_default_records_root
+    from flow_sdk.fs_store.indexer.functions.claude_sessions import get_claude_session
+    from flow_sdk.fs_store.record_paths import set_default_records_root, get_default_records_root
     from flow_sdk.server.routes.bootstrap import get_or_create_local_compute_node
 
     await init_db()
@@ -455,7 +455,7 @@ async def test_agentic_process_recovery_no_http(tmp_path):
         deadline = time.monotonic() + 30.0
         session_rec = None
         while time.monotonic() < deadline:
-            session_rec = ClaudeSessionRecord.get(session_id)
+            session_rec = get_claude_session(session_id)
             if session_rec:
                 break
             await asyncio.sleep(0.5)

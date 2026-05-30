@@ -143,6 +143,11 @@ class IndexerFunc(Protocol):
     ) -> list[FSRef]: ...
 
 
+def _has_dispatch(info) -> bool:
+    """True when *info* declares a ``from_disk_fn`` parser slot."""
+    return info.from_disk_fn is not None
+
+
 def _is_async_walker(fn: Any) -> bool:
     """True when ``fn`` is a coroutine function or a class instance whose
     ``__call__`` is. Used by scan() to choose between direct-await and
@@ -237,11 +242,11 @@ def _read_disk_record_scope(
     (safer for DELETE: corrupt metadata can't bleed cross-scope).
     """
     import json  # noqa: PLC0415
-    from flow_sdk.fs_store.record import (  # noqa: PLC0415
-        _META_JSON,
+    from flow_sdk.fs_store.record_paths import (  # noqa: PLC0415
         get_default_records_root,
         record_stem,
     )
+    _META_JSON = "metadata.json"
 
     path = get_default_records_root() / type_name / record_stem(type_name, eid) / _META_JSON
     try:
@@ -433,9 +438,9 @@ class FSIndexer:
             if ref.record_type is None:
                 continue
             info = SchemaRegistry.get(str(ref.record_type))
-            if info is None or info.record_cls is None:
+            if info is None:
                 continue
-            if not hasattr(info.record_cls, "from_fsref"):
+            if not _has_dispatch(info):
                 continue
             per_type_totals[ref.record_type] = per_type_totals.get(ref.record_type, 0) + 1
 
@@ -511,14 +516,39 @@ class FSIndexer:
         # so we pay connection setup ONCE for the whole batch instead of
         # per record. Critical for paths that touch hundreds of records
         # (e.g. ~/.claude/skills/ scan).
-        async with _db_session():
+        #
+        # Within that session we COMMIT IN BOUNDED BATCHES (every
+        # _INDEX_COMMIT_BATCH records). The engine issues BEGIN IMMEDIATE on
+        # every transaction, so a single session spanning the whole scan would
+        # hold the SQLite writer lock for seconds/minutes, starving concurrent
+        # requests (os-status-batch, entity loads) until they time out as
+        # "database is locked". Committing per batch releases the lock so those
+        # requests interleave; the next write re-acquires a fresh transaction.
+        # Safe because: (1) the session factory uses expire_on_commit=False, so
+        # loop-held state survives a commit; (2) indexing is idempotent, so
+        # per-batch durability (vs one all-or-nothing transaction) loses
+        # nothing on a mid-run crash. This is a contention fix, NOT a
+        # busy_timeout/retry change.
+        _INDEX_COMMIT_BATCH = 50
+        _since_commit = 0
+        driver = get_db_driver()
+
+        async def _flush_fts() -> None:
+            """Flush the accumulated FTS batch (if any) and reset it."""
+            if not fts_batch:
+                return
+            if hasattr(driver, "fts_upsert"):
+                await driver.fts_upsert(fts_batch)
+            fts_batch.clear()
+
+        async with _db_session() as _idx_session:
             for ref in targets:
                 if ref.record_type is None:
                     continue
                 info = SchemaRegistry.get(str(ref.record_type))
-                if info is None or info.record_cls is None:
+                if info is None:
                     continue
-                if not hasattr(info.record_cls, "from_fsref"):
+                if not _has_dispatch(info):
                     continue
 
                 current_rt = ref.record_type
@@ -538,7 +568,11 @@ class FSIndexer:
                 # currently derived id back so future scans and lookups are
                 # rename-stable. Falls back to getId for record classes that don't
                 # override genId (base class default keeps genId == getId).
-                ref_id = info.record_cls.genId(ref)
+                if info.gen_id_fn is not None:
+                    ref_id = info.gen_id_fn(ref)
+                else:
+                    import uuid as _uuid
+                    ref_id = str(_uuid.uuid5(_uuid.NAMESPACE_URL, str(ref._path)))
                 if ref_id:
                     seen_ids.setdefault(ref.record_type, set()).add(ref_id)
 
@@ -551,7 +585,11 @@ class FSIndexer:
                 state = valid_map.get(rt_name, {}).get(ref_id)
                 if not opts.force and state is not None:
                     last_ts, db_scope, db_pid = state
-                    asset_ts = info.record_cls.asset_hash_for_ref(ref)
+                    if info.asset_hash_fn is not None:
+                        asset_ts = info.asset_hash_fn(ref)
+                    else:
+                        from flow_sdk.fs_store.fs_record import FSRecord as _FS
+                        asset_ts = _FS.asset_hash_for_ref(ref)
                     fresh = bool(asset_ts) and asset_ts <= last_ts
                     walk_scope = ref.scope or ""
                     walk_pid = ref.project_id or ""
@@ -571,7 +609,12 @@ class FSIndexer:
 
                 t_start = time.perf_counter()
                 try:
-                    records = await info.record_cls.from_fsref(ref)
+                    # Loop is gated by _has_dispatch → from_disk_fn is set.
+                    from_disk = info.from_disk_fn
+                    if asyncio.iscoroutinefunction(from_disk):
+                        records = await from_disk(ref)
+                    else:
+                        records = await asyncio.to_thread(from_disk, ref)
                     # Walk-time scope/project_id from the FSRef parent-chain.
                     # Loop-invariant — read once, stamp on each record.
                     ref_scope = ref.scope
@@ -597,11 +640,18 @@ class FSIndexer:
 
                 await emit()
 
-            # Batch FTS commit — still inside the shared session.
-            if fts_batch:
-                driver = get_db_driver()
-                if hasattr(driver, "fts_upsert"):
-                    await driver.fts_upsert(fts_batch)
+                # Bounded-batch commit: flush this batch's FTS then commit the
+                # session, releasing the writer lock so concurrent requests
+                # aren't starved (see batch rationale above the loop).
+                _since_commit += 1
+                if _since_commit >= _INDEX_COMMIT_BATCH:
+                    await _flush_fts()
+                    await _idx_session.commit()
+                    _since_commit = 0
+
+            # Flush the trailing partial batch (records since the last
+            # bounded-batch commit), still inside the shared session.
+            await _flush_fts()
 
             # ----- Orphan handling -----
             # DEFINITION: a record is orphan iff its source (Layer 1, e.g.
@@ -778,7 +828,7 @@ class FSIndexer:
         # Union of "types with DB rows" and "types with a records dir on disk"
         # so we never miss a records-dir orphan just because no DB row exists.
         # Then intersect with INDEXABLE_TYPES — see comment above.
-        from flow_sdk.fs_store.record import get_default_records_root  # noqa: PLC0415
+        from flow_sdk.fs_store.record_paths import get_default_records_root  # noqa: PLC0415
 
         result: set[str] = set(valid_map.keys())
         records_root = get_default_records_root()
@@ -797,7 +847,7 @@ class FSIndexer:
         IDs come from parsing the directory stem (``<type>-@<id>``). Folders
         that don't match the stem pattern are skipped — they aren't records.
         """
-        from flow_sdk.fs_store.record import (  # noqa: PLC0415
+        from flow_sdk.fs_store.record_paths import (  # noqa: PLC0415
             get_default_records_root,
             parse_record_stem,
         )
@@ -906,7 +956,7 @@ class FSIndexer:
 
         # Lazy imports keep this module a leaf in import topology.
         from flow_sdk.db import get_db_driver  # noqa: PLC0415
-        from flow_sdk.fs_store.record import (  # noqa: PLC0415
+        from flow_sdk.fs_store.record_paths import (  # noqa: PLC0415
             get_default_records_root,
             record_stem,
         )
@@ -982,7 +1032,7 @@ class FSIndexer:
         roots_for_walk = list(opts.roots) if opts.roots is not None else self._roots
         stack: list[FSRef] = list(reversed(roots_for_walk))
         visited: list[FSRef] = []
-        seen: set[tuple[str, RecordType | None]] = set()
+        seen: set[tuple[str, RecordType | None, str | None]] = set()
         per_type_counts: dict[RecordType, int] = {}
         current_rt: RecordType | None = None
         last_emit_at = 0.0
@@ -1056,7 +1106,11 @@ class FSIndexer:
             hit_limit = False
             while stack and processed < max_nodes:
                 node = stack.pop()
-                key = (node.path, node.record_type)
+                # Include json_path so multiple fragment records sharing one
+                # source file (CLAUDE_HOOK / MCP_SERVER / PLUGIN — each a distinct
+                # RFC-6901 pointer) are NOT collapsed. None for whole-file records,
+                # so non-fragment dedup behaviour is unchanged.
+                key = (node.path, node.record_type, node.json_path)
                 if key in seen:
                     continue
                 seen.add(key)

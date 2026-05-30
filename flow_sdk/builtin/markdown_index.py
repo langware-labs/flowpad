@@ -32,5 +32,3 @@ class MarkdownIndex(Markdown):
     subfolder_count: int = APIField(default=0)
     latest_process_ref: str = APIField(default="")
 
-    _api_visible: ClassVar[bool] = True
-    _icon: ClassVar[str] = "ListTree"

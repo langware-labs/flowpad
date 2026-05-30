@@ -24,7 +24,7 @@ def _markdown_vaults() -> list[dict]:
     every scan root is reachable via the local compute node's VFS.
     """
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
-    from flow_sdk.fs_records.markdown_record import _doc_search_dirs  # noqa: PLC0415
+    from flow_sdk.fs_store.operations.markdown_dirs import doc_search_dirs as _doc_search_dirs  # noqa: PLC0415
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
 
     home = get_instance_settings().user_home.resolve()

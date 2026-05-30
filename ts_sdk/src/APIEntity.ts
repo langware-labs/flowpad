@@ -1229,10 +1229,16 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    * @param eventType - Event type to emit
    * @param data - Optional data to pass to listeners
    */
-  emit(eventType: string, data?: any): void {
+  emit(eventType: string, ...args: any[]): void {
     const listeners = this._eventListeners.get(eventType);
     if (listeners) {
-      listeners.forEach((callback) => callback(data));
+      // Forward ALL args, not just the first. Several call sites emit multiple
+      // values — e.g. onEntityEvent → emit('entity_event', event, payload) and
+      // emit('status', newStatus, oldStatus). The previous single-`data` form
+      // silently dropped every argument after the first, so consumers
+      // subscribing via `on('entity_event', (event, payload) => ...)` received
+      // an undefined payload. Single-arg emits are unaffected (callback(arg)).
+      listeners.forEach((callback) => callback(...args));
     }
   }
 

@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 import pytest
 
 from flow_sdk.builtin.shell import Shell
-from flow_sdk.fs_store.record import (
+from flow_sdk.fs_store.record_paths import (
     get_default_records_data_root,
     get_default_records_root,
     set_default_records_data_root,

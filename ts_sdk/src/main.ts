@@ -46,8 +46,9 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
       // and listens to oauth WS events for the lifetime of the app.
       void cloudManager.bootstrap(bootstrapInfo.desktop_info);
 
-      // Load schemas (pass empty array if null to prevent re-fetching)
-      await dataManager.loadSchemas(bootstrapInfo.schemas || []);
+      // Load the type registry (TypeInfo + schema) into the SchemaRegistry
+      // (pass empty array if null to prevent re-fetching)
+      await dataManager.loadTypes(bootstrapInfo.types || []);
 
       // Set domain in context if present
       if (bootstrapInfo.domain) {

@@ -132,8 +132,8 @@ async def test_fire_schedule_job_spawns_with_expected_fields(monkeypatch):
     # Production calls ``proc.start_pty(...)`` (was ``proc.start`` pre-refactor).
     monkeypatch.setattr(AgenticProcess, "start_pty", fake_start_pty)
 
-    from flow_sdk.fs_records import trigger_log as tl_mod
-    monkeypatch.setattr(tl_mod.TriggerLogRecord, "append_entry", staticmethod(fake_append_entry))
+    from flow_sdk.fs_store.operations import trigger_log as tl_mod
+    monkeypatch.setattr(tl_mod, "append_entry", fake_append_entry)
 
     await _fire_schedule_job(trig_id)
 

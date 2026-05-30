@@ -207,13 +207,42 @@ class TypeInfo:
     indexed_by_default: bool = False
     browseable: bool = False
     creatable: bool = False
+    api_visible: bool = False
     icon: str | None = None
     parent_type: str | None = None
     locations: list[str] = field(default_factory=list)
 
     # --- Runtime refs (NOT in hash, NOT persisted) ---
-    record_cls: type | None = field(default=None, compare=False, repr=False)
     entity_cls: type | None = field(default=None, compare=False, repr=False)
+    # Optional post-sync hook: async Callable[[FSRecord], None] — runs after
+    # FSRecord.sync_to_db completes its entity/FTS/wiki writes. Used by
+    # types that reconcile cross-record relationships (e.g. markdown folder-doc
+    # parent/child edges) that the base sync doesn't know about.
+    post_sync_fn: Any = field(default=None, compare=False, repr=False)
+    # Per-type indexer dispatch callables, registered next to their definitions
+    # in ``fs_store/indexer/functions/<type>.py``. The indexer reads these
+    # instead of duck-typing classmethods on the entity:
+    #   from_disk_fn:  Callable[[FSRef], list[FSRecord]] — parse (cold path)
+    #   gen_id_fn:     Callable[[FSRef], str]           — mint/read id (hot path)
+    #   asset_hash_fn: Callable[[FSRef], float]         — cheap freshness stat
+    from_disk_fn: Any = field(default=None, compare=False, repr=False)
+    gen_id_fn: Any = field(default=None, compare=False, repr=False)
+    asset_hash_fn: Any = field(default=None, compare=False, repr=False)
+    # The declarative TypeMetadata (possibly a per-type subclass) this TypeInfo
+    # was built from — home for type-specific extras beyond the flat fields.
+    # Runtime-only; the flat fields above remain the serialized surface.
+    metadata: Any = field(default=None, compare=False, repr=False)
+    # Per-type pydantic metadata model: the FS↔DB schema. Its field set defines
+    # which entity fields with ``persist=DEFAULT`` are mirrored to metadata.json,
+    # and ``FSRecord.meta_dict`` returns a typed instance when it is set.
+    # Runtime-only; not part of the schema hash.
+    meta_model: Any = field(default=None, compare=False, repr=False)
+    # Asset layout: scope-relative subdir for the primary asset
+    # (e.g. ".claude/skills") and whether the asset is a single file or
+    # a folder. Used by FSRecord to resolve where an entity's asset goes
+    # on save.
+    main_subdir: str | None = None
+    main_layout: str = "file"
 
     @property
     def schema_hash(self) -> str:
@@ -226,6 +255,7 @@ class TypeInfo:
             "indexed_by_default": self.indexed_by_default,
             "browseable": self.browseable,
             "creatable": self.creatable,
+            "api_visible": self.api_visible,
             "icon": self.icon,
             "parent_type": self.parent_type,
             "locations": sorted(self.locations),
@@ -257,6 +287,7 @@ class TypeInfo:
             "indexed_by_default": self.indexed_by_default,
             "browseable": self.browseable,
             "creatable": self.creatable,
+            "api_visible": self.api_visible,
             "icon": self.icon,
             "parent_type": self.parent_type,
             "locations": self.locations,
@@ -273,6 +304,7 @@ class TypeInfo:
             indexed_by_default=data.get("indexed_by_default", False),
             browseable=data.get("browseable", False),
             creatable=data.get("creatable", False),
+            api_visible=data.get("api_visible", False),
             icon=data.get("icon"),
             parent_type=data.get("parent_type"),
             locations=data.get("locations", []),
@@ -299,6 +331,23 @@ class SchemaRegistry:
     # ---------------------------------------------------------------------------
 
     @classmethod
+    def register_crud_type(cls, type_name: str, *, icon: str | None = None) -> None:
+        """Register a CRUD-only type that has no indexer walker.
+
+        Such types (e.g. ``claude_error``, ``claude_debug_log``) are produced
+        on demand and exist only so the fs-records routes accept them
+        (GET returns an empty list instead of 400). They are never auto-indexed,
+        browseable, or creatable.
+        """
+        cls.register(TypeInfo(
+            type_name=type_name,
+            icon=icon,
+            indexed_by_default=False,
+            browseable=False,
+            creatable=False,
+        ))
+
+    @classmethod
     def register(cls, info: TypeInfo) -> None:
         """Register or enrich a TypeInfo. O(1). Idempotent — merges on re-register."""
         existing = cls._types.get(info.type_name)
@@ -306,8 +355,22 @@ class SchemaRegistry:
             for loc in info.locations:
                 if loc not in existing.locations:
                     existing.locations.append(loc)
-            if info.record_cls is not None:
-                existing.record_cls = info.record_cls
+            if info.main_subdir is not None:
+                existing.main_subdir = info.main_subdir
+            if info.main_layout != "file":
+                existing.main_layout = info.main_layout
+            if info.post_sync_fn is not None:
+                existing.post_sync_fn = info.post_sync_fn
+            if info.from_disk_fn is not None:
+                existing.from_disk_fn = info.from_disk_fn
+            if info.gen_id_fn is not None:
+                existing.gen_id_fn = info.gen_id_fn
+            if info.asset_hash_fn is not None:
+                existing.asset_hash_fn = info.asset_hash_fn
+            if info.metadata is not None:
+                existing.metadata = info.metadata
+            if info.meta_model is not None:
+                existing.meta_model = info.meta_model
             if info.entity_cls is not None:
                 if existing.entity_cls is None:
                     existing.entity_cls = info.entity_cls
@@ -326,6 +389,14 @@ class SchemaRegistry:
                 existing.creatable = True
             if info.browseable and not existing.browseable:
                 existing.browseable = True
+            if info.indexed_by_default and not existing.indexed_by_default:
+                existing.indexed_by_default = True
+            if info.api_visible and not existing.api_visible:
+                existing.api_visible = True
+            if info.index_fields:
+                existing.index_fields = list(info.index_fields)
+            if info.defaults:
+                existing.defaults = {**existing.defaults, **info.defaults}
             info = existing
         else:
             cls._types[info.type_name] = info
@@ -359,11 +430,6 @@ class SchemaRegistry:
         return info.entity_cls if info else None
 
     @classmethod
-    def get_record_cls(cls, type_name: str) -> type | None:
-        info = cls.get(type_name)
-        return info.record_cls if info else None
-
-    @classmethod
     def is_entity_type(cls, type_name: str) -> bool:
         info = cls.get(type_name)
         return bool(info and info.entity_cls is not None)
@@ -375,10 +441,7 @@ class SchemaRegistry:
     @classmethod
     def is_public_entity(cls, type_name: str) -> bool:
         info = cls.get(type_name)
-        try:
-            return bool(info and info.entity_cls and info.entity_cls.api_visible())
-        except Exception:
-            return False
+        return bool(info and info.entity_cls is not None and info.api_visible)
 
     @classmethod
     def get_all_entity_types(cls) -> list[str]:
@@ -390,19 +453,38 @@ class SchemaRegistry:
 
     @classmethod
     def get_public_entity_types(cls) -> list[str]:
-        result = []
-        for k, v in cls._types.items():
-            if v.entity_cls is not None:
-                try:
-                    if v.entity_cls.api_visible():
-                        result.append(k)
-                except Exception:
-                    pass
-        return result
+        return [k for k, v in cls._types.items() if v.entity_cls is not None and v.api_visible]
+
+    # --- Presentation read-through getters (registry is the single source) ---
+
+    @classmethod
+    def is_api_visible(cls, type_name: str) -> bool:
+        info = cls.get(type_name)
+        return bool(info and info.api_visible)
+
+    @classmethod
+    def get_icon(cls, type_name: str) -> str | None:
+        info = cls.get(type_name)
+        return info.icon if info else None
+
+    @classmethod
+    def is_browseable(cls, type_name: str) -> bool:
+        info = cls.get(type_name)
+        return bool(info and info.browseable)
+
+    @classmethod
+    def is_creatable(cls, type_name: str) -> bool:
+        info = cls.get(type_name)
+        return bool(info and info.creatable)
+
+    @classmethod
+    def is_indexed_by_default(cls, type_name: str) -> bool:
+        info = cls.get(type_name)
+        return bool(info and info.indexed_by_default)
 
     @classmethod
     def get_all_record_types(cls) -> list[str]:
-        return [k for k, v in cls._types.items() if v.record_cls is not None]
+        return [k for k, v in cls._types.items() if v.entity_cls is not None]
 
     @classmethod
     def get_default_index_types(cls) -> list[str]:
@@ -540,7 +622,7 @@ class SchemaRegistry:
     @classmethod
     async def clear_index(cls, types: list[str] | None = None) -> ClearResult:
         from flow_sdk.db import get_db_driver  # noqa: PLC0415
-        from flow_sdk.fs_records.record_error import RecordError  # noqa: PLC0415
+        from flow_sdk.fs_store.operations.record_error import clear_all, clear_for_type  # noqa: PLC0415
 
         driver = get_db_driver()
         if types is None:
@@ -556,7 +638,7 @@ class SchemaRegistry:
                 for per_type_log in types_dir.glob("*/index_log.jsonl"):
                     per_type_log.unlink()
             types_cleared = cls.get_all_record_types()
-            await RecordError.clear_all()
+            await clear_all()
         else:
             fts_cleared = 0
             entities_cleared = 0
@@ -569,7 +651,7 @@ class SchemaRegistry:
                 if log_file.exists():
                     log_file.unlink()
                 types_cleared.append(type_name)
-                await RecordError.clear_for_type(type_name)
+                await clear_for_type(type_name)
         return ClearResult(
             fts_cleared=fts_cleared,
             entities_cleared=entities_cleared,
@@ -660,15 +742,15 @@ class SchemaRegistry:
 
     @classmethod
     def get_errors(cls, type_name: "str | TypeId | None" = None) -> list:
-        from flow_sdk.fs_records.record_error import RecordError  # noqa: PLC0415
+        from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
+        from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
 
-        results = list(RecordError.discover())  # base type only
-        for subtype_info in cls.get_subtypes("record_error"):
-            subtype_cls = subtype_info.record_cls
-            if subtype_cls is not None:
-                results.extend(subtype_cls.discover())
+        results = FSRecord.discover(RecordType.RECORD_ERROR)
         if type_name is not None:
             if not isinstance(type_name, str):
                 type_name = type_name.type
-            results = [e for e in results if getattr(e, "_record_type", None) == type_name]
+            results = [
+                e for e in results
+                if e.__dict__.get("source_record_type") == type_name or getattr(e, "type", None) == type_name
+            ]
         return results

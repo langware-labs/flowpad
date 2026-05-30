@@ -23,8 +23,14 @@ from flow_sdk.builtin.spec import Spec
 from flow_sdk.builtin.task import Task
 from flow_sdk.builtin.user import User
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
-from flow_sdk.fs_records.conversation_record import ConversationRecord
-from flow_sdk.fs_records.flow_message_bundle import FlowMessageExistsError
+from flow_sdk.fs_store.operations.conversation import (
+    append_message_pointer,
+    default_jsonl_path,
+    from_jsonl,
+    message_pointers,
+    project_pointers_to_entity,
+)
+from flow_sdk.builtin.flow_message_bundle import FlowMessageExistsError
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.instance_settings import get_instance_settings
@@ -519,12 +525,11 @@ async def handle_create_project_conversation(
     await project.attach_child(conv)
 
     # Canonical jsonl path is auto-created under records-data root.
-    jsonl_path = ConversationRecord.default_jsonl_path(conv.id)
-    rec = ConversationRecord.from_jsonl(
+    jsonl_path = default_jsonl_path(conv.id)
+    rec = from_jsonl(
         jsonl_path, project.id, conv.id, parent_type=RecordType.PROJECT
     )
     rec.save()
-    rec.link_to_parent_record()
 
     return ApiSuccessResponse(data={
         "conversation_id": conv.id,
@@ -672,7 +677,7 @@ async def _hard_delete_local_conversation(conv: Conversation) -> None:
         logger.warning("[conv-hard-delete] %s fm list failed: %s", cid[:8], e)
     # Unlink the on-disk jsonl pointer index + parent dir if empty.
     try:
-        jsonl_path = ConversationRecord.default_jsonl_path(cid)
+        jsonl_path = default_jsonl_path(cid)
         if jsonl_path.exists():
             jsonl_path.unlink()
         parent = jsonl_path.parent
@@ -1056,7 +1061,7 @@ async def _download_and_unpack_bundle(
     ``on_progress`` — optional async callback fired as download bytes land;
     when set the hub GET is streamed instead of buffered whole.
     """
-    from flow_sdk.fs_records.flow_message_bundle import FlowMessageExistsError, unpack_bundle
+    from flow_sdk.builtin.flow_message_bundle import FlowMessageExistsError, unpack_bundle
     bundle_bytes = await hub_get(
         BuiltinEntityType.FLOW_MESSAGE, fm_id, "fs", f"download/{attachment_filename}",
         raw=True, on_progress=on_progress,
@@ -1198,15 +1203,16 @@ async def _process_single_hub_message(raw: dict) -> str | None:
             # bump the projection on the Conversation entity (direct
             # writes are blocked by Conversation.__setattr__'s projection
             # guard at conversation.py:252).
-            rec = ConversationRecord.from_jsonl(
-                ConversationRecord.default_jsonl_path(conv_id),
+            rec = from_jsonl(
+                default_jsonl_path(conv_id),
                 parent_id="", record_id=conv_id, parent_type=RecordType.PROJECT,
             )
-            existing_ids = {p.id for p in rec.message_pointers()}
+            existing_ids = {p.id for p in message_pointers(rec)}
             if fm_id not in existing_ids:
                 ts = raw.get("created_date") or ""
-                rec.append_message_pointer(fm_id, ts)
+                append_message_pointer(rec, fm_id, ts)
                 await rec.sync_to_db(notify=False)
+                await project_pointers_to_entity(rec, notify=False)
         except Exception as e:  # noqa: BLE001
             logger.warning(
                 "[fm-process] pointer-append for conv=%s fm=%s failed: %s",
@@ -1553,8 +1559,8 @@ async def _materialize_invitation(
 
     # Ensure the on-disk jsonl exists so future bundle writes have a home.
     try:
-        rec = ConversationRecord.from_jsonl(
-            ConversationRecord.default_jsonl_path(conv_id),
+        rec = from_jsonl(
+            default_jsonl_path(conv_id),
             parent_id="", record_id=conv_id, parent_type=RecordType.PROJECT,
         )
         rec.save()
@@ -1743,11 +1749,11 @@ async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> Non
                 if not hub_pointers:
                     return
             try:
-                rec = ConversationRecord.from_jsonl(
-                    ConversationRecord.default_jsonl_path(conv_id),
+                rec = from_jsonl(
+                    default_jsonl_path(conv_id),
                     parent_id="", record_id=conv_id, parent_type=RecordType.PROJECT,
                 )
-                local_ids = {p.id for p in rec.message_pointers()}
+                local_ids = {p.id for p in message_pointers(rec)}
             except Exception:  # noqa: BLE001
                 local_ids = set()
             missing_fm_ids: list[str] = []

@@ -81,7 +81,7 @@ def workflow_report(
         ),
     ] = None,
 ) -> None:
-    from flow_sdk.fs_records.workflow_report_entry import WorkflowReportEntry
+    from flow_sdk.builtin.workflow import WorkflowReportEntry
 
     try:
         entry = WorkflowReportEntry.model_validate_json(data)
@@ -91,18 +91,19 @@ def workflow_report(
 
     process_id = _resolve_process_id(process)
 
-    from flow_sdk.fs_records.agentic_process_record import AgenticProcessRecord
+    from flow_sdk.fs_store.fs_record import record_stem
+    from flow_sdk.fs_store.record_paths import get_default_records_root
 
-    rec = AgenticProcessRecord.get(process_id)
-    if rec is None or rec.record_dir is None:
+    record_dir = get_default_records_root() / "agentic_process" / record_stem("agentic_process", process_id)
+    if not record_dir.exists():
         _fail(
             EXIT_NOT_FOUND,
             "PROCESS_NOT_FOUND",
-            f"AgenticProcess {process_id} not found or has no record_dir",
+            f"AgenticProcess {process_id} has no record_dir at {record_dir}",
         )
         return
 
-    out_path = Path(rec.output_dir) / "workflow.trace.jsonl"
+    out_path = record_dir / "execution" / "output" / "workflow.trace.jsonl"
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with out_path.open("a") as fh:
         fh.write(entry.model_dump_json() + "\n")

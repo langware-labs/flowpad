@@ -23,8 +23,8 @@ from pathlib import Path
 import pytest
 
 from flow_sdk.builtin.agentic_process import AgenticProcess
-from flow_sdk.fs_records.agent_status import WorkerStatus
-from flow_sdk.fs_records.agentic_process_lifecycle import ProcessStatus
+from flow_sdk.builtin.worker_status import WorkerStatus
+from flow_sdk.builtin.process_lifecycle import ProcessStatus
 from flow_sdk.flowpad_types.enums import WorkerType
 
 

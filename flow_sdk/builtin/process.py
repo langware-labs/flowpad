@@ -44,7 +44,7 @@ from flow_sdk.external_apis.llm.utils.utils import clean_json_completion, typed_
 from flow_sdk.external_apis.llm.utils.xml_chunk_parser import process_xml
 from flow_sdk.flowpad_types.machine_status import MachineStatus
 from flow_sdk.flowpad_types.runtime_environment import ExecutionEnvironmentStatus
-from flow_sdk.core.resource_management.scan.system_profile.types import SystemProfile
+from flow_sdk.builtin.faas.system_profile_types import SystemProfile
 
 EMPTY_FLOW_TITLE = "Empty Flow"
 
@@ -207,7 +207,6 @@ class Flow(Entity):
     current_terminal_id: str | None = APIField(default=None)
     worker_session_id: str | None = APIField(default=None)
     created_by_flowpad: bool = APIField(default=True)
-    _api_visible: ClassVar[bool] = True
 
     @property
     def state_persistence(self):

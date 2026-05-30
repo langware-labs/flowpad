@@ -23,8 +23,9 @@ pytestmark = pytest.mark.skipif(
 from flow_sdk.server.app import app
 from flow_sdk.fs_store import get_default_records_root, set_default_records_root
 
-from flow_sdk.fs_records.skill_record import SkillRecord  # noqa: F401 — register type
-from flow_sdk.fs_records.task import TaskResource  # noqa: F401 — register type
+from flow_sdk.fs_store.indexer.functions.task import extract_task
+from flow_sdk.fs_store.fs_record import FSRecord
+TaskResource = FSRecord  # noqa: F401 — register type
 
 
 # ---------------------------------------------------------------------------

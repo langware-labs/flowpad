@@ -13,7 +13,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter
-from flow_sdk.fs_records.agent_status import WorkerStatus
+from flow_sdk.builtin.worker_status import WorkerStatus
 from flow_sdk.server.system_heartbeat import register_heartbeat_task
 
 _log = logging.getLogger(__name__)

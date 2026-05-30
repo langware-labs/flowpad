@@ -30,6 +30,9 @@ INDEXABLE_TYPES: list[RecordType] = [
     RecordType.CLAUDE_MEMORY,
     RecordType.MARKDOWN,
     RecordType.CLAUDE_HOOK,
+    RecordType.MCP_SERVER,
+    RecordType.PLUGIN,
+    RecordType.TODO_FILE,
     RecordType.TASK,
     RecordType.WHITEBOARD,
 ]
@@ -37,6 +40,12 @@ INDEXABLE_TYPES: list[RecordType] = [
 
 def build_default_indexer() -> FSIndexer:
     """Construct an FSIndexer with the canonical root set + all functions registered."""
+    # Ensure all TypeInfo metadata (slot fns, post_sync_fn, presentation) is
+    # registered before any indexing/sync runs. Type metadata now lives in
+    # schema/type_info/<type>_info.py (registered by register_all) rather than
+    # self-registering on functions-module import, so building the indexer is
+    # the chokepoint that guarantees a complete registry. Idempotent.
+    import flow_sdk.fs_store.indexer.registrations  # noqa: F401, PLC0415
     # Import locally to keep this module import-light at package-init time.
     from flow_sdk.fs_store.indexer.functions.claude_projects import claude_projects_fn
     from flow_sdk.fs_store.indexer.functions.claude_sessions import claude_sessions_fn
@@ -64,8 +73,13 @@ def build_default_indexer() -> FSIndexer:
     )
     from flow_sdk.fs_store.indexer.functions.task import task_fn
     from flow_sdk.fs_store.indexer.functions.claude_hook import (
-        claude_hook_fn, claude_hook_extras_fn,
+        claude_hook_files_fn, claude_hook_files_extras_fn, hooks_in_settings_fn,
     )
+    from flow_sdk.fs_store.indexer.functions.mcp_server import (
+        mcp_source_files_fn, mcp_servers_in_file_fn,
+    )
+    from flow_sdk.fs_store.indexer.functions.plugin import plugin_fn
+    from flow_sdk.fs_store.indexer.functions.todo import todo_fn
 
     # Transcript handlers are opt-in (full-JSONL parse is expensive — see
     # flow_sdk/fs_store/transcript_indexer/).
@@ -97,8 +111,16 @@ def build_default_indexer() -> FSIndexer:
     idx.add_function(RecordType.USER_HOME_FOLDER, workflow_fn, RecordType.WORKFLOW)
     idx.add_function(RecordType.USER_HOME_FOLDER, command_fn, RecordType.COMMAND)
     idx.add_function(RecordType.USER_HOME_FOLDER, markdown_flat_fn, RecordType.MARKDOWN)
-    idx.add_function(RecordType.USER_HOME_FOLDER, claude_hook_fn, RecordType.CLAUDE_HOOK)
-    idx.add_function(RecordType.USER_HOME_FOLDER, claude_hook_extras_fn, RecordType.CLAUDE_HOOK)
+    # Hook indexing is two-stage (recursive into-file walk):
+    #   stage 1: <root> → CLAUDE_HOOK_SOURCE (one per settings.json-like file)
+    #   stage 2: CLAUDE_HOOK_SOURCE → CLAUDE_HOOK (one per hook entry, with json_path)
+    idx.add_function(RecordType.USER_HOME_FOLDER, claude_hook_files_fn, RecordType.CLAUDE_HOOK_SOURCE)
+    idx.add_function(RecordType.USER_HOME_FOLDER, claude_hook_files_extras_fn, RecordType.CLAUDE_HOOK_SOURCE)
+    # MCP servers are two-stage (source file → per-server, with json_path).
+    idx.add_function(RecordType.USER_HOME_FOLDER, mcp_source_files_fn, RecordType.MCP_SERVER_SOURCE)
+    # Plugins + todos are user-global single-file registries.
+    idx.add_function(RecordType.USER_HOME_FOLDER, plugin_fn, RecordType.PLUGIN)
+    idx.add_function(RecordType.USER_HOME_FOLDER, todo_fn, RecordType.TODO_FILE)
     # codex_projects_fn consolidates codex cwds into RecordType.PROJECT
     # (CODEX_PROJECT is a deprecated alias). Annotating it CODEX_PROJECT here
     # makes the type-gating dispatcher skip it for ``?type=project`` queries
@@ -121,7 +143,9 @@ def build_default_indexer() -> FSIndexer:
     idx.add_function(RecordType.REAL_PROJECT_CWD, workflow_fn, RecordType.WORKFLOW)
     idx.add_function(RecordType.REAL_PROJECT_CWD, project_folder_walker_fn, RecordType.FOLDER)
     idx.add_function(RecordType.REAL_PROJECT_CWD, task_fn, RecordType.TASK)
-    idx.add_function(RecordType.REAL_PROJECT_CWD, claude_hook_fn, RecordType.CLAUDE_HOOK)
+    idx.add_function(RecordType.REAL_PROJECT_CWD, claude_hook_files_fn, RecordType.CLAUDE_HOOK_SOURCE)
+    idx.add_function(RecordType.REAL_PROJECT_CWD, mcp_source_files_fn, RecordType.MCP_SERVER_SOURCE)
+    idx.add_function(RecordType.REAL_PROJECT_CWD, command_fn, RecordType.COMMAND)
 
     # SYSTEM_ROOT (flowpad_assistant) expanders
     idx.add_function(RecordType.SYSTEM_ROOT, skill_fn, RecordType.SKILL)
@@ -138,11 +162,20 @@ def build_default_indexer() -> FSIndexer:
     idx.add_function(RecordType.CWD_ROOT, workflow_fn, RecordType.WORKFLOW)
     idx.add_function(RecordType.CWD_ROOT, command_fn, RecordType.COMMAND)
     idx.add_function(RecordType.CWD_ROOT, project_folder_walker_fn, RecordType.FOLDER)
+    idx.add_function(RecordType.CWD_ROOT, mcp_source_files_fn, RecordType.MCP_SERVER_SOURCE)
 
     # FOLDER (transient scaffold emitted by project_folder_walker_fn) expanders
     idx.add_function(RecordType.FOLDER, markdown_in_folder_fn, RecordType.MARKDOWN)
     idx.add_function(RecordType.FOLDER, workflow_frontmatter_fn, RecordType.WORKFLOW)
-    idx.add_function(RecordType.CWD_ROOT, claude_hook_fn, RecordType.CLAUDE_HOOK)
+    idx.add_function(RecordType.CWD_ROOT, claude_hook_files_fn, RecordType.CLAUDE_HOOK_SOURCE)
+
+    # Stage 2 of recursive hook walk: descend into each settings.json source
+    # file emitted above and emit one CLAUDE_HOOK FSRef per hook entry.
+    idx.add_function(RecordType.CLAUDE_HOOK_SOURCE, hooks_in_settings_fn, RecordType.CLAUDE_HOOK)
+
+    # Stage 2 of recursive MCP walk: descend into each .mcp.json source file
+    # and emit one MCP_SERVER FSRef per server entry (with json_path).
+    idx.add_function(RecordType.MCP_SERVER_SOURCE, mcp_servers_in_file_fn, RecordType.MCP_SERVER)
 
     return idx
 

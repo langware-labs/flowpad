@@ -1,5 +1,31 @@
 import { cloudManager, HubClientErrorInfo } from '@sdk';
 import { useCallback, useEffect, useState } from 'react';
+import { createKeyedDispatch } from './keyed-event-dispatch';
+
+// Pull the FlowMessage id out of a hub path like
+// `/flow_message/<id>/download_body` or `/flow_message/<id>/fs/download/...`.
+const FLOW_MESSAGE_PATH_RE = /\/flow_message\/([^/]+)\//;
+
+// One shared `hub_client_error` listener on the cloudManager singleton, routed
+// by the FlowMessage id parsed from the error's path. Only download-class
+// errors carry a key; everything else is dropped at the dispatcher.
+const hubErrorByMessageId = createKeyedDispatch<[Record<string, unknown>]>(
+  (handler) => {
+    cloudManager.on('hub_client_error', handler);
+    return () => cloudManager.off('hub_client_error', handler);
+  },
+  (msg) => {
+    const path = String(msg?.path ?? '');
+    const id = FLOW_MESSAGE_PATH_RE.exec(path)?.[1];
+    if (!id) return null;
+    const tag = `/flow_message/${id}/`;
+    const isDownload =
+      path.includes(`${tag}fs/download/`)
+      || path.includes(`${tag}download_body`)
+      || path.includes(`${tag}create-and-download-local-flowmsg`);
+    return isDownload ? id : null;
+  },
+);
 
 /**
  * Per-message download error signal. Subscribes to the SDK-wide
@@ -26,27 +52,16 @@ export function useFlowMessageDownloadError(messageId: string | null | undefined
 
   useEffect(() => {
     if (!messageId) return;
-    const tag = `/flow_message/${messageId}/`;
-    const handler = (msg: Record<string, unknown>) => {
-      const path = String(msg.path ?? '');
-      if (!path.includes(tag)) return;
-      const isDownload =
-        path.includes(`${tag}fs/download/`)
-        || path.includes(`${tag}download_body`)
-        || path.includes(`${tag}create-and-download-local-flowmsg`);
-      if (!isDownload) return;
+    // The dispatcher already filtered to download-class errors for this id.
+    return hubErrorByMessageId(messageId, (msg) => {
       setError({
         method: String(msg.method ?? ''),
-        path,
+        path: String(msg.path ?? ''),
         statusCode: Number(msg.status_code ?? 0),
         message: String(msg.message ?? ''),
         ts: Date.now(),
       });
-    };
-    cloudManager.on('hub_client_error', handler);
-    return () => {
-      cloudManager.off('hub_client_error', handler);
-    };
+    });
   }, [messageId]);
 
   const dismiss = useCallback(() => setError(null), []);

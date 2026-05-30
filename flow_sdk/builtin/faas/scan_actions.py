@@ -1,21 +1,9 @@
 """ScanActionsMixin — resource scanning & agentic process actions for ComputeNode."""
 from __future__ import annotations
 
-import asyncio
 import logging
 
-from flow_sdk.core.resource_management.scan.system_profile import (
-    get_resource_summary as _get_resource_summary,
-)
-from flow_sdk.core.resource_management.scan.system_profile import (
-    scan_item as _scan_item,
-)
-from flow_sdk.core.resource_management.scan.system_profile import (
-    scan_project as _scan_project,
-)
-from flow_sdk.core.resource_management.scan.system_profile import (
-    scan_resources as _scan_resources,
-)
+from flow_sdk.builtin.faas import scan_indexer
 from flow_sdk.builtin.faas.project_list import (
     list_projects_from_indexer as _list_projects_from_indexer,
 )
@@ -36,14 +24,14 @@ def _resolve_session_record(session_id: str, hint: str | None = None):
         return None, None
 
     if hint != "codex":
-        from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
-        rec = ClaudeSessionRecord.get(session_id)
+        from flow_sdk.fs_store.indexer.functions.claude_sessions import get_claude_session
+        rec = get_claude_session(session_id)
         if rec is not None:
             return rec, "claude"
 
     if hint != "claude":
-        from flow_sdk.fs_records.codex import CodexSessionRecord
-        rec = CodexSessionRecord.get(session_id)
+        from flow_sdk.fs_store.indexer.functions.codex_sessions import get_codex_session
+        rec = get_codex_session(session_id)
         if rec is not None:
             return rec, "codex"
 
@@ -51,6 +39,12 @@ def _resolve_session_record(session_id: str, hint: str | None = None):
 
 
 class ScanActionsMixin:
+    async def _scan_scoped_roots(self):
+        """Full-coverage (user + all projects) indexer roots for resource scans."""
+        from flow_sdk.fs_store.operations.all_projects import get_all_scope_filter
+
+        return await self._resolve_scoped_roots(await get_all_scope_filter())
+
     async def _scan_resources(self) -> ApiResponse:
         """Scan specific resource type with optional time window filtering.
 
@@ -90,16 +84,14 @@ class ScanActionsMixin:
             time_window = {"start": time_start, "end": time_end}
 
         try:
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(
-                None,
-                lambda: _scan_resources(
-                    resource_type=resource_type,
-                    time_window=time_window,
-                    parent_id=parent_id,
-                    limit=limit,
-                    offset=offset,
-                ),
+            scoped_roots = await self._scan_scoped_roots()
+            result = await scan_indexer.scan_resources_from_indexer(
+                resource_type,
+                scoped_roots,
+                time_window=time_window,
+                parent_id=parent_id,
+                limit=limit,
+                offset=offset,
             )
             return ApiSuccessResponse(data=result)
         except Exception as e:
@@ -116,8 +108,8 @@ class ScanActionsMixin:
             ApiResponse with dict mapping resource_type -> count
         """
         try:
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(None, _get_resource_summary)
+            scoped_roots = await self._scan_scoped_roots()
+            result = await scan_indexer.get_resource_summary_from_indexer(scoped_roots)
             return ApiSuccessResponse(data=result)
         except Exception as e:
             logging.exception(f"get-resource-summary failed: {e}")
@@ -144,16 +136,28 @@ class ScanActionsMixin:
         if not item_type:
             return ApiFailResponse(message="type parameter is required")
 
-        limit_str = request_info.get_param("limit")
-        limit = int(limit_str) if limit_str else 100
-        session_id = request_info.get_param("session_id") or None
+        # Cost / usage / context moved to dedicated analytics actions
+        # (get-cost-overview / get-claude-usage / get-claude-context).
+        # scan-item now only serves a flat resource-type list (e.g. skills).
+        _ITEM_TO_RESOURCE = {
+            "skills": "skill",
+            "agents": "agent",
+            "commands": "command",
+            "hooks": "hook",
+            "mcpServers": "mcp_server",
+            "plugins": "plugin",
+            "sessions": "claude_session",
+        }
+        resource = _ITEM_TO_RESOURCE.get(item_type)
+        if resource is None:
+            return ApiSuccessResponse(data=None)
 
         try:
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(
-                None, lambda: _scan_item(item_type=item_type, limit=limit, session_id=session_id)
+            scoped_roots = await self._scan_scoped_roots()
+            res = await scan_indexer.scan_resources_from_indexer(
+                resource, scoped_roots, limit=0
             )
-            return ApiSuccessResponse(data=result)
+            return ApiSuccessResponse(data=res.get("items", []))
         except Exception as e:
             logging.exception(f"scan-item failed: {e}")
             return ApiFailResponse(message=str(e))
@@ -161,7 +165,7 @@ class ScanActionsMixin:
     async def _scan_clear_skill_usage(self) -> ApiResponse:
         """Clear all skill usage counters from ~/.claude.json."""
         try:
-            from flow_sdk.core.resource_management.scan.system_profile.settings import clear_skill_usage
+            from flow_sdk.fs_store.operations.claude_settings import clear_skill_usage
 
             cleared = clear_skill_usage()
             return ApiSuccessResponse(data={"cleared": cleared})
@@ -220,14 +224,10 @@ class ScanActionsMixin:
         include_sessions = sessions_str != "false"
 
         try:
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(
-                None,
-                lambda: _scan_project(
-                    project_encoded_name=project,
-                    session_limit=limit,
-                    include_sessions=include_sessions,
-                ),
+            result = await scan_indexer.scan_project_from_indexer(
+                project_encoded_name=project,
+                session_limit=limit,
+                include_sessions=include_sessions,
             )
             return ApiSuccessResponse(data=result)
         except Exception as e:

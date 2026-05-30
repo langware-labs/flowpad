@@ -5,7 +5,6 @@ import uuid
 
 import pytest
 
-from flow_sdk.fs_records.bookmark import BookmarkRecord  # noqa: F401
 from flow_sdk.fs_store import get_default_records_root, set_default_records_root
 from tests.test_settings import test_service_config
 
