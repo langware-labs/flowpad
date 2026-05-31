@@ -93,6 +93,7 @@ class Entity(DBEntity):
     # paths). Used by ``is_stale`` / ``merge_hub_payload`` at the remote
     # boundary. ClassVar so pydantic treats it as config, not a field.
     LOCAL_ONLY_FIELDS: ClassVar[frozenset[str]] = frozenset({"remote", "system", "orphan"})
+
     orphan: bool = APIField(
         default=False,
         description=(

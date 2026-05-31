@@ -792,6 +792,9 @@ async def unpack_bundle(
             conversation_id=target_conv_id,
             someone_typeid=owner_typeid,
             bundle_ts=bundle_ts,
+            # A .flowmsg bundle is a hub-delivered message; its row mirrors a
+            # hub counterpart.
+            remote=True,
         )
 
         # Entity-event channel: useEntity hooks in the UI re-render on this,

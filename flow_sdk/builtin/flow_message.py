@@ -142,6 +142,17 @@ class Attachment(BaseModel):
 
 
 class FlowMessage(Entity):
+    # Beyond the base local flags, a FlowMessage owns its body/download and
+    # read state locally. A hub metadata refresh must not reset these:
+    #   * body_status  — download/delivery lifecycle on THIS machine; reset
+    #     would re-trigger an already-completed body download.
+    #   * is_read / is_archived — local inbox state, not the hub's to dictate.
+    #   * received_at  — when THIS device received it.
+    #   * is_draft     — a local draft has no hub twin; never let a refresh flip it.
+    LOCAL_ONLY_FIELDS: ClassVar[frozenset[str]] = Entity.LOCAL_ONLY_FIELDS | frozenset({
+        "body_status", "is_read", "is_archived", "received_at", "is_draft",
+    })
+
     type: str = APIField(default="flow_message")
     text: str = APIField(...)
     instruction: Optional[str] = APIField(None)

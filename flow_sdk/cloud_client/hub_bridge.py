@@ -393,6 +393,8 @@ class HubWsBridge:
                         # sync already materialized the row, so the open conversation
                         # ``on('message')`` listener still fires.
                         emit_live_create=True,
+                        # Inbound from the hub: this row mirrors a hub counterpart.
+                        remote=True,
                     )
                     logger.info(
                         "[bridge] inbound persisted fm=%s conv=%s", fm_id, conversation_id,
