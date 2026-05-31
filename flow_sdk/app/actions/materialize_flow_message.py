@@ -163,6 +163,11 @@ async def materialize_flow_message(
     payload = dict(payload)  # don't mutate caller's dict
     payload.setdefault("conversation_id", conversation_id)
 
+    # Single hub-origin signal: either the explicit param or a remote flag
+    # carried in the payload (some callers, e.g. invitation preview, set it
+    # inline). Both route the existing-row path through the LWW invalidation.
+    remote = remote or bool(payload.get("remote"))
+
     fm_id = payload.get("id")
     existing = await FlowMessage.get_one({"id": fm_id}) if fm_id else None
     is_new = existing is None

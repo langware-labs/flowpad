@@ -35,6 +35,10 @@ const STRUCTURAL_ATTACHMENT_TYPES = new Set(['conversation', 'flow_message', 'ta
 
 interface FlowMessageBubbleProps {
   messageId: string;
+  /** The FlowMessage entity, supplied by the parent's batched conversation
+   *  query (one request for all messages, replacing the per-bubble fetch).
+   *  When omitted the bubble falls back to fetching by id. */
+  fm?: FlowMessage | null;
   timestamp: string;
   task?: ITask | null;
   onApproveAndExecute?: (messageId: string, attachmentIndex: number) => void;
@@ -66,6 +70,7 @@ interface FlowMessageBubbleProps {
 
 export function FlowMessageBubble({
   messageId,
+  fm: fmProp,
   timestamp,
   task,
   onApproveAndExecute,
@@ -79,9 +84,14 @@ export function FlowMessageBubble({
   participants,
   conversationStatusVisible = true,
 }: FlowMessageBubbleProps) {
-  const { data: fm } = useEntity<FlowMessage>(
-    new TypeId(FlowMessage.type, messageId),
+  // Prefer the FlowMessage handed down from the parent's batched conversation
+  // query; fall back to a per-id fetch only when it wasn't provided (so the
+  // bubble still works in isolation). Passing null to useEntity disables the
+  // fetch — the same pattern the creator lookup below uses.
+  const { data: fetchedFm } = useEntity<FlowMessage>(
+    fmProp ? null : new TypeId(FlowMessage.type, messageId),
   );
+  const fm = fmProp ?? fetchedFm;
   // Resolve the message author via `created_by`. Used as the sender-name
   // fallback for messages that carry no `sender_id`/`sender_name` — notably
   // the invitation-kind placeholder, whose author is the inviter.

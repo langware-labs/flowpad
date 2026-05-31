@@ -245,9 +245,14 @@ async def _append_message_to_conversation(
 
 
 
-async def _send_conversation_message_header(conv: "Conversation", reply_fm: "FlowMessage") -> None:
+async def _send_conversation_message_header(conv: "Conversation", reply_fm: "FlowMessage") -> bool:
     """Create the hub-side FlowMessage header via the conversation's
     ``add_message`` action.
+
+    Returns ``True`` on confirmed hub-side creation, ``False`` if the call
+    failed (network blip, hub rejection, etc.). Callers that gate later
+    state on hub success (e.g. flipping ``fm.remote = True``) MUST check
+    the return value — a swallowed exception is no longer a silent success.
 
     Unlike the legacy ``flow_message/send`` path, ``add_message`` runs
     ``Conversation.add_child`` on the hub, so the FlowMessage is graph-linked
@@ -268,10 +273,12 @@ async def _send_conversation_message_header(conv: "Conversation", reply_fm: "Flo
             attachments=attachments or None,
             shared_context_entities=shared_context_entities or None,
         )
+        return True
     except Exception as e:  # noqa: BLE001
         logger.warning(
             "[append_conversation] hub add_message header failed (non-fatal): %s", e, exc_info=True
         )
+        return False
 
 
 async def _upload_body_and_finalize(reply_fm: "FlowMessage", conv_id: str) -> None:
@@ -387,6 +394,9 @@ async def _try_send_reply_via_hub(
             conversation_id=conv_id,
             someone_typeid=someone_typeid,
             notify=True,
+            # Hub confirmed this send (add_message returned its id); the local
+            # row mirrors a hub counterpart.
+            remote=True,
         )
     except Exception as e:
         logger.warning("[append_conversation] hub-side reply materialize failed: %s", e, exc_info=True)
