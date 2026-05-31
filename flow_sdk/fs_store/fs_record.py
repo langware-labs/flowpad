@@ -438,7 +438,7 @@ class FSRecord(Generic[M]):
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
         info = SchemaRegistry.get(self.type)
-        body_fn = getattr(info, "default_body_fn", None) if info else None
+        body_fn = info.default_body_fn if info else None
         if body_fn is None:
             return None
         return body_fn(entity)
