@@ -43,6 +43,11 @@ class TypeMetadata:
     gen_id_fn: Any = None
     asset_hash_fn: Any = None
     post_sync_fn: Any = None
+    # Per-type default-body writer used by FSRecord.upsert_main_ref to materialize
+    # the backing file on create. None ⇒ no auto-created body. Without this wired
+    # through, create persists the entity + asset_ref but never writes the file
+    # (the "File is missing" workflow bug).
+    default_body_fn: Any = None
     # Per-type pydantic metadata model — the FS↔DB schema (see TypeInfo.meta_model).
     meta_model: Any = None
 
@@ -62,6 +67,7 @@ class TypeMetadata:
             gen_id_fn=self.gen_id_fn,
             asset_hash_fn=self.asset_hash_fn,
             post_sync_fn=self.post_sync_fn,
+            default_body_fn=self.default_body_fn,
             meta_model=self.meta_model,
             locations=["index"],
             metadata=self,

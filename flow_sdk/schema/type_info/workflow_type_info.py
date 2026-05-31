@@ -6,6 +6,18 @@ from flow_sdk.fs_store.indexer.functions.workflow import (
     workflow_gen_id,
 )
 
+def _workflow_default_body(entity) -> str:
+    """AMD source written to the workflow's asset_ref on create.
+
+    Mirrors Skill/Agent: without a default-body writer, create persists the
+    entity + asset_ref but never materializes the backing .md, leaving a
+    dangling pointer the editor reports as "File is missing".
+    """
+    title = (getattr(entity, "name", None) or "Untitled Workflow").strip()
+    desc = (getattr(entity, "description", None) or "").strip()
+    return f"---\nname: {title}\n---\n\n# {title}\n\n{desc}\n"
+
+
 WORKFLOW = TypeMetadata(
     type=EntityType.WORKFLOW,
     icon="Workflow",
@@ -17,4 +29,5 @@ WORKFLOW = TypeMetadata(
     main_subdir=".claude/workflows",
     from_disk_fn=extract_workflow,
     gen_id_fn=workflow_gen_id,
+    default_body_fn=_workflow_default_body,
 )

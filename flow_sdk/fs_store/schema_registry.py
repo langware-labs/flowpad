@@ -228,6 +228,10 @@ class TypeInfo:
     from_disk_fn: Any = field(default=None, compare=False, repr=False)
     gen_id_fn: Any = field(default=None, compare=False, repr=False)
     asset_hash_fn: Any = field(default=None, compare=False, repr=False)
+    # Per-type default-body writer: Callable[[entity], str]. Read by
+    # FSRecord.default_body / upsert_main_ref to materialize the backing file on
+    # create. None ⇒ no auto-created body.
+    default_body_fn: Any = field(default=None, compare=False, repr=False)
     # The declarative TypeMetadata (possibly a per-type subclass) this TypeInfo
     # was built from — home for type-specific extras beyond the flat fields.
     # Runtime-only; the flat fields above remain the serialized surface.
@@ -367,6 +371,8 @@ class SchemaRegistry:
                 existing.gen_id_fn = info.gen_id_fn
             if info.asset_hash_fn is not None:
                 existing.asset_hash_fn = info.asset_hash_fn
+            if info.default_body_fn is not None:
+                existing.default_body_fn = info.default_body_fn
             if info.metadata is not None:
                 existing.metadata = info.metadata
             if info.meta_model is not None:
