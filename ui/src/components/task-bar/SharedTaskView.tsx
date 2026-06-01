@@ -11,7 +11,7 @@ import { Conversation, Spec, Task, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { ExpansionRequest } from '@sdk/FlowSync/query';
 import { sendReply } from '@sdk/entities/notifications';
-import { toast } from 'sonner';
+import { notify } from '@src/notifications';
 import { ConversationPanel } from '@src/components/conversation/ConversationPanel';
 import { useLocalUser } from '@src/components/conversation/useLocalUser';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
@@ -60,7 +60,7 @@ export function SharedTaskView({ task, conversationId, onClose }: SharedTaskView
     try {
       const gate = await ensureCloudLogin();
       if (!gate.ok) {
-        toast.error(gate.error);
+        notify.error({ title: gate.error });
         return;
       }
       await sendReply(
@@ -72,12 +72,13 @@ export function SharedTaskView({ task, conversationId, onClose }: SharedTaskView
           sharedContextEntities: specTypeId ? [specTypeId.toString()] : [],
         },
       );
-      toast.success('Status request sent', {
-        description: 'The recipient will see a PROMPT to approve.',
+      notify.success({
+        title: 'Status request sent',
+        message: 'The recipient will see a PROMPT to approve.',
       });
     } catch (err) {
       console.error('[SharedTaskView] sendReply failed', err);
-      toast.error('Failed to send status request');
+      notify.error({ title: 'Failed to send status request' });
     } finally {
       setRequestingStatus(false);
     }

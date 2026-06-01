@@ -6,7 +6,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Button } from '@src/components/ui/button';
 import { RadioGroup, RadioGroupItem } from '@src/components/ui/radio-group';
 import { Label } from '@src/components/ui/label';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { MarkdownEditor } from './markdown/MarkdownEditor';
@@ -36,7 +36,6 @@ type CreateAsType = 'markdown' | 'whiteboard';
 export function WikiResolveView({ name }: WikiResolveViewProps) {
   const { computeNode } = useAgentContext();
   const typeIdStr = computeNode?.typeId?.toString();
-  const { toast } = useToast();
   const { navigation } = useDockNavigation();
   const queryClient = useQueryClient();
   const [creating, setCreating] = useState(false);
@@ -71,29 +70,28 @@ export function WikiResolveView({ name }: WikiResolveViewProps) {
     try {
       if (createAs === 'whiteboard') {
         const saved = await Whiteboard.createInProject(dataContext.project ?? null, name);
-        toast({ title: 'Whiteboard created', description: `[[${name}]]` });
+        notify.success({ title: 'Whiteboard created', message: `[[${name}]]` });
         void queryClient.invalidateQueries({ queryKey: ['wiki-resolve', name] });
         if (saved.asset_ref) {
           navigation.openDock(DockPointer.forAssetEditor('whiteboard', saved.asset_ref));
         }
       } else {
         const saved = await Markdown.createInProject(dataContext.project ?? null, name);
-        toast({ title: 'Markdown created', description: `[[${name}]]` });
+        notify.success({ title: 'Markdown created', message: `[[${name}]]` });
         void queryClient.invalidateQueries({ queryKey: ['wiki-resolve', name] });
         if (saved.asset_ref) {
           navigation.openDock(DockPointer.forAssetEditor('markdown', saved.asset_ref));
         }
       }
     } catch (err) {
-      toast({
+      notify.error({
         title: `Could not create ${createAs}`,
-        description: err instanceof Error ? err.message : String(err),
-        variant: 'destructive',
+        message: err instanceof Error ? err.message : String(err),
       });
     } finally {
       setCreating(false);
     }
-  }, [createAs, name, navigation, queryClient, toast]);
+  }, [createAs, name, navigation, queryClient]);
 
   if (!computeNode?.typeId) {
     return (

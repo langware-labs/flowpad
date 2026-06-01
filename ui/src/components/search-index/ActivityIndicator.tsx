@@ -12,7 +12,7 @@ import { ActivityProgressBar } from './ActivityProgressModal';
 type StripProps = { variant: 'strip'; className?: string };
 type PillProps = { variant: 'pill'; className?: string; 'data-testid'?: string };
 type BarProps = { variant: 'bar'; className?: string };
-type ListProps = { variant: 'list'; types: string[]; className?: string };
+type ListProps = { variant: 'list'; types?: string[]; className?: string };
 
 export type ActivityIndicatorProps = StripProps | PillProps | BarProps | ListProps;
 
@@ -39,12 +39,22 @@ export function ActivityIndicator(props: ActivityIndicatorProps) {
   const show = useActivityModalStore((s) => s.show);
 
   if (props.variant === 'list') {
-    // Caller chooses what to render when not actively indexing (CTA, confirm step, etc.)
-    if (currentActivity !== 'index' || !progressTable) return null;
+    if (!progressTable) return null;
+    const explicit = props.types;
+    // Explicit-types callers (Index Now CTA / banner) keep their original
+    // index-only behavior. The scanner passes no types: it renders per-type
+    // rows for ANY active job (scan / index / clear), derived from the live
+    // table — so every type shows its progress as the run advances.
+    if (explicit) {
+      if (currentActivity !== 'index') return null;
+    } else if (!currentActivity) {
+      return null;
+    }
     const table = progressTable;
+    const typeNames = explicit ?? table.rows.map((r) => r.type_name);
     return (
       <div className={props.className ?? 'flex flex-col gap-1 py-2'}>
-        {props.types.map((t) => {
+        {typeNames.map((t) => {
           const row = table.rows.find((r) => r.type_name === t);
           const state = row ? rowState(row, table.current) : 'pending';
           const style = LIST_ROW_STYLE[state];
@@ -53,9 +63,17 @@ export function ActivityIndicator(props: ActivityIndicatorProps) {
             <div key={t} className="flex items-center gap-2 text-sm">
               <Icon className={style.iconClass} />
               <span className={style.nameClass}>{t}</span>
-              {row && row.total > 0 && (
-                <span className="ml-auto text-xs tabular-nums text-muted-foreground">
-                  {row.done}/{row.total}
+              {row && (row.total > 0 || row.done > 0) && (
+                <span className="ml-auto flex items-center gap-1.5 text-xs tabular-nums">
+                  {/* Actually-(re)indexed this run = done − skipped. Shown on any
+                      delta (Fast) run — where some entries were skipped-fresh — so
+                      the real work is visible (incl. 0) instead of hidden in done. */}
+                  {row.skipped > 0 && (
+                    <span className="text-foreground">{row.done - row.skipped} indexed</span>
+                  )}
+                  <span className="text-muted-foreground">
+                    {row.total > 0 ? `${row.done}/${row.total}` : row.done}
+                  </span>
                 </span>
               )}
             </div>

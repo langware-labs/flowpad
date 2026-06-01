@@ -28,7 +28,7 @@ import {
   TypeId,
 } from '@sdk';
 import { Conversation as ConversationEntity, Task as TaskEntity } from '@sdk';
-import { toast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { redirect } from 'react-router';
 
 export class ConversationLoadError extends Error {
@@ -123,10 +123,9 @@ export async function loadConversationRoute(pointer: string | undefined): Promis
     await loadConversation(conversationId);
   } catch (e) {
     if (!(e instanceof ConversationLoadError)) throw e;
-    toast({
+    notify.error({
       title: 'Conversation not found',
-      description: 'This conversation no longer exists.',
-      variant: 'destructive',
+      message: 'This conversation no longer exists.',
     });
     // eslint-disable-next-line @typescript-eslint/only-throw-error
     throw redirect('/dock/inbox');

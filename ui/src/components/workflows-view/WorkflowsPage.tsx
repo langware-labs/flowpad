@@ -4,7 +4,7 @@ import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { InputDialog } from '@src/components/ui/input-dialog';
 import { Button } from '@src/components/ui/button';
 import { ScrollArea } from '@src/components/ui/scroll-area';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -28,7 +28,6 @@ import { useCallback, useMemo, useRef, useState, KeyboardEvent } from 'react';
 export function WorkflowsPage() {
   const { computeNode } = useAgentContext();
   const { navigation, currentDock } = useDockNavigation();
-  const { toast } = useToast();
 
   const fsTypeId = computeNode?.typeId;
 
@@ -64,13 +63,13 @@ export function WorkflowsPage() {
         const saved = await Workflow.create(name);
         await refetch();
         navigation.openDock(DockPointer.forWorkflows(saved.id));
-        toast({ title: 'Workflow created' });
+        notify.success({ title: 'Workflow created' });
       } catch (err) {
         console.error('[WorkflowsPage] Failed to create workflow:', err);
-        toast({ title: 'Failed to create workflow', variant: 'destructive' });
+        notify.error({ title: 'Failed to create workflow' });
       }
     },
-    [navigation, refetch, toast],
+    [navigation, refetch],
   );
 
   const handleDeleteWorkflow = useCallback(
@@ -81,29 +80,29 @@ export function WorkflowsPage() {
         if (selectedId === workflow.id) {
           navigation.openDock(DockPointer.forWorkflows());
         }
-        toast({ title: 'Workflow deleted' });
+        notify.success({ title: 'Workflow deleted' });
       } catch (err) {
         console.error('[WorkflowsPage] Failed to delete workflow:', err);
-        toast({ title: 'Failed to delete workflow', variant: 'destructive' });
+        notify.error({ title: 'Failed to delete workflow' });
       }
     },
-    [navigation, refetch, selectedId, toast],
+    [navigation, refetch, selectedId],
   );
 
   const handleOpenExternal = useCallback(
     async (workflow: Workflow) => {
       if (!workflow.asset_ref || !fsTypeId?.id) {
-        toast({ title: 'No file linked to this workflow', variant: 'destructive' });
+        notify.error({ title: 'No file linked to this workflow' });
         return;
       }
       try {
         await openExternalFromComputeNode(fsTypeId.id, workflow.asset_ref);
       } catch (err) {
         console.error('[WorkflowsPage] Open external failed:', err);
-        toast({ title: 'Failed to open file', variant: 'destructive' });
+        notify.error({ title: 'Failed to open file' });
       }
     },
-    [fsTypeId, toast],
+    [fsTypeId],
   );
 
   const handleRenameWorkflow = useCallback(
@@ -113,10 +112,10 @@ export function WorkflowsPage() {
         await refetch();
       } catch (err) {
         console.error('[WorkflowsPage] Rename failed:', err);
-        toast({ title: 'Failed to rename workflow', variant: 'destructive' });
+        notify.error({ title: 'Failed to rename workflow' });
       }
     },
-    [refetch, toast],
+    [refetch],
   );
 
   return (

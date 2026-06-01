@@ -375,19 +375,24 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    *   `execute` action, which routes to `prompt()` → `send()` and writes the
    *   text into the running PTY's stdin so the worker picks it up as its
    *   first user message.
+   * @param project - Optional project to run the tab in. Defaults to the active
+   *   `dataContext.project`. Pass an explicit project when the prompt relies on
+   *   project-scoped assets (e.g. a `.claude/skills` skill that only lives in a
+   *   specific system project) so the spawned worker's cwd can discover them.
    * @returns The spawned AgenticProcess (already navigated to).
    */
   static async openTab(
     workerType: 'claude_code' | 'codex',
     prompt?: string,
+    project?: { id?: string; fs_storage_mount_path?: string | null } | null,
   ): Promise<AgenticProcess> {
     const computeNode = dataContext.computeNode;
     if (!computeNode) throw new Error('[AgenticProcess.openTab] No local compute node');
-    const project = dataContext.project;
+    const proj = project ?? dataContext.project;
     const process = await computeNode.createProcess(
       {
-        workdir: project?.fs_storage_mount_path ?? undefined,
-        ...(project?.id ? { projectId: project.id } : {}),
+        workdir: proj?.fs_storage_mount_path ?? undefined,
+        ...(proj?.id ? { projectId: proj.id } : {}),
         workerType,
       },
       { visible: true, watchProcess: false },

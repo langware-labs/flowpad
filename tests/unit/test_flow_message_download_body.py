@@ -39,6 +39,9 @@ async def test_download_body_happy_path() -> None:
     args = mock_dl.await_args_list[0].args
     assert args[0] == fm.id
     assert args[1] == BODY_FILENAME
+    # Explicit path forwards its READY status into the chokepoint so the single
+    # gate sees it (belt-and-suspenders with the pre-check below).
+    assert mock_dl.await_args_list[0].kwargs.get("body_status") == BodyStatus.READY
 
 
 @pytest.mark.asyncio

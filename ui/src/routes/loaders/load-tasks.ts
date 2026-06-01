@@ -26,7 +26,7 @@ import {
   Task,
   TypeId,
 } from '@sdk';
-import { toast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { redirect } from 'react-router';
 import { loadConversation } from './load-conversation';
 
@@ -111,10 +111,9 @@ export async function loadTasksRoute(pointer: string | undefined): Promise<void>
     await loadTask(taskId);
   } catch (e) {
     if (!(e instanceof TaskLoadError)) throw e;
-    toast({
+    notify.error({
       title: 'Task not found',
-      description: 'This task no longer exists.',
-      variant: 'destructive',
+      message: 'This task no longer exists.',
     });
     // eslint-disable-next-line @typescript-eslint/only-throw-error
     throw redirect('/dock/tasks');

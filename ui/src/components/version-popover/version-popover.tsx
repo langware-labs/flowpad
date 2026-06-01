@@ -28,11 +28,16 @@ interface ReleaseInfo {
   html_url: string | null;
 }
 
+interface HubInfo {
+  version: string | null;
+}
+
 interface VersionCheckResponse {
   pypi: PypiInfo;
   latest_release: ReleaseInfo | null;
   releases: ReleaseInfo[];
   github_error: string | null;
+  hub: HubInfo | null;
 }
 
 interface ElectronAPI {
@@ -383,6 +388,18 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
               </button>
             )}
           </section>
+
+          {data?.hub?.version && (
+            <>
+              <div className="border-t" />
+              <section className="space-y-1.5">
+                <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  Cloud hub
+                </h4>
+                <VersionRow label="Hub" version={data.hub.version} />
+              </section>
+            </>
+          )}
         </div>
       </PopoverContent>
     </Popover>

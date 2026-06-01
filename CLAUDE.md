@@ -47,6 +47,41 @@ The frontend runs at `http://localhost:$VITE_PORT` and calls the backend at `htt
 
 > **Hub at `$FLOWPAD_HUB_URL` (default `localhost:8093`) is served by `/Users/shlom/Documents/dev/test_flowpad/FlowPad/` (run via `flowpad/run.py`, ships `flowpad/hub/routers/auth.py` with `/api/v1/login`) — NOT the minimal `flow-hub/` stub in this tree. Don't `pkill`/install into the wrong one.**
 
+### Spinning up an extra named instance (`scripts/instance_ctl.sh`)
+
+To run a second, fully-isolated backend+frontend pair out of **this** checkout — e.g. to
+stand in for the separate "bob"/app instance in conversation/collaboration testing, or to
+verify a change in a real browser without touching your main dev server — use the launcher:
+
+```bash
+scripts/instance_ctl.sh launch <name> [--email E] [--password P] [--hub URL]
+scripts/instance_ctl.sh status [<name>]
+scripts/instance_ctl.sh list
+scripts/instance_ctl.sh kill   <name> [--keep-env]
+```
+
+What `launch <name>` does (all isolated per instance):
+
+- **Ports** follow the trailing digit of the name: `dev-1` → frontend `5001`, backend `6001`
+  (band `500X` / `600X`; scans upward if busy). Backend avoids `6000` (ERR_UNSAFE_PORT),
+  frontend avoids `5000` (macOS AirPlay).
+- **Data dir** `~/.flow/instances/<name>/` — own DB, sodot, singleton lock, and launcher
+  logs (`launcher-backend.log` / `launcher-frontend.log`).
+- **Hub user** `<name>@local.test` (password `<name>-pw-1234` by default) is auto-signed-up
+  on the hub (idempotent) and the instance is auto cloud-logged-in after the backend is healthy.
+- Writes `.env.<name>.local` at the repo root; the frontend is started with
+  `vite --mode <name>` so that file out-precedences `.env.local`. `FLOWPAD_SKIP_DOTENV=true`
+  and `MINIHUB_RELOAD=False` are set so the injected env isn't clobbered and the backend
+  stays single-process (PID/port kill is sufficient).
+
+Both processes are spawned detached and survive the shell. Stop with `kill <name>` (removes
+the registry + `.env.<name>.local` unless `--keep-env`). Example:
+
+```bash
+scripts/instance_ctl.sh launch dev-1            # → http://localhost:5001 (be 6001), user dev-1@local.test
+scripts/instance_ctl.sh kill   dev-1
+```
+
 ### Building for pip install
 
 ```bash

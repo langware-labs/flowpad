@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Archive, CheckSquare, Inbox as InboxIcon, MailPlus, RefreshCw, Trash2 } from 'lucide-react';
-import { toast } from 'sonner';
+import { Archive, CheckSquare, Inbox as InboxIcon, MailPlus, RefreshCw, SquarePen, Trash2 } from 'lucide-react';
+import { notify } from '@src/notifications';
+import { NewConversationDialog } from '@src/components/new-conversation-dialog/NewConversationDialog';
 import {
   Conversation,
   FlowMessage,
@@ -380,6 +381,7 @@ export function InboxView() {
 
   // Bulk-delete + per-row-delete dialog state.
   const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
+  const [showNewConversation, setShowNewConversation] = useState(false);
   const [rowDelete, setRowDelete] = useState<RowDeleteAction | null>(null);
 
   const request = useMemo(() => new QueryRequest({ type: Conversation.type }), []);
@@ -511,8 +513,9 @@ export function InboxView() {
   const handleDeleteArchived = useCallback(() => {
     if (archivedConvs.length === 0) return;
     if (needsHub && !hubReachable) {
-      toast.error('Cloud disconnected', {
-        description: 'Reconnect to the cloud to delete shared conversations.',
+      notify.error({
+        title: 'Cloud disconnected',
+        message: 'Reconnect to the cloud to delete shared conversations.',
       });
       return;
     }
@@ -525,19 +528,21 @@ export function InboxView() {
       const ok = res.deleted?.length ?? 0;
       const failed = res.failed ?? [];
       if (failed.length === 0) {
-        toast.success(`Deleted ${ok} conversation${ok === 1 ? '' : 's'}`);
+        notify.success({ title: `Deleted ${ok} conversation${ok === 1 ? '' : 's'}` });
       } else {
         const firstFew = failed
           .slice(0, 3)
           .map((f) => `${f.id.slice(0, 8)}: ${f.reason}`)
           .join('\n');
-        toast.error(`Deleted ${ok}, ${failed.length} failed`, {
-          description: firstFew,
+        notify.error({
+          title: `Deleted ${ok}, ${failed.length} failed`,
+          message: firstFew,
         });
       }
     } catch (e) {
-      toast.error('Delete all failed', {
-        description: e instanceof Error ? e.message : String(e),
+      notify.error({
+        title: 'Delete all failed',
+        message: e instanceof Error ? e.message : String(e),
       });
     } finally {
       void refetch();
@@ -547,8 +552,9 @@ export function InboxView() {
   const handleRowDelete = useCallback(
     (action: RowDeleteAction) => {
       if (action.kind !== 'local' && !hubReachable) {
-        toast.error('Cloud disconnected', {
-          description: 'Reconnect to the cloud to delete this conversation.',
+        notify.error({
+          title: 'Cloud disconnected',
+          message: 'Reconnect to the cloud to delete this conversation.',
         });
         return;
       }
@@ -562,26 +568,27 @@ export function InboxView() {
     try {
       if (rowDelete.kind === 'invitation') {
         await declineInvitation({ invitation_id: rowDelete.invitationId });
-        toast.success('Invitation declined');
+        notify.success({ title: 'Invitation declined' });
       } else if (rowDelete.kind === 'owner') {
         await deleteConversation({
           conversation_id: rowDelete.conversationId,
           mode: 'delete_for_all',
         });
-        toast.success('Conversation deleted');
+        notify.success({ title: 'Conversation deleted' });
       } else if (rowDelete.kind === 'leave') {
         await leaveConversation({ conversation_id: rowDelete.conversationId });
-        toast.success('Left conversation');
+        notify.success({ title: 'Left conversation' });
       } else {
         await deleteConversation({
           conversation_id: rowDelete.conversationId,
           mode: 'local',
         });
-        toast.success('Conversation deleted');
+        notify.success({ title: 'Conversation deleted' });
       }
     } catch (e) {
-      toast.error('Delete failed', {
-        description: e instanceof Error ? e.message : String(e),
+      notify.error({
+        title: 'Delete failed',
+        message: e instanceof Error ? e.message : String(e),
       });
     } finally {
       void refetch();
@@ -593,10 +600,11 @@ export function InboxView() {
       if (action.kind !== 'invitation') return;
       try {
         await dismissConversation({ conversation_id: action.conversationId });
-        toast.success('Invitation dismissed');
+        notify.success({ title: 'Invitation dismissed' });
       } catch (e) {
-        toast.error('Dismiss failed', {
-          description: e instanceof Error ? e.message : String(e),
+        notify.error({
+          title: 'Dismiss failed',
+          message: e instanceof Error ? e.message : String(e),
         });
       } finally {
         void refetch();
@@ -704,6 +712,17 @@ export function InboxView() {
           )}
           <Button
             variant="ghost"
+            size="sm"
+            className="h-7 text-xs"
+            onClick={() => setShowNewConversation(true)}
+            data-testid="inbox-new-conversation-button"
+            title="Start a new conversation"
+          >
+            <SquarePen className="mr-1 h-3.5 w-3.5" />
+            New
+          </Button>
+          <Button
+            variant="ghost"
             size="icon"
             className="h-7 w-7"
             onClick={() => void handleRefresh()}
@@ -754,6 +773,11 @@ export function InboxView() {
             />
           ))}
       </div>
+
+      <NewConversationDialog
+        open={showNewConversation}
+        onClose={() => setShowNewConversation(false)}
+      />
 
       <BulkConfirmDialog
         open={bulkDialogOpen}

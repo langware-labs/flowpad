@@ -15,7 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@src/components/ui/dialog';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { ExternalLink, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 
@@ -47,7 +47,6 @@ function openExternal(url: string) {
  * user hits Cancel.
  */
 export function GitHubDeviceFlowModal() {
-  const { toast } = useToast();
   const [payload, setPayload] = useState<OAuthDeviceFlowPayload | null>(null);
   const [remaining, setRemaining] = useState<number>(0);
   const [error, setError] = useState<string | null>(null);
@@ -81,7 +80,7 @@ export function GitHubDeviceFlowModal() {
       if (msg.auth_method !== 'github') return;
       if (msg.oauth_request_id && msg.oauth_request_id !== payload.state) return;
       if (msg.status === 'success') {
-        toast({ title: 'GitHub connected', duration: 3000 });
+        notify.success({ title: 'GitHub connected', durationMs: 3000 });
         setPayload(null);
       } else if (msg.status === 'error') {
         setError('Authorization failed or was denied. Click Retry to try again.');
@@ -91,7 +90,7 @@ export function GitHubDeviceFlowModal() {
     return () => {
       connectionManager.off('on_llm_config_msg', handler);
     };
-  }, [payload, toast]);
+  }, [payload]);
 
   // Single combined action: copy first (inside the user-gesture click handler,
   // so the clipboard write is allowed and paste will work on the GitHub page),
@@ -101,16 +100,16 @@ export function GitHubDeviceFlowModal() {
     if (!payload) return;
     try {
       await copyToClipboard(payload.user_code);
-      toast({ title: 'Code copied — paste it on the GitHub page', duration: 2500 });
+      notify.success({ title: 'Code copied — paste it on the GitHub page', durationMs: 2500 });
     } catch {
-      toast({
+      notify.error({
         title: 'Could not copy the code',
-        description: 'Type it manually on the GitHub page.',
-        duration: 4000,
+        message: 'Type it manually on the GitHub page.',
+        durationMs: 4000,
       });
     }
     openExternal(payload.verification_uri);
-  }, [payload, toast]);
+  }, [payload]);
 
   const handleClose = useCallback(() => {
     // Tell the backend to stop polling so it doesn't keep talking to GitHub
