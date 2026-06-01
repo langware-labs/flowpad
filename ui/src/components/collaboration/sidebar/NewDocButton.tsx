@@ -1,7 +1,7 @@
 import { Markdown, Project, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { InputDialog } from '@src/components/ui/input-dialog';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { Plus } from 'lucide-react';
@@ -21,7 +21,6 @@ interface Props {
  * otherwise it navigates to the standalone asset editor.
  */
 export function NewDocButton({ projectId, onOpenTab }: Props) {
-  const { toast } = useToast();
   const { navigation } = useDockNavigation();
   const [open, setOpen] = useState(false);
 
@@ -37,7 +36,7 @@ export function NewDocButton({ projectId, onOpenTab }: Props) {
       if (!trimmed || !project) return;
       try {
         const md = await Markdown.createInProject(project, trimmed);
-        toast({ title: 'Doc created' });
+        notify.success({ title: 'Doc created' });
         if (md.asset_ref) {
           if (onOpenTab) {
             onOpenTab({
@@ -52,10 +51,10 @@ export function NewDocButton({ projectId, onOpenTab }: Props) {
         }
       } catch (err) {
         console.error('[NewDocButton] create failed:', err);
-        toast({ title: 'Failed to create doc', variant: 'destructive' });
+        notify.error({ title: 'Failed to create doc' });
       }
     },
-    [project, toast, navigation, onOpenTab],
+    [project, navigation, onOpenTab],
   );
 
   if (!projectId) return null;

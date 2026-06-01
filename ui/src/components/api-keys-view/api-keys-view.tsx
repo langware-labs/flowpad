@@ -3,7 +3,7 @@ import { useAuth } from '@sdk/react/hooks';
 import { Badge } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
 import { Textarea } from '@src/components/ui/textarea';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@src/components/ui/table';
 import { AlertCircle, Copy, Key, Trash2 } from 'lucide-react';
 import React, { useState } from 'react';
@@ -24,7 +24,6 @@ export function ApiKeysView() {
   const [hasFlowPadApiKey, setHasFlowPadApiKey] = useState(false);
   const [apiKeysReloadTrigger, setApiKeysReloadTrigger] = useState(0);
   const [userApiKeys, setUserApiKeys] = useState<ApiKeyListItem[]>([]);
-  const { toast } = useToast();
   const { user } = useAuth();
 
   // Load API keys from the user
@@ -58,10 +57,9 @@ export function ApiKeysView() {
 
   const handleGenerateApiKey = async () => {
     if (!user?.typeId) {
-      toast({
+      notify.error({
         title: 'Error',
-        description: 'User not found',
-        variant: 'destructive',
+        message: 'User not found',
       });
       return;
     }
@@ -83,9 +81,9 @@ export function ApiKeysView() {
       // Reload API keys list by triggering useEffect dependency
       setApiKeysReloadTrigger((prev) => prev + 1);
 
-      toast({
+      notify.success({
         title: 'API Key Generated',
-        description: 'Your new API key has been created. Please save it securely.',
+        message: 'Your new API key has been created. Please save it securely.',
       });
     } catch (error) {
       console.error('Failed to generate API key:', error);
@@ -95,20 +93,18 @@ export function ApiKeysView() {
         errorMessage = error.message;
       }
 
-      toast({
+      notify.error({
         title: 'API Key Generation',
-        description: errorMessage,
-        variant: 'destructive',
+        message: errorMessage,
       });
     }
   };
 
   const handleDeleteApiKey = async (keyName: string) => {
     if (!user?.typeId) {
-      toast({
+      notify.error({
         title: 'Error',
-        description: 'User not found',
-        variant: 'destructive',
+        message: 'User not found',
       });
       return;
     }
@@ -127,9 +123,9 @@ export function ApiKeysView() {
       // Reload API keys list by triggering useEffect dependency
       setApiKeysReloadTrigger((prev) => prev + 1);
 
-      toast({
+      notify.success({
         title: 'API Key Deleted',
-        description: 'API key has been removed successfully',
+        message: 'API key has been removed successfully',
       });
     } catch (error) {
       console.error('Failed to delete API key:', error);
@@ -139,10 +135,9 @@ export function ApiKeysView() {
         errorMessage = error.message;
       }
 
-      toast({
+      notify.error({
         title: 'API Key Deletion',
-        description: errorMessage,
-        variant: 'destructive',
+        message: errorMessage,
       });
     }
   };
@@ -235,9 +230,9 @@ export function ApiKeysView() {
                 <Button
                   onClick={() => {
                     void navigator.clipboard.writeText(generatedApiKey.api_key);
-                    toast({
+                    notify.success({
                       title: 'Copied to Clipboard',
-                      description: 'API key copied successfully',
+                      message: 'API key copied successfully',
                     });
                   }}
                   variant="outline"

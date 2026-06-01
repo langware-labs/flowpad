@@ -9,7 +9,7 @@ import { Badge } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
 import { AlertCircle, Check, CheckCircle2, Cloud, CloudOff, Copy, Loader2 } from 'lucide-react';
 import { useState } from 'react';
-import { toast } from 'sonner';
+import { notify } from '@src/notifications';
 import { Chip } from '../label-chip';
 
 interface UserInfoProps {
@@ -85,26 +85,28 @@ export function UserInfo({ user }: UserInfoProps) {
     try {
       if (action === 'sign_in') {
         await cloudManager.login();
-        toast.success('Signed in');
+        notify.success({ title: 'Signed in', id: 'cloud-conn-action' });
       } else if (action === 'reconnect') {
         const result = await cloudManager.connectHubWs();
         if (result.hub_ws_verified) {
-          toast.success('Reconnected', { description: 'Hub WebSocket profile verified.' });
+          notify.success({ title: 'Reconnected', message: 'Hub WebSocket profile verified.', id: 'cloud-conn-action' });
         } else {
-          toast.success('Connected', { description: 'Hub WebSocket connected.' });
+          notify.success({ title: 'Connected', message: 'Hub WebSocket connected.', id: 'cloud-conn-action' });
         }
       } else if (action === 'verify') {
         const result = await cloudManager.verifyHubWs();
         if (result.hub_ws_verified) {
-          toast.success('Verified', { description: 'Hub WebSocket profile matches.' });
+          notify.success({ title: 'Verified', message: 'Hub WebSocket profile matches.', id: 'cloud-conn-action' });
         }
       } else if (action === 'disconnect') {
         await cloudManager.disconnectHubWs();
-        toast.success('Disconnected', { description: 'Hub WebSocket listener stopped.' });
+        notify.success({ title: 'Disconnected', message: 'Hub WebSocket listener stopped.', id: 'cloud-conn-action' });
       }
     } catch (err) {
-      toast.error(button.label + ' failed', {
-        description: err instanceof Error ? err.message : 'Unknown error.',
+      notify.error({
+        title: button.label + ' failed',
+        message: err instanceof Error ? err.message : 'Unknown error.',
+        id: 'cloud-conn-action',
       });
     } finally {
       setBusy(false);

@@ -2,7 +2,7 @@ import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { DatabasePaths, DbSettings } from '@sdk';
 import { useSystemTools } from '@src/hooks/use-system-tools';
 import { Button } from '@src/components/ui/button';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { BarChart3, Copy, FolderOpen } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { DbStatsDialog } from './db-stats';
@@ -22,7 +22,6 @@ export function DatabaseSection() {
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [showDbStats, setShowDbStats] = useState(false);
   const [paths, setPaths] = useState<DatabasePaths | null>(null);
-  const { toast } = useToast();
 
   const [dbPathState, setDbPathState] = useState<DbPathSettings>(() => {
     try {
@@ -64,9 +63,9 @@ export function DatabaseSection() {
     try {
       const result = await setDbPath(path);
       setActiveDbPath(result.db_path);
-      toast({ title: 'Database switched', description: result.db_path });
+      notify.success({ title: 'Database switched', message: result.db_path });
     } catch (error) {
-      toast({ title: 'Error', description: error instanceof Error ? error.message : 'Failed to switch database', variant: 'destructive' });
+      notify.error({ title: 'Error', message: error instanceof Error ? error.message : 'Failed to switch database' });
     } finally {
       setIsSwitching(false);
     }
@@ -94,9 +93,9 @@ export function DatabaseSection() {
       setDbPathState(newState);
       setIsCustomInput(false);
       setCustomInputValue('');
-      toast({ title: 'Database switched', description: result.db_path });
+      notify.success({ title: 'Database switched', message: result.db_path });
     } catch (error) {
-      toast({ title: 'Error', description: error instanceof Error ? error.message : 'Failed to switch database', variant: 'destructive' });
+      notify.error({ title: 'Error', message: error instanceof Error ? error.message : 'Failed to switch database' });
     } finally {
       setIsSwitching(false);
     }
@@ -106,19 +105,19 @@ export function DatabaseSection() {
     setShowClearConfirm(false);
     try {
       const result = await clearAllData();
-      toast({ title: 'Database Cleared', description: result.message || 'All data cleared. Redirecting...' });
+      notify.success({ title: 'Database Cleared', message: result.message || 'All data cleared. Redirecting...' });
       setTimeout(() => { window.location.href = '/'; }, 1500);
     } catch (error) {
-      toast({ title: 'Error', description: error instanceof Error ? error.message : 'Failed to clear database', variant: 'destructive' });
+      notify.error({ title: 'Error', message: error instanceof Error ? error.message : 'Failed to clear database' });
     }
   };
 
   const handleBackupDb = async () => {
     try {
       const result = await backup();
-      toast({ title: 'Database Backed Up', description: result.message });
+      notify.success({ title: 'Database Backed Up', message: result.message });
     } catch (error) {
-      toast({ title: 'Error', description: error instanceof Error ? error.message : 'Failed to backup database', variant: 'destructive' });
+      notify.error({ title: 'Error', message: error instanceof Error ? error.message : 'Failed to backup database' });
     }
   };
 
@@ -128,16 +127,16 @@ export function DatabaseSection() {
       else if (folderType === 'db') await openDbFolder();
       else await openLogsFolder();
     } catch (error) {
-      toast({ title: 'Error', description: error instanceof Error ? error.message : `Failed to open ${folderType} folder`, variant: 'destructive' });
+      notify.error({ title: 'Error', message: error instanceof Error ? error.message : `Failed to open ${folderType} folder` });
     }
   };
 
   const handleCopyPath = async (path: string) => {
     try {
       await navigator.clipboard.writeText(path);
-      toast({ title: 'Copied', description: 'Path copied to clipboard' });
+      notify.success({ title: 'Copied', message: 'Path copied to clipboard' });
     } catch {
-      toast({ title: 'Error', description: 'Failed to copy path to clipboard', variant: 'destructive' });
+      notify.error({ title: 'Error', message: 'Failed to copy path to clipboard' });
     }
   };
 

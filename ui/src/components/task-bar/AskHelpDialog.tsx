@@ -25,7 +25,7 @@ import {
   DialogTitle,
 } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
-import { toast } from 'sonner';
+import { notify } from '@src/notifications';
 
 interface AskHelpDialogProps {
   open: boolean;
@@ -135,7 +135,7 @@ export function AskHelpDialog({ open, onClose }: AskHelpDialogProps) {
 
       draftTaskRef.current = null;
       draftConvRef.current = null;
-      toast.success('Help request sent.');
+      notify.success({ title: 'Help request sent.' });
       navigation.openDock(DockPointer.forConversation(conv.id));
       onClose();
     } catch (err: unknown) {

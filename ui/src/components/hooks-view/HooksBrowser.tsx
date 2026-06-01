@@ -1,7 +1,7 @@
 import { Badge } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { cn } from '@src/lib/utils';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -113,7 +113,6 @@ export function HooksBrowser({ highlightHookId, highlightEventType }: HooksBrows
   const autoLoadAttempts = useRef(0);
   const highlightRef = useRef<HTMLDivElement>(null);
   const hasScrolled = useRef(false);
-  const { toast } = useToast();
 
   // Editor state
   const [isCreating, setIsCreating] = useState(false);
@@ -258,10 +257,9 @@ export function HooksBrowser({ highlightHookId, highlightEventType }: HooksBrows
   const handleDeleteHook = useCallback(
     (hook: HookItem) => {
       if (!computeNode) {
-        toast({
+        notify.error({
           title: 'Cannot delete hook',
-          description: 'No compute node available',
-          variant: 'destructive',
+          message: 'No compute node available',
         });
         return;
       }
@@ -269,10 +267,9 @@ export function HooksBrowser({ highlightHookId, highlightEventType }: HooksBrows
       const hooksService = createClaudeHooksService(computeNode);
 
       if (!hooksService.canDeleteHook(hook)) {
-        toast({
+        notify.error({
           title: 'Cannot delete hook',
-          description: 'No source file available for this hook',
-          variant: 'destructive',
+          message: 'No source file available for this hook',
         });
         return;
       }
@@ -291,10 +288,9 @@ export function HooksBrowser({ highlightHookId, highlightEventType }: HooksBrows
               next.delete(hook.id);
               return next;
             });
-            toast({
+            notify.error({
               title: 'Failed to delete hook',
-              description: result.error,
-              variant: 'destructive',
+              message: result.error,
             });
           }
         })
@@ -306,14 +302,13 @@ export function HooksBrowser({ highlightHookId, highlightEventType }: HooksBrows
             return next;
           });
           const message = err instanceof Error ? err.message : 'Failed to delete hook';
-          toast({
+          notify.error({
             title: 'Failed to delete hook',
-            description: message,
-            variant: 'destructive',
+            message,
           });
         });
     },
-    [computeNode, toast],
+    [computeNode],
   );
 
   // --- Create / Edit handlers ---
@@ -352,7 +347,7 @@ export function HooksBrowser({ highlightHookId, highlightEventType }: HooksBrows
 
   const handleEditorSave = useCallback(async () => {
     if (!computeNode) {
-      toast({ title: 'No compute node available', variant: 'destructive' });
+      notify.error({ title: 'No compute node available' });
       return;
     }
 
@@ -370,10 +365,9 @@ export function HooksBrowser({ highlightHookId, highlightEventType }: HooksBrows
     }
 
     if (!sourceFile) {
-      toast({
+      notify.error({
         title: 'Cannot determine settings file',
-        description: `No existing hooks found for scope "${editorScope}" to determine the settings file path.`,
-        variant: 'destructive',
+        message: `No existing hooks found for scope "${editorScope}" to determine the settings file path.`,
       });
       return;
     }
@@ -393,7 +387,7 @@ export function HooksBrowser({ highlightHookId, highlightEventType }: HooksBrows
           flowMetadata,
         );
         if (!result.success) {
-          toast({ title: 'Failed to update hook', description: result.error, variant: 'destructive' });
+          notify.error({ title: 'Failed to update hook', message: result.error });
           return;
         }
       } else {
@@ -406,7 +400,7 @@ export function HooksBrowser({ highlightHookId, highlightEventType }: HooksBrows
           flowMetadata,
         );
         if (!result.success) {
-          toast({ title: 'Failed to create hook', description: result.error, variant: 'destructive' });
+          notify.error({ title: 'Failed to create hook', message: result.error });
           return;
         }
       }
@@ -415,10 +409,10 @@ export function HooksBrowser({ highlightHookId, highlightEventType }: HooksBrows
       invalidate();
       autoLoadAttempts.current = 0;
       void refresh();
-      toast({ title: editingHook ? 'Hook updated' : 'Hook created' });
+      notify.success({ title: editingHook ? 'Hook updated' : 'Hook created' });
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown error';
-      toast({ title: 'Operation failed', description: message, variant: 'destructive' });
+      notify.error({ title: 'Operation failed', message });
     }
   }, [
     computeNode,
@@ -434,7 +428,6 @@ export function HooksBrowser({ highlightHookId, highlightEventType }: HooksBrows
     invalidate,
     refresh,
     resetEditor,
-    toast,
   ]);
 
   // Check if a hook row matches the highlight criteria

@@ -27,7 +27,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@src/components/ui/alert-dialog';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { useEntityByPath } from '@src/hooks/use-entity-by-path';
 import {
   AgenticProcess,
@@ -62,8 +62,6 @@ interface WorkflowAssetEditorProps {
  * prop, `useEntityByPath` resolves it from `fsRef`.
  */
 export function WorkflowAssetEditor({ fsRef, workflow: providedWorkflow }: WorkflowAssetEditorProps) {
-  const { toast } = useToast();
-
   const { entity: discoveredWorkflow } = useEntityByPath<Workflow>(
     providedWorkflow ? null : Workflow.type,
     providedWorkflow ? null : fsRef,
@@ -155,11 +153,11 @@ export function WorkflowAssetEditor({ fsRef, workflow: providedWorkflow }: Workf
       await doRun();
     } catch (err) {
       console.error('[WorkflowAssetEditor] Run failed:', err);
-      toast({ title: 'Failed to start workflow', variant: 'destructive' });
+      notify.error({ title: 'Failed to start workflow' });
     } finally {
       setIsStarting(false);
     }
-  }, [resolvedWorkflow, doRun, toast]);
+  }, [resolvedWorkflow, doRun]);
 
   const handleEnableMcp = useCallback(
     async (scope: 'user' | 'project') => {
@@ -167,16 +165,16 @@ export function WorkflowAssetEditor({ fsRef, workflow: providedWorkflow }: Workf
       try {
         await enableMcp('flow-sdk-mcp', scope);
         setShowMcpModal(false);
-        toast({ title: `flow-sdk-mcp enabled (${scope} scope). Starting workflow…` });
+        notify.success({ title: `flow-sdk-mcp enabled (${scope} scope). Starting workflow…` });
         await doRun();
       } catch (err) {
         console.error('[WorkflowAssetEditor] Enable MCP failed:', err);
-        toast({ title: 'Failed to enable MCP', variant: 'destructive' });
+        notify.error({ title: 'Failed to enable MCP' });
       } finally {
         setMcpEnabling(false);
       }
     },
-    [doRun, toast],
+    [doRun],
   );
 
   // The gate (`AssetEditorRouter`) only mounts us once the workflow is

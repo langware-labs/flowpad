@@ -28,7 +28,7 @@ import {
 } from '@src/hooks/use-project-repo-state';
 import { Button } from '@src/components/ui/button';
 import { GitBranch, ExternalLink, Loader2, Lock, Play, Terminal } from 'lucide-react';
-import { toast } from 'sonner';
+import { notify } from '@src/notifications';
 import { cn } from '@src/lib/utils';
 
 interface GitRepoAcceptModalProps {
@@ -134,7 +134,7 @@ export function GitRepoAcceptModal({ gitRepoTypeId, open, onClose }: GitRepoAcce
     const subpath = actionSubpathFor(state);
     if (!subpath || !projectTypeId) return;
     if (state === 'COMMIT_AND_PULL' && !commitMessage.trim()) {
-      toast.error('Enter a commit message first.');
+      notify.error({ title: 'Enter a commit message first.' });
       return;
     }
     setBusy(true);
@@ -160,7 +160,7 @@ export function GitRepoAcceptModal({ gitRepoTypeId, open, onClose }: GitRepoAcce
       console.error('[GitRepoAcceptModal] action failed', err);
       const msg = err instanceof Error ? err.message : 'Action failed';
       setStatusLine(`Failed: ${msg}`);
-      toast.error(msg);
+      notify.error({ title: msg });
     } finally {
       setBusy(false);
     }
@@ -196,7 +196,7 @@ export function GitRepoAcceptModal({ gitRepoTypeId, open, onClose }: GitRepoAcce
       onClose();
     } catch (err) {
       console.error('[GitRepoAcceptModal] start session failed', err);
-      toast.error('Failed to start session');
+      notify.error({ title: 'Failed to start session' });
     }
   };
 
@@ -211,7 +211,7 @@ export function GitRepoAcceptModal({ gitRepoTypeId, open, onClose }: GitRepoAcce
       onClose();
     } catch (err) {
       console.error('[GitRepoAcceptModal] open terminal failed', err);
-      toast.error('Failed to open terminal');
+      notify.error({ title: 'Failed to open terminal' });
     }
   };
 

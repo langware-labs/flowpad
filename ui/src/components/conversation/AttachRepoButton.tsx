@@ -14,7 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@src/components/ui/dialog';
-import { toast } from 'sonner';
+import { notify } from '@src/notifications';
 
 interface AttachRepoButtonProps {
   /** Called with the freshly-materialized ``git_repo-<uuid>`` TypeId. */
@@ -58,7 +58,7 @@ export function AttachRepoButton({ onAttach, disabled }: AttachRepoButtonProps) 
       closeAndReset();
     } catch (err) {
       console.error('[AttachRepoButton] materialize failed', err);
-      toast.error(err instanceof Error ? err.message : 'Failed to attach repo');
+      notify.error({ title: err instanceof Error ? err.message : 'Failed to attach repo' });
       setSubmitting(false);
     }
   };

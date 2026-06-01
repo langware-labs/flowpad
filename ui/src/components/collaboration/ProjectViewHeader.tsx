@@ -1,5 +1,5 @@
 import { Copy, Menu, PackageSearch, RotateCcw, Users } from 'lucide-react';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { useSystemTools } from '@src/hooks/use-system-tools';
 import { Button } from '@src/components/ui/button';
 import {
@@ -26,7 +26,6 @@ function onlineWithin(member: ProjectMember, windowMs: number): boolean {
 }
 
 export function ProjectViewHeader({ project, localMemberId }: Props) {
-  const { toast } = useToast();
   const { busy } = useSystemTools();
   const members = project.members ?? [];
   const [editing, setEditing] = useState(false);
@@ -43,7 +42,7 @@ export function ProjectViewHeader({ project, localMemberId }: Props) {
   const copy = () => {
     if (!project.session_code) return;
     void navigator.clipboard.writeText(project.session_code);
-    toast({ title: 'Code copied', description: project.session_code });
+    notify.success({ title: 'Code copied', message: project.session_code });
   };
 
   const startEdit = () => {
@@ -59,10 +58,10 @@ export function ProjectViewHeader({ project, localMemberId }: Props) {
     try {
       project.name = next ?? undefined;
       await project.save();
-      toast({ title: 'Project renamed', description: trimmed || '(cleared)' });
+      notify.success({ title: 'Project renamed', message: trimmed || '(cleared)' });
     } catch (err) {
       console.error('[ProjectViewHeader] rename failed', err);
-      toast({ title: 'Rename failed', description: String((err as Error).message ?? err) });
+      notify.info({ title: 'Rename failed', message: String((err as Error).message ?? err) });
     }
   };
 
