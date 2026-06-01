@@ -1,7 +1,7 @@
 import { FlowMessage, GitRepo, TypeId, User } from '@sdk';
 import { isValidIdentifier } from '@sdk/models/TypeId';
 import { useEntity } from '@sdk/react/hooks';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { ITask } from '@sdk/entities/task';
 import type { ConversationMessage, ConversationParticipant } from '@sdk/entities/conversation';
 import {
@@ -21,7 +21,11 @@ import { fileAttachmentUrl } from './attachment-url';
 import { useLocalUser } from './useLocalUser';
 import { localBundleUrl } from './flow-message-drafts';
 import { DraftMessageComposer } from './DraftMessageComposer';
-import { participantLabelByUserId } from './participant-display';
+import {
+  participantLabelByUserId,
+  UNRESOLVED_SENDER_LABEL,
+  warnUnresolvedSender,
+} from './participant-display';
 import { useFlowMessageProgress } from './useFlowMessageProgress';
 import { useFlowMessageDownloadError } from './useFlowMessageDownloadError';
 import { cn } from '@src/lib/utils';
@@ -63,6 +67,12 @@ interface FlowMessageBubbleProps {
   /** Click on the bubble fires this so the parent can mark this message selected. */
   onSelect?: () => void;
   participants?: ConversationParticipant[];
+  /** True once the parent has resolved the canonical hub roster (success
+   *  OR explicit failure). The bubble only escalates to the UNRESOLVED
+   *  alert label when `rosterReady` is true — otherwise it falls through
+   *  to the soft cushions (sender_name, creator, 'unknown') so legitimate
+   *  load windows don't flash the alert glyph. */
+  rosterReady?: boolean;
   /** Parent conversation's `message_status_visible` flag — passed straight
    *  through to the receipt indicator. Defaults to true. */
   conversationStatusVisible?: boolean;
@@ -82,6 +92,7 @@ export function FlowMessageBubble({
   isSelected,
   onSelect,
   participants,
+  rosterReady = false,
   conversationStatusVisible = true,
 }: FlowMessageBubbleProps) {
   // Prefer the FlowMessage handed down from the parent's batched conversation
@@ -140,12 +151,56 @@ export function FlowMessageBubble({
 
   const isCurrentUser = !!(fm.sender_id && localUser?.id && fm.sender_id === localUser.id);
   const creatorLabel = creator?.name?.trim() || creator?.email?.trim() || null;
-  const displayName = overrideName
-    ?? participantLabelByUserId(participants, fm.sender_id)
-    ?? fm.sender_name
-    ?? (isCurrentUser ? (localUser?.name || 'You') : null)
-    ?? creatorLabel
-    ?? 'unknown';
+  // Identity is hub-authoritative — but the bubble must NOT flash the alert
+  // glyph on legitimate gaps (cold-load before roster fetch returns,
+  // departed members, cross-instance bundle imports). Tiered chain:
+  //   1. local self-edit override (always wins)
+  //   2. roster lookup by sender_id (canonical hub-authoritative label)
+  //   3. it's me → my local profile name
+  //   4. wire-stamped sender_name — soft cushion only; legitimate for
+  //      messages from senders who left the roster or are on a different
+  //      instance (bundle import). Not trusted as identity but better than
+  //      blank for users.
+  //   5. creator entity name (for invitation placeholders, system msgs)
+  //   6a. UNRESOLVED — ONLY when sender_id is set AND the roster has
+  //      confirmed loaded (rosterReady) AND none of the cushions matched.
+  //      That's the "the hub roster says no, no other signal" case worth
+  //      alerting on.
+  //   6b. otherwise the benign 'unknown' string (roster still loading, no
+  //      sender_id at all, etc.)
+  const rosterLabel = fm.sender_id
+    ? participantLabelByUserId(participants, fm.sender_id)
+    : null;
+  const wireSenderName = fm.sender_name?.trim() || null;
+  let displayName: string;
+  if (overrideName) {
+    displayName = overrideName;
+  } else if (rosterLabel) {
+    displayName = rosterLabel;
+  } else if (isCurrentUser) {
+    displayName = localUser?.name?.trim() || 'You';
+  } else if (wireSenderName) {
+    displayName = wireSenderName;
+  } else if (creatorLabel) {
+    displayName = creatorLabel;
+  } else if (fm.sender_id && rosterReady) {
+    displayName = UNRESOLVED_SENDER_LABEL;
+  } else {
+    displayName = 'unknown';
+  }
+
+  // Telemetry: warn once per (conv, sender_id) when we landed on the alert
+  // label — the warn lives in an effect (NOT the render body) so re-renders
+  // don't flood devtools.
+  const isAlertLabel = displayName === UNRESOLVED_SENDER_LABEL;
+  useEffect(() => {
+    if (!isAlertLabel || !fm.sender_id) return;
+    warnUnresolvedSender(
+      fm.sender_id,
+      fm.conversation_id ?? null,
+      participants?.length ?? 0,
+    );
+  }, [isAlertLabel, fm.sender_id, fm.conversation_id, participants?.length]);
 
   // When task is present, role tracks the original task initiator (sender) vs
   // recipient. For project-scoped conversations (no task), use the local user
