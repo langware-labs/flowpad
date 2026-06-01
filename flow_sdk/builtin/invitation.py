@@ -36,7 +36,6 @@ class Invitation(Entity):
     expiration_at: Optional[datetime] = APIField(None)
     sent: Optional[bool] = APIField(False)
     message: Optional[str] = APIField(None)
-    _api_visible: ClassVar[bool] = True
 
     def __init__(self, **data):
         super().__init__(**data)

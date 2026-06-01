@@ -1,6 +1,5 @@
 import Graph from 'graphology';
 import louvain from 'graphology-communities-louvain';
-import { initIconRegistry } from '../icons/iconRegistry';
 import { iconDataUriForType } from '../icons/iconToDataUri';
 import { hexForType } from '../ui/typeColors';
 import { paletteForTheme, type EdgeKind, type Theme } from './themeColors';
@@ -34,7 +33,9 @@ export async function loadDepGraph(opts: LoadOptions = {}): Promise<Graph> {
   const dropOrphans = opts.dropOrphans ?? true;
   const palette = paletteForTheme(opts.theme ?? 'dark');
 
-  const [, res] = await Promise.all([initIconRegistry(), fetch(apiUrl)]);
+  // Icons resolve synchronously from the bootstrap-loaded SchemaRegistry; no
+  // registry init to await — just fetch the graph.
+  const res = await fetch(apiUrl);
   if (!res.ok) throw new Error(`dep_graph fetch failed: ${res.status}`);
   const data = (await res.json()) as Partial<DepGraphResponse> | null;
 

@@ -56,11 +56,11 @@ def _all_raw_from_db(entity_cls) -> list[dict[str, Any]]:
     legacy fields (``spec_id``, ``task_id``, etc.) before we'd ever see them
     — that's exactly what the migration needs to relocate.
     """
-    import sqlite3
+    from flow_sdk.db.drivers.sqlite.connection import open_sqlite
     from flow_sdk.instance_settings import get_instance_settings
 
     db_path = get_instance_settings().db_path
-    conn = sqlite3.connect(str(db_path))
+    conn = open_sqlite(db_path)
     try:
         cur = conn.execute(
             "SELECT id, data FROM entities WHERE type = ?",
@@ -177,14 +177,14 @@ def _migrate_one_type(entity_cls, dry_run: bool) -> dict[str, int]:
     fields and *strip* them in one shot — the entity model would round-trip
     them away on load.
     """
-    import sqlite3
+    from flow_sdk.db.drivers.sqlite.connection import open_sqlite
     from flow_sdk.instance_settings import get_instance_settings
 
     plan_fn = _PLAN_FOR[entity_cls]
     raws = _all_raw_from_db(entity_cls)
     counts = {"scanned": 0, "changed": 0, "skipped": 0}
     db_path = get_instance_settings().db_path
-    conn = sqlite3.connect(str(db_path))
+    conn = open_sqlite(db_path)
     try:
         for raw in raws:
             counts["scanned"] += 1

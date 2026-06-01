@@ -63,7 +63,16 @@ const TRACKED: Array<[label: string, mutate: (p: AgenticProcess) => void]> = [
   ['cli_config.print_mode',      (p) => { p.cli_config = { ...(p.cli_config ?? {}), print_mode: true }; }],
   ['cli_config.env_vars',        (p) => { p.cli_config = { ...(p.cli_config ?? {}), env_vars: { FOO: 'bar' } }; }],
   ['cli_config.agents_json',     (p) => { p.cli_config = { ...(p.cli_config ?? {}), agents_json: { x: { description: 'y' } } }; }],
-  ['workdir',                    (p) => { p.workdir = '/tmp/restart_required_test'; }],
+  // NOTE: ``workdir`` is intentionally NOT tracked here. Unlike the Python
+  // counterpart — whose ``_setup_running_process`` forces status=RUNNING
+  // *without* a session_id — this suite drives a REAL ``proc.start()``, which
+  // assigns a session_id and arms the binding freeze (``_BINDING_FROZEN_FIELDS``
+  // = {project_id, workdir}). Post-start, ``__setattr__`` silently refuses a
+  // workdir rebind to protect the transcript-to-disk mapping (incident
+  // 4c5bd6e4), so the field never changes and restart_required never flips.
+  // That's correct product behavior; asserting a flip here would be testing an
+  // impossible state. workdir-drift is covered by the freeze semantics, not the
+  // restart-required snapshot path.
   ['additional_dirs',            (p) => { p.additional_dirs = [...(p.additional_dirs ?? []), '/tmp/extra_a']; }],
   ['embedded_agent_ids',         (p) => { p.embedded_agent_ids = [...(p.embedded_agent_ids ?? []), 'legacy_persona']; }],
   ['shell_mode',                 (p) => { p.shell_mode = !p.shell_mode; }],

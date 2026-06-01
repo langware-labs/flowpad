@@ -596,7 +596,10 @@ class UvManager {
         FLOWPAD_DESKTOP: '1',
       };
       if (sodKey) {
-        env.SOD_KEY = sodKey;
+        // Matches flow_sdk/instance_settings/base_settings.py:ENV_SOD_ENC_KEY.
+        // Python's `sod_key` property reads this and short-circuits any
+        // keychain access — no Python-keyring prompt on subsequent launches.
+        env.SOD_ENC_KEY = sodKey;
       }
 
       if (IS_WIN) {

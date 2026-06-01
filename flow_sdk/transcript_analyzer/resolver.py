@@ -15,10 +15,14 @@ ran in, producing dead paths). The resolver always finds what's actually on disk
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Final
 
-_CLAUDE_PROJECTS: Final[Path] = Path.home() / ".claude" / "projects"
-_CODEX_SESSIONS: Final[Path] = Path.home() / ".codex" / "sessions"
+
+def _claude_projects_dir() -> Path:
+    return Path.home() / ".claude" / "projects"
+
+
+def _codex_sessions_dir() -> Path:
+    return Path.home() / ".codex" / "sessions"
 
 
 class TranscriptNotFoundError(LookupError):
@@ -40,11 +44,12 @@ def resolve_session_jsonl(worker_type: str, session_id: str) -> Path:
 
 
 def _resolve_claude(session_id: str) -> Path:
-    if not _CLAUDE_PROJECTS.is_dir():
+    projects = _claude_projects_dir()
+    if not projects.is_dir():
         raise TranscriptNotFoundError(
             f"~/.claude/projects/ not found; cannot resolve session {session_id}"
         )
-    matches = list(_CLAUDE_PROJECTS.glob(f"*/{session_id}.jsonl"))
+    matches = list(projects.glob(f"*/{session_id}.jsonl"))
     if not matches:
         raise TranscriptNotFoundError(
             f"No claude transcript JSONL found for session_id={session_id}"
@@ -57,11 +62,12 @@ def _resolve_claude(session_id: str) -> Path:
 
 
 def _resolve_codex(session_id: str) -> Path:
-    if not _CODEX_SESSIONS.is_dir():
+    sessions = _codex_sessions_dir()
+    if not sessions.is_dir():
         raise TranscriptNotFoundError(
             f"~/.codex/sessions/ not found; cannot resolve session {session_id}"
         )
-    matches = list(_CODEX_SESSIONS.glob(f"**/rollout-*-{session_id}.jsonl"))
+    matches = list(sessions.glob(f"**/rollout-*-{session_id}.jsonl"))
     if not matches:
         raise TranscriptNotFoundError(
             f"No codex rollout JSONL found for session_id={session_id}"

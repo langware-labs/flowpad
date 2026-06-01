@@ -1,21 +1,24 @@
 import {
   ActionInfo,
+  cloudManager,
   connectionManager,
   createCloudConnectionAuthRejectedWarning,
   createCloudConnectionLostWarning,
   createCloudDisconnectedWarning,
+  createHubRequestFailedWarning,
   createLlmNotConfiguredWarning,
   createNoComputeNodeWarning,
   createSecretsNotEnabledWarning,
   createSnifferNotFoundWarning,
   dataContext,
   dataManager,
+  HubClientErrorInfo,
   secretApprovalGate,
   secretsService,
   UserWarning,
 } from '../..';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useContext } from './useContext';
 
 /**
@@ -167,6 +170,21 @@ export function useWarnings() {
   const claudeCodeAuth = llmConfigData?.claude_code_auth ?? null;
   const isOAuthConfigured = claudeCodeAuth?.auth_method === 'oauth';
 
+  // Track the most recent hub HTTP error (4xx/5xx) reported by the local
+  // backend's httpx hook. Shown as a soft warning so the user can see the
+  // full method/path/status and copy it; clicking dismisses it.
+  const [lastHubError, setLastHubError] = useState<HubClientErrorInfo | null>(
+    () => cloudManager.lastHubError,
+  );
+  useEffect(() => {
+    const handler = (next: HubClientErrorInfo | null) => setLastHubError(next);
+    cloudManager.on('last_hub_error_changed', handler);
+    setLastHubError(cloudManager.lastHubError);
+    return () => {
+      cloudManager.off('last_hub_error_changed', handler);
+    };
+  }, []);
+
   // Compute warnings based on current state
   const computedWarnings = useMemo(() => {
     const warnings: UserWarning[] = [];
@@ -198,6 +216,20 @@ export function useWarnings() {
       warnings.push(createCloudConnectionLostWarning());
     }
 
+    // Most recent hub HTTP error — request-level failure, NOT a connection
+    // problem. Distinct from the connection warnings above; both can be
+    // present at once (e.g. WS reconnecting + an in-flight fs/download
+    // returned 404).
+    if (lastHubError) {
+      warnings.push(createHubRequestFailedWarning({
+        method: lastHubError.method,
+        path: lastHubError.path,
+        statusCode: lastHubError.statusCode,
+        message: lastHubError.message,
+        onDismiss: () => cloudManager.clearLastHubError(),
+      }));
+    }
+
     // No compute node warning
     if (!computeNode) {
       warnings.push(createNoComputeNodeWarning());
@@ -222,7 +254,7 @@ export function useWarnings() {
     }
 
     return warnings;
-  }, [isDesktop, isLlmConfigured, cloudLoginAvailable, cloudConnectionStatus, computeNode, snifferEnabled, isSecretsEnabled]);
+  }, [isDesktop, isLlmConfigured, cloudLoginAvailable, cloudConnectionStatus, computeNode, snifferEnabled, isSecretsEnabled, lastHubError]);
 
   // Update context warnings when computed warnings change
   useEffect(() => {

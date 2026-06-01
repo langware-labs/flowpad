@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef } from 'react';
-import { ExternalLink, FileCheck2, FileText, FolderOpen, MessageSquare, Sparkles, User } from 'lucide-react';
+import { ExternalLink } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { APIEntity, TypeId } from '@sdk';
+import { lucideByName } from '@src/lib/lucide-by-name';
+import { APIEntity, TypeId, dataManager } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useChipPrewarm } from '@src/navigation/useChipPrewarm';
@@ -51,15 +52,34 @@ interface EntityChipProps {
  * render in the same tab strip — keeping them here means the strip and any
  * entity chip stay visually consistent.
  */
-export const ICON_BY_TYPE: Record<string, LucideIcon> = {
-  project: FolderOpen,
-  task: FileText,
-  conversation: MessageSquare,
-  spec: FileCheck2,
-  user: User,
-  skill: Sparkles,
-  markdown: FileText,
-};
+/** Icon for an entity type from the SchemaRegistry (backend TypeInfo.icon is
+ *  the single source of truth), with an ExternalLink fallback. */
+export function iconForEntity(type: string): LucideIcon {
+  // Guarded: dataManager may be uninitialized in isolated unit tests that mount
+  // a component before bootstrap/loadTypes ran.
+  const name = dataManager?.iconForType?.(type);
+  return (name && lucideByName(name)) || ExternalLink;
+}
+
+/**
+ * Backwards-compatible map facade over {@link iconForEntity}. Reads icons from
+ * the SchemaRegistry (no hardcoded list); ``ICON_BY_TYPE[type]`` and
+ * ``ICON_BY_TYPE.task`` both resolve a LucideIcon, or undefined when the type
+ * has no backend icon (so existing ``?? ExternalLink`` fallbacks still work).
+ */
+export const ICON_BY_TYPE: Record<string, LucideIcon> = new Proxy(
+  {} as Record<string, LucideIcon>,
+  {
+    get(_t, prop): LucideIcon | undefined {
+      // The trap also fires for symbol keys + introspection props like
+      // `toString` (React-refresh / Object spread). Only resolve real
+      // string type-names; everything else is "no icon".
+      if (typeof prop !== 'string') return undefined;
+      const name = dataManager?.iconForType?.(prop);
+      return name ? lucideByName(name) : undefined;
+    },
+  },
+);
 
 /**
  * Per-entity-type styling. Stable across the app so a "project" chip always
@@ -75,6 +95,8 @@ const STYLE_BY_TYPE: Record<string, string> = {
     'border border-emerald-500/40 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-300',
   spec:
     'border border-amber-500/40 bg-amber-500/10 text-amber-700 hover:bg-amber-500/20 dark:text-amber-300',
+  git_repo:
+    'border border-slate-500/40 bg-slate-500/10 text-slate-700 hover:bg-slate-500/20 dark:text-slate-300',
 };
 const DEFAULT_STYLE =
   'border border-border bg-muted/30 text-muted-foreground hover:bg-muted hover:text-foreground';

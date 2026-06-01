@@ -7,7 +7,7 @@ import threading
 import pytest
 
 from flow_sdk.fs_store.manifest import CollectionManifest
-from flow_sdk.fs_store.record import get_default_records_root, set_default_records_root
+from flow_sdk.fs_store.record_paths import get_default_records_root, set_default_records_root
 
 
 @pytest.fixture()

@@ -3,7 +3,6 @@
 Endpoints:
   GET    /secrets/is-enabled  → {enabled: bool}
   POST   /secrets/enable      → {enabled: bool}
-  POST   /secrets/seed-key    → body {key} → {enabled: bool} (Electron-only)
   GET    /secrets             → [{name, description, created_at}]
   POST   /secrets             → body {name, value, description?}
   DELETE /secrets/{name}      → {ok: True}
@@ -20,7 +19,6 @@ from flow_sdk.cli.auth.secrets import (
     enable_secrets,
     get_secrets,
     is_secrets_enabled,
-    seed_sod_key,
     write_secret,
 )
 from flow_sdk.core import action
@@ -32,7 +30,6 @@ logger = logging.getLogger(__name__)
 
 _IS_ENABLED = "is-enabled"
 _ENABLE = "enable"
-_SEED_KEY = "seed-key"
 
 
 @action.all(action_name="secrets", methods=["get", "post", "delete"], types="all")
@@ -55,13 +52,6 @@ async def secrets_action() -> ApiResponse:
         if method == "POST":
             if sub_path == _ENABLE:
                 return ApiSuccessResponse(data={"enabled": enable_secrets()})
-            if sub_path == _SEED_KEY:
-                body = await request_info.request.body()
-                payload = json.loads(body) if body else {}
-                key = (payload.get("key") or "").strip()
-                if not key:
-                    return ApiFailResponse(message="key is required")
-                return ApiSuccessResponse(data={"enabled": seed_sod_key(key)})
             if sub_path == "":
                 body = await request_info.request.body()
                 payload = json.loads(body) if body else {}

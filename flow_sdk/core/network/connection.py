@@ -37,8 +37,6 @@ class Notification(Entity):
     # Extra context (project_url, spec_id, sender_name, etc.)
     metadata: Optional[Dict[str, Any]] = APIField(None)
 
-    _api_visible: ClassVar[bool] = True
-
     def after_create(self, create_data: dict):
         pass
 

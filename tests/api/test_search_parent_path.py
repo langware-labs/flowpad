@@ -40,14 +40,15 @@ async def _seed_md(tmp: Path, scan_roots: list[Path]) -> None:
 
     Scan roots are patched so vault_root attribution is deterministic.
     """
-    from flow_sdk.fs_records.markdown_record import MarkdownRecord
+    from flow_sdk.fs_store.indexer.functions.markdown import extract_markdown
+    from flow_sdk.fs_store.fs_ref import FSRef as _FSRef
 
     with patch(
-        "flow_sdk.fs_records.markdown_record._doc_search_dirs",
+        "flow_sdk.fs_store.operations.markdown_dirs.doc_search_dirs",
         return_value=scan_roots,
     ):
         for md in sorted(tmp.rglob("*.md")):
-            rec = MarkdownRecord.from_file(md)
+            rec = extract_markdown(_FSRef(md))[0]
             await rec.sync_to_db()
 
 

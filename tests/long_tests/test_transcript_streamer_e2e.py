@@ -28,7 +28,7 @@ import pytest
 from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.claude_memory_entities import ClaudePlan
 from flow_sdk.flowpad_types.enums import WorkerType
-from flow_sdk.fs_records.agent_status import ApiErrorTimeoutError
+from flow_sdk.builtin.worker_status import ApiErrorTimeoutError
 from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.responses import ApiResponse, ApiSuccessResponse
 from flow_sdk.server.fsop_watcher import fsop_watcher

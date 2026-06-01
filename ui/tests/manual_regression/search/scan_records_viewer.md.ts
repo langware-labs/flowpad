@@ -38,17 +38,16 @@ async function dismissSetupModal(page: import('@playwright/test').Page) {
   });
 }
 
-// The header Rescan button is the last one in the action row (Index All, Rescan, Clear Index).
-// The empty-state banner also has a Rescan link, so we scope to header buttons via a role+name
-// locator and then pick the first enabled one.
+// The read-only rescan action is the "Scan Stats" button (GET /fs-records/scan)
+// in the action row (Sync changes, Force re-sync, Rebuild index, Scan Stats,
+// Scan Orphans, LLM Indexers, Clear Index).
 function headerRescanButton(page: import('@playwright/test').Page) {
-  return page.getByRole('button', { name: 'Rescan', exact: true }).first();
+  return page.getByRole('button', { name: 'Scan Stats', exact: true }).first();
 }
 
 async function triggerInitialScan(page: import('@playwright/test').Page) {
-  // There may be two Rescan buttons on the page: the header button and an empty-state link.
-  // Either one triggers a scan — click whichever is visible first.
-  const rescan = page.getByRole('button', { name: 'Rescan', exact: true }).first();
+  // "Scan Stats" triggers a read-only scan (GET /fs-records/scan).
+  const rescan = page.getByRole('button', { name: 'Scan Stats', exact: true }).first();
   await expect(rescan).toBeVisible({ timeout: 10_000 });
   await rescan.click();
 }
@@ -61,7 +60,8 @@ test.describe('FsRecordsScannerViewer (/dock/lens/fs-records/scan)', () => {
     await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
 
     await expect(page.getByRole('heading', { name: 'Records Scanner' })).toBeVisible({ timeout: 10_000 });
-    await expect(page.getByRole('button', { name: /Index All|Indexing/ })).toBeVisible({ timeout: 10_000 });
+    // Primary index action (POST /fs-records/index) is the "Sync changes" button.
+    await expect(page.getByRole('button', { name: /Sync changes|Indexing/ })).toBeVisible({ timeout: 10_000 });
     await expect(headerRescanButton(page)).toBeVisible({ timeout: 10_000 });
   });
 

@@ -30,7 +30,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.claude.session_history import 
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.stream_worker import (
     ClaudeCLIStreamWorker,
 )
-from flow_sdk.fs_records.agent_status import WorkerStatus, _tail_status
+from flow_sdk.builtin.worker_status import WorkerStatus, _tail_status
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 from flow_sdk.transcript_analyzer import (
     TranscriptDescriptor,
@@ -183,7 +183,7 @@ class ClaudeDriver:
         )
 
         # Lifecycle: flip to RUNNING before launching the worker.
-        from flow_sdk.fs_records.agentic_process_lifecycle import ProcessStatus
+        from flow_sdk.builtin.process_lifecycle import ProcessStatus
         if process.status != ProcessStatus.RUNNING.value:
             process.status = ProcessStatus.RUNNING.value
             try:
@@ -291,8 +291,8 @@ class ClaudeDriver:
         """Path to the Claude session JSONL — None when no session_id yet."""
         if not process.session_id:
             return None
-        from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
-        record = ClaudeSessionRecord.get(process.session_id)
+        from flow_sdk.fs_store.indexer.functions.claude_sessions import get_claude_session
+        record = get_claude_session(process.session_id)
         if record and record.jsonl_path:
             path = Path(record.jsonl_path)
             if path.exists():

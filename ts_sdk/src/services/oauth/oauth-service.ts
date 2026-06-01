@@ -1,6 +1,7 @@
 import { EventEmitter } from 'events';
 import { ActionInfo, dataContext, dataManager, OAuthMessage, TypeId } from '../../index';
 import { EntityEnv, EnvVarType } from '../../models/env_var';
+import { connectionManager } from '../../websocket';
 import { secretApprovalGate } from '../secretApprovalGate';
 import { secretsService } from '../secrets-service';
 import { BrowserAuthWindow, MockAuthWindow, OAuthWindow } from './oauth-window';
@@ -27,6 +28,19 @@ export enum OAuthEventType {
   OAUTH_MSG = 'on_oauth_msg',
   WINDOW_CLOSE = 'on_window_close',
   OAUTH_FLOW_COMPLETE = 'on_oauth_flow_complete',
+  /** Fired when an OAuth flow requires the user to enter a device code
+   *  (RFC 8628). UI listens and renders a modal with `user_code` + verify URL. */
+  DEVICE_FLOW_START = 'on_oauth_device_flow_start',
+}
+
+/** Payload emitted by DEVICE_FLOW_START. */
+export interface OAuthDeviceFlowPayload {
+  provider: string;
+  user_code: string;
+  verification_uri: string;
+  expires_in: number;
+  interval: number;
+  state: string;
 }
 
 export interface OAuthProvider {
@@ -239,19 +253,85 @@ export class OAuthService {
         await cloudManager.login();
         return null;
       }
-      // Start OAuth flow
-      const oauthRequestInfo = await this.generateOauthRequestInfo(provider, targetEntity, sharedEntityVarName);
 
-      // Create popup window
+      // Probe the backend's `/auth` response directly so we can branch on the
+      // discriminator without forcing a popup for device-flow providers.
+      const actionInfo = new ActionInfo('oauth');
+      if (targetEntity) actionInfo.targetEntity = targetEntity;
+      actionInfo.subpath = [provider, 'auth'];
+      if (sharedEntityVarName) {
+        actionInfo.queryParameters = { shared_entity_var_name: sharedEntityVarName };
+      }
+      const raw = await dataManager.callAction<unknown, Record<string, unknown>>(actionInfo);
+      if (!raw) {
+        throw new Error(`Empty OAuth /auth response for ${provider}`);
+      }
+
+      // Device flow (e.g. GitHub): no browser popup; emit an event so the UI can
+      // render a code-display modal. Then kick off the long-poll on wait-callback.
+      if ((raw as { kind?: string }).kind === 'device') {
+        const payload: OAuthDeviceFlowPayload = {
+          provider,
+          user_code: String(raw.user_code ?? ''),
+          verification_uri: String(raw.verification_uri ?? ''),
+          expires_in: Number(raw.expires_in ?? 900),
+          interval: Number(raw.interval ?? 5),
+          state: String(raw.state ?? ''),
+        };
+        // Attach the completion listener BEFORE emitting DEVICE_FLOW_START so a
+        // race between a near-instant SUCCESS broadcast and the modal's own
+        // listener can't drop the result. Listener also fires OAUTH_FLOW_COMPLETE
+        // so useOAuthConnection.connect() can clear its `isConnecting` spinner.
+        const completionHandler = (msg: { auth_method?: string; oauth_request_id?: string; status?: string }) => {
+          if (msg.auth_method !== provider) return;
+          if (msg.oauth_request_id && msg.oauth_request_id !== payload.state) return;
+          connectionManager.off('on_llm_config_msg', completionHandler);
+          dataManager.emit(OAuthEventType.OAUTH_FLOW_COMPLETE, {
+            ...msg,
+            provider,
+            targetEntity,
+            attachSuccess: null,
+          });
+        };
+        connectionManager.on('on_llm_config_msg', completionHandler);
+        dataManager.emit(OAuthEventType.DEVICE_FLOW_START, payload);
+
+        // Long-poll the wait-callback action; this resolves when GitHub authorizes
+        // (or rejects / expires). The backend writes to SOD on success and
+        // broadcasts an LlmConfigMessage that the listener above picks up. The
+        // backend bounds this at OAUTH_CALLBACK_TIMEOUT and returns
+        // `{status: "polling"}` if the user takes longer than that window —
+        // polling continues server-side as a background task in that case.
+        const waitAction = new ActionInfo('oauth');
+        if (targetEntity) waitAction.targetEntity = targetEntity;
+        waitAction.subpath = [provider, 'wait-callback'];
+        waitAction.method = 'POST';
+        waitAction.queryParameters = { state: payload.state };
+        waitAction.bodyParameters = {};
+        // Fire-and-forget — the modal + completionHandler own the UX via the broadcast.
+        void dataManager.callAction<unknown, unknown>(waitAction).catch((err) => {
+          console.warn(`[OAuthService] device-flow wait-callback errored for ${provider}:`, err);
+        });
+        return null;
+      }
+
+      // Loopback flow (Anthropic et al.): adapt to OAuthClientRequestInfo + popup.
+      const authUrl = String(raw.auth_url ?? raw.url ?? '');
+      if (!authUrl) {
+        throw new Error(`Invalid OAuth response for ${provider}: missing auth_url`);
+      }
+      const oauthRequestInfo: OAuthClientRequestInfo = {
+        provider,
+        auth_url: authUrl,
+        oauth_request_id: String(raw.oauth_request_id ?? raw.state ?? ''),
+      };
       const popupWindow = await this.createOAuthPopupWindow(oauthRequestInfo.auth_url, provider);
       if (!popupWindow) {
         console.error(`[OAuthService] Failed to create popup window`);
         throw new Error(`Failed to create popup window`);
       }
-      // Create and store OauthFlow instance
       const oauthFlow = new OauthFlow(oauthRequestInfo, popupWindow, targetEntity, sharedEntityVarName);
       this.oAuthFlows.set(oauthRequestInfo.oauth_request_id, oauthFlow);
-
       return oauthFlow;
     } catch (error) {
       console.error(`[OAuthService] OAuth connection failed for ${provider}:`, error);
@@ -280,6 +360,26 @@ export class OAuthService {
       return Boolean(verified?.enabled);
     } catch {
       return false;
+    }
+  }
+
+  /**
+   * Signal the backend to terminate a running device-flow polling task.
+   * Used by the device-flow modal's Cancel button so the backend doesn't keep
+   * polling GitHub for the rest of the device-code's lifetime (~15 min).
+   */
+  public async cancelDeviceFlow(provider: string, state: string): Promise<void> {
+    try {
+      const actionInfo = new ActionInfo('oauth');
+      actionInfo.subpath = [provider, 'cancel'];
+      actionInfo.method = 'POST';
+      actionInfo.queryParameters = { state };
+      actionInfo.bodyParameters = {};
+      await dataManager.callAction<unknown, { cancelled: boolean }>(actionInfo);
+    } catch (err) {
+      // Cancellation is best-effort; if the backend is unreachable the session
+      // will time out naturally at the device-code's natural expiry.
+      console.warn(`[OAuthService] cancelDeviceFlow failed for ${provider}:`, err);
     }
   }
 

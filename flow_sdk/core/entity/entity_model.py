@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import inspect
 import os
+from contextvars import ContextVar
 
 DEFAULT_BROWSE_LIMIT = 20
 import types
@@ -51,6 +52,12 @@ from .entity_env.env_types import EntityEnvVars, EnvVar, EnvVarType
 
 EntityType = TypeVar("EntityType", bound="Entity")
 
+# When set, ``Entity.save`` skips the disk write-back (``store()``). Used by the
+# disk→DB adopt path (``from_record``) so the source-of-truth file is never
+# rewritten. Override-agnostic: every ``save()`` override funnels through the
+# base ``save()`` which reads this, so no per-type signature change is needed.
+_SUPPRESS_STORE: "ContextVar[bool]" = ContextVar("_suppress_store", default=False)
+
 
 @dataclass
 class PathQueryOptions:
@@ -78,6 +85,15 @@ class Entity(DBEntity):
     tags: List[str] = APIField(default_factory=list)
     system: bool = APIField(default=False, description="True when this entity belongs to an SDK-shipped system project")
     remote: bool = APIField(default=False, description="True when this entity has a hub counterpart at the same id; refreshable from the hub")
+
+    # Locally-authoritative fields a hub refresh must NEVER overwrite. The hub
+    # is the source of truth for *content*; these describe the local copy's own
+    # state (do-I-have-a-hub-twin, FS-indexer flags). Subclasses extend this
+    # with their own local-only state (e.g. download/body status, on-disk
+    # paths). Used by ``is_stale`` / ``merge_hub_payload`` at the remote
+    # boundary. ClassVar so pydantic treats it as config, not a field.
+    LOCAL_ONLY_FIELDS: ClassVar[frozenset[str]] = frozenset({"remote", "system", "orphan"})
+
     orphan: bool = APIField(
         default=False,
         description=(
@@ -448,7 +464,16 @@ class Entity(DBEntity):
                         setattr(entity, prop_name, record.get_prop(prop_name))
                     except Exception:
                         pass
-        await entity.save(notify=notify)
+        # from_record is the disk→DB adopt path: persist the DB row only, never
+        # write back to disk. The record we just read IS the source of truth;
+        # re-writing it is what creates the indexer loop. Suppressing store()
+        # via the contextvar makes that structurally impossible (not dependent
+        # on mtime timing) and works through any save() override.
+        token = _SUPPRESS_STORE.set(True)
+        try:
+            await entity.save(notify=notify)
+        finally:
+            _SUPPRESS_STORE.reset(token)
         return entity
 
     async def _fts_upsert(self, type_name: str, content: str) -> None:
@@ -464,14 +489,10 @@ class Entity(DBEntity):
                 content=content,
             ))
 
-    async def get_record(self) -> "Record | None":
+    async def get_record(self) -> "FSRecord | None":
         """Return the fs-record associated with this entity, or None if none exists."""
-        from flow_sdk.fs_store import Record  # noqa: PLC0415 — lazy, avoids circular import
-        type_name = self.get_type()
-        record_cls = SchemaRegistry.get_record_cls(type_name)
-        if record_cls is None:
-            return None
-        return record_cls.get(self.id)
+        from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415 — lazy
+        return FSRecord.load_or_none(self.get_type(), self.id)
 
     async def updateSearchIndex(self) -> None:
         """Write this entity's searchable content into the FTS5 table.
@@ -494,12 +515,47 @@ class Entity(DBEntity):
         if hasattr(driver, "fts_delete"):
             await driver.fts_delete(self.id)
 
+    def metadata_payload(self) -> dict:
+        """Resolve which entity fields are mirrored into metadata.json.
+
+        Per-field ``persist`` policy (declared on the APIField):
+          - TRUE    → always written.
+          - FALSE   → never written (DB-only: computed/denormalized/runtime).
+          - DEFAULT → written iff the field name is declared in the type's
+                      metadata model (``TypeInfo.meta_model``), falling back to
+                      ``BaseMeta`` when a type registers none.
+        ``None`` values are omitted so a stale field never clobbers a fresh
+        on-disk one under partial-merge.
+        """
+        from flow_sdk.api.api_types.api_field import Persist, persist_policy
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry
+        from flow_sdk.schema.type_info.base_meta import BaseMeta
+
+        info = SchemaRegistry.get(self.get_type())
+        meta_model = (getattr(info, "meta_model", None) if info else None) or BaseMeta
+        model_field_names = set(getattr(meta_model, "model_fields", {}) or {})
+
+        out: dict = {}
+        for name, field in self.__class__.model_fields.items():
+            if name in ("id", "type") or name.startswith("_"):
+                continue
+            policy = persist_policy(field)
+            if policy == Persist.FALSE:
+                continue
+            if policy == Persist.DEFAULT and name not in model_field_names:
+                continue
+            v = getattr(self, name, None)
+            if v is None:
+                continue
+            out[name] = v
+        return out
+
     async def store(self) -> "Record | None":
         """Sync entity metadata DOWN to its record on disk.
 
-        Discovers the record for this entity type and id, updates meta fields
-        from self (name, status, etc.), calls record.save() wrapped in asyncio.to_thread.
-        Returns the updated Record, or None if no linked record can be found.
+        Discovers the record for this entity type and id, writes the persisted
+        meta fields (per ``metadata_payload``) via ``record.save_metadata``, and
+        upserts the main asset body. Returns the record, or None if none exists.
         """
         return await self._store()
 
@@ -515,13 +571,13 @@ class Entity(DBEntity):
         if hasattr(entity, "record_data_ref") and entity.record_data_ref is None:
             return None
         type_name = entity.get_type()
-        record_cls = SchemaRegistry.get_record_cls(type_name)
-        if record_cls is None:
-            service_log.debug(f"_store: no Record class registered for entity type '{type_name}'")
-            return None
-        record = record_cls.get(entity.id)
-        if record is None:
-            record = record_cls(id=entity.id)
+        # FSRecord is the single record class. Load the shadow if present;
+        # otherwise construct a fresh one with the entity's id+type.
+        from flow_sdk.fs_store.fs_record import FSRecord
+        try:
+            record = FSRecord.load(type_name, entity.id)
+        except FileNotFoundError:
+            record = FSRecord(type=type_name, id=entity.id)
         # Propagate any pre-resolved asset_ref string from the entity (set in
         # _prepare_for_storage) onto the record so main_ref resolves correctly.
         if record.asset_ref is None:
@@ -529,15 +585,22 @@ class Entity(DBEntity):
             if ar_str:
                 from flow_sdk.fs_store.fs_ref import FSRef
                 record.asset_ref = FSRef(ar_str)
+        # The single declarative DB→disk write: persisted fields + the special
+        # asset_ref (always mirrored so main_ref resolves). Partial-merge, so
+        # action/indexer-written keys this entity doesn't own are preserved.
+        payload = entity.metadata_payload()
+        ar_str = getattr(entity, "asset_ref", None)
+        if ar_str:
+            payload["asset_ref"] = ar_str
         import asyncio
         try:
             # upsert_main_ref writes default_body iff main_ref doesn't exist
             # — write goes through the FSRef contract, never raw Path.write_text.
             await asyncio.to_thread(record.upsert_main_ref, entity)
-            await asyncio.to_thread(record.sync_from_entity, entity)
+            await asyncio.to_thread(record.save_metadata, payload)
         except Exception as exc:
-            from flow_sdk.fs_records.record_error import RecordError  # lazy (circular-safe)
-            RecordError.from_exception(record, exc, trigger="store").save()
+            from flow_sdk.fs_store.operations.record_error import from_exception  # lazy (circular-safe)
+            from_exception(record, exc, trigger="store").save()
             return None
         # Immediately index into FTS5 so the entity is searchable without a scan.
         content = record.search_content
@@ -617,10 +680,7 @@ class Entity(DBEntity):
         from flow_sdk import wiki
 
         if body is None:
-            rec_cls = SchemaRegistry.get_record_cls(self.type)
-            rec = rec_cls.get(self.id) if rec_cls is not None else None
-            if rec is None:
-                rec = await self.get_record()
+            rec = await self.get_record()
             if rec is not None:
                 body = rec.wiki_body()
 
@@ -648,7 +708,16 @@ class Entity(DBEntity):
 
     @staticmethod
     def api_visible_by_type(entity_type: str):
-        return SchemaRegistry.get_entity_cls(entity_type).api_visible()
+        return SchemaRegistry.is_api_visible(entity_type)
+
+    @property
+    def type_info(self):
+        """The registry TypeInfo for this entity's type — the single source of
+        truth for type metadata (icon/browseable/creatable/indexed_by_default/
+        api_visible/asset layout). Read via ``self.type_info.icon`` etc.; never
+        re-declared on concrete entity classes.
+        """
+        return SchemaRegistry.get(self.get_type())
 
     @staticmethod
     def get_entity_model_by_type(entity_type: str) -> type[Entity]:
@@ -951,6 +1020,54 @@ class Entity(DBEntity):
             self.remote = True
         return self
 
+    @staticmethod
+    def _as_datetime(value: Any) -> Optional[datetime]:
+        """Coerce a stored/serialized timestamp to a ``datetime`` for compare.
+        Returns ``None`` when the value is absent or unparseable."""
+        if value is None or isinstance(value, datetime):
+            return value
+        try:
+            return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            return None
+
+    @classmethod
+    def is_stale(cls, local: Optional["Entity"], hub_payload: Dict[str, Any]) -> bool:
+        """LWW staleness at the hub→local boundary: ``True`` when the hub copy
+        should replace the local one.
+
+        - No local row  → stale (must materialize).
+        - Hub provides no ``updated_date`` → cannot prove staleness, keep local
+          (avoids clobbering local edits with a timestamp-less hub echo).
+        - Otherwise stale iff ``hub.updated_date > local.updated_date``.
+
+        ``updated_date`` is the single decision point; the hub is the real-time
+        source of truth. See ``merge_hub_payload`` for the field-level merge.
+        """
+        if local is None:
+            return True
+        hub_dt = cls._as_datetime(hub_payload.get("updated_date"))
+        if hub_dt is None:
+            return False
+        local_dt = cls._as_datetime(getattr(local, "updated_date", None))
+        if local_dt is None:
+            return True
+        return hub_dt > local_dt
+
+    @classmethod
+    def merge_hub_payload(cls, local: "Entity", hub_payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Build a ``model_validate``-able dict that refreshes hub-owned fields
+        from ``hub_payload`` while preserving this type's ``LOCAL_ONLY_FIELDS``
+        (the locally-authoritative state the hub must never overwrite). The
+        hub's ``updated_date`` is carried through so the local save records the
+        hub timestamp (the driver preserves a non-None ``updated_date``)."""
+        merged = dict(hub_payload)
+        merged["id"] = local.id
+        for field in cls.LOCAL_ONLY_FIELDS:
+            if field in cls.model_fields:
+                merged[field] = getattr(local, field, None)
+        return merged
+
     async def save(self: EntityType, owner: DBEntity | TypeId | types.NoneType = None, notify: bool = True) -> EntityType:
         user_id = owner
         if isinstance(owner, Entity):
@@ -967,7 +1084,12 @@ class Entity(DBEntity):
         await super().save(user_id, notify=notify)
         # Sync metadata down to disk + upsert main_ref iff missing (Record
         # contract: writes go through main_ref FSRef, no per-type store()).
-        await self.store()
+        # The disk→DB adopt path (from_record) suppresses this via the
+        # _SUPPRESS_STORE contextvar so the source-of-truth file is never
+        # rewritten — structural loop suppression, override-agnostic (all
+        # save() overrides funnel through this base).
+        if not _SUPPRESS_STORE.get():
+            await self.store()
         # Invalidate authorization cache since entity properties have changed
         from ..auth.auth_cache import get_auth_cache
 
@@ -986,14 +1108,15 @@ class Entity(DBEntity):
         if getattr(self, "asset_ref", None):
             return  # Already set (entity update or explicit caller-set path).
         type_name = self.get_type()
-        record_cls = SchemaRegistry.get_record_cls(type_name)
-        if record_cls is None or not getattr(record_cls, "_main_subdir", None):
+        info = SchemaRegistry.get(type_name)
+        if info is None or info.main_subdir is None:
             return
         scope_root = await self._resolve_scope_root()
         if scope_root is None:
             return
-        # Transient record just to compute the asset_ref convention.
-        rec = record_cls(id=self.id)
+        # Transient FSRecord just to compute the asset_ref convention.
+        from flow_sdk.fs_store.fs_record import FSRecord
+        rec = FSRecord(type=type_name, id=self.id)
         ar = rec.compute_asset_ref(scope_root, self)
         if ar is None or getattr(ar, "_path", None) is None:
             return
@@ -1571,9 +1694,16 @@ class Entity(DBEntity):
 
         try:
             from flow_sdk.request_context.methods import delete_user_credentials  # noqa: PLC0415
-            await delete_user_credentials(self, provider_id)
+            # Pass self.id as foreign_key to match the device-flow write convention
+            # in flow_sdk.app.actions.desktop_oauth._save_github_token_to_sod —
+            # otherwise the composed SOD key diverges and the token is silently
+            # leaked on disk after a user-initiated revocation.
+            await delete_user_credentials(self, provider_id, self.id)
         except Exception as e:
-            service_log.error(f"Error deleting OAuth credentials {e}")
+            # ERROR (not warn): a swallowed FK ValueError here means a user
+            # believed they revoked a credential but the SOD blob is still
+            # on disk — a real security regression worth surfacing in logs.
+            service_log.error(f"Failed to delete OAuth credentials for {provider_id}: {e}", exc_info=True)
 
         self.env_vars.values.remove(env_var_to_remove)
         await self.update()

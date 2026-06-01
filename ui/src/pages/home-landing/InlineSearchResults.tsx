@@ -149,13 +149,16 @@ export function InlineSearchResults({
         <div className="px-3 py-3 text-sm text-muted-foreground">No results</div>
       )}
 
-      {/* Result rows */}
+      {/* Result rows — div+role=button (not <button>) so the per-action
+          chips below can be real <button>s without nesting buttons. Selection
+          + Enter activation are handled by the container's handleKeyDown. */}
       {!isLoading && displayResults.map((result, i) => (
-        <button
+        <div
           key={result.record_id}
-          type="button"
+          role="button"
+          tabIndex={-1}
           className={cn(
-            'flex w-full flex-col gap-0.5 px-3 py-2 text-left',
+            'flex w-full flex-col gap-0.5 px-3 py-2 text-left cursor-pointer',
             selectedIndex === i ? 'bg-accent text-foreground' : 'hover:bg-accent/50',
           )}
           onClick={() => onNavigateResult(result)}
@@ -212,7 +215,7 @@ export function InlineSearchResults({
               </div>
             );
           })()}
-        </button>
+        </div>
       ))}
 
       {/* See all overflow row */}

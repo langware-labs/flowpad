@@ -32,11 +32,11 @@ def _changes(path: str = "/tmp/x", change_type: str = "modified") -> list[Change
 @pytest.fixture
 def records_data_root(tmp_path, monkeypatch):
     """Redirect records_data root to a temp dir so we don't pollute the real ~/.flow."""
-    from flow_sdk.fs_store import record as record_module
+    from flow_sdk.fs_store import record_paths as record_paths_module
 
     root = tmp_path / "records_data"
     root.mkdir(parents=True, exist_ok=True)
-    monkeypatch.setattr(record_module, "get_default_records_data_root", lambda: root)
+    monkeypatch.setattr(record_paths_module, "get_default_records_data_root", lambda: root)
     return root
 
 

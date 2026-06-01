@@ -1144,14 +1144,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   }
 
   /**
-   * Handle incoming FlowData from backend entity notification.
-   */
-  handleFlowData(flowData: FlowData): void {
-    super.handleFlowData(flowData);
-    this._handleFlowData(flowData);
-  }
-
-  /**
    * Async iterator for streaming FlowData outputs.
    *
    * Yields FlowData as they arrive from the backend.
@@ -1592,7 +1584,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     processor.on(FlowEvents.DATA, (fd: FlowData) => {
       try {
         this.flowDataStream.ingest(fd);
-        this._handleFlowData(fd);
       } catch (err) {
         console.error('[AgenticProcess.prompt] ingest error', err);
       }
@@ -2213,32 +2204,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * (following Flow's pattern of state management via FlowData messages).
    * @internal
    */
-  _handleFlowData(data: FlowData): void {
-    const elementType = data.attributes?.['element-type'];
-
-    if (elementType === 'status' && typeof data.data === 'object' && data.data !== null) {
-      const statusData = data.data as Record<string, unknown>;
-      if (
-        statusData.status &&
-        typeof statusData.status === 'string' &&
-        statusData.status !== this.workerStatus
-      ) {
-        const oldWorker = this.workerStatus;
-        this.workerStatus = statusData.status as WorkerStatus;
-        this.emit('state_change', {
-          field: 'workerStatus',
-          oldValue: oldWorker,
-          newValue: this.workerStatus,
-        });
-        if (this.workerStatus === WorkerStatus.COMPLETE) {
-          this._handleComplete();
-        } else if (this.workerStatus === WorkerStatus.ERROR || this.workerStatus === WorkerStatus.INTERRUPTED) {
-          this._handleError(new Error(`Process ended with worker status: ${this.workerStatus}`));
-        }
-      }
-    }
-  }
-
   /**
    * Called by the store when the backend pushes an entity update via WebSocket.
    * Propagates state changes (including COMPLETE) so output() terminates correctly.
@@ -2294,8 +2259,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * (``output()``, ``waitForExecutionComplete``) can resolve.
    *
    * Caller contract: only invoke on a real transition into COMPLETE. The
-   * existing call sites in ``_handleFlowData`` / ``onEntityUpdate`` are
-   * gated by ``newValue !== oldValue`` so this is naturally one-per-edge.
+   * call site in ``onEntityUpdate`` is gated by ``newValue !== oldValue`` so
+   * this is naturally one-per-edge.
    * @internal
    */
   _handleComplete(): void {

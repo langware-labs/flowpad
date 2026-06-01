@@ -76,7 +76,6 @@ class ApiKey(Entity):
     is_active: bool = APIField(default=True)
     allowed_ip_hashes: List[str] = APIField(default_factory=list)
     allowed_machine_id_hashes: List[str] = APIField(default_factory=list)
-    _api_visible: ClassVar[bool] = True
 
     # Private cache for binded entity
     _binded_entity: Optional[Entity] = None

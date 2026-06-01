@@ -244,23 +244,39 @@ def session_analysis(claude_session_id: str, index: int) -> str:
     Returns:
         Details of the sessions as a string for the complete session or a specific entry based on the index provided.
     """
-    from flow_sdk.fs_records.claude import ClaudeRootFsRecord
+    from flow_sdk.fs_store.indexer.functions.claude_sessions import (
+        claude_session_filtered_entries,
+        claude_session_summary_log,
+        extract_claude_session_from_path,
+    )
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
 
     if not claude_session_id:
         return "Error: session_id is required"
     if not isinstance(index, int):
         return "Error: index must be an integer"
-    claude = ClaudeRootFsRecord.default()
-    session = claude.get_session(claude_session_id)
+
+    # Find <projects_dir>/<encoded>/<session_id>.jsonl across all project dirs.
+    projects_dir = get_instance_settings().claude_projects_dir
+    session = None
+    if projects_dir.is_dir():
+        for project_dir in projects_dir.iterdir():
+            if not project_dir.is_dir():
+                continue
+            jsonl = project_dir / f"{claude_session_id}.jsonl"
+            if jsonl.is_file():
+                session = extract_claude_session_from_path(jsonl)
+                break
     if session is None:
         return f"Error: session {claude_session_id} not found"
+    entries = claude_session_filtered_entries(session)
     if index == -1:
-        result = session.summary_log
-    elif 0 <= index < len(session.filtered_entries):
-        entry = session.filtered_entries[index]
+        result = claude_session_summary_log(session)
+    elif 0 <= index < len(entries):
+        entry = entries[index]
         result = f"Entry {index} summary: {entry.summary}\nFull content: {entry.content}"
     else:
-        result = f"Error: index {index} out of range for session with {len(session.filtered_entries)} entries"
+        result = f"Error: index {index} out of range for session with {len(entries)} entries"
 
     from flow_sdk.discovery.notify import send_mcp_event
     send_mcp_event("session_analysis", claude_session_id, {"index": index}, result[:200])

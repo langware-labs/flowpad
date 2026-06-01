@@ -5,3 +5,5 @@ export {
 } from './ProjectSelector';
 export { ProjectSelectorModal, type ProjectSelectorModalProps } from './ProjectSelectorModal';
 export { NewProjectDialog, type NewProjectDialogProps } from './NewProjectDialog';
+export { NewProjectFromGitDialog, type NewProjectFromGitDialogProps } from './NewProjectFromGitDialog';
+export { useEnsureProject, useSelectExistingProject } from './use-ensure-project';

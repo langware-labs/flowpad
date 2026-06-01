@@ -19,7 +19,6 @@ class Visitor(Entity):
     type: str = APIField(default=BuiltinEntityType.VISITOR.value)
     ga_client_id: str | None = Field(default=None)
     utm_params: dict[str, str] | None = Field(default=None)  # Stores all utm_* query parameters
-    _api_visible: ClassVar[bool] = True
     visitor_role: str = Field(default=VISITOR_AUTH_ROLE.value.lower())  # Use Field not APIField for security
 
     @staticmethod

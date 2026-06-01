@@ -1,3 +1,4 @@
+export * from './git-providers';
 export * from './system-tools-service';
 export * from './secrets-service';
 export * from './secretApprovalGate';
@@ -14,7 +15,7 @@ export * from './fsService';
 export * from './shell';
 export * from './SkillManager';
 export * from './ActivationManager';
-export * from './WorkspaceSetting';
+export * from './InstancePreferences';
 export * from './hooksSnifferService';
 export * from './snifferManager';
 export * from './sniffer-hook';

@@ -85,7 +85,9 @@ def load_session_history(session_id: str) -> list[FlowData]:
     """Load session history as FlowData carrying typed ProcessEntries."""
     path = get_session_jsonl_path(session_id)
     if path is None:
-        logger.warning("load_session_history: no JSONL for session %s", session_id)
+        # Common + benign: a session with no transcript yet (just created, or
+        # never produced output). Graceful empty result, not a warning.
+        logger.debug("load_session_history: no JSONL for session %s", session_id)
         return []
     try:
         transcript = AgentTranscriptFile("claude", path)

@@ -150,6 +150,15 @@ const KIND_CONFIG: Record<TerminalRuntimeError['kind'], KindConfig> = {
     actionIcon: RefreshCw,
     action: retryNetwork,
   },
+  project_mismatch: {
+    icon: AlertTriangle,
+    title: 'This session belongs to a different project.',
+    detail:
+      'The transcript on disk was started under another project — the binding here is frozen to avoid silent drift. Reload to re-resolve, or open the session under its real project.',
+    actionLabel: 'Reload',
+    actionIcon: RefreshCw,
+    action: retryNetwork,
+  },
 };
 
 /**

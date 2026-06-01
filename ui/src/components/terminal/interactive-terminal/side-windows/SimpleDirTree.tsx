@@ -1,7 +1,7 @@
 import { type TypeId } from '@sdk';
 import apiClient from '@sdk/client';
 import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
-import { lucideByName } from '@src/lib/lucide-by-name';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import {
@@ -49,18 +49,6 @@ const ASSET_RECORD_TYPES = [
   'command',
   'plan',
 ];
-
-const ASSET_ICON_FALLBACKS: Record<string, string> = {
-  skill: 'Sparkles',
-  agent: 'Bot',
-  workflow: 'Workflow',
-  markdown: 'BookOpen',
-  claude_md: 'BookOpen',
-  claude_memory: 'Brain',
-  claude_rules: 'Shield',
-  command: 'Terminal',
-  plan: 'FileText',
-};
 
 const TEXT_EXTENSIONS = new Set(['md', 'txt', 'json', 'yaml', 'yml', 'toml', 'ini', 'csv', 'log']);
 
@@ -149,7 +137,6 @@ export const SimpleDirTree: React.FC<SimpleDirTreeProps> = ({
   const [currentPath, setCurrentPath] = useState<string>(() => normalize(initialPath ?? topLevel));
   const [assetRefreshKey, setAssetRefreshKey] = useState(0);
   const [pathAssets, setPathAssets] = useState<PathAsset[]>([]);
-  const [assetIconNames, setAssetIconNames] = useState<Record<string, string | null>>({});
   const [filterQuery, setFilterQuery] = useState('');
 
   // Reset filter when navigating between directories — a query that fit the
@@ -168,28 +155,8 @@ export const SimpleDirTree: React.FC<SimpleDirTreeProps> = ({
     void fsRef.current?.listDirectory(currentPath);
   }, [browseResult, currentPath]);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    apiClient
-      .get('/assets/types')
-      .then((data: unknown) => {
-        if (cancelled) return;
-        const d = data as { types?: { type_name: string; icon: string | null }[] } | null;
-        const next: Record<string, string | null> = {};
-        for (const type of d?.types ?? []) {
-          next[type.type_name] = type.icon;
-        }
-        setAssetIconNames(next);
-      })
-      .catch(() => {
-        if (!cancelled) setAssetIconNames({});
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  // Asset-record-type glyphs come from the bootstrap-loaded SchemaRegistry
+  // (iconForType) — no per-type /assets/types fetch needed.
 
   useEffect(() => {
     let cancelled = false;
@@ -306,12 +273,10 @@ export const SimpleDirTree: React.FC<SimpleDirTreeProps> = ({
 
   const renderItemIcon = useCallback(
     (item: { name: string; is_dir?: boolean }, asset?: PathAsset) => {
-      const Icon = asset
-        ? lucideByName(assetIconNames[asset.type] ?? ASSET_ICON_FALLBACKS[asset.type])
-        : defaultIconForItem(item);
+      const Icon = asset ? iconForType(asset.type) : defaultIconForItem(item);
       return <Icon className={`h-4 w-4 shrink-0 ${asset ? 'text-primary' : 'text-muted-foreground'}`} />;
     },
-    [assetIconNames],
+    [],
   );
 
   const sortedItems = useMemo(() => {

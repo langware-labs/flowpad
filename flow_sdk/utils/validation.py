@@ -4,8 +4,9 @@ from typing import Any
 
 import jsonschema
 
-# UUID v4 regex pattern - used for validation across the codebase
-UUID_PATTERN = r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+# Re-export from the canonical identifier module.
+# Single source of truth: flow_sdk/api/api_types/identifier.py
+from flow_sdk.api.api_types.identifier import UUID_PATTERN  # noqa: F401
 
 
 def validate_schema_on_data(

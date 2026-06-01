@@ -21,7 +21,7 @@ from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.request_context.methods import get_current_request_info, get_current_sod_store
 from flow_sdk.core.responses import ApiFailResponse, ApiResponse, ApiSuccessResponse
-from .external_apis.sod import SodDriver
+from flow_sdk.sod.sod_provider_base import SodDriver
 from flow_sdk.utils import (
     ROOT_FOLDER,
     cwd_as_root_folder,

@@ -52,6 +52,7 @@ export const WARNING_IDS = {
   CLOUD_LOGIN_FAILED: 'cloud-login-failed',
   CLOUD_CONNECTION_LOST: 'cloud-connection-lost',
   CLOUD_CONNECTION_AUTH_REJECTED: 'cloud-connection-auth-rejected',
+  HUB_REQUEST_FAILED: 'hub-request-failed',
   NO_COMPUTE_NODE: 'no-compute-node',
   SNIFFER_NOT_FOUND: 'sniffer-not-found',
   SECRETS_NOT_ENABLED: 'secrets-not-enabled',
@@ -152,6 +153,32 @@ export function createCloudConnectionAuthRejectedWarning(description?: string): 
         console.error('[Cloud Reconnect] Failed:', e);
       }
     },
+  };
+}
+
+/**
+ * Soft warning for a failed hub HTTP call (e.g. fs/download 404, a 5xx from
+ * a hub action). Distinct from CLOUD_CONNECTION_LOST — the WS may be fine;
+ * a single request just failed. The description carries the full
+ * `METHOD path STATUS: message` so the copy button on the warning item
+ * yields a useful, copyable detail line.
+ */
+export function createHubRequestFailedWarning(detail: {
+  method: string;
+  path: string;
+  statusCode: number;
+  message: string;
+  onDismiss?: () => void;
+}): UserWarning {
+  const { method, path, statusCode, message, onDismiss } = detail;
+  return {
+    id: WARNING_IDS.HUB_REQUEST_FAILED,
+    icon: 'CloudOff',
+    color: 'orange',
+    message: 'Cloud Request Failed',
+    description: `${method} ${path} ${statusCode}: ${message}`.trim(),
+    targetView: ViewType.CONNECTIONS,
+    onClick: onDismiss,
   };
 }
 

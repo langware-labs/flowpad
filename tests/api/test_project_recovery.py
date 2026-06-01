@@ -68,7 +68,7 @@ async def test_recover_by_path_phase2_materializes_claude_folder(
     )
 
     monkeypatch.setattr(
-        "flow_sdk.fs_records.claude.claude_project._claude_projects_dir",
+        "flow_sdk.fs_store.indexer.functions.claude_projects._claude_projects_dir",
         lambda: fake_claude_projects_dir,
     )
 

@@ -46,7 +46,19 @@ class FsRecordsActionsMixin:
           - {user=True,  projects=[ids]}       → USER_HOME + per-project roots
           - {user=False, projects=[]}          → None (degenerate; default_roots())
 
-        Returns ``ApiFailResponse`` on per-project resolution error.
+        Per-project resolution policy:
+          - 404 ApiFailResponse when the Project entity does not exist
+            (caller-supplied id is unknown).
+          - silently skip with ``logging.debug`` when the entity exists but
+            its ``fs_storage_mount_path`` is missing or no longer a directory
+            (stale entity from a moved/deleted project — surfaces zero results
+            for that project instead of 4xx-ing the whole request).
+
+        If every requested project gets skipped AND ``sf.user`` is False (so
+        the only requested roots are now empty), returns an empty tuple — the
+        indexer walks NOTHING. This preserves the narrowing intent: a caller
+        who explicitly asked for a project list shouldn't silently widen to
+        ``default_roots()`` just because the projects are all stale.
         """
         from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
         from flow_sdk.fs_store.indexer.roots import default_roots  # noqa: PLC0415
@@ -76,16 +88,23 @@ class FsRecordsActionsMixin:
                     )
                 mount = getattr(proj, "fs_storage_mount_path", None)
                 if not mount:
-                    return ApiFailResponse(
-                        message=f"Project '{pid}' has no fs_storage_mount_path",
-                        status_code=400,
+                    # Stale entity with no mount — skip silently (matches the
+                    # legacy ``project_folder_walker_fn`` skip-on-missing
+                    # behaviour). Erroring out 400s every scan whenever a
+                    # single stale project entity has a missing mount.
+                    logging.debug(
+                        "fs-records/_resolve_scoped_roots: skipping project %s — no fs_storage_mount_path",
+                        pid,
                     )
+                    continue
                 mount_path = _Path(str(mount))
                 if not mount_path.is_dir():
-                    return ApiFailResponse(
-                        message=f"Project mount path '{mount}' is not a directory",
-                        status_code=400,
+                    logging.debug(
+                        "fs-records/_resolve_scoped_roots: skipping project %s — mount %r is not a directory",
+                        pid,
+                        mount,
                     )
+                    continue
                 roots.append(
                     FSRef(
                         mount_path,
@@ -96,6 +115,15 @@ class FsRecordsActionsMixin:
                 )
 
         if not roots:
+            # Distinguish two empty-result cases. When the caller passed a
+            # narrowing filter that we managed to consume (sf had user or
+            # projects set) but every entry got skipped, we MUST return an
+            # empty tuple — returning None would let the indexer fall back to
+            # ``default_roots()`` and walk a wider tree than the caller asked
+            # for. The degenerate {user=False, projects=()} input does fall
+            # back to None (matches the documented mapping).
+            if sf.user or sf.projects:
+                return tuple()
             return None
         return tuple(roots)
 
@@ -106,14 +134,12 @@ class FsRecordsActionsMixin:
         if path:
             return path
         try:
-            from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+            from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
             rec = await ent.get_record()
             if rec is None:
-                record_cls = SchemaRegistry.get_record_cls(ent.type or ent.get_type())
-                if record_cls:
-                    ent_name = getattr(ent, "name", None) or getattr(ent, "uname", None)
-                    if ent_name:
-                        rec = record_cls.get(ent_name)
+                ent_name = getattr(ent, "name", None) or getattr(ent, "uname", None)
+                if ent_name:
+                    rec = FSRecord.load_or_none(ent.type or ent.get_type(), ent_name)
             if rec:
                 ar = getattr(rec, "_asset_ref", None)
                 if ar is not None:
@@ -121,6 +147,66 @@ class FsRecordsActionsMixin:
         except Exception:
             pass
         return ""
+
+    async def _handle_fs_records_history(self, request_info) -> ApiResponse:
+        """GET /fs-records/history_entry?limit=N — unified worker history.
+
+        history_entry is a computed/aggregated view (deduplicated worker
+        history across Claude/Codex/agentic processes), not a stored FSRecord
+        type, so it's served from ``worker_history.get_worker_history`` rather
+        than the generic RecordList path.
+        """
+        from flow_sdk.builtin.worker_history import get_worker_history  # noqa: PLC0415
+
+        qp = request_info.request.query_params if request_info.request else {}
+        try:
+            limit = int(qp.get("limit", 20))
+        except (TypeError, ValueError):
+            limit = 20
+        include_set = {s.strip() for s in (qp.get("include", "") or "").split(",") if s.strip()}
+        entries = await get_worker_history(limit)
+        # get_worker_history already sorts by last_active_time desc (== timestamp_ms
+        # desc) and applies the limit, matching the frontend's sort_by/sort_desc.
+        return ApiSuccessResponse(
+            data=[self._history_entry_to_dict(e, include_set) for e in entries]
+        )
+
+    @staticmethod
+    def _history_entry_to_dict(entry, include_set: set[str]) -> dict:
+        """Map a ``WorkerHistoryEntry`` to the ``history_entry`` wire contract
+        consumed by ``useClaudeHistory`` / ``LiveStatus`` (id, display,
+        timestamp_ms, session_id, session_ref, optional embedded _session).
+
+        ``history_entry`` is a computed view, so this boundary owns the shape —
+        the internal aggregation model intentionally carries richer fields.
+        """
+        worker_type = entry.worker_type.value if hasattr(entry.worker_type, "value") else str(entry.worker_type)
+        sid = entry.worker_id
+        ts_ms = int(entry.last_active_time.timestamp() * 1000) if entry.last_active_time else 0
+        display = entry.last_prompt or entry.name or ""
+        name = entry.name or display
+        session_type = "claude_session" if worker_type == "claude" else f"{worker_type}_session"
+        row: dict = {
+            "id": sid,
+            "type": "history_entry",
+            "name": name,
+            "display": display,
+            "timestamp_ms": ts_ms,
+            "project": entry.project_name or entry.project_id or "",
+            "session_id": sid,
+            "session_ref": {"id": sid, "type": session_type},
+        }
+        # Honor ?include=claude_session by embedding the session shape the UI
+        # reads (cwd / message_count) directly from the aggregation entry —
+        # no extra record load needed, since worker_history already gathered it.
+        if "claude_session" in include_set and worker_type == "claude":
+            row["_session"] = {
+                "session_id": sid,
+                "cwd": entry.project_cwd or "",
+                "message_count": entry.message_count,
+                "name": name,
+            }
+        return row
 
     async def _handle_fs_records_search(self, request_info) -> ApiResponse:
         from flow_sdk.core.entity.entity_model import Entity
@@ -224,6 +310,24 @@ class FsRecordsActionsMixin:
         results = await _rows(entities, with_snippet=True)
         return ApiSuccessResponse(data={"results": results, "query": q, "total": len(results), "indexer_ready": True})
 
+    @staticmethod
+    def _ref_gen_id(ref) -> "str | None":
+        """Mint the deterministic id for an FSRef via its type's gen_id_fn.
+
+        Returns None when the type has no gen_id_fn or minting raises —
+        callers decide the fallback (the scan list falls back to the path; the
+        diff loop skips). Single source of truth for the gen_id dispatch dance.
+        """
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+        info = SchemaRegistry.get(str(ref.record_type)) if ref.record_type is not None else None
+        gen_id_fn = getattr(info, "gen_id_fn", None) if info else None
+        if gen_id_fn is None:
+            return None
+        try:
+            return gen_id_fn(ref) or None
+        except Exception:
+            return None
+
     async def _handle_fs_records_scan(self, request_info) -> ApiResponse:
         """Scan fs_records for stats.
 
@@ -235,9 +339,9 @@ class FsRecordsActionsMixin:
         """
         import time
 
-        import flow_sdk.fs_records  # noqa: F401 — trigger auto-registration
+        import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — trigger auto-registration
         from flow_sdk.core.network.resource_tracker import broadcast_progress  # noqa: PLC0415
-        from flow_sdk.fs_records.schema_record import SchemaRecord  # noqa: PLC0415
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
         from flow_sdk.fs_store.indexer import (  # noqa: PLC0415
             INDEXABLE_TYPES,
             IndexProgressTable,
@@ -255,12 +359,27 @@ class FsRecordsActionsMixin:
         limit_per_type = int(limit_per_type_raw) if limit_per_type_raw.isdigit() else None
 
         # Unified ScopeFilter from wire format `?user=true&projects=A,B`.
-        # Absent params → None → indexer uses default_roots() (full scan).
+        # Absent params → explicit "everything known" filter built from
+        # get_all_projects(), so the walk fans out via _resolve_scoped_roots
+        # instead of the silent USER_HOME_FOLDER → real_project_cwd_fn
+        # expander discovery.
+        from flow_sdk.fs_store.operations.all_projects import get_all_scope_filter  # noqa: PLC0415
         from flow_sdk.server.search_filters import ScopeFilter  # noqa: PLC0415
+        scope_explicit = qp.get("user") is not None or qp.get("projects") is not None
+        # ``create_missing=True`` matches the legacy behaviour of the silent
+        # ``real_project_cwd_fn`` expander (which also called
+        # ``get_all_projects(create_missing=True)`` on every walk). It also
+        # avoids 404s in ``_resolve_scoped_roots`` for cwds whose Project
+        # entity hasn't been materialised yet: with ``create_missing=False``
+        # ``get_all_projects`` still returns a synthetic UUID5 project_id via
+        # ``Project.derive_id_for_path`` but the entity row doesn't exist, so
+        # ``Project.get_one`` would 404 the whole scan. The materialisation
+        # side-effect is pre-existing; this change only makes it explicit at
+        # the route boundary instead of implicit during the walk.
         scope_filter = (
             ScopeFilter.from_query_params(qp)
-            if (qp.get("user") is not None or qp.get("projects") is not None)
-            else None
+            if scope_explicit
+            else await get_all_scope_filter()
         )
         scoped_roots = await self._resolve_scoped_roots(scope_filter)
         if isinstance(scoped_roots, ApiFailResponse):
@@ -320,16 +439,7 @@ class FsRecordsActionsMixin:
                 st = n._path.stat()
                 b["total_bytes"] += st.st_size
                 if filter_type:
-                    # Use the record class's own id resolution so the returned
-                    # `id` is a valid record id (not a filesystem path).
-                    _info = _SR_rec.get(key)
-                    if _info is not None and _info.record_cls is not None:
-                        try:
-                            rec_id = _info.record_cls.getId(n)
-                        except Exception:
-                            rec_id = str(n._path)
-                    else:
-                        rec_id = str(n._path)
+                    rec_id = self._ref_gen_id(n) or str(n._path)
                     b["_records"].append({
                         "id": rec_id,
                         "name": n._path.stem,
@@ -357,7 +467,13 @@ class FsRecordsActionsMixin:
             _load_entity_state_map,
         )
 
-        do_diff = scope_filter is None
+        # Diff classification needs ``seen_ids`` to cover every relevant root,
+        # so it only runs on a full-coverage scan. Pre-fix, that was signalled
+        # by ``scope_filter is None`` (the "no scope = walk default_roots()"
+        # branch). After the route now resolves the no-scope case to an
+        # explicit ``get_all_scope_filter()``, the predicate is "the caller
+        # did not pass an explicit scope param" (``not scope_explicit``).
+        do_diff = not scope_explicit
         if do_diff:
             _driver = _get_db_driver()
             _indexable_names = {str(t) for t in INDEXABLE_TYPES}
@@ -380,14 +496,7 @@ class FsRecordsActionsMixin:
                 rt_name = str(rt)
                 if rt_name not in _indexable_names:
                     continue
-                _info = _SR_rec.get(rt_name)
-                _record_cls = getattr(_info, "record_cls", None) if _info else None
-                if _record_cls is None or not hasattr(_record_cls, "from_fsref"):
-                    continue
-                try:
-                    ref_id = _record_cls.genId(ref)
-                except Exception:
-                    continue
+                ref_id = self._ref_gen_id(ref)
                 if not ref_id:
                     continue
                 _seen_ids[rt_name].add(ref_id)
@@ -396,8 +505,9 @@ class FsRecordsActionsMixin:
                     _diff[rt_name]["new"] += 1
                     continue
                 db_mtime, db_scope, db_pid = db_state
+                _asset_hash_fn = getattr(_SR_rec.get(rt_name), "asset_hash_fn", None)
                 try:
-                    file_mtime = _record_cls.asset_hash_for_ref(ref)
+                    file_mtime = _asset_hash_fn(ref) if _asset_hash_fn is not None else 0.0
                 except Exception:
                     file_mtime = 0.0
                 walk_scope = ref.scope or ""
@@ -452,7 +562,7 @@ class FsRecordsActionsMixin:
             {k: v for k, v in b.items() if k != "_records"} for b in per_type
         ]
 
-        last_scan_at = SchemaRecord.append_scan(
+        last_scan_at = SchemaRegistry.append_scan(
             trigger=trigger,
             duration_ms=scan_ms,
             total_records=grand_total,
@@ -515,7 +625,7 @@ class FsRecordsActionsMixin:
         """
         from dataclasses import asdict  # noqa: PLC0415
 
-        from flow_sdk.fs_records.schema_record import SchemaRecord  # noqa: PLC0415
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
         from flow_sdk.server.search_filters import ScopeFilter  # noqa: PLC0415
 
         qp = request_info.request.query_params
@@ -525,7 +635,7 @@ class FsRecordsActionsMixin:
             else None
         )
 
-        status = await SchemaRecord.get_index_status(scope=scope_filter)
+        status = await SchemaRegistry.get_index_status(scope=scope_filter)
         return ApiSuccessResponse(
             data={
                 "never_indexed": status.never_indexed,
@@ -551,8 +661,8 @@ class FsRecordsActionsMixin:
 
         from flow_sdk.core.network.resource_tracker import broadcast_progress  # noqa: PLC0415
         from flow_sdk.db import get_db_driver  # noqa: PLC0415
-        from flow_sdk.fs_records.record_error import RecordError  # noqa: PLC0415
-        from flow_sdk.fs_records.schema_record import SchemaRecord  # noqa: PLC0415
+        from flow_sdk.fs_store.operations.record_error import clear_all as _clear_all_errors, clear_for_type as _clear_errors_for_type  # noqa: PLC0415
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
         from flow_sdk.fs_store.indexer import IndexProgressTable, TypeProgressRow  # noqa: PLC0415
         from flow_sdk.fs_store.schema_registry import SchemaRegistry, _sanitize_type_name, _schema_dir  # noqa: PLC0415
 
@@ -632,7 +742,7 @@ class FsRecordsActionsMixin:
                     log_file = _schema_dir() / "types" / sanitized / "index_log.jsonl"
                     if log_file.exists():
                         log_file.unlink()
-                    await RecordError.clear_for_type(type_name)
+                    await _clear_errors_for_type(type_name)
                 per_type_done[type_name] = 1
                 await emit()
 
@@ -644,7 +754,7 @@ class FsRecordsActionsMixin:
                 global_log = _schema_dir() / "index_log.jsonl"
                 if global_log.exists():
                     global_log.unlink()
-                await RecordError.clear_all()
+                await _clear_all_errors()
 
             current_type = None
             await emit(text="complete")
@@ -665,17 +775,18 @@ class FsRecordsActionsMixin:
         POST /fs-records/index                       → index all registered types
         POST /fs-records/index?type=X                → index one type
         POST /fs-records/index?rebuild=true          → clear + re-index
-        POST /fs-records/index?project_id=<id>       → scope to a single project's
-                                                       fs_storage_mount_path subtree
-                                                       (one REAL_PROJECT_CWD root).
+        POST /fs-records/index?user=&projects=A,B    → narrow to a ScopeFilter
+                                                       (canonical wire format —
+                                                       matches search, scan,
+                                                       index-status, clear).
 
         Backed by ``FSIndexer.index()``. Emits ``progress_report`` FlowData
         events per type via the shared indexer's ``on_progress`` callback.
         """
-        import flow_sdk.fs_records  # noqa: F401 — trigger auto-registration
+        import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — trigger auto-registration
         from flow_sdk.core.network.resource_tracker import broadcast_progress  # noqa: PLC0415
         from flow_sdk.db import get_db_driver  # noqa: PLC0415
-        from flow_sdk.fs_records.schema_record import SchemaRecord  # noqa: PLC0415
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
         from flow_sdk.fs_store.indexer import (  # noqa: PLC0415
             INDEXABLE_TYPES,
             IndexProgressTable,
@@ -695,19 +806,28 @@ class FsRecordsActionsMixin:
         limit_types = int(limit_types_raw) if limit_types_raw.isdigit() else None
         limit_per_type_raw = qp.get("limit_per_type", "").strip()
         limit_per_type = int(limit_per_type_raw) if limit_per_type_raw.isdigit() else None
-        # Unified ScopeFilter from wire format `?user=true&projects=A,B`.
-        # Legacy single-project param `?project_id=…` is kept as a back-compat
-        # shim — promoted into ScopeFilter.projects when the new params are absent.
+        # Unified ScopeFilter from canonical wire format `?user=…&projects=A,B`.
         from flow_sdk.server.search_filters import ScopeFilter  # noqa: PLC0415
+        # Surface stale callers still using the legacy `?project_id=<id>` shim
+        # — it now silently triggers a full-tree walk (scope_filter=None).
+        # Logging the hit lets us debug runaway scans without re-introducing
+        # the shim and undoing the canonical-wire-format standardisation.
         legacy_project_id = qp.get("project_id", "").strip() or None
-        if qp.get("user") is not None or qp.get("projects") is not None:
-            scope_filter = ScopeFilter.from_query_params(qp)
-        elif legacy_project_id:
-            scope_filter = ScopeFilter(user=False, projects=(legacy_project_id,))
-        else:
-            scope_filter = None
-        # Some downstream sites still want the singular project_id (effective_project_id).
-        project_id = legacy_project_id or (
+        if legacy_project_id and qp.get("user") is None and qp.get("projects") is None:
+            logging.warning(
+                "fs-records/index received legacy ?project_id=%s — ignored. "
+                "Callers must use canonical ?user=&projects= ScopeFilter format.",
+                legacy_project_id,
+            )
+        from flow_sdk.fs_store.operations.all_projects import get_all_scope_filter  # noqa: PLC0415
+        scope_filter = (
+            ScopeFilter.from_query_params(qp)
+            if (qp.get("user") is not None or qp.get("projects") is not None)
+            else await get_all_scope_filter()
+        )
+        # Single-project narrowing — derived from the ScopeFilter, used below
+        # to short-circuit non-project indexer work paths.
+        project_id = (
             scope_filter.projects[0]
             if (scope_filter and len(scope_filter.projects) == 1)
             else None
@@ -728,9 +848,21 @@ class FsRecordsActionsMixin:
 
         # Resolve ScopeFilter → narrowed roots. When the filter is None,
         # fall back to the indexer's default_roots() (full walk).
-        custom_roots = await self._resolve_scoped_roots(scope_filter)
-        if isinstance(custom_roots, ApiFailResponse):
-            return custom_roots
+        #
+        # Orphan-aware runs (orphan_action != INDEX) intentionally walk the
+        # full root set even when a scope is selected: orphan-ness is defined
+        # globally (a record is orphan iff its source is missing anywhere),
+        # so ``seen_ids`` must cover all references. The scope filter is then
+        # re-applied inside the indexer to narrow which orphans get reported
+        # and acted on. Without this, a record physically inside project A
+        # but referenced from project B would be falsely flagged as orphan
+        # when the user picks scope=A.
+        if orphan_action != OrphanAction.INDEX:
+            custom_roots = None
+        else:
+            custom_roots = await self._resolve_scoped_roots(scope_filter)
+            if isinstance(custom_roots, ApiFailResponse):
+                return custom_roots
 
         # Type filter + validation
         types_filter: list[RecordType] | None = None
@@ -784,6 +916,7 @@ class FsRecordsActionsMixin:
                 force=force,
                 project_id=effective_project_id,
                 orphan_action=orphan_action,
+                scope_filter=scope_filter,
             ))
         finally:
             self._complete_activity("index")
@@ -791,7 +924,9 @@ class FsRecordsActionsMixin:
         types_out = [
             {
                 "type": str(rt),
-                "indexed": pt.indexed,
+                "indexed": pt.indexed + pt.skipped,
+                "new": pt.indexed,
+                "skipped": pt.skipped,
                 "errors": pt.errors,
                 "duration_ms": pt.duration_ms,
                 "orphans_found": pt.orphans_found,
@@ -801,7 +936,7 @@ class FsRecordsActionsMixin:
             for rt, pt in result.per_type.items()
         ]
 
-        SchemaRecord.append_index(
+        SchemaRegistry.append_index(
             trigger=trigger,
             duration_ms=result.duration_ms,
             total_indexed=result.total_indexed,
@@ -830,7 +965,9 @@ class FsRecordsActionsMixin:
             })
 
         return ApiSuccessResponse(data={
-            "indexed": result.total_indexed,
+            "indexed": sum(p.indexed + p.skipped for p in result.per_type.values()),
+            "new": result.total_indexed,
+            "skipped": sum(p.skipped for p in result.per_type.values()),
             "errors": result.total_errors,
             "orphans_found": result.total_orphans_found,
             "orphans_db_removed": result.total_orphans_db_removed,
@@ -856,7 +993,7 @@ class FsRecordsActionsMixin:
         Returns 404 if the file doesn't exist on disk OR doesn't match the
         requested type's discovery rules.
         """
-        import flow_sdk.fs_records  # noqa: F401 — trigger auto-registration
+        import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — trigger auto-registration
         from flow_sdk.fs_store.schema_registry import SchemaRegistry as _SR  # noqa: PLC0415
         from flow_sdk.fs_store.record_list import RecordList  # noqa: PLC0415
 
@@ -868,8 +1005,7 @@ class FsRecordsActionsMixin:
                 status_code=400,
             )
 
-        record_cls = _SR.get_record_cls(record_type)
-        if record_cls is None:
+        if _SR.get(record_type) is None:
             return ApiFailResponse(
                 message=f"Unknown record type '{record_type}'. Available: {_SR.get_all_record_types()}",
                 status_code=400,
@@ -896,7 +1032,7 @@ class FsRecordsActionsMixin:
             return None
 
         # Pass 1: try the existing index (shadow tree). Fast path.
-        record_list = RecordList(record_class=record_cls)
+        record_list = RecordList(type_name=record_type)
         try:
             found = _find_in(record_list)
         except Exception as e:
@@ -912,8 +1048,16 @@ class FsRecordsActionsMixin:
         # until the indexer materialises it. This is the recovery path
         # for ``useEntityByPath``: file exists on disk, isn't yet in
         # the index → re-index this single type, then look again.
+        #
+        # default_roots() no longer auto-expands USER_HOME → REAL_PROJECT_CWD
+        # (the silent ``real_project_cwd_fn`` fanout was removed). We
+        # therefore have to enumerate project roots explicitly via the new
+        # scope filter so project-rooted record types (TASK, SPEC, project-
+        # root SKILL/AGENT/WORKFLOW/CLAUDE_MD/CLAUDE_RULES) are reachable
+        # from this recovery path.
         if found is None:
             try:
+                from flow_sdk.fs_store.operations.all_projects import get_all_scope_filter  # noqa: PLC0415
                 from flow_sdk.fs_store.indexer import (  # noqa: PLC0415
                     IndexerOptions,
                     get_shared_indexer,
@@ -921,7 +1065,13 @@ class FsRecordsActionsMixin:
                 from flow_sdk.fs_store.record_types import RecordType as _RT  # noqa: PLC0415
                 rt = _RT(record_type)
                 indexer = get_shared_indexer()
-                await indexer.index(IndexerOptions(types=[rt]))
+                discover_sf = await get_all_scope_filter()
+                discover_roots = await self._resolve_scoped_roots(discover_sf)
+                if isinstance(discover_roots, ApiFailResponse):
+                    discover_roots = None  # fall back to default_roots()
+                await indexer.index(
+                    IndexerOptions(types=[rt], roots=discover_roots),
+                )
             except Exception as e:
                 return ApiFailResponse(
                     message=f"Re-index failed for {record_type}: {e}",
@@ -929,7 +1079,7 @@ class FsRecordsActionsMixin:
                 )
             # Fresh RecordList — `RecordList(MUTABLE)` re-discovers per call,
             # but instantiating a new one is the cleanest reset.
-            record_list = RecordList(record_class=record_cls)
+            record_list = RecordList(type_name=record_type)
             try:
                 found = _find_in(record_list)
             except Exception as e:
@@ -1025,7 +1175,7 @@ class FsRecordsActionsMixin:
             PUT    /fs-records/{type}/{uid}       → update record
             DELETE /fs-records/{type}/{uid}       → delete record
         """
-        import flow_sdk.fs_records  # noqa: F401 — trigger auto-registration
+        import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — trigger auto-registration
         from flow_sdk.fs_store.exceptions import ReadOnlyRecordError  # noqa: PLC0415
         from flow_sdk.fs_store.record_list import RecordList  # noqa: PLC0415
         from flow_sdk.fs_store.schema_registry import SchemaRegistry as _SR  # noqa: PLC0415
@@ -1040,6 +1190,13 @@ class FsRecordsActionsMixin:
         # Path-based source file API: /fs-records/file?path=...
         if segments and segments[0] == "file":
             return await self._handle_path_based_source_file(method, request_info)
+
+        # Worker history: GET /fs-records/history_entry?limit=N
+        # history_entry is an aggregated/computed view (unified worker history
+        # across providers), not a stored FSRecord type, so it has its own
+        # branch instead of the generic RecordList path.
+        if segments and segments[0] == "history_entry" and method == "get":
+            return await self._handle_fs_records_history(request_info)
 
         # Semantic search: GET /fs-records/search?q=...
         if segments and segments[0] == "search" and method == "get":
@@ -1082,30 +1239,19 @@ class FsRecordsActionsMixin:
         record_type = segments[0]
         uid = segments[1] if len(segments) > 1 else None
 
-        record_cls = _SR.get_record_cls(record_type)
-        if record_cls is None:
+        if _SR.get(record_type) is None:
             return ApiFailResponse(
                 message=f"Unknown record type '{record_type}'. Available types: {_SR.get_all_record_types()}",
                 status_code=400,
             )
 
-        record_list = RecordList(record_class=record_cls)
+        record_list = RecordList(type_name=record_type)
 
-        # For write operations, check read-only status via a probe instance.
-        # from_dict() bypasses __init__ (which sets _asset_ref), so we must
-        # probe with a proper constructor call to get accurate read-only state.
+        # Read-only checks moved off Record; the RecordList over FSRecord is
+        # always mutable. ReadOnlyRecordError stays imported for the
+        # except branch below.
         if method in ("post", "put", "delete"):
-            from flow_sdk.fs_store.exceptions import ReadOnlyRecordError
-
-            try:
-                probe = record_cls()
-                if probe._is_read_only():
-                    return ApiFailResponse(
-                        message=f"Record type '{record_type}' is read-only",
-                        status_code=403,
-                    )
-            except Exception:
-                pass  # if probe fails, fall through and let the real call raise
+            from flow_sdk.fs_store.exceptions import ReadOnlyRecordError  # noqa: F401
 
         try:
             if method == "get":
@@ -1207,8 +1353,20 @@ class FsRecordsActionsMixin:
                 record = await asyncio.to_thread(record_list.get, uid)
                 if record is None:
                     return ApiFailResponse(message=f"Record '{uid}' not found", status_code=404)
-                await record.delete(delete_ref=True)
-                record_list.invalidate()
+                # Remove the asset_ref source too (live file/folder under
+                # ~/.claude/...) so re-discovery doesn't resurface it.
+                ar = getattr(record, "_asset_ref", None)
+                if ar is not None:
+                    try:
+                        import shutil as _shutil
+                        ar_path = ar._path
+                        if ar_path.is_dir():
+                            _shutil.rmtree(ar_path, ignore_errors=True)
+                        elif ar_path.exists():
+                            ar_path.unlink()
+                    except OSError:
+                        pass
+                await record_list.delete(uid)
                 await self._broadcast_fs_record_op("delete", record_type, uid)
                 return ApiSuccessResponse(data={"deleted": uid})
 
@@ -1238,11 +1396,14 @@ class FsRecordsActionsMixin:
                 if cache is not None and ref.id in cache:
                     session_dict = cache[ref.id]
                 else:
-                    from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
+                    from flow_sdk.fs_store.indexer.functions.claude_sessions import (
+                        claude_session_meta_dict,
+                        get_claude_session,
+                    )
 
                     project = rec.data.get("project", "") if rec.data else ""
-                    session = ClaudeSessionRecord.get(ref.id, project=project)
-                    session_dict = session.meta_dict() if session else None
+                    session = get_claude_session(ref.id, project=project)
+                    session_dict = claude_session_meta_dict(session) if session else None
                     if cache is not None:
                         cache[ref.id] = session_dict
                 if session_dict:
@@ -1287,62 +1448,60 @@ class FsRecordsActionsMixin:
         method: str,
         request_info,
     ) -> ApiResponse:
-        """Handle path-based source file CRUD: /fs-records/file?path=...&json_path=..."""
-        from flow_sdk.fs_store.exceptions import ReadOnlyRecordError
-        from flow_sdk.fs_store.source_file_registry import (
+        """Handle path-based source file CRUD: ``/fs-records/file?path=...&json_path=...``.
+
+        Uses ``flow_sdk.fs_store.source_file_records`` to extract a flat list of
+        typed records keyed by JSON Pointer. Each record carries ``type``,
+        ``json_path``, ``source_file``, plus the JSON fragment's own fields.
+        """
+        from flow_sdk.fs_store.source_file_records import (  # noqa: PLC0415
+            extract_records,
+            extract_from_data,
             is_allowed_source_path,
-            resolve_list_class,
+            known_filename,
+            load_raw,
+            write_raw,
+            _delete_pointer,
+            _set_pointer,
         )
 
         qp = request_info.request.query_params
         source_path = qp.get("path", "")
-        json_path = qp.get("json_path")  # None means "all records"
+        json_path = qp.get("json_path")
 
         if not source_path:
             return ApiFailResponse(
                 message="Missing required 'path' query parameter",
                 status_code=400,
             )
-
         if not is_allowed_source_path(source_path):
             return ApiFailResponse(
                 message=f"Access denied for path: {source_path}",
                 status_code=403,
             )
 
-        # Expand ~ to home dir
         expanded_path = str(Path(source_path).expanduser())
-
-        list_class = resolve_list_class(expanded_path)
-        if list_class is None:
+        if not known_filename(expanded_path):
             return ApiFailResponse(
                 message=f"Unknown source file type: {Path(expanded_path).name}",
                 status_code=400,
             )
 
-        record_list = list_class(source_file=expanded_path)
-
         try:
             if method == "get":
+                records = extract_records(expanded_path)
                 if json_path is not None:
-                    rec = self._find_record_by_json_path(record_list, json_path)
-                    if rec is None:
+                    match = next(
+                        (r for r in records if str(r.get("json_path", "")) == json_path),
+                        None,
+                    )
+                    if match is None:
                         return ApiFailResponse(
                             message=f"No record at json_path '{json_path}'",
                             status_code=404,
                         )
-                    d = rec.meta_dict()
-                    d["source_file"] = expanded_path
-                    d["json_path"] = rec.json_path
-                    return ApiSuccessResponse(data=d)
-                # List all records from the file
-                results = []
-                for rec in record_list:
-                    d = rec.meta_dict()
-                    d["source_file"] = expanded_path
-                    d["json_path"] = rec.json_path
-                    results.append(d)
-                return ApiSuccessResponse(data=results)
+                    return ApiSuccessResponse(data=match)
+                return ApiSuccessResponse(data=records)
 
             if method == "put":
                 if json_path is None:
@@ -1350,33 +1509,44 @@ class FsRecordsActionsMixin:
                         message="'json_path' query parameter is required for update",
                         status_code=400,
                     )
-                rec = self._find_record_by_json_path(record_list, json_path)
-                if rec is None:
-                    return ApiFailResponse(
-                        message=f"No record at json_path '{json_path}'",
-                        status_code=404,
-                    )
                 body = await request_info.get_post_data()
                 if not isinstance(body, dict):
                     return ApiFailResponse(
                         message="Invalid request body (expected JSON object)",
                     )
-                updated = record_list.update(rec.type, rec.id, body)
-                try:
-                    await updated.sync_to_db()
-                except Exception as e:
-                    logging.debug(f"[fs-records] sync_to_db skipped on source-file update: {e}")
-                result_data = updated.meta_dict()
-                result_data["source_file"] = expanded_path
-                result_data["json_path"] = updated.json_path
+                data = load_raw(expanded_path)
+                # Strip framework-only fields the TS layer round-trips back.
+                payload = {
+                    k: v for k, v in body.items()
+                    if k not in ("type", "json_path", "source_file")
+                }
+                if json_path in ("", "/"):
+                    # Root replace
+                    for k, v in payload.items():
+                        data[k] = v
+                else:
+                    _set_pointer(data, json_path, payload)
+                write_raw(expanded_path, data)
+                # Re-derive records from the in-hand dict — avoids a redundant
+                # re-read + re-parse of the file we just wrote.
+                records = extract_from_data(data, expanded_path)
+                updated = next(
+                    (r for r in records if str(r.get("json_path", "")) == json_path),
+                    None,
+                )
+                if updated is None:
+                    return ApiFailResponse(
+                        message=f"Update wrote but couldn't re-resolve json_path '{json_path}'",
+                        status_code=500,
+                    )
                 await self._broadcast_fs_record_op(
                     "update",
-                    rec.type,
-                    rec.id,
-                    result_data,
+                    str(updated.get("type", "")),
+                    str(updated.get("id", "")),
+                    updated,
                     source_file=expanded_path,
                 )
-                return ApiSuccessResponse(data=result_data)
+                return ApiSuccessResponse(data=updated)
 
             if method == "delete":
                 if json_path is None:
@@ -1384,50 +1554,26 @@ class FsRecordsActionsMixin:
                         message="'json_path' query parameter is required for delete",
                         status_code=400,
                     )
-                rec = self._find_record_by_json_path(record_list, json_path)
-                if rec is None:
+                data = load_raw(expanded_path)
+                removed = _delete_pointer(data, json_path)
+                if not removed:
                     return ApiFailResponse(
                         message=f"No record at json_path '{json_path}'",
                         status_code=404,
                     )
-                deleted = record_list.delete_record(rec.type, rec.id)
-                if not deleted:
-                    return ApiFailResponse(
-                        message=f"Failed to delete record at json_path '{json_path}'",
-                        status_code=404,
-                    )
+                write_raw(expanded_path, data)
                 await self._broadcast_fs_record_op(
                     "delete",
-                    rec.type,
-                    rec.id,
+                    "",
+                    "",
                     source_file=expanded_path,
                 )
                 return ApiSuccessResponse(data={"deleted": json_path})
 
             return ApiFailResponse(message=f"Unsupported method: {method}")
-
-        except ReadOnlyRecordError as e:
-            return ApiFailResponse(message=f"Record is read-only: {e}", status_code=403)
         except Exception as e:
             logging.exception(f"fs-records path-based error: {e}")
             return ApiFailResponse(message=str(e))
-
-    @staticmethod
-    def _find_record_by_json_path(record_list, json_path: str):
-        """Find a record by its json_path within a JsonFileRecordStore.
-
-        Handles root record matching: json_path="" or "/" both match the root.
-        """
-        for rec in record_list:
-            rec_jp = getattr(rec, "json_path", None)
-            if rec_jp is None:
-                continue
-            # Root record: both "" and "/" should match
-            if json_path in ("", "/") and rec_jp in ("", "/"):
-                return rec
-            if rec_jp == json_path:
-                return rec
-        return None
 
     async def _broadcast_fs_record_op(
         self,

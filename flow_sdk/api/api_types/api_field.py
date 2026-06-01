@@ -4,6 +4,8 @@ from typing import Any, Callable, Dict, List, Union
 from pydantic import Field
 from pydantic.fields import PydanticUndefined
 
+from flow_sdk._compat import StrEnum
+
 JSONType = Union[str, int, float, bool, None, Dict[str, "JSONType"], List[Any]]
 
 
@@ -13,6 +15,20 @@ class FieldFlags(Flag):
     DB_EXCLUDE = auto()  # 4 (binary: 0100)
 
 
+class Persist(StrEnum):
+    """Whether a field is mirrored into the on-disk record metadata.json.
+
+    - ``TRUE``    → always written.
+    - ``FALSE``   → never written (DB-only: computed / denormalized / runtime).
+    - ``DEFAULT`` → written iff the field is declared in the type's metadata
+                    model (``TypeInfo.meta_model``). This is the field default,
+                    so existing declarations need no change.
+    """
+    TRUE = "true"
+    FALSE = "false"
+    DEFAULT = "default"
+
+
 def EntityField(
     default: Any = PydanticUndefined,
     *,
@@ -20,6 +36,7 @@ def EntityField(
     blob=False,
     db_exclude=False,
     role: str = "*",
+    persist: Persist = Persist.DEFAULT,
     json_schema_extra: dict[str, Any] | None = None,
     **kwargs,
 ):
@@ -27,7 +44,18 @@ def EntityField(
     json_schema_extra.update({"role": role})
     json_schema_extra.update({"blob": blob})
     json_schema_extra.update({"db_exclude": db_exclude})
+    json_schema_extra.update({"persist": str(Persist(persist))})
     return Field(default=default, default_factory=default_factory, json_schema_extra=json_schema_extra, **kwargs)
+
+
+def persist_policy(field_info) -> Persist:
+    """Read the ``persist`` policy off a pydantic FieldInfo. Defaults to DEFAULT."""
+    extra = field_info.json_schema_extra
+    if extra and isinstance(extra, dict):
+        raw = extra.get("persist")
+        if raw is not None:
+            return Persist(raw)
+    return Persist.DEFAULT
 
 
 def is_api_visible_field(field_info):

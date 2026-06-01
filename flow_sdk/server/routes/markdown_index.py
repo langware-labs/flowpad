@@ -7,7 +7,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
 
-from flow_sdk.fs_records.markdown_index_render import load_index_md_json
+from flow_sdk.fs_store.operations.markdown_index_render import load_index_md_json
 
 logger = logging.getLogger(__name__)
 router = APIRouter()

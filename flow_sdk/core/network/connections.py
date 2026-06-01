@@ -8,9 +8,28 @@ without creating circular dependencies.
 
 import logging
 from typing import Dict, Optional
-from starlette.websockets import WebSocket
+from starlette.websockets import WebSocket, WebSocketDisconnect
 
 logger = logging.getLogger(__name__)
+
+
+def is_client_gone(exc: Exception) -> bool:
+    """True when an exception just means the client already disconnected.
+
+    A send/receive that fails because the peer closed the socket is normal
+    (e.g. a browser tab closing mid-stream), not a server error — callers
+    log it at debug and stop, rather than ERROR + a doomed error-response send
+    or an unretrieved fire-and-forget task exception.
+    """
+    if isinstance(exc, WebSocketDisconnect):
+        return True
+    msg = str(exc).lower()
+    return (
+        "close message has been sent" in msg
+        or "websocket.close" in msg
+        or "after sending" in msg
+        or "disconnect" in msg
+    )
 
 
 class ConnectionRegistry:
