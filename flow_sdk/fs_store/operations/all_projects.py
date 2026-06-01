@@ -17,6 +17,7 @@ from flow_sdk.fs_store.indexer.functions.codex_projects import (
 )
 from flow_sdk.fs_store.path_utils import canonical_posix_path
 from flow_sdk.instance_settings import get_instance_settings
+from flow_sdk.utils.file_system import is_temp_path
 
 
 @dataclass
@@ -118,6 +119,12 @@ async def get_all_projects(
 
     for cwd, proj in by_cwd.items():
         if cwd in fs_by_cwd:
+            continue
+        # DB-only projects bypass the scan-time temp filter (the scans above
+        # already drop temp cwds). Apply the same guard here so a Project
+        # entity that was once materialized for a temp cwd (e.g. via an
+        # include_temp=True indexer run) doesn't resurface in the picker.
+        if not include_temp and is_temp_path(cwd):
             continue
         fs_by_cwd[cwd] = ProjectInfo(
             cwd=cwd,

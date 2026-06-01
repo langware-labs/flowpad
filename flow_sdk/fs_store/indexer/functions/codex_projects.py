@@ -25,16 +25,10 @@ except ImportError:
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
+from flow_sdk.utils.file_system import is_temp_path
 
 
 # ── Codex project path helpers (inlined from former fs_records/codex/codex_project.py) ──
-
-_TEMP_PATH_PREFIXES = (
-    "/tmp/",
-    "/var/folders/",
-    "/private/var/folders/",
-    "/private/tmp/",
-)
 
 
 def _codex_project_id(cwd: str) -> str:
@@ -48,8 +42,7 @@ def _is_valid_cwd(cwd: str) -> bool:
         return False
     if cwd == "/":
         return False
-    temp_roots = tuple(p.rstrip("/") for p in _TEMP_PATH_PREFIXES)
-    return cwd not in temp_roots and not cwd.startswith(_TEMP_PATH_PREFIXES)
+    return not is_temp_path(cwd)
 
 
 def _read_codex_projects_from_config(config_path: Path) -> dict[str, dict]:

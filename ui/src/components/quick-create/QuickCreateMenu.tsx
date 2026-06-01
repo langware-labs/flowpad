@@ -1,6 +1,8 @@
 import { ContextEntitiesEnum, dataContext, Project } from '@sdk';
 import { useProject } from '@sdk/react/hooks';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
+import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
+import { CodexIcon } from '@src/components/icons/CodexIcon';
 import {
   NewProjectDialog,
   NewProjectFromGitDialog,
@@ -19,6 +21,7 @@ import {
 import { useAssetTypes } from '@src/hooks/use-asset-types';
 import { useProjects } from '@src/hooks/use-projects';
 import { notify } from '@src/notifications';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { FolderOpen, FolderPlus, GitBranch } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useCallback, useMemo, useState } from 'react';
@@ -43,6 +46,7 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
   const { project: currentProject } = useProject();
   const { projects, isLoading: isLoadingProjects } = useProjects();
   const { computeNode } = useAgentContext();
+  const { navigation } = useDockNavigation();
   const ensureProject = useEnsureProject();
   const selectExisting = useSelectExistingProject();
   const [projectModalOpen, setProjectModalOpen] = useState(false);
@@ -111,6 +115,22 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
     [projects],
   );
 
+  // Coding-agent sessions aren't "assets" with a name/folder — they launch a
+  // live AgenticProcess immediately. Create the process, then navigate to its
+  // terminal dock pointer (URL-first; the loader owns the rendered view).
+  const handleStartSession = useCallback(
+    async (workerType: 'claude_code' | 'codex') => {
+      onOpenChange(false);
+      const result = await navigation.openNewClaudeProcess({ workerType });
+      if (!result) {
+        notify.error({ title: 'Failed to start session' });
+        return;
+      }
+      await navigation.openShellProcess(result.processId);
+    },
+    [navigation, onOpenChange],
+  );
+
   const handleProjectSelect = useCallback(
     async (id: string) => {
       const picked = projects?.find((p) => p.id === id);
@@ -157,6 +177,16 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
               <span className="truncate">{currentProject?.displayName ?? 'Select…'}</span>
             </button>
           </div>
+          <DropdownMenuSeparator />
+          <DropdownMenuLabel>New session</DropdownMenuLabel>
+          <DropdownMenuItem onSelect={() => void handleStartSession('claude_code')}>
+            <ClaudeIcon className="mr-2 h-4 w-4 text-orange-500" />
+            Claude Code session
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => void handleStartSession('codex')}>
+            <CodexIcon className="mr-2 h-4 w-4 text-emerald-500" />
+            Codex session
+          </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuLabel>New project</DropdownMenuLabel>
           <DropdownMenuItem
