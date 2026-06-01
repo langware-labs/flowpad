@@ -1,5 +1,5 @@
 import { soundService } from '@sdk';
-import { useSettings } from '@sdk/react/hooks/use-settings';
+import { useInstancePreferences } from '@sdk/react/hooks/use-instance-preferences';
 import { usePendingActions } from '@src/store/pending-actions-store';
 import { useEffect, useRef } from 'react';
 import { soundByKey } from '@src/assets/sounds/notification/manifest';
@@ -18,7 +18,7 @@ import { soundByKey } from '@src/assets/sounds/notification/manifest';
  */
 export function usePendingCompletionSound(): void {
   const pending = usePendingActions();
-  const { settings } = useSettings();
+  const { preferences } = useInstancePreferences();
   const mountedAtRef = useRef<number>(Date.now());
   // processId -> readyAt of the last time we observed/announced this id.
   // Re-arming (TTL expiry → re-ready with a fresh server timestamp) shows
@@ -42,9 +42,9 @@ export function usePendingCompletionSound(): void {
       if (!currentIds.has(id)) seenRef.current.delete(id);
     }
     if (!hasNew) return;
-    if (!settings.notificationSoundEnabled) return;
-    const sound = soundByKey(settings.notificationSoundKey);
+    if (!preferences.notificationSoundEnabled) return;
+    const sound = soundByKey(preferences.notificationSoundKey);
     if (!sound) return;
     void soundService.play(sound.url);
-  }, [pending, settings.notificationSoundEnabled, settings.notificationSoundKey]);
+  }, [pending, preferences.notificationSoundEnabled, preferences.notificationSoundKey]);
 }

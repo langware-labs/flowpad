@@ -28,7 +28,7 @@ class FrontMatterFsRef(FSRef):
         if not self._path.exists():
             return ""
         try:
-            from flow_sdk.fs_records._frontmatter import _extract_body
+            from flow_sdk.fs_store.indexer._frontmatter import _extract_body
             return _extract_body(self._path.read_text(encoding="utf-8"))
         except Exception:
             return ""
@@ -37,7 +37,7 @@ class FrontMatterFsRef(FSRef):
         """Merge fields into the existing frontmatter, preserving the body."""
         if self.read_only:
             raise IOError(f"FrontMatterFsRef at {self.path!r} is read-only")
-        from flow_sdk.fs_records._frontmatter import _extract_body, _render_frontmatter
+        from flow_sdk.fs_store.indexer._frontmatter import _extract_body, _render_frontmatter
         existing_fm = _read_existing_frontmatter(self._path) if self._path.exists() else {}
         existing_fm.update(fields)
         body = ""
@@ -50,7 +50,7 @@ class FrontMatterFsRef(FSRef):
         """Replace the body while preserving the existing frontmatter."""
         if self.read_only:
             raise IOError(f"FrontMatterFsRef at {self.path!r} is read-only")
-        from flow_sdk.fs_records._frontmatter import _render_frontmatter
+        from flow_sdk.fs_store.indexer._frontmatter import _render_frontmatter
         existing_fm = _read_existing_frontmatter(self._path) if self._path.exists() else {}
         self._path.parent.mkdir(parents=True, exist_ok=True)
         self._path.write_text(_render_frontmatter(existing_fm) + "\n" + body, encoding="utf-8")
@@ -59,6 +59,6 @@ class FrontMatterFsRef(FSRef):
         """Atomically write frontmatter + body without reading the existing file first."""
         if self.read_only:
             raise IOError(f"FrontMatterFsRef at {self.path!r} is read-only")
-        from flow_sdk.fs_records._frontmatter import _render_frontmatter
+        from flow_sdk.fs_store.indexer._frontmatter import _render_frontmatter
         self._path.parent.mkdir(parents=True, exist_ok=True)
         self._path.write_text(_render_frontmatter(frontmatter) + "\n" + body, encoding="utf-8")

@@ -92,9 +92,13 @@ export interface Attachment {
   approved_by?: string | null;
 }
 
-/** Three-state delivery receipt. Mirrors the hub-side schema. Monotonic
- *  transitions only: created → delivered → received. */
-export type DeliveryStatus = 'created' | 'delivered' | 'received';
+/** Delivery receipt. Mirrors the hub-side schema. Monotonic transitions only:
+ *  created → sent → delivered → received.
+ *  - created:   local only, hub has not accepted it (🕐 Pending)
+ *  - sent:      accepted/stored on the hub (✓)
+ *  - delivered: recipient's client pulled it (✓✓)
+ *  - received:  recipient read it (✓✓ blue) */
+export type DeliveryStatus = 'created' | 'sent' | 'delivered' | 'received';
 
 /** Named event types emitted by ``Conversation`` and ``FlowMessage``. Use
  *  these instead of bare strings so call sites are typo-proof:

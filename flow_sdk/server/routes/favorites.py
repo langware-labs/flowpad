@@ -60,8 +60,15 @@ async def _summarize(ref: FavoriteRef) -> FavoriteSummary:
     entity_cls = Entity.get_entity_model_by_type(ref.type)
     if entity_cls is None:
         return FavoriteSummary(type=ref.type, id=ref.id)
+    # Some favorites are stored with a TypeId-form id ("<type>-<uuid>") rather
+    # than a bare uuid. get_by_id expects the bare id, so strip a redundant
+    # leading "<type>-" prefix before the lookup.
+    bare_id = ref.id
+    prefix = f"{ref.type}-"
+    if bare_id.startswith(prefix):
+        bare_id = bare_id[len(prefix):]
     try:
-        entity = await entity_cls.get_by_id(ref.id)
+        entity = await entity_cls.get_by_id(bare_id)
     except Exception:
         logger.exception("favorites/summary get_by_id failed for %s-%s", ref.type, ref.id)
         return FavoriteSummary(type=ref.type, id=ref.id)

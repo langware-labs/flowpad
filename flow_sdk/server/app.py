@@ -34,6 +34,13 @@ from flow_sdk.core.loaders import load_actions, load_entities
 load_entities()
 load_actions()
 
+# Run the declarative type-info registrations (register_all) at import time so
+# per-type TypeInfo extras — icon/browseable/creatable authored in
+# flow_sdk/schema/type_info/*.py — are present before the first bootstrap.
+# Entities self-register via their metaclass on import; this import's side
+# effect is what lands the declarative metadata (icons, etc.).
+import flow_sdk.fs_store.indexer.registrations  # noqa: E402, F401
+
 from flow_sdk.server import FlowServer
 
 from .routes import (
@@ -96,7 +103,7 @@ async def _on_server_startup():
     )
     print(f"  server.json:   {settings.server_json_path}")
 
-    from flow_sdk.fs_records.old_record_cleanup import run_old_record_cleanup
+    from flow_sdk.fs_store.operations.record_retention import run_old_record_cleanup
 
     threading.Thread(target=run_old_record_cleanup, daemon=True, name="old-record-cleanup").start()
 
@@ -208,7 +215,7 @@ async def _transcript_catch_up_walk() -> None:
 async def _start_notification_scanner() -> None:
     """Scan for incoming notifications on startup."""
     try:
-        from flow_sdk.fs_records.notification_scanner import scan_incoming_notifications
+        from flow_sdk.app.actions.notification_scanner import scan_incoming_notifications
         from flow_sdk.builtin.user import User as _User
         import asyncio as _asyncio
         local_user = await _User.get_one({"uname": "local"})
@@ -232,7 +239,13 @@ async def _start_inbox_catchup() -> None:
         try:
             from flow_sdk.app.actions.flow_message_action import handle_conversation_list
             from flow_sdk.builtin.user import User as _User
+            from flow_sdk.cli.auth.hub_login import is_logged_in
 
+            # No cloud session → the hub would 401 every conversation/invitation
+            # call. Skip the catch-up entirely instead of logging 401 warnings
+            # on every offline startup.
+            if not is_logged_in():
+                return
             local_user = await _User.get_one({"uname": "local"})
             if not local_user:
                 return
@@ -494,7 +507,8 @@ def wait_for_login_callback(timeout_sec: int = None):
         timeout_str = get_config_value("login_callback_timeout")
         timeout_sec = int(timeout_str) if timeout_str else 30
 
-    port = int(os.environ.get("LOCAL_SERVER_PORT", "9007"))
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+    port = get_instance_settings().port
 
     # Start server in daemon thread
     server_thread = threading.Thread(target=start_server, args=(port,), daemon=True)
@@ -515,6 +529,7 @@ def wait_for_login_callback(timeout_sec: int = None):
 
 if __name__ == "__main__":
     setup_defaults()
-    port = int(os.environ.get("LOCAL_SERVER_PORT", "9007"))
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+    port = get_instance_settings().port
     print(f"Starting minihub server on http://127.0.0.1:{port}")
     start_server(port)

@@ -1,11 +1,13 @@
 import inspect
 import logging
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Literal, Optional
 
 from fastapi import HTTPException
 from pydantic.fields import FieldInfo
 
 ActionHandler = Callable[..., Any]
+
+ReflectMode = Literal["hub", "local_first", "local_only"]
 
 
 class Action:
@@ -16,12 +18,14 @@ class Action:
         handler: ActionHandler,
         methods: str | List[str] | None = None,
         types: str | List[str] | None = None,
+        reflect: ReflectMode | None = None,
     ):
         self.action_name: str = action_name
         self.function_name: str = function_name
         self.methods: List[str] = []
         self.types: List[str] = []
         self.handler: ActionHandler = handler
+        self.reflect: ReflectMode | None = reflect
         if types:
             if isinstance(types, str):
                 self.types.append(types)
@@ -78,9 +82,10 @@ class ActionManager:
         handler: ActionHandler,
         methods: List[str] | str = "all",
         types: List[str] | str = "all",
+        reflect: ReflectMode | None = None,
     ):
         action_name = action_name.lower()
-        a = Action(action_name, function_name, handler, methods, types)
+        a = Action(action_name, function_name, handler, methods, types, reflect=reflect)
         self.function_registry[action_name] = a
         return a
 
@@ -95,6 +100,7 @@ class ActionManager:
         action_name=None,
         methods: List[str] | str = "all",
         types: List[str] | str = "all",
+        reflect: ReflectMode | None = None,
     ):
         def decorator(func):
             qualname = getattr(func, "__qualname__", action_name or func.__name__)
@@ -122,7 +128,7 @@ class ActionManager:
             if action_name:
                 # Use action_name at the end of the qualname
                 qualname = ".".join(qualname.split(".")[:-1] + [action_name])
-            self.register(qualname, func.__name__, func, methods, types)
+            self.register(qualname, func.__name__, func, methods, types, reflect=reflect)
             return func
 
         return decorator

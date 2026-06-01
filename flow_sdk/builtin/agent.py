@@ -1,13 +1,9 @@
-"""Slim Agent entity — a desktop agent backed by a filesystem AgentRecord (.md file).
+"""Agent entity — graph/HTTP surface for FSRecord(type='agent').
 
-Each Agent entity has:
-  - name / description
-  - record_data_ref → "agent/<name>" pointing to the companion AgentRecord
-
-Cloud-only concepts (KnowledgeBase, LLM routing, CheckpointMode, etc.) are
-intentionally absent. Use flow_sdk.builtin.agent_config for those types if needed
-by cloud-path code.
+On-disk parsing lives in ``fs_store/indexer/functions/agent.py`` and is wired
+to the indexer via ``TypeInfo`` callable slots, not classmethods here.
 """
+from __future__ import annotations
 
 from typing import ClassVar
 
@@ -17,17 +13,9 @@ from flow_sdk.core.entity.entity_model import Entity
 
 
 class Agent(Entity):
-    """Filesystem-backed agent entity. record_data_ref points to AgentRecord on disk.
-
-    Path layout (``<scope_root>/.claude/agents/<name>.md``) and default body
-    live on AgentRecord (``_main_subdir``, ``default_body``). Entity.save()
-    resolves scope from request_context once and the framework hook calls
-    ``record.upsert_main_ref(self)``.
-    """
+    """Filesystem-backed agent entity. Source: ``<scope>/.claude/agents/<name>.md``."""
 
     type: str = APIField(default=BuiltinEntityType.AGENT.value)
     name: str | None = APIField(default=None)
     description: str | None = APIField(default=None)
     asset_ref: str = APIField(default="")
-    _api_visible: ClassVar[bool] = True
-    _icon: ClassVar[str] = "Bot"

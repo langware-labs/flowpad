@@ -81,8 +81,8 @@ export async function apiTestSetup(_signupInfo?: unknown, _test_name: string | n
   const domain = window.location.hostname;
   const bootstrapInfo = await dataManager.bootstrap(domain, true);
 
-  // Load schemas
-  await dataManager.loadSchemas(bootstrapInfo.schemas || []);
+  // Load the type registry (TypeInfo + schema) into the SchemaRegistry
+  await dataManager.loadTypes(bootstrapInfo.types || []);
 
   // Store bootstrap info for UI access (desktop_info, etc.)
   dataContext.bootstrapInfo = bootstrapInfo;

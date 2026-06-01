@@ -12,7 +12,8 @@ import {
   createCodeBlockCommand,
   linkSchema,
 } from '@milkdown/preset-commonmark';
-import { gfm } from '@milkdown/preset-gfm';
+import { gfm, insertTableCommand } from '@milkdown/preset-gfm';
+import { tableBlock } from '@milkdown/components/table-block';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { listener, listenerCtx } from '@milkdown/plugin-listener';
 import { prism } from '@milkdown/plugin-prism';
@@ -32,6 +33,7 @@ import {
   Link as LinkIcon, Check, X, Pencil, Unlink,
   ChevronsRight, ChevronsLeft, Languages,
   AlignLeft, AlignCenter, AlignRight, AlignJustify,
+  Table as TableIcon,
 } from 'lucide-react';
 
 // Prism core must be imported before language components
@@ -600,6 +602,12 @@ function MilkdownToolbar({
       {headingBtn('Bullet list', <List className="h-3.5 w-3.5" />, callCommand(wrapInBulletListCommand.key), bulletList)}
       {headingBtn('Ordered list', <ListOrdered className="h-3.5 w-3.5" />, callCommand(wrapInOrderedListCommand.key), orderedList)}
       {headingBtn('Code block', <SquareCode className="h-3.5 w-3.5" />, callCommand(createCodeBlockCommand.key), codeBlock)}
+      <FormatButton
+        title="Insert table"
+        icon={<TableIcon className="h-3.5 w-3.5" />}
+        testId="milkdown-toolbar-table"
+        onMouseDown={(e) => { e.preventDefault(); act(callCommand(insertTableCommand.key, { row: 3, col: 3 })); }}
+      />
       <div className="mx-1.5 h-4 w-px bg-border" />
       <FormatButton
         title="Left-to-right paragraph"
@@ -843,6 +851,7 @@ function MilkdownEditorInner({ content, onChange, editorMode, plugins, onActiveS
         })
         .use(commonmark)
         .use(gfm)
+        .use(tableBlock)
         .use(listener)
         .use(prism)
         .use(emoji)

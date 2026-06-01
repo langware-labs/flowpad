@@ -1,4 +1,4 @@
-import { useSettings } from '@sdk/react/hooks/use-settings';
+import { useInstancePreferences } from '@sdk/react/hooks/use-instance-preferences';
 import { ActionInfo, dataContext, dataManager, TerminalType } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { Checkbox } from '@src/components/ui/checkbox';
@@ -9,7 +9,7 @@ import { LogIn } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 
 export function SettingsSection() {
-  const { settings } = useSettings();
+  const { preferences } = useInstancePreferences();
   const [cliLogLevel, setCliLogLevel] = useState('info');
 
   const computeNode = dataContext.computeNode;
@@ -44,9 +44,9 @@ export function SettingsSection() {
       <div className="flex items-center gap-2">
         <Checkbox
           id="show-system-skills"
-          checked={settings.showSystemSkills}
+          checked={preferences.showSystemSkills}
           onCheckedChange={(checked) => {
-            settings.showSystemSkills = checked === true;
+            preferences.showSystemSkills = checked === true;
           }}
         />
         <Label htmlFor="show-system-skills" className="cursor-pointer text-sm">
@@ -61,9 +61,9 @@ export function SettingsSection() {
           sidecar OS Terminal window is also opened.
         </p>
         <RadioGroup
-          value={settings.defaultTerminal}
+          value={preferences.defaultTerminal}
           onValueChange={(value) => {
-            settings.defaultTerminal = value as TerminalType;
+            preferences.defaultTerminal = value as TerminalType;
           }}
         >
           <div className="flex items-center gap-2">
@@ -98,9 +98,9 @@ export function SettingsSection() {
       <div className="flex items-center gap-2">
         <Checkbox
           id="buffer-sync-updates"
-          checked={settings.bufferSyncUpdates}
+          checked={preferences.bufferSyncUpdates}
           onCheckedChange={(checked) => {
-            settings.bufferSyncUpdates = checked === true;
+            preferences.bufferSyncUpdates = checked === true;
           }}
         />
         <Label htmlFor="buffer-sync-updates" className="cursor-pointer text-sm">

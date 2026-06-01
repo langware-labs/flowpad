@@ -248,6 +248,37 @@ async def handle_request(
                 kwargs[name] = json_data[name]
 
     _hr_bench("before handler call")
+
+    # Hub reflection: if the action is marked ``reflect="hub"`` and the
+    # entity has a hub counterpart (remote=True), forward the call to the
+    # hub and mirror its response into the local row instead of running
+    # the local handler. Falls through to the local handler on HubError
+    # (offline / hub unreachable) so degraded mode still works.
+    from flow_sdk.server.routes._hub_reflect import (
+        reflect_to_hub,
+        should_reflect_to_hub,
+    )
+    from flow_sdk.utils.hub import HubError
+
+    entity_for_reflect = kwargs.get("self")
+    if should_reflect_to_hub(a, entity_for_reflect):
+        try:
+            hub_data = await reflect_to_hub(a, entity_for_reflect, {**request_params, **json_data})
+            _hr_bench("after hub reflect")
+            return ApiResponse.success(data=hub_data)
+        except HubError as e:
+            service_log.warn(
+                f"[hub-reflect] {request_info.action} on {entity_for_reflect.type}/{entity_for_reflect.id} "
+                f"falling back to local: {e}"
+            )
+        except Exception as e:  # noqa: BLE001
+            # Never let a reflection-layer bug 500 the whole request — fall
+            # through to the local handler. The dispatcher is opportunistic.
+            service_log.warn(
+                f"[hub-reflect] unexpected error on {request_info.action} "
+                f"for {entity_for_reflect.type}/{entity_for_reflect.id}: {type(e).__name__}: {e}"
+            )
+
     # Call the function with the matched arguments
     try:
         if inspect.iscoroutinefunction(a.handler):

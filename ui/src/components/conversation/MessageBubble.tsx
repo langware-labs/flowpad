@@ -1,5 +1,5 @@
 import { useState, type MouseEvent, type ReactNode } from 'react';
-import { Pencil, Check, CheckCheck } from 'lucide-react';
+import { Pencil, Check, CheckCheck, Clock } from 'lucide-react';
 import type { FlowMessage } from '@sdk';
 import type { ConversationMessage } from '@sdk/entities/conversation';
 import { AttachmentType, type DeliveryStatus } from '@sdk/entities/flow-message';
@@ -61,6 +61,17 @@ interface MessageBubbleProps {
 function DeliveryReceipt({ status }: { status: DeliveryStatus | undefined }) {
   if (!status) return null;
   if (status === 'created') {
+    // `created` = written to the local store, NOT yet accepted by the hub.
+    // Show a clock ("Pending"), not a ✓ — a single check here would give false
+    // confidence the recipient got it when the outbound hub push may have failed.
+    return (
+      <span title="Pending" className="inline-flex items-center text-muted-foreground/70">
+        <Clock className="h-3 w-3" strokeWidth={2.5} />
+      </span>
+    );
+  }
+  if (status === 'sent') {
+    // `sent` = accepted/stored on the hub (one check). Not yet pulled by the recipient.
     return (
       <span title="Sent" className="inline-flex items-center text-muted-foreground/70">
         <Check className="h-3 w-3" strokeWidth={2.5} />

@@ -250,11 +250,11 @@ class PtySessionManager:
 
         # Transition shell session record to CLOSED
         try:
-            from flow_sdk.fs_records.shell_record import ShellRecord, ShellStatus
+            from flow_sdk.builtin.shell import get_shell_record, close_shell_record
 
-            record = ShellRecord.get(shell_id)
+            record = get_shell_record(shell_id)
             if record:
-                record.close()
+                close_shell_record(record)
         except Exception as e:
             logger.warning(f"[PtySessionManager] Error closing shell session record {shell_id}: {e}")
 

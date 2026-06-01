@@ -24,7 +24,6 @@ class Spec(Entity):
     metadata: Optional[Dict[str, Any]] = APIField(None)
     # NOTE: plan_id moved into ``context_entities``. Use
     # ``spec.first_context_of_type('plan')`` to read it back.
-    _api_visible: ClassVar[bool] = True
 
     # NOTE: Spec's former ``author_id`` projection moved alongside other
     # implicit projections to ``Entity.get_implicit_private_context_entities``.

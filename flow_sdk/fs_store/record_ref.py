@@ -129,10 +129,10 @@ class RecordDataRef(RecordRef):
         if not self.type or not self.id:
             return None
         if records_root is None:
-            from flow_sdk.fs_store.record import get_default_records_data_root, record_stem
+            from flow_sdk.fs_store.record_paths import get_default_records_data_root, record_stem
             data_root = get_default_records_data_root()
         else:
-            from flow_sdk.fs_store.record import record_stem
+            from flow_sdk.fs_store.record_paths import record_stem
             data_root = records_root
         stem = record_stem(self.type, self.id)
         return data_root / self.type / stem

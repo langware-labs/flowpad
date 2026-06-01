@@ -113,7 +113,11 @@ export function useRecordSearch(
   useEffect(() => {
     if (timerRef.current) clearTimeout(timerRef.current);
 
-    const hasFilter = !!(filters.record_type || filters.status || filters.scope || filters.time_preset);
+    // `filters.scope` is intentionally excluded — it no longer drives the
+    // request (the canonical ScopeFilter does that). Gating on it here used
+    // to fire searches that came back unscoped, which silently rendered
+    // global results in scope-only UIs.
+    const hasFilter = !!(filters.record_type || filters.status || filters.time_preset);
     if (!hasFilter && (!query.trim() || query.trim().length < 2)) {
       setResults([]);
       setIsLoading(false);
@@ -125,8 +129,10 @@ export function useRecordSearch(
       const params = new URLSearchParams({ q: query, limit: String(DEFAULT_SEARCH_LIMIT) });
       if (filters.record_type) params.set('record_type', filters.record_type);
       if (filters.status) params.set('status', filters.status);
-      if (filters.scope) params.set('scope', filters.scope);
       if (filters.include_system) params.set('include_system', 'true');
+      // Canonical scope wire-format — `user=…&projects=…`. The legacy
+      // `filters.scope` enum string used to be sent as `?scope=<enum>` but
+      // the backend never read it; the ScopeFilter below is the only path.
       if (scopeFilter) applyScopeToParams(params, scopeFilter);
       if (col_weights) params.set('col_weights', col_weights.join(','));
       if (recency_boost) params.set('recency_boost', String(recency_boost));
@@ -161,7 +167,7 @@ export function useRecordSearch(
       cancelledRef.current = true;
       if (timerRef.current) clearTimeout(timerRef.current);
     };
-  }, [query, filters.record_type, filters.status, filters.scope, filters.time_preset, filters.time_start, filters.time_end, filters.include_system, scopeFilter ? scopeFilterKey(scopeFilter) : null, col_weights, recency_boost, recency_factor, overfetch, type_scores, debounceMs]);
+  }, [query, filters.record_type, filters.status, filters.time_preset, filters.time_start, filters.time_end, filters.include_system, scopeFilter ? scopeFilterKey(scopeFilter) : null, col_weights, recency_boost, recency_factor, overfetch, type_scores, debounceMs]);
 
   return { results, isLoading, error, indexerReady, latencyMs };
 }

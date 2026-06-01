@@ -13,4 +13,3 @@ class Comment(Entity):
     # Mirrors Annotation.data — opaque dict keeps the field reusable for future
     # anchor kinds (ranges, char offsets) without a migration.
     data: Optional[Dict[str, Any]] = APIField(default_factory=dict)
-    _api_visible: ClassVar[bool] = True

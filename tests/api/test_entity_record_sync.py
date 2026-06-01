@@ -11,7 +11,9 @@ import pytest
 import pytest_asyncio
 
 from flow_sdk.core.entity.entity_model import Entity
-from flow_sdk.fs_store.record import Record, set_default_records_root
+from flow_sdk.fs_store.record_paths import set_default_records_root
+
+from flow_sdk.fs_store.fs_record import FSRecord as Record
 from flow_sdk.responses.response import ApiResponse
 
 
@@ -67,7 +69,7 @@ async def test_write_through_entity_update_syncs_to_disk_record(bootstrapped_cli
     import uuid
 
     from flow_sdk.builtin.workspace import Workspace
-    from flow_sdk.fs_store.record import get_default_records_root, record_stem
+    from flow_sdk.fs_store.record_paths import get_default_records_root, record_stem
 
     original_root = get_default_records_root()
     with tempfile.TemporaryDirectory() as tmpdir:

@@ -65,6 +65,17 @@ export function useFavorites() {
     [excludeBookmarks, refetch],
   );
 
+  const renameFavorite = useCallback(
+    async (bookmark: Bookmark, newName: string) => {
+      const next = newName.trim();
+      if (!next || bookmark.name === next) return;
+      bookmark.name = next;
+      await bookmark.save([]);
+      await refetch();
+    },
+    [refetch],
+  );
+
   const toggleFavorite = useCallback(
     async (ref: FavoriteRef) => {
       const existing = isFavorited(ref.entityType, ref.entityId);
@@ -77,5 +88,5 @@ export function useFavorites() {
     [isFavorited, addFavorite, removeFavorite],
   );
 
-  return { favorites, isFavorited, addFavorite, removeFavorite, toggleFavorite };
+  return { favorites, isFavorited, addFavorite, removeFavorite, renameFavorite, toggleFavorite };
 }

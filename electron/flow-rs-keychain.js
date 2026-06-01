@@ -120,29 +120,13 @@ async function setKeyRestricted(service, account, value) {
 
 /**
  * Build the keychain account name Electron uses for the per-instance
- * sod-key. We deliberately suffix the FLOW_INSTANCE name with `.flow-rs`
- * so the new flow-rs-owned entry occupies a different `(service, account)`
- * slot than the legacy keytar entry (account = bare instance name) that
- * pre-FLOWPAD-1862 installs may already have in the user's keychain.
- *
- * Why the suffix is required for prompt-free migration:
- *   * The old keytar entry's ACL trusts only the Flowpad.app bundle. A
- *     SecItemAdd from the flow-rs binary at the *same* (service, account)
- *     would return errSecDuplicateItem, the keyring crate would fall
- *     through to SecItemUpdate, and SecItemUpdate would pop a
- *     "flow-rs wants to use the keychain" prompt (ACL mismatch).
- *   * By writing to a fresh account slot, SecItemAdd succeeds outright
- *     and there is no ACL conflict to resolve.
- *
- * Trade-off (acknowledged in the FLOWPAD-1862 plan): the legacy keytar
- * entry stays orphaned in the user's keychain. Any sodot file encrypted
- * with the old Fernet key becomes unreadable; on first launch the
- * SecretApprovalDialog re-mints a fresh key and the user re-approves
- * their secrets. This is the "Re-provision on upgrade" option the user
- * explicitly selected.
+ * sod-key. Matches the account convention in
+ * flow_sdk/instance_settings/base_settings.py:_fetch_or_create_sod_key
+ * (account = instance name, no suffix) so Electron's flow-rs path and
+ * Python's keyring path address the exact same `(service, account)` slot.
  */
 function sodKeyAccount() {
-  return `${process.env.FLOW_INSTANCE || 'prod'}.flow-rs`;
+  return process.env.FLOW_INSTANCE || 'prod';
 }
 
 module.exports = {

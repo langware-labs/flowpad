@@ -922,8 +922,8 @@ export async function fetchCostOverviewFromComputeNode(
   computeNodeId: string,
   sessionLimit: number = 100,
 ): Promise<CostOverview> {
-  const actionInfo = new ActionInfo('scan-item', 'compute_node', computeNodeId, 'GET');
-  const url = `${actionInfo.fullActionUrl}?type=costOverview&limit=${sessionLimit}`;
+  const actionInfo = new ActionInfo('get-cost-overview', 'compute_node', computeNodeId, 'GET');
+  const url = `${actionInfo.fullActionUrl}?limit=${sessionLimit}`;
   const response = await fetch(url, { credentials: 'include' });
   const result = await response.json();
   if (result.status !== 'SUCCESS') {
@@ -1051,8 +1051,8 @@ export interface ClaudeUsageData {
 export async function fetchClaudeUsageFromComputeNode(
   computeNodeId: string,
 ): Promise<ClaudeUsageData | null> {
-  const actionInfo = new ActionInfo('scan-item', 'compute_node', computeNodeId, 'GET');
-  const url = `${actionInfo.fullActionUrl}?type=claudeUsage`;
+  const actionInfo = new ActionInfo('get-claude-usage', 'compute_node', computeNodeId, 'GET');
+  const url = `${actionInfo.fullActionUrl}`;
   try {
     const response = await fetch(url, { credentials: 'include' });
     const result = await response.json();
@@ -1148,8 +1148,8 @@ export async function fetchClaudeContextFromComputeNode(
   sessionId?: string,
 ): Promise<ClaudeContextData | null> {
   try {
-    const actionInfo = new ActionInfo('scan-item', 'compute_node', computeNodeId, 'GET');
-    const params = new URLSearchParams({ type: 'claudeContext' });
+    const actionInfo = new ActionInfo('get-claude-context', 'compute_node', computeNodeId, 'GET');
+    const params = new URLSearchParams();
     if (sessionId) params.set('session_id', sessionId);
     const url = `${actionInfo.fullActionUrl}?${params.toString()}`;
     const response = await fetch(url, { credentials: 'include' });

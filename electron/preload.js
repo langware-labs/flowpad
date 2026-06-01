@@ -36,10 +36,4 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Update management
   onUpdateAvailable: (callback) => ipcRenderer.on('update-available', (_event, data) => callback(data)),
   upgradeFlowpad: () => ipcRenderer.invoke('upgrade-flowpad'),
-
-  // Mint + store a per-instance Fernet key under Electron's keychain ACL.
-  // Returns the key string for the renderer to seed into Python via
-  // /api/v1/secrets/seed-key. Avoids the OS prompt on later launches that
-  // would fire if Python (under a different ACL) had been the writer.
-  provisionSodKey: () => ipcRenderer.invoke('secrets:provision-sod-key'),
 });

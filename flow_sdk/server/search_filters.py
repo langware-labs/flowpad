@@ -78,6 +78,16 @@ def apply_scope_filter(entities: list, sf: "ScopeFilter | None") -> list:
         return entities
     pid_set = set(sf.projects)
 
+    # Record types that ALWAYS have a scope (user/project). Empty scope on
+    # one of these means the record skipped the scope-stamp path (a bug, not
+    # an exemption) — drop it under an explicit ScopeFilter so search doesn't
+    # leak half-classified rows.
+    _SCOPED_TYPES: frozenset[str] = frozenset({
+        "skill", "agent", "markdown", "whiteboard", "workflow", "task",
+        "claude_hook", "claude_rules", "claude_memory", "claude_md",
+        "claude_session", "codex_session", "command", "spec",
+    })
+
     def _keep(e) -> bool:
         s = (getattr(e, "scope", None) or "")
         if s == "user":
@@ -85,7 +95,11 @@ def apply_scope_filter(entities: list, sf: "ScopeFilter | None") -> list:
         if s == "project":
             pid = getattr(e, "project_id", None) or ""
             return pid in pid_set
-        # Unscoped record type — outside the user/project axis. Keep.
+        # Empty scope on a normally-scoped type = drop. Other unscoped types
+        # (e.g. 'project' itself) keep through.
+        etype = str(getattr(e, "type", "") or "")
+        if etype in _SCOPED_TYPES:
+            return False
         return True
 
     return [e for e in entities if _keep(e)]

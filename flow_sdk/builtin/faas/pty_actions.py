@@ -361,42 +361,80 @@ class PtyActionsMixin:
         if name:
             session_state.name = name
 
-        # Create or update ShellRecord and wire PtyStreamFile
+        # Create or update shell FSRecord and wire PtyStreamFile
         try:
             from flow_sdk.compute.providers.desktop.pty_stream_file import PtyStreamFile
-            from flow_sdk.fs_records.shell_record import ShellRecord, ShellStatus
+            from flow_sdk.fs_store.fs_record import FSRecord
+            from flow_sdk.builtin.shell import (
+                ShellStatus,
+                get_shell_record,
+                shell_pty_stream_path,
+            )
 
-            existing_record = ShellRecord.get(shell_id)
+            existing_record = get_shell_record(shell_id)
             if not existing_record:
-                record = ShellRecord(
+                record = FSRecord(
+                    type="shell",
                     id=shell_id,
                     pty_pid=shell_id,
                     workdir=working_dir,
                     name=name,
-                    state=ShellStatus.RUNNING,
+                    status=ShellStatus.RUNNING.value,
                 )
                 record.save()
             else:
-                # Recovery case: update process_id and touch
+                # Recovery case: backfill pty_pid (may be missing when the
+                # record was first materialized via Entity.save() before PTY
+                # start) and update process_id from the provider session.
+                patch: dict = {}
+                if not existing_record.__dict__.get("pty_pid"):
+                    patch["pty_pid"] = shell_id
                 pid = provider_session_data.get("pid") if isinstance(provider_session_data, dict) else None
-                object.__setattr__(existing_record, "process_id", str(pid) if pid is not None else None)
-                dirty = object.__getattribute__(existing_record, "_dirty_keys")
-                dirty.add("process_id")
-                existing_record.touch()
+                if pid is not None:
+                    patch["process_id"] = str(pid)
+                if patch:
+                    existing_record.save_metadata(patch)
                 record = existing_record
 
-            # Create PtyStreamFile at the record's pty_stream_path
-            pty_stream_file = PtyStreamFile(path=record.pty_stream_path)
+            # Create PtyStreamFile at the record's pty stream path
+            pty_stream_file = PtyStreamFile(path=shell_pty_stream_path(record.id, record.__dict__.get("pty_pid")))
             session_state.pty_stream_file = pty_stream_file
 
-            # Write-through: create/update Shell DB entity
+            # Write-through: create/update the Shell DB entity from the record
+            # via the generic base sync, then apply the shell-specific side
+            # effects (tab ordering for new tabs, compute-node binding). The
+            # compute node is this action's context (self.typeid), so the
+            # binding lives here — not in a per-type from_record override.
             try:
+                import re as _re
                 from flow_sdk.builtin.shell import Shell
+                from flow_sdk.core.entity.entity_model import Entity
 
-                shell = await Shell.from_record(record, self.typeid)
-                if shell and shell.status != ShellStatus.RUNNING.value:
-                    shell.status = ShellStatus.RUNNING.value
-                    await shell.save()
+                _UUID = r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+                if _re.match(_UUID, str(record.id), _re.I):
+                    was_new = await Shell.get_one({"id": record.id}) is None
+                    shell = await Shell.from_record(record)
+                    if shell:
+                        changed = False
+                        if was_new:
+                            shell.tab_order = await Shell.next_tab_order()
+                            changed = True
+                        cn_parts = str(self.typeid).split("-", 1)
+                        cn_id = cn_parts[1] if len(cn_parts) == 2 else str(self.typeid)
+                        if cn_id and not shell.compute_node_id:
+                            shell.compute_node_id = cn_id
+                            changed = True
+                        if shell.status != ShellStatus.RUNNING.value:
+                            shell.status = ShellStatus.RUNNING.value
+                            changed = True
+                        if changed:
+                            await shell.save()
+                        try:
+                            cn = await Entity.get_by_typeid(self.typeid)
+                            if cn:
+                                await cn.attach_child(shell.typeid)
+                        except Exception as _e_attach:
+                            logging.debug(f"[PTY] attach shell to compute node failed: {_e_attach}")
             except Exception as e_shell:
                 logging.warning(f"[PTY] Error creating Shell entity: {e_shell}", exc_info=True)
         except Exception as e:
@@ -493,7 +531,10 @@ class PtyActionsMixin:
           - session_id (required): The Claude session UUID
           - project (optional): Absolute project path for O(1) lookup
         """
-        from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
+        from flow_sdk.fs_store.indexer.functions.claude_sessions import (
+            claude_session_to_transcript_dicts,
+            get_claude_session,
+        )
 
         request_info = get_current_request_info()
         session_id = request_info.request.query_params.get("session_id")
@@ -501,15 +542,11 @@ class PtyActionsMixin:
             return ApiFailResponse(message="session_id query parameter required")
 
         project = request_info.request.query_params.get("project")
-        kwargs = {}
-        if project:
-            kwargs["project"] = project
-
-        record = ClaudeSessionRecord.get(session_id, **kwargs)
+        record = get_claude_session(session_id, project=project)
         if not record:
             return ApiSuccessResponse(data=[])
 
-        return ApiSuccessResponse(data=record.to_transcript_dicts())
+        return ApiSuccessResponse(data=claude_session_to_transcript_dicts(record))
 
     async def _pty_session_transcript_raw(self) -> ApiResponse:
         """Return raw JSONL bytes for a Claude session as a UTF-8 string.
@@ -523,7 +560,7 @@ class PtyActionsMixin:
           - session_id (required): The Claude session UUID
           - project (optional): Absolute project path for O(1) lookup
         """
-        from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
+        from flow_sdk.fs_store.indexer.functions.claude_sessions import get_claude_session
 
         request_info = get_current_request_info()
         session_id = request_info.request.query_params.get("session_id")
@@ -531,11 +568,7 @@ class PtyActionsMixin:
             return ApiFailResponse(message="session_id query parameter required")
 
         project = request_info.request.query_params.get("project")
-        kwargs = {}
-        if project:
-            kwargs["project"] = project
-
-        record = ClaudeSessionRecord.get(session_id, **kwargs)
+        record = get_claude_session(session_id, project=project)
         if not record or not record.jsonl_path:
             return ApiSuccessResponse(data={"content": "", "session_id": session_id, "jsonl_path": None})
 
@@ -573,38 +606,54 @@ class PtyActionsMixin:
         # Resolve Record class from the global type registry (supports all registered types)
         from flow_sdk.fs_store.schema_registry import SchemaRegistry as _SR  # noqa: PLC0415
 
-        cls = _SR.get_record_cls(record_type)
-        if cls is None:
-            # Lazy-import well-known record types that aren't loaded at startup.
-            # Importing the module triggers __init_subclass__ → SchemaRegistry registration.
-            if record_type == "claude_session":
-                from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord  # noqa: PLC0415
-
-                cls = ClaudeSessionRecord
-            else:
-                return ApiFailResponse(message=f"Unknown record type: {record_type!r}")
-
         uuid_param = request_info.request.query_params.get("uuid") if request_info.request else None
         project = request_info.request.query_params.get("project") if request_info.request else None
-        kwargs = {}
-        if project:
-            kwargs["project"] = project
 
         loop = asyncio.get_event_loop()
 
+        # Parser-fn-only types need their own dispatch (no record_cls). Add
+        # cases here as more types migrate.
+        if record_type == "claude_session":
+            from flow_sdk.fs_store.indexer.functions.claude_sessions import (  # noqa: PLC0415
+                claude_session_meta_dict,
+                discover_claude_session_paths_iter,
+                ensure_claude_session_stats,
+                extract_claude_session_from_path,
+                get_claude_session,
+            )
+            try:
+                if uuid_param:
+                    record = await loop.run_in_executor(
+                        None, lambda: get_claude_session(uuid_param, project=project)
+                    )
+                    if not record:
+                        return ApiSuccessResponse(data=None)
+                    await loop.run_in_executor(None, lambda: ensure_claude_session_stats(record))
+                    return ApiSuccessResponse(data=claude_session_meta_dict(record))
+                else:
+                    paths = await loop.run_in_executor(
+                        None, lambda: list(discover_claude_session_paths_iter())
+                    )
+                    records = [extract_claude_session_from_path(p) for p in paths]
+                    return ApiSuccessResponse(
+                        data=[claude_session_meta_dict(r) for r in records]
+                    )
+            except Exception as exc:
+                logging.warning("discovery action error for %r uuid=%r: %s", record_type, uuid_param, exc)
+                return ApiSuccessResponse(data=None)
+
+        if _SR.get(record_type) is None:
+            return ApiFailResponse(message=f"Unknown record type: {record_type!r}")
+
+        from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
         try:
             if uuid_param:
-                record = await loop.run_in_executor(None, lambda: cls.get(uuid_param, **kwargs))
-                if not record:
-                    # Return 200 with null data — the session file may not exist yet
-                    # during normal startup (race condition), so this is not an error.
+                record = await loop.run_in_executor(None, lambda: FSRecord.load_or_none(record_type, uuid_param))
+                if record is None:
                     return ApiSuccessResponse(data=None)
-                await loop.run_in_executor(None, lambda: record.discovery(force=True))
                 return ApiSuccessResponse(data=record.meta_dict())
             else:
-                records = await loop.run_in_executor(None, lambda: cls.discover())
-                for rec in records:
-                    await loop.run_in_executor(None, lambda r=rec: r.discovery(force=True))
+                records = await loop.run_in_executor(None, lambda: FSRecord.discover(record_type))
                 return ApiSuccessResponse(data=[r.meta_dict() for r in records])
         except Exception as exc:
             logging.warning("discovery action error for %r uuid=%r: %s", record_type, uuid_param, exc)
@@ -634,7 +683,7 @@ class PtyActionsMixin:
         name (str). Updates the record on disk and returns
         the updated record data.
         """
-        from flow_sdk.fs_records.shell_record import ShellRecord
+        from flow_sdk.builtin.shell import get_shell_record
 
         request_info = get_current_request_info()
         body = await request_info.get_post_data()
@@ -642,32 +691,25 @@ class PtyActionsMixin:
         if not shell_id:
             return ApiFailResponse(message="shell_id is required")
 
-        record = ShellRecord.get(shell_id)
-        if not record:
+        # Entity-first write-through: mutate the Shell entity and save(). The
+        # base store mirrors persisted fields (name) to metadata.json; tab_order
+        # is DB-only (persist=FALSE). No direct record poke / sync_from_record.
+        from flow_sdk.builtin.shell import Shell
+
+        shell_entity = await Shell.get_one({"id": shell_id})
+        if not shell_entity:
             return ApiFailResponse(message="Shell session not found")
 
         if "tab_order" in body:
-            object.__setattr__(record, "tab_order", body["tab_order"])
-            dirty = object.__getattribute__(record, "_dirty_keys")
-            dirty.add("tab_order")
+            shell_entity.tab_order = body["tab_order"]
         if "name" in body:
-            object.__setattr__(record, "name", body["name"])
-            dirty = object.__getattribute__(record, "_dirty_keys")
-            dirty.add("name")
-        record.save()
+            shell_entity.name = body["name"]
+        await shell_entity.save()
 
-        # Write-through: update Shell DB entity
-        try:
-            from flow_sdk.builtin.shell import Shell
-
-            shell_entity = await Shell.get_one({"id": shell_id})
-            if shell_entity:
-                shell_entity.sync_from_record(record)
-                await shell_entity.save()
-        except Exception as e:
-            logging.warning(f"[PTY] Failed to update Shell entity: {e}")
-
-        return ApiSuccessResponse(data=record.meta_dict())
+        record = get_shell_record(shell_id)
+        data = record.meta_dict() if record else {}
+        data["tab_order"] = shell_entity.tab_order
+        return ApiSuccessResponse(data=data)
 
     async def _attach_pty_session(self, body: dict) -> ApiResponse:
         """Reattach to existing PTY session with output replay."""
@@ -822,7 +864,16 @@ class PtyActionsMixin:
                 logging.debug(f"[PTY] Sending PTY output to client: seq={seq}, size={len(data)} bytes")
                 await handler.send_message(response_msg.model_dump())
             except Exception as e:
-                logging.warning(f"Failed to send PTY output to client: {e}")
+                # A closed socket (tab closed mid-stream) is normal, not a
+                # warning — the PTY keeps running and reattach replays output.
+                _m = str(e).lower()
+                if any(s in _m for s in (
+                    "close message has been sent", "websocket.close",
+                    "after sending", "disconnect",
+                )):
+                    logging.debug(f"PTY output send skipped — client gone: {e}")
+                else:
+                    logging.warning(f"Failed to send PTY output to client: {e}")
                 response_msg = ResponseMessage(
                     session_id=shell_id,
                     message_id=request_message_id,
@@ -974,16 +1025,14 @@ class PtyActionsMixin:
 
         # Also update disk record directly (covers migration period)
         try:
-            from flow_sdk.fs_records.shell_record import ShellRecord, ShellStatus
+            from flow_sdk.builtin.shell import ShellStatus, get_shell_record
 
-            record = ShellRecord.get(shell_id)
+            record = get_shell_record(shell_id)
             if record:
-                object.__setattr__(record, "state", ShellStatus.CLOSED)
-                dirty = object.__getattribute__(record, "_dirty_keys")
-                dirty.add("state")
-                record.save()
+                # Canonical `status` write through the unified metadata path.
+                record.save_metadata_field("status", ShellStatus.CLOSED.value)
         except Exception as e:
-            logging.warning(f"[PTY] Failed to update ShellRecord on close: {e}")
+            logging.warning(f"[PTY] Failed to update shell record on close: {e}")
 
         # Write-through: update Shell DB entity status to CLOSED
         try:

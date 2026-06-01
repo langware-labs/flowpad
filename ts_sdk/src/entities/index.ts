@@ -51,3 +51,6 @@ export * from './claude-memory';
 export * from './claude-rules';
 export * from './command';
 export * from './workspace';
+export * from './members';
+export * from './git-repo';
+export * from './git-workdir';

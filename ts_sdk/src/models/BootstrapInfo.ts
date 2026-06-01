@@ -1,4 +1,5 @@
 import { Project, User, Visitor, Workspace } from '../entities';
+import { TypeInfo } from '../FlowSync/schema';
 import { ComputeNode } from '../entities/compute_node';
 import { AgentHook } from '../entities/agent-hook';
 import { WebDomain } from '../entities/web-domain';
@@ -36,8 +37,8 @@ export interface AppPaths {
   system_agents: string;
   /** Logs folder ("Users/shlom/Flowpad workspace/.flow/logs") */
   logs: string;
-  /** Settings file ("Users/shlom/Flowpad workspace/.flow/settings.json") */
-  settings: string;
+  /** Per-instance UI preferences file ("Users/shlom/.flow/instances/<name>/preferences.json") */
+  preferences: string;
 }
 
 /**
@@ -86,7 +87,10 @@ export interface BootstrapNotice {
 }
 
 export interface BootstrapInfo {
-  schemas?: any[];
+  // Complete type registry: TypeInfo (icon/browseable/creatable/fields) +
+  // nested JSON schema, one entry per registered type. Loaded into the
+  // frontend SchemaRegistry (dataManager.typeInfos) at startup.
+  types?: TypeInfo[];
   user?: User;
   domain?: WebDomain;
   visitor?: Visitor;

@@ -35,7 +35,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable
 
 if TYPE_CHECKING:
-    from flow_sdk.fs_records.agent_record import AgentRecord
+    from flow_sdk.fs_store.fs_record import FSRecord as AgentRecord
 
 TEMP_DIR = Path(tempfile.gettempdir()) / "claude_plugin_test"
 
@@ -547,31 +547,35 @@ class ClaudeProjectEnvManager:
 
     # -- Agent management -----------------------------------------------------
 
-    def load_agent(self, agent: AgentRecord | str | Path) -> None:
+    def load_agent(self, agent: "AgentRecord | str | Path") -> None:
         """Copy an agent definition into ``.claude/agents/``.
 
         Accepts:
-          - ``AgentRecord``: renders ``to_markdown()`` and writes it
-          - ``str``: treated as agent name, loaded via ``AgentRecord.load_agent``
+          - ``Record`` (AGENT type): renders via ``render_agent_markdown`` and writes it
+          - ``str``: treated as agent name, loaded via ``load_agent`` from operations
           - ``Path``: path to a ``.md`` file, copied directly
         """
-        from flow_sdk.fs_records.agent_record import AgentRecord as AR
+        from flow_sdk.fs_store.operations.agent import (  # noqa: PLC0415
+            load_agent as _load_agent,
+            render_agent_markdown,
+        )
 
         if isinstance(agent, Path):
             dest = self.agents_dir / agent.name
             dest.write_text(agent.read_text(encoding="utf-8"), encoding="utf-8")
         elif isinstance(agent, str):
-            loaded = AR.load_agent(agent)
+            loaded = _load_agent(agent)
             if loaded is None:
                 raise FileNotFoundError(f"Agent {agent!r} not found")
             self._write_agent_md(loaded)
         else:
             self._write_agent_md(agent)
 
-    def _write_agent_md(self, agent: AgentRecord) -> None:
+    def _write_agent_md(self, agent: "AgentRecord") -> None:
+        from flow_sdk.fs_store.operations.agent import render_agent_markdown  # noqa: PLC0415
         name = agent.name or agent.id or "agent"
         dest = self.agents_dir / f"{name}.md"
-        dest.write_text(agent.to_markdown(), encoding="utf-8")
+        dest.write_text(render_agent_markdown(agent), encoding="utf-8")
 
     # -- System prompt --------------------------------------------------------
 

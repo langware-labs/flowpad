@@ -16,7 +16,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from flow_sdk.builtin.flow_message import Attachment, AttachmentType, FlowMessage
-from flow_sdk.fs_records.flow_message_bundle import (
+from flow_sdk.builtin.flow_message_bundle import (
     FlowMessageExistsError,
     pack_bundle,
     unpack_bundle,
@@ -247,11 +247,11 @@ class TestUnpackBundle:
         """unpack_bundle calls append_message_pointer on the target conversation."""
         from flow_sdk.builtin.conversation import Conversation
         from flow_sdk.builtin.user import User
-        from flow_sdk.fs_records.conversation_record import ConversationRecord
+        from flow_sdk.fs_store.operations.conversation import default_data_dir, default_jsonl_path, from_jsonl
 
         # Pin the records-data root to tmp_path so the canonical jsonl lives here.
         monkeypatch.setattr(
-            "flow_sdk.fs_store.record.get_default_records_data_root",
+            "flow_sdk.fs_store.record_paths.get_default_records_data_root",
             lambda: tmp_path,
         )
 
@@ -271,7 +271,7 @@ class TestUnpackBundle:
         zip_path = _write_flowmsg_zip(tmp_path, fm_data)
 
         # Pre-create the canonical jsonl path.
-        canonical = ConversationRecord.default_jsonl_path(conv_id)
+        canonical = default_jsonl_path(conv_id)
         canonical.parent.mkdir(parents=True, exist_ok=True)
         canonical.write_text("")
 

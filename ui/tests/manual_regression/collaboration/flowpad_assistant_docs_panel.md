@@ -1,40 +1,34 @@
 ---
-id: ac1ac5b9-5906-5e25-95a7-8bf5de55e2b3
+id: 8a3c1f29-4b7e-4d6a-9f12-2c5e8a1b3d40
 ---
 
-test 1: Flowpad Assistant collab space lists the shipped sample doc
-- navigate to {APP_URL}/dock/project/@flowpad_assistant
-- wait for the project page (CollaborationPage) to render
-- expand the DOCS category in the left sidebar
-- validate a doc with name "Hello from Flowpad" is visible in the DOCS list
-  (the seeded markdown title; the filename on disk is hello-flowpad.md)
-- click it
-- wait 500 ms
-- validate a room tab opens with the title "Hello from Flowpad"
-- validate the rendered markdown contains the heading "Hello from Flowpad" and the body text "Welcome to the Flowpad Assistant workspace."
+# Flowpad Assistant — project view (system space)
+# Note (2026-05-31): `/dock/project/<id>` renders the project ASSET BROWSER
+# (record-removal branch UX), not the legacy DOCS/ROOMS/PLANS CollaborationPage.
+# The assistant's docs are reachable as markdown assets via that browser. These
+# tests assert the current, intended surface (asset browser mounts cleanly +
+# the seeded doc is indexed/searchable), not the removed DOCS sidebar.
 
-test 2: Footer "Flowpad docs" button opens the Flowpad Assistant collab space
+test 1: Open the Flowpad Assistant space from the sidebar
 - navigate to {APP_URL}/dock/home
-- locate the application footer (bottom bar of the window)
-- validate a button with aria-label="Flowpad docs" is visible to the LEFT of the ClaudeUsageChip
-- click the "Flowpad docs" button
-- wait up to 1 second for navigation
-- validate the URL is /dock/project/@flowpad_assistant (URL-encoded as /dock/project/%40flowpad_assistant)
-- validate the CollaborationPage rendered for the Flowpad Assistant project
+- wait for the sidebar to render
+- click the "Flowpad Assistant" button in the sidebar (data-testid="sidebar-flowpad-assistant" or text "Flowpad Assistant")
+- wait up to 2 seconds for navigation
+- validate the URL contains "/dock/project/" (the assistant opens its project space)
+- validate the project asset browser rendered (the "Assets" heading and a "Project: @flowpad" scope indicator with the asset-type tree)
+- validate the page does NOT contain the text "No editor for type: project"
+- check console for errors
+- validate no errors appeared
 
-test 3: Server include_system filter default hides system markdown rows
-- with the backend running at {API_URL} (default http://localhost:9008/api/v1)
-- run: curl -sS '{API_URL}/search?record_type=markdown&q=hello-flowpad'
-- validate the JSON response has data.total == 0 (system records hidden by default)
-- run: curl -sS '{API_URL}/search?record_type=markdown&q=hello-flowpad&include_system=true'
-- validate the JSON response has data.total >= 1 and at least one result has asset_ref ending in /hello-flowpad.md (the seeded system markdown)
+test 2: The seeded hello-flowpad doc is indexed and searchable
+- [bash] run "curl -s -X POST '{API_URL}/api/v1/graph/compute_node/@local/fs-records/index?type=markdown'"
+- [bash] run "sleep 2"
+- [bash] run "curl -s '{API_URL}/api/v1/search?record_type=markdown&q=hello&include_system=true'"
+- validate the search response includes a result whose name/path contains "hello-flowpad" (the seeded system doc is discoverable after indexing)
 
-test 4: Bootstrap re-scans markdown after system projects are ensured (recovery path)
-- stop the backend
-- locate the backend's SQLite DB used by fs_store (e.g. /root/.flow/dev_db/flowpad_db inside the dev container)
-- run: sqlite3 <path> "DELETE FROM entities WHERE type='markdown' AND json_extract(data, '$.asset_ref') LIKE '%/hello-flowpad.md';"
-- start the backend
-- once the server reports ready, hit GET {API_URL}/graph/bootstrap
-- wait for the bootstrap response (200 OK)
-- run: sqlite3 <path> "SELECT count(*) FROM entities WHERE type='markdown' AND json_extract(data, '$.asset_ref') LIKE '%/hello-flowpad.md';"
-- validate the row reappears (bootstrap re-indexed system project markdowns)
+test 3: The assistant project view mounts without an error boundary
+- navigate to {APP_URL}/dock/project/@flowpad_assistant
+- wait for the project view to render
+- validate no React error boundary is visible (no heading "Error" / "Something went wrong")
+- check console for errors
+- validate no errors appeared

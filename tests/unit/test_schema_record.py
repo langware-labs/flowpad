@@ -1,15 +1,15 @@
-"""Unit tests for SchemaRecord — pure, no server needed."""
+"""Unit tests for SchemaRegistry — pure, no server needed."""
 
 from __future__ import annotations
 
 import json
 from unittest import mock
 
-from flow_sdk.fs_records.schema_record import (
+from flow_sdk.fs_store.schema_registry import (
     IndexRequest,
     IndexResult,
     ScanResult,
-    SchemaRecord,
+    SchemaRegistry,
     _append_jsonl,
 )
 
@@ -53,7 +53,7 @@ def test_index_request_defaults():
 
 def test_append_scan_writes_global_log(tmp_path):
     with mock.patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
-        ts = SchemaRecord.append_scan(
+        ts = SchemaRegistry.append_scan(
             trigger="test",
             duration_ms=10.0,
             total_records=5,
@@ -70,7 +70,7 @@ def test_append_scan_writes_global_log(tmp_path):
 
 def test_append_scan_writes_per_type_log(tmp_path):
     with mock.patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
-        ts = SchemaRecord.append_scan(
+        ts = SchemaRegistry.append_scan(
             trigger="test",
             duration_ms=5.0,
             total_records=2,
@@ -90,7 +90,7 @@ def test_append_index_writes_both_logs(tmp_path):
     in get_index_status as max(per_type[i].last_indexed_at) (see
     SchemaRegistry.append_index docstring)."""
     with mock.patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
-        ts = SchemaRecord.append_index(
+        ts = SchemaRegistry.append_index(
             trigger="test",
             duration_ms=20.0,
             total_indexed=3,
@@ -107,20 +107,20 @@ def test_append_index_writes_both_logs(tmp_path):
 
 def test_get_last_scan_at_none_when_missing(tmp_path):
     with mock.patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
-        result = SchemaRecord.get_last_scan_at("nonexistent_type")
+        result = SchemaRegistry.get_last_scan_at("nonexistent_type")
     assert result is None
 
 
 def test_get_last_index_at_returns_timestamp(tmp_path):
     with mock.patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
-        ts = SchemaRecord.append_index(
+        ts = SchemaRegistry.append_index(
             trigger="t",
             duration_ms=1.0,
             total_indexed=1,
             types=[],
             type_name="skill",
         )
-        result = SchemaRecord.get_last_index_at("skill")
+        result = SchemaRegistry.get_last_index_at("skill")
     assert result == ts
 
 

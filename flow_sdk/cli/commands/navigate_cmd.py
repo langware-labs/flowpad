@@ -15,6 +15,7 @@ parse the outcome.
 """
 
 from __future__ import annotations
+from flow_sdk.instance_settings import get_instance_settings
 
 import json
 import os
@@ -48,7 +49,7 @@ def _discover_port() -> int:
     server_info = read_server_info()
     if server_info:
         return server_info.port
-    return int(os.environ.get("LOCAL_SERVER_PORT", "9007"))
+    return get_instance_settings().port
 
 
 def _fail(exit_code: int, error_code: str, message: str) -> None:

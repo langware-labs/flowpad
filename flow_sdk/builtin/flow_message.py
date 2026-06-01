@@ -51,6 +51,54 @@ class FlowMessageKind(str, Enum):
     INVITATION = "invitation"
 
 
+class DeliveryStatus(str, Enum):
+    """Delivery-receipt lifecycle of a FlowMessage. Monotonic. Single source of
+    truth — imported by both the client (here) and the hub.
+
+    CREATED   — local only; the hub has NOT accepted it (🕐 Pending).
+    SENT      — accepted/stored on the hub (✓).
+    DELIVERED — recipient's client pulled it (✓✓).
+    RECEIVED  — recipient read it (✓✓ blue).
+
+    The hub never stores CREATED — that is a purely client-local pre-accept state.
+    """
+    CREATED = "created"
+    SENT = "sent"
+    DELIVERED = "delivered"
+    RECEIVED = "received"
+
+
+# Monotonic order — list index is the rank.
+DELIVERY_ORDER: tuple[DeliveryStatus, ...] = (
+    DeliveryStatus.CREATED,
+    DeliveryStatus.SENT,
+    DeliveryStatus.DELIVERED,
+    DeliveryStatus.RECEIVED,
+)
+# O(1) rank lookup. ``DeliveryStatus`` is a str-Enum, so each member hashes and
+# compares equal to its value — one key per status serves both enum and raw-str
+# callers (e.g. ``_RANK["sent"]`` and ``_RANK[DeliveryStatus.SENT]`` both hit).
+_RANK: dict[Any, int] = {s: i for i, s in enumerate(DELIVERY_ORDER)}
+
+
+def delivery_rank(status: Any) -> int:
+    """Rank of a delivery status (enum or raw str). Unknown/None → -1."""
+    return _RANK.get(status, -1)
+
+
+def delivery_advances(current: Any, incoming: Any) -> bool:
+    """True iff ``incoming`` is a known status whose rank is >= ``current``'s.
+
+    Enforces the monotonic lifecycle so a stale/out-of-order update can't
+    downgrade a row. Unknown ``incoming`` is rejected; unknown/None ``current``
+    is treated as CREATED (rank 0).
+    """
+    ir = delivery_rank(incoming)
+    if ir < 0:
+        return False
+    return ir >= max(delivery_rank(current), 0)
+
+
 # Single source of truth for the body filename on the hub blob store.
 # Bodies live under flow_message/<id>/fs/<BODY_FILENAME>.
 BODY_FILENAME = "body.flowmsg"
@@ -94,6 +142,17 @@ class Attachment(BaseModel):
 
 
 class FlowMessage(Entity):
+    # Beyond the base local flags, a FlowMessage owns its body/download and
+    # read state locally. A hub metadata refresh must not reset these:
+    #   * body_status  — download/delivery lifecycle on THIS machine; reset
+    #     would re-trigger an already-completed body download.
+    #   * is_read / is_archived — local inbox state, not the hub's to dictate.
+    #   * received_at  — when THIS device received it.
+    #   * is_draft     — a local draft has no hub twin; never let a refresh flip it.
+    LOCAL_ONLY_FIELDS: ClassVar[frozenset[str]] = Entity.LOCAL_ONLY_FIELDS | frozenset({
+        "body_status", "is_read", "is_archived", "received_at", "is_draft",
+    })
+
     type: str = APIField(default="flow_message")
     text: str = APIField(...)
     instruction: Optional[str] = APIField(None)
@@ -107,10 +166,14 @@ class FlowMessage(Entity):
     is_read: bool = APIField(default=False)
     is_archived: bool = APIField(default=False)
     # Receipt state — mirrors the hub-side schema. Monotonic:
-    # created → delivered → received. Stamped only by the hub on
-    # mark_delivered / mark_received actions; the bridge propagates updates
-    # to the local row via data_op_msg(update).
-    delivery_status: str = APIField(default="created")
+    # created → sent → delivered → received.
+    #   created  — local only; the hub has NOT accepted it (no add_message ACK).
+    #   sent     — accepted/stored on the hub (the hub stamps it on persist and
+    #              returns it in the add_message response).
+    #   delivered/received — stamped by the hub on mark_delivered / mark_received.
+    # The bridge propagates hub updates to the local row via data_op_msg(update),
+    # guarded so a lower-ranked status can never downgrade a higher one.
+    delivery_status: str = APIField(default=DeliveryStatus.CREATED.value)
     delivered_at: Optional[datetime] = APIField(default=None)
     received_at: Optional[datetime] = APIField(default=None)
     # NOTE: ``context`` (list[TypeId]) was renamed and consolidated into the
@@ -164,13 +227,13 @@ class FlowMessage(Entity):
 
     async def to_file(self, dest_dir: Path | None = None) -> Path:
         """Pack this FlowMessage + attachments into a .flowmsg zip. Returns path to zip."""
-        from flow_sdk.fs_records.flow_message_bundle import pack_bundle
+        from flow_sdk.builtin.flow_message_bundle import pack_bundle
         return await pack_bundle(self, dest_dir)
 
     @classmethod
     async def from_file(cls, zip_path: Path, local_user_id: str, *, overwrite: bool = False) -> "FlowMessage":
         """Unpack .flowmsg, materialize entities, append pointer to conversation."""
-        from flow_sdk.fs_records.flow_message_bundle import unpack_bundle
+        from flow_sdk.builtin.flow_message_bundle import unpack_bundle
         return await unpack_bundle(zip_path, local_user_id, overwrite=overwrite)
 
     # -------- Header / Body interface (principle #6) -------- #

@@ -1,4 +1,4 @@
-"""Unit tests for flow_sdk.fs_records._claude_projects.
+"""Unit tests for flow_sdk.fs_store.indexer.functions._claude_projects.
 
 Tests cover:
 - _real_path_from_jsonl: reads 'cwd' from a session JSONL file
@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.fs_records._claude_projects import (
+from flow_sdk.fs_store.indexer.functions._claude_projects import (
     _real_path_from_jsonl,
     iter_claude_project_paths,
 )
@@ -96,7 +96,7 @@ def test_yields_real_path_from_jsonl(tmp_path: Path, monkeypatch: pytest.MonkeyP
     _make_project_dir(projects_root, "-Users-foo-my-project", real_cwd=str(real_dir))
 
     monkeypatch.setattr(
-        "flow_sdk.fs_records._claude_projects._claude_projects_dir",
+        "flow_sdk.fs_store.indexer.functions._claude_projects._claude_projects_dir",
         lambda: projects_root,
     )
     result = list(iter_claude_project_paths(include_temp=True))
@@ -106,34 +106,40 @@ def test_yields_real_path_from_jsonl(tmp_path: Path, monkeypatch: pytest.MonkeyP
 def test_falls_back_to_decode_when_no_jsonl(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Falls back to hyphen-decode when _real_path_from_jsonl returns None.
 
-    Uses Path.home() as the target because it has no hyphens in the path and
-    is guaranteed to exist — tmp_path contains pytest-generated hyphens that
-    would make the naive decode produce the wrong path.
+    Materializes a hyphen-free real path on disk so the naive decode
+    round-trips. Avoids ``Path.home()`` because conftest's sandbox HOME may
+    sit under ``/private/tmp/claude-501/...`` whose embedded ``-501`` would
+    decode wrong (Claude's encoder collapses ``-`` and ``/`` together).
 
-    `_INVALID_PROJECT_ROOTS` is emptied for this test so the fallback path is
-    what we actually exercise, not the safety filter that drops `/` / `$HOME`.
+    ``_INVALID_PROJECT_ROOTS`` is emptied for this test so the fallback path is
+    what we actually exercise, not the safety filter that drops ``/`` / ``$HOME``.
     """
     projects_root = tmp_path / ".claude" / "projects"
-    real_dir = Path.home().resolve()
+    # Hyphen-free real path so encode→decode round-trips. The sandbox tmp_path
+    # sits under ``/tmp/claude-501/...`` whose embedded ``-501`` breaks the
+    # decode, so we materialize outside ``tempfile.gettempdir()`` under
+    # ``/var/tmp`` (resolves to a hyphen-free ``/private/var/tmp/...``).
+    import tempfile as _tempfile
+    real_dir = Path(_tempfile.mkdtemp(prefix="decoderoundtrip", dir="/var/tmp")).resolve()
     encoded = "-" + str(real_dir).lstrip("/").replace("/", "-")
     _make_project_dir(projects_root, encoded, real_cwd=None)  # no JSONL
 
     monkeypatch.setattr(
-        "flow_sdk.fs_records._claude_projects._claude_projects_dir",
+        "flow_sdk.fs_store.indexer.functions._claude_projects._claude_projects_dir",
         lambda: projects_root,
     )
     # Patch _real_path_from_jsonl to return None (simulate empty project dir)
     monkeypatch.setattr(
-        "flow_sdk.fs_records._claude_projects._real_path_from_jsonl",
+        "flow_sdk.fs_store.indexer.functions._claude_projects._real_path_from_jsonl",
         lambda _: None,
     )
     # Neutralize the `/` / `$HOME` safety filter so the decode fallback is
     # what the assertion measures.
     monkeypatch.setattr(
-        "flow_sdk.fs_records._claude_projects._invalid_project_roots",
+        "flow_sdk.fs_store.indexer.functions._claude_projects._invalid_project_roots",
         lambda: set(),
     )
-    result = list(iter_claude_project_paths())
+    result = list(iter_claude_project_paths(include_temp=True))
     assert result == [real_dir]
 
 
@@ -146,7 +152,7 @@ def test_deduplicates_same_real_path(tmp_path: Path, monkeypatch: pytest.MonkeyP
     _make_project_dir(projects_root, "-b", real_cwd=str(real_dir))
 
     monkeypatch.setattr(
-        "flow_sdk.fs_records._claude_projects._claude_projects_dir",
+        "flow_sdk.fs_store.indexer.functions._claude_projects._claude_projects_dir",
         lambda: projects_root,
     )
     result = list(iter_claude_project_paths(include_temp=True))
@@ -162,7 +168,7 @@ def test_skips_nonexistent_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     )  # path does not exist
 
     monkeypatch.setattr(
-        "flow_sdk.fs_records._claude_projects._claude_projects_dir",
+        "flow_sdk.fs_store.indexer.functions._claude_projects._claude_projects_dir",
         lambda: projects_root,
     )
     result = list(iter_claude_project_paths())
@@ -182,7 +188,7 @@ def test_hyphenated_project_name_resolved_correctly(
     )
 
     monkeypatch.setattr(
-        "flow_sdk.fs_records._claude_projects._claude_projects_dir",
+        "flow_sdk.fs_store.indexer.functions._claude_projects._claude_projects_dir",
         lambda: projects_root,
     )
     result = list(iter_claude_project_paths(include_temp=True))
@@ -195,7 +201,7 @@ def test_empty_projects_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
     projects_root.mkdir(parents=True)
 
     monkeypatch.setattr(
-        "flow_sdk.fs_records._claude_projects._claude_projects_dir",
+        "flow_sdk.fs_store.indexer.functions._claude_projects._claude_projects_dir",
         lambda: projects_root,
     )
     assert list(iter_claude_project_paths()) == []
@@ -204,7 +210,7 @@ def test_empty_projects_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
 def test_missing_projects_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Returns empty list when ~/.claude/projects doesn't exist."""
     monkeypatch.setattr(
-        "flow_sdk.fs_records._claude_projects._claude_projects_dir",
+        "flow_sdk.fs_store.indexer.functions._claude_projects._claude_projects_dir",
         lambda: tmp_path / "nonexistent",
     )
     assert list(iter_claude_project_paths()) == []

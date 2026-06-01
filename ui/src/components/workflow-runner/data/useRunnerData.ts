@@ -157,7 +157,7 @@ function useRunFiles(selectedRuns: AgenticProcess[]): Map<string, RunFiles> {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cacheKey, computeNodeId, homeDir]);
+  }, [cacheKey, computeNodeId]);
 
   return files;
 }

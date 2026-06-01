@@ -45,7 +45,7 @@ def test_invalid_sentinel_rejected():
 def test_data_path_is_property_derived(monkeypatch, tmp_path):
     """data_path is a derived @property, not a stored field."""
     monkeypatch.setattr(
-        "flow_sdk.fs_store.record.get_default_records_data_root",
+        "flow_sdk.fs_store.record_paths.get_default_records_data_root",
         lambda: tmp_path,
     )
     conv = Conversation.model_validate({"id": "ddd12345-1234-1234-1234-123456789012"})

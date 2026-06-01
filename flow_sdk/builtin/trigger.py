@@ -125,7 +125,7 @@ async def _fire_schedule_job(trigger_id: str) -> None:
     """
     try:
         from flow_sdk.builtin.hook_models import get_action_handler
-        from flow_sdk.fs_records.trigger_log import TriggerLogRecord
+        from flow_sdk.fs_store.operations.trigger_log import append_entry as _append_trigger_log_entry, discover as _discover_trigger_log
 
         entity = await Trigger.get_by_id(trigger_id)
         if not (entity and entity.enabled):
@@ -174,7 +174,7 @@ async def _fire_schedule_job(trigger_id: str) -> None:
             except Exception as e:
                 logger.error(f"Schedule trigger {entity.name}: failed to spawn process: {e}")
 
-        TriggerLogRecord.append_entry(entity.name, {
+        _append_trigger_log_entry(entity.name, {
             "hook_event": "schedule_fire",
             "trigger": True,
             "reason": f"Scheduled ({entity.sched_trigger_type or 'cron'}): {entity.expr}",
@@ -279,7 +279,7 @@ class Trigger(Entity):
         Matches the fs-record convention at `flow_sdk/fs_store/record.py:105`.
         """
         # Import lazily so the function works in tests that monkeypatch the root.
-        from flow_sdk.fs_store.record import get_default_records_data_root, record_stem
+        from flow_sdk.fs_store.record_paths import get_default_records_data_root, record_stem
 
         root = get_default_records_data_root()
         path = root / "trigger" / record_stem("trigger", self.id or "unsaved")
@@ -671,8 +671,8 @@ class Trigger(Entity):
         }
         result = rule.run(mock_data, [])
         try:
-            from flow_sdk.fs_records.trigger_log import TriggerLogRecord
-            TriggerLogRecord.append_entry(rule.name, {
+            from flow_sdk.fs_store.operations.trigger_log import append_entry as _append_trigger_log_entry, discover as _discover_trigger_log
+            _append_trigger_log_entry(rule.name, {
                 "hook_event": "UserPromptSubmit",
                 "trigger": result.trigger,
                 "reason": result.reason or "",
@@ -721,8 +721,8 @@ class Trigger(Entity):
         params = request_info.request_parameters if request_info else {}
         limit = int(params.get("limit", 500))
         triggered_only = str(params.get("triggered_only", "false")).lower() == "true"
-        from flow_sdk.fs_records.trigger_log import TriggerLogRecord
-        entries = TriggerLogRecord.discover(self.name, limit=limit)
+        from flow_sdk.fs_store.operations.trigger_log import append_entry as _append_trigger_log_entry, discover as _discover_trigger_log
+        entries = _discover_trigger_log(self.name, limit=limit)
         if triggered_only:
             entries = [e for e in entries if e.get("trigger")]
         return ApiSuccessResponse(data=entries)

@@ -93,7 +93,15 @@ def get_db_path() -> Path:
 
 
 def get_backup_folder() -> Path:
-    folder = Path.home() / ".flowpad" / "backups"
+    """Per-instance backup directory.
+
+    Backups live under ``<instance_dir>/backups`` (not the legacy shared
+    ``~/.flowpad/backups``). Two instances on the same machine (e.g.
+    ``app`` and ``oss``) used to collide on identical timestamps + filenames
+    in the shared folder; moving under ``instance_dir`` keeps them isolated.
+    """
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+    folder = get_instance_settings().instance_dir / "backups"
     folder.mkdir(parents=True, exist_ok=True)
     return folder
 
@@ -173,6 +181,21 @@ async def backup_db() -> BackupResult:
 # ---------------------------------------------------------------------------
 
 
+def _scan_backup_folder(folder: Path) -> list[Path]:
+    """Collect candidate backup files from a single folder."""
+    candidates: list[Path] = []
+    if not folder.exists():
+        return candidates
+    for entry in folder.iterdir():
+        if entry.is_file() and entry.name.startswith("flowpad_db_"):
+            candidates.append(entry)
+        elif entry.is_dir() and entry.name.startswith("archive_"):
+            db_inside = entry / "flowpad_db"
+            if db_inside.exists():
+                candidates.append(db_inside)
+    return candidates
+
+
 def find_last_valid_db_backup() -> Path | None:
     """Return the path of the most recent valid DB file from the backups folder.
 
@@ -180,18 +203,25 @@ def find_last_valid_db_backup() -> Path | None:
       - flowpad_db_YYYYMMDD_HHMMSS        (plain backup files)
       - archive_YYYYMMDD_HHMMSS/flowpad_db (archive folders)
 
-    Returns None if no valid backup is found.
+    Looks first in the per-instance folder (``<instance_dir>/backups``).
+    If nothing valid is found, falls back to the legacy shared folder
+    (``~/.flowpad/backups``) so installations that upgraded from a layout
+    where backups lived in the shared location can still recover. Without
+    the fallback, ``ensure_db`` would silently reinitialise a fresh DB on
+    first post-upgrade boot and lose recoverable user history.
+
+    Returns None if no valid backup is found in either folder.
     """
     backup_folder = get_backup_folder()
-    candidates: list[Path] = []
+    legacy_folder = Path.home() / ".flowpad" / "backups"
 
-    for entry in backup_folder.iterdir():
-        if entry.is_file() and entry.name.startswith("flowpad_db_"):
-            candidates.append(entry)
-        elif entry.is_dir() and entry.name.startswith("archive_"):
-            db_inside = entry / "flowpad_db"
-            if db_inside.exists():
-                candidates.append(db_inside)
+    folders: list[Path] = [backup_folder]
+    if legacy_folder != backup_folder and legacy_folder.exists():
+        folders.append(legacy_folder)
+
+    candidates: list[Path] = []
+    for folder in folders:
+        candidates.extend(_scan_backup_folder(folder))
 
     # Sort newest-first by the timestamp embedded in the parent name
     candidates.sort(key=lambda p: p.parent.name if p.name == "flowpad_db" else p.name, reverse=True)
@@ -241,13 +271,17 @@ def ensure_db() -> bool:
 
 
 def _write_db_corruption_error(db_path: Path) -> None:
-    """Write a RecordError recording the DB corruption incident."""
+    """Write a record_error FSRecord recording the DB corruption incident."""
+    import uuid as _uuid  # noqa: PLC0415
     from datetime import datetime, timezone  # noqa: PLC0415
 
-    from flow_sdk.fs_records.record_error import RecordError  # noqa: PLC0415
+    from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
+    from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
 
     try:
-        rec = RecordError(
+        rec = FSRecord(
+            type=RecordType.RECORD_ERROR,
+            id=str(_uuid.uuid4()),
             trigger="ensure_db",
             error_type="DatabaseCorruption",
             error_message=(
@@ -257,9 +291,9 @@ def _write_db_corruption_error(db_path: Path) -> None:
             occurred_at=datetime.now(timezone.utc).isoformat(),
         )
         rec.save()
-        logger.info("ensure_db: corruption RecordError written")
+        logger.info("ensure_db: corruption record_error written")
     except Exception as e:
-        logger.error(f"ensure_db: failed to write RecordError: {e}")
+        logger.error(f"ensure_db: failed to write record_error: {e}")
 
 
 def validate_db(db_path: Path | None = None) -> bool:
@@ -270,13 +304,15 @@ def validate_db(db_path: Path | None = None) -> bool:
     """
     import sqlite3 as stdlib_sqlite3  # noqa: PLC0415
 
+    from flow_sdk.db.drivers.sqlite.connection import open_sqlite  # noqa: PLC0415
+
     path = db_path or get_db_path()
     if not path.exists():
         logger.warning(f"validate_db: file not found at {path}")
         return False
 
     try:
-        conn = stdlib_sqlite3.connect(str(path))
+        conn = open_sqlite(path)
         try:
             rows = conn.execute("PRAGMA integrity_check").fetchall()
             # SQLite returns [('ok',)] when healthy; any other rows mean corruption.
@@ -369,7 +405,7 @@ async def clear_all_data() -> ClearAllResult:
 
 async def archive() -> ArchiveResult:
     """Create a full archive: DB backup + records snapshot in a timestamped folder."""
-    from flow_sdk.fs_store.record import get_default_records_root  # noqa: PLC0415
+    from flow_sdk.fs_store.record_paths import get_default_records_root  # noqa: PLC0415
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     archive_dir = get_backup_folder() / f"archive_{timestamp}"
@@ -432,14 +468,14 @@ async def restore(backup_path: str) -> RestoreResult:
 
 
 async def get_database_stats() -> DatabaseStatsResult:
-    import sqlite3 as stdlib_sqlite3  # noqa: PLC0415
+    from flow_sdk.db.drivers.sqlite.connection import open_sqlite  # noqa: PLC0415
 
     db_path = get_db_path()
     if not db_path.exists():
         raise FileNotFoundError("Database file does not exist")
 
     file_size = db_path.stat().st_size
-    conn = stdlib_sqlite3.connect(str(db_path))
+    conn = open_sqlite(db_path)
     try:
         cur = conn.cursor()
         cur.execute("SELECT COUNT(*) FROM entities")

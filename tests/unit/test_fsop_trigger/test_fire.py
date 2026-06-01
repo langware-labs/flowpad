@@ -37,7 +37,7 @@ def _isolate_callback_registry():
 @pytest.fixture
 def trigger_log_dir(tmp_path, monkeypatch):
     """Redirect trigger-log dir into a temp space so append_entry has somewhere to write."""
-    from flow_sdk.fs_records import trigger_log as tl
+    from flow_sdk.fs_store.operations import trigger_log as tl
 
     log_dir = tmp_path / "trigger_logs"
     log_dir.mkdir(parents=True, exist_ok=True)

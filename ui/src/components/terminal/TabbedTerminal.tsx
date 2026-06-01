@@ -49,7 +49,6 @@ import {
   FolderGit2,
   History,
   Loader2,
-  Search,
   SquareTerminal,
   X,
 } from 'lucide-react';
@@ -57,7 +56,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { allowRename } from './rename-rules';
 import { HistoryModal } from './HistoryModal';
 import InteractiveTerminal from './interactive-terminal';
-import { SessionQuickSearchModal } from './SessionQuickSearchModal';
 import { ProjectsCounterChip } from './ProjectsCounterChip';
 import { TerminalOpenerToolbar } from './openers/TerminalOpenerToolbar';
 import type { OpenerDescriptor } from './openers/tab_opener_types';
@@ -253,7 +251,6 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
   const tabContainerRef = useRef<HTMLDivElement>(null);
   const tabRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
-  const [sessionSearchOpen, setSessionSearchOpen] = useState(false);
   const [resumeByIdOpen, setResumeByIdOpen] = useState(false);
   const { resumeInTerminal } = useResumeInTerminal();
   const [hasTabOverflow, setHasTabOverflow] = useState(false);
@@ -1097,26 +1094,6 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
             </Button>
           )}
 
-          {/* Quick-search sessions — opens a cmdk modal that resolves the
-              picked session to its terminalDockPointer. Always visible. */}
-          <TooltipProvider delayDuration={600}>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-7 w-7 shrink-0 rounded-md"
-                  onClick={() => setSessionSearchOpen(true)}
-                  aria-label="Search sessions"
-                  data-testid="session-search-button"
-                >
-                  <Search className="h-3.5 w-3.5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">Search sessions</TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
-
           {/* Close All button — shown when 2+ tabs are open. Tab count badge
               hints at the destructive scope before clicking. */}
           {visibleSessions.length >= 2 && (
@@ -1232,7 +1209,6 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
           )}
         </div>
       </div>
-      <SessionQuickSearchModal open={sessionSearchOpen} onOpenChange={setSessionSearchOpen} />
       <HistoryModal
         open={historyModalOpen}
         onOpenChange={setHistoryModalOpen}

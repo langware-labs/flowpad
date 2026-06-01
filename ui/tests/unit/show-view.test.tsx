@@ -27,24 +27,34 @@ vi.mock('@mcp-ui/client', () => ({
   }),
 }));
 
-vi.mock('@sdk', () => ({
-  fsManager: { download: (...args: unknown[]) => mocks.downloadMock(...args) },
-  VFSPath: {
-    parse: (raw: string) => {
-      const stripped = raw.replace(/^(ui|vfs):\/\//, '');
-      const idx = stripped.indexOf('/');
-      if (idx < 0) {
-        return { typeId: { type: 'unknown', id: stripped }, entitySubPath: '', type: 'unknown', id: stripped };
-      }
-      const left = stripped.slice(0, idx);
-      const entitySubPath = stripped.slice(idx + 1);
-      const dashIdx = left.indexOf('-');
-      const type = left.slice(0, dashIdx);
-      const id = left.slice(dashIdx + 1);
-      return { typeId: { type, id }, entitySubPath, type, id };
+// Partial mock — overrides `fsManager` + `VFSPath` but spreads the rest of
+// the @sdk barrel so transitive importers (e.g. DockPointer's ViewType
+// enum) still resolve. This is wider than ShowView strictly needs; any
+// future @sdk module that adds an import-time side effect (network calls,
+// singleton bootstrapping) will leak into this jsdom test. If that bites,
+// reach for a per-symbol `vi.importActual` rather than widening further.
+vi.mock('@sdk', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@sdk')>();
+  return {
+    ...actual,
+    fsManager: { download: (...args: unknown[]) => mocks.downloadMock(...args) },
+    VFSPath: {
+      parse: (raw: string) => {
+        const stripped = raw.replace(/^(ui|vfs):\/\//, '');
+        const idx = stripped.indexOf('/');
+        if (idx < 0) {
+          return { typeId: { type: 'unknown', id: stripped }, entitySubPath: '', type: 'unknown', id: stripped };
+        }
+        const left = stripped.slice(0, idx);
+        const entitySubPath = stripped.slice(idx + 1);
+        const dashIdx = left.indexOf('-');
+        const type = left.slice(0, dashIdx);
+        const id = left.slice(dashIdx + 1);
+        return { typeId: { type, id }, entitySubPath, type, id };
+      },
     },
-  },
-}));
+  };
+});
 
 vi.mock('@src/navigation/useDockNavigation', () => ({
   useDockNavigation: () => mocks.useDockNavigationMock(),
