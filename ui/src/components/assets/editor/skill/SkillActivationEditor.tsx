@@ -8,7 +8,7 @@ import {
   FSItem,
 } from '@sdk';
 import { Button } from '@src/components/ui/button';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { Code, FileText, FlaskConical, RefreshCw, Save } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivationEvalsPanel } from './ActivationEvalsPanel';
@@ -36,7 +36,6 @@ export function SkillActivationEditor({
   initialViewMode = 'rule',
 }: SkillActivationEditorProps) {
   useAgentContext(); // Keep context connection for future use
-  const { toast } = useToast();
   const [activation, setActivation] = useState<ActivationRule | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -190,16 +189,15 @@ export function SkillActivationEditor({
       }
 
       onActivationUpdated?.();
-      toast({
+      notify.success({
         title: 'Saved',
-        description: 'Activation rule saved successfully.',
+        message: 'Activation rule saved successfully.',
       });
     } catch (error) {
       console.error('[SkillActivationEditor] Failed to save:', error);
-      toast({
+      notify.error({
         title: 'Save Failed',
-        description: 'Failed to save activation rule. Please check the format.',
-        variant: 'destructive',
+        message: 'Failed to save activation rule. Please check the format.',
       });
     } finally {
       setIsSaving(false);
@@ -213,7 +211,6 @@ export function SkillActivationEditor({
     editedRuleContent,
     editedTriggerContent,
     onActivationUpdated,
-    toast,
   ]);
 
   if (isLoading) {

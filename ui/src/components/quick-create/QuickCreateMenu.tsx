@@ -18,7 +18,7 @@ import {
 } from '@src/components/ui/dropdown-menu';
 import { useAssetTypes } from '@src/hooks/use-asset-types';
 import { useProjects } from '@src/hooks/use-projects';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { FolderOpen, FolderPlus, GitBranch } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useCallback, useMemo, useState } from 'react';
@@ -43,7 +43,6 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
   const { project: currentProject } = useProject();
   const { projects, isLoading: isLoadingProjects } = useProjects();
   const { computeNode } = useAgentContext();
-  const { toast } = useToast();
   const ensureProject = useEnsureProject();
   const selectExisting = useSelectExistingProject();
   const [projectModalOpen, setProjectModalOpen] = useState(false);
@@ -57,17 +56,17 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
 
   const handlePickFolder = useCallback(async (): Promise<string | null> => {
     if (!computeNode) {
-      toast({ title: 'No compute node available', variant: 'destructive' });
+      notify.error({ title: 'No compute node available' });
       return null;
     }
     try {
       return await computeNode.openPathDialog();
     } catch (err) {
       console.error('[QuickCreateMenu] Folder picker failed:', err);
-      toast({ title: 'Failed to open folder picker', variant: 'destructive' });
+      notify.error({ title: 'Failed to open folder picker' });
       return null;
     }
-  }, [computeNode, toast]);
+  }, [computeNode]);
 
   const handleCreateLocalProject = useCallback(
     async (rawName: string, rawParent: string) => {

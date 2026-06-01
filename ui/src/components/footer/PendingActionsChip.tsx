@@ -1,7 +1,7 @@
 import { AgenticProcess, Project } from '@sdk';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
-import { toast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import {
   acknowledgePending,
@@ -57,10 +57,9 @@ export function PendingActionsChip() {
     try {
       const opened = await navigation.openShellProcess(processId);
       if (!opened) {
-        toast({
+        notify.error({
           title: 'Process unavailable',
-          description: 'That agent is no longer in your workspace.',
-          variant: 'destructive',
+          message: 'That agent is no longer in your workspace.',
         });
       }
     } catch (err) {
@@ -68,10 +67,9 @@ export function PendingActionsChip() {
       // null-return branch: tell the user, then ack so the dead row
       // doesn't haunt the chip.
       console.error('[PendingActionsChip] openShellProcess threw', err);
-      toast({
+      notify.error({
         title: 'Process unavailable',
-        description: 'That agent is no longer in your workspace.',
-        variant: 'destructive',
+        message: 'That agent is no longer in your workspace.',
       });
     } finally {
       // Ack either way — clears the row's glow if the process was in the

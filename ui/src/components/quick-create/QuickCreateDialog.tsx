@@ -14,7 +14,7 @@ import {
 import { Input } from '@src/components/ui/input';
 import { useAllProjects } from '@src/hooks/use-all-projects';
 import { getProjectDisplayName } from '@src/hooks/use-claude-projects';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -55,7 +55,6 @@ function initialScope(project: Project | null): Scope {
 
 export function QuickCreateDialog({ open, onOpenChange, type }: QuickCreateDialogProps) {
   const descriptor = type ? getDescriptor(type) : undefined;
-  const { toast } = useToast();
   const { navigation } = useDockNavigation();
   const { project } = useProject();
   const { computeNode } = useAgentContext();
@@ -165,17 +164,17 @@ export function QuickCreateDialog({ open, onOpenChange, type }: QuickCreateDialo
 
   const handlePickFolder = useCallback(async (): Promise<string | null> => {
     if (!computeNode) {
-      toast({ title: 'No compute node available', variant: 'destructive' });
+      notify.error({ title: 'No compute node available' });
       return null;
     }
     try {
       return await computeNode.openPathDialog();
     } catch (err) {
       console.error('[QuickCreateDialog] Folder picker failed:', err);
-      toast({ title: 'Failed to open folder picker', variant: 'destructive' });
+      notify.error({ title: 'Failed to open folder picker' });
       return null;
     }
-  }, [computeNode, toast]);
+  }, [computeNode]);
 
   const folderVfsPath = useMemo<string | undefined>(() => {
     if (!descriptor || scope.kind !== 'project') return undefined;
@@ -196,17 +195,17 @@ export function QuickCreateDialog({ open, onOpenChange, type }: QuickCreateDialo
         harness,
         folderVfsPath,
       });
-      toast({ title: res.toastTitle });
+      notify.success({ title: res.toastTitle });
       commit();
       if (res.pointer) navigation.openDock(res.pointer);
       onOpenChange(false);
     } catch (err) {
       console.error('[QuickCreateDialog] Create failed:', err);
-      toast({ title: 'Failed to create', variant: 'destructive' });
+      notify.error({ title: 'Failed to create' });
     } finally {
       setIsSubmitting(false);
     }
-  }, [descriptor, name, path, scope.kind, harness, folderVfsPath, isSubmitting, toast, commit, navigation, onOpenChange]);
+  }, [descriptor, name, path, scope.kind, harness, folderVfsPath, isSubmitting, commit, navigation, onOpenChange]);
 
   const handleOpenChange = useCallback(
     (next: boolean) => {

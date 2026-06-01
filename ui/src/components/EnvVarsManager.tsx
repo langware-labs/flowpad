@@ -15,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@src/components/ui/table';
 import { Textarea } from '@src/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { useAuth, useEntityEnv } from '@sdk/react/hooks';
 import { useQueryClient } from '@tanstack/react-query';
 import { AlertCircle, CheckCircle, Edit, FileText, Key, Plus, Trash2, XCircle } from 'lucide-react';
@@ -81,7 +81,6 @@ const EnvVarsManager: React.FC<EnvVarManagerProps> = ({
   const [hasFlowPadApiKey, setHasFlowPadApiKey] = useState(false);
   const [apiKeysReloadTrigger, setApiKeysReloadTrigger] = useState(0);
   const [userApiKeys, setUserApiKeys] = useState<ApiKeyListItem[]>([]);
-  const { toast } = useToast();
   const { user } = useAuth();
   const queryClient = useQueryClient();
 
@@ -237,10 +236,9 @@ const EnvVarsManager: React.FC<EnvVarManagerProps> = ({
 
   const handleEdit = (envVar: EnvVarApiInfoOut) => {
     if (!user?.id) {
-      toast({
+      notify.info({
         title: 'Login Required',
-        description: 'Please login in order to edit environment variables',
-        variant: 'default',
+        message: 'Please login in order to edit environment variables',
       });
       return;
     }
@@ -256,10 +254,9 @@ const EnvVarsManager: React.FC<EnvVarManagerProps> = ({
 
   const handleDelete = async (envVarName: string) => {
     if (!user?.id) {
-      toast({
+      notify.error({
         title: 'Error',
-        description: 'You must be logged in to delete environment variables',
-        variant: 'destructive',
+        message: 'You must be logged in to delete environment variables',
       });
       return;
     }
@@ -273,9 +270,9 @@ const EnvVarsManager: React.FC<EnvVarManagerProps> = ({
       // Invalidate the query cache to update other components
       void queryClient.invalidateQueries({ queryKey: ['entity-env-table', entityTypeId.toString()] });
 
-      toast({
+      notify.success({
         title: 'Success',
-        description: 'Environment variable deleted successfully',
+        message: 'Environment variable deleted successfully',
       });
     } catch (error: unknown) {
       let errorMessage = 'Failed to delete environment variable';
@@ -301,10 +298,9 @@ const EnvVarsManager: React.FC<EnvVarManagerProps> = ({
           'Failed to delete environment variable';
       }
 
-      toast({
+      notify.error({
         title: 'Error',
-        description: errorMessage,
-        variant: 'destructive',
+        message: errorMessage,
       });
     }
   };
@@ -319,10 +315,9 @@ const EnvVarsManager: React.FC<EnvVarManagerProps> = ({
 
   const handleGenerateApiKey = async () => {
     if (!user?.typeId) {
-      toast({
+      notify.error({
         title: 'Error',
-        description: 'User not logged in',
-        variant: 'destructive',
+        message: 'User not logged in',
       });
       return;
     }
@@ -373,20 +368,18 @@ const EnvVarsManager: React.FC<EnvVarManagerProps> = ({
           'Failed to generate API key';
       }
 
-      toast({
+      notify.error({
         title: 'API Key Generation',
-        description: errorMessage,
-        variant: 'destructive',
+        message: errorMessage,
       });
     }
   };
 
   const handleDeleteApiKey = async (keyName: string) => {
     if (!user?.typeId) {
-      toast({
+      notify.error({
         title: 'Error',
-        description: 'User not logged in',
-        variant: 'destructive',
+        message: 'User not logged in',
       });
       return;
     }
@@ -435,65 +428,58 @@ const EnvVarsManager: React.FC<EnvVarManagerProps> = ({
           'Failed to delete API key';
       }
 
-      toast({
+      notify.error({
         title: 'API Key Deletion',
-        description: errorMessage,
-        variant: 'destructive',
+        message: errorMessage,
       });
     }
   };
 
   const handleSave = async () => {
     if (!user?.id) {
-      toast({
+      notify.info({
         title: 'Login Required',
-        description: 'Please login in order to save environment variables',
-        variant: 'default',
+        message: 'Please login in order to save environment variables',
       });
       return;
     }
 
     if (!newEnvVar.name) {
-      toast({
+      notify.error({
         title: 'Error',
-        description: 'Name is required',
-        variant: 'destructive',
+        message: 'Name is required',
       });
       return;
     }
 
     if (!validateEnvVarName(newEnvVar.name)) {
-      toast({
+      notify.error({
         title: 'Error',
-        description: 'Variable name must contain only uppercase letters, numbers, and underscores',
-        variant: 'destructive',
+        message: 'Variable name must contain only uppercase letters, numbers, and underscores',
       });
       return;
     }
 
     if (!editingEnvVar && !newEnvVar.value) {
-      toast({
+      notify.error({
         title: 'Error',
-        description: 'Value is required for new variables',
-        variant: 'destructive',
+        message: 'Value is required for new variables',
       });
       return;
     }
 
     if (newEnvVar.value && !validateEnvVarValue(newEnvVar.value)) {
-      toast({
+      notify.error({
         title: 'Error',
-        description: `Variable value is too long (max ${MAX_ENV_VAR_VALUE_LENGTH.toLocaleString()} characters)`,
-        variant: 'destructive',
+        message: `Variable value is too long (max ${MAX_ENV_VAR_VALUE_LENGTH.toLocaleString()} characters)`,
       });
       return;
     }
 
     if (!newEnvVar.var_type && !editingEnvVar) {
-      toast({
+      notify.error({
         title: 'Error',
-        description: 'Variable type is required',
-        variant: 'destructive',
+        message: 'Variable type is required',
       });
       return;
     }
@@ -537,9 +523,9 @@ const EnvVarsManager: React.FC<EnvVarManagerProps> = ({
           description: newEnvVar.description !== undefined ? newEnvVar.description : editingEnvVar.description,
         });
 
-        toast({
+        notify.success({
           title: 'Success',
-          description: 'Environment variable updated successfully',
+          message: 'Environment variable updated successfully',
         });
 
         // Invalidate the query cache to update other components
@@ -559,9 +545,9 @@ const EnvVarsManager: React.FC<EnvVarManagerProps> = ({
           description: newEnvVar.description || '',
         });
 
-        toast({
+        notify.success({
           title: 'Success',
-          description: 'Environment variable created successfully',
+          message: 'Environment variable created successfully',
         });
 
         // Invalidate the query cache to update other components
@@ -593,10 +579,9 @@ const EnvVarsManager: React.FC<EnvVarManagerProps> = ({
           'Unknown error occurred';
       }
 
-      toast({
+      notify.error({
         title: 'Error',
-        description: errorMessage,
-        variant: 'destructive',
+        message: errorMessage,
       });
     }
   };
@@ -608,10 +593,9 @@ const EnvVarsManager: React.FC<EnvVarManagerProps> = ({
         <Button
           onClick={() => {
             if (!user?.id) {
-              toast({
+              notify.info({
                 title: 'Login Required',
-                description: 'Please login in order to add a new variable',
-                variant: 'default',
+                message: 'Please login in order to add a new variable',
               });
             } else {
               setEditingEnvVar(null);
@@ -775,9 +759,9 @@ const EnvVarsManager: React.FC<EnvVarManagerProps> = ({
             <Button
               onClick={() => {
                 void navigator.clipboard.writeText(generatedApiKey.api_key);
-                toast({
+                notify.success({
                   title: 'Copied to Clipboard',
-                  description: 'API key copied successfully',
+                  message: 'API key copied successfully',
                 });
               }}
             >

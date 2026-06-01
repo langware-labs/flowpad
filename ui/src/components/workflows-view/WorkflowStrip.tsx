@@ -1,6 +1,6 @@
 import { Button } from '@src/components/ui/button';
 import { ScrollArea } from '@src/components/ui/scroll-area';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { QueryRequest, Workflow } from '@sdk';
@@ -12,7 +12,6 @@ import { workflowRunStore } from './workflow-run-store';
 
 export function WorkflowStrip() {
   const { navigation } = useDockNavigation();
-  const { toast } = useToast();
   const [newDialogOpen, setNewDialogOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Workflow | null>(null);
 
@@ -37,10 +36,10 @@ export function WorkflowStrip() {
         navigation.openDock(workflow.dockPointer);
       } catch (err) {
         console.error('[WorkflowStrip] Failed to run workflow:', err);
-        toast({ title: 'Failed to run workflow', variant: 'destructive' });
+        notify.error({ title: 'Failed to run workflow' });
       }
     },
-    [navigation, toast],
+    [navigation],
   );
 
   const handleDelete = useCallback(
@@ -48,13 +47,13 @@ export function WorkflowStrip() {
       try {
         await workflow.delete();
         await refetch();
-        toast({ title: 'Workflow deleted' });
+        notify.success({ title: 'Workflow deleted' });
       } catch (err) {
         console.error('[WorkflowStrip] Failed to delete workflow:', err);
-        toast({ title: 'Failed to delete workflow', variant: 'destructive' });
+        notify.error({ title: 'Failed to delete workflow' });
       }
     },
-    [refetch, toast],
+    [refetch],
   );
 
   const handleNewWorkflow = useCallback(
@@ -64,13 +63,13 @@ export function WorkflowStrip() {
         const saved = await Workflow.create(name);
         await refetch();
         navigation.openDock(saved.dockPointer);
-        toast({ title: 'Workflow created' });
+        notify.success({ title: 'Workflow created' });
       } catch (err) {
         console.error('[WorkflowStrip] Failed to create workflow:', err);
-        toast({ title: 'Failed to create workflow', variant: 'destructive' });
+        notify.error({ title: 'Failed to create workflow' });
       }
     },
-    [navigation, refetch, toast],
+    [navigation, refetch],
   );
 
   return (

@@ -1,7 +1,7 @@
 import type { BrowseCache, ContentCache } from '@sdk';
 import { dataManager, fsManager, fsStore, type FSItem, type TypeId } from '@sdk';
 import { useEffect } from 'react';
-import { toast } from 'sonner';
+import { notify } from '@src/notifications';
 import { useFSStore } from './useFSStore';
 
 /**
@@ -249,7 +249,7 @@ export function useFS(typeid?: TypeId) {
     refetch: async (path: string, asBlob = false) => {
       const store = fsStore.getState();
       if (store.getContentFromCache(typeid, path)?.isDirty) {
-        toast.warning('Discarded unsaved edits', { description: path });
+        notify.warning({ title: 'Discarded unsaved edits', message: path });
       }
       store.invalidate(typeid, path, 'content');
       return store.downloadFile(typeid, path, asBlob);

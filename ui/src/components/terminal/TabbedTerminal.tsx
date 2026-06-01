@@ -25,7 +25,7 @@ import {
 import { InputDialog } from '@src/components/ui/input-dialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { useResumeInTerminal } from '@src/hooks/use-resume-in-terminal';
-import { toast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import {
   acknowledgePending,
   formatTimeAgo,
@@ -1225,10 +1225,10 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
                 processId = process?.id ?? null;
               }
               if (!processId) {
-                toast({
+                notify.error({
                   title: 'Session not found',
-                  description: `Session ${entry.worker_id} is not in Claude or Codex history.`,
-                  variant: 'destructive',
+                  message: `Session ${entry.worker_id} is not in Claude or Codex history.`,
+                  id: `session-not-found:${entry.worker_id}`,
                 });
                 return;
               }

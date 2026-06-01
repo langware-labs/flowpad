@@ -6,7 +6,7 @@ import { getDescriptor } from '@src/components/quick-create';
 import { RecordSearchBar } from '@src/components/record-search-bar/RecordSearchBar';
 import { InlineSearchResults } from '@src/pages/home-landing/InlineSearchResults';
 import type { SearchFilters, SearchResult as RecordSearchResult } from '@src/hooks/use-record-search';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { navigateToResult } from '@src/navigation/record-type-nav';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -260,7 +260,6 @@ function FolderBreadcrumb({
 }
 
 export function AssetsPage() {
-  const { toast } = useToast();
   const { currentDock, navigation } = useDockNavigation();
   const { types: allTypes, isLoading: typesLoading } = useAssetTypes();
   const { indexType, busy, resetAndRescan } = useSystemTools();
@@ -447,7 +446,7 @@ export function AssetsPage() {
   const handleNewFolderConfirm = useCallback(async (rawName: string) => {
     const name = rawName.trim();
     if (!newFolderTarget || !isValidFolderName(name)) {
-      toast({ title: 'Invalid folder name', variant: 'destructive' });
+      notify.error({ title: 'Invalid folder name' });
       return;
     }
 
@@ -456,21 +455,21 @@ export function AssetsPage() {
 
     try {
       if (await fsManager.exists(typeId, folderRelPath)) {
-        toast({ title: 'Folder already exists', variant: 'destructive' });
+        notify.error({ title: 'Folder already exists' });
         return;
       }
       await fsManager.mkdir(typeId, folderRelPath);
       fsStore.getState().invalidate(typeId, newFolderTarget.relPath || '/', 'browse');
       refreshNode(markdownFolderNodeId(newFolderTarget.typeid, newFolderTarget.absPath));
       setRefreshKey((k) => k + 1);
-      toast({ title: 'Folder created' });
+      notify.success({ title: 'Folder created' });
     } catch (err) {
       console.error('[AssetsPage] Failed to create folder:', err);
-      toast({ title: 'Failed to create folder', variant: 'destructive' });
+      notify.error({ title: 'Failed to create folder' });
     } finally {
       setNewFolderTarget(null);
     }
-  }, [newFolderTarget, toast]);
+  }, [newFolderTarget]);
 
   const handleMoveMarkdownItem = useCallback(async (
     item: MarkdownDragItem,
@@ -490,7 +489,7 @@ export function AssetsPage() {
 
     try {
       if (await fsManager.exists(typeId, destRel)) {
-        toast({ title: 'Destination already has an item with that name', variant: 'destructive' });
+        notify.error({ title: 'Destination already has an item with that name' });
         return;
       }
 
@@ -536,16 +535,16 @@ export function AssetsPage() {
         await indexType('markdown', effectiveFilter.scope, { force: true });
       } catch (err) {
         console.error('[AssetsPage] Markdown reindex after move failed:', err);
-        toast({ title: 'Moved, but reindex failed', variant: 'destructive' });
+        notify.error({ title: 'Moved, but reindex failed' });
         return;
       }
 
-      toast({ title: 'Moved' });
+      notify.success({ title: 'Moved' });
     } catch (err) {
       console.error('[AssetsPage] Failed to move markdown item:', err);
-      toast({ title: 'Failed to move item', variant: 'destructive' });
+      notify.error({ title: 'Failed to move item' });
     }
-  }, [effectiveFilter.scope, effectivePointer, indexType, navigateAsset, toast]);
+  }, [effectiveFilter.scope, effectivePointer, indexType, navigateAsset]);
 
   const wikiRoots = useMemo(
     () =>
@@ -606,13 +605,13 @@ export function AssetsPage() {
     if (!name.trim() || !newTypeTarget) return;
     const descriptor = getDescriptor(newTypeTarget);
     if (!descriptor) {
-      toast({ title: `Cannot create ${newTypeTarget}`, variant: 'destructive' });
+      notify.error({ title: `Cannot create ${newTypeTarget}` });
       setNewTypeTarget(null);
       return;
     }
     try {
       const res = await descriptor.create({ project: dataContext.project ?? null, name });
-      toast({ title: res.toastTitle });
+      notify.success({ title: res.toastTitle });
       if (res.pointer) {
         navigateAsset(res.pointer);
         setNewTypeTarget(null);
@@ -621,10 +620,10 @@ export function AssetsPage() {
       setRefreshKey((k) => k + 1);
     } catch (err) {
       console.error('[AssetsPage] Failed to create:', err);
-      toast({ title: 'Failed to create', variant: 'destructive' });
+      notify.error({ title: 'Failed to create' });
     }
     setNewTypeTarget(null);
-  }, [newTypeTarget, navigateAsset, toast]);
+  }, [newTypeTarget, navigateAsset]);
 
   const handleRowClick = useCallback((result: SearchResult) => {
     // Projects open in their collaboration space (the "project room"), not
@@ -635,15 +634,14 @@ export function AssetsPage() {
     }
     const path = result.asset_ref;
     if (!path || !path.startsWith('/')) {
-      toast({
+      notify.error({
         title: 'Asset has no file on disk',
-        description: `${result.name || result.record_id} is indexed without a valid source path and cannot be opened.`,
-        variant: 'destructive',
+        message: `${result.name || result.record_id} is indexed without a valid source path and cannot be opened.`,
       });
       return;
     }
     navigateAsset(DockPointer.forAssetEditor(result.record_type, path));
-  }, [navigateAsset, navigation, toast]);
+  }, [navigateAsset, navigation]);
 
   const handleProjectFilter = useCallback(async (label: string) => {
     if (lockedScope) return;

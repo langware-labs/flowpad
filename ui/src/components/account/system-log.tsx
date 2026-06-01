@@ -1,7 +1,7 @@
 import { dataContext, fsManager } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@src/components/ui/collapsible';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { ChevronDown, FileText, FolderOpen } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
@@ -67,7 +67,6 @@ async function findNewestLogFile(
 export function SystemLog() {
   const [isOpen, setIsOpen] = useState(false);
   const [currentLogFile, setCurrentLogFile] = useState<{ path: string; name: string } | null>(null);
-  const { toast } = useToast();
 
   const computeNode = dataContext.computeNode;
   const desktopInfo = dataContext.bootstrapInfo?.desktop_info;
@@ -95,10 +94,9 @@ export function SystemLog() {
       await fsManager.open(computeNode.typeId, currentLogFile.path);
     } catch (error) {
       console.error('Failed to open log file:', error);
-      toast({
+      notify.error({
         title: 'Error',
-        description: 'Failed to open log file',
-        variant: 'destructive',
+        message: 'Failed to open log file',
       });
     }
   };
@@ -109,10 +107,9 @@ export function SystemLog() {
       await fsManager.open(computeNode.typeId, logsPath);
     } catch (error) {
       console.error('Failed to open logs folder:', error);
-      toast({
+      notify.error({
         title: 'Error',
-        description: 'Failed to open logs folder',
-        variant: 'destructive',
+        message: 'Failed to open logs folder',
       });
     }
   };

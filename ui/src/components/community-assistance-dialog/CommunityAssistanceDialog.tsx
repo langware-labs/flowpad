@@ -3,7 +3,7 @@ import { sendReply } from '@sdk/entities/notifications';
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Sparkles } from 'lucide-react';
@@ -48,7 +48,6 @@ async function findFlowpadAssistantProjectId(): Promise<string | null> {
 
 export function CommunityAssistanceDialog({ open, onClose }: CommunityAssistanceDialogProps) {
   const { navigation } = useDockNavigation();
-  const { toast } = useToast();
   const ensureCloudLogin = useCloudLoginGate();
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
@@ -75,15 +74,14 @@ export function CommunityAssistanceDialog({ open, onClose }: CommunityAssistance
       // sign-in and the send resumes on the same click.
       const gate = await ensureCloudLogin();
       if (!gate.ok) {
-        toast({ title: 'Sign in required', description: gate.error });
+        notify.info({ title: 'Sign in required', message: gate.error });
         return;
       }
       const projectId = await findFlowpadAssistantProjectId();
       if (!projectId) {
-        toast({
+        notify.error({
           title: 'Flowpad Assistant unavailable',
-          description: 'The Flowpad Assistant project is not registered on this instance.',
-          variant: 'destructive',
+          message: 'The Flowpad Assistant project is not registered on this instance.',
         });
         return;
       }
@@ -105,9 +103,9 @@ export function CommunityAssistanceDialog({ open, onClose }: CommunityAssistance
         // Non-fatal: still navigate to the conversation so the user can see
         // their context and retry sending. Surface the error.
         console.error('[CommunityAssistanceDialog] failed to post first message', err);
-        toast({
+        notify.info({
           title: 'Could not post your message',
-          description: err instanceof Error ? err.message : 'Please try again from the conversation view.',
+          message: err instanceof Error ? err.message : 'Please try again from the conversation view.',
         });
       }
 
