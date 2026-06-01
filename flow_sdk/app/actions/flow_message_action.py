@@ -1722,6 +1722,86 @@ def _dispatch_conversation_message_fetch(conv_id: str, someone_typeid: str) -> N
     )
 
 
+# Hub-hosted child types pulled during the shared-context catch-up. Comments
+# today; add other shareable is_child types here as they gain hub support.
+_SHARED_CHILD_TYPES = (BuiltinEntityType.COMMENT.value,)
+
+
+async def _materialize_remote_child(cls, data: dict, parent_ref: str, someone_typeid: str | None):
+    """Upsert a hub child dict locally as a remote is_child of ``parent_ref``.
+
+    Thin wrapper over ``Entity.upsert_from_hub_child`` (shared with the live
+    bridge path). Returns the saved entity."""
+    return await cls.upsert_from_hub_child(data, parent_ref, someone_typeid)
+
+
+async def _sync_remote_children(parent_tid: TypeId, child_type: str, someone_typeid: str | None) -> None:
+    """Pull ``parent_tid``'s hub children of ``child_type`` and materialize the
+    new/changed ones locally (LWW via ``is_stale``). Best-effort."""
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    cls = SchemaRegistry.get_entity_cls(child_type)
+    if cls is None:
+        return
+    # hub_get expects a BuiltinEntityType for the entity_type arg (it reads
+    # ``.value``); parent_tid.type is a plain string, so coerce.
+    try:
+        parent_etype = BuiltinEntityType(parent_tid.type)
+    except ValueError:
+        parent_etype = parent_tid.type
+    children = await hub_get(parent_etype, parent_tid.id, action=child_type)
+    child_list: list[dict] = []
+    if isinstance(children, list):
+        child_list = children
+    elif isinstance(children, dict):
+        for k in ("data", "items", "results"):
+            v = children.get(k)
+            if isinstance(v, list):
+                child_list = v
+                break
+    parent_ref = f"{parent_tid.type}-{parent_tid.id}"
+    for raw in child_list:
+        if not isinstance(raw, dict) or not raw.get("id"):
+            continue
+        local = await cls.get_one({"id": raw["id"]})
+        if local is not None and not cls.is_stale(local, raw):
+            continue
+        try:
+            await _materialize_remote_child(cls, raw, parent_ref, someone_typeid)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[subtree-sync] materialize %s-%s failed (non-fatal): %s", child_type, raw.get("id"), e)
+
+
+async def _sync_shared_context_subtree(conv_id: str, someone_typeid: str | None) -> None:
+    """Recursive-share catch-up for one conversation.
+
+    For each ``shared_context_entities`` member (e.g. the shared markdown):
+      1. Ensure a local row exists and is marked ``remote=True`` with
+         ``parent_type_id`` = this conversation — so a child create under it
+         (a comment) auto-shares, and so effective-remote resolves.
+      2. Pull its child comments from the hub as remote children.
+
+    This is what lets a recipient who never watched the doc live still see the
+    doc + everyone's comments after a sync. Best-effort; never raises."""
+    try:
+        conv = await Conversation.get_one({"id": conv_id})
+        if conv is None or not conv.shared_context_entities:
+            return  # nothing shared → no subtree to catch up (skip the hub GET)
+        # 1) Link each shared-context doc to this conversation so its
+        #    ``effective_remote`` resolves (the doc is NOT a hub entity — the hub
+        #    has no markdown type — its content arrives via the chip-open
+        #    deploy). Reuses the same linker the share path runs.
+        await conv._link_context_to_conversation()
+        # 2) Pull the conversation's hub child entities (comments today; each
+        #    carries its real doc parent in ``parent_type_id``). Materialize
+        #    new/changed ones locally.
+        conv_tid = TypeId(f"{BuiltinEntityType.CONVERSATION.value}-{conv_id}")
+        for child_type in _SHARED_CHILD_TYPES:
+            await _sync_remote_children(conv_tid, child_type, someone_typeid)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[subtree-sync] conv=%s failed (non-fatal): %s", conv_id, e)
+
+
 async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> None:
     """Bring local message state for a single conversation up to the hub's.
 
@@ -2250,6 +2330,10 @@ async def conversation_message_sync() -> ApiResponse:
         if local_conv is None:
             return ApiFailResponse(message="conversation not found", status_code=404)
         await _fetch_conversation_messages(conv_id, request_info.someone_typeid)
+        # Recursive-share catch-up: pull shared-context children (e.g. the
+        # shared markdown) + their comments so a recipient sees the doc and
+        # everyone's comments without a live subscription.
+        await _sync_shared_context_subtree(conv_id, request_info.someone_typeid)
         return ApiSuccessResponse(data={"conversation_id": conv_id})
     except Exception as e:
         logger.error("[flow_message_action] conversation-message-sync error: %s", e, exc_info=True)
@@ -2323,17 +2407,40 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
         # accepted — causing every downstream conversation-scoped call to
         # return 401 ("no valid access for role ['member']").
         if resp.status_code not in (200, 409):
-            if resp.status_code == 302:
+            if resp.status_code in (301, 302, 303, 307, 308):
                 location = resp.headers.get("location") or resp.headers.get("Location") or ""
+                low = location.lower()
+                # A redirect to a login page IS the unauthenticated bounce
+                # (e.g. app.flowpad.ai → /login.html). The accept did NOT run.
+                if "login" in low:
+                    return ApiFailResponse(
+                        message=(
+                            "Accept failed: hub redirected us to login (request was "
+                            f"unauthenticated). location={location[:200]}"
+                        ),
+                    )
+                # Otherwise this hub bounces a SUCCESSFUL accept to the target's
+                # page — the role was granted. The target is either the
+                # conversation (/conversation/<id>) or the landing FlowMessage
+                # (/flow_message/<id>); both mean success. Extract the id and
+                # fall through to the normal post-accept resolution (the
+                # FlowMessage path resolves its parent conv below).
+                def _id_after(seg: str) -> Optional[str]:
+                    if seg in location:
+                        return location.split(seg)[1].split("/")[0].split("?")[0].split("#")[0]
+                    return None
+                if _id_after("/conversation/"):
+                    linked_conv_id = _id_after("/conversation/")
+                elif _id_after("/flow_message/"):
+                    linked_fm_id = _id_after("/flow_message/")
+                else:
+                    return ApiFailResponse(
+                        message=f"Accept failed: unexpected redirect location={location[:200]}"
+                    )
+            else:
                 return ApiFailResponse(
-                    message=(
-                        "Accept failed: hub redirected us to login (request was "
-                        f"unauthenticated). location={location[:200]}"
-                    ),
+                    message=f"Accept failed ({resp.status_code}): {resp.text[:200]}"
                 )
-            return ApiFailResponse(
-                message=f"Accept failed ({resp.status_code}): {resp.text[:200]}"
-            )
         if resp.status_code == 409:
             logger.info("[invitation-accept] hub returned 409 (already accepted) — running local cleanup")
         # Resolve the chosen target's typeid from the JSON ``data`` field.

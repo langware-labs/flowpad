@@ -85,6 +85,16 @@ class Entity(DBEntity):
     tags: List[str] = APIField(default_factory=list)
     system: bool = APIField(default=False, description="True when this entity belongs to an SDK-shipped system project")
     remote: bool = APIField(default=False, description="True when this entity has a hub counterpart at the same id; refreshable from the hub")
+    parent_type_id: str | None = APIField(
+        default=None,
+        description=(
+            "Canonical parent reference as a ``<type>-<id>`` TypeId string. The "
+            "single source of truth for parentage; reflected to disk via the "
+            "declarative persist path (``BaseMeta``). Supersedes the legacy "
+            "per-type ``data.parent_id`` convention. Resolve the parent entity "
+            "via the async ``parent()`` accessor."
+        ),
+    )
 
     # Locally-authoritative fields a hub refresh must NEVER overwrite. The hub
     # is the source of truth for *content*; these describe the local copy's own
@@ -930,7 +940,7 @@ class Entity(DBEntity):
             raise RuntimeError("cloud_watch requires entity.id; save first")
         return CloudWatch(self.id)
 
-    async def share(self: EntityType) -> EntityType:
+    async def share(self: EntityType, *, recursive: bool = False) -> EntityType:
         """Create this entity on the hub (POST /api/v1/graph/<type>).
 
         Generic, type-agnostic: the body is this entity's serialized dump,
@@ -938,6 +948,12 @@ class Entity(DBEntity):
         taken from the stored hub credentials. Returns ``self`` after
         flipping the ``remote`` field on the in-memory entity when the
         subclass declares one.
+
+        ``recursive=True`` additionally walks this entity's ``is_child``
+        subtree and creates each descendant on the hub under its parent via
+        ``create_child`` (children get their own ``remote=True``). Late-added
+        children are handled separately by the auto-share-on-create rule in
+        the create handler.
 
         The caller is responsible for persisting ``remote=True`` to the
         local DB — typically by loading the on-disk row and saving it
@@ -974,16 +990,33 @@ class Entity(DBEntity):
         # All of the above were producing ``None API field !!!`` errors on the
         # hub at create because the hub schema doesn't declare them. They
         # have no hub semantics; the SDK simply shouldn't be sending them.
-        body = self.model_dump(
+        body = self._hub_body()
+
+        path = build_hub_url(self.get_type())
+        async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
+            resp = await client.post(path, body)
+
+        # ``remote`` is opt-in per subclass. Flip it when present so callers
+        # can branch on it. Subclasses without the field stay unchanged.
+        if "remote" in type(self).model_fields:
+            self.remote = True
+        if recursive:
+            await self._share_children()
+        return self
+
+    def _hub_body(self) -> dict:
+        """The serialized body to POST to the hub — shared by ``share`` and
+        ``create_child``. Excludes local-only / hub-stamped fields (see the
+        rationale inline in ``share``). ``id`` is included so the hub honors
+        the same-id invariant; the hub derives the parent from the URL, so a
+        stray ``parent_type_id`` in the body is harmless (the hub sanitizes
+        unknown fields)."""
+        return self.model_dump(
             mode="json",
             exclude_none=True,
             exclude={
                 "private_context_entities_",
                 "private_context_entities",   # Pydantic computed field — backend computes it
-                # Both sidecars are local-only — they carry absolute filesystem
-                # paths from the writer's machine that are PII to peers and
-                # meaningless off-host. See the field comments at the top of
-                # this class for the full rationale.
                 "private_context_entity_data",
                 "shared_context_entity_data",
                 "created_by", "updated_by",
@@ -994,15 +1027,146 @@ class Entity(DBEntity):
             },
         )
 
-        path = build_hub_url(self.get_type())
-        async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
-            resp = await client.post(path, body)
+    async def create_child(self: EntityType, child: "Entity") -> "Entity":
+        """Create ``child`` on the hub as an ``is_child`` of this (remote) entity.
 
-        # ``remote`` is opt-in per subclass. Flip it when present so callers
-        # can branch on it. Subclasses without the field stay unchanged.
-        if "remote" in type(self).model_fields:
-            self.remote = True
+        POSTs to ``/graph/<self.type>/<self.id>/<child.type>`` so the hub's
+        create handler runs ``add_child`` and writes the role-propagating
+        ``is_child`` edge. The child's own id rides in the body (same-id
+        invariant). Sets ``child.remote=True`` on success.
+
+        Caller must ensure ``self`` is on the hub (``remote``/``effective_remote``);
+        creating a child under a non-remote parent would 404 on the hub.
+        """
+        from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
+        from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
+        from flow_sdk.core.urls.service_urls import build_hub_url  # noqa: PLC0415
+
+        creds = load_credentials()
+        if not creds or not creds.api_key:
+            raise RuntimeError("Cloud login required before create_child()")
+        body = child._hub_body()
+        # build_hub_url(self) → /graph/<ptype>/<pid>; action=<childtype> appends
+        # the trailing bare child type the hub parses as direct_resource_type.
+        path = build_hub_url(self, action=child.get_type())
+        async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
+            await client.post(path, body)
+        if "remote" in type(child).model_fields:
+            child.remote = True
+        return child
+
+    async def _share_children(self: EntityType) -> None:
+        """Recursively create this entity's ``is_child`` subtree on the hub."""
+        for ec in await self.get_children():
+            child = getattr(ec, "value", ec)
+            if child is None:
+                continue
+            await self.create_child(child)
+            await child._share_children()
+
+    async def unshare(self: EntityType, *, recursive: bool = True) -> EntityType:
+        """Remove this entity (and, by default, its subtree) from the hub.
+
+        Pure inverse of ``share``: ``recursive`` first unshares each child so
+        the subtree is detached/deleted bottom-up, then deletes this entity on
+        the hub and flips ``remote=False`` locally. Owner-gated server-side.
+        """
+        from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
+        from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
+        from flow_sdk.core.urls.service_urls import build_hub_url  # noqa: PLC0415
+
+        if recursive:
+            for ec in await self.get_children():
+                child = getattr(ec, "value", ec)
+                if child is not None and getattr(child, "remote", False):
+                    await child.unshare(recursive=True)
+
+        if getattr(self, "remote", False):
+            creds = load_credentials()
+            if not creds or not creds.api_key:
+                raise RuntimeError("Cloud login required before unshare()")
+            path = build_hub_url(self)
+            async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
+                await client.request("DELETE", path)
+            if "remote" in type(self).model_fields:
+                self.remote = False
         return self
+
+    async def parent(self: EntityType) -> Optional["Entity"]:
+        """Resolve this entity's parent via ``parent_type_id`` (async DB load).
+
+        Returns ``None`` when there is no parent reference or the type is
+        unknown. ``parent_type_id`` is the canonical parent pointer; this
+        supersedes the legacy per-type ``data.parent_id`` convention.
+        """
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+        from flow_sdk.fs_store.type_id import TypeId  # noqa: PLC0415
+
+        pid = getattr(self, "parent_type_id", None)
+        if not pid:
+            return None
+        tid = pid if isinstance(pid, TypeId) else TypeId(pid)
+        cls = SchemaRegistry.get_entity_cls(tid.type)
+        if cls is None or not tid.id:
+            return None
+        return await cls.get_one({"id": tid.id})
+
+    async def effective_remote(self: EntityType) -> bool:
+        """True if this entity is on the hub itself OR any ancestor is.
+
+        ``remote`` is the sync, locally-authoritative fact ("I have a hub row").
+        Effective remoteness additionally walks up ``parent`` so a child under a
+        recursively-shared parent is treated as remote even before its own push.
+        Thin wrapper over ``nearest_remote_ancestor`` (one walk, one cycle guard).
+        """
+        return (await self.nearest_remote_ancestor()) is not None
+
+    async def nearest_remote_ancestor(self: EntityType, _seen: Optional[set] = None) -> Optional["Entity"]:
+        """Closest entity (self or an ancestor) that has its OWN hub row
+        (``remote=True``), walking ``parent``. ``None`` if none is remote.
+
+        Used to pick the hub-side parent for a child create: a local-only type
+        (e.g. ``markdown``, which the hub doesn't host) returns its conversation
+        ancestor, so the child is created under a hub-known container while the
+        child keeps its true ``parent_type_id`` (the doc) in its own payload.
+        """
+        if getattr(self, "remote", False):
+            return self
+        seen = _seen if _seen is not None else set()
+        if self.id in seen:
+            return None
+        seen.add(self.id)
+        p = await self.parent()
+        if p is None:
+            return None
+        return await p.nearest_remote_ancestor(seen)
+
+    @classmethod
+    async def upsert_from_hub_child(
+        cls,
+        data: dict,
+        parent_ref: Optional[str],
+        someone_typeid: Optional[str] = None,
+        notify: bool = True,
+    ) -> "Entity":
+        """Materialize a hub child payload locally as a ``remote`` ``is_child``.
+
+        Shared by the live bridge path (``hub_bridge._handle_child_op``) and the
+        sync catch-up (``_materialize_remote_child``). The child's own
+        ``parent_type_id`` in the payload wins over ``parent_ref`` (the hub
+        container it was pulled from); ``remote`` is stamped True.
+        """
+        effective_parent = (data.get("parent_type_id") if isinstance(data, dict) else None) or parent_ref
+        sanitized = {k: v for k, v in (data or {}).items() if cls.is_api_field(k)}
+        if isinstance(data, dict) and data.get("id"):
+            sanitized["id"] = data["id"]
+        if effective_parent and "parent_type_id" in cls.model_fields:
+            sanitized["parent_type_id"] = effective_parent
+        ent = cls.model_validate(sanitized)
+        if "remote" in cls.model_fields:
+            ent.remote = True
+        await ent.save(someone_typeid, notify=notify)
+        return ent
 
     @staticmethod
     def _as_datetime(value: Any) -> Optional[datetime]:

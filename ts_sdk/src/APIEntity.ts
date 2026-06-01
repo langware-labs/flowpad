@@ -753,6 +753,12 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    */
   remote?: boolean;
 
+  /**
+   * Canonical parent reference ("<type>-<id>"). Single source of truth for
+   * parentage; supersedes the legacy per-type ``data.parent_id``.
+   */
+  parent_type_id?: string | null;
+
   /** POST /entity-event {event, payload}. Unknown events are a server-side no-op. */
   public async entityEvent(event: string, payload: Record<string, unknown> = {}): Promise<unknown> {
     return APIEntity.entityEvent(this.typeId, event, payload);
