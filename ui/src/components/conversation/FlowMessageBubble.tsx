@@ -4,20 +4,12 @@ import { useEntity } from '@sdk/react/hooks';
 import { useEffect, useState } from 'react';
 import type { ITask } from '@sdk/entities/task';
 import type { ConversationMessage, ConversationParticipant } from '@sdk/entities/conversation';
-import {
-  AttachmentType,
-  BodyStatus,
-  BODY_FILENAME,
-  attachmentDataString,
-  downloadFlowMessageUrl,
-  downloadFlowMessageBody,
-} from '@sdk/entities/flow-message';
-import { AlertCircle, Download, X } from 'lucide-react';
+import { BodyStatus } from '@sdk/entities/flow-message';
+import { AlertCircle, Download, Loader2, X } from 'lucide-react';
 import { MessageBubble } from './MessageBubble';
 import { AttachmentChip, AttachmentChipState } from './AttachmentChip';
 import { ContextEntityChip } from './EntityChip';
 import { GitRepoChip } from '@src/components/git/GitRepoChip';
-import { fileAttachmentUrl } from './attachment-url';
 import { useLocalUser } from './useLocalUser';
 import { localBundleUrl } from './flow-message-drafts';
 import { DraftMessageComposer } from './DraftMessageComposer';
@@ -26,15 +18,59 @@ import {
   UNRESOLVED_SENDER_LABEL,
   warnUnresolvedSender,
 } from './participant-display';
-import { useFlowMessageProgress } from './useFlowMessageProgress';
-import { useFlowMessageDownloadError } from './useFlowMessageDownloadError';
+import { useAttachments } from './useAttachments';
 import { cn } from '@src/lib/utils';
 
-/** Attachment TypeId types the conversation send path injects as structural
- *  self-references — the parent conversation, the message itself, and the
- *  bound task. They are plumbing, not user-attached assets, so they never
- *  render as asset chips. */
-const STRUCTURAL_ATTACHMENT_TYPES = new Set(['conversation', 'flow_message', 'task']);
+/** Single Download affordance for a message whose body bundle hasn't been
+ *  pulled yet. One click materializes every attachment (files + entities) —
+ *  they all ride in one bundle. Badge shows the asset count; the tooltip lists
+ *  the typeids + filenames it will fetch. */
+function DownloadAttachmentsButton({
+  count,
+  labels,
+  uploading,
+  downloading,
+  onDownload,
+}: {
+  count: number;
+  labels: string[];
+  uploading: boolean;
+  downloading: boolean;
+  onDownload: () => void;
+}) {
+  const disabled = uploading || downloading;
+  const sub = uploading
+    ? 'Uploading…'
+    : downloading
+      ? 'Downloading…'
+      : `Download ${count} ${count === 1 ? 'attachment' : 'attachments'}`;
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={disabled ? undefined : onDownload}
+      title={labels.length ? labels.join('\n') : 'Download attachments'}
+      className={cn(
+        'flex w-full max-w-[360px] items-center gap-3 rounded-lg border border-dashed px-3 py-2.5 text-left transition-colors',
+        uploading
+          ? 'cursor-not-allowed border-border bg-background opacity-50'
+          : downloading
+            ? 'cursor-default border-primary/60 bg-background'
+            : 'cursor-pointer border-primary/60 bg-background hover:bg-muted/40',
+      )}
+    >
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-primary/10 text-primary">
+        {downloading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Download className="h-5 w-5" />}
+      </div>
+      <div className="flex min-w-0 flex-col">
+        <span className="truncate text-sm font-medium text-foreground">
+          {count} {count === 1 ? 'asset' : 'assets'} attached
+        </span>
+        <span className="text-[11px] uppercase tracking-wide text-muted-foreground">{sub}</span>
+      </div>
+    </button>
+  );
+}
 
 
 interface FlowMessageBubbleProps {
@@ -76,6 +112,12 @@ interface FlowMessageBubbleProps {
   /** Parent conversation's `message_status_visible` flag — passed straight
    *  through to the receipt indicator. Defaults to true. */
   conversationStatusVisible?: boolean;
+  /** Project gate from the parent. Attachment downloads materialize assets into
+   *  the conversation's project (`.claude/…`), so a download must run inside a
+   *  mapped project — when supplied, the bubble routes its download trigger
+   *  through this, which opens the project picker first if none is selected and
+   *  resumes the download after a pick. */
+  ensureProjectMapped?: (run: () => void | Promise<void>) => void;
 }
 
 export function FlowMessageBubble({
@@ -94,6 +136,7 @@ export function FlowMessageBubble({
   participants,
   rosterReady = false,
   conversationStatusVisible = true,
+  ensureProjectMapped,
 }: FlowMessageBubbleProps) {
   // Prefer the FlowMessage handed down from the parent's batched conversation
   // query; fall back to a per-id fetch only when it wasn't provided (so the
@@ -115,13 +158,21 @@ export function FlowMessageBubble({
   );
   const { localUser, updateName } = useLocalUser();
   const [overrideName, setOverrideName] = useState<string | null>(null);
-  const [downloading, setDownloading] = useState(false);
-  // Live body upload/download bar — null when no transfer is in flight.
-  const progress = useFlowMessageProgress(messageId);
-  // Per-message download failure — surfaced inline so the user can tell
-  // *which* bubble produced the error in the warnings popover.
-  const { error: downloadError, dismiss: dismissDownloadError } =
-    useFlowMessageDownloadError(messageId);
+  // The single attachment surface: per-file chip state + url, the live progress
+  // bar, the per-message download-error slot, and the one download entrypoint.
+  // Replaces the inline chipState / bundle-chip / handleDownloadBody wiring.
+  const {
+    items: attachmentItems,
+    entities,
+    downloaded,
+    assetCount,
+    assetLabels,
+    progress,
+    error: downloadError,
+    dismissError: dismissDownloadError,
+    downloading,
+    download: handleDownloadBody,
+  } = useAttachments(fm, messageId);
 
   // Unresolved-sender telemetry. Hoisted ABOVE the early returns so the hook
   // count is identical on every render (a useEffect after ``if (!fm) return``
@@ -246,62 +297,25 @@ export function FlowMessageBubble({
     timestamp,
   };
 
-  // Filter out the conversation.jsonl transcript — that lives on the toolbar now.
-  // ``attachmentDataString`` collapses the hub's two ``data`` shapes
-  // (string ``"<type>-<id>"`` OR object ``{type, id}``) into one string.
-  const fileAttachments = (fm.attachment ?? []).filter((a) => {
-    if (a.attachment_type !== AttachmentType.FILE) return false;
-    const d = attachmentDataString(a);
-    return !!d && !d.endsWith('conversation.jsonl');
-  });
-
-  // Asset attachments — TYPE_ID attachments the user deliberately attached
-  // (Skill, Spec, …). Rendered as clickable chips that open the entity in its
-  // own view, exactly like the conversation Context panel. The structural
-  // self-refs the send path injects are plumbing, so they are filtered out.
-  const assetAttachments = (fm.attachment ?? [])
-    .filter((a) => a.attachment_type === AttachmentType.TYPE_ID)
-    .map((a) => {
-      const d = attachmentDataString(a);
-      const dash = d.indexOf('-');
-      if (dash <= 0) return null;
-      return new TypeId(d.slice(0, dash), d.slice(dash + 1));
-    })
-    .filter((t): t is TypeId => t !== null && !STRUCTURAL_ATTACHMENT_TYPES.has(t.type));
-
-  // Body-bundle lifecycle drives each FILE chip's appearance:
-  //   uploading  — sender still staging the body (body_status=uploading)
-  //   ready      — body on the hub, not yet on this machine (no local_path)
-  //   downloaded — bytes are local (local_path set) or no body round-trip (na)
+  // Files + entities (Skill / Markdown / Spec / git_repo) come from the single
+  // `useAttachments` surface, along with the message-level `downloaded` flag.
+  // `git_repo` is a remote reference rendered via its own accept-and-work modal
+  // (no bundle download), so it's split out and always shown; the rest ride in
+  // the body bundle and only render as live chips once `downloaded`.
+  const gitRepoEntities = entities.filter((t) => t.type === GitRepo.type);
+  const otherEntities = entities.filter((t) => t.type !== GitRepo.type);
+  const hasAttachments = attachmentItems.length > 0 || entities.length > 0;
   const bodyStatus = fm.body_status ?? BodyStatus.NA;
-  const chipState = (att: { local_path?: string | null }): AttachmentChipState => {
-    if (bodyStatus === BodyStatus.UPLOADING) return AttachmentChipState.Uploading;
-    if (att.local_path) return AttachmentChipState.Downloaded;
-    if (bodyStatus === BodyStatus.READY) return AttachmentChipState.Ready;
-    return AttachmentChipState.Downloaded;
-  };
-  const handleDownloadBody = async () => {
-    if (downloading) return;
-    setDownloading(true);
-    try {
-      await downloadFlowMessageBody(messageId);
-      // Success fans an entity UPDATE — useEntity re-renders the chips as
-      // DOWNLOADED. On failure they stay READY so the user can retry.
-    } catch {
-      /* swallowed — chip stays READY */
-    } finally {
-      setDownloading(false);
-    }
-  };
-  // The body.flowmsg bundle is transport, not a user-facing file — never chip it.
-  const showBundleChip =
-    !!fm.attachment_filename && fm.attachment_filename !== BODY_FILENAME;
+  const hasBody = bodyStatus !== BodyStatus.NA;
 
-  const hasAttachments =
-    showBundleChip
-    || fileAttachments.length > 0
-    || assetAttachments.length > 0;
-  const totalAttachments = (showBundleChip ? 1 : 0) + fileAttachments.length;
+  // One click pulls the whole bundle (files + entities). When the parent supplies
+  // a project gate, route through it: assets materialize into the conversation's
+  // project, so a download with no project selected opens the picker first and
+  // resumes after a pick.
+  const triggerDownload = () =>
+    ensureProjectMapped
+      ? ensureProjectMapped(() => handleDownloadBody())
+      : void handleDownloadBody();
 
   const progressPct =
     progress && progress.bytesTotal > 0 ? Math.round(progress.fraction * 100) : null;
@@ -349,65 +363,60 @@ export function FlowMessageBubble({
           </span>
         </div>
       )}
-      {assetAttachments.length > 0 && (
+      {/* git_repo references open the accept-and-work modal directly — no
+          bundle download needed, so they render in both states. */}
+      {gitRepoEntities.length > 0 && (
         <div className="flex flex-wrap gap-1">
-          {assetAttachments.map((typeId) => {
-            // ``git_repo`` chips open the accept-and-work modal directly
-            // (clone / checkout / pull against the recipient's project),
-            // bypassing the generic dock-pointer route.
-            if (typeId.type === GitRepo.type) {
-              return (
-                <GitRepoChip key={`asset:${typeId.type}-${typeId.id}`} typeId={typeId} />
-              );
-            }
-            // No hintPath wired here: asset attachments are TYPE_ID
-            // pointers on the FlowMessage, but the corresponding path
-            // sidecar is harvested on the AgenticProcess (see
-            // flow_sdk/transcript_analyzer/{plan,file}_cross_link.py).
-            // Looking it up on `fm` would always return undefined.
-            // Closing this gap requires either harvesting on the FM too
-            // or looking up via the AP — separate follow-up.
-            return (
-              <ContextEntityChip
-                key={`asset:${typeId.type}-${typeId.id}`}
-                typeId={typeId}
-                inside={{ type: 'conversation', id: fm.conversation_id ?? '' }}
-              />
-            );
-          })}
+          {gitRepoEntities.map((typeId) => (
+            <GitRepoChip key={`asset:${typeId.type}-${typeId.id}`} typeId={typeId} />
+          ))}
         </div>
       )}
-      {showBundleChip && (
-        <AttachmentChip
-          url={downloadFlowMessageUrl(messageId, fm.attachment_filename!)}
-          filename={fm.attachment_filename!}
+      {downloaded ? (
+        <>
+          {otherEntities.length > 0 && (
+            <div className="flex flex-wrap gap-1">
+              {otherEntities.map((typeId) => (
+                <ContextEntityChip
+                  key={`asset:${typeId.type}-${typeId.id}`}
+                  typeId={typeId}
+                  inside={{ type: 'conversation', id: fm.conversation_id ?? '' }}
+                />
+              ))}
+            </div>
+          )}
+          {attachmentItems.map((item) => (
+            <AttachmentChip
+              key={item.key}
+              url={item.url ?? ''}
+              filename={item.filename}
+              state={item.state}
+              downloading={item.state === AttachmentChipState.Ready && downloading}
+              onDownload={
+                item.state === AttachmentChipState.Ready ? triggerDownload : undefined
+              }
+            />
+          ))}
+          {attachmentItems.length > 1 && (
+            <a
+              href={localBundleUrl(messageId)}
+              download
+              className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <Download className="h-3 w-3" />
+              Download all attachments
+            </a>
+          )}
+        </>
+      ) : hasBody && assetCount > 0 ? (
+        <DownloadAttachmentsButton
+          count={assetCount}
+          labels={assetLabels}
+          uploading={bodyStatus === BodyStatus.UPLOADING}
+          downloading={downloading}
+          onDownload={triggerDownload}
         />
-      )}
-      {fileAttachments.map((a) => {
-        const d = attachmentDataString(a);
-        const name = d.split('/').pop() || d;
-        const st = chipState(a);
-        return (
-          <AttachmentChip
-            key={d}
-            url={fileAttachmentUrl(messageId, d)}
-            filename={name}
-            state={st}
-            downloading={st === AttachmentChipState.Ready && downloading}
-            onDownload={st === AttachmentChipState.Ready ? () => void handleDownloadBody() : undefined}
-          />
-        );
-      })}
-      {totalAttachments > 1 && (
-        <a
-          href={localBundleUrl(messageId)}
-          download
-          className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        >
-          <Download className="h-3 w-3" />
-          Download all attachments
-        </a>
-      )}
+      ) : null}
     </div>
   ) : null;
 

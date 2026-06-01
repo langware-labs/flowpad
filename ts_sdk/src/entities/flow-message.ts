@@ -150,6 +150,13 @@ export interface IFlowMessage extends IEntity {
    *  attachments require a packed body; sender flips to READY after upload.
    *  Receivers gate downloads on READY. */
   body_status?: BodyStatus;
+  /** Transient, server-derived (API responses only — never stored). True once
+   *  this message has a body AND that body has been pulled + unpacked locally,
+   *  i.e. every renderable body attachment is on disk (files materialized,
+   *  TYPE_ID entity assets have a local record). The UI switches the whole
+   *  message between a single Download button and rendered chips off this one
+   *  flag, so the transcript and the context panel share download state. */
+  body_downloaded?: boolean;
 }
 
 @registerEntity
@@ -171,6 +178,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   is_draft?: boolean;
   kind?: FlowMessageKind;
   body_status?: BodyStatus;
+  body_downloaded?: boolean;
   static type: string = 'flow_message';
 
   constructor(entity: Partial<IFlowMessage> = {}) {
@@ -192,6 +200,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.is_draft = entity.is_draft ?? false;
     this.kind = entity.kind ?? FlowMessageKind.USER;
     this.body_status = entity.body_status ?? BodyStatus.NA;
+    this.body_downloaded = entity.body_downloaded ?? false;
   }
 
   /** Promote a draft message to a real reply: flips is_draft=false, appends to conversation.jsonl, pushes to hub. */
@@ -247,6 +256,23 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     const action = new ActionInfo('download_body', FlowMessage.type, this.id, 'POST');
     await dataManager.callAction<unknown, unknown>(action);
     return this;
+  }
+
+  /**
+   * The single UI entrypoint for pulling this message's attachment bytes onto
+   * local disk — every download surface (chips, context panel, prompt build)
+   * goes through here rather than building an ``fs/download`` URL by hand.
+   *
+   * This is frontend gate #1: when there is no downloadable body
+   * (``body_status`` NA = none was ever uploaded, UPLOADING = not landed yet)
+   * it is a NO-OP — we never fire a request that the backend would have to 404.
+   * Only a READY body delegates to ``downloadBody()`` (which posts the
+   * ``download_body`` action and unpacks; ``attachment[].local_path`` then
+   * materialises and an entity UPDATE re-renders the chips as downloaded).
+   */
+  async downloadAttachments(opts: { onProgress?: (pct: number) => void } = {}): Promise<this> {
+    if (this.body_status !== BodyStatus.READY) return this;
+    return this.downloadBody(opts);
   }
 
   // -------- Realtime receipt (ack) subscription -------- //
@@ -355,13 +381,6 @@ export async function uploadFlowMessage(
   return res!;
 }
 
-/** Returns the hub fs/download URL for a FlowMessage's stored .flowmsg bundle. */
-export function downloadFlowMessageUrl(messageId: string, attachmentFilename: string): string {
-  const action = new ActionInfo('fs', 'flow_message', messageId, 'GET');
-  action.subpath = `download/${attachmentFilename}`;
-  return action.fullActionUrl;
-}
-
 export interface CreateTaskBundleParams {
   spec_title: string;
   spec_content?: string;
@@ -382,21 +401,6 @@ export async function createTaskBundle(params: CreateTaskBundleParams): Promise<
   action.bodyParameters = params;
   const res = await dataManager.callAction<CreateTaskBundleParams, CreateTaskBundleResult>(action);
   return res!;
-}
-
-/**
- * Download + unpack a FlowMessage's body bundle by id. The local backend
- * pulls the ``.flowmsg`` from the hub and unpacks it, so every FILE / PROMPT
- * attachment materializes under the message's VFS. After this resolves the
- * FM's ``attachment[].local_path`` fields are populated and an entity UPDATE
- * fans out — the conversation UI re-renders the chips as DOWNLOADED.
- *
- * Standalone (vs. ``FlowMessage.downloadBody``) so call sites holding only a
- * message id — like a chip click handler — don't need a live entity instance.
- */
-export async function downloadFlowMessageBody(messageId: string): Promise<void> {
-  const action = new ActionInfo('download_body', FlowMessage.type, messageId, 'POST');
-  await dataManager.callAction<unknown, unknown>(action);
 }
 
 export interface MarkResult {

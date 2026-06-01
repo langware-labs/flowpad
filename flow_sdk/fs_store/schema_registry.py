@@ -673,74 +673,83 @@ class SchemaRegistry:
         types: list[str] | None = None,
         scope: "object | None" = None,
     ) -> IndexStatus:
-        """Snapshot of per-instance index state. Async because it queries the DB
-        for live entity counts.
+        """Snapshot of index state. DB-free for freshness.
 
-        ``last_indexed_at`` and ``never_indexed`` are derived from per-type
-        timestamps — there is no separate global JSONL. This means per-type
-        indexing (UI's "Index Now" loop) automatically flips ``never_indexed``.
-        ``entity_count`` comes from ``driver.count_entities_by_type`` so it
-        reflects what's actually searchable, not a stale log entry.
+        * **Project scope** (``scope.projects == [one id]``) — the project IS a
+          record, so its three states come from the project record's own
+          on-disk ``.hash`` sentinel: ``never_indexed`` = no sentinel,
+          ``last_indexed_at`` = the sentinel time, ``stale`` = ``index_required``
+          ("changes pending"). No child aggregation.
+        * **Unscoped / type list** — footer/scanner view. ``last_indexed_at``
+          per type from the JSONL run-history (audit); ``entity_count`` from
+          ``count_entities_by_type`` (the live searchable count).
 
-        When ``scope`` (a server-side ScopeFilter) is provided, per-type
-        ``entity_count`` and ``orphan_count`` shrink to the scoped subset.
-        The ``last_indexed_at`` / ``stale`` fields are unaffected (those are
-        per-type indexer-run timestamps, not row counts).
+        ``stale`` now means "changes pending next index", not a 24h timer.
+        Orphan counts come from a scan, not from here.
         """
-        from datetime import timedelta  # noqa: PLC0415
-        from flow_sdk._compat import UTC
         from flow_sdk.db import get_db_driver  # noqa: PLC0415
 
         driver = get_db_driver()
         per_type: list[TypeIndexStatus] = []
         latest_iso: str | None = None
         for type_name in types or cls.get_default_index_types():
-            type_last = cls.get_last_index_at(type_name)
-            type_stale = True
-            if type_last:
-                dt = datetime.fromisoformat(type_last)
-                type_stale = (datetime.now(UTC) - dt) > timedelta(hours=24)
-                if latest_iso is None or type_last > latest_iso:
-                    latest_iso = type_last
+            type_last = cls.get_last_index_at(type_name)  # JSONL run-history (audit)
+            if type_last and (latest_iso is None or type_last > latest_iso):
+                latest_iso = type_last
             try:
                 count = await driver.count_entities_by_type(type_name, scope=scope)
             except TypeError:
-                # Driver predates the scope kwarg — fall back to unscoped count.
                 count = await driver.count_entities_by_type(type_name)
             except Exception:
                 count = 0
-            try:
-                if hasattr(driver, "count_orphans_by_type"):
-                    try:
-                        orphans = await driver.count_orphans_by_type(type_name, scope=scope)
-                    except TypeError:
-                        orphans = await driver.count_orphans_by_type(type_name)
-                else:
-                    orphans = 0
-            except Exception:
-                orphans = 0
             per_type.append(
                 TypeIndexStatus(
                     type_name=type_name,
                     last_indexed_at=type_last,
                     entity_count=count,
-                    stale=type_stale,
-                    orphan_count=orphans,
+                    stale=False,
+                    orphan_count=0,
                 )
             )
-        never_indexed = all(t.last_indexed_at is None for t in per_type)
-        global_stale = False
-        if latest_iso:
-            dt = datetime.fromisoformat(latest_iso)
-            global_stale = (datetime.now(UTC) - dt) > timedelta(hours=24)
+
+        # Project-scoped freshness from the project record's own sentinel.
+        project_id = cls._single_project_id(scope)
+        if project_id is not None:
+            prec = cls._project_record_for_status(project_id)
+            indexed_at = prec.indexed_at if prec is not None else None
+            return IndexStatus(
+                never_indexed=indexed_at is None,
+                last_indexed_at=indexed_at,
+                stale=bool(prec.index_required) if prec is not None else False,
+                default_types=cls.get_default_index_types(),
+                per_type=per_type,
+                total_orphans=0,
+            )
+
         return IndexStatus(
-            never_indexed=never_indexed,
+            never_indexed=all(t.last_indexed_at is None for t in per_type),
             last_indexed_at=latest_iso,
-            stale=global_stale,
+            stale=False,
             default_types=cls.get_default_index_types(),
             per_type=per_type,
-            total_orphans=sum(t.orphan_count for t in per_type),
+            total_orphans=0,
         )
+
+    @staticmethod
+    def _single_project_id(scope: "object | None") -> str | None:
+        """The lone project id when ``scope`` targets exactly one project, else None."""
+        projects = list(getattr(scope, "projects", None) or []) if scope is not None else []
+        return projects[0] if len(projects) == 1 else None
+
+    @staticmethod
+    def _project_record_for_status(project_id: str) -> "object | None":
+        """Load the project record with its asset_ref bound to the project
+        folder, so ``indexed_at`` / ``index_required`` resolve. None if the
+        record (or its mount path) is unknown."""
+        from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
+
+        prec = FSRecord.load_or_none("project", project_id)
+        return prec.ensure_asset_ref() if prec is not None else None
 
     # New name alias
     get_status = get_index_status

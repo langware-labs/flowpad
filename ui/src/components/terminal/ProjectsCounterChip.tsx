@@ -1,7 +1,7 @@
 import { ContextEntitiesEnum, dataContext, Project } from '@sdk';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
-import { toast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { useTerminalProjectBuckets, type TerminalProjectBucket } from '@src/hooks/useActiveTerminals';
 import { Layers, Loader2, RotateCcw } from 'lucide-react';
 import React, { useMemo, useState } from 'react';
@@ -98,12 +98,12 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({ curren
     try {
       const recovered = await bucket.recover();
       if (!recovered) {
-        toast({
+        notify.error({
           title: 'Recovery failed',
-          description: `Couldn't recover the project for ${bucket.tabs.length} terminal${
+          message: `Couldn't recover the project for ${bucket.tabs.length} terminal${
             bucket.tabs.length === 1 ? '' : 's'
           } (${bucket.projectId.slice(0, 8)}).`,
-          variant: 'destructive',
+          id: `project-recover:${bucket.projectId}`,
         });
         return;
       }

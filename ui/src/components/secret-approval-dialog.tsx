@@ -11,14 +11,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@src/components/ui/alert-dialog';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 
 const TITLE = 'Allow Flowpad to use system keychain';
 const DESCRIPTION =
   'Flowpad needs to store your login token and any app secrets you add in your operating system keychain. ' +
   'Approving here will trigger your OS keychain prompt — please choose Always Allow when it appears.';
-const CANCEL_TOAST = { title: 'Login canceled', description: 'Keychain approval was not granted' };
-const USER_CANCEL_TOAST = { title: 'Access canceled', description: 'You can enable keychain access from the warnings menu later.' };
+const CANCEL_TOAST = { title: 'Login canceled', message: 'Keychain approval was not granted' };
+const USER_CANCEL_TOAST = { title: 'Access canceled', message: 'You can enable keychain access from the warnings menu later.' };
 
 /**
  * Globally-mounted approval dialog.
@@ -31,7 +31,6 @@ const SecretApprovalDialog = () => {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const settledRef = useRef(false);
-  const { toast } = useToast();
   const queryClient = useQueryClient();
 
   useEffect(() => {
@@ -41,10 +40,10 @@ const SecretApprovalDialog = () => {
     });
   }, []);
 
-  const settle = (approved: boolean, withToast?: { title: string; description?: string }) => {
+  const settle = (approved: boolean, withToast?: { title: string; message?: string }) => {
     if (settledRef.current) return;
     settledRef.current = true;
-    if (withToast) toast(withToast);
+    if (withToast) notify.info(withToast);
     secretApprovalGate.resolve(approved);
     setOpen(false);
   };

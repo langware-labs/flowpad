@@ -6,13 +6,13 @@ import { getDescriptor } from '@src/components/quick-create';
 import { RecordSearchBar } from '@src/components/record-search-bar/RecordSearchBar';
 import { InlineSearchResults } from '@src/pages/home-landing/InlineSearchResults';
 import type { SearchFilters, SearchResult as RecordSearchResult } from '@src/hooks/use-record-search';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { navigateToResult } from '@src/navigation/record-type-nav';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { dataContext, fsManager, fsStore, RecordType, systemTools, TypeId } from '@sdk';
 import apiClient from '@sdk/client';
-import { BookOpen, ChevronRight, PackageSearch, PanelLeft, PanelLeftClose, X } from 'lucide-react';
+import { AlertCircle, BookOpen, ChevronRight, PackageSearch, PanelLeft, PanelLeftClose, X } from 'lucide-react';
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -25,8 +25,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tool
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { AssetFilter } from './assetFilter';
 import { DEFAULT_ASSET_FILTER } from './assetFilter';
-import { defaultScopeFilter } from '@src/lib/scope-filter';
+import { applyScopeToParams, defaultScopeFilter } from '@src/lib/scope-filter';
 import type { ScopeFilter } from '@src/lib/scope-filter';
+import { useIndexStatus } from '@src/hooks/use-index-status';
+import { formatTimeAgo } from '@src/utils/format-time-ago';
 import { projectIdForPath } from './utils';
 import { ScopeFilterBar } from '@src/components/scope-filter/ScopeFilterBar';
 import { ProjectScopeBadge } from './ProjectScopeBadge';
@@ -260,7 +262,6 @@ function FolderBreadcrumb({
 }
 
 export function AssetsPage() {
-  const { toast } = useToast();
   const { currentDock, navigation } = useDockNavigation();
   const { types: allTypes, isLoading: typesLoading } = useAssetTypes();
   const { indexType, busy, resetAndRescan } = useSystemTools();
@@ -320,15 +321,39 @@ export function AssetsPage() {
   });
   const [isResizingSidebar, setIsResizingSidebar] = useState(false);
 
+  // Project-page index state comes from the project record's own ``.hash``
+  // (the project IS a record): never_indexed → CTA, stale → "changes pending".
+  // Only meaningful under a locked project scope; global assets keep the plain
+  // "refresh search data" rebuild.
+  const { state: idxState, refresh: refreshIdxStatus } = useIndexStatus(
+    lockedScope ?? undefined,
+  );
+  const projIdx = isProjectView && idxState.phase === 'ready' ? idxState.status : null;
+  const neverIndexed = projIdx?.never_indexed ?? false;
+  const changesPending = projIdx?.stale ?? false;
+  const lastIndexedAt = projIdx?.last_indexed_at ?? null;
+
   useEffect(() => { setSelectedResultIndex(-1); }, [searchQuery]);
 
   useEffect(() => {
     void systemTools.refreshActivityStatus();
   }, []);
 
-  const handleRebuildIndex = useCallback(() => {
+  const handleRebuildIndex = useCallback(async () => {
+    // Project view → Fast index scoped to the project (re-stamps the project's
+    // own index sentinel). Global view → legacy full reset+rescan.
+    if (isProjectView) {
+      const params = new URLSearchParams();
+      applyScopeToParams(params, effectiveFilter.scope);
+      try {
+        await apiClient.post(`/graph/compute_node/@local/fs-records/index?${params.toString()}`);
+      } finally {
+        refreshIdxStatus();
+      }
+      return;
+    }
     void resetAndRescan();
-  }, [resetAndRescan]);
+  }, [isProjectView, effectiveFilter.scope, refreshIdxStatus, resetAndRescan]);
 
   const handleSearchSubmit = useCallback(() => {
     const q = searchQuery.trim();
@@ -447,7 +472,7 @@ export function AssetsPage() {
   const handleNewFolderConfirm = useCallback(async (rawName: string) => {
     const name = rawName.trim();
     if (!newFolderTarget || !isValidFolderName(name)) {
-      toast({ title: 'Invalid folder name', variant: 'destructive' });
+      notify.error({ title: 'Invalid folder name' });
       return;
     }
 
@@ -456,21 +481,21 @@ export function AssetsPage() {
 
     try {
       if (await fsManager.exists(typeId, folderRelPath)) {
-        toast({ title: 'Folder already exists', variant: 'destructive' });
+        notify.error({ title: 'Folder already exists' });
         return;
       }
       await fsManager.mkdir(typeId, folderRelPath);
       fsStore.getState().invalidate(typeId, newFolderTarget.relPath || '/', 'browse');
       refreshNode(markdownFolderNodeId(newFolderTarget.typeid, newFolderTarget.absPath));
       setRefreshKey((k) => k + 1);
-      toast({ title: 'Folder created' });
+      notify.success({ title: 'Folder created' });
     } catch (err) {
       console.error('[AssetsPage] Failed to create folder:', err);
-      toast({ title: 'Failed to create folder', variant: 'destructive' });
+      notify.error({ title: 'Failed to create folder' });
     } finally {
       setNewFolderTarget(null);
     }
-  }, [newFolderTarget, toast]);
+  }, [newFolderTarget]);
 
   const handleMoveMarkdownItem = useCallback(async (
     item: MarkdownDragItem,
@@ -490,7 +515,7 @@ export function AssetsPage() {
 
     try {
       if (await fsManager.exists(typeId, destRel)) {
-        toast({ title: 'Destination already has an item with that name', variant: 'destructive' });
+        notify.error({ title: 'Destination already has an item with that name' });
         return;
       }
 
@@ -536,16 +561,16 @@ export function AssetsPage() {
         await indexType('markdown', effectiveFilter.scope, { force: true });
       } catch (err) {
         console.error('[AssetsPage] Markdown reindex after move failed:', err);
-        toast({ title: 'Moved, but reindex failed', variant: 'destructive' });
+        notify.error({ title: 'Moved, but reindex failed' });
         return;
       }
 
-      toast({ title: 'Moved' });
+      notify.success({ title: 'Moved' });
     } catch (err) {
       console.error('[AssetsPage] Failed to move markdown item:', err);
-      toast({ title: 'Failed to move item', variant: 'destructive' });
+      notify.error({ title: 'Failed to move item' });
     }
-  }, [effectiveFilter.scope, effectivePointer, indexType, navigateAsset, toast]);
+  }, [effectiveFilter.scope, effectivePointer, indexType, navigateAsset]);
 
   const wikiRoots = useMemo(
     () =>
@@ -606,13 +631,13 @@ export function AssetsPage() {
     if (!name.trim() || !newTypeTarget) return;
     const descriptor = getDescriptor(newTypeTarget);
     if (!descriptor) {
-      toast({ title: `Cannot create ${newTypeTarget}`, variant: 'destructive' });
+      notify.error({ title: `Cannot create ${newTypeTarget}` });
       setNewTypeTarget(null);
       return;
     }
     try {
       const res = await descriptor.create({ project: dataContext.project ?? null, name });
-      toast({ title: res.toastTitle });
+      notify.success({ title: res.toastTitle });
       if (res.pointer) {
         navigateAsset(res.pointer);
         setNewTypeTarget(null);
@@ -621,10 +646,10 @@ export function AssetsPage() {
       setRefreshKey((k) => k + 1);
     } catch (err) {
       console.error('[AssetsPage] Failed to create:', err);
-      toast({ title: 'Failed to create', variant: 'destructive' });
+      notify.error({ title: 'Failed to create' });
     }
     setNewTypeTarget(null);
-  }, [newTypeTarget, navigateAsset, toast]);
+  }, [newTypeTarget, navigateAsset]);
 
   const handleRowClick = useCallback((result: SearchResult) => {
     // Projects open in their collaboration space (the "project room"), not
@@ -635,15 +660,14 @@ export function AssetsPage() {
     }
     const path = result.asset_ref;
     if (!path || !path.startsWith('/')) {
-      toast({
+      notify.error({
         title: 'Asset has no file on disk',
-        description: `${result.name || result.record_id} is indexed without a valid source path and cannot be opened.`,
-        variant: 'destructive',
+        message: `${result.name || result.record_id} is indexed without a valid source path and cannot be opened.`,
       });
       return;
     }
     navigateAsset(DockPointer.forAssetEditor(result.record_type, path));
-  }, [navigateAsset, navigation, toast]);
+  }, [navigateAsset, navigation]);
 
   const handleProjectFilter = useCallback(async (label: string) => {
     if (lockedScope) return;
@@ -705,22 +729,51 @@ export function AssetsPage() {
               </div>
             )}
           </div>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-9 w-9 shrink-0"
-                onClick={handleRebuildIndex}
-                disabled={busy}
-                aria-label="Refresh search data"
-                data-testid="rebuild-index"
-              >
-                <PackageSearch className={`h-4 w-4 ${busy ? 'animate-spin' : ''}`} />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Refresh search data</TooltipContent>
-          </Tooltip>
+          {isProjectView && neverIndexed ? (
+            // Never indexed → clear call-to-action (same action, clearer label).
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 shrink-0 gap-1.5"
+              onClick={() => void handleRebuildIndex()}
+              disabled={busy}
+              data-testid="index-now-cta"
+            >
+              <PackageSearch className={`h-4 w-4 ${busy ? 'animate-spin' : ''}`} />
+              Index now
+            </Button>
+          ) : (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="relative h-9 w-9 shrink-0"
+                  onClick={() => void handleRebuildIndex()}
+                  disabled={busy}
+                  aria-label={isProjectView ? 'Re-index project' : 'Refresh search data'}
+                  data-testid="rebuild-index"
+                >
+                  <PackageSearch className={`h-4 w-4 ${busy ? 'animate-spin' : ''}`} />
+                  {isProjectView && changesPending && (
+                    <AlertCircle
+                      className="absolute -right-0.5 -top-0.5 h-3 w-3 text-amber-500"
+                      data-testid="changes-pending-badge"
+                    />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {isProjectView
+                  ? changesPending
+                    ? 'Changes pending next index'
+                    : lastIndexedAt
+                      ? `Last indexed ${formatTimeAgo(lastIndexedAt)}`
+                      : 'Re-index project'
+                  : 'Refresh search data'}
+              </TooltipContent>
+            </Tooltip>
+          )}
           {lockedScope && urlProjectId ? (
             <ProjectScopeBadge projectId={urlProjectId} />
           ) : (

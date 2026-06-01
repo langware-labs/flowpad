@@ -425,7 +425,6 @@ class FsRecordsActionsMixin:
 
         # Bucket FSRefs by record_type; compute count / total_bytes per type.
         # For single-type calls, also collect a per-record list.
-        from flow_sdk.fs_store.schema_registry import SchemaRegistry as _SR_rec  # noqa: PLC0415
         by_type: dict[str, dict] = {}
         for n in nodes:
             if n.record_type is None:
@@ -461,10 +460,9 @@ class FsRecordsActionsMixin:
         # (db_ids ∪ shadow_dir_ids) − seen_ids. Skipped when scope-filtered
         # because seen_ids is incomplete for a partial walk. ~16% overhead on
         # top of scan() — measured at ~360 ms on a 7660-FSRef tree.
-        from flow_sdk.db import get_db_driver as _get_db_driver  # noqa: PLC0415
+        from flow_sdk.fs_store.fs_record import FSRecord as _FSRecord  # noqa: PLC0415
         from flow_sdk.fs_store.indexer.index_function import (  # noqa: PLC0415
             FSIndexer as _FSIndexer,
-            _load_entity_state_map,
         )
 
         # Diff classification needs ``seen_ids`` to cover every relevant root,
@@ -473,18 +471,16 @@ class FsRecordsActionsMixin:
         # branch). After the route now resolves the no-scope case to an
         # explicit ``get_all_scope_filter()``, the predicate is "the caller
         # did not pass an explicit scope param" (``not scope_explicit``).
+        # Classification is entirely on-disk now: each record's own ``.hash``
+        # sentinel decides new / stale / fresh — no DB read.
         do_diff = not scope_explicit
         if do_diff:
-            _driver = _get_db_driver()
             _indexable_names = {str(t) for t in INDEXABLE_TYPES}
-            _state_map: dict[str, dict[str, tuple[float, str, str]]] = {}
-            for _tn in _indexable_names:
-                try:
-                    _state_map[_tn] = await _load_entity_state_map(_driver, _tn)
-                except Exception:
-                    _state_map[_tn] = {}
 
             _seen_ids: dict[str, set[str]] = {tn: set() for tn in _indexable_names}
+            # ``mis_scoped`` retained as a zero key for response-shape stability;
+            # under the on-disk model a scope change just re-stamps on the next
+            # index, so it folds into ``stale``.
             _diff: dict[str, dict[str, int]] = {
                 tn: {"new": 0, "stale": 0, "mis_scoped": 0, "fresh": 0}
                 for tn in _indexable_names
@@ -500,33 +496,24 @@ class FsRecordsActionsMixin:
                 if not ref_id:
                     continue
                 _seen_ids[rt_name].add(ref_id)
-                db_state = _state_map[rt_name].get(ref_id)
-                if db_state is None:
+                # Pure on-disk freshness via the record's own ``.hash`` sentinel.
+                # Read the sentinel once (one glob) and compare to the live hash;
+                # `index_required` would re-glob, so inline the comparison here.
+                _probe = _FSRecord(type=rt_name, id=ref_id, asset_ref=ref)
+                _indexed = _probe.indexed_hash
+                if _indexed is None:
                     _diff[rt_name]["new"] += 1
-                    continue
-                db_mtime, db_scope, db_pid = db_state
-                _asset_hash_fn = getattr(_SR_rec.get(rt_name), "asset_hash_fn", None)
-                try:
-                    file_mtime = _asset_hash_fn(ref) if _asset_hash_fn is not None else 0.0
-                except Exception:
-                    file_mtime = 0.0
-                walk_scope = ref.scope or ""
-                walk_pid = ref.project_id or ""
-                scope_ok = walk_scope == "" or db_scope == walk_scope
-                pid_ok = walk_pid == "" or db_pid == walk_pid
-                if file_mtime and file_mtime <= db_mtime and scope_ok and pid_ok:
-                    _diff[rt_name]["fresh"] += 1
-                elif not (scope_ok and pid_ok):
-                    _diff[rt_name]["mis_scoped"] += 1
-                else:
+                elif _probe.record_hash != _indexed:
                     _diff[rt_name]["stale"] += 1
+                else:
+                    _diff[rt_name]["fresh"] += 1
 
             _disk_ids = _FSIndexer._discover_records_dir_ids(_indexable_names)
             for _tn in _indexable_names:
-                _db_ids = set(_state_map[_tn].keys())
-                _all_ids = _db_ids | _disk_ids.get(_tn, set())
-                _diff[_tn]["orphan"] = len(_all_ids - _seen_ids[_tn])
-                _diff[_tn]["in_index"] = len(_db_ids)
+                _home_ids = _disk_ids.get(_tn, set())
+                # Orphan = a record home whose source wasn't seen this walk.
+                _diff[_tn]["orphan"] = len(_home_ids - _seen_ids[_tn])
+                _diff[_tn]["in_index"] = len(_home_ids)
                 _diff[_tn]["pending"] = (
                     _diff[_tn]["new"] + _diff[_tn]["stale"] + _diff[_tn]["mis_scoped"]
                 )
@@ -743,6 +730,10 @@ class FsRecordsActionsMixin:
                     if log_file.exists():
                         log_file.unlink()
                     await _clear_errors_for_type(type_name)
+                    # Drop every record's index sentinel for this type so cleared
+                    # records read as never-indexed (no lie-after-clear).
+                    from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
+                    FSRecord.clear_hashes_for_type(type_name)
                 per_type_done[type_name] = 1
                 await emit()
 
@@ -755,6 +746,15 @@ class FsRecordsActionsMixin:
                 if global_log.exists():
                     global_log.unlink()
                 await _clear_all_errors()
+
+            # Scoped clear of a single project: drop the project's own sentinel
+            # so the project page reads never-indexed after the clear.
+            _proj_ids = list(getattr(scope_filter, "projects", None) or []) if scope_filter else []
+            if len(_proj_ids) == 1:
+                from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
+                _prec = FSRecord.load_or_none("project", _proj_ids[0])
+                if _prec is not None:
+                    _prec.clear_hash()
 
             current_type = None
             await emit(text="complete")
@@ -944,6 +944,19 @@ class FsRecordsActionsMixin:
             type_name=filter_type or None,
         )
 
+        # Stamp the project's own index sentinel after a project-scoped run, so
+        # the project page reads "last indexed" / "changes pending" off the
+        # project record itself (the project IS a record). Single chokepoint —
+        # covers Fast and Full from the project page.
+        if effective_project_id:
+            try:
+                from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
+                _prec = FSRecord.load_or_none("project", effective_project_id)
+                if _prec is not None:
+                    _prec.ensure_asset_ref().write_hash()
+            except Exception as e:
+                logging.debug(f"[fs-records] project index sentinel write skipped: {e}")
+
         if filter_type:
             if not types_out:
                 return ApiSuccessResponse(data={
@@ -1094,15 +1107,10 @@ class FsRecordsActionsMixin:
                 status_code=404,
             )
 
-        # Sync to DB so future bulk queries pick it up. Idempotent.
-        # Skip when the source is missing on disk — `sync_to_db` rebuilds
-        # the entity row from the Record's fields, which would clobber the
-        # `orphan` / `orphan_since` flags the FSIndexer set on this row.
-        # Orphan state is the indexer's responsibility; discover just reads.
-        _ar_for_sync = getattr(found, "asset_ref", None)
-        _ar_path_for_sync = getattr(_ar_for_sync, "path", None) if _ar_for_sync is not None else None
-        _alive_on_disk = bool(_ar_path_for_sync and Path(str(_ar_path_for_sync)).expanduser().exists())
-        if _alive_on_disk:
+        # Orphan-ness is the dynamic ``FSRecord.orphan`` (source missing on
+        # disk). Sync to DB only when the source is alive; discover just reads.
+        is_orphan = found.orphan
+        if not is_orphan:
             try:
                 await found.sync_to_db()
             except Exception as e:
@@ -1114,26 +1122,9 @@ class FsRecordsActionsMixin:
         _ar_path = getattr(_ar, "path", None) if _ar is not None else None
         if _ar_path:
             data["asset_ref"] = _ar_path
-
-        # Merge entity-level fields the Record's meta_dict doesn't know about
-        # (orphan / orphan_since live on the Entity row, not the Record).
-        # The frontend's `<MissingAssetCard>` reads these to differentiate
-        # stale-but-known rows from never-existed paths.
-        try:
-            from flow_sdk.fs_store.schema_registry import SchemaRegistry as _SR  # noqa: PLC0415
-            _ent_cls = _SR.get_entity_cls(record_type)
-            if _ent_cls is not None:
-                _ent = await _ent_cls.get_by_id(found.id)  # type: ignore[attr-defined]
-                if _ent is not None:
-                    data["orphan"] = bool(getattr(_ent, "orphan", False))
-                    _since = getattr(_ent, "orphan_since", None)
-                    if _since is not None:
-                        # datetime → ISO 8601 string for the wire
-                        data["orphan_since"] = _since.isoformat() if hasattr(_since, "isoformat") else str(_since)
-                    else:
-                        data["orphan_since"] = None
-        except Exception as e:
-            logging.debug(f"[fs-records] merge entity orphan fields skipped for {record_type}: {e}")
+        # The frontend's `<MissingAssetCard>` reads ``orphan`` to differentiate
+        # a missing source from a present one. Computed live from the record.
+        data["orphan"] = is_orphan
         return ApiSuccessResponse(data=data)
 
 

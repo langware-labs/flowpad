@@ -1,7 +1,7 @@
 import type { GitProvider } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { useGitInvitations, useRespondInvitation } from '@src/hooks/use-git-providers';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { Loader2, MailPlus } from 'lucide-react';
 import { useState } from 'react';
 
@@ -17,7 +17,6 @@ interface InvitationsStripProps {
 export function InvitationsStrip({ provider, enabled = true }: InvitationsStripProps) {
   const { data: invitations, isLoading } = useGitInvitations(provider, enabled);
   const respond = useRespondInvitation(provider);
-  const { toast } = useToast();
   // Per-row in-flight tracker so only the clicked invitation's buttons spin.
   // The shared `respond.isPending` from react-query would otherwise grey out
   // every row's buttons when one is mid-flight, blocking the user from
@@ -32,16 +31,15 @@ export function InvitationsStrip({ provider, enabled = true }: InvitationsStripP
       { id, action },
       {
         onSuccess: () => {
-          toast({
+          notify.success({
             title: action === 'accept' ? `Accepted ${fullName}` : `Declined ${fullName}`,
-            duration: 2500,
+            durationMs: 2500,
           });
         },
         onError: (err) => {
-          toast({
+          notify.error({
             title: `Failed to ${action} invitation`,
-            description: err instanceof Error ? err.message : String(err),
-            variant: 'destructive',
+            message: err instanceof Error ? err.message : String(err),
           });
         },
         onSettled: () => {

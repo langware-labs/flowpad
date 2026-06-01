@@ -2,7 +2,7 @@ import { AgenticProcess } from '@sdk';
 import type { SearchResult } from '@src/hooks/use-record-search';
 import type { WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
 import type { NavigationActions } from '@src/navigation/NavigationActions';
-import { toast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import type { SpotlightRow } from './types';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -92,10 +92,9 @@ async function resolveProcessAndOpenTerminal(
   }
   if (!process) {
     if (!hasFallback) {
-      toast({
+      notify.error({
         title: 'Session not found',
-        description: `Session ${workerId} is not in Claude or Codex history.`,
-        variant: 'destructive',
+        message: `Session ${workerId} is not in Claude or Codex history.`,
       });
     }
     return false;

@@ -21,8 +21,7 @@ from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.path_utils import canonical_posix_path
-
-_TEMP_PATH_PREFIXES = ("/tmp/", "/var/folders/", "/private/var/folders/", "/private/tmp/")
+from flow_sdk.utils.file_system import is_temp_path
 
 # ── Helpers (moved from ProjectFsRecord) ─────────────────────────────────────
 
@@ -33,7 +32,14 @@ def _claude_projects_dir() -> Path:
 def _flow_records_norm_prefixes() -> tuple[str, ...]:
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
     home_str = str(get_instance_settings().user_home)
-    return (home_str + "/.flow/records/", home_str + "/flow/records/")
+    # Internal record folders (incl. the dev_records variant) are never user
+    # projects — they must not surface in the project picker.
+    return (
+        home_str + "/.flow/records/",
+        home_str + "/.flow/dev_records/",
+        home_str + "/flow/records/",
+        home_str + "/flow/dev_records/",
+    )
 
 def _decode_claude_encoded(d: Path) -> str | None:
     from flow_sdk.fs_store.indexer.functions._claude_projects import decode_claude_project_dir  # noqa: PLC0415
@@ -46,13 +52,12 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 def _is_valid_cwd(cwd: str) -> bool:
-    """Reject system/temp paths."""
+    """Reject system/temp paths and internal record folders."""
     if not cwd or not cwd.startswith("/"):
         return False
     if cwd == "/":
         return False
-    temp_roots = tuple(prefix.rstrip("/") for prefix in _TEMP_PATH_PREFIXES)
-    if cwd in temp_roots or cwd.startswith(_TEMP_PATH_PREFIXES):
+    if is_temp_path(cwd):
         return False
     normalized = os.path.normpath(cwd) + os.sep
     return not normalized.startswith(_flow_records_norm_prefixes())

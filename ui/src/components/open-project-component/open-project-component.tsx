@@ -16,7 +16,7 @@ import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
 import { Label } from '@src/components/ui/label';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { Check, FolderOpen, FolderPlus, Loader2, Lock, Search, Sparkles } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
@@ -531,7 +531,6 @@ export function OpenProjectComponent({
   onPicked,
 }: OpenProjectComponentProps) {
   const { project: currentProject } = useProject();
-  const { toast } = useToast();
   const { computeNode } = useAgentContext();
 
   const [showCreate, setShowCreate] = useState(false);
@@ -655,7 +654,7 @@ export function OpenProjectComponent({
     try {
       const result = await ensureProjectAndSetContext(selected);
       if (result.openedExisting) {
-        toast({ title: 'Opened existing project', description: result.project.displayName });
+        notify.success({ title: 'Opened existing project', message: result.project.displayName });
       }
       onOpenChange(false);
     } catch (err) {
@@ -663,7 +662,7 @@ export function OpenProjectComponent({
     } finally {
       setIsSubmitting(false);
     }
-  }, [pickFolder, ensureProjectAndSetContext, onOpenChange, toast]);
+  }, [pickFolder, ensureProjectAndSetContext, onOpenChange]);
 
   // NewProjectDialog calls this after validation
   const handleCreate = useCallback(

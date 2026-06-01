@@ -11,7 +11,7 @@ import {
   DialogTitle,
 } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { CheckCircle2, GitBranch, Github, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 
@@ -63,7 +63,6 @@ async function fetchGithubStatus(): Promise<boolean | null> {
 }
 
 export function NewProjectFromGitDialog({ open, onOpenChange, onCreate }: NewProjectFromGitDialogProps) {
-  const { toast } = useToast();
   const [url, setUrl] = useState('');
   const [branch, setBranch] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -127,9 +126,9 @@ export function NewProjectFromGitDialog({ open, onOpenChange, onCreate }: NewPro
       // "Request failed with status code 500".
       const ax = err as { response?: { data?: { message?: string } }; message?: string };
       const title = ax.response?.data?.message ?? ax.message ?? 'Failed to start GitHub connection';
-      toast({ title, variant: 'destructive' });
+      notify.error({ title });
     }
-  }, [toast]);
+  }, []);
 
   const canSubmit = !!url.trim() && !isSubmitting;
 
@@ -145,15 +144,14 @@ export function NewProjectFromGitDialog({ open, onOpenChange, onCreate }: NewPro
           setSuggestion({ suggestedName: res.suggestedName, attemptedName: res.attemptedName });
         }
       } catch (err) {
-        toast({
+        notify.error({
           title: err instanceof Error ? err.message : 'Failed to clone repository',
-          variant: 'destructive',
         });
       } finally {
         setIsSubmitting(false);
       }
     },
-    [isSubmitting, url, branch, onCreate, onOpenChange, toast],
+    [isSubmitting, url, branch, onCreate, onOpenChange],
   );
 
   const handlePickRepo = useCallback((repo: RepoSummary) => {

@@ -2,7 +2,7 @@ import { IncomingTaskDialog } from '@src/components/task-receive/IncomingTaskDia
 import { useIncomingTaskStore } from '@src/store/use-incoming-task-store';
 import { UsageBar } from '@src/components/cost-dashboard';
 import { RecordSearchBar } from '@src/components/record-search-bar/RecordSearchBar';
-import { NotificationFeed } from '@src/components/notification-feed';
+import { NotificationFeed, notify } from '@src/notifications';
 import { type ProjectResourceListItem } from '@src/components/project-resource-list';
 import { ProjectActivityStrip, RecentConversationsStrip, BookmarkColumn } from '@src/components/project-activity-strip';
 import { EventSnifferChip } from '@src/components/hooks/EventSnifferChip';
@@ -26,7 +26,6 @@ import { Annotation, claudeSessionManager, ContextEntitiesEnum, dataContext, Pro
 import { refreshNotifications } from '@sdk/entities/notifications';
 import { useAuth, useProject } from '@sdk/react/hooks';
 import { useAgentContext } from '@src/contexts/agent-context';
-import { useToast } from '@src/hooks/use-toast';
 import { useSystemTools } from '@src/hooks/use-system-tools';
 import { ActivityIndicator } from '@src/components/search-index/ActivityIndicator';
 import { WelcomeModal } from '@src/components/search-index/WelcomeModal';
@@ -132,7 +131,6 @@ export function HomeLanding() {
   }, []);
   const { projects: claudeProjects, isLoading: isLoadingClaudeProjects } = useClaudeProjectList();
   const { project: currentProject } = useProject();
-  const { toast } = useToast();
   const { events: snifferEvents } = useSnifferContext();
 
   // Per-session event counts for notification badges
@@ -308,11 +306,7 @@ export function HomeLanding() {
 
   const handleSessionSubmit = (message: string) => {
     if (!currentProject?.typeId) {
-      toast({
-        title: 'Project Required',
-        description: 'Please select or create a project first.',
-        variant: 'destructive',
-      });
+      notify.error({ title: 'Project Required', message: 'Please select or create a project first.' });
       return;
     }
 
@@ -499,16 +493,12 @@ export function HomeLanding() {
     async (resource: ProjectResourceListItem, command: string) => {
       const cwd = resource.path || selectedClaudeProjectCwd;
       if (!resource.sessionId || !cwd) {
-        toast({
-          title: 'Session unavailable',
-          description: 'No session ID or working directory found.',
-          variant: 'destructive',
-        });
+        notify.error({ title: 'Session unavailable', message: 'No session ID or working directory found.' });
         return;
       }
       await actOnClassification(resource.sessionId, cwd, command);
     },
-    [actOnClassification, toast, selectedClaudeProjectCwd],
+    [actOnClassification, selectedClaudeProjectCwd],
   );
 
   return (

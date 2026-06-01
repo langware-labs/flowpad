@@ -12,7 +12,7 @@ import { ActionInfo } from '@sdk/models/ActionInfo';
 import type { ITask } from '@sdk/entities/task';
 import type { FlowData } from '@sdk/flow_processing';
 import { FlowElementTypes } from '@sdk/flow_processing/flow-element-types';
-import { toast } from 'sonner';
+import { notify } from '@src/notifications';
 import { useProcessesForTarget } from '@src/components/entity-execution-panel';
 import { approveAndReload, buildMergedPrompt } from './prompt-building';
 
@@ -130,7 +130,7 @@ export function useApproveAndExecute(
     const projectId = useTaskScope ? task.project_id : conversation?.project_id;
     const workdir = await resolveWorkdir(projectId);
     if (!workdir) {
-      toast.warning('Map this conversation to a local project first.');
+      notify.warning({ title: 'Map this conversation to a local project first.' });
       return;
     }
 
@@ -139,7 +139,7 @@ export function useApproveAndExecute(
 
     const promptText = await buildMergedPrompt(flowMessage);
     if (!promptText) {
-      toast.error('Prompt is empty — nothing to execute.');
+      notify.error({ title: 'Prompt is empty — nothing to execute.' });
       return;
     }
 
@@ -203,7 +203,7 @@ export function useApproveAndExecute(
       }
     } catch (err) {
       console.error('[approveAndExecute] failed', err);
-      toast.error('Failed to run Approve & Execute.');
+      notify.error({ title: 'Failed to run Approve & Execute.' });
       return;
     }
 

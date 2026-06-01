@@ -279,7 +279,9 @@ async def handle_open_flow_message(fm_id: str) -> ApiResponse:
     # gates the download.
     if not repo_url and attachment_filename:
         try:
-            await _download_and_unpack_bundle(fm_id, attachment_filename)
+            await _download_and_unpack_bundle(
+                fm_id, attachment_filename, body_status=(data or {}).get("body_status"),
+            )
         except Exception as e:
             logger.warning("[open_flow_message] failed to materialize bundle (non-fatal): %s", e)
 
@@ -431,8 +433,18 @@ async def handle_download_body(fm_id: str) -> ApiResponse:
     fm = await _load_fm_local_or_hub(fm_id)
     if not fm:
         return ApiFailResponse(message=f"FlowMessage not found: {fm_id}", status_code=404)
+    # FS-rooted assets (skill/agent) unpack into ``<project>/.claude/…`` — without
+    # an ``asset_dest_root`` they land in a throwaway temp dir and are never
+    # materialized for the receiver. Resolve the conversation/task's project
+    # workdir so a chip-triggered download actually installs the shared assets.
+    # (The UI's project gate guarantees the conversation is mapped first.)
+    workdir, _project_id = await _resolve_workdir_and_project_async(fm)
+    asset_dest_root = Path(workdir) if workdir else None
     try:
-        await fm.download_body(on_progress=make_flow_message_progress_emitter(fm_id, "download"))
+        await fm.download_body(
+            asset_dest_root=asset_dest_root,
+            on_progress=make_flow_message_progress_emitter(fm_id, "download"),
+        )
     except BodyNotReadyError as e:
         return ApiFailResponse(message=str(e), status_code=409)
     except Exception as e:
@@ -1047,12 +1059,22 @@ async def _download_and_unpack_bundle(
     fm_id: str,
     attachment_filename: str,
     *,
+    body_status: "str | BodyStatus | None" = None,
     asset_dest_root: Path | None = None,
     on_progress=None,
 ) -> bool:
     """Download the .flowmsg bundle from the hub and unpack it locally.
 
     Returns True if the bundle was successfully unpacked, False otherwise.
+
+    ``body_status`` — the hub-side body lifecycle for this message. This is the
+    SINGLE backend gate: when it's anything other than READY there is no bundle
+    on the hub to pull (``na`` = none was ever uploaded, ``uploading`` = not yet
+    landed), so we skip the GET entirely rather than 404. Every implicit caller
+    (open / inbox-open / conversation-sync / invitation-accept / catch-up / the
+    eager-pull bridge) forwards what it already read from the hub payload; the
+    explicit ``download_body`` path forwards its own READY status. ``None`` means
+    "caller did not supply a status" and proceeds unchanged (back-compat).
 
     ``asset_dest_root`` is forwarded to ``unpack_bundle`` to anchor FS-rooted
     assets (skill/agent) restored from the bundle. ``None`` falls through to
@@ -1061,7 +1083,16 @@ async def _download_and_unpack_bundle(
     ``on_progress`` — optional async callback fired as download bytes land;
     when set the hub GET is streamed instead of buffered whole.
     """
+    from flow_sdk.builtin.flow_message import BodyStatus
     from flow_sdk.builtin.flow_message_bundle import FlowMessageExistsError, unpack_bundle
+    if body_status is not None:
+        bs = body_status.value if isinstance(body_status, BodyStatus) else body_status
+        if bs != BodyStatus.READY.value:
+            logger.debug(
+                "[bundle] skip download fm=%s — body_status=%s (no bundle to pull)",
+                fm_id, bs,
+            )
+            return False
     bundle_bytes = await hub_get(
         BuiltinEntityType.FLOW_MESSAGE, fm_id, "fs", f"download/{attachment_filename}",
         raw=True, on_progress=on_progress,
@@ -1182,7 +1213,9 @@ async def _process_single_hub_message(raw: dict) -> str | None:
         # First time we see a bundle-bearing message — download + unpack it.
         # An already-present (now stale) row only needs its metadata refreshed
         # below; the body bytes are local-only and don't re-download.
-        success = await _download_and_unpack_bundle(fm_id, attachment_filename)
+        success = await _download_and_unpack_bundle(
+            fm_id, attachment_filename, body_status=raw.get("body_status"),
+        )
         return fm_id if success else None
     # Bundle-less: persist the FM payload as-is, then append the pointer to
     # the conversation's message_ids JSON projection. We DO NOT route through
@@ -1270,10 +1303,12 @@ async def handle_inbox_open(fm_id: str) -> ApiResponse:
     local_fm = await FlowMessage.get_one({"id": fm_id})
     if local_fm:
         attachment_filename = (local_fm.attachment_filename or "").strip()
+        body_status = local_fm.body_status
         raw_context = [str(c) for c in (local_fm.shared_context_entities or [])]
     else:
         hub_data = await hub_get(BuiltinEntityType.FLOW_MESSAGE, fm_id)
         attachment_filename = ((hub_data or {}).get("attachment_filename") or "").strip()
+        body_status = (hub_data or {}).get("body_status")
         # Tolerate both new and legacy hub field names during transition.
         raw_context = (
             (hub_data or {}).get("shared_context_entities")
@@ -1296,7 +1331,7 @@ async def handle_inbox_open(fm_id: str) -> ApiResponse:
     needs_task_bundle = bool(task_id) and not await Task.get_one({"id": task_id})
     needs_fm_bundle = local_fm is None
     if attachment_filename and (needs_task_bundle or needs_fm_bundle):
-        await _download_and_unpack_bundle(fm_id, attachment_filename)
+        await _download_and_unpack_bundle(fm_id, attachment_filename, body_status=body_status)
 
     return ApiSuccessResponse(data={"task_id": task_id, "conversation_id": conv_id})
 
@@ -1722,6 +1757,86 @@ def _dispatch_conversation_message_fetch(conv_id: str, someone_typeid: str) -> N
     )
 
 
+# Hub-hosted child types pulled during the shared-context catch-up. Comments
+# today; add other shareable is_child types here as they gain hub support.
+_SHARED_CHILD_TYPES = (BuiltinEntityType.COMMENT.value,)
+
+
+async def _materialize_remote_child(cls, data: dict, parent_ref: str, someone_typeid: str | None):
+    """Upsert a hub child dict locally as a remote is_child of ``parent_ref``.
+
+    Thin wrapper over ``Entity.upsert_from_hub_child`` (shared with the live
+    bridge path). Returns the saved entity."""
+    return await cls.upsert_from_hub_child(data, parent_ref, someone_typeid)
+
+
+async def _sync_remote_children(parent_tid: TypeId, child_type: str, someone_typeid: str | None) -> None:
+    """Pull ``parent_tid``'s hub children of ``child_type`` and materialize the
+    new/changed ones locally (LWW via ``is_stale``). Best-effort."""
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    cls = SchemaRegistry.get_entity_cls(child_type)
+    if cls is None:
+        return
+    # hub_get expects a BuiltinEntityType for the entity_type arg (it reads
+    # ``.value``); parent_tid.type is a plain string, so coerce.
+    try:
+        parent_etype = BuiltinEntityType(parent_tid.type)
+    except ValueError:
+        parent_etype = parent_tid.type
+    children = await hub_get(parent_etype, parent_tid.id, action=child_type)
+    child_list: list[dict] = []
+    if isinstance(children, list):
+        child_list = children
+    elif isinstance(children, dict):
+        for k in ("data", "items", "results"):
+            v = children.get(k)
+            if isinstance(v, list):
+                child_list = v
+                break
+    parent_ref = f"{parent_tid.type}-{parent_tid.id}"
+    for raw in child_list:
+        if not isinstance(raw, dict) or not raw.get("id"):
+            continue
+        local = await cls.get_one({"id": raw["id"]})
+        if local is not None and not cls.is_stale(local, raw):
+            continue
+        try:
+            await _materialize_remote_child(cls, raw, parent_ref, someone_typeid)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[subtree-sync] materialize %s-%s failed (non-fatal): %s", child_type, raw.get("id"), e)
+
+
+async def _sync_shared_context_subtree(conv_id: str, someone_typeid: str | None) -> None:
+    """Recursive-share catch-up for one conversation.
+
+    For each ``shared_context_entities`` member (e.g. the shared markdown):
+      1. Ensure a local row exists and is marked ``remote=True`` with
+         ``parent_type_id`` = this conversation — so a child create under it
+         (a comment) auto-shares, and so effective-remote resolves.
+      2. Pull its child comments from the hub as remote children.
+
+    This is what lets a recipient who never watched the doc live still see the
+    doc + everyone's comments after a sync. Best-effort; never raises."""
+    try:
+        conv = await Conversation.get_one({"id": conv_id})
+        if conv is None or not conv.shared_context_entities:
+            return  # nothing shared → no subtree to catch up (skip the hub GET)
+        # 1) Link each shared-context doc to this conversation so its
+        #    ``effective_remote`` resolves (the doc is NOT a hub entity — the hub
+        #    has no markdown type — its content arrives via the chip-open
+        #    deploy). Reuses the same linker the share path runs.
+        await conv._link_context_to_conversation()
+        # 2) Pull the conversation's hub child entities (comments today; each
+        #    carries its real doc parent in ``parent_type_id``). Materialize
+        #    new/changed ones locally.
+        conv_tid = TypeId(f"{BuiltinEntityType.CONVERSATION.value}-{conv_id}")
+        for child_type in _SHARED_CHILD_TYPES:
+            await _sync_remote_children(conv_tid, child_type, someone_typeid)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[subtree-sync] conv=%s failed (non-fatal): %s", conv_id, e)
+
+
 async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> None:
     """Bring local message state for a single conversation up to the hub's.
 
@@ -1915,7 +2030,9 @@ async def _sync_conversation_messages(conv_id: str, someone_typeid: str) -> None
         if not attachment_filename:
             continue
         try:
-            await _download_and_unpack_bundle(raw_fm["id"], attachment_filename)
+            await _download_and_unpack_bundle(
+                raw_fm["id"], attachment_filename, body_status=raw_fm.get("body_status"),
+            )
         except Exception as b_err:  # noqa: BLE001
             logger.warning(
                 "[conv-sync] conv=%s fm=%s bundle download failed: %s",
@@ -2250,6 +2367,10 @@ async def conversation_message_sync() -> ApiResponse:
         if local_conv is None:
             return ApiFailResponse(message="conversation not found", status_code=404)
         await _fetch_conversation_messages(conv_id, request_info.someone_typeid)
+        # Recursive-share catch-up: pull shared-context children (e.g. the
+        # shared markdown) + their comments so a recipient sees the doc and
+        # everyone's comments without a live subscription.
+        await _sync_shared_context_subtree(conv_id, request_info.someone_typeid)
         return ApiSuccessResponse(data={"conversation_id": conv_id})
     except Exception as e:
         logger.error("[flow_message_action] conversation-message-sync error: %s", e, exc_info=True)
@@ -2318,26 +2439,51 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
         #         No usable body, but server-side state is what we want and
         #         local cleanup still has work to do (mark accepted, sync).
         #
-        # A 302 with ``Location: /login.html?target_path=...`` is the OTHER
-        # shape — same status, opposite meaning: the request was treated as
-        # unauthenticated and the accept did NOT run. Distinguish by reading
-        # the Location header before deciding to run cleanup; otherwise we
-        # mark invitations locally accepted for accepts that never executed.
-        if resp.status_code == 302:
-            location = resp.headers.get("location") or resp.headers.get("Location") or ""
-            if "/login.html" in location or "/login?" in location or "/login&" in location:
+        # A 302 from this endpoint ALWAYS means the hub bounced us to
+        # ``/login.html`` because the request was unauthenticated — the
+        # accept did NOT execute. Probed against app.flowpad.ai on
+        # 2026-05-28: 302 → ``/login.html?target_path=...`` for both
+        # missing and invalid Authorization headers. Earlier this code
+        # accepted 302 as success and ran local cleanup, which wrote
+        # ``accepted=True`` locally for an invitation the hub never
+        # accepted — causing every downstream conversation-scoped call to
+        # return 401 ("no valid access for role ['member']").
+        if resp.status_code not in (200, 409):
+            if resp.status_code in (301, 302, 303, 307, 308):
+                location = resp.headers.get("location") or resp.headers.get("Location") or ""
+                low = location.lower()
+                # A redirect to a login page IS the unauthenticated bounce
+                # (e.g. app.flowpad.ai → /login.html). The accept did NOT run.
+                if "login" in low:
+                    return ApiFailResponse(
+                        message=(
+                            "Accept failed: hub redirected us to login (request was "
+                            f"unauthenticated). location={location[:200]}"
+                        ),
+                    )
+                # Otherwise this hub bounces a SUCCESSFUL accept to the target's
+                # page — the role was granted. The target is either the
+                # conversation (/conversation/<id>) or the landing FlowMessage
+                # (/flow_message/<id>); both mean success. Extract the id and
+                # fall through to the normal post-accept resolution (the
+                # FlowMessage path resolves its parent conv below).
+                def _id_after(seg: str) -> Optional[str]:
+                    if seg in location:
+                        return location.split(seg)[1].split("/")[0].split("?")[0].split("#")[0]
+                    return None
+                if _id_after("/conversation/"):
+                    linked_conv_id = _id_after("/conversation/")
+                elif _id_after("/flow_message/"):
+                    linked_fm_id = _id_after("/flow_message/")
+                else:
+                    return ApiFailResponse(
+                        message=f"Accept failed: unexpected redirect location={location[:200]}"
+                    )
+            else:
                 return ApiFailResponse(
-                    message=(
-                        "Accept failed: hub redirected to login (request was "
-                        f"unauthenticated). location={location[:200]}"
-                    ),
+                    message=f"Accept failed ({resp.status_code}): {resp.text[:200]}"
                 )
-            logger.info("[invitation-accept] hub returned 302 (post-accept landing) — running local cleanup. location=%s", location[:200])
-        elif resp.status_code not in (200, 409):
-            return ApiFailResponse(
-                message=f"Accept failed ({resp.status_code}): {resp.text[:200]}"
-            )
-        elif resp.status_code == 409:
+        if resp.status_code == 409:
             logger.info("[invitation-accept] hub returned 409 (already accepted) — running local cleanup")
         # Resolve the chosen target's typeid. Three response shapes to handle:
         #  - 200 + JSON body — ``data`` carries the typeid (string or dict).
@@ -2464,7 +2610,10 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
             hub_fm = await hub_get(BuiltinEntityType.FLOW_MESSAGE, linked_fm_id)
             attachment_filename = ((hub_fm or {}).get("attachment_filename") or "").strip()
             if attachment_filename:
-                bundle_unpacked = await _download_and_unpack_bundle(linked_fm_id, attachment_filename)
+                bundle_unpacked = await _download_and_unpack_bundle(
+                    linked_fm_id, attachment_filename,
+                    body_status=(hub_fm or {}).get("body_status"),
+                )
         except Exception as e:
             logger.warning("[invitation-accept] bundle download failed: %s", e)
 

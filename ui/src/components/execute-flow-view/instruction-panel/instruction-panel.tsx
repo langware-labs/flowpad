@@ -2,7 +2,7 @@ import { copyToClipboard } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { Progress } from '@src/components/ui/progress';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
-import { toast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import Editor from '@monaco-editor/react';
 import { Copy, FileText, FilePlus, Loader2, Pencil, Save, X } from 'lucide-react';
 import { useTheme } from 'next-themes';
@@ -59,7 +59,7 @@ export function InstructionPanel({
   const handleCopyPath = useCallback(() => {
     if (filePath) {
       void copyToClipboard(filePath);
-      toast.success('Path copied', { description: 'File path copied to clipboard' });
+      notify.success({ title: 'Path copied', message: 'File path copied to clipboard' });
     }
   }, [filePath]);
 
@@ -79,10 +79,10 @@ export function InstructionPanel({
     try {
       await onSaveFile(editContent);
       setIsEditing(false);
-      toast.success('File saved', { description: 'Changes saved successfully' });
+      notify.success({ title: 'File saved', message: 'Changes saved successfully' });
     } catch (error) {
       console.error('[InstructionPanel] Failed to save:', error);
-      toast.error('Save failed', { description: 'Could not save changes' });
+      notify.error({ title: 'Save failed', message: 'Could not save changes' });
     }
   }, [editContent, onSaveFile]);
 
