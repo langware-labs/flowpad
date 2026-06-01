@@ -27,8 +27,12 @@ async def test_bootstrap_returns_local_user_and_schemas(client):
 
     data = payload["data"]
 
-    schemas = data["schemas"]
-    assert isinstance(schemas, list)
+    # Type metadata is delivered as `data.types` (list of TypeInfo), each with a
+    # nested JSON `schema`. Pull the schemas out of it.
+    types = data["types"]
+    assert isinstance(types, list)
+    assert len(types) > 0
+    schemas = [t["schema"] for t in types if isinstance(t.get("schema"), dict)]
     assert len(schemas) > 0
     assert any(s.get("properties", {}).get("type", {}).get("const") == "flow" for s in schemas)
 

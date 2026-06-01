@@ -76,7 +76,7 @@ def legacy_input_output_rates(model: str | None) -> tuple[float, float]:
 
     Returns the bare-input (``cache=none``) and ``output`` rates as
     $/1M tokens — matching the legacy ``MODEL_PRICING[model] = {"input": .., "output": ..}``
-    contract in ``flow_sdk/core/resource_management/scan/system_profile/utils.py``.
+    contract consumed by ``flow_sdk/builtin/faas/analytics/_pricing.py``.
     """
     from .base import ItemPrice
 

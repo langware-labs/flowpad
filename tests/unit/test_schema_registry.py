@@ -142,20 +142,6 @@ def test_register_idempotent_merges_locations(tmp_path):
     _fresh_registry()
 
 
-def test_register_idempotent_merges_record_cls(tmp_path):
-    _fresh_registry()
-    with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
-
-        class FakeRecordCls:
-            pass
-
-        SchemaRegistry.register(TypeInfo(type_name="t"))
-        SchemaRegistry.register(TypeInfo(type_name="t", record_cls=FakeRecordCls))
-        info = SchemaRegistry.get("t")
-    assert info.record_cls is FakeRecordCls
-    _fresh_registry()
-
-
 def test_register_parent_type_builds_subtypes(tmp_path):
     _fresh_registry()
     with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):

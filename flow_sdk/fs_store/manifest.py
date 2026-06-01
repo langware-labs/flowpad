@@ -38,7 +38,7 @@ class CollectionManifest:
         record_type: str,
         records_root: Path | None = None,
     ) -> None:
-        from .record import get_default_records_root
+        from .record_paths import get_default_records_root
         root = records_root or get_default_records_root()
         self._dir = root / "manifests" / record_type
         self._path = self._dir / ".manifest.json"

@@ -158,7 +158,6 @@ class KnowledgeBase(Entity):
     raw_knowledge: str | None = APIField(default=None, blob=True)
     # TODO Enable async invalidation of items
     # invalidated_items: list[TypeId] = []
-    _api_visible: ClassVar[bool] = True
 
     def __init__(self, **data):
         super().__init__(**data)

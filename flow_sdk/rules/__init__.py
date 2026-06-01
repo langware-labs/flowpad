@@ -1,92 +1,28 @@
-"""Rule engine module for file-based rules."""
+"""Rules engine stubs.
 
-from .activation_rule import (
-    ActivationRule,
-    ActivationRuleCase,
-    EvalCaseResult,
-    RuleEvaluation,
-)
-from .engine import RulesPackage, RuleEngine, create_rule_engine, evaluate_hooks_with_rules
-from .trigger_executor import Action, TriggerResult, execute_trigger, execute_all_triggers
-from .action_executor import ActionExecutor, ActionResult, execute_actions, format_hook_output
-from .rule_loader import (
-    discover_rules,
-    ensure_rules_dir,
-    get_rules_dir,
-    get_system_rules_dir,
-    get_user_rules_dir,
-    get_project_rules_dir,
-    load_rule_metadata,
-)
-from .index_manager import IndexManager, get_index_manager
-from .field_extractor import (
-    extract_field,
-    get_tool_info,
-    get_hook_event,
-    get_user_prompt,
-    is_tool_match,
-    get_bash_command,
-    get_file_operation,
-)
-from .regex_utils import (
-    compile_regex,
-    regex_match,
-    regex_match_ignorecase,
-    contains,
-    starts_with,
-    ends_with,
-    matches_any,
-    extract_match,
-    word_boundary_match,
-)
+The original ``ActivationRule`` Record-subclass + RuleEngine were removed
+in the Record-subclass deletion pass. These minimal stubs keep imports
+working; real rules functionality is deferred to a follow-up rewrite.
+"""
+from __future__ import annotations
 
-__all__ = [
-    # Core classes
-    "ActivationRule",
-    "ActivationRuleCase",
-    "EvalCaseResult",
-    "RuleEvaluation",
-    "RulesPackage",
-    "RuleEngine",
-    # Trigger/Action system
-    "Action",
-    "TriggerResult",
-    "ActionExecutor",
-    "ActionResult",
-    "execute_trigger",
-    "execute_all_triggers",
-    "execute_actions",
-    "format_hook_output",
-    # Factory functions
-    "create_rule_engine",
-    "evaluate_hooks_with_rules",
-    # Rule loader
-    "discover_rules",
-    "ensure_rules_dir",
-    "get_rules_dir",
-    "get_system_rules_dir",
-    "get_user_rules_dir",
-    "get_project_rules_dir",
-    "load_rule_metadata",
-    # Index manager
-    "IndexManager",
-    "get_index_manager",
-    # Field extractor
-    "extract_field",
-    "get_tool_info",
-    "get_hook_event",
-    "get_user_prompt",
-    "is_tool_match",
-    "get_bash_command",
-    "get_file_operation",
-    # Regex utilities
-    "compile_regex",
-    "regex_match",
-    "regex_match_ignorecase",
-    "contains",
-    "starts_with",
-    "ends_with",
-    "matches_any",
-    "extract_match",
-    "word_boundary_match",
-]
+from typing import Any
+
+
+class ActivationRule:
+    """No-op stub. Original Record subclass removed."""
+
+    def __init__(self, **kwargs: Any) -> None:
+        for k, v in kwargs.items():
+            setattr(self, k, v)
+
+
+class ActivationRuleCase:
+    """No-op stub."""
+
+    def __init__(self, **kwargs: Any) -> None:
+        for k, v in kwargs.items():
+            setattr(self, k, v)
+
+
+__all__ = ["ActivationRule", "ActivationRuleCase"]

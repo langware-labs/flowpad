@@ -52,7 +52,7 @@ from flow_sdk.config import (
     system_projects_root,
 )
 from flow_sdk.core.entity.entity_model import Entity
-from flow_sdk.core.schema import get_public_schema
+from flow_sdk.core.schema import build_all_type_payloads
 from flow_sdk.db.database import init_db
 from flow_sdk.external_apis.llm.llm_drivers.definitions import LLMProvider
 from flow_sdk.flowpad_types.runtime_environment import OSType, RuntimeEnvironment
@@ -552,12 +552,18 @@ async def is_cloud_login_available() -> bool:
         if not await asyncio.to_thread(is_secrets_enabled):
             return False
 
-        api_key = await asyncio.to_thread(get_api_key)
+        # Read the API key with a short cap. On macOS subprocesses inheriting
+        # an unconfigured python-keyring backend, the OS keychain prompt can
+        # block forever; bootstrap must not stall on that. A timeout here lands
+        # in the outer except with api_key still None → returns False without
+        # touching stored creds; the UI re-validates on first user action.
+        api_key = await asyncio.wait_for(asyncio.to_thread(get_api_key), timeout=2.0)
         if not api_key:
             return False
 
         # Real cloud validation — succeeds only when the token is still valid.
-        await validate_api_key_async(api_key)
+        # Cap at a few seconds for the same reason (CI / offline / blip).
+        await asyncio.wait_for(validate_api_key_async(api_key), timeout=3.0)
         return True
     except Exception:
         # Stored token failed validation (expired, revoked, network error). When
@@ -567,7 +573,7 @@ async def is_cloud_login_available() -> bool:
             try:
                 from flow_sdk.cli.app_config import set_user
                 from flow_sdk.cli.auth.hub_login import delete_api_key
-                await asyncio.to_thread(delete_api_key)
+                await asyncio.wait_for(asyncio.to_thread(delete_api_key), timeout=2.0)
                 set_user({})
             except Exception:
                 pass
@@ -1198,7 +1204,8 @@ async def _index_system_project_markdowns(projects: list[Project]) -> None:
     Idempotent: ``Entity.save()`` deduplicates by uuid5-derived id.
     """
     from pathlib import Path  # noqa: PLC0415
-    from flow_sdk.fs_records.markdown_record import MarkdownRecord  # noqa: PLC0415
+    from flow_sdk.fs_store.fs_ref import FSRef as _FSRef  # noqa: PLC0415
+    from flow_sdk.fs_store.indexer.functions.markdown import extract_markdown  # noqa: PLC0415
     from flow_sdk.core.entity import Entity  # noqa: PLC0415
 
     for proj in projects:
@@ -1212,14 +1219,17 @@ async def _index_system_project_markdowns(projects: list[Project]) -> None:
                 continue
             for md_path in base.rglob("*.md"):
                 try:
-                    rec = MarkdownRecord.from_file(md_path)
+                    records = extract_markdown(_FSRef(md_path))
+                    if not records:
+                        continue
+                    rec = records[0]
                     if proj.id and getattr(rec, "project_id", None) is None:
                         object.__setattr__(rec, "project_id", proj.id)
-                    entity = await Entity.from_record(rec, notify=False)
-                    # Mark system so include_system filters work; idempotent re-save.
-                    if entity is not None and not getattr(entity, "system", False):
-                        entity.system = True
-                        await entity.save(notify=False)
+                    # Stamp `system` on the record so from_record persists it in
+                    # the single upsert — avoids a redundant second save() per
+                    # file just to flip the flag (include_system filters rely on it).
+                    object.__setattr__(rec, "system", True)
+                    await Entity.from_record(rec, notify=False)
                 except Exception as e:
                     logging.debug(f"[bootstrap] failed to index system markdown {md_path}: {e}")
 
@@ -1397,8 +1407,13 @@ async def get_desktop_info() -> LmInfo:
     from flow_sdk.cloud_client import ApiConfig
 
     llm_providers = detect_available_llm_providers()
-    installed_agents = await asyncio.to_thread(get_installed_agents)
-    cloud_login_available = await is_cloud_login_available()
+    # The agent-dir scan (blocking, off-thread) and the cloud-login probe
+    # (network + keychain, capped) are independent — overlap them so this
+    # startup-path call costs max(), not sum(), of the two.
+    installed_agents, cloud_login_available = await asyncio.gather(
+        asyncio.to_thread(get_installed_agents),
+        is_cloud_login_available(),
+    )
 
     # Build fully resolved paths
     app_paths = build_app_paths()
@@ -1569,14 +1584,14 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
         docker_available = len(docker_cns) > 0
         _t.time("get_docker_compute_nodes")
 
-        # Get desktop info (LLM providers, installed agents, paths)
-        desktop_info = await get_desktop_info()
-        _t.time("get_desktop_info")
-
-        # Get scan info (index status; queries DB for live entity counts).
+        # desktop info (LLM providers, installed agents, cloud-login, paths) and
+        # scan info (DB index-status) are independent — fetch them concurrently.
         from flow_sdk.system_tools import get_scan_info  # noqa: PLC0415
-        scan_info = await get_scan_info()
-        _t.time("get_scan_info")
+        desktop_info, scan_info = await asyncio.gather(
+            get_desktop_info(),
+            get_scan_info(),
+        )
+        _t.time("get_desktop_info+get_scan_info")
 
         # Sniffer hook is opt-in via InstanceSettings.sniffer_enabled
         # (default off). When disabled, bootstrap reports whatever is in the
@@ -1600,11 +1615,11 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
             logging.warning(f"Failed to auto-enable sniffer hook: {e}")
 
         # Build BootstrapInfo using Pydantic model
-        schemas = get_public_schema()
-        _t.time("get_public_schema")
+        types = build_all_type_payloads()
+        _t.time("build_all_type_payloads")
         from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
         bootstrap_info = BootstrapInfo(
-            schemas=schemas,
+            types=types,
             user=entity_to_dict(user),
             domain=None,
             visitor=None,

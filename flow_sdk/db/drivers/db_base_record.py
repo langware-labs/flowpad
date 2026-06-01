@@ -1,7 +1,6 @@
 import logging
 import uuid
 from datetime import datetime
-from enum import Enum
 from typing import (
     Any,
     ClassVar,
@@ -16,6 +15,7 @@ from typing import (
     get_type_hints,
 )
 from flow_sdk._compat import Unpack
+from flow_sdk.schema.types import EntityType
 
 from pydantic import BaseModel, ConfigDict
 from pydantic.fields import FieldInfo
@@ -68,6 +68,8 @@ class DBBaseRecord(BaseModel):
                 entity_cls=cls,
                 browseable=bool(getattr(cls, "_browseable", False)),
                 creatable=bool(getattr(cls, "_creatable", False)),
+                indexed_by_default=bool(getattr(cls, "_indexed_by_default", False)),
+                api_visible=bool(getattr(cls, "_api_visible", False)),
                 icon=getattr(cls, "_icon", None),
             ))
 
@@ -278,59 +280,9 @@ def is_valid_id(uuid_to_test):
     return str(uuid_obj) == uuid_to_test
 
 
-class BuiltinEntityType(Enum):
-    USER = "user"
-    VISITOR = "visitor"
-    APP_HOST = "app_host"
-    TEAM = "team"
-    GROUP = "group"
-    ORGANIZATION = "organization"
-    WORKSPACE = "workspace"
-    ACCOUNT = "account"
-    PAGE = "page"
-    FLOW = "flow"
-    AGENT = "agent"
-    INVITATION = "invitation"
-    MENTION = "mention"
-    CONNECTION = "connection"
-    EXTENSION = "extension"
-    FUNC = "func"
-    SYNC_SERVICE = "sync_service"
-    PLUGIN = "plugin"
-    PLUGIN_MANIFEST = "plugin_manifest"
-    FLOWPAD_SERVICE = "flowpad_service"
-    STORAGE = "storage_device"
-    FLOW_FILE = "flow_file"
-    MICRO_APP = "micro_app"
-    WEB_DOMAIN = "web_domain"
-    COMPUTE_NODE = "compute_node"
-    JOB = "job"
-    SYSTEM_JOB = "system_job"
-    JOB_EXECUTION = "job_execution"
-    PROJECT = "project"
-    ARTIFACT = "artifact"
-    API_KEY = "api_key"
-    CODE_REF = "code_ref"
-    COMMENT = "comment"
-    AGENT_HOOK = "agent_hook"
-    TRIGGER = "trigger"
-    AGENTIC_PROCESS = "agentic_process"
-    PROCESS_RESULT = "process_result"
-    WORKFLOW = "workflow"
-    SKILL = "skill"
-    MARKDOWN_INDEX = "markdown_index"
-    WHITEBOARD = "whiteboard"
-    SHELL = "shell"
-    CRON_EVENT = "cron_event"
-    TASK = "task"
-    SPEC = "spec"
-    CONVERSATION = "conversation"
-    FLOW_MESSAGE = "flow_message"
-    TEAM_SPACE = "team_space"
-    NOTIFICATION = "notification"
-    BOOKMARK = "bookmark"
-    RUN = "run"
-    GIT_REPO = "git_repo"
+# Backward-compat alias — `BuiltinEntityType` is now the single canonical
+# `EntityType` enum. Same class; kept so existing imports keep working.
+BuiltinEntityType = EntityType
 
 
 class EntityChild(BaseModel, Generic[RecordType]):

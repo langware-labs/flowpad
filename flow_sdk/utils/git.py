@@ -132,7 +132,7 @@ def find_local_repo_for_url(project_url: str) -> Optional[str]:
         return None
 
     from pathlib import Path as _Path
-    from flow_sdk.fs_records._claude_projects import iter_claude_project_paths
+    from flow_sdk.fs_store.indexer.functions._claude_projects import iter_claude_project_paths
 
     claude_paths = list(iter_claude_project_paths())
 

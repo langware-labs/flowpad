@@ -92,6 +92,7 @@ class Conversation(Entity):
     # NOTE: task_id moved into ``shared_context_entities``. Use
     # ``conv.first_context_of_type('task', bucket='shared')`` to read it back.
     _api_visible: ClassVar[bool] = True
+    _icon: ClassVar[str | None] = "MessageSquare"
 
     async def share(self, recipients: Optional[List[str]] = None) -> "Conversation":
         """Push to hub + invite recipients via the standard hub pattern.
@@ -243,11 +244,11 @@ class Conversation(Entity):
     def data_path(self) -> str:
         """Canonical path to this conversation's jsonl pointer index.
 
-        Always derived from ``ConversationRecord.default_jsonl_path(self.id)``
+        Always derived from ``default_jsonl_path(self.id)``
         so on-disk layout is uniform; no per-instance storage.
         """
-        from flow_sdk.fs_records.conversation_record import ConversationRecord  # noqa: PLC0415
-        return str(ConversationRecord.default_jsonl_path(self.id))
+        from flow_sdk.fs_store.operations.conversation import default_jsonl_path  # noqa: PLC0415
+        return str(default_jsonl_path(self.id))
 
     def __setattr__(self, key, value):
         if (

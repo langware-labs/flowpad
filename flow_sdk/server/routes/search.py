@@ -33,14 +33,12 @@ async def _entity_asset_ref(ent) -> str:
     if path:
         return path
     try:
-        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
         rec = await ent.get_record()
         if rec is None:
-            record_cls = SchemaRegistry.get_record_cls(ent.type or ent.get_type())
-            if record_cls:
-                ent_name = getattr(ent, "name", None) or getattr(ent, "uname", None)
-                if ent_name:
-                    rec = record_cls.get(ent_name)
+            from flow_sdk.fs_store.fs_record import FSRecord
+            ent_name = getattr(ent, "name", None) or getattr(ent, "uname", None)
+            if ent_name:
+                rec = FSRecord.load_or_none(ent.type or ent.get_type(), ent_name)
         if rec:
             ar = getattr(rec, "_asset_ref", None)
             if ar is not None:

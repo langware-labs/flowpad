@@ -10,10 +10,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from flow_sdk.builtin.agentic_process import AgenticProcess, ProcessError, RunResult
-from flow_sdk.fs_records.agent_status import WorkerStatus
-from flow_sdk.fs_records.agentic_process_lifecycle import ProcessStatus
+from flow_sdk.builtin.worker_status import WorkerStatus
+from flow_sdk.builtin.process_lifecycle import ProcessStatus
 from flow_sdk.responses.response import ApiSuccessResponse
-from flow_sdk.fs_store.record import (
+from flow_sdk.fs_store.record_paths import (
     get_default_records_data_root,
     get_default_records_root,
     set_default_records_data_root,

@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { Users } from 'lucide-react';
+import { Users, X } from 'lucide-react';
 import { type TypeId } from '@sdk';
 import { Avatar, AvatarFallback } from '@src/components/ui/avatar';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { useMembers } from '@src/hooks/use-members';
+import { useLocalUser } from './useLocalUser';
 import {
   participantInitials,
   participantLabel,
@@ -28,11 +29,32 @@ interface MembersAvatarStackProps {
  * pattern; this component is purely presentational.
  */
 export function MembersAvatarStack({ typeId }: MembersAvatarStackProps) {
-  const { members, addMember } = useMembers(typeId);
+  const { members, addMember, removeMember } = useMembers(typeId);
+  const { localUser } = useLocalUser();
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState('');
   const [inviting, setInviting] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
+  const [removingId, setRemovingId] = useState<string | null>(null);
+
+  // The remove affordance is OWNER ONLY (the hub enforces it too — this just
+  // hides the control for everyone else). Owner = the roster row whose role is
+  // 'owner'; I'm the owner iff that row's user_id is mine.
+  const ownerId = members.find((m) => (m.role ?? '').toLowerCase() === 'owner')?.user_id ?? null;
+  const iAmOwner = !!localUser?.id && ownerId === localUser.id;
+
+  const handleRemove = async (userId: string) => {
+    setRemovingId(userId);
+    try {
+      await removeMember(userId);
+    } catch {
+      // Hub rejects non-owner/owner-self with 403; the control is already
+      // owner-gated, so a failure here is a transient/again-case — leave the
+      // row as-is rather than surfacing a modal in this compact popover.
+    } finally {
+      setRemovingId(null);
+    }
+  };
 
   const handleInvite = async () => {
     const candidate = email.trim();
@@ -122,6 +144,22 @@ export function MembersAvatarStack({ typeId }: MembersAvatarStackProps) {
                     {role}
                   </span>
                 )}
+                {/* Remove — owner only, never on the owner's own row. */}
+                {iAmOwner
+                  && (p.role ?? '').toLowerCase() !== 'owner'
+                  && p.user_id
+                  && (
+                    <button
+                      type="button"
+                      aria-label={`Remove ${participantLabel(p)}`}
+                      data-testid="member-remove"
+                      disabled={removingId === p.user_id}
+                      onClick={() => void handleRemove(p.user_id as string)}
+                      className="flex h-4 w-4 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-40"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  )}
               </li>
             );
           })}
