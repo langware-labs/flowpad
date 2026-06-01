@@ -53,7 +53,19 @@ const SecretApprovalDialog = () => {
     if (busy) return;
     setBusy(true);
     try {
-      const result = await secretsService.enable();
+      // Under signed Electron: Electron mints + stores the Fernet key in
+      // the OS keychain (so the ACL lists the Flowpad binary, not Python)
+      // and we seed Python with the value. This keeps later launches free
+      // of the unbranded macOS keychain prompt. Plain web/CLI falls back
+      // to Python's keyring write via /secrets/enable.
+      const provisionSodKey = (window as unknown as {
+        electronAPI?: { provisionSodKey?: () => Promise<string> };
+      }).electronAPI?.provisionSodKey;
+
+      const result = provisionSodKey
+        ? await secretsService.seedKey(await provisionSodKey())
+        : await secretsService.enable();
+
       if (result?.enabled) {
         // Update the cache so any subscriber (e.g. warnings popover) sees the
         // new state immediately, without waiting for a re-fetch round-trip.

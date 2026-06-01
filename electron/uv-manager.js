@@ -43,10 +43,20 @@ const PYPI_PACKAGE = 'flowpad';
 
 const API_PREFIX = '/api/v1';
 
-// Keychain entry for the per-instance Fernet key that encrypts the sodot
-// file. Owning the read in the signed Electron app means the OS prompt is
-// attributed to Flowpad rather than the bundled, unsigned Python process.
-// Must match flow_sdk/instance_settings/base_settings.py:SOD_KEY_KEYCHAIN_SERVICE.
+// Keychain SERVICE for the per-instance Fernet key that encrypts the sodot
+// file. Owning the read in the signed Electron app (now via the bundled
+// flow-rs binary, formerly via keytar) means the OS prompt is attributed
+// to Flowpad rather than the bundled, unsigned Python process.
+//
+// The SERVICE matches flow_sdk/instance_settings/base_settings.py:
+// SOD_KEY_KEYCHAIN_SERVICE so both code paths address the same logical
+// namespace. The ACCOUNT now diverges intentionally: Electron uses
+// `<instance>.flow-rs` (see flow-rs-keychain.js::sodKeyAccount) for
+// prompt-free migration from any pre-FLOWPAD-1862 keytar entry at the
+// bare-`<instance>` account. Python's fallback in _fetch_or_create_sod_key
+// still reads from the bare-`<instance>` slot; in Electron-driven flow
+// Python never reaches the fallback because it gets the value via
+// SOD_KEY env, so the slot divergence has no functional effect.
 const SOD_KEY_KEYCHAIN_SERVICE = 'Flowpad.ai.sod_key';
 
 // Working directory for the `flow start` backend. The FS indexer treats its
@@ -919,35 +929,28 @@ class UvManager {
   }
 
   /**
-   * Lazily load the keytar module. Returns null if it's not installed or
-   * fails to load (e.g. native binding mismatch). All keychain operations
-   * are best-effort — failures are logged and treated as "no key", letting
-   * the React SecretApprovalDialog handle first-time approval.
-   */
-  _keytar() {
-    if (this._keytarCached !== undefined) return this._keytarCached;
-    try {
-      this._keytarCached = require('keytar');
-    } catch (err) {
-      this.log.warn(`[uv] keytar not available: ${err.message}`);
-      this._keytarCached = null;
-    }
-    return this._keytarCached;
-  }
-
-  /**
-   * Read the per-instance Fernet key from the OS keychain. Account name
-   * mirrors flow_sdk's instance-name resolution (FLOW_INSTANCE, default
-   * "prod"). Returns null on miss, keytar-unavailable, or any error —
-   * caller treats that as "no key", and the React SecretApprovalDialog
-   * handles first-time approval.
+   * Read the per-instance Fernet key from the OS keychain via the bundled
+   * `flow-rs` binary (replaces the previous keytar path — see
+   * flow_sdk/rust/README.md). Account name mirrors flow_sdk's instance-name
+   * resolution (FLOW_INSTANCE, default "prod"). Returns null on miss,
+   * flow-rs unavailable, or any error — caller treats that as "no key",
+   * and the React SecretApprovalDialog handles first-time approval.
+   *
+   * Uses getKeyRestricted (modern Keychain API) to match the write path
+   * in main.js. ACL is bound to the flow-rs binary's code-signing identity,
+   * preserving the previous keytar restrictive posture.
    */
   async _loadSodKey() {
-    const keytar = this._keytar();
-    if (!keytar) return null;
-    const account = process.env.FLOW_INSTANCE || 'prod';
+    let flowRs;
     try {
-      const key = await keytar.getPassword(SOD_KEY_KEYCHAIN_SERVICE, account);
+      flowRs = require('./flow-rs-keychain');
+    } catch (err) {
+      this.log.warn(`[uv] flow-rs-keychain not available: ${err.message}`);
+      return null;
+    }
+    const account = flowRs.sodKeyAccount();
+    try {
+      const key = await flowRs.getKeyRestricted(SOD_KEY_KEYCHAIN_SERVICE, account);
       if (key) {
         this.log.info(`[uv] Loaded Flowpad sod_key from keychain (${account})`);
         return key;
@@ -961,3 +964,4 @@ class UvManager {
 }
 
 module.exports = UvManager;
+module.exports.SOD_KEY_KEYCHAIN_SERVICE = SOD_KEY_KEYCHAIN_SERVICE;

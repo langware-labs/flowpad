@@ -10,6 +10,8 @@ resources/flowpad-venv/
 # TypeScript output
 scripts/*.js
 scripts/*.js.map
+# ...but explicitly track hand-written build helpers checked in as .js
+!scripts/build-flow-rs.js
 
 # Logs
 *.log

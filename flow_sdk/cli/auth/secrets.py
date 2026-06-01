@@ -29,7 +29,11 @@ from flow_sdk.instance_settings import (
     SecretsNotEnabledError,
     get_instance_settings,
 )
-from flow_sdk.instance_settings.base_settings import ENV_SOD_KEY, _fetch_or_create_sod_key
+from flow_sdk.instance_settings.base_settings import (
+    ENV_SOD_KEY,
+    _SOD_KEY_CACHE,
+    _fetch_or_create_sod_key,
+)
 
 
 def is_secrets_enabled() -> bool:
@@ -44,6 +48,27 @@ def is_secrets_enabled() -> bool:
     if os.environ.get(ENV_SOD_KEY):
         return True
     return get_instance_settings().consent_marker_path.exists()
+
+
+def seed_sod_key(key: str) -> bool:
+    """Install ``key`` as the per-instance Fernet key without touching the OS
+    keychain. Used by the signed Electron launcher: Electron mints the key,
+    writes it to the keychain itself (so the ACL lists the Flowpad binary),
+    then hands the value over via this seed path so Python skips its own
+    keyring write entirely.
+
+    Caches the key in ``_SOD_KEY_CACHE`` for the active instance and touches
+    the consent marker. Idempotent.
+
+    Returns False if the key is empty; True otherwise.
+    """
+    if not key:
+        return False
+    s = get_instance_settings()
+    _SOD_KEY_CACHE[s.instance_name] = key.encode()
+    s.instance_dir.mkdir(parents=True, exist_ok=True)
+    s.consent_marker_path.touch(mode=0o600)
+    return True
 
 
 def enable_secrets() -> bool:
