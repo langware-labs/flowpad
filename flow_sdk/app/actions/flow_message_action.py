@@ -433,8 +433,18 @@ async def handle_download_body(fm_id: str) -> ApiResponse:
     fm = await _load_fm_local_or_hub(fm_id)
     if not fm:
         return ApiFailResponse(message=f"FlowMessage not found: {fm_id}", status_code=404)
+    # FS-rooted assets (skill/agent) unpack into ``<project>/.claude/…`` — without
+    # an ``asset_dest_root`` they land in a throwaway temp dir and are never
+    # materialized for the receiver. Resolve the conversation/task's project
+    # workdir so a chip-triggered download actually installs the shared assets.
+    # (The UI's project gate guarantees the conversation is mapped first.)
+    workdir, _project_id = await _resolve_workdir_and_project_async(fm)
+    asset_dest_root = Path(workdir) if workdir else None
     try:
-        await fm.download_body(on_progress=make_flow_message_progress_emitter(fm_id, "download"))
+        await fm.download_body(
+            asset_dest_root=asset_dest_root,
+            on_progress=make_flow_message_progress_emitter(fm_id, "download"),
+        )
     except BodyNotReadyError as e:
         return ApiFailResponse(message=str(e), status_code=409)
     except Exception as e:

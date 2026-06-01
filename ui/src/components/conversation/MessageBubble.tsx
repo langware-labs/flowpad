@@ -261,7 +261,11 @@ export function MessageBubble({
             </span>
           )}
           {showReceipt && <DeliveryReceipt status={flowMessage?.delivery_status} />}
-          <MessageChips flowMessageId={flowMessageId} />
+          <MessageChips
+            flowMessageId={flowMessageId}
+            conversationId={flowMessage?.conversation_id ?? undefined}
+            messageText={message.content}
+          />
         </div>
         {message.content && message.content !== PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT && (() => {
           const claudeQuote = parseClaudeQuote(message.content);
