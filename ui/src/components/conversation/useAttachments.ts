@@ -1,13 +1,12 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { FlowMessage, type HubClientErrorInfo } from '@sdk';
 import {
-  AttachmentType,
   BodyStatus,
   attachmentDataString,
   type Attachment,
 } from '@sdk/entities/flow-message';
 import { AttachmentChipState } from './AttachmentChip';
-import { localAttachmentUrl } from './attachment-url';
+import { isDownloadableFileAttachment, localAttachmentUrl } from './attachment-url';
 import { useFlowMessageProgress, type FlowMessageProgress } from './useFlowMessageProgress';
 import { useFlowMessageDownloadError } from './useFlowMessageDownloadError';
 
@@ -58,11 +57,7 @@ function buildItems(fm: FlowMessage | null | undefined, messageId: string): Atta
   if (!fm) return [];
   const bodyStatus = fm.body_status ?? BodyStatus.NA;
   return (fm.attachment ?? [])
-    .filter((a) => {
-      if (a.attachment_type !== AttachmentType.FILE) return false;
-      const d = attachmentDataString(a);
-      return !!d && !d.endsWith('conversation.jsonl');
-    })
+    .filter(isDownloadableFileAttachment)
     .map((a) => {
       const d = attachmentDataString(a);
       const state = stateFor(a, bodyStatus);
@@ -91,12 +86,9 @@ export function useAttachments(
   const progress = useFlowMessageProgress(messageId);
   const { error, dismiss } = useFlowMessageDownloadError(messageId);
 
-  const items = useMemo(
-    () => buildItems(fm, messageId),
-    // Re-derive when the attachment list, body_status, or local_path materialise.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [fm, messageId, fm?.body_status, JSON.stringify(fm?.attachment ?? [])],
-  );
+  // Cheap to derive (a filter+map over a handful of attachments) and always
+  // reflects the current fm — no memo/dep-array bookkeeping to keep in sync.
+  const items = buildItems(fm, messageId);
 
   const download = useCallback(async () => {
     if (!fm || downloading) return;

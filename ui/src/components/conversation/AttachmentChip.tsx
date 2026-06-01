@@ -162,20 +162,13 @@ export function AttachmentChip({
     const isUnavailable = state === AttachmentChipState.Unavailable;
     const inert = isUploading || isUnavailable;
     const clickable = state === AttachmentChipState.Ready && !downloading && !!onDownload;
-    const sub = isUploading
-      ? 'Uploading…'
+    const { sub, title } = isUploading
+      ? { sub: 'Uploading…', title: 'File not uploaded yet' }
       : isUnavailable
-        ? 'Unavailable'
+        ? { sub: 'Unavailable', title: 'Attachment unavailable — no body was uploaded' }
         : downloading
-          ? 'Downloading…'
-          : `${label} · Download`;
-    const title = isUploading
-      ? 'File not uploaded yet'
-      : isUnavailable
-        ? 'Attachment unavailable — no body was uploaded'
-        : downloading
-          ? 'Downloading…'
-          : 'Click to download';
+          ? { sub: 'Downloading…', title: 'Downloading…' }
+          : { sub: `${label} · Download`, title: 'Click to download' };
     return (
       <div className="max-w-[360px]">
         <button
