@@ -260,6 +260,21 @@ class HubWsBridge:
             return
 
         try:
+            if op in ("child_created", "child_updated", "child_deleted"):
+                # child_* ops invert the envelope: ``to_entity`` is the PARENT
+                # (etype/eid here), ``from_entity`` is the changed child, and
+                # ``data`` is the child JSON. Materialize the child locally as
+                # an is_child of the parent. The local save(notify=True) then
+                # drives the FE via the normal create/update/delete op path.
+                await self._handle_child_op(
+                    op,
+                    parent_type=etype,
+                    parent_id=eid,
+                    child_type=from_etype,
+                    child_id=from_eid,
+                    data=data,
+                )
+                return
             if etype == "flow_message":
                 parent_conv_id = from_eid if from_etype == "conversation" else None
                 await self._handle_flow_message_op(op, eid, data, parent_conv_id)
@@ -291,6 +306,60 @@ class HubWsBridge:
             parent_id=resolved_parent_id,
             data=data if isinstance(data, dict) else {},
         )
+
+    async def _handle_child_op(
+        self,
+        op: str,
+        parent_type: Optional[str],
+        parent_id: Optional[str],
+        child_type: Optional[str],
+        child_id: Optional[str],
+        data: dict,
+    ) -> None:
+        """Materialize a peer's is_child change locally.
+
+        Generic for any child type: upsert (create/update) or delete the child
+        with ``parent_type_id`` pointing at the parent and ``remote=True``. The
+        ``save(notify=True)`` / ``delete`` then emits the normal local
+        create/update/delete data_op that the FE already reacts to (e.g. the
+        comment gutter re-queries on a comment op).
+        """
+        from flow_sdk.builtin.user import User  # noqa: PLC0415
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+        # child identity comes from from_entity; fall back to the payload.
+        if not child_type:
+            child_type = data.get("type") if isinstance(data, dict) else None
+        if not child_id:
+            child_id = data.get("id") if isinstance(data, dict) else None
+        if not child_type or not child_id:
+            logger.debug("hub_bridge: child op %s missing child identity", op)
+            return
+        cls = SchemaRegistry.get_entity_cls(child_type)
+        if cls is None:
+            logger.debug("hub_bridge: child op for unknown type %s", child_type)
+            return
+
+        if op == "child_deleted":
+            try:
+                await cls.delete_by_id(child_id)
+            except Exception:
+                logger.exception("hub_bridge: child_deleted local delete failed %s-%s", child_type, child_id)
+            return
+
+        # create / update → upsert via the shared helper. The child's own
+        # ``parent_type_id`` (e.g. the markdown doc) wins over the op envelope's
+        # hub container (e.g. the conversation, used only for fanout).
+        if isinstance(data, dict) and not data.get("id"):
+            data = {**data, "id": child_id}
+        envelope_ref = f"{parent_type}-{parent_id}" if parent_type and parent_id else None
+        local_user = await User.get_local()
+        someone_typeid = local_user.typeid if local_user else None
+        try:
+            await cls.upsert_from_hub_child(data, envelope_ref, someone_typeid)
+            logger.info("[bridge] %s materialized %s-%s", op, child_type, child_id)
+        except Exception:
+            logger.exception("hub_bridge: child upsert save failed %s-%s", child_type, child_id)
 
     async def _handle_flow_message_op(
         self,

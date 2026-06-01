@@ -5,12 +5,12 @@ import { useCallback, useMemo } from 'react';
 /**
  * List + create + delete `Comment` entities scoped to a markdown doc.
  *
- * Parent linkage is encoded on the comment itself as `data.parent_id` and
- * filtered client-side. We DO also pass the scope to `comment.save()` so the
- * backend's add_child relationship lands, but the entity-graph scope query is
- * permissive (returns matching-type entities regardless of parent), so without
- * the data.parent_id filter, every doc would see every other doc's comments.
- * Mirrors the use-annotations pattern.
+ * Parent linkage is the canonical `parent_type_id` ("<type>-<id>") on the
+ * comment itself, filtered client-side. We DO also pass the scope to
+ * `comment.save()` so the backend's add_child relationship lands, but the
+ * entity-graph scope query is permissive (returns matching-type entities
+ * regardless of parent), so without the parent_type_id filter, every doc would
+ * see every other doc's comments. Mirrors the use-annotations pattern.
  */
 export interface DocComment {
   id: string;
@@ -54,12 +54,12 @@ export function useDocComments(docTypeId: string | null | undefined) {
 
   // Filter to comments anchored to a line AND tagged for this parent. The
   // server-side scope query returns every comment regardless of parent, so the
-  // parent_id check is what keeps doc A's comments out of doc B's gutter.
+  // parent_type_id check is what keeps doc A's comments out of doc B's gutter.
   const comments = useMemo<DocComment[]>(
     () =>
       rawComments
         .map((c): DocComment | null => {
-          if (!parentKey || c.data?.parent_id !== parentKey) return null;
+          if (!parentKey || c.parent_type_id !== parentKey) return null;
           const line = Number(c.data?.line);
           if (!Number.isFinite(line) || line < 1) return null;
           return {
@@ -79,7 +79,8 @@ export function useDocComments(docTypeId: string | null | undefined) {
       if (!parentTypeId || !parentKey || !text.trim()) return;
       const comment = new Comment({
         raw_content: text.trim(),
-        data: { line, parent_id: parentKey },
+        parent_type_id: parentKey,
+        data: { line },
       });
       await comment.save(parentTypeId);
       await refetch();
