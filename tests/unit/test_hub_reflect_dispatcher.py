@@ -190,6 +190,52 @@ async def test_reflect_to_hub_uses_post_for_mutating_actions(monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_reflect_to_hub_forwards_delete_body_and_refreshes_roster(monkeypatch):
+    """DELETE members: the member-selector body must be forwarded to
+    ``hub_delete`` verbatim (this is the link that was silently dropping the
+    selector → empty ``{}`` → hub 500), and the post-remove roster re-fetched
+    via ``hub_get`` and mirrored onto the local row."""
+    import flow_sdk.server.routes._hub_reflect as mod
+
+    captured = {}
+
+    async def fake_hub_delete(entity_type, entity_id=None, action=None, *, payload=None, **kwargs):
+        captured["payload"] = payload
+        captured["action"] = action
+        captured["et"] = entity_type
+        captured["id"] = entity_id
+        return {"message": "removed"}
+
+    async def fake_hub_get(entity_type, entity_id=None, action=None, **kwargs):
+        # Canonical roster after the removal — bob is gone.
+        return [{"user_id": "u-alice", "role": "owner", "status": "approved"}]
+
+    async def fake_save(self_=None, **kwargs):
+        captured["saved"] = True
+        return None
+
+    monkeypatch.setattr(mod, "hub_delete", fake_hub_delete)
+    monkeypatch.setattr(mod, "hub_get", fake_hub_get)
+    monkeypatch.setattr(Conversation, "save", fake_save)
+
+    a = _make_action(reflect="hub", methods=("delete",))
+    e = _make_entity(remote=True, participants=[{"user_id": "u-bob"}])
+
+    result = await mod.reflect_to_hub(a, e, {"user_id": "u-bob"})
+
+    # Body forwarded verbatim — the new identifier shape, no member_through envelope.
+    assert captured["payload"] == {"user_id": "u-bob"}
+    assert captured["action"] == "members"
+    assert captured["et"].value == "conversation"
+    assert captured["id"] == e.id
+    # Roster re-fetched after the remove and mirrored onto the local row.
+    assert result == [{"user_id": "u-alice", "role": "owner", "status": "approved"}]
+    assert e.participants == [{"user_id": "u-alice", "role": "owner", "status": "approved"}]
+    assert captured.get("saved") is True
+
+
+@pytest.mark.asyncio
 @pytest.mark.timeout(30)
 async def test_reflect_to_hub_skips_unknown_entity_type(monkeypatch):
     """Entities whose ``type`` isn't a builtin enum value have no hub
