@@ -77,7 +77,7 @@ export function ConversationView({
   // `rosterReady` is true once the hub has answered for this conv at least
   // once (success or failure) — FlowMessageBubble uses it to gate the alert
   // glyph so legitimate load windows don't flash UNRESOLVED.
-  const { members: memberRoster, ready: rosterReady } = useMembers(conversationTypeId);
+  const { members: memberRoster, ready: rosterReady, refresh: refreshMembers } = useMembers(conversationTypeId);
   const participants = useMemo(
     () =>
       conversation?.participants && conversation.participants.length > 0
@@ -278,19 +278,25 @@ export function ConversationView({
   const conversationStatusVisible = conversation?.message_status_visible !== false;
 
   const [hubSyncing, setHubSyncing] = useState(false);
+  // Full reload: messages AND members. The button is the user's explicit
+  // "pull everything fresh from the hub" — so it force-reloads the roster
+  // (refreshMembers re-fetches, bypassing the per-instance members cache),
+  // re-syncs this conversation's messages, and re-reads the conversation
+  // entity. Each leg is independent + best-effort so one offline hop doesn't
+  // block the others.
   const handleRefresh = useCallback(async () => {
     setHubSyncing(true);
     try {
-      try {
-        await fetchConversations();
-      } catch {
-        // Hub may be offline / not configured — local refetch still runs.
-      }
+      await Promise.allSettled([
+        fetchConversations(),
+        syncConversationMessages(conversationId),
+        refreshMembers(),
+      ]);
       await refetch();
     } finally {
       setHubSyncing(false);
     }
-  }, [refetch]);
+  }, [refetch, refreshMembers, conversationId]);
 
   return (
     <div className="space-y-3">
