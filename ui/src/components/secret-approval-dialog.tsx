@@ -53,7 +53,20 @@ const SecretApprovalDialog = () => {
     if (busy) return;
     setBusy(true);
     try {
-      const result = await secretsService.enable();
+      // Under signed Electron: Electron mints + stores the Fernet key in
+      // the OS keychain via the bundled flow-rs binary (signed Mach-O at
+      // Contents/Resources/flow-rs/flow-rs), so the ACL trust list lists
+      // flow-rs rather than the unsigned uv-bundled python3.x. The minted
+      // value is then seeded into Python via /secrets/seed-key so Python
+      // never makes a keyring write of its own. Plain web/CLI falls back
+      // to Python's keyring write via /secrets/enable.
+      const provisionSodKey = (window as unknown as {
+        electronAPI?: { provisionSodKey?: () => Promise<string> };
+      }).electronAPI?.provisionSodKey;
+
+      const result = provisionSodKey
+        ? await secretsService.seedKey(await provisionSodKey())
+        : await secretsService.enable();
 
       if (result?.enabled) {
         // Update the cache so any subscriber (e.g. warnings popover) sees the

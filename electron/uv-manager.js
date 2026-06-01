@@ -43,21 +43,6 @@ const PYPI_PACKAGE = 'flowpad';
 
 const API_PREFIX = '/api/v1';
 
-// Keychain SERVICE for the per-instance Fernet key that encrypts the sodot
-// file. Owning the read in the signed Electron app (now via the bundled
-// flow-rs binary, formerly via keytar) means the OS prompt is attributed
-// to Flowpad rather than the bundled, unsigned Python process.
-//
-// The SERVICE matches flow_sdk/instance_settings/base_settings.py:
-// SOD_KEY_KEYCHAIN_SERVICE so both code paths address the same logical
-// namespace. The ACCOUNT now diverges intentionally: Electron uses
-// `<instance>.flow-rs` (see flow-rs-keychain.js::sodKeyAccount) for
-// prompt-free migration from any pre-FLOWPAD-1862 keytar entry at the
-// bare-`<instance>` account. Python's fallback in _fetch_or_create_sod_key
-// still reads from the bare-`<instance>` slot; in Electron-driven flow
-// Python never reaches the fallback because it gets the value via
-// SOD_KEY env, so the slot divergence has no functional effect.
-const SOD_KEY_KEYCHAIN_SERVICE = 'Flowpad.ai.sod_key';
 
 // Working directory for the `flow start` backend. The FS indexer treats its
 // CWD as a project root and walks the entire subtree (see
@@ -578,11 +563,15 @@ class UvManager {
       // Ensure port 9007 is free before starting
       await this.ensurePortFree(9007);
 
-      // Read the per-instance Fernet key from the OS keychain via the signed
-      // Electron app — the prompt is attributed to Flowpad. If present, pass
-      // it through as SOD_KEY so Python short-circuits its own keychain
-      // access. If missing, the React SecretApprovalDialog will fire on first
-      // secret use; Python writes the entry then and the next launch finds it.
+      // Read the per-instance Fernet sod-key from the OS keychain via the
+      // bundled, signed flow-rs binary. If present (i.e. a previous launch
+      // or the SecretApprovalDialog has already provisioned it), pass it
+      // through as SOD_ENC_KEY so Python's `sod_key` property short-circuits
+      // and never touches the keychain itself — keeping the entry's ACL
+      // trust list flow-rs-only (no python3.x ownership). If absent, the
+      // React SecretApprovalDialog fires on first secret use, mints via
+      // flow-rs (provision-sod-key IPC), and seeds the running backend via
+      // /secrets/seed-key.
       const sodKey = await this._loadSodKey();
 
       const env = {
@@ -598,7 +587,7 @@ class UvManager {
       if (sodKey) {
         // Matches flow_sdk/instance_settings/base_settings.py:ENV_SOD_ENC_KEY.
         // Python's `sod_key` property reads this and short-circuits any
-        // keychain access — no Python-keyring prompt on subsequent launches.
+        // keychain access — no Python-keyring touch on subsequent launches.
         env.SOD_ENC_KEY = sodKey;
       }
 
@@ -932,16 +921,13 @@ class UvManager {
   }
 
   /**
-   * Read the per-instance Fernet key from the OS keychain via the bundled
-   * `flow-rs` binary (replaces the previous keytar path — see
-   * flow_sdk/rust/README.md). Account name mirrors flow_sdk's instance-name
-   * resolution (FLOW_INSTANCE, default "prod"). Returns null on miss,
-   * flow-rs unavailable, or any error — caller treats that as "no key",
-   * and the React SecretApprovalDialog handles first-time approval.
-   *
-   * Uses getKeyRestricted (modern Keychain API) to match the write path
-   * in main.js. ACL is bound to the flow-rs binary's code-signing identity,
-   * preserving the previous keytar restrictive posture.
+   * Read the per-instance Fernet sod-key from the OS keychain via the
+   * bundled `flow-rs` binary. Reads from the same flow-rs binary that
+   * wrote the entry (see main.js::secrets:provision-sod-key) succeed
+   * without an ACL prompt; flow-rs is a no-op for fresh installs where
+   * the entry doesn't exist yet. Returns null on miss, flow-rs binary
+   * unavailable, or any error — caller treats that as "no key", and the
+   * React SecretApprovalDialog handles first-time approval.
    */
   async _loadSodKey() {
     let flowRs;
@@ -965,6 +951,16 @@ class UvManager {
     return null;
   }
 }
+
+// Keychain SERVICE for the per-instance Fernet sod-key. Matches
+// flow_sdk/instance_settings/base_settings.py:SOD_KEY_KEYCHAIN_SERVICE so
+// both code paths address the same logical namespace. The ACCOUNT diverges
+// intentionally between Electron (`<instance>.flow-rs`, see
+// flow-rs-keychain.js::sodKeyAccount) and Python's fallback path (bare
+// `<instance>`); under Electron-driven flow Python never reaches its
+// fallback (it gets the value via SOD_ENC_KEY env or the /secrets/seed-key
+// endpoint), so the slot divergence has no functional effect.
+const SOD_KEY_KEYCHAIN_SERVICE = 'Flowpad.ai.sod_key';
 
 module.exports = UvManager;
 module.exports.SOD_KEY_KEYCHAIN_SERVICE = SOD_KEY_KEYCHAIN_SERVICE;

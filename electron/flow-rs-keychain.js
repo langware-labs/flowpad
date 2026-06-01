@@ -5,14 +5,16 @@
 //
 //   Electron main process
 //      └─ execFile(flow-rs set_key_restricted | get_key_restricted)
-//             └─ flow-rs binary
+//             └─ flow-rs binary (signed Mach-O, Langware Developer ID)
 //                   └─ modern Keychain Services API
 //                         └─ OS credential store
 //
-// Only the restrictive-ACL surface is wrapped here — that is what the sod-key
-// flow uses and what keytar's security posture required. The flow-rs CLI also
-// supports a permissive `-A` legacy path (`set_key` / `get_key`), but no
-// Electron code path needs it, so we don't expose it on this wrapper.
+// The whole point of routing through flow-rs is that flow-rs is a signed
+// binary — when it calls SecItemAdd to create the sod-key entry, that
+// entry's ACL trust list shows `flow-rs` (Langware-signed), not the
+// unsigned uv-bundled `python3.x`. Reads from the same flow-rs binary
+// are silent (ACL match); reads from any OTHER binary trigger the
+// "X wants to use the keychain" prompt.
 //
 // Binary location:
 //   * Packaged app: process.resourcesPath/flow-rs/flow-rs[.exe]
@@ -45,17 +47,11 @@ let _cachedBinPath = null;
  *
  * Packaged: <Resources>/flow-rs/flow-rs   (electron-builder extraResources)
  * Dev:      <repo>/flow_sdk/rust/target/release/flow-rs
- *
- * Throws if neither location has the binary so the caller can fail fast with
- * a clear message instead of getting an opaque ENOENT later.
  */
 function flowRsBinaryPath() {
   if (_cachedBinPath) return _cachedBinPath;
 
   const candidates = [];
-  // process.resourcesPath is defined when running inside a packaged Electron
-  // app. In `npm run dev:electron` it points at the electron framework's
-  // own resources/ dir, so we still try the repo dev path as a fallback.
   if (process.resourcesPath) {
     candidates.push(path.join(process.resourcesPath, 'flow-rs', BIN_NAME));
   }
@@ -82,16 +78,15 @@ function flowRsBinaryPath() {
 }
 
 /**
- * Run flow-rs with the given args, returning { stdout, code }. Non-zero exit
- * codes do NOT throw here — the caller distinguishes "absent" (exit 1) from
- * "error" (other non-zero).
+ * Run flow-rs with the given args, returning { stdout, stderr, code }.
+ * Non-zero exit codes do NOT throw here — the caller distinguishes
+ * "absent" (exit 1) from "error" (other non-zero).
  */
 function runFlowRs(args) {
   const bin = flowRsBinaryPath();
   return new Promise((resolve, reject) => {
     execFile(bin, args, { encoding: 'utf-8' }, (err, stdout, stderr) => {
       if (err) {
-        // err.code is the exit code; err.signal is the signal if killed.
         if (typeof err.code === 'number') {
           resolve({ stdout, stderr, code: err.code });
           return;
@@ -120,13 +115,27 @@ async function setKeyRestricted(service, account, value) {
 
 /**
  * Build the keychain account name Electron uses for the per-instance
- * sod-key. Matches the account convention in
- * flow_sdk/instance_settings/base_settings.py:_fetch_or_create_sod_key
- * (account = instance name, no suffix) so Electron's flow-rs path and
- * Python's keyring path address the exact same `(service, account)` slot.
+ * sod-key. We deliberately suffix the FLOW_INSTANCE name with `.flow-rs`
+ * so the flow-rs-owned entry occupies a different `(service, account)`
+ * slot than any pre-existing entry at the bare-`<instance>` account
+ * (which could be a stale keytar entry from older Flowpad versions, or
+ * a python3.x-owned entry from a CLI-only path).
+ *
+ * Why the suffix is required for a prompt-free flow:
+ *   * The flow-rs binary signs its sod-key entry with its own code-signing
+ *     identity. If a pre-existing entry sits at the same (service, account),
+ *     SecItemAdd returns errSecDuplicateItem, the keyring crate falls
+ *     through to SecItemUpdate, and SecItemUpdate would pop a
+ *     "flow-rs wants to use the keychain" prompt (ACL mismatch with the
+ *     prior owner).
+ *   * By writing to a fresh account slot, SecItemAdd succeeds outright
+ *     and there is no ACL conflict to resolve.
+ *
+ * Trade-off: if a stale entry exists at the bare-`<instance>` slot, it
+ * stays orphaned (harmless — never read by Electron-driven launches).
  */
 function sodKeyAccount() {
-  return process.env.FLOW_INSTANCE || 'prod';
+  return `${process.env.FLOW_INSTANCE || 'prod'}.flow-rs`;
 }
 
 module.exports = {
