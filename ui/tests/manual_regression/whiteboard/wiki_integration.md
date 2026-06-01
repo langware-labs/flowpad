@@ -1,55 +1,22 @@
 ---
-id: 9d2a4c0e-1f8b-4e5a-9c11-440044004400
-type: workflow
-name: whiteboard_wiki_integration
-description: Whiteboard wiki integration W1-W5 — search, wikilink dispatch, missing-link picker, backlinks, rename safety
-tags: [whiteboard, wiki]
+id: e7b2c4a9-1f86-4d23-bc05-9a3e1f7c0d28
 ---
 
-# Whiteboard — Wiki Integration (W1–W5)
+# Whiteboard participates in the wiki graph
+# Corrected 2026-05-31: the wiki edge table is `links` (cols: src_type, src_id,
+# src_name, target_name, target_type, target_id, resolved) in
+# ~/.flow/instances/oss/flowpad.db. A whiteboard's wiki body is its WHITE_BOARD.md
+# (see indexer extract_whiteboard -> rec.body = WHITE_BOARD.md). Wiki edges are
+# (re)extracted during fs-records index, not on autosave, so an explicit index is
+# required before asserting.
 
-## Steps
+test 1: a whiteboard whose WHITE_BOARD.md has a [[wiki-link]] creates a links-table edge
+- [bash] run: create target — curl -s -X POST {API_URL}/api/v1/graph/markdown -H 'Content-Type: application/json' -d '{"name":"wiki-target-q2","body":"# target\n"}'
+- [bash] run: create source whiteboard — curl -s -X POST {API_URL}/api/v1/graph/whiteboard -H 'Content-Type: application/json' -d '{"name":"wiki-src-q2"}' ; capture asset_ref
+- [bash] run: append a prose wiki link to the board's markdown — printf '\nSee [[wiki-target-q2]] for details.\n' >> "<asset_ref>/WHITE_BOARD.md"
+- [bash] run: validate the link is in the file — grep -c 'wiki-target-q2' "<asset_ref>/WHITE_BOARD.md" (>=1)
+- [bash] run: index whiteboards — curl -s -X POST "{API_URL}/api/v1/graph/compute_node/@local/fs-records/index?type=whiteboard" ; wait ~3s
+- [bash] run: query the wiki graph — sqlite3 ~/.flow/instances/oss/flowpad.db "SELECT count(*) FROM links WHERE src_type='whiteboard' AND target_name='wiki-target-q2';"
+- validate the count is >= 1 (an edge from the whiteboard to the target name)
 
-### W1: Wiki resolve endpoint hits the whiteboard
-* Create a whiteboard named `wiki-target-<random>` via POST.
-* GET `${API_URL}/api/v1/wiki/resolve?name=wiki-target-<random>`.
-* Expect HTTP 200 with body `{ type: "whiteboard", id: <uuid>, asset_ref: ".../<name>" }`. Body MUST NOT be `null`.
-
-### W2: Wikilink from markdown dispatches to whiteboard editor
-* Create a markdown doc named `wiki-source-<random>` via POST `${API_URL}/api/v1/graph/markdown` with body `{"name":"...","description":"..."}`.
-* Write into its body the text `[[wiki-target-<random>]]` (use the FS API or write directly to its `asset_ref`).
-* Navigate to the markdown doc's editor.
-* Find the rendered wikilink (text content `[[wiki-target-...]]` or an `<a>` whose href matches `/dock/assets/wiki/wiki-target-...`).
-* Click it.
-* Wait up to 5s; URL must end up at `/dock/assets/editor/whiteboard/<asset_ref>` (NOT the WikiResolveView fallback).
-* Validate `[data-testid="whiteboard-editor"]` mounted.
-
-### W3: Missing wikilink → type picker offers Whiteboard
-* Navigate to `${APP_URL}/dock/assets/wiki/non-existent-name-<random>`.
-* Wait for the WikiResolveView "not found" card. Validate `[data-testid="wiki-not-found"]` present.
-* Validate `[data-testid="wiki-create-as"]` radio group present with two options (`#wiki-create-markdown` selected by default, `#wiki-create-whiteboard` selectable).
-* Click `#wiki-create-whiteboard`, then click "Create it".
-* Wait up to 8s for a whiteboard editor to mount at `non-existent-name-<random>`.
-* Validate `${API_URL}/api/v1/wiki/resolve?name=non-existent-name-<random>` now returns `type: "whiteboard"`.
-
-### W4: Backlinks panel includes the source markdown
-* Open the whiteboard from W2 (the one named `wiki-target-...`).
-* Find and open the Backlinks side tab (look for `[data-testid*="backlink"]` or similar).
-* Validate the source markdown doc appears in the backlinks list.
-
-### W5: Rename safety — id survives folder rename
-* Capture the id of the whiteboard from W2.
-* Rename the folder on disk: `mv .../wiki-target-X .../wiki-target-X-renamed`.
-* Force a re-index: `POST ${API_URL}/api/v1/search/reindex/whiteboard`.
-* Wait 2s.
-* GET `${API_URL}/api/v1/graph/whiteboard/<id>` → expect HTTP 200 with `asset_ref` now ending in `wiki-target-X-renamed`.
-* GET `${API_URL}/api/v1/wiki/resolve?name=wiki-target-X-renamed` → expect HTTP 200 with the same id as before.
-* GET `${API_URL}/api/v1/wiki/resolve?name=wiki-target-X` (the OLD name) → expect null (rename invalidates the old name).
-
-## Pass criteria
-
-W1, W2, W3, W4, W5 all pass. W5's "old name resolves to null" is expected behavior, not a failure.
-
-## Cleanup
-
-* Remove all created whiteboards + markdown docs.
+# Cleanup: rm -rf <asset_ref>; DELETE the markdown + whiteboard entities (best-effort).

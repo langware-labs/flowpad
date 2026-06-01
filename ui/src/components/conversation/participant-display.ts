@@ -13,6 +13,38 @@ export function participantLabelByUserId(
   return participant ? participantLabel(participant) : null;
 }
 
+/** Marker rendered when a message carries an authenticated `sender_id` that
+ *  does NOT resolve to anyone in the member roster, AND no other cushion
+ *  (sender_name, creator) is available. This is an ALERT state — identity
+ *  is hub-authoritative, so a non-resolving id (with the roster confirmed
+ *  loaded) means the local roster is stale or, in the worst case, a spoof
+ *  attempt the hub should have blocked. Reserved for the genuine unknown
+ *  case; legitimate gaps (loading roster, departed member, cross-instance
+ *  bundle import) fall back through the tiered chain first. */
+export const UNRESOLVED_SENDER_LABEL = '⚠ unknown sender';
+
+/** Module-level dedup so the unresolved-sender warn fires AT MOST once per
+ *  (sender_id, conversation) pair — callers invoke it from a useEffect, so
+ *  this also protects against re-renders without an effect dep change. */
+const _warnedUnresolved = new Set<string>();
+
+/** Emit a one-time console.warn for a sender_id that didn't resolve. Pass
+ *  a `conversationId` so the same id surfacing in two different
+ *  conversations is logged once per conversation. */
+export function warnUnresolvedSender(
+  senderId: string,
+  conversationId: string | null | undefined,
+  rosterSize: number,
+): void {
+  const key = `${conversationId ?? ''}::${senderId}`;
+  if (_warnedUnresolved.has(key)) return;
+  _warnedUnresolved.add(key);
+  console.warn(
+    `[conversation] unresolved sender_id="${senderId}" in conv="${conversationId ?? '?'}" — ` +
+      `not in member roster (${rosterSize} members). Showing alert label.`,
+  );
+}
+
 /** Short display label for a participant's role. Returns an empty string
  *  when the role is absent so callers can render conditionally. */
 export function participantRoleLabel(participant: ConversationParticipant | null | undefined): string {

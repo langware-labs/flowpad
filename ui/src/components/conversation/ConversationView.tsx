@@ -18,6 +18,7 @@ import { MessageComposer } from './MessageComposer';
 import { useApproveAndExecute } from './useApproveAndExecute';
 import { useImplementPlan } from './useImplementPlan';
 import { useLocalUser } from './useLocalUser';
+import { useMembers } from '@src/hooks/use-members';
 import { buildConversationItems, ConversationItemKind } from './conversation-items';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -59,10 +60,31 @@ export function ConversationView({
   onMostRecentMessageChange,
   onApproveAndExecuteFired,
 }: ConversationViewProps) {
-  const { data: conversation, refetch } = useEntity<Conversation>(
-    new TypeId(Conversation.type, conversationId),
+  const conversationTypeId = useMemo(
+    () => new TypeId(Conversation.type, conversationId),
+    [conversationId],
   );
+  const { data: conversation, refetch } = useEntity<Conversation>(conversationTypeId);
   const { localUser } = useLocalUser();
+
+  // Member roster used to resolve a message's hub-authoritative sender_id to
+  // a display name. Precedence is `conversation.participants` (entity-cache,
+  // updated via the live-query whenever the hub pushes a change) FIRST, with
+  // the explicit hub fetch in `useMembers` as the initial-load source while
+  // the entity cache is still cold. This keeps post-kick/role-change updates
+  // visible immediately (the entity update fires before the next user-driven
+  // refresh) while still getting a populated roster on first paint.
+  // `rosterReady` is true once the hub has answered for this conv at least
+  // once (success or failure) — FlowMessageBubble uses it to gate the alert
+  // glyph so legitimate load windows don't flash UNRESOLVED.
+  const { members: memberRoster, ready: rosterReady } = useMembers(conversationTypeId);
+  const participants = useMemo(
+    () =>
+      conversation?.participants && conversation.participants.length > 0
+        ? conversation.participants
+        : memberRoster,
+    [conversation?.participants, memberRoster],
+  );
 
   const pointers = conversation?.conversationMessageIds ?? [];
 
@@ -301,7 +323,8 @@ export function ConversationView({
                   fm={messagesById.get(id) ?? null}
                   timestamp={item.timestamp}
                   task={task}
-                  participants={conversation?.participants}
+                  participants={participants}
+                  rosterReady={rosterReady}
                   onApproveAndExecute={canApproveAndExecute ? runApprove : undefined}
                   onImplementPlan={task && !openPlanSession ? runImplementPlan : undefined}
                   onOpenPlanSession={openPlanSession}
@@ -322,7 +345,8 @@ export function ConversationView({
                   ? item.draft.created_date.toISOString()
                   : (item.draft.created_date ?? '')}
                 task={task}
-                participants={conversation?.participants}
+                participants={participants}
+                rosterReady={rosterReady}
                 isDraft
                 onDraftSent={() => void refetch()}
                 isSelected={!!id && (selectedMessageIds ?? []).includes(id)}
