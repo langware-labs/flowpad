@@ -14,7 +14,7 @@ import {
   dataContext,
   type TerminalRuntimeError,
 } from '@sdk';
-import { toast } from 'sonner';
+import { notify } from '@src/notifications';
 import { Button } from '@src/components/ui/button';
 import { useContext as useDataContext } from '@src/hooks/useContext';
 
@@ -60,16 +60,16 @@ async function loadProcessById(processId: string): Promise<AgenticProcess | null
 async function retryStart(processId: string): Promise<boolean> {
   const process = await loadProcessById(processId);
   if (!process) {
-    toast.error('Couldn’t resolve this process.');
+    notify.error({ title: 'Couldn’t resolve this process.', id: `terminal-recover:${processId}` });
     return false;
   }
   try {
     await process.start({ visible: true });
-    toast.success('Reconnected.');
+    notify.success({ title: 'Reconnected.', id: `terminal-recover:${processId}` });
     dataContext.setTerminalRuntimeError(null);
     return true;
   } catch (err) {
-    toast.error(err instanceof Error ? err.message : 'Reconnect failed.');
+    notify.error({ title: err instanceof Error ? err.message : 'Reconnect failed.', id: `terminal-recover:${processId}` });
     return false;
   }
 }
@@ -77,13 +77,13 @@ async function retryStart(processId: string): Promise<boolean> {
 async function recoverProject(processId: string): Promise<boolean> {
   const process = await loadProcessById(processId);
   if (!process) {
-    toast.error('Couldn’t resolve this process.');
+    notify.error({ title: 'Couldn’t resolve this process.', id: `terminal-recover:${processId}` });
     return false;
   }
   try {
     const recovered = await process.recoverProject();
     if (!recovered) {
-      toast.error('Project not recoverable from this workdir.');
+      notify.error({ title: 'Project not recoverable from this workdir.', id: `terminal-recover:${processId}` });
       return false;
     }
     await dataContext.setContextEntityTypeId(
@@ -92,11 +92,11 @@ async function recoverProject(processId: string): Promise<boolean> {
       'CurrentProjectTypeId' as never,
       new TypeId(Project.type, recovered.id),
     );
-    toast.success('Project recovered.');
+    notify.success({ title: 'Project recovered.', id: `terminal-recover:${processId}` });
     dataContext.setTerminalRuntimeError(null);
     return true;
   } catch (err) {
-    toast.error(err instanceof Error ? err.message : 'Project recovery failed.');
+    notify.error({ title: err instanceof Error ? err.message : 'Project recovery failed.', id: `terminal-recover:${processId}` });
     return false;
   }
 }

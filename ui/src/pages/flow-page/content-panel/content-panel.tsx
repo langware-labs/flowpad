@@ -41,7 +41,7 @@ import { useActiveViewer } from '@src/hooks/flow-hooks';
 import { useViewerStore } from '@src/hooks/flow-hooks/useViewerStore';
 import { useContentPanelStore } from '@src/hooks/use-content-panel-store';
 import { useEnvVarsStore } from '@src/hooks/use-env-vars-store';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import {
   terminalTargetKey,
   terminalTransportShellId,
@@ -69,7 +69,6 @@ import { UserDropdown } from './user-dropdown/user-dropdown';
 export function ContentPanel() {
   // Get navigation instance for URL-first architecture
   const { navigation, currentDock, isDockUrl } = useDockNavigation();
-  const { toast } = useToast();
 
   const { user } = useAuth();
 
@@ -182,12 +181,12 @@ export function ContentPanel() {
       const transportShellId = terminalTransportShellId(tab);
       const shell = transportShellId ? (tab.shell ?? null) : null;
       if (shell?.status !== ShellStatus.CLOSING) {
-        toast({ title: 'Shell is disconnected', variant: 'destructive' });
+        notify.error({ title: 'Shell is disconnected' });
       }
       const aliveTab = terminalTabs.find((t) => terminalTargetKey(t) !== targetKey && !t.isDisabled);
       if (aliveTab) navigateToTab(aliveTab);
     }
-  }, [currentDock, navigateToTab, terminalsLoading, terminalTabs, toast]);
+  }, [currentDock, navigateToTab, terminalsLoading, terminalTabs]);
 
   const { editorActivePath, checkpointHash } = useMemo(() => {
     return {

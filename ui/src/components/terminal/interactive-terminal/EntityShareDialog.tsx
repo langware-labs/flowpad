@@ -18,7 +18,7 @@ import { AgenticProcess, ConversationParticipant, dataManager, oauthService, OAU
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
 import { generateIssueDocument } from '@src/components/conversation/generate-issue-doc';
 import { useEntityShare } from '@src/hooks/use-entity-share';
-import { toast } from 'sonner';
+import { notify } from '@src/notifications';
 import { Mail, Download, Link2, Copy, Check, Pencil, Loader2 } from 'lucide-react';
 import {
   Dialog,
@@ -135,10 +135,10 @@ export function EntityShareDialog({ open, onClose, typeId, defaultTitle, allowCo
       });
       setAttachTranscript(false);
       setShowUncheckWarning(false);
-      toast.success('Generated issue.md from your session and attached it.');
+      notify.success({ title: 'Generated issue.md from your session and attached it.' });
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to generate document.';
-      toast.error(`Could not generate document: ${msg}`);
+      notify.error({ title: `Could not generate document: ${msg}` });
     } finally {
       setGeneratingDoc(false);
     }
@@ -172,11 +172,11 @@ export function EntityShareDialog({ open, onClose, typeId, defaultTitle, allowCo
       } else if (result.emailError) {
         setSuccess(true);
         setEmailError(result.emailError);
-        toast.warning('Request created, but the notification email could not be sent. Check your activity panel.');
+        notify.warning({ title: 'Request created, but the notification email could not be sent. Check your activity panel.' });
         setTimeout(() => onClose(), 5000);
       } else {
         setSuccess(true);
-        toast.success('Assistance request sent successfully!');
+        notify.success({ title: 'Assistance request sent successfully!' });
         setTimeout(() => onClose(), 1200);
       }
     } catch (err: unknown) {
@@ -194,13 +194,13 @@ export function EntityShareDialog({ open, onClose, typeId, defaultTitle, allowCo
       const url = await entityShare.copyLink();
       setShareUrl(url);
       setLinkCopied(true);
-      toast.success('Link copied to clipboard');
+      notify.success({ title: 'Link copied to clipboard' });
     } catch (err: unknown) {
       // Try once more to surface the URL even if clipboard failed.
       const fallbackMsg =
         err instanceof Error ? err.message : 'Could not copy link.';
       setError(fallbackMsg);
-      toast.error(fallbackMsg);
+      notify.error({ title: fallbackMsg });
     } finally {
       setBusy(false);
     }
@@ -218,7 +218,7 @@ export function EntityShareDialog({ open, onClose, typeId, defaultTitle, allowCo
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      toast.success('Bundle ready — download started.');
+      notify.success({ title: 'Bundle ready — download started.' });
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Failed to create task bundle.');
     } finally {

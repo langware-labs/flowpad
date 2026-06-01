@@ -28,7 +28,7 @@ import {
 } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { toast } from 'sonner';
+import { notify } from '@src/notifications';
 import { Mail, Download, Github, Pencil } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import {
@@ -227,7 +227,7 @@ export function SendPlanNotificationDialog({
       draftTaskRef.current = null;
       draftConvRef.current = null;
       setSuccess(true);
-      toast.success('Task shared successfully!');
+      notify.success({ title: 'Task shared successfully!' });
       navigation.openDock(DockPointer.forConversation(conv.id));
       setTimeout(() => onClose(), 1200);
     } catch (err: unknown) {

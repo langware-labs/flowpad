@@ -45,6 +45,11 @@ export interface IEntity extends Partial<IResource> {
   /** True when this entity has a hub-side counterpart at the same id; refreshable from the hub. */
   remote?: boolean;
   /**
+   * Canonical parent reference as a "<type>-<id>" TypeId string. Single source
+   * of truth for parentage (supersedes the legacy per-type ``data.parent_id``).
+   */
+  parent_type_id?: string | null;
+  /**
    * Wire-bound shared context. Each entry is a TypeId-formatted string
    * ("type-id"). Read via the typed ``sharedContextEntities`` getter.
    * Frontend code must NOT push to this array directly — call a backend

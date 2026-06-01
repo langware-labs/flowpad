@@ -3,16 +3,25 @@ import { dataManager } from '../APIEntity';
 import { ApiResponse } from '../ApiResponse';
 import { Workspace } from '../entities';
 import { dataContext, TypeId } from '../FlowSync';
-import { ActionInfo, IMembershipRequest, InvitationMethod, Membership, MentionSendInfo } from '../models';
+import { ActionInfo, IMembershipRequest, Membership, MentionSendInfo } from '../models';
 import { navigator } from './navigationService';
 
 export type UserRole = 'owner' | 'admin' | 'editor' | 'guest' | 'reader' | 'anonymous_viewer';
-interface MembershipMethod {
-  member_through: InvitationMethod;
-  value: string;
+
+/**
+ * Direct member selector — one of these keys identifies the member to act on.
+ * Supersedes the legacy ``{member_through, value}`` envelope on both the remove
+ * (DELETE) and role-update (PUT) paths: the discriminator was redundant since
+ * the hub immediately fanned ``value`` back out into exactly these fields. The
+ * 95% case is just ``{user_id}``. The hub still tolerates the old envelope.
+ */
+interface MembershipIdentifiers {
+  user_id?: string;
+  user_email?: string;
+  invitation_id?: string;
 }
 
-interface MembershipRoleUpdate extends MembershipMethod {
+interface MembershipRoleUpdate extends MembershipIdentifiers {
   role: string;
 }
 
@@ -159,15 +168,17 @@ class MembershipService {
     }
   }
 
-  determineMembershipDetails(membership: Membership): { member_through: InvitationMethod; value: string } {
+  /** Pick the single identifier key for a member — the body shape for the
+   * remove (DELETE) and role-update (PUT) paths. */
+  determineMembershipIdentifiers(membership: Membership): MembershipIdentifiers {
     if (membership.user_id) {
-      return { member_through: 'id', value: membership.user_id };
+      return { user_id: membership.user_id };
     } else if (membership.user_email) {
-      return { member_through: 'email', value: membership.user_email };
+      return { user_email: membership.user_email };
     } else if (membership.invitation_id) {
-      return { member_through: 'invitation', value: membership.invitation_id };
+      return { invitation_id: membership.invitation_id };
     } else {
-      throw new Error('No valid member_through method could be determined');
+      throw new Error('No valid membership identifier could be determined');
     }
   }
 
@@ -182,11 +193,10 @@ class MembershipService {
     }
 
     try {
-      const { member_through, value } = this.determineMembershipDetails(membership);
-
+      // PUT sends the identifier directly alongside the role — no
+      // ``{member_through, value}`` envelope. The hub accepts both shapes.
       const payload: MembershipRoleUpdate = {
-        member_through,
-        value,
+        ...this.determineMembershipIdentifiers(membership),
         role: membership.role,
       };
 
@@ -205,12 +215,14 @@ class MembershipService {
     }
 
     try {
-      const { member_through, value } = this.determineMembershipDetails(membership);
-      const payload: MembershipMethod = { member_through, value };
+      // Remove sends identifiers directly — ``{user_id}`` / ``{user_email}`` /
+      // ``{invitation_id}`` — instead of the legacy ``{member_through, value}``
+      // envelope. The hub still accepts both shapes during the transition.
+      const payload: MembershipIdentifiers = this.determineMembershipIdentifiers(membership);
 
       const actionInfo = new ActionInfo('members', entity_typeId.type, entity_typeId.id, 'DELETE');
       actionInfo.bodyParameters = payload as any;
-      await dataManager.callAction<MembershipMethod, ApiResponse<void>>(actionInfo);
+      await dataManager.callAction<MembershipIdentifiers, ApiResponse<void>>(actionInfo);
       // if the user removed himself from the entity, navigate to the landing page
       if (membership.user_id === dataContext.user?.id) {
         void navigator.navigateToLanding(true);

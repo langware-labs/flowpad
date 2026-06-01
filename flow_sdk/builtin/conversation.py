@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import ClassVar, List, Optional, TYPE_CHECKING
 
@@ -118,6 +119,10 @@ class Conversation(Entity):
         from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
 
         await super().share()
+        # Link each shared-context doc to this conversation locally (the hub
+        # doesn't host doc types). This makes the doc effective-remote so a
+        # comment on it auto-shares under the conversation (the hub parent).
+        await self._link_context_to_conversation()
         if not recipients:
             return self
         creds = load_credentials()
@@ -151,6 +156,42 @@ class Conversation(Entity):
                     body,
                 )
         return self
+
+    async def _link_context_to_conversation(self) -> None:
+        """Set ``parent_type_id`` = this conversation on each local shared-context
+        entity (e.g. the shared markdown).
+
+        The hub does NOT host doc types like ``markdown``, so the doc itself is
+        never pushed to the hub. Instead we make the conversation its parent
+        locally: the conversation IS remote, so the doc's ``effective_remote``
+        is True, and a child create under the doc (a comment) auto-shares under
+        the conversation (the nearest hub-known ancestor). Best-effort."""
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+        conv_typeid_str = str(self.typeid)
+        for ref in (self.shared_context_entities or []):
+            try:
+                if isinstance(ref, TypeId):
+                    tid = ref
+                elif isinstance(ref, str):
+                    tid = TypeId(ref)
+                elif isinstance(ref, dict) and ref.get("type") and ref.get("id"):
+                    tid = TypeId(f"{ref['type']}-{ref['id']}")
+                else:
+                    continue
+                cls = SchemaRegistry.get_entity_cls(tid.type)
+                if cls is None or not tid.id or "parent_type_id" not in cls.model_fields:
+                    continue
+                ent = await cls.get_one({"id": tid.id})
+                if ent is None or getattr(ent, "parent_type_id", None) == conv_typeid_str:
+                    continue
+                ent.parent_type_id = conv_typeid_str
+                try:
+                    await ent.save(self.created_by)
+                except Exception as e:  # noqa: BLE001
+                    logging.warning("[conv.share] link context %s failed (non-fatal): %s", tid, e)
+            except Exception as e:  # noqa: BLE001
+                logging.warning("[conv.share] link context entity %r failed (non-fatal): %s", ref, e)
 
     def _first_message_landing_path(self) -> Optional[str]:
         """Return ``/flow_message/<id>`` for the earliest FM in this conv, or None.

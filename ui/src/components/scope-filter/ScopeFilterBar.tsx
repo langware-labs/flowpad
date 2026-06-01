@@ -69,7 +69,10 @@ export function ScopeFilterBar({
 
   const handleChange = (next: ChipKey) => {
     if (next === 'user') {
-      onScopeChange({ user: true, projects: scope.projects });
+      // "User" = user assets only (per the chip's label). Clear projects —
+      // keeping them would yield {user:true, projects:[...]} which is the
+      // "All" chip, so the user could never actually land on user-only.
+      onScopeChange({ user: true, projects: [] });
       return;
     }
     if (next === 'project') {

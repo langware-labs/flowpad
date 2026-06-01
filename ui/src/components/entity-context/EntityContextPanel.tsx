@@ -9,7 +9,7 @@ import {
   Users,
   type LucideIcon,
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { notify } from '@src/notifications';
 import type { APIEntity } from '@sdk';
 import { Skill, Spec, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
@@ -142,7 +142,7 @@ export function EntityContextPanel({ entity }: EntityContextPanelProps) {
         await spec.save(projectScopeIds);
         if (spec.id) {
           await entity.shareContextEntities(new TypeId(Spec.type, spec.id));
-          toast.success('Plan created');
+          notify.success({ title: 'Plan created' });
           navigation.openDock(DockPointer.forSpec(spec.id));
         }
       } else {
@@ -153,7 +153,7 @@ export function EntityContextPanel({ entity }: EntityContextPanelProps) {
         await skill.save(projectScopeIds);
         if (skill.id) {
           await entity.shareContextEntities(new TypeId(Skill.type, skill.id));
-          toast.success('Skill created');
+          notify.success({ title: 'Skill created' });
           if (skill.asset_ref) {
             navigation.openDock(DockPointer.forAssetEditor('skill', skill.asset_ref));
           }
@@ -163,7 +163,7 @@ export function EntityContextPanel({ entity }: EntityContextPanelProps) {
       setTitleDraft('');
     } catch (err) {
       console.error(`[EntityContextPanel] add-${kind} failed`, err);
-      toast.error(`Failed to create ${kind}`);
+      notify.error({ title: `Failed to create ${kind}` });
     } finally {
       setAdding(false);
     }

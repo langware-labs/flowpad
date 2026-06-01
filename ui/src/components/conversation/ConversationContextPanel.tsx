@@ -27,12 +27,12 @@ import {
   Users,
   type LucideIcon,
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { notify } from '@src/notifications';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useChipPrewarm } from '@src/navigation/useChipPrewarm';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { resolveWorkdir } from './apply-project-choice';
-import { fileAttachmentUrl } from './attachment-url';
+import { localAttachmentUrl } from './attachment-url';
 import { ICON_BY_TYPE } from './EntityChip';
 import { buildAssistancePrompt } from './prompt-building';
 import {
@@ -308,7 +308,7 @@ export function ConversationContextPanel({
       if (!anchorMessageId || !task || starting) return;
       const workdir = await resolveWorkdir(task.project_id);
       if (!workdir) {
-        toast.warning('Map this conversation to a local project first.');
+        notify.warning({ title: 'Map this conversation to a local project first.' });
         return;
       }
       setStarting(true);
@@ -327,7 +327,7 @@ export function ConversationContextPanel({
         proc.openTerminalDock();
       } catch (err) {
         console.error('[ContextPanel] start session failed', err);
-        toast.error('Failed to start session');
+        notify.error({ title: 'Failed to start session' });
       } finally {
         setStarting(false);
       }
@@ -563,7 +563,9 @@ function TranscriptRow({
   // Defensive: stale/malformed rows can have a non-string `data`; the bare
   // `.split` used to take down the whole context panel.
   const dataStr = attachmentDataString(attachment);
-  const downloadUrl = fileAttachmentUrl(messageId, dataStr);
+  // Only resolves to a URL when the bytes are local — a not-yet-downloaded /
+  // dangling transcript yields null, so "View" stays inert rather than 404ing.
+  const downloadUrl = localAttachmentUrl(messageId, attachment);
 
   const handleView = () => {
     if (localPath) {
@@ -571,7 +573,7 @@ function TranscriptRow({
       // Form 2 branch (POSIX or Windows-style absolute paths are both
       // forwarded to ``TranscriptViewer path={…}``).
       navigation.openLens('claude', 'transcript', encodeURIComponent(localPath));
-    } else {
+    } else if (downloadUrl) {
       window.open(downloadUrl, '_blank', 'noopener,noreferrer');
     }
   };
@@ -618,7 +620,9 @@ function AttachmentRow({
   // Defensive: stale/malformed rows can have a non-string `data`; the bare
   // `.split` used to crash the whole context panel for the entire conv.
   const dataStr = attachmentDataString(attachment);
-  const downloadUrl = fileAttachmentUrl(messageId, dataStr);
+  // Null until the bytes are local — keeps the Download action from 404ing on a
+  // body that was never pulled (see localAttachmentUrl).
+  const downloadUrl = localAttachmentUrl(messageId, attachment);
   const filename = dataStr.split('/').pop() || dataStr || '(unknown)';
   const typeLabel = kind === 'prompt-file' ? 'Prompt file' : 'File';
 
@@ -631,13 +635,15 @@ function AttachmentRow({
       onFocus={onSelect}
       focusTitle="Reveal the message this file is attached to"
     >
-      <RowAction
-        onClick={() => window.open(downloadUrl, '_blank', 'noopener,noreferrer')}
-        title={`Download ${filename}`}
-      >
-        <Download className="h-3 w-3" />
-        Download
-      </RowAction>
+      {downloadUrl && (
+        <RowAction
+          onClick={() => window.open(downloadUrl, '_blank', 'noopener,noreferrer')}
+          title={`Download ${filename}`}
+        >
+          <Download className="h-3 w-3" />
+          Download
+        </RowAction>
+      )}
     </Row>
   );
 }
@@ -700,13 +706,13 @@ function PrivateContextSection({
       const action = new ActionInfo('derive-task', 'flow_message', anchorMessageId, 'POST');
       const res = await dataManager.callAction<unknown, { process_id?: string; task_id?: string }>(action);
       if (res?.task_id || res?.process_id) {
-        toast.success('Deriving task with Claude…');
+        notify.success({ title: 'Deriving task with Claude…' });
       } else {
-        toast.error('Failed to start task derivation');
+        notify.error({ title: 'Failed to start task derivation' });
       }
     } catch (err) {
       console.error('[PrivateContext] derive-task failed', err);
-      toast.error('Failed to derive task');
+      notify.error({ title: 'Failed to derive task' });
     } finally {
       setAdding(false);
     }
@@ -751,11 +757,11 @@ function PrivateContextSection({
           console.error('[PrivateContext] linking spec to conversation failed', convErr);
         }
       }
-      toast.success('Spec created');
+      notify.success({ title: 'Spec created' });
       if (spec.id) navigation.openDock(DockPointer.forSpec(spec.id));
     } catch (err) {
       console.error('[PrivateContext] add-spec failed', err);
-      toast.error('Failed to create spec');
+      notify.error({ title: 'Failed to create spec' });
     } finally {
       setAdding(false);
     }
@@ -777,13 +783,13 @@ function PrivateContextSection({
       const skill = new Skill({ name, shared_context_entities: [fmTypeIdString] } as Partial<Skill>);
       const scopeIds = projectTypeId ? [projectTypeId] : [];
       await skill.save(scopeIds);
-      toast.success('Skill created');
+      notify.success({ title: 'Skill created' });
       if (skill.asset_ref) {
         navigation.openDock(DockPointer.forAssetEditor('skill', skill.asset_ref));
       }
     } catch (err) {
       console.error('[PrivateContext] add-skill failed', err);
-      toast.error('Failed to create skill');
+      notify.error({ title: 'Failed to create skill' });
     } finally {
       setAdding(false);
     }

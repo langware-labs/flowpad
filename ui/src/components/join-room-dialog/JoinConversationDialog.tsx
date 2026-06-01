@@ -3,7 +3,7 @@ import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { LogIn } from 'lucide-react';
 import { useState } from 'react';
 
@@ -23,7 +23,6 @@ export function JoinConversationDialog({ open, onClose, defaultName }: JoinConve
   const [displayName, setDisplayName] = useState(defaultName ?? '');
   const [busy, setBusy] = useState(false);
   const { navigation } = useDockNavigation();
-  const { toast } = useToast();
 
   const normalizedCode = code.trim().toUpperCase();
   const canJoin = !!normalizedCode && !!displayName.trim() && !busy;
@@ -34,9 +33,9 @@ export function JoinConversationDialog({ open, onClose, defaultName }: JoinConve
     try {
       const resolved = await Project.resolveByCode(normalizedCode);
       if (!resolved) {
-        toast({
+        notify.info({
           title: 'Project not found',
-          description: `No project matches code "${normalizedCode}".`,
+          message: `No project matches code "${normalizedCode}".`,
         });
         return;
       }

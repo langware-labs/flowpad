@@ -1,5 +1,5 @@
 import { Button } from '@src/components/ui/button';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { Webhook, Download, Upload } from 'lucide-react';
 import React, { useState, useMemo, useEffect } from 'react';
 import { HooksTable, type HookTableRow } from './HooksTable';
@@ -26,8 +26,6 @@ export function HooksView() {
   const [editPrompt, setEditPrompt] = useState('');
   const [editTimeout, setEditTimeout] = useState('60');
 
-  const { toast } = useToast();
-
   // Load hooks from API on mount
   useEffect(() => {
     void loadHooks();
@@ -41,10 +39,9 @@ export function HooksView() {
       setConfig({ hooks: response.hooks || {} });
     } catch (error) {
       console.error('Failed to load hooks:', error);
-      toast({
+      notify.error({
         title: 'Failed to Load Hooks',
-        description: error instanceof Error ? error.message : 'Unknown error',
-        variant: 'destructive',
+        message: error instanceof Error ? error.message : 'Unknown error',
       });
     } finally {
       setIsLoading(false);
@@ -164,16 +161,15 @@ export function HooksView() {
       setShowEditor(false);
       setSelectedRowId(null);
 
-      toast({
+      notify.success({
         title: selectedRow ? 'Hook Updated' : 'Hook Added',
-        description: `Hook has been ${selectedRow ? 'updated' : 'added'} successfully`,
+        message: `Hook has been ${selectedRow ? 'updated' : 'added'} successfully`,
       });
     } catch (error) {
       console.error('Failed to save hook:', error);
-      toast({
+      notify.error({
         title: 'Failed to Save',
-        description: error instanceof Error ? error.message : 'Unknown error',
-        variant: 'destructive',
+        message: error instanceof Error ? error.message : 'Unknown error',
       });
     }
   };
@@ -220,16 +216,15 @@ export function HooksView() {
       setSelectedRowId(null);
       setShowEditor(false);
 
-      toast({
+      notify.success({
         title: 'Hook Deleted',
-        description: 'Hook has been removed successfully',
+        message: 'Hook has been removed successfully',
       });
     } catch (error) {
       console.error('Failed to delete hook:', error);
-      toast({
+      notify.error({
         title: 'Failed to Delete',
-        description: error instanceof Error ? error.message : 'Unknown error',
-        variant: 'destructive',
+        message: error instanceof Error ? error.message : 'Unknown error',
       });
     }
   };
@@ -249,9 +244,9 @@ export function HooksView() {
     a.click();
     URL.revokeObjectURL(url);
 
-    toast({
+    notify.success({
       title: 'Exported',
-      description: 'Hooks configuration has been downloaded',
+      message: 'Hooks configuration has been downloaded',
     });
   };
 
@@ -271,15 +266,14 @@ export function HooksView() {
         // Reload from server to ensure UI is in sync
         await loadHooks();
 
-        toast({
+        notify.success({
           title: 'Imported',
-          description: 'Hooks configuration has been loaded and saved',
+          message: 'Hooks configuration has been loaded and saved',
         });
       } catch (error) {
-        toast({
+        notify.error({
           title: 'Import Failed',
-          description: error instanceof Error ? error.message : 'Invalid JSON',
-          variant: 'destructive',
+          message: error instanceof Error ? error.message : 'Invalid JSON',
         });
       }
     };

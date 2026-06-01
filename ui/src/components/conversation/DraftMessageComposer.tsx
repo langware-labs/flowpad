@@ -4,7 +4,7 @@ import type { FlowMessage } from '@sdk';
 import { sendReply } from '@sdk/entities/notifications';
 import { AttachmentType, type Attachment } from '@sdk/entities/flow-message';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
-import { toast } from 'sonner';
+import { notify } from '@src/notifications';
 import { cn } from '@src/lib/utils';
 import { MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_LABEL } from './constants';
 import { PromptComposerDialog, type QueuedPrompt } from './PromptComposerDialog';
@@ -131,7 +131,7 @@ export function DraftMessageComposer({
       const gate = await ensureCloudLogin();
       if (!gate.ok) {
         setError(gate.error);
-        toast.error(gate.error);
+        notify.error({ title: gate.error });
         return;
       }
       // Promotion path: discard the local-only draft and send through the
@@ -158,7 +158,7 @@ export function DraftMessageComposer({
     } catch (err: unknown) {
       console.error('[DraftMessageComposer] send failed', err);
       setError(err instanceof Error ? err.message : 'Failed to send draft.');
-      toast.error('Failed to send draft');
+      notify.error({ title: 'Failed to send draft' });
     } finally {
       setSending(false);
     }
@@ -175,7 +175,7 @@ export function DraftMessageComposer({
       onAfterDiscard?.();
     } catch (err: unknown) {
       console.error('[DraftMessageComposer] discard failed', err);
-      toast.error('Failed to discard draft');
+      notify.error({ title: 'Failed to discard draft' });
     } finally {
       setDiscarding(false);
     }

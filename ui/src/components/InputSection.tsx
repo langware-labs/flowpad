@@ -1,7 +1,7 @@
 import { trackEvent } from '@src/utils/analytics';
 import { TypeId, navigator } from '@sdk';
 import { ContentCard } from '@src/components/ui/content-card';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { ContentCardAction } from '@src/components/ui/content-card';
 import { ContentCardActionButton } from '@src/components/ui/content-card';
 import { ContentCardBody } from '@src/components/ui/content-card';
@@ -26,7 +26,6 @@ interface InputSectionProps {
 
 const InputSection = ({ input, readOnly, className, currentProject }: InputSectionProps) => {
   const [isConnected, setIsConnected] = useState(false);
-  const { toast } = useToast();
   const { user } = useAuth();
 
   // Use the OAuth connection hook
@@ -43,10 +42,9 @@ const InputSection = ({ input, readOnly, className, currentProject }: InputSecti
   const handleConnect = async () => {
     // Check if user is authenticated
     if (!user?.id) {
-      toast({
+      notify.info({
         title: 'Authentication Required',
-        description: 'Please login to connect to the OAuth provider.',
-        variant: 'default',
+        message: 'Please login to connect to the OAuth provider.',
       });
       return;
     }
@@ -59,10 +57,9 @@ const InputSection = ({ input, readOnly, className, currentProject }: InputSecti
       if (error instanceof Error) {
         errorMessage = error.message;
       }
-      toast({
+      notify.error({
         title: 'Error',
-        description: errorMessage,
-        variant: 'destructive',
+        message: errorMessage,
       });
     }
   };

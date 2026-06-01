@@ -73,16 +73,15 @@ async def test_orphan_appears_after_source_delete(tmp_path: Path) -> None:
 
     idx = _build_indexer(root)
     await idx.index(IndexerOptions(verbose=False, types=[RecordType.MARKDOWN]))
-    count_before, orphans_before, _ = await _markdown_status()
-    assert orphans_before == 0
+    count_before, _, _ = await _markdown_status()
 
-    # Source gone → run index → orphan flag is set, row stays.
+    # Source gone → run index → orphan detected (reported on the result),
+    # row stays with the default INDEX action.
     md.unlink()
-    await idx.index(IndexerOptions(verbose=False, types=[RecordType.MARKDOWN]))
-    count_after, orphans_after, total_after = await _markdown_status()
+    result = await idx.index(IndexerOptions(verbose=False, types=[RecordType.MARKDOWN]))
+    count_after, _, _ = await _markdown_status()
     assert count_after == count_before, "row should still exist with default INDEX orphan action"
-    assert orphans_after >= 1
-    assert total_after == orphans_after
+    assert result.per_type[RecordType.MARKDOWN].orphans_found >= 1
 
 
 @pytest.mark.asyncio
@@ -100,15 +99,13 @@ async def test_orphan_clears_when_source_returns(tmp_path: Path) -> None:
     await idx.index(IndexerOptions(verbose=False, types=[RecordType.MARKDOWN]))
 
     md.unlink()
-    await idx.index(IndexerOptions(verbose=False, types=[RecordType.MARKDOWN]))
-    _, orphans_after_delete, _ = await _markdown_status()
-    assert orphans_after_delete >= 1
+    result = await idx.index(IndexerOptions(verbose=False, types=[RecordType.MARKDOWN]))
+    assert result.per_type[RecordType.MARKDOWN].orphans_found >= 1
 
-    # Restore the source — orphan flag must be cleared on next walk.
+    # Restore the source — it's seen again, so no orphan is reported.
     md.write_text("# a back\n", encoding="utf-8")
-    await idx.index(IndexerOptions(verbose=False, types=[RecordType.MARKDOWN], force=True))
-    _, orphans_after_restore, _ = await _markdown_status()
-    assert orphans_after_restore == 0
+    result2 = await idx.index(IndexerOptions(verbose=False, types=[RecordType.MARKDOWN], force=True))
+    assert result2.per_type[RecordType.MARKDOWN].orphans_found == 0
 
 
 @pytest.mark.asyncio
