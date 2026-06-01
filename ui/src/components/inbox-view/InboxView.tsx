@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Archive, CheckSquare, Inbox as InboxIcon, MailPlus, RefreshCw, Trash2 } from 'lucide-react';
+import { Archive, CheckSquare, Inbox as InboxIcon, MailPlus, RefreshCw, SquarePen, Trash2 } from 'lucide-react';
 import { notify } from '@src/notifications';
+import { NewConversationDialog } from '@src/components/new-conversation-dialog/NewConversationDialog';
 import {
   Conversation,
   FlowMessage,
@@ -380,6 +381,7 @@ export function InboxView() {
 
   // Bulk-delete + per-row-delete dialog state.
   const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
+  const [showNewConversation, setShowNewConversation] = useState(false);
   const [rowDelete, setRowDelete] = useState<RowDeleteAction | null>(null);
 
   const request = useMemo(() => new QueryRequest({ type: Conversation.type }), []);
@@ -710,6 +712,17 @@ export function InboxView() {
           )}
           <Button
             variant="ghost"
+            size="sm"
+            className="h-7 text-xs"
+            onClick={() => setShowNewConversation(true)}
+            data-testid="inbox-new-conversation-button"
+            title="Start a new conversation"
+          >
+            <SquarePen className="mr-1 h-3.5 w-3.5" />
+            New
+          </Button>
+          <Button
+            variant="ghost"
             size="icon"
             className="h-7 w-7"
             onClick={() => void handleRefresh()}
@@ -760,6 +773,11 @@ export function InboxView() {
             />
           ))}
       </div>
+
+      <NewConversationDialog
+        open={showNewConversation}
+        onClose={() => setShowNewConversation(false)}
+      />
 
       <BulkConfirmDialog
         open={bulkDialogOpen}
