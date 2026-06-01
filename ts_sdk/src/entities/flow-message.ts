@@ -150,6 +150,13 @@ export interface IFlowMessage extends IEntity {
    *  attachments require a packed body; sender flips to READY after upload.
    *  Receivers gate downloads on READY. */
   body_status?: BodyStatus;
+  /** Transient, server-derived (API responses only — never stored). True once
+   *  this message has a body AND that body has been pulled + unpacked locally,
+   *  i.e. every renderable body attachment is on disk (files materialized,
+   *  TYPE_ID entity assets have a local record). The UI switches the whole
+   *  message between a single Download button and rendered chips off this one
+   *  flag, so the transcript and the context panel share download state. */
+  body_downloaded?: boolean;
 }
 
 @registerEntity
@@ -171,6 +178,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   is_draft?: boolean;
   kind?: FlowMessageKind;
   body_status?: BodyStatus;
+  body_downloaded?: boolean;
   static type: string = 'flow_message';
 
   constructor(entity: Partial<IFlowMessage> = {}) {
@@ -192,6 +200,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.is_draft = entity.is_draft ?? false;
     this.kind = entity.kind ?? FlowMessageKind.USER;
     this.body_status = entity.body_status ?? BodyStatus.NA;
+    this.body_downloaded = entity.body_downloaded ?? false;
   }
 
   /** Promote a draft message to a real reply: flips is_draft=false, appends to conversation.jsonl, pushes to hub. */

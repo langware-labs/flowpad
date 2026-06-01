@@ -338,6 +338,7 @@ export function ConversationView({
                   isSelected={(selectedMessageIds ?? []).includes(id)}
                   onSelect={onSelectMessage ? () => onSelectMessage(id) : undefined}
                   conversationStatusVisible={conversationStatusVisible}
+                  ensureProjectMapped={ensureMapped}
                 />
               );
             }

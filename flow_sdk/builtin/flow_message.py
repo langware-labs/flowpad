@@ -116,6 +116,39 @@ class BodyNotReadyError(Exception):
 FILE_VFS_PREFIX = "data/"
 PROMPT_FILE_VFS_PREFIX = "prompt/"
 
+# TYPE_ID attachment types that ride in the body bundle but never materialize a
+# standard local record folder — either conversation plumbing
+# (conversation/flow_message/task, the UI's STRUCTURAL_ATTACHMENT_TYPES) or a
+# remote reference resolved on accept (git_repo). They must NOT gate the
+# message-level ``body_downloaded`` signal, or a message carrying one would be
+# stuck behind the Download button forever.
+_NON_MATERIALIZING_TYPE_IDS = frozenset(
+    {"conversation", "flow_message", "task", "git_repo"}
+)
+
+
+def _type_id_record_materialized(data: str) -> bool:
+    """Sync disk probe: does the entity referenced by a TYPE_ID attachment have
+    a materialized record folder on local disk?
+
+    Disk is the source of truth (docs/CLAUDE.md rule 1): a materialized record
+    is a folder at ``<records_root>/<type>/<type>-@<id>/`` with a
+    ``metadata.json``. The body-bundle unpack reindexes assets *before* it fans
+    the entity UPDATE, so by the time a re-serialize observes this the folder
+    exists. Structural plumbing types are treated as always-present (they don't
+    render and may not have a standard folder)."""
+    if "-" not in data:
+        return True
+    etype, eid = data.split("-", 1)
+    if etype in _NON_MATERIALIZING_TYPE_IDS:
+        return True
+    try:
+        from flow_sdk.fs_store.record_paths import get_default_records_root, record_stem
+        folder = get_default_records_root() / etype / record_stem(etype, eid)
+        return (folder / "metadata.json").exists()
+    except Exception:
+        return False
+
 
 class Attachment(BaseModel):
     """A single item attached to a FlowMessage.
@@ -223,7 +256,33 @@ class FlowMessage(Entity):
                 # bundle; the sender sees it set the moment the file is staged.
                 resolved = storage.get_storage_path(vfs_subpath)
                 att["local_path"] = resolved if resolved and Path(resolved).exists() else None
+        # Message-level download signal (transient, API-only — computed after
+        # the per-file local_path resolution above so it can read it). True once
+        # the body bundle has been pulled + unpacked locally: every renderable
+        # body attachment is on disk (files have a resolved local_path, entity
+        # assets have a materialized record folder). The UI switches the whole
+        # message between a single Download button and rendered chips off this
+        # one flag, so the transcript and the context panel share state.
+        data["body_downloaded"] = self._compute_body_downloaded(data.get("attachment") or [])
         return data
+
+    def _compute_body_downloaded(self, atts: list[dict[str, Any]]) -> bool:
+        if not self.has_body():
+            return False
+        for att in atts:
+            atype = att.get("attachment_type")
+            if atype == AttachmentType.FILE.value:
+                if not att.get("local_path"):
+                    return False
+            elif atype == AttachmentType.PROMPT.value:
+                if (att.get("data") or "").startswith(PROMPT_FILE_VFS_PREFIX) and not att.get(
+                    "local_path"
+                ):
+                    return False
+            elif atype == AttachmentType.TYPE_ID.value:
+                if not _type_id_record_materialized(att.get("data") or ""):
+                    return False
+        return True
 
     async def to_file(self, dest_dir: Path | None = None) -> Path:
         """Pack this FlowMessage + attachments into a .flowmsg zip. Returns path to zip."""
