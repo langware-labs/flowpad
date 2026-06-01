@@ -6,18 +6,13 @@ import type { ITask } from '@sdk/entities/task';
 import type { ConversationMessage, ConversationParticipant } from '@sdk/entities/conversation';
 import {
   AttachmentType,
-  BodyStatus,
-  BODY_FILENAME,
   attachmentDataString,
-  downloadFlowMessageUrl,
-  downloadFlowMessageBody,
 } from '@sdk/entities/flow-message';
 import { AlertCircle, Download, X } from 'lucide-react';
 import { MessageBubble } from './MessageBubble';
 import { AttachmentChip, AttachmentChipState } from './AttachmentChip';
 import { ContextEntityChip } from './EntityChip';
 import { GitRepoChip } from '@src/components/git/GitRepoChip';
-import { fileAttachmentUrl } from './attachment-url';
 import { useLocalUser } from './useLocalUser';
 import { localBundleUrl } from './flow-message-drafts';
 import { DraftMessageComposer } from './DraftMessageComposer';
@@ -26,8 +21,7 @@ import {
   UNRESOLVED_SENDER_LABEL,
   warnUnresolvedSender,
 } from './participant-display';
-import { useFlowMessageProgress } from './useFlowMessageProgress';
-import { useFlowMessageDownloadError } from './useFlowMessageDownloadError';
+import { useAttachments } from './useAttachments';
 import { cn } from '@src/lib/utils';
 
 /** Attachment TypeId types the conversation send path injects as structural
@@ -115,13 +109,17 @@ export function FlowMessageBubble({
   );
   const { localUser, updateName } = useLocalUser();
   const [overrideName, setOverrideName] = useState<string | null>(null);
-  const [downloading, setDownloading] = useState(false);
-  // Live body upload/download bar — null when no transfer is in flight.
-  const progress = useFlowMessageProgress(messageId);
-  // Per-message download failure — surfaced inline so the user can tell
-  // *which* bubble produced the error in the warnings popover.
-  const { error: downloadError, dismiss: dismissDownloadError } =
-    useFlowMessageDownloadError(messageId);
+  // The single attachment surface: per-file chip state + url, the live progress
+  // bar, the per-message download-error slot, and the one download entrypoint.
+  // Replaces the inline chipState / bundle-chip / handleDownloadBody wiring.
+  const {
+    items: attachmentItems,
+    progress,
+    error: downloadError,
+    dismissError: dismissDownloadError,
+    downloading,
+    download: handleDownloadBody,
+  } = useAttachments(fm, messageId);
 
   // Unresolved-sender telemetry. Hoisted ABOVE the early returns so the hook
   // count is identical on every render (a useEffect after ``if (!fm) return``
@@ -246,15 +244,6 @@ export function FlowMessageBubble({
     timestamp,
   };
 
-  // Filter out the conversation.jsonl transcript — that lives on the toolbar now.
-  // ``attachmentDataString`` collapses the hub's two ``data`` shapes
-  // (string ``"<type>-<id>"`` OR object ``{type, id}``) into one string.
-  const fileAttachments = (fm.attachment ?? []).filter((a) => {
-    if (a.attachment_type !== AttachmentType.FILE) return false;
-    const d = attachmentDataString(a);
-    return !!d && !d.endsWith('conversation.jsonl');
-  });
-
   // Asset attachments — TYPE_ID attachments the user deliberately attached
   // (Skill, Spec, …). Rendered as clickable chips that open the entity in its
   // own view, exactly like the conversation Context panel. The structural
@@ -269,39 +258,12 @@ export function FlowMessageBubble({
     })
     .filter((t): t is TypeId => t !== null && !STRUCTURAL_ATTACHMENT_TYPES.has(t.type));
 
-  // Body-bundle lifecycle drives each FILE chip's appearance:
-  //   uploading  — sender still staging the body (body_status=uploading)
-  //   ready      — body on the hub, not yet on this machine (no local_path)
-  //   downloaded — bytes are local (local_path set) or no body round-trip (na)
-  const bodyStatus = fm.body_status ?? BodyStatus.NA;
-  const chipState = (att: { local_path?: string | null }): AttachmentChipState => {
-    if (bodyStatus === BodyStatus.UPLOADING) return AttachmentChipState.Uploading;
-    if (att.local_path) return AttachmentChipState.Downloaded;
-    if (bodyStatus === BodyStatus.READY) return AttachmentChipState.Ready;
-    return AttachmentChipState.Downloaded;
-  };
-  const handleDownloadBody = async () => {
-    if (downloading) return;
-    setDownloading(true);
-    try {
-      await downloadFlowMessageBody(messageId);
-      // Success fans an entity UPDATE — useEntity re-renders the chips as
-      // DOWNLOADED. On failure they stay READY so the user can retry.
-    } catch {
-      /* swallowed — chip stays READY */
-    } finally {
-      setDownloading(false);
-    }
-  };
-  // The body.flowmsg bundle is transport, not a user-facing file — never chip it.
-  const showBundleChip =
-    !!fm.attachment_filename && fm.attachment_filename !== BODY_FILENAME;
-
-  const hasAttachments =
-    showBundleChip
-    || fileAttachments.length > 0
-    || assetAttachments.length > 0;
-  const totalAttachments = (showBundleChip ? 1 : 0) + fileAttachments.length;
+  // File chips + their state/url come from the single `useAttachments` surface
+  // (hoisted above the early returns). No bundle chip and no inline chipState:
+  // a non-downloadable body now renders an inert "Unavailable" chip rather than
+  // a live link to a body that was never uploaded.
+  const hasAttachments = attachmentItems.length > 0 || assetAttachments.length > 0;
+  const totalAttachments = attachmentItems.length;
 
   const progressPct =
     progress && progress.bytesTotal > 0 ? Math.round(progress.fraction * 100) : null;
@@ -377,27 +339,18 @@ export function FlowMessageBubble({
           })}
         </div>
       )}
-      {showBundleChip && (
+      {attachmentItems.map((item) => (
         <AttachmentChip
-          url={downloadFlowMessageUrl(messageId, fm.attachment_filename!)}
-          filename={fm.attachment_filename!}
+          key={item.key}
+          url={item.url ?? ''}
+          filename={item.filename}
+          state={item.state}
+          downloading={item.state === AttachmentChipState.Ready && downloading}
+          onDownload={
+            item.state === AttachmentChipState.Ready ? () => void handleDownloadBody() : undefined
+          }
         />
-      )}
-      {fileAttachments.map((a) => {
-        const d = attachmentDataString(a);
-        const name = d.split('/').pop() || d;
-        const st = chipState(a);
-        return (
-          <AttachmentChip
-            key={d}
-            url={fileAttachmentUrl(messageId, d)}
-            filename={name}
-            state={st}
-            downloading={st === AttachmentChipState.Ready && downloading}
-            onDownload={st === AttachmentChipState.Ready ? () => void handleDownloadBody() : undefined}
-          />
-        );
-      })}
+      ))}
       {totalAttachments > 1 && (
         <a
           href={localBundleUrl(messageId)}

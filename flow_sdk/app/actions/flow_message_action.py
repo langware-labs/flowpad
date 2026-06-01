@@ -279,7 +279,9 @@ async def handle_open_flow_message(fm_id: str) -> ApiResponse:
     # gates the download.
     if not repo_url and attachment_filename:
         try:
-            await _download_and_unpack_bundle(fm_id, attachment_filename)
+            await _download_and_unpack_bundle(
+                fm_id, attachment_filename, body_status=(data or {}).get("body_status"),
+            )
         except Exception as e:
             logger.warning("[open_flow_message] failed to materialize bundle (non-fatal): %s", e)
 
@@ -1047,12 +1049,22 @@ async def _download_and_unpack_bundle(
     fm_id: str,
     attachment_filename: str,
     *,
+    body_status: "str | BodyStatus | None" = None,
     asset_dest_root: Path | None = None,
     on_progress=None,
 ) -> bool:
     """Download the .flowmsg bundle from the hub and unpack it locally.
 
     Returns True if the bundle was successfully unpacked, False otherwise.
+
+    ``body_status`` — the hub-side body lifecycle for this message. This is the
+    SINGLE backend gate: when it's anything other than READY there is no bundle
+    on the hub to pull (``na`` = none was ever uploaded, ``uploading`` = not yet
+    landed), so we skip the GET entirely rather than 404. Every implicit caller
+    (open / inbox-open / conversation-sync / invitation-accept / catch-up / the
+    eager-pull bridge) forwards what it already read from the hub payload; the
+    explicit ``download_body`` path forwards its own READY status. ``None`` means
+    "caller did not supply a status" and proceeds unchanged (back-compat).
 
     ``asset_dest_root`` is forwarded to ``unpack_bundle`` to anchor FS-rooted
     assets (skill/agent) restored from the bundle. ``None`` falls through to
@@ -1061,7 +1073,16 @@ async def _download_and_unpack_bundle(
     ``on_progress`` — optional async callback fired as download bytes land;
     when set the hub GET is streamed instead of buffered whole.
     """
+    from flow_sdk.builtin.flow_message import BodyStatus
     from flow_sdk.builtin.flow_message_bundle import FlowMessageExistsError, unpack_bundle
+    if body_status is not None:
+        bs = body_status.value if isinstance(body_status, BodyStatus) else body_status
+        if bs != BodyStatus.READY.value:
+            logger.debug(
+                "[bundle] skip download fm=%s — body_status=%s (no bundle to pull)",
+                fm_id, bs,
+            )
+            return False
     bundle_bytes = await hub_get(
         BuiltinEntityType.FLOW_MESSAGE, fm_id, "fs", f"download/{attachment_filename}",
         raw=True, on_progress=on_progress,
@@ -1182,7 +1203,9 @@ async def _process_single_hub_message(raw: dict) -> str | None:
         # First time we see a bundle-bearing message — download + unpack it.
         # An already-present (now stale) row only needs its metadata refreshed
         # below; the body bytes are local-only and don't re-download.
-        success = await _download_and_unpack_bundle(fm_id, attachment_filename)
+        success = await _download_and_unpack_bundle(
+            fm_id, attachment_filename, body_status=raw.get("body_status"),
+        )
         return fm_id if success else None
     # Bundle-less: persist the FM payload as-is, then append the pointer to
     # the conversation's message_ids JSON projection. We DO NOT route through
@@ -1270,10 +1293,12 @@ async def handle_inbox_open(fm_id: str) -> ApiResponse:
     local_fm = await FlowMessage.get_one({"id": fm_id})
     if local_fm:
         attachment_filename = (local_fm.attachment_filename or "").strip()
+        body_status = local_fm.body_status
         raw_context = [str(c) for c in (local_fm.shared_context_entities or [])]
     else:
         hub_data = await hub_get(BuiltinEntityType.FLOW_MESSAGE, fm_id)
         attachment_filename = ((hub_data or {}).get("attachment_filename") or "").strip()
+        body_status = (hub_data or {}).get("body_status")
         # Tolerate both new and legacy hub field names during transition.
         raw_context = (
             (hub_data or {}).get("shared_context_entities")
@@ -1296,7 +1321,7 @@ async def handle_inbox_open(fm_id: str) -> ApiResponse:
     needs_task_bundle = bool(task_id) and not await Task.get_one({"id": task_id})
     needs_fm_bundle = local_fm is None
     if attachment_filename and (needs_task_bundle or needs_fm_bundle):
-        await _download_and_unpack_bundle(fm_id, attachment_filename)
+        await _download_and_unpack_bundle(fm_id, attachment_filename, body_status=body_status)
 
     return ApiSuccessResponse(data={"task_id": task_id, "conversation_id": conv_id})
 
@@ -1995,7 +2020,9 @@ async def _sync_conversation_messages(conv_id: str, someone_typeid: str) -> None
         if not attachment_filename:
             continue
         try:
-            await _download_and_unpack_bundle(raw_fm["id"], attachment_filename)
+            await _download_and_unpack_bundle(
+                raw_fm["id"], attachment_filename, body_status=raw_fm.get("body_status"),
+            )
         except Exception as b_err:  # noqa: BLE001
             logger.warning(
                 "[conv-sync] conv=%s fm=%s bundle download failed: %s",
@@ -2573,7 +2600,10 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
             hub_fm = await hub_get(BuiltinEntityType.FLOW_MESSAGE, linked_fm_id)
             attachment_filename = ((hub_fm or {}).get("attachment_filename") or "").strip()
             if attachment_filename:
-                bundle_unpacked = await _download_and_unpack_bundle(linked_fm_id, attachment_filename)
+                bundle_unpacked = await _download_and_unpack_bundle(
+                    linked_fm_id, attachment_filename,
+                    body_status=(hub_fm or {}).get("body_status"),
+                )
         except Exception as e:
             logger.warning("[invitation-accept] bundle download failed: %s", e)
 

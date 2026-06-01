@@ -76,6 +76,7 @@ async def _maybe_eager_pull_bundle(
     fm_id: str,
     attachment_filename: str,
     attachments: Any,
+    body_status: Any = None,
 ) -> None:
     """Pull the .flowmsg bundle in the background when the FM carries an
     asset-entity TYPE_ID attachment. No-op otherwise — keeps media-bearing
@@ -94,7 +95,7 @@ async def _maybe_eager_pull_bundle(
     _INFLIGHT_BUNDLE_PULLS.add(fm_id)
     try:
         from flow_sdk.app.actions.flow_message_action import _download_and_unpack_bundle
-        await _download_and_unpack_bundle(fm_id, attachment_filename)
+        await _download_and_unpack_bundle(fm_id, attachment_filename, body_status=body_status)
         logger.info("[bridge] eager bundle pulled fm=%s", fm_id)
     except Exception as e:  # noqa: BLE001
         logger.warning("[bridge] eager bundle pull failed fm=%s (non-fatal): %s", fm_id, e)
@@ -485,6 +486,7 @@ class HubWsBridge:
                     fm_id,
                     (payload.get("attachment_filename") or "").strip(),
                     payload.get("attachment") or [],
+                    body_status=payload.get("body_status"),
                 ))
 
             # Auto-ack delivery — receiver-side acks are the only signal that
@@ -564,6 +566,7 @@ class HubWsBridge:
                     fm_id,
                     (getattr(existing, "attachment_filename", "") or "").strip(),
                     getattr(existing, "attachment", None) or [],
+                    body_status=new_body_status,
                 ))
             return
 

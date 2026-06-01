@@ -105,14 +105,18 @@ function absoluteUrl(url: string): string {
 }
 
 /** Body-bundle lifecycle as the chip sees it:
- *  - Uploading   : sender is still staging the body — bytes not on the hub yet.
- *  - Ready       : body is on the hub but not on this machine — click to pull.
- *  - Downloaded  : bytes are local — open/save normally (also: text-only and
- *                  purely-local conversations, which never round-trip a body). */
+ *  - Uploading    : sender is still staging the body — bytes not on the hub yet.
+ *  - Ready        : body is on the hub but not on this machine — click to pull.
+ *  - Downloaded   : bytes are local — open/save normally (also: text-only and
+ *                   purely-local conversations, which never round-trip a body).
+ *  - Unavailable  : there is no body to fetch (``body_status='na'`` and the
+ *                   bytes are not local) — a dangling pointer. Inert: we render
+ *                   a muted row and NEVER a live URL, so nothing 404s. */
 export enum AttachmentChipState {
   Uploading = 'uploading',
   Ready = 'ready',
   Downloaded = 'downloaded',
+  Unavailable = 'unavailable',
 }
 
 interface AttachmentChipProps {
@@ -147,29 +151,41 @@ export function AttachmentChip({
     return () => document.removeEventListener('mousedown', onDocMouseDown);
   }, [menuOpen]);
 
-  // UPLOADING / READY: the bytes aren't on this machine, so there is no live
-  // URL to link or inline-render. Render a status row instead — greyed and
-  // inert for UPLOADING, dashed and clickable (→ download) for READY.
+  // UPLOADING / READY / UNAVAILABLE: the bytes aren't on this machine, so there
+  // is no live URL to link or inline-render. Render a status row instead —
+  // greyed + inert for UPLOADING, dashed + clickable (→ download) for READY,
+  // muted + inert for UNAVAILABLE (a dangling pointer with no body to fetch).
   // Placed after every hook so hook order stays stable across renders.
   if (state !== AttachmentChipState.Downloaded) {
     const { Icon, bg, label } = fileMeta(filename);
     const isUploading = state === AttachmentChipState.Uploading;
+    const isUnavailable = state === AttachmentChipState.Unavailable;
+    const inert = isUploading || isUnavailable;
     const clickable = state === AttachmentChipState.Ready && !downloading && !!onDownload;
     const sub = isUploading
       ? 'Uploading…'
-      : downloading
-        ? 'Downloading…'
-        : `${label} · Download`;
+      : isUnavailable
+        ? 'Unavailable'
+        : downloading
+          ? 'Downloading…'
+          : `${label} · Download`;
+    const title = isUploading
+      ? 'File not uploaded yet'
+      : isUnavailable
+        ? 'Attachment unavailable — no body was uploaded'
+        : downloading
+          ? 'Downloading…'
+          : 'Click to download';
     return (
       <div className="max-w-[360px]">
         <button
           type="button"
           disabled={!clickable}
           onClick={clickable ? () => onDownload?.() : undefined}
-          title={isUploading ? 'File not uploaded yet' : downloading ? 'Downloading…' : 'Click to download'}
+          title={title}
           className={cn(
             'flex w-full items-center gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors',
-            isUploading
+            inert
               ? 'cursor-not-allowed border-border bg-background opacity-50'
               : clickable
                 ? 'cursor-pointer border-dashed border-primary/60 bg-background hover:bg-muted/40'
@@ -179,7 +195,7 @@ export function AttachmentChip({
           <div
             className={cn(
               'flex h-10 w-10 shrink-0 items-center justify-center rounded text-white',
-              isUploading ? 'bg-slate-400' : bg,
+              inert ? 'bg-slate-400' : bg,
             )}
           >
             {downloading ? <Loader2 className="h-5 w-5 animate-spin" /> : <Icon className="h-5 w-5" />}
