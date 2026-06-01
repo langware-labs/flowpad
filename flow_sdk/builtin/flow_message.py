@@ -356,7 +356,8 @@ class FlowMessage(Entity):
         from flow_sdk.app.actions.flow_message_action import _download_and_unpack_bundle
         filename = self.attachment_filename or BODY_FILENAME
         ok = await _download_and_unpack_bundle(
-            self.id, filename, asset_dest_root=asset_dest_root, on_progress=on_progress,
+            self.id, filename, body_status=self.body_status,
+            asset_dest_root=asset_dest_root, on_progress=on_progress,
         )
         if not ok:
             raise RuntimeError(f"download_body failed for fm={self.id}")
