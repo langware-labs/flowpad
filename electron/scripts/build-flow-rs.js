@@ -16,6 +16,7 @@
 
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const { execFileSync } = require('child_process');
 
 const RUST_DIR = path.resolve(__dirname, '..', '..', 'flow_sdk', 'rust');
@@ -28,19 +29,67 @@ if (!fs.existsSync(path.join(RUST_DIR, 'Cargo.toml'))) {
   process.exit(1);
 }
 
+/**
+ * Resolve a usable `cargo` binary. npm-spawned scripts don't always inherit
+ * the interactive shell's PATH, so a bare `cargo` lookup via PATH often hits
+ * ENOENT even when rustup has cargo installed. Probe the standard rustup
+ * location (~/.cargo/bin) as a fallback, and allow an explicit override via
+ * the CARGO env var.
+ */
+function resolveCargo() {
+  const cargoExe = IS_WIN ? 'cargo.exe' : 'cargo';
+  const candidates = [];
+  if (process.env.CARGO) candidates.push(process.env.CARGO);
+  candidates.push(cargoExe); // bare name → relies on PATH
+  candidates.push(path.join(os.homedir(), '.cargo', 'bin', cargoExe));
+  if (!IS_WIN) {
+    candidates.push('/usr/local/cargo/bin/cargo'); // some CI installs
+    candidates.push('/opt/homebrew/bin/cargo');    // brew on Apple Silicon
+    candidates.push('/usr/local/bin/cargo');       // brew on Intel macOS / Linux
+  }
+
+  for (const candidate of candidates) {
+    try {
+      execFileSync(candidate, ['--version'], { stdio: 'ignore' });
+      return candidate;
+    } catch {
+      // try the next one
+    }
+  }
+  return null;
+}
+
+const cargoBin = resolveCargo();
+if (!cargoBin) {
+  console.error('[build-flow-rs] cargo not found on PATH or in ~/.cargo/bin.');
+  console.error(
+    '[build-flow-rs] Install the Rust toolchain: ' +
+    'curl --proto \'=https\' --tlsv1.2 -sSf https://sh.rustup.rs | sh ' +
+    '(then open a new shell so ~/.cargo/bin is on PATH, ' +
+    'or set CARGO=/full/path/to/cargo and re-run).'
+  );
+  process.exit(1);
+}
+
+console.log(`[build-flow-rs] using ${cargoBin}`);
 console.log(`[build-flow-rs] cargo build --release  (cwd=${RUST_DIR})`);
 
+// Prepend ~/.cargo/bin to PATH so the spawned cargo can find rustc/rustup
+// even when this script's shell didn't inherit them.
+const env = { ...process.env };
+const cargoBinDir = path.join(os.homedir(), '.cargo', 'bin');
+if (fs.existsSync(cargoBinDir) && !(env.PATH || '').includes(cargoBinDir)) {
+  env.PATH = `${cargoBinDir}${path.delimiter}${env.PATH || ''}`;
+}
+
 try {
-  execFileSync('cargo', ['build', '--release'], {
+  execFileSync(cargoBin, ['build', '--release'], {
     cwd: RUST_DIR,
     stdio: 'inherit',
+    env,
   });
 } catch (err) {
   console.error(`[build-flow-rs] cargo build failed: ${err.message}`);
-  console.error(
-    '[build-flow-rs] Ensure the Rust toolchain is installed: ' +
-    'curl --proto \'=https\' --tlsv1.2 -sSf https://sh.rustup.rs | sh'
-  );
   process.exit(1);
 }
 
