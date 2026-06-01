@@ -562,11 +562,15 @@ export class DockPointer implements IDockPointer {
    */
   static parseLensPointer(pointer: string): LensPointerParts | null {
     const parts = pointer.split('/');
-    if (parts.length < 3) return null;
+    // Two-segment lenses (category/type, no ref) are valid — e.g.
+    // `fs-records/scan`, `fs-records/llm-indexers`, `cli/log`, `claude/context`.
+    // Three-or-more-segment lenses additionally carry a ref (e.g.
+    // `claude/transcript/<sessionId>`).
+    if (parts.length < 2) return null;
     return {
       category: parts[0],
       type: parts[1],
-      ref: parts.slice(2).join('/'), // ref might contain slashes
+      ref: parts.slice(2).join('/'), // '' when absent; may contain slashes
     };
   }
 

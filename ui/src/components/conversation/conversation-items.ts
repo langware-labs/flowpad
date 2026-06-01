@@ -24,14 +24,13 @@ function safeTime(value: string | Date | null | undefined, fallback: number): nu
 
 /**
  * Merge pointer-resolved messages with local drafts and sort by created_date.
- * `backfilledIds` is the set of message ids whose backfill download just
- * finished — used as a key salt so the bubble re-mounts and re-fetches the FM
- * entity instead of staying stuck on "Loading message…".
+ * Pointer rows key on the message id alone — the parent now feeds each bubble
+ * its FlowMessage from a single batched live query, so there's no per-bubble
+ * fetch to force-remount when a message lands.
  */
 export function buildConversationItems(
   pointers: readonly ConversationMessagePointer[],
   drafts: readonly FlowMessage[],
-  backfilledIds: ReadonlySet<string>,
 ): ConversationItem[] {
   const pointerIds = new Set<string>();
   const items: ConversationItem[] = [];
@@ -39,7 +38,7 @@ export function buildConversationItems(
     pointerIds.add(ptr.id);
     items.push({
       kind: ConversationItemKind.POINTER,
-      key: backfilledIds.has(ptr.id) ? `${ptr.id}:resolved` : ptr.id,
+      key: ptr.id,
       messageId: ptr.id,
       timestamp: ptr.ts,
       sortAt: safeTime(ptr.ts, 0),

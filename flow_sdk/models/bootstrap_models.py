@@ -59,7 +59,11 @@ class BootstrapInfo(BaseModel):
     Matches production FlowPad BootstrapInfo fields for API compatibility.
     Production source: flowpad/hub/app/actions/bootstrap_actions.py
     """
-    schemas: List[Dict[str, Any]] = []
+    # Unified per-type payloads (TypeInfo + nested JSON ``schema``) for the
+    # frontend SchemaRegistry. One entry per registered type; ``schema`` is
+    # populated only for public api_visible entity types. Replaces the former
+    # ``schemas`` (bare JSON-schema list) channel.
+    types: List[Dict[str, Any]] = []
     user: Optional[Dict[str, Any]] = None
     domain: Optional[Dict[str, Any]] = None
     visitor: Optional[Dict[str, Any]] = None

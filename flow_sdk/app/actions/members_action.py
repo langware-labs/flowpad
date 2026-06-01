@@ -15,7 +15,26 @@ from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.responses.response import ApiResponse, ApiSuccessResponse
 
 
+def _participants(entity: Entity) -> list:
+    """The entity's cached participants, or an empty list when it has none."""
+    return list(getattr(entity, "participants", []) or [])
+
+
 @action.get(action_name="members", types="all", reflect="hub")
 async def list_members(self: Entity) -> ApiSuccessResponse:
-    participants = list(getattr(self, "participants", []) or [])
-    return ApiResponse.success(data=participants)
+    return ApiResponse.success(data=_participants(self))
+
+
+@action.delete(action_name="members", types="all", reflect="hub")
+async def remove_member(self: Entity) -> ApiSuccessResponse:
+    """Remove a member — OWNER ONLY (enforced hub-side in
+    ``delete_membership``). Like ``list_members`` this is ``reflect="hub"``: for
+    a ``remote`` entity the dispatcher forwards the DELETE to the hub (which
+    revokes the role + strips the participant + fans the update) and mirrors the
+    resulting roster back onto the local row. The DELETE body is a
+    ``MembershipMethod`` — ``{member_through: "id", value: "<user_id>"}``.
+
+    The local body runs only for local-only entities or when the hub is
+    unreachable; there is no local-only membership store, so it's a no-op
+    success (the reflect path is the real implementation)."""
+    return ApiResponse.success(data=_participants(self))

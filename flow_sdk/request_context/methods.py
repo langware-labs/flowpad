@@ -163,15 +163,23 @@ def set_default_test_sod_driver(sod_driver: SodDriver):
 
 
 def get_current_sod_store():
+    """Resolve the active SOD store.
+
+    Order:
+      1. ``service.sod_driver`` — cloud/hub runtime (GCP/file SOD). Unchanged.
+      2. ``test_sod_override`` — explicit test/embedding hook.
+      3. ``get_instance_settings().sod`` — the single per-instance desktop
+         store (keychain/env Fernet key over ``<inst>/sodot``). Always
+         available; the key resolves lazily on first real secret access.
+    """
     global test_sod_override
     service: FlowpadService | None = get_current_service()
-    if service is None or service.sod_driver is None:
-        if test_sod_override:
-            if not default_service_config.development:
-                raise Exception("get_current_sod_store: SOD override allowed only in development mode")
-            return test_sod_override
-        raise Exception("get_current_sod_store: No service or sod_driver")
-    return service.sod_driver
+    if service is not None and service.sod_driver is not None:
+        return service.sod_driver
+    if test_sod_override is not None:
+        return test_sod_override
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+    return get_instance_settings().sod
 
 
 def get_current_email_provider():

@@ -20,4 +20,3 @@ class ProcessResult(Entity):
     )
 
     # Note: root_vfs_path is inherited from Entity and stores the result folder path
-    _api_visible: ClassVar[bool] = True

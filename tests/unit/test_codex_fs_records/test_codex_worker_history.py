@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.fs_records.worker_history import WorkerType, get_codex_worker_history
+from flow_sdk.builtin.worker_history import WorkerType, get_codex_worker_history
 
 
 @pytest.mark.asyncio

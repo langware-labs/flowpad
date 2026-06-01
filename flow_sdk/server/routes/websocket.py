@@ -20,6 +20,7 @@ from flow_sdk.core.network.connections import (
 from flow_sdk.core.network.connections import (
     remove_connection as remove_registry_connection,
 )
+from flow_sdk.core.network.connections import is_client_gone as _is_client_gone
 
 from .ws_rest import handle_rest_message
 
@@ -160,7 +161,10 @@ async def send_personal_message(message: str, websocket: WebSocket):
     try:
         await websocket.send_text(message)
     except Exception as e:
-        logger.error(f"Error sending personal message: {e}")
+        if _is_client_gone(e):
+            logger.debug(f"send_personal_message: client gone, dropping message: {e}")
+        else:
+            logger.error(f"Error sending personal message: {e}")
 
 
 async def broadcast(message: str):
@@ -416,6 +420,12 @@ async def handle_json_message(connection_id: str, websocket: WebSocket, message_
         return True
 
     except Exception as e:
+        # Client disconnected mid-handling → normal; don't ERROR, and don't try
+        # to send an error_response (that send would fail too). Let the outer
+        # endpoint loop handle disconnect cleanup.
+        if _is_client_gone(e):
+            logger.debug(f"Message handling stopped — client gone ({connection_id}): {e}")
+            return False
         logger.error(f"Error handling message from {connection_id}: {type(e).__name__}: {e}")
         error_response = {
             "message_type": "response_msg",

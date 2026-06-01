@@ -19,7 +19,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-import { AgenticProcess, FlowData, Markdown } from '@sdk';
+import { AgenticProcess, Markdown } from '@sdk';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
@@ -61,17 +61,14 @@ describe('file-op cross-link — end-to-end via real Claude Write tool', () => {
       proc = await new AgenticProcess({ workdir }).save([]);
       await proc.watch();
 
-      // Capture entity_event flow_data — that's how emit_entity_event surfaces
-      // over WS (element-type=entity_event, attributes carry event+payload).
+      // Capture entity events. ``emit_entity_event`` arrives over WS as an
+      // ``element-type=entity_event`` envelope which the SDK routes straight to
+      // the entity's ``onEntityEvent`` hook (NOT the flow-data stream) and
+      // re-emits as the ``'entity_event'`` event — see APIEntity.onEntityEvent /
+      // FlowSync store.onFlowData. Subscribe on that channel, not 'flow_data'.
       const entityEvents: Array<{ event: string; payload: any }> = [];
-      const unsub = proc.on('flow_data', (data: FlowData) => {
-        const eltType = data.attributes?.['element-type'];
-        if (eltType === 'entity_event') {
-          entityEvents.push({
-            event: String(data.attributes?.event ?? ''),
-            payload: data.attributes?.payload ?? {},
-          });
-        }
+      const unsub = proc.on('entity_event', (event: string, payload: any) => {
+        entityEvents.push({ event: String(event ?? ''), payload: payload ?? {} });
       });
 
       const chatChunks: string[] = [];

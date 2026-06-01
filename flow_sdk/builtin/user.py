@@ -40,7 +40,6 @@ class User(Entity):
     onboarded: bool = APIField(default=False)
     salt_: str | None = None
     hashed_password_: str | None = None
-    _api_visible: ClassVar[bool] = True
     _unique: ClassVar[list[str]] = ["email"]
 
     def __init__(self, **data):

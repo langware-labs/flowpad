@@ -42,9 +42,6 @@ class GitRepo(Entity):
     private: bool = APIField(default=False)
     fork: bool = APIField(default=False)
 
-    _api_visible: ClassVar[bool] = True
-    _icon: ClassVar[str] = "GitBranch"
-
     @property
     def display_name(self) -> str:
         if self.full_name and self.branch:

@@ -79,7 +79,7 @@ def _real_home_for_cli_subprocess_tests(request):
         yield
 
 from tests.api.conftest import clean_db, client, bootstrapped_client, reset_db_for_testclient, drain_background_tasks  # noqa: F401
-from flow_sdk.fs_records.agent_status import ApiErrorTimeoutError
+from flow_sdk.builtin.worker_status import ApiErrorTimeoutError
 
 
 @pytest.hookimpl(hookwrapper=True)

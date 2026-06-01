@@ -12,8 +12,9 @@ These tests reproduce the exact failure sequence observed in production.
 import pytest
 
 from flow_sdk.compute.providers.desktop.pty_session_manager import PtySessionManager
-from flow_sdk.fs_records.shell_record import ShellRecord, ShellStatus
-from flow_sdk.fs_store.record import get_default_records_root, set_default_records_root
+from flow_sdk.builtin.shell import ShellStatus
+from flow_sdk.fs_store.fs_record import FSRecord
+from flow_sdk.fs_store.record_paths import get_default_records_root, set_default_records_root
 
 
 @pytest.fixture(autouse=True)
@@ -147,10 +148,11 @@ def use_tmp_records(tmp_path):
 
 def test_plain_running_session_has_no_process(use_tmp_records):
     """A plain RUNNING shell (no Claude) should have no agentic_process_id."""
-    record = ShellRecord(
+    record = FSRecord(
+        type="shell",
         id="plain-1",
         pty_pid="plain-1",
-        state=ShellStatus.RUNNING,
+        state=ShellStatus.RUNNING.value,
     )
     record.save()
 

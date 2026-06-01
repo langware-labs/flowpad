@@ -300,6 +300,15 @@ class SQLiteDBDriver(DBDriver):
     async def open(self):
         """Initialize database connection."""
         if self.engine is not None:
+            # Engine is alive, but a concurrent or partially-completed close()
+            # may have nulled the session factory (it clears the factory before
+            # awaiting engine.dispose()). Rebuild it from the live engine rather
+            # than returning a driver that can't create sessions — otherwise
+            # callers hit ``'NoneType' object is not callable`` at session_factory().
+            if self.session_factory is None:
+                self.session_factory = async_sessionmaker(
+                    self.engine, class_=AsyncSession, expire_on_commit=False
+                )
             return
         from sqlalchemy.ext.asyncio import create_async_engine
         from sqlalchemy.pool import NullPool
@@ -389,11 +398,17 @@ class SQLiteDBDriver(DBDriver):
     async def close(self):
         """Close database connection and ensure worker threads stop."""
         if self.engine:
-            # Clear session factory first to prevent new sessions
+            # Null both references synchronously BEFORE the await on dispose().
+            # engine.dispose() yields the event loop; if another coroutine ran
+            # _session_ctx() in that window with engine!=None but factory=None,
+            # open()'s early-return would skip rebuilding and the caller would
+            # call None(). Clearing engine here too means a concurrent open()
+            # sees a fully-closed driver and rebuilds cleanly.
+            engine = self.engine
             self.session_factory = None
-            # Dispose the engine — closes all pooled connections + worker threads.
-            await self.engine.dispose()
             self.engine = None
+            # Dispose the engine — closes all pooled connections + worker threads.
+            await engine.dispose()
         # Drop the lazily-resolved path so the next ``open()`` re-reads
         # ``get_database_path()`` — picks up any ``override_db_path`` swap
         # that landed after the previous open. Callers who passed an

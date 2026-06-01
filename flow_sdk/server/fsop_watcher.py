@@ -96,9 +96,9 @@ async def _fire(
     first = changes[0]
     sampled = [{"path": str(c.path), "change_type": c.change_type} for c in changes[:_LOG_CAP]]
     try:
-        from flow_sdk.fs_records.trigger_log import TriggerLogRecord
+        from flow_sdk.fs_store.operations.trigger_log import append_entry as _append_trigger_log_entry, discover as _discover_trigger_log
 
-        TriggerLogRecord.append_entry(
+        _append_trigger_log_entry(
             trigger.name,
             {
                 # Legacy fields — keep populated from the first event so old
@@ -127,7 +127,7 @@ async def _fire(
             },
         )
     except Exception:
-        _log.exception("Trigger %s: failed to append TriggerLogRecord entry", trigger.name)
+        _log.exception("Trigger %s: failed to append trigger_log entry", trigger.name)
 
 
 async def _catch_up_if_changed(trigger: Trigger) -> None:

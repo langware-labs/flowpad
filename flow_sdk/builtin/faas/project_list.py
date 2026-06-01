@@ -9,12 +9,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from flow_sdk.fs_records.claude.claude_project import ProjectFsRecord
-from flow_sdk.fs_records.codex.codex_project import _read_codex_projects_from_config
-from flow_sdk.fs_records._claude_projects import decode_claude_project_dir
+from flow_sdk.fs_store.indexer.functions.codex_projects import _read_codex_projects_from_config
+from flow_sdk.fs_store.indexer.functions._claude_projects import decode_claude_project_dir
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer import FSIndexer, IndexerOptions
-from flow_sdk.fs_store.indexer.functions.claude_projects import claude_projects_fn
+from flow_sdk.fs_store.indexer.functions.claude_projects import (
+    _is_claude_encoded_ref as _is_claude_project_ref_fn,
+    _is_valid_cwd as _is_valid_project_cwd,
+    claude_projects_fn,
+)
 from flow_sdk.fs_store.indexer.functions.codex_projects import codex_projects_fn
 from flow_sdk.fs_store.path_utils import canonical_posix_path
 from flow_sdk.fs_store.record_types import RecordType
@@ -40,7 +43,7 @@ def _project_indexer() -> FSIndexer:
 
 
 def _is_claude_project_ref(path: Path) -> bool:
-    return ProjectFsRecord._is_claude_encoded_ref(path)
+    return _is_claude_project_ref_fn(path)
 
 
 def _iso_from_mtime(ts: float | None) -> str | None:
@@ -76,7 +79,7 @@ def _index_claude_dirs_by_cwd(claude_root: Path) -> dict[str, Path]:
     ground truth is each child's JSONL ``cwd`` field, which
     ``decode_claude_project_dir`` already exposes.
     """
-    from flow_sdk.fs_records._claude_projects import decode_claude_project_dir
+    from flow_sdk.fs_store.indexer.functions._claude_projects import decode_claude_project_dir
     out: dict[str, Path] = {}
     if not claude_root.is_dir():
         return out
@@ -174,7 +177,7 @@ def _read_codex_session_cwd(path: Path) -> str | None:
         if raw.get("type") == "session_meta":
             payload = raw.get("payload") or {}
             cwd = payload.get("cwd")
-            if isinstance(cwd, str) and ProjectFsRecord._is_valid_cwd(cwd):
+            if isinstance(cwd, str) and _is_valid_project_cwd(cwd):
                 return cwd
             return None
     return None
@@ -254,8 +257,8 @@ async def list_projects_from_indexer() -> dict[str, Any]:
     function then enriches each row with per-worker session counts read off
     disk — same shape the UI expected from the legacy implementation.
     """
-    from flow_sdk.fs_records._claude_projects import _claude_projects_dir
-    from flow_sdk.fs_records.all_projects import get_all_projects
+    from flow_sdk.fs_store.indexer.functions._claude_projects import _claude_projects_dir
+    from flow_sdk.fs_store.operations.all_projects import get_all_projects
 
     all_projects = await get_all_projects(create_missing=True)
     codex_activity = _codex_activity_by_cwd()
@@ -267,7 +270,7 @@ async def list_projects_from_indexer() -> dict[str, Any]:
     projects_by_cwd: dict[str, dict[str, Any]] = {}
     for info in all_projects:
         canonical = info.cwd
-        if not ProjectFsRecord._is_valid_cwd(canonical):
+        if not _is_valid_project_cwd(canonical):
             continue
         if "claude" in info.worker_types:
             claude_dir = claude_dirs.get(str(Path(canonical).resolve()))

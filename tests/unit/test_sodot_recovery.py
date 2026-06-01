@@ -22,23 +22,22 @@ from flow_sdk.cli.auth.secrets import (
     recover_orphaned_sodot,
     write_secret,
 )
-from flow_sdk.fs_records.app_secret import AppSecretRecord
+from flow_sdk.fs_store.fs_record import FSRecord
+from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.instance_settings import reset_instance_settings
-from flow_sdk.instance_settings.base_settings import (
-    SOD_KEY_KEYCHAIN_SERVICE,
-    _reset_sod_key_cache,
-)
+from flow_sdk.instance_settings.base_settings import SOD_KEY_KEYCHAIN_SERVICE
 
 
 def _lose_keychain_key(instance_name: str) -> None:
-    """Simulate the keychain Fernet key going missing across a restart:
-    drop the keychain entry and the per-process cache so the next sod access
-    mints a new (mismatched) key."""
+    """Simulate the keychain Fernet key going missing across a restart: drop
+    the keychain entry and reset the instance cache so the next sod access
+    re-resolves on a fresh instance (no memoized key) and mints a new
+    (mismatched) key — exactly what a real restart would do."""
     try:
         keyring.delete_password(SOD_KEY_KEYCHAIN_SERVICE, instance_name)
     except Exception:
         pass
-    _reset_sod_key_cache()
+    reset_instance_settings()
 
 
 def test_healthy_sodot_is_left_alone(sod_env):
@@ -71,22 +70,53 @@ def test_orphaned_sodot_is_reset_with_notice(sod_env):
     assert sod_env.sod.read("OPENAI_API_KEY") is None
 
 
+def test_keyring_locked_does_not_reset_sodot(sod_env, monkeypatch):
+    """A TRANSIENT keychain lock (KeyringLocked) must NOT wipe the sodot.
+
+    Regression for the 2026-05-30 prod logout: a momentarily-locked keychain
+    raised KeyringLocked during boot recovery and the old broad `except`
+    destroyed the whole store. The key is intact — unlocking recovers it — so
+    recovery must leave everything in place.
+    """
+    import keyring
+    import keyring.errors as kerr
+
+    write_secret("OPENAI_API_KEY", "sk-test-123")
+    assert sod_env.sodot_path.exists()
+
+    # Drop the per-instance key memo so the next access re-reads the keychain,
+    # and make that read report the keychain as LOCKED.
+    monkeypatch.delenv("SOD_ENC_KEY", raising=False)
+    reset_instance_settings()
+
+    def _locked(*_a, **_k):
+        raise kerr.KeyringLocked("keychain is locked")
+
+    monkeypatch.setattr(keyring, "get_password", _locked)
+
+    notice = recover_orphaned_sodot()
+
+    assert notice is None                       # transient → no reset, no notice
+    assert sod_env.sodot_path.exists()          # sodot must survive intact
+    assert sod_env.sodot_path.stat().st_size > 0
+
+
 async def test_clear_app_secret_metadata_removes_orphaned_records(sod_env):
     """After a sodot reset, the now-orphaned metadata records are deleted so
     the secrets list doesn't show entries whose values are gone."""
     write_secret("OPENAI_API_KEY", "sk-test-123", "OpenAI key")
     write_secret("GROQ_API_KEY", "gsk-test", "Groq key")
-    assert AppSecretRecord.get("OPENAI_API_KEY") is not None
-    assert AppSecretRecord.get("GROQ_API_KEY") is not None
+    assert FSRecord.load_or_none(RecordType.APP_SECRET, "OPENAI_API_KEY") is not None
+    assert FSRecord.load_or_none(RecordType.APP_SECRET, "GROQ_API_KEY") is not None
 
     _lose_keychain_key(sod_env.instance_name)
 
     assert recover_orphaned_sodot() is not None
     await clear_app_secret_metadata()
 
-    assert AppSecretRecord.get("OPENAI_API_KEY") is None
-    assert AppSecretRecord.get("GROQ_API_KEY") is None
-    assert AppSecretRecord.discover() == []
+    assert FSRecord.load_or_none(RecordType.APP_SECRET, "OPENAI_API_KEY") is None
+    assert FSRecord.load_or_none(RecordType.APP_SECRET, "GROQ_API_KEY") is None
+    assert FSRecord.discover(str(RecordType.APP_SECRET)) == []
 
 
 async def test_clear_app_secret_metadata_is_idempotent(sod_env):

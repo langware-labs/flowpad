@@ -1,8 +1,8 @@
-import { GitRepo, ComputeNode, dataContext, ShellInputFlowData } from '@sdk';
+import { GitWorkdir, ComputeNode, dataContext, ShellInputFlowData } from '@sdk';
 import { afterAll, beforeEach, describe, expect, it } from 'vitest';
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
 
-describe('GitRepo (live server)', () => {
+describe('GitWorkdir (live server)', () => {
   const signupInfo = getTestSignupInfo();
 
   beforeEach(async (context: any) => {
@@ -50,7 +50,7 @@ describe('GitRepo (live server)', () => {
   // -------------------------------------------------------------------------
 
   it('isInit returns false for /tmp (non-git dir)', async () => {
-    const result = await new GitRepo('/tmp').isInit();
+    const result = await new GitWorkdir('/tmp').isInit();
     expect(result).toBe(false);
   }, 10000);
 
@@ -59,7 +59,7 @@ describe('GitRepo (live server)', () => {
   // -------------------------------------------------------------------------
 
   it('getBranch returns null for /tmp', async () => {
-    const result = await new GitRepo('/tmp').getBranch();
+    const result = await new GitWorkdir('/tmp').getBranch();
     expect(result).toBeNull();
   }, 10000);
 
@@ -67,7 +67,7 @@ describe('GitRepo (live server)', () => {
     const cn = getComputeNode();
     const dir = await makeGitRepo(cn);
     try {
-      const result = await new GitRepo(dir, cn.id).getBranch();
+      const result = await new GitWorkdir(dir, cn.id).getBranch();
       expect(typeof result).toBe('string');
       expect(result!.length).toBeGreaterThan(0);
     } finally {
@@ -80,7 +80,7 @@ describe('GitRepo (live server)', () => {
   // -------------------------------------------------------------------------
 
   it('isLinkedWorktree returns false for /tmp', async () => {
-    const result = await new GitRepo('/tmp').isLinkedWorktree();
+    const result = await new GitWorkdir('/tmp').isLinkedWorktree();
     expect(result).toBe(false);
   }, 10000);
 
@@ -90,7 +90,7 @@ describe('GitRepo (live server)', () => {
     const worktreeDir = await shell(cn, 'mktemp -d --dry-run');
     try {
       await shell(cn, `git -C ${mainDir} worktree add ${worktreeDir}`);
-      const result = await new GitRepo(worktreeDir, cn.id).isLinkedWorktree();
+      const result = await new GitWorkdir(worktreeDir, cn.id).isLinkedWorktree();
       expect(result).toBe(true);
     } finally {
       await cleanupDir(cn, mainDir);
@@ -103,7 +103,7 @@ describe('GitRepo (live server)', () => {
   // -------------------------------------------------------------------------
 
   it('getStatus returns error field for /tmp (not a git repo)', async () => {
-    const status = await new GitRepo('/tmp').getStatus();
+    const status = await new GitWorkdir('/tmp').getStatus();
     expect(status.error).toBe('not a git repository');
     expect(status.branch).toBeNull();
     expect(status.files).toEqual([]);
@@ -118,7 +118,7 @@ describe('GitRepo (live server)', () => {
     const workspace = dataContext.bootstrapInfo?.desktop_info?.paths?.workspace;
     if (!workspace) return; // skip if bootstrap does not expose paths
     const absPath = root + workspace;
-    const result = await new GitRepo(absPath).isInit();
+    const result = await new GitWorkdir(absPath).isInit();
     expect(typeof result).toBe('boolean');
   }, 10000);
 
@@ -127,7 +127,7 @@ describe('GitRepo (live server)', () => {
   // -------------------------------------------------------------------------
 
   it('hasCommit returns false for /tmp (non-git dir)', async () => {
-    const result = await new GitRepo('/tmp').hasCommit();
+    const result = await new GitWorkdir('/tmp').hasCommit();
     expect(result).toBe(false);
   }, 10000);
 
@@ -135,7 +135,7 @@ describe('GitRepo (live server)', () => {
     const cn = getComputeNode();
     const dir = await makeGitRepo(cn);
     try {
-      const result = await new GitRepo(dir, cn.id).hasCommit();
+      const result = await new GitWorkdir(dir, cn.id).hasCommit();
       expect(result).toBe(true);
     } finally {
       await cleanupDir(cn, dir);
@@ -146,7 +146,7 @@ describe('GitRepo (live server)', () => {
     const cn = getComputeNode();
     const dir = await makeEmptyGitRepo(cn);
     try {
-      const result = await new GitRepo(dir, cn.id).hasCommit();
+      const result = await new GitWorkdir(dir, cn.id).hasCommit();
       expect(result).toBe(false);
     } finally {
       await cleanupDir(cn, dir);
@@ -160,7 +160,7 @@ describe('GitRepo (live server)', () => {
   it('ComputeNode.git() creates a GitRepo bound to the compute node', async () => {
     const cn = getComputeNode();
     const git = cn.git('/tmp');
-    expect(git).toBeInstanceOf(GitRepo);
+    expect(git).toBeInstanceOf(GitWorkdir);
     expect(git.workDir).toBe('/tmp');
     expect(git.computeNodeId).toBe(cn.id);
   }, 10000);

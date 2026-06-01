@@ -296,7 +296,7 @@ def main(argv: list[str] | None = None) -> int:
     p_build.add_argument("--summaries-dir", type=Path, required=True,
                          help="Absolute path to this entity's file-summaries dir "
                               "(resolved by the skill agent from the entity's id via "
-                              "`flow_sdk.fs_records.markdown_index_record.file_summaries_dir(entity_id)`).")
+                              "`flow_sdk.fs_store.operations.markdown_index.file_summaries_dir(entity_id)`).")
     p_build.add_argument("--force", action="store_true")
 
     p_status = sub.add_parser("status", help="one-line summary, no JSON")

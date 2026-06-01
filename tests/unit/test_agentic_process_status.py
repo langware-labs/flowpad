@@ -27,7 +27,7 @@ from flow_sdk.builtin.agentic_process.status_predicates import (
     is_ready_for_input,
     WorkerMode,
 )
-from flow_sdk.fs_records.agent_status import (
+from flow_sdk.builtin.worker_status import (
     _RUNNING_STATUSES,
     _TERMINAL_STATUSES,
     _tail_status,

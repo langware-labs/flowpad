@@ -41,11 +41,11 @@ from flow_sdk.builtin.agentic_process.cli_drivers.claude import (
 from flow_sdk.core import Entity, action
 from flow_sdk.core.flow.streaming.response_handler import StreamingResponseHandler
 from flow_sdk.flowpad_types.enums import ProcessType, WorkerType
-from flow_sdk.fs_records.agent_status import WorkerStatus, is_terminal as is_worker_terminal
-from flow_sdk.fs_records.agentic_process_lifecycle import ProcessStatus
+from flow_sdk.builtin.worker_status import WorkerStatus, is_terminal as is_worker_terminal
+from flow_sdk.builtin.process_lifecycle import ProcessStatus
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.builtin.agentic_process.status_predicates import is_ready_for_input
-from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
+from flow_sdk.fs_store.indexer.functions.claude_sessions import get_claude_session
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 
@@ -163,7 +163,7 @@ def _shell_worker_pid_alive(shell_id: str) -> bool:
 
         import psutil as _psutil
 
-        from flow_sdk.fs_store.record import get_default_records_data_root, record_stem
+        from flow_sdk.fs_store.record_paths import get_default_records_data_root, record_stem
 
         path = (
             get_default_records_data_root()
@@ -272,19 +272,14 @@ async def _index_session_on_close(session_id: str, display_name: str | None = No
                   when the JSONL has no user-set custom-title.
     """
     try:
-        from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
-        record = ClaudeSessionRecord.get(session_id)
+        record = get_claude_session(session_id)
         if record:
             if display_name:
                 inst = object.__getattribute__(record, "__dict__")
                 if not inst.get("custom_title"):
-                    record.name = display_name
-                    _ = record.search_content  # populate _fts_cache
-                    cache = inst.get("_fts_cache")
-                    object.__setattr__(
-                        record, "_fts_cache",
-                        (display_name[:120], cache[1] if cache else None),
-                    )
+                    # Base search_title reads record.name → FTS title becomes
+                    # the truncated display_name.
+                    record.name = display_name[:120]
             await record.sync_to_db()
             logger.debug("[AgenticProcess] indexed session %s on close", session_id)
     except Exception:
@@ -300,11 +295,11 @@ def _build_run_result(proc: "AgenticProcess") -> "RunResult":
     token_usage: dict | None = None
     if proc.session_id:
         try:
-            record = ClaudeSessionRecord.get(proc.session_id)
+            record = get_claude_session(proc.session_id)
             if record:
-                text = record.last_assistant_text or ""
-                models_used = list(record.models_used) if hasattr(record, "models_used") else []
-                token_usage = record.token_usage if hasattr(record, "token_usage") else None
+                text = getattr(record, "last_assistant_text", None) or ""
+                models_used = list(getattr(record, "models_used", []) or [])
+                token_usage = getattr(record, "token_usage", None)
         except Exception:
             pass
 
@@ -330,6 +325,7 @@ def _build_run_result(proc: "AgenticProcess") -> "RunResult":
 
 class AgenticProcess(Entity):
     _api_visible = True
+    _icon: ClassVar[str | None] = "Workflow"
     type: str = APIField(default="agentic_process")
 
     instruction_content: str | None = APIField(default=None)
@@ -1142,7 +1138,7 @@ class AgenticProcess(Entity):
         Raises:
             TimeoutError: if the process does not reach idle within ``timeout``.
         """
-        from flow_sdk.fs_records.agent_status import (
+        from flow_sdk.builtin.worker_status import (
             WorkerStatus as _WS,
             _has_pending_tool_use,
             _last_assistant_stop_reason,
@@ -1660,9 +1656,13 @@ class AgenticProcess(Entity):
                 )
 
         try:
-            from flow_sdk.fs_records.markdown_record import MarkdownRecord
+            from flow_sdk.fs_store.fs_ref import FSRef as _FSRef
+            from flow_sdk.fs_store.indexer.functions.markdown import extract_markdown
 
-            rec = MarkdownRecord.from_file(Path(plan_file_path))
+            records = extract_markdown(_FSRef(Path(plan_file_path)))
+            if not records:
+                return ApiFailResponse(message=f"could not parse {plan_file_path}")
+            rec = records[0]
             await rec.sync_to_db()
             return ApiSuccessResponse(data={"markdown": rec.meta_dict(), "plan_path": plan_file_path})
         except Exception as e:
@@ -1749,14 +1749,14 @@ class AgenticProcess(Entity):
         Merges the agent spec into cli_config.agents_json so it survives across
         HTTP requests without relying on in-memory state.
         """
-        from flow_sdk.fs_records.agent_record import AgentRecord
+        from flow_sdk.fs_store.operations.agent import extract_agent_from_path, agent_to_cli_json  # noqa: PLC0415
         if not asset_ref:
             return ApiFailResponse(message="asset_ref is required")
         abs_path = Path("/" + asset_ref.lstrip("/"))
         if not abs_path.exists():
             return ApiFailResponse(message=f"Agent file not found: {abs_path}")
-        agent = AgentRecord.from_file(abs_path)
-        agent_entry = agent.to_agents_cli_json()
+        agent = extract_agent_from_path(abs_path)
+        agent_entry = agent_to_cli_json(agent)
         # Merge into cli_config so the agent is durably stored on the entity.
         cli_opts = ClaudeCliOptions.from_json(self.cli_config or {})
         cli_opts.agents_json = {**(cli_opts.agents_json or {}), **agent_entry}
@@ -1807,14 +1807,14 @@ class AgenticProcess(Entity):
         Adds the agent's name to the persisted embedded_agent_ids list and stores
         the agent object in the in-memory _embedded_agents list.
         """
-        from flow_sdk.fs_records.agent_record import AgentRecord
+        from flow_sdk.fs_store.operations.agent import load_agent as _load_agent  # noqa: PLC0415
+        from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
+        from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
         _agents: list = object.__getattribute__(self, "__dict__").setdefault("_embedded_agents", [])
         if isinstance(agent, str):
-            rec = AgentRecord.load_agent(agent) or AgentRecord(name=agent, id=agent)
-        elif isinstance(agent, AgentRecord):
-            rec = agent
+            rec = _load_agent(agent) or FSRecord(type=RecordType.AGENT, name=agent, id=agent)
         else:
-            # duck-type: anything with to_agents_json
+            # duck-type: Record or anything with name/id
             rec = agent
         _agents.append(rec)
         name = rec.name if hasattr(rec, "name") else str(agent)
@@ -1847,27 +1847,15 @@ class AgenticProcess(Entity):
     # Claude discovers them via `--add-dir <record_dir>/assets`.
 
     async def _assets_dir_path(self) -> "Path":
-        """The filesystem directory where embedded assets are materialized."""
-        from flow_sdk.fs_records.agentic_process_record import AgenticProcessRecord
-        from flow_sdk.fs_store.record import get_default_records_root, record_stem
+        """The filesystem directory where embedded assets are materialized.
 
-        record = None
-        try:
-            record = await self.get_record()
-        except Exception:
-            pass
+        ``<records_root>/agentic_process/agentic_process-@<id>/execution/assets``
+        """
+        from flow_sdk.fs_store.fs_record import record_stem
+        from flow_sdk.fs_store.record_paths import get_default_records_root
 
-        if record and record.record_dir:
-            return record.assets_dir
-
-        # Fallback: synthesize the path from the process id if the record can't
-        # be resolved (e.g. the process was saved moments ago and the store
-        # hasn't reindexed). Must match ``AgenticProcessRecord.assets_dir``
-        # (``<record_dir>/execution/assets``) or attach + read paths diverge.
         root = get_default_records_root()
-        d = root / AgenticProcessRecord._record_type / record_stem(
-            AgenticProcessRecord._record_type, self.id
-        )
+        d = root / "agentic_process" / record_stem("agentic_process", self.id)
         a = d / "execution" / "assets"
         a.mkdir(parents=True, exist_ok=True)
         return a
@@ -1887,13 +1875,13 @@ class AgenticProcess(Entity):
         type is unsupported for embedding. Raises for resolution / IO failures.
         """
         import shutil
-        from flow_sdk.fs_records.agent_record import AgentRecord
-        from flow_sdk.fs_records.skill_record import SkillRecord
+        from flow_sdk.fs_store.operations.agent import get_agent, load_agent as _load_agent  # noqa: PLC0415
+        from flow_sdk.fs_store.operations.skill import get_skill, copy_skill_to
 
         if ref.type == "agent":
             # Resolve by id (uuid5-derived from the .md path) first, then fall back
             # to name-based lookup for agents the UI knows by name only.
-            agent = AgentRecord.get(ref.id) or AgentRecord.load_agent(ref.id)
+            agent = get_agent(ref.id) or _load_agent(ref.id)
             if agent is None:
                 raise FileNotFoundError(f"Agent not found: {ref.id}")
             target_dir = assets_dir / ".claude" / "agents"
@@ -1906,11 +1894,11 @@ class AgenticProcess(Entity):
             return agent.name or ref.id
 
         if ref.type == "skill":
-            skill = SkillRecord.get(ref.id)
+            skill = get_skill(ref.id)
             if skill is None:
                 raise FileNotFoundError(f"Skill not found: {ref.id}")
             target_root = assets_dir / ".claude" / "skills"
-            skill.copy_to(target_root)
+            copy_skill_to(skill, target_root)
             return skill.name or ref.id
 
         return None  # Unsupported type — caller decides to fail loudly.
@@ -1918,17 +1906,17 @@ class AgenticProcess(Entity):
     async def _unmaterialize_entity(self, ref: TypeId, assets_dir: "Path") -> None:
         """Best-effort removal of the files laid down by _materialize_entity."""
         import shutil
-        from flow_sdk.fs_records.agent_record import AgentRecord
-        from flow_sdk.fs_records.skill_record import SkillRecord
+        from flow_sdk.fs_store.operations.agent import get_agent, load_agent as _load_agent  # noqa: PLC0415
+        from flow_sdk.fs_store.operations.skill import get_skill
 
         if ref.type == "agent":
-            agent = AgentRecord.get(ref.id) or AgentRecord.load_agent(ref.id)
+            agent = get_agent(ref.id) or _load_agent(ref.id)
             name = agent.name if agent else ref.id
             target = assets_dir / ".claude" / "agents" / f"{name}.md"
             if target.exists():
                 target.unlink()
         elif ref.type == "skill":
-            skill = SkillRecord.get(ref.id)
+            skill = get_skill(ref.id)
             name = skill.name if skill else ref.id
             target = assets_dir / ".claude" / "skills" / name
             if target.exists():
@@ -2147,15 +2135,15 @@ class AgenticProcess(Entity):
         """
         try:
             if ref.type == "agent":
-                from flow_sdk.fs_records.agent_record import AgentRecord
-                rec = AgentRecord.get(ref.id) or AgentRecord.load_agent(ref.id)
+                from flow_sdk.fs_store.operations.agent import get_agent, load_agent as _load_agent  # noqa: PLC0415
+                rec = get_agent(ref.id) or _load_agent(ref.id)
                 if rec is None:
                     return None
                 name = rec.name or ref.id
                 return assets_dir / ".claude" / "agents" / f"{name}.md"
             if ref.type == "skill":
-                from flow_sdk.fs_records.skill_record import SkillRecord
-                rec = SkillRecord.get(ref.id)
+                from flow_sdk.fs_store.operations.skill import get_skill
+                rec = get_skill(ref.id)
                 if rec is None:
                     return None
                 name = rec.name or ref.id
@@ -2468,15 +2456,22 @@ class AgenticProcess(Entity):
         missing = [a for a in ("exe_folder", "input_folder", "output_folder", "assets_folder") if not data.get(a)]
         if missing and self.id:
             try:
-                from flow_sdk.fs_records.agentic_process_record import AgenticProcessRecord
-                rec = AgenticProcessRecord(id=self.id)
-                default = rec.default_path
-                if default is not None:
-                    rec.path = str(default)
-                    for attr in missing:
-                        ref = getattr(rec, attr, None)
-                        if ref is not None:
-                            data[attr] = ref.to_dict()
+                from flow_sdk.fs_store.fs_record import record_stem
+                from flow_sdk.fs_store.record_paths import get_default_records_root
+                from flow_sdk.fs_store.fs_ref import FSRef
+
+                base = get_default_records_root() / "agentic_process" / record_stem("agentic_process", self.id)
+                folder_map = {
+                    "exe_folder": base / "execution",
+                    "input_folder": base / "execution" / "input",
+                    "output_folder": base / "execution" / "output",
+                    "assets_folder": base / "execution" / "assets",
+                }
+                for attr in missing:
+                    p = folder_map.get(attr)
+                    if p is not None:
+                        p.mkdir(parents=True, exist_ok=True)
+                        data[attr] = FSRef(p).to_dict()
             except Exception:
                 pass
         return data
@@ -2915,23 +2910,14 @@ class AgenticProcess(Entity):
     @action.get(action_name="input-dir")
     async def get_input_dir(self):
         """Return the absolute path of this process's input directory, creating it if needed."""
-        from flow_sdk.fs_records.agentic_process_record import AgenticProcessRecord
-        from flow_sdk.fs_store.record import get_default_records_root, record_stem
+        from flow_sdk.fs_store.fs_record import record_stem
+        from flow_sdk.fs_store.record_paths import get_default_records_root
 
-        record = None
-        try:
-            record = await self.get_record()
-        except Exception:
-            pass
-
-        if record and record.record_dir:
-            input_dir = record.input_dir
-        else:
-            uid = self.id
-            root = get_default_records_root()
-            record_dir = root / AgenticProcessRecord._record_type / record_stem(AgenticProcessRecord._record_type, uid)
-            input_dir = record_dir / "input"
-            input_dir.mkdir(parents=True, exist_ok=True)
+        uid = self.id
+        root = get_default_records_root()
+        record_dir = root / "agentic_process" / record_stem("agentic_process", uid)
+        input_dir = record_dir / "input"
+        input_dir.mkdir(parents=True, exist_ok=True)
 
         shell = await self.shell()
         compute_node_id = await shell.resolve_compute_node_typeid_str() if shell else "compute_node-@local"
@@ -2948,11 +2934,11 @@ class AgenticProcess(Entity):
         """Check if there's a resumable Claude session for this agentic process."""
         return self._discover_claude_record_session(session_id) is not None
 
-    def _discover_claude_record_session(self, session_id: str | None) -> ClaudeSessionRecord | None:
-        """Discover the ClaudeSessionRecord associated with this agentic process's session_id."""
+    def _discover_claude_record_session(self, session_id: str | None) -> "Record | None":
+        """Discover the Claude session Record associated with this agentic process's session_id."""
         if not session_id:
             return None
-        return ClaudeSessionRecord.get(session_id)
+        return get_claude_session(session_id)
 
     # Bursty turn writes ~10-50 entries in 1s; cap at 1000 so a pathological
     # writer can't grow the buffer without bound.
@@ -3142,7 +3128,7 @@ class AgenticProcess(Entity):
         seen: set[str] = set()
         while candidate and candidate not in seen:
             seen.add(candidate)
-            if ClaudeSessionRecord.get(candidate) is not None:
+            if get_claude_session(candidate) is not None:
                 return candidate
             procs = await AgenticProcess.get_all()
             parent = next((p for p in procs if p.session_id == candidate), None)

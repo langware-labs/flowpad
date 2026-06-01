@@ -19,6 +19,28 @@ export interface JSONSchemaProperty {
   [key: string]: any;
 }
 
+/**
+ * Complete reflection of the backend ``TypeInfo`` (schema_registry.py),
+ * delivered one-per-type in the bootstrap ``types`` payload. ``schema`` carries
+ * the JSON validation schema for entity-backed types (null otherwise); ``icon``
+ * is the single source of truth for the lucide icon name (backend-owned).
+ */
+export interface TypeInfo {
+  type_name: string;
+  uid_field: string;
+  index_fields: string[];
+  defaults: Record<string, unknown>;
+  indexed_by_default: boolean;
+  browseable: boolean;
+  creatable: boolean;
+  api_visible: boolean;
+  icon: string | null;
+  parent_type: string | null;
+  locations: string[];
+  schema_hash: string;
+  schema: JSONSchemaProperty | null;
+}
+
 export class JSONSchemaParser {
   schema: JSONSchemaProperty;
 
