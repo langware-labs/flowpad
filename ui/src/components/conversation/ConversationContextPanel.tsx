@@ -32,7 +32,7 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { useChipPrewarm } from '@src/navigation/useChipPrewarm';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { resolveWorkdir } from './apply-project-choice';
-import { fileAttachmentUrl } from './attachment-url';
+import { localAttachmentUrl } from './attachment-url';
 import { ICON_BY_TYPE } from './EntityChip';
 import { buildAssistancePrompt } from './prompt-building';
 import {
@@ -563,7 +563,9 @@ function TranscriptRow({
   // Defensive: stale/malformed rows can have a non-string `data`; the bare
   // `.split` used to take down the whole context panel.
   const dataStr = attachmentDataString(attachment);
-  const downloadUrl = fileAttachmentUrl(messageId, dataStr);
+  // Only resolves to a URL when the bytes are local — a not-yet-downloaded /
+  // dangling transcript yields null, so "View" stays inert rather than 404ing.
+  const downloadUrl = localAttachmentUrl(messageId, attachment);
 
   const handleView = () => {
     if (localPath) {
@@ -571,7 +573,7 @@ function TranscriptRow({
       // Form 2 branch (POSIX or Windows-style absolute paths are both
       // forwarded to ``TranscriptViewer path={…}``).
       navigation.openLens('claude', 'transcript', encodeURIComponent(localPath));
-    } else {
+    } else if (downloadUrl) {
       window.open(downloadUrl, '_blank', 'noopener,noreferrer');
     }
   };
@@ -618,7 +620,9 @@ function AttachmentRow({
   // Defensive: stale/malformed rows can have a non-string `data`; the bare
   // `.split` used to crash the whole context panel for the entire conv.
   const dataStr = attachmentDataString(attachment);
-  const downloadUrl = fileAttachmentUrl(messageId, dataStr);
+  // Null until the bytes are local — keeps the Download action from 404ing on a
+  // body that was never pulled (see localAttachmentUrl).
+  const downloadUrl = localAttachmentUrl(messageId, attachment);
   const filename = dataStr.split('/').pop() || dataStr || '(unknown)';
   const typeLabel = kind === 'prompt-file' ? 'Prompt file' : 'File';
 
@@ -631,13 +635,15 @@ function AttachmentRow({
       onFocus={onSelect}
       focusTitle="Reveal the message this file is attached to"
     >
-      <RowAction
-        onClick={() => window.open(downloadUrl, '_blank', 'noopener,noreferrer')}
-        title={`Download ${filename}`}
-      >
-        <Download className="h-3 w-3" />
-        Download
-      </RowAction>
+      {downloadUrl && (
+        <RowAction
+          onClick={() => window.open(downloadUrl, '_blank', 'noopener,noreferrer')}
+          title={`Download ${filename}`}
+        >
+          <Download className="h-3 w-3" />
+          Download
+        </RowAction>
+      )}
     </Row>
   );
 }

@@ -8,7 +8,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@src/components/ui/dialog';
-import { fileAttachmentUrl } from './attachment-url';
+import { localAttachmentUrl } from './attachment-url';
 
 interface PromptApprovalRowProps {
   /** Every PROMPT attachment on the message — the row splits inline text from prompt files. */
@@ -165,7 +165,7 @@ export function PromptApprovalRow({
         const d = attachmentDataString(a);
         const filename = d.split('/').pop() || d;
         const display = truncateMiddle(filename, FILENAME_LIMIT);
-        const url = messageId ? fileAttachmentUrl(messageId, d) : undefined;
+        const url = messageId ? localAttachmentUrl(messageId, a) : null;
         const className =
           'inline-flex shrink-0 items-center gap-1 rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[11px] font-medium text-foreground/80 transition-colors hover:bg-muted hover:text-foreground';
         return url ? (

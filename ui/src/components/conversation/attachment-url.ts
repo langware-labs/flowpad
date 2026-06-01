@@ -1,5 +1,19 @@
 import { ActionInfo } from '@sdk/models/ActionInfo';
-import { attachmentDataString, type Attachment } from '@sdk/entities/flow-message';
+import { AttachmentType, attachmentDataString, type Attachment } from '@sdk/entities/flow-message';
+
+/**
+ * True for a FILE attachment the user can download as a chip — i.e. any FILE
+ * except the `conversation.jsonl` transcript, which lives on the toolbar rather
+ * than as an attachment chip. Shared so the bubble and the prompt builder agree
+ * on what counts as a downloadable file.
+ */
+export function isDownloadableFileAttachment(
+  att: Pick<Attachment, 'attachment_type' | 'data'>,
+): boolean {
+  if (att.attachment_type !== AttachmentType.FILE) return false;
+  const d = attachmentDataString(att);
+  return !!d && !d.endsWith('conversation.jsonl');
+}
 
 /**
  * Build the GET URL that streams a single FILE / PROMPT-file attachment from

@@ -4,7 +4,7 @@ import { AgenticProcess, dataManager, TypeId } from '@sdk';
 import type { ITask } from '@sdk/entities/task';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { fileAttachmentUrl } from '../attachment-url';
+import { localAttachmentUrl } from '../attachment-url';
 import {
   findConversationTranscript,
   type ConversationTranscriptInfo,
@@ -39,7 +39,16 @@ export function ConversationChips({ conversationId, task }: ConversationChipsPro
 
   const sharedProcessId = task?.shared_process_id ?? undefined;
 
-  const showTranscript = !!transcript && !exclude.has(ChipKey.transcript(transcript.vfsPath));
+  // Null until the transcript bytes are local — keeps the link from pointing at
+  // a body that was never pulled.
+  const transcriptUrl = transcript
+    ? localAttachmentUrl(transcript.messageId, {
+        data: transcript.vfsPath,
+        local_path: transcript.localPath,
+      })
+    : null;
+  const showTranscript =
+    !!transcript && !!transcriptUrl && !exclude.has(ChipKey.transcript(transcript.vfsPath));
   const showSharedTerminal =
     !!sharedProcessId && !exclude.has(ChipKey.sharedTerminal(sharedProcessId));
 
@@ -54,9 +63,9 @@ export function ConversationChips({ conversationId, task }: ConversationChipsPro
 
   return (
     <>
-      {showTranscript && transcript && (
+      {showTranscript && transcript && transcriptUrl && (
         <a
-          href={fileAttachmentUrl(transcript.messageId, transcript.vfsPath)}
+          href={transcriptUrl}
           target="_blank"
           rel="noreferrer"
           download

@@ -6,6 +6,9 @@ export interface ConversationTranscriptInfo {
   messageId: string;
   /** VFS subpath of the attachment, e.g. `data/conversation.jsonl`. */
   vfsPath: string;
+  /** Absolute local path when the bytes are on disk, else null — gates the
+   *  download link so it never points at a body that was never pulled. */
+  localPath: string | null;
 }
 
 /**
@@ -33,7 +36,7 @@ export async function findConversationTranscript(
       const att = (fm.attachment ?? []).find(
         (a) => a.attachment_type === AttachmentType.FILE && a.data.endsWith('conversation.jsonl'),
       );
-      if (att) return { messageId: ptr.id, vfsPath: att.data };
+      if (att) return { messageId: ptr.id, vfsPath: att.data, localPath: att.local_path ?? null };
     }
   } catch {
     // fall through — the toolbar treats null as "no transcript yet".
