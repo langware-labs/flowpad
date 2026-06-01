@@ -12,7 +12,7 @@ import { navigateToResult } from '@src/navigation/record-type-nav';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { dataContext, fsManager, fsStore, RecordType, systemTools, TypeId } from '@sdk';
 import apiClient from '@sdk/client';
-import { BookOpen, ChevronRight, PackageSearch, PanelLeft, PanelLeftClose, X } from 'lucide-react';
+import { AlertCircle, BookOpen, ChevronRight, PackageSearch, PanelLeft, PanelLeftClose, X } from 'lucide-react';
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -25,8 +25,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tool
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { AssetFilter } from './assetFilter';
 import { DEFAULT_ASSET_FILTER } from './assetFilter';
-import { defaultScopeFilter } from '@src/lib/scope-filter';
+import { applyScopeToParams, defaultScopeFilter } from '@src/lib/scope-filter';
 import type { ScopeFilter } from '@src/lib/scope-filter';
+import { useIndexStatus } from '@src/hooks/use-index-status';
+import { formatTimeAgo } from '@src/utils/format-time-ago';
 import { projectIdForPath } from './utils';
 import { ScopeFilterBar } from '@src/components/scope-filter/ScopeFilterBar';
 import { ProjectScopeBadge } from './ProjectScopeBadge';
@@ -319,15 +321,39 @@ export function AssetsPage() {
   });
   const [isResizingSidebar, setIsResizingSidebar] = useState(false);
 
+  // Project-page index state comes from the project record's own ``.hash``
+  // (the project IS a record): never_indexed → CTA, stale → "changes pending".
+  // Only meaningful under a locked project scope; global assets keep the plain
+  // "refresh search data" rebuild.
+  const { state: idxState, refresh: refreshIdxStatus } = useIndexStatus(
+    lockedScope ?? undefined,
+  );
+  const projIdx = isProjectView && idxState.phase === 'ready' ? idxState.status : null;
+  const neverIndexed = projIdx?.never_indexed ?? false;
+  const changesPending = projIdx?.stale ?? false;
+  const lastIndexedAt = projIdx?.last_indexed_at ?? null;
+
   useEffect(() => { setSelectedResultIndex(-1); }, [searchQuery]);
 
   useEffect(() => {
     void systemTools.refreshActivityStatus();
   }, []);
 
-  const handleRebuildIndex = useCallback(() => {
+  const handleRebuildIndex = useCallback(async () => {
+    // Project view → Fast index scoped to the project (re-stamps the project's
+    // own index sentinel). Global view → legacy full reset+rescan.
+    if (isProjectView) {
+      const params = new URLSearchParams();
+      applyScopeToParams(params, effectiveFilter.scope);
+      try {
+        await apiClient.post(`/graph/compute_node/@local/fs-records/index?${params.toString()}`);
+      } finally {
+        refreshIdxStatus();
+      }
+      return;
+    }
     void resetAndRescan();
-  }, [resetAndRescan]);
+  }, [isProjectView, effectiveFilter.scope, refreshIdxStatus, resetAndRescan]);
 
   const handleSearchSubmit = useCallback(() => {
     const q = searchQuery.trim();
@@ -703,22 +729,51 @@ export function AssetsPage() {
               </div>
             )}
           </div>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-9 w-9 shrink-0"
-                onClick={handleRebuildIndex}
-                disabled={busy}
-                aria-label="Refresh search data"
-                data-testid="rebuild-index"
-              >
-                <PackageSearch className={`h-4 w-4 ${busy ? 'animate-spin' : ''}`} />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Refresh search data</TooltipContent>
-          </Tooltip>
+          {isProjectView && neverIndexed ? (
+            // Never indexed → clear call-to-action (same action, clearer label).
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 shrink-0 gap-1.5"
+              onClick={() => void handleRebuildIndex()}
+              disabled={busy}
+              data-testid="index-now-cta"
+            >
+              <PackageSearch className={`h-4 w-4 ${busy ? 'animate-spin' : ''}`} />
+              Index now
+            </Button>
+          ) : (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="relative h-9 w-9 shrink-0"
+                  onClick={() => void handleRebuildIndex()}
+                  disabled={busy}
+                  aria-label={isProjectView ? 'Re-index project' : 'Refresh search data'}
+                  data-testid="rebuild-index"
+                >
+                  <PackageSearch className={`h-4 w-4 ${busy ? 'animate-spin' : ''}`} />
+                  {isProjectView && changesPending && (
+                    <AlertCircle
+                      className="absolute -right-0.5 -top-0.5 h-3 w-3 text-amber-500"
+                      data-testid="changes-pending-badge"
+                    />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {isProjectView
+                  ? changesPending
+                    ? 'Changes pending next index'
+                    : lastIndexedAt
+                      ? `Last indexed ${formatTimeAgo(lastIndexedAt)}`
+                      : 'Re-index project'
+                  : 'Refresh search data'}
+              </TooltipContent>
+            </Tooltip>
+          )}
           {lockedScope && urlProjectId ? (
             <ProjectScopeBadge projectId={urlProjectId} />
           ) : (

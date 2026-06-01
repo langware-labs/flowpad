@@ -42,6 +42,8 @@ M = TypeVar("M")  # meta model — dict view by default; Pydantic models opt-in 
 # Canonical naming. <type>-@<uid> as folder name under records_root/<type>/.
 _NAME_SEP = "-@"
 _METADATA_JSON = "metadata.json"
+# The single per-record index sentinel: ``<int_epoch>_<hexdigest>.hash``.
+_HASH_GLOB = "*.hash"
 
 # Instance attribute names that don't belong in serialized meta (system state).
 _SYSTEM_ATTRS: frozenset[str] = frozenset({"type", "id", "_asset_ref"})
@@ -62,6 +64,17 @@ def _get_default_records_root() -> Path:
     """Lazy lookup so tests can monkeypatch FS_RECORD_PATH between sessions."""
     from flow_sdk.fs_store.record_paths import get_default_records_root  # noqa: PLC0415
     return get_default_records_root()
+
+
+def _digest(raw: str) -> str:
+    """The one freshness-token digester — a short, filename-safe hex digest.
+
+    Used by ``FSRecord.get_hash`` to turn any raw freshness token (an
+    ``FSRef.fingerprint`` or a per-type ``asset_hash_fn`` value) into the
+    bounded ``<hexdigest>`` half of the ``.hash`` sentinel filename.
+    """
+    import hashlib
+    return hashlib.blake2b(raw.encode(), digest_size=8).hexdigest()
 
 
 class FSRecord(Generic[M]):
@@ -204,6 +217,17 @@ class FSRecord(Generic[M]):
         """Alias — the 'main' file is the asset_ref."""
         return self.asset_ref
 
+    def ensure_asset_ref(self) -> "FSRecord":
+        """Bind ``asset_ref`` from the record's own mount metadata
+        (``fs_storage_mount_path``/``cwd``) when not already set, so the
+        index-state properties resolve for records loaded from disk. Returns
+        self for chaining."""
+        if self.asset_ref is None:
+            mount = self.__dict__.get("fs_storage_mount_path") or self.__dict__.get("cwd")
+            if mount:
+                self.asset_ref = FSRef(str(mount))
+        return self
+
     # ── Save / Load ───────────────────────────────────────────────────────
 
     def save(self) -> Path:
@@ -322,73 +346,113 @@ class FSRecord(Generic[M]):
             if child.is_dir() and _NAME_SEP in child.name
         )
 
-    # ── Asset freshness (indexer skip-fresh) ─────────────────────────────
+    # ── Index state (self-contained, on-disk, zero DB) ───────────────────
+    #
+    # The freshness oracle lives beside the record (its shadow_dir), never in
+    # the DB — so the index layer never reads the store it produces. A single
+    # ``<int_epoch>_<hexdigest>.hash`` sentinel encodes both the last-indexed
+    # time and the source hash at that index. Skip-fresh is the pure equality
+    # ``record_hash != indexed_hash``. Index state is for asset-backed records.
 
-    @classmethod
-    def asset_hash_for_ref(cls, ref: FSRef | None) -> float:
-        """Default file mtime. Per-type override via Entity.asset_hash classmethod."""
-        if ref is None:
-            return 0.0
-        try:
-            return ref._path.stat().st_mtime
-        except OSError:
-            return 0.0
-
-    @property
-    def asset_hash(self) -> float:
-        """Max ``st_mtime`` of the user-facing asset. 0.0 when no asset.
-
-        Per-type override via ``TypeInfo.asset_hash_fn`` (e.g. folder-based
-        types that walk inner files like SKILL.md + skill.yaml).
-        """
+    def get_hash(self) -> str:
+        """Digest of the source's current freshness token. Reuses the existing
+        per-type ``TypeInfo.asset_hash_fn`` (folder types combine inner-file
+        mtimes) when present; the default token is the asset ref's own
+        ``fingerprint`` (mtime+size). Empty string when there is no asset."""
+        if self._asset_ref is None:
+            return ""
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
         info = SchemaRegistry.get(self.type)
-        asset_hash_fn = getattr(info, "asset_hash_fn", None) if info else None
-        if asset_hash_fn is not None and self._asset_ref is not None:
-            try:
-                return float(asset_hash_fn(self._asset_ref))
-            except Exception:
-                return 0.0
-        return self.asset_hash_for_ref(self._asset_ref)
+        fn = getattr(info, "asset_hash_fn", None) if info else None
+        try:
+            raw = str(fn(self._asset_ref)) if fn is not None else self._asset_ref.fingerprint
+        except Exception:
+            raw = self._asset_ref.fingerprint
+        return _digest(raw)
 
-    def is_valid(self) -> bool:
-        """True when the on-disk shadow is current relative to the asset.
+    @property
+    def record_hash(self) -> str:
+        """Live source hash of this record's asset."""
+        return self.get_hash()
 
-        Compares ``asset_hash`` to ``updated_date`` (mirrored into meta via
-        ``sync_from_entity``). Returns False when either is missing or the
-        asset is newer — meaning the indexer needs to re-parse.
+    def _hash_file(self) -> Path | None:
+        """The single ``*.hash`` sentinel in the shadow dir, or None."""
+        if not self.type or self.id is None:
+            return None
+        try:
+            return next(iter(self.shadow_dir.glob(_HASH_GLOB)), None)
+        except OSError:
+            return None
 
-        Records without an asset_ref (synthetic / in-memory) trivially
-        validate iff type+id are populated.
-        """
+    @property
+    def indexed_hash(self) -> str | None:
+        """Source hash captured at the last index (from the sentinel filename),
+        or None if never indexed."""
+        f = self._hash_file()
+        if f is None:
+            return None
+        parts = f.stem.split("_", 1)
+        return parts[1] if len(parts) == 2 else None
+
+    @property
+    def indexed_at(self) -> str | None:
+        """ISO-8601 UTC time of the last index (from the sentinel filename),
+        or None if never indexed."""
         from datetime import datetime as _dt, timezone as _tz  # noqa: PLC0415
 
-        if self._asset_ref is None:
-            return bool(self.type) and self.id is not None
-        ah = self.asset_hash
-        if ah <= 0:
-            return False
-        ud = self.__dict__.get("updated_date")
-        if ud is None:
-            return False
-        if hasattr(ud, "timestamp"):
-            dt = ud if getattr(ud, "tzinfo", None) is not None else ud.replace(tzinfo=_tz.utc)
-            stored_ts = dt.timestamp()
-        elif isinstance(ud, str):
-            try:
-                dt = _dt.fromisoformat(ud.replace(" ", "T"))
-            except ValueError:
-                return False
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=_tz.utc)
-            stored_ts = dt.timestamp()
-        else:
-            try:
-                stored_ts = float(ud)
-            except (TypeError, ValueError):
-                return False
-        return ah <= stored_ts
+        f = self._hash_file()
+        if f is None:
+            return None
+        try:
+            ts = int(f.stem.split("_", 1)[0])
+        except (ValueError, IndexError):
+            return None
+        return _dt.fromtimestamp(ts, tz=_tz.utc).isoformat()
+
+    @property
+    def index_required(self) -> bool:
+        """True when the source changed since the last index (or never indexed)."""
+        return self.record_hash != (self.indexed_hash or "")
+
+    @property
+    def orphan(self) -> bool:
+        """True when the record's source asset no longer exists on disk."""
+        ar = self._asset_ref
+        return ar is not None and not ar.exists()
+
+    def write_hash(self) -> None:
+        """Stamp the current source hash + now as the index sentinel, replacing
+        any prior one. No-op for asset-less records."""
+        if self._asset_ref is None or not self.type or self.id is None:
+            return
+        import time  # noqa: PLC0415
+
+        folder = self.shadow_dir
+        folder.mkdir(parents=True, exist_ok=True)
+        self.clear_hash()
+        (folder / f"{int(time.time())}_{self.record_hash}.hash").touch()
+
+    def clear_hash(self) -> None:
+        """Remove the index sentinel so the record reads as never-indexed."""
+        if not self.type or self.id is None:
+            return
+        try:
+            for f in self.shadow_dir.glob(_HASH_GLOB):
+                f.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    @classmethod
+    def clear_hashes_for_type(cls, type_name: str) -> None:
+        """Drop every record's index sentinel for ``type_name`` so cleared
+        records read as never-indexed. Bulk counterpart to ``clear_hash``;
+        keeps the sentinel-glob knowledge in one place."""
+        root = _get_default_records_root() / type_name
+        if not root.is_dir():
+            return
+        for hf in root.glob(f"*/{_HASH_GLOB}"):
+            hf.unlink(missing_ok=True)
 
     # ── Search (FTS) — default readers over instance attrs. Type-specific
     # extractors populate these fields directly during parser_fn. ─────────

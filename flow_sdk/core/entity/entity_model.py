@@ -92,25 +92,11 @@ class Entity(DBEntity):
     # with their own local-only state (e.g. download/body status, on-disk
     # paths). Used by ``is_stale`` / ``merge_hub_payload`` at the remote
     # boundary. ClassVar so pydantic treats it as config, not a field.
-    LOCAL_ONLY_FIELDS: ClassVar[frozenset[str]] = frozenset({"remote", "system", "orphan"})
+    LOCAL_ONLY_FIELDS: ClassVar[frozenset[str]] = frozenset({"remote", "system"})
 
-    orphan: bool = APIField(
-        default=False,
-        description=(
-            "True when the entity's source asset (file/folder at asset_ref) is "
-            "missing on disk. Set by the FSIndexer's orphan-detection pass; "
-            "cleared automatically when the source reappears. Non-asset entities "
-            "(those without an asset_ref) are always False."
-        ),
-    )
-    orphan_since: datetime | None = APIField(
-        default=None,
-        description=(
-            "UTC timestamp of when the entity first transitioned to orphan=True. "
-            "Null when orphan=False. Preserved across rescans so 'how long has "
-            "this been missing' is answerable."
-        ),
-    )
+    # Orphan-ness ("source asset missing on disk") is no longer a stored field —
+    # it is the dynamic ``FSRecord.orphan`` (``not asset_ref.exists()``),
+    # computed on demand by the index/scan layer. Nothing to persist.
 
     # Context-entity references — split into two buckets by the rule
     # "if it came over the wire, it is shared; otherwise private."
@@ -636,18 +622,17 @@ class Entity(DBEntity):
         return get_instance_settings().user_home
 
     async def check_and_refresh_record(self) -> bool:
-        """If the asset is newer than the DB row, re-sync. Returns True if refresh happened."""
+        """If the source asset changed since the last index, re-sync. Returns
+        True if a refresh happened. Freshness is the record's own on-disk
+        ``index_required`` (source hash vs the index sentinel) — no DB read."""
         record = await self.get_record()
         if record is None:
             return False
-        # Propagate the entity's updated_date to the record so is_valid() has
-        # a reference point — the DB row is the source of truth.
-        if self.updated_date is not None:
-            object.__getattribute__(record, "__dict__")["updated_date"] = self.updated_date
-        if record.is_valid():
+        if not record.index_required:
             return False
         try:
             await record.sync_to_db()
+            record.write_hash()
         except Exception:
             pass
         return True
@@ -979,7 +964,6 @@ class Entity(DBEntity):
         #  - ``created_date`` / ``updated_date`` — hub stamps timestamps itself.
         #  - ``remote``      — local "do I have a hub counterpart" flag; meaningless on the hub.
         #  - ``system``      — local "ships in an SDK system project" flag.
-        #  - ``orphan``      — local FS-indexer "source asset missing" flag.
         #  - ``message_count`` — SDK projection from the conversation jsonl pointer index.
         #  - ``tags``        — local-only labels; the hub doesn't read them.
         #  - ``project_id``  — sender's local project; recipients resolve their
@@ -1004,7 +988,7 @@ class Entity(DBEntity):
                 "shared_context_entity_data",
                 "created_by", "updated_by",
                 "created_date", "updated_date",
-                "remote", "system", "orphan",
+                "remote", "system",
                 "message_count",
                 "tags", "project_id", "participants",
             },
