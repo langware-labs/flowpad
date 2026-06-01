@@ -333,13 +333,17 @@ async def hub_delete(
     entity_id: str,
     action: str | None = None,
     *,
+    payload: dict[str, Any] | None = None,
     scope: list[tuple[str, str]] | None = None,
 ) -> Optional[dict[str, Any]]:
     """DELETE a hub graph endpoint (entity-level or entity-action).
 
-    Returns the response ``data`` dict on success, None when FLOWPAD_HUB_URL
-    is not configured. Raises ``HubError`` on transport failure or non-200
-    so callers can classify (e.g. 403 owner-only) vs network errors.
+    ``payload`` is sent as the JSON request body — the hub parses DELETE
+    bodies (e.g. ``members`` DELETE expects a ``MembershipMethod``
+    ``{member_through, value}``). Returns the response ``data`` dict on
+    success, None when FLOWPAD_HUB_URL is not configured. Raises ``HubError``
+    on transport failure or non-200 so callers can classify (e.g. 403
+    owner-only) vs network errors.
     """
     url = hub_graph_url(entity_type, entity_id, action, scope=scope)
     if not url:
@@ -348,8 +352,10 @@ async def hub_delete(
         return None
     try:
         async with FlowpadClient(ApiConfig.from_env()) as client:
-            logger.info("[hub] DELETE %s", url)
-            resp = await client.request("DELETE", url, timeout=httpx.Timeout(10))
+            logger.info("[hub] DELETE %s payload=%s", url, payload)
+            resp = await client.request(
+                "DELETE", url, json=payload or {}, timeout=httpx.Timeout(10),
+            )
     except HubAuthExpiredError as e:
         logger.warning("[hub] DELETE %s auth expired: %s", url, e)
         raise HubError(401, "auth expired")

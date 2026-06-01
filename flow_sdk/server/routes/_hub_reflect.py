@@ -19,7 +19,7 @@ from flow_sdk.actions.action_registry import Action
 from flow_sdk.cli.auth.hub_login import is_logged_in
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
-from flow_sdk.utils.hub import HubError, hub_get, hub_post
+from flow_sdk.utils.hub import HubError, hub_delete, hub_get, hub_post
 
 logger = logging.getLogger(__name__)
 
@@ -64,8 +64,22 @@ async def reflect_to_hub(a: Action, entity: Entity, body: dict[str, Any]) -> Any
         # treat that as "fall through to local" via HubError.
         if hub_resp is None:
             raise HubError(0, "hub_get returned no data")
+    elif "delete" in a.methods:
+        # DELETE carries its selector in the body (e.g. members remove →
+        # MembershipMethod {member_through, value}); hub_delete sends it as
+        # the JSON body and raises HubError on non-200 (e.g. 403 owner-only),
+        # which propagates to the caller verbatim.
+        hub_resp = await hub_delete(et, entity.id, action=a.action_name, payload=body or {})
     else:
         hub_resp = await hub_post(et, body or {}, entity.id, action=a.action_name)
+
+    # After a successful remove the hub returns a message, not a roster — so
+    # re-fetch the canonical roster to mirror locally (keeps participants in
+    # sync without a second client round-trip).
+    if "delete" in a.methods and a.action_name == "members":
+        refreshed = await hub_get(et, entity.id, action=a.action_name)
+        if refreshed is not None:
+            hub_resp = refreshed
 
     normalized = _normalize_hub_response(a.action_name, hub_resp)
     await mirror_hub_response_into_local(entity, a.action_name, normalized)
@@ -129,7 +143,24 @@ async def mirror_hub_response_into_local(
     if action_name == "members" and isinstance(hub_resp, list):
         if hasattr(entity, "participants"):
             try:
-                entity.participants = list(hub_resp)
+                new_participants = list(hub_resp)
+                # EQUALITY GUARD — only assign+save when the roster actually
+                # changed. ``Entity.__setattr__`` marks the row dirty on *any*
+                # assignment (it tracks assignment, not value), and ``save()``
+                # fans an entity UPDATE. A reflect that re-mirrors the SAME
+                # roster would therefore dirty → save → UPDATE → re-arm the
+                # next members fetch → reflect again: an unbounded
+                # fetch↔mirror↔refetch loop hammering the hub ~14×/s. Comparing
+                # against the currently-stored value makes the mirror idempotent:
+                # an unchanged roster is a no-op (no assignment, no save, no
+                # UPDATE), so the loop converges after the first mirror. Compare
+                # the already-normalized stored value against the new normalized
+                # value (both went through ``_normalize_hub_response``), so the
+                # check isn't defeated by raw-vs-normalized key differences.
+                current = list(getattr(entity, "participants", None) or [])
+                if current == new_participants:
+                    return
+                entity.participants = new_participants
                 # Best-effort save; never blow up the action if persistence fails.
                 save = getattr(entity, "save", None)
                 if callable(save):

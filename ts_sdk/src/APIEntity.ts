@@ -10,6 +10,22 @@ import { DockPointerData } from './models/DockPointer';
 import { TypeId } from './models/TypeId';
 import { ViewType } from './utils/ui/view-types';
 import { Callable } from './types';
+
+/**
+ * One row of an entity's member roster, as returned by the generic ``members``
+ * action (``APIEntity.fetchMembers``). The hub normalizes ``user_email`` →
+ * ``email`` etc. server-side (see ``_hub_reflect._normalize_hub_response``);
+ * extra hub keys (``status``, ``role``, ``invitation_id``, …) pass through, so
+ * this is intentionally open. ``Participant`` in ``entities/members.ts`` is the
+ * structurally-compatible alias kept for existing import sites. */
+export interface EntityMember {
+  user_id?: string | null;
+  email?: string | null;
+  name?: string | null;
+  role?: string | null;
+  status?: string | null;
+  [key: string]: unknown;
+}
 import { defineGlobal } from './utils/globals';
 import { WikiLink } from './types/wiki';
 
@@ -679,6 +695,56 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     await dataManager.callAction<unknown, unknown>(info);
     (this as any).remote = true;
     return this as unknown as T;
+  }
+
+  /**
+   * Per-instance cache for ``fetchMembers`` so repeat reads (e.g. multiple
+   * UI consumers mounting against the same entity) don't each round-trip.
+   * Undefined = never fetched; an array = the last fetched roster.
+   */
+  private _membersCache?: EntityMember[];
+
+  /**
+   * Generic roster fetch for any shareable entity — GET ``<type>/<id>/members``.
+   *
+   * The ``members`` action is ``reflect="hub"`` server-side: for a ``remote``
+   * entity the local server forwards to the hub and mirrors the roster back
+   * onto the local row; for a local-only entity it returns the cached
+   * participants. Either way this returns the normalized ``EntityMember[]``.
+   *
+   * ``cache`` (default ``true``): return the per-instance cached roster when
+   * present, so incidental reads are free. Pass ``cache: false`` to force a
+   * fresh round-trip — the path a deliberate "reload" (e.g. the conversation
+   * refresh button, or a post-invite/role-change refresh) must use so it
+   * reflects hub state rather than a stale snapshot.
+   */
+  public async fetchMembers(opts: { cache?: boolean } = {}): Promise<EntityMember[]> {
+    const useCache = opts.cache ?? true;
+    if (useCache && this._membersCache) return this._membersCache;
+    const info = new ActionInfo('members', this.typeId.type, this.typeId.id, 'GET');
+    const res = await dataManager.callAction<undefined, EntityMember[]>(info);
+    // Defensive: the hub utils coerce empty lists to {} upstream
+    // (`resp.json().get('data') or {}`); treat any non-array as "no members".
+    this._membersCache = Array.isArray(res) ? res : [];
+    return this._membersCache;
+  }
+
+  /**
+   * Remove a member by user id — DELETE ``<type>/<id>/members``. OWNER ONLY:
+   * the hub enforces the owner gate (``delete_membership`` → 403 for non-owners
+   * / owner-self), so this surfaces that as a thrown error rather than
+   * silently no-op'ing. The DELETE body is a ``MembershipMethod``
+   * (``{member_through: 'id', value: userId}``) — the shape the hub's
+   * ``create_membership_identifiers`` expects.
+   *
+   * Invalidates the per-instance cache so the next ``fetchMembers`` reflects
+   * the post-removal roster.
+   */
+  public async removeMember(userId: string): Promise<void> {
+    const info = new ActionInfo('members', this.typeId.type, this.typeId.id, 'DELETE');
+    info.bodyParameters = { member_through: 'id', value: userId };
+    await dataManager.callAction<unknown, unknown>(info);
+    this._membersCache = undefined;
   }
 
   /**

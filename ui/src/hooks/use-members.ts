@@ -46,6 +46,9 @@ export interface UseMembersResult {
    *  flow uses — then refreshes the members list. The recipient only shows
    *  up in ``members`` after they accept + join hub-side. */
   addMember: (email: string) => Promise<void>;
+  /** Remove a member by user id. OWNER ONLY — the hub rejects non-owner (and
+   *  owner-self) callers with 403, which throws here. Refreshes after. */
+  removeMember: (userId: string) => Promise<void>;
 }
 
 /**
@@ -118,6 +121,21 @@ export function useMembers(typeId: TypeId | null): UseMembersResult {
     [entity, refresh],
   );
 
+  // Remove a member by user id. OWNER ONLY — the hub returns 403 for a
+  // non-owner caller (or owner-self), which propagates as a thrown error here;
+  // callers should surface it. Refreshes the roster after so the removed user
+  // drops out of the list.
+  const removeMember = useCallback(
+    async (userId: string) => {
+      const trimmed = userId.trim();
+      if (!trimmed) return;
+      if (!entity) throw new Error('useMembers: entity not loaded; cannot remove');
+      await (entity as any).removeMember(trimmed);
+      await refresh();
+    },
+    [entity, refresh],
+  );
+
   // Prefer the freshly-fetched list; fall back to whatever the entity cache
   // has. Entities without a ``participants`` field surface as the shared
   // EMPTY_MEMBERS constant so the array identity is stable.
@@ -132,5 +150,5 @@ export function useMembers(typeId: TypeId | null): UseMembersResult {
     [refreshed, error],
   );
 
-  return { members, loading, ready, error, refresh, addMember };
+  return { members, loading, ready, error, refresh, addMember, removeMember };
 }

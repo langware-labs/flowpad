@@ -123,6 +123,31 @@ export function FlowMessageBubble({
   const { error: downloadError, dismiss: dismissDownloadError } =
     useFlowMessageDownloadError(messageId);
 
+  // Unresolved-sender telemetry. Hoisted ABOVE the early returns so the hook
+  // count is identical on every render (a useEffect after ``if (!fm) return``
+  // / ``if (isDraft) return`` would run only on some renders → React's
+  // "Rendered more hooks than during the previous render" crash). The body is
+  // guarded: it fires only once ``fm`` exists, it's not a draft, the label
+  // resolved to the alert sentinel, and the roster has actually loaded.
+  // ``displayName`` is computed further below; recompute the alert condition
+  // here from the same inputs so this can live before that code.
+  const unresolvedSenderId =
+    fm && !isDraft && fm.sender_id && rosterReady
+      && !participantLabelByUserId(participants, fm.sender_id)
+      && !(localUser?.id && fm.sender_id === localUser.id)
+      && !(fm.sender_name?.trim())
+      && !(creator?.name?.trim() || creator?.email?.trim())
+      ? fm.sender_id
+      : null;
+  useEffect(() => {
+    if (!unresolvedSenderId) return;
+    warnUnresolvedSender(
+      unresolvedSenderId,
+      fm?.conversation_id ?? null,
+      participants?.length ?? 0,
+    );
+  }, [unresolvedSenderId, fm?.conversation_id, participants?.length]);
+
   if (!fm) {
     // The pointer to this FlowMessage is in the conversation.jsonl, but the
     // entity itself hasn't been materialised locally yet (it lands via the
@@ -191,16 +216,12 @@ export function FlowMessageBubble({
 
   // Telemetry: warn once per (conv, sender_id) when we landed on the alert
   // label — the warn lives in an effect (NOT the render body) so re-renders
-  // don't flood devtools.
+  // don't flood devtools. NOTE: the ``useEffect`` itself is hoisted ABOVE the
+  // early returns (``if (!fm)`` / ``if (isDraft)``) — see near the other hooks
+  // — because a hook called after a conditional return changes the per-render
+  // hook count and trips React's "Rendered more hooks than during the previous
+  // render". Here we only derive the boolean it keys on.
   const isAlertLabel = displayName === UNRESOLVED_SENDER_LABEL;
-  useEffect(() => {
-    if (!isAlertLabel || !fm.sender_id) return;
-    warnUnresolvedSender(
-      fm.sender_id,
-      fm.conversation_id ?? null,
-      participants?.length ?? 0,
-    );
-  }, [isAlertLabel, fm.sender_id, fm.conversation_id, participants?.length]);
 
   // When task is present, role tracks the original task initiator (sender) vs
   // recipient. For project-scoped conversations (no task), use the local user

@@ -1,18 +1,15 @@
-import { dataManager } from '../APIEntity';
+import { dataManager, type EntityMember } from '../APIEntity';
 import { ActionInfo } from '../models/ActionInfo';
 import { TypeId } from '../models/TypeId';
 
 /**
- * A participant on any shareable entity. Returned by the generic ``members``
- * action; same shape regardless of the entity type. ``ConversationParticipant``
- * is structurally compatible — the conversation cache uses the same fields.
+ * A participant on any shareable entity. Alias of ``EntityMember`` (the shape
+ * ``APIEntity.fetchMembers`` returns) — kept as a named export for existing
+ * import sites. ``ConversationParticipant`` is structurally compatible.
+ * Carries the open ``status`` / passthrough keys so callers reading hub
+ * fields (e.g. pending-vs-approved) don't have to cast.
  */
-export interface Participant {
-  user_id?: string | null;
-  email?: string | null;
-  name?: string | null;
-  role?: string | null;
-}
+export type Participant = EntityMember;
 
 /**
  * Fetch the member list for any entity. Hits ``GET /api/v1/graph/<type>/<id>/members``.
