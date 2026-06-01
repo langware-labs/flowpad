@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
-import { FlowMessage, type HubClientErrorInfo } from '@sdk';
+import { FlowMessage, TypeId, type HubClientErrorInfo } from '@sdk';
 import {
+  AttachmentType,
   BodyStatus,
   attachmentDataString,
   type Attachment,
@@ -9,6 +10,12 @@ import { AttachmentChipState } from './AttachmentChip';
 import { isDownloadableFileAttachment, localAttachmentUrl } from './attachment-url';
 import { useFlowMessageProgress, type FlowMessageProgress } from './useFlowMessageProgress';
 import { useFlowMessageDownloadError } from './useFlowMessageDownloadError';
+
+/** TYPE_ID attachment types the send path injects as structural self-refs
+ *  (parent conversation, the message, the bound task). Plumbing — never
+ *  rendered as chips. Mirrors the backend ``_NON_MATERIALIZING_TYPE_IDS``
+ *  (minus git_repo, which DOES render — as a GitRepoChip). */
+const STRUCTURAL_ATTACHMENT_TYPES = new Set(['conversation', 'flow_message', 'task']);
 
 /** One downloadable attachment, resolved into everything a chip needs to render
  *  — and nothing it could use to fetch a body that isn't there. */
@@ -26,6 +33,19 @@ export interface AttachmentView {
 export interface UseAttachments {
   /** FILE attachments (the conversation.jsonl transcript is filtered out). */
   items: AttachmentView[];
+  /** Non-structural TYPE_ID (entity) attachments — skill / markdown / agent /
+   *  spec / git_repo — as TypeIds. Rendered as entity chips once the body is
+   *  downloaded; until then they ride inside the single Download button. */
+  entities: TypeId[];
+  /** Message-level download state, straight from the backend-derived
+   *  `fm.body_downloaded`: true once the body bundle has been pulled + unpacked
+   *  so every renderable attachment is local. The UI switches the whole message
+   *  between the Download button and rendered chips off this one flag. */
+  downloaded: boolean;
+  /** Count of attached assets (files + entities) — the Download button badge. */
+  assetCount: number;
+  /** Human labels for the Download button tooltip: entity typeids + filenames. */
+  assetLabels: string[];
   /** Live upload/download progress for this message, or null when idle. */
   progress: FlowMessageProgress | null;
   /** Most recent per-message download error, or null. */
@@ -35,8 +55,24 @@ export interface UseAttachments {
   downloading: boolean;
   /** The single download entrypoint — pulls + unpacks the body via
    *  `FlowMessage.downloadAttachments()`, which is a no-op unless body_status
-   *  is READY. Chips call this; they never build a download URL themselves. */
+   *  is READY. Chips call this; they never build a download URL themselves.
+   *  One bundle holds files AND entities, so one call materializes both. */
   download: () => Promise<void>;
+}
+
+/** Parse the non-structural TYPE_ID (entity) attachments into TypeIds. Shared
+ *  by the transcript bubble and the context panel so both read one list. */
+function buildEntities(fm: FlowMessage | null | undefined): TypeId[] {
+  if (!fm) return [];
+  return (fm.attachment ?? [])
+    .filter((a) => a.attachment_type === AttachmentType.TYPE_ID)
+    .map((a) => {
+      const d = attachmentDataString(a);
+      const dash = d.indexOf('-');
+      if (dash <= 0) return null;
+      return new TypeId(d.slice(0, dash), d.slice(dash + 1));
+    })
+    .filter((t): t is TypeId => t !== null && !STRUCTURAL_ATTACHMENT_TYPES.has(t.type));
 }
 
 /** Map one attachment to a chip state. The single truth table for "what can the
@@ -89,6 +125,15 @@ export function useAttachments(
   // Cheap to derive (a filter+map over a handful of attachments) and always
   // reflects the current fm — no memo/dep-array bookkeeping to keep in sync.
   const items = buildItems(fm, messageId);
+  const entities = buildEntities(fm);
+  const downloaded = fm?.body_downloaded ?? false;
+  // The Download button badge + tooltip: one entry per attached asset
+  // (entity typeids + file names) so the user sees what a pull will fetch.
+  const assetLabels = [
+    ...entities.map((t) => `${t.type}-${t.id}`),
+    ...items.map((i) => i.filename),
+  ];
+  const assetCount = assetLabels.length;
 
   const download = useCallback(async () => {
     if (!fm || downloading) return;
@@ -105,5 +150,16 @@ export function useAttachments(
     }
   }, [fm, downloading]);
 
-  return { items, progress, error, dismissError: dismiss, downloading, download };
+  return {
+    items,
+    entities,
+    downloaded,
+    assetCount,
+    assetLabels,
+    progress,
+    error,
+    dismissError: dismiss,
+    downloading,
+    download,
+  };
 }

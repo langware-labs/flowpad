@@ -342,6 +342,21 @@ export function ConversationContextPanel({
     else void run();
   }, [startSession, sharedTypeIds, privateTypeIds, ensureMapped]);
 
+  // Pull the bundle for the message that contributed an entity attachment. One
+  // bundle materializes every attachment, so the originating bubble AND every
+  // context row for those entities flip to "downloaded" together on the UPDATE.
+  // Gated on project selection (assets land in the conversation's `.claude`).
+  const handleDownloadEntity = useCallback(
+    (messageId: string) => {
+      const fm = orderedMessages.find((m) => m.id === messageId);
+      if (!fm) return;
+      const run = () => void fm.downloadAttachments();
+      if (ensureMapped) ensureMapped(run);
+      else void run();
+    },
+    [orderedMessages, ensureMapped],
+  );
+
   if (orderedMessages.length === 0) {
     return (
       <div className="px-3 py-6 text-center text-[11px] text-muted-foreground">
@@ -360,6 +375,7 @@ export function ConversationContextPanel({
         selectedSet={selectedSet}
         selectedEntityKey={entityKey}
         onSelectEntity={onSelectEntity}
+        onDownloadEntity={handleDownloadEntity}
       />
 
       <PrivateContextSection
@@ -391,6 +407,9 @@ interface SharedContextSectionProps {
   selectedSet: ReadonlySet<string>;
   selectedEntityKey: string | null;
   onSelectEntity?: (entityKey: string, messageIds: string[]) => void;
+  /** Pull the bundle for the message that contributed an entity (gated on
+   *  project selection). Drives the "Download <type>" row action. */
+  onDownloadEntity?: (messageId: string) => void;
 }
 
 function SharedContextSection({
@@ -401,6 +420,7 @@ function SharedContextSection({
   selectedSet,
   selectedEntityKey,
   onSelectEntity,
+  onDownloadEntity,
 }: SharedContextSectionProps) {
   const { navigation } = useDockNavigation();
   const prewarm = useChipPrewarm();
@@ -435,6 +455,12 @@ function SharedContextSection({
                 typeId={entry.typeId}
                 originMessageIds={entry.originMessageIds}
                 isHighlighted={isRowHighlighted(rowKey, entry.originMessageIds)}
+                needsDownload={!!entry.downloadable && !entry.downloaded}
+                onDownload={
+                  onDownloadEntity && entry.downloadOriginMessageId
+                    ? () => onDownloadEntity(entry.downloadOriginMessageId!)
+                    : undefined
+                }
                 onSelect={
                   onSelectEntity && entry.originMessageIds.length > 0
                     ? () => onSelectEntity(rowKey, entry.originMessageIds)
@@ -499,6 +525,12 @@ interface SharedEntityRowProps {
   /** Fired with the resolved asset_ref (when the entity is an asset) so the
    *  parent can route skill/agent/markdown rows to the Assets editor. */
   onOpen: (assetRef?: string) => void;
+  /** True when this entity rides in a message bundle that hasn't been pulled
+   *  yet — the row shows "Download <type>" instead of "Open". Mirrors the
+   *  transcript bubble's state (both read the message's `body_downloaded`). */
+  needsDownload?: boolean;
+  /** Pull the originating message's bundle (gated on project selection). */
+  onDownload?: () => void;
 }
 
 function SharedEntityRow({
@@ -507,6 +539,8 @@ function SharedEntityRow({
   isHighlighted,
   onSelect,
   onOpen,
+  needsDownload,
+  onDownload,
 }: SharedEntityRowProps) {
   const { data: entity } = useEntity(typeId);
   const name = entity?.displayName ?? typeId.id;
@@ -530,10 +564,20 @@ function SharedEntityRow({
           : 'Reveal the message that introduced this'
       }
     >
-      <RowAction onClick={() => onOpen(assetRef)} title={`${primaryLabel} ${humanType(typeId.type)}: ${name}`}>
-        {primaryIcon}
-        {primaryLabel}
-      </RowAction>
+      {needsDownload && onDownload ? (
+        <RowAction
+          onClick={onDownload}
+          title={`Download ${humanType(typeId.type)} — not pulled to this device yet`}
+        >
+          <Download className="h-3 w-3" />
+          Download {humanType(typeId.type)}
+        </RowAction>
+      ) : (
+        <RowAction onClick={() => onOpen(assetRef)} title={`${primaryLabel} ${humanType(typeId.type)}: ${name}`}>
+          {primaryIcon}
+          {primaryLabel}
+        </RowAction>
+      )}
     </Row>
   );
 }
