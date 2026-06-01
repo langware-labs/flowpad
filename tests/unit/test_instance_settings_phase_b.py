@@ -306,6 +306,47 @@ def test_sod_env_key_bypasses_keychain(monkeypatch, tmp_path):
     assert call_count == {"get": 0, "set": 0}
 
 
+def test_seed_sod_key_populates_cache_and_marker(monkeypatch, tmp_path):
+    """seed_sod_key (called from the /secrets/seed-key endpoint after
+    Electron has minted + written to the keychain) installs the key in
+    the per-process cache, touches the consent marker, and never invokes
+    keyring. Subsequent .sod access uses the seeded key."""
+    monkeypatch.setenv("FLOW_HOME", str(tmp_path))
+    monkeypatch.setenv("FLOW_INSTANCE", "prod")
+
+    import keyring
+    monkeypatch.setattr(keyring, "get_password",
+                        lambda *_a, **_k: (_ for _ in ()).throw(
+                            AssertionError("keyring.get_password must not be called after seed_sod_key")))
+    monkeypatch.setattr(keyring, "set_password",
+                        lambda *_a, **_k: (_ for _ in ()).throw(
+                            AssertionError("keyring.set_password must not be called after seed_sod_key")))
+
+    from cryptography.fernet import Fernet
+    from flow_sdk.cli.auth.secrets import seed_sod_key
+    key = Fernet.generate_key().decode()
+
+    s = get_instance_settings()
+    assert not s.consent_marker_path.exists()
+
+    assert seed_sod_key(key) is True
+    assert s.consent_marker_path.exists()
+
+    # .sod access uses the seeded key — round-trip works without touching keyring.
+    sod = s.sod
+    sod.write("k", "v")
+    assert sod.read("k") == "v"
+
+
+def test_seed_sod_key_rejects_empty(monkeypatch, tmp_path):
+    monkeypatch.setenv("FLOW_HOME", str(tmp_path))
+    monkeypatch.setenv("FLOW_INSTANCE", "prod")
+    from flow_sdk.cli.auth.secrets import seed_sod_key
+    assert seed_sod_key("") is False
+    s = get_instance_settings()
+    assert not s.consent_marker_path.exists()
+
+
 def test_is_secrets_enabled_true_when_env_set(monkeypatch, tmp_path):
     """SOD_KEY env set => is_secrets_enabled() returns True even with no
     marker file (lets bootstrap proceed to the first .sod access, where

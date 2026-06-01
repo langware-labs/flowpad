@@ -31,6 +31,16 @@ export class SecretsService {
     return apiClient.post(`${this.base}/enable`);
   }
 
+  /**
+   * Hand a pre-minted Fernet key to Python. Used by the signed Electron
+   * launcher so Python skips its own keyring write (the OS prompt on
+   * later launches would not be branded as Flowpad). The key has already
+   * been stored in the OS keychain by Electron before this call.
+   */
+  seedKey(key: string): Promise<{ enabled: boolean }> {
+    return apiClient.post(`${this.base}/seed-key`, { key });
+  }
+
   list(): Promise<AppSecretSummary[]> {
     return apiClient.get(this.base);
   }

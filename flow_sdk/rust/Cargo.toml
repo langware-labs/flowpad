@@ -1,0 +1,27 @@
+[package]
+name = "flow_rs"
+version = "0.1.0"
+edition = "2021"
+description = "OS-keychain helper (Rust lib + flow-rs CLI + pyo3 module), interchangeable with Python keyring"
+license = "MIT"
+
+[lib]
+name = "flow_rs"
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "flow-rs"
+path = "src/bin/flow-rs.rs"
+
+[dependencies]
+keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native"] }
+clap = { version = "4", features = ["derive"] }
+anyhow = "1"
+pyo3 = { version = "0.23", features = ["extension-module"], optional = true }
+
+[dev-dependencies]
+uuid = { version = "1", features = ["v4"] }
+
+[features]
+default = []
+python = ["dep:pyo3"]

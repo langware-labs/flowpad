@@ -2,7 +2,9 @@ const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const log = require('electron-log');
+const crypto = require('crypto');
 const UvManager = require('./uv-manager');
+const { SOD_KEY_KEYCHAIN_SERVICE } = UvManager;
 
 // Register flowpad:// as a custom protocol so the OS routes deep links here.
 // Must be called before app.whenReady().
@@ -647,6 +649,45 @@ ipcMain.handle('upgrade-flowpad', async () => {
   } catch (err) {
     return { success: false, error: err.message };
   }
+});
+
+/**
+ * Mint a fresh per-instance Fernet key and store it in the OS keychain
+ * via the bundled flow-rs binary (modern Keychain Services API, restrictive
+ * ACL bound to the flow-rs code-signing identity — same posture as the
+ * previous keytar path). Returning the value here lets the renderer hand
+ * it to Python via the /secrets/seed-key endpoint, so Python never makes
+ * a keyring write of its own — keeping the entry flow-rs-owned and
+ * avoiding an unbranded OS prompt on later launches.
+ *
+ * Idempotent: if an entry already exists for this instance, returns it
+ * unchanged (the renderer's seeded value should match what _loadSodKey
+ * already passed via SOD_KEY env on the next launch).
+ */
+ipcMain.handle('secrets:provision-sod-key', async () => {
+  let flowRs;
+  try {
+    flowRs = require('./flow-rs-keychain');
+  } catch (err) {
+    log.error(`[secrets] flow-rs-keychain not available: ${err.message}`);
+    throw new Error('flow-rs-keychain unavailable');
+  }
+  const account = flowRs.sodKeyAccount();
+  try {
+    const existing = await flowRs.getKeyRestricted(SOD_KEY_KEYCHAIN_SERVICE, account);
+    if (existing) {
+      log.info(`[secrets] sod_key already present in keychain (${account}); returning existing`);
+      return existing;
+    }
+  } catch (err) {
+    log.warn(`[secrets] keychain probe failed (${err.message}); minting fresh`);
+  }
+  // Fernet key: 32 random bytes, url-safe base64 with padding.
+  const key = crypto.randomBytes(32).toString('base64')
+    .replace(/\+/g, '-').replace(/\//g, '_');
+  await flowRs.setKeyRestricted(SOD_KEY_KEYCHAIN_SERVICE, account, key);
+  log.info(`[secrets] minted + wrote new sod_key to keychain (${account})`);
+  return key;
 });
 
 ipcMain.handle('open-external', async (_, url) => {
