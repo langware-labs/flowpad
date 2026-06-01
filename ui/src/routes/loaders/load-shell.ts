@@ -37,7 +37,7 @@ import {
   type TerminalTab,
 } from '@src/hooks/useActiveTerminals';
 import { showCleanupModal } from '@src/components/recovery/cleanup-modal';
-import { toast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { DockPointer } from '@src/navigation';
 import { replace } from 'react-router';
 import { perfLog, perfTime } from './_perf';
@@ -181,7 +181,7 @@ function handleCleanups(cleaned: CleanupRecord[]): void {
   if (cleaned.length === 0) return;
   if (cleaned.length === 1) {
     const c = cleaned[0];
-    toast({ title: c.title, description: c.description, variant: 'destructive' });
+    notify.error({ title: c.title, message: c.description });
     return;
   }
   showCleanupModal({ count: cleaned.length });
@@ -285,10 +285,9 @@ async function routeProcessPointer(processId: string): Promise<void> {
       next.loaded.kind === 'process'
         ? next.loaded.process.name ?? next.loaded.process.displayName ?? fallbackPointer
         : next.loaded.shell.name ?? fallbackPointer;
-    toast({
+    notify.error({
       title: `Terminal "${requestedName}" not found`,
-      description: `${directCleanup.title} — opened "${fallbackName}" instead.`,
-      variant: 'destructive',
+      message: `${directCleanup.title} — opened "${fallbackName}" instead.`,
     });
     // eslint-disable-next-line @typescript-eslint/only-throw-error
     throw replace(`/dock/shell/${fallbackPointer}`);
@@ -341,10 +340,9 @@ async function routePlainShellPointer(pointer: string): Promise<void> {
       throw replace('/dock/shell');
     }
     const fallbackPointer = loadedToPointer(next.loaded);
-    toast({
+    notify.error({
       title: 'Opened a different terminal',
-      description: `Couldn't load ${shellId.slice(0, 8)}… (${directCleanup.title}) — opened ${fallbackPointer} instead.`,
-      variant: 'destructive',
+      message: `Couldn't load ${shellId.slice(0, 8)}… (${directCleanup.title}) — opened ${fallbackPointer} instead.`,
     });
     // eslint-disable-next-line @typescript-eslint/only-throw-error
     throw replace(`/dock/shell/${fallbackPointer}`);
@@ -410,10 +408,9 @@ export async function loadShellRoute(pointer: string | undefined): Promise<void>
       connectionManager.waitForConnected(5000),
     );
   } catch {
-    toast({
+    notify.error({
       title: 'No realtime connection',
-      description: 'Terminal may be unresponsive until the connection recovers.',
-      variant: 'destructive',
+      message: 'Terminal may be unresponsive until the connection recovers.',
     });
   }
 

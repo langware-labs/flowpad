@@ -23,7 +23,7 @@ import { projectIdForPath } from '@src/components/assets/utils';
 import { ScopeFilterBar } from '@src/components/scope-filter/ScopeFilterBar';
 import { useAllProjects } from '@src/hooks/use-all-projects';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { useDefaultScopeFilter } from '@src/hooks/use-default-scope-filter';
 import { Button } from '@src/components/ui/button';
 import { ScrollArea } from '@src/components/ui/scroll-area';
@@ -61,7 +61,6 @@ const toneClasses: Record<'idle' | 'running' | 'done' | 'error', string> = {
 
 export function LlmIndexersViewer() {
   const { navigation } = useDockNavigation();
-  const { toast } = useToast();
   const [busyId, setBusyId] = useState<string | null>(null);
 
   const request = useMemo(() => new QueryRequest({ type: MarkdownIndex.type }), []);
@@ -89,9 +88,9 @@ export function LlmIndexersViewer() {
 
   const runRebuild = useCallback(async (index: MarkdownIndex) => {
     if (!index.vault_root) {
-      toast({
+      notify.info({
         title: 'Cannot run rebuild',
-        description: 'MarkdownIndex has no vault_root — set the source path first.',
+        message: 'MarkdownIndex has no vault_root — set the source path first.',
       });
       return;
     }
@@ -130,31 +129,31 @@ export function LlmIndexersViewer() {
         process_type: ProcessType.Execution,
       }).save([index.typeId]);
       void process.prompt(instruction);
-      toast({
+      notify.success({
         title: 'Rebuild started',
-        description: `MarkdownIndex ${index.name ?? index.id} is rebuilding.`,
+        message: `MarkdownIndex ${index.name ?? index.id} is rebuilding.`,
       });
       await refetch();
     } catch (err) {
-      toast({
+      notify.info({
         title: 'Rebuild failed to start',
-        description: err instanceof Error ? err.message : String(err),
+        message: err instanceof Error ? err.message : String(err),
       });
     } finally {
       setBusyId(null);
     }
-  }, [refetch, toast]);
+  }, [refetch]);
 
   const viewIndex = useCallback((index: MarkdownIndex) => {
     if (!index.asset_ref) {
-      toast({
+      notify.info({
         title: 'No index.md to view',
-        description: 'asset_ref is unset — has this MarkdownIndex ever been built?',
+        message: 'asset_ref is unset — has this MarkdownIndex ever been built?',
       });
       return;
     }
     navigation.openDock(DockPointer.forFs(index.asset_ref));
-  }, [navigation, toast]);
+  }, [navigation]);
 
   return (
     <div className="flex h-full flex-col" data-testid="llm-indexers-lens">

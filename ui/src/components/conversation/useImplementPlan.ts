@@ -10,7 +10,7 @@ import { ClaudeCliOptions } from '@sdk/cli_workers/claude-cli';
 import { useEntitiesQuery } from '@sdk/react/hooks';
 import type { ITask } from '@sdk/entities/task';
 import type { ConversationMessagePointer } from '@sdk/entities/conversation';
-import { toast } from 'sonner';
+import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import type { DockPointer } from '@src/navigation/DockPointer';
 import { resolveWorkdir } from './apply-project-choice';
@@ -83,7 +83,7 @@ export function useImplementPlan({
       const run = async () => {
         const workdir = await resolveWorkdir(task.project_id);
         if (!workdir) {
-          toast.warning('Map this conversation to a local project first.');
+          notify.warning({ title: 'Map this conversation to a local project first.' });
           return;
         }
         try {
@@ -110,7 +110,7 @@ export function useImplementPlan({
           proc.openTerminalDock();
         } catch (err) {
           console.error('[useImplementPlan] failed', err);
-          toast.error('Failed to start session');
+          notify.error({ title: 'Failed to start session' });
         }
       };
       if (ensureMapped) ensureMapped(run);

@@ -69,6 +69,37 @@ def hub_base_url() -> Optional[str]:
     return url.rstrip("/") if url else None
 
 
+async def get_info() -> Optional[dict[str, Any]]:
+    """Fetch lightweight info about the configured hub.
+
+    Currently returns just the hub's running version::
+
+        {"version": "0.29.41"}
+
+    Hits the public ``GET /api/v1/health/version`` endpoint (no auth), so it
+    works even when the user is signed out. Returns ``None`` when the hub is
+    not configured (``FLOWPAD_HUB_URL`` unset) or unreachable.
+    """
+    base = hub_base_url()
+    if not base:
+        return None
+    from flow_sdk.api.api_request import APIRequest
+    url = f"{base}{APIRequest.api_prefix}/health/version"
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.get(url, timeout=httpx.Timeout(8))
+            if resp.status_code != 200:
+                logger.warning("[hub] GET %s returned %s", url, resp.status_code)
+                return None
+            # The hub wraps responses in an ApiResponse envelope; the version
+            # string lives in `data` (same shape `hub_get` unwraps).
+            data = resp.json().get("data")
+            return {"version": data if isinstance(data, str) else None}
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[hub] get_info error (non-fatal): %s", e)
+        return None
+
+
 def hub_graph_url(
     entity_type: BuiltinEntityType,
     entity_id: str | None = None,

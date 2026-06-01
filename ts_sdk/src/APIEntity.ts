@@ -733,16 +733,17 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    * Remove a member by user id — DELETE ``<type>/<id>/members``. OWNER ONLY:
    * the hub enforces the owner gate (``delete_membership`` → 403 for non-owners
    * / owner-self), so this surfaces that as a thrown error rather than
-   * silently no-op'ing. The DELETE body is a ``MembershipMethod``
-   * (``{member_through: 'id', value: userId}``) — the shape the hub's
-   * ``create_membership_identifiers`` expects.
+   * silently no-op'ing. The DELETE body is a member selector — ``{user_id}``
+   * (the hub also accepts ``{user_email}`` / ``{invitation_id}`` for pending
+   * invitees that have no account yet, and still tolerates the legacy
+   * ``{member_through, value}`` envelope during the transition).
    *
    * Invalidates the per-instance cache so the next ``fetchMembers`` reflects
    * the post-removal roster.
    */
   public async removeMember(userId: string): Promise<void> {
     const info = new ActionInfo('members', this.typeId.type, this.typeId.id, 'DELETE');
-    info.bodyParameters = { member_through: 'id', value: userId };
+    info.bodyParameters = { user_id: userId };
     await dataManager.callAction<unknown, unknown>(info);
     this._membersCache = undefined;
   }
@@ -752,6 +753,12 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    * the Python ``Entity.remote`` field; flipped to ``true`` by ``share()``.
    */
   remote?: boolean;
+
+  /**
+   * Canonical parent reference ("<type>-<id>"). Single source of truth for
+   * parentage; supersedes the legacy per-type ``data.parent_id``.
+   */
+  parent_type_id?: string | null;
 
   /** POST /entity-event {event, payload}. Unknown events are a server-side no-op. */
   public async entityEvent(event: string, payload: Record<string, unknown> = {}): Promise<unknown> {

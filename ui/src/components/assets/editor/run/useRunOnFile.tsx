@@ -16,7 +16,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@src/components/ui/alert-dialog';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { useProject } from '@src/hooks/useProject';
 import { parseTypeid } from '@src/components/asset-manager/asset-row-helpers';
 import type { ProcessEntry } from '@src/components/workflows-view/workflow-run-store';
@@ -62,7 +62,6 @@ export function useRunOnFile({
   filePath,
   onActiveSideTabChange,
 }: UseRunOnFileArgs): UseRunOnFileResult {
-  const { toast } = useToast();
   const { project } = useProject();
 
   const [isStarting, setIsStarting] = useState(false);
@@ -108,10 +107,9 @@ export function useRunOnFile({
   const runWithAsset = useCallback(
     async (descriptor: AssetDescriptor) => {
       if (!targetVfsPath) {
-        toast({
+        notify.error({
           title: 'Cannot run',
-          description: 'This file has no backing entity yet.',
-          variant: 'destructive',
+          message: 'This file has no backing entity yet.',
         });
         return;
       }
@@ -126,12 +124,12 @@ export function useRunOnFile({
         await doRun(descriptor);
       } catch (err) {
         console.error('[useRunOnFile] run failed', err);
-        toast({ title: 'Failed to start run', variant: 'destructive' });
+        notify.error({ title: 'Failed to start run' });
       } finally {
         setIsStarting(false);
       }
     },
-    [targetVfsPath, doRun, toast],
+    [targetVfsPath, doRun],
   );
 
   const handleEnableMcp = useCallback(
@@ -144,17 +142,17 @@ export function useRunOnFile({
       try {
         await enableMcp(MCP_SERVER, scope);
         setShowMcpModal(false);
-        toast({ title: `${MCP_SERVER} enabled (${scope} scope). Starting run…` });
+        notify.success({ title: `${MCP_SERVER} enabled (${scope} scope). Starting run…` });
         await doRun(pendingDescriptor);
       } catch (err) {
         console.error('[useRunOnFile] enable MCP failed', err);
-        toast({ title: 'Failed to enable MCP', variant: 'destructive' });
+        notify.error({ title: 'Failed to enable MCP' });
       } finally {
         setMcpEnabling(false);
         setPendingDescriptor(null);
       }
     },
-    [pendingDescriptor, doRun, toast],
+    [pendingDescriptor, doRun],
   );
 
   const mcpModal = (

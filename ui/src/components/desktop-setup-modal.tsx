@@ -1,6 +1,6 @@
 import { ActionInfo, connectionManager, dataContext, dataManager } from '@sdk';
 import { useAuth } from '@sdk/react/hooks';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { ExternalLink, Loader2 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
@@ -24,7 +24,6 @@ export function DesktopSetupModal({ isOpen, onClose, authFailure }: DesktopSetup
   const authWindowRef = useRef<Window | null>(null);
   const oauthCompletedRef = useRef<boolean>(false);
   const { user } = useAuth();
-  const { toast } = useToast();
 
   const isClaudeCodeInstalled = installedAgents.some((agent) => agent.toLowerCase().includes('claude code'));
 
@@ -52,9 +51,9 @@ export function DesktopSetupModal({ isOpen, onClose, authFailure }: DesktopSetup
             authWindowRef.current.close();
             authWindowRef.current = null;
           }
-          toast({
+          notify.success({
             title: 'Success',
-            description: 'Anthropic OAuth authentication completed successfully',
+            message: 'Anthropic OAuth authentication completed successfully',
           });
           setIsOAuthInProgress(false);
           setOauthState(null);
@@ -66,11 +65,10 @@ export function DesktopSetupModal({ isOpen, onClose, authFailure }: DesktopSetup
           }
           setIsOAuthInProgress(false);
           setOauthState(null);
-          toast({
+          notify.error({
             title: 'Authentication Failed',
-            description: 'OAuth authentication failed. Please try again.',
-            variant: 'destructive',
-            duration: 5000,
+            message: 'OAuth authentication failed. Please try again.',
+            durationMs: 5000,
           });
         }
       }
@@ -81,7 +79,7 @@ export function DesktopSetupModal({ isOpen, onClose, authFailure }: DesktopSetup
     return () => {
       connectionManager.off('on_llm_config_msg', handleLlmConfigMessage);
     };
-  }, [oauthState, toast, onClose]);
+  }, [oauthState, onClose]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -111,10 +109,9 @@ export function DesktopSetupModal({ isOpen, onClose, authFailure }: DesktopSetup
     if (isOAuthInProgress) return;
 
     if (!user?.typeId) {
-      toast({
+      notify.error({
         title: 'Error',
-        description: 'User not found. Please log in.',
-        variant: 'destructive',
+        message: 'User not found. Please log in.',
       });
       return;
     }
@@ -163,9 +160,9 @@ export function DesktopSetupModal({ isOpen, onClose, authFailure }: DesktopSetup
               authWindowRef.current.close();
               authWindowRef.current = null;
             }
-            toast({
+            notify.success({
               title: 'Success',
-              description: 'Anthropic OAuth authentication completed successfully',
+              message: 'Anthropic OAuth authentication completed successfully',
             });
             setIsOAuthInProgress(false);
             setOauthState(null);
@@ -193,20 +190,18 @@ export function DesktopSetupModal({ isOpen, onClose, authFailure }: DesktopSetup
               }
             }
 
-            toast({
+            notify.error({
               title: 'Authentication Failed',
-              description: errorMessage,
-              variant: 'destructive',
-              duration: 5000,
+              message: errorMessage,
+              durationMs: 5000,
             });
           }
         });
     } catch (error) {
       console.error('OAuth flow error:', error);
-      toast({
+      notify.error({
         title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to start OAuth flow',
-        variant: 'destructive',
+        message: error instanceof Error ? error.message : 'Failed to start OAuth flow',
       });
       setIsOAuthInProgress(false);
     }

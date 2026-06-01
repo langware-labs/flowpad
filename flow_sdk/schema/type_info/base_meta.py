@@ -25,3 +25,11 @@ class BaseMeta(BaseModel):
     project_id: Optional[str] = None
     created_date: Optional[Any] = None
     updated_date: Optional[Any] = None
+    # Canonical parent reference ("<type>-<id>") and the local "do I have a hub
+    # twin" flag. Declared here so the declarative persist path (metadata_payload
+    # ↔ from_record) mirrors them to/from metadata.json for every entity type.
+    # ``remote`` stays in LOCAL_ONLY_FIELDS (a hub refresh must never overwrite
+    # it) and is excluded from the hub push body by Entity.share(); BaseMeta
+    # membership governs DISK persistence only, not the wire.
+    parent_type_id: Optional[str] = None
+    remote: Optional[bool] = None

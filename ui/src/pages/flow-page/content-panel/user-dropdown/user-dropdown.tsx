@@ -10,7 +10,7 @@ import {
 import { SettingsPane } from '@src/components/ui/settings-pane';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { Cloud, LogIn, LogOut, Settings, User as UserIcon, Wrench } from 'lucide-react';
-import { toast } from 'sonner';
+import { notify } from '@src/notifications';
 
 import { AccountInfo } from '@src/components/account/account-info';
 
@@ -225,7 +225,7 @@ export function UserDropdown() {
         title = 'Cloud is not configured';
         description = message;
       }
-      toast.error(title, { description });
+      notify.error({ title, message: description });
       console.error('[Cloud Login] Failed:', e);
     }
   }, []);

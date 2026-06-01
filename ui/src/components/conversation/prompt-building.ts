@@ -1,7 +1,7 @@
 import { dataManager, FlowMessage, TypeId } from '@sdk';
 import { ActionInfo } from '@sdk/models/ActionInfo';
 import { AttachmentType } from '@sdk/entities/flow-message';
-import { fileAttachmentUrl } from './attachment-url';
+import { isDownloadableFileAttachment } from './attachment-url';
 
 /** Title-case the type slug for human-friendly type labels. */
 function humanType(type: string): string {
@@ -113,17 +113,25 @@ export async function resolvePromptText(
  * - FILE attachments are listed at the end as absolute paths the agent can read.
  *
  * For hub-mirrored conversations the bytes live on the hub until first access;
- * we pre-fetch every file-backed attachment via ``fileAttachmentUrl`` (the local
- * download endpoint with hub fallback) so the cached copy lands on local disk
- * before the agent tries to read the path.
+ * we materialise them once via ``FlowMessage.downloadAttachments()`` (the single
+ * gated download entrypoint — a no-op unless body_status is READY) so the cached
+ * copies land on local disk before the agent reads the paths. We never fetch a
+ * raw ``fs/download`` URL here, so a body that was never uploaded can't 404.
  */
 export async function buildMergedPrompt(flowMessage: FlowMessage): Promise<string> {
   const promptAtts = (flowMessage.attachment ?? []).filter(
     (a) => a.attachment_type === AttachmentType.PROMPT,
   );
-  const fileAtts = (flowMessage.attachment ?? []).filter(
-    (a) => a.attachment_type === AttachmentType.FILE && !!a.data && !a.data.endsWith('conversation.jsonl'),
-  );
+  const fileAtts = (flowMessage.attachment ?? []).filter(isDownloadableFileAttachment);
+
+  // Pull the body bundle once so every file-backed attachment's local_path is
+  // populated. Gated on READY inside downloadAttachments — never fires for a
+  // dangling (na) body. Best-effort: errors surface elsewhere.
+  try {
+    await flowMessage.downloadAttachments();
+  } catch {
+    // best-effort — fall back to the raw VFS path below
+  }
 
   const inlineParts: string[] = [];
   const promptFilePaths: string[] = [];
@@ -131,13 +139,6 @@ export async function buildMergedPrompt(flowMessage: FlowMessage): Promise<strin
   for (const att of promptAtts) {
     const isFile = !!att.data && att.data.startsWith('prompt/');
     if (isFile && flowMessage.id) {
-      // Trigger the local download endpoint so a hub-mirrored FlowMessage's
-      // bytes are cached on disk before the agent reads via local_path.
-      try {
-        await fetch(fileAttachmentUrl(flowMessage.id, att.data));
-      } catch {
-        // best-effort
-      }
       const localPath = att.local_path || att.data;
       promptFilePaths.push(`Your prompt to execute is here: ${localPath}`);
     } else {
@@ -150,11 +151,6 @@ export async function buildMergedPrompt(flowMessage: FlowMessage): Promise<strin
   if (fileAtts.length > 0 && flowMessage.id) {
     const lines: string[] = [];
     for (const att of fileAtts) {
-      try {
-        await fetch(fileAttachmentUrl(flowMessage.id, att.data));
-      } catch {
-        // best-effort
-      }
       const localPath = att.local_path || att.data;
       const filename = att.data.split('/').pop() ?? att.data;
       lines.push(`- ${filename}: ${localPath}`);

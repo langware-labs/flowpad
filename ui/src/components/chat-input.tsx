@@ -29,7 +29,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from '@src/components/ui/dropdown-menu';
 import { Input } from '@src/components/ui/input';
 import { Textarea } from '@src/components/ui/textarea';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { useCurrentArtifacts } from '@src/hooks/flow-hooks';
 import { useAuth, useProject } from '@sdk/react/hooks';
 import { FileArchive, GitBranch, Loader2, Paperclip, Send, Settings2, Square } from 'lucide-react';
@@ -109,7 +109,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const [pendingSubmission, setPendingSubmission] = useState<{
     message: string;
     options: ICompletionOptions;
-    dismissToast: () => void;
+    notifyId: string;
   } | null>(null);
   const [showGitHubDialog, setShowGitHubDialog] = useState(false);
   const [pendingGitUrl, setPendingGitUrl] = useState<string>('');
@@ -121,7 +121,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const zipFileInputRef = useRef<HTMLInputElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const { toast } = useToast();
 
   const flowTypeId = useMemo(() => (processId ? new TypeId(AgenticProcess.type, processId) : null), [processId]);
 
@@ -168,7 +167,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
       void navigate(`/agent/${agentId}/flow/${pendingSubmission.options.processId}`);
       clearEditorContent();
     }
-    pendingSubmission.dismissToast();
+    notify.dismiss(pendingSubmission.notifyId);
     setIsWaitingForOperations(false);
     onSendMessage?.(pendingSubmission.message, pendingSubmission.options);
     setMessage('');
@@ -245,13 +244,12 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
       await Promise.all(fileItems.map(uploadFile));
 
-      toast({
+      notify.success({
         title: 'Uploaded files',
-        description: files.map((file) => file.name).join(', '),
-        variant: 'default',
+        message: files.map((file) => file.name).join(', '),
       });
     },
-    [currentFlowId, currentProjectId, createFlow, toast],
+    [currentFlowId, currentProjectId, createFlow],
   );
 
   const removeUploadingFile = useCallback(
@@ -369,14 +367,13 @@ const ChatInput: React.FC<ChatInputProps> = ({
       } catch (error) {
         console.error('Error uploading zip file:', error);
         setCodebaseConnection(null);
-        toast({
+        notify.error({
           title: 'Zip Upload Failed',
-          description: 'Failed to upload the zip file. Please try again.',
-          variant: 'destructive',
+          message: 'Failed to upload the zip file. Please try again.',
         });
       }
     },
-    [createFlow, currentProjectId, currentFlowId, saveRepoArtifact, toast],
+    [createFlow, currentProjectId, currentFlowId, saveRepoArtifact],
   );
 
   const handleFilesDrop = useCallback(
@@ -394,18 +391,16 @@ const ChatInput: React.FC<ChatInputProps> = ({
 
       if (zipFiles.length > 0) {
         if (!codebaseConnectionEnabled) {
-          toast({
+          notify.error({
             title: 'ZIP File Upload Not Allowed',
-            description: `ZIP file upload is only available as a codebase connection`,
-            variant: 'destructive',
+            message: `ZIP file upload is only available as a codebase connection`,
           });
           return;
         }
         if (zipFiles.length > 1) {
-          toast({
+          notify.error({
             title: 'Multiple ZIP Files Not Allowed',
-            description: `Only one ZIP file can be uploaded at a time`,
-            variant: 'destructive',
+            message: `Only one ZIP file can be uploaded at a time`,
           });
           return;
         }
@@ -415,7 +410,7 @@ const ChatInput: React.FC<ChatInputProps> = ({
         await addUploadingFiles(nonZipFiles);
       }
     },
-    [addUploadingFiles, addZipUpload, codebaseConnectionEnabled, toast],
+    [addUploadingFiles, addZipUpload, codebaseConnectionEnabled],
   );
 
   const isVisitorWithLimitReached = useMemo(
@@ -525,17 +520,13 @@ const ChatInput: React.FC<ChatInputProps> = ({
           waitingMessages.push(`Connecting codebase: ${codebaseConnection?.name}`);
         }
 
-        // Set waiting state and show toast
+        // Set waiting state and show a busy (spinner) toast
         setIsWaitingForOperations(true);
-        const { dismiss: dismissToast } = toast({
+        const waitingId = `chat-waiting:${currentFlowId ?? 'new'}`;
+        notify.busy({
+          id: waitingId,
           title: 'Please wait...',
-          description: (
-            <div className="flex items-center gap-2">
-              <Loader2 className="h-4 w-4 animate-spin" />
-              {waitingMessages.join('. ')}
-            </div>
-          ),
-          variant: 'default',
+          message: waitingMessages.join('. '),
         });
 
         // Store the pending submission and return early
@@ -552,8 +543,8 @@ const ChatInput: React.FC<ChatInputProps> = ({
           baseSkill: chatOptions.skill,
           labels: chatOptions.labels,
         };
-        pendingSubmission?.dismissToast();
-        setPendingSubmission({ message: messageToSend, options: completionOptions, dismissToast });
+        if (pendingSubmission) notify.dismiss(pendingSubmission.notifyId);
+        setPendingSubmission({ message: messageToSend, options: completionOptions, notifyId: waitingId });
         return;
       }
 
@@ -787,14 +778,13 @@ const ChatInput: React.FC<ChatInputProps> = ({
       } catch (error) {
         console.error('Error cloning git repository:', error);
         setCodebaseConnection(null);
-        toast({
+        notify.error({
           title: 'Git Clone Failed',
-          description: 'Failed to clone the git repository. Please check the URL and try again.',
-          variant: 'destructive',
+          message: 'Failed to clone the git repository. Please check the URL and try again.',
         });
       }
     },
-    [currentProjectId, currentFlowId, createFlow, toast, saveRepoArtifact, getRepoNameFromUrl],
+    [currentProjectId, currentFlowId, createFlow, saveRepoArtifact, getRepoNameFromUrl],
   );
 
   const handleGitCloneSubmit = useCallback(async () => {
@@ -834,10 +824,9 @@ const ChatInput: React.FC<ChatInputProps> = ({
         }
       } else {
         // Error occurred while checking access
-        toast({
+        notify.error({
           title: 'Error Checking Repository',
-          description: 'An error occurred while checking the repository. Please try again.',
-          variant: 'destructive',
+          message: 'An error occurred while checking the repository. Please try again.',
         });
         // Clear the codebase button
         setCodebaseConnection(null);
@@ -846,17 +835,16 @@ const ChatInput: React.FC<ChatInputProps> = ({
     } catch (error) {
       console.error('Error checking repository access:', error);
       // If there's an error checking access, show alert and clear codebase button
-      toast({
+      notify.error({
         title: 'Error Checking Repository',
-        description: 'An error occurred while checking the repository. Please try again.',
-        variant: 'destructive',
+        message: 'An error occurred while checking the repository. Please try again.',
       });
       // Clear the codebase button
       setCodebaseConnection(null);
     } finally {
       setIsCheckingRepo(false);
     }
-  }, [gitUrl, performGitClone, someone, visitor, project?.typeId, createFlow, toast]);
+  }, [gitUrl, performGitClone, someone, visitor, project?.typeId, createFlow]);
 
   const handleGitHubConnectionSuccess = useCallback(
     async (branch?: string) => {

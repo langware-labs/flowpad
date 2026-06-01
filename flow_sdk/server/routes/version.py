@@ -12,6 +12,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 
 from flow_sdk import __version__
+from flow_sdk.utils import hub
 
 logger = logging.getLogger(__name__)
 
@@ -42,11 +43,16 @@ class ReleaseInfo(BaseModel):
     html_url: Optional[str] = None
 
 
+class HubInfo(BaseModel):
+    version: Optional[str] = None
+
+
 class VersionCheckResponse(BaseModel):
     pypi: PypiInfo
     latest_release: Optional[ReleaseInfo] = None
     releases: list[ReleaseInfo] = []
     github_error: Optional[str] = None
+    hub: Optional[HubInfo] = None
 
 
 def _normalize_tag(tag: str) -> str:
@@ -126,16 +132,19 @@ async def check_version() -> VersionCheckResponse:
     if cached and time.monotonic() - cached[0] < _CACHE_TTL_S:
         return cached[1]
     async with httpx.AsyncClient() as client:
-        pypi_info, github_result = await asyncio.gather(
+        pypi_info, github_result, hub_raw = await asyncio.gather(
             _fetch_pypi(client),
             _fetch_github(client),
+            hub.get_info(),
         )
     releases, github_error = github_result
+    hub_info = HubInfo(version=hub_raw.get("version")) if hub_raw else None
     resp = VersionCheckResponse(
         pypi=pypi_info,
         latest_release=releases[0] if releases else None,
         releases=releases,
         github_error=github_error,
+        hub=hub_info,
     )
     # Only cache when both upstreams succeeded — keeps a transient outage from
     # pinning a broken response for 5 minutes.

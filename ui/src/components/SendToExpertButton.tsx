@@ -13,7 +13,7 @@ import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from '@src/components/ui/select';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { useAuth } from '@sdk/react/hooks';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -50,7 +50,6 @@ export const SendToExpertButton: React.FC<SendToExpertButtonProps> = ({ agentId,
   const [members, setMembers] = useState<Membership[]>([]);
   const [selectedExpert, setSelectedExpert] = useState<string | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
-  const { toast } = useToast();
   const { user } = useAuth();
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
@@ -89,10 +88,9 @@ export const SendToExpertButton: React.FC<SendToExpertButtonProps> = ({ agentId,
     setLoading(true);
     try {
       if (!agent) {
-        toast({
+        notify.error({
           title: 'Error',
-          description: 'Could not access agent information',
-          variant: 'destructive',
+          message: 'Could not access agent information',
         });
         setIsDialogOpen(false);
         return;
@@ -100,20 +98,18 @@ export const SendToExpertButton: React.FC<SendToExpertButtonProps> = ({ agentId,
 
       const workspace = await agent.get_related_workspace();
       if (!workspace) {
-        toast({
+        notify.error({
           title: 'Error',
-          description: 'Could not determine workspace for this chat',
-          variant: 'destructive',
+          message: 'Could not determine workspace for this chat',
         });
         setIsDialogOpen(false);
         return;
       }
 
       if (!workspace || !workspace.typeId) {
-        toast({
+        notify.error({
           title: 'Error',
-          description: 'Could not access workspace information',
-          variant: 'destructive',
+          message: 'Could not access workspace information',
         });
         setIsDialogOpen(false);
         return;
@@ -128,22 +124,21 @@ export const SendToExpertButton: React.FC<SendToExpertButtonProps> = ({ agentId,
         const approvedMembers = memberships.filter((member) => member.status === 'approved');
         setMembers(approvedMembers);
       } else {
-        toast({
+        notify.info({
           title: 'No members found',
-          description: 'No experts available for this workspace',
+          message: 'No experts available for this workspace',
         });
       }
     } catch (error) {
       console.error('Error fetching members:', error);
-      toast({
+      notify.error({
         title: 'Error',
-        description: 'Failed to load experts',
-        variant: 'destructive',
+        message: 'Failed to load experts',
       });
     } finally {
       setLoading(false);
     }
-  }, [agent, toast]);
+  }, [agent]);
 
   // Fetch members when dialog opens
   useEffect(() => {
@@ -163,19 +158,17 @@ export const SendToExpertButton: React.FC<SendToExpertButtonProps> = ({ agentId,
 
   const handleSendToExpert = useCallback(async () => {
     if (!processId) {
-      toast({
+      notify.error({
         title: 'Error',
-        description: 'No active chat found',
-        variant: 'destructive',
+        message: 'No active chat found',
       });
       return;
     }
 
     if (!selectedExpert) {
-      toast({
+      notify.error({
         title: 'Error',
-        description: 'Please select an expert',
-        variant: 'destructive',
+        message: 'Please select an expert',
       });
       return;
     }
@@ -185,20 +178,18 @@ export const SendToExpertButton: React.FC<SendToExpertButtonProps> = ({ agentId,
       const expert = members.find((member) => member.user_id === selectedExpert);
 
       if (!expert) {
-        toast({
+        notify.error({
           title: 'Error',
-          description: 'Selected expert not found',
-          variant: 'destructive',
+          message: 'Selected expert not found',
         });
         return;
       }
 
       const flow = await Flow.getById(processId);
       if (!flow) {
-        toast({
+        notify.error({
           title: 'Error',
-          description: 'Chat not found',
-          variant: 'destructive',
+          message: 'Chat not found',
         });
         return;
       }
@@ -214,39 +205,37 @@ export const SendToExpertButton: React.FC<SendToExpertButtonProps> = ({ agentId,
       const response = await dataManager.callAction<unknown, ExpertResponse>(actionInfo);
 
       if (response.status === 'SUCCESS') {
-        toast({
+        notify.success({
           title: 'Success',
-          description: `Request sent to ${expert.user_name || expert.user_email}`,
+          message: `Request sent to ${expert.user_name || expert.user_email}`,
         });
 
         // The backend response includes the structured issue summary from LLM
         if (response.details) {
-          toast({
+          notify.info({
             title: 'Issue Summary',
-            description: response.details,
-            duration: 6000,
+            message: response.details,
+            durationMs: 6000,
           });
         }
 
         handleCloseDialog();
       } else {
-        toast({
+        notify.error({
           title: 'Error',
-          description: response.details || 'Failed to send request to expert',
-          variant: 'destructive',
+          message: response.details || 'Failed to send request to expert',
         });
       }
     } catch (error) {
       console.error('Error sending expert request:', error);
-      toast({
+      notify.error({
         title: 'Error',
-        description: 'Failed to send request to expert',
-        variant: 'destructive',
+        message: 'Failed to send request to expert',
       });
     } finally {
       setLoading(false);
     }
-  }, [agentTypeId, processId, members, selectedExpert, toast]);
+  }, [agentTypeId, processId, members, selectedExpert]);
 
   // Use a different gradient for visual distinction
   const buttonStyle = {
