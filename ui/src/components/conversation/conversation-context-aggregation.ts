@@ -55,6 +55,19 @@ export interface SharedEntityAgg extends OriginSet {
    *  to pre-warm the 404 self-heal (`?hint_path=<path>`); undefined when
    *  no source carried a path (opaque types or pre-v1.2 rows). */
   hintPath?: string;
+  /** True when this entity rides in a message's body bundle (it was a TYPE_ID
+   *  *attachment*, not just a context cross-link). Only downloadable entities
+   *  get the "Download <type>" affordance; cross-links / conversation-level
+   *  shares keep their resolve-or-open behavior. */
+  downloadable?: boolean;
+  /** Mirrors the origin message's backend-derived `body_downloaded`: true once
+   *  the bundle was pulled and this entity is materialized locally. Shared with
+   *  the transcript bubble so both surfaces flip together. Always true for
+   *  non-downloadable entries (nothing to pull). */
+  downloaded?: boolean;
+  /** The earliest message that contributed this entity as an attachment — the
+   *  one whose `downloadAttachments()` the panel triggers. */
+  downloadOriginMessageId?: string;
 }
 
 export interface TranscriptEntry extends OriginSet {
@@ -165,17 +178,32 @@ export function buildSharedEntities(
     t: TypeId | null,
     originMessageId: string | null,
     sourceWithSidecar: { getContextEntryData?: (t: TypeId) => Record<string, unknown> | undefined } | null,
+    fromAttachment?: { downloaded: boolean },
   ) => {
     if (!t) return;
     const key = t.toString();
     if (skipKeys.has(key)) return;
     let entry = byKey.get(key);
     if (!entry) {
-      entry = { typeId: t, originMessageIds: [] };
+      // Default downloaded=true so cross-links / conversation-level shares (no
+      // bundle) keep their resolve-or-open behavior; the attachment branch
+      // below flips it false until the origin message's body is pulled.
+      entry = { typeId: t, originMessageIds: [], downloadable: false, downloaded: true };
       byKey.set(key, entry);
     }
     if (originMessageId && !entry.originMessageIds.includes(originMessageId)) {
       entry.originMessageIds.push(originMessageId);
+    }
+    if (fromAttachment) {
+      // Materialized once at least one contributing message's bundle is pulled.
+      // First attachment contribution replaces the default `true`; later ones OR in.
+      entry.downloaded = entry.downloadable
+        ? entry.downloaded || fromAttachment.downloaded
+        : fromAttachment.downloaded;
+      entry.downloadable = true;
+      if (!entry.downloadOriginMessageId && originMessageId) {
+        entry.downloadOriginMessageId = originMessageId;
+      }
     }
     // First non-empty hintPath wins. Sources are walked in conversation
     // order, so we prefer the earliest harvested path.
@@ -191,7 +219,7 @@ export function buildSharedEntities(
     for (const a of fm.attachment ?? []) {
       if (a.attachment_type !== AttachmentType.TYPE_ID) continue;
       try {
-        pushTypeId(new TypeId(a.data), fm.id, fm);
+        pushTypeId(new TypeId(a.data), fm.id, fm, { downloaded: fm.body_downloaded ?? false });
       } catch {
         /* malformed — skip */
       }
@@ -200,7 +228,8 @@ export function buildSharedEntities(
   // Conversation-level shared context (e.g. specs published via the + button
   // through the share-context endpoint) surface as Shared Context with no
   // specific origin message — they belong to the whole thread, not to a
-  // single bubble.
+  // single bubble. They have no body bundle to pull, so they stay
+  // downloadable=false / downloaded=true (resolve-or-open as before).
   if (conversation) {
     for (const t of conversation.sharedContextEntities ?? []) pushTypeId(t, null, conversation);
   }
