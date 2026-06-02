@@ -37,6 +37,15 @@ export const DEFAULT_ASSET_FILTER: AssetFilter = {
  */
 export function applyFilterToParams(params: URLSearchParams, filter: AssetFilter): void {
   applyScopeToParams(params, filter.scope);
+  // When browsing a specific project, surface its records regardless of the
+  // per-record ``system`` flag — system projects (e.g. @flowpad_assistant) and
+  // their bootstrap-seeded docs carry ``system=True``, which the default
+  // search filter hides. Being explicitly inside the project IS the opt-in,
+  // mirroring DocsCategory/SkillsCategory. Global (user) browse leaves it off
+  // so SDK-shipped system content stays out of the unscoped view.
+  if (filter.scope.projects.length > 0) {
+    params.set('include_system', 'true');
+  }
   if (filter.tags.length > 0) {
     params.set('tags', filter.tags.join(','));
   }
