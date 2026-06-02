@@ -105,6 +105,29 @@ def apply_scope_filter(entities: list, sf: "ScopeFilter | None") -> list:
     return [e for e in entities if _keep(e)]
 
 
+def resolve_project_scope(sf: "ScopeFilter | None") -> "ScopeFilter | None":
+    """Resolve project *uname* tokens in ``sf.projects`` to entity ids.
+
+    System projects (e.g. ``@flowpad_assistant``) are referenced by their
+    stable uname in URLs/footer, but records are stamped with the project's
+    entity id — the indexer resolves the same way via
+    ``lookup_project_id_by_uname``. Resolving here keeps the scope match
+    symmetric with the stamp across every search surface. uuid tokens (the
+    common case) pass through untouched, so this is a no-op for them.
+    """
+    if sf is None or not sf.projects:
+        return sf
+    from flow_sdk.fs_store.indexer.roots import lookup_project_id_by_uname  # noqa: PLC0415
+    from flow_sdk.fs_store.identifier import is_valid_uuid  # noqa: PLC0415
+
+    resolved = tuple(
+        tok if is_valid_uuid(tok)
+        else lookup_project_id_by_uname(tok[1:] if tok.startswith("@") else tok) or tok
+        for tok in sf.projects
+    )
+    return sf if resolved == sf.projects else ScopeFilter(user=sf.user, projects=resolved)
+
+
 def apply_folder_filter(entities: list, parent_path: str | None, vault_root: str | None) -> list:
     """Filter entities by parent_path (exact) and/or vault_root (exact)."""
     if not parent_path and not vault_root:

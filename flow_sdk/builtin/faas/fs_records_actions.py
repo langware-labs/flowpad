@@ -216,6 +216,7 @@ class FsRecordsActionsMixin:
             apply_scope_filter,
             apply_system_filter,
             apply_tag_filter,
+            resolve_project_scope,
         )
 
         qp = request_info.request.query_params
@@ -225,7 +226,7 @@ class FsRecordsActionsMixin:
         status = qp.get("status", "") or None
         # Unified ScopeFilter wire format: `?user=true&projects=A,B`. Absent
         # both params means no filter applied (legacy callers).
-        scope_filter = (
+        scope_filter = resolve_project_scope(
             ScopeFilter.from_query_params(qp)
             if (qp.get("user") is not None or qp.get("projects") is not None)
             else None
@@ -364,7 +365,7 @@ class FsRecordsActionsMixin:
         # instead of the silent USER_HOME_FOLDER → real_project_cwd_fn
         # expander discovery.
         from flow_sdk.fs_store.operations.all_projects import get_all_scope_filter  # noqa: PLC0415
-        from flow_sdk.server.search_filters import ScopeFilter  # noqa: PLC0415
+        from flow_sdk.server.search_filters import ScopeFilter, resolve_project_scope  # noqa: PLC0415
         scope_explicit = qp.get("user") is not None or qp.get("projects") is not None
         # ``create_missing=True`` matches the legacy behaviour of the silent
         # ``real_project_cwd_fn`` expander (which also called
@@ -376,7 +377,7 @@ class FsRecordsActionsMixin:
         # ``Project.get_one`` would 404 the whole scan. The materialisation
         # side-effect is pre-existing; this change only makes it explicit at
         # the route boundary instead of implicit during the walk.
-        scope_filter = (
+        scope_filter = resolve_project_scope(
             ScopeFilter.from_query_params(qp)
             if scope_explicit
             else await get_all_scope_filter()
