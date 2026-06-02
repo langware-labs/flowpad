@@ -244,6 +244,64 @@ async def _append_message_to_conversation(
     return await Conversation.get_one({"id": conv.id})
 
 
+# Types that ride along every message as transport plumbing — never treated as
+# shared context to merge onto the conversation.
+_NON_CONTEXT_TYPES = {"conversation", "flow_message"}
+
+
+def _parse_context_typeids(
+    conv: Conversation,
+    asset_references: list,
+    shared_context_entities: list,
+) -> list[TypeId]:
+    """Union of asset_references + shared_context_entities, parsed to TypeIds,
+    excluding the conversation's own id and the transport types. Deduped,
+    order-preserving."""
+    seen: set[str] = set()
+    out: list[TypeId] = []
+    for raw in [*(asset_references or []), *(shared_context_entities or [])]:
+        if not raw:
+            continue
+        try:
+            tid = raw if isinstance(raw, TypeId) else TypeId(str(raw))
+        except (ValueError, TypeError):
+            continue
+        if tid.type in _NON_CONTEXT_TYPES or not tid.id:
+            continue
+        if tid.id == conv.id:
+            continue
+        key = str(tid)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(tid)
+    return out
+
+
+async def _merge_shared_context_into_conversation(
+    conv: Conversation,
+    asset_references: list,
+    shared_context_entities: list,
+    someone_typeid: str,
+) -> None:
+    """Append the just-shared items to ``conv.shared_context_entities`` and link
+    each item back to the conversation (parent_type_id). Idempotent — a re-share
+    of the same item is a no-op (dedup by (type, id)). Best-effort: never blocks
+    the message send."""
+    typeids = _parse_context_typeids(conv, asset_references, shared_context_entities)
+    if not typeids:
+        return
+    try:
+        changed = conv.add_shared_context_entities(*typeids)
+        if changed:
+            await conv.save(someone_typeid)
+        await conv._link_context_to_conversation(typeids)
+    except Exception as e:  # noqa: BLE001
+        logger.warning(
+            "[append_conversation] merge shared context failed (non-fatal): %s", e, exc_info=True
+        )
+
+
 
 async def _send_conversation_message_header(conv: "Conversation", reply_fm: "FlowMessage") -> bool:
     """Create the hub-side FlowMessage header via the conversation's
@@ -491,6 +549,18 @@ async def handle_add_message(body: dict, someone_typeid: str) -> ApiResponse:
     conv = await Conversation.get_one({"id": conversation_id})
     if not conv:
         return ApiFailResponse(message=f"Conversation not found: {conversation_id}")
+
+    # Merge the items being shared into THIS conversation's context (both the
+    # conversation row and the items themselves), so a re-share into an existing
+    # conversation updates context just like the new-conversation path does —
+    # without minting a new conversation/invitation. The local backend is the
+    # single writer of the local Conversation (shared_context_entities is a
+    # local-only field; the hub has no such concept), so this lives here, not
+    # in an optimistic FE write. Skip the conversation's own typeid and the
+    # transport types (conversation/flow_message) that ride every message.
+    await _merge_shared_context_into_conversation(
+        conv, asset_references, shared_context_entities, someone_typeid,
+    )
 
     sender_participant = await User.current_sender_participant(body.get("sender_name"))
     sender_id = sender_participant.get("user_id") or None

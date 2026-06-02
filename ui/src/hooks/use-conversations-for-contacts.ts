@@ -5,15 +5,9 @@ import {
   QueryRequest,
 } from '@sdk';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
-
-/**
- * Stable identity key for a participant. user_id wins (cross-machine stable),
- * then email, then name as a last resort. Same keying must be applied on both
- * sides of the filter so the subset check is order-insensitive.
- */
-function participantKey(p: ConversationParticipant): string {
-  return (p.user_id || p.email || p.name || '').trim().toLowerCase();
-}
+// Single canonical keying, shared with ContactPicker / AddressBookButton so the
+// picker's dedup and this subset-match agree on participant identity.
+import { participantKey } from '@src/components/contact-picker/use-contacts';
 
 export interface UseConversationsForContactsResult {
   conversations: Conversation[];
