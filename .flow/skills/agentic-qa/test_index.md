@@ -1,188 +1,185 @@
 # Test Index
 
-> Last updated: 2026-05-24 (QA cycle start)
-> Scope: .md scenarios only. .md.ts-only files without a .md spec are not counted.
+> Last updated: 2026-06-02T20:27:50Z
+> Scope: .md scenarios. 'Playwright' = paired .md.ts exists.
 
 ## agentic-process (12 scenarios)
-| Scenario | Playwright | Fast Path |
-|----------|------------|-----------|
-| conversation_view_three_spawn_branches.md | no | no |
-| embedded_close_preserves_process.md | no | no |
-| fork_action_from_search_dock.md | no | no |
-| new_claude_session_no_console_errors.md | yes | no |
-| observability_surfaces.md | no | no |
-| open_shell_from_process_workdir.md | no | no |
-| process_restart_and_cli_flags.md | no | no |
-| process_terminal_shell_tab_navigates_url.md | yes | no |
-| processtoolbar_fork.md | no | no |
-| resume_session_from_recent.md | no | no |
-| session_info_popover.md | no | no |
-| worktree_lifecycle.md | no | no |
+| Scenario | Playwright |
+|----------|------------|
+| conversation_view_three_spawn_branches.md | no |
+| embedded_close_preserves_process.md | no |
+| fork_action_from_search_dock.md | no |
+| new_claude_session_no_console_errors.md | yes |
+| observability_surfaces.md | no |
+| open_shell_from_process_workdir.md | no |
+| process_restart_and_cli_flags.md | no |
+| process_terminal_shell_tab_navigates_url.md | yes |
+| processtoolbar_fork.md | no |
+| resume_session_from_recent.md | no |
+| session_info_popover.md | no |
+| worktree_lifecycle.md | no |
 
 ## assets (3 scenarios)
-| Scenario | Playwright | Fast Path |
-|----------|------------|-----------|
-| agent_execution_asset_picker.md | no | no |
-| assets_list_mode.md | no | no |
-| wiki_folder_tree.md | yes | no |
+| Scenario | Playwright |
+|----------|------------|
+| agent_execution_asset_picker.md | no |
+| assets_list_mode.md | no |
+| wiki_folder_tree.md | yes |
 
 ## chat (14 scenarios)
-| Scenario | Playwright | Fast Path |
-|----------|------------|-----------|
-| chat_input_controls.md | yes | no |
-| chat_refresh_persistence.md | yes | no |
-| chat_tab_switching.md | yes | no |
-| closing_a_chat_produces_console_error_401.md | no | no |
-| doc_chat_per_type.md | no | no |
-| landing_to_new_chat.md | yes | no |
-| new_session_is_not_opened.md | no | no |
-| new_sessions_always_opened_with_session_1_header.md | no | no |
-| opening_project_in_explorer_console_error_404.md | no | no |
-| prompting_from_app_homepage_does_not_start_new_session.md | no | no |
-| return_to_home.md | yes | no |
-| send_multiple_messages.md | yes | no |
-| sessions_disappear_after_page_refresh.md | no | no |
-| switch_between_sessions.md | no | no |
+| Scenario | Playwright |
+|----------|------------|
+| chat_input_controls.md | yes |
+| chat_refresh_persistence.md | yes |
+| chat_tab_switching.md | yes |
+| closing_a_chat_produces_console_error_401.md | no |
+| doc_chat_per_type.md | no |
+| landing_to_new_chat.md | yes |
+| new_session_is_not_opened.md | no |
+| new_sessions_always_opened_with_session_1_header.md | no |
+| opening_project_in_explorer_console_error_404.md | no |
+| prompting_from_app_homepage_does_not_start_new_session.md | no |
+| return_to_home.md | yes |
+| send_multiple_messages.md | yes |
+| sessions_disappear_after_page_refresh.md | no |
+| switch_between_sessions.md | no |
 
 ## cli-log (1 scenarios)
-| Scenario | Playwright | Fast Path |
-|----------|------------|-----------|
-| cli_log_viewer.md | no | yes |
+| Scenario | Playwright |
+|----------|------------|
+| cli_log_viewer.md | no |
 
 ## collaboration (4 scenarios)
-| Scenario | Playwright | Fast Path |
-|----------|------------|-----------|
-| collaboration_room_add_process.md | no | no |
-| flowpad_assistant_docs_panel.md | no | no |
-| project_room_new_doc.md | no | no |
-| project_row_opens_collab_space.md | no | no |
+| Scenario | Playwright |
+|----------|------------|
+| collaboration_room_add_process.md | no |
+| flowpad_assistant_docs_panel.md | no |
+| project_room_new_doc.md | no |
+| project_row_opens_collab_space.md | no |
 
-## conversation (1 scenarios)
-| Scenario | Playwright | Fast Path |
-|----------|------------|-----------|
-| two_instance_hub_conversation.md | no | no |
+## conversation (2 scenarios)
+| Scenario | Playwright |
+|----------|------------|
+| conversation_title_rename_live.md | no |
+| two_instance_hub_conversation.md | no |
 
 ## editor (13 scenarios)
-| Scenario | Playwright | Fast Path |
-|----------|------------|-----------|
-| ami_creating_a_folder_crashes_desktop_app_agent_id_is_missin.md | no | no |
-| console_error_404_request_failed_with_status_code_404_when_c.md | no | no |
-| console_error_500_failed_to_load_resource_tab_hooks_in_syste.md | no | no |
-| editor_download_all_files_console_error.md | no | no |
-| editor_tab_download_all_files_fails_to_create_zip.md | no | no |
-| editorfiles_tab_creating_a_new_file_doesnt_show_the_file_in.md | no | no |
-| execute_flow_error_theme_vs_dark_not_found_you_may_need_to_l.md | no | no |
-| files_tab_download_directory_does_nothing.md | no | no |
-| files_tab_shows_local_c_as_root_and_doesnt_show_the_temp_wor.md | no | no |
-| milkdown_no_wiki_back_button.md | no | no |
-| milkdown_selection_toolbar.md | no | no |
-| new_prompt_save_indefinitely.md | no | no |
-| uploading_a_file_doesnt_show_up_in_the_side_bar.md | no | no |
+| Scenario | Playwright |
+|----------|------------|
+| ami_creating_a_folder_crashes_desktop_app_agent_id_is_missin.md | no |
+| console_error_404_request_failed_with_status_code_404_when_c.md | no |
+| console_error_500_failed_to_load_resource_tab_hooks_in_syste.md | no |
+| editor_download_all_files_console_error.md | no |
+| editor_tab_download_all_files_fails_to_create_zip.md | no |
+| editorfiles_tab_creating_a_new_file_doesnt_show_the_file_in.md | no |
+| execute_flow_error_theme_vs_dark_not_found_you_may_need_to_l.md | no |
+| files_tab_download_directory_does_nothing.md | no |
+| files_tab_shows_local_c_as_root_and_doesnt_show_the_temp_wor.md | no |
+| milkdown_no_wiki_back_button.md | no |
+| milkdown_selection_toolbar.md | no |
+| new_prompt_save_indefinitely.md | no |
+| uploading_a_file_doesnt_show_up_in_the_side_bar.md | no |
 
 ## general (7 scenarios)
-| Scenario | Playwright | Fast Path |
-|----------|------------|-----------|
-| console_error_482_failed_to_start_in_app_hompage.md | no | no |
-| current_activity_recent_sessions.md | yes | no |
-| execute_flow_hangs_indefinitely.md | yes | no |
-| heartbeat_sniffer_hook_events_e2e.md | no | no |
-| mac_desktop_app_hompage_error_500_failed_to_load_system_reso.md | no | no |
-| refreshing_any_tab_other_than_main_app_error_404_agent_id_mi.md | no | no |
-| usage_cost_failed_to_fetch_cost_overview.md | no | no |
+| Scenario | Playwright |
+|----------|------------|
+| console_error_482_failed_to_start_in_app_hompage.md | no |
+| current_activity_recent_sessions.md | yes |
+| execute_flow_hangs_indefinitely.md | yes |
+| heartbeat_sniffer_hook_events_e2e.md | no |
+| mac_desktop_app_hompage_error_500_failed_to_load_system_reso.md | no |
+| refreshing_any_tab_other_than_main_app_error_404_agent_id_mi.md | no |
+| usage_cost_failed_to_fetch_cost_overview.md | no |
 
 ## markdown_index (1 scenarios)
-| Scenario | Playwright | Fast Path |
-|----------|------------|-----------|
-| smoke.md | no | no |
+| Scenario | Playwright |
+|----------|------------|
+| smoke.md | no |
 
 ## search (7 scenarios)
-| Scenario | Playwright | Fast Path |
-|----------|------------|-----------|
-| rebuild_index_ui.md | no | no |
-| record_search_from_home.md | yes | no |
-| record_search_view.md | yes | yes |
-| scan_records_viewer.md | yes | no |
-| search_bar.md | yes | no |
-| search_limit_param.md | yes | no |
-| search_scan_info_stats.md | yes | no |
+| Scenario | Playwright |
+|----------|------------|
+| rebuild_index_ui.md | no |
+| record_search_from_home.md | yes |
+| record_search_view.md | yes |
+| scan_records_viewer.md | yes |
+| search_bar.md | yes |
+| search_limit_param.md | yes |
+| search_scan_info_stats.md | yes |
 
 ## setup (1 scenarios)
-| Scenario | Playwright | Fast Path |
-|----------|------------|-----------|
-| llm_not_configured_shows_up_after_configuring_llm.md | yes | no |
+| Scenario | Playwright |
+|----------|------------|
+| llm_not_configured_shows_up_after_configuring_llm.md | yes |
 
 ## skills (6 scenarios)
-| Scenario | Playwright | Fast Path |
-|----------|------------|-----------|
-| console_error_404_skill_page.md | no | no |
-| skill_editor_error_skillparseerror_invalid_skillmd_format_mi.md | no | no |
-| skills_failed_to_run_skill_console_error_482.md | no | no |
-| skills_run_hangs_indefinitely.md | yes | no |
-| user_skills_failed_to_generate_plan_console_error_404.md | no | no |
-| user_skills_failed_to_generate_plan_console_error_500.md | no | no |
+| Scenario | Playwright |
+|----------|------------|
+| console_error_404_skill_page.md | no |
+| skill_editor_error_skillparseerror_invalid_skillmd_format_mi.md | no |
+| skills_failed_to_run_skill_console_error_482.md | no |
+| skills_run_hangs_indefinitely.md | yes |
+| user_skills_failed_to_generate_plan_console_error_404.md | no |
+| user_skills_failed_to_generate_plan_console_error_500.md | no |
 
 ## sniffer (4 scenarios)
-| Scenario | Playwright | Fast Path |
-|----------|------------|-----------|
-| sniffer_bootstrap_init_state.md | no | no |
-| sniffer_event_capture.md | no | no |
-| sniffer_shared_state_single_backend_call.md | no | no |
-| sniffer_spa_navigation_preserves_state.md | no | no |
+| Scenario | Playwright |
+|----------|------------|
+| sniffer_bootstrap_init_state.md | no |
+| sniffer_event_capture.md | no |
+| sniffer_shared_state_single_backend_call.md | no |
+| sniffer_spa_navigation_preserves_state.md | no |
 
 ## terminal (26 scenarios)
-| Scenario | Playwright | Fast Path |
-|----------|------------|-----------|
-| ctrlc_doesnt_copy_in_shell_tab.md | yes | no |
-| flow_shell_tab_location.md | no | no |
-| git_status_panel.md | yes | no |
-| in_claude_ctrlv_does_not_paste.md | yes | no |
-| interactive_tabs_project_filtering_matrix.md | no | no |
-| multiple_terminal_tabs.md | yes | no |
-| navigate_to_shell.md | yes | no |
-| prompt_index_panel.md | yes | no |
-| run_basic_command.md | yes | no |
-| shell_starts_in_acceptable_time.md | no | no |
-| shell_tabs_remain_open_after_closing.md | no | no |
-| shell_terminals_looks_empty.md | no | no |
-| terminal_annotation_bookmark.md | yes | no |
-| terminal_clear_and_scrollback.md | yes | no |
-| terminal_command_history.md | yes | no |
-| terminal_ctrl_c.md | yes | no |
-| terminal_persistence_on_tab_switch.md | yes | no |
-| terminal_pty_no_duplicates.md | yes | no |
-| terminal_pty_output_clean.md | yes | no |
-| terminal_resize.md | yes | no |
-| terminal_scroll_sync.md | yes | no |
-| terminal_tab_rename.md | yes | no |
-| time_gutter_and_prompt_annotations.md | no | no |
-| visible_process_still_pty.md | no | no |
-| web_app_artifact_not_created_when_prompted.md | yes | no |
-| when_claude_runs_in_shell_and_is_thinking_not_all_the_output.md | yes | no |
+| Scenario | Playwright |
+|----------|------------|
+| ctrlc_doesnt_copy_in_shell_tab.md | yes |
+| flow_shell_tab_location.md | no |
+| git_status_panel.md | yes |
+| in_claude_ctrlv_does_not_paste.md | yes |
+| interactive_tabs_project_filtering_matrix.md | no |
+| multiple_terminal_tabs.md | yes |
+| navigate_to_shell.md | yes |
+| prompt_index_panel.md | yes |
+| run_basic_command.md | yes |
+| shell_starts_in_acceptable_time.md | no |
+| shell_tabs_remain_open_after_closing.md | no |
+| shell_terminals_looks_empty.md | no |
+| terminal_annotation_bookmark.md | yes |
+| terminal_clear_and_scrollback.md | yes |
+| terminal_command_history.md | yes |
+| terminal_ctrl_c.md | yes |
+| terminal_persistence_on_tab_switch.md | yes |
+| terminal_pty_no_duplicates.md | yes |
+| terminal_pty_output_clean.md | yes |
+| terminal_resize.md | yes |
+| terminal_scroll_sync.md | yes |
+| terminal_tab_rename.md | yes |
+| time_gutter_and_prompt_annotations.md | no |
+| visible_process_still_pty.md | no |
+| web_app_artifact_not_created_when_prompted.md | yes |
+| when_claude_runs_in_shell_and_is_thinking_not_all_the_output.md | yes |
 
 ## triggers (1 scenarios)
-| Scenario | Playwright | Fast Path |
-|----------|------------|-----------|
-| trigger_process_target_typeid_str.md | no | no |
+| Scenario | Playwright |
+|----------|------------|
+| trigger_process_target_typeid_str.md | no |
 
 ## whiteboard (8 scenarios)
-| Scenario | Playwright | Fast Path |
-|----------|------------|-----------|
-| create_persist.md | no | no |
-| edge_cases.md | no | no |
-| mermaid_sync.md | no | no |
-| multi_tab.md | no | no |
-| scope.md | no | no |
-| smoke.md | no | no |
-| ui_ux.md | no | no |
-| wiki_integration.md | no | no |
+| Scenario | Playwright |
+|----------|------------|
+| create_persist.md | no |
+| edge_cases.md | no |
+| mermaid_sync.md | no |
+| multi_tab.md | no |
+| scope.md | no |
+| smoke.md | no |
+| ui_ux.md | no |
+| wiki_integration.md | no |
 
 ## workflow (2 scenarios)
-| Scenario | Playwright | Fast Path |
-|----------|------------|-----------|
-| workflow_entity_create.md | no | no |
-| workflow_run_button.md | no | no |
+| Scenario | Playwright |
+|----------|------------|
+| workflow_entity_create.md | no |
+| workflow_run_button.md | no |
 
-## Totals
-
-- Categories: 17
-- Total scenarios: 111
