@@ -12,7 +12,7 @@ import { ContextEntityChip } from './EntityChip';
 import { GitRepoChip } from '@src/components/git/GitRepoChip';
 import { useLocalUser } from './useLocalUser';
 import { localBundleUrl } from './flow-message-drafts';
-import { DraftMessageComposer } from './DraftMessageComposer';
+import { MessageComposer } from './MessageComposer';
 import {
   participantLabelByUserId,
   UNRESOLVED_SENDER_LABEL,
@@ -94,7 +94,8 @@ interface FlowMessageBubbleProps {
    *  up its own Spec TypeId and calls back with the id. */
   onViewPlan?: (specId: string) => void;
   /** Render the bubble as a local draft — replaces the message view with the
-   *  DraftMessageComposer (always-editable, attachment picker, Send/Discard). */
+   *  MessageComposer in draft mode (always-editable, attach File/Asset/Repo,
+   *  Send/Discard). */
   isDraft?: boolean;
   /** Called after the draft was sent or discarded so the parent can refetch. */
   onDraftSent?: () => void;
@@ -102,6 +103,13 @@ interface FlowMessageBubbleProps {
   isSelected?: boolean;
   /** Click on the bubble fires this so the parent can mark this message selected. */
   onSelect?: () => void;
+  /** True when the local user owns the parent conversation (created_by). The
+   *  conversation owner may delete ANY message; everyone may delete their own.
+   *  Together with `isCurrentUser` this gates the delete affordance. */
+  isConversationOwner?: boolean;
+  /** Delete this message everywhere. The bubble only wires it through when the
+   *  local user is allowed (sender of this message OR conversation owner). */
+  onDeleteMessage?: (messageId: string) => void;
   participants?: ConversationParticipant[];
   /** True once the parent has resolved the canonical hub roster (success
    *  OR explicit failure). The bubble only escalates to the UNRESOLVED
@@ -133,6 +141,8 @@ export function FlowMessageBubble({
   onDraftSent,
   isSelected,
   onSelect,
+  isConversationOwner = false,
+  onDeleteMessage,
   participants,
   rosterReady = false,
   conversationStatusVisible = true,
@@ -216,10 +226,10 @@ export function FlowMessageBubble({
 
   if (isDraft) {
     return (
-      <DraftMessageComposer
-        fm={fm}
+      <MessageComposer
+        draft={fm}
         conversationId={fm.conversation_id ?? undefined}
-        onAfterSend={onDraftSent}
+        onSent={onDraftSent}
         onAfterDiscard={onDraftSent}
       />
     );
@@ -431,6 +441,11 @@ export function FlowMessageBubble({
         setOverrideName(newName);
         void updateName(newName);
       } : undefined}
+      onDeleteMessage={
+        onDeleteMessage && (isCurrentUser || isConversationOwner)
+          ? () => onDeleteMessage(messageId)
+          : undefined
+      }
       onApproveAndExecute={onApproveAndExecute ? (idx) => onApproveAndExecute(messageId, idx) : undefined}
       onImplementPlan={onImplementPlan ? () => onImplementPlan(messageId) : undefined}
       onOpenPlanSession={onOpenPlanSession}

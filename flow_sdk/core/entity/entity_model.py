@@ -360,23 +360,26 @@ class Entity(DBEntity):
     def allocate_id(cls, data: dict) -> str:
         """Return a stable UUID for this entity type given creation data.
 
-        Default behaviour (mirrors original from_record logic):
-        - If data['id'] is already a valid UUID → return it unchanged.
-        - If data['id'] is a non-empty non-UUID slug → derive uuid5(type:id).
-        - If data['id'] is empty/absent → return a fresh random uuid4.
+        Validate-on-adopt + single minter:
+        - If data['id'] is a **conforming** entity id (UUID v4/v5) → keep it.
+        - Else if data['id'] is non-empty (a slug, or a foreign/non-conforming
+          uuid such as a v7) → derive a stable ``uuid5(type:id)`` (normalizes
+          it; a hand-authored v7 never survives as the id).
+        - If empty/absent → fresh random uuid4.
 
-        Override in subclasses that have a natural filesystem identity key
-        (e.g. Project uses fs_storage_mount_path).
+        All cases route through ``mint_uuid`` so the version policy lives in one
+        place. Override in subclasses with a natural fs identity key (e.g.
+        Project uses fs_storage_mount_path).
         """
         import uuid as _uuid
-        from flow_sdk.fs_store.identifier import is_valid_uuid
+        from flow_sdk.fs_store.identifier import is_valid_entity_id, mint_uuid
         rid = data.get("id") or ""
-        if rid and is_valid_uuid(rid):
+        if rid and is_valid_entity_id(rid):
             return rid
         if rid:
             type_str = data.get("type") or "record"
-            return str(_uuid.uuid5(_uuid.NAMESPACE_DNS, f"{type_str}:{rid}"))
-        return str(_uuid.uuid4())
+            return mint_uuid(f"{type_str}:{rid}", namespace=_uuid.NAMESPACE_DNS)
+        return mint_uuid()
 
     @classmethod
     async def from_record(cls, record: "Record", notify: bool = True) -> Entity:
@@ -489,6 +492,20 @@ class Entity(DBEntity):
         """Return the fs-record associated with this entity, or None if none exists."""
         from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415 — lazy
         return FSRecord.load_or_none(self.get_type(), self.id)
+
+    async def destroy(self) -> None:
+        """Erase this entity's entire existence: the DB row + relationships AND
+        its on-disk record folder.
+
+        Unlike :meth:`delete` (DB row + relationships only — the on-disk shadow
+        folder is left behind), ``destroy`` routes through the record so the
+        whole ``<records_root>/<type>/<type>-@<id>/`` tree is removed too.
+        Falls back to a plain ``delete`` for entities that have no record."""
+        rec = await self.get_record()
+        if rec is not None:
+            await rec.destroy()
+        else:
+            await self.delete()
 
     async def updateSearchIndex(self) -> None:
         """Write this entity's searchable content into the FTS5 table.

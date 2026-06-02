@@ -29,6 +29,7 @@ from flow_sdk.fs_store.operations.conversation import (
     from_jsonl,
     message_pointers,
     project_pointers_to_entity,
+    prune_message_pointer,
 )
 from flow_sdk.builtin.flow_message_bundle import FlowMessageExistsError
 from flow_sdk.fs_store.record_types import RecordType
@@ -935,6 +936,114 @@ async def conversation_delete() -> ApiResponse:
         return await handle_conversation_delete(conv_id, mode, request_info.someone_typeid)
     except Exception as e:
         logger.error("[flow_message_action] conversation-delete error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Failed: {e}")
+
+
+async def handle_remove_message(flow_message_id: str) -> ApiResponse:
+    """Delete a single FlowMessage everywhere (rule: sender OR conversation owner).
+
+    Local entrypoint behind the ``remove-message`` action. Flow:
+      * gate locally on the resolved cloud-user id == ``fm.sender_id`` OR
+        == ``conv.created_by`` (owner). Purely-local conversations have no
+        cloud counterpart, so the local single user always passes.
+      * for shared (``remote``) conversations, pre-check hub reachability then
+        call ``Conversation.remove_message`` — the hub re-enforces the gate,
+        deletes the hub-side FlowMessage and fans a DELETE op to participants.
+      * always purge the local existence: ``fm.destroy()`` (DB row +
+        relationships + on-disk record folder) and drop the conversation
+        pointer (``prune_message_pointer`` re-projects with notify so the
+        initiator's open view refreshes).
+    """
+    from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
+    from flow_sdk.utils.hub import HubError  # noqa: PLC0415
+
+    fm_id = (flow_message_id or "").strip()
+    if not fm_id:
+        return ApiFailResponse(message="flow_message_id is required")
+
+    fm = await FlowMessage.get_one({"id": fm_id})
+    if fm is None:
+        return ApiFailResponse(message=f"FlowMessage not found: {fm_id}", status_code=404)
+
+    conv_id = (fm.conversation_id or "").strip()
+    conv = await Conversation.get_one({"id": conv_id}) if conv_id else None
+
+    # A purely-local conversation (no cloud counterpart, owner-less) is
+    # single-user, so the gate + hub round-trip only apply to shared convs.
+    if conv and getattr(conv, "remote", False):
+        # Gate: deleter is the message sender OR the conversation owner. The
+        # cloud user id is the authority for both. Owner = ``created_by``
+        # matches (recipient-side, where the hub stamped the cloud-user id) OR
+        # the caller holds role ``owner`` in the participant roster
+        # (creator-side, where ``created_by`` is the local user id). The roster
+        # is the hub-authoritative signal on both sides.
+        cloud_user_id = await _current_cloud_user_id()
+        is_sender = bool(cloud_user_id and fm.sender_id and cloud_user_id == fm.sender_id)
+        is_owner = bool(
+            cloud_user_id and (
+                (conv.created_by and cloud_user_id == conv.created_by)
+                or any(
+                    (p or {}).get("user_id") == cloud_user_id
+                    and str((p or {}).get("role") or "").lower() == "owner"
+                    for p in (conv.participants or [])
+                )
+            )
+        )
+        if not (is_sender or is_owner):
+            return ApiFailResponse(
+                message="Only the message sender or the conversation owner can delete this message.",
+                status_code=403,
+            )
+
+        # Delete for everyone via the hub (which re-enforces the gate and fans
+        # the DELETE op out to all participants).
+        if not hub_base_url():
+            return ApiFailResponse(
+                data={"hub_reachable": False, "auth_required": False, "id": fm_id},
+                message="Cloud disconnected — reconnect to delete shared messages.",
+            )
+        try:
+            await conv.remove_message(fm_id)
+        except HubError as e:
+            return ApiFailResponse(
+                data={"id": fm_id, "hub_status": e.status_code},
+                message=f"Hub {e.status_code}: {e.reason}",
+            )
+
+    # Purge the local existence (DB row + relationships + on-disk record folder).
+    try:
+        await fm.destroy()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[remove-message] local destroy failed fm=%s: %s", fm_id, e)
+
+    # Drop the conversation pointer + re-project (notify so the open view updates).
+    if conv_id:
+        rec = FSRecord(type=RecordType.CONVERSATION, id=conv_id)
+        try:
+            await prune_message_pointer(rec, fm_id, notify=True)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[remove-message] pointer prune failed fm=%s conv=%s: %s", fm_id, conv_id, e)
+
+    return ApiSuccessResponse(data={"flow_message_id": fm_id, "conversation_id": conv_id})
+
+
+@action.post(action_name="remove-message", types=["flow_message"])
+async def remove_message() -> ApiResponse:
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.someone_typeid:
+            return ApiFailResponse(message="Authentication required")
+        body = await request_info.get_post_data() or {}
+        fm_id = (body.get("flow_message_id") or "").strip()
+        # The action target id (flow_message-<id>) is the fallback when the
+        # body omits the explicit field — the UI calls it on the message entity.
+        if not fm_id:
+            tgt = getattr(request_info, "target_entity_typeid", None)
+            if tgt is not None and getattr(tgt, "id", None):
+                fm_id = str(tgt.id).strip()
+        return await handle_remove_message(fm_id)
+    except Exception as e:
+        logger.error("[flow_message_action] remove-message error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Failed: {e}")
 
 
