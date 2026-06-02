@@ -3,10 +3,23 @@
  * Companion: ``rename.alice.test.ts``.
  *
  * Bob is a member (not owner), so he cannot rename the shared conversation — the
- * hub authorizes field updates to the owner only. Bob's role here is the
- * independent cross-validator: he reads the **hub** directly and confirms that
- * each of alice's renames — one reflected over HTTP, one over WS — landed on the
- * hub. Two clients, two transports, hub-verified.
+ * hub authorizes field updates to the owner only. Bob plays two roles:
+ *
+ *   (a) Independent cross-validator — he reads the **hub** directly and confirms
+ *       that each of alice's renames (one reflected over HTTP, one over WS)
+ *       landed on the hub. This proves the proxy carried the write. [passes]
+ *
+ *   (b) Cross-user receiver (spec point 6) — he taps his OWN local conversation
+ *       entity and asserts the new title arrives over **his own UI WS**, with no
+ *       hub read and no re-fetch: hub fan-out → bob's bridge → save(notify) →
+ *       local data_op → SDK cache. This is the true end-to-end chain
+ *       (alice → alice local server → hub → bob local server → bob client).
+ *       It FAILS today: the hub fans membership + flow_message events to
+ *       participants but NOT generic conversation field updates, so the rename
+ *       never becomes a data_op_msg on bob's bridge. The assertion is kept (not
+ *       skipped) precisely so the gap is visible and flips to green the day the
+ *       hub fans conversation updates. Mirrors how matrix.bob receives alice's
+ *       *messages* over the same path (which the hub does fan).
  *
  * Run:
  *   VITE_API_URL=http://localhost:<bob-be> RENAME_BOB_EMAIL=<bob>@local.test \
@@ -90,8 +103,21 @@ describe('hub: rename two-process — BOB (cross-validates HTTP + WS on the hub)
     expect(accepted.invitation_id).toBe(invitation.id);
     console.log('[rename.bob] invitation accepted + joined');
 
-    // Materialize locally (sanity), then signal alice that bob is a participant.
-    await pollUntil(() => Conversation.getById<Conversation>(convId), 10_000, 'conversation materialized');
+    // Materialize locally, then tap bob's LOCAL conversation entity for live
+    // updates pushed over his own UI WS. ``watch()`` registers the backend-side
+    // watch so the local data_op routes to this connection; ``subscribe()``
+    // records each pushed entity version. A cross-user rename only lands here if
+    // the hub fans the field update to bob and his bridge materializes it.
+    const conv = await pollUntil(
+      () => Conversation.getById<Conversation>(convId),
+      10_000,
+      'conversation materialized',
+    );
+    const offWatch = await conv.watch();
+    let observedTitle: string | null = null;
+    const offSub = conv.subscribe((u) => {
+      if (u) observedTitle = (u as Conversation).title ?? observedTitle;
+    });
     await fsp.writeFile(JOINED, convId, 'utf-8');
 
     // ── Confirm alice's HTTP rename on the hub. ───────────────────────────
@@ -117,6 +143,30 @@ describe('hub: rename two-process — BOB (cross-validates HTTP + WS on the hub)
       ),
     ).toBe(wsName);
     console.log(`[rename.bob] confirmed alice's WS rename on hub → ${wsName} — done`);
+
+    // ── (b) The real cross-user assertion (spec point 6). ─────────────────
+    // Bob must RECEIVE alice's rename over his OWN local WS — no hub read, no
+    // re-fetch — purely via hub fan-out → bob's bridge → save(notify) → local
+    // data_op → SDK cache (``observedTitle``). The hub already proved it holds
+    // ``wsName`` (above), so a failure here isolates the missing hop exactly:
+    // the hub is NOT fanning the conversation field update to participants.
+    let receivedOverWs: string | null = null;
+    try {
+      // 6s grace: by the time bob's hub-GET above returned wsName, the hub had
+      // already processed alice's update — so any participant fan-out would have
+      // been emitted already; this only needs to cover bridge → local broadcast
+      // → SDK. Kept well under the 30s testTimeout cap (do not raise either).
+      receivedOverWs = await pollUntil(
+        () => (observedTitle === wsName ? observedTitle : null),
+        6_000,
+        'bob received alice rename over his local WS (cross-user push)',
+      );
+    } finally {
+      offSub();
+      await offWatch().catch(() => {});
+    }
+    expect(receivedOverWs).toBe(wsName);
+    console.log(`[rename.bob] received alice's rename over local WS → ${receivedOverWs}`);
 
     void dataContext;
   });
