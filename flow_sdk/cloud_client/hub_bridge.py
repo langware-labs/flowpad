@@ -595,8 +595,12 @@ class HubWsBridge:
             return
 
     async def _handle_conversation_op(self, op: str, conv_id: str, data: dict) -> None:
-        """Passive upsert of Conversation lifecycle changes (status, participants,
-        message_status_visible) so the local entity stays in sync.
+        """Passive upsert of Conversation lifecycle changes (title, status,
+        participants, message_status_visible) so the local entity stays in sync.
+
+        ``title`` is included so a peer's rename (sent over HTTP or WS and reflected
+        to the hub) fans out and lands on the local row here — otherwise a renamed
+        conversation would never update on the other side.
 
         Drops projection-guarded fields (``message_count``, ``message_ids``)
         before save — those are owned by ``ConversationRecord.sync_to_db``."""
@@ -609,7 +613,7 @@ class HubWsBridge:
         # Strip fields not on the local model or guarded against direct write.
         _PROJECTED = {"message_count", "message_ids"}
         _LOCAL_FIELDS = {
-            "id", "type", "remote_project_id", "remote_project_name",
+            "id", "type", "title", "remote_project_id", "remote_project_name",
             "participants", "message_status_visible",
         }
         clean = {k: v for k, v in data.items() if k in _LOCAL_FIELDS and k not in _PROJECTED}
@@ -635,7 +639,7 @@ class HubWsBridge:
             await Conversation.delete_by_id(conv_id)
             return
 
-        for field in ("message_status_visible", "participants", "remote_project_id", "remote_project_name"):
+        for field in ("title", "message_status_visible", "participants", "remote_project_id", "remote_project_name"):
             if field in clean:
                 setattr(existing, field, clean[field])
         await existing.save(someone_typeid, notify=True)

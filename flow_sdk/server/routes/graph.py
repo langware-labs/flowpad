@@ -249,7 +249,7 @@ async def handle_request(
 
     _hr_bench("before handler call")
 
-    # Hub reflection: if the action is marked ``reflect="hub"`` and the
+    # Hub reflection: if the call opts in (``request_info.hub_reflect``) and the
     # entity has a hub counterpart (remote=True), forward the call to the
     # hub and mirror its response into the local row instead of running
     # the local handler. Falls through to the local handler on HubError
@@ -260,10 +260,21 @@ async def handle_request(
     )
     from flow_sdk.utils.hub import HubError
 
+    # The target entity for reflection: entity-bound action handlers receive it
+    # as ``self`` (e.g. ``members``), but the generic CRUD handlers (``update`` /
+    # ``create`` / ``delete``) take only ``request`` — for those, fall back to the
+    # framework-resolved target so a reflectable PUT (e.g. a conversation rename)
+    # still finds its entity.
     entity_for_reflect = kwargs.get("self")
-    if should_reflect_to_hub(a, entity_for_reflect):
+    if entity_for_reflect is None and request_info.auth_result is not None:
+        entity_for_reflect = request_info.auth_result.target
+    if should_reflect_to_hub(entity_for_reflect, request_info.hub_reflect):
         try:
-            hub_data = await reflect_to_hub(a, entity_for_reflect, {**request_params, **json_data})
+            # Carry the REAL request method into reflection — never infer the hub
+            # verb from the matched action's static methods (see reflect_to_hub).
+            hub_data = await reflect_to_hub(
+                a, entity_for_reflect, {**request_params, **json_data}, request_info.method
+            )
             _hr_bench("after hub reflect")
             return ApiResponse.success(data=hub_data)
         except HubError as e:

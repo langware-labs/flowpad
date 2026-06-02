@@ -1,10 +1,11 @@
 """Generic action-to-hub reflection.
 
 When a local action runs against an entity that has a hub counterpart
-(``entity.remote=True``), and the action is marked ``reflect="hub"`` on its
-``@action`` decorator, the dispatcher forwards the call to the hub instead of
-invoking the local handler. The hub's response is then mirrored into the
-local row so the local cache stays consistent.
+(``entity.remote=True``) and the call opts into reflection (the ``Hub-Reflect``
+header, or the ``hub_reflect`` field on a WS ``rest_api_msg`` → ``request_info.hub_reflect``),
+the dispatcher forwards the call to the hub instead of invoking the local handler.
+The hub's response is then mirrored into the local row so the local cache stays
+consistent.
 
 The TS SDK only ever talks to the local server; this module is the seam
 that turns the local server into a transparent proxy for remote entities.
@@ -19,15 +20,23 @@ from flow_sdk.actions.action_registry import Action
 from flow_sdk.cli.auth.hub_login import is_logged_in
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
-from flow_sdk.utils.hub import HubError, hub_delete, hub_get, hub_post
+from flow_sdk.utils.hub import HubError, hub_delete, hub_get, hub_post, hub_put
 
 logger = logging.getLogger(__name__)
 
 
-def should_reflect_to_hub(a: Action, entity: Entity | None) -> bool:
-    """True iff this action call should be forwarded to the hub instead of run locally."""
+def should_reflect_to_hub(entity: Entity | None, hub_reflect: bool) -> bool:
+    """True iff this action call should be forwarded to the hub instead of run locally.
+
+    Reflection is **opt-in per call** via ``hub_reflect`` (the ``Hub-Reflect`` header,
+    or the ``hub_reflect`` field on a WS ``rest_api_msg``), default False. The action
+    no longer carries a ``reflect`` marker — the request decides. The remaining gates
+    are unchanged: the entity must have a hub counterpart and the user must be logged
+    in. (Type eligibility is enforced downstream by ``reflect_to_hub`` →
+    ``_entity_type_enum`` → ``HubError`` → quiet local fallback.)
+    """
     return (
-        getattr(a, "reflect", None) == "hub"
+        bool(hub_reflect)
         and entity is not None
         and getattr(entity, "remote", False) is True
         and is_logged_in()
@@ -46,8 +55,17 @@ def _entity_type_enum(entity: Entity) -> BuiltinEntityType | None:
         return None
 
 
-async def reflect_to_hub(a: Action, entity: Entity, body: dict[str, Any]) -> Any:
+async def reflect_to_hub(a: Action, entity: Entity, body: dict[str, Any], method: str) -> Any:
     """Forward the action call to the hub and mirror the response into the local row.
+
+    ``method`` is the **actual incoming HTTP method** (e.g. from
+    ``RequestInfo.method``). The hub verb is taken from it verbatim — NOT inferred
+    from the matched action's static ``a.methods``. That inference was the bug: an
+    action name (e.g. ``members``) registers both a GET (list) and a DELETE
+    (remove) handler under one registry key, so a roster GET could resolve to the
+    DELETE-registered ``Action`` and reflect a destructive hub DELETE with an empty
+    body → hub 400 → the "Cloud request rejected" toast. The request method never
+    lies; ``a.methods`` does.
 
     Returns the hub's response payload (the unwrapped ``data`` dict/list),
     after normalizing per-action shapes (e.g. ``members`` field rename).
@@ -58,25 +76,32 @@ async def reflect_to_hub(a: Action, entity: Entity, body: dict[str, Any]) -> Any
     if et is None:
         raise HubError(0, f"entity type {entity.type!r} has no hub representation")
 
-    if "get" in a.methods:
+    verb = (method or "").lower()
+    if verb == "get":
         hub_resp = await hub_get(et, entity.id, action=a.action_name)
         # hub_get returns None on transport/HTTP failure (does not raise);
         # treat that as "fall through to local" via HubError.
         if hub_resp is None:
             raise HubError(0, "hub_get returned no data")
-    elif "delete" in a.methods:
+    elif verb == "delete":
         # DELETE carries its selector in the body (e.g. members remove →
         # MembershipMethod {member_through, value}); hub_delete sends it as
         # the JSON body and raises HubError on non-200 (e.g. 403 owner-only),
         # which propagates to the caller verbatim.
         hub_resp = await hub_delete(et, entity.id, action=a.action_name, payload=body or {})
+    elif verb in ("put", "patch"):
+        # A bare entity field update (the generic ``update`` CRUD action, e.g. a
+        # conversation rename) reflects as a hub PUT to ``/<type>/<id>`` — NOT a
+        # POST to ``/<type>/<id>/<action>``. The hub merges the body's fields and
+        # fans the update to participants.
+        hub_resp = await hub_put(et, entity.id, body or {})
     else:
         hub_resp = await hub_post(et, body or {}, entity.id, action=a.action_name)
 
     # After a successful remove the hub returns a message, not a roster — so
     # re-fetch the canonical roster to mirror locally (keeps participants in
     # sync without a second client round-trip).
-    if "delete" in a.methods and a.action_name == "members":
+    if verb == "delete" and a.action_name == "members":
         refreshed = await hub_get(et, entity.id, action=a.action_name)
         if refreshed is not None:
             hub_resp = refreshed

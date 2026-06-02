@@ -968,7 +968,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
 
     const endpoint = actionInfo.actionUrl;
 
-    let requestConfig = undefined;
+    let requestConfig: any = undefined;
     if (actionInfo.isRawResponse) {
       requestConfig = {
         transformResponse: (data: any) => {
@@ -976,6 +976,16 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         },
         signal: actionInfo.abortSignal || undefined,
         responseType: actionInfo.responseType || undefined,
+      };
+    }
+
+    // Per-call hub-reflection opt-in: send the `Hub-Reflect` header so the local
+    // server forwards this call to the hub (default is don't-reflect). Applies to
+    // every verb branch below since they all pass `requestConfig`.
+    if (actionInfo.hubReflect) {
+      requestConfig = {
+        ...(requestConfig ?? {}),
+        headers: { ...(requestConfig?.headers ?? {}), 'Hub-Reflect': 'true' },
       };
     }
 
@@ -1047,6 +1057,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       sub_path: actionInfo.subpath,
       query_params: actionInfo.queryParameters as Record<string, unknown> | null,
       body: actionInfo.bodyParameters as Record<string, unknown> | null,
+      hub_reflect: actionInfo.hubReflect,
     };
 
     const response = await connectionManager.sendRestApiMessage<Res>(message, options);
