@@ -51,6 +51,10 @@ class RequestInfo:
         self.close_transaction: Optional[Callable] = None
         self.action: str | None = None
         self.sub_path: str | None = None
+        # Per-call hub-reflection opt-in. Default False (do NOT reflect). Set from
+        # the ``Hub-Reflect`` HTTP header, or from the ``hub_reflect`` field of a
+        # ``rest_api_msg`` on the WS-REST path (see server/routes/ws_rest.py).
+        self.hub_reflect: bool = False
         self.immediate_commit = False
         self.request: Request | None = None
         self.request_parameters: Dict[str, Any] = {}
@@ -199,6 +203,9 @@ class RequestInfo:
         if self._lock:
             raise ValueError("RequestInfo is locked and cannot be modified")
         self.request = request
+        # Per-call hub-reflection opt-in (default False). The header is a local
+        # routing directive only — CloudProxy strips it before forwarding to the hub.
+        self.hub_reflect = request.headers.get("Hub-Reflect", "").strip().lower() in ("true", "1", "yes")
         visitor_id = request.cookies.get(default_service_config.visitor_cookie_name) or request.cookies.get(
             default_service_config.visitor_session_cookie_name
         )

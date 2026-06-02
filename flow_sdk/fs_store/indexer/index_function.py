@@ -481,8 +481,10 @@ class FSIndexer:
                 if info.gen_id_fn is not None:
                     ref_id = info.gen_id_fn(ref)
                 else:
-                    import uuid as _uuid
-                    ref_id = str(_uuid.uuid5(_uuid.NAMESPACE_URL, str(ref._path)))
+                    # Default mint for types without a custom gen_id_fn: stable
+                    # uuid5 of the path, via the single minter (policy-conforming).
+                    from flow_sdk.fs_store.identifier import mint_uuid  # noqa: PLC0415
+                    ref_id = mint_uuid(str(ref._path))
                 if ref_id:
                     seen_ids.setdefault(ref.record_type, set()).add(ref_id)
 

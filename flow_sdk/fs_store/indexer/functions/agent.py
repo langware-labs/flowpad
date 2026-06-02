@@ -96,7 +96,8 @@ def _read_frontmatter_id(path: Path) -> str | None:
         return None
     fields = _yaml_load(fm) or {}
     raw = fields.get("id") or fields.get("asset_id")
-    return str(raw).strip() if isinstance(raw, str) and raw.strip() else None
+    from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
+    return adopt_entity_id(raw)  # validate-on-adopt (v4/v5) → else caller derives
 
 
 def _read_frontmatter_name(path: Path) -> str | None:
@@ -142,9 +143,10 @@ def agent_gen_id(ref: FSRef) -> str:
         parsed = _yaml_load(fm)
         if isinstance(parsed, dict):
             fields.update(parsed)
-    raw_id = fields.get("id") or fields.get("asset_id")
-    if isinstance(raw_id, str) and raw_id.strip():
-        return raw_id.strip()
+    from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
+    adopted = adopt_entity_id(fields.get("id") or fields.get("asset_id"))
+    if adopted:  # validate-on-adopt — same gate as the read path
+        return adopted
     name = fields.get("name")
     if isinstance(name, str) and name.strip():
         new_id = name.strip()

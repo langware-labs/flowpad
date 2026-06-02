@@ -33,16 +33,18 @@ export class Whiteboard extends APIEntity<Whiteboard> {
     this.scope = entity.scope;
   }
 
+  /** Default open target: the asset editor (URL-first navigate target). */
+  override get dockPointer(): DockPointerData {
+    return this.assetEditorPointer('whiteboard', this.asset_ref) ?? super.dockPointer;
+  }
+
   override get editorDockPointer(): DockPointerData {
     const path = this.asset_ref ?? this.id;
     return new DockPointerData(ViewType.ASSETS, `editor/whiteboard/${path}`);
   }
 
   override get searchDockPointer(): DockPointerData {
-    if (this.asset_ref) {
-      return new DockPointerData(ViewType.ASSETS, `editor/whiteboard/${this.asset_ref.replace(/^\//, '')}`);
-    }
-    return this.dockPointer;
+    return this.assetEditorPointer('whiteboard', this.asset_ref) ?? this.dockPointer;
   }
 
   /** FrontMatterFsRef for WHITE_BOARD.md. Resolves compute node from dataContext. */

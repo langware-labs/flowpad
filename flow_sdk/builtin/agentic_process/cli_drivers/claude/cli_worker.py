@@ -79,14 +79,23 @@ class ClaudeCLIWorker(AgenticWorker):
         """Build a sanitized environment dict for the subprocess.
 
         Starts from ``os.environ``, strips ``CLAUDECODE*`` vars, sets
-        ``CLAUDE_PROJECT_DIR``, and overlays ``context.env_vars``.
+        ``CLAUDE_PROJECT_DIR``, overlays ``context.env_vars``, and pins
+        ``FLOW_INSTANCE`` to this backend's own instance.
 
         This is a pure-ish function (reads os.environ) — unit-testable.
         """
+        from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+
         env = {k: v for k, v in os.environ.items() if not k.startswith("CLAUDECODE")}
         env.update(context.env_vars)
         if context.workdir:
             env["CLAUDE_PROJECT_DIR"] = context.workdir
+        # Pin the worker's flow CLI to the instance that spawned it. Without
+        # this, a worker whose backend env lacks FLOW_INSTANCE falls back to
+        # "prod" and its `flow` commands hit the wrong instance (the
+        # multi-instance cross-talk bug). Authoritative on purpose: a worker
+        # must never target a different backend than its parent.
+        env["FLOW_INSTANCE"] = get_instance_settings().instance_name
         return env
 
     # ------------------------------------------------------------------

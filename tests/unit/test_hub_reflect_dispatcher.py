@@ -18,14 +18,13 @@ from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.utils.hub import HubError
 
 
-def _make_action(reflect=None, methods=("get",)):
+def _make_action(methods=("get",)):
     return Action(
         action_name="members",
         function_name="list_members",
         handler=lambda self: [],
         methods=list(methods),
         types=["all"],
-        reflect=reflect,
     )
 
 
@@ -58,46 +57,44 @@ def logged_out(monkeypatch):
 # do not increase timeout without approval
 @pytest.mark.timeout(30)
 def test_should_reflect_true_when_all_gates_pass(logged_in):
+    """hub_reflect requested + remote entity + logged in → reflect."""
     from flow_sdk.server.routes._hub_reflect import should_reflect_to_hub
 
-    a = _make_action(reflect="hub")
     e = _make_entity(remote=True)
-    assert should_reflect_to_hub(a, e) is True
+    assert should_reflect_to_hub(e, hub_reflect=True) is True
 
 
 @pytest.mark.timeout(30)
-def test_should_reflect_false_when_no_reflect_marker(logged_in):
+def test_should_reflect_false_when_hub_reflect_not_requested(logged_in):
+    """Default is DON'T reflect: a remote entity does NOT reflect unless the call
+    explicitly opts in (the action no longer carries a reflect marker)."""
     from flow_sdk.server.routes._hub_reflect import should_reflect_to_hub
 
-    a = _make_action(reflect=None)
     e = _make_entity(remote=True)
-    assert should_reflect_to_hub(a, e) is False
+    assert should_reflect_to_hub(e, hub_reflect=False) is False
 
 
 @pytest.mark.timeout(30)
 def test_should_reflect_false_when_not_remote(logged_in):
     from flow_sdk.server.routes._hub_reflect import should_reflect_to_hub
 
-    a = _make_action(reflect="hub")
     e = _make_entity(remote=False)
-    assert should_reflect_to_hub(a, e) is False
+    assert should_reflect_to_hub(e, hub_reflect=True) is False
 
 
 @pytest.mark.timeout(30)
 def test_should_reflect_false_when_entity_none(logged_in):
     from flow_sdk.server.routes._hub_reflect import should_reflect_to_hub
 
-    a = _make_action(reflect="hub")
-    assert should_reflect_to_hub(a, None) is False
+    assert should_reflect_to_hub(None, hub_reflect=True) is False
 
 
 @pytest.mark.timeout(30)
 def test_should_reflect_false_when_logged_out(logged_out):
     from flow_sdk.server.routes._hub_reflect import should_reflect_to_hub
 
-    a = _make_action(reflect="hub")
     e = _make_entity(remote=True)
-    assert should_reflect_to_hub(a, e) is False
+    assert should_reflect_to_hub(e, hub_reflect=True) is False
 
 
 @pytest.mark.asyncio
@@ -132,10 +129,10 @@ async def test_reflect_to_hub_forwards_get_and_mirrors_participants(monkeypatch)
     monkeypatch.setattr(mod, "hub_get", fake_hub_get)
     monkeypatch.setattr(Conversation, "save", fake_save)
 
-    a = _make_action(reflect="hub", methods=("get",))
+    a = _make_action(methods=("get",))
     e = _make_entity(remote=True, participants=[{"user_id": "stale"}])
 
-    result = await mod.reflect_to_hub(a, e, {})
+    result = await mod.reflect_to_hub(a, e, {}, "get")
 
     assert result == expected_normalized
     assert captured["id"] == e.id
@@ -157,11 +154,57 @@ async def test_reflect_to_hub_raises_huberror_when_hub_get_returns_none(monkeypa
 
     monkeypatch.setattr(mod, "hub_get", fake_hub_get)
 
-    a = _make_action(reflect="hub", methods=("get",))
+    a = _make_action(methods=("get",))
     e = _make_entity(remote=True)
 
     with pytest.raises(HubError):
-        await mod.reflect_to_hub(a, e, {})
+        await mod.reflect_to_hub(a, e, {}, "get")
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_reflect_uses_request_method_not_action_methods(monkeypatch):
+    """REGRESSION LOCK for the "Cloud request rejected" inbox bug.
+
+    ``members`` registers a GET (list) and a DELETE (remove) handler under one
+    registry key; the DELETE ``Action`` overwrites the GET, so ``get_by_name``
+    returns the DELETE-registered ``Action`` for a roster **GET**. Reflection must
+    take the verb from the REAL request method, never from ``a.methods`` — otherwise
+    a roster GET reflects as a hub DELETE with an empty body → hub 400 → toast.
+
+    Here the matched Action declares ``methods=["delete"]`` (simulating the
+    overwrite) but the incoming request method is GET: reflect MUST call hub_get
+    and MUST NOT call hub_delete.
+    """
+    import flow_sdk.server.routes._hub_reflect as mod
+
+    calls = {"get": 0, "delete": 0}
+
+    async def fake_hub_get(entity_type, entity_id=None, action=None, **kwargs):
+        calls["get"] += 1
+        return [{"user_id": "u-alice", "role": "owner"}]
+
+    async def fake_hub_delete(*args, **kwargs):
+        calls["delete"] += 1
+        return {"message": "should-not-happen"}
+
+    async def fake_save(self_=None, **kwargs):
+        return None
+
+    monkeypatch.setattr(mod, "hub_get", fake_hub_get)
+    monkeypatch.setattr(mod, "hub_delete", fake_hub_delete)
+    monkeypatch.setattr(Conversation, "save", fake_save)
+
+    # Action resolved by name-only lookup is the DELETE handler (the bug's setup).
+    a = _make_action(methods=("delete",))
+    e = _make_entity(remote=True, participants=[{"user_id": "stale"}])
+
+    # ...but the actual request is a roster GET.
+    result = await mod.reflect_to_hub(a, e, {}, "get")
+
+    assert calls["get"] == 1, "roster GET must reflect as a hub GET"
+    assert calls["delete"] == 0, "a GET must never reflect as a destructive hub DELETE"
+    assert result == [{"user_id": "u-alice", "role": "owner"}]
 
 
 @pytest.mark.asyncio
@@ -178,15 +221,99 @@ async def test_reflect_to_hub_uses_post_for_mutating_actions(monkeypatch):
 
     monkeypatch.setattr(mod, "hub_post", fake_hub_post)
 
-    a = _make_action(reflect="hub", methods=("post",))
+    a = _make_action(methods=("post",))
     a.action_name = "rename"  # arbitrary mutating action
     e = _make_entity(remote=True)
 
-    result = await mod.reflect_to_hub(a, e, {"new_name": "x"})
+    result = await mod.reflect_to_hub(a, e, {"new_name": "x"}, "post")
 
     assert result == {"ok": True}
     assert captured["payload"] == {"new_name": "x"}
     assert captured["action"] == "rename"
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_reflect_to_hub_put_merges_hub_response_and_returns_merged(monkeypatch):
+    """A PUT/PATCH (the generic ``update`` action — e.g. a conversation rename)
+    reflects as a bare hub PUT to ``/<type>/<id>`` via ``hub_put`` (NOT a POST to
+    ``/<type>/<id>/update``), then MERGES the hub's authoritative response onto the
+    local row and returns the MERGED LOCAL entity:
+      - scalar fields (title, server times) the hub changed are applied locally,
+      - a saved+notify broadcast fans the update to local watchers,
+      - LIST fields (``participants``) are NOT clobbered — they keep their local
+        normalized shape (their own sync path owns them),
+      - the return value is the merged local entity (``model_dump``), not the raw
+        hub response."""
+    import flow_sdk.server.routes._hub_reflect as mod
+
+    captured = {}
+
+    async def fake_hub_put(entity_type, entity_id, payload, **kwargs):
+        captured["et"] = entity_type
+        captured["id"] = entity_id
+        captured["payload"] = payload
+        # Hub echoes the entity with the new title + a server-set timestamp, plus a
+        # hub-shaped participants list that must NOT overwrite the local one.
+        return {
+            "id": entity_id,
+            "title": payload.get("title"),
+            "created_date": "2026-06-02T10:00:00Z",
+            "participants": [{"user_id": "u-hub", "name": "HubShape"}],
+        }
+
+    async def boom(*args, **kwargs):  # must NOT be called
+        raise AssertionError("PUT must reflect via hub_put, not hub_post/hub_delete")
+
+    async def fake_save(self_=None, **kwargs):
+        captured["saved"] = True
+        return None
+
+    monkeypatch.setattr(mod, "hub_put", fake_hub_put)
+    monkeypatch.setattr(mod, "hub_post", boom)
+    monkeypatch.setattr(mod, "hub_delete", boom)
+    monkeypatch.setattr(Conversation, "save", fake_save)
+
+    a = _make_action(methods=("put", "patch"))
+    a.action_name = "update"
+    local_parts = [{"user_id": "u-alice", "email": "alice@example.com", "name": "Alice"}]
+    e = _make_entity(remote=True, participants=local_parts)
+
+    result = await mod.reflect_to_hub(a, e, {"title": "new-name"}, "put")
+
+    # Reflected as a bare hub PUT with the body.
+    assert captured["payload"] == {"title": "new-name"}
+    assert captured["id"] == e.id
+    assert captured["et"].value == "conversation"
+    # Scalar hub fields merged onto the local row + broadcast.
+    assert e.title == "new-name"
+    assert captured.get("saved") is True
+    # Returned the MERGED LOCAL entity (a dict), carrying the new title.
+    assert isinstance(result, dict)
+    assert result["title"] == "new-name"
+    # The LIST field was NOT clobbered — local normalized participants preserved.
+    assert e.participants == local_parts
+    assert result["participants"] == local_parts
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+def test_merge_hub_entity_skips_lists_and_unchanged_scalars(monkeypatch):
+    """``_merge_hub_entity_into_local`` returns only the differing SCALAR api fields:
+    unchanged scalars and list/dict fields are skipped."""
+    from flow_sdk.server.routes._hub_reflect import _merge_hub_entity_into_local
+
+    e = _make_entity(remote=True, participants=[{"user_id": "u1"}])
+    e.title = "old"
+    updates = _merge_hub_entity_into_local(
+        e,
+        {
+            "title": "new",                              # scalar, changed → applied
+            "message_status_visible": True,              # scalar, unchanged → skipped
+            "participants": [{"user_id": "hub"}],        # list → skipped
+            "not_a_field_xyz": "z",                      # not an api field → skipped
+        },
+    )
+    assert updates == {"title": "new"}
 
 
 @pytest.mark.asyncio
@@ -219,10 +346,10 @@ async def test_reflect_to_hub_forwards_delete_body_and_refreshes_roster(monkeypa
     monkeypatch.setattr(mod, "hub_get", fake_hub_get)
     monkeypatch.setattr(Conversation, "save", fake_save)
 
-    a = _make_action(reflect="hub", methods=("delete",))
+    a = _make_action(methods=("delete",))
     e = _make_entity(remote=True, participants=[{"user_id": "u-bob"}])
 
-    result = await mod.reflect_to_hub(a, e, {"user_id": "u-bob"})
+    result = await mod.reflect_to_hub(a, e, {"user_id": "u-bob"}, "delete")
 
     # Body forwarded verbatim — the new identifier shape, no member_through envelope.
     assert captured["payload"] == {"user_id": "u-bob"}
@@ -243,12 +370,12 @@ async def test_reflect_to_hub_skips_unknown_entity_type(monkeypatch):
     through to local."""
     import flow_sdk.server.routes._hub_reflect as mod
 
-    a = _make_action(reflect="hub", methods=("get",))
+    a = _make_action(methods=("get",))
     e = _make_entity(remote=True)
     e.type = "some-plugin-defined-type"  # not in BuiltinEntityType
 
     with pytest.raises(HubError):
-        await mod.reflect_to_hub(a, e, {})
+        await mod.reflect_to_hub(a, e, {}, "get")
 
 
 @pytest.mark.timeout(30)

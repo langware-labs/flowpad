@@ -83,6 +83,38 @@ _CREATION_HINTS: dict[str, dict] = {
 }
 
 
+def _derive_creation_hint(info) -> dict | None:
+    """Build a creation recipe straight from the type's registered schema.
+
+    Generic for any ``creatable`` type whose primary asset is a single file
+    (``main_layout == "file"``): the agent writes one markdown file with YAML
+    frontmatter at ``<project_cwd>/<main_subdir>/<safe-title>.md`` and indexes
+    it. Every coordinate — the subfolder, the uid field, the frontmatter
+    fields — is sourced from ``TypeInfo`` so nothing is hardcoded per type and
+    new file-layout types become agent-creatable for free. Folder-layout and
+    otherwise-irregular types are left to the ``_CREATION_HINTS`` override
+    table. Returns None when no generic recipe applies.
+    """
+    if not info.creatable or not info.main_subdir or info.main_layout != "file":
+        return None
+    uid = info.uid_field
+    fields: dict[str, str] = {
+        uid: "uuid v4 (you generate it; write it into the frontmatter `id:` — this becomes the entity id)",
+    }
+    for f in info.index_fields:
+        fields[f] = f"see json_schema for `{f}`"
+    example: dict = {uid: "11111111-2222-3333-4444-555555555555"}
+    for f in info.index_fields:
+        example[f] = "" if f != "tags" else []
+    return {
+        "location": f"<project_cwd>/{info.main_subdir}/<safe-title>.md",
+        "format": "markdown file: YAML frontmatter (the fields below) followed by the document content as the markdown body",
+        "manifest_fields": fields,
+        "example": example,
+        "after_index": f"Resulting TypeId is `{info.type_name}-<{uid}>` — pass it to `flow navigate entity` to open.",
+    }
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # /api/v1/agent/schema — list types + per-type info
 # ─────────────────────────────────────────────────────────────────────────────
@@ -138,11 +170,15 @@ async def get_schema_info(type_name: str):
         except Exception:  # noqa: BLE001
             pass
 
-    payload["creation"] = _CREATION_HINTS.get(
-        type_name,
-        {
+    # Override table first (irregular layouts: task's manifest.json, the
+    # markdown_index computed fields), then a schema-derived recipe for any
+    # plain file-layout type, then the "unsupported" fallback.
+    payload["creation"] = (
+        _CREATION_HINTS.get(type_name)
+        or _derive_creation_hint(info)
+        or {
             "location": "(no built-in recipe — ask the user where to put the file or read the indexer source)",
             "manifest_fields": {},
-        },
+        }
     )
     return {"ok": True, "type": payload}

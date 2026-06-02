@@ -11,7 +11,7 @@ import { ScopeBar, type ScopeBarOption } from '@src/components/ui/scope-bar';
  * state, not the source of truth.
  *
  * Chip → ScopeFilter mapping:
- *   "User"    {user: true,  projects: keep current}
+ *   "User"    {user: true,  projects: cleared}  (else chipFor() reads as "All")
  *   "Project" {user: false, projects: keep current (or fall through to picker)}
  *   "Both"    {user: true,  projects: keep current}
  *

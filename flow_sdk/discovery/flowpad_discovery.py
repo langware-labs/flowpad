@@ -219,6 +219,41 @@ def read_server_info() -> Optional[FlowpadServerInfo]:
     return _active_state()._read_server_info()
 
 
+class InstanceNotRunningError(RuntimeError):
+    """The FLOW_INSTANCE-selected instance has no live ``server.json``.
+
+    Carries the instance name + path so CLI callers can surface a clear
+    message instead of silently dialing a port nothing is listening on.
+    """
+
+    def __init__(self, instance_name: str, server_json_path: Path):
+        self.instance_name = instance_name
+        self.server_json_path = server_json_path
+        super().__init__(
+            f"Instance '{instance_name}' is not running "
+            f"(no server.json at {server_json_path}) — start it or set FLOW_INSTANCE."
+        )
+
+
+def resolve_cli_port() -> int:
+    """Resolve the port the ``flow`` CLI should target for the active instance.
+
+    The instance is FLOW_INSTANCE-aware (via ``get_instance_settings``); the
+    port comes from that instance's ``server.json``. Single chokepoint shared
+    by every ``flow`` subcommand so instance selection stays consistent.
+
+    Raises:
+        InstanceNotRunningError: when the selected instance has no live
+            ``server.json`` (i.e. it isn't running).
+    """
+    info = read_server_info()
+    if info is not None:
+        return info.port
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+    settings = get_instance_settings()
+    raise InstanceNotRunningError(settings.instance_name, settings.server_json_path)
+
+
 def check_server_health(server_info: FlowpadServerInfo, timeout: float = 2.0) -> bool:
     """Check if server is running via health endpoint.
 

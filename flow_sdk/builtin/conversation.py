@@ -157,7 +157,7 @@ class Conversation(Entity):
                 )
         return self
 
-    async def _link_context_to_conversation(self) -> None:
+    async def _link_context_to_conversation(self, refs=None) -> None:
         """Set ``parent_type_id`` = this conversation on each local shared-context
         entity (e.g. the shared markdown).
 
@@ -165,11 +165,20 @@ class Conversation(Entity):
         never pushed to the hub. Instead we make the conversation its parent
         locally: the conversation IS remote, so the doc's ``effective_remote``
         is True, and a child create under the doc (a comment) auto-shares under
-        the conversation (the nearest hub-known ancestor). Best-effort."""
+        the conversation (the nearest hub-known ancestor). Best-effort.
+
+        ``refs`` (TypeId/str/dict, or a list thereof) targets a specific subset —
+        used by the existing-conversation share path (``handle_add_message``) to
+        link only the items just shared. When omitted, links the full
+        ``shared_context_entities`` set (the new-conversation path from
+        ``share()``)."""
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
         conv_typeid_str = str(self.typeid)
-        for ref in (self.shared_context_entities or []):
+        targets = refs if refs is not None else (self.shared_context_entities or [])
+        if not isinstance(targets, (list, tuple)):
+            targets = [targets]
+        for ref in targets:
             try:
                 if isinstance(ref, TypeId):
                     tid = ref
@@ -279,6 +288,30 @@ class Conversation(Entity):
         path = build_hub_url(self, action="add_message")
         async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
             return await client.post(path, body)
+
+    async def remove_message(self, flow_message_id: str) -> dict:
+        """Delete a FlowMessage from this conversation on the hub.
+
+        Hits ``POST <hub>/api/v1/graph/conversation/<id>/remove_message`` via the
+        standard cloud client. The hub enforces the gate (sender of the message
+        OR conversation owner), removes the child + deletes the FlowMessage, then
+        fans a DELETE data-op out to every participant. Returns the response
+        ``data`` (``{flow_message_id}``).
+        """
+        from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
+        from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
+        from flow_sdk.core.urls.service_urls import build_hub_url  # noqa: PLC0415
+
+        if not self.id:
+            raise RuntimeError("Conversation.id is required")
+        if not flow_message_id:
+            raise RuntimeError("flow_message_id is required")
+        creds = load_credentials()
+        if not creds or not creds.api_key:
+            raise RuntimeError("Cloud login required before remove_message()")
+        path = build_hub_url(self, action="remove_message")
+        async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
+            return await client.post(path, {"flow_message_id": flow_message_id})
 
 
     @property

@@ -28,7 +28,10 @@ describe('ScopeFilterBar', () => {
       />,
     );
     fireEvent.click(screen.getByText('User'));
-    expect(onScopeChange).toHaveBeenCalledWith({ user: true, projects: ['project-1'] });
+    // "User" = user-assets-only: it clears projects on purpose. Keeping them
+    // would be {user:true, projects:[...]} which chipFor() maps to the "All"
+    // chip, making user-only unreachable. See ScopeFilterBar handleChange.
+    expect(onScopeChange).toHaveBeenCalledWith({ user: true, projects: [] });
   });
 
   it('defaults the project scope to the current project', () => {

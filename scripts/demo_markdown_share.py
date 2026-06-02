@@ -93,7 +93,7 @@ def run() -> int:
         local_login(client, OSS_BE, ALICE_EMAIL, ALICE_PW)
         local_login(client, APP_BE, BOB_EMAIL, BOB_PW)
         hub_login(client, ALICE_EMAIL, ALICE_PW)
-        hub_login(client, BOB_EMAIL, BOB_PW)
+        _bob_uid, bob_tok = hub_login(client, BOB_EMAIL, BOB_PW)
 
         # --- Step 2: Alice creates + shares a markdown ----------------------
         print("· step 2: alice creates markdown + shares conversation")
@@ -103,14 +103,20 @@ def run() -> int:
         docs_dir = os.path.expanduser("~/docs")
         os.makedirs(docs_dir, exist_ok=True)
         md_path = os.path.join(docs_dir, f"sharetest-{stamp}.md")
+        body = "# Shared doc\n\nLine 2\nLine 3 (Bob will comment here)\n"
         with open(md_path, "w", encoding="utf-8") as f:
-            f.write("# Shared doc\n\nLine 2\nLine 3 (Bob will comment here)\n")
+            f.write(body)
         md = local_post(client, OSS_BE, "graph/markdown", {
             "title": f"Shared doc {stamp}",
             "asset_ref": md_path,
         })
         md_id = md["id"]
         md_ref = f"markdown-{md_id}"
+        # Write the assigned id into the file's frontmatter so the RECIPIENT
+        # adopts it (validate-on-adopt) when it discovers the same file — keeping
+        # alice's and bob's markdown ids identical (the shared file carries its id).
+        with open(md_path, "w", encoding="utf-8") as f:
+            f.write(f"---\nid: {md_id}\n---\n\n{body}")
         print(f"    markdown {md_ref}  ({md_path})")
 
         conv = local_post(client, OSS_BE, "graph/conversation", {
@@ -126,17 +132,41 @@ def run() -> int:
             "recipients": [BOB_EMAIL],
         })
 
-        # --- Step 3: Bob receives + deploys + indexes the markdown ----------
-        print("· step 3: bob syncs + opens chip (self-heal deploy) + indexes")
+        # --- Step 3: Bob accepts the invitation, then receives the markdown --
+        print("· step 3: bob accepts invitation (member role + join) + syncs")
+
+        # Bob must accept the pending invitation before he has any role on the
+        # conversation — without it every conversation-scoped hub call (and the
+        # comment auto-share in step 4) 401s. Mirrors the UI's accept click.
+        def bob_accept_invite() -> bool:
+            r = client.get(f"{HUB}/api/v1/graph/invitation/pending",
+                           headers={"Authorization": f"Bearer {bob_tok}"})
+            r.raise_for_status()
+            for inv in (r.json().get("data") or []):
+                if conv_id in str(inv.get("conversation") or "") and not inv.get("accepted"):
+                    local_post(client, APP_BE, "graph/invitation-accept",
+                               {"invitation_id": inv.get("id")})
+                    return True
+            return False
+
+        if not _until(bob_accept_invite):
+            fail("bob never found/accepted the pending invitation for the conversation")
+        print("    bob accepted the invitation (member role + joined)")
+
         def bob_has_markdown() -> bool:
             # (a) sync the conversation (brings the conv + shared_context refs)
             local_post(client, APP_BE, "graph/conversation-list", {})
             local_post(client, APP_BE, "graph/conversation-message-sync",
                        {"conversation_id": conv_id})
-            # (b) reproduce the chip-open: self-heal GET with the sender's path
-            #     (same machine → Bob indexes the same .md, same path-derived id)
+            # (b) reproduce the chip-open via the REAL resolver: discover scans
+            #     the file on disk (same machine), adopts its frontmatter id
+            #     (== md_id, validate-on-adopt), and syncs it to Bob's DB.
             try:
-                local_get(client, APP_BE, f"graph/markdown/{md_id}?hint_path={md_path}")
+                local_post(
+                    client, APP_BE,
+                    f"graph/compute_node/@local/fs-records/markdown/discover?path={md_path}",
+                    {},
+                )
             except Exception:
                 pass
             # (c) re-sync so the subtree catch-up links parent_type_id=conversation
@@ -174,9 +204,17 @@ def run() -> int:
                 if c.get("id") == comment_id:
                     if not c.get("remote"):
                         print("    (found comment but remote flag not set yet)")
-                    if c.get("parent_type_id") not in (md_ref, None):
-                        print(f"    (parent_type_id={c.get('parent_type_id')})")
-                    return bool(c.get("remote"))
+                        return False
+                    # Gutter-binding: the comment MUST carry the doc as its
+                    # parent (not the conversation it was hub-routed under), or
+                    # it won't render on the markdown's line gutter.
+                    if c.get("parent_type_id") != md_ref:
+                        print(f"    (parent_type_id={c.get('parent_type_id')}, want {md_ref})")
+                        return False
+                    if (c.get("data") or {}).get("line") != 3:
+                        print(f"    (line anchor={(c.get('data') or {}).get('line')}, want 3)")
+                        return False
+                    return True
             return False
 
         if not _until(alice_has_comment):
