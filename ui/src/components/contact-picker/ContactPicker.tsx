@@ -1,10 +1,14 @@
-import { ConversationParticipant, QueryRequest, User } from '@sdk';
-import { useEntitiesQuery } from '@src/hooks/entity-hooks';
+import { ConversationParticipant, User } from '@sdk';
 import { Input } from '@src/components/ui/input';
 import { X } from 'lucide-react';
 import { useMemo, useState } from 'react';
-
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+import {
+  EMAIL_RE,
+  filterContacts,
+  participantFromContact,
+  participantKey,
+  useContacts,
+} from './use-contacts';
 
 interface ContactPickerProps {
   /** Currently selected contacts as ConversationParticipant entries. */
@@ -42,43 +46,18 @@ export function ContactPicker({
   const [filterText, setFilterText] = useState('');
   const [listOpen, setListOpen] = useState(false);
 
-  const usersRequest = useMemo(() => new QueryRequest({ type: User.type }), []);
-  const { data: allUsers = [] } = useEntitiesQuery<User>(usersRequest, { enabled });
+  const { contacts } = useContacts(excludeUserId, enabled);
 
-  const contacts = useMemo(
-    () => allUsers.filter((u) => !excludeUserId || u.id !== excludeUserId),
-    [allUsers, excludeUserId],
+  const filteredContacts = useMemo(
+    () => filterContacts(contacts, filterText),
+    [contacts, filterText],
   );
 
-  const filteredContacts = useMemo(() => {
-    const q = filterText.trim().toLowerCase();
-    if (!q) return contacts;
-    return contacts.filter(
-      (u) =>
-        (u.name ?? '').toLowerCase().includes(q) ||
-        (u.email ?? '').toLowerCase().includes(q),
-    );
-  }, [contacts, filterText]);
-
   const isFull = typeof max === 'number' && value.length >= max;
-
-  const participantKey = (p: ConversationParticipant) =>
-    p.user_id || p.email?.toLowerCase() || '';
 
   const alreadyAdded = (participant: ConversationParticipant) => {
     const key = participantKey(participant);
     return !!key && value.some((p) => participantKey(p) === key);
-  };
-
-  const participantFromContact = (u: User): ConversationParticipant => {
-    const participant: ConversationParticipant = {
-      email: u.email ?? null,
-      name: u.name ?? null,
-    };
-    if (u.remote && u.id) {
-      participant.user_id = u.id;
-    }
-    return participant;
   };
 
   const addContact = (u: User) => {
