@@ -32,6 +32,6 @@ export class ClaudeRules extends APIEntity<ClaudeRules> implements IClaudeRules 
 
   /** Default open target: the asset editor (URL-first navigate target). */
   override get dockPointer(): DockPointerData {
-    return this.assetEditorPointer('claude_rules', this.asset_ref) ?? super.dockPointer;
+    return this.assetEditorPointer('claude_rules') ?? super.dockPointer;
   }
 }

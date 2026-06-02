@@ -3,6 +3,8 @@ import { VIEW_SLOTS, ViewSlot, ViewType } from '../types/ViewType';
 import { NavigationError, NavigationErrorType } from './NavigationError';
 import { parseQueryParams } from './url-builder';
 import { isValidView } from './validators';
+import { AssetDocPointer } from './AssetDocPointer';
+import { AssetEditor, editorForType } from './asset-doc-types';
 
 /**
  * Lens pointer structure for sub-routing within lens viewer
@@ -198,7 +200,11 @@ export class DockPointer implements IDockPointer {
     layout: Layout = Layout.DOCK,
     options?: Record<string, string>,
   ): DockPointer {
-    return new DockPointer(ViewType.ASSETS, `editor/${assetType}/${vfsPath.replace(/^\//, '')}`, options, layout);
+    // Delegates to the canonical AssetDocPointer grammar:
+    //   editor/<editor>/vfs/<computeNodeTypeId>/<relPath>
+    // The editor is derived from the record type (one editor serves many types).
+    const editor = editorForType(assetType) ?? AssetEditor.MARKDOWN;
+    return AssetDocPointer.forVfs(editor, vfsPath, undefined, options).toDockPointer(layout);
   }
 
   /**
@@ -207,8 +213,9 @@ export class DockPointer implements IDockPointer {
    * Pointer format: "wiki/<encoded name>"
    * URL: /dock/assets/wiki/<encoded name>
    */
-  static forWiki(name: string, layout: Layout = Layout.DOCK): DockPointer {
-    return new DockPointer(ViewType.ASSETS, `wiki/${encodeURIComponent(name)}`, undefined, layout);
+  static forWiki(name: string, layout: Layout = Layout.DOCK, space?: string): DockPointer {
+    // Canonical grammar: wiki/<space>/<name> (space default @local).
+    return AssetDocPointer.forWiki(name, space).toDockPointer(layout);
   }
 
   /**

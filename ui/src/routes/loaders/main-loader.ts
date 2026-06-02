@@ -24,6 +24,7 @@ import { getBrokenViewUrl, loadFlowFromParams } from './loaders';
 import { loadShellRoute, resolveDefaultTab } from './load-shell';
 import { loadProject, loadProjectRoute } from './load-project';
 import { loadConversationRoute } from './load-conversation';
+import { loadAssetRoute } from './load-asset';
 import { loadTasksRoute } from './load-tasks';
 import { describeProcessStartError } from './load-process';
 
@@ -154,6 +155,11 @@ export async function loadAgentApp(args: LoaderArgs) {
     if (viewType === ViewType.CONVERSATION) {
       await loadConversationRoute(pointer || undefined);
       t.time('loadConversationRoute');
+    }
+
+    if (viewType === ViewType.ASSETS) {
+      await loadAssetRoute(pointer || undefined);
+      t.time('loadAssetRoute');
     }
 
     if (viewType === ViewType.TASKS) {

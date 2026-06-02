@@ -38,6 +38,6 @@ export class ClaudeMemory extends APIEntity<ClaudeMemory> implements IClaudeMemo
 
   /** Default open target: the asset editor (URL-first navigate target). */
   override get dockPointer(): DockPointerData {
-    return this.assetEditorPointer('claude_memory', this.asset_ref) ?? super.dockPointer;
+    return this.assetEditorPointer('claude_memory') ?? super.dockPointer;
   }
 }

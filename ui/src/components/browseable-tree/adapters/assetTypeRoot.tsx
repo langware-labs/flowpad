@@ -3,6 +3,9 @@ import { Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import apiClient from '@sdk/client';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
+import { AssetMode, AssetRoutingMethod } from '@src/navigation/asset-doc-types';
+import { VFSPath } from '@sdk';
 import { ViewType } from '@src/types/ViewType';
 import type { AssetTypeInfo } from '@src/hooks/use-asset-types';
 import type { SearchResult } from '@src/hooks/use-asset-search';
@@ -52,28 +55,24 @@ interface AssetPointerParts {
  *   `wiki/<encoded name>`
  */
 export function parseAssetPointer(pointer: string | null | undefined): AssetPointerParts {
-  if (!pointer) return { mode: null, typeName: null, vfsPath: null, wikiName: null };
-  if (pointer.startsWith('editor/')) {
-    const rest = pointer.slice('editor/'.length);
-    const slash = rest.indexOf('/');
-    if (slash < 0) return { mode: 'editor', typeName: rest || null, vfsPath: null, wikiName: null };
-    return {
-      mode: 'editor',
-      typeName: rest.slice(0, slash) || null,
-      vfsPath: rest.slice(slash + 1) || null,
-      wikiName: null,
-    };
-  }
+  const empty: AssetPointerParts = { mode: null, typeName: null, vfsPath: null, wikiName: null };
+  if (!pointer) return empty;
+  // `list/` isn't an AssetDocPointer mode — handle it directly.
   if (pointer.startsWith('list/')) {
-    return { mode: 'list', typeName: pointer.slice('list/'.length) || null, vfsPath: null, wikiName: null };
+    return { ...empty, mode: 'list', typeName: pointer.slice('list/'.length) || null };
   }
-  if (pointer.startsWith('wiki/')) {
-    const raw = pointer.slice('wiki/'.length);
-    let name = raw;
-    try { name = decodeURIComponent(raw); } catch { /* keep raw */ }
-    return { mode: 'wiki', typeName: 'markdown', vfsPath: null, wikiName: name || null };
+  try {
+    const ptr = AssetDocPointer.parse(pointer);
+    if (ptr.mode === AssetMode.WIKI) {
+      return { ...empty, mode: 'wiki', typeName: 'markdown', wikiName: ptr.wikiName || null };
+    }
+    // editor mode: typeName = the editor; vfsPath only exists for the vfs method.
+    const vfsPath =
+      ptr.method === AssetRoutingMethod.VFS ? VFSPath.parse(ptr.value).entitySubPath || null : null;
+    return { ...empty, mode: 'editor', typeName: ptr.editor || null, vfsPath };
+  } catch {
+    return empty;
   }
-  return { mode: null, typeName: null, vfsPath: null, wikiName: null };
 }
 
 function resolveAssetIcon(iconName: string | null, className = 'h-4 w-4 flex-shrink-0'): React.ReactNode {

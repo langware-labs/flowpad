@@ -101,9 +101,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
     },
   },
   command: {
-    dockPointer: (r) => r.asset_ref
-      ? new DockPointer(ViewType.ASSETS, `editor/command/${r.asset_ref.replace(/^\//, '')}`)
-      : null,
+    dockPointer: (r) => (r.asset_ref ? DockPointer.forAssetEditor('command', r.asset_ref) : null),
   },
   comment: {
     primaryAction: async (r, navigation) => {
@@ -115,34 +113,22 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
     },
   },
   [RecordType.MARKDOWN]: {
-    dockPointer: (r) => r.asset_ref
-      ? new DockPointer(ViewType.ASSETS, `editor/${RecordType.MARKDOWN}/${r.asset_ref.replace(/^\//, '')}`)
-      : null,
+    dockPointer: (r) => (r.asset_ref ? DockPointer.forAssetEditor(RecordType.MARKDOWN, r.asset_ref) : null),
   },
   plan: {
-    dockPointer: (r) => r.asset_ref
-      ? new DockPointer(ViewType.ASSETS, `editor/plan/${r.asset_ref.replace(/^\//, '')}`)
-      : null,
+    dockPointer: (r) => (r.asset_ref ? DockPointer.forAssetEditor('plan', r.asset_ref) : null),
   },
   workflow: {
-    dockPointer: (r) => r.asset_ref
-      ? new DockPointer(ViewType.ASSETS, `editor/workflow/${r.asset_ref.replace(/^\//, '')}`)
-      : null,
+    dockPointer: (r) => (r.asset_ref ? DockPointer.forAssetEditor('workflow', r.asset_ref) : null),
   },
   claude_md: {
-    dockPointer: (r) => r.asset_ref
-      ? new DockPointer(ViewType.ASSETS, `editor/claude_md/${r.asset_ref.replace(/^\//, '')}`)
-      : null,
+    dockPointer: (r) => (r.asset_ref ? DockPointer.forAssetEditor('claude_md', r.asset_ref) : null),
   },
   claude_memory: {
-    dockPointer: (r) => r.asset_ref
-      ? new DockPointer(ViewType.ASSETS, `editor/claude_memory/${r.asset_ref.replace(/^\//, '')}`)
-      : null,
+    dockPointer: (r) => (r.asset_ref ? DockPointer.forAssetEditor('claude_memory', r.asset_ref) : null),
   },
   claude_rules: {
-    dockPointer: (r) => r.asset_ref
-      ? new DockPointer(ViewType.ASSETS, `editor/claude_rules/${r.asset_ref.replace(/^\//, '')}`)
-      : null,
+    dockPointer: (r) => (r.asset_ref ? DockPointer.forAssetEditor('claude_rules', r.asset_ref) : null),
   },
   claude_settings: {
     dockPointer: () => DockPointer.forSettings(),

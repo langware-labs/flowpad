@@ -1,5 +1,7 @@
 import { AssetEditorRouter, hasEditor } from '@src/components/assets/editor/AssetEditorRouter';
 import { WikiResolveView } from '@src/components/assets/editor/WikiResolveView';
+import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
+import { AssetMode, AssetRoutingMethod, DEFAULT_WIKI_SPACE } from '@src/navigation/asset-doc-types';
 import { InputDialog } from '@src/components/ui/input-dialog';
 import { Button } from '@src/components/ui/button';
 import { getDescriptor } from '@src/components/quick-create';
@@ -10,7 +12,7 @@ import { notify } from '@src/notifications';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { navigateToResult } from '@src/navigation/record-type-nav';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { dataContext, fsManager, fsStore, RecordType, systemTools, TypeId } from '@sdk';
+import { dataContext, fsManager, fsStore, RecordType, systemTools, TypeId, VFSPath } from '@sdk';
 import apiClient from '@sdk/client';
 import { AlertCircle, BookOpen, ChevronRight, PackageSearch, PanelLeft, PanelLeftClose, X } from 'lucide-react';
 import {
@@ -71,11 +73,13 @@ interface ParsedAssetPointer {
   folderRelPath: string | null;
   /** Only set when mode === 'wiki'. Decoded link target name. */
   wikiName: string | null;
+  /** Only set when mode === 'wiki'. The space the name resolves within (default @local). */
+  wikiSpace: string | null;
 }
 
 function parseAssetPointer(pointer: string | undefined): ParsedAssetPointer {
   const empty: ParsedAssetPointer = {
-    mode: null, typeName: null, folderTypeid: null, folderRelPath: null, wikiName: null,
+    mode: null, typeName: null, folderTypeid: null, folderRelPath: null, wikiName: null, wikiSpace: null,
   };
   if (!pointer) return empty;
   if (pointer.startsWith('editor/')) {
@@ -97,10 +101,14 @@ function parseAssetPointer(pointer: string | undefined): ParsedAssetPointer {
     }
   }
   if (pointer.startsWith('wiki/')) {
-    const raw = pointer.slice('wiki/'.length);
+    // Canonical grammar: wiki/<space>/<name>. Space defaults to @local.
+    const rest = pointer.slice('wiki/'.length);
+    const slash = rest.indexOf('/');
+    const space = slash >= 0 ? rest.slice(0, slash) : DEFAULT_WIKI_SPACE;
+    const raw = slash >= 0 ? rest.slice(slash + 1) : rest;
     let name = raw;
     try { name = decodeURIComponent(raw); } catch { /* keep raw */ }
-    return { ...empty, mode: 'wiki', typeName: 'markdown', wikiName: name || null };
+    return { ...empty, mode: 'wiki', typeName: 'markdown', wikiName: name || null, wikiSpace: space || DEFAULT_WIKI_SPACE };
   }
   return empty;
 }
@@ -174,15 +182,22 @@ function dirnamePath(path: string): string {
   return trimmed.slice(0, idx);
 }
 
+/**
+ * Extract the editor + absolute path from a vfs-addressed editor pointer, for
+ * the rename/move "follow the open file" logic. Returns null for typeid/code/
+ * wiki pointers (no file path in the URL to follow).
+ */
 function parseAssetEditorPointer(pointer: string | undefined): { typeName: string; absPath: string } | null {
   if (!pointer?.startsWith('editor/')) return null;
-  const rest = pointer.slice('editor/'.length);
-  const slash = rest.indexOf('/');
-  if (slash < 0) return null;
-  const typeName = rest.slice(0, slash);
-  const path = rest.slice(slash + 1);
-  if (!typeName || !path) return null;
-  return { typeName, absPath: `/${path.replace(/^\/+/, '')}` };
+  let ptr: AssetDocPointer;
+  try {
+    ptr = AssetDocPointer.parse(pointer);
+  } catch {
+    return null;
+  }
+  if (ptr.mode !== AssetMode.EDITOR || ptr.method !== AssetRoutingMethod.VFS || !ptr.editor) return null;
+  const vfs = VFSPath.parse(ptr.value);
+  return { typeName: ptr.editor, absPath: `/${vfs.entitySubPath.replace(/^\/+/, '')}` };
 }
 
 function joinRelPath(parent: string, name: string): string {
@@ -437,6 +452,7 @@ export function AssetsPage() {
     folderTypeid,
     folderRelPath,
     wikiName,
+    wikiSpace,
   } = parseAssetPointer(effectivePointer);
   const isEditorMode = mode === 'editor';
   const isFolderMode = mode === 'folder';
@@ -822,7 +838,7 @@ export function AssetsPage() {
         {/* Main content: editor when in editor mode, list view otherwise */}
         <div className="min-w-0 flex-1">
           {isWikiMode && wikiName ? (
-            <WikiResolveView name={wikiName} />
+            <WikiResolveView name={wikiName} space={wikiSpace ?? DEFAULT_WIKI_SPACE} />
           ) : isEditorMode && effectivePointer ? (
             <AssetEditorRouter pointer={effectivePointer} />
           ) : isFolderMode ? (

@@ -12,8 +12,10 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { MarkdownEditor } from './markdown/MarkdownEditor';
 
 interface WikiResolveViewProps {
-  /** Decoded wiki name from the `/dock/assets/wiki/<name>` pointer. */
+  /** Decoded wiki name from the `/dock/assets/wiki/<space>/<name>` pointer. */
   name: string;
+  /** The space the name resolves within (default @local). */
+  space?: string;
 }
 
 interface ResolveResult {
@@ -33,7 +35,7 @@ type CreateAsType = 'markdown' | 'whiteboard';
  *
  * On miss: type picker offering "Create as markdown" / "Create as whiteboard".
  */
-export function WikiResolveView({ name }: WikiResolveViewProps) {
+export function WikiResolveView({ name, space = '@local' }: WikiResolveViewProps) {
   const { computeNode } = useAgentContext();
   const typeIdStr = computeNode?.typeId?.toString();
   const { navigation } = useDockNavigation();
@@ -42,14 +44,14 @@ export function WikiResolveView({ name }: WikiResolveViewProps) {
   const [createAs, setCreateAs] = useState<CreateAsType>('markdown');
 
   const { data, isLoading, error } = useQuery<ResolveResult | null>({
-    queryKey: ['wiki-resolve', name],
+    queryKey: ['wiki-resolve', name, space],
     queryFn: async () => {
       // /wiki/resolve returns the resource shape directly (no {status,data}
       // envelope). Wrap the raw body in {data} so the apiClient interceptor's
       // unconditional `.data.data` extract yields the parsed JSON — same trick
       // dataManager.callAction uses for raw-response endpoints.
       const body = (await apiClient.get<ResolveResult | null>('/wiki/resolve', {
-        params: { name },
+        params: { name, space },
         transformResponse: (raw: string) => ({ data: JSON.parse(raw) }),
       })) as ResolveResult | null;
       if (!body || typeof body !== 'object' || !('type' in body) || !('id' in body)) return null;

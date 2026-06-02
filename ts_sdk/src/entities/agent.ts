@@ -98,11 +98,11 @@ export class Agent extends APIEntity<Agent> {
 
   /** Default open target: the asset editor (URL-first navigate target). */
   override get dockPointer(): DockPointerData {
-    return this.assetEditorPointer('agent', this.asset_ref) ?? super.dockPointer;
+    return this.assetEditorPointer('agent') ?? super.dockPointer;
   }
 
   override get searchDockPointer(): DockPointerData {
-    return this.assetEditorPointer('agent', this.asset_ref) ?? this.dockPointer;
+    return this.assetEditorPointer('agent') ?? this.dockPointer;
   }
 
   override get editorDockPointer(): DockPointerData {

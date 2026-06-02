@@ -35,6 +35,6 @@ export class Command extends APIEntity<Command> implements ICommand {
 
   /** Default open target: the asset editor (URL-first navigate target). */
   override get dockPointer(): DockPointerData {
-    return this.assetEditorPointer('command', this.asset_ref) ?? super.dockPointer;
+    return this.assetEditorPointer('command') ?? super.dockPointer;
   }
 }

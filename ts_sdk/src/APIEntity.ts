@@ -7,6 +7,7 @@ import { DataManager, Manageable } from './FlowSync/store';
 import { FlowData, FlowDataStream } from './flow_processing';
 import { defaultEntityType, IEntity } from './IEntity';
 import { DockPointerData } from './models/DockPointer';
+import { editorForType } from './models/asset-editor';
 import { TypeId } from './models/TypeId';
 import { ViewType } from './utils/ui/view-types';
 import { Callable } from './types';
@@ -463,10 +464,16 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    * (falling back to `super.dockPointer`); the `editor/<type>/<ref>` format
    * lives here once so it stays consistent across every asset type.
    */
-  protected assetEditorPointer(typeSegment: string, assetRef?: string): DockPointerData | null {
-    return assetRef
-      ? new DockPointerData(ViewType.ASSETS, `editor/${typeSegment}/${assetRef.replace(/^\//, '')}`)
-      : null;
+  protected assetEditorPointer(typeSegment: string): DockPointerData | null {
+    const editor = editorForType(typeSegment);
+    if (!editor) return null;
+    // Stable typeid form: editor/<editor>/typeid/<type>-<id>. `this.typeId`
+    // throws if the entity has no id → fall back to null (callers use ?? super).
+    try {
+      return new DockPointerData(ViewType.ASSETS, `editor/${editor}/typeid/${this.typeId.toString()}`);
+    } catch {
+      return null;
+    }
   }
 
   public get searchDockPointer(): DockPointerData {
