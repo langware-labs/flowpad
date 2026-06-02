@@ -70,7 +70,7 @@ def test_getId_without_asset_id_returns_path_uuid5(tmp_path: Path) -> None:
 
 def test_getId_reads_asset_id_from_frontmatter(tmp_path: Path) -> None:
     """Legacy `asset_id:` field is still read."""
-    known = "11111111-2222-3333-4444-555555555555"
+    known = "11111111-2222-4333-8444-555555555555"
     p = tmp_path / "b.md"
     _write_md(p, "# body\n", frontmatter=f"asset_id: {known}\ntitle: T\n")
     assert MarkdownRecord.getId(FSRef(p)) == known
@@ -78,7 +78,7 @@ def test_getId_reads_asset_id_from_frontmatter(tmp_path: Path) -> None:
 
 def test_getId_reads_id_from_frontmatter(tmp_path: Path) -> None:
     """New `id:` field is read with precedence."""
-    known = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    known = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
     p = tmp_path / "c.md"
     _write_md(p, "# body\n", frontmatter=f"id: {known}\ntitle: T\n")
     assert MarkdownRecord.getId(FSRef(p)) == known
@@ -158,7 +158,7 @@ def test_getId_after_genId_returns_minted(tmp_path: Path) -> None:
 
 def test_genId_does_not_overwrite_existing_asset_id(tmp_path: Path) -> None:
     """Legacy `asset_id:` is respected; no rewrite, no rename to `id`."""
-    preexisting = "deadbeef-dead-beef-dead-beefdeadbeef"
+    preexisting = "deadbeef-dead-4eef-8ead-beefdeadbeef"
     p = tmp_path / "h.md"
     _write_md(p, "# body\n", frontmatter=f"asset_id: {preexisting}\ntitle: T\n")
     mtime_before = p.stat().st_mtime
@@ -172,7 +172,7 @@ def test_genId_does_not_overwrite_existing_asset_id(tmp_path: Path) -> None:
 
 def test_genId_respects_existing_id_key(tmp_path: Path) -> None:
     """`id:` already in frontmatter counts — no new mint."""
-    existing = "12345678-1234-1234-1234-123456789012"
+    existing = "12345678-1234-4234-8234-123456789012"
     p = tmp_path / "i.md"
     _write_md(p, "# body\n", frontmatter=f"id: {existing}\ntitle: T\n")
     mtime_before = p.stat().st_mtime
