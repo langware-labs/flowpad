@@ -722,6 +722,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     const useCache = opts.cache ?? true;
     if (useCache && this._membersCache) return this._membersCache;
     const info = new ActionInfo('members', this.typeId.type, this.typeId.id, 'GET');
+    info.hubReflect = true; // roster is hub-owned — reflect this read to the hub
     const res = await dataManager.callAction<undefined, EntityMember[]>(info);
     // Defensive: the hub utils coerce empty lists to {} upstream
     // (`resp.json().get('data') or {}`); treat any non-array as "no members".
@@ -743,6 +744,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    */
   public async removeMember(userId: string): Promise<void> {
     const info = new ActionInfo('members', this.typeId.type, this.typeId.id, 'DELETE');
+    info.hubReflect = true; // membership change is hub-owned — reflect to the hub
     info.bodyParameters = { user_id: userId };
     await dataManager.callAction<unknown, unknown>(info);
     this._membersCache = undefined;

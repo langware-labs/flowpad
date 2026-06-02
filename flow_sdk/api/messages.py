@@ -163,6 +163,9 @@ class DataOpMessage(EntityMessage):
 
 class APIMessage(BaseMessage, APIRequest):
     message_type: str = WSMessageType.REST_API_MSG.value
+    # Per-call hub-reflection opt-in for the WS-REST path (the HTTP path uses the
+    # ``Hub-Reflect`` header). Default False — do not reflect.
+    hub_reflect: bool = False
 
     @property
     def auth_info(self) -> AuthContext:
