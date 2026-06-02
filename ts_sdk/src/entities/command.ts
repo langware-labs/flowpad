@@ -1,5 +1,6 @@
 import { APIEntity, registerEntity } from '../APIEntity';
 import { IEntity } from '../IEntity';
+import { DockPointerData } from '../models/DockPointer';
 
 export interface ICommand extends IEntity {
   name?: string;
@@ -30,5 +31,10 @@ export class Command extends APIEntity<Command> implements ICommand {
     this.asset_type = entity.asset_type;
     this.parent_path = entity.parent_path;
     this.vault_root = entity.vault_root;
+  }
+
+  /** Default open target: the asset editor (URL-first navigate target). */
+  override get dockPointer(): DockPointerData {
+    return this.assetEditorPointer('command', this.asset_ref) ?? super.dockPointer;
   }
 }

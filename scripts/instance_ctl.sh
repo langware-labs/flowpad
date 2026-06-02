@@ -20,6 +20,11 @@
 #   scripts/instance_ctl.sh status [<name>]
 #   scripts/instance_ctl.sh list
 #
+# The launch writes FLOW_INSTANCE=<name> into .env.<name>.local, so `flow`
+# commands run against that instance target it: `FLOW_INSTANCE=<name> flow ...`
+# (reads ~/.flow/instances/<name>/server.json). Spawned agentic workers inherit
+# FLOW_INSTANCE from the backend automatically.
+#
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
