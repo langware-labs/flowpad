@@ -56,8 +56,9 @@ def whiteboard_fn(
 
 def _read_frontmatter_id_from_yaml(yaml_fields: dict) -> str | None:
     """Pick ``id`` (or legacy ``asset_id``) from a parsed frontmatter dict."""
+    from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
     raw = yaml_fields.get("id") or yaml_fields.get("asset_id")
-    return str(raw).strip() if isinstance(raw, str) and raw.strip() else None
+    return adopt_entity_id(raw)  # validate-on-adopt (v4/v5) → else derive from name
 
 def _resolve_whiteboard_name(yaml_fields: dict, folder_name: str) -> str:
     """Pick the whiteboard's display name: yaml.name first, else folder name."""
