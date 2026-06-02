@@ -234,11 +234,17 @@ async def test_reflect_to_hub_uses_post_for_mutating_actions(monkeypatch):
 
 @pytest.mark.asyncio
 @pytest.mark.timeout(30)  # do not increase timeout without approval
-async def test_reflect_to_hub_put_is_bare_entity_update(monkeypatch):
+async def test_reflect_to_hub_put_merges_hub_response_and_returns_merged(monkeypatch):
     """A PUT/PATCH (the generic ``update`` action — e.g. a conversation rename)
-    must reflect as a bare hub PUT to ``/<type>/<id>`` via ``hub_put`` — NOT a
-    POST to ``/<type>/<id>/update``. This is the path the alice/bob rename E2E
-    exercises over both HTTP and WS."""
+    reflects as a bare hub PUT to ``/<type>/<id>`` via ``hub_put`` (NOT a POST to
+    ``/<type>/<id>/update``), then MERGES the hub's authoritative response onto the
+    local row and returns the MERGED LOCAL entity:
+      - scalar fields (title, server times) the hub changed are applied locally,
+      - a saved+notify broadcast fans the update to local watchers,
+      - LIST fields (``participants``) are NOT clobbered — they keep their local
+        normalized shape (their own sync path owns them),
+      - the return value is the merged local entity (``model_dump``), not the raw
+        hub response."""
     import flow_sdk.server.routes._hub_reflect as mod
 
     captured = {}
@@ -247,25 +253,67 @@ async def test_reflect_to_hub_put_is_bare_entity_update(monkeypatch):
         captured["et"] = entity_type
         captured["id"] = entity_id
         captured["payload"] = payload
-        return {"id": entity_id, "title": payload.get("title")}
+        # Hub echoes the entity with the new title + a server-set timestamp, plus a
+        # hub-shaped participants list that must NOT overwrite the local one.
+        return {
+            "id": entity_id,
+            "title": payload.get("title"),
+            "created_date": "2026-06-02T10:00:00Z",
+            "participants": [{"user_id": "u-hub", "name": "HubShape"}],
+        }
 
     async def boom(*args, **kwargs):  # must NOT be called
         raise AssertionError("PUT must reflect via hub_put, not hub_post/hub_delete")
 
+    async def fake_save(self_=None, **kwargs):
+        captured["saved"] = True
+        return None
+
     monkeypatch.setattr(mod, "hub_put", fake_hub_put)
     monkeypatch.setattr(mod, "hub_post", boom)
     monkeypatch.setattr(mod, "hub_delete", boom)
+    monkeypatch.setattr(Conversation, "save", fake_save)
 
     a = _make_action(methods=("put", "patch"))
     a.action_name = "update"
-    e = _make_entity(remote=True)
+    local_parts = [{"user_id": "u-alice", "email": "alice@example.com", "name": "Alice"}]
+    e = _make_entity(remote=True, participants=local_parts)
 
     result = await mod.reflect_to_hub(a, e, {"title": "new-name"}, "put")
 
+    # Reflected as a bare hub PUT with the body.
     assert captured["payload"] == {"title": "new-name"}
     assert captured["id"] == e.id
     assert captured["et"].value == "conversation"
-    assert result == {"id": e.id, "title": "new-name"}
+    # Scalar hub fields merged onto the local row + broadcast.
+    assert e.title == "new-name"
+    assert captured.get("saved") is True
+    # Returned the MERGED LOCAL entity (a dict), carrying the new title.
+    assert isinstance(result, dict)
+    assert result["title"] == "new-name"
+    # The LIST field was NOT clobbered — local normalized participants preserved.
+    assert e.participants == local_parts
+    assert result["participants"] == local_parts
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+def test_merge_hub_entity_skips_lists_and_unchanged_scalars(monkeypatch):
+    """``_merge_hub_entity_into_local`` returns only the differing SCALAR api fields:
+    unchanged scalars and list/dict fields are skipped."""
+    from flow_sdk.server.routes._hub_reflect import _merge_hub_entity_into_local
+
+    e = _make_entity(remote=True, participants=[{"user_id": "u1"}])
+    e.title = "old"
+    updates = _merge_hub_entity_into_local(
+        e,
+        {
+            "title": "new",                              # scalar, changed → applied
+            "message_status_visible": True,              # scalar, unchanged → skipped
+            "participants": [{"user_id": "hub"}],        # list → skipped
+            "not_a_field_xyz": "z",                      # not an api field → skipped
+        },
+    )
+    assert updates == {"title": "new"}
 
 
 @pytest.mark.asyncio

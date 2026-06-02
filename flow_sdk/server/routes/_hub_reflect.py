@@ -91,10 +91,17 @@ async def reflect_to_hub(a: Action, entity: Entity, body: dict[str, Any], method
         hub_resp = await hub_delete(et, entity.id, action=a.action_name, payload=body or {})
     elif verb in ("put", "patch"):
         # A bare entity field update (the generic ``update`` CRUD action, e.g. a
-        # conversation rename) reflects as a hub PUT to ``/<type>/<id>`` — NOT a
-        # POST to ``/<type>/<id>/<action>``. The hub merges the body's fields and
-        # fans the update to participants.
+        # conversation rename) reflects as a hub PUT to ``/<type>/<id>``. Merge the
+        # hub's authoritative response (server-set times etc.) onto the local row +
+        # broadcast, then return the MERGED LOCAL entity — the same shape a normal
+        # (non-reflected) update returns, so the local cache and the client stay
+        # consistent (the hub is the source of truth for every differing scalar).
         hub_resp = await hub_put(et, entity.id, body or {})
+        updates = _merge_hub_entity_into_local(entity, hub_resp)
+        if updates:
+            entity.apply_field_updates(updates)
+            await entity.save(notify=True)  # local row + data_op broadcast to watchers
+        return entity.model_dump()
     else:
         hub_resp = await hub_post(et, body or {}, entity.id, action=a.action_name)
 
@@ -149,6 +156,39 @@ def _normalize_hub_response(action_name: str, hub_resp: Any) -> Any:
                 normalized[client_key] = entry[hub_key]
         out.append(normalized)
     return out
+
+
+_MISSING = object()
+
+
+def _merge_hub_entity_into_local(entity: Entity, hub_resp: Any) -> dict[str, Any]:
+    """Select the hub-authoritative SCALAR fields to merge onto the local entity.
+
+    A reflected ``update`` returns the hub's view of the entity. We apply each API
+    field whose hub value is a scalar (``str`` / ``int`` / ``float`` / ``bool`` /
+    ``None``) and differs from the local value — which carries the renamed field plus
+    server-set timestamps, and deliberately SKIPS list/dict fields. ``participants``
+    (a list) is the important skip: its local shape is the normalized ``{email,name}``
+    from the members reflect and must not be clobbered by the hub's ``{user_id,…}``
+    shape (it has its own sync path). Projection-guarded fields are dropped downstream
+    by the entity's ``apply_field_updates`` (e.g. Conversation strips
+    ``message_count`` / ``message_ids``). Local-only fields (``project_id``,
+    ``dismissed_at``, ``archived_at``) are absent from the hub response → preserved.
+
+    Returns the dict of fields to apply, empty when nothing changed (so the caller
+    skips the save+broadcast entirely).
+    """
+    if not isinstance(hub_resp, dict):
+        return {}
+    updates: dict[str, Any] = {}
+    for k, v in hub_resp.items():
+        if not entity.is_api_field(k):
+            continue
+        if v is not None and not isinstance(v, (str, int, float, bool)):
+            continue  # skip list/dict (participants, nested objects, projections-as-list)
+        if getattr(entity, k, _MISSING) != v:
+            updates[k] = v
+    return updates
 
 
 async def mirror_hub_response_into_local(
