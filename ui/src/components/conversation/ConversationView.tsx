@@ -9,7 +9,7 @@ import {
 
   TypeId,
 } from '@sdk';
-import { useEntitiesQuery, useEntity } from '@sdk/react/hooks';
+import { useAuth, useEntitiesQuery, useEntity } from '@sdk/react/hooks';
 import type { ITask } from '@sdk/entities/task';
 import { syncConversationMessages } from '@src/components/inbox-view/inbox-api';
 import { markFlowMessagesReceived } from '@sdk/entities/flow-message';
@@ -277,6 +277,31 @@ export function ConversationView({
 
   const conversationStatusVisible = conversation?.message_status_visible !== false;
 
+  // The conversation owner (created_by == the local cloud user) may delete ANY
+  // message; everyone may delete their own. The per-bubble sender check is done
+  // inside FlowMessageBubble — this only supplies the owner half of the gate.
+  const { cloudUser } = useAuth();
+  const cloudUserId = cloudUser?.id ?? null;
+  // Owner = either created_by matches (recipient side, where the hub stamped the
+  // cloud-user id) OR the local user holds role "owner" in the participant
+  // roster (creator side, where created_by is the local user id). The roster is
+  // the hub-authoritative signal on both sides.
+  const isConversationOwner =
+    !!cloudUserId &&
+    ((!!conversation?.created_by && conversation.created_by === cloudUserId) ||
+      (participants ?? []).some(
+        (p) => p.user_id === cloudUserId && (p.role ?? '').toLowerCase() === 'owner',
+      ));
+
+  // Delete a message everywhere. The loader/live-query owns the list, so we
+  // only fire the SDK action and let the resulting data-op re-render the view
+  // (no optimistic list mutation — URL/loader-first).
+  const handleDeleteMessage = useCallback((messageId: string) => {
+    void new FlowMessage({ id: messageId }).remove().catch((err) => {
+      console.error('[conversation] delete message failed', messageId, err);
+    });
+  }, []);
+
   const [hubSyncing, setHubSyncing] = useState(false);
   // Full reload: messages AND members. The button is the user's explicit
   // "pull everything fresh from the hub" — so it force-reloads the roster
@@ -337,6 +362,8 @@ export function ConversationView({
                   onViewPlan={runViewPlan}
                   isSelected={(selectedMessageIds ?? []).includes(id)}
                   onSelect={onSelectMessage ? () => onSelectMessage(id) : undefined}
+                  isConversationOwner={isConversationOwner}
+                  onDeleteMessage={handleDeleteMessage}
                   conversationStatusVisible={conversationStatusVisible}
                   ensureProjectMapped={ensureMapped}
                 />

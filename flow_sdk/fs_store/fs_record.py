@@ -651,11 +651,18 @@ class FSRecord(Generic[M]):
                 await driver.fts_delete(entity.id)
             await entity.delete()
 
-    async def delete(self) -> None:
-        """Unindex (entity row, FTS, wiki edges) AND remove the shadow folder on disk."""
+    async def destroy(self) -> None:
+        """Erase the record's entire existence: unindex (entity row, FTS, wiki
+        edges) AND remove the shadow folder on disk (metadata.json, body bundle,
+        .hash sentinel — everything under ``shadow_dir``)."""
         await self.unindex()
         import shutil  # noqa: PLC0415
         try:
             shutil.rmtree(self.shadow_dir)
         except (FileNotFoundError, OSError, ValueError):
             pass
+
+    async def delete(self) -> None:
+        """Alias for :meth:`destroy` — full purge (entity row + FTS + wiki edges
+        + on-disk shadow folder). Kept so existing callers don't diverge."""
+        await self.destroy()

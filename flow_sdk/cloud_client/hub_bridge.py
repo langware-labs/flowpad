@@ -572,8 +572,26 @@ class HubWsBridge:
 
         if op == "delete":
             existing = await FlowMessage.get_one({"id": fm_id})
+            conv_id = parent_conv_id or (
+                getattr(existing, "conversation_id", None) if existing is not None else None
+            )
             if existing is not None:
-                await FlowMessage.delete_by_id(fm_id)
+                # Erase the message's entire existence — DB row + relationships
+                # AND the on-disk record folder (body bundle, metadata, .hash).
+                # ``delete_by_id`` would leave the folder behind.
+                await existing.destroy()
+            # Drop the dangling conversation pointer so an open conversation view
+            # removes the bubble instead of rendering a permanent "Loading
+            # message…" placeholder for the now-deleted FlowMessage.
+            if conv_id:
+                from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
+                from flow_sdk.fs_store.operations.conversation import prune_message_pointer  # noqa: PLC0415
+                from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
+                try:
+                    rec = FSRecord(type=RecordType.CONVERSATION, id=conv_id)
+                    await prune_message_pointer(rec, fm_id, notify=True)
+                except Exception:
+                    logger.exception("hub_bridge: pointer prune failed fm=%s conv=%s", fm_id, conv_id)
             return
 
     async def _handle_conversation_op(self, op: str, conv_id: str, data: dict) -> None:
