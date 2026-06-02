@@ -85,15 +85,24 @@ uv tool install --force ./dist/flowpad-*.whl
 
 ### 3. Verify the prod server starts on 9007 and is the updated build
 
+The desktop runs the **uv-tool** `flow`, so verify against that binary explicitly —
+a repo editable install on your `PATH` reads `_version.py` live and would give a
+false positive. The version is printed by **bare `flow`** (no subcommand);
+`flow --version` is not a flag.
+
 ```bash
-flow --version                 # → flow 0.2.38+local
-flow stop                      # drop any old server/monitor first
-flow start                     # prod instance → http://127.0.0.1:9007
-flow upgrade --info            # JSON status; "version" must read 0.2.38+local
-curl -fsS http://127.0.0.1:9007/api/v1/graph/bootstrap >/dev/null && echo "9007 OK"
+FLOW=~/.local/share/uv/tools/flowpad/bin/flow   # or `which flow` for a pip install
+
+"$FLOW"                         # → flow 0.2.38+local   (bare flow prints version)
+"$FLOW" stop                    # drop any old server/monitor first
+FLOWPAD_NO_BROWSER=1 "$FLOW" start   # prod → http://127.0.0.1:9007 (no browser, like Electron)
+# wait for health, then check the version the server reports:
+until curl -fsS http://127.0.0.1:9007/api/v1/graph/bootstrap >/dev/null 2>&1; do sleep 1; done
+"$FLOW" upgrade --info          # JSON status; "version" must read 0.2.38+local
+echo "9007 OK"
 ```
 
-Both `flow --version` and the `version` field of `flow upgrade --info` must read
+Bare `flow` and the `version` field of `flow upgrade --info` must both read
 `0.2.38+local`, and the server must answer on **9007** (prod port; dev is 9008).
 
 ### 4. Restart the desktop only if it was up at the start

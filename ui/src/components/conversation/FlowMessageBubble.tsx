@@ -19,6 +19,9 @@ import {
   warnUnresolvedSender,
 } from './participant-display';
 import { useAttachments } from './useAttachments';
+import { editorPathForLocalFile } from './attachment-url';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
 import { cn } from '@src/lib/utils';
 
 /** Single Download affordance for a message whose body bundle hasn't been
@@ -167,6 +170,7 @@ export function FlowMessageBubble({
       : null,
   );
   const { localUser, updateName } = useLocalUser();
+  const { navigation } = useDockNavigation();
   const [overrideName, setOverrideName] = useState<string | null>(null);
   // The single attachment surface: per-file chip state + url, the live progress
   // bar, the per-message download-error slot, and the one download entrypoint.
@@ -404,6 +408,16 @@ export function FlowMessageBubble({
               downloading={item.state === AttachmentChipState.Ready && downloading}
               onDownload={
                 item.state === AttachmentChipState.Ready ? triggerDownload : undefined
+              }
+              onOpenInEditor={
+                item.localPath
+                  ? () => navigation.openEditor(editorPathForLocalFile(item.localPath!))
+                  : undefined
+              }
+              onRevealInFolder={
+                item.localPath
+                  ? () => void openExternalFromComputeNode('@local', item.localPath!, { select: true })
+                  : undefined
               }
             />
           ))}

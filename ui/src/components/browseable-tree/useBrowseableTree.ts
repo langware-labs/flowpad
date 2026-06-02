@@ -32,6 +32,17 @@ const EMPTY_STATE: BrowseableTreeState = {
 export function useBrowseableTree(roots: BrowseableRoot[]) {
   const [state, setState] = useState<BrowseableTreeState>(EMPTY_STATE);
 
+  // Ref mirror of `loadStates` for the async workers (`loadChildren`,
+  // `expandParentsForPointer`) to read WITHOUT listing `state.loadStates` in
+  // their dep arrays. Each `setLoadState` mutates `loadStates`; if the workers
+  // depended on it they'd be recreated on every fetch, and the consumer effect
+  // in <BrowseableTree> (keyed on `expandParentsForPointer`'s identity) would
+  // re-run — re-entering the walk before its async guard latches and firing a
+  // burst of redundant child fetches. Render-phase assignment keeps the ref at
+  // the latest committed value.
+  const loadStatesRef = useRef(state.loadStates);
+  loadStatesRef.current = state.loadStates;
+
   // Track in-flight fetches to prevent duplicate work on quick toggles.
   const inflight = useRef(new Map<string, Promise<Browseable[]>>());
 
@@ -73,7 +84,7 @@ export function useBrowseableTree(roots: BrowseableRoot[]) {
       const pending = inflight.current.get(node.id);
       if (pending) return pending;
 
-      const current = state.loadStates.get(node.id);
+      const current = loadStatesRef.current.get(node.id);
       if (current?.status === 'ready') return current.children;
 
       setLoadState(node.id, { status: 'loading' });
@@ -94,7 +105,7 @@ export function useBrowseableTree(roots: BrowseableRoot[]) {
       inflight.current.set(node.id, p);
       return p;
     },
-    [state.loadStates, setLoadState],
+    [setLoadState],
   );
 
   const expand = useCallback(
@@ -217,7 +228,7 @@ export function useBrowseableTree(roots: BrowseableRoot[]) {
       let parentChildren: Browseable[] | null = null;
       for (const node of nodesToExpand) {
         if (!node.listChildren) continue;
-        const existing = state.loadStates.get(node.id);
+        const existing = loadStatesRef.current.get(node.id);
         const children =
           existing?.status === 'ready'
             ? existing.children
@@ -244,7 +255,10 @@ export function useBrowseableTree(roots: BrowseableRoot[]) {
 
       return leaf;
     },
-    [roots, state.loadStates, loadChildren],
+    // `setLoadState` is stable (useCallback []), so listing it doesn't
+    // reintroduce identity churn. `state.loadStates` is deliberately read via
+    // `loadStatesRef` instead of being a dep — see the ref's comment.
+    [roots, loadChildren, setLoadState],
   );
 
   return {

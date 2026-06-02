@@ -718,6 +718,102 @@ class Entity(DBEntity):
         """
         return {"name": self.name, "subtitle": None}
 
+    async def _favorite_bookmark(self):
+        """Find this entity's favorite Bookmark for the current user, if any.
+
+        Same shape as ``ui/src/hooks/use-favorites.ts`` matches on:
+        ``bookmark_type='favorite'`` + ``data.entity_type`` + ``data.entity_id``.
+        Owner-scoping is enforced by the request's auth context (the bookmark
+        query only returns rows the current user can read).
+        """
+        from flow_sdk.builtin.bookmark import Bookmark, BookmarkType  # noqa: PLC0415
+
+        bookmarks = await Bookmark.get_all(
+            QueryFilter.by_type("bookmark", {"bookmark_type": BookmarkType.FAVORITE.value})
+        )
+        my_type = self.get_type()
+        my_id = str(self.id)
+        for b in bookmarks:
+            data = b.data if isinstance(b.data, dict) else None
+            if not data:
+                continue
+            if data.get("entity_type") == my_type and data.get("entity_id") == my_id:
+                return b
+        return None
+
+    async def favorite(self, title: str | None = None):
+        """Mark this entity as favorited for the current user. Idempotent —
+        returns the existing favorite Bookmark if already favorited (without
+        renaming it; use ``Bookmark.name = ...; save()`` to rename after).
+
+        :param title: Display label for the favorite tile / star tooltip.
+            Defaults to ``self.name`` when omitted. Mirrors the ``title`` field
+            of ``useFavorites.addFavorite`` on the frontend.
+
+        The Bookmark shape matches what the UI writes, so the watched
+        bookmark query on the frontend re-fetches and re-renders
+        ``FavoriteStar`` / ``FavoriteTile`` automatically.
+        """
+        from flow_sdk.builtin.bookmark import Bookmark, BookmarkType  # noqa: PLC0415
+        from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        user = request_info.user if request_info is not None else None
+        if user is None:
+            raise ValueError(
+                "Entity.favorite() requires an authenticated user in the request context"
+            )
+
+        existing = await self._favorite_bookmark()
+        if existing is not None:
+            return existing
+
+        nav: dict[str, str] = {}
+        asset_ref = getattr(self, "asset_ref", None)
+        if asset_ref:
+            nav["asset_ref"] = str(asset_ref)
+        icon = getattr(getattr(self, "type_info", None), "icon", None)
+        data: dict[str, object] = {
+            "entity_type": self.get_type(),
+            "entity_id": str(self.id),
+        }
+        if nav:
+            data["nav"] = nav
+        if icon:
+            data["icon"] = icon
+
+        # title=None → match useFavorites.addFavorite: set bookmark.title only
+        # (UI falls back to live summary.name from tooltip_summary, so the tile
+        # tracks the entity's current name).
+        # title="<custom>" → match useFavorites.renameFavorite: set bookmark.name
+        # as well so the custom label wins over the live summary.
+        kwargs: dict[str, object] = {
+            "bookmark_type": BookmarkType.FAVORITE.value,
+            "title": (title if title is not None else self.name) or "",
+            "source": "entity.favorite",
+            "data": data,
+        }
+        if title is not None and title.strip():
+            kwargs["name"] = title
+        bookmark = Bookmark(**kwargs)
+        await bookmark.save(owner=user)
+        return bookmark
+
+    async def unfavorite(self) -> bool:
+        """Remove this entity's favorite Bookmark for the current user.
+        Idempotent — returns True if a favorite was deleted, False if none
+        existed.
+        """
+        existing = await self._favorite_bookmark()
+        if existing is None:
+            return False
+        await existing.delete()
+        return True
+
+    async def is_favorited(self) -> bool:
+        """Is this entity currently favorited by the current user?"""
+        return (await self._favorite_bookmark()) is not None
+
     @staticmethod
     def api_visible_by_type(entity_type: str):
         return SchemaRegistry.is_api_visible(entity_type)
@@ -1901,6 +1997,46 @@ _action_registry.register(
     action_name="entity-event",
     function_name="entity_event",
     handler=Entity.entity_event,
+    methods="post",
+    types="all",
+)
+
+
+async def _http_favorite(self: Entity):
+    from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
+    from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+
+    request_info = get_current_request_info()
+    body = await request_info.get_post_data() if request_info is not None else {}
+    title = body.get("title") if isinstance(body, dict) else None
+    bookmark = await self.favorite(title=title)
+    return ApiSuccessResponse(
+        data={
+            "bookmark_id": str(bookmark.id) if bookmark is not None else None,
+            "bookmark_typeid": str(bookmark.typeid) if bookmark is not None else None,
+            "title": getattr(bookmark, "title", None),
+            "favorited": True,
+        }
+    )
+
+
+async def _http_unfavorite(self: Entity):
+    from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
+    deleted = await self.unfavorite()
+    return ApiSuccessResponse(data={"deleted": deleted, "favorited": False})
+
+
+_action_registry.register(
+    action_name="favorite",
+    function_name="favorite",
+    handler=_http_favorite,
+    methods="post",
+    types="all",
+)
+_action_registry.register(
+    action_name="unfavorite",
+    function_name="unfavorite",
+    handler=_http_unfavorite,
     methods="post",
     types="all",
 )
