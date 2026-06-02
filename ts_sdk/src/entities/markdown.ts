@@ -59,7 +59,7 @@ export class Markdown extends APIEntity<Markdown> implements IMarkdown {
    * base `APIEntity.dockPointer` (HOME) would send the doc to the home view.
    */
   override get dockPointer(): DockPointerData {
-    return this.assetEditorPointer('markdown', this.asset_ref) ?? super.dockPointer;
+    return this.assetEditorPointer('markdown') ?? super.dockPointer;
   }
 
   /**

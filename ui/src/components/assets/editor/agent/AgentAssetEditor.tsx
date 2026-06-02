@@ -46,7 +46,9 @@ export function AgentAssetEditor({ fsRef, agent: providedAgent }: AgentAssetEdit
     },
     [sourcePath],
   );
-  const chatTarget = fsRef.vpath;
+  // chatTarget MUST be the entity's TypeId — MarkdownEditor builds `new TypeId(chatTarget)`
+  // and uses it as docTypeId. Passing a path here is what caused the "Invalid typeId" crash.
+  const chatTarget = agent ? agent.typeId.toString() : null;
   const agentExecutionTarget = agent ? agent.typeId.toString() : null;
   const { navigation } = useDockNavigation();
   const onDelete = useCallback(async () => {

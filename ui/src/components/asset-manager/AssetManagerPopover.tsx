@@ -32,7 +32,8 @@ import {
   makeIconForType,
   parseTypeid as _parseTypeid,
 } from './asset-row-helpers';
-import { DockPointer } from '@src/navigation/DockPointer';
+import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
+import { editorForType } from '@src/navigation/asset-doc-types';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ArrowLeft, ArrowDownAZ, Boxes, Folder, FolderOpen, FolderPlus, Lock, Plus, Search, X, type LucideIcon } from 'lucide-react';
 
@@ -546,18 +547,18 @@ function AssetRow({
   const onChipClick = useCallback(() => {
     if (!id) return;
     try {
-      // Read-only sources open in viewer mode (readOnly=1). The assets editor
-      // route honors this query param to disable save affordances. The query
-      // string is passed via the DockPointer ``options`` argument so it
-      // serializes as a real `?readOnly=1` query string — embedding it in
-      // the pointer (path) string would URL-encode the `?` to `%3F` and
-      // produce a malformed path the backend can't parse.
+      // Open by the asset's TypeId in the canonical grammar
+      // (editor/<editor>/typeid/<type>-<id>). Read-only sources open in viewer
+      // mode (readOnly=1), passed as a real `?readOnly=1` query string via the
+      // DockPointer options (not embedded in the path).
+      const editor = editorForType(type);
+      if (!editor) return;
       navigation.openDock(
-        new DockPointer(
-          'assets' as never,
-          `editor/${type}/${id}`,
+        AssetDocPointer.forTypeId(
+          editor,
+          new TypeId(type, id),
           readOnly ? { readOnly: '1' } : undefined,
-        ),
+        ).toDockPointer(),
       );
     } catch {
       // ignore navigation errors
