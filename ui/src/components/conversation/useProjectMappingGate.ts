@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { useNavigation } from 'react-router';
 import { dataManager, Project, TypeId, ViewType } from '@sdk';
 import type { ITask } from '@sdk/entities/task';
 import type { IConversation } from '@sdk/entities/conversation';
@@ -43,6 +44,10 @@ export function useProjectMappingGate(
   const { mapping, loaded: mappingLoaded } = useProjectMapping();
   const ctx = useContext();
   const { navigation, currentDock } = useDockNavigation();
+  // Router transition state. `currentDock` is derived from the *committed*
+  // URL, so it lags during an in-flight navigation; `routerNav.state` tells
+  // us a navigation is underway even before the URL/loader settles.
+  const routerNav = useNavigation();
   const autoApplyAttemptedRef = useRef<Set<string>>(new Set());
   const autoMapAttemptedRef = useRef<Set<string>>(new Set());
 
@@ -136,6 +141,13 @@ export function useProjectMappingGate(
       // sets ctx.project from process.project_id as a side-effect — not a
       // user pick. Bouncing them to the project home would override the
       // navigation they just took.
+      //
+      // The SHELL check alone races: the loader sets ctx.project *during* the
+      // transition, while `currentDock` still reflects the OLD (conversation)
+      // view, so the guard misses and we wrongly bounce to the project. A
+      // project change observed while a navigation is in flight is never a
+      // user pick — bail until the router settles.
+      if (routerNav.state !== 'idle') return;
       if (currentDock?.viewType === ViewType.SHELL) return;
       navigateToProjectHome(activeProjectId);
       return;
@@ -150,7 +162,7 @@ export function useProjectMappingGate(
         await persistRemoteToLocalMapping(remoteProjectId, project.id);
       }
     })();
-  }, [mappingLoaded, remoteProjectId, subjectKey, activeProjectId, existingLocalProjectId, mapping, currentDock?.viewType]);
+  }, [mappingLoaded, remoteProjectId, subjectKey, activeProjectId, existingLocalProjectId, mapping, currentDock?.viewType, routerNav.state]);
 
   // Direct pick (gate's own dialog → onPicked). The picker only opens when
   // unmapped, so this is always a first-time map — no remap branch needed.
