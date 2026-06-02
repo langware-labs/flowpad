@@ -37,7 +37,8 @@ def markdown_index_id(ref: FSRef) -> str:
     Uses the same uuid5(NAMESPACE_URL, resolved_path) formula as the base
     ``Record.getId`` default.  Exposed here for tests + explicitness.
     """
-    return str(uuid.uuid5(uuid.NAMESPACE_URL, str(ref._path.resolve())))
+    from flow_sdk.fs_store.identifier import mint_uuid  # noqa: PLC0415
+    return mint_uuid(str(ref._path.resolve()))
 
 def markdown_index_gen_id(ref: FSRef) -> str:
     """Id mint for MARKDOWN_INDEX — same formula as getId (no frontmatter write).
