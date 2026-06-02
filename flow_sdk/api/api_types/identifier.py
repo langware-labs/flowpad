@@ -110,6 +110,51 @@ def is_valid_uuid(uuid_to_test: Optional[str]) -> TypeGuard[str]:
     return str(uuid_obj) == uuid_to_test
 
 
+def is_valid_entity_id(uuid_to_test: Optional[str]) -> TypeGuard[str]:
+    """Mint/adopt policy gate: a *conforming entity id* is a UUID of version
+    **4 (random) or 5 (deterministic)** — the only two an entity id is ever
+    minted as.
+
+    Stricter than ``is_valid_uuid`` on purpose. ``is_valid_uuid`` /
+    ``UUID_PATTERN`` are deliberately version-agnostic (URL/VFS path matchers
+    and ``@local`` parsing depend on that); this predicate is the policy the
+    minter and the "adopt an id from frontmatter/slug" path enforce, so a
+    hand-authored or foreign id (e.g. a v7) can never become an entity id.
+    """
+    if not isinstance(uuid_to_test, str):
+        return False
+    try:
+        u = uuid.UUID(uuid_to_test)
+    except ValueError:
+        return False
+    return str(u) == uuid_to_test and u.version in (4, 5)
+
+
+def adopt_entity_id(raw: Any) -> Optional[str]:
+    """Validate-on-adopt: the single gate every "adopt an id from outside the
+    minter" site calls (frontmatter ``id:``/``asset_id:``, a slug, a
+    client-supplied id). Returns the stripped value only if it's a conforming
+    entity id (UUID v4/v5); otherwise ``None`` so the caller derives a stable
+    id instead — a hand-authored/foreign id (e.g. a v7) never gets adopted.
+    """
+    candidate = str(raw).strip() if isinstance(raw, str) and raw.strip() else None
+    return candidate if (candidate and is_valid_entity_id(candidate)) else None
+
+
+def mint_uuid(key: Optional[str] = None, *, namespace: uuid.UUID = uuid.NAMESPACE_URL) -> str:
+    """The single id-construction site for entity ids.
+
+    Deterministic ``uuid5(namespace, key)`` when a stable key is given (path or
+    natural key), else a random ``uuid4``. Always returns a value that passes
+    ``is_valid_entity_id`` (v4/v5). All minting — indexer ``gen_id_fn``,
+    ``Entity.allocate_id``, the DB-record fallback — should route through here
+    so the version policy lives in exactly one place.
+    """
+    if key:
+        return str(uuid.uuid5(namespace, key))
+    return str(uuid.uuid4())
+
+
 def is_valid_identifier(identifier: str) -> bool:
     if not identifier:
         return False

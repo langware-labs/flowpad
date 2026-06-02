@@ -1,8 +1,7 @@
-import { useEffect, useState } from 'react';
-import { Boxes, MessageSquarePlus, Send } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { Check, MessageSquarePlus, Send } from 'lucide-react';
 import {
   hasRemoteParticipant,
-  type AssetDescriptor,
   type ConversationParticipant,
   type ConversationSendPayload,
 } from '@sdk';
@@ -11,12 +10,13 @@ import { useContext as useDataContext } from '@src/hooks/useContext';
 import { useSendToConversation, type SendTarget } from '@src/hooks/use-send-to-conversation';
 import { useConversationsForContacts } from '@src/hooks/use-conversations-for-contacts';
 import { useAutoTitle } from '@src/hooks/use-auto-title';
+import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
+import { useLocalUser } from '@src/components/conversation/useLocalUser';
+import type { ShareSource } from '@src/hooks/share-sources';
 import { ContactPicker } from '@src/components/contact-picker/ContactPicker';
+import { AddressBookButton } from '@src/components/contact-picker/AddressBookButton';
+import { FileAttachmentPicker } from '@src/components/conversation/FileAttachmentPicker';
 import { deriveConversationTitle } from '@src/components/conversation/conversation-title';
-import {
-  displayLabelForTypeid,
-  parseTypeid,
-} from '@src/components/asset-manager/asset-row-helpers';
 import {
   Dialog,
   DialogContent,
@@ -24,6 +24,7 @@ import {
   DialogTitle,
 } from '@src/components/ui/dialog';
 import { Button } from '@src/components/ui/button';
+import { Input } from '@src/components/ui/input';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
@@ -31,127 +32,262 @@ import { formatTimeAgo } from '@src/utils/format-time-ago';
 interface ShareToConversationDialogProps {
   open: boolean;
   onClose: () => void;
-  /** Doc/entity being shared. Carried into the message as an asset reference. */
-  assetDescriptor: AssetDescriptor;
+  /** What is being shared. Performs its own prep (fork / Task / Spec mint) on
+   *  submit; never creates a conversation. */
+  source: ShareSource;
   /** Scope existing-conversation results to a single project. Defaults to the active project. */
   projectId?: string | null;
 }
 
+const MAX_CONVERSATIONS = 5;
+
 /**
- * Contact-first share: pick contact(s) → see conversations with those people →
- * one-click row to send + navigate. The trailing "+ Start new" row creates a
- * fresh conversation with the same contacts (auto-titled) and sends in one shot.
+ * The single contact-first share screen. Pick recipients (typeahead +
+ * address-book multi-select) → see the conversations you already have with all
+ * of them → click one to share into it, or start a new one. First contact = one
+ * conversation + one invite; later shares thread into the existing conversation
+ * with no new invite (the duplicate-conversation/email fix).
  */
 export function ShareToConversationDialog({
   open,
   onClose,
-  assetDescriptor,
+  source,
   projectId,
 }: ShareToConversationDialogProps) {
   const { navigation } = useDockNavigation();
   const ctx = useDataContext();
   const { cloudUser } = useAuth();
+  const { localUser } = useLocalUser();
+  const ensureCloudLogin = useCloudLoginGate();
   const { send, busy, error, resetDraft } = useSendToConversation();
+
   const [participants, setParticipants] = useState<ConversationParticipant[]>([]);
+  const [titleInput, setTitleInput] = useState('');
+  const [note, setNote] = useState('');
+  const [files, setFiles] = useState<File[]>([]);
+  const [attachTranscript, setAttachTranscript] = useState(true);
+  const [sharedConversationId, setSharedConversationId] = useState<string | null>(null);
+  const [localError, setLocalError] = useState<string | null>(null);
+  // A non-null id is the single source of truth for "share succeeded".
+  const shared = sharedConversationId !== null;
 
   const effectiveProjectId = projectId ?? ctx.project?.id ?? null;
-  const { conversations } = useConversationsForContacts(participants, effectiveProjectId, open);
+  const matches = useConversationsForContacts(participants, effectiveProjectId, open);
+  const conversations = useMemo(
+    () => matches.conversations.slice(0, MAX_CONVERSATIONS),
+    [matches.conversations],
+  );
   const newConvTitle = useAutoTitle(open, participants);
 
   useEffect(() => {
     if (!open) return;
     setParticipants([]);
+    setTitleInput('');
+    setNote('');
+    setFiles([]);
+    setAttachTranscript(true);
+    setSharedConversationId(null);
+    setLocalError(null);
     resetDraft();
   }, [open, resetDraft]);
 
   const isRemote = hasRemoteParticipant(participants);
-  const canStartNew = participants.length > 0 && (isRemote || !!effectiveProjectId);
-
-  const finalize = (conversationId: string | null) => {
-    if (!conversationId) return;
-    navigation.openDock(DockPointer.forConversation(conversationId));
-    onClose();
-  };
-
-  const handlePickExisting = async (conversationId: string) => {
-    const payload: ConversationSendPayload = {
-      text: '',
-      assetReferences: [assetDescriptor.typeid],
-    };
-    finalize(await send({ kind: 'existing', conversationId }, payload));
-  };
-
-  const handleStartNew = async () => {
-    if (!canStartNew) return;
-    const target: SendTarget = {
-      kind: 'new',
-      params: {
-        project_id: isRemote ? null : effectiveProjectId,
-        participants,
-        title: newConvTitle,
-      },
-    };
-    const payload: ConversationSendPayload = {
-      text: '',
-      assetReferences: [assetDescriptor.typeid],
-    };
-    finalize(await send(target, payload));
-  };
-
-  const docTypeLabel = parseTypeid(assetDescriptor.typeid).type;
-  const docLabel = displayLabelForTypeid(assetDescriptor.typeid);
+  const recipientEmails = useMemo(
+    () =>
+      participants
+        .map((p) => (p.email || '').trim())
+        .filter((e) => !!e && e.includes('@')),
+    [participants],
+  );
+  const effectiveTitle = (
+    source.requiresTitle ? titleInput : source.defaultTitle ?? newConvTitle
+  ).trim();
+  const titleOk = !source.requiresTitle || titleInput.trim().length > 0;
+  const canStartNew = participants.length > 0 && (isRemote || !!effectiveProjectId) && titleOk;
   const hasContacts = participants.length > 0;
 
+  const doShare = async (existingId: string | null) => {
+    if (busy) return;
+    setLocalError(null);
+    if (isRemote) {
+      const gate = await ensureCloudLogin();
+      if (!gate.ok) {
+        setLocalError(gate.error);
+        return;
+      }
+    }
+    let payload: ConversationSendPayload;
+    try {
+      const prepared = await source.prepare({
+        recipientEmails,
+        senderName: localUser?.name ?? null,
+        senderId: localUser?.id ?? null,
+        title: effectiveTitle,
+        projectId: effectiveProjectId,
+        attachTranscript,
+        files,
+      });
+      payload = {
+        text: note.trim(),
+        files: prepared.files,
+        assetReferences: prepared.assetReferences,
+        sharedContextEntities: prepared.sharedContextEntities,
+      };
+      const target: SendTarget = existingId
+        ? { kind: 'existing', conversationId: existingId }
+        : {
+            kind: 'new',
+            params: {
+              project_id: isRemote ? null : effectiveProjectId,
+              participants,
+              title: effectiveTitle,
+              shared_context_entities: prepared.sharedContextEntities,
+            },
+          };
+      const convId = await send(target, payload);
+      if (convId) {
+        setSharedConversationId(convId);
+      }
+    } catch (err: unknown) {
+      setLocalError(err instanceof Error ? err.message : 'Failed to share');
+    }
+  };
+
+  const shownError = localError ?? error;
+
   return (
-    <Dialog open={open} onOpenChange={onClose}>
+    <Dialog open={open} onOpenChange={(o) => { if (!o && !busy) onClose(); }}>
       <DialogContent className="sm:max-w-md" data-testid="share-to-conversation-dialog">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Send className="h-5 w-5 text-primary" />
-            Share to conversation
+            Share
           </DialogTitle>
         </DialogHeader>
 
-        <div className="flex flex-col gap-4 text-sm">
-          <div className="flex items-center gap-2 rounded-md border border-input bg-muted/40 px-2 py-1.5 text-xs">
-            <Boxes className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-            <span className="flex-1 truncate text-foreground" title={assetDescriptor.typeid}>
-              {docLabel}
-            </span>
-            <span className="shrink-0 rounded border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
-              {docTypeLabel}
-            </span>
+        {shared ? (
+          <div className="flex flex-col items-center gap-4 py-6 text-sm" data-testid="share-status">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-green-500/15 text-green-600 dark:text-green-400">
+              <Check className="h-6 w-6" />
+            </div>
+            <p className="font-medium text-foreground">Shared</p>
+            <div className="flex gap-2">
+              <Button variant="outline" onClick={onClose}>
+                Close
+              </Button>
+              <Button
+                onClick={() => {
+                  if (sharedConversationId) {
+                    navigation.openDock(DockPointer.forConversation(sharedConversationId));
+                  }
+                  onClose();
+                }}
+                disabled={!sharedConversationId}
+                data-testid="share-open-message"
+              >
+                Open message
+              </Button>
+            </div>
           </div>
+        ) : (
+          <div className="flex flex-col gap-4 text-sm">
+            <div className="flex items-center gap-2 rounded-md border border-input bg-muted/40 px-2 py-1.5 text-xs">
+              <span className="flex-1 truncate text-foreground" title={source.label}>
+                {source.label}
+              </span>
+              {source.typeLabel && (
+                <span className="shrink-0 rounded border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground">
+                  {source.typeLabel}
+                </span>
+              )}
+            </div>
 
-          <div className="flex flex-col gap-1.5">
-            <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
-              To
-            </label>
-            <ContactPicker
-              value={participants}
-              onChange={setParticipants}
-              excludeUserId={cloudUser?.id ?? ctx.user?.id}
-              enabled={open}
-              testId="share-contact-picker"
-            />
-          </div>
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
+                To
+              </label>
+              <div className="flex items-end gap-2">
+                <div className="flex-1">
+                  <ContactPicker
+                    value={participants}
+                    onChange={setParticipants}
+                    excludeUserId={cloudUser?.id ?? ctx.user?.id}
+                    enabled={open}
+                    testId="share-contact-picker"
+                  />
+                </div>
+                <AddressBookButton
+                  value={participants}
+                  onChange={setParticipants}
+                  excludeUserId={cloudUser?.id ?? ctx.user?.id}
+                  enabled={open}
+                  disabled={busy}
+                />
+              </div>
+            </div>
 
-          <div className="flex flex-col gap-1.5">
-            <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
-              Conversations
-            </label>
-            {!hasContacts ? (
-              <p className="text-xs text-muted-foreground">
-                Pick a contact to see your conversations with them.
-              </p>
-            ) : (
-              <>
+            {source.requiresTitle && (
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
+                  Title
+                </label>
+                <Input
+                  value={titleInput}
+                  onChange={(e) => setTitleInput(e.target.value)}
+                  placeholder="What do you need help with?"
+                  disabled={busy}
+                  data-testid="share-title-input"
+                />
+              </div>
+            )}
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
+                Note (optional)
+              </label>
+              <textarea
+                value={note}
+                onChange={(e) => setNote(e.target.value)}
+                placeholder="Add a personal note…"
+                rows={2}
+                disabled={busy}
+                className="w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                data-testid="share-note-input"
+              />
+            </div>
+
+            {source.supportsFiles && (
+              <div className="flex flex-col gap-1.5">
+                {source.isProcess && (
+                  <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <input
+                      type="checkbox"
+                      checked={attachTranscript}
+                      onChange={(e) => setAttachTranscript(e.target.checked)}
+                      disabled={busy}
+                    />
+                    Attach session transcript
+                  </label>
+                )}
+                <FileAttachmentPicker files={files} onChange={setFiles} disabled={busy} />
+              </div>
+            )}
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
+                Conversations
+              </label>
+              {!hasContacts ? (
+                <p className="text-xs text-muted-foreground">
+                  Pick a contact to see your conversations with them.
+                </p>
+              ) : (
                 <ul className="flex flex-col gap-1" data-testid="share-conversation-list">
                   {conversations.map((conv) => (
                     <li key={conv.id}>
                       <button
                         type="button"
-                        onClick={() => void handlePickExisting(conv.id)}
+                        onClick={() => void doShare(conv.id)}
                         disabled={busy}
                         className="flex w-full items-center gap-2 rounded-md border border-input bg-background px-2 py-1.5 text-left text-xs hover:bg-muted/50 disabled:pointer-events-none disabled:opacity-50"
                         data-testid={`share-conv-row-${conv.id}`}
@@ -161,9 +297,7 @@ export function ShareToConversationDialog({
                         </span>
                         <span className="shrink-0 text-[10px] text-muted-foreground">
                           {formatTimeAgo(
-                            conv.updated_date
-                              ? new Date(conv.updated_date).toISOString()
-                              : null,
+                            conv.updated_date ? new Date(conv.updated_date).toISOString() : null,
                           ) ?? ''}
                         </span>
                       </button>
@@ -172,35 +306,30 @@ export function ShareToConversationDialog({
                   <li>
                     <button
                       type="button"
-                      onClick={() => void handleStartNew()}
+                      onClick={() => void doShare(null)}
                       disabled={busy || !canStartNew}
                       className="flex w-full items-center gap-2 rounded-md border border-dashed border-input bg-background px-2 py-1.5 text-left text-xs text-foreground hover:bg-muted/50 disabled:pointer-events-none disabled:opacity-50"
                       data-testid="share-conv-row-new"
                     >
                       <MessageSquarePlus className="h-3.5 w-3.5 shrink-0 text-primary" />
-                      <span className="flex-1 truncate" title={newConvTitle}>
-                        Start new · {newConvTitle}
+                      <span className="flex-1 truncate" title={effectiveTitle}>
+                        Start new conversation · {effectiveTitle}
                       </span>
                     </button>
                   </li>
                 </ul>
-                {conversations.length === 0 && (
-                  <p className="text-xs text-muted-foreground">
-                    No existing conversations with these contacts — start one.
-                  </p>
-                )}
-              </>
-            )}
+              )}
+            </div>
+
+            {shownError && <p className="text-xs text-destructive">{shownError}</p>}
+
+            <div className="flex justify-end pt-1">
+              <Button variant="outline" onClick={onClose} disabled={busy}>
+                {busy ? 'Sharing…' : 'Cancel'}
+              </Button>
+            </div>
           </div>
-
-          {error && <p className="text-xs text-destructive">{error}</p>}
-        </div>
-
-        <div className="flex justify-end pt-2">
-          <Button variant="outline" onClick={onClose} disabled={busy}>
-            {busy ? 'Sending…' : 'Cancel'}
-          </Button>
-        </div>
+        )}
       </DialogContent>
     </Dialog>
   );

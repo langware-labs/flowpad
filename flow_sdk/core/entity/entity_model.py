@@ -360,23 +360,26 @@ class Entity(DBEntity):
     def allocate_id(cls, data: dict) -> str:
         """Return a stable UUID for this entity type given creation data.
 
-        Default behaviour (mirrors original from_record logic):
-        - If data['id'] is already a valid UUID → return it unchanged.
-        - If data['id'] is a non-empty non-UUID slug → derive uuid5(type:id).
-        - If data['id'] is empty/absent → return a fresh random uuid4.
+        Validate-on-adopt + single minter:
+        - If data['id'] is a **conforming** entity id (UUID v4/v5) → keep it.
+        - Else if data['id'] is non-empty (a slug, or a foreign/non-conforming
+          uuid such as a v7) → derive a stable ``uuid5(type:id)`` (normalizes
+          it; a hand-authored v7 never survives as the id).
+        - If empty/absent → fresh random uuid4.
 
-        Override in subclasses that have a natural filesystem identity key
-        (e.g. Project uses fs_storage_mount_path).
+        All cases route through ``mint_uuid`` so the version policy lives in one
+        place. Override in subclasses with a natural fs identity key (e.g.
+        Project uses fs_storage_mount_path).
         """
         import uuid as _uuid
-        from flow_sdk.fs_store.identifier import is_valid_uuid
+        from flow_sdk.fs_store.identifier import is_valid_entity_id, mint_uuid
         rid = data.get("id") or ""
-        if rid and is_valid_uuid(rid):
+        if rid and is_valid_entity_id(rid):
             return rid
         if rid:
             type_str = data.get("type") or "record"
-            return str(_uuid.uuid5(_uuid.NAMESPACE_DNS, f"{type_str}:{rid}"))
-        return str(_uuid.uuid4())
+            return mint_uuid(f"{type_str}:{rid}", namespace=_uuid.NAMESPACE_DNS)
+        return mint_uuid()
 
     @classmethod
     async def from_record(cls, record: "Record", notify: bool = True) -> Entity:
@@ -489,6 +492,20 @@ class Entity(DBEntity):
         """Return the fs-record associated with this entity, or None if none exists."""
         from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415 — lazy
         return FSRecord.load_or_none(self.get_type(), self.id)
+
+    async def destroy(self) -> None:
+        """Erase this entity's entire existence: the DB row + relationships AND
+        its on-disk record folder.
+
+        Unlike :meth:`delete` (DB row + relationships only — the on-disk shadow
+        folder is left behind), ``destroy`` routes through the record so the
+        whole ``<records_root>/<type>/<type>-@<id>/`` tree is removed too.
+        Falls back to a plain ``delete`` for entities that have no record."""
+        rec = await self.get_record()
+        if rec is not None:
+            await rec.destroy()
+        else:
+            await self.delete()
 
     async def updateSearchIndex(self) -> None:
         """Write this entity's searchable content into the FTS5 table.
@@ -700,6 +717,102 @@ class Entity(DBEntity):
         AgenticProcess returns its last prompt).
         """
         return {"name": self.name, "subtitle": None}
+
+    async def _favorite_bookmark(self):
+        """Find this entity's favorite Bookmark for the current user, if any.
+
+        Same shape as ``ui/src/hooks/use-favorites.ts`` matches on:
+        ``bookmark_type='favorite'`` + ``data.entity_type`` + ``data.entity_id``.
+        Owner-scoping is enforced by the request's auth context (the bookmark
+        query only returns rows the current user can read).
+        """
+        from flow_sdk.builtin.bookmark import Bookmark, BookmarkType  # noqa: PLC0415
+
+        bookmarks = await Bookmark.get_all(
+            QueryFilter.by_type("bookmark", {"bookmark_type": BookmarkType.FAVORITE.value})
+        )
+        my_type = self.get_type()
+        my_id = str(self.id)
+        for b in bookmarks:
+            data = b.data if isinstance(b.data, dict) else None
+            if not data:
+                continue
+            if data.get("entity_type") == my_type and data.get("entity_id") == my_id:
+                return b
+        return None
+
+    async def favorite(self, title: str | None = None):
+        """Mark this entity as favorited for the current user. Idempotent —
+        returns the existing favorite Bookmark if already favorited (without
+        renaming it; use ``Bookmark.name = ...; save()`` to rename after).
+
+        :param title: Display label for the favorite tile / star tooltip.
+            Defaults to ``self.name`` when omitted. Mirrors the ``title`` field
+            of ``useFavorites.addFavorite`` on the frontend.
+
+        The Bookmark shape matches what the UI writes, so the watched
+        bookmark query on the frontend re-fetches and re-renders
+        ``FavoriteStar`` / ``FavoriteTile`` automatically.
+        """
+        from flow_sdk.builtin.bookmark import Bookmark, BookmarkType  # noqa: PLC0415
+        from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+
+        request_info = get_current_request_info()
+        user = request_info.user if request_info is not None else None
+        if user is None:
+            raise ValueError(
+                "Entity.favorite() requires an authenticated user in the request context"
+            )
+
+        existing = await self._favorite_bookmark()
+        if existing is not None:
+            return existing
+
+        nav: dict[str, str] = {}
+        asset_ref = getattr(self, "asset_ref", None)
+        if asset_ref:
+            nav["asset_ref"] = str(asset_ref)
+        icon = getattr(getattr(self, "type_info", None), "icon", None)
+        data: dict[str, object] = {
+            "entity_type": self.get_type(),
+            "entity_id": str(self.id),
+        }
+        if nav:
+            data["nav"] = nav
+        if icon:
+            data["icon"] = icon
+
+        # title=None → match useFavorites.addFavorite: set bookmark.title only
+        # (UI falls back to live summary.name from tooltip_summary, so the tile
+        # tracks the entity's current name).
+        # title="<custom>" → match useFavorites.renameFavorite: set bookmark.name
+        # as well so the custom label wins over the live summary.
+        kwargs: dict[str, object] = {
+            "bookmark_type": BookmarkType.FAVORITE.value,
+            "title": (title if title is not None else self.name) or "",
+            "source": "entity.favorite",
+            "data": data,
+        }
+        if title is not None and title.strip():
+            kwargs["name"] = title
+        bookmark = Bookmark(**kwargs)
+        await bookmark.save(owner=user)
+        return bookmark
+
+    async def unfavorite(self) -> bool:
+        """Remove this entity's favorite Bookmark for the current user.
+        Idempotent — returns True if a favorite was deleted, False if none
+        existed.
+        """
+        existing = await self._favorite_bookmark()
+        if existing is None:
+            return False
+        await existing.delete()
+        return True
+
+    async def is_favorited(self) -> bool:
+        """Is this entity currently favorited by the current user?"""
+        return (await self._favorite_bookmark()) is not None
 
     @staticmethod
     def api_visible_by_type(entity_type: str):
@@ -1884,6 +1997,46 @@ _action_registry.register(
     action_name="entity-event",
     function_name="entity_event",
     handler=Entity.entity_event,
+    methods="post",
+    types="all",
+)
+
+
+async def _http_favorite(self: Entity):
+    from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
+    from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+
+    request_info = get_current_request_info()
+    body = await request_info.get_post_data() if request_info is not None else {}
+    title = body.get("title") if isinstance(body, dict) else None
+    bookmark = await self.favorite(title=title)
+    return ApiSuccessResponse(
+        data={
+            "bookmark_id": str(bookmark.id) if bookmark is not None else None,
+            "bookmark_typeid": str(bookmark.typeid) if bookmark is not None else None,
+            "title": getattr(bookmark, "title", None),
+            "favorited": True,
+        }
+    )
+
+
+async def _http_unfavorite(self: Entity):
+    from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
+    deleted = await self.unfavorite()
+    return ApiSuccessResponse(data={"deleted": deleted, "favorited": False})
+
+
+_action_registry.register(
+    action_name="favorite",
+    function_name="favorite",
+    handler=_http_favorite,
+    methods="post",
+    types="all",
+)
+_action_registry.register(
+    action_name="unfavorite",
+    function_name="unfavorite",
+    handler=_http_unfavorite,
     methods="post",
     types="all",
 )

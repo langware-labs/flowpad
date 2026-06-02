@@ -95,3 +95,25 @@ export async function clearRendezvous(): Promise<void> {
 export async function writeRendezvous(convId: string): Promise<void> {
   await fsp.writeFile(RENDEZVOUS, convId, 'utf-8');
 }
+
+// Poll a /tmp marker file until it contains ``value`` — the cross-process "done"
+// handshake used alongside the rendezvous file (e.g. "bob joined", "http rename
+// landed"). Written with plain ``fsp.writeFile(path, value)``.
+export async function waitMarker(
+  path: string,
+  value: string,
+  label: string,
+  timeoutMs = 25_000,
+): Promise<void> {
+  await pollUntil(
+    async () => {
+      try {
+        return (await fsp.readFile(path, 'utf-8')).trim() === value ? true : null;
+      } catch {
+        return null; // not written yet
+      }
+    },
+    timeoutMs,
+    label,
+  );
+}

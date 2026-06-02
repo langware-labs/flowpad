@@ -63,6 +63,70 @@ interface ConversationPanelProps {
  * shared-terminal affordances all live in the Context tab now, scoped to
  * whichever message the user has selected.
  */
+/**
+ * Click-to-rename for the conversation title. Click the text → inline input;
+ * Enter/blur commits, Escape cancels. Commit is just ``conv.title = next;
+ * conv.save()`` — the backend's save→data_op broadcast updates every other
+ * client viewing this conversation (e.g. a second tab) via ``useEntity``.
+ */
+function EditableConversationTitle({
+  conv,
+  fallback,
+}: {
+  conv: Conversation | null;
+  fallback: string;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+
+  if (!conv) return <span>{fallback}</span>;
+
+  const display = (conv.title ?? '').trim() || fallback;
+
+  const commit = async () => {
+    setEditing(false);
+    const next = draft.trim();
+    if (!next || next === (conv.title ?? '')) return;
+    conv.title = next;
+    try {
+      await conv.save();
+    } catch {
+      // best-effort; the optimistic title stays until the next sync
+    }
+  };
+
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        data-testid="conversation-title-input"
+        className="min-w-0 flex-1 border-b border-border bg-transparent text-xs font-medium text-foreground outline-none"
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') e.currentTarget.blur();
+          else if (e.key === 'Escape') setEditing(false);
+        }}
+      />
+    );
+  }
+
+  return (
+    <span
+      data-testid="conversation-title"
+      className="cursor-text rounded px-0.5 hover:bg-muted"
+      title="Click to rename"
+      onClick={() => {
+        setDraft(conv.title ?? '');
+        setEditing(true);
+      }}
+    >
+      {display}
+    </span>
+  );
+}
+
 export function ConversationPanel({
   task,
   conversationId,
@@ -205,7 +269,7 @@ export function ConversationPanel({
         <div className="flex min-w-0 flex-1 flex-col">
           {headerLabel !== null && (
             <div className={headerWrapper}>
-              <span>{headerLabel}</span>
+              <EditableConversationTitle conv={convEntity ?? null} fallback={headerLabel} />
               <MembersAvatarStack
                 typeId={new TypeId(Conversation.type, conversationId)}
               />

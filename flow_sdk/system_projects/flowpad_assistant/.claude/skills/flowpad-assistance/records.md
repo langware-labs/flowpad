@@ -11,6 +11,17 @@ The pipeline is the same for every record type:
 
 Never call backend APIs directly, never edit the SQLite DB, never write outside the documented `creation.location` — the indexer is the single chokepoint.
 
+Every `flow` command here acts on **your own instance** — the backend pins `FLOW_INSTANCE` for you, so `flow schema/record/navigate/context` already target the right backend. You normally never set it; only prefix `FLOW_INSTANCE=<name> flow …` if a user explicitly asks you to operate on a *different* instance.
+
+## Creating a doc from a web page (URL → markdown)
+
+When the body of a markdown doc comes from a web page, you are **converting**, not summarizing. The doc must reproduce the article's content faithfully — every heading, paragraph, list, quote, and link — at (near) the source's full length.
+
+- **Fetch the RAW page, not a summary.** `curl -sL "<url>"` and convert the HTML to markdown yourself. **Do NOT use `WebFetch` for the body** — it returns a model-condensed rendering that silently halves the content and drops tables/structured blocks. A summary is a failed conversion.
+- **Convert verbatim.** Keep the author's exact wording and voice (first/second person). Do not paraphrase, compress, re-order, or "tighten". Section headings → markdown headings, lists → lists, tables → markdown tables, inline links preserved.
+- **Strip only chrome** — nav, header/footer, share buttons, cookie banners, "related posts". Keep all article body content.
+- **Acceptance check, before you index:** count words in your doc body and in the source article; they must be within ~10%. If your draft is much shorter, you summarized — redo it from the raw HTML. If a block is client-side-rendered and genuinely absent from the raw HTML, note its absence; never use that as licence to compress the prose.
+
 ## Step 1 — discover the type
 
 ```bash
@@ -52,7 +63,7 @@ If `creatable` is `false` or the `creation` block has no real recipe, stop and t
 
 Read `creation.location` literally. Tokens like `<project_cwd>`, `<safe-title>` are placeholders — substitute them:
 
-- `<project_cwd>` — your current working directory IS the active project workspace. Use `.` or `pwd`.
+- `<project_cwd>` — the user's **current project** directory. Resolve it from `flow context list` → `CurrentProjectPath`, and write the record there. Do NOT assume your shell's `pwd` is the right place: as the Flowpad Assistant you run from the system assistant project, not the project the user is looking at, so `pwd` would put the record in the wrong project. Only fall back to `pwd` when `CurrentProjectPath` is absent (no active project). The indexer associates the record with whichever project's directory the file lives under, so writing under `CurrentProjectPath` is what puts it in the right project — no extra index flag needed.
 - `<safe-title>` — slugify the user's title (lowercase, hyphens, ascii-only).
 
 For any UUID-shaped field (`task_id`, `id`, …) generate a fresh v4 UUID yourself and remember it — that becomes the entity id, and you'll use it to navigate. Use `python3 -c "import uuid; print(uuid.uuid4())"` if you do not have one mentally.
