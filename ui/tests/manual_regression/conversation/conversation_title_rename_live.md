@@ -18,14 +18,17 @@ click title → inline input → Enter
   → other client's ConnectionManager → useEntity subscriber → header re-renders
 ```
 
-Reflection note: `save()` does **not** opt into hub reflection (no `Hub-Reflect`
-header), so it updates the local row + broadcasts to all clients on **that
-backend**. Cross-*user* propagation (alice's backend → bob's backend) additionally
-requires the hub to fan conversation field updates to participants — which the
-current local hub does not do — so this scenario validates the cross-client path
-on a single backend (two tabs / two windows). See
-[`two_instance_hub_conversation.md`](./two_instance_hub_conversation.md) for the
-cross-user hub path.
+Reflection note: when the conversation is **remote** (shared), `save()` opts into
+hub reflection (`entity.remote` → `Hub-Reflect: true`). The server reflects the PUT
+to the hub, merges the hub's authoritative response (server times etc.) back onto
+the local row, broadcasts a `data_op`, and returns the **merged** entity. So a
+rename of a remote conversation **persists to the hub** (no "reverts after sync")
+*and* updates other clients on that backend live. Cross-*user* live push (alice's
+backend → bob's backend) still needs the hub to fan conversation updates (it does
+not today), but because the rename now persists on the hub, a peer's next sync
+(`fetchConversations`) pulls the new title. For a local-only conversation, `save()`
+stays local (no header). See
+[`two_instance_hub_conversation.md`](./two_instance_hub_conversation.md).
 
 ## Prereqs
 
@@ -83,8 +86,24 @@ PASS when tab 2's `[data-testid="conversation-title"]` shows the **new title**
 within ~1s — updated purely by the `save()` → `data_op` broadcast → `useEntity`
 re-render, with no interaction in tab 2. This is the end-to-end proof.
 
-Also confirm persistence: `GET /conversation/<CONV>` on the backend returns the
-new `title`.
+### 4. Verify hub persistence (remote conversation)
+
+For a **remote** conversation, confirm `save()` reflected and the hub merged:
+
+```bash
+# local backend reflected a hub PUT:
+grep "PUT .*/conversation/<CONV>" ~/.flow/instances/ra1/launcher-backend.log
+# hub holds the new title (login for a token, then GET):
+TOK=$(curl -s -X POST http://localhost:8093/api/v1/login -H 'content-type: application/json' \
+  -d '{"email":"ra1@local.test","password":"ra1-pw-1234"}' | python3 -c 'import sys,json;print(json.load(sys.stdin)["data"]["api_key"])')
+curl -s "http://localhost:8093/api/v1/graph/conversation/<CONV>" -H "Authorization: Bearer $TOK" \
+  | python3 -c 'import sys,json;print(json.load(sys.stdin)["data"]["title"])'
+```
+
+PASS when the backend log shows `[hub] PUT .../conversation/<CONV>` (200) and the
+hub GET returns the new title. Also confirm the local row's `participants` keep the
+normalized `{email,name,...}` shape (the merge skips list fields — it must NOT be
+clobbered to the hub's `{user_id,name}` shape).
 
 ## Failure modes & first-pass debugging
 
@@ -93,7 +112,8 @@ new `title`.
 | Title shows static `Conversation`, not the conv title | header still renders `headerLabel`, not `convEntity.title` | confirm `EditableConversationTitle` is wired in `ConversationPanel.tsx` and `useEntity` returns the conv |
 | Click does nothing | clicked before HMR / wrong testid | snapshot for `[data-testid="conversation-title"]`; trigger `el.click()` directly |
 | Tab 1 renames but **tab 2 does not update** | local WS broadcast not reaching tab 2 | check the backend emitted a `data_op` UPDATE (backend log); confirm tab 2's WS is connected (`/api/v1/connect/ws`); confirm `useEntity` subscribed for `conversation-<id>` |
-| New title reverts after a few seconds | a hub sync (`fetchConversations`) overwrote the local-only title | expected for a shared conv when the rename was not reflected to the hub — use `conversation.rename()` (hub_reflect) if hub persistence is required |
+| New title reverts after a few seconds | the rename was NOT reflected to the hub, so a sync overwrote it | confirm the conv is `remote` (so `save()` sends `Hub-Reflect: true`) and the user is cloud-logged-in; check the backend log for the `[hub] PUT` |
+| `participants` lost their email/role after rename | the merge clobbered the list with the hub's bare shape | the merge must skip list fields (`_merge_hub_entity_into_local` scalar-only) — verify `participants` still has `email` in `GET /conversation/<CONV>` |
 
 ## Teardown
 

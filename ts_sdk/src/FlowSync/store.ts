@@ -894,7 +894,13 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         }
         ref.status = EntityStatus.FETCHING;
         const endpoint = `${GRAPH_API_PREFIX}${scope_path}/${entity.typeId.type}/${ref.entity.typeId.id}`;
-        newEntityJson = (await apiClient.put<IEntity>(endpoint, entityJson)) as IEntity;
+        // A remote entity's save reflects to the hub: the server forwards the PUT,
+        // merges the hub's authoritative response (incl. server times) back onto the
+        // local row + broadcasts, and returns the merged entity. Local-only entities
+        // omit the header and save purely locally. The server still re-gates on
+        // remote + logged-in, so an offline remote entity falls back to local.
+        const reflectConfig = entity.remote ? { headers: { 'Hub-Reflect': 'true' } } : undefined;
+        newEntityJson = (await apiClient.put<IEntity>(endpoint, entityJson, reflectConfig)) as IEntity;
       }
       if (!newEntityJson) {
         throw new Error('No data returned');
