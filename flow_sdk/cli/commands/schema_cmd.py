@@ -6,7 +6,6 @@ construct new records via ``flow record index``.
 """
 
 from __future__ import annotations
-from flow_sdk.instance_settings import get_instance_settings
 
 import json
 import os
@@ -32,12 +31,13 @@ EXIT_CONNECTION_ERROR = 5
 
 
 def _discover_port() -> int:
-    from flow_sdk.discovery.flowpad_discovery import read_server_info
+    from flow_sdk.discovery.flowpad_discovery import InstanceNotRunningError, resolve_cli_port
 
-    info = read_server_info()
-    if info:
-        return info.port
-    return get_instance_settings().port
+    try:
+        return resolve_cli_port()
+    except InstanceNotRunningError as e:
+        _fail(EXIT_CONNECTION_ERROR, "INSTANCE_NOT_RUNNING", str(e))
+        raise  # unreachable — _fail raises typer.Exit
 
 
 def _fail(exit_code: int, error_code: str, message: str) -> None:

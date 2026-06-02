@@ -23,6 +23,9 @@ Ports are configured in `.env.local` (repo root) and `ui/.env.local`:
 |----------|------|---------|
 | `LOCAL_SERVER_PORT` | `.env.local` | Backend server port |
 | `VITE_PORT` | `.env.local` | Frontend dev server port |
+| `FLOW_INSTANCE` | `.env.local` | Instance **name** the `flow` CLI targets (per-instance state under `~/.flow/instances/<name>/`). Default `prod`. This checkout is `oss`. |
+
+> **The `flow` CLI is instance-scoped.** `FLOW_INSTANCE=<name> flow …` reads that instance's `~/.flow/instances/<name>/server.json` for the port; unset → `prod`. Agentic-process **workers inherit this automatically** — the backend pins `FLOW_INSTANCE` to its own instance when spawning a worker, so a worker's `flow record/navigate/context` calls always hit the backend that spawned it (not prod). A clear `Instance '<name>' is not running` error is raised when that instance has no `server.json`.
 
 ### Backend
 

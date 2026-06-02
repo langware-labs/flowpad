@@ -457,6 +457,18 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     return new DockPointerData(ViewType.HOME, this.typeId?.toString());
   }
 
+  /**
+   * Asset-editor dock pointer for a file-backed asset entity, or null when it
+   * has no asset file yet. Asset subclasses return this from `dockPointer`
+   * (falling back to `super.dockPointer`); the `editor/<type>/<ref>` format
+   * lives here once so it stays consistent across every asset type.
+   */
+  protected assetEditorPointer(typeSegment: string, assetRef?: string): DockPointerData | null {
+    return assetRef
+      ? new DockPointerData(ViewType.ASSETS, `editor/${typeSegment}/${assetRef.replace(/^\//, '')}`)
+      : null;
+  }
+
   public get searchDockPointer(): DockPointerData {
     return this.dockPointer;
   }

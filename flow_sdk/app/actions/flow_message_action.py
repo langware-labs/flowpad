@@ -1916,6 +1916,47 @@ async def _sync_remote_children(parent_tid: TypeId, child_type: str, someone_typ
             logger.warning("[subtree-sync] materialize %s-%s failed (non-fatal): %s", child_type, raw.get("id"), e)
 
 
+async def _ensure_shared_context_rows(conv: "Conversation", someone_typeid: str | None) -> None:
+    """Materialize a local stub row for each ``shared_context_entities`` member
+    that the recipient doesn't have yet.
+
+    The hub hosts no doc types (markdown, plan, …), so a shared doc's *row* never
+    arrives over the wire — only its typeid does, on the conversation's
+    ``shared_context_entities``. Without a local row the doc can't be resolved,
+    linked to its parent conversation, or carry comments. We create a minimal
+    ``remote=False`` stub (id + parent_type_id + a placeholder name); the doc's
+    content fills in later via the chip-open deploy / bundle-unpack path.
+
+    The stub is ``remote=False``: the hub hosts no doc types, so a markdown never
+    has its OWN hub row. Its ``parent_type_id`` = this (remote) conversation is
+    what makes it *effective*-remote, so a comment on it auto-shares under the
+    conversation (the nearest ancestor that IS hub-hosted). Marking the doc
+    ``remote=True`` would make ``nearest_remote_ancestor`` return the doc itself
+    and the comment create would 422 against the non-existent hub doc type.
+    Best-effort."""
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    conv_ref = f"{BuiltinEntityType.CONVERSATION.value}-{conv.id}"
+    for ref in conv.shared_context_entities or []:
+        try:
+            tid = ref if isinstance(ref, TypeId) else TypeId(str(ref))
+            cls = SchemaRegistry.get_entity_cls(tid.type)
+            if cls is None or not tid.id:
+                continue
+            if await cls.get_one({"id": tid.id}) is not None:
+                continue  # row exists → _link_context_to_conversation handles it
+            stub = cls.model_validate({
+                "id": tid.id,
+                "remote": False,
+                "parent_type_id": conv_ref,
+                "name": tid.id,
+            })
+            stub.id = tid.id
+            await stub.save(someone_typeid)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[subtree-sync] stub %s failed (non-fatal): %s", ref, e)
+
+
 async def _sync_shared_context_subtree(conv_id: str, someone_typeid: str | None) -> None:
     """Recursive-share catch-up for one conversation.
 
@@ -1931,10 +1972,16 @@ async def _sync_shared_context_subtree(conv_id: str, someone_typeid: str | None)
         conv = await Conversation.get_one({"id": conv_id})
         if conv is None or not conv.shared_context_entities:
             return  # nothing shared → no subtree to catch up (skip the hub GET)
-        # 1) Link each shared-context doc to this conversation so its
-        #    ``effective_remote`` resolves (the doc is NOT a hub entity — the hub
-        #    has no markdown type — its content arrives via the chip-open
-        #    deploy). Reuses the same linker the share path runs.
+        # 1a) Ensure a local row exists for each shared-context doc. The hub
+        #     never ships the doc's row (no hub doc types), so on a recipient
+        #     that never had the file we mint a remote stub keyed on the shared
+        #     typeid — otherwise the link + comment-attach below have nothing to
+        #     bind to.
+        await _ensure_shared_context_rows(conv, someone_typeid)
+        # 1b) Link each shared-context doc to this conversation so its
+        #     ``effective_remote`` resolves (the doc is NOT a hub entity — the hub
+        #     has no markdown type — its content arrives via the chip-open
+        #     deploy). Reuses the same linker the share path runs.
         await conv._link_context_to_conversation()
         # 2) Pull the conversation's hub child entities (comments today; each
         #    carries its real doc parent in ``parent_type_id``). Materialize
@@ -2185,7 +2232,8 @@ async def _upsert_hub_conversation_metadata(
     existing = await Conversation.get_one({"id": conv_id})
     if existing is None:
         payload: dict = {"id": conv_id, "remote": True}
-        for k in ("title", "participants", "remote_project_id", "remote_project_name"):
+        for k in ("title", "participants", "remote_project_id", "remote_project_name",
+                  "shared_context_entities"):
             if hub_conv.get(k) is not None:
                 payload[k] = hub_conv[k]
         # Hub owner field ``initiated_by`` mirrors locally as ``created_by``.
@@ -2209,6 +2257,15 @@ async def _upsert_hub_conversation_metadata(
         v = hub_conv.get(k)
         if v is not None and getattr(existing, k, None) != v:
             setattr(existing, k, v)
+            changed = True
+    # ``shared_context_entities`` is wire-bound (hub-authoritative): adopt the
+    # hub's list when it differs. Local is list[TypeId], hub returns list[str] —
+    # compare via string projection so a re-echo of the same set is a no-op.
+    hub_ctx = hub_conv.get("shared_context_entities")
+    if isinstance(hub_ctx, list):
+        local_ctx = [str(t) for t in (existing.shared_context_entities or [])]
+        if local_ctx != [str(c) for c in hub_ctx]:
+            existing.shared_context_entities = hub_ctx
             changed = True
     hub_owner = hub_conv.get("initiated_by")
     if hub_owner is not None and getattr(existing, "created_by", None) != hub_owner:

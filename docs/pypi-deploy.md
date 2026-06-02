@@ -51,6 +51,60 @@ uv tool install flowpad --force
 /tmp/flowpad-test/bin/flow --help
 ```
 
+## Local Deployment
+
+Rehearse a release end-to-end on your own machine — exactly as if the package had
+shipped to PyPI and the desktop app pulled the update — **without publishing
+anything**. Give the build a throwaway local version so you can prove the running
+server is *your* build and not the installed/published one.
+
+> Give it `<version>+local` (e.g. `0.2.38+local`). This is a PEP 440 *local
+> version label* — the `+` is required; a bare `-local` will not build.
+
+### 1. Stop the desktop app if it's running (and remember whether it was)
+
+```bash
+WAS_UP=$(pgrep -f "Flowpad.app" >/dev/null && echo 1 || echo 0)
+[ "$WAS_UP" = 1 ] && osascript -e 'quit app "Flowpad"'
+```
+
+### 2. Build + install locally with a `+local` version
+
+```bash
+echo '__version__ = "0.2.38+local"' > flow_sdk/_version.py
+rm -rf dist build flowpad.egg-info
+python3 build_ui.py            # REQUIRED — bakes the UI into the wheel
+python3 -m build               # or: uv build
+
+# Install the freshly built wheel the SAME way your `flow` is installed
+# (this is what `flow upgrade` auto-detects):
+uv tool install --force ./dist/flowpad-*.whl
+#   ...or for a pip install:
+#   pip install --force-reinstall ./dist/flowpad-*.whl
+```
+
+### 3. Verify the prod server starts on 9007 and is the updated build
+
+```bash
+flow --version                 # → flow 0.2.38+local
+flow stop                      # drop any old server/monitor first
+flow start                     # prod instance → http://127.0.0.1:9007
+flow upgrade --info            # JSON status; "version" must read 0.2.38+local
+curl -fsS http://127.0.0.1:9007/api/v1/graph/bootstrap >/dev/null && echo "9007 OK"
+```
+
+Both `flow --version` and the `version` field of `flow upgrade --info` must read
+`0.2.38+local`, and the server must answer on **9007** (prod port; dev is 9008).
+
+### 4. Restart the desktop only if it was up at the start
+
+```bash
+[ "$WAS_UP" = 1 ] && open -a Flowpad
+```
+
+When done rehearsing, `git checkout flow_sdk/_version.py` to discard the `+local`
+marker.
+
 ## Known Pitfalls
 
 ### Server module paths must use `flow_sdk.server.*`

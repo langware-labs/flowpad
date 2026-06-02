@@ -658,20 +658,36 @@ export function InboxView() {
   // List mode
   return (
     <div className="flex h-full flex-col">
-      <div className="flex shrink-0 items-center justify-between border-b px-3 py-1.5">
-        {/* LEFT — view selector */}
-        <div
-          className="flex items-center gap-0.5 rounded-md bg-muted/40 p-0.5"
-          role="tablist"
-          aria-label="Inbox view"
-          data-testid="inbox-view-bar"
-        >
-          {renderViewPill('inbox', 'Inbox', InboxIcon)}
-          {renderViewPill('unread', 'Unread', MailPlus)}
-          {renderViewPill('archived', 'Archived', Archive)}
+      <div className="flex shrink-0 items-center border-b px-3 py-1.5">
+        {/* LEFT — view selector. flex-1 here + on RIGHT keeps the CENTER truly centered. */}
+        <div className="flex flex-1 items-center">
+          <div
+            className="flex items-center gap-0.5 rounded-md bg-muted/40 p-0.5"
+            role="tablist"
+            aria-label="Inbox view"
+            data-testid="inbox-view-bar"
+          >
+            {renderViewPill('inbox', 'Inbox', InboxIcon)}
+            {renderViewPill('unread', 'Unread', MailPlus)}
+            {renderViewPill('archived', 'Archived', Archive)}
+          </div>
+        </div>
+        {/* CENTER — new conversation */}
+        <div className="flex shrink-0 items-center">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 text-xs"
+            onClick={() => setShowNewConversation(true)}
+            data-testid="inbox-new-conversation-button"
+            title="Start a new conversation"
+          >
+            <SquarePen className="mr-1 h-3.5 w-3.5" />
+            New
+          </Button>
         </div>
         {/* RIGHT — actions for the current view */}
-        <div className="flex items-center gap-1" data-testid="inbox-action-bar">
+        <div className="flex flex-1 items-center justify-end gap-1" data-testid="inbox-action-bar">
           {!inArchivedView && (
             <Button
               variant="ghost"
@@ -710,17 +726,6 @@ export function InboxView() {
               Delete all
             </Button>
           )}
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 text-xs"
-            onClick={() => setShowNewConversation(true)}
-            data-testid="inbox-new-conversation-button"
-            title="Start a new conversation"
-          >
-            <SquarePen className="mr-1 h-3.5 w-3.5" />
-            New
-          </Button>
           <Button
             variant="ghost"
             size="icon"
