@@ -252,6 +252,11 @@ export interface IAgenticProcess extends IEntity {
   cli_config?: Record<string, any>;
   /** Extra directories passed to Claude via --add-dir */
   additional_dirs?: string[];
+  /** Per-process override for mounting the Flowpad Assistant project
+   *  (--add-dir → its .claude/skills + agents become discoverable). When
+   *  null/undefined it inherits the global ServiceConfig.load_flowpad_assistant.
+   *  Set via {@link enableAssistant}. */
+  load_flowpad_assistant?: boolean | null;
   /** TypeIds of entities materialized under the process's assets dir. */
   embedded_asset_refs?: TypeId[];
   /** Owning project ID */
@@ -797,6 +802,16 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
 
   set cliOptions(cmd: ClaudeCliOptions) {
     this.cli_config = cmd.toJson();
+  }
+
+  /** Enable the Flowpad Assistant mount for this process — its
+   *  `.claude/skills` + agents become discoverable via `--add-dir`. Sets the
+   *  per-process `load_flowpad_assistant` flag (the backend driver reads it via
+   *  `assistant_enabled`, falling back to the global default). Returns `this`
+   *  for chaining; persist via `save()` (or pass at spawn). */
+  enableAssistant(): this {
+    this.load_flowpad_assistant = true;
+    return this;
   }
 
   /** Append a directory to additional_dirs (passed to Claude via --add-dir). */

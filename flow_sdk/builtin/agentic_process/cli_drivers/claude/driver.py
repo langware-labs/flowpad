@@ -66,10 +66,13 @@ class ClaudeDriver:
         registers embedded agents via ``--agents``; sets ``CLAUDE_PROJECT_DIR``
         env from the workdir.
 
-        The Flowpad Assistant mount is gated by ``ServiceConfig.load_flowpad_assistant``
-        — set to ``False`` to keep the SDK-shipped skills/agents out of the session.
+        The Flowpad Assistant mount is gated by ``process.assistant_enabled`` —
+        the per-process ``load_flowpad_assistant`` flag, falling back to the
+        global ``ServiceConfig.load_flowpad_assistant``. Set the flag (e.g.
+        ``process.enable_assistant()``) to override per process; ``None`` keeps
+        the global default.
         """
-        from flow_sdk.config import default_service_config, flowpad_assistant_project_root
+        from flow_sdk.config import flowpad_assistant_project_root
 
         cmd = ClaudeCliOptions.from_json(process.cli_config)
         cmd.session_id = process.session_id
@@ -79,7 +82,7 @@ class ClaudeDriver:
             cmd.fork_session_id = None
         if cmd.workdir:
             cmd.env_vars.setdefault("CLAUDE_PROJECT_DIR", cmd.workdir)
-        if default_service_config.load_flowpad_assistant:
+        if process.assistant_enabled:
             core_dir = str(flowpad_assistant_project_root())
             extra = [d for d in (process.additional_dirs or []) if d != core_dir]
             cmd.add_dirs = [core_dir] + extra
@@ -153,8 +156,8 @@ class ClaudeDriver:
         parent_effort = cli_cfg.get("effort")
         # Mirror the add_dirs gate used by ``cli_options`` (PTY mode) so the
         # print-mode worker sees the same skill/agent mount surface.
-        from flow_sdk.config import default_service_config, flowpad_assistant_project_root
-        if default_service_config.load_flowpad_assistant:
+        from flow_sdk.config import flowpad_assistant_project_root
+        if process.assistant_enabled:
             core_dir = str(flowpad_assistant_project_root())
             extra = [d for d in (process.additional_dirs or []) if d != core_dir]
             ctx_add_dirs = [core_dir] + extra
