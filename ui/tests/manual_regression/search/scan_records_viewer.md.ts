@@ -60,8 +60,9 @@ test.describe('FsRecordsScannerViewer (/dock/lens/fs-records/scan)', () => {
     await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
 
     await expect(page.getByRole('heading', { name: 'Records Scanner' })).toBeVisible({ timeout: 10_000 });
-    // Primary index action (POST /fs-records/index) is the "Sync changes" button.
-    await expect(page.getByRole('button', { name: /Sync changes|Indexing/ })).toBeVisible({ timeout: 10_000 });
+    // Primary index action (POST /fs-records/index) is the "Fast" button
+    // ("Indexing…" while in flight); "Full" (force=true) sits next to it.
+    await expect(page.getByRole('button', { name: /Fast|Indexing/ })).toBeVisible({ timeout: 10_000 });
     await expect(headerRescanButton(page)).toBeVisible({ timeout: 10_000 });
   });
 
