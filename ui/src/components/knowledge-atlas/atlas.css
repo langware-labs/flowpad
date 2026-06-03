@@ -1,27 +1,30 @@
 /* Knowledge Atlas — port of the Claude Design "The Atlas" canvas (canvas.css),
- * scoped under .kb-atlas so the editorial paper theme never leaks into the app.
- * The design is light/paper by intent regardless of app theme. */
+ * scoped under .kb-atlas, recolored onto flowpad's theme tokens so it follows
+ * light/dark automatically. Surfaces/text come from the shadcn vars
+ * (--background/--muted/--border/--foreground/...); the two graph hues match
+ * the dep-graph palette (graph-view/graph/themeColors.ts): structure = indigo,
+ * cross-link accent ("rubric") = emerald. Layout/typography are the design's. */
 
 @import url('https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400;1,6..72,500&family=IBM+Plex+Mono:wght@400;500&display=swap');
 
 .kb-atlas {
-  --paper:      oklch(98.4% 0.008 85);
-  --paper-2:    oklch(96.5% 0.012 84);
-  --paper-3:    oklch(94% 0.016 83);
-  --kb-edge:    oklch(88% 0.018 80);
-  --edge-soft:  oklch(91.5% 0.014 82);
+  /* surfaces + text — app tokens, flip with .dark for free */
+  --paper:      hsl(var(--background));
+  --paper-2:    hsl(var(--muted));
+  --paper-3:    color-mix(in oklab, hsl(var(--muted)) 90%, hsl(var(--foreground)));
+  --kb-edge:    hsl(var(--border));
+  --edge-soft:  hsl(var(--border) / 0.55);
 
-  --ink:        oklch(26% 0.02 60);
-  --ink-strong: oklch(17% 0.02 55);
-  --ink-soft:   oklch(46% 0.02 65);
-  --ink-faint:  oklch(60% 0.018 70);
+  --ink:        hsl(var(--foreground) / 0.88);
+  --ink-strong: hsl(var(--foreground));
+  --ink-soft:   hsl(var(--muted-foreground));
+  --ink-faint:  hsl(var(--muted-foreground) / 0.72);
 
-  --rubric:     oklch(53% 0.19 33);
-  --rubric-2:   oklch(46% 0.17 32);
-  --rubric-dim: oklch(53% 0.19 33 / 0.12);
-
-  --flow:       oklch(72% 0.03 70);   /* structural edge */
-  --sel:        oklch(53% 0.19 33 / 0.16);
+  /* flowpad graph language — light values (see themeColors.ts LIGHT) */
+  --rubric:     rgb(5 150 105);          /* cross-link / accent (emerald) */
+  --rubric-dim: rgb(5 150 105 / 0.12);
+  --flow:       rgb(67 56 202 / 0.55);   /* structural edge (indigo) */
+  --sel:        rgb(5 150 105 / 0.16);
 
   --serif: 'Newsreader', Georgia, serif;
   --mono:  'IBM Plex Mono', ui-monospace, monospace;
@@ -30,7 +33,7 @@
   inset: 0;
   overflow: hidden;
   background:
-    radial-gradient(circle at 1px 1px, oklch(80% 0.02 75 / 0.55) 1px, transparent 0) 0 0 / 30px 30px,
+    radial-gradient(circle at 1px 1px, hsl(var(--foreground) / 0.12) 1px, transparent 0) 0 0 / 30px 30px,
     var(--paper);
   color: var(--ink);
   font-family: var(--serif);
@@ -38,6 +41,15 @@
   text-rendering: optimizeLegibility;
   cursor: grab;
 }
+
+/* dark-theme graph hues (themeColors.ts DARK) */
+.dark .kb-atlas {
+  --rubric:     rgb(16 185 129);
+  --rubric-dim: rgb(16 185 129 / 0.16);
+  --flow:       rgb(99 102 241 / 0.55);
+  --sel:        rgb(16 185 129 / 0.2);
+}
+
 .kb-atlas * { box-sizing: border-box; }
 .kb-atlas ::selection { background: var(--sel); }
 .kb-atlas.panning { cursor: grabbing; }
@@ -49,10 +61,10 @@
 .kb-atlas .flow-edge.dim { stroke-opacity: .35; }
 .kb-atlas .flow-edge.hot { stroke: var(--ink-soft); stroke-width: 2; }
 
-.kb-atlas .xlink { fill: none; stroke: var(--rubric); stroke-width: 1.4; stroke-opacity: .14;
+.kb-atlas .xlink { fill: none; stroke: var(--rubric); stroke-width: 1.4; stroke-opacity: .2;
   stroke-dasharray: 2 5; transition: stroke-opacity .2s, stroke-width .2s; }
-.kb-atlas .xlink.hot { stroke-opacity: .9; stroke-width: 1.8; stroke-dasharray: none; }
-.kb-atlas .xlink.fade { stroke-opacity: .04; }
+.kb-atlas .xlink.hot { stroke-opacity: .95; stroke-width: 1.8; stroke-dasharray: none; }
+.kb-atlas .xlink.fade { stroke-opacity: .05; }
 
 /* ---- Nodes -------------------------------------------------------- */
 .kb-atlas .node {
@@ -65,11 +77,11 @@
 .kb-atlas .node .card {
   background: var(--paper); border: 1px solid var(--kb-edge);
   border-radius: 12px; padding: 12px 15px;
-  box-shadow: 0 1px 0 oklch(80% 0.02 75 / 0.5), 0 6px 18px -10px oklch(40% 0.04 60 / 0.4);
+  box-shadow: 0 1px 0 hsl(var(--border) / 0.55), 0 6px 18px -10px hsl(0 0% 0% / 0.35);
   transition: border-color .16s, box-shadow .16s, transform .16s;
 }
-.kb-atlas .node:hover .card { border-color: var(--ink-faint); box-shadow: 0 2px 0 oklch(80% 0.02 75 / 0.5), 0 12px 28px -12px oklch(40% 0.05 60 / 0.5); transform: translateY(-1px); }
-.kb-atlas .node.active .card { border-color: var(--rubric); box-shadow: 0 0 0 3px var(--rubric-dim), 0 12px 30px -12px oklch(40% 0.06 33 / 0.5); }
+.kb-atlas .node:hover .card { border-color: var(--ink-faint); box-shadow: 0 2px 0 hsl(var(--border) / 0.55), 0 12px 28px -12px hsl(0 0% 0% / 0.45); transform: translateY(-1px); }
+.kb-atlas .node.active .card { border-color: var(--rubric); box-shadow: 0 0 0 3px var(--rubric-dim), 0 12px 30px -12px hsl(0 0% 0% / 0.45); }
 
 .kb-atlas .node .kic {
   font-family: var(--mono); font-size: 9px; letter-spacing: .18em; text-transform: uppercase;
@@ -79,14 +91,15 @@
 .kb-atlas .node .ttl { font-size: 16px; line-height: 1.18; color: var(--ink-strong); letter-spacing: -.005em; }
 .kb-atlas .node .sub { font-size: 12px; color: var(--ink-soft); margin-top: 4px; font-style: italic; }
 .kb-atlas .node .deg { position: absolute; top: -7px; right: -7px; min-width: 18px; height: 18px; padding: 0 4px;
-  background: var(--rubric); color: var(--paper); border-radius: 9px; font-family: var(--mono);
-  font-size: 10px; display: grid; place-items: center; box-shadow: 0 2px 6px -1px oklch(40% 0.06 33 / .5); }
+  background: var(--rubric); color: hsl(var(--background)); border-radius: 9px; font-family: var(--mono);
+  font-size: 10px; display: grid; place-items: center; box-shadow: 0 2px 6px -1px hsl(0 0% 0% / .4); }
 
-/* root node */
-.kb-atlas .node.root .card { background: var(--ink-strong); border-color: var(--ink-strong); padding: 16px 20px; }
-.kb-atlas .node.root .ttl { color: var(--paper); font-size: 20px; font-style: italic; }
-.kb-atlas .node.root .kic { color: oklch(72% 0.02 75); }
+/* root node — inverted card via the primary token pair */
+.kb-atlas .node.root .card { background: hsl(var(--primary)); border-color: hsl(var(--primary)); padding: 16px 20px; }
+.kb-atlas .node.root .ttl { color: hsl(var(--primary-foreground)); font-size: 20px; font-style: italic; }
+.kb-atlas .node.root .kic { color: hsl(var(--primary-foreground) / 0.65); }
 .kb-atlas .node.root .kic .pip { background: var(--rubric); }
+.kb-atlas .node.root .sub { color: hsl(var(--primary-foreground) / 0.78); }
 
 /* section node */
 .kb-atlas .node.section .card { background: var(--paper-2); padding: 10px 16px; border-radius: 22px; }
@@ -116,7 +129,7 @@
 .kb-atlas .pill {
   display: flex; align-items: center; gap: 9px; height: 36px; padding: 0 12px;
   background: var(--paper); border: 1px solid var(--kb-edge); border-radius: 9px;
-  box-shadow: 0 4px 14px -8px oklch(40% 0.04 60 / 0.45);
+  box-shadow: 0 4px 14px -8px hsl(0 0% 0% / 0.4);
   color: var(--ink-faint); font-family: var(--mono); font-size: 11.5px; cursor: pointer;
   transition: border-color .15s;
 }
@@ -125,7 +138,7 @@
 
 .kb-atlas .zoomer { position: absolute; bottom: 20px; left: 18px; display: flex; flex-direction: column;
   background: var(--paper); border: 1px solid var(--kb-edge); border-radius: 10px; overflow: hidden;
-  box-shadow: 0 6px 20px -10px oklch(40% 0.04 60 / 0.5); pointer-events: auto; }
+  box-shadow: 0 6px 20px -10px hsl(0 0% 0% / 0.45); pointer-events: auto; }
 .kb-atlas .zoomer button { width: 38px; height: 36px; border: none; background: var(--paper); color: var(--ink-soft);
   cursor: pointer; display: grid; place-items: center; border-bottom: 1px solid var(--edge-soft); transition: background .14s, color .14s; }
 .kb-atlas .zoomer button:last-child { border-bottom: none; }
@@ -134,7 +147,7 @@
 
 .kb-atlas .legend { position: absolute; bottom: 20px; right: 18px; pointer-events: auto;
   background: var(--paper); border: 1px solid var(--kb-edge); border-radius: 10px; padding: 12px 14px;
-  box-shadow: 0 6px 20px -10px oklch(40% 0.04 60 / 0.5); }
+  box-shadow: 0 6px 20px -10px hsl(0 0% 0% / 0.45); }
 .kb-atlas .legend .lr { display: flex; align-items: center; gap: 9px; font-family: var(--mono); font-size: 10px;
   letter-spacing: .06em; text-transform: uppercase; color: var(--ink-soft); margin: 4px 0; }
 .kb-atlas .legend .lr svg { flex: none; }
@@ -142,22 +155,22 @@
 
 .kb-atlas .hint { position: absolute; bottom: 22px; left: 50%; transform: translateX(-50%); pointer-events: none; white-space: nowrap;
   font-family: var(--mono); font-size: 10.5px; letter-spacing: .08em; color: var(--ink-faint);
-  background: oklch(98.4% 0.008 85 / 0.7); padding: 5px 12px; border-radius: 20px; backdrop-filter: blur(3px);
+  background: hsl(var(--background) / 0.7); padding: 5px 12px; border-radius: 20px; backdrop-filter: blur(3px);
   transition: opacity .4s; }
 
 /* loading / error status */
 .kb-atlas .kb-status { position: absolute; inset: 0; display: grid; place-items: center;
   font-family: var(--mono); font-size: 12px; letter-spacing: .08em; color: var(--ink-faint); }
-.kb-atlas .kb-status.err { color: var(--rubric-2); }
+.kb-atlas .kb-status.err { color: hsl(var(--destructive)); }
 
 /* ---- Reading drawer ---------------------------------------------- */
-.kb-atlas .drawer-scrim { position: absolute; inset: 0; z-index: 20; background: oklch(20% 0.02 60 / 0.18);
+.kb-atlas .drawer-scrim { position: absolute; inset: 0; z-index: 20; background: hsl(0 0% 0% / 0.25);
   opacity: 0; pointer-events: none; transition: opacity .25s; }
 .kb-atlas .drawer-scrim.open { opacity: 1; pointer-events: auto; }
 .kb-atlas .drawer {
   position: absolute; top: 0; right: 0; bottom: 0; width: min(560px, 46%); z-index: 21;
   background: var(--paper); border-left: 1px solid var(--kb-edge);
-  box-shadow: -24px 0 60px -24px oklch(30% 0.04 60 / 0.4);
+  box-shadow: -24px 0 60px -24px hsl(0 0% 0% / 0.4);
   transform: translateX(100%); transition: transform .32s cubic-bezier(.4,.0,.1,1);
   display: flex; flex-direction: column;
 }
@@ -165,7 +178,6 @@
 .kb-atlas .drawer-head { display: flex; align-items: flex-start; gap: 12px; padding: 22px 24px 16px; border-bottom: 1px solid var(--kb-edge); }
 .kb-atlas .drawer-head .eye { font-family: var(--mono); font-size: 10px; letter-spacing: .18em; text-transform: uppercase; color: var(--rubric); }
 .kb-atlas .drawer-head h2 { margin: 7px 0 0; font-size: 27px; line-height: 1.08; font-weight: 500; color: var(--ink-strong); letter-spacing: -.01em; font-family: var(--serif); }
-.kb-atlas .drawer-head .common { font-size: 14px; color: var(--ink-soft); font-style: italic; margin-top: 4px; }
 .kb-atlas .drawer-x { margin-left: auto; flex: none; width: 32px; height: 32px; border: 1px solid var(--kb-edge); background: var(--paper-2);
   border-radius: 8px; display: grid; place-items: center; cursor: pointer; color: var(--ink-soft); transition: all .14s; }
 .kb-atlas .drawer-x:hover { color: var(--ink-strong); border-color: var(--ink-faint); }
@@ -203,9 +215,9 @@
 .kb-atlas .drawer-body::-webkit-scrollbar-thumb { background: var(--kb-edge); border-radius: 6px; border: 2px solid transparent; background-clip: content-box; }
 
 /* ---- command palette ---------------------------------------------- */
-.kb-atlas .cmd-scrim { position: absolute; inset: 0; background: oklch(20% 0.02 60 / 0.28); display: flex; align-items: flex-start; justify-content: center; padding-top: 13vh; z-index: 40; backdrop-filter: blur(2px); animation: kb-fade .12s ease; }
+.kb-atlas .cmd-scrim { position: absolute; inset: 0; background: hsl(0 0% 0% / 0.3); display: flex; align-items: flex-start; justify-content: center; padding-top: 13vh; z-index: 40; backdrop-filter: blur(2px); animation: kb-fade .12s ease; }
 @keyframes kb-fade { from { opacity: 0; } }
-.kb-atlas .cmd { width: min(580px, 92%); background: var(--paper); border: 1px solid var(--kb-edge); border-radius: 12px; box-shadow: 0 24px 70px -20px oklch(20% 0.04 60 / 0.45); overflow: hidden; animation: kb-pop .14s cubic-bezier(.2,.7,.3,1); }
+.kb-atlas .cmd { width: min(580px, 92%); background: var(--paper); border: 1px solid var(--kb-edge); border-radius: 12px; box-shadow: 0 24px 70px -20px hsl(0 0% 0% / 0.5); overflow: hidden; animation: kb-pop .14s cubic-bezier(.2,.7,.3,1); }
 @keyframes kb-pop { from { transform: translateY(-8px) scale(.985); opacity: 0; } }
 .kb-atlas .cmd-in { display: flex; align-items: center; gap: 12px; padding: 15px 18px; border-bottom: 1px solid var(--kb-edge); }
 .kb-atlas .cmd-in input { flex: 1; border: none; outline: none; background: transparent; font-family: var(--serif); font-size: 18px; color: var(--ink-strong); }
@@ -218,5 +230,5 @@
 .kb-atlas .cmd-item .ci-ic { width: 22px; height: 22px; flex: none; display: grid; place-items: center; color: var(--rubric); border: 1px solid var(--kb-edge); border-radius: 6px; background: var(--paper-2); }
 .kb-atlas .cmd-item .ci-t { font-size: 15px; color: var(--ink-strong); }
 .kb-atlas .cmd-item .ci-s { font-family: var(--mono); font-size: 9px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-faint); margin-left: auto; }
-.kb-atlas .cmd-item mark { background: var(--rubric-dim); color: var(--rubric-2); border-radius: 2px; }
+.kb-atlas .cmd-item mark { background: var(--rubric-dim); color: var(--rubric); border-radius: 2px; }
 .kb-atlas .cmd-empty { padding: 26px; text-align: center; color: var(--ink-faint); font-style: italic; }

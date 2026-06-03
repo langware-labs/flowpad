@@ -354,8 +354,13 @@ export function KnowledgeAtlas({ root }: { root: string }) {
   };
   useEffect(() => {
     const move = (e: MouseEvent) => {
-      if (!pan.current) return;
-      setView((v) => ({ ...v, tx: pan.current!.tx + (e.clientX - pan.current!.x), ty: pan.current!.ty + (e.clientY - pan.current!.y) }));
+      // Snapshot the pan origin NOW — the setView updater runs later (React
+      // batches), and mouseup may null the ref in between (end-of-drag race).
+      const p = pan.current;
+      if (!p) return;
+      const tx = p.tx + (e.clientX - p.x);
+      const ty = p.ty + (e.clientY - p.y);
+      setView((v) => ({ ...v, tx, ty }));
     };
     const up = () => { pan.current = null; stageRef.current?.classList.remove('panning'); };
     window.addEventListener('mousemove', move);
