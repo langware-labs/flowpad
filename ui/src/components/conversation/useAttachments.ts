@@ -7,6 +7,7 @@ import {
   type Attachment,
 } from '@sdk/entities/flow-message';
 import { AttachmentChipState } from './AttachmentChip';
+import { isTranscriptAttachment } from './conversation-context-aggregation';
 import { isDownloadableFileAttachment, localAttachmentUrl } from './attachment-url';
 import { useFlowMessageProgress, type FlowMessageProgress } from './useFlowMessageProgress';
 import { useFlowMessageDownloadError } from './useFlowMessageDownloadError';
@@ -47,6 +48,13 @@ export interface UseAttachments {
    *  so every renderable attachment is local. The UI switches the whole message
    *  between the Download button and rendered chips off this one flag. */
   downloaded: boolean;
+  /** True when the message carries the `conversation.jsonl` transcript. The
+   *  transcript is deliberately NOT in `items` (it surfaces in the Context
+   *  tab) — this flag lets the bubble say so instead of rendering nothing. */
+  sharesTranscript: boolean;
+  /** True when the message carries a PROMPT attachment (the prompt row
+   *  renders it). */
+  hasPrompt: boolean;
   /** Count of attached assets (files + entities) — the Download button badge. */
   assetCount: number;
   /** Human labels for the Download button tooltip: entity typeids + filenames. */
@@ -133,6 +141,10 @@ export function useAttachments(
   const items = buildItems(fm, messageId);
   const entities = buildEntities(fm);
   const downloaded = fm?.body_downloaded ?? false;
+  const sharesTranscript = (fm?.attachment ?? []).some(isTranscriptAttachment);
+  const hasPrompt = (fm?.attachment ?? []).some(
+    (a) => a.attachment_type === AttachmentType.PROMPT,
+  );
   // The Download button badge + tooltip: one entry per attached asset
   // (entity typeids + file names) so the user sees what a pull will fetch.
   const assetLabels = [
@@ -160,6 +172,8 @@ export function useAttachments(
     items,
     entities,
     downloaded,
+    sharesTranscript,
+    hasPrompt,
     assetCount,
     assetLabels,
     progress,

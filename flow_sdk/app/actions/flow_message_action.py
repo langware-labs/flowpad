@@ -1313,19 +1313,30 @@ async def _process_single_hub_message(raw: dict) -> str | None:
     if not fm_id:
         return None
     existing = await FlowMessage.get_one({"id": fm_id})
-    if existing is not None and not FlowMessage.is_stale(existing, raw):
-        # Already have a current copy. The body (if any) is local-only state,
-        # so a not-stale existing row never needs a re-download.
-        return fm_id
+    # Body first, metadata second — and the two are INDEPENDENT. The body
+    # check must not be keyed on row existence: a row materialized while the
+    # sender was still uploading (bridge CREATE with body_status=uploading)
+    # would otherwise never auto-download its bundle on any later pass,
+    # leaving every bundled entity (task / spec / transcript) unmaterialized
+    # until a manual click. Pull whenever the hub advertises a bundle that
+    # isn't fully on disk yet — ``_download_and_unpack_bundle`` gates on
+    # body_status=READY itself, and ``unpack_bundle`` is idempotent for
+    # re-unpacks (existing rows merge, attachments fill in).
     attachment_filename = (raw.get("attachment_filename") or "").strip()
-    if attachment_filename and existing is None:
-        # First time we see a bundle-bearing message — download + unpack it.
-        # An already-present (now stale) row only needs its metadata refreshed
-        # below; the body bytes are local-only and don't re-download.
-        success = await _download_and_unpack_bundle(
-            fm_id, attachment_filename, body_status=raw.get("body_status"),
-        )
-        return fm_id if success else None
+    if attachment_filename:
+        downloaded = existing is not None and existing.is_body_downloaded()
+        if not downloaded:
+            success = await _download_and_unpack_bundle(
+                fm_id, attachment_filename, body_status=raw.get("body_status"),
+            )
+            if existing is None:
+                # unpack materializes the FM row itself on success; on failure
+                # (body still uploading, transient hub error) leave nothing
+                # behind — the next sync pass retries.
+                return fm_id if success else None
+    if existing is not None and not FlowMessage.is_stale(existing, raw):
+        # Metadata current (body handled above).
+        return fm_id
     # Bundle-less: persist the FM payload as-is, then append the pointer to
     # the conversation's message_ids JSON projection. We DO NOT route through
     # materialize_flow_message / _append_message_to_conversation here —
@@ -1916,55 +1927,21 @@ async def _sync_remote_children(parent_tid: TypeId, child_type: str, someone_typ
             logger.warning("[subtree-sync] materialize %s-%s failed (non-fatal): %s", child_type, raw.get("id"), e)
 
 
-async def _ensure_shared_context_rows(conv: "Conversation", someone_typeid: str | None) -> None:
-    """Materialize a local stub row for each ``shared_context_entities`` member
-    that the recipient doesn't have yet.
-
-    The hub hosts no doc types (markdown, plan, …), so a shared doc's *row* never
-    arrives over the wire — only its typeid does, on the conversation's
-    ``shared_context_entities``. Without a local row the doc can't be resolved,
-    linked to its parent conversation, or carry comments. We create a minimal
-    ``remote=False`` stub (id + parent_type_id + a placeholder name); the doc's
-    content fills in later via the chip-open deploy / bundle-unpack path.
-
-    The stub is ``remote=False``: the hub hosts no doc types, so a markdown never
-    has its OWN hub row. Its ``parent_type_id`` = this (remote) conversation is
-    what makes it *effective*-remote, so a comment on it auto-shares under the
-    conversation (the nearest ancestor that IS hub-hosted). Marking the doc
-    ``remote=True`` would make ``nearest_remote_ancestor`` return the doc itself
-    and the comment create would 422 against the non-existent hub doc type.
-    Best-effort."""
-    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
-
-    conv_ref = f"{BuiltinEntityType.CONVERSATION.value}-{conv.id}"
-    for ref in conv.shared_context_entities or []:
-        try:
-            tid = ref if isinstance(ref, TypeId) else TypeId(str(ref))
-            cls = SchemaRegistry.get_entity_cls(tid.type)
-            if cls is None or not tid.id:
-                continue
-            if await cls.get_one({"id": tid.id}) is not None:
-                continue  # row exists → _link_context_to_conversation handles it
-            stub = cls.model_validate({
-                "id": tid.id,
-                "remote": False,
-                "parent_type_id": conv_ref,
-                "name": tid.id,
-            })
-            stub.id = tid.id
-            await stub.save(someone_typeid)
-        except Exception as e:  # noqa: BLE001
-            logger.warning("[subtree-sync] stub %s failed (non-fatal): %s", ref, e)
-
-
 async def _sync_shared_context_subtree(conv_id: str, someone_typeid: str | None) -> None:
     """Recursive-share catch-up for one conversation.
 
     For each ``shared_context_entities`` member (e.g. the shared markdown):
-      1. Ensure a local row exists and is marked ``remote=True`` with
-         ``parent_type_id`` = this conversation — so a child create under it
-         (a comment) auto-shares, and so effective-remote resolves.
+      1. Link the locally-materialized ones to this conversation (parent_type_id)
+         so effective-remote resolves and comments auto-share.
       2. Pull its child comments from the hub as remote children.
+
+    NO stub minting here: shared-context rows are materialized exclusively by
+    the bundle download → unpack pipeline (``_process_single_hub_message`` /
+    ``_download_and_unpack_bundle``), which carries the real entity data. A
+    placeholder row minted ahead of the bundle used to permanently block the
+    unpack's exists-check from landing the real fields. Refs whose bundle
+    hasn't arrived yet are simply skipped by the linker and picked up on the
+    next sync pass — order no longer decides the outcome.
 
     This is what lets a recipient who never watched the doc live still see the
     doc + everyone's comments after a sync. Best-effort; never raises."""
@@ -1972,16 +1949,11 @@ async def _sync_shared_context_subtree(conv_id: str, someone_typeid: str | None)
         conv = await Conversation.get_one({"id": conv_id})
         if conv is None or not conv.shared_context_entities:
             return  # nothing shared → no subtree to catch up (skip the hub GET)
-        # 1a) Ensure a local row exists for each shared-context doc. The hub
-        #     never ships the doc's row (no hub doc types), so on a recipient
-        #     that never had the file we mint a remote stub keyed on the shared
-        #     typeid — otherwise the link + comment-attach below have nothing to
-        #     bind to.
-        await _ensure_shared_context_rows(conv, someone_typeid)
-        # 1b) Link each shared-context doc to this conversation so its
-        #     ``effective_remote`` resolves (the doc is NOT a hub entity — the hub
-        #     has no markdown type — its content arrives via the chip-open
-        #     deploy). Reuses the same linker the share path runs.
+        # 1) Link each locally-present shared-context doc to this conversation
+        #    so its ``effective_remote`` resolves (the doc is NOT a hub entity —
+        #    the hub has no markdown type — its content arrives via the bundle
+        #    unpack). Reuses the same linker the share path runs; missing rows
+        #    are skipped (bundle not downloaded yet).
         await conv._link_context_to_conversation()
         # 2) Pull the conversation's hub child entities (comments today; each
         #    carries its real doc parent in ``parent_type_id``). Materialize

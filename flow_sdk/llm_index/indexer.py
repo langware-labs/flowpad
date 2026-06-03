@@ -390,7 +390,7 @@ class LLMIndexer:
         folder_by_name: dict[str, tuple[str, str]] = {}
         all_docs: list[DocItem] = []
 
-        def add_node(type_name: str, path: Path, label: str) -> tuple[str, str]:
+        def add_node(type_name: str, path: Path, label: str, rel_path: str) -> tuple[str, str]:
             rp = str(path.resolve())
             nid = nid_by_path.get(rp)
             if nid is None:
@@ -398,7 +398,14 @@ class LLMIndexer:
             key = f"{type_name}-{nid}"
             nodes.setdefault(
                 key,
-                {"type": type_name, "id": nid, "label": label, "is_ghost": False, "key": key},
+                {
+                    "type": type_name,
+                    "id": nid,
+                    "label": label,
+                    "is_ghost": False,
+                    "key": key,
+                    "rel_path": rel_path,
+                },
             )
             return type_name, nid
 
@@ -410,15 +417,15 @@ class LLMIndexer:
             })
 
         for item in self.indexes():
-            folder = add_node("markdown_index", item.path, item.path.name or "/")
+            folder = add_node("markdown_index", item.path, item.path.name or "/", item.rel_path)
             folder_by_name.setdefault(FolderNote.link_name(item.path), folder)
             for doc in item.files:
-                f = add_node("markdown", doc.path, doc.title)
+                f = add_node("markdown", doc.path, doc.title, doc.rel_path)
                 file_by_stem.setdefault(doc.path.stem, f)
                 child_edge(folder, f)
                 all_docs.append(doc)
             for sub in item.subfolders:
-                child_edge(folder, add_node("markdown_index", sub.path, sub.path.name))
+                child_edge(folder, add_node("markdown_index", sub.path, sub.path.name, sub.rel_path))
 
         # Wiki cross-links — resolved against the now-complete lookup maps.
         for doc in all_docs:

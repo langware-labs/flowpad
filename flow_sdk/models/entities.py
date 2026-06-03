@@ -111,6 +111,14 @@ except ImportError as e:
     print(f"[WARN] Failed to import claude memory entities: {e}")
 
 try:
+    # ClaudeSession (ClaudeTranscript) — must register independently of the
+    # indexer registrations import, or a receiver that never ran an index walk
+    # can't materialize shared claude_session stubs (get_entity_cls → None).
+    from flow_sdk.builtin.claude_session import ClaudeSession  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import ClaudeSession: {e}")
+
+try:
     from flow_sdk.builtin.markdown_index import MarkdownIndex  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import MarkdownIndex: {e}")

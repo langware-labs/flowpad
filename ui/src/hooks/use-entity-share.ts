@@ -23,8 +23,8 @@ export interface UseEntityShareResult {
   /** True once the entity has loaded and is shareable. */
   canShare: boolean;
   /** True iff this typeId resolves to an AgenticProcess (used by callers to
-   *  pick the right ShareSource for the conversation share). */
-  shouldForkBeforeSend: boolean;
+   *  pick the transcript-sharing ShareSource for the conversation share). */
+  isAgenticProcess: boolean;
   /** In-flight flag for copyLink/exportBundle. */
   isSharing: boolean;
 }
@@ -41,7 +41,7 @@ function resolveDockPointer(entity: any) {
  * Generic entity share hook — the LINK + BUNDLE half of sharing. The
  * conversation/email share now lives in the contact-first
  * ``ShareToConversationDialog`` (driven by a ShareSource); this hook only
- * exposes copy-link and export-bundle, plus ``shouldForkBeforeSend`` so callers
+ * exposes copy-link and export-bundle, plus ``isAgenticProcess`` so callers
  * can choose the right ShareSource.
  */
 export function useEntityShare(typeId: TypeId | null): UseEntityShareResult {
@@ -49,7 +49,7 @@ export function useEntityShare(typeId: TypeId | null): UseEntityShareResult {
   const { navigation } = useDockNavigation();
   const [isSharing, setIsSharing] = useState(false);
 
-  const shouldForkBeforeSend = useMemo(
+  const isAgenticProcess = useMemo(
     () => typeId?.type === AgenticProcess.type,
     [typeId?.type],
   );
@@ -102,7 +102,7 @@ export function useEntityShare(typeId: TypeId | null): UseEntityShareResult {
     copyLink,
     exportBundle,
     canShare,
-    shouldForkBeforeSend,
+    isAgenticProcess,
     isSharing,
   };
 }

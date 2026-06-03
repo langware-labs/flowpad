@@ -42,6 +42,7 @@ _REAL_HOME_TEST_MODULES = frozenset({
     "test_clean_claude_pty",
     "test_clean_claude_pty_stress",
     "test_markdown_index",
+    "test_prompt_queue_integration",
     "test_agent",
     "test_debug_log_records",
 })
