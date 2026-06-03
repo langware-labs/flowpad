@@ -121,9 +121,9 @@ function setupElectronAutoUpdater() {
     }
   });
 
-  // First check shortly after startup, then re-check every hour while the
-  // app keeps running. Without the periodic check a long-lived FlowPad
-  // session never picks up new releases until the user relaunches.
+  // Check immediately at launch, then re-check every hour while the app keeps
+  // running. Without the periodic check a long-lived FlowPad session never
+  // picks up new releases until the user relaunches.
   // electron-updater is internally idempotent: if a download is already in
   // progress, subsequent checkForUpdates() calls are no-ops.
   const HOUR_MS = 60 * 60 * 1000;
@@ -132,8 +132,35 @@ function setupElectronAutoUpdater() {
       log.error('[electron-updater] check failed:', err);
     });
   };
-  setTimeout(runCheck, 5000);
+  runCheck();
   setInterval(runCheck, HOUR_MS);
+}
+
+// ----------------------------------------------------------------------------
+// Desktop wrapper version tracking.
+//
+// We persist the Electron app version that last ran so the next launch can
+// tell whether the user just upgraded to a new desktop build. On an upgrade we
+// bring the bundled flowpad (Python) package up to latest so backend and
+// wrapper move in lockstep. (getPath('userData') requires app to be ready.)
+// ----------------------------------------------------------------------------
+function getDesktopVersionStatePath() {
+  return path.join(app.getPath('userData'), 'desktop-version.json');
+}
+function readLastDesktopVersion() {
+  try {
+    const data = JSON.parse(fs.readFileSync(getDesktopVersionStatePath(), 'utf8'));
+    return (data && data.version) || null;
+  } catch {
+    return null;
+  }
+}
+function writeDesktopVersion(version) {
+  try {
+    fs.writeFileSync(getDesktopVersionStatePath(), JSON.stringify({ version }), 'utf8');
+  } catch (err) {
+    log.warn(`[update] failed to persist desktop version: ${err.message}`);
+  }
 }
 
 // Configuration
@@ -305,6 +332,10 @@ function sendStatus(message) {
 }
 
 async function startApp() {
+  // Kick off the desktop wrapper update check immediately at launch — runs in
+  // parallel with backend startup and is a no-op when the app isn't packaged.
+  setupElectronAutoUpdater();
+
   createWindow();
 
   // Wait for the loading page to finish loading so IPC listeners are ready
@@ -321,17 +352,41 @@ async function startApp() {
     // Install and start backend via uv + flow CLI
     uvManager = new UvManager(log);
 
+    // Did the user just upgrade to a new desktop build? If so we'll pull the
+    // flowpad package up to latest before starting so backend matches wrapper.
+    const lastDesktopVersion = readLastDesktopVersion();
+    const desktopUpgraded =
+      app.isPackaged && lastDesktopVersion && lastDesktopVersion !== app.getVersion();
+    if (desktopUpgraded) {
+      log.info(`[update] desktop upgraded ${lastDesktopVersion} → ${app.getVersion()}`);
+    }
+
     try {
       // FAST PATH: check if flow binary exists on disk (no subprocess, just fs.existsSync)
       const flowBin = uvManager.getInstalledFlowBin();
 
       if (flowBin) {
-        // Already installed → launch immediately (skip uv/version checks)
         log.info(`Fast path: flow binary found at ${flowBin}`);
-        const version = uvManager.getInstalledVersionSync(flowBin);
+
+        // After a desktop upgrade, bring flowpad up to latest (blocking, with
+        // status) — but only when PyPI actually has a newer version.
+        // The backend is still down here, so check PyPI directly (not the
+        // cloud /check-update policy) and upgrade if a newer flowpad exists.
+        let activeBin = flowBin;
+        if (desktopUpgraded) {
+          const installed = uvManager.getInstalledVersionSync(flowBin);
+          sendStatus('Checking for Flowpad updates');
+          if (await uvManager.isUpgradeAvailable(installed)) {
+            sendStatus('Updating Flowpad to latest');
+            await uvManager.upgrade();
+            activeBin = uvManager.getInstalledFlowBin() || flowBin;
+          }
+        }
+
+        const version = uvManager.getInstalledVersionSync(activeBin);
         const versionSuffix = version ? ` v${version}` : '';
         sendStatus(`Starting flowpad${versionSuffix}`);
-        await uvManager.startWithBin(flowBin);
+        await uvManager.startWithBin(activeBin);
       } else {
         // FIRST-TIME SETUP: uv tool install flowpad (latest)
         log.info('First-time setup: flow binary not found, installing latest from PyPI');
@@ -399,14 +454,17 @@ async function startApp() {
     return;
   }
 
+  // Backend is up — record this desktop version as the baseline so the next
+  // launch can detect a wrapper upgrade and re-sync the flowpad package.
+  if (app.isPackaged) {
+    writeDesktopVersion(app.getVersion());
+  }
+
   // Load the main UI (or a pending deep-link target if one arrived during startup).
   const startUrl = pendingDeepLink || BACKEND_URL;
   pendingDeepLink = null;
   log.info(`Loading UI from ${startUrl}`);
   mainWindow.loadURL(startUrl);
-
-  // Electron wrapper auto-update
-  setupElectronAutoUpdater();
 
   // Open DevTools in development
   if (isDev) {
