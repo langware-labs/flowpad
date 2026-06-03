@@ -805,12 +805,20 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   }
 
   /** Enable the Flowpad Assistant mount for this process — its
-   *  `.claude/skills` + agents become discoverable via `--add-dir`. Sets the
-   *  per-process `load_flowpad_assistant` flag (the backend driver reads it via
-   *  `assistant_enabled`, falling back to the global default). Returns `this`
-   *  for chaining; persist via `save()` (or pass at spawn). */
-  enableAssistant(): this {
+   *  `.claude/skills` + agents become discoverable via `--add-dir`.
+   *
+   *  Sets the per-process `load_flowpad_assistant` flag, notifies local
+   *  subscribers via an entity event, then persists. The backend driver reads
+   *  the flag via `assistant_enabled` (falling back to the global default) when
+   *  building the worker command; because the flag changes the resolved
+   *  `--add-dir` set, the backend `save()` hook recomputes `restart_required`
+   *  naturally and reflects both the flag and `restart_required` back to the
+   *  frontend "as is" (no special-casing). */
+  async enableAssistant(): Promise<this> {
     this.load_flowpad_assistant = true;
+    // Optimistic local notify so subscribers can react before the round-trip.
+    this.onEntityEvent('assistant.enabled', { load_flowpad_assistant: true });
+    await this.save();
     return this;
   }
 
