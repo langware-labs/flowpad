@@ -33,8 +33,8 @@ import { formatTimeAgo } from '@src/utils/format-time-ago';
 interface ShareToConversationDialogProps {
   open: boolean;
   onClose: () => void;
-  /** What is being shared. Performs its own prep (fork / Task / Spec mint) on
-   *  submit; never creates a conversation. */
+  /** What is being shared. Performs its own prep (entity refs / Task / Spec
+   *  mint) on submit; never creates a conversation. */
   source: ShareSource;
   /** Scope existing-conversation results to a single project. Defaults to the active project. */
   projectId?: string | null;
@@ -221,7 +221,10 @@ export function ShareToConversationDialog({
             </div>
           </div>
         ) : (
-          <div className="flex flex-col gap-4 text-sm">
+          // min-w-0: DialogContent is a grid; without it this item's min-width:auto
+          // lets a long nowrap row title (the `truncate` spans) inflate the column
+          // track past max-w-md, spilling every row outside the dialog.
+          <div className="flex min-w-0 flex-col gap-4 text-sm">
             <div className="flex items-center gap-2 rounded-md border border-input bg-muted/40 px-2 py-1.5 text-xs">
               <span className="flex-1 truncate text-foreground" title={source.label}>
                 {source.label}
