@@ -20,6 +20,8 @@
     --skip-bg: #fff3cd;
     --error: #dc3545;
     --error-bg: #f8d7da;
+    --flagged: #6f42c1;
+    --flagged-bg: #e2d9f3;
     --accent: #0d6efd;
     --accent-bg: #cfe2ff;
     --radius: 8px;
@@ -41,6 +43,8 @@
       --skip-bg: #3a2e1b;
       --error: #f44336;
       --error-bg: #3a1b1b;
+      --flagged: #b39ddb;
+      --flagged-bg: #2a1b3a;
       --accent: #64b5f6;
       --accent-bg: #1b2a3a;
       --shadow: 0 1px 3px rgba(0,0,0,0.3);
@@ -99,6 +103,7 @@
   .card-value.fail { color: var(--fail); }
   .card-value.skip { color: var(--skip); }
   .card-value.error { color: var(--error); }
+  .card-value.flagged { color: var(--flagged); }
 
   table { width: 100%; border-collapse: collapse; margin-bottom: 24px; }
   th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border); }
@@ -115,6 +120,7 @@
   .progress-bar .fail-seg { background: var(--fail); }
   .progress-bar .skip-seg { background: var(--skip); }
   .progress-bar .error-seg { background: var(--error); }
+  .progress-bar .flagged-seg { background: var(--flagged); }
 
   .details { margin-bottom: 24px; }
   details {
@@ -143,6 +149,20 @@
   .status-icon.fail { background: var(--fail); }
   .status-icon.skip { background: var(--skip); }
   .status-icon.error { background: var(--error); }
+  .status-icon.flagged { background: var(--flagged); }
+  .status-icon.test-issue { background: var(--skip); }
+
+  .flagged-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: var(--flagged-bg);
+    border: 1px solid var(--flagged);
+    border-radius: var(--radius);
+    margin-bottom: 4px;
+    font-size: 0.9rem;
+  }
 
   .step {
     display: flex;
@@ -251,6 +271,9 @@
   html += '<div class="card"><div class="card-value fail">' + s.failed + '</div><div class="card-label">Failed</div></div>';
   html += '<div class="card"><div class="card-value skip">' + s.skipped + '</div><div class="card-label">Skipped</div></div>';
   html += '<div class="card"><div class="card-value error">' + s.error + '</div><div class="card-label">Errors</div></div>';
+  if (s.flagged !== undefined && s.flagged > 0) {
+    html += '<div class="card"><div class="card-value flagged">' + s.flagged + '</div><div class="card-label">Flagged</div></div>';
+  }
   if (s.fast_path_hit_rate !== undefined) {
     html += '<div class="card"><div class="card-value" style="color:var(--accent)">' + s.fast_path_hit_rate.toFixed(0) + '%</div><div class="card-label">Fast Path</div></div>';
   }
@@ -265,6 +288,7 @@
     const failW = (counts.failed / total * 100).toFixed(1);
     const skipW = (counts.skipped / total * 100).toFixed(1);
     const errW = (counts.error / total * 100).toFixed(1);
+    const flagW = ((counts.flagged || 0) / total * 100).toFixed(1);
     html += '<tr>';
     html += '<td><strong>' + cat + '</strong></td>';
     html += '<td>' + counts.total + '</td>';
@@ -276,6 +300,7 @@
     html += '<div class="fail-seg" style="width:' + failW + '%"></div>';
     html += '<div class="skip-seg" style="width:' + skipW + '%"></div>';
     html += '<div class="error-seg" style="width:' + errW + '%"></div>';
+    html += '<div class="flagged-seg" style="width:' + flagW + '%"></div>';
     html += '</div></td>';
     html += '</tr>';
   }
@@ -286,7 +311,7 @@
   html += '<div class="details">';
   for (const result of data.results) {
     const scenarioName = result.scenario_path.split('/').pop().replace('.md', '');
-    html += '<details' + (result.status === 'fail' || result.status === 'error' ? ' open' : '') + '>';
+    html += '<details' + (result.status === 'fail' || result.status === 'error' || result.status === 'flagged' ? ' open' : '') + '>';
     html += '<summary>';
     html += statusIcon(result.status);
     html += '<span>' + result.category + '/' + scenarioName + '</span>';
@@ -331,6 +356,22 @@
     html += '</div></details>';
   }
   html += '</div>';
+
+  // Flagged — senior dev review queue
+  if (data.flagged && data.flagged.length > 0) {
+    html += '<h2>Flagged — Senior Dev Review Required</h2>';
+    html += '<div class="stale-section">';
+    for (const flag of data.flagged) {
+      html += '<div class="flagged-item">';
+      html += '<span class="status-icon flagged"></span>';
+      html += '<span><strong>' + escapeHtml(flag.scenario_path) + '</strong> — ' + escapeHtml(flag.reason) + '</span>';
+      if (flag.evidence_path) {
+        html += '<span style="margin-left:auto;font-size:0.8rem;color:var(--text-secondary)">' + escapeHtml(flag.evidence_path) + '</span>';
+      }
+      html += '</div>';
+    }
+    html += '</div>';
+  }
 
   // Stale fast paths
   if (data.stale_fast_paths && data.stale_fast_paths.length > 0) {
