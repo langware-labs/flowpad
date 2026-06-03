@@ -35,6 +35,7 @@ INDEXABLE_TYPES: list[RecordType] = [
     RecordType.TODO_FILE,
     RecordType.TASK,
     RecordType.WHITEBOARD,
+    RecordType.DATASET,
 ]
 
 
@@ -72,6 +73,7 @@ def build_default_indexer() -> FSIndexer:
         project_folder_walker_fn,
     )
     from flow_sdk.fs_store.indexer.functions.task import task_fn
+    from flow_sdk.fs_store.indexer.functions.dataset import dataset_fn
     from flow_sdk.fs_store.indexer.functions.claude_hook import (
         claude_hook_files_fn, claude_hook_files_extras_fn, hooks_in_settings_fn,
     )
@@ -143,6 +145,7 @@ def build_default_indexer() -> FSIndexer:
     idx.add_function(RecordType.REAL_PROJECT_CWD, workflow_fn, RecordType.WORKFLOW)
     idx.add_function(RecordType.REAL_PROJECT_CWD, project_folder_walker_fn, RecordType.FOLDER)
     idx.add_function(RecordType.REAL_PROJECT_CWD, task_fn, RecordType.TASK)
+    idx.add_function(RecordType.REAL_PROJECT_CWD, dataset_fn, RecordType.DATASET)
     idx.add_function(RecordType.REAL_PROJECT_CWD, claude_hook_files_fn, RecordType.CLAUDE_HOOK_SOURCE)
     idx.add_function(RecordType.REAL_PROJECT_CWD, mcp_source_files_fn, RecordType.MCP_SERVER_SOURCE)
     idx.add_function(RecordType.REAL_PROJECT_CWD, command_fn, RecordType.COMMAND)
