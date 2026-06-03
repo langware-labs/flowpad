@@ -162,6 +162,26 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
   }
 
   /**
+   * Rename a (shared) conversation. Issues the generic entity update
+   * (``PUT /api/v1/graph/conversation/<id>`` with ``{title}``) and opts the call
+   * into hub reflection, so for a ``remote`` conversation the local backend
+   * forwards the rename to the hub, which fans the title update to the other
+   * participants. Set ``overWs`` to send the update over the WebSocket
+   * (``rest_api_msg``) instead of HTTP — both paths reflect identically.
+   */
+  async rename(title: string, opts: { overWs?: boolean } = {}): Promise<void> {
+    const action = new ActionInfo('update', this.typeId.type, this.typeId.id, 'PUT');
+    action.bodyParameters = { title };
+    action.hubReflect = true;
+    if (opts.overWs) {
+      await dataManager.callActionOverWS<unknown, unknown>(action);
+    } else {
+      await dataManager.callAction<unknown, unknown>(action);
+    }
+    this.title = title;
+  }
+
+  /**
    * Reactive subscription to FlowMessage activity on this conversation.
    *
    * Wraps APIEntity's event emitter so callers can write

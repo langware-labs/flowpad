@@ -72,6 +72,9 @@ async def setup_rest_context(connection_id: str, message_json: dict) -> Executio
     # Set up local auth (allow all for minihub)
     req_info = get_current_request_info()
     if req_info:
+        # WS-REST has no HTTP header; carry the per-call reflection opt-in from the
+        # message itself (the HTTP path parses the ``Hub-Reflect`` header instead).
+        req_info.hub_reflect = bool(getattr(api_message, "hub_reflect", False))
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
         from flow_sdk.server.middleware.request_transaction_middleware import _get_local_user_cached
 

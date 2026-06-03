@@ -7,12 +7,13 @@ import { WikiToolbar } from '@src/components/wiki-toolbar';
 import { useMarkdownContent } from '@src/hooks/use-markdown-content';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { FSRef, type AssetDescriptor } from '@sdk';
+import { FSRef, TypeId } from '@sdk';
 import { downloadFile } from '@sdk/utils/utils';
 import Editor, { type OnMount } from '@monaco-editor/react';
 import { ChevronDown, ChevronRight, Download, Eye, ExternalLink, FileCode, FilePlus2, GraduationCap, MessageSquareDiff, Pencil, RefreshCw, Send, Trash2 } from 'lucide-react';
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
 import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
+import { genericEntityShareSource } from '@src/hooks/share-sources';
 import { useTheme } from 'next-themes';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -241,13 +242,11 @@ function MarkdownEditorContent({
   const [propsExpanded, setPropsExpanded] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
 
-  const shareDescriptor: AssetDescriptor | null = useMemo(() => {
+  const shareSource = useMemo(() => {
     if (!chatTarget) return null;
-    return {
-      typeid: chatTarget,
-      source: 'project_dir',
-      posix_path: typeof sourcePath === 'string' ? sourcePath : null,
-    };
+    const label =
+      (typeof sourcePath === 'string' ? sourcePath.split('/').pop() : null) || undefined;
+    return genericEntityShareSource(new TypeId(chatTarget), { label });
   }, [chatTarget, sourcePath]);
 
   // On-disk caret line shared across all editor backends. Null means "user has
@@ -393,7 +392,7 @@ function MarkdownEditorContent({
   }
 
   // ── Editor ─────────────────────────────────────────────────────────────────
-  const shareButton = shareDescriptor ? (
+  const shareButton = shareSource ? (
     <button
       type="button"
       title="Share to conversation"
@@ -425,11 +424,11 @@ function MarkdownEditorContent({
         actions={headerActions}
         showLearningMode={showLearningMode}
       />
-      {shareDescriptor && shareOpen && (
+      {shareSource && shareOpen && (
         <ShareToConversationDialog
           open={shareOpen}
           onClose={() => setShareOpen(false)}
-          assetDescriptor={shareDescriptor}
+          source={shareSource}
         />
       )}
 

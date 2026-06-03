@@ -108,6 +108,18 @@ async function fetchAssetsOfType(
 }
 
 /**
+ * Canonical tree-node id for an asset. The path is normalized to the same
+ * leading-slash-stripped form `DockPointer.forAssetEditor` uses for the
+ * pointer, so the id built from a search result's `asset_ref` (`/Users/…`)
+ * matches the id built from a URL pointer's `vfsPath` (`Users/…`). Without
+ * this, the deep-link freshness check in `useBrowseableTree` never finds the
+ * leaf among its parent's children and force-refreshes in a loop.
+ */
+function assetNodeId(typeName: string, path: string): string {
+  return `asset:${typeName}:${path.replace(/^\/+/, '')}`;
+}
+
+/**
  * Build a child Browseable from a SearchResult.
  */
 function assetChild(typeName: string, iconName: string | null, result: SearchResult, onAfterDelete?: () => void): Browseable {
@@ -138,7 +150,7 @@ function assetChild(typeName: string, iconName: string | null, result: SearchRes
     });
   }
   return {
-    id: `asset:${typeName}:${result.asset_ref}`,
+    id: assetNodeId(typeName, result.asset_ref),
     kind: 'asset',
     label,
     icon: resolveAssetIcon(iconName, 'h-3.5 w-3.5 flex-shrink-0'),
@@ -283,7 +295,7 @@ export function assetTypeRoot(type: AssetTypeInfo, deps: AssetTypeRootDeps): Bro
       }
       if (!parsed.vfsPath) return [root];
       const leaf: Browseable = {
-        id: `asset:${type.type_name}:${parsed.vfsPath}`,
+        id: assetNodeId(type.type_name, parsed.vfsPath),
         kind: 'asset',
         label: basename(parsed.vfsPath),
         icon: resolveAssetIcon(type.icon, 'h-3.5 w-3.5 flex-shrink-0'),

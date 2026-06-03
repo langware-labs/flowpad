@@ -457,6 +457,18 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     return new DockPointerData(ViewType.HOME, this.typeId?.toString());
   }
 
+  /**
+   * Asset-editor dock pointer for a file-backed asset entity, or null when it
+   * has no asset file yet. Asset subclasses return this from `dockPointer`
+   * (falling back to `super.dockPointer`); the `editor/<type>/<ref>` format
+   * lives here once so it stays consistent across every asset type.
+   */
+  protected assetEditorPointer(typeSegment: string, assetRef?: string): DockPointerData | null {
+    return assetRef
+      ? new DockPointerData(ViewType.ASSETS, `editor/${typeSegment}/${assetRef.replace(/^\//, '')}`)
+      : null;
+  }
+
   public get searchDockPointer(): DockPointerData {
     return this.dockPointer;
   }
@@ -722,6 +734,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     const useCache = opts.cache ?? true;
     if (useCache && this._membersCache) return this._membersCache;
     const info = new ActionInfo('members', this.typeId.type, this.typeId.id, 'GET');
+    info.hubReflect = true; // roster is hub-owned — reflect this read to the hub
     const res = await dataManager.callAction<undefined, EntityMember[]>(info);
     // Defensive: the hub utils coerce empty lists to {} upstream
     // (`resp.json().get('data') or {}`); treat any non-array as "no members".
@@ -743,6 +756,7 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    */
   public async removeMember(userId: string): Promise<void> {
     const info = new ActionInfo('members', this.typeId.type, this.typeId.id, 'DELETE');
+    info.hubReflect = true; // membership change is hub-owned — reflect to the hub
     info.bodyParameters = { user_id: userId };
     await dataManager.callAction<unknown, unknown>(info);
     this._membersCache = undefined;

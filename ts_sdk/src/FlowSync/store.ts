@@ -894,7 +894,13 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         }
         ref.status = EntityStatus.FETCHING;
         const endpoint = `${GRAPH_API_PREFIX}${scope_path}/${entity.typeId.type}/${ref.entity.typeId.id}`;
-        newEntityJson = (await apiClient.put<IEntity>(endpoint, entityJson)) as IEntity;
+        // A remote entity's save reflects to the hub: the server forwards the PUT,
+        // merges the hub's authoritative response (incl. server times) back onto the
+        // local row + broadcasts, and returns the merged entity. Local-only entities
+        // omit the header and save purely locally. The server still re-gates on
+        // remote + logged-in, so an offline remote entity falls back to local.
+        const reflectConfig = entity.remote ? { headers: { 'Hub-Reflect': 'true' } } : undefined;
+        newEntityJson = (await apiClient.put<IEntity>(endpoint, entityJson, reflectConfig)) as IEntity;
       }
       if (!newEntityJson) {
         throw new Error('No data returned');
@@ -968,7 +974,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
 
     const endpoint = actionInfo.actionUrl;
 
-    let requestConfig = undefined;
+    let requestConfig: any = undefined;
     if (actionInfo.isRawResponse) {
       requestConfig = {
         transformResponse: (data: any) => {
@@ -976,6 +982,16 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         },
         signal: actionInfo.abortSignal || undefined,
         responseType: actionInfo.responseType || undefined,
+      };
+    }
+
+    // Per-call hub-reflection opt-in: send the `Hub-Reflect` header so the local
+    // server forwards this call to the hub (default is don't-reflect). Applies to
+    // every verb branch below since they all pass `requestConfig`.
+    if (actionInfo.hubReflect) {
+      requestConfig = {
+        ...(requestConfig ?? {}),
+        headers: { ...(requestConfig?.headers ?? {}), 'Hub-Reflect': 'true' },
       };
     }
 
@@ -1047,6 +1063,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       sub_path: actionInfo.subpath,
       query_params: actionInfo.queryParameters as Record<string, unknown> | null,
       body: actionInfo.bodyParameters as Record<string, unknown> | null,
+      hub_reflect: actionInfo.hubReflect,
     };
 
     const response = await connectionManager.sendRestApiMessage<Res>(message, options);

@@ -47,3 +47,16 @@ export function localAttachmentUrl(
   if (!vfsPath) return null;
   return fileAttachmentUrl(messageId, vfsPath);
 }
+
+/**
+ * Turn a downloaded attachment's absolute `local_path` into the VFS path the
+ * editor opens. The file lives in the message's embedded storage (an absolute
+ * path like `/tmp/.../data/SKILL.md`), NOT under any project root — so it must
+ * be opened against the **@local** compute node. Prefixing with the
+ * `compute_node-@local` TypeId makes `CodeEditor` resolve it via
+ * `compute_node/@local/fs/download/<abs path>`; without the prefix the editor
+ * falls back to the active project's root and 404s.
+ */
+export function editorPathForLocalFile(localPath: string): string {
+  return `compute_node-@local/${localPath.replace(/^\/+/, '')}`;
+}

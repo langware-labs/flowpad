@@ -74,6 +74,18 @@ export async function hubLogin(email: string, password: string): Promise<HubLogi
   return { token, user: body.data.user ?? {} };
 }
 
+/** Read a shared conversation's title straight from the hub (authenticated GET).
+ *  Used by the reflection-proxy tests to verify a reflected rename landed on the
+ *  hub, independent of any backend↔backend fan-out. Returns null on non-200. */
+export async function hubConversationTitle(token: string, convId: string): Promise<string | null> {
+  const r = await fetch(`${HUB_URL}/api/v1/graph/conversation/${convId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!r.ok) return null;
+  const body = (await r.json()) as { data?: { title?: string } };
+  return body.data?.title ?? null;
+}
+
 export async function getAliceCreds() {
   const env = await readEnvLocal(REPO_OSS);
   const email = env.FLOWPAD_CLOUD_USER_EMAIL;

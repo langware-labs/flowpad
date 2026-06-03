@@ -15,7 +15,6 @@ parse the outcome.
 """
 
 from __future__ import annotations
-from flow_sdk.instance_settings import get_instance_settings
 
 import json
 import os
@@ -43,13 +42,14 @@ EXIT_CONNECTION_ERROR = 5
 
 
 def _discover_port() -> int:
-    """Find the running server's port (same helper pattern as flow_cli)."""
-    from flow_sdk.discovery.flowpad_discovery import read_server_info
+    """Resolve the active instance's running port (FLOW_INSTANCE-aware)."""
+    from flow_sdk.discovery.flowpad_discovery import InstanceNotRunningError, resolve_cli_port
 
-    server_info = read_server_info()
-    if server_info:
-        return server_info.port
-    return get_instance_settings().port
+    try:
+        return resolve_cli_port()
+    except InstanceNotRunningError as e:
+        _fail(EXIT_CONNECTION_ERROR, "INSTANCE_NOT_RUNNING", str(e))
+        raise  # unreachable — _fail raises typer.Exit
 
 
 def _fail(exit_code: int, error_code: str, message: str) -> None:

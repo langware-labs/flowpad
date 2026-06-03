@@ -146,6 +146,7 @@ class MembershipService {
 
     try {
       const actionInfo = new ActionInfo('members', entity_typeId.type, entity_typeId.id, 'GET');
+      actionInfo.hubReflect = true; // roster is hub-owned — reflect to the hub
       const fetchedMemberships = await dataManager.callAction<undefined, Membership[]>(actionInfo);
       return fetchedMemberships ?? [];
     } catch (error) {
@@ -157,6 +158,7 @@ class MembershipService {
   async createMembership(entity_typeId: TypeId, membershipRequest: IMembershipRequest): Promise<void> {
     try {
       const actionInfo = new ActionInfo('members', entity_typeId.type, entity_typeId.id, 'POST');
+      actionInfo.hubReflect = true; // membership change is hub-owned — reflect to the hub
       actionInfo.bodyParameters = membershipRequest as any;
       await dataManager.callAction<IMembershipRequest, ApiResponse<void>>(actionInfo);
     } catch (error) {
@@ -201,6 +203,7 @@ class MembershipService {
       };
 
       const actionInfo = new ActionInfo('members', entity_typeId.type, entity_typeId.id, 'PUT');
+      actionInfo.hubReflect = true; // role change is hub-owned — reflect to the hub
       actionInfo.bodyParameters = payload as any;
       await dataManager.callAction<MembershipRoleUpdate, ApiResponse<void>>(actionInfo);
     } catch (error) {
@@ -221,6 +224,7 @@ class MembershipService {
       const payload: MembershipIdentifiers = this.determineMembershipIdentifiers(membership);
 
       const actionInfo = new ActionInfo('members', entity_typeId.type, entity_typeId.id, 'DELETE');
+      actionInfo.hubReflect = true; // membership change is hub-owned — reflect to the hub
       actionInfo.bodyParameters = payload as any;
       await dataManager.callAction<MembershipIdentifiers, ApiResponse<void>>(actionInfo);
       // if the user removed himself from the entity, navigate to the landing page

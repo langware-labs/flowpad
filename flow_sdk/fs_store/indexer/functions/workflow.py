@@ -117,7 +117,8 @@ def workflow_frontmatter_fn(
     return out
 
 def _workflow_id_from_path(path: Path) -> str:
-    return str(uuid.uuid5(uuid.NAMESPACE_URL, str(path.resolve())))
+    from flow_sdk.fs_store.identifier import mint_uuid  # noqa: PLC0415
+    return mint_uuid(str(path.resolve()))
 
 def _read_workflow_asset_id(path: Path) -> str | None:
     """Return ``id`` (or legacy ``asset_id``) from frontmatter, or None."""
@@ -129,8 +130,9 @@ def _read_workflow_asset_id(path: Path) -> str | None:
     if not fm:
         return None
     fields = _yaml_load(fm) or {}
+    from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
     raw = fields.get("id") or fields.get("asset_id")
-    return str(raw).strip() if isinstance(raw, str) and raw.strip() else None
+    return adopt_entity_id(raw)  # validate-on-adopt (v4/v5) → else caller derives uuid5(path)
 
 def workflow_id(ref: FSRef) -> str:
     """Cheap id: prefer frontmatter ``id``; else uuid5(path)."""

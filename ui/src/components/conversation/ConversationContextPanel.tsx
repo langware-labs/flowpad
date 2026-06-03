@@ -18,6 +18,7 @@ import { attachmentDataString, type Attachment } from '@sdk/entities/flow-messag
 import {
   Download,
   ExternalLink,
+  FolderOpen,
   Pencil,
   Eye,
   Lock,
@@ -27,12 +28,13 @@ import {
   Users,
   type LucideIcon,
 } from 'lucide-react';
+import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
 import { notify } from '@src/notifications';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useChipPrewarm } from '@src/navigation/useChipPrewarm';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { resolveWorkdir } from './apply-project-choice';
-import { localAttachmentUrl } from './attachment-url';
+import { localAttachmentUrl, editorPathForLocalFile } from './attachment-url';
 import { ICON_BY_TYPE } from './EntityChip';
 import { buildAssistancePrompt } from './prompt-building';
 import {
@@ -663,10 +665,14 @@ function AttachmentRow({
   // bytes from the FlowMessage's embedded VFS.
   // Defensive: stale/malformed rows can have a non-string `data`; the bare
   // `.split` used to crash the whole context panel for the entire conv.
+  const { navigation } = useDockNavigation();
   const dataStr = attachmentDataString(attachment);
   // Null until the bytes are local — keeps the Download action from 404ing on a
   // body that was never pulled (see localAttachmentUrl).
   const downloadUrl = localAttachmentUrl(messageId, attachment);
+  // Absolute path once the bytes are local — the editor opens this (standard
+  // file dock pointer), mirroring the message bubble's file chip.
+  const localPath = attachment.local_path ?? null;
   const filename = dataStr.split('/').pop() || dataStr || '(unknown)';
   const typeLabel = kind === 'prompt-file' ? 'Prompt file' : 'File';
 
@@ -679,6 +685,24 @@ function AttachmentRow({
       onFocus={onSelect}
       focusTitle="Reveal the message this file is attached to"
     >
+      {localPath && (
+        <>
+          <RowAction
+            onClick={() => navigation.openEditor(editorPathForLocalFile(localPath))}
+            title={`Open ${filename} in the editor`}
+          >
+            <ExternalLink className="h-3 w-3" />
+            Open
+          </RowAction>
+          <RowAction
+            onClick={() => void openExternalFromComputeNode('@local', localPath, { select: true })}
+            title={`Reveal ${filename} in the file manager`}
+          >
+            <FolderOpen className="h-3 w-3" />
+            Reveal
+          </RowAction>
+        </>
+      )}
       {downloadUrl && (
         <RowAction
           onClick={() => window.open(downloadUrl, '_blank', 'noopener,noreferrer')}

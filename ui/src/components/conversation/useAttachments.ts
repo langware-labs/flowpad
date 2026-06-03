@@ -28,6 +28,11 @@ export interface AttachmentView {
    *  Downloaded). Every other state yields null, so a chip can never link or
    *  inline-fetch a body that was never downloaded. */
   url: string | null;
+  /** Absolute on-disk path once the bytes are local (state === Downloaded),
+   *  else null. This is what the editor opens — clicking a downloaded file
+   *  routes to `navigation.openEditor(localPath)` (the standard file dock
+   *  pointer), same as the interactive terminal's file tree. */
+  localPath: string | null;
 }
 
 export interface UseAttachments {
@@ -104,6 +109,7 @@ function buildItems(fm: FlowMessage | null | undefined, messageId: string): Atta
         // localAttachmentUrl is itself gated on local_path, so this is null for
         // every non-Downloaded state — belt-and-suspenders with `state`.
         url: state === AttachmentChipState.Downloaded ? localAttachmentUrl(messageId, a) : null,
+        localPath: state === AttachmentChipState.Downloaded ? (a.local_path ?? null) : null,
       };
     });
 }

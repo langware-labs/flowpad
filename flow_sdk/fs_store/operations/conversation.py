@@ -95,6 +95,28 @@ def write_pointers(rec: FSRecord, pointers: list[Pointer]) -> None:
             fh.write(p.to_jsonl_line() + "\n")
 
 
+async def prune_message_pointer(
+    rec: FSRecord, flow_message_id: str, notify: bool = True
+) -> bool:
+    """Drop the pointer to ``flow_message_id`` from the conversation index and
+    re-project. Mirror of ``append_message_pointer`` for removal.
+
+    Pointer ids may carry the local ``@`` marker (``flow_message-@<id>``) while
+    the caller passes the bare id, so both sides are normalised before compare.
+    Idempotent: returns ``False`` (no re-projection) when the pointer is absent.
+    """
+    target = (flow_message_id or "").lstrip("@")
+    if not target:
+        return False
+    pointers = message_pointers(rec)
+    kept = [p for p in pointers if (p.id or "").lstrip("@") != target]
+    if len(kept) == len(pointers):
+        return False
+    write_pointers(rec, kept)
+    await project_pointers_to_entity(rec, notify=notify)
+    return True
+
+
 def from_jsonl(
     jsonl_path: Path,
     parent_id: str,

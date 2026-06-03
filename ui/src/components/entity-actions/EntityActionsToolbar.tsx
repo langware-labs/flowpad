@@ -1,8 +1,13 @@
-import { useState } from 'react';
-import { Share2 } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Link2, Share2 } from 'lucide-react';
 import { TypeId } from '@sdk';
 import { FavoriteStar } from '@src/components/favorites/FavoriteStar';
 import { EntityShareDialog } from '@src/components/terminal/interactive-terminal/EntityShareDialog';
+import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
+import {
+  agenticProcessShareSource,
+  genericEntityShareSource,
+} from '@src/hooks/share-sources';
 import { useEntityShare } from '@src/hooks/use-entity-share';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { cn } from '@src/lib/utils';
@@ -48,7 +53,21 @@ export function EntityActionsToolbar({
   className,
 }: EntityActionsToolbarProps) {
   const [shareOpen, setShareOpen] = useState(false);
-  const { canShare } = useEntityShare(typeId);
+  const [exportOpen, setExportOpen] = useState(false);
+  const { canShare, shouldForkBeforeSend } = useEntityShare(typeId);
+
+  // The conversation share's prep: AgenticProcess forks + mints a Task; any
+  // other entity rides as a TYPE_ID attachment. Keyed on ``shareOpen`` so each
+  // open gets a fresh source (its resolve-once cache resets) — a second share
+  // of the same session mints a fresh fork/Task rather than reusing a stale one.
+  const shareSource = useMemo(
+    () =>
+      shouldForkBeforeSend
+        ? agenticProcessShareSource(typeId, { label: favoriteTitle, defaultTitle: favoriteTitle })
+        : genericEntityShareSource(typeId, { label: favoriteTitle }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [typeId, shouldForkBeforeSend, favoriteTitle, shareOpen],
+  );
 
   const handleClose = () => {
     setShareOpen(false);
@@ -77,7 +96,7 @@ export function EntityActionsToolbar({
             </button>
           </TooltipTrigger>
           <TooltipContent side="bottom" className="text-xs">
-            {canShare ? 'Share, copy link, or download as bundle' : 'Loading…'}
+            {canShare ? 'Share to a conversation' : 'Loading…'}
           </TooltipContent>
         </Tooltip>
       ) : (
@@ -103,6 +122,27 @@ export function EntityActionsToolbar({
         </Tooltip>
       )}
 
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            type="button"
+            onClick={() => setExportOpen(true)}
+            disabled={!canShare}
+            className={cn(
+              'inline-flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent',
+              'disabled:cursor-not-allowed disabled:opacity-50',
+            )}
+            data-testid="entity-actions-export"
+            aria-label="Export or copy link"
+          >
+            <Link2 className="h-3.5 w-3.5" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" className="text-xs">
+          {allowCopyLink ? 'Copy link or download bundle' : 'Download bundle'}
+        </TooltipContent>
+      </Tooltip>
+
       <FavoriteStar
         entityType={typeId.type}
         entityId={typeId.id}
@@ -114,9 +154,17 @@ export function EntityActionsToolbar({
       {trailing}
 
       {shareOpen && (
-        <EntityShareDialog
+        <ShareToConversationDialog
           open={shareOpen}
           onClose={handleClose}
+          source={shareSource}
+        />
+      )}
+
+      {exportOpen && (
+        <EntityShareDialog
+          open={exportOpen}
+          onClose={() => setExportOpen(false)}
           typeId={typeId}
           defaultTitle={favoriteTitle}
           allowCopyLink={allowCopyLink}

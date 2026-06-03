@@ -295,6 +295,8 @@ class TypeInfo:
             "icon": self.icon,
             "parent_type": self.parent_type,
             "locations": self.locations,
+            "main_subdir": self.main_subdir,
+            "main_layout": self.main_layout,
             "schema_hash": self.schema_hash,
         }
 
