@@ -152,6 +152,7 @@ export function AttachmentChip({
   const [menuOpen, setMenuOpen] = useState(false);
   const [imgFailed, setImgFailed] = useState(false);
   const [videoFailed, setVideoFailed] = useState(false);
+  const [lightbox, setLightbox] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -162,6 +163,16 @@ export function AttachmentChip({
     document.addEventListener('mousedown', onDocMouseDown);
     return () => document.removeEventListener('mousedown', onDocMouseDown);
   }, [menuOpen]);
+
+  // Esc closes the in-app image preview (lightbox).
+  useEffect(() => {
+    if (!lightbox) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setLightbox(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [lightbox]);
 
   // UPLOADING / READY / UNAVAILABLE: the bytes aren't on this machine, so there
   // is no live URL to link or inline-render. Render a status row instead —
@@ -329,11 +340,12 @@ export function AttachmentChip({
   if (isImage(filename) && !imgFailed) {
     return (
       <div ref={containerRef} className="group relative inline-block">
-        <a
-          href={url}
-          target="_blank"
-          rel="noreferrer"
-          className="block max-w-[360px] overflow-hidden rounded-lg border border-border bg-muted/40"
+        {/* Primary click previews the image in-app (lightbox), not a browser
+            tab. Download / open-in-new-tab / reveal stay in the overlay menu. */}
+        <button
+          type="button"
+          onClick={() => setLightbox(true)}
+          className="block max-w-[360px] cursor-zoom-in overflow-hidden rounded-lg border border-border bg-muted/40"
           title={filename}
         >
           <img
@@ -342,8 +354,24 @@ export function AttachmentChip({
             onError={() => setImgFailed(true)}
             className="block max-h-[280px] max-w-full object-contain"
           />
-        </a>
+        </button>
         {overlay}
+        {lightbox && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={filename}
+            onClick={() => setLightbox(false)}
+            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-6 cursor-zoom-out"
+          >
+            <img
+              src={url}
+              alt={filename}
+              onClick={(e) => e.stopPropagation()}
+              className="max-h-full max-w-full rounded-lg object-contain shadow-2xl cursor-default"
+            />
+          </div>
+        )}
       </div>
     );
   }
