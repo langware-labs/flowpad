@@ -1,8 +1,10 @@
 import { useMemo } from 'react';
 import { ArrowLeft } from 'lucide-react';
+import { useAuth } from '@sdk/react/hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { ViewType } from '@src/types/ViewType';
+import { LoginRequiredOverlay } from '@src/components/login-required-overlay';
 import { ConversationPanel } from './ConversationPanel';
 import { useConversation } from './useConversation';
 
@@ -21,6 +23,7 @@ import { useConversation } from './useConversation';
  */
 export function ConversationRoute() {
   const { navigation, currentDock } = useDockNavigation();
+  const { cloudUser } = useAuth();
 
   // Hidden tabs are kept mounted by Radix Tabs (data-[state=inactive]:hidden),
   // so when the URL points at a different view this component still re-renders
@@ -50,6 +53,34 @@ export function ConversationRoute() {
     );
   }
 
+  // Thin header (back arrow + subject) shared by the logged-out and loaded
+  // states so the back affordance + styling stay in one place.
+  const header = (
+    <div className="flex shrink-0 items-center gap-2 border-b px-3 py-1.5">
+      <button
+        type="button"
+        onClick={goBack}
+        className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+        title="Back to inbox"
+      >
+        <ArrowLeft className="h-4 w-4" />
+      </button>
+      <span className="truncate text-sm font-semibold">{task?.displayName ?? 'Conversation'}</span>
+    </div>
+  );
+
+  // Logged out → don't get stuck on "Loading conversation…" (the hub fetch
+  // 401s and never resolves). Show the standard chrome with a Login CTA
+  // overlay instead, regardless of whether the conversation is cached locally.
+  if (!cloudUser) {
+    return (
+      <div className="relative flex h-full flex-col">
+        <LoginRequiredOverlay description="Sign in to your Flowpad Cloud account to view and reply to this conversation." />
+        {header}
+      </div>
+    );
+  }
+
   if (!conversation) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
@@ -69,21 +100,9 @@ export function ConversationRoute() {
     );
   }
 
-  const subject = task?.displayName ?? 'Conversation';
-
   return (
     <div className="flex h-full flex-col">
-      <div className="flex shrink-0 items-center gap-2 border-b px-3 py-1.5">
-        <button
-          type="button"
-          onClick={goBack}
-          className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-          title="Back to inbox"
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </button>
-        <span className="truncate text-sm font-semibold">{subject}</span>
-      </div>
+      {header}
       <div className="flex min-h-0 flex-1 flex-col">
         <ConversationPanel
           task={task}

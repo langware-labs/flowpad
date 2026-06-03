@@ -56,6 +56,12 @@ function handleHubClientError(msg: HubClientErrorMsg): void {
       actions: [detail],
     });
   } else if (statusCode === 401) {
+    // A 401 while we were never authenticated (or after an explicit logout) is
+    // the *normal* logged-out state — not an error. The inbox/conversation
+    // surfaces show a Login CTA overlay for that case, so swallow the toast.
+    // Only surface "sign-in expired" when a previously-valid cloud session
+    // actually lapsed (we still believe we're logged in).
+    if (cloudManager.loginStatus !== 'logged_in') return;
     notify.error({
       id: 'cloud-auth-expired',
       title: 'Cloud sign-in expired',

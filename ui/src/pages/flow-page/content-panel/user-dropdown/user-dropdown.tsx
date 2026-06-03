@@ -9,7 +9,7 @@ import {
 } from '@src/components/ui/dropdown-menu';
 import { SettingsPane } from '@src/components/ui/settings-pane';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
-import { Cloud, LogIn, LogOut, Settings, User as UserIcon, Wrench } from 'lucide-react';
+import { Cloud, HelpCircle, LogIn, LogOut, Settings, User as UserIcon, Wrench } from 'lucide-react';
 import { notify } from '@src/notifications';
 
 import { AccountInfo } from '@src/components/account/account-info';
@@ -160,6 +160,17 @@ export function UserDropdown() {
   const { cloudLoginAvailable } = useContext();
   const { login, connection, cloudUrl } = useCloudStatus();
   const dotClass = statusDotClass(login.status, connection.status);
+  // Logged out of cloud → identity is unknown, so fall back to a neutral
+  // question-mark glyph rather than the local user's initials (a name we can't
+  // actually vouch for). When logged in, derive up-to-2-char initials.
+  const avatarInitials = cloudLoginAvailable
+    ? (currentUser?.name || currentUser?.email?.split('@')[0] || '?')
+        .split(/[\s._-]+/)
+        .map((n: string) => n[0])
+        .join('')
+        .toUpperCase()
+        .slice(0, 2)
+    : null;
   const agentTypeId = useMemo(() => (agentId ? new TypeId(Agent.type, agentId) : null), [agentId]);
   const { data: agent } = useEntity<Agent>(agentTypeId, {
     query: user ? agentQuery : new ExpansionRequest({}),
@@ -342,16 +353,11 @@ export function UserDropdown() {
                     title={!isConnected ? 'Service unavailable' : undefined}
                     data-testid="agent-page-user-avatar"
                   >
-                    {currentUser?.picture && (
+                    {cloudLoginAvailable && currentUser?.picture && (
                       <AvatarImage src={currentUser.picture} alt={currentUser.name ?? currentUser.email ?? ''} />
                     )}
                     <AvatarFallback>
-                      {(currentUser?.name || currentUser?.email?.split('@')[0] || '?')
-                        .split(/[\s._-]+/)
-                        .map((n: string) => n[0])
-                        .join('')
-                        .toUpperCase()
-                        .slice(0, 2)}
+                      {avatarInitials ?? <HelpCircle className="h-5 w-5 text-muted-foreground" />}
                     </AvatarFallback>
                   </Avatar>
                   {dotClass && (
