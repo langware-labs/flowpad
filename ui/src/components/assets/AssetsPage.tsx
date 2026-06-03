@@ -599,6 +599,8 @@ export function AssetsPage() {
             onMoveItem: handleMoveMarkdownItem,
             onScanComplete: handleScanComplete,
             filter: effectiveFilter,
+            onOpenKnowledgeBrowser: (absPath) =>
+              navigation.openDock(DockPointer.forKnowledgeBrowser(absPath, 'vfs')),
           });
         }
         return assetTypeRoot(t, {
@@ -618,6 +620,7 @@ export function AssetsPage() {
       creatableTypes,
       effectiveFilter,
       handleScanComplete,
+      navigation,
     ],
   );
 

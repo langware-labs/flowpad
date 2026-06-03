@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileText, Folder, FolderPlus, Library, Plus, RefreshCw, User as UserIcon } from 'lucide-react';
+import { FileText, Folder, FolderPlus, Library, Network, Plus, RefreshCw, User as UserIcon } from 'lucide-react';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import apiClient from '@sdk/client';
 import { fsStore, TypeId } from '@sdk';
@@ -40,6 +40,10 @@ export interface MarkdownFolderRootDeps {
   folderPageSize?: number;
   /** Active filter — used by the count badge so it tracks scope/project. */
   filter?: AssetFilter;
+  /** Open the docs knowledge browser for a vault root (its absolute vfs path).
+   *  Wired by the host (AssetsPage) to navigation.openDock — toolbar actions are
+   *  side-effects, so navigation is performed by the host, not here. */
+  onOpenKnowledgeBrowser?: (absPath: string) => void;
 }
 
 export interface MarkdownFolderTarget {
@@ -213,9 +217,24 @@ function folderBrowseable(args: {
   folderPageSize: number;
   onCreateFolder?: (target: MarkdownFolderTarget) => void;
   onMoveItem?: (item: MarkdownDragItem, target: MarkdownFolderTarget) => Promise<void> | void;
+  onOpenKnowledgeBrowser?: (absPath: string) => void;
 }): Browseable {
-  const { typeName, typeid, relPath, absPath, label, kind, folderPageSize, onCreateFolder, onMoveItem } = args;
+  const { typeName, typeid, relPath, absPath, label, kind, folderPageSize, onCreateFolder, onMoveItem, onOpenKnowledgeBrowser } = args;
   const target = folderTarget({ typeName, typeid, relPath, absPath, label });
+  // The knowledge-browser button sits only on the docs root (vault-root), which
+  // has a single scannable path; subfolders don't get their own browser.
+  const kbAction: ToolbarAction[] =
+    kind === 'vault-root' && onOpenKnowledgeBrowser
+      ? [
+          {
+            id: `kbrowser:${typeid}:${absPath}`,
+            icon: <Network />,
+            label: 'Open knowledge browser',
+            run: () => onOpenKnowledgeBrowser(absPath),
+            showBusyIndicator: false,
+          },
+        ]
+      : [];
   return {
     id: markdownFolderNodeId(typeid, absPath),
     kind,
@@ -228,7 +247,7 @@ function folderBrowseable(args: {
       ),
     hasChildren: true,
     pointer: DockPointer.forAssetFolder(typeName, typeid, relPath),
-    toolbar: folderToolbar(target, onCreateFolder),
+    toolbar: [...folderToolbar(target, onCreateFolder), ...kbAction],
     dragData: kind === 'folder'
       ? {
           kind: 'markdown-folder',
@@ -380,6 +399,7 @@ export function markdownFolderRoot(
       folderPageSize,
       onCreateFolder: deps.onCreateFolder,
       onMoveItem: deps.onMoveItem,
+      onOpenKnowledgeBrowser: deps.onOpenKnowledgeBrowser,
     }),
     icon: vaultIcon(v),
   });
