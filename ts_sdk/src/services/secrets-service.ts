@@ -31,6 +31,34 @@ export class SecretsService {
     return apiClient.post(`${this.base}/enable`);
   }
 
+  /**
+   * Hand a pre-minted Fernet key to Python. Used by the signed Electron
+   * launcher so Python skips its own keyring write — the OS keychain entry
+   * is created by the bundled flow-rs binary (Langware-signed), so its ACL
+   * trust list shows flow-rs rather than the unsigned uv-bundled python3.x.
+   */
+  seedKey(key: string): Promise<{ enabled: boolean }> {
+    return apiClient.post(`${this.base}/seed-key`, { key });
+  }
+
+  /**
+   * One-shot legacy migration: returns the Fernet key value currently
+   * stored at the legacy bare-instance keychain slot (python3.x-owned),
+   * or { key: null } if no legacy entry exists. The renderer hands the
+   * value to electronAPI.provisionSodKey(value), which re-writes it via
+   * flow-rs at the .flow-rs slot — moving ACL ownership to flow-rs
+   * without losing the sodot's encryption key. Sibling: cleanupLegacy().
+   */
+  migrateToFlowRs(): Promise<{ key: string | null; has_legacy: boolean }> {
+    return apiClient.post(`${this.base}/migrate-to-flow-rs`);
+  }
+
+  /** Delete the legacy bare-instance keychain entry. Call after a
+   *  successful migrateToFlowRs + provisionSodKey + seedKey round-trip. */
+  cleanupLegacy(): Promise<{ ok: boolean }> {
+    return apiClient.post(`${this.base}/cleanup-legacy`);
+  }
+
   list(): Promise<AppSecretSummary[]> {
     return apiClient.get(this.base);
   }
