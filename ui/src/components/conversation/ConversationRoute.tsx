@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useCallback, useMemo } from 'react';
 import { ArrowLeft } from 'lucide-react';
 import { useAuth } from '@sdk/react/hooks';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -31,17 +31,27 @@ export function ConversationRoute() {
   // an agentic_process or shell id). Bail unless the dock is actually pointing
   // at a conversation; otherwise we'd feed a foreign id into useConversation
   // and TypeId would throw "Invalid type-id: conversation, agentic_process-…".
-  const conversationId = useMemo(() => {
-    if (currentDock?.viewType !== ViewType.CONVERSATION) return null;
-    const pointer = currentDock?.pointer;
-    if (!pointer) return null;
-    // Defensive: trim any trailing path segments (multi-segment pointers
-    // aren't expected for this view, but keep the head-of-path guard).
-    const head = pointer.split('/')[0];
-    return head || null;
+  const { conversationId, messageId } = useMemo(() => {
+    if (currentDock?.viewType !== ViewType.CONVERSATION) {
+      return { conversationId: null, messageId: null };
+    }
+    // Pointer grammar: <conversationId>[/message/<messageId>]. The message
+    // segment deep-links a specific bubble — selection + scroll derive from it.
+    return DockPointer.parseConversationPointer(currentDock?.pointer);
   }, [currentDock?.viewType, currentDock?.pointer]);
 
   const { conversation, task, senderName, taskMissing } = useConversation(conversationId);
+
+  // URL-first message selection: a bubble click only navigates — the URL
+  // change flows back down as `selectedMessageId`, which drives the
+  // highlight + scroll-into-view (no optimistic local selection writes).
+  const handleMessageNavigate = useCallback(
+    (id: string) => {
+      if (!conversationId) return;
+      navigation.openDock(DockPointer.forConversation(conversationId, { messageId: id }));
+    },
+    [navigation, conversationId],
+  );
 
   const goBack = () => navigation.openDock(DockPointer.forInbox());
 
@@ -108,6 +118,8 @@ export function ConversationRoute() {
           task={task}
           conversationId={conversationId}
           senderName={senderName}
+          selectedMessageId={messageId}
+          onMessageNavigate={handleMessageNavigate}
         />
       </div>
     </div>

@@ -237,20 +237,32 @@ export function ConversationView({
   // conversation order — same id every render, so we still only scroll on
   // genuine selection changes. The "set" identity is compared via the joined
   // string so a re-render of the same array doesn't re-fire.
+  //
+  // Two-phase (arm → fire) so URL deep links (/conversation/<id>/message/<id>)
+  // work: on a cold load the selection lands before the bubbles have rendered
+  // (messages stream in via the live query), so a single same-tick
+  // querySelector would miss. The pending id stays armed until the target
+  // exists in the DOM — the fire effect re-runs as messages/items land.
   const selectionKey = (selectedMessageIds ?? []).join(',');
   const scrollTargetId = (selectedMessageIds ?? [])[0] ?? null;
+  const pendingScrollIdRef = useRef<string | null>(null);
   const prevSelectionKeyRef = useRef<string | undefined>(undefined);
   useEffect(() => {
     const prev = prevSelectionKeyRef.current;
     prevSelectionKeyRef.current = selectionKey;
-    if (!scrollTargetId) return;
-    if (prev === undefined) return; // skip first mount
-    if (prev === selectionKey) return;
-    const el = document.querySelector<HTMLElement>(
-      `[data-testid="message-bubble-${CSS.escape(scrollTargetId)}"]`,
-    );
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    if (prev === selectionKey) return; // re-render of the same selection
+    pendingScrollIdRef.current = scrollTargetId;
   }, [selectionKey, scrollTargetId]);
+  useEffect(() => {
+    const target = pendingScrollIdRef.current;
+    if (!target) return;
+    const el = document.querySelector<HTMLElement>(
+      `[data-testid="message-bubble-${CSS.escape(target)}"]`,
+    );
+    if (!el) return; // bubble not rendered yet — retry on the next data tick
+    pendingScrollIdRef.current = null;
+    el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [selectionKey, orderedItems, messagesById]);
 
   // Read-ack emission: when the conversation panel is open, batch-mark all
   // current pointers as `received`. The hub honors monotonicity + sender-skip
