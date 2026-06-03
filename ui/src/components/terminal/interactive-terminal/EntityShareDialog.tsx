@@ -43,7 +43,7 @@ interface EntityShareDialogProps {
 
 export function EntityShareDialog({ open, onClose, typeId, defaultTitle, allowCopyLink = false }: EntityShareDialogProps) {
   const entityShare = useEntityShare(typeId);
-  const isProcess = entityShare.shouldForkBeforeSend;
+  const isProcess = entityShare.isAgenticProcess;
 
   const [mode, setMode] = useState<ShareMode>(allowCopyLink ? 'link' : 'bundle');
   const [title, setTitle] = useState('');

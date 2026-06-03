@@ -3,16 +3,16 @@
  * dialogs (EntityShareDialog / AskHelpDialog / SendPlanNotificationDialog).
  *
  * A ShareSource knows how to turn "the thing being shared" into a send payload
- * (asset references + shared context + files). It performs the fork / Task /
- * Spec minting, but it does NOT create a Conversation — conversation
- * selection/creation is owned by the share screen via `useSendToConversation`.
- * This is what kills the duplicate-conversation bug: prep runs once, the
- * Conversation is chosen (existing) or created (once) separately.
+ * (asset references + shared context + files). Plan/ask-help sources mint
+ * their Spec/Task rows here, but a ShareSource does NOT create a Conversation
+ * — conversation selection/creation is owned by the share screen via
+ * `useSendToConversation`. This is what kills the duplicate-conversation bug:
+ * prep runs once, the Conversation is chosen (existing) or created (once)
+ * separately.
  *
- * `prepare()` is resolve-once: the result (including any minted Task/Spec ids
- * and forked process id) is cached, so a click → error → retry reuses the same
- * rows instead of forking/minting again — replacing the old `draftTaskRef` /
- * `draftSpecRef` guards.
+ * `prepare()` is resolve-once: the result (including any minted Task/Spec ids)
+ * is cached, so a click → error → retry reuses the same rows instead of
+ * minting again — replacing the old `draftTaskRef` / `draftSpecRef` guards.
  */
 import {
   AgenticProcess,
@@ -122,9 +122,13 @@ export function genericEntityShareSource(
 }
 
 /**
- * AgenticProcess session: pre-fork (so the recipient resumes from this
- * session's context), mint a Task carrying my_process_id + shared_process_id,
- * optionally attach the transcript. Task rides as the asset/context.
+ * AgenticProcess session: share the session's ClaudeTranscript
+ * (``claude_session`` entity — its id IS the Claude session id). The
+ * transcript rides as the TYPE_ID attachment (the message chip) and the
+ * shared context carries transcript + process, so the backend's mutual
+ * context linking connects process ↔ message. Optionally attaches the raw
+ * transcript jsonl as a file. No fork, no Task — the transcript is the
+ * shared artifact.
  */
 export function agenticProcessShareSource(
   typeId: TypeId,
@@ -150,28 +154,13 @@ export function agenticProcessShareSource(
       });
       files = transcript.files;
 
-      let forkedProcessId: string | null = null;
-      if (proc) {
-        try {
-          const forked = await proc.fork(false);
-          forkedProcessId = forked.id ?? null;
-        } catch (err) {
-          console.warn('[shareSource:process] pre-fork failed (non-fatal):', err);
-        }
-      }
-
-      const task = new Task({
-        ...baseTaskFields(o, o.title || opts.defaultTitle || 'Shared session'),
-        spec_type: 'request',
-        my_process_id: typeId.id,
-      } as Partial<Task>);
-      task.shared_process_id = forkedProcessId;
-      await task.save();
-
-      const ref = `${Task.type}-${task.id}`;
+      const sessionId = proc?.session_id ?? null;
+      const transcriptRef = sessionId ? `claude_session-${sessionId}` : null;
+      const processRef = `${AgenticProcess.type}-${typeId.id}`;
       return {
-        assetReferences: [ref],
-        sharedContextEntities: [ref],
+        // The chip: the transcript when a session exists, else the process.
+        assetReferences: [transcriptRef ?? processRef],
+        sharedContextEntities: transcriptRef ? [transcriptRef, processRef] : [processRef],
         files: files.length > 0 ? files : undefined,
       };
     }),

@@ -169,6 +169,32 @@ async def _pack_task_attachment(entry_id: str, attachment_dir: Path) -> None:
     )
 
 
+async def _pack_claude_session_attachment(entry_id: str, attachment_dir: Path) -> None:
+    """Write ``attachment/claude_session-@<id>/header.json`` (whitelisted
+    ClaudeTranscript fields).
+
+    Sender-local fields are stripped: ``cwd`` is the sender's filesystem path
+    and ``worker_session_id`` is the sender's AgenticProcess worker — both
+    meaningless (and path-leaking) on the receiver. The transcript *content*
+    rides separately as the share's FILE attachment; this header materializes
+    the entity row so the receiver's chip resolves a real name."""
+    from flow_sdk.builtin.claude_session import ClaudeSession
+
+    sess = await ClaudeSession.get_one({"id": entry_id})
+    if not sess:
+        return
+    sess_dir = attachment_dir / f"claude_session-@{entry_id}"
+    sess_dir.mkdir(parents=True, exist_ok=True)
+    sess_data = sess.model_dump(
+        mode="python",
+        include={"id", "type", "name", "slug", "message_count"},
+        context={"skip_api_serializer": True},
+    )
+    (sess_dir / "header.json").write_text(
+        json.dumps(sess_data, default=_json_default, ensure_ascii=False), encoding="utf-8"
+    )
+
+
 async def _pack_conversation_attachment(
     entry_id: str, flow_message: "FlowMessage", attachment_dir: Path,
 ) -> None:
@@ -248,6 +274,8 @@ async def _pack_attachment_entry(
         await _pack_conversation_attachment(entry_id, flow_message, attachment_dir)
     elif entry_type == BuiltinEntityType.FLOW_MESSAGE.value:
         await _pack_flow_message_entry(entry_id, attachment_dir)
+    elif entry_type == BuiltinEntityType.CLAUDE_SESSION.value:
+        await _pack_claude_session_attachment(entry_id, attachment_dir)
     elif entry_type in _FS_ROOTED_TYPES:
         _pack_fs_rooted_attachment(entry_type, entry_id, attachment_dir)
 
@@ -448,6 +476,24 @@ def _read_entity_header(entity_dir: Path) -> dict | None:
         return json.loads(path.read_text(encoding="utf-8"))
     except Exception:
         return None
+
+
+def _fill_merge_entity(existing, payload: dict, skip_keys: tuple[str, ...]) -> bool:
+    """Re-unpack onto an existing row: FILL-MERGE, never skip.
+
+    The bundle header is authoritative for fields the receiver hasn't
+    populated; receiver-local state (anything in ``skip_keys``, plus any
+    already-set value) is never clobbered. Returns True if anything changed.
+    Shared by the TASK and CLAUDE_SESSION unpack branches — the per-type
+    variance is the skip list, not the loop."""
+    changed = False
+    for k, v in payload.items():
+        if k in skip_keys or v in (None, "", []):
+            continue
+        if getattr(existing, k, None) in (None, "", []):
+            setattr(existing, k, v)
+            changed = True
+    return changed
 
 
 # ---------------------------------------------------------------------------
@@ -673,23 +719,32 @@ async def unpack_bundle(
                             task = Task.model_validate(task_payload)
                             await task.save(owner_typeid)
                         else:
-                            # Re-unpack onto an existing row: FILL-MERGE, never
-                            # skip. The old exists-check skip let any earlier
-                            # partial row permanently block the bundle's real
-                            # title / spec link / process id from ever landing.
-                            # The header is authoritative for fields the
-                            # receiver hasn't populated; receiver-local state
-                            # (project mapping, status progress) is never
-                            # clobbered.
-                            changed = False
-                            for k, v in task_payload.items():
-                                if k in ("id", "type", "project_id", "status") or v in (None, "", []):
-                                    continue
-                                if getattr(existing_task, k, None) in (None, "", []):
-                                    setattr(existing_task, k, v)
-                                    changed = True
-                            if changed:
+                            # The old exists-check skip let any earlier partial
+                            # row permanently block the bundle's real title /
+                            # spec link / process id from ever landing. Skips
+                            # protect receiver-local state (project mapping,
+                            # status progress).
+                            if _fill_merge_entity(
+                                existing_task, task_payload,
+                                ("id", "type", "project_id", "status"),
+                            ):
                                 await existing_task.save(owner_typeid)
+
+                elif entry_type == BuiltinEntityType.CLAUDE_SESSION.value:
+                    # Shared ClaudeTranscript: materialize the entity row from
+                    # the packed header (same create-or-fill-merge contract as
+                    # TASK — a partial row never blocks the real name/slug).
+                    sess_data = _read_entity_header(entry_dir)
+                    if sess_data is not None:
+                        from flow_sdk.builtin.claude_session import ClaudeSession  # noqa: PLC0415
+                        sess_id = sess_data.get("id") or entry_id
+                        sess_payload = {**sess_data, "id": sess_id, "remote": False}
+                        existing_sess = await ClaudeSession.get_one({"id": sess_id})
+                        if existing_sess is None or overwrite:
+                            sess = ClaudeSession.model_validate(sess_payload)
+                            await sess.save(owner_typeid)
+                        elif _fill_merge_entity(existing_sess, sess_payload, ("id", "type")):
+                            await existing_sess.save(owner_typeid)
 
                 elif entry_type == BuiltinEntityType.CONVERSATION.value:
                     jsonl_file = entry_dir / "conversation.jsonl"

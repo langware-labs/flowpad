@@ -49,6 +49,7 @@ export * from './plan';
 export * from './claude-md';
 export * from './claude-memory';
 export * from './claude-rules';
+export * from './claude-session';
 export * from './command';
 export * from './workspace';
 export * from './members';
