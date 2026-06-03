@@ -15,10 +15,15 @@ sub-verbs.
 from __future__ import annotations
 
 import json
-from pathlib import Path
-from typing import Annotated, Any, Optional
+from typing import Annotated, Optional
 
 import typer
+
+from flow_sdk.cli.commands._common import (
+    fail as _fail,
+    ok as _ok,
+    resolve_process_id as _resolve_process_id,
+)
 
 workflow_app = typer.Typer(
     name="workflow",
@@ -30,39 +35,6 @@ workflow_app = typer.Typer(
 EXIT_OK = 0
 EXIT_INVALID_ARG = 2
 EXIT_NOT_FOUND = 4
-
-
-def _fail(exit_code: int, error_code: str, message: str) -> None:
-    typer.echo(f"Error: {message}", err=True)
-    typer.echo(json.dumps({"ok": False, "error_code": error_code, "error": message}), err=True)
-    raise typer.Exit(exit_code)
-
-
-def _ok(payload: dict[str, Any]) -> None:
-    typer.echo(json.dumps({"ok": True, **payload}))
-
-
-def _resolve_process_id(process_opt: Optional[str]) -> str:
-    if process_opt:
-        return process_opt
-    from flow_sdk.utils.environment import get_execution_scope
-
-    scope = get_execution_scope()
-    proc: Optional[dict] = None
-    for s in scope:
-        if isinstance(s, dict) and s.get("type") == "agentic_process":
-            proc = s
-            break
-        if isinstance(s, str) and s.startswith("agentic_process-"):
-            proc = {"id": s.split("-", 1)[1]}
-            break
-    if not proc:
-        _fail(
-            EXIT_INVALID_ARG,
-            "NO_PROCESS",
-            "Pass --process or run inside an AgenticProcess (FLOWPAD_EXECUTION_SCOPE)",
-        )
-    return proc["id"]  # type: ignore[index]
 
 
 @workflow_app.command(

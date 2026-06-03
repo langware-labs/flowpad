@@ -1,3 +1,7 @@
+---
+id: 23897332-8b35-504e-8b94-1234fe32ea0b
+---
+
 # Local Hot-Patch Runbook
 
 How to apply a **single-commit hot-patch** to the locally-installed `flowpad` (the
