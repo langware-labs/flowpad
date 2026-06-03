@@ -54,19 +54,19 @@ export function EntityActionsToolbar({
 }: EntityActionsToolbarProps) {
   const [shareOpen, setShareOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
-  const { canShare, shouldForkBeforeSend } = useEntityShare(typeId);
+  const { canShare, isAgenticProcess } = useEntityShare(typeId);
 
-  // The conversation share's prep: AgenticProcess forks + mints a Task; any
-  // other entity rides as a TYPE_ID attachment. Keyed on ``shareOpen`` so each
-  // open gets a fresh source (its resolve-once cache resets) — a second share
-  // of the same session mints a fresh fork/Task rather than reusing a stale one.
+  // The conversation share's prep: AgenticProcess shares its ClaudeTranscript
+  // (claude_session) entity; any other entity rides as a TYPE_ID attachment.
+  // Keyed on ``shareOpen`` so each open gets a fresh source (its resolve-once
+  // cache resets).
   const shareSource = useMemo(
     () =>
-      shouldForkBeforeSend
+      isAgenticProcess
         ? agenticProcessShareSource(typeId, { label: favoriteTitle, defaultTitle: favoriteTitle })
         : genericEntityShareSource(typeId, { label: favoriteTitle }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [typeId, shouldForkBeforeSend, favoriteTitle, shareOpen],
+    [typeId, isAgenticProcess, favoriteTitle, shareOpen],
   );
 
   const handleClose = () => {

@@ -280,27 +280,88 @@ def _parse_context_typeids(
 
 async def _merge_shared_context_into_conversation(
     conv: Conversation,
-    asset_references: list,
-    shared_context_entities: list,
+    typeids: list[TypeId],
     someone_typeid: str,
 ) -> None:
     """Append the just-shared items to ``conv.shared_context_entities`` and link
     each item back to the conversation (parent_type_id). Idempotent — a re-share
     of the same item is a no-op (dedup by (type, id)). Best-effort: never blocks
     the message send."""
-    typeids = _parse_context_typeids(conv, asset_references, shared_context_entities)
     if not typeids:
         return
     try:
         changed = conv.add_shared_context_entities(*typeids)
         if changed:
             await conv.save(someone_typeid)
-        await conv._link_context_to_conversation(typeids)
+        await conv._link_context_to_conversation(typeids, someone_typeid=someone_typeid)
     except Exception as e:  # noqa: BLE001
         logger.warning(
             "[append_conversation] merge shared context failed (non-fatal): %s", e, exc_info=True
         )
 
+
+async def _ensure_claude_session_rows(typeids: list[TypeId]) -> None:
+    """Sender-side ensure for shared ClaudeTranscript refs.
+
+    A ``claude_session`` row only exists after an indexer walk (walks are
+    explicit-click only), so the session being shared often has no row yet —
+    which would leave the chip unresolvable and the context links dangling.
+    The share IS an explicit user action on exactly this session, so locate
+    its JSONL and run the scoped single-file index. Best-effort."""
+    from flow_sdk.builtin.claude_session import ClaudeSession  # noqa: PLC0415
+    from flow_sdk.fs_store.indexer.functions.claude_sessions import get_claude_session  # noqa: PLC0415
+    from flow_sdk.fs_store.transcript_indexer.handlers.single_file_indexers import (  # noqa: PLC0415
+        _index_single_claude_session,
+    )
+
+    for tid in typeids:
+        if tid.type != BuiltinEntityType.CLAUDE_SESSION.value:
+            continue
+        try:
+            if await ClaudeSession.get_one({"id": tid.id}) is not None:
+                continue
+            rec = get_claude_session(tid.id)
+            if rec is None or rec.asset_ref is None:
+                continue
+            await _index_single_claude_session(Path(rec.asset_ref.path))
+        except Exception as e:  # noqa: BLE001
+            logger.warning(
+                "[append_conversation] ensure claude_session %s failed (non-fatal): %s",
+                tid, e, exc_info=True,
+            )
+
+
+async def _link_message_into_context_entities(
+    reply_fm: "FlowMessage",
+    typeids: list[TypeId],
+    someone_typeid: str,
+) -> None:
+    """Mutual context: each just-shared context entity learns about this
+    message (``flow_message-<id>`` lands in its ``shared_context_entities``);
+    the message side already rides on ``reply_fm.shared_context_entities`` —
+    e.g. an AgenticProcess and the FlowMessage that shared its transcript end
+    up referencing each other. Idempotent (dedup by (type, id)); best-effort
+    per entity — never blocks the send."""
+    if not typeids:
+        return
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    fm_tid = TypeId(f"{BuiltinEntityType.FLOW_MESSAGE.value}-{reply_fm.id}")
+    for tid in typeids:
+        try:
+            cls = SchemaRegistry.get_entity_cls(tid.type)
+            if cls is None:
+                continue
+            ent = await cls.get_one({"id": tid.id})
+            if ent is None:
+                continue
+            if ent.add_shared_context_entities(fm_tid):
+                await ent.save(someone_typeid)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(
+                "[append_conversation] context backlink %s ← %s failed (non-fatal): %s",
+                tid, fm_tid, e, exc_info=True,
+            )
 
 
 async def _send_conversation_message_header(conv: "Conversation", reply_fm: "FlowMessage") -> bool:
@@ -558,9 +619,11 @@ async def handle_add_message(body: dict, someone_typeid: str) -> ApiResponse:
     # local-only field; the hub has no such concept), so this lives here, not
     # in an optimistic FE write. Skip the conversation's own typeid and the
     # transport types (conversation/flow_message) that ride every message.
-    await _merge_shared_context_into_conversation(
-        conv, asset_references, shared_context_entities, someone_typeid,
-    )
+    context_typeids = _parse_context_typeids(conv, asset_references, shared_context_entities)
+    # Shared ClaudeTranscripts may not be indexed yet — materialize their rows
+    # first so the merge/backlink below (and the chip's name lookup) resolve.
+    await _ensure_claude_session_rows(context_typeids)
+    await _merge_shared_context_into_conversation(conv, context_typeids, someone_typeid)
 
     sender_participant = await User.current_sender_participant(body.get("sender_name"))
     sender_id = sender_participant.get("user_id") or None
@@ -630,6 +693,11 @@ async def handle_add_message(body: dict, someone_typeid: str) -> ApiResponse:
             "flow_message_id": reply_fm.id,
             "is_draft": True,
         })
+
+    # Mutual context: link each just-shared entity back to this message (the
+    # message → entity direction already rides on the FM's own
+    # shared_context_entities, stamped at build time above).
+    await _link_message_into_context_entities(reply_fm, context_typeids, someone_typeid)
 
     # Append pointer + project message_ids before the hub header so the
     # conversation.jsonl is consistent when the body bundle packs.

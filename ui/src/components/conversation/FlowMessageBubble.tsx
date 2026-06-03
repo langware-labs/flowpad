@@ -5,8 +5,9 @@ import { useEffect, useState } from 'react';
 import type { ITask } from '@sdk/entities/task';
 import type { ConversationMessage, ConversationParticipant } from '@sdk/entities/conversation';
 import { BodyStatus } from '@sdk/entities/flow-message';
-import { AlertCircle, Download, Loader2, X } from 'lucide-react';
+import { AlertCircle, Download, FileText, Loader2, X } from 'lucide-react';
 import { MessageBubble } from './MessageBubble';
+import { PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT } from './constants';
 import { AttachmentChip, AttachmentChipState } from './AttachmentChip';
 import { ContextEntityChip } from './EntityChip';
 import { GitRepoChip } from '@src/components/git/GitRepoChip';
@@ -179,6 +180,8 @@ export function FlowMessageBubble({
     items: attachmentItems,
     entities,
     downloaded,
+    sharesTranscript,
+    hasPrompt,
     assetCount,
     assetLabels,
     progress,
@@ -322,6 +325,19 @@ export function FlowMessageBubble({
   const bodyStatus = fm.body_status ?? BodyStatus.NA;
   const hasBody = bodyStatus !== BodyStatus.NA;
 
+  // A transcript-only share renders a fully blank bubble without this note:
+  // the backend synthesizes the "Please run the following prompt:" placeholder
+  // for any empty-text send (MessageBubble suppresses it, assuming a prompt
+  // row takes its place), the conversation.jsonl transcript is deliberately
+  // NOT a chip (it lives in the Context tab), and the structural TYPE_ID
+  // self-refs are filtered too. When the message carries a transcript but no
+  // prompt and no renderable chips, say what was shared instead of nothing.
+  const isBareTranscriptShare =
+    sharesTranscript &&
+    !hasPrompt &&
+    !hasAttachments &&
+    (!message.content || message.content === PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT);
+
   // One click pulls the whole bundle (files + entities). When the parent supplies
   // a project gate, route through it: assets materialize into the conversation's
   // project, so a download with no project selected opens the picker first and
@@ -334,8 +350,14 @@ export function FlowMessageBubble({
   const progressPct =
     progress && progress.bytesTotal > 0 ? Math.round(progress.fraction * 100) : null;
 
-  const footer = hasAttachments || downloadError ? (
+  const footer = hasAttachments || downloadError || isBareTranscriptShare ? (
     <div className="mt-2 space-y-1.5">
+      {isBareTranscriptShare && (
+        <div className="flex items-center gap-1.5 text-[11px] italic text-muted-foreground">
+          <FileText className="h-3 w-3 shrink-0" />
+          Shared a session transcript — see the Context tab
+        </div>
+      )}
       {downloadError && (
         <div
           className="flex items-start gap-2 rounded-md border border-orange-500/30 bg-orange-500/10 px-2 py-1.5 text-[11px] text-orange-700 dark:text-orange-300"

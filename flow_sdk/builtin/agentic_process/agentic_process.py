@@ -44,12 +44,13 @@ from flow_sdk.flowpad_types.enums import ProcessType, WorkerType
 from flow_sdk.builtin.worker_status import WorkerStatus, is_terminal as is_worker_terminal
 from flow_sdk.builtin.process_lifecycle import ProcessStatus
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.builtin.agentic_process.status_predicates import is_ready_for_input
+from flow_sdk.builtin.agentic_process.status_predicates import is_ready_for_input, is_process_startable
 from flow_sdk.fs_store.indexer.functions.claude_sessions import get_claude_session
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 
 if TYPE_CHECKING:
+    from flow_sdk.builtin.agentic_process.prompt_queue import PromptQueue
     from flow_sdk.builtin.faas.compute_node import ComputeNode
     from flow_sdk.builtin.shell import Shell
     from flow_sdk.transcript_analyzer import AgentTranscriptFile
@@ -137,6 +138,10 @@ _PROMPT_WORKERS: dict[str, Any] = {}
 # concurrent refresh-driven calls can't both run recovery on the same process.
 _OPEN_LOCKS: dict[str, asyncio.Lock] = {}
 
+# Per-process serialization for prompt-queue drains so two ready edges can't
+# pop+inject the same head twice.
+_QUEUE_LOCKS: dict[str, asyncio.Lock] = {}
+
 
 # Worker statuses for which an OS-pid liveness reconciliation is meaningful.
 # Terminal statuses (COMPLETE, ERROR, INTERRUPTED, INACTIVE) already encode the
@@ -218,6 +223,26 @@ def _get_open_lock(process_id: str) -> asyncio.Lock:
         lock = asyncio.Lock()
         _OPEN_LOCKS[process_id] = lock
     return lock
+
+
+def _get_queue_lock(process_id: str) -> asyncio.Lock:
+    lock = _QUEUE_LOCKS.get(process_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _QUEUE_LOCKS[process_id] = lock
+    return lock
+
+
+async def _read_json_body() -> dict | ApiFailResponse:
+    """JSON object body of the current request, or an ``ApiFailResponse``
+    the action can return as-is."""
+    request_info = get_current_request_info()
+    if not request_info:
+        return ApiFailResponse(message="No request info")
+    body = await request_info.get_post_data()
+    if not isinstance(body, dict):
+        return ApiFailResponse(message="Expected JSON object body")
+    return body
 
 
 def _write_plan_frontmatter(file_path: str, fields: dict) -> None:
@@ -404,7 +429,6 @@ class AgenticProcess(Entity):
             "Null for legacy rows pre-dating this field."
         ),
     )
-    queue: dict | None = APIField(default=None)
     restart_required: bool = APIField(
         default=False,
         description=(
@@ -1148,6 +1172,140 @@ class AgenticProcess(Entity):
             if deadline and time.monotonic() > deadline:
                 raise TimeoutError(f"Process did not reach idle state within {timeout}s")
             await asyncio.sleep(2.0)
+
+    # ── Prompt queue ──────────────────────────────────────────────────────────
+
+    def _record_dir(self) -> "Path":
+        """This process's record folder (deterministic from type+id)."""
+        from flow_sdk.fs_store.fs_record import record_stem
+        from flow_sdk.fs_store.record_paths import get_default_records_root
+
+        return get_default_records_root() / "agentic_process" / record_stem("agentic_process", self.id)
+
+    @property
+    def queue(self) -> "PromptQueue":
+        """The process's file-backed FIFO prompt queue (``prompt_queue.json``)."""
+        from flow_sdk.builtin.agentic_process.prompt_queue import PromptQueue
+
+        return PromptQueue(FSRef(self._record_dir() / "prompt_queue.json"))
+
+    def _queue_state(self) -> dict:
+        """Queue state for entity payloads — never raises (a serializer
+        exception would poison the whole entity dump)."""
+        try:
+            return self.queue.read()
+        except Exception:
+            return {"enabled": True, "entries": []}
+
+    def _queue_ready(self) -> bool:
+        """Drain-local readiness — superset of ``is_ready_for_input`` that also
+        admits a cold (startable) AP for its FIRST prompt.
+
+        Cold start is deliberate for BOTH modes: the first queued prompt boots
+        the worker *with* it — ``prompt()`` routes a cold PTY to
+        ``start_pty(instruction=head)`` (launch arg) and a cold headless AP to
+        ``headless_prompt``. Both are deterministic and dodge the
+        boot-empty-then-write-stdin readline race (the original "lost first
+        prompt" bug). Follow-up prompts inject via stdin only once the worker is
+        genuinely idle post-turn (``is_ready_for_input``)."""
+        if is_ready_for_input(self):
+            return True
+        return not getattr(self, "_turn_in_flight", False) and is_process_startable(self.status)
+
+    def _schedule_queue_drain(self, source: str) -> None:
+        """Fire-and-forget a drain attempt; never block the caller."""
+        try:
+            task = asyncio.create_task(self._maybe_drain_queue(source))
+        except RuntimeError:
+            return  # no running loop (sync context) — nothing to drain into
+        task.add_done_callback(lambda t: self._log_drain_task_exc(t, source))
+
+    def _log_drain_task_exc(self, task: "asyncio.Task", source: str) -> None:
+        exc = None if task.cancelled() else task.exception()
+        if exc is not None:
+            try:
+                self.queue.log("error", source, error=f"drain task: {exc!r}")
+            except Exception:
+                pass
+
+    async def _maybe_drain_queue(self, source: str) -> None:
+        """Inject the FIFO head into the worker iff enabled + non-empty + ready.
+
+        One entry per call. Pop-persists the head BEFORE injecting so a re-fired
+        ready edge can never re-inject it. Runs under a per-process lock.
+        """
+        q = self.queue
+        async with _get_queue_lock(self.id):
+            state = q.read()
+            if not state.get("enabled", True) or not state.get("entries"):
+                q.log("drain_check", source, reason="empty_or_disabled")
+                return
+            if not self._queue_ready():
+                q.log(
+                    "drain_check", source, reason="not_ready",
+                    status=self.status,
+                    worker_status=str(self._discover_status_from_transcript() or ""),
+                )
+                return
+            q.log("drain_check", source, reason="ok")
+            head = q.pop(source=source)  # persists removal + logs "pop"
+            if head is None:
+                return
+            q.log("inject", source, entry_id=head.get("id"), prompt=str(head.get("prompt", ""))[:200])
+            try:
+                await self.notify_updated()
+            except Exception:
+                pass
+        # Release the lock BEFORE prompt() — it may run start_pty (long) and is
+        # itself serialized by _PROMPT_LOCKS / _OPEN_LOCKS.
+        try:
+            await self.prompt(head["prompt"])
+            q.log("injected", source, entry_id=head.get("id"))
+        except Exception as e:  # noqa: BLE001 — already popped; record the loss
+            q.log("error", source, entry_id=head.get("id"), error=str(e))
+
+    @action.post(action_name="enqueue")
+    async def _enqueue_action(self) -> ApiSuccessResponse | ApiFailResponse:
+        body = await _read_json_body()
+        if isinstance(body, ApiFailResponse):
+            return body
+        prompt = (body.get("prompt") or "").strip()
+        if not prompt:
+            return ApiFailResponse(message="prompt is required")
+        self.queue.enqueue(prompt, source=str(body.get("source") or "ui"))
+        await self.notify_updated()
+        self._schedule_queue_drain("enqueue")
+        return ApiSuccessResponse(data=self.queue.read())
+
+    @action.post(action_name="dequeue")
+    async def _dequeue_action(self) -> ApiSuccessResponse | ApiFailResponse:
+        body = await _read_json_body()
+        if isinstance(body, ApiFailResponse):
+            return body
+        ident = body.get("id", body.get("index"))
+        if ident is None:
+            return ApiFailResponse(message="id or index is required")
+        self.queue.dequeue(ident)
+        await self.notify_updated()
+        return ApiSuccessResponse(data=self.queue.read())
+
+    @action.post(action_name="clear-queue")
+    async def _clear_queue_action(self) -> ApiSuccessResponse | ApiFailResponse:
+        self.queue.clear()
+        await self.notify_updated()
+        return ApiSuccessResponse(data=self.queue.read())
+
+    @action.post(action_name="set-queue-enabled")
+    async def _set_queue_enabled_action(self) -> ApiSuccessResponse | ApiFailResponse:
+        body = await _read_json_body()
+        if isinstance(body, ApiFailResponse):
+            return body
+        enabled = bool(body.get("enabled", True))
+        self.queue.set_enabled(enabled)
+        await self.notify_updated()
+        if enabled:
+            self._schedule_queue_drain("enable")
+        return ApiSuccessResponse(data=self.queue.read())
 
     # ── Execution ─────────────────────────────────────────────────────────────
 
@@ -1932,12 +2090,7 @@ class AgenticProcess(Entity):
 
         ``<records_root>/agentic_process/agentic_process-@<id>/execution/assets``
         """
-        from flow_sdk.fs_store.fs_record import record_stem
-        from flow_sdk.fs_store.record_paths import get_default_records_root
-
-        root = get_default_records_root()
-        d = root / "agentic_process" / record_stem("agentic_process", self.id)
-        a = d / "execution" / "assets"
+        a = self._record_dir() / "execution" / "assets"
         a.mkdir(parents=True, exist_ok=True)
         return a
 
@@ -2508,6 +2661,7 @@ class AgenticProcess(Entity):
         ready = is_ready_for_input(self, computed)
         d["ready_for_input"] = ready
         d["ready_for_input_since"] = self._ready_for_input_since() if ready else None
+        d["queue"] = self._queue_state()
         return d
 
     @model_serializer(mode="wrap")
@@ -2522,6 +2676,7 @@ class AgenticProcess(Entity):
         ready = is_ready_for_input(self, computed)
         data["ready_for_input"] = ready
         data["ready_for_input_since"] = self._ready_for_input_since() if ready else None
+        data["queue"] = self._queue_state()
         # Surface the live launch command so the UI (run drawer, session info
         # popover, etc.) can show what was actually spawned. Failure-tolerant:
         # if a driver hasn't been wired or the cli_config is malformed, omit
@@ -2537,11 +2692,7 @@ class AgenticProcess(Entity):
         missing = [a for a in ("exe_folder", "input_folder", "output_folder", "assets_folder") if not data.get(a)]
         if missing and self.id:
             try:
-                from flow_sdk.fs_store.fs_record import record_stem
-                from flow_sdk.fs_store.record_paths import get_default_records_root
-                from flow_sdk.fs_store.fs_ref import FSRef
-
-                base = get_default_records_root() / "agentic_process" / record_stem("agentic_process", self.id)
+                base = self._record_dir()
                 folder_map = {
                     "exe_folder": base / "execution",
                     "input_folder": base / "execution" / "input",
@@ -3032,13 +3183,7 @@ class AgenticProcess(Entity):
     @action.get(action_name="input-dir")
     async def get_input_dir(self):
         """Return the absolute path of this process's input directory, creating it if needed."""
-        from flow_sdk.fs_store.fs_record import record_stem
-        from flow_sdk.fs_store.record_paths import get_default_records_root
-
-        uid = self.id
-        root = get_default_records_root()
-        record_dir = root / "agentic_process" / record_stem("agentic_process", uid)
-        input_dir = record_dir / "input"
+        input_dir = self._record_dir() / "input"
         input_dir.mkdir(parents=True, exist_ok=True)
 
         shell = await self.shell()
@@ -3219,6 +3364,12 @@ class AgenticProcess(Entity):
                     )
 
             await self.notify_updated()
+
+            # Drain the prompt queue on a transition INTO a ready state. This is
+            # the single AP-level seam for both PTY *and* headless turns (both
+            # write the transcript that lands here), so no driver coupling.
+            if current in (WorkerStatus.IDLE, WorkerStatus.COMPLETE, WorkerStatus.INTERRUPTED):
+                self._schedule_queue_drain("ready")
         except asyncio.CancelledError:
             raise
         except Exception:
