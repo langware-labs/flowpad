@@ -3,6 +3,7 @@ import {
   AgenticProcess,
   dataContext,
   dataManager,
+  DockPointerData,
   Project,
   Shell,
   ShellStatus,
@@ -162,6 +163,15 @@ export function terminalTransportShellId(tab: TerminalTab): string | null {
 
 export function terminalProcessId(tab: TerminalTab): string | null {
   return tab.targetTypeId.type === AgenticProcess.type ? tab.targetTypeId.id : null;
+}
+
+/**
+ * The pointer terminal surfaces navigate to: the live PTY route. Prefers the
+ * AgenticProcess's ``terminalDockPointer`` (its default ``dockPointer`` is the
+ * read-only lens/transcript) over the plain shell pointer.
+ */
+export function terminalDockPointer(tab: TerminalTab): DockPointerData | null {
+  return tab.agenticProcess?.terminalDockPointer ?? tab.shell?.dockPointer ?? null;
 }
 
 // ─── Module-level shared state ──────────────────────────────────────────────

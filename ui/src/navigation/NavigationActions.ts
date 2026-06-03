@@ -158,6 +158,17 @@ export class NavigationActions {
   }
 
   /**
+   * Open a dock pointer in a NEW browser tab (`_blank`), one per call —
+   * unlike {@link openInBrowserTab}, which reuses the single named
+   * "flowpad-shell" tab. Used by pop-out flows where each popped entity
+   * must get its own window. Inside Electron, the main process's
+   * setWindowOpenHandler routes this to the system browser.
+   */
+  openInNewBrowserTab(pointer: IDockPointer | DockPointer): void {
+    window.open(this.getDockUrl(pointer), '_blank', 'noopener,noreferrer');
+  }
+
+  /**
    * Close the current dock (navigate to base flow URL)
    */
   closeDock(): void {
