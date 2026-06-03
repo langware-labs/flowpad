@@ -29,6 +29,7 @@ from flow_sdk.fs_store.operations.conversation import (
     from_jsonl,
     message_pointers,
     project_pointers_to_entity,
+    prune_message_pointer,
 )
 from flow_sdk.builtin.flow_message_bundle import FlowMessageExistsError
 from flow_sdk.fs_store.record_types import RecordType
@@ -938,6 +939,114 @@ async def conversation_delete() -> ApiResponse:
         return ApiFailResponse(message=f"Failed: {e}")
 
 
+async def handle_remove_message(flow_message_id: str) -> ApiResponse:
+    """Delete a single FlowMessage everywhere (rule: sender OR conversation owner).
+
+    Local entrypoint behind the ``remove-message`` action. Flow:
+      * gate locally on the resolved cloud-user id == ``fm.sender_id`` OR
+        == ``conv.created_by`` (owner). Purely-local conversations have no
+        cloud counterpart, so the local single user always passes.
+      * for shared (``remote``) conversations, pre-check hub reachability then
+        call ``Conversation.remove_message`` — the hub re-enforces the gate,
+        deletes the hub-side FlowMessage and fans a DELETE op to participants.
+      * always purge the local existence: ``fm.destroy()`` (DB row +
+        relationships + on-disk record folder) and drop the conversation
+        pointer (``prune_message_pointer`` re-projects with notify so the
+        initiator's open view refreshes).
+    """
+    from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
+    from flow_sdk.utils.hub import HubError  # noqa: PLC0415
+
+    fm_id = (flow_message_id or "").strip()
+    if not fm_id:
+        return ApiFailResponse(message="flow_message_id is required")
+
+    fm = await FlowMessage.get_one({"id": fm_id})
+    if fm is None:
+        return ApiFailResponse(message=f"FlowMessage not found: {fm_id}", status_code=404)
+
+    conv_id = (fm.conversation_id or "").strip()
+    conv = await Conversation.get_one({"id": conv_id}) if conv_id else None
+
+    # A purely-local conversation (no cloud counterpart, owner-less) is
+    # single-user, so the gate + hub round-trip only apply to shared convs.
+    if conv and getattr(conv, "remote", False):
+        # Gate: deleter is the message sender OR the conversation owner. The
+        # cloud user id is the authority for both. Owner = ``created_by``
+        # matches (recipient-side, where the hub stamped the cloud-user id) OR
+        # the caller holds role ``owner`` in the participant roster
+        # (creator-side, where ``created_by`` is the local user id). The roster
+        # is the hub-authoritative signal on both sides.
+        cloud_user_id = await _current_cloud_user_id()
+        is_sender = bool(cloud_user_id and fm.sender_id and cloud_user_id == fm.sender_id)
+        is_owner = bool(
+            cloud_user_id and (
+                (conv.created_by and cloud_user_id == conv.created_by)
+                or any(
+                    (p or {}).get("user_id") == cloud_user_id
+                    and str((p or {}).get("role") or "").lower() == "owner"
+                    for p in (conv.participants or [])
+                )
+            )
+        )
+        if not (is_sender or is_owner):
+            return ApiFailResponse(
+                message="Only the message sender or the conversation owner can delete this message.",
+                status_code=403,
+            )
+
+        # Delete for everyone via the hub (which re-enforces the gate and fans
+        # the DELETE op out to all participants).
+        if not hub_base_url():
+            return ApiFailResponse(
+                data={"hub_reachable": False, "auth_required": False, "id": fm_id},
+                message="Cloud disconnected — reconnect to delete shared messages.",
+            )
+        try:
+            await conv.remove_message(fm_id)
+        except HubError as e:
+            return ApiFailResponse(
+                data={"id": fm_id, "hub_status": e.status_code},
+                message=f"Hub {e.status_code}: {e.reason}",
+            )
+
+    # Purge the local existence (DB row + relationships + on-disk record folder).
+    try:
+        await fm.destroy()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[remove-message] local destroy failed fm=%s: %s", fm_id, e)
+
+    # Drop the conversation pointer + re-project (notify so the open view updates).
+    if conv_id:
+        rec = FSRecord(type=RecordType.CONVERSATION, id=conv_id)
+        try:
+            await prune_message_pointer(rec, fm_id, notify=True)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[remove-message] pointer prune failed fm=%s conv=%s: %s", fm_id, conv_id, e)
+
+    return ApiSuccessResponse(data={"flow_message_id": fm_id, "conversation_id": conv_id})
+
+
+@action.post(action_name="remove-message", types=["flow_message"])
+async def remove_message() -> ApiResponse:
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.someone_typeid:
+            return ApiFailResponse(message="Authentication required")
+        body = await request_info.get_post_data() or {}
+        fm_id = (body.get("flow_message_id") or "").strip()
+        # The action target id (flow_message-<id>) is the fallback when the
+        # body omits the explicit field — the UI calls it on the message entity.
+        if not fm_id:
+            tgt = getattr(request_info, "target_entity_typeid", None)
+            if tgt is not None and getattr(tgt, "id", None):
+                fm_id = str(tgt.id).strip()
+        return await handle_remove_message(fm_id)
+    except Exception as e:
+        logger.error("[flow_message_action] remove-message error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Failed: {e}")
+
+
 async def handle_invitation_decline(
     invitation_id: str, someone_typeid: str,
 ) -> ApiResponse:
@@ -1807,6 +1916,47 @@ async def _sync_remote_children(parent_tid: TypeId, child_type: str, someone_typ
             logger.warning("[subtree-sync] materialize %s-%s failed (non-fatal): %s", child_type, raw.get("id"), e)
 
 
+async def _ensure_shared_context_rows(conv: "Conversation", someone_typeid: str | None) -> None:
+    """Materialize a local stub row for each ``shared_context_entities`` member
+    that the recipient doesn't have yet.
+
+    The hub hosts no doc types (markdown, plan, …), so a shared doc's *row* never
+    arrives over the wire — only its typeid does, on the conversation's
+    ``shared_context_entities``. Without a local row the doc can't be resolved,
+    linked to its parent conversation, or carry comments. We create a minimal
+    ``remote=False`` stub (id + parent_type_id + a placeholder name); the doc's
+    content fills in later via the chip-open deploy / bundle-unpack path.
+
+    The stub is ``remote=False``: the hub hosts no doc types, so a markdown never
+    has its OWN hub row. Its ``parent_type_id`` = this (remote) conversation is
+    what makes it *effective*-remote, so a comment on it auto-shares under the
+    conversation (the nearest ancestor that IS hub-hosted). Marking the doc
+    ``remote=True`` would make ``nearest_remote_ancestor`` return the doc itself
+    and the comment create would 422 against the non-existent hub doc type.
+    Best-effort."""
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+    conv_ref = f"{BuiltinEntityType.CONVERSATION.value}-{conv.id}"
+    for ref in conv.shared_context_entities or []:
+        try:
+            tid = ref if isinstance(ref, TypeId) else TypeId(str(ref))
+            cls = SchemaRegistry.get_entity_cls(tid.type)
+            if cls is None or not tid.id:
+                continue
+            if await cls.get_one({"id": tid.id}) is not None:
+                continue  # row exists → _link_context_to_conversation handles it
+            stub = cls.model_validate({
+                "id": tid.id,
+                "remote": False,
+                "parent_type_id": conv_ref,
+                "name": tid.id,
+            })
+            stub.id = tid.id
+            await stub.save(someone_typeid)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[subtree-sync] stub %s failed (non-fatal): %s", ref, e)
+
+
 async def _sync_shared_context_subtree(conv_id: str, someone_typeid: str | None) -> None:
     """Recursive-share catch-up for one conversation.
 
@@ -1822,10 +1972,16 @@ async def _sync_shared_context_subtree(conv_id: str, someone_typeid: str | None)
         conv = await Conversation.get_one({"id": conv_id})
         if conv is None or not conv.shared_context_entities:
             return  # nothing shared → no subtree to catch up (skip the hub GET)
-        # 1) Link each shared-context doc to this conversation so its
-        #    ``effective_remote`` resolves (the doc is NOT a hub entity — the hub
-        #    has no markdown type — its content arrives via the chip-open
-        #    deploy). Reuses the same linker the share path runs.
+        # 1a) Ensure a local row exists for each shared-context doc. The hub
+        #     never ships the doc's row (no hub doc types), so on a recipient
+        #     that never had the file we mint a remote stub keyed on the shared
+        #     typeid — otherwise the link + comment-attach below have nothing to
+        #     bind to.
+        await _ensure_shared_context_rows(conv, someone_typeid)
+        # 1b) Link each shared-context doc to this conversation so its
+        #     ``effective_remote`` resolves (the doc is NOT a hub entity — the hub
+        #     has no markdown type — its content arrives via the chip-open
+        #     deploy). Reuses the same linker the share path runs.
         await conv._link_context_to_conversation()
         # 2) Pull the conversation's hub child entities (comments today; each
         #    carries its real doc parent in ``parent_type_id``). Materialize
@@ -2076,7 +2232,8 @@ async def _upsert_hub_conversation_metadata(
     existing = await Conversation.get_one({"id": conv_id})
     if existing is None:
         payload: dict = {"id": conv_id, "remote": True}
-        for k in ("title", "participants", "remote_project_id", "remote_project_name"):
+        for k in ("title", "participants", "remote_project_id", "remote_project_name",
+                  "shared_context_entities"):
             if hub_conv.get(k) is not None:
                 payload[k] = hub_conv[k]
         # Hub owner field ``initiated_by`` mirrors locally as ``created_by``.
@@ -2100,6 +2257,15 @@ async def _upsert_hub_conversation_metadata(
         v = hub_conv.get(k)
         if v is not None and getattr(existing, k, None) != v:
             setattr(existing, k, v)
+            changed = True
+    # ``shared_context_entities`` is wire-bound (hub-authoritative): adopt the
+    # hub's list when it differs. Local is list[TypeId], hub returns list[str] —
+    # compare via string projection so a re-echo of the same set is a no-op.
+    hub_ctx = hub_conv.get("shared_context_entities")
+    if isinstance(hub_ctx, list):
+        local_ctx = [str(t) for t in (existing.shared_context_entities or [])]
+        if local_ctx != [str(c) for c in hub_ctx]:
+            existing.shared_context_entities = hub_ctx
             changed = True
     hub_owner = hub_conv.get("initiated_by")
     if hub_owner is not None and getattr(existing, "created_by", None) != hub_owner:

@@ -47,10 +47,12 @@ def _read_memory_frontmatter_id(path: Path) -> str | None:
         return None
     fields = _yaml_load(fm) or {}
     raw = fields.get("id") or fields.get("asset_id")
-    return str(raw).strip() if isinstance(raw, str) and raw.strip() else None
+    from flow_sdk.fs_store.identifier import adopt_entity_id  # noqa: PLC0415
+    return adopt_entity_id(raw)  # validate-on-adopt (v4/v5) → else caller derives uuid5(path)
 
 def _mem_id(path: Path) -> str:
-    return str(uuid.uuid5(uuid.NAMESPACE_URL, str(path.resolve())))
+    from flow_sdk.fs_store.identifier import mint_uuid  # noqa: PLC0415
+    return mint_uuid(str(path.resolve()))
 
 def claude_memory_id(ref: FSRef) -> str:
     existing = _read_memory_frontmatter_id(ref._path)

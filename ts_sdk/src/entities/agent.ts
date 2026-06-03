@@ -1,7 +1,6 @@
 import { APIEntity, registerEntity } from '../APIEntity';
 import { FrontMatterFsRef } from '../fs/FrontMatterFsRef';
 import { DockPointerData } from '../models/DockPointer';
-import { ViewType } from '../utils/ui/view-types';
 import { dataContext } from '../FlowSync/context';
 import { ComputeNodeSize } from './compute-node';
 import { ISiteConfig } from './siteconfig';
@@ -97,11 +96,13 @@ export class Agent extends APIEntity<Agent> {
     this.site_config = entity.site_config;
   }
 
+  /** Default open target: the asset editor (URL-first navigate target). */
+  override get dockPointer(): DockPointerData {
+    return this.assetEditorPointer('agent', this.asset_ref) ?? super.dockPointer;
+  }
+
   override get searchDockPointer(): DockPointerData {
-    if (this.asset_ref) {
-      return new DockPointerData(ViewType.ASSETS, `editor/agent/${this.asset_ref.replace(/^\//, '')}`);
-    }
-    return this.dockPointer;
+    return this.assetEditorPointer('agent', this.asset_ref) ?? this.dockPointer;
   }
 
   override get editorDockPointer(): DockPointerData {

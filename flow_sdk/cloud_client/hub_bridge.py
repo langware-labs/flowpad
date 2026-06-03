@@ -572,13 +572,35 @@ class HubWsBridge:
 
         if op == "delete":
             existing = await FlowMessage.get_one({"id": fm_id})
+            conv_id = parent_conv_id or (
+                getattr(existing, "conversation_id", None) if existing is not None else None
+            )
             if existing is not None:
-                await FlowMessage.delete_by_id(fm_id)
+                # Erase the message's entire existence — DB row + relationships
+                # AND the on-disk record folder (body bundle, metadata, .hash).
+                # ``delete_by_id`` would leave the folder behind.
+                await existing.destroy()
+            # Drop the dangling conversation pointer so an open conversation view
+            # removes the bubble instead of rendering a permanent "Loading
+            # message…" placeholder for the now-deleted FlowMessage.
+            if conv_id:
+                from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
+                from flow_sdk.fs_store.operations.conversation import prune_message_pointer  # noqa: PLC0415
+                from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
+                try:
+                    rec = FSRecord(type=RecordType.CONVERSATION, id=conv_id)
+                    await prune_message_pointer(rec, fm_id, notify=True)
+                except Exception:
+                    logger.exception("hub_bridge: pointer prune failed fm=%s conv=%s", fm_id, conv_id)
             return
 
     async def _handle_conversation_op(self, op: str, conv_id: str, data: dict) -> None:
-        """Passive upsert of Conversation lifecycle changes (status, participants,
-        message_status_visible) so the local entity stays in sync.
+        """Passive upsert of Conversation lifecycle changes (title, status,
+        participants, message_status_visible) so the local entity stays in sync.
+
+        ``title`` is included so a peer's rename (sent over HTTP or WS and reflected
+        to the hub) fans out and lands on the local row here — otherwise a renamed
+        conversation would never update on the other side.
 
         Drops projection-guarded fields (``message_count``, ``message_ids``)
         before save — those are owned by ``ConversationRecord.sync_to_db``."""
@@ -591,7 +613,7 @@ class HubWsBridge:
         # Strip fields not on the local model or guarded against direct write.
         _PROJECTED = {"message_count", "message_ids"}
         _LOCAL_FIELDS = {
-            "id", "type", "remote_project_id", "remote_project_name",
+            "id", "type", "title", "remote_project_id", "remote_project_name",
             "participants", "message_status_visible",
         }
         clean = {k: v for k, v in data.items() if k in _LOCAL_FIELDS and k not in _PROJECTED}
@@ -617,7 +639,7 @@ class HubWsBridge:
             await Conversation.delete_by_id(conv_id)
             return
 
-        for field in ("message_status_visible", "participants", "remote_project_id", "remote_project_name"):
+        for field in ("title", "message_status_visible", "participants", "remote_project_id", "remote_project_name"):
             if field in clean:
                 setattr(existing, field, clean[field])
         await existing.save(someone_typeid, notify=True)

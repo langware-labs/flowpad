@@ -210,6 +210,17 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     return res!;
   }
 
+  /** Delete this message everywhere. Allowed only for the sender of the
+   *  message or the conversation owner — the backend (and hub) enforce that
+   *  gate. On a shared conversation this fans a DELETE out to every
+   *  participant; the message's entire existence (DB row + on-disk record
+   *  folder) is erased. POSTs /api/v1/graph/flow_message/<id>/remove-message. */
+  async remove(): Promise<void> {
+    if (!this.id) throw new Error('remove requires this.id');
+    const action = new ActionInfo('remove-message', FlowMessage.type, this.id, 'POST');
+    await dataManager.callAction<unknown, unknown>(action);
+  }
+
   // -------- Header / Body interface (principle #6) -------- //
 
   /** True iff at least one attachment requires a packed body bundle.

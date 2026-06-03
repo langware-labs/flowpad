@@ -29,7 +29,8 @@ import { Bookmark as BookmarkIcon, Copy, FolderOpen, Save, Send, ShieldOff, Stic
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './milkdown.css';
 import { planNotePlugins } from './plan-note-plugin';
-import { SendPlanNotificationDialog } from './SendSpecNotificationDialog';
+import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
+import { extractPlanTitle, planSpecShareSource } from '@src/hooks/share-sources';
 
 function parseFrontmatter(raw: string): { executed: boolean; body: string } {
   const m = raw.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
@@ -75,6 +76,17 @@ const PlanFileEditor: React.FC = () => {
   // State
   const [isExecuting, setIsExecuting] = useState(false);
   const [showShareDialog, setShowShareDialog] = useState(false);
+  // Stable source while the dialog is open so a retry reuses the same Spec/Task.
+  const shareSource = useMemo(
+    () =>
+      planSpecShareSource({
+        title: extractPlanTitle(fileContent, filePath),
+        content: fileContent,
+        processId: agenticProcess?.id ?? null,
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [showShareDialog, filePath],
+  );
 
   // Bookmark state for this plan file
   const [planBookmark, setPlanBookmark] = useState<Bookmark | null>(null);
@@ -274,13 +286,10 @@ const PlanFileEditor: React.FC = () => {
         </div>
       </div>
 
-      <SendPlanNotificationDialog
+      <ShareToConversationDialog
         open={showShareDialog}
         onClose={() => setShowShareDialog(false)}
-        planFilePath={filePath}
-        planContent={fileContent}
-        workdir={agenticProcess?.workdir}
-        processId={agenticProcess?.id}
+        source={shareSource}
       />
 
       {/* Editor body */}
@@ -415,12 +424,14 @@ const SpecEntityEditor: React.FC = () => {
         </div>
       </div>
 
-      <SendPlanNotificationDialog
+      <ShareToConversationDialog
         open={showShareDialog}
         onClose={() => setShowShareDialog(false)}
-        planFilePath={syntheticPath}
-        planContent={localContent ?? spec.content ?? ''}
-        workdir={null}
+        source={planSpecShareSource({
+          title: extractPlanTitle(localContent ?? spec.content ?? '', syntheticPath),
+          content: localContent ?? spec.content ?? '',
+          processId: null,
+        })}
       />
 
       <div className="min-h-0 flex-1">

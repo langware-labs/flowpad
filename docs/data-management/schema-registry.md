@@ -6,7 +6,13 @@ id: ab331b9d-eea6-58a5-b44e-bbd65be5f867
 
 The `SchemaRegistry` is the single source of truth for all type metadata across the Record and Entity layers. It replaces the two separate, unconnected registries that previously existed (`fs_store/factory/type_registry.py` and `schema/entity_factory.py`).
 
-**Key source file:** `flow_sdk/fs_store/schema_registry.py`
+Per-type metadata is **authored declaratively** in `flow_sdk/schema/type_info/<type>_info.py` modules (one `TypeMetadata` instance each) and **registered** into `SchemaRegistry` as `TypeInfo` by `register_all()`. Entity classes additionally self-register their `entity_cls` via `Entity.__init_subclass__`. See [Registration](#registration).
+
+**Key source files:**
+- `flow_sdk/fs_store/schema_registry.py` — `SchemaRegistry` + `TypeInfo`
+- `flow_sdk/schema/type_info/__init__.py` — `TypeMetadata` + `register_all()`
+- `flow_sdk/schema/type_info/<type>_info.py` — per-type metadata authoring
+- `flow_sdk/schema/types.py` — `EntityType`, the single canonical type-name enum
 
 ---
 
@@ -17,103 +23,120 @@ Every registered type has exactly one `TypeInfo` object:
 ```python
 @dataclass
 class TypeInfo:
-    # Structural (included in hash, persisted to disk)
+    # --- Structural fields (included in schema_hash) ---
     type_name: str
     uid_field: str = "id"
     index_fields: list[str] = ...
     defaults: dict[str, Any] = ...
-    read_only: bool = False
     indexed_by_default: bool = False
+    browseable: bool = False
+    creatable: bool = False
+    api_visible: bool = False
+    icon: str | None = None
     parent_type: str | None = None    # string only, resolved lazily
-    locations: list[str] = ...        # "record", "index", or both
+    locations: list[str] = ...        # "index" (and/or "record")
 
-    # Runtime refs (NOT persisted)
-    record_cls: type | None = ...     # the Record subclass
-    entity_cls: type | None = ...     # the DBBaseRecord subclass
+    # --- Runtime refs (NOT in hash, NOT persisted) ---
+    entity_cls: type | None = ...     # the Entity subclass (db_base_record)
+    post_sync_fn / from_disk_fn / gen_id_fn / asset_hash_fn / default_body_fn: Any
+    metadata: Any                     # the TypeMetadata instance it was built from
+    meta_model: Any                   # per-type pydantic FS↔DB schema model
+    main_subdir: str | None = None    # scope-relative asset subdir
+    main_layout: str = "file"         # "file" | "folder"
 ```
+
+There is **no `record_cls` field** — `FSRecord` is now the single concrete record class (no `Record` subclasses), so a per-type record class is no longer registered. Per-type record behavior lives in free functions (`from_disk_fn`, `gen_id_fn`, etc.) attached to the `TypeInfo`, not on a subclass.
 
 ### Dynamic properties
 
 | Property | Description |
 |----------|-------------|
-| `schema_hash` | MD5 of structural fields as canonical JSON (first 16 hex chars). Used to gate disk writes. |
-| `extends` | Resolves `parent_type` string → `TypeInfo` via registry lookup. |
-| `subtypes` | All direct children registered with `parent_type == self.type_name`. |
-| `scans` | Last 20 entries from `~/.flow/schema/types/<type>/scan_log.jsonl`. Read on access, not persisted. |
+| `schema_hash` | MD5 of structural fields as canonical JSON (first 16 hex chars). Stable across runs. |
+| `extends` | Resolves `parent_type` string → `TypeInfo` via `SchemaRegistry.get`. |
+| `subtypes` | All direct children registered with `parent_type == self.type_name` (returns `list[TypeInfo]`). |
+| `type_id` | A `TypeId(type=self.type_name)` for this type. |
 
 ---
 
 ## Registration
 
-Types register themselves automatically via `__init_subclass__` hooks:
+A type's `TypeInfo` is assembled from up to two sources that merge into one entry:
 
-### Record subclasses (`flow_sdk/fs_store/record.py`)
+### 1. Declarative metadata (`flow_sdk/schema/type_info/<type>_info.py`)
 
-When a `Record` subclass declares `_record_type`, `__init_subclass__` (line 212) fires and:
-1. Resolves `parent_type` by walking the MRO for the first base class with its own `_record_type`
-2. Registers with `SchemaRegistry` using `locations=["record"]`, `record_cls=cls`
-3. Also registers with the legacy `fs_store/factory/type_registry` as a fallback
+Each `<type>_info.py` module declares one (or more) `TypeMetadata` instance at module scope. Example (`skill_type_info.py`):
 
-Additional fields extracted from the class:
-- `uid_field` from `cls.uid_field_name` (defaults to `"id"`)
-- `index_fields` from `cls.index_fields`
-- `defaults` from `cls._DATA_DEFAULTS`
-- `read_only` from `cls._read_only`
-- `indexed_by_default` from `cls._indexed_by_default` (defaults to `False`)
+```python
+SKILL = TypeMetadata(
+    type=EntityType.SKILL,
+    icon="Sparkles",
+    browseable=True,
+    creatable=True,
+    indexed_by_default=True,
+    api_visible=True,
+    index_fields=["description"],
+    main_subdir=".claude/skills",
+    main_layout="folder",
+    from_disk_fn=extract_skill,
+    gen_id_fn=skill_gen_id,
+    asset_hash_fn=skill_asset_hash,
+)
+```
 
-Types marked as indexed by default:
-- `SkillRecord` (`skill`)
-- `MemoRecord` (`memo`)
-- `AgentRecord` (`agent`)
-- `TaskResource` (`task`)
-- `AgenticProcessRecord` (`agentic_process`)
+`register_all()` (in `flow_sdk/schema/type_info/__init__.py`) walks every sibling `*_info` module via `pkgutil`, finds module-scope `TypeMetadata` instances, and calls `.register()` on each — which converts the `TypeMetadata` to a `TypeInfo` (`to_type_info()`, `locations=["index"]`) and hands it to `SchemaRegistry.register()`.
 
-**Note:** `error` and `claude_error` record types are NOT in the default index types. They have their own parallel discovery mechanism via `ClaudeErrorRecordList._do_sync()`, which bypasses SchemaRegistry's scan/index orchestration entirely.
+`register_all()` is wired into startup by importing `flow_sdk.fs_store.indexer.registrations` (which calls it at module load — `registrations.py:49`); `flow_sdk/server/app.py` imports that module so the declarative metadata (icons, `from_disk_fn`, etc.) lands before the first bootstrap.
 
-### Entity subclasses (`flow_sdk/db/drivers/db_base_record.py`)
+`TypeMetadata` is the *declarative authoring* shape; `TypeInfo` is the *runtime registry record* it produces. A type may subclass `TypeMetadata` to add type-specific extras; the instance is attached to `TypeInfo.metadata` so base classes can read those extras, while the flat `TypeInfo` fields remain the single serialized surface.
 
-When a `DBBaseRecord` subclass registers via `__init_subclass__` (line 59):
-1. Calls `cls.get_type()` to resolve the type name
-2. Registers with `SchemaRegistry` using `locations=["index"]`, `entity_cls=cls`
-3. Also registers with the legacy `schema/entity_factory.type_registry`
+### 2. Entity subclasses (`flow_sdk/db/drivers/db_base_record.py`)
 
-Bootstrap entities (User, Project, ComputeNode) have `locations=["index"]` only — no `record_cls`.
+When an `Entity` (`DBBaseRecord`) subclass is defined, `__init_subclass__` (`db_base_record.py:58`) fires and — unless the class is `_abstract` — resolves the type name via `cls.get_type()` and calls `SchemaRegistry.register(TypeInfo(type_name=..., locations=["index"], entity_cls=cls, browseable/creatable/indexed_by_default/api_visible/icon from the class `_*` ClassVars))`.
+
+This is the **only** remaining `__init_subclass__` auto-registration. There is no `Record`/`_record_type` `__init_subclass__` registration — `flow_sdk/fs_store/record.py` does not exist; `FSRecord` (`flow_sdk/fs_store/fs_record.py`) is the lone record class and carries no per-type config.
 
 ### Merge semantics
 
-`register()` is idempotent. When the same `type_name` registers twice (once as Record, once as Entity):
-- Locations are merged: `["record", "index"]`
-- `record_cls` and `entity_cls` are each set on the first non-None value
+`register()` is idempotent and **merges on re-register** (`schema_registry.py:357`). The declarative `TypeMetadata` and the Entity `__init_subclass__` typically both register the same `type_name`; the merge:
+- unions `locations`,
+- fills `entity_cls`, `metadata`, `meta_model`, and the per-type function refs (`post_sync_fn`, `from_disk_fn`, `gen_id_fn`, `asset_hash_fn`, `default_body_fn`) on first non-None,
+- OR-merges the boolean flags (`browseable`, `creatable`, `indexed_by_default`, `api_visible`),
+- overwrites `icon`, `main_subdir`, `main_layout`, `index_fields` when the new value is set.
 
-This is the normal path for types like `agentic_process` that exist in both layers — the Record subclass registers first with `locations=["record"]`, then the Entity subclass enriches the same `TypeInfo` with `locations=["record", "index"]`.
+Registration order does not matter — whichever side imports first creates the entry, the other enriches it.
 
 ---
 
-## Persistence (`type_info.json`)
+## Persistence
 
-Each type gets a `~/.flow/schema/types/<type>/type_info.json` file containing structural fields and `schema_hash`. Writes are hash-gated: if the structural hash matches the last-written value, no file write occurs.
+The `TypeInfo` registry is **rebuilt in-memory on every startup** from `register_all()` + Entity `__init_subclass__`; it is **not** persisted to disk. `TypeInfo` exposes `to_dict()` / `from_dict()` and a `schema_hash` property, but there is no code that writes a per-type `type_info.json`, and there is no `load_persisted()` method. (The module docstring at `schema_registry.py:6` still mentions a `type_info.json` file — that is stale.)
 
-`SchemaRegistry.load_persisted()` can restore structural metadata from disk at startup without requiring Python class imports.
+What *is* written under `~/.flow/schema/` is the scan/index **run-history JSONL** logs (see below), not type metadata.
 
 ---
 
 ## Scan/Index Orchestration
 
-`SchemaRegistry` owns all scan and index operations (previously `SchemaRecord`).
+The actual scan/index **walk** is owned by the indexer package — `FSIndexer` (`flow_sdk/fs_store/indexer/`), built via `build_default_indexer()` and accessed through `get_shared_indexer()`. The HTTP-facing orchestration lives in `FsRecordsActionsMixin` (`flow_sdk/builtin/faas/fs_records_actions.py`) on the ComputeNode, which calls `get_shared_indexer().scan(...)`.
+
+`SchemaRegistry` itself retains only the **registry queries, default-type list, run-history logging, status, clear, and errors** helpers below. The old `discover` / `incremental` / `index_type` / `_scan_type` / `rebuild_index` methods (and their `sync` / `sync_incremental` / `rebuild` aliases) are **no longer on `SchemaRegistry`** — that orchestration moved into the indexer + the ComputeNode mixin handlers.
 
 ### Method reference
 
 | Method | Description |
 |--------|-------------|
-| `discover(types, trigger, limit_per_type, actions)` | Full scan+index for given or default types. Returns `(scan_results, index_results)`. Also aliased as `sync()`. |
-| `incremental(request: IndexRequest)` | Scan+index types not indexed since `request.start_time`. Aliased as `sync_incremental()`. |
-| `index_type(type_or_cls, limit, clear_first)` | Index one type. Accepts type name string or Record class (backward compat). |
-| `_scan_type(type_or_cls, include_records, limit)` | Scan one type, return `ScanResult`. |
-| `rebuild_index(types, trigger)` | Clear then re-index. Aliased as `rebuild()`. |
-| `clear_index(types)` | Clear FTS index, entities, and per-type logs. Aliased as `clear()`. |
-| `get_index_status(types)` | Return `IndexStatus` with freshness info for all default types. Aliased as `get_status()`. |
-| `get_errors(type_name)` | Return `RecordError` list, optionally filtered by type. |
-| `get_default_index_types()` | Return list of `indexed_by_default=True` types. Falls back to built-in list if registry is empty. |
+| `register(info)` / `register_crud_type(type_name, *, icon)` | Register or enrich a `TypeInfo`. `register_crud_type` adds a CRUD-only type with no indexer walker. |
+| `get(type_name)` | Return the `TypeInfo` for a type name or `TypeId`, or `None`. |
+| `get_subtypes(type_name)` | Direct children as `list[TypeInfo]`. |
+| `get_entity_cls` / `is_entity_type` / `is_implemented` / `is_public_entity` | Entity-class lookups / predicates. |
+| `get_all_entity_types` / `get_all_entity_classes` / `get_public_entity_types` | Bulk entity-type/class listings. |
+| `is_api_visible` / `get_icon` / `is_browseable` / `is_creatable` / `is_indexed_by_default` | Presentation read-through getters. |
+| `get_default_index_types()` | Return `indexed_by_default=True` types. Falls back to `_BUILTIN_DEFAULT_TYPES` if the registry list is empty. |
+| `append_scan(...)` / `append_index(...)` | Write a scan/index entry to the run-history JSONL logs (global + per-type). |
+| `get_last_scan_at` / `get_last_index_at` | Read the latest timestamp from a type's run-history JSONL. |
+| `clear_index(types)` | Clear FTS index, entities, per-type index logs, and record errors. Aliased as `clear()`. |
+| `get_index_status(types, scope)` | Return `IndexStatus` freshness snapshot (DB-free for freshness). Aliased as `get_status()`. |
+| `get_errors(type_name)` | Return `RecordError` list (via `FSRecord.discover(RECORD_ERROR)`), optionally filtered by type. |
 
 ### Log files
 
@@ -122,61 +145,56 @@ All operations are logged to JSONL files:
 ```
 ~/.flow/schema/
   scan_log.jsonl              # global scan log (all types)
-  index_log.jsonl             # global index log (all types)
+  index_log.jsonl             # global index log (written only by clear; see note)
   types/
     skill/
-      type_info.json          # TypeInfo structural fields + hash
       scan_log.jsonl          # per-type scan log
       index_log.jsonl         # per-type index log
-    memo/
+    agent/
       ...
 ```
 
-Each log file is capped at 100 entries (oldest trimmed on append).
+(No `type_info.json` is written — `TypeInfo` is rebuilt in-memory at startup, not persisted.)
+
+Each log file is capped at `_MAX_LOG_ENTRIES` = 100 entries (oldest trimmed on append). Note: `append_index` writes **per-type** logs only; the global `index_log.jsonl` is created/removed by `clear_index`, and the "global" last-indexed time is derived as `max(per_type.last_indexed_at)` in `get_index_status`.
 
 ### Result types
 
 | Type | Fields |
 |------|--------|
 | `ScanResult` | `type_name`, `count`, `total_bytes`, `scan_ms`, `last_scan_at`, `records`, `avg_bytes`, `min_bytes`, `max_bytes` |
-| `IndexResult` | `type_name`, `indexed`, `skipped`, `duration_ms`, `last_index_at`, `errors` |
+| `IndexResult` | `type_name`, `indexed`, `skipped`, `duration_ms`, `last_index_at`, `errors`, `fresh` |
 | `IndexRequest` | `types`, `actions`, `start_time`, `end_time`, `trigger`, `limit_per_type` |
 | `ClearResult` | `fts_cleared`, `entities_cleared`, `types_cleared` |
-| `IndexStatus` | `never_indexed`, `last_indexed_at`, `stale`, `default_types`, `per_type` |
-| `TypeIndexStatus` | `type_name`, `last_indexed_at`, `last_scan_at`, `entity_count`, `stale` |
+| `IndexStatus` | `never_indexed`, `last_indexed_at`, `stale`, `default_types`, `per_type`, `total_orphans` |
+| `TypeIndexStatus` | `type_name`, `last_indexed_at`, `entity_count`, `stale`, `orphan_count` |
+
+(`IndexRequest` is still a defined dataclass, but `SchemaRegistry` no longer has an `incremental(request)` method that consumes it.)
 
 ---
 
 ## Backward Compatibility
 
-`flow_sdk/fs_records/schema_record.py` is a thin re-export shim:
+The old `flow_sdk/fs_records/schema_record.py` `SchemaRecord` re-export shim and the `fs_store/factory/type_registry.py` record-registry shim **no longer exist**. The only remaining legacy shim is the Entity registry:
 
-```python
-from flow_sdk.fs_store.schema_registry import SchemaRegistry as SchemaRecord
-```
+- `schema/entity_factory.py` — `type_registry` is an `_EntityRegistryShim` instance that delegates all lookups to `SchemaRegistry` (`get(name)` → `SchemaRegistry.get_entity_cls(name)`, `is_registered`/`is_implemented`/`is_public`, `entity_models`, etc.). `register()` is a no-op (registration now happens via Entity `__init_subclass__` → SchemaRegistry). The `TypeRegistry` class alias is retained for `db_driver.py` type annotations; `RegistryEntry` has been removed.
 
-All existing code that imports `SchemaRecord` continues to work. The old method names (`discover`, `incremental`, `rebuild_index`, `clear_index`, `get_index_status`) are kept as primary names on `SchemaRegistry`; the new names (`sync`, `sync_incremental`, `rebuild`, `clear`, `get_status`) are aliases.
+The single canonical type-name enum is `EntityType` (`flow_sdk/schema/types.py`). The historical `RecordType` (`fs_store/record_types.py`) and `BuiltinEntityType` enums are now **aliases of `EntityType`**, re-exported from their old modules for backward compatibility — `RecordType = EntityType`.
 
-Both legacy type registries are now thin backward-compat shims that fully delegate to `SchemaRegistry`:
+`SchemaRegistry` is authoritative for both Record (`FSRecord`) and Entity lookups.
 
-- `fs_store/factory/type_registry.py` — `type_registry` is an `_FsRegistryShim` instance. `get(type_name)` delegates to `SchemaRegistry.get_record_cls(type_name)`. `register()` is a no-op (registration now happens via `__init_subclass__` → SchemaRegistry).
-- `schema/entity_factory.py` — `type_registry` is an `_EntityRegistryShim` instance. `get(name)` delegates to `SchemaRegistry.get_entity_cls(name)`. `register()` is a no-op. `TypeRegistry` class alias retained for type annotations. `RegistryEntry` has been removed.
-
-`SchemaRegistry` is now authoritative for **both** Record and Entity lookups.
-
-### New convenience methods on SchemaRegistry
+### Convenience methods on SchemaRegistry
 
 | Method | Returns | Description |
 |--------|---------|-------------|
 | `get_entity_cls(type_name)` | `type \| None` | Entity class for the given type, or None |
-| `get_record_cls(type_name)` | `type \| None` | Record class for the given type, or None |
 | `is_entity_type(type_name)` | `bool` | True if an entity class is registered for this type |
 | `is_implemented(type_name)` | `bool` | Alias for `is_entity_type()` |
-| `is_public_entity(type_name)` | `bool` | True if entity class exists and `api_visible()` returns True |
+| `is_public_entity(type_name)` | `bool` | True if entity class exists and `api_visible` is True |
 | `get_all_entity_types()` | `list[str]` | All type names with a registered entity class |
 | `get_all_entity_classes()` | `list[type]` | All registered entity classes |
-| `get_public_entity_types()` | `list[str]` | Entity type names where `api_visible()` is True |
-| `get_all_record_types()` | `list[str]` | All type names with a registered record class |
+| `get_public_entity_types()` | `list[str]` | Entity type names where `api_visible` is True |
+| `get_all_record_types()` | `list[str]` | **Note:** currently returns type names with a registered entity class (same predicate as `get_all_entity_types`) — there is no separate `record_cls` concept. There is no `get_record_cls()`. |
 
 ### Duplicate entity registration
 
@@ -186,7 +204,7 @@ Both legacy type registries are now thin backward-compat shims that fully delega
 
 ## HTTP Endpoints
 
-The ComputeNode exposes these `fs-records` endpoints that use `SchemaRegistry`:
+The ComputeNode (`FsRecordsActionsMixin` in `flow_sdk/builtin/faas/fs_records_actions.py`) exposes these `fs-records` endpoints, which read type metadata from `SchemaRegistry` and drive the shared `FSIndexer`:
 
 | Endpoint | Handler | Description |
 |----------|---------|-------------|
@@ -200,23 +218,27 @@ The ComputeNode exposes these `fs-records` endpoints that use `SchemaRegistry`:
 ## Usage Example
 
 ```python
-import flow_sdk.fs_records  # triggers auto-registration of all Record types
+# Register declarative per-type metadata (icons, browseable, from_disk_fn, ...).
+# Importing the indexer registrations module runs register_all() as a side effect.
+import flow_sdk.fs_store.indexer.registrations  # noqa: F401
 
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
 # Inspect a type
 info = SchemaRegistry.get("skill")
-print(info.locations)       # ["record", "index"]
-print(info.schema_hash)     # "a3f1c2d4..."
+print(info.locations)           # ["index"]
+print(info.schema_hash)         # "a3f1c2d4..."
 print(info.indexed_by_default)  # True
+print(info.from_disk_fn)        # <function extract_skill ...>
 
 # Find subtypes
-children = SchemaRegistry.get_subtypes("transcript_entry")
+children = SchemaRegistry.get_subtypes("transcript_entry")  # list[TypeInfo]
 
-# Run a full scan+index
-scan_results, index_results = await SchemaRegistry.discover(trigger="manual")
+# Run a full scan via the shared indexer (orchestration is NOT on SchemaRegistry)
+from flow_sdk.fs_store.indexer import get_shared_indexer
+nodes = await get_shared_indexer().scan(...)
 
-# Get status
-status = SchemaRegistry.get_index_status()
+# Get freshness status
+status = await SchemaRegistry.get_index_status()
 print(status.never_indexed)  # True if never indexed
 ```

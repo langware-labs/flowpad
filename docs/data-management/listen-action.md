@@ -23,14 +23,18 @@ POST /api/v1/webhook/listen
          |
     DataOpMessage broadcast over WebSocket
          |
-    ConnectionManager.onDataOp() -> FlowSyncStore.onDataOp()
+    ConnectionManager.onDataOpMessage() -> emit('on_data_op', "type-id", op, data)
          |
-    WatchQueryMap / SubscriptionMap cache update + callbacks
+    DataManager.onDataOp()  +  FsRecordDataOpHandler.handleDataOp()
+         |
+    WatchedQuery re-run / alias-subscriber callbacks
 ```
+
+> The first arg of the `on_data_op` event is the `"type-id"` **string** form, not a `TypeId` object. Both `DataManager` (`FlowSync/store.ts`) and `FsRecordDataOpHandler` subscribe to it.
 
 ## Route Registration
 
-The webhook endpoint is registered in `/Users/shlom/Documents/dev/flow-cli/server/routes/webhook.py` as a plain FastAPI route:
+The webhook endpoint is registered in `/Users/shlom/Documents/dev/flowpad-oss/flow_sdk/server/routes/webhook.py` as a plain FastAPI route:
 
 ```python
 webhook_router = APIRouter(prefix="/api/v1/webhook")
@@ -45,7 +49,7 @@ async def listen_endpoint(request: Request):
 
 ## listen_action Entry Point
 
-**File:** `/Users/shlom/Documents/dev/flow-cli/flow_sdk/app/actions/listen.py`
+**File:** `/Users/shlom/Documents/dev/flowpad-oss/flow_sdk/app/actions/listen.py`
 
 ```python
 async def listen_action(request):
@@ -56,19 +60,28 @@ async def listen_action(request):
 
     if webhook_type == WebhookType.HOOK_OP:
         sync_payload = HookOpPayload(**raw_payload)
-        await _broadcast_to_sniffer(flow_value, "hook_op")
+        flow_value = {"webhook_type": "hook_op", **raw_payload}
         await _route_to_source_process(flow_value, execution_scope=sync_payload.execution_scope)
         return await handle_hook_op(sync_payload)
+        # NOTE: the sniffer broadcast for hook_op happens INSIDE handle_hook_op,
+        # not here. listen_action does NOT call _broadcast_to_sniffer for hook_op.
 
     if webhook_type == WebhookType.AGENT_HOOK:
-        # Skill usage count enrichment step (when tool_name == "Skill"):
-        # hook_data_dict["skill_usage_count"] = <usageCount from ~/.claude.json>
-        # This mutates raw_payload["hook_data"] in place before the model is built.
-        data = AgentHookData(**raw_payload)  # sees enriched hook_data
+        data = AgentHookData(**raw_payload)
+        payload_data = {"webhook_type": "agent_hook", **raw_payload}
+        skip_hook_id = raw_payload.get("agent_hook_id")
         await _broadcast_to_sniffer(payload_data, "agent_hook", skip_hook_id=skip_hook_id)
+        agent_session_id = (raw_payload.get("hook_data") or {}).get("session_id")
         await _route_to_source_process(payload_data, session_id=agent_session_id)
         return await handle_agent_hook(data)
 ```
+
+> **No skill-usage-count enrichment.** Earlier revisions of this doc described a
+> step that read the skill's usage count from `~/.claude.json` and injected
+> `hook_data_dict["skill_usage_count"]` before building `AgentHookData`. That
+> enrichment does **not** exist in the current code — there is only a stale
+> leftover comment in `listen_action`'s `AGENT_HOOK` branch. No `skill_usage_count`
+> field is ever written and `get_legacy_settings()` is not called.
 
 ### Outer Envelope
 
@@ -91,7 +104,7 @@ class WebhookType(StrEnum):
 
 ### hook_op
 
-`hook_op` is the unified envelope for all entity CRUD, events, invocations, and log entries. It is the primary mechanism for syncing state from external agents (Claude CLI, background workers) into the flow-cli database and broadcasting changes to the frontend.
+`hook_op` is the unified envelope for all entity CRUD, events, invocations, and log entries. It is the primary mechanism for syncing state from external agents (Claude CLI, background workers) into the flowpad database and broadcasting changes to the frontend.
 
 Parsed model: `HookOpPayload` (`flow_sdk/core/flow/models/hook_op.py`)
 
@@ -118,7 +131,12 @@ Parsed model: `HookOpPayload` (`flow_sdk/core/flow/models/hook_op.py`)
 
 ### Valid Entity Types (RecordType)
 
-`task`, `skill`, `log`, `rule`, `agentic_process`, `memo`, `session_analysis`
+Defined in `RecordType` in `flow_sdk/core/flow/models/hook_op.py`:
+
+`task`, `skill`, `log`, `rule`, `agentic_process`, `bookmark`, `session_analysis`, `conversation`, `flow_message`, `invitation`
+
+> This `RecordType` enum is the webhook-payload allowlist and is **separate** from the
+> filesystem `RecordType` in `flow_sdk/fs_store/record_types.py`.
 
 > **Note**: Entity type validation is **skipped** for `INVOKE` and `LOG` operations — those operations accept any string for `type`.
 
@@ -142,20 +160,23 @@ Parsed model: `AgentHookData`
 | `hook_entry_id` | `str` or `None` | Optional identifier for the hook entry |
 | `hook_metadata` | `dict` or `None` | Optional metadata |
 | `hook_file_path` | `str` or `None` | Path of the hook file that fired |
+| `process_entry` | `dict` or `None` | Typed conversational payload synthesized from `hook_data` (Phase 9) |
 
-### agent_hook Enrichment and Side Effects
+### agent_hook Side Effects
 
-Before `AgentHookData` model construction, `listen_action` applies enrichment and tracks state:
+`handle_agent_hook` resolves the hook fields (`hook_event_name`, `session_id`, `tool_name`, `tool_input`, `execution_scope`) up-front — before loading the `AgentHook` entity — so the side effects below run even when the hook entity itself no longer exists. The originating `AgenticProcess` id is resolved from `execution_scope` via `_extract_agentic_process_id`.
 
-**Skill usage count enrichment**: When `tool_name == "Skill"` in the hook data, the skill's absolute usage count is read from `~/.claude.json` via `get_legacy_settings()` and injected as `hook_data_dict["skill_usage_count"]`. This mutates `raw_payload["hook_data"]` in place so both `_broadcast_to_sniffer` and `handle_agent_hook` see the enriched value. Non-critical — failures are silently ignored.
+**File-op path tracking**: A module-level `_last_file_op_path_by_session` dict caches the most recent `PostToolUse:Write` **or** `PostToolUse:Edit` file path per session (via `_track_file_op_path`). When a `PostToolUse` event arrives with `tool_name in ("Write", "Edit")`, the `file_path` from `tool_input` is stored keyed by `session_id`. This cached path is the fallback plan-file source consumed by the plan annotation side effect below.
 
-**Write path tracking**: A module-level `_last_write_path_by_session` dict caches the most recent `PostToolUse:Write` file path per session. When a `PostToolUse` event arrives with `tool_name == "Write"`, the `file_path` from `tool_input` is stored keyed by `session_id`. This cached path is consumed by the plan annotation side effect below.
+**Worktree auto-close**: On `PostToolUse:ExitWorktree` with a resolved agentic_process id, `_close_worktree_process` closes that process's tab.
+
+**ExitPlanMode auto-approve**: A module-level `_plan_auto_approve_by_agentic_process` set (keyed by agentic_process id, set by `set_plan_auto_approve` / execute-plan) is consumed on `PermissionRequest:ExitPlanMode` to return a synchronous `{"behavior": "allow"}` decision, and is cleared on `UserPromptSubmit`.
 
 **Annotation auto-creation**: `handle_agent_hook` creates `Annotation` entities for two event types:
 
-1. **`UserPromptSubmit`**: Creates an annotation with label `"prompt:"`, content truncated to 50 chars, linked to the `AgenticProcess` matching the session's `worker_session_id`.
+1. **`UserPromptSubmit`**: `_create_prompt_annotation` creates an annotation with label `"prompt:"`, content truncated to 50 chars, linked to the `AgenticProcess` matching the session's `session_id`.
 
-2. **`PreToolUse:ExitPlanMode`**: Creates an annotation with label `"plan:"`. If the previously cached Write path (from `_last_write_path_by_session`) points to a `.claude/plans/*.md` file, it is included as `data.file_path` in the annotation. The cached path is consumed (popped) on use.
+2. **`PreToolUse:ExitPlanMode`**: `_create_plan_annotation` creates an annotation with label `"plan:"`. The plan file path is resolved from `tool_input["planFilePath"]` (emitted directly by newer Claude Code) first; it falls back to the cached `_last_file_op_path_by_session` Write/Edit path when that path points to a `.claude/plans/*.md` file (the cache entry is popped on consume). Cross-linking the plan to the process is delegated to `cross_link_plan_to_process`.
 
 Both annotation creation paths are non-critical — failures are caught and logged at DEBUG level.
 
@@ -164,13 +185,15 @@ Both annotation creation paths are non-critical — failures are caught and logg
 **Function:** `handle_hook_op(sync_payload: HookOpPayload)`
 
 ```
-operation == EVENT   -> _handle_hook_op_event()
-operation == INVOKE  -> _handle_hook_op_invoke()
-operation == LOG     -> acknowledge and return
+operation == EVENT   -> _handle_hook_op_event()   + _broadcast_to_sniffer()
+operation == INVOKE  -> _handle_hook_op_invoke()   + _broadcast_to_sniffer()
+operation == LOG     -> acknowledge and return     (no sniffer broadcast)
 is_relationship      -> _handle_relationship_sync()
 operation in (CREATE, UPDATE, DELETE) -> _reflect_entity()
                                           + _broadcast_to_sniffer()
 ```
+
+The dispatch order matters: EVENT, INVOKE, and LOG are checked **before** the `is_relationship` branch, so a relationship payload only reaches `_handle_relationship_sync` for non-event/invoke/log operations (i.e. CREATE/UPDATE/DELETE edges).
 
 For CRUD operations, the id from the payload is merged into the data dict before calling `_reflect_entity`:
 
@@ -187,26 +210,29 @@ After `_reflect_entity` returns, `_broadcast_to_sniffer` is called with the CRUD
 
 This function creates, updates, or deletes any registered entity type from a `hook_op` payload. The FsRecord `id` field is used as the entity `uname` for idempotent lookup — the same record always maps to the same entity regardless of how many times the event is received.
 
+The entity class is resolved via `SchemaRegistry.get_entity_cls(record_type)` (not a `type_registry`). If the type is unregistered, `_reflect_entity` returns a success response carrying a `warning` and performs no DB op.
+
 ### CREATE
 
-1. Look up `payload["id"]` in `type_registry` to get the entity class.
-2. Call `entity_cls.get_by_uname(external_id)`.
-   - If the entity already exists: log a warning, apply non-system fields, `save()`, return `"updated"`.
-   - If not found: construct `entity_cls(uname=external_id, **init_fields)`.
-3. Fetch `@local` project via `get_desktop_project()`.
-4. Call `entity.save(project)` to persist with project scope. This is important: project-scoped saves ensure that project-scoped frontend queries can find the new entity, and that `DataOp` notifications reach the correct `WatchedQuery` listeners.
-5. Call `project.attach_child(entity.typeid)` to register the entity as a child of the `@local` project.
+1. `entity_cls.get_one({"id": external_id})` — **id-collision noop guard.** If a row with this exact `id` already exists locally, return `{action: "noop"}` immediately (this is how echoed-back webhooks for locally-originated entities are short-circuited).
+2. `entity_cls.get_by_uname(external_id)`.
+   - If found: set `warning = "CREATE with existing uname… treating as UPDATE"`, apply non-system fields, `save()`, return `{action: "updated"}`.
+   - If not found: construct `entity_cls(uname=external_id, **init_fields)` (init_fields are payload keys that are valid model fields and not system fields).
+3. Resolve the `@local` project via `get_desktop_project()`.
+4. Call `entity.save(scope)` where `scope` is the project (or, if no project, the current request's user). This is important: project-scoped saves ensure that project-scoped frontend queries can find the new entity, and that `DataOp` notifications reach the correct `WatchedQuery` listeners.
+5. If a project was resolved, call `project.attach_child(entity.typeid)` to register the entity as a child of the `@local` project. If no project, the entity is still saved but a warning is logged.
 6. Return `ApiSuccessResponse(data={"{type}_id": entity.id, "action": "created"})`.
 
 ### UPDATE
 
-1. Call `entity_cls.get_by_uname(external_id)`.
+1. Look up the existing entity by `get_one({"id": external_id})`, falling back to `get_by_uname(external_id)`.
    - If not found: return `(None, warning)`. The caller acknowledges without error.
 2. Call `_apply_entity_fields(existing, payload)` to copy non-system fields.
 3. Call `existing.save()`.
-4. Call `existing.notify_updated()` if the method exists (not all entity types implement it).
-5. For `task` entities with `task_type == "skill_creation"`, copy analysis files to the skill's `references/` subfolder.
-6. Return `ApiSuccessResponse(data={"{type}_id": existing.id, "action": "updated"})`.
+4. Call `existing.notify_updated()` inside a `try/except` (not all entity types implement it; any error is swallowed).
+5. Return `ApiSuccessResponse(data={"{type}_id": existing.id, "action": "updated"})`.
+
+> The previously-documented "skill_creation analysis file copy" step does **not** exist in `_reflect_entity`. The UPDATE branch has only a `task`-specific logging line, no file copy.
 
 ### DELETE
 
@@ -243,10 +269,10 @@ Emits a `flow_data` event to the global `@sniffer` `AgentHook` so the global sni
 Behavior:
 1. Load the `AgentHook` entity with `uname == "sniffer"`. If not found, attempt a fallback lookup via `hooks_sniffer._get_sniffer_hook()` (legacy compatibility). If still not found, return silently.
 2. If `skip_hook_id` matches the sniffer hook's id, skip emission (avoids double-emitting when the webhook itself targets the sniffer hook).
-3. Convert the webhook payload to canonical `FlowData` using `convert_webhook_event()`.
-4. Call `sniffer_hook.emit_flow_data({flow_value: fd.flow_value, attributes: fd.attributes})`.
+3. Convert the webhook payload to canonical `FlowData` using `convert_webhook_event()` (`flow_sdk/app/actions/_webhook_to_flowdata.py`); take `fds[0]`. The optional `element_type` / `data_type` / `warning` args are written onto `fd.attributes` as `element-type` / `data-type` / `warning`.
+4. Call `sniffer_hook.emit_flow_data({"flow_value": fd.flow_value, "attributes": fd.attributes})`.
 
-> **Double-broadcast for CRUD operations**: For `hook_op` CRUD events, `_broadcast_to_sniffer` is called **twice**: once in `listen_action` with the full raw webhook payload, and once inside `handle_hook_op` after `_reflect_entity` returns, with a minimal `{webhook_type, type, operation, id}` summary dict that includes any warning or error message. The sniffer therefore receives two `flow_data` entries per CRUD event.
+> **Per-webhook sniffer emission.** For `agent_hook`, `_broadcast_to_sniffer` is called once in `listen_action` (with `skip_hook_id`). For `hook_op`, `listen_action` does **not** call it; instead `handle_hook_op` calls `_broadcast_to_sniffer` once per dispatched op (EVENT / INVOKE / CRUD) with a minimal `{webhook_type, type, operation, id, …}` summary dict, attaching any `warning` or error message for CRUD. There is no double-broadcast of the full raw payload for `hook_op`.
 
 Failures in this function are non-critical and logged at DEBUG level.
 
@@ -256,36 +282,35 @@ Failures in this function are non-critical and logged at DEBUG level.
 
 Routes a copy of the webhook event to the `AgenticProcess` that generated it, so it appears in the process's `flowDataStream` and can be rendered by the terminal TraceGutter.
 
-A `flow_data_msg` is constructed:
-
-```python
-flow_msg = {
-    "element_type": "webhook",
-    "data_type": "object",
-    "flow_value": payload_data,
-    "attributes": {"t": now_iso},
-}
-```
+The payload is **not** wrapped in a hand-built `{element_type: "webhook", ...}` dict. Instead it is translated through the shared `convert_webhook_event(payload_data)` dispatcher, and `flow_msg = fds[0].model_dump(mode="python")` is the canonical `FlowData` shape. If `convert_webhook_event` returns nothing, the function returns early.
 
 Routing priority:
-1. **execution_scope** (hook_op): for each `{type, id}` entry, call `_send_flow_data_message(type, id, flow_msg)`.
-2. **session_id** (agent_hook): query `AgenticProcess` by `worker_session_id == session_id`.
+1. **execution_scope** (hook_op): for each `{type, id}` entry, call `_send_flow_data_message(type, id, flow_msg)`, then return.
+2. **session_id** (agent_hook): query `AgenticProcess` by `session_id == session_id` (via `QueryFilter(match=ExpressionNode(session_id=…))`), route to the first match.
 3. **Fallback**: if neither matched, extract `pty_pid` from `payload_data` and query `AgenticProcess` by `pty_pid`.
 
 ## DataOpMessage
 
 ### Python Definition
 
-**File:** `/Users/shlom/Documents/dev/flow-cli/flow_sdk/core/network/resource_tracker.py`
+**File:** `/Users/shlom/Documents/dev/flowpad-oss/flow_sdk/core/network/resource_tracker.py`
 
 ```python
 class DataOpMessage:
+    _counter: int = 0
+
     def __init__(self, op: str, to_entity, data: Optional[dict] = None, message_id: Optional[str] = None):
+        DataOpMessage._counter += 1
+        self.instance_id = DataOpMessage._counter
         self.message_type = "data_op_msg"
         self.message_id = message_id or str(uuid4())
         self.op = op
-        # to_entity: TypeId or string, normalized to "type-id" format
-        self.to_entity = f"{to_entity.type}-{to_entity.id}"  # if TypeId
+        # to_entity: TypeId or string. A string is kept as-is; a TypeId is
+        # rendered as "type-id".
+        if isinstance(to_entity, str):
+            self.to_entity = to_entity
+        else:
+            self.to_entity = f"{to_entity.type}-{to_entity.id}"
         self.data = data
 ```
 
@@ -295,6 +320,7 @@ Serialized wire format (`to_dict()`):
 {
   "message_type": "data_op_msg",
   "message_id": "<uuid>",
+  "instance_id": 42,
   "op": "create" | "update" | "delete",
   "to_entity": "<type>-<id>",
   "data": { ... }
@@ -305,15 +331,16 @@ Serialized wire format (`to_dict()`):
 |-------|------|-------------|
 | `message_type` | `"data_op_msg"` | Fixed discriminator, matches `WSMessageType.DATA_OP_MSG` |
 | `message_id` | `str` | UUID for the message |
+| `instance_id` | `int` | Monotonic per-process counter (debug ordering aid) |
 | `op` | `str` | `"create"`, `"update"`, or `"delete"` |
 | `to_entity` | `str` | `"{entity_type}-{entity_id}"` in hyphen-separated TypeId format |
-| `data` | `dict` or `None` | Entity data dict (omitted for delete) |
+| `data` | `dict` or `None` | Entity data dict (omitted when `None`, e.g. for delete) |
 
-There is also a Pydantic version defined in `flow_sdk/api/messages.py` (`DataOpMessage` extends `EntityMessage` which extends `BaseMessage`) used in contexts where Pydantic model validation is needed. The `resource_tracker.py` version is a plain class used inside the notification path to avoid circular imports.
+There is also a Pydantic version defined in `flow_sdk/api/messages.py` (`DataOpMessage` extends `EntityMessage` which extends `BaseMessage`; `EntityMessage.to_entity` is a `TypeId`) used in contexts where Pydantic model validation is needed. The `resource_tracker.py` version is a plain class used inside the notification path to avoid circular imports. `_to_message_dict` accepts a plain dict, any object with `model_dump()` (the Pydantic form), or any object with `to_dict()` (this plain form).
 
 ### WSMessageType Enum
 
-**File:** `/Users/shlom/Documents/dev/flow-cli/flow_sdk/api/messages.py`
+**File:** `/Users/shlom/Documents/dev/flowpad-oss/flow_sdk/api/messages.py`
 
 | Value | String | Purpose |
 |-------|--------|---------|
@@ -335,33 +362,60 @@ There is also a Pydantic version defined in `flow_sdk/api/messages.py` (`DataOpM
 | `HANGUP` | `"hangup"` | Client disconnect request |
 | `CMD_STATUS_MSG` | `"cmd_status_msg"` | Command execution status |
 | `CLIENT_NODE_READY_MSG` | `"client_node_ready_msg"` | Compute node ready signal |
+| `HUB_CLIENT_ERROR_MSG` | `"hub_client_error_msg"` | Hub client error |
+| `AUTH_EXPIRED_MSG` | `"auth_expired_msg"` | Auth/session expiry notification |
+| `CLOUD_LOGIN_STATUS_MSG` | `"cloud_login_status_msg"` | Cloud login status |
+| `CLOUD_CONNECTION_STATUS_MSG` | `"cloud_connection_status_msg"` | Cloud connection status |
+
+> `WSMessageType` is a plain `Enum` (members carry string values), not a `StrEnum`. Consumers reference `WSMessageType.X.value`.
 
 ## resource_tracker: _sync_handle_entity_op
 
-**File:** `/Users/shlom/Documents/dev/flow-cli/flow_sdk/core/network/resource_tracker.py`
+**File:** `/Users/shlom/Documents/dev/flowpad-oss/flow_sdk/core/network/resource_tracker.py`
 
-`_sync_handle_entity_op` is the synchronous function called from the database layer after every `entity.save()` or `entity.delete_by_id()`. It is synchronous because the database layer may not be running inside an async context, but it uses `asyncio.get_running_loop().create_task()` to schedule the actual WebSocket sends on the existing event loop.
+`_sync_handle_entity_op` is the synchronous function called from the database layer after every `entity.save()` or `entity.delete_by_id()`. It is synchronous because the database layer may not be running inside an async context, but it uses `asyncio.get_running_loop().create_task()` to schedule the actual WebSocket sends on the existing event loop. (If there is no running loop, it logs and returns without sending.)
 
 ```python
 def _sync_handle_entity_op(op_message: DataOpMessage):
     active_connections = get_all_connections()   # from connections.py registry
-    message = _to_message_dict(op_message)       # serialize to plain dict
-    op = message.get("op").lower()
+    if not active_connections:
+        return
+    message = _to_message_dict(op_message)       # serialize to plain dict (excludes None)
+    op = str(message.get("op", "")).lower()
     entity_type, entity_id, type_id = _extract_entity_parts(message.get("to_entity"))
-    message["to_entity"] = type_id               # normalize to "type-id" format
+    if type_id:
+        message["to_entity"] = type_id           # normalize to "type-id" format
+
+    # Explicit watchers always win, even for non-API-visible types.
+    explicit_watchers = set()
+    if entity_type and entity_id and op in ("update", "delete"):
+        explicit_watchers = {c for c in get_watched_by(f"{entity_type}:{entity_id}")
+                             if c in active_connections}
+
+    # API-visibility gate: skip entirely for types that are not api-visible,
+    # UNLESS an explicit watcher asked for this entity.
+    if entity_type and not explicit_watchers:
+        if not Entity.api_visible_by_type(entity_type):
+            return
 
     recipients = _resolve_recipients(op, entity_type, entity_id, active_connections)
+    if not recipients:
+        return
+
+    loop = asyncio.get_running_loop()  # returns early if none
 
     # DELETE: prepend a flow_data_msg notification before the data_op_msg
     payloads = []
-    if op == "delete" and type_id:
+    if op == "delete" and type_id and entity_id:
         payloads.append(_build_delete_flow_data_msg(type_id, entity_id))
     payloads.append(message)
 
     for conn_id in recipients:
-        ws = active_connections[conn_id]
+        ws = active_connections.get(conn_id)
         loop.create_task(_send_payloads(ws, payloads))
 ```
+
+> **API-visibility gate (not previously documented).** Before resolving recipients, `_sync_handle_entity_op` checks `Entity.api_visible_by_type(entity_type)`. For non-API-visible types (e.g. `agentic_process`, which is runtime-only and absent from the bootstrap schema set), the notification is **dropped entirely** — *unless* a UI connection has an explicit watch on this exact entity (an update/delete-only carve-out computed before the gate). Without this carve-out, a persistent-field change on a watched-but-non-api-visible entity (e.g. a `private_context_entities` cross-link on an `AgenticProcess`) would never reach the watching client and its cached copy would go stale.
 
 ### Recipient Resolution Algorithm
 
@@ -378,19 +432,19 @@ The "no explicit watchers" fallback for UPDATE is specifically to handle webhook
 
 ### Connection Registry
 
-**File:** `/Users/shlom/Documents/dev/flow-cli/flow_sdk/core/network/connections.py`
+**File:** `/Users/shlom/Documents/dev/flowpad-oss/flow_sdk/core/network/connections.py`
 
 `ConnectionRegistry` is a module-level singleton (`_registry`) holding a `dict[str, WebSocket]`. The websocket route calls `add_connection(connection_id, websocket)` on accept and `remove_connection(connection_id)` on disconnect. `_sync_handle_entity_op` calls `get_all_connections()` to read a snapshot of all active sockets.
 
 ### Watch Registry
 
-**File:** `/Users/shlom/Documents/dev/flow-cli/flow_sdk/app/actions/watch_registry.py`
+**File:** `/Users/shlom/Documents/dev/flowpad-oss/flow_sdk/app/actions/watch_registry.py`
 
 `_watched_entities: Dict[str, Set[str]]` maps each `connection_id` to the set of `"{type}:{id}"` keys it is watching. The TypeScript frontend registers watches by calling `create_watch` via the REST API. `get_watched_by("{type}:{id}")` iterates all connections and returns those whose watch set contains the given key.
 
 ## WebSocket Route
 
-**File:** `/Users/shlom/Documents/dev/flow-cli/server/routes/websocket.py`
+**File:** `/Users/shlom/Documents/dev/flowpad-oss/flow_sdk/server/routes/websocket.py`
 
 ```
 URL: /api/v1/connect/ws/{connection_id}
@@ -398,11 +452,11 @@ URL: /api/v1/connect/ws/{connection_id}
 
 Connection lifecycle:
 1. `websocket.accept()` — upgrades the HTTP connection.
-2. `_active_connections[connection_id] = websocket` — registers locally.
+2. `_active_connections[connection_id] = ConnectionInfo(ws=websocket)` — registers locally. (`_active_connections` holds `ConnectionInfo` wrappers, not bare sockets; `get_active_connections()` unwraps them to `{cid: info.ws}`.)
 3. `add_registry_connection(connection_id, websocket)` — registers in the SDK's `ConnectionRegistry`.
 4. Sends a `response_msg` confirmation to the client.
 5. Receive loop: routes messages by `message_type`.
-6. On disconnect: removes from `_active_connections`, `ConnectionRegistry`, and `watch_registry`.
+6. On disconnect: removes from `_active_connections`, `ConnectionRegistry`, and calls `cleanup_connection` on `watch_registry`.
 
 The module also registers an `_minihub_connection_lookup` function with `set_external_connection_lookup`, which allows the SDK's `connection_manager` module to resolve connection IDs to `ConnectionHandler`-compatible wrappers without importing the server module.
 
@@ -415,8 +469,11 @@ The module also registers an `_minihub_connection_lookup` function with `set_ext
 | `broadcast` | Sends to all connected clients |
 | `hangup` | Closes the connection |
 | `rest_api_msg` | Delegates to `handle_rest_message` (WebSocket-tunneled REST API) |
-| `oauth_msg` | Logged; no multi-user coordination needed in desktop mode |
+| `oauth_msg` | Replies with a `response_msg`; no multi-user coordination needed in desktop mode |
 | `entity_msg` | Forwarded to all watchers of the target entity |
+| `browser_context` | Stored on the connection's `ConnectionInfo` |
+| `presence` | Stored on the connection's `ConnectionInfo` |
+| (unknown) | Replies with a `response_msg` carrying an `error` |
 
 `data_op_msg` and `flow_data_msg` are server-to-client only. The server never receives them from clients.
 
@@ -424,7 +481,7 @@ The module also registers an `_minihub_connection_lookup` function with `set_ext
 
 ### ConnectionManager
 
-**File:** `/Users/shlom/Documents/dev/flow-cli/ts_sdk/src/websocket.ts`
+**File:** `/Users/shlom/Documents/dev/flowpad-oss/ts_sdk/src/websocket.ts`
 
 `ConnectionManager` is a singleton `EventEmitter`. It connects to `/api/v1/connect/ws/{uuid}` on initialization and dispatches incoming JSON messages by `message_type`.
 
@@ -438,17 +495,19 @@ onMessage(data: BaseMessage) {
 
 onDataOpMessage(data: DataOpMessage) {
     const typeId = this.parseTypeId(data.to_entity);
-    this.emit('on_data_op', typeId, data.op, data.data);
+    if (!typeId) return;
+    // NOTE: emits the STRING form (typeId.toString()), not the TypeId object.
+    this.emit('on_data_op', typeId.toString(), data.op, data.data);
 }
 ```
 
-`parseTypeId` handles both the `"type-id"` hyphen format (current) and the legacy `"type:id"` colon format. The parsed `TypeId` is a structured `{type, id}` object.
+`parseTypeId` handles both the `"type-id"` hyphen format (current) and the legacy `"type:id"` colon format, returning a structured `TypeId` (or `null`). The `on_data_op` event then carries the **string** form (`typeId.toString()`), so every listener receives a `"type-id"` string as the first argument.
 
-Reconnection: on unexpected close, `ConnectionManager` reconnects with exponential backoff (base 500ms, max 10s, up to 10 attempts, with jitter).
+Reconnection: on unexpected close, `ConnectionManager` reconnects with exponential backoff (base 500ms, capped at 10s) **indefinitely — there is no hard attempt cap** (`reconnect()` comment: "Retries indefinitely — no hard cap").
 
 ### FlowSyncStore.onDataOp
 
-**File:** `/Users/shlom/Documents/dev/flow-cli/ts_sdk/src/FlowSync/store.ts`
+**File:** `/Users/shlom/Documents/dev/flowpad-oss/ts_sdk/src/FlowSync/store.ts`
 
 `DataManager` (the actual class name; the spec previously called this `FlowSyncStore`) registers `this.onDataOp` on the `on_data_op` event in the constructor via `attach_connection_manager()`:
 
@@ -457,20 +516,21 @@ Reconnection: on unexpected close, `ConnectionManager` reconnects with exponenti
 manager.on('on_data_op', this.onDataOp.bind(this));
 ```
 
-The handler:
+The handler (first argument is a **string**, parsed into a `TypeId` internally):
 
 ```typescript
-private onDataOp(typeId: TypeId, op: DataOpType, data: IEntity) {
+private onDataOp(typeIdStr: string, op: DataOpType, data: IEntity) {
+    const typeId = new TypeId(typeIdStr);
     if (op !== 'delete' && (!data || !('id' in data))) return;
 
     const ctor = EntityFactory.getEntityConstructor(typeId.type);
     if (!ctor) return;
 
+    // Query re-run gating: ALWAYS on create; on other ops only when
+    // this.dataOpQueryInvalidation is enabled.
     if (op === 'delete') {
         this.watchedQueries.removeEntityFromResults(typeId.type, typeId);
-    } else {
-        // For create/update: find all WatchedQueries for this type,
-        // re-run the query if the new data matches the filter, update results
+    } else if (op === 'create' || this.dataOpQueryInvalidation) {
         const watchedQueries = this.watchedQueries.getWatchCallbacksByType(typeId.type);
         for (const watchedQuery of watchedQueries) {
             if (!watchedQuery.request.query || watchedQuery.request.query.validate(data)) {
@@ -483,45 +543,47 @@ private onDataOp(typeId: TypeId, op: DataOpType, data: IEntity) {
 
     switch (op) {
         case 'create': {
-            const ref = this.getRef(typeId);
-            ref.entity = this.castAndDeepAssign(data);
-            ref.status = EntityStatus.READY;
-            this.subscriptions.get(typeId)?.forEach((cb) => void cb(ref.entity));
+            const entity = this.castAndDeepAssign(data);
+            this.register_new_entity(typeId, entity);
+            this._notifyAllAliases(typeId, entity, entity);
             break;
         }
         case 'update': {
-            // If TypeId is not in cache at all, return silently.
-            // If it IS in cache but entity is null, throws an error.
-            if (!this.hasRef(typeId)) return;
+            if (!this.hasRef(typeId)) return;        // not cached → ignore
             const ref = this.getRef(typeId);
             if (!ref.entity) {
-                throw new Error('Entity not found in cache on data op update');
+                // Fetch in flight → BUFFER the update; fetchByTypeId applies it later.
+                ref.pendingUpdate = data;
+                return;
             }
             ref.entity = this.castAndDeepAssign(data);
             ref.status = EntityStatus.READY;
-            this.subscriptions.get(typeId)?.forEach((cb) => void cb(ref.entity));
+            this._notifyAllAliases(typeId, ref.entity, ref.entity);
             break;
         }
         case 'delete': {
-            this.entities.delete(typeId);
-            this.subscriptions.get(typeId)?.forEach((cb) => void cb(null));
+            const ref = this.entities.get(typeId);
+            const entity = ref?.entity ?? null;
+            this._deleteWithAliases(typeId);
+            this._notifyAllAliases(typeId, entity, null);
             break;
         }
     }
+    this.resolvePendingRequests();
 }
 ```
 
-> **Note**: The UPDATE path throws `Error('Entity not found in cache on data op update')` when a ref exists but its entity is null. This can happen for webhook-originated updates where the frontend has a ref but the entity load failed. This is an unhandled error path.
+> **Note (corrected)**: The UPDATE path no longer throws. Earlier revisions described an `Error('Entity not found in cache on data op update')` thrown when a ref existed but its entity was `null`. The current code instead **buffers** the update (`ref.pendingUpdate = data`) and returns, letting the in-flight `fetchByTypeId` apply it on completion. When the `TypeId` is not cached at all, it returns silently.
 
-Two parallel update paths run for every event:
+Two update concerns run per event:
 
-1. **WatchQueryMap path** (list queries): All `WatchedQuery` instances for the entity type are checked. If the incoming entity data passes the query's filter, the full query is re-run via HTTP and the cached results are replaced. All callbacks registered on that `WatchedQuery` are then invoked with the new list.
+1. **WatchedQuery path** (list queries): on `create` (always) or on `update`/etc. when `dataOpQueryInvalidation` is enabled, all `WatchedQuery` instances for the entity type are checked. If the incoming entity data passes the query's filter, the full query is re-run via HTTP and the cached results are replaced.
 
-2. **SubscriptionMap path** (single entity): Subscribers registered for this specific `TypeId` are called directly with the new entity or `null` (delete).
+2. **Subscriber/alias path** (single entity): CREATE/UPDATE/DELETE notify subscribers through `_notifyAllAliases` (and register/delete the ref via `register_new_entity` / `_deleteWithAliases`) so alias keys stay consistent. Subscribers receive the new entity, or `null` on delete.
 
 ### FsRecordDataOpHandler
 
-**File:** `/Users/shlom/Documents/dev/flow-cli/ts_sdk/src/resource_management/fs_records/data-op-handler.ts`
+**File:** `/Users/shlom/Documents/dev/flowpad-oss/ts_sdk/src/resource_management/fs_records/data-op-handler.ts`
 
 A second, parallel listener handles `data_op_msg` events for FsRecord types (file-system record types registered in `fsRecordTypeRegistry`). It attaches to the `on_data_op` event on `ConnectionManager` (not the store):
 
@@ -531,7 +593,7 @@ cm.on('on_data_op', (toEntity: string, op: string, data?: Record<string, unknown
 });
 ```
 
-> **Note**: The `on_data_op` event actually passes a `TypeId` object as the first argument (see `ConnectionManager.onDataOpMessage`), not a raw string. The handler's TypeScript signature declares `string` but receives a `TypeId`. At runtime, `TypeId.toString()` returns `"type-id"` format, so `indexOf('-')` inside `handleDataOp` works by implicit coercion.
+> **Note**: The `on_data_op` event passes the **string** form of the TypeId as its first argument (`ConnectionManager.onDataOpMessage` emits `typeId.toString()`). The handler's `string` signature is therefore correct, and `toEntity.indexOf('-')` inside `handleDataOp` operates on a real string directly — no coercion involved.
 
 `handleDataOp` parses the `recordType` from the `to_entity` prefix, checks it against the `fsRecordTypeRegistry`, and dispatches to:
 - **Type-specific subscribers** (`_subscribers` map keyed by `recordType`)
@@ -581,24 +643,24 @@ The following steps trace a single `hook_op` CREATE event from the CLI to the fr
    }
    ```
 
-2. **listen_action parses.** `WebhookPayload` and `HookOpPayload` are validated. If validation fails, `ApiFailResponse` is returned immediately.
+2. **listen_action parses.** `WebhookPayload` and `HookOpPayload` are validated. If validation fails, `ApiFailResponse` is returned immediately (a `HookOpPayload` failure is also logged, then re-raised and surfaced as a fail response by the outer handler).
 
-3. **Sniffer broadcast.** `_broadcast_to_sniffer` emits a `flow_data` event to the global `@sniffer` `AgentHook`. The global sniffer panel receives this stream.
+3. **Source process routing.** `_route_to_source_process(flow_value, execution_scope=…)` converts the payload via `convert_webhook_event` and sends the resulting `flow_data_msg` to `agentic_process-proc-456` via `_send_flow_data_message`. The terminal TraceGutter receives this through that process's `flowDataStream`. (For `hook_op`, there is no separate sniffer broadcast at this point — see step 5.)
 
-4. **Source process routing.** `_route_to_source_process` sends a `flow_data_msg` to `agentic_process-proc-456` via `_send_flow_data_message`. The terminal TraceGutter receives this through that process's `flowDataStream`.
+4. **handle_hook_op dispatches.** Operation is `create`, resource is entity; calls `_reflect_entity("task", CREATE, {"id": "my-task-123", "title": "My Task", "status": "pending"})`.
 
-5. **handle_hook_op dispatches.** Operation is `create`, resource is entity; calls `_reflect_entity("task", CREATE, {"id": "my-task-123", "title": "My Task", "status": "pending"})`.
+5. **Sniffer broadcast.** After `_reflect_entity` returns, `handle_hook_op` calls `_broadcast_to_sniffer` once with a `{webhook_type, type, operation, id}` summary (plus any warning/error), emitting a `flow_data` event to the global `@sniffer` `AgentHook`.
 
 6. **_reflect_entity creates the entity.**
-   - `type_registry.get("task")` returns the `Task` entity class.
-   - `Task.get_by_uname("my-task-123")` returns `None` (new entity).
+   - `SchemaRegistry.get_entity_cls("task")` returns the `Task` entity class.
+   - `Task.get_one({"id": "my-task-123"})` and then `Task.get_by_uname("my-task-123")` return `None` (new entity).
    - Constructs `Task(uname="my-task-123", title="My Task", status="pending")`.
-   - Calls `entity.save(project)` with the `@local` project as scope.
-   - Calls `project.attach_child(entity.typeid)`.
+   - Calls `entity.save(scope)` with the `@local` project as scope (or the request user as fallback).
+   - If a project was resolved, calls `project.attach_child(entity.typeid)`.
 
 7. **entity.save triggers notification.** The database layer calls `handle_entity_op(DataOpMessage(op="create", to_entity=task.typeid, data=task.to_dict()))`.
 
-8. **_sync_handle_entity_op broadcasts.** Operation is `create`; `_resolve_recipients` returns all active connections. A `data_op_msg` is scheduled via `loop.create_task` to every active WebSocket.
+8. **_sync_handle_entity_op broadcasts.** The API-visibility gate is applied first: `task` is api-visible, so it passes (a non-api-visible type with no explicit watcher would be dropped here). Operation is `create`; `_resolve_recipients` returns all active connections. A `data_op_msg` is scheduled via `loop.create_task` to every active WebSocket.
 
 9. **Wire message.** Each frontend WebSocket connection receives:
    ```json
@@ -611,12 +673,12 @@ The following steps trace a single `hook_op` CREATE event from the CLI to the fr
    }
    ```
 
-10. **ConnectionManager.onDataOpMessage.** Parses `to_entity` into `TypeId("task", "<id>")`, emits `on_data_op(typeId, "create", data)`.
+10. **ConnectionManager.onDataOpMessage.** Parses `to_entity` into `TypeId("task", "<id>")`, then emits `on_data_op("task-<id>", "create", data)` — the first arg is the `toString()` **string**, not the object.
 
-11. **FlowSyncStore.onDataOp.**
-    - Finds all `WatchedQuery` instances for type `"task"`.
-    - For each: if `data` passes the query filter (or filter is absent), re-runs the query via HTTP and updates `watchedQuery.results`, calling all registered callbacks.
-    - Creates a ref for the new entity and notifies any direct `TypeId` subscribers.
+11. **DataManager.onDataOp.**
+    - Reconstructs `new TypeId("task-<id>")`.
+    - Since `op === "create"`, finds all `WatchedQuery` instances for type `"task"`; for each, if `data` passes the query filter (or filter is absent), re-runs the query via HTTP and updates results, calling all registered callbacks.
+    - Registers the new entity ref (`register_new_entity`) and notifies subscribers via `_notifyAllAliases`.
 
 12. **FsRecordDataOpHandler.** If `"task"` is registered in `fsRecordTypeRegistry`, dispatches to type-specific and wildcard subscribers.
 

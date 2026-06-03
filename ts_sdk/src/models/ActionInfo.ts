@@ -40,6 +40,10 @@ export class ActionInfo {
   private _abortSignal: AbortSignal | null = null;
   private _responseType: ResponseType | null = null;
   private _castResponse: boolean = false;
+  // Per-call hub-reflection opt-in. When true the call is forwarded to the hub
+  // (HTTP: `Hub-Reflect: true` header; WS: `hub_reflect` field on the rest_api_msg).
+  // Default false — reflection is opt-in; the server default is "do not reflect".
+  private _hubReflect: boolean = false;
 
   constructor(
     name: string,
@@ -166,6 +170,14 @@ export class ActionInfo {
 
   public set castResponse(value: boolean) {
     this._castResponse = value;
+  }
+
+  public get hubReflect(): boolean {
+    return this._hubReflect;
+  }
+
+  public set hubReflect(value: boolean) {
+    this._hubReflect = value;
   }
 
   public get actionUrl(): string {

@@ -14,19 +14,30 @@ export interface ConversationSendPayload {
   files?: File[];
   /** Serialized TypeIds (e.g. ``"markdown-<uuid>"``) for TYPE_ID attachments. */
   assetReferences?: string[];
+  /** Serialized TypeIds to publish as the FlowMessage's *shared* context. On
+   *  the existing-conversation path the local backend (handle_add_message)
+   *  also merges these onto the parent Conversation and links them back —
+   *  parity with the new-conversation path, without minting a new invite. */
+  sharedContextEntities?: string[];
 }
 
-/** Send into an already-existing conversation. Thin wrap over ``sendReply``. */
+/** Send into an already-existing conversation. Thin wrap over ``sendReply`` —
+ *  NEVER calls ``conv.share()``, so it can never mint a new invitation. */
 export async function sendToExistingConversation(
   conversationId: string,
   payload: ConversationSendPayload,
 ): Promise<void> {
+  const hasAssetRefs = !!payload.assetReferences?.length;
+  const hasSharedCtx = !!payload.sharedContextEntities?.length;
   await sendReply(
     { conversationId },
     payload.text,
     payload.files,
-    payload.assetReferences?.length
-      ? { assetReferences: payload.assetReferences }
+    hasAssetRefs || hasSharedCtx
+      ? {
+          ...(hasAssetRefs ? { assetReferences: payload.assetReferences } : {}),
+          ...(hasSharedCtx ? { sharedContextEntities: payload.sharedContextEntities } : {}),
+        }
       : undefined,
   );
 }
@@ -36,6 +47,9 @@ export interface CreateAndSendParams {
   project_id?: string | null;
   participants: ConversationParticipant[];
   title?: string;
+  /** Serialized TypeIds stamped as the new conversation's shared context at
+   *  create time (constructor-lift into ``_shared_context_entities_``). */
+  shared_context_entities?: string[];
 }
 
 export interface CreateAndSendResult {
@@ -79,7 +93,15 @@ export async function createAndSendConversation(
 
     const conv =
       opts?.draftRef?.current ??
-      new Conversation({ title: params.title, participants: params.participants });
+      new Conversation({
+        title: params.title,
+        participants: params.participants,
+        // ``shared_context_entities`` is a wire-lifted field (not on IConversation);
+        // the APIEntity base moves it into ``_shared_context_entities_`` on construct.
+        ...(params.shared_context_entities && params.shared_context_entities.length > 0
+          ? { shared_context_entities: params.shared_context_entities }
+          : {}),
+      } as Partial<Conversation>);
     if (params.title !== undefined) conv.title = params.title;
     conv.participants = params.participants;
     if (opts?.draftRef) opts.draftRef.current = conv;

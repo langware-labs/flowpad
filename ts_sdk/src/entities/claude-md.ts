@@ -1,5 +1,6 @@
 import { APIEntity, registerEntity } from '../APIEntity';
 import { IEntity } from '../IEntity';
+import { DockPointerData } from '../models/DockPointer';
 
 export interface IClaudeMd extends IEntity {
   name?: string;
@@ -36,5 +37,10 @@ export class ClaudeMd extends APIEntity<ClaudeMd> implements IClaudeMd {
     this.parent_path = entity.parent_path;
     this.vault_root = entity.vault_root;
     this.scope = entity.scope;
+  }
+
+  /** Default open target: the asset editor (URL-first navigate target). */
+  override get dockPointer(): DockPointerData {
+    return this.assetEditorPointer('claude_md', this.asset_ref) ?? super.dockPointer;
   }
 }
