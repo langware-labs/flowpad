@@ -1,4 +1,5 @@
 import { Archive, CheckSquare, Paperclip } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import type { InboxMessage } from './inbox-api';
 
 interface InboxMessageRowProps {
@@ -58,20 +59,30 @@ export function InboxMessageRow({ message, onArchive, onToggleRead, onClick }: I
         className="absolute right-2 top-2 flex items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100"
         onClick={(e) => e.stopPropagation()}
       >
-        <button
-          className="rounded p-1 hover:bg-muted"
-          title={message.is_read ? 'Mark unread' : 'Mark read'}
-          onClick={() => onToggleRead(message.id, !message.is_read)}
-        >
-          <CheckSquare className="h-3.5 w-3.5 text-muted-foreground" />
-        </button>
-        <button
-          className="rounded p-1 hover:bg-destructive/10"
-          title="Archive"
-          onClick={() => onArchive(message.id)}
-        >
-          <Archive className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
-        </button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              className="rounded p-1 hover:bg-muted"
+              aria-label={message.is_read ? 'Mark unread' : 'Mark read'}
+              onClick={() => onToggleRead(message.id, !message.is_read)}
+            >
+              <CheckSquare className="h-3.5 w-3.5 text-muted-foreground" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="top">{message.is_read ? 'Mark unread' : 'Mark read'}</TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              className="rounded p-1 hover:bg-destructive/10"
+              aria-label="Archive"
+              onClick={() => onArchive(message.id)}
+            >
+              <Archive className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent side="top">Archive — moves to Archived, kept</TooltipContent>
+        </Tooltip>
       </div>
     </div>
   );
