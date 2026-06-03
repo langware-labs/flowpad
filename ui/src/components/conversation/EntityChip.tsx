@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useMemo } from 'react';
 import { ExternalLink } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import { APIEntity, TypeId, dataManager } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { useChipPrewarm } from '@src/navigation/useChipPrewarm';
+import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
+import { editorForType } from '@src/navigation/asset-doc-types';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 
 /**
@@ -146,14 +147,10 @@ export function EntityChip({ entity, inside, onClick, title, size = 'chip' }: En
         return;
       }
       if (!resolved || !resolved.id) return;
-      const pointer = buildDockPointer(
-        resolved as { type: string; id: string },
-        inside,
-        entity.assetRef ?? undefined,
-      );
+      const pointer = buildDockPointer(resolved as { type: string; id: string }, inside);
       if (pointer) navigation.openDock(pointer);
     };
-  }, [onClick, resolved, inside, navigation, entity.assetRef]);
+  }, [onClick, resolved, inside, navigation]);
 
   const baseLayout =
     size === 'chip'
@@ -185,7 +182,6 @@ export function EntityChip({ entity, inside, onClick, title, size = 'chip' }: En
 export function buildDockPointer(
   resolved: { type: string; id: string },
   inside: { type: string; id: string } | undefined,
-  assetRef?: string,
 ): DockPointer | null {
   switch (resolved.type) {
     case 'project':
@@ -196,19 +192,14 @@ export function buildDockPointer(
       return DockPointer.forSpec(resolved.id);
     case 'conversation':
       return DockPointer.forConversation(resolved.id);
-    // Asset entities open in the Assets editor by VFS path. When
-    // ``assetRef`` is missing the chip data hasn't loaded yet (recipient is
-    // still fetching the entity row from a freshly arrived share); return
-    // null so the click is a no-op. ``ContextEntityChip`` defers the
-    // navigation until the entity resolves — falling back to ``resolved.id``
-    // here would bake the entity UUID into the URL, which the asset editor's
-    // path-keyed ``useEntityByPath`` can never resolve.
-    case 'skill':
-    case 'agent':
-    case 'markdown':
-      if (!assetRef) return null;
-      return DockPointer.forAssetEditor(resolved.type, assetRef);
-    default:
+    default: {
+      // Asset-editor types (markdown family, agent, skill, workflow, whiteboard)
+      // open by their TypeId — no asset_ref needed; the loader resolves the
+      // entity. This is why the chip never has to defer on an unresolved path.
+      const editor = editorForType(resolved.type);
+      if (editor) {
+        return AssetDocPointer.forTypeId(editor, new TypeId(resolved.type, resolved.id)).toDockPointer();
+      }
       try {
         return DockPointer.fromUrl(resolved.type, resolved.id);
       } catch {
@@ -218,6 +209,7 @@ export function buildDockPointer(
         console.warn(`[EntityChip] no dock target for type=${resolved.type}`);
         return null;
       }
+    }
   }
 }
 
@@ -248,77 +240,19 @@ interface ContextEntityChipProps {
  * ``entity.privateContextEntities`` use this wrapper instead of
  * hand-constructing each chip.
  */
-const ASSET_CHIP_TYPES = new Set(['skill', 'agent', 'markdown']);
 
-export function ContextEntityChip({ typeId, inside, onClick, title, size, hintPath }: ContextEntityChipProps) {
+export function ContextEntityChip({ typeId, inside, onClick, title, size }: ContextEntityChipProps) {
+  // Resolve the display name; navigation is owned by the single ``EntityChip``.
+  // Asset types navigate by TypeId (the loader resolves the entity), so there's
+  // no asset_ref to fetch and no deferral/prewarm dance — the chip just renders.
   const { data } = useEntity<APIEntity<any>>(typeId);
   const resolvedName = data?.displayName ?? typeId.toString();
-  // Asset entities (skill / agent / markdown) carry an `asset_ref` VFS path —
-  // the address the Assets editor opens. Forward it so the chip navigates to
-  // the real file rather than falling back to the bare entity id.
-  const assetRef = (data as unknown as { asset_ref?: string | null })?.asset_ref ?? null;
-
-  // Deferred-click handling for asset chips whose entity row hasn't arrived
-  // yet (typical right after Alice shares a skill — the FlowMessage shows up
-  // first, the Skill row is materialized once the eager bundle pull lands).
-  // Without this, clicking before ``assetRef`` resolves would either no-op
-  // (post-fix) or — pre-fix — bake the entity UUID into the URL, where the
-  // asset editor's path-keyed lookup would 404 and cache that forever.
-  const { navigation } = useDockNavigation();
-  const prewarm = useChipPrewarm();
-  const pendingNavRef = useRef(false);
-  const needsDeferral = ASSET_CHIP_TYPES.has(typeId.type) && !assetRef;
-
-  useEffect(() => {
-    if (!pendingNavRef.current) return;
-    if (!assetRef) return;
-    pendingNavRef.current = false;
-    const pointer = DockPointer.forAssetEditor(typeId.type, assetRef);
-    if (pointer) navigation.openDock(pointer);
-  }, [assetRef, typeId.type, navigation]);
-
-  // On click:
-  //   * If `onClick` was overridden, prewarm then defer to it.
-  //   * If the chip needs deferral (asset chip without resolved assetRef),
-  //     ARM `pendingNavRef` SYNCHRONOUSLY before awaiting prewarm — otherwise
-  //     the deferral useEffect (deps: [assetRef, typeId.type, navigation])
-  //     can fire on assetRef arrival during the await with pendingNavRef
-  //     still false, and won't re-run later when the flag flips. Then
-  //     await prewarm; the effect picks up navigation when assetRef lands.
-  //   * Otherwise, do the default type+id navigation via buildDockPointer
-  //     (exported so we don't duplicate its dispatch table here).
-  const handleClick = async () => {
-    if (onClick) {
-      await prewarm(typeId, hintPath);
-      onClick();
-      return;
-    }
-    if (needsDeferral) {
-      pendingNavRef.current = true;
-      await prewarm(typeId, hintPath);
-      // If assetRef already arrived while we awaited, fire navigation now
-      // since the effect's last run was before pendingNavRef was set.
-      if (assetRef) {
-        pendingNavRef.current = false;
-        const pointer = DockPointer.forAssetEditor(typeId.type, assetRef);
-        if (pointer) navigation.openDock(pointer);
-      }
-      return;
-    }
-    await prewarm(typeId, hintPath);
-    const pointer = buildDockPointer(
-      { type: typeId.type, id: typeId.id },
-      inside,
-      assetRef ?? undefined,
-    );
-    if (pointer) navigation.openDock(pointer);
-  };
 
   return (
     <EntityChip
-      entity={{ typeId, type: typeId.type, id: typeId.id, name: resolvedName, assetRef }}
+      entity={{ typeId, type: typeId.type, id: typeId.id, name: resolvedName }}
       inside={inside}
-      onClick={handleClick}
+      onClick={onClick}
       title={title}
       size={size}
     />

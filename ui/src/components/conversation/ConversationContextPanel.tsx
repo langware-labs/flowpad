@@ -31,11 +31,10 @@ import {
 import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
 import { notify } from '@src/notifications';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { useChipPrewarm } from '@src/navigation/useChipPrewarm';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { resolveWorkdir } from './apply-project-choice';
 import { localAttachmentUrl, editorPathForLocalFile } from './attachment-url';
-import { ICON_BY_TYPE } from './EntityChip';
+import { ICON_BY_TYPE, buildDockPointer } from './EntityChip';
 import { buildAssistancePrompt } from './prompt-building';
 import {
   buildAttachmentEntries,
@@ -84,40 +83,16 @@ function humanType(type: string): string {
   return type.charAt(0).toUpperCase() + type.slice(1).replace(/_/g, ' ');
 }
 
-/** Build the canonical dock pointer for an entity TypeId, mirroring EntityChip. */
+/** Canonical dock pointer for an entity TypeId — delegates to the single
+ *  EntityChip dispatch (``buildDockPointer``). Asset types navigate by TypeId
+ *  (the loader resolves the entity), so the legacy ``assetRef`` arg is
+ *  accepted-but-ignored. */
 function dockPointerFor(
   typeId: TypeId,
   inside?: { type: string; id: string },
-  assetRef?: string,
+  _assetRef?: string,
 ): DockPointer | null {
-  switch (typeId.type) {
-    case 'project':
-      return DockPointer.forProject(
-        typeId.id,
-        inside?.type === 'conversation' ? { conversationId: inside.id } : undefined,
-      );
-    case 'task':
-      return DockPointer.forTasks(
-        typeId.id,
-        inside?.type === 'conversation' ? { conversationId: inside.id } : undefined,
-      );
-    case 'spec':
-      return DockPointer.forSpec(typeId.id);
-    case 'conversation':
-      return DockPointer.forConversation(typeId.id);
-    // Asset entities open in the Assets editor, addressed by VFS path —
-    // fall back to the entity id when the asset_ref isn't known yet.
-    case 'skill':
-    case 'agent':
-    case 'markdown':
-      return DockPointer.forAssetEditor(typeId.type, assetRef || typeId.id);
-    default:
-      try {
-        return DockPointer.fromUrl(typeId.type, typeId.id);
-      } catch {
-        return null;
-      }
-  }
+  return buildDockPointer({ type: typeId.type, id: typeId.id }, inside);
 }
 
 /**
@@ -425,7 +400,6 @@ function SharedContextSection({
   onDownloadEntity,
 }: SharedContextSectionProps) {
   const { navigation } = useDockNavigation();
-  const prewarm = useChipPrewarm();
   const containerInside = useMemo(() => ({ type: Conversation.type, id: conversationId }), [conversationId]);
 
   const isEmpty =
@@ -468,9 +442,8 @@ function SharedContextSection({
                     ? () => onSelectEntity(rowKey, entry.originMessageIds)
                     : undefined
                 }
-                onOpen={async (assetRef) => {
-                  await prewarm(entry.typeId, entry.hintPath);
-                  const ptr = dockPointerFor(entry.typeId, containerInside, assetRef);
+                onOpen={() => {
+                  const ptr = dockPointerFor(entry.typeId, containerInside);
                   if (ptr) navigation.openDock(ptr);
                 }}
               />
@@ -758,7 +731,6 @@ function PrivateContextSection({
   starting,
 }: PrivateContextSectionProps) {
   const { navigation } = useDockNavigation();
-  const prewarm = useChipPrewarm();
   const containerInside = useMemo(() => ({ type: Conversation.type, id: conversationId }), [conversationId]);
   const [adding, setAdding] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -934,10 +906,7 @@ function PrivateContextSection({
           {projectTypeId && (
             <ProjectRow
               typeId={projectTypeId}
-              onOpen={async () => {
-                const sidecar = conversation?.getContextEntryData(projectTypeId);
-                const hintPath = typeof sidecar?.path === 'string' ? sidecar.path : undefined;
-                await prewarm(projectTypeId, hintPath);
+              onOpen={() => {
                 const ptr = dockPointerFor(projectTypeId, containerInside);
                 if (ptr) navigation.openDock(ptr);
               }}
@@ -956,14 +925,8 @@ function PrivateContextSection({
                     ? () => onSelectEntity(rowKey, t.originMessageIds)
                     : undefined
                 }
-                onView={async () => {
+                onView={() => {
                   if (!t.task.typeId) return;
-                  // Tasks rarely carry a path sidecar (they're opaque), but
-                  // run the lookup anyway so any future schema for Task
-                  // automatically rides through this path.
-                  const sidecar = conversation?.getContextEntryData(t.task.typeId);
-                  const hintPath = typeof sidecar?.path === 'string' ? sidecar.path : undefined;
-                  await prewarm(t.task.typeId, hintPath);
                   const ptr = dockPointerFor(t.task.typeId, containerInside);
                   if (ptr) navigation.openDock(ptr);
                 }}
