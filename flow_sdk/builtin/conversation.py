@@ -157,7 +157,7 @@ class Conversation(Entity):
                 )
         return self
 
-    async def _link_context_to_conversation(self, refs=None) -> None:
+    async def _link_context_to_conversation(self, refs=None, someone_typeid: str | None = None) -> None:
         """Set ``parent_type_id`` = this conversation on each local shared-context
         entity (e.g. the shared markdown).
 
@@ -196,7 +196,11 @@ class Conversation(Entity):
                     continue
                 ent.parent_type_id = conv_typeid_str
                 try:
-                    await ent.save(self.created_by)
+                    # ``created_by`` is a bare user uuid, NOT a someone_typeid —
+                    # save() parses its owner as a TypeId, so passing it failed
+                    # every link save. Use the caller's someone_typeid (the
+                    # add_message path) or fall back to an ownerless save.
+                    await ent.save(someone_typeid or None)
                 except Exception as e:  # noqa: BLE001
                     logging.warning("[conv.share] link context %s failed (non-fatal): %s", tid, e)
             except Exception as e:  # noqa: BLE001

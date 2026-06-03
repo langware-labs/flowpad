@@ -117,13 +117,16 @@ FILE_VFS_PREFIX = "data/"
 PROMPT_FILE_VFS_PREFIX = "prompt/"
 
 # TYPE_ID attachment types that ride in the body bundle but never materialize a
-# standard local record folder — either conversation plumbing
-# (conversation/flow_message/task, the UI's STRUCTURAL_ATTACHMENT_TYPES) or a
-# remote reference resolved on accept (git_repo). They must NOT gate the
-# message-level ``body_downloaded`` signal, or a message carrying one would be
-# stuck behind the Download button forever.
+# standard local record folder (which is what ``_type_id_record_materialized``
+# probes) — either conversation plumbing (conversation/flow_message/task, the
+# UI's STRUCTURAL_ATTACHMENT_TYPES), a remote reference resolved on accept
+# (git_repo), or an indexer-owned type whose bundle unpack creates only an
+# entity ROW, never a records folder (claude_session — the transcript content
+# rides as a FILE attachment). They must NOT gate the message-level
+# ``body_downloaded`` signal, or a message carrying one would be stuck behind
+# the Download button forever.
 _NON_MATERIALIZING_TYPE_IDS = frozenset(
-    {"conversation", "flow_message", "task", "git_repo"}
+    {"conversation", "flow_message", "task", "git_repo", "claude_session"}
 )
 
 

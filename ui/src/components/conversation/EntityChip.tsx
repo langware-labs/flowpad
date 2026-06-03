@@ -192,6 +192,10 @@ export function buildDockPointer(
       return DockPointer.forSpec(resolved.id);
     case 'conversation':
       return DockPointer.forConversation(resolved.id);
+    case 'claude_session':
+      // ClaudeTranscript: the entity id IS the Claude session id — open the
+      // transcript lens (same target as ProcessToolbar's "Open transcript").
+      return DockPointer.forLensTranscript('claude', resolved.id);
     default: {
       // Asset-editor types (markdown family, agent, skill, workflow, whiteboard)
       // open by their TypeId — no asset_ref needed; the loader resolves the
