@@ -130,6 +130,9 @@ def test_to_graph_nodes_and_child_edges(tmp_path: Path):
                      "markdown_index", "markdown_index"]
     for n in graph["nodes"]:
         assert n["key"] == f"{n['type']}-{n['id']}"
+        assert "rel_path" in n
+    rels = {n["rel_path"] for n in graph["nodes"]}
+    assert {"", "auth", "intro.md", "auth/oauth.md"} <= rels
 
     child = [e for e in graph["edges"] if e["kind"] == "child"]
     # root→intro, root→pricing, root→auth, auth→oauth, auth→tokens

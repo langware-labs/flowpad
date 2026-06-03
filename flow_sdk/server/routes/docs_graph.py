@@ -63,6 +63,29 @@ async def _emit(
     await broadcast_progress(to_entity=activity.entity_id, flow_data=activity.make_flow_data())
 
 
+@router.get("/api/v1/docs-graph/doc")
+async def docs_graph_doc(root: str = Query(...), rel: str = Query(...)) -> dict:
+    """Read one markdown doc under the scanned root (for the Atlas reading
+    drawer). ``rel`` is the node's ``rel_path``; paths escaping ``root`` 403."""
+    root_path = _resolve_root(root)
+    target = (root_path / rel).resolve()
+    if target != root_path and not target.is_relative_to(root_path):
+        raise HTTPException(status_code=403, detail="path escapes root")
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail=f"Not a file: {rel}")
+    text = await asyncio.to_thread(
+        lambda: target.read_text(encoding="utf-8", errors="replace")
+    )
+    from flow_sdk.llm_index import MarkdownDocument  # noqa: PLC0415
+
+    doc = MarkdownDocument.from_text(text, path=target)
+    return {
+        "status": "SUCCESS",
+        "message": "success",
+        "data": {"title": doc.title, "content": text, "rel_path": rel},
+    }
+
+
 @router.get("/api/v1/docs-graph")
 async def docs_graph(root: str = Query(...)) -> dict:
     """Native scan of ``root`` → ``{nodes, edges, counts, duration_ms}``."""
