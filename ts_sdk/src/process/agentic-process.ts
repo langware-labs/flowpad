@@ -2070,6 +2070,24 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   }
 
   /**
+   * Bridge backend-initiated restarts to the local 'restarted' event.
+   *
+   * The UI restart button drives {@link restart} client-side, which emits
+   * 'restarted' directly. A *server*-initiated restart (e.g. the agent running
+   * `flow process restart` after installing an MCP, via the backend
+   * `self-restart` action) has no such client signal — the backend instead
+   * pushes a `worker.restarted` entity event once the fresh PTY is up. Re-emit
+   * it as the same local 'restarted' event so {@link InteractiveTerminal}
+   * clears and re-attaches to the new PTY without any extra wiring.
+   */
+  onEntityEvent(event: string, payload: Record<string, unknown>): void {
+    super.onEntityEvent(event, payload);
+    if (event === 'worker.restarted') {
+      this.emit('restarted', { process: this, payload });
+    }
+  }
+
+  /**
    * Write raw text to the live PTY stdin.
    * The shell must have an active PTY (call start() first).
    *
