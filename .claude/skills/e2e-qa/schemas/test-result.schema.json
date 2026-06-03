@@ -12,8 +12,7 @@
     },
     "category": {
       "type": "string",
-      "enum": ["chat", "terminal", "editor", "general", "skills", "setup"],
-      "description": "Test category"
+      "description": "Test category — the scenario's directory name under ui/tests/manual_regression/ (e.g. chat, terminal, search, agentic-process, triggers, assets, general, skills, setup, ...)"
     },
     "timestamp": {
       "type": "string",
@@ -27,8 +26,12 @@
     },
     "status": {
       "type": "string",
-      "enum": ["pass", "fail", "skip", "error", "test-issue"],
-      "description": "Overall scenario status. test-issue means the scenario itself is wrong, not the app."
+      "enum": ["pass", "fail", "skip", "error", "test-issue", "flagged"],
+      "description": "Overall scenario status. test-issue means the scenario itself is wrong, not the app. flagged means the test exposes a significant gap and senior dev review is required to decide on next step."
+    },
+    "flag_reason": {
+      "type": ["string", "null"],
+      "description": "When status is flagged, the flag criterion + one-line reason (full evidence lives in flagged.md)"
     },
     "execution_method": {
       "type": "string",
@@ -62,8 +65,8 @@
           },
           "status": {
             "type": "string",
-            "enum": ["pass", "fail", "skip", "error", "test-issue"],
-            "description": "test-issue means the test logic/steps are incorrect, not the app under test"
+            "enum": ["pass", "fail", "skip", "error", "test-issue", "flagged"],
+            "description": "test-issue means the test logic/steps are incorrect, not the app under test; flagged means senior dev review is required"
           },
           "reason": {
             "type": ["string", "null"],
@@ -104,7 +107,7 @@
                 },
                 "status": {
                   "type": "string",
-                  "enum": ["pass", "fail", "skip", "error", "test-issue"]
+                  "enum": ["pass", "fail", "skip", "error", "test-issue", "flagged"]
                 },
                 "duration_ms": {
                   "type": "integer",

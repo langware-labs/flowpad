@@ -95,6 +95,28 @@ def is_secrets_enabled() -> bool:
         return True
 
 
+def _consent_previously_granted(settings) -> bool:
+    """Prompt-free "was secret storage ever set up here" check.
+
+    Unlike :func:`is_secrets_enabled`, this does NOT probe the keychain —
+    so it stays True when the keychain entry was lost but the consent
+    marker remains, which is precisely the orphaned-sodot state
+    :func:`recover_orphaned_sodot` must be allowed to repair.
+    """
+    import os  # noqa: PLC0415
+
+    from flow_sdk.instance_settings.base_settings import (  # noqa: PLC0415
+        ENV_SOD_ENC_KEY,
+        _UNSET,
+    )
+
+    if os.environ.get(ENV_SOD_ENC_KEY):
+        return True
+    if getattr(settings, "_sod_key_memo", _UNSET) is not _UNSET:
+        return True
+    return settings.consent_marker_path.exists()
+
+
 def read_legacy_sod_key() -> str | None:
     """Return the Fernet key currently stored at the legacy bare-instance
     keychain slot ``(Flowpad.ai.sod_key, <instance>)`` — the slot Python's
@@ -287,8 +309,13 @@ def recover_orphaned_sodot() -> dict | None:
     """
     settings = get_instance_settings()
 
-    # No consent ⇒ never touch the keychain; nothing to recover.
-    if not is_secrets_enabled():
+    # No PRIOR consent ⇒ never touch the keychain; nothing to recover.
+    # Deliberately NOT is_secrets_enabled(): its trailing keychain probe
+    # returns False in exactly the orphan scenario this function exists to
+    # fix (entry deleted out-of-band, marker + sodot left behind), which
+    # would short-circuit recovery. "Was consent ever granted" is the
+    # env-key / in-process-memo / on-disk-marker check, prompt-free.
+    if not _consent_previously_granted(settings):
         return None
 
     sodot_path = settings.sodot_path
