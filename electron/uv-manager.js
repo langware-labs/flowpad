@@ -43,6 +43,7 @@ const PYPI_PACKAGE = 'flowpad';
 
 const API_PREFIX = '/api/v1';
 
+
 // Working directory for the `flow start` backend. The FS indexer treats its
 // CWD as a project root and walks the entire subtree (see
 // flow_sdk/fs_store/indexer/roots.py + project_folder_walker.py). If that root
@@ -562,10 +563,17 @@ class UvManager {
       // Ensure port 9007 is free before starting
       await this.ensurePortFree(9007);
 
-      // Credentials are managed entirely by the backend now: it stores hub
-      // login/secrets in the per-instance encrypted sodot file, keyed by the
-      // `Flowpad.ai.sod_key` keychain entry it reads/writes directly. The
-      // Electron app no longer mirrors a credential into the OS keychain.
+      // Read the per-instance Fernet sod-key from the OS keychain via the
+      // bundled, signed flow-rs binary. If present (i.e. a previous launch
+      // or the SecretApprovalDialog has already provisioned it), pass it
+      // through as SOD_ENC_KEY so Python's `sod_key` property short-circuits
+      // and never touches the keychain itself — keeping the entry's ACL
+      // trust list flow-rs-only (no python3.x ownership). If absent, the
+      // React SecretApprovalDialog fires on first secret use, mints via
+      // flow-rs (provision-sod-key IPC), and seeds the running backend via
+      // /secrets/seed-key.
+      const sodKey = await this._loadSodKey();
+
       const env = {
         ...process.env,
         PATH: this._enrichedPath(),
@@ -576,6 +584,12 @@ class UvManager {
         FLOWPAD_NO_BROWSER: '1',
         FLOWPAD_DESKTOP: '1',
       };
+      if (sodKey) {
+        // Matches flow_sdk/instance_settings/base_settings.py:ENV_SOD_ENC_KEY.
+        // Python's `sod_key` property reads this and short-circuits any
+        // keychain access — no Python-keyring touch on subsequent launches.
+        env.SOD_ENC_KEY = sodKey;
+      }
 
       if (IS_WIN) {
         env.USERPROFILE = env.USERPROFILE || os.homedir();
@@ -905,6 +919,48 @@ class UvManager {
     this._flowBin = await this._resolveFlowBin();
     this.log.info('[uv] Upgrade complete');
   }
+
+  /**
+   * Read the per-instance Fernet sod-key from the OS keychain via the
+   * bundled `flow-rs` binary. Reads from the same flow-rs binary that
+   * wrote the entry (see main.js::secrets:provision-sod-key) succeed
+   * without an ACL prompt; flow-rs is a no-op for fresh installs where
+   * the entry doesn't exist yet. Returns null on miss, flow-rs binary
+   * unavailable, or any error — caller treats that as "no key", and the
+   * React SecretApprovalDialog handles first-time approval.
+   */
+  async _loadSodKey() {
+    let flowRs;
+    try {
+      flowRs = require('./flow-rs-keychain');
+    } catch (err) {
+      this.log.warn(`[uv] flow-rs-keychain not available: ${err.message}`);
+      return null;
+    }
+    const account = flowRs.sodKeyAccount();
+    try {
+      const key = await flowRs.getKeyRestricted(SOD_KEY_KEYCHAIN_SERVICE, account);
+      if (key) {
+        this.log.info(`[uv] Loaded Flowpad sod_key from keychain (${account})`);
+        return key;
+      }
+    } catch (err) {
+      this.log.warn(`[uv] keychain read failed: ${err.message}`);
+    }
+    this.log.info('[uv] No sod_key in keychain — SecretApprovalDialog will fire on first secret use');
+    return null;
+  }
 }
 
+// Keychain SERVICE for the per-instance Fernet sod-key. Matches
+// flow_sdk/instance_settings/base_settings.py:SOD_KEY_KEYCHAIN_SERVICE so
+// both code paths address the same logical namespace. The ACCOUNT diverges
+// intentionally between Electron (`<instance>.flow-rs`, see
+// flow-rs-keychain.js::sodKeyAccount) and Python's fallback path (bare
+// `<instance>`); under Electron-driven flow Python never reaches its
+// fallback (it gets the value via SOD_ENC_KEY env or the /secrets/seed-key
+// endpoint), so the slot divergence has no functional effect.
+const SOD_KEY_KEYCHAIN_SERVICE = 'Flowpad.ai.sod_key';
+
 module.exports = UvManager;
+module.exports.SOD_KEY_KEYCHAIN_SERVICE = SOD_KEY_KEYCHAIN_SERVICE;
