@@ -1,3 +1,7 @@
+---
+id: 4123bb18-2066-5923-9cd7-fc2417b2b880
+---
+
 # Tab Management
 
 Architecture and roadmap for Flowpad's tab system: how terminal/process tabs
