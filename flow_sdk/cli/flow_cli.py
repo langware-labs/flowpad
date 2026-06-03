@@ -977,6 +977,9 @@ app.add_typer(record_app, name="record")
 from flow_sdk.cli.commands.workflow_cmd import workflow_app
 app.add_typer(workflow_app, name="workflow")
 
+from flow_sdk.cli.commands.process_cmd import process_app
+app.add_typer(process_app, name="process")
+
 from flow_sdk.cli.commands.migrate_cmd import migrate_app
 app.add_typer(migrate_app, name="migrate")
 

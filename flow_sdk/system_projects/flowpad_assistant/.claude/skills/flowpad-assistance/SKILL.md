@@ -16,7 +16,11 @@ description: "Flowpad assistance — drives the Flowpad app on behalf of the use
   \ — Search local files, skills, agents, specs, plans and other\n    assets via ``flow\
   \ record search <query> <time> <limit>`` (SQLite FTS5).\n    Use this whenever the\
   \ user asks to find / look up / show / search for\n    something without giving\
-  \ an explicit TypeId. See ``search.md``.\n"
+  \ an explicit TypeId. See ``search.md``.\n  • process — restart the calling\
+  \ agentic-process session via ``flow process restart`` (kills + re-spawns the\
+  \ worker, resuming the session). Use after installing an MCP server so the new\
+  \ config loads, or when the user says \"restart this session / process /\
+  \ agent\". Defaults to the current process. See ``process.md``.\n"
 tags:
 - flowpad
 - ui
@@ -31,6 +35,7 @@ allowed-tools:
 - Bash(flow schema info:*)
 - Bash(flow record index:*)
 - Bash(flow record search:*)
+- Bash(flow process restart:*)
 - Read
 - Write
 - Edit
@@ -103,5 +108,6 @@ For any action other than `context`, open the matching file in this skill direct
 | navigate | [`navigate.md`](navigate.md) |
 | records  | [`records.md`](records.md) |
 | search   | [`search.md`](search.md) |
+| process  | [`process.md`](process.md) |
 
 When composing actions (e.g. "navigate to the current X" or "create a task and open it"), read both files end-to-end before you start running commands.

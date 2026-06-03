@@ -236,6 +236,12 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
+  [ViewType.K_BROWSER]: {
+    title: 'Knowledge Browser',
+    iconName: 'Brain',
+    tabLocation: 'dedicated',
+    canAddAsTab: true,
+  },
   [ViewType.LENS]: {
     title: 'Lens',
     iconName: 'Eye',

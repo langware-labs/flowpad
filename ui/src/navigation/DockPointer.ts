@@ -564,6 +564,44 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
+   * Create a DockPointer for the docs knowledge browser at
+   * `/dock/k-browser/<method>/<value>`. Mirrors the editor addressing grammar:
+   * the explicit `<method>` segment (`vfs` | `typeid`) keeps a filesystem path
+   * from ever being parsed as a TypeId. `value` is the docs-root vfs path (vfs)
+   * or a `<type>-<id>` TypeId (typeid).
+   */
+  static forKnowledgeBrowser(
+    value: string,
+    method: 'vfs' | 'typeid' = 'vfs',
+    options?: { selected?: string },
+    layout: Layout = Layout.DOCK,
+  ): DockPointer {
+    const pointer = `${method}/${value}`;
+    const queryOptions: Record<string, string> = {};
+    if (options?.selected) queryOptions.selected = options.selected;
+    return new DockPointer(
+      ViewType.K_BROWSER,
+      pointer,
+      Object.keys(queryOptions).length ? queryOptions : undefined,
+      layout,
+    );
+  }
+
+  /** Split a K_BROWSER pointer into `{ method, value }` (default method `vfs`). */
+  static parseKnowledgeBrowserPointer(
+    pointer: string | undefined,
+  ): { method: 'vfs' | 'typeid'; value: string } | null {
+    if (!pointer) return null;
+    const idx = pointer.indexOf('/');
+    if (idx < 0) return { method: 'vfs', value: pointer };
+    const method = pointer.slice(0, idx);
+    return {
+      method: method === 'typeid' ? 'typeid' : 'vfs',
+      value: pointer.slice(idx + 1),
+    };
+  }
+
+  /**
    * Parse a lens pointer into its parts
    * @param pointer - The full pointer string (e.g., "claude/transcript/abc123")
    */
