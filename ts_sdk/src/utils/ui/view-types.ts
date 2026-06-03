@@ -45,6 +45,7 @@ export enum ViewType {
   SHOW = 'show', // MCP UI display dock pointer
   APPS = 'apps', // Skill UI apps - /dock/apps/<uname>/<router> mounts AppHost
   GRAPH = 'graph', // Built-in dep-graph viewer - /dock/graph/<type>/<id>
+  K_BROWSER = 'k-browser', // Docs knowledge browser - /dock/k-browser/<vfs|typeid>/<value>
   LENS = 'lens', // Lens viewer for specialized content (e.g., transcripts)
   SESSION = 'session', // Live session view (simplified workflow without file)
   TASKS = 'tasks', // Task create/edit view
