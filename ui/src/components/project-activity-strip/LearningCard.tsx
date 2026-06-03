@@ -38,7 +38,7 @@ export function LearningCard({
   const eventCount = workerSessionId ? sessionEventCounts?.get(workerSessionId) ?? 0 : 0;
 
   const handleCardClick = () => {
-    navigation.openDock(DockPointer.forTasks(task.typeId?.toString()));
+    navigation.openDock(DockPointer.forTasks(task.id));
   };
 
   return (

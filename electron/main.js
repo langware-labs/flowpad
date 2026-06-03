@@ -2,7 +2,9 @@ const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const log = require('electron-log');
+const crypto = require('crypto');
 const UvManager = require('./uv-manager');
+const { SOD_KEY_KEYCHAIN_SERVICE } = UvManager;
 
 // Register flowpad:// as a custom protocol so the OS routes deep links here.
 // Must be called before app.whenReady().
@@ -647,6 +649,58 @@ ipcMain.handle('upgrade-flowpad', async () => {
   } catch (err) {
     return { success: false, error: err.message };
   }
+});
+
+/**
+ * Provision the per-instance Fernet sod-key in the OS keychain via the
+ * bundled signed flow-rs binary. Returning the value here lets the
+ * renderer hand it to Python via the /secrets/seed-key endpoint, so
+ * Python never makes a keyring write of its own — keeping the keychain
+ * ACL trust list flow-rs-only (no python3.x ownership).
+ *
+ * Two modes:
+ *   * No argument: mint a fresh Fernet key (32 random bytes, url-safe
+ *     base64). Used in fresh-install + SecretApprovalDialog approval.
+ *   * `existingValue` supplied: write the supplied value verbatim.
+ *     Used by the one-shot legacy migration flow — backend reads the
+ *     legacy python3.x-owned key (which still decrypts the existing
+ *     sodot) and hands it here so flow-rs can re-write it at the
+ *     `.flow-rs` slot, preserving the user's secrets.
+ *
+ * Idempotent: if an entry already exists at the flow-rs slot, returns
+ * it unchanged (skips both mint AND re-write).
+ */
+ipcMain.handle('secrets:provision-sod-key', async (_event, existingValue) => {
+  let flowRs;
+  try {
+    flowRs = require('./flow-rs-keychain');
+  } catch (err) {
+    log.error(`[secrets] flow-rs-keychain not available: ${err.message}`);
+    throw new Error('flow-rs-keychain unavailable');
+  }
+  const account = flowRs.sodKeyAccount();
+  try {
+    const existing = await flowRs.getKeyRestricted(SOD_KEY_KEYCHAIN_SERVICE, account);
+    if (existing) {
+      log.info(`[secrets] sod_key already present in keychain (${account}); returning existing`);
+      return existing;
+    }
+  } catch (err) {
+    log.warn(`[secrets] keychain probe failed (${err.message}); minting/migrating fresh`);
+  }
+  let key;
+  if (typeof existingValue === 'string' && existingValue.length > 0) {
+    key = existingValue;
+    log.info(`[secrets] migrating supplied legacy sod_key to keychain (${account}) via flow-rs`);
+  } else {
+    // Fernet key: 32 random bytes, url-safe base64 with padding.
+    key = crypto.randomBytes(32).toString('base64')
+      .replace(/\+/g, '-').replace(/\//g, '_');
+    log.info(`[secrets] minted fresh sod_key for keychain (${account})`);
+  }
+  await flowRs.setKeyRestricted(SOD_KEY_KEYCHAIN_SERVICE, account, key);
+  log.info(`[secrets] wrote sod_key to keychain (${account})`);
+  return key;
 });
 
 ipcMain.handle('open-external', async (_, url) => {

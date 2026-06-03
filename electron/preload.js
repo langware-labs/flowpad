@@ -36,4 +36,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Update management
   onUpdateAvailable: (callback) => ipcRenderer.on('update-available', (_event, data) => callback(data)),
   upgradeFlowpad: () => ipcRenderer.invoke('upgrade-flowpad'),
+
+  // Provision the per-instance Fernet sod-key in the OS keychain via the
+  // bundled signed flow-rs binary, and return the value so the renderer
+  // can hand it to Python via /api/v1/secrets/seed-key. Keeps the keychain
+  // ACL trust list showing flow-rs (signed) rather than python3.x (unsigned).
+  //
+  // No argument → mint a fresh Fernet key.
+  // String argument → re-write the supplied value via flow-rs (used by the
+  //   legacy python3.x → flow-rs migration flow to preserve existing secrets).
+  provisionSodKey: (existingValue) => ipcRenderer.invoke('secrets:provision-sod-key', existingValue),
 });
