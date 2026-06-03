@@ -619,7 +619,15 @@ async def unpack_bundle(
                 if entry_type == BuiltinEntityType.SPEC.value:
                     spec_file = entry_dir / "spec.md"
                     if spec_file.exists():
-                        await _create_spec_from_file(spec_file, entry_id, owner_typeid)
+                        # Create-once: ``_create_spec_from_file`` saves
+                        # unconditionally, and re-unpacks are now routine
+                        # (missing body files trigger a re-pull) — without
+                        # this guard a re-unpack would clobber receiver-side
+                        # spec edits with the bundle's original copy. With
+                        # stub minting gone, an existing row can only be a
+                        # real one, so exists == already materialized.
+                        if overwrite or await Spec.get_one({"id": entry_id}) is None:
+                            await _create_spec_from_file(spec_file, entry_id, owner_typeid)
 
                 elif entry_type == BuiltinEntityType.TASK.value:
                     task_data = _read_entity_header(entry_dir)
@@ -638,39 +646,50 @@ async def unpack_bundle(
                         # picks via the mapping dialog; the picker stamps both
                         # task.project_id and conversation.project_id.
                         existing_task = await Task.get_one({"id": task_id})
-                        # Patch sender_email into the existing task if the bundle has it
-                        # and it was missing (e.g. task imported before sender_email was added)
-                        if existing_task and not overwrite:
-                            bundle_sender_email = task_data.get("sender_email") or ""
-                            if bundle_sender_email and not existing_task.sender_email:
-                                existing_task.sender_email = bundle_sender_email
-                                await existing_task.save(owner_typeid)
+                        # Strip sender-local fields that are meaningless on the
+                        # receiver: `project_root` is the sender's filesystem
+                        # path; `project_name` mirrors the sender's local
+                        # Project name; `my_process_id` is the sender's
+                        # AgenticProcess id (defense in depth — the pack side
+                        # also drops it from `_TASK_FIELDS`, but we re-strip
+                        # here so older bundles on the hub and senders running
+                        # stale code can't leak it through). Remote provenance
+                        # now lives on the Conversation (see CONVERSATION
+                        # branch below), not the Task — so we don't propagate
+                        # `project_id` / `project_name` onto the receiver's
+                        # task either.
+                        task_payload = {
+                            k: v for k, v in task_data.items()
+                            if k not in ("project_root", "project_name", "my_process_id")
+                        }
+                        task_payload.update({
+                            "id": task_id,
+                            "title": task_data.get("title", ""),
+                            "status": task_data.get("status", "to_do"),
+                            "spec_type": task_data.get("spec_type") or None,
+                            "project_id": None,
+                        })
                         if existing_task is None or overwrite:
-                            # Strip sender-local fields that are meaningless on the
-                            # receiver: `project_root` is the sender's filesystem
-                            # path; `project_name` mirrors the sender's local
-                            # Project name; `my_process_id` is the sender's
-                            # AgenticProcess id (defense in depth — the pack side
-                            # also drops it from `_TASK_FIELDS`, but we re-strip
-                            # here so older bundles on the hub and senders running
-                            # stale code can't leak it through). Remote provenance
-                            # now lives on the Conversation (see CONVERSATION
-                            # branch below), not the Task — so we don't propagate
-                            # `project_id` / `project_name` onto the receiver's
-                            # task either.
-                            task_payload = {
-                                k: v for k, v in task_data.items()
-                                if k not in ("project_root", "project_name", "my_process_id")
-                            }
-                            task_payload.update({
-                                "id": task_id,
-                                "title": task_data.get("title", ""),
-                                "status": task_data.get("status", "to_do"),
-                                "spec_type": task_data.get("spec_type") or None,
-                                "project_id": None,
-                            })
                             task = Task.model_validate(task_payload)
                             await task.save(owner_typeid)
+                        else:
+                            # Re-unpack onto an existing row: FILL-MERGE, never
+                            # skip. The old exists-check skip let any earlier
+                            # partial row permanently block the bundle's real
+                            # title / spec link / process id from ever landing.
+                            # The header is authoritative for fields the
+                            # receiver hasn't populated; receiver-local state
+                            # (project mapping, status progress) is never
+                            # clobbered.
+                            changed = False
+                            for k, v in task_payload.items():
+                                if k in ("id", "type", "project_id", "status") or v in (None, "", []):
+                                    continue
+                                if getattr(existing_task, k, None) in (None, "", []):
+                                    setattr(existing_task, k, v)
+                                    changed = True
+                            if changed:
+                                await existing_task.save(owner_typeid)
 
                 elif entry_type == BuiltinEntityType.CONVERSATION.value:
                     jsonl_file = entry_dir / "conversation.jsonl"
