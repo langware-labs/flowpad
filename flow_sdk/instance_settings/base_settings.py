@@ -435,14 +435,17 @@ class BaseInstanceSettings:
             key_bytes = env_key.encode()
         else:
             key_bytes = _fetch_or_create_sod_key(self.instance_name)
-            # Decoupled-from-login sentinel: record that this instance's local
-            # secret store is set up, without ever gating availability on it.
-            try:
-                self.instance_dir.mkdir(parents=True, exist_ok=True)
-                if not self.consent_marker_path.exists():
-                    self.consent_marker_path.touch(mode=0o600)
-            except OSError:
-                pass
+
+        # Decoupled-from-login sentinel: record that this instance's local
+        # secret store is set up, without ever gating availability on it.
+        # Runs in both the env-key and keychain-mint paths so the marker is
+        # consistent regardless of how the key was sourced.
+        try:
+            self.instance_dir.mkdir(parents=True, exist_ok=True)
+            if not self.consent_marker_path.exists():
+                self.consent_marker_path.touch(mode=0o600)
+        except OSError:
+            pass
 
         object.__setattr__(self, "_sod_key_memo", key_bytes)
         return key_bytes

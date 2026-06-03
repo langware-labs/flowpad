@@ -22,6 +22,7 @@ Phase C of the InstanceSettings consolidation. The legacy keychain
 from __future__ import annotations
 
 import logging
+import os
 
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.record_types import RecordType
@@ -44,20 +45,138 @@ from flow_sdk.instance_settings import (
 
 
 def is_secrets_enabled() -> bool:
-    """Non-prompting check: is the per-instance secret store set up?
+    """Non-prompting check: is the per-instance secret store actually
+    reachable right now?
 
-    True when ``SOD_ENC_KEY`` is supplied (env key ⇒ consent, no keychain) OR
-    the consent marker exists. Pure env+file probe; never touches the keychain
-    or decrypts the sod file. The marker is now auto-created on first secret
-    use (see ``InstanceSettings.sod_key``), decoupled from cloud login.
+    True when ANY of:
+      * ``SOD_ENC_KEY`` env supplies the key directly (env ⇒ consent).
+      * The in-process ``_sod_key_memo`` was populated (e.g. by
+        ``seed_sod_key`` after the signed Electron launcher minted +
+        wrote the keychain entry via flow-rs).
+      * The consent marker exists AND a Fernet entry actually sits in
+        the OS keychain at ``(Flowpad.ai.sod_key, <instance_name>)``.
+
+    The keychain probe at the end is what prevents the gate from falsely
+    claiming "enabled" when the user has deleted the keychain entry
+    out-of-band (Keychain Access, ``security delete-generic-password``,
+    fresh machine) and left the marker file behind. Without it the
+    SecretApprovalDialog redirect in /auth/login_callback would never
+    fire, and Python would silently re-mint a new python3.x-owned key
+    in the next ``_fetch_or_create_sod_key`` — exactly the failure mode
+    reported when ``Flowpad.ai.sod_key`` was deleted but the marker
+    survived.
     """
     import os  # noqa: PLC0415
 
-    from flow_sdk.instance_settings.base_settings import ENV_SOD_ENC_KEY  # noqa: PLC0415
+    from flow_sdk.instance_settings.base_settings import (  # noqa: PLC0415
+        ENV_SOD_ENC_KEY,
+        SOD_KEY_KEYCHAIN_SERVICE,
+        _UNSET,
+    )
 
     if os.environ.get(ENV_SOD_ENC_KEY):
         return True
-    return get_instance_settings().consent_marker_path.exists()
+
+    s = get_instance_settings()
+    if getattr(s, "_sod_key_memo", _UNSET) is not _UNSET:
+        return True
+
+    if not s.consent_marker_path.exists():
+        return False
+
+    # Marker present but no env/memo — confirm the keychain entry too.
+    try:
+        import keyring  # noqa: PLC0415
+        return keyring.get_password(SOD_KEY_KEYCHAIN_SERVICE, s.instance_name) is not None
+    except Exception:  # noqa: BLE001
+        # Keyring unavailable (test env, locked keychain, transient
+        # platform error): fall back to trusting the marker so we don't
+        # force re-approval on every check under recoverable failures.
+        return True
+
+
+def read_legacy_sod_key() -> str | None:
+    """Return the Fernet key currently stored at the legacy bare-instance
+    keychain slot ``(Flowpad.ai.sod_key, <instance>)`` — the slot Python's
+    ``_fetch_or_create_sod_key`` uses — or None if absent.
+
+    Idempotent and prompt-free in the typical case: Python reads its own
+    previously-written entry (same binary identity ⇒ ACL match). Used by
+    the one-shot migration flow in /secrets/migrate-to-flow-rs so the
+    signed Electron launcher can re-write the SAME key value via the
+    bundled flow-rs binary at the ``<instance>.flow-rs`` slot — moving
+    the ACL trust list from python3.x to flow-rs without losing the
+    sodot file's contents.
+    """
+    import keyring  # noqa: PLC0415
+
+    from flow_sdk.instance_settings.base_settings import SOD_KEY_KEYCHAIN_SERVICE  # noqa: PLC0415
+
+    s = get_instance_settings()
+    try:
+        return keyring.get_password(SOD_KEY_KEYCHAIN_SERVICE, s.instance_name)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def cleanup_legacy_sod_key() -> bool:
+    """Delete the legacy bare-instance keychain entry — called by the
+    renderer AFTER a successful migrate-to-flow-rs handoff so the
+    python3.x-owned entry doesn't sit orphaned in the keychain. The
+    flow-rs-owned entry at ``<instance>.flow-rs`` is the live one from
+    this point on; the env handoff (uv-manager.js::_loadSodKey) and the
+    seeded memo cover all sod access paths.
+
+    Returns True on success or absent, False on error.
+    """
+    import keyring  # noqa: PLC0415
+    from keyring.errors import PasswordDeleteError  # noqa: PLC0415
+
+    from flow_sdk.instance_settings.base_settings import SOD_KEY_KEYCHAIN_SERVICE  # noqa: PLC0415
+
+    s = get_instance_settings()
+    try:
+        keyring.delete_password(SOD_KEY_KEYCHAIN_SERVICE, s.instance_name)
+        return True
+    except PasswordDeleteError:
+        # No entry — nothing to clean.
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def seed_sod_key(key: str) -> bool:
+    """Install ``key`` as the per-instance Fernet key in memory, bypassing
+    the OS keychain entirely.
+
+    Called by the signed Electron launcher via the /secrets/seed-key endpoint
+    after Electron has already minted + stored the key in the keychain via
+    the bundled ``flow-rs`` binary (so the ACL trust list shows the signed
+    flow-rs binary, NOT the unsigned uv-bundled python3.x). This handoff is
+    what keeps Python from ever calling ``keyring.set_password`` and ending
+    up in the trust list itself.
+
+    Writes the key directly to ``InstanceSettings._sod_key_memo`` (the cache
+    field consulted by the ``sod_key`` property), so subsequent .sod access
+    uses the seeded value without touching the keychain. Also touches the
+    consent marker so ``is_secrets_enabled()`` returns True for any later
+    bootstrap probes.
+
+    Idempotent. Returns False if ``key`` is empty; True otherwise.
+    """
+    if not key:
+        return False
+    s = get_instance_settings()
+    # Bypass the dataclass __setattr__ since BaseInstanceSettings is frozen.
+    # The sod_key property checks this attr first and short-circuits.
+    object.__setattr__(s, "_sod_key_memo", key.encode())
+    try:
+        s.instance_dir.mkdir(parents=True, exist_ok=True)
+        if not s.consent_marker_path.exists():
+            s.consent_marker_path.touch(mode=0o600)
+    except OSError:
+        return False
+    return True
 
 
 def enable_secrets() -> bool:

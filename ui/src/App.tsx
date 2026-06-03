@@ -12,6 +12,8 @@ import { useEffect, useRef, useState } from 'react';
 import { DesktopSetupModal, DESKTOP_SETUP_REASON_AUTH_FAILURE } from '@src/components/desktop-setup-modal';
 import { GitHubDeviceFlowModal } from '@src/components/oauth/GitHubDeviceFlowModal';
 import SecretApprovalDialog from '@src/components/secret-approval-dialog';
+import MigrateLegacyKeychain from '@src/components/migrate-legacy-keychain';
+import { initNotificationListener } from '@src/store/use-notification-store';
 import { SnifferProvider } from '@src/contexts/SnifferContext';
 import { FloatingChatProvider } from '@src/components/floating-chat';
 import { usePresenceReporter } from '@src/hooks/use-presence-reporter';
@@ -142,6 +144,7 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
         <DesktopSetupModalHandler />
         <GitHubDeviceFlowModal />
         <SecretApprovalDialog />
+        <MigrateLegacyKeychain />
         <SnifferProvider>
           <FloatingChatProvider>
             {children}

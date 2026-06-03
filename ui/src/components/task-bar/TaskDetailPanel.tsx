@@ -37,7 +37,7 @@ export function TaskDetailPanel({ task, onClose }: TaskDetailPanelProps) {
     { query: blobExpansion },
   );
   const handleOpenFullView = () => {
-    navigation.openDock(DockPointer.forTasks(task.typeId?.toString()));
+    navigation.openDock(DockPointer.forTasks(task.id));
   };
 
   const analysisPath = getAnalysisPath(task);
