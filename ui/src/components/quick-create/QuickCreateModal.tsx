@@ -64,7 +64,7 @@ function DesktopTile({ Icon, label, iconClassName, disabled, onClick }: DesktopT
       )}
     >
       <Icon className={cn('h-7 w-7', iconClassName)} />
-      <span className="max-w-[68px] truncate text-center text-[10px] font-medium leading-tight">{label}</span>
+      <span className="line-clamp-2 w-full break-words px-1 text-center text-[10px] font-medium leading-tight">{label}</span>
     </button>
   );
 }
@@ -220,7 +220,7 @@ export function QuickCreateModal({ open, onOpenChange, onPick }: QuickCreateModa
     {
       key: 'new-git',
       Icon: GitBranch,
-      label: 'Project - from git',
+      label: 'Git',
       onClick: () => {
         onOpenChange(false);
         setNewGitProjectOpen(true);
