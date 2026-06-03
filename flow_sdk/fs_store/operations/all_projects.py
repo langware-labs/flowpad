@@ -56,6 +56,33 @@ def iter_codex_project_paths(include_temp: bool = False) -> Iterator[Path]:
         yield path
 
 
+def iter_workspace_project_paths(include_temp: bool = False) -> Iterator[Path]:
+    """Yield every immediate, non-hidden subdirectory of the Flowpad workspace.
+
+    Each top-level folder under ``<user_home>/Flowpad workspace`` whose name does
+    not start with ``.`` is treated as a project, even with no Claude or Codex
+    worker history. Hidden folders (``.claude``, ``.flow``, ``.git`` …) are
+    skipped. Same semantics as the Claude/Codex iterators: only existing dirs,
+    temp paths excluded unless ``include_temp``.
+    """
+    workspace = get_instance_settings().user_home / "Flowpad workspace"
+    try:
+        children = workspace.iterdir()
+    except OSError:
+        return
+    for child in children:
+        if child.name.startswith("."):
+            continue
+        try:
+            if not child.is_dir():
+                continue
+        except OSError:
+            continue
+        if not include_temp and is_temp_path(canonical_posix_path(child)):
+            continue
+        yield child
+
+
 async def get_all_projects(
     *,
     include_temp: bool = False,
@@ -68,7 +95,7 @@ async def get_all_projects(
 
     fs_by_cwd: dict[str, ProjectInfo] = {}
 
-    def _scan(paths: Iterator[Path], worker: str) -> None:
+    def _scan(paths: Iterator[Path], worker: str | None) -> None:
         for path in paths:
             canonical = canonical_posix_path(path)
             if not canonical:
@@ -81,11 +108,15 @@ async def get_all_projects(
                     project_id="",
                 )
                 fs_by_cwd[canonical] = info
-            if worker not in info.worker_types:
+            # Workspace folders (worker=None) register as projects without a
+            # worker tag; they still flow through the same reconcile → mint →
+            # materialize path below as Claude/Codex-discovered cwds.
+            if worker and worker not in info.worker_types:
                 info.worker_types.append(worker)
 
     _scan(iter_claude_project_paths(include_temp=include_temp), "claude")
     _scan(iter_codex_project_paths(include_temp=include_temp), "codex")
+    _scan(iter_workspace_project_paths(include_temp=include_temp), None)
 
     existing = await Project.get_all()
     by_cwd: dict[str, "Project"] = {}
