@@ -1,5 +1,5 @@
 import { EventEmitter } from 'events';
-import { computed, makeObservable, observable, runInAction } from 'mobx';
+import { autorun, computed, makeObservable, observable, runInAction } from 'mobx';
 import { v4 as uuidv4 } from 'uuid';
 import apiClient from '../client';
 import {
@@ -502,6 +502,7 @@ class DataContext extends EventEmitter {
     });
     this.setupAuthListeners();
     this.setupConnectionListeners();
+    this.startBrowserContextReporter();
   }
 
   private setupAuthListeners() {
@@ -586,6 +587,77 @@ class DataContext extends EventEmitter {
       defineGlobal('connection', null);
       this.emit(ContextEventType.CONTEXT_CHANGED);
     });
+  }
+
+  /**
+   * Mirror this connection's data-context (every ``ContextEntitiesEnum`` slot,
+   * incl. the active entity) to the backend over the UI WS, so the backend can
+   * read it (``flow context list``) AND drive ``BrowserContextWatch`` (register
+   * a hub watch for any ``remote`` entity in context → cross-user live updates).
+   *
+   * This lives in the SDK — not a React hook — so context sync works for EVERY
+   * consumer (CLI, agent worker, headless test), making the SDK self-contained
+   * with the backend. One-way, fire-and-forget, debounced, re-sent on every
+   * (re)connect (presence stays a UI hook — it reads the DOM, this doesn't).
+   */
+  private startBrowserContextReporter(): void {
+    const cm = ConnectionManager.getInstance();
+    let lastSerialized: string | null = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    const snapshot = (): Record<string, string | null> => {
+      const out: Record<string, string | null> = {};
+      for (const key of Object.values(ContextEntitiesEnum)) {
+        const typeId = this.getContextEntityTypeId(key);
+        out[key] = typeId ? typeId.toString() : null;
+      }
+      return out;
+    };
+
+    const sendNow = (force: boolean) => {
+      if (!cm.connected) return;
+      const ctx = snapshot();
+      const serialized = JSON.stringify(ctx);
+      if (!force && serialized === lastSerialized) return;
+      try {
+        cm.send(
+          JSON.stringify({
+            message_type: 'browser_context',
+            message_id: uuidv4(),
+            context: ctx,
+          }),
+        );
+        lastSerialized = serialized;
+      } catch {
+        // Socket may have dropped; on_open re-sends forcibly.
+      }
+    };
+
+    const schedule = () => {
+      if (timer !== null) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = null;
+        sendNow(false);
+      }, 100);
+    };
+
+    // mobx autorun fires once immediately, then on every observed change.
+    // Touching each observable getter inside the closure registers it.
+    autorun(() => {
+      for (const key of Object.values(ContextEntitiesEnum)) {
+        this.getContextEntityTypeId(key);
+      }
+      schedule();
+    });
+
+    const resend = () => {
+      lastSerialized = null;
+      sendNow(true);
+    };
+    cm.on('on_open', resend);
+    cm.on('on_reconnected', resend);
+
+    if (cm.connected) sendNow(true);
   }
 
   activeEntityTypeId2ContextEnum(typeId: TypeId): ContextEntitiesEnum | null {

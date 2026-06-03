@@ -190,6 +190,15 @@ class HubWebSocketManager:
         self.reconnect_attempts_per_level = max(1, int(reconnect_attempts_per_level))
         self._task: asyncio.Task | None = None
         self._stop_requested = False
+        # Id for THIS backend's CURRENT hub WS connection, minted FRESH per
+        # connect attempt in ``_run_forever`` (NOT pinned). A reconnect MUST use
+        # a new id: the hub keys its live ``Connection`` handler by this id and
+        # rejects a reused id as a duplicate (``WS_CLOSE_DUPLICATE``) whenever a
+        # prior half-open connection's handler hasn't been cleaned up — which
+        # would wedge the bridge permanently. ``BrowserContextWatch`` survives
+        # reconnects via ``resync()`` (re-registers watches against the new id),
+        # NOT via id stability. ``None`` until the first connect.
+        self._connection_id: str | None = None
         self._connected = False
         self._verified = False
         self._status: HubConnectionStatus = HubConnectionStatus.DISCONNECTED
@@ -268,6 +277,15 @@ class HubWebSocketManager:
     @property
     def is_verified(self) -> bool:
         return self.is_connected and self._verified
+
+    @property
+    def connection_id(self) -> str | None:
+        """This backend's session-stable hub connection id (``None`` until started).
+
+        Used by ``BrowserContextWatch`` to register hub watches against the live
+        bridge connection — the hub keys its ``Connection`` entity by this id.
+        """
+        return self._connection_id
 
     def connection_payload(self) -> dict[str, Any]:
         """Canonical {status, error} for the hub WS connection slot."""
@@ -388,7 +406,11 @@ class HubWebSocketManager:
             while not self._stop_requested:
                 try:
                     await self._set_state(HubConnectionStatus.CONNECTING, connected=False, verified=False, error=None)
-                    async with connect_hub_websocket(self.config) as websocket:
+                    # Fresh id every connect attempt — never reuse (see
+                    # ``_connection_id`` doc: a reused id collides with a stale
+                    # hub-side ghost handler and is rejected as a duplicate).
+                    self._connection_id = str(uuid.uuid4())
+                    async with connect_hub_websocket(self.config, connection_id=self._connection_id) as websocket:
                         backoff = self.reconnect_initial_seconds
                         attempts_at_level = 0
                         await self._set_state(
@@ -398,6 +420,12 @@ class HubWebSocketManager:
                         )
                         if self._connected_event:
                             self._connected_event.set()
+                        # Re-register BrowserContextWatch hub watches against the
+                        # freshly-(re)connected ``Connection`` (idempotent). Runs
+                        # as a task so it doesn't delay the reader/writer below.
+                        from flow_sdk.cloud_client.context_watch import browser_context_watch
+
+                        asyncio.create_task(browser_context_watch.resync())
                         # Fresh queue per connection — prior queued frames from
                         # a dead session don't leak across reconnects.
                         self._outbound = asyncio.Queue(maxsize=HUB_WS_OUTBOUND_QUEUE_MAX)

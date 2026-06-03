@@ -15,7 +15,6 @@ import SecretApprovalDialog from '@src/components/secret-approval-dialog';
 import { SnifferProvider } from '@src/contexts/SnifferContext';
 import { FloatingChatProvider } from '@src/components/floating-chat';
 import { usePresenceReporter } from '@src/hooks/use-presence-reporter';
-import { useBrowserContextReporter } from '@src/hooks/use-browser-context-reporter';
 import { useUiCommandListener } from '@src/hooks/use-ui-command-listener';
 import { Spotlight, useSpotlightHotkey } from '@src/components/spotlight';
 
@@ -98,7 +97,6 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
   const GlobalEvents = () => {
     void useGlobalEvents();
     usePresenceReporter();
-    useBrowserContextReporter();
     useUiCommandListener();
     useSpotlightHotkey();
     return null;
