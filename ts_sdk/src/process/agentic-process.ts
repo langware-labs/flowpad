@@ -231,6 +231,8 @@ export interface IAgenticProcess extends IEntity {
   shell_id?: string | null;
   /** Whether this process is visible in the tabs view */
   visible?: boolean;
+  /** ISO timestamp of the tab's last activation. Resolver recency seed (Bug 1). */
+  last_active_at?: string | null;
   /** Sidecar plain shell PTY session ID */
   sidecar_shell_id?: string | null;
   /** True when PTY OSC title escapes may update `name`. Cleared the first time the user manually renames this tab. */
