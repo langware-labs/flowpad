@@ -68,6 +68,9 @@ const ClaudeResumeIcon: React.FC<{ className?: string }> = ({ className }) => (
 );
 
 import type { TerminalTab } from '@src/hooks/useActiveTerminals';
+import { resolveActive } from '@src/tabs/tab-model';
+import { buildTabCandidates } from '@src/tabs/tab-candidates';
+import { consumePendingIntent, peekPendingIntent } from '@src/tabs/pending-intent';
 
 function isCodexProcess(process?: AgenticProcess | null): boolean {
   return process?.worker_type?.trim().toLowerCase() === 'codex';
@@ -322,12 +325,23 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
   useEffect(() => {
     if (visibleSessions.length === 0) return;
     if (hasActiveTab) return;
-    const firstSession = visibleSessions[0];
-    // Self-heal lands on the live terminal, not the transcript. AgenticProcess's
-    // default ``dockPointer`` is read-only (lens/transcript); the terminal pane
-    // wants ``terminalDockPointer`` so the shell-id vs agentic_process-id route
-    // resolves correctly and the actual PTY surfaces.
-    const pointer = firstSession.agenticProcess?.terminalDockPointer ?? firstSession.shell?.dockPointer;
+    // URL-first self-heal via the single resolver: prefer an explicit pending
+    // intent (footer-chip click → Bug 2), else the most-recently-active tab
+    // (project round-trip → Bug 1), else lowest tab_order. We only RESOLVE a key
+    // and navigate; the route loader writes context. Replaces the old
+    // unconditional `visibleSessions[0]` snap.
+    const { activeKey, consumedPendingIntent } = resolveActive({
+      candidates: buildTabCandidates(visibleSessions),
+      urlActiveKey: null, // self-heal only runs when no active tab is in the strip
+      pendingIntentKey: peekPendingIntent(),
+    });
+    if (consumedPendingIntent) consumePendingIntent();
+    const target = visibleSessions.find((s) => terminalTargetKey(s) === activeKey);
+    if (!target) return;
+    // Land on the live terminal, not the transcript: AgenticProcess's default
+    // ``dockPointer`` is read-only (lens/transcript); the terminal pane wants
+    // ``terminalDockPointer`` so the PTY route resolves and surfaces.
+    const pointer = target.agenticProcess?.terminalDockPointer ?? target.shell?.dockPointer;
     if (pointer) navigation.openDockPointer(pointer);
   }, [hasActiveTab, visibleSessions, navigation]);
 

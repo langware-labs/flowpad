@@ -375,6 +375,9 @@ class AgenticProcess(Entity):
     shell_id: str | None = APIField(default=None)
     sidecar_shell_id: str | None = APIField(default=None)
     visible: bool = APIField(default=False, description="Whether this process is visible in the tabs view")
+    last_active_at: str | None = APIField(
+        default=None, description="ISO timestamp of the tab's last activation (resolver recency seed)"
+    )
     auto_rename: bool = APIField(
         default=True,
         description=(

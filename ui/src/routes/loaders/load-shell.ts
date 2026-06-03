@@ -39,6 +39,7 @@ import {
 import { showCleanupModal } from '@src/components/recovery/cleanup-modal';
 import { notify } from '@src/notifications';
 import { DockPointer } from '@src/navigation';
+import { bumpLastActive } from '@src/tabs/last-active';
 import { replace } from 'react-router';
 import { perfLog, perfTime } from './_perf';
 import {
@@ -125,6 +126,7 @@ export async function loadShell(shellId: string): Promise<Shell> {
 
   dataContext.setActiveShellId(shell.id);
   dataContext.setActiveTerminalTargetTypeId(shell.typeId);
+  bumpLastActive(shell); // recency seed for resolveActive (Bug 1)
   dataContext.setWorkdir(shell.workdir ?? dataContext.project?.fs_storage_mount_path ?? null);
   await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProcessTypeId, null);
   return shell;

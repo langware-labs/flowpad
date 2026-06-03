@@ -97,7 +97,10 @@ function processFromCache(id: string): AgenticProcess | undefined {
   );
 }
 
-function toShellTab(s: WireShell): TerminalTab {
+// `toShellTab`/`toProcessTab`/`byTabOrder`/`mergePreservingOrder` are exported for
+// Phase-0 characterization tests (behaviour-neutral). The wire→tab mapping and the
+// ordering/merge invariants are locked by `ui/tests/unit/tab-*.test.ts`.
+export function toShellTab(s: WireShell): TerminalTab {
   const cached = shellFromCache(s.id);
   const isClosing = s.status === ShellStatus.CLOSING;
   return {
@@ -116,7 +119,7 @@ function toShellTab(s: WireShell): TerminalTab {
   };
 }
 
-function toProcessTab(p: WireProcess): TerminalTab {
+export function toProcessTab(p: WireProcess): TerminalTab {
   const cached = processFromCache(p.id);
   const linkedShellId = p.shell_id ?? cached?.shell_id ?? '';
   const linkedShell = linkedShellId ? shellFromCache(linkedShellId) : undefined;
@@ -139,7 +142,7 @@ function toProcessTab(p: WireProcess): TerminalTab {
   };
 }
 
-function byTabOrder(a: TerminalTab, b: TerminalTab): number {
+export function byTabOrder(a: TerminalTab, b: TerminalTab): number {
   if (a.tabOrder !== b.tabOrder) return a.tabOrder - b.tabOrder;
   // Stable secondary: plain shells before processes when tab_order is equal.
   if (a.type !== b.type) return a.type === 'plain' ? -1 : 1;
@@ -259,7 +262,11 @@ function ensureWsSubscription(): void {
  * indices of existing tabs, which is the exact "tabs moving around" problem
  * this function exists to prevent.
  */
-function mergePreservingOrder(prev: TerminalTab[], fetched: TerminalTab[]): TerminalTab[] {
+export function mergePreservingOrder(
+  prev: TerminalTab[],
+  fetched: TerminalTab[],
+  firstFetchCompleted: boolean,
+): TerminalTab[] {
   if (!firstFetchCompleted) return fetched.slice().sort(byTabOrder);
   const fetchedByKey = new Map<string, TerminalTab>();
   for (const t of fetched) fetchedByKey.set(terminalTargetKey(t), t);
@@ -316,7 +323,7 @@ export async function fetchActiveTerminals(): Promise<TerminalTab[]> {
     ...result.pure_shells.map(toShellTab),
     ...result.visible_processes.map(toProcessTab),
   ];
-  const next = mergePreservingOrder(terminalState, fetched);
+  const next = mergePreservingOrder(terminalState, fetched, firstFetchCompleted);
   setTerminalState(next);
   firstFetchCompleted = true;
   return next;
