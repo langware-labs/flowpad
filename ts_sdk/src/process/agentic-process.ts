@@ -199,6 +199,27 @@ export interface AgenticProcessReportEventResult {
 }
 
 /**
+ * One pending prompt in the backend file-backed PromptQueue. Flat shape —
+ * mirrors `flow_sdk/builtin/agentic_process/prompt_queue/prompt_queue.py`.
+ */
+export interface QueueEntry {
+  id: string;
+  prompt: string;
+  source: string;
+  created_at: string;
+}
+
+/**
+ * Reflected state of a process's prompt queue. Read-only on the frontend:
+ * the backend owns the file + the drain; the UI mutates only via the
+ * `enqueue` / `dequeue` / `clear-queue` / `set-queue-enabled` actions.
+ */
+export interface QueueState {
+  enabled: boolean;
+  entries: QueueEntry[];
+}
+
+/**
  * Interface for AgenticProcess entity data
  */
 export interface IAgenticProcess extends IEntity {
@@ -298,6 +319,12 @@ export interface IAgenticProcess extends IEntity {
    * the trigger to re-fire.
    */
   plan_path?: string | null;
+  /**
+   * Reflected prompt-queue state. Computed server-side from the on-disk
+   * `prompt_queue.json` and pushed via `data_op`; never persisted on the
+   * entity and never written from the frontend (mutate via the queue actions).
+   */
+  queue?: QueueState | null;
 }
 
 /**
@@ -378,10 +405,11 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * harness tab pre-filled with a user prompt.
    *
    * @param workerType - `'claude_code'` or `'codex'`
-   * @param prompt - Optional initial user prompt. Delivered via the backend
-   *   `execute` action, which routes to `prompt()` → `send()` and writes the
-   *   text into the running PTY's stdin so the worker picks it up as its
-   *   first user message.
+   * @param prompt - Optional initial user prompt. Placed on the process's
+   *   prompt queue (not injected directly): the backend drains the queue head
+   *   as the worker's launch instruction when the dock starts it, so the
+   *   first prompt boots the worker deterministically (no post-spawn stdin
+   *   race).
    * @param project - Optional project to run the tab in. Defaults to the active
    *   `dataContext.project`. Pass an explicit project when the prompt relies on
    *   project-scoped assets (e.g. a `.claude/skills` skill that only lives in a
@@ -396,27 +424,21 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     const computeNode = dataContext.computeNode;
     if (!computeNode) throw new Error('[AgenticProcess.openTab] No local compute node');
     const proj = project ?? dataContext.project;
+    // Seed the prompt onto the queue via createProcess (`launchPrompt`), which
+    // enqueues it server-side BEFORE the visible auto-start. The worker then
+    // boots with the queued head as its launch instruction — deterministic,
+    // no post-spawn stdin race (the original "lost first prompt" bug). A
+    // separate enqueue after createProcess would land too late (the worker has
+    // already started).
     const process = await computeNode.createProcess(
       {
         workdir: proj?.fs_storage_mount_path ?? undefined,
         ...(proj?.id ? { projectId: proj.id } : {}),
         workerType,
       },
-      { visible: true, watchProcess: false },
+      { visible: true, watchProcess: false, ...(prompt ? { launchPrompt: prompt } : {}) },
     );
     process.openTerminalDock();
-    if (prompt) {
-      // Call backend `execute` action directly: bypasses the TS-side
-      // `isWorkerRunning` guard in executeInstruction() (the just-spawned PTY
-      // *is* running, which is exactly when we want to send to its stdin).
-      const actionInfo = new ActionInfo('execute', AgenticProcess.type, process.id, 'POST');
-      actionInfo.bodyParameters = { instruction: prompt };
-      try {
-        await dataManager.callAction(actionInfo);
-      } catch (err) {
-        console.error('[AgenticProcess.openTab] execute failed', err);
-      }
-    }
     return process;
   }
 
@@ -842,6 +864,39 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this.additional_dirs = (this.additional_dirs ?? []).filter((d) => d !== path);
   }
 
+  // ── Prompt queue (backend-owned; these are thin action wrappers) ───────────
+  // The backend writes the queue file, runs the drain, and pushes the new
+  // `queue` state back via `data_op`. These methods never mutate `this.queue`
+  // locally — the reflection round-trip is the single source of truth.
+
+  /** Append a prompt to the tail of the queue. */
+  async enqueue(prompt: string, source: string = 'ui'): Promise<void> {
+    const actionInfo = new ActionInfo('enqueue', AgenticProcess.type, this.id, 'POST');
+    actionInfo.bodyParameters = { prompt, source };
+    await dataManager.callAction(actionInfo);
+  }
+
+  /** Remove a queued prompt by its id (string) or list index (number). */
+  async dequeue(idOrIndex: string | number): Promise<void> {
+    const actionInfo = new ActionInfo('dequeue', AgenticProcess.type, this.id, 'POST');
+    actionInfo.bodyParameters =
+      typeof idOrIndex === 'number' ? { index: idOrIndex } : { id: idOrIndex };
+    await dataManager.callAction(actionInfo);
+  }
+
+  /** Drop every pending prompt. */
+  async clearQueue(): Promise<void> {
+    const actionInfo = new ActionInfo('clear-queue', AgenticProcess.type, this.id, 'POST');
+    await dataManager.callAction(actionInfo);
+  }
+
+  /** Enable/disable draining. Disabled keeps entries but stops injection. */
+  async setQueueEnabled(enabled: boolean): Promise<void> {
+    const actionInfo = new ActionInfo('set-queue-enabled', AgenticProcess.type, this.id, 'POST');
+    actionInfo.bodyParameters = { enabled };
+    await dataManager.callAction(actionInfo);
+  }
+
   async shell(): Promise<Shell | null> {
     if (!this.shell_id) return null;
     const w = (typeof window !== 'undefined' ? window : undefined) as
@@ -1089,6 +1144,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this.output_folder = entity.output_folder ? FSRef.fromJson(entity.output_folder) : null;
     this.assets_folder = entity.assets_folder ? FSRef.fromJson(entity.assets_folder) : null;
     this.plan_path = entity.plan_path ?? null;
+    this.queue = entity.queue ?? null;
   }
 
   // NOTE: project_id projection moved server-side. The base Python
@@ -1100,6 +1156,13 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   // ── Field declarations (populated by constructor / wire data) ──────────────
 
   plan_path: string | null = null;
+
+  /**
+   * Reflected prompt-queue state (backend-owned). Populated by `deepAssign`
+   * off the wire and refreshed on every `data_op`; the panel reads this and
+   * mutates exclusively through the queue action methods below.
+   */
+  queue: QueueState | null = null;
 
   /**
    * Get the instruction file (if set locally)
@@ -2263,6 +2326,18 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * @internal
    */
   protected onEntityUpdate(data: Partial<IAgenticProcess>): void {
+    // Reflected ``queue`` must REPLACE, not merge. ``deepAssign`` (which runs
+    // right after this hook) recurses into arrays and merges them by index,
+    // never shrinking the target — so a dequeue/clear would leave stale tail
+    // entries (e.g. [A,B] + wire [B] → [B,B]). Assign the wire value wholesale
+    // here and strip it from the payload so the following deepAssign skips it.
+    // (Same "remove from payload before deepAssign" guard the cache path uses
+    // for ``state``.)
+    if ('queue' in data) {
+      const q = data.queue;
+      this.queue = q ? { enabled: !!q.enabled, entries: [...(q.entries ?? [])] } : null;
+      delete data.queue;
+    }
     // Skip no-op transitions: castAndDeepAssign() runs this hook for every
     // WS entity-op AND for every REST-response write-through, so the same
     // status often arrives many times. Without the equality guard, downstream
