@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Conversation, type Task, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { History, Layers, PanelRightClose, PanelRightOpen } from 'lucide-react';
@@ -32,6 +32,20 @@ interface ConversationPanelProps {
    */
   variant?: 'default' | 'compact';
   className?: string;
+  /**
+   * URL-derived selected message id (the `/message/<id>` pointer segment).
+   * When it changes, the panel syncs its selection to that single bubble —
+   * highlight + scroll-into-view follow. Hosts without a message-deep-link
+   * URL shape simply omit it and selection stays panel-local.
+   */
+  selectedMessageId?: string | null;
+  /**
+   * URL-first bubble clicks: when provided, clicking a message navigates
+   * (the host builds the `/message/<id>` dock pointer) instead of writing
+   * local selection state — the URL change flows back via
+   * `selectedMessageId`. Omitted → local-state selection (embedded hosts).
+   */
+  onMessageNavigate?: (messageId: string) => void;
 }
 
 /**
@@ -134,6 +148,8 @@ export function ConversationPanel({
   headerLabel = 'Conversation',
   variant = 'default',
   className,
+  selectedMessageId,
+  onMessageNavigate,
 }: ConversationPanelProps) {
   // One gate, two subject shapes. Remote provenance always lives on the
   // conversation; the gate stamps the task when present (task owns project_root
@@ -169,12 +185,28 @@ export function ConversationPanel({
   // that contributed it.
   const [selectedMessageIds, setSelectedMessageIds] = useState<string[]>([]);
   const [selectedEntityKey, setSelectedEntityKey] = useState<string | null>(null);
+  // URL → selection sync (mirrors the transcript viewer's entry-id sync):
+  // when the host passes a `/message/<id>` deep-link segment, the panel's
+  // selection derives from it. Entity-mode multi-selection stays panel-local
+  // (clicking a context entity doesn't change the URL), but any URL change
+  // wholesale-replaces it with the single linked bubble.
+  useEffect(() => {
+    if (!selectedMessageId) return;
+    setSelectedMessageIds([selectedMessageId]);
+    setSelectedEntityKey(null);
+  }, [selectedMessageId]);
   const selectOneMessage = useCallback(
     (id: string) => {
+      // URL-first when the host supports it: navigating re-enters via the
+      // `selectedMessageId` effect above. No optimistic local write.
+      if (onMessageNavigate) {
+        onMessageNavigate(id);
+        return;
+      }
       setSelectedMessageIds([id]);
       setSelectedEntityKey(null);
     },
-    [],
+    [onMessageNavigate],
   );
   const selectEntity = useCallback(
     (entityKey: string, messageIds: string[]) => {

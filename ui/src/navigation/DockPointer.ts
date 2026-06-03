@@ -661,9 +661,43 @@ export class DockPointer implements IDockPointer {
    * Create dock pointer for the dedicated conversation viewer at
    * `/dock/conversation/<conversationId>`. Same UI as the conversation
    * panel embedded in task views — the URL is just a different host for it.
+   *
+   * URL formats:
+   *   /dock/conversation/<conversationId>
+   *   /dock/conversation/<conversationId>/message/<messageId>
+   *
+   * The optional `message` segment deep-links to a specific FlowMessage —
+   * the conversation view derives its selected bubble from it (URL-first)
+   * and scrolls it into view.
    */
-  static forConversation(conversationId: string, layout: Layout = Layout.DOCK): DockPointer {
-    return new DockPointer(ViewType.CONVERSATION, conversationId, undefined, layout);
+  static forConversation(
+    conversationId: string,
+    sub?: { messageId?: string | null },
+    layout: Layout = Layout.DOCK,
+  ): DockPointer {
+    const pointer = sub?.messageId
+      ? `${conversationId}/message/${sub.messageId}`
+      : conversationId;
+    return new DockPointer(ViewType.CONVERSATION, pointer, undefined, layout);
+  }
+
+  /**
+   * Parse a conversation pointer string.
+   *
+   * Accepted shapes:
+   *   <conversationId>
+   *   <conversationId>/message/<messageId>
+   *
+   * Returns nulls for segments that aren't present or the input is malformed.
+   */
+  static parseConversationPointer(
+    pointer: string | undefined | null,
+  ): { conversationId: string | null; messageId: string | null } {
+    if (!pointer) return { conversationId: null, messageId: null };
+    const parts = pointer.split('/').filter(Boolean);
+    const conversationId = parts[0] ?? null;
+    const messageId = parts[1] === 'message' && parts[2] ? parts[2] : null;
+    return { conversationId, messageId };
   }
 
   /**
