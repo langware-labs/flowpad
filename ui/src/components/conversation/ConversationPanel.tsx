@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Conversation, type Task, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { History, Layers, PanelRightClose, PanelRightOpen } from 'lucide-react';
+import { cn } from '@src/lib/utils';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
 import { TabbedSideDrawer } from '@src/components/ui/side-drawer';
 import { useProcessesForTarget } from '@src/components/entity-execution-panel/hooks/useProcessesForTarget';
@@ -83,17 +84,20 @@ interface ConversationPanelProps {
  * conv.save()`` — the backend's save→data_op broadcast updates every other
  * client viewing this conversation (e.g. a second tab) via ``useEntity``.
  */
-function EditableConversationTitle({
+export function EditableConversationTitle({
   conv,
   fallback,
+  className = 'text-xs font-medium',
 }: {
   conv: Conversation | null;
   fallback: string;
+  /** Text styling (size/weight/truncation) applied to both the static span and the edit input. */
+  className?: string;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
 
-  if (!conv) return <span>{fallback}</span>;
+  if (!conv) return <span className={className}>{fallback}</span>;
 
   const display = (conv.title ?? '').trim() || fallback;
 
@@ -114,7 +118,7 @@ function EditableConversationTitle({
       <input
         autoFocus
         data-testid="conversation-title-input"
-        className="min-w-0 flex-1 border-b border-border bg-transparent text-xs font-medium text-foreground outline-none"
+        className={cn('min-w-0 flex-1 border-b border-border bg-transparent text-foreground outline-none', className)}
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
         onBlur={commit}
@@ -129,7 +133,7 @@ function EditableConversationTitle({
   return (
     <span
       data-testid="conversation-title"
-      className="cursor-text rounded px-0.5 hover:bg-muted"
+      className={cn('cursor-text rounded px-0.5 hover:bg-muted', className)}
       title="Click to rename"
       onClick={() => {
         setDraft(conv.title ?? '');
