@@ -68,17 +68,10 @@ class CodexDriver:
         on this), and the runtime path inlines the agent body via
         ``compose_prompt`` instead.
         """
-        from flow_sdk.config import flowpad_assistant_project_root
-
         cmd = CodexCliOptions.from_json(process.cli_config)
         cmd.session_id = process.session_id
         cmd.workdir = process.workdir
-        if process.assistant_enabled:
-            core_dir = str(flowpad_assistant_project_root())
-            extra = [d for d in (process.additional_dirs or []) if d != core_dir]
-            cmd.add_dirs = [core_dir] + extra
-        else:
-            cmd.add_dirs = list(process.additional_dirs or [])
+        cmd.add_dirs = process.resolved_add_dirs
         agents_json = process.get_agents_json()
         if agents_json:
             cmd.skill_names = list(agents_json.keys())

@@ -44,10 +44,21 @@ env_file()     { echo "$REPO_ROOT/.env.$1.local"; }   # vite reads this via --mo
 
 port_in_use() { lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1; }
 
+# Ports we must never hand out even if nothing is currently listening on them,
+# because another well-known service owns them on this machine:
+#   5001 -> neo4j
+RESERVED_PORTS="5001"
+port_reserved() {
+  local p
+  for p in $RESERVED_PORTS; do [ "$p" = "$1" ] && return 0; done
+  return 1
+}
+
 # find_free_port <band_base> <preferred>  -> echoes a free port in [preferred, band_base+99]
 find_free_port() {
   local base="$1" pref="$2" p
   for (( p=pref; p<=base+99; p++ )); do
+    port_reserved "$p" && continue
     port_in_use "$p" || { echo "$p"; return 0; }
   done
   return 1

@@ -2648,6 +2648,22 @@ class AgenticProcess(Entity):
         from flow_sdk.config import default_service_config  # noqa: PLC0415
         return default_service_config.load_flowpad_assistant
 
+    @property
+    def resolved_add_dirs(self) -> list[str]:
+        """The ``--add-dir`` set the driver should mount for this process.
+
+        ``additional_dirs`` plus the Flowpad Assistant project root prepended
+        when :attr:`assistant_enabled` (de-duped so an explicit copy in
+        ``additional_dirs`` doesn't double it). Both the PTY and print-mode
+        driver paths read this so they mount the same surface.
+        """
+        dirs = list(self.additional_dirs or [])
+        if not self.assistant_enabled:
+            return dirs
+        from flow_sdk.config import flowpad_assistant_project_root  # noqa: PLC0415
+        core_dir = str(flowpad_assistant_project_root())
+        return [core_dir] + [d for d in dirs if d != core_dir]
+
     def enable_assistant(self) -> "AgenticProcess":
         """Mount the Flowpad Assistant for this process (skills/agents discoverable).
 
