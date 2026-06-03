@@ -33,15 +33,11 @@ export async function hubAvailable(): Promise<{ ok: boolean; reason?: string }> 
   }
 }
 
-export async function readEnvLocal(repo: string): Promise<Record<string, string>> {
+/** Parse dotenv text into a key→value map (skips comments/blanks, strips a
+ *  matching pair of surrounding quotes). Shared by `readEnvLocal` and the
+ *  per-instance harness in `_instances.ts`. */
+export function parseDotEnv(text: string): Record<string, string> {
   const out: Record<string, string> = {};
-  const p = path.join(repo, '.env.local');
-  let text: string;
-  try {
-    text = await fs.readFile(p, 'utf-8');
-  } catch {
-    return out;
-  }
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.trim();
     if (!line || line.startsWith('#') || !line.includes('=')) continue;
@@ -54,6 +50,14 @@ export async function readEnvLocal(repo: string): Promise<Record<string, string>
     out[k] = v;
   }
   return out;
+}
+
+export async function readEnvLocal(repo: string): Promise<Record<string, string>> {
+  try {
+    return parseDotEnv(await fs.readFile(path.join(repo, '.env.local'), 'utf-8'));
+  } catch {
+    return {};
+  }
 }
 
 export interface HubLoginResult {
