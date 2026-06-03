@@ -73,9 +73,12 @@ class CodexDriver:
         cmd = CodexCliOptions.from_json(process.cli_config)
         cmd.session_id = process.session_id
         cmd.workdir = process.workdir
-        core_dir = str(flowpad_assistant_project_root())
-        extra = [d for d in (process.additional_dirs or []) if d != core_dir]
-        cmd.add_dirs = [core_dir] + extra
+        if process.assistant_enabled:
+            core_dir = str(flowpad_assistant_project_root())
+            extra = [d for d in (process.additional_dirs or []) if d != core_dir]
+            cmd.add_dirs = [core_dir] + extra
+        else:
+            cmd.add_dirs = list(process.additional_dirs or [])
         agents_json = process.get_agents_json()
         if agents_json:
             cmd.skill_names = list(agents_json.keys())

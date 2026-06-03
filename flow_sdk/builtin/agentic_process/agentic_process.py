@@ -416,6 +416,15 @@ class AgenticProcess(Entity):
         ),
     )
     additional_dirs: list[str] = APIField(default_factory=list, description="Extra directories passed to Claude via --add-dir")
+    load_flowpad_assistant: bool | None = APIField(
+        default=None,
+        description=(
+            "Per-process override for mounting the Flowpad Assistant project "
+            "(--add-dir → its .claude/skills + agents become discoverable). "
+            "None inherits the global ServiceConfig.load_flowpad_assistant. "
+            "Resolve via the assistant_enabled property; the driver reads that."
+        ),
+    )
     embedded_agent_ids: list[str] = APIField(default_factory=list, description="Agent ids injected via --agents at session launch")
     embedded_asset_refs: list[TypeId] = APIField(
         default_factory=list,
@@ -2624,6 +2633,31 @@ class AgenticProcess(Entity):
 
         logger.info("AgenticProcess %s: injecting message: %s", self.id, message[:80])
         await self.send(message)
+
+    @property
+    def assistant_enabled(self) -> bool:
+        """Whether the Flowpad Assistant project is mounted for this process.
+
+        The per-process ``load_flowpad_assistant`` flag wins when explicitly
+        set (True/False); otherwise it inherits the global
+        ``ServiceConfig.load_flowpad_assistant`` default. The driver reads
+        THIS (not the global) when building the worker's ``--add-dir`` set.
+        """
+        if self.load_flowpad_assistant is not None:
+            return self.load_flowpad_assistant
+        from flow_sdk.config import default_service_config  # noqa: PLC0415
+        return default_service_config.load_flowpad_assistant
+
+    def enable_assistant(self) -> "AgenticProcess":
+        """Mount the Flowpad Assistant for this process (skills/agents discoverable).
+
+        Currently just flips the per-process ``load_flowpad_assistant`` flag
+        on; the driver picks it up via :attr:`assistant_enabled` when building
+        the worker command. Returns ``self`` for chaining — the caller persists
+        via ``save()``.
+        """
+        self.load_flowpad_assistant = True
+        return self
 
     @action.post(action_name="add-dir")
     async def add_dir(self, path: str) -> "ApiResponse":
