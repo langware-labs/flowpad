@@ -17,6 +17,7 @@ import {
 } from '@sdk';
 import { estimateCols, estimateRows } from '@src/components/terminal/interactive-terminal/terminalConfig';
 import { ensureTerminalsFetched } from '@src/hooks/useActiveTerminals';
+import { bumpLastActive } from '@src/tabs/last-active';
 import { perfLog, perfTime } from './_perf';
 import { loadProject } from './load-project';
 
@@ -203,6 +204,7 @@ export async function loadProcess(
   await perfTime('dataContext sync setters (shellId/target/workdir)', async () => {
     dataContext.setActiveShellId(shell!.id);
     dataContext.setActiveTerminalTargetTypeId(new TypeId(AgenticProcess.type, processId));
+    bumpLastActive(process); // recency seed on the process (tab identity) — Bug 1
     dataContext.setWorkdir(
       process!.workdir ?? shell!.workdir ?? dataContext.project?.fs_storage_mount_path ?? null,
     );

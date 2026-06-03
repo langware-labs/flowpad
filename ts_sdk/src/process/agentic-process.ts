@@ -231,6 +231,8 @@ export interface IAgenticProcess extends IEntity {
   shell_id?: string | null;
   /** Whether this process is visible in the tabs view */
   visible?: boolean;
+  /** ISO timestamp of the tab's last activation. Resolver recency seed (Bug 1). */
+  last_active_at?: string | null;
   /** Sidecar plain shell PTY session ID */
   sidecar_shell_id?: string | null;
   /** True when PTY OSC title escapes may update `name`. Cleared the first time the user manually renames this tab. */
@@ -2065,6 +2067,24 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     if (this.shell_id) await this.stop();
     await this.start();
     this.emit('restarted', { process: this });
+  }
+
+  /**
+   * Bridge backend-initiated restarts to the local 'restarted' event.
+   *
+   * The UI restart button drives {@link restart} client-side, which emits
+   * 'restarted' directly. A *server*-initiated restart (e.g. the agent running
+   * `flow process restart` after installing an MCP, via the backend
+   * `self-restart` action) has no such client signal — the backend instead
+   * pushes a `worker.restarted` entity event once the fresh PTY is up. Re-emit
+   * it as the same local 'restarted' event so {@link InteractiveTerminal}
+   * clears and re-attaches to the new PTY without any extra wiring.
+   */
+  onEntityEvent(event: string, payload: Record<string, unknown>): void {
+    super.onEntityEvent(event, payload);
+    if (event === 'worker.restarted') {
+      this.emit('restarted', { process: this, payload });
+    }
   }
 
   /**

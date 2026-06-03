@@ -57,6 +57,17 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Detached background tasks that must outlive the request that spawned them
+# (e.g. ``self-restart``, which kills the very worker — and therefore the CLI
+# child process — that issued the request). ``asyncio`` only holds a weak
+# reference to running tasks, so without a strong ref here they could be
+# garbage-collected mid-flight. Tasks remove themselves on completion.
+_DETACHED_TASKS: set["asyncio.Task"] = set()
+
+# Grace period before a detached self-restart tears down the worker, giving the
+# HTTP response time to flush back to the (about-to-die) caller.
+_SELF_RESTART_GRACE_S = 0.5
+
 
 # ── Asset descriptors ──────────────────────────────────────────────────────────
 # Read-side surface for ``AgenticProcess.get_asset_descriptors`` — see plan
@@ -375,6 +386,9 @@ class AgenticProcess(Entity):
     shell_id: str | None = APIField(default=None)
     sidecar_shell_id: str | None = APIField(default=None)
     visible: bool = APIField(default=False, description="Whether this process is visible in the tabs view")
+    last_active_at: str | None = APIField(
+        default=None, description="ISO timestamp of the tab's last activation (resolver recency seed)"
+    )
     auto_rename: bool = APIField(
         default=True,
         description=(
@@ -947,6 +961,64 @@ class AgenticProcess(Entity):
         if isinstance(exit_result, ApiFailResponse) and "No active shell" not in exit_result.message:
             return exit_result
         return await self.start_pty()
+
+    @action.post(action_name="self-restart")
+    async def http_self_restart(self) -> ApiSuccessResponse:
+        """Detached restart — safe to call from *inside* the running worker.
+
+        The intended caller is the worker itself: ``flow process restart`` run
+        from within a session, e.g. to pick up a newly-installed MCP server.
+        The catch is that the calling CLI process is a **child** of the worker
+        this restart is about to kill (``exit()`` SIGTERMs the worker and all
+        its descendants). Doing the exit()+start_pty() inline would therefore
+        tear down the HTTP client mid-request, and — depending on the ASGI
+        server's disconnect semantics — could even cancel this handler before
+        ``start_pty()`` runs, leaving the process stuck STOPPED.
+
+        So we don't restart inline. We schedule the work on the server event
+        loop and return immediately: the ``{"scheduled": true}`` response
+        reaches the about-to-die caller, and the restart runs to completion
+        independently of the dropped client connection.
+
+        Unlike the UI ``restart`` button (whose frontend emits its own local
+        ``'restarted'`` event to re-attach the terminal), a server-initiated
+        restart has no client-side signal. So once the fresh PTY is up we emit
+        the ``worker.restarted`` entity event over the WS watcher channel; the
+        frontend bridges it back to the same terminal re-attach path.
+        """
+        process_id = self.id
+
+        async def _run() -> None:
+            try:
+                # Let the HTTP response flush before we kill the worker (and,
+                # with it, the CLI child that is waiting on that response).
+                await asyncio.sleep(_SELF_RESTART_GRACE_S)
+                proc = await AgenticProcess.get_by_id(process_id)
+                if proc is None:
+                    logger.warning("self-restart: process %s vanished before restart", process_id)
+                    return
+                result = await proc.http_restart()
+                if isinstance(result, ApiSuccessResponse):
+                    # Tell every WS watcher (the UI terminal) to re-attach to
+                    # the freshly-spawned PTY. Payload mirrors the open payload
+                    # (pty_id / shell_id / worker_pid) for clients that want it.
+                    await proc.emit_entity_event("worker.restarted", result.data or {})
+                else:
+                    logger.error(
+                        "self-restart: restart failed for %s: %s",
+                        process_id,
+                        getattr(result, "message", "?"),
+                    )
+            except Exception:
+                logger.exception("self-restart: background restart failed for %s", process_id)
+
+        task = asyncio.create_task(_run(), name=f"self-restart-{self.id[:8]}")
+        _DETACHED_TASKS.add(task)
+        task.add_done_callback(_DETACHED_TASKS.discard)
+
+        return ApiSuccessResponse(
+            data={"scheduled": True, "id": self.id, "status": self.status}
+        )
 
     def _bind_project_id(self, project_id: str) -> bool:
         """Polite bind: set ``project_id`` (honouring the freeze) and append

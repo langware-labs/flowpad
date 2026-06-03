@@ -1,8 +1,9 @@
-import { AgenticProcess, Project } from '@sdk';
+import { AgenticProcess, Project, TypeId } from '@sdk';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { setPendingIntent } from '@src/tabs/pending-intent';
 import {
   acknowledgePending,
   formatTimeAgo,
@@ -54,6 +55,12 @@ export function PendingActionsChip() {
 
   const handlePick = async (processId: string) => {
     setOpen(false);
+    // Pin the explicit intent BEFORE navigating: the agent may live in another
+    // project, so the navigation triggers a strip rebuild. Without this, the
+    // self-heal resolver would re-pick the new project's default tab instead of
+    // the clicked agent (Bug 2). resolveActive case 2 honors this intent, then
+    // consumes it once the agent lands in the (now-switched) project's strip.
+    setPendingIntent(new TypeId(AgenticProcess.type, processId).toString());
     try {
       const opened = await navigation.openShellProcess(processId);
       if (!opened) {

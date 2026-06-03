@@ -25,6 +25,7 @@ import {
 } from '@src/components/ui/dialog';
 import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
+import { cn } from '@src/lib/utils';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
@@ -40,6 +41,19 @@ interface ShareToConversationDialogProps {
 }
 
 const MAX_CONVERSATIONS = 5;
+
+/** Sentinel for the "start a new conversation" row (never a real UUID). */
+const NEW_CONVERSATION = '__new__';
+
+/** Shared styling for a selectable conversation row; `dashed` marks the "new" row. */
+const rowClasses = (isSelected: boolean, dashed = false) =>
+  cn(
+    'flex w-full items-center gap-2 rounded-md border px-2 py-1.5 text-left text-xs text-foreground disabled:pointer-events-none disabled:opacity-50',
+    dashed && 'border-dashed',
+    isSelected
+      ? 'border-primary bg-primary/10 ring-1 ring-primary/40'
+      : 'border-input bg-background hover:bg-muted/50',
+  );
 
 /**
  * The single contact-first share screen. Pick recipients (typeahead +
@@ -66,6 +80,9 @@ export function ShareToConversationDialog({
   const [note, setNote] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [attachTranscript, setAttachTranscript] = useState(true);
+  // Which conversation row is selected (a conversation id, or NEW_CONVERSATION).
+  // Click selects; double-click or the Share button commits.
+  const [selected, setSelected] = useState<string>(NEW_CONVERSATION);
   const [sharedConversationId, setSharedConversationId] = useState<string | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
   // A non-null id is the single source of truth for "share succeeded".
@@ -77,6 +94,14 @@ export function ShareToConversationDialog({
     () => matches.conversations.slice(0, MAX_CONVERSATIONS),
     [matches.conversations],
   );
+  // Default selection follows the list: the latest existing conversation
+  // (sorted updated_date desc by the hook), or "start new" when there are none.
+  // Keyed on the latest id (not the array ref) so a background refetch that
+  // returns the same list doesn't clobber the user's current selection.
+  const latestConvId = conversations[0]?.id ?? null;
+  useEffect(() => {
+    setSelected(latestConvId ?? NEW_CONVERSATION);
+  }, [latestConvId]);
   const newConvTitle = useAutoTitle(open, participants);
 
   useEffect(() => {
@@ -99,12 +124,18 @@ export function ShareToConversationDialog({
         .filter((e) => !!e && e.includes('@')),
     [participants],
   );
-  const effectiveTitle = (
-    source.requiresTitle ? titleInput : source.defaultTitle ?? newConvTitle
-  ).trim();
+  // The title is always editable. When the user hasn't typed one, fall back to
+  // the source default / auto-generated title (shown as the input's placeholder).
+  // `requiresTitle` sources have no fallback — the user must type one.
+  const defaultTitle = source.requiresTitle ? '' : source.defaultTitle ?? newConvTitle;
+  const effectiveTitle = (titleInput.trim() || defaultTitle).trim();
   const titleOk = !source.requiresTitle || titleInput.trim().length > 0;
   const canStartNew = participants.length > 0 && (isRemote || !!effectiveProjectId) && titleOk;
   const hasContacts = participants.length > 0;
+  const isNewSelected = selected === NEW_CONVERSATION;
+  const canShareSelected = isNewSelected
+    ? canStartNew
+    : conversations.some((c) => c.id === selected);
 
   const doShare = async (existingId: string | null) => {
     if (busy) return;
@@ -226,20 +257,18 @@ export function ShareToConversationDialog({
               </div>
             </div>
 
-            {source.requiresTitle && (
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
-                  Title
-                </label>
-                <Input
-                  value={titleInput}
-                  onChange={(e) => setTitleInput(e.target.value)}
-                  placeholder="What do you need help with?"
-                  disabled={busy}
-                  data-testid="share-title-input"
-                />
-              </div>
-            )}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
+                Title
+              </label>
+              <Input
+                value={titleInput}
+                onChange={(e) => setTitleInput(e.target.value)}
+                placeholder={source.requiresTitle ? 'What do you need help with?' : defaultTitle || 'Conversation title'}
+                disabled={busy}
+                data-testid="share-title-input"
+              />
+            </div>
 
             <div className="flex flex-col gap-1.5">
               <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
@@ -283,32 +312,43 @@ export function ShareToConversationDialog({
                 </p>
               ) : (
                 <ul className="flex flex-col gap-1" data-testid="share-conversation-list">
-                  {conversations.map((conv) => (
-                    <li key={conv.id}>
-                      <button
-                        type="button"
-                        onClick={() => void doShare(conv.id)}
-                        disabled={busy}
-                        className="flex w-full items-center gap-2 rounded-md border border-input bg-background px-2 py-1.5 text-left text-xs hover:bg-muted/50 disabled:pointer-events-none disabled:opacity-50"
-                        data-testid={`share-conv-row-${conv.id}`}
-                      >
-                        <span className="flex-1 truncate text-foreground">
-                          {deriveConversationTitle(conv)}
-                        </span>
-                        <span className="shrink-0 text-[10px] text-muted-foreground">
-                          {formatTimeAgo(
-                            conv.updated_date ? new Date(conv.updated_date).toISOString() : null,
-                          ) ?? ''}
-                        </span>
-                      </button>
-                    </li>
-                  ))}
-                  <li>
+                  {conversations.map((conv) => {
+                    const isSelected = selected === conv.id;
+                    return (
+                      <li key={conv.id}>
+                        {/* Click selects; double-click commits the share. */}
+                        <button
+                          type="button"
+                          onClick={() => setSelected(conv.id)}
+                          onDoubleClick={() => void doShare(conv.id)}
+                          disabled={busy}
+                          aria-pressed={isSelected}
+                          data-selected={isSelected}
+                          className={rowClasses(isSelected)}
+                          data-testid={`share-conv-row-${conv.id}`}
+                        >
+                          <span className="flex-1 truncate text-foreground">
+                            {deriveConversationTitle(conv)}
+                          </span>
+                          <span className="shrink-0 text-[10px] text-muted-foreground">
+                            {formatTimeAgo(
+                              conv.updated_date ? new Date(conv.updated_date).toISOString() : null,
+                            ) ?? ''}
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
+                  {/* "Start new" is always last, set apart by a divider + gap. */}
+                  <li className={cn(conversations.length > 0 && 'mt-2 border-t border-border/60 pt-2')}>
                     <button
                       type="button"
-                      onClick={() => void doShare(null)}
-                      disabled={busy || !canStartNew}
-                      className="flex w-full items-center gap-2 rounded-md border border-dashed border-input bg-background px-2 py-1.5 text-left text-xs text-foreground hover:bg-muted/50 disabled:pointer-events-none disabled:opacity-50"
+                      onClick={() => setSelected(NEW_CONVERSATION)}
+                      onDoubleClick={() => void doShare(null)}
+                      disabled={busy}
+                      aria-pressed={isNewSelected}
+                      data-selected={isNewSelected}
+                      className={rowClasses(isNewSelected, true)}
                       data-testid="share-conv-row-new"
                     >
                       <MessageSquarePlus className="h-3.5 w-3.5 shrink-0 text-primary" />
@@ -323,9 +363,18 @@ export function ShareToConversationDialog({
 
             {shownError && <p className="text-xs text-destructive">{shownError}</p>}
 
-            <div className="flex justify-end pt-1">
+            <div className="flex justify-end gap-2 pt-1">
               <Button variant="outline" onClick={onClose} disabled={busy}>
-                {busy ? 'Sharing…' : 'Cancel'}
+                Cancel
+              </Button>
+              <Button
+                onClick={() => void doShare(isNewSelected ? null : selected)}
+                disabled={busy || !canShareSelected}
+                data-testid="share-submit"
+                className="gap-1.5"
+              >
+                <Send className="h-4 w-4" />
+                {busy ? 'Sharing…' : 'Share'}
               </Button>
             </div>
           </div>

@@ -100,6 +100,7 @@ class EntityType(StrEnum):
     SPEC = "spec"
     CONVERSATION = "conversation"
     WHITEBOARD = "whiteboard"
+    DATASET = "dataset"
     COLLABORATION_ROOM = "collaboration_room"
     # Transient indexer waypoints — fan-out scaffolding, never persisted.
     USER_HOME_FOLDER = "user_home_folder"

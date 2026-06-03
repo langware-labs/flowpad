@@ -27,6 +27,7 @@ import { BulkConfirmDialog } from '@src/components/ui/bulk-confirm-dialog';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { LoginRequiredOverlay } from '@src/components/login-required-overlay';
 import { useInboxStore } from '@src/store/use-inbox-store';
 import { formatTimeAgo } from '@src/components/project-activity-strip/project-activity-utils';
 import {
@@ -657,7 +658,10 @@ export function InboxView() {
 
   // List mode
   return (
-    <div className="flex h-full flex-col">
+    <div className="relative flex h-full flex-col">
+      {!cloudUser && (
+        <LoginRequiredOverlay description="Sign in to your Flowpad Cloud account to view your inbox and conversations." />
+      )}
       <div className="flex shrink-0 items-center border-b px-3 py-1.5">
         {/* LEFT — view selector. flex-1 here + on RIGHT keeps the CENTER truly centered. */}
         <div className="flex flex-1 items-center">

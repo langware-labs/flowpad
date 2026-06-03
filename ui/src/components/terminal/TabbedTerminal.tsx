@@ -34,6 +34,7 @@ import {
 } from '@src/store/pending-actions-store';
 import {
   closeTerminalTargets,
+  terminalDockPointer,
   terminalProcessId,
   terminalTargetKey,
   terminalTransportShellId,
@@ -46,6 +47,7 @@ import {
   ChevronRight,
   Cloud,
   Container,
+  ExternalLink,
   FolderGit2,
   History,
   Loader2,
@@ -68,6 +70,9 @@ const ClaudeResumeIcon: React.FC<{ className?: string }> = ({ className }) => (
 );
 
 import type { TerminalTab } from '@src/hooks/useActiveTerminals';
+import { resolveActive } from '@src/tabs/tab-model';
+import { buildTabCandidates } from '@src/tabs/tab-candidates';
+import { consumePendingIntent, peekPendingIntent } from '@src/tabs/pending-intent';
 
 function isCodexProcess(process?: AgenticProcess | null): boolean {
   return process?.worker_type?.trim().toLowerCase() === 'codex';
@@ -322,12 +327,20 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
   useEffect(() => {
     if (visibleSessions.length === 0) return;
     if (hasActiveTab) return;
-    const firstSession = visibleSessions[0];
-    // Self-heal lands on the live terminal, not the transcript. AgenticProcess's
-    // default ``dockPointer`` is read-only (lens/transcript); the terminal pane
-    // wants ``terminalDockPointer`` so the shell-id vs agentic_process-id route
-    // resolves correctly and the actual PTY surfaces.
-    const pointer = firstSession.agenticProcess?.terminalDockPointer ?? firstSession.shell?.dockPointer;
+    // URL-first self-heal via the single resolver: prefer an explicit pending
+    // intent (footer-chip click → Bug 2), else the most-recently-active tab
+    // (project round-trip → Bug 1), else lowest tab_order. We only RESOLVE a key
+    // and navigate; the route loader writes context. Replaces the old
+    // unconditional `visibleSessions[0]` snap.
+    const { activeKey, consumedPendingIntent } = resolveActive({
+      candidates: buildTabCandidates(visibleSessions),
+      urlActiveKey: null, // self-heal only runs when no active tab is in the strip
+      pendingIntentKey: peekPendingIntent(),
+    });
+    if (consumedPendingIntent) consumePendingIntent();
+    const target = visibleSessions.find((s) => terminalTargetKey(s) === activeKey);
+    if (!target) return;
+    const pointer = terminalDockPointer(target);
     if (pointer) navigation.openDockPointer(pointer);
   }, [hasActiveTab, visibleSessions, navigation]);
 
@@ -571,6 +584,40 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
       if (session) void closeTabs([session]);
     },
     [visibleSessions, closeTabs],
+  );
+
+  /**
+   * Pop a tab out to an external browser: open its dock URL via the same
+   * `window.open(url, '_blank')` path the footer uses for "current url"
+   * (Electron's setWindowOpenHandler routes it to the system browser), then
+   * navigate this window away so only the external browser is viewing the
+   * session. The backend session must stay alive — closing it would kill
+   * the PTY for the popped-out browser too (it is one shared session), so
+   * this deliberately does NOT go through the close path.
+   */
+  const handleOpenExternalTab = useCallback(
+    (targetKey: string) => {
+      const session = visibleSessions.find((s) => terminalTargetKey(s) === targetKey);
+      const pointer = session && terminalDockPointer(session);
+      if (!pointer) return;
+      navigation.openInNewBrowserTab(pointer);
+      // Detach this window only if it is currently viewing the popped-out
+      // tab: hand the remaining alive tabs to the shared resolver (same
+      // MRU/order precedence as the strip's self-heal), or close the dock
+      // when none remain.
+      if (activeTargetKey !== targetKey) return;
+      const remaining = visibleSessions.filter((s) => terminalTargetKey(s) !== targetKey && !s.isDisabled);
+      const { activeKey } = resolveActive({
+        candidates: buildTabCandidates(remaining),
+        urlActiveKey: null,
+        pendingIntentKey: null,
+      });
+      const next = remaining.find((s) => terminalTargetKey(s) === activeKey);
+      const nextPointer = next && terminalDockPointer(next);
+      if (nextPointer) navigation.openDockPointer(nextPointer);
+      else navigation.closeDock();
+    },
+    [visibleSessions, navigation, activeTargetKey],
   );
 
   const handleCloseAll = useCallback(() => {
@@ -1000,6 +1047,20 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
                       {displayName}
                     </span>
                   )}
+
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleOpenExternalTab(targetKey);
+                    }}
+                    disabled={isDisabled}
+                    className="rounded p-0.5 opacity-0 transition-opacity hover:bg-muted-foreground/20 group-hover:opacity-100"
+                    aria-label="Open in external browser"
+                    title="Open in external browser"
+                    data-testid={`tab-open-external-${indicatorKey}`}
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                  </button>
 
                   <button
                     onClick={(e) => {
