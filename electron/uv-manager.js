@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { promisify } = require('util');
+const { SEMVER_RE } = require('./semver');
 
 const execFileAsync = promisify(execFile);
 
@@ -514,8 +515,10 @@ class UvManager {
       // uv tool list output format: "flowpad v0.1.35" (one tool per line)
       for (const line of stdout.split('\n')) {
         if (line.startsWith(PYPI_PACKAGE)) {
-          const match = line.match(/v(\d+\.\d+\.\d+)/);
-          if (match) return match[1];
+          // Shared SEMVER_RE so an "extra" tag (e.g. "0.2.40-local") is kept,
+          // not silently dropped. m[0] is the full matched version string.
+          const match = line.match(SEMVER_RE);
+          if (match) return match[0];
         }
       }
       return null;

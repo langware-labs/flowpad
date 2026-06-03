@@ -11,6 +11,8 @@
     "dev:backend": "cd .. && python -m server.run",
     "dev:electron": "cross-env MINIHUB_DEV=true electron .",
 
+    "test": "node semver.test.js",
+
     "cleanup": "rimraf release",
 
     "build:flow-rs": "node scripts/build-flow-rs.js",

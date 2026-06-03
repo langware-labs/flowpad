@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 from flow_sdk import __version__
 from flow_sdk.utils import hub
+from flow_sdk.utils.semver import is_newer
 
 logger = logging.getLogger(__name__)
 
@@ -59,19 +60,6 @@ def _normalize_tag(tag: str) -> str:
     return tag.lstrip("vV")
 
 
-def _compare_versions(current: str, latest: str) -> bool:
-    """True if ``latest`` is newer than ``current``. Falls back to string != on parse errors."""
-    try:
-        from packaging.version import InvalidVersion, Version
-
-        try:
-            return Version(latest) > Version(current)
-        except InvalidVersion:
-            return latest != current
-    except ImportError:
-        return latest != current
-
-
 async def _fetch_pypi(client: httpx.AsyncClient) -> PypiInfo:
     try:
         resp = await client.get(PYPI_URL, timeout=HTTP_TIMEOUT)
@@ -80,7 +68,9 @@ async def _fetch_pypi(client: httpx.AsyncClient) -> PypiInfo:
         latest = (data.get("info") or {}).get("version")
         if not isinstance(latest, str):
             latest = None
-        update_available = bool(latest) and _compare_versions(__version__, latest)
+        # is_newer (shared with electron/semver.js) treats an "extra" tag like
+        # "0.2.40-local" as newer than "0.2.40" instead of mis-parsing it.
+        update_available = bool(latest) and is_newer(__version__, latest)
         return PypiInfo(
             current=__version__,
             latest=latest,
