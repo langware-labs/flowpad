@@ -134,6 +134,28 @@ export function QuickCreateModal({ open, onOpenChange, onPick }: QuickCreateModa
     [ensureProject],
   );
 
+  // "Open folder" — pick an existing folder, ensure a Project for it, then
+  // launch a default-worker AgenticProcess there and land on its terminal.
+  const handleOpenFolder = useCallback(async () => {
+    onOpenChange(false);
+    const folder = await handlePickFolder();
+    if (!folder) return;
+    try {
+      const project = await ensureProject(folder);
+      const result = await navigation.openNewClaudeProcess({
+        cwd: project.fs_storage_mount_path ?? folder,
+        projectId: project.id,
+      });
+      if (!result) {
+        notify.error({ title: 'Failed to start session' });
+        return;
+      }
+      await navigation.openShellProcess(result.processId);
+    } catch (err) {
+      notify.error({ title: err instanceof Error ? err.message : 'Failed to open folder' });
+    }
+  }, [onOpenChange, handlePickFolder, ensureProject, navigation]);
+
   const handleCreateGitProject = useCallback(
     async (
       url: string,
@@ -208,6 +230,12 @@ export function QuickCreateModal({ open, onOpenChange, onPick }: QuickCreateModa
   ];
 
   const projectTiles: Array<{ key: string; Icon: LucideIcon; label: string; onClick: () => void }> = [
+    {
+      key: 'open-folder',
+      Icon: FolderOpen,
+      label: 'Open folder',
+      onClick: () => void handleOpenFolder(),
+    },
     {
       key: 'new-local',
       Icon: FolderPlus,
