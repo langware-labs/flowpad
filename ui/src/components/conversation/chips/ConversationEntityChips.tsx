@@ -38,10 +38,8 @@ export function ConversationEntityChips({ conversation }: ConversationEntityChip
       {chips.map((typeId) => {
         const key = ChipKey.forTypeId(typeId);
         if (exclude.has(key)) return null;
-        const sidecar = conversation.getContextEntryData(typeId);
-        const hintPath = typeof sidecar?.path === 'string' ? sidecar.path : undefined;
         return (
-          <ContextEntityChip key={key} typeId={typeId} inside={inside} hintPath={hintPath} />
+          <ContextEntityChip key={key} typeId={typeId} inside={inside} />
         );
       })}
     </>

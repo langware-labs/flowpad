@@ -72,8 +72,6 @@ class ClaudeDriver:
         ``process.enable_assistant()``) to override per process; ``None`` keeps
         the global default.
         """
-        from flow_sdk.config import flowpad_assistant_project_root
-
         cmd = ClaudeCliOptions.from_json(process.cli_config)
         cmd.session_id = process.session_id
         cmd.workdir = process.workdir
@@ -82,12 +80,7 @@ class ClaudeDriver:
             cmd.fork_session_id = None
         if cmd.workdir:
             cmd.env_vars.setdefault("CLAUDE_PROJECT_DIR", cmd.workdir)
-        if process.assistant_enabled:
-            core_dir = str(flowpad_assistant_project_root())
-            extra = [d for d in (process.additional_dirs or []) if d != core_dir]
-            cmd.add_dirs = [core_dir] + extra
-        else:
-            cmd.add_dirs = list(process.additional_dirs or [])
+        cmd.add_dirs = process.resolved_add_dirs
         agents_json = process.get_agents_json()
         if agents_json:
             cmd.agents_json = agents_json
@@ -154,16 +147,6 @@ class ClaudeDriver:
         # can override via cli_config["model"] / ["effort"].
         parent_model = cli_cfg.get("model") or "sonnet"
         parent_effort = cli_cfg.get("effort")
-        # Mirror the add_dirs gate used by ``cli_options`` (PTY mode) so the
-        # print-mode worker sees the same skill/agent mount surface.
-        from flow_sdk.config import flowpad_assistant_project_root
-        if process.assistant_enabled:
-            core_dir = str(flowpad_assistant_project_root())
-            extra = [d for d in (process.additional_dirs or []) if d != core_dir]
-            ctx_add_dirs = [core_dir] + extra
-        else:
-            ctx_add_dirs = list(process.additional_dirs or [])
-
         # Mirror PTY path's FLOWPAD_EXECUTION_SCOPE injection
         # (agentic_process.py:786-788) so headless workers can route
         # CLI calls (e.g. ``flow workflow report``) back to this process.
@@ -182,7 +165,7 @@ class ClaudeDriver:
             resume_session_id=(fork_source or process.session_id) if (is_resume or fork_source) else None,
             session_id=process.session_id if fork_source else (None if is_resume else process.session_id),
             fork_session=bool(fork_source),
-            add_dirs=ctx_add_dirs,
+            add_dirs=process.resolved_add_dirs,
         )
 
         # Lifecycle: flip to RUNNING before launching the worker.

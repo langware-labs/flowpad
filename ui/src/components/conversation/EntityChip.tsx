@@ -221,14 +221,6 @@ interface ContextEntityChipProps {
   onClick?: () => void;
   title?: string;
   size?: 'chip' | 'inline';
-  /** Sidecar `data.path` harvested by the BE at cross-link time for this
-   *  typeid (looked up on the parent entity via
-   *  ``parent.getContextEntryData(typeId)?.path``). When set, the chip
-   *  fires `GET /graph/<type>/<id>?hint_path=<path>` before navigation so
-   *  the dock view finds a self-healed row even if the indexer hasn't
-   *  walked this file yet. Optional — when undefined the chip behaves
-   *  exactly as it did pre-v1.2 (direct navigation, possible 404). */
-  hintPath?: string;
 }
 
 /**
