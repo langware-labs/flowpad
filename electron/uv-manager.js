@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { promisify } = require('util');
-const { SEMVER_RE } = require('./semver');
+const { SEMVER_RE, isNewer } = require('./semver');
 
 const execFileAsync = promisify(execFile);
 
@@ -832,29 +832,94 @@ class UvManager {
     }
   }
 
-  /**
-   * Run a background update check after the UI is loaded.
-   * Non-blocking — failures are logged and silently ignored.
-   * Shows a native OS dialog if an update is available.
-   */
-  async checkForUpdatesInBackground(mainWindow, { sendStatus, waitForBackend, backendUrl, cloudUrl }) {
-    try {
-      const upgradeInfo = await this._getUpgradeInfo();
-      if (!upgradeInfo || !upgradeInfo.version) return;
+  // There are deliberately TWO update checks, for two different moments:
+  //
+  //   getLatestPypiVersion / isUpgradeAvailable  → asks PyPI directly. No
+  //     backend and no cloud needed. Used during the desktop-upgrade window,
+  //     where the local flow backend is stopped/not-yet-started.
+  //
+  //   getUpdateStatus → asks the cloud `/check-update` for its policy verdict
+  //     (whether an upgrade is *required*). Used by the background prompt while
+  //     the app is already running.
 
+  /**
+   * Latest published flowpad version on PyPI, or null on any failure. Hits
+   * pypi.org only — works even when the local backend is down.
+   */
+  async getLatestPypiVersion() {
+    try {
+      const res = await fetch(`https://pypi.org/pypi/${PYPI_PACKAGE}/json`, {
+        headers: { Accept: 'application/json' },
+      });
+      if (!res.ok) {
+        this.log.warn(`[uv] PyPI version lookup failed: HTTP ${res.status}`);
+        return null;
+      }
+      const data = await res.json();
+      return (data && data.info && data.info.version) || null;
+    } catch (err) {
+      this.log.warn(`[uv] PyPI version lookup failed: ${err.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * True if PyPI has a newer flowpad than `installedVersion`. Returns false
+   * (don't upgrade) when either version can't be determined, so an offline /
+   * indeterminate result never forces a needless reinstall. Backend-independent.
+   */
+  async isUpgradeAvailable(installedVersion) {
+    if (!installedVersion) return false;
+    const latest = await this.getLatestPypiVersion();
+    if (!latest) return false;
+    const available = isNewer(installedVersion, latest);
+    this.log.info(
+      available
+        ? `[uv] flowpad upgrade available: ${installedVersion} → ${latest}`
+        : `[uv] flowpad is up to date (installed=${installedVersion}, latest=${latest})`
+    );
+    return available;
+  }
+
+  /**
+   * Ask the cloud `/check-update` endpoint for its verdict. Returns
+   * { currentVersion, latestVersion, required } or null when the version can't
+   * be read or the check fails — callers treat null as "no update".
+   */
+  async getUpdateStatus(cloudUrl) {
+    const upgradeInfo = await this._getUpgradeInfo();
+    if (!upgradeInfo || !upgradeInfo.version) return null;
+    try {
       const res = await fetch(`${cloudUrl}${API_PREFIX}/check-update`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(upgradeInfo),
       });
-
-      if (!res.ok) return;
+      if (!res.ok) return null;
       const data = await res.json();
+      return {
+        currentVersion: upgradeInfo.version,
+        latestVersion: data.latest_version || null,
+        required: data.status === UpdateStatus.REQUIRED,
+      };
+    } catch (err) {
+      this.log.warn(`[uv] update check failed: ${err.message}`);
+      return null;
+    }
+  }
 
-      if (data.status !== UpdateStatus.REQUIRED || !data.latest_version) return;
+  /**
+   * Run a background update check after the UI is loaded.
+   * Non-blocking — failures are logged and silently ignored.
+   * Shows a native OS dialog if an update is required.
+   */
+  async checkForUpdatesInBackground(mainWindow, { sendStatus, waitForBackend, backendUrl, cloudUrl }) {
+    try {
+      const status = await this.getUpdateStatus(cloudUrl);
+      if (!status || !status.required || !status.latestVersion) return;
 
-      const latest = data.latest_version;
-      this.log.info(`[uv] Update available: ${upgradeInfo.version} → ${latest}`);
+      const latest = status.latestVersion;
+      this.log.info(`[uv] Update available: ${status.currentVersion} → ${latest}`);
 
       if (!mainWindow || mainWindow.isDestroyed()) return;
 
@@ -862,7 +927,7 @@ class UvManager {
         type: 'info',
         title: 'Update Available',
         message: `A new version of FlowPad is available (${latest}).`,
-        detail: `You are running version ${upgradeInfo.version}.`,
+        detail: `You are running version ${status.currentVersion}.`,
         buttons: ['Upgrade', 'Later'],
         defaultId: 0,
       });
