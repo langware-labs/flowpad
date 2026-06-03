@@ -262,6 +262,12 @@ class ScanActionsMixin:
                 context_raw = {}
 
             visible = bool(body.get("visible", False))
+            # Optional first prompt to seed onto the queue BEFORE the visible
+            # auto-start below, so the worker boots with it as its launch arg
+            # (``_perform_open`` pops the head). Enqueuing here — pre-start —
+            # is what makes launch-via-queue deterministic; a post-start enqueue
+            # would race the boot and fall back to the stdin path.
+            launch_prompt = body.get("launch_prompt")
             result_data = body.get("result")
 
             context_data = dict(context_raw)
@@ -412,6 +418,18 @@ class ScanActionsMixin:
                     logging.debug("ProcessResult entity not available, skipping result creation")
 
             logging.info(f"ComputeNode {self.id} created AgenticProcess {process.id}")
+
+            # Seed the launch prompt onto the queue BEFORE any auto-start. Use
+            # the PromptQueue directly (not the enqueue *action*) so we don't
+            # schedule a competing drain — the start_pty below drains the head
+            # as the launch instruction.
+            if launch_prompt and str(launch_prompt).strip():
+                try:
+                    process.queue.enqueue(str(launch_prompt), source="ui")
+                except Exception:
+                    logging.exception(
+                        f"ComputeNode {self.id} createProcess: failed to seed launch prompt for {process.id}"
+                    )
 
             # Visible (PTY) processes spawn the linked Shell here so the
             # frontend gets a fully-attached row in one round-trip; otherwise
