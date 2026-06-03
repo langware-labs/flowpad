@@ -33,7 +33,7 @@ import { Invitation } from '@sdk/entities/invitation';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
-import { hubConversationTitle, hubLogin } from './_hub';
+import { hubConversationTitle, hubConversationWatchers, hubLogin } from './_hub';
 import { pollUntil, probeHub, probeLocalBackendLoggedIn, readRendezvous, waitMarker } from './_matrix';
 
 const JOINED = '/tmp/flowpad_rename_joined.txt';
@@ -118,6 +118,25 @@ describe('hub: rename two-process — BOB (cross-validates HTTP + WS on the hub)
     const offSub = conv.subscribe((u) => {
       if (u) observedTitle = (u as Conversation).title ?? observedTitle;
     });
+
+    // Put the conversation in bob's browser context as the active entity — the
+    // exact call the real app makes on conversation open (load-conversation.ts).
+    // The SDK's (now self-contained) context reporter mirrors it to bob's
+    // backend, where BrowserContextWatch registers a HUB watch for this remote
+    // conversation so the hub will fan alice's update back to bob. Barrier on
+    // the hub's watcher list so the watch is live BEFORE we signal JOINED (i.e.
+    // before alice renames) — closes the register-vs-rename race.
+    await dataContext.setActiveEntityTypeId(conv.typeId);
+    await pollUntil(
+      async () => {
+        const w = await hubConversationWatchers(bobToken!, convId);
+        return (w?.length ?? 0) > 0;
+      },
+      15_000,
+      'bob backend registered a hub watch (ConnectedThrough) on the conversation',
+    );
+    console.log('[rename.bob] hub watch registered via browser context');
+
     await fsp.writeFile(JOINED, convId, 'utf-8');
 
     // ── Confirm alice's HTTP rename on the hub. ───────────────────────────

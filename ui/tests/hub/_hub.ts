@@ -86,6 +86,19 @@ export async function hubConversationTitle(token: string, convId: string): Promi
   return body.data?.title ?? null;
 }
 
+/** Read the hub's watcher list for a conversation (the GET side of the `watch`
+ *  action — its `ConnectedThrough` peers). Non-empty once a backend has
+ *  registered a hub watch (e.g. via BrowserContextWatch). Returns null on
+ *  non-200, else the (possibly empty) list. */
+export async function hubConversationWatchers(token: string, convId: string): Promise<unknown[] | null> {
+  const r = await fetch(`${HUB_URL}/api/v1/graph/conversation/${convId}/watch`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!r.ok) return null;
+  const body = (await r.json()) as { data?: unknown[] };
+  return Array.isArray(body.data) ? body.data : null;
+}
+
 export async function getAliceCreds() {
   const env = await readEnvLocal(REPO_OSS);
   const email = env.FLOWPAD_CLOUD_USER_EMAIL;

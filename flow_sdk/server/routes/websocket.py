@@ -332,6 +332,12 @@ async def handle_json_message(connection_id: str, websocket: WebSocket, message_
                 ctx = message_data.get("context")
                 if isinstance(ctx, dict):
                     info.browser_context = ctx
+                    # Mirror remote entities in this context to hub watches so
+                    # the hub fans their updates back to us (cross-user live
+                    # updates). Cloud-facing + best-effort; never breaks the WS.
+                    from flow_sdk.cloud_client.context_watch import browser_context_watch
+
+                    await browser_context_watch.on_context(connection_id, ctx)
 
         elif message_type == "presence":
             # Per-tab visibility/focus update from the UI. Fire-and-forget:
@@ -536,6 +542,12 @@ async def websocket_endpoint(websocket: WebSocket, connection_id: str):
         from flow_sdk.app.actions.watch_registry import cleanup_connection
 
         cleanup_connection(connection_id)
+
+        # Release this connection's hub context-watches (unwatch any entity no
+        # other connection still holds in context).
+        from flow_sdk.cloud_client.context_watch import browser_context_watch
+
+        await browser_context_watch.on_disconnect(connection_id)
 
         # Detach this connection from all PTY sessions so stale connection_ids
         # don't accumulate.  This only removes the connection reference — it does
