@@ -67,7 +67,10 @@ def iter_workspace_project_paths(include_temp: bool = False) -> Iterator[Path]:
     """
     workspace = get_instance_settings().user_home / "Flowpad workspace"
     try:
-        children = workspace.iterdir()
+        # list() forces eager evaluation: iterdir() is a lazy generator, so a
+        # missing workspace dir would otherwise raise at the for-loop below,
+        # outside this guard.
+        children = list(workspace.iterdir())
     except OSError:
         return
     for child in children:

@@ -106,6 +106,7 @@ class EntityType(StrEnum):
     MARKDOWN = "markdown"
     MARKDOWN_INDEX = "markdown_index"
     SPEC = "spec"
+    PROMPT = "prompt"
     CONVERSATION = "conversation"
     WHITEBOARD = "whiteboard"
     DATASET = "dataset"
