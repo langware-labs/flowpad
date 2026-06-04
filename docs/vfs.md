@@ -40,7 +40,7 @@ In desktop/local mode the named id `@local` is used for all bootstrap entities.
 vfs://compute_node-@local/Users/alice/file.md
   type:           "compute_node"
   id:             "@local"
-  entitySubPath:  "Users/shlom/file.md"
+  entitySubPath:  "Users/alice/file.md"
 
 agent-@local/skills/test.md          (no protocol prefix)
   type:           "agent"
@@ -55,7 +55,7 @@ compute_node-@local/                  (entity root, no sub-path)
 /Users/alice/file.md                  (bare absolute path, no TypeId)
   type:           null
   id:             null
-  entitySubPath:  "Users/shlom/file.md"
+  entitySubPath:  "Users/alice/file.md"
 ```
 
 ### Bare absolute path fallback (Python only)
@@ -74,8 +74,8 @@ All paths stored internally use forward slashes with no leading slash:
 
 | OS Input                             | Normalized `entitySubPath` |
 | ------------------------------------ | -------------------------- |
-| `/Users/alice/file.md` (macOS/Linux) | `Users/shlom/file.md`      |
-| `C:\Users\shlom\file.md` (Windows)   | `Users/shlom/file.md`      |
+| `/Users/alice/file.md` (macOS/Linux) | `Users/alice/file.md`      |
+| `C:\Users\alice\file.md` (Windows)   | `Users/alice/file.md`      |
 
 Windows drive letters (`C:\`, `D:\`) are stripped. Backslashes are converted to forward slashes.
 

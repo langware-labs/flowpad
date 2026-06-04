@@ -16,15 +16,15 @@ class AppPaths(BaseModel):
     """
 
     root: str  # Filesystem root ("/" on Unix, "C:\\" on Windows)
-    home: str  # User home directory ("Users/shlom")
-    workspace: str  # FlowPad workspace folder ("Users/shlom/Flowpad workspace")
-    skills: str  # Skills folder ("Users/shlom/Flowpad workspace/.claude/skills")
-    user_skills: str  # Personal skills folder ("Users/shlom/.claude/skills")
-    system_skills: str  # System skills folder ("Users/shlom/Flowpad workspace/.flow/system_assets/skills")
-    system_agents: str  # System agents folder ("Users/shlom/Flowpad workspace/.flow/system_assets/agents")
-    user_agents: str = ""  # Personal agents folder ("Users/shlom/.claude/agents")
-    logs: str  # Logs folder ("Users/shlom/Flowpad workspace/.flow/logs")
-    preferences: str  # Per-instance UI preferences file ("Users/shlom/.flow/instances/<name>/preferences.json")
+    home: str  # User home directory ("Users/alice")
+    workspace: str  # FlowPad workspace folder ("Users/alice/Flowpad workspace")
+    skills: str  # Skills folder ("Users/alice/Flowpad workspace/.claude/skills")
+    user_skills: str  # Personal skills folder ("Users/alice/.claude/skills")
+    system_skills: str  # System skills folder ("Users/alice/Flowpad workspace/.flow/system_assets/skills")
+    system_agents: str  # System agents folder ("Users/alice/Flowpad workspace/.flow/system_assets/agents")
+    user_agents: str = ""  # Personal agents folder ("Users/alice/.claude/agents")
+    logs: str  # Logs folder ("Users/alice/Flowpad workspace/.flow/logs")
+    preferences: str  # Per-instance UI preferences file ("Users/alice/.flow/instances/<name>/preferences.json")
 
 
 class EnvInfo(BaseModel):
@@ -47,7 +47,7 @@ class LmInfo(BaseModel):
     # Application paths - all VFS-relative, ready to use
     paths: Optional[AppPaths] = None
     # Legacy desktop paths (deprecated - use paths instead)
-    home: Optional[str] = None  # VFS home path (e.g., "Users/shlom")
+    home: Optional[str] = None  # VFS home path (e.g., "Users/alice")
     workspace: Optional[str] = None  # Workspace folder name (e.g., "Flowpad workspace")
     skills: Optional[str] = None  # Skills folder relative to workspace
     logs: Optional[str] = None  # Logs folder relative to workspace
