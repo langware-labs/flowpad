@@ -45,7 +45,22 @@ export class Group extends APIEntity<Group> implements IGroup {
 
   name: string = '';
   group_namespace: string = '';
-  icon?: string | null;
+  private _icon: string | null = null;
+
+  /**
+   * Per-instance icon. The base ``APIEntity.icon`` is a getter-only accessor
+   * (the static type icon), so this overrides it as an accessor PAIR — and
+   * the constructor additionally mirrors it as an OWN enumerable accessor so
+   * toJSON's own-enumerable iterator serializes it (the ``_icon`` backing
+   * field is underscore-skipped) and deepAssign can set it.
+   */
+  get icon(): string | null {
+    return this._icon;
+  }
+
+  set icon(v: string | null) {
+    this._icon = v ?? null;
+  }
   color?: string | null;
   project_id?: string | null;
 
@@ -53,6 +68,14 @@ export class Group extends APIEntity<Group> implements IGroup {
     super(entity);
     this.name = entity.name ?? '';
     this.group_namespace = entity.group_namespace ?? '';
+    Object.defineProperty(this, 'icon', {
+      enumerable: true,
+      configurable: true,
+      get: () => this._icon,
+      set: (v: string | null | undefined) => {
+        this._icon = v ?? null;
+      },
+    });
     this.icon = entity.icon ?? null;
     this.color = entity.color ?? null;
     this.project_id = entity.project_id ?? null;
@@ -116,6 +139,22 @@ export class Group extends APIEntity<Group> implements IGroup {
   ): Promise<IEntity[]> {
     const perType = await Promise.all(types.map((t) => queryEntities<IEntity>(t, matchFor([]))));
     return perType.flat().sort(byName as any);
+  }
+
+  /** Resolve a Group by id (cache-first via the data manager). */
+  static async byId(id: string): Promise<Group | null> {
+    const { TypeId } = await import('../models/TypeId');
+    return (await dataManager.getByTypeId<any>(new TypeId(Group.type, id))) as Group | null;
+  }
+
+  /**
+   * Resolve any member entity by type+id (cache-first). Used by tree
+   * adapters to turn a drag payload back into the entity whose
+   * ``setGroup``/``move`` must run — resolution is SDK logic, not tsx.
+   */
+  static async resolveEntity(type: string, id: string): Promise<APIEntity<any> | null> {
+    const { TypeId } = await import('../models/TypeId');
+    return (await dataManager.getByTypeId<any>(new TypeId(type, id))) as APIEntity<any> | null;
   }
 
   async rename(name: string): Promise<Group> {
