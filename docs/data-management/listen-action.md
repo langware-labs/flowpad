@@ -166,19 +166,13 @@ Parsed model: `AgentHookData`
 
 `handle_agent_hook` resolves the hook fields (`hook_event_name`, `session_id`, `tool_name`, `tool_input`, `execution_scope`) up-front — before loading the `AgentHook` entity — so the side effects below run even when the hook entity itself no longer exists. The originating `AgenticProcess` id is resolved from `execution_scope` via `_extract_agentic_process_id`.
 
-**File-op path tracking**: A module-level `_last_file_op_path_by_session` dict caches the most recent `PostToolUse:Write` **or** `PostToolUse:Edit` file path per session (via `_track_file_op_path`). When a `PostToolUse` event arrives with `tool_name in ("Write", "Edit")`, the `file_path` from `tool_input` is stored keyed by `session_id`. This cached path is the fallback plan-file source consumed by the plan annotation side effect below.
-
 **Worktree auto-close**: On `PostToolUse:ExitWorktree` with a resolved agentic_process id, `_close_worktree_process` closes that process's tab.
 
 **ExitPlanMode auto-approve**: A module-level `_plan_auto_approve_by_agentic_process` set (keyed by agentic_process id, set by `set_plan_auto_approve` / execute-plan) is consumed on `PermissionRequest:ExitPlanMode` to return a synchronous `{"behavior": "allow"}` decision, and is cleared on `UserPromptSubmit`.
 
-**Annotation auto-creation**: `handle_agent_hook` creates `Annotation` entities for two event types:
+**Annotation auto-creation**: On **`UserPromptSubmit`**, `_create_prompt_annotation` creates an annotation with label `"prompt:"`, content truncated to 50 chars, linked to the `AgenticProcess` matching the session's `session_id`. Plan↔process cross-linking is NOT done here — it belongs to the transcript paths (`PlanHandler` in the indexer and the TranscriptStreamer subscriber, both via `cross_link_plan_to_process`).
 
-1. **`UserPromptSubmit`**: `_create_prompt_annotation` creates an annotation with label `"prompt:"`, content truncated to 50 chars, linked to the `AgenticProcess` matching the session's `session_id`.
-
-2. **`PreToolUse:ExitPlanMode`**: `_create_plan_annotation` creates an annotation with label `"plan:"`. The plan file path is resolved from `tool_input["planFilePath"]` (emitted directly by newer Claude Code) first; it falls back to the cached `_last_file_op_path_by_session` Write/Edit path when that path points to a `.claude/plans/*.md` file (the cache entry is popped on consume). Cross-linking the plan to the process is delegated to `cross_link_plan_to_process`.
-
-Both annotation creation paths are non-critical — failures are caught and logged at DEBUG level.
+Annotation creation is non-critical — failures are caught and logged at DEBUG level.
 
 ## handle_hook_op: CRUD Dispatch
 
