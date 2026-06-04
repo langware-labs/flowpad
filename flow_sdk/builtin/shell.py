@@ -97,6 +97,16 @@ class Shell(Entity):
     collaboration_room_id: str | None = APIField(
         default=None, description="CollaborationRoom this shell is shared into (null = not shared)"
     )
+    agentic_process_id: str | None = APIField(
+        default=None,
+        description=(
+            "Owning AgenticProcess id — the reverse of AgenticProcess.shell_id. "
+            "A shell is created by exactly one process and never reassigned, so "
+            "this is set once at creation and lives for the shell's lifetime. "
+            "Lets a bare /dock/shell/<id> URL resolve its owner with a plain "
+            "get-by-id (no reverse scan over processes)."
+        ),
+    )
     tab_order: int = APIField(default=0, persist=Persist.FALSE)
     created_at: str | None = APIField(default=None, description="ISO creation timestamp")
     last_active_at: str | None = APIField(default=None, description="ISO last activity timestamp")
@@ -111,6 +121,18 @@ class Shell(Entity):
         ),
     )
     last_launch_cmd: dict | None = APIField(default=None, description="Serialized WorkerCLIOptions from the last launch() call")
+
+    def get_implicit_private_context_entities(self) -> list["TypeId"]:
+        """Project the owning process into private context (the reverse of
+        AgenticProcess projecting its ``shell_id``). Derived from the stored
+        ``agentic_process_id`` field — a cheap getattr, no reverse scan — so the shell
+        and its process carry each other as lineage chips, both directions."""
+        from flow_sdk.api.api_types.type_id import TypeId  # noqa: PLC0415
+
+        refs = super().get_implicit_private_context_entities()
+        if self.agentic_process_id:
+            refs.append(TypeId(type=BuiltinEntityType.AGENTIC_PROCESS.value, id=self.agentic_process_id))
+        return refs
 
     # ── Internal helpers ──────────────────────────────────────────────────────
 
