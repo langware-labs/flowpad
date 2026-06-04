@@ -48,6 +48,7 @@ EXPECTED = {
     "CLAUDE_SETTINGS_JSON_SANDBOX": "claude_settings_json:sandbox",
     "CLAUDE_SETTINGS_JSON_ATTRIBUTION": "claude_settings_json:attribution",
     "CLAUDE_MANAGED_SETTINGS": "claude_managed_settings", "CLAUDE_MCP_JSON": "claude_mcp_json",
+    "CLAUDE_MCP_JSON_ENTRY": "claude_mcp_json:entry",
     "CLAUDE_USAGE": "claude_usage", "CODEX_SESSION": "codex_session",
     "CODEX_PROJECT": "codex_project", "CLI_LOG": "cli_log", "CLI_LOG_SETTINGS": "cli_log_settings",
     "TRIGGER_LOG": "trigger_log", "SCAN_LOG": "scan_log", "INDEX_LOG": "index_log",
