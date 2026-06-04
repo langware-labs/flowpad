@@ -95,6 +95,19 @@ class Entity(DBEntity):
             "via the async ``parent()`` accessor."
         ),
     )
+    group_id: str | None = APIField(
+        default=None,
+        description=(
+            "Folder-like containment (docs/entities-groups.md): id of the "
+            "``Group`` this entity lives in; null = ungrouped (tree root). "
+            "Exactly one parent — moving = one field write. Generic for every "
+            "type; a Group's own parent is this same inherited field, so "
+            "nesting needs no extra mechanism. Mutate via the generic "
+            "``set-group`` action (or ``Group.move``) so target/cycle "
+            "validation runs; persisted to metadata.json via ``BaseMeta`` so "
+            "grouping survives an index rebuild."
+        ),
+    )
 
     # Locally-authoritative fields a hub refresh must NEVER overwrite. The hub
     # is the source of truth for *content*; these describe the local copy's own
@@ -1551,24 +1564,32 @@ class Entity(DBEntity):
         return data
 
     async def grant_access_to_public_data(self: EntityType, public_role=AuthRole.ANONYMOUS_VIEWER.value) -> EntityType:
+        from flow_sdk.builtin.group import Group  # noqa: PLC0415
+
         # Make sure the public entity is a child of the saved entity
         public_entity = await Group.get_public_group()
         await public_entity.grant_role(self.typeid, to_role=public_role)
         return self
 
     async def get_public_data_role(self) -> List[str]:
+        from flow_sdk.builtin.group import Group  # noqa: PLC0415
+
         # Make sure the public entity is a child of the saved entity
         public_entity = await Group.get_public_group()
         public_role, _ = await self.get_roles(public_entity.typeid)
         return public_role
 
     async def enable_public_access(self: EntityType) -> EntityType:
+        from flow_sdk.builtin.group import Group  # noqa: PLC0415
+
         # Grant the public entity the specified role
         public_entity = await Group.get_public_group()
         await self.grant_role(public_entity.typeid)
         return self
 
     async def disable_public_access(self: EntityType) -> EntityType:
+        from flow_sdk.builtin.group import Group  # noqa: PLC0415
+
         # Remove the role from the public entity
         public_entity = await Group.get_public_group()
         await self.remove_role(public_entity.typeid)
@@ -1972,22 +1993,10 @@ class Entity(DBEntity):
         return True
 
 
-class Group(Entity):
-    type: str = APIField(default="group")
-    name: str
-    _unique: ClassVar[List[str]] = ["name"]
-
-    @staticmethod
-    async def get_public_group() -> "Group":
-        public_entity = await Group.get_by_name("public")
-        if not public_entity:
-            public_entity = Group(name="public")
-            await public_entity.save()
-        return public_entity
-
-    @staticmethod
-    async def get_by_name(name="public") -> Optional["Group"]:
-        return await Group.get_one({"name": name})
+# NOTE: the former ACL ``Group`` (name-unique principal with a "public" group)
+# lived here. It was dormant (zero callers) and its ``"group"`` type value has
+# been repurposed for the generic folder-like container entity in
+# ``flow_sdk/builtin/group.py`` (docs/entities-groups.md).
 
 
 from flow_sdk.actions.action_registry import action as _action_registry  # noqa: E402
@@ -2037,6 +2046,38 @@ _action_registry.register(
     action_name="unfavorite",
     function_name="unfavorite",
     handler=_http_unfavorite,
+    methods="post",
+    types="all",
+)
+
+
+async def _http_set_group(self: Entity):
+    """Generic membership move: place this entity into a Group (or ungroup).
+
+    The folder semantics and every rule (target exists, same project, no
+    cycles, namespace immutability) live in ``Group.validate_membership`` —
+    this handler only parses the body and delegates (docs/entities-groups.md).
+    """
+    from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+    from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+    from flow_sdk.builtin.group import Group  # noqa: PLC0415
+
+    request_info = get_current_request_info()
+    body = await request_info.get_post_data() if request_info is not None else {}
+    group_id = body.get("group_id") if isinstance(body, dict) else None
+
+    error = await Group.validate_membership(self, group_id)
+    if error:
+        return ApiFailResponse(message=error)
+    self.group_id = group_id
+    await self.save()
+    return ApiSuccessResponse(data={"group_id": group_id})
+
+
+_action_registry.register(
+    action_name="set-group",
+    function_name="set_group",
+    handler=_http_set_group,
     methods="post",
     types="all",
 )

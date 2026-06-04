@@ -33,3 +33,8 @@ class BaseMeta(BaseModel):
     # membership governs DISK persistence only, not the wire.
     parent_type_id: Optional[str] = None
     remote: Optional[bool] = None
+    # Folder-like containment (docs/entities-groups.md): the Group this entity
+    # lives in. Declared on BaseMeta so membership persists to metadata.json
+    # for EVERY type — disk is the source of truth, grouping survives a full
+    # index rebuild.
+    group_id: Optional[str] = None
