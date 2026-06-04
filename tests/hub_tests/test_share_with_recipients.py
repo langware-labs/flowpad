@@ -29,7 +29,7 @@ import pytest
 import websockets
 
 
-REPO_APP = Path("/Users/shlom/Documents/dev/flowpad-app")
+REPO_APP = Path(__file__).resolve().parents[2].parent / "flowpad-app"
 
 
 def _read_env_local(repo: Path) -> dict[str, str]:
@@ -96,13 +96,31 @@ async def test_share_with_recipients(hub_base_url, hub_login_payload, isolated_h
         matching.sort(key=lambda x: x.get("created_date") or "", reverse=True)
         invitation_id = matching[0]["id"]
 
-        # Bob accepts → grants role on the Conversation target.
+        # Bob accepts → grants role on the Conversation target. The hub's
+        # members/accept is browser-oriented and ALWAYS 302s: to /login when
+        # unauthenticated (accept did NOT run), or to the /conversation/<id>
+        # (or /flow_message/<id>) landing on a SUCCESSFUL authenticated accept
+        # (role granted server-side before the redirect). Mirror the SDK's
+        # handle_invitation_accept: do NOT follow the redirect; treat 200/409
+        # or a redirect to the conversation/flow_message landing as success,
+        # only a redirect to login as failure. (raise_for_status rejected the
+        # by-design 302 and failed every accept.)
         r = await h.get(
             f"{hub_base_url}/api/v1/graph/members/accept",
             headers=headers_b,
             params={"invitation-id": invitation_id},
         )
-        r.raise_for_status()
+        if r.status_code not in (200, 409):
+            if r.status_code in (301, 302, 303, 307, 308):
+                location = (r.headers.get("location") or r.headers.get("Location") or "")
+                assert "login" not in location.lower(), (
+                    f"accept redirected to login (unauthenticated); location={location[:200]}"
+                )
+                assert ("/conversation/" in location) or ("/flow_message/" in location), (
+                    f"accept returned an unexpected redirect location={location[:200]}"
+                )
+            else:
+                r.raise_for_status()
 
         # Bob joins → enters ``participants``.
         r = await h.post(

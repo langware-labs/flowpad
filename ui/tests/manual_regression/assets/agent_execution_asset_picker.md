@@ -84,6 +84,13 @@ a skill, then detach it. The footer's project selector must also render
 - [browser] validate the text "Add asset" is NOT visible inside the popover
 
 ### test 5: Attach a skill — embedded row materializes with a detach button
+# NOTE: the writable `embedded` row + detach button materialize only when the
+# attached asset is NOT already a file-discovered source. project_dir/user_dir
+# sources are read-only (no detach). In an env where every skill candidate is
+# file-backed (the common local case), attaching one reflects on its existing
+# read-only row and produces NO embedded duplicate — this test then `skip`s with
+# that reason (no detachable writable row to assert). It passes only when a
+# non-file-backed (embedded-producing) candidate exists.
 - [browser] navigate to {APP_URL}/dock/assets/list/agent
 - [browser] click the first element whose data-testid starts with "browseable-chevron-asset-type:agent:"
 - [browser] click the first agent row at aria-level 2

@@ -122,7 +122,7 @@ The test does NOT cover:
 ### Single-shot invocation
 
 ```bash
-cd /Users/shlom/Documents/dev/flowpad-oss
+cd <repo root>
 bash tests/migration_e2e/run.sh
 ```
 
@@ -318,8 +318,8 @@ real `flow record create` flow or a known-good API path.
 
 | Path | What |
 |---|---|
-| `/Users/shlom/.claude/plans/i-would-like-the-whimsical-wilkinson.md` | The refactor design (Phases A-F). |
-| `/Users/shlom/.claude/plans/once-done-add-to-dreamy-aurora.md` | The Docker e2e test design. |
+| `~/.claude/plans/i-would-like-the-whimsical-wilkinson.md` | The refactor design (Phases A-F). |
+| `~/.claude/plans/once-done-add-to-dreamy-aurora.md` | The Docker e2e test design. |
 
 ## Part 5 — Expected success output
 

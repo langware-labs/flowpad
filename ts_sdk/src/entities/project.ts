@@ -81,7 +81,7 @@ export class Project extends APIEntity<Project> {
   /**
    * Project's ``name`` is sometimes a full path (legacy data); strip to the
    * basename so the UI shows ``foo-project`` rather than
-   * ``/Users/shlom/Documents/foo-project``. When ``name`` is empty or has no
+   * ``/Users/alice/Documents/foo-project``. When ``name`` is empty or has no
    * path separators, return null and let the default chain handle it.
    */
   override getDisplayName(): string | null {

@@ -23,6 +23,7 @@ Body layout::
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -146,11 +147,33 @@ class IndexDocument:
         json_path.write_text(self.data.to_json(), encoding="utf-8")
         return md_path, json_path
 
+    def write_sidecar(self, json_path: Path | str) -> Path:
+        """Write ONLY the canonical JSON, atomically (`*.tmp` + os.replace).
+
+        Used for data-dir baselines (the native ``stamp``) — never touches the
+        vault and never renders an ``index.md``.
+        """
+        json_path = Path(json_path)
+        json_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = json_path.with_suffix(json_path.suffix + ".tmp")
+        tmp.write_text(self.data.to_json(), encoding="utf-8")
+        os.replace(tmp, json_path)
+        return json_path
+
     @classmethod
     def load(cls, folder: Path | str) -> "IndexDocument | None":
         """Load the canonical sidecar for ``folder``; ``None`` if absent/bad."""
-        json_path = Path(folder) / cls.SIDECAR
+        return cls.load_file(Path(folder) / cls.SIDECAR)
+
+    @classmethod
+    def load_file(cls, json_path: Path | str) -> "IndexDocument | None":
+        """Load a sidecar from an explicit json path; ``None`` if absent/bad.
+
+        Unknown/extra keys (e.g. legacy demo sidecars carrying ``rel_path`` /
+        ``size_bytes`` per file) raise TypeError in the dataclass constructors
+        and are deliberately treated as "no baseline".
+        """
         try:
-            return cls(IndexData.from_json(json_path.read_text(encoding="utf-8")))
+            return cls(IndexData.from_json(Path(json_path).read_text(encoding="utf-8")))
         except (OSError, ValueError, TypeError):
             return None

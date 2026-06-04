@@ -7,14 +7,14 @@
 # Prereqs:
 #   - Docker Desktop running (or Docker Engine >= 20.10 on Linux)
 #   - Hub backend running on host at http://localhost:8093 (run from
-#     /Users/shlom/Documents/dev/test_flowpad/FlowPad)
-#   - flowpad-app sibling repo at /Users/shlom/Documents/dev/flowpad-app
+#     the sibling test_flowpad/FlowPad checkout)
+#   - flowpad-app sibling repo (../flowpad-app next to this checkout)
 #     with its UI deps installed (for bob's vitest)
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
 ROOT="$(pwd)"
-APP_ROOT="/Users/shlom/Documents/dev/flowpad-app"
+APP_ROOT="${APP_ROOT:-$(dirname "$ROOT")/flowpad-app}"
 COMPOSE="docker compose -f docker/docker-compose.yml"
 
 echo "==> [1/6] sanity: hub on host"

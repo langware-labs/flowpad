@@ -112,10 +112,14 @@ curl -sS -X POST "$HUB/api/v1/graph/collaboration_room/$RID/add_process" \
   -d "{\"agentic_process_id\":\"$PID\"}"
 ```
 
+# Corrected 2026-06-04: the add_process RESPONSE echoes linked processes as
+# `data.shared_context_entities` (typeid strings, e.g. `agentic_process-<PID>`),
+# NOT `data.agentic_process_ids`. The GET room (step 7) does expose
+# `data.agentic_process_ids` (bare uuids).
 PASS when:
 - HTTP 200, `status=SUCCESS`.
 - `data.ok == true` on first add, `false` on a repeated call with the same PID.
-- `data.agentic_process_ids` includes `PID`.
+- `data.shared_context_entities` includes `agentic_process-<PID>`.
 
 ### 7. GET the room and verify the process list is populated
 
@@ -151,6 +155,10 @@ curl -sS -X POST "$HUB/api/v1/graph/collaboration_room/$RID/add_process" \
 Expected (ideal) behavior: HTTP 4xx, `status=FAIL`, message indicating the
 process does not exist. If the server happily appends the unknown id with
 `status=SUCCESS`, record as a FAIL — `add_process` must validate existence.
+
+# Verified 2026-06-04: add_process NOW validates existence — a bogus id returns
+# `status=FAIL`, message "AgenticProcess <id> not found". (The earlier no-validation
+# gap noted for this cycle has been closed.)
 
 ## Teardown
 

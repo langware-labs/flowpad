@@ -152,6 +152,96 @@ async def test_orphan_action_ignore_removes_db_row_keeps_shadow_dir(tmp_path: Pa
 
 
 @pytest.mark.asyncio
+async def test_db_only_orphan_without_shadow_dir_is_swept(tmp_path: Path) -> None:
+    """A DB row whose shadow dir is gone (e.g. deleted out-of-band) must still
+    be sweepable when its declared source (asset_ref) no longer exists.
+
+    Regression: orphan candidates used to come ONLY from the record homes on
+    disk, so DB-only rows were invisible to the sweep forever."""
+    import shutil
+
+    root = tmp_path / "proj"
+    docs = root / ".claude" / "docs"
+    docs.mkdir(parents=True)
+    md = docs / "a.md"
+    md.write_text("# a\n", encoding="utf-8")
+
+    driver = get_db_driver()
+    await driver.delete_entities_by_type(str(RecordType.MARKDOWN))
+
+    idx = _build_indexer(root)
+    await idx.index(IndexerOptions(verbose=False, types=[RecordType.MARKDOWN]))
+    count_before, _, _ = await _markdown_status()
+    assert count_before >= 1
+
+    # Remove BOTH the source and the shadow dir — only the DB row remains.
+    md.unlink()
+    records_root = get_default_records_root() / "markdown"
+    shutil.rmtree(records_root, ignore_errors=True)
+
+    result = await idx.index(
+        IndexerOptions(
+            verbose=False, types=[RecordType.MARKDOWN], orphan_action=OrphanAction.IGNORE
+        )
+    )
+
+    pt = result.per_type[RecordType.MARKDOWN]
+    assert pt.orphans_found >= 1, "DB-only row with missing asset_ref must be detected"
+    assert pt.orphans_db_removed >= 1
+    count_after, _, _ = await _markdown_status()
+    assert count_after == count_before - 1, "the DB-only orphan row should be gone"
+
+
+@pytest.mark.asyncio
+async def test_db_only_row_with_live_source_is_not_swept(tmp_path: Path) -> None:
+    """Safety: a DB row not derivable from the walk (no shadow dir, id differs
+    from the path-derived one) but whose asset_ref still EXISTS is alive — the
+    sweep must not touch it. Guards the API-minted-v4-beside-path-minted-v5
+    twin-row case."""
+    import shutil
+    import uuid
+
+    from flow_sdk.fs_store.fs_record import FSRecord
+    from flow_sdk.fs_store.fs_ref import FSRef as _FSRef
+
+    root = tmp_path / "proj"
+    docs = root / ".claude" / "docs"
+    docs.mkdir(parents=True)
+    md = docs / "a.md"
+    md.write_text("# a\n", encoding="utf-8")
+
+    driver = get_db_driver()
+    await driver.delete_entities_by_type(str(RecordType.MARKDOWN))
+
+    idx = _build_indexer(root)
+    await idx.index(IndexerOptions(verbose=False, types=[RecordType.MARKDOWN]))
+
+    # Twin row: different (random v4) id, same still-existing source file.
+    twin_id = str(uuid.uuid4())
+    twin = FSRecord(type=str(RecordType.MARKDOWN), id=twin_id, name="twin")
+    object.__setattr__(twin, "asset_ref", _FSRef(md))
+    await twin.sync_to_db()
+    # Drop the twin's shadow dir so it is a DB-only row.
+    from flow_sdk.fs_store.record_paths import record_stem
+    shutil.rmtree(
+        get_default_records_root() / "markdown" / record_stem("markdown", twin_id),
+        ignore_errors=True,
+    )
+
+    result = await idx.index(
+        IndexerOptions(
+            verbose=False, types=[RecordType.MARKDOWN], orphan_action=OrphanAction.DELETE
+        )
+    )
+
+    pt = result.per_type.get(RecordType.MARKDOWN)
+    orphan_ids = tuple(pt.orphan_ids) if pt is not None else ()
+    assert twin_id not in orphan_ids, "row with a live source must not be classified orphan"
+    row = await driver.get_by_id(twin_id, str(RecordType.MARKDOWN))
+    assert row is not None, "live-source DB-only row must survive a DELETE sweep"
+
+
+@pytest.mark.asyncio
 async def test_orphan_action_delete_removes_db_row_and_shadow_dir(tmp_path: Path) -> None:
     root = tmp_path / "proj"
     docs = root / ".claude" / "docs"

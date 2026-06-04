@@ -34,6 +34,8 @@ export * from './conversation-send';
 export * from './flow-message';
 export * from './invitation';
 export * from './spec';
+export * from './group';
+export * from './prompt';
 export * from './task';
 export * from './cron-event';
 export * from './trigger';

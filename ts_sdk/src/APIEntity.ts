@@ -781,6 +781,25 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    */
   parent_type_id?: string | null;
 
+  /**
+   * Folder-like containment (docs/entities-groups.md): the Group this entity
+   * lives in; null = ungrouped. Reflected off the wire; mutate only via
+   * {@link setGroup} so backend validation (target exists, same project, no
+   * cycles) runs.
+   */
+  group_id?: string | null;
+
+  /**
+   * Move this entity into a Group (or ungroup with null) via the generic
+   * ``set-group`` action. The new membership reflects back through the
+   * ordinary entity-update path; no local write.
+   */
+  public async setGroup(groupId: string | null): Promise<void> {
+    const info = new ActionInfo('set-group', this.typeId.type, this.typeId.id, 'POST');
+    info.bodyParameters = { group_id: groupId };
+    await dataManager.callAction<unknown, unknown>(info);
+  }
+
   /** POST /entity-event {event, payload}. Unknown events are a server-side no-op. */
   public async entityEvent(event: string, payload: Record<string, unknown> = {}): Promise<unknown> {
     return APIEntity.entityEvent(this.typeId, event, payload);

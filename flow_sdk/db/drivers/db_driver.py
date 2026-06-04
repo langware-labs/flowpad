@@ -1,7 +1,10 @@
+import asyncio
 import warnings
+from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from datetime import datetime
 from flow_sdk._compat import UTC
-from typing import Callable, Generic, List, Optional, Tuple
+from typing import AsyncIterator, Callable, Generic, List, Optional, Tuple
 from flow_sdk.settings import is_desktop
 from pydantic import BaseModel
 
@@ -385,6 +388,63 @@ class DBDriver(Generic[RecordType]):
 
 _driver_instances = {}
 _default_driver = "sqlite"  # Default to SQLite driver
+
+
+# ---------------------------------------------------------------------------
+# DB lifecycle serialization
+# ---------------------------------------------------------------------------
+#
+# The destructive DB-lifecycle mutators (clear_all_data, restore,
+# reinit_db/set_db_path) all share the same shape: dispose the engine,
+# swap/unlink the on-disk file, reinitialize, then repoint the
+# DBEntity._db / DBRelationship._db caches. With nothing serializing that
+# teardown/rebuild, two engines could straddle the unlink (one bound to the
+# deleted inode → ``disk I/O error`` on every subsequent query, health
+# deceptively green, only a restart recovering) and a fresh session opened
+# concurrently could capture the disposed engine or lazily build a second one.
+#
+# ``_DB_LIFECYCLE_LOCK`` serializes every such mutator against each other AND
+# against the fresh-session-open path so no two engines coexist across the
+# swap. It is a plain ``asyncio.Lock`` taken inside the already-async call
+# paths (no event-loop reaching).
+#
+# ``_lifecycle_in_progress`` is the same-task bypass: the mutator's own nested
+# session opens (bootstrap rebuild, clear_index, entity-cache work that runs
+# *while it holds the lock*) must NOT re-acquire the non-reentrant lock or
+# they self-deadlock. Modeled on the existing ``_standalone_session_var``
+# same-task handoff in sqlite_driver.py: a ContextVar set inside the held
+# region, so the holder's coroutine sees it True.
+#
+# Context propagation note: a child task spawned *inside* the held region
+# (e.g. anything bootstrap rebuild launches via create_task) inherits the
+# True snapshot and therefore also bypasses. That is correct AND required:
+# by the time the rebuild/bootstrap runs, the close→unlink→init→repoint has
+# already completed, so those nested opens target the freshly-rebuilt engine
+# — there is no longer any deleted file to straddle, and forcing them to
+# block on the lock the parent still holds would deadlock. Foreign request /
+# WS / indexer work arrives as top-level tasks created by the ASGI server
+# OUTSIDE this context (their snapshot is the default False), so they
+# correctly block on the lock until the swap completes. Verified: a task
+# created outside the guard blocks; one created inside inherits the bypass.
+_DB_LIFECYCLE_LOCK = asyncio.Lock()
+_lifecycle_in_progress: ContextVar[bool] = ContextVar("db_lifecycle_in_progress", default=False)
+
+
+@asynccontextmanager
+async def db_lifecycle_guard() -> "AsyncIterator[None]":
+    """Hold the DB-lifecycle lock for the duration of a destructive swap.
+
+    Acquire around the full close→unlink/swap→init→repoint(→bootstrap) block
+    of a lifecycle mutator. Sets ``_lifecycle_in_progress`` for the holder's
+    coroutine so its own nested session opens bypass the lock instead of
+    self-deadlocking on this non-reentrant lock.
+    """
+    async with _DB_LIFECYCLE_LOCK:
+        token = _lifecycle_in_progress.set(True)
+        try:
+            yield
+        finally:
+            _lifecycle_in_progress.reset(token)
 
 
 def set_default_driver(name: str) -> None:

@@ -98,8 +98,8 @@ async def test_get_worker_history_dedupes_by_worker_type_and_id(monkeypatch):
         ("-var-folders-abc", True),
         ("-tmp-something", True),
         ("-history-merge-test-deadbeef", True),
-        ("-Users-shlom-Documents-dev-flowpad-oss", False),
-        ("-Users-shlom-projects-real-app", False),
+        ("-Users-alice-Documents-dev-flowpad-oss", False),
+        ("-Users-alice-projects-real-app", False),
     ],
 )
 def test_is_scratch_encoded_dir(encoded, expected):
@@ -114,7 +114,7 @@ def test_is_scratch_encoded_dir(encoded, expected):
         ("/tmp/something", True),
         (None, False),
         ("", False),
-        ("/Users/shlom/Documents/dev/flowpad-oss", False),
+        ("/Users/alice/Documents/dev/flowpad-oss", False),
     ],
 )
 def test_is_scratch_cwd(cwd, expected):
@@ -126,10 +126,10 @@ def test_collect_claude_skips_scratch_encoded_dirs(monkeypatch, tmp_path):
     projects_dir = tmp_path / "projects"
     projects_dir.mkdir()
 
-    real_dir = projects_dir / "-Users-shlom-Documents-dev-flowpad-oss"
+    real_dir = projects_dir / "-Users-alice-Documents-dev-flowpad-oss"
     real_dir.mkdir()
     real_jsonl = real_dir / "real-session.jsonl"
-    real_jsonl.write_text('{"sessionId":"real-session","cwd":"/Users/shlom/Documents/dev/flowpad-oss"}\n')
+    real_jsonl.write_text('{"sessionId":"real-session","cwd":"/Users/alice/Documents/dev/flowpad-oss"}\n')
 
     scratch_dir = projects_dir / "-private-var-folders-t7-foo"
     scratch_dir.mkdir()
@@ -193,7 +193,7 @@ def test_agentic_process_only_entries_skips_scratch_workdir():
     real_proc = SimpleNamespace(
         id="proc-2",
         session_id="sid-real",
-        workdir="/Users/shlom/Documents/dev/flowpad-oss",
+        workdir="/Users/alice/Documents/dev/flowpad-oss",
         project_id="proj-real",
         name="real work",
         worker_type=None,

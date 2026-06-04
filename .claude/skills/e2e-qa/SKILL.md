@@ -56,7 +56,7 @@ LOCAL_SERVER_PORT=${LOCAL_SERVER_PORT} uv run -m flow_sdk.server.run
 
 **This is the first thing you do — before reading config, before building the index.**
 
-Parse the user's request and identify which of the 5 job types applies:
+Parse the user's request and identify which of the 6 job types applies:
 
 | # | Job type | Trigger phrase |
 |---|----------|----------------|
@@ -69,10 +69,10 @@ Parse the user's request and identify which of the 5 job types applies:
 
 Print the identified job type before proceeding:
 ```
-Job type: <i–v> — <name>
+Job type: <i–vi> — <name>
 ```
 
-If ambiguous, ask the user to clarify before continuing.
+If ambiguous, ask the user to clarify before continuing. **This is the ONLY moment user questions are allowed.** Once a job starts, the [Autonomous Run Policy](#autonomous-run-policy) applies: zero questions, decide-or-flag.
 
 ---
 
@@ -197,16 +197,28 @@ Task(
 
 When invoked with `run qa cycle` / `full qa` / `qa cycle`:
 
-Runs all test suites in sequence across 6 phases. **You never advance to the next phase unless the current phase achieves a clear pass.** All failures in a phase must be debugged and fixed before moving on.
+Runs all test suites in sequence across 11 phases. **You never advance to the next phase unless the current phase achieves a clear pass.** All failures in a phase must be debugged and fixed — or flagged — before moving on.
+
+**Step 0 — start the watchdog loop.** Immediately after identifying the job type (before Phase 1), start the cycle watchdog via the Skill tool:
+
+```
+Skill(skill="loop", args='30m "Do not stop untill all passed or flagged. flagged means this test exposes significant gap hence senior dev review is required to decide on next step"')
+```
+
+The loop keeps the cycle driving forward unattended; it naturally ends when the QA Cycle Summary is printed (every test passed or flagged). The loop never overrides the [circuit breaker](#circuit-breaker): on repeated same-class anomalies, a loop tick performs the meta-RCA instead of more forward grinding.
+
+**Step 0.5 — create the cycle-state file.** Create `<output-dir>/<timestamp>/cycle-state.md` (phase, per-item dispositions, owners, instance locks, pending validations) and update it at every milestone — see [Durable cycle state](#durable-cycle-state).
 
 ---
 
 ### Phase Rules
 
-- **Clear pass** = all tests in the phase exit with 0 failures. No skipped failures allowed unless the user explicitly approves skipping a specific test.
+- **Clear pass** = all tests in the phase exit with 0 failures, OR every residual failure has been worked to a `flagged` terminal state per the [Autonomous Run Policy](#autonomous-run-policy). Flagged is a tracked, evidence-backed state — never a silent skip. No skipped failures allowed unless the user pre-approved skipping a specific test in the invocation.
 - **On failure**: debug the failing test(s) one by one using the [Debug Mode](#debug-mode) flow. Do NOT re-run the full suite after every individual fix — fix all failures first, then re-run the phase once as a final verification.
-- **Never skip** a failing test without explicit user instruction. "It was already failing" is not a reason to move on.
-- **Backend ownership**: For phases 2, 3, 5, and 7, you own the machine. You may restart the backend server (`python -m server.run`) as needed between runs.
+- **Never skip** a failing test without explicit user instruction given at invocation time. "It was already failing" is not a reason to move on. Mid-cycle, the only alternative to fixing is flagging.
+- **Backend/infra ownership**: For phases 2, 3, 5, and 7–11, you own the machine. You may restart the backend server (`uv run -m flow_sdk.server.run`), the frontend, named instances (`scripts/instance_ctl.sh`), and the local hub as needed between runs.
+- **No flaky tolerance**: `retries` stays 0 everywhere. A test that passes on re-run with no code change is not green — it is evidence of a real race and is flag-worthy. Never add retries, reruns, or `@flaky` markers, and never raise any timeout (see CLAUDE.md non-negotiables).
+- **Integrity & resilience**: every verdict, destructive op, infra launch, and anomaly response is governed by [Run Integrity & Resilience](#run-integrity--resilience-non-negotiable) — machine-read verdicts, one writer per instance, daemonized services, durable cycle state, circuit breaker.
 
 ---
 
@@ -278,17 +290,95 @@ cd ui && npm run test:vitest:long
 - Backend must be running (you own it — restart if needed).
 - **Gate**: all tests pass → proceed to Phase 8
 
-### Phase 8 — full manual regression
+### Phase 8 — Playwright `.md.ts` sweep
 
-- Build test index, spawn up to 3 qa-testers, run all `.md` scenarios
-- Follow [Run Mode](#run-mode) steps 1–12
+A fast, deterministic pass/fail sweep of every `.md.ts` Playwright test. **No team, no debugging, no fixes** — the manager runs it directly and records results. That's it.
+
+1. Build/refresh the test index. List every category dir under `scenarios-dir` that contains `.md.ts` files.
+2. For each such category, reset the DB then run the category with the JSON reporter (machine-readable per-test results — never scrape list output):
+   ```bash
+   curl -s -X POST http://localhost:${LOCAL_SERVER_PORT}/api/v1/graph/compute_node/@local/desktop-db/clear
+
+   cd ui && VITE_PORT=${VITE_PORT} \
+     PLAYWRIGHT_JSON_OUTPUT_NAME=<abs-results-dir>/<timestamp>/phase8--<category>.json \
+     npx playwright test --config tests/manual_regression/<category>/playwright.config.ts --reporter=json
+   ```
+3. Parse each `phase8--<category>.json` and aggregate into `<output-dir>/<timestamp>/phase8-summary.json`:
+   - one entry per test: `{ category, file, test_title, status, duration_ms, error_excerpt }`
+4. Print the per-test pass/fail table:
+   ```
+   Phase 8 — Playwright sweep
+   ──────────────────────────
+   <category>/<file> :: <test title>   PASS|FAIL  (Xs)
+   ...
+   Total: N tests — N passed, N failed
+   ```
+- **Do not debug or fix anything in this phase.** Failures are recorded and become Phase 9's work list.
+- **Gate**: Phase 8 never blocks — it always proceeds to Phase 9 with its failure list. (If Phase 8 has zero failures AND the test index shows no `.md`-only scenarios, Phase 9 is a no-op.)
+
+### Phase 9 — agentic remediation (full `.md` scenarios)
+
+Team-based agentic phase using the full methodology — [Run Mode](#run-mode) steps 1–12, [Debug Mode](#debug-mode) lifecycle, up to 3 qa-testers with the per-test tab protocol.
+
+**Scope** (from `phase8-summary.json` + the test index):
+- (a) every scenario with a **failing `.md.ts`** in Phase 8
+- (b) every `.md` scenario that has **no `.md.ts`** at all
+
+**Per scenario, three sub-goals — in order, all required:**
+1. **Make the full `.md` scenario pass.** The `.md` is the source of truth. Classify honestly: `fail` → fix the app; `test-issue` → fix the scenario.
+2. **Fold learnings into the `.md.ts`.** Update the stale `.md.ts` with corrected selectors/timing/steps — or, for `.md`-only scenarios, **author a new `.md.ts`** following the category's existing conventions (`testMatch: '*.md.ts'`, same per-category `playwright.config.ts`). Playwright coverage grows every cycle.
+3. **Make the `.md.ts` pass.** Re-run it until green, then confirm stability:
+   ```bash
+   cd ui && VITE_PORT=${VITE_PORT} npx playwright test --config tests/manual_regression/<category>/playwright.config.ts <scenario>.md.ts --repeat-each=3
+   ```
+   (`--repeat-each=3` is a stability check on the just-changed test — it is NOT a retry mask; `retries` stays 0.)
+
 - **Before each scenario**, the tester must reset the DB to a clean state:
   ```bash
   curl -s -X POST http://localhost:${LOCAL_SERVER_PORT}/api/v1/graph/compute_node/@local/desktop-db/clear
   ```
   This backs up and wipes the DB + FTS index so each scenario starts from a clean bootstrap state.
-- **Gate**: all scenarios pass (or explicitly user-approved skips)
+- A scenario's task is complete only when all three sub-goals hold (`.md` ✓ AND `.md.ts` ✓ stable).
+- Max 2 fix→re-validate retries per scenario (existing Run Mode rule), then `flagged`.
+- **Gate**: every in-scope scenario is `resolved` or `flagged` → proceed to Phase 10.
 
+### Phase 10 — pytest hub tests (hub + instances required)
+
+1. **Hub preflight**: `set -a; source .env.local; set +a` then check `curl -sf ${FLOWPAD_HUB_URL:-http://localhost:8093}/api/v1/health/status`.
+   - If down: start the hub autonomously from the FlowPad checkout at the sibling checkout `../test_flowpad/FlowPad/` (run via `flowpad/run.py`, detached, output to a log file), then seed test users via `ops/scripts/setup_test_users.sh` in that checkout, then re-check health.
+   - Still down (e.g., its Neo4j Desktop DB isn't running) → mark Phases 10 **and** 11 `flagged` (reason: hub infra unavailable, evidence: startup log excerpt) and continue to the summary.
+2. **Instances**: check `scripts/instance_ctl.sh status` first — **reuse any instance that is already UP** (do not relaunch it; `launch` kills an existing instance before starting, so re-launching a healthy one is a needless restart). Launch only what's missing via `scripts/instance_ctl.sh launch <name>`; if an instance goes unhealthy mid-phase, restart it with `kill <name>` + `launch <name>`.
+3. **Run**:
+   ```bash
+   FLOWPAD_HUB_URL=${FLOWPAD_HUB_URL:-http://localhost:8093} python -m pytest tests/hub_tests -v
+   ```
+4. **Auto-skips count as failures.** `tests/hub_tests/conftest.py` silently skips when the hub is unreachable or credentials are invalid. A skipped-for-infra test is NOT a pass — remediate (restart hub, re-seed users via `setup_test_users.sh`) and re-run. Zero hub-infra skips allowed in a clear pass.
+5. **On failure**: existing [Debug Mode](#debug-mode) flow; unresolvable → `flagged`.
+6. **Cleanup (always, even when flagging)**: `scripts/instance_ctl.sh kill <name>` for every instance THIS phase launched. Do not kill instances you didn't launch; leave the hub running for Phase 11.
+- **Gate**: all tests pass (or flagged) → proceed to Phase 11.
+
+### Phase 11 — vitest hub tests (hub + dev-1/dev-2 required)
+
+1. **Hub preflight**: same as Phase 10 (reuse its result if the hub is already up and healthy).
+2. **Instances**: the suite expects the fixed names **dev-1** and **dev-2** (`ui/tests/hub/_instances.ts`). Check first, reuse if already UP — launch only what's missing (`launch` restarts an existing instance, so don't run it against a healthy one):
+   ```bash
+   scripts/instance_ctl.sh status            # see what's already UP
+   scripts/instance_ctl.sh launch dev-1      # only if dev-1 is not UP
+   scripts/instance_ctl.sh launch dev-2      # only if dev-2 is not UP
+   scripts/instance_ctl.sh status            # wait until both report UP
+   ```
+3. **Run**:
+   ```bash
+   cd ui && npm run test:vitest:hub
+   ```
+4. **On failure**: [Debug Mode](#debug-mode) flow. Restart instances between re-runs as needed (`kill` + `launch`). The suite's 30s test timeouts are a hard cap — never raise them. Unresolvable → `flagged`.
+5. **Cleanup (always, even when flagging)**: kill only the instances THIS phase launched:
+   ```bash
+   scripts/instance_ctl.sh kill dev-1   # only if Phase 11 launched it
+   scripts/instance_ctl.sh kill dev-2   # only if Phase 11 launched it
+   ```
+   Instances that were already running before the phase started belong to the user's setup — leave them up, and leave the hub running.
+- **Gate**: all tests pass (or flagged) → print the QA Cycle Summary.
 
 ---
 
@@ -299,18 +389,27 @@ After all phases complete, print:
 ```
 QA Cycle Complete
 ─────────────────
-Phase 1 (pytest unit):   PASS — N tests
-Phase 2 (pytest api):    PASS — N tests
-Phase 3 (pytest long):   PASS — N tests
-Phase 4 (vitest unit):   PASS — N tests
-Phase 5 (vitest api):    PASS — N tests
-Phase 6 (vitest react):  PASS — N tests
-Phase 7 (vitest long):   PASS — N tests
-Phase 8 (manual e2e):    PASS — N scenarios
+Phase 1  (pytest unit):       PASS — N tests
+Phase 2  (pytest api):        PASS — N tests
+Phase 3  (pytest long):       PASS — N tests
+Phase 4  (vitest unit):       PASS — N tests
+Phase 5  (vitest api):        PASS — N tests
+Phase 6  (vitest react):      PASS — N tests
+Phase 7  (vitest long):       PASS — N tests
+Phase 8  (playwright md.ts):  N passed / N failed → Phase 9
+Phase 9  (agentic md+md.ts):  PASS — N scenarios (N flagged)
+Phase 10 (pytest hub):        PASS — N tests (N flagged)
+Phase 11 (vitest hub):        PASS — N tests (N flagged)
 
 Total fixes applied: N
+New .md.ts authored: N
 Docs corrected: N
+Flagged: N (see _results/<timestamp>/flagged.md — senior dev review required)
 ```
+
+A cycle is **complete** when every test is passed or flagged. Flagged items are listed individually below the table with their one-line reason.
+
+**Upon completion, open the HTML report in the default browser** (`open <report-path>` on macOS, `xdg-open` on Linux) so the results are immediately visible — then print the summary and the report path.
 
 ---
 
@@ -494,9 +593,9 @@ Simple execution — no debug lifecycle unless failures occur.
 8. **Handle failures**:
    - **First-time failure** (no entry in `debug_log.md` for this scenario): spawn test_debugger + bug_fixer in parallel; also spawn testing_analysis_expert to check coverage
    - **Persistent failure** (entry exists in `debug_log.md`): spawn test_debugger + bug_fixer only
-   - After fix: create re-run task for tester (max 2 retries)
+   - After fix: create re-run task for tester (max 2 retries). After the 2nd failed retry, mark the scenario `flagged` per the [Autonomous Run Policy](#autonomous-run-policy) and move on — never stall the run waiting for guidance.
 9. **Aggregate**: Read all JSON result files. Build cycle report conforming to `schemas/cycle-report.schema.json`.
-10. **Generate HTML**: Read `templates/report.html`, inject cycle report data at `<!-- REPORT_DATA -->`, write to results directory. Print file path only — do not start an HTTP server.
+10. **Generate HTML**: Read `templates/report.html`, inject cycle report data at `<!-- REPORT_DATA -->`, write to results directory. Open the report in the default browser (`open <path>` on macOS, `xdg-open <path>` on Linux) — do not start an HTTP server.
 11. **Report summary**: Print the summary table and the report file path
 12. **Shutdown**: Send `shutdown_request` to all teammates, then `TeamDelete`
 
@@ -536,7 +635,7 @@ When invoked with `report [results-dir]`:
 2. Read all `*.json` result files (exclude `cycle-report.json`)
 3. Aggregate into cycle report conforming to `schemas/cycle-report.schema.json`
 4. Generate HTML report from `templates/report.html`
-5. Print summary and report path
+5. Open the report in the default browser (`open <path>` on macOS, `xdg-open <path>` on Linux), then print summary and report path
 
 ---
 
@@ -550,6 +649,7 @@ Total:       N scenarios
 Passed:      N (green)
 Failed:      N (red)      ← app bugs
 Test Issues: N (orange)   ← scenario authoring problems
+Flagged:     N (purple)   ← senior dev review required
 Skipped:     N (yellow)
 Errors:      N (red)
 Duration:    Xs
@@ -557,7 +657,7 @@ Pass Rate:   N%           ← excludes test-issues from denominator
 Report:      <path-to-report.html>
 ```
 
-**Pass rate calculation**: `passed / (total - skipped - test_issues) * 100`.
+**Pass rate calculation**: `passed / (total - skipped - test_issues) * 100`. Flagged scenarios **stay in the denominator** — a flag is a real coverage hole, and the pass rate must reflect it. They are listed separately so senior review can find them.
 
 ---
 
@@ -593,12 +693,12 @@ The file `.flow/skills/agentic-qa/test_index.md` uses this format:
 ## JSON Schemas
 
 ### Test Result (`schemas/test-result.schema.json`)
-- `scenario_path`, `category`, `status` (pass|fail|skip|error|test-issue)
+- `scenario_path`, `category`, `status` (pass|fail|skip|error|test-issue|flagged)
 - `execution_method` (playwright|fast-path|mcp-browser|skipped)
-- `known_bug`, `tests[]`, `environment`
+- `known_bug`, `flag_reason`, `tests[]`, `environment`
 
 ### Cycle Report (`schemas/cycle-report.schema.json`)
-- `summary`, `categories`, `results[]`, `stale_fast_paths[]`
+- `summary` (incl. `flagged` count), `categories`, `results[]`, `stale_fast_paths[]`, `flagged[]`
 
 ## HTML Report Template
 
@@ -612,8 +712,12 @@ Inject at `<!-- REPORT_DATA -->`:
 ```
 _results/
   2026-03-04T10-30-00/
+    cycle-state.md                 ← durable orchestration ledger (phase, dispositions, owners, locks)
+    phase8--chat.json              ← raw Playwright JSON reporter output, per category
+    phase8-summary.json            ← aggregated per-test pass/fail list (Phase 9's work list)
     chat--chat_input_controls.json
     terminal--run_basic_command.json
+    flagged.md                     ← senior-dev-review queue (Autonomous Run Policy)
     cycle-report.json
     report.html
 ```
@@ -630,6 +734,83 @@ File naming: `<category>--<scenario-name>.json`.
 - Never let a single scenario failure stop the entire cycle
 - **Never launch a tester without a current test index file**
 
+## Run Integrity & Resilience (non-negotiable)
+
+Hard rules learned from cycle post-mortems. They bind every role, the manager most of all.
+
+### Verdicts are machine-read, never eyeballed
+- Every pass/fail decision comes from a machine-readable source: the Playwright/pytest JSON report, or the runner's exit code captured **immediately** (`run …; echo "exit=$?"` as the very next statement).
+- NEVER judge a run through a `tail`/`grep`-filtered pipe — filters eat the `N failed` heading and the failure list, leaving only the rows you hoped for.
+- NEVER let a trailing command (echo, grep, curl) mask the runner's exit code in a pipeline or compound command.
+- Absence of failure artifacts is NOT evidence of success. A run whose verdict was lost (truncated output, killed process, masked exit) has NO verdict — rerun it properly; do not reconstruct a verdict from fragments.
+
+### Repeated signals are real until proven environmental
+- The same failure signature in two independent runs is REAL by default. Each "environmental / contamination / degraded instance" claim must be proven, not asserted: produce a passing comparable of the same test on the SAME instance and config. No comparable → the failure stands.
+- A baseline established on one instance never validates another. Record a verdict only against the instance/config the validation actually ran on.
+
+### Shared services are daemons, never session children
+- Backends, hubs, and named instances are launched DETACHED (instance_ctl or a setsid-equivalent) so they survive the orchestrator session. Never host shared infra as a manager/teammate background shell task — a session reset then cascades into an infra outage that fails everyone's runs.
+- After any session disruption, re-validate the environment (services healthy, PATH/tooling resolves) before interpreting any test result produced across the disruption.
+
+### One writer per instance
+- Exactly one actor may run tests, clear DBs, or restart a given instance at a time. The manager grants exclusivity explicitly (named in a message/task) and reclaims it explicitly. Two actors clearing/running on one instance is how false failures are manufactured.
+- Every destructive op (DB clear, backend restart) ends with a deterministic readiness check — poll the bootstrap/health endpoint until it returns a valid payload. Never a blind sleep.
+
+### Durable cycle state
+- Maintain `<output-dir>/<timestamp>/cycle-state.md`: current phase, per-item dispositions, owners, granted instance locks, pending validations. Update it at every milestone (phase gate, fix landed, verdict recorded).
+- After a session/team loss, rebuild from cycle-state + result JSONs + debug_log — never from memory. Work products must always make a team death cost a re-read, not a re-do.
+
+### Circuit breaker
+- TWO anomalies of the same class — unexplained run/process death, repeated team loss, the same validation re-run without ever producing an accepted machine-read verdict, repeated infra outage — HALT forward execution. Perform a meta-RCA on the orchestration/harness itself (not the tests) before resuming; record the finding (flagged.md if unresolved).
+- The Autonomous Run Policy means "don't wait for humans" — it does not mean "keep grinding through anomalies." Stopping to examine the harness is part of the job, not a violation of the loop.
+
+---
+
+## Autonomous Run Policy
+
+**You do not stop to ask questions — no matter what. No one is on the other side to answer during e2e.** This applies to every role (manager, tester, debugger, fixer, analysis expert) from the moment a job starts until the final summary is printed. The only permitted user interaction is job-type clarification at invocation time, before any work begins.
+
+Every decision is made from the documented defaults in this skill. When something genuinely requires human judgment, it does not pause the cycle — it becomes **`flagged`** and the cycle moves on.
+
+"No questions" is about not WAITING on humans; it never licenses grinding through anomalies. The [circuit breaker](#circuit-breaker) is part of this policy: repeated same-class anomalies stop forward execution for a self-directed meta-RCA — still autonomous, still no questions.
+
+### `flagged` — definition
+
+> Flagged means this test exposes a significant gap, hence senior dev review is required to decide on next step.
+
+`flagged` is a terminal state for a test within this cycle. It is a quarantine lane: **non-blocking** for cycle completion, but always **visible, evidence-attached, and owned**. It is never a silent skip and never counts as a pass.
+
+### When to flag (and only then)
+
+- The fix requires an **architectural change** (cross-cutting concern, API contract change, major module restructure) — bug_fixer's existing stop rule.
+- The fixer↔debugger loop exhausted its **3 rejection iterations** without an approved fix.
+- The **2 fix→re-validate retries** are exhausted and the scenario still fails.
+- Required infra (hub, Neo4j, a named instance) is unavailable **after an autonomous start/restart attempt**.
+- The only way to make the test pass would **violate a non-negotiable** (e.g., raising any timeout, adding retries/flaky markers).
+
+Flagging without a genuine RCA attempt is a process violation — a flag is *worked*, not waved through.
+
+### Flag artifact
+
+Append every flag to `<output-dir>/<timestamp>/flagged.md`:
+
+```markdown
+## <phase>/<category>/<scenario-or-test-id>
+- owner: senior-dev-review
+- reason: <which flag criterion, one line>
+- evidence: <log excerpts, RCA-so-far, file:line references, result JSON path>
+- why senior review: <what decision is actually needed>
+- recommendation: <the team's best suggested next step>
+```
+
+Flags also appear in the result JSON (`status: "flagged"` + `flag_reason`), in the cycle report, and in the final summary.
+
+### What this replaces
+
+Anywhere this skill or an agent doc previously said "wait for user guidance" / "ask the user" mid-run: the agent instead sends the manager the full evidence package via SendMessage, and the **manager decides — fix path or flag**. The manager never relays a question to the user mid-cycle.
+
+---
+
 ## Non-Dismissal Policy
 
 **Every failure gets worked.** The manager must never dismiss, deprioritize, or accept a failure as "already known" and move on — unless the user explicitly says to skip it.
@@ -637,9 +818,10 @@ File naming: `<category>--<scenario-name>.json`.
 - A `known_bug: true` entry in a scenario does NOT mean the bug is accepted. It means the team knows about it. It still requires a Debug task.
 - An entry in `debug_log.md` does NOT mean the issue is resolved. If a scenario is still failing, it gets debugged again.
 - "This was broken before my changes" is not a valid reason to skip. If it failed during this run, it gets a Fix task.
-- The only valid reason to skip working an issue is an explicit user instruction to do so.
+- The only valid reason to skip working an issue is an explicit user instruction given at invocation time.
+- `flagged` is the **only** alternate terminal state, and it is itself "worked": it requires a real RCA attempt and the full evidence package described in the [Autonomous Run Policy](#autonomous-run-policy). Flagging without evidence is dismissal by another name.
 
-This applies to all roles — manager, tester, debugger, and fixer. No team member may declare an issue out of scope without user authorization.
+This applies to all roles — manager, tester, debugger, and fixer. No team member may declare an issue out of scope without user authorization given before the run started.
 
 ---
 

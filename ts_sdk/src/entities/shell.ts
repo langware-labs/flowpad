@@ -66,6 +66,10 @@ export interface IShell extends IEntity {
   compute_node_uname?: string | null;
   project_id?: string | null;
   collaboration_room_id?: string | null;
+  /** Owning AgenticProcess id — reverse of AgenticProcess.shell_id. Set once
+   *  at shell creation; lets a bare-shell URL resolve its owner by get-by-id.
+   *  NB: distinct from the OS PID (which the PTY layer writes as `process_id`). */
+  agentic_process_id?: string | null;
   tab_order?: number;
   auto_rename?: boolean;
   claude_session_id?: string | null;
@@ -111,6 +115,7 @@ export class Shell extends APIEntity<Shell> implements IShell {
   compute_node_uname: string | null = null;
   project_id: string | null = null;
   collaboration_room_id: string | null = null;
+  agentic_process_id: string | null = null;
   tab_order: number = 0;
   auto_rename: boolean = true;
   claude_session_id: string | null = null;

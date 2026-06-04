@@ -9,7 +9,7 @@ import os
 logger = logging.getLogger(__name__)
 import re
 from collections import defaultdict
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, nullcontext
 from contextvars import ContextVar
 from datetime import datetime
 from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Set, Tuple
@@ -23,7 +23,13 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from flow_sdk.api.api_types.type_id import TypeId
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType, DBBaseRecord, DBBaseRelationship, EntityChild
-from flow_sdk.db.drivers.db_driver import DBConfig, DBDriver, DBResetProfile
+from flow_sdk.db.drivers.db_driver import (
+    _DB_LIFECYCLE_LOCK,
+    _lifecycle_in_progress,
+    DBConfig,
+    DBDriver,
+    DBResetProfile,
+)
 from flow_sdk.db.drivers.path_model import NodeConnection, NodesPath
 from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
 from flow_sdk.flowpad_types.enums import ExpansionType, RelationshipDirection
@@ -761,6 +767,24 @@ class SQLiteDBDriver(DBDriver):
             result = await session.execute(text(sql), bindings)
             return result.scalar() or 0
 
+    async def list_entity_sources_by_type(
+        self,
+        type_name: str,
+    ) -> dict[str, tuple[str | None, str | None, str | None]]:
+        """Return ``{id: (asset_ref, scope, project_id)}`` for every row of
+        ``type_name``. One lean SELECT — used by the indexer's orphan
+        detection to include DB rows that have no shadow record dir."""
+        if not self.session_factory:
+            return {}
+        sql = (
+            "SELECT id, json_extract(data, '$.asset_ref'), "
+            "json_extract(data, '$.scope'), json_extract(data, '$.project_id') "
+            "FROM entities WHERE type = :type"
+        )
+        async with self._session_ctx() as session:
+            result = await session.execute(text(sql), {"type": type_name})
+            return {str(row[0]): (row[1], row[2], row[3]) for row in result.fetchall()}
+
     async def delete_entities_by_type(
         self,
         type_name: str | None = None,
@@ -902,9 +926,26 @@ class SQLiteDBDriver(DBDriver):
         if standalone is not None:
             yield standalone
             return
-        if not self.session_factory:
-            await self.open()
-        async with self.session_factory() as session:
+        # Gate ONLY the factory-resolution + session-open against the DB
+        # lifecycle lock (NOT the whole query): a destructive clear/restore/
+        # path-switch must not unlink/swap the file while a fresh session is
+        # being born on the old engine. Holding the lock here means a waiting
+        # lifecycle mutator cannot proceed to dispose+unlink until no new
+        # session is mid-open; combined with the mutator's own engine dispose
+        # (which reaps idle conns), this closes the deleted-file-engine window
+        # for the dominant fresh-session path. We release before yielding so
+        # the query itself never holds the lifecycle lock.
+        #
+        # The lifecycle mutator's OWN coroutine sets _lifecycle_in_progress
+        # while it holds the lock (see db_lifecycle_guard); its nested opens
+        # (init_db / bootstrap rebuild / clear_index) must bypass here or they
+        # would re-acquire this non-reentrant lock and self-deadlock.
+        lock_ctx = nullcontext() if _lifecycle_in_progress.get() else _DB_LIFECYCLE_LOCK
+        async with lock_ctx:
+            if not self.session_factory:
+                await self.open()
+            session = self.session_factory()
+        async with session:
             token = _standalone_session_var.set(session)
             try:
                 yield session
@@ -1337,10 +1378,17 @@ class SQLiteDBDriver(DBDriver):
                 parts.append(cond)
             return (or_(*parts), True) if parts else (None, False)
 
-        # Leaf node
-        if len(expr.operands) < 2:
+        # Leaf node. The null-test ops are unary — ``operands=[field]`` is the
+        # canonical wire shape (a trailing JSON null does not survive axios GET
+        # param serialization); a legacy ``[field, None]`` is also accepted.
+        if expr.op in (QueryOp.IS_NULL, QueryOp.IS_NOT_NULL):
+            if not expr.operands:
+                return None, False
+            field_name, value = expr.operands[0], None
+        elif len(expr.operands) < 2:
             return None, False
-        field_name, value = expr.operands[0], expr.operands[1]
+        else:
+            field_name, value = expr.operands[0], expr.operands[1]
 
         # PROP references and non-string field names are not SQL-pushable
         if not isinstance(field_name, str) or isinstance(value, ExpressionNode):
@@ -2628,6 +2676,13 @@ class SQLiteDBDriver(DBDriver):
                 for op in expression.operands
             )
 
+        # Null-test ops are unary: [field] is canonical, [field, None] accepted.
+        if expression.op in (QueryOp.IS_NULL, QueryOp.IS_NOT_NULL):
+            if not expression.operands:
+                return False
+            attr_value = attributes.get(expression.operands[0])
+            return attr_value is None if expression.op == QueryOp.IS_NULL else attr_value is not None
+
         if len(expression.operands) < 2:
             return False
 
@@ -2649,11 +2704,6 @@ class SQLiteDBDriver(DBDriver):
         attr_name = operand1
         target_value = operand2
         attr_value = attributes.get(attr_name)
-
-        if expression.op == QueryOp.IS_NULL:
-            return attr_value is None
-        elif expression.op == QueryOp.IS_NOT_NULL:
-            return attr_value is not None
 
         if attr_value is None:
             if attr_name in ["is_child", "is_final"] and isinstance(target_value, bool):

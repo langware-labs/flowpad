@@ -2,14 +2,15 @@
 id: b2a56d34-91ea-5380-9530-c6ded72bd167
 ---
 
-test 1: Fork button is disabled before a session exists and before the first assistant turn
+test 1: Fork button is disabled before the first assistant turn
 - navigate to {APP_URL}/dock/shell/new_terminal
 - wait for the plain shell tab
-- validate the Fork button (GitFork icon) in the process toolbar is disabled
-- hover the Fork button; validate the tooltip reads "Launch a session first"
+- validate NO ProcessToolbar is rendered on a plain shell (data-testid="process-toolbar" absent) — the toolbar (and therefore the Fork button) mounts only for an AgenticProcess in the Claude pane, so there is no Fork button to inspect on a plain shell
 - open the tab-opener "+" (data-testid="opener-plus-button") and pick the "Claude Code" row (data-testid="opener-menu-row-claude") and wait for the banner
-- validate the Fork button is STILL disabled (no transcript yet; workerStatus is INITIALIZING or IDLE)
+- validate the Fork button (GitFork icon) in the process toolbar is disabled (no transcript yet; workerStatus is INITIALIZING or IDLE)
 - hover; validate the tooltip reads "Send a message first — fork requires conversation history"
+
+NOTE: the "Launch a session first" tooltip only renders if a ProcessToolbar exists with hasSession=false. In the current UI a plain shell has no toolbar at all, and a freshly-launched Claude process gets its session_id immediately, so that tooltip is effectively unreachable; the realistic pre-transcript gate is "Send a message first — fork requires conversation history".
 
 test 2: Fork button becomes enabled after the first assistant turn and creates a sibling process
 - continue from test 1 state (Claude session running, no messages yet)
