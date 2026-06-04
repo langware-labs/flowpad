@@ -18,7 +18,10 @@ export type QueryOp =
   | '$PROP';
 
 export class ExpressionNode {
-  operands: (ExpressionNode | string | number | Partial<ExpressionNode>)[];
+  // ``null`` is admitted so IS_NULL/IS_NOT_NULL leaves are expressible as
+  // ``operands: [field, null]`` — the backend driver requires two-operand
+  // leaves and ignores the value for the null ops (mirrors the py model).
+  operands: (ExpressionNode | string | number | null | Partial<ExpressionNode>)[];
   op?: QueryOp;
 
   constructor(data: any) {
