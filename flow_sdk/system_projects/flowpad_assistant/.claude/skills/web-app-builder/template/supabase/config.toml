@@ -1,0 +1,3 @@
+# Minimal Supabase CLI config — all other settings use CLI defaults
+# (API 54321, Postgres 54322, Studio 54323).
+project_id = "webapp"

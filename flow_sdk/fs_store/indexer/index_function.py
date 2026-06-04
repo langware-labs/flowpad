@@ -14,6 +14,7 @@ import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
+from pathlib import Path
 from typing import Any, Awaitable, Callable, Protocol
 
 from flow_sdk.fs_store.fs_ref import FSRef
@@ -336,11 +337,12 @@ class FSIndexer:
         from flow_sdk.fs_store.schema_registry import SchemaRegistry
         from flow_sdk.db import get_db_driver, session as _db_session
 
-        # Skip-fresh and orphan detection are entirely on-disk now: skip-fresh
-        # reads each record's own ``.hash`` sentinel (``index_required``), and
-        # orphan detection walks the record homes (``_discover_records_dir_ids``)
-        # minus the ids seen on disk this run. The index path makes ZERO DB
-        # reads — it never queries the store it produces.
+        # Skip-fresh is entirely on-disk: it reads each record's own ``.hash``
+        # sentinel (``index_required``). The per-record index loop makes ZERO
+        # DB reads — it never queries the store it produces. Orphan detection
+        # (post-loop) unions the record homes on disk
+        # (``_discover_records_dir_ids``) with the type's DB row ids (one lean
+        # SELECT per type) so rows without a shadow dir are still sweepable.
 
         # Pre-flight per-type totals: known up front because scan() materialized
         # everything before we entered the per-record loop. Only counts types
@@ -584,10 +586,18 @@ class FSIndexer:
                 )
                 effective_orphan_action = OrphanAction.INDEX
             orphan_records: dict[RecordType, list[str]] = {}
+            orphan_sources: dict[RecordType, dict[str, dict[str, bool]]] = {}
             orphan_filter_types = self._resolve_orphan_filter_types(opts.types)
-            # Record homes on disk are the authoritative "records we have" set;
-            # a home whose source wasn't seen this run is an orphan.
+            # Both materializations feed the candidate set (per the DEFINITION
+            # above): record homes on disk, plus DB rows — a row whose shadow
+            # dir was never created (or already removed) would otherwise be
+            # invisible to the sweep forever. One lean SELECT per type.
             disk_ids_per_type = self._discover_records_dir_ids(orphan_filter_types)
+            db_rows_known = hasattr(driver, "list_entity_sources_by_type")
+            db_rows_per_type: dict[str, dict[str, tuple]] = {}
+            if db_rows_known:
+                for type_name in orphan_filter_types:
+                    db_rows_per_type[type_name] = await driver.list_entity_sources_by_type(type_name)
 
             for type_name in orphan_filter_types:
                 try:
@@ -596,20 +606,58 @@ class FSIndexer:
                     continue
 
                 disk_ids = disk_ids_per_type.get(type_name, set())
+                db_rows = db_rows_per_type.get(type_name, {})
                 seen = seen_ids.get(rt, set())
-                missing = sorted(disk_ids - seen)
+                # DB-only candidates obey the strict orphan definition
+                # (``FSRecord.orphan``): a DECLARED source (asset_ref) that no
+                # longer exists. Rows without an asset_ref aren't file-backed →
+                # never orphan. Rows whose asset_ref still exists are alive even
+                # when this walk derived a different id for that file (e.g. an
+                # API-minted v4 row beside a path-minted v5 twin) — id-set
+                # arithmetic alone would misclassify those as orphan.
+                db_missing = {
+                    eid
+                    for eid, (aref, _scope, _pid) in db_rows.items()
+                    if eid not in seen
+                    and eid not in disk_ids
+                    and aref
+                    and not Path(str(aref)).exists()
+                }
+                missing = sorted((disk_ids - seen) | db_missing)
                 if not missing:
                     continue
 
                 if opts.scope_filter is not None:
+                    sf = opts.scope_filter
+                    sf_projects = set(sf.projects)
+
+                    def _db_row_keeps(eid: str) -> bool:
+                        # Same predicate as ``_scope_filter_keeps``, sourced from
+                        # the row itself (no shadow metadata.json exists for it).
+                        _aref, scope, pid = db_rows[eid]
+                        if scope == "user":
+                            return sf.user
+                        if scope == "project":
+                            return str(pid or "") in sf_projects
+                        return True
+
                     missing = [
                         eid for eid in missing
-                        if _scope_filter_keeps(opts.scope_filter, type_name, eid)
+                        if (
+                            _scope_filter_keeps(sf, type_name, eid)
+                            if eid in disk_ids
+                            else _db_row_keeps(eid)
+                        )
                     ]
                     if not missing:
                         continue
 
                 orphan_records[rt] = missing
+                if db_rows_known:
+                    orphan_sources[rt] = {
+                        eid: {"in_db": eid in db_rows, "on_disk": eid in disk_ids}
+                        for eid in missing
+                    }
 
             for rt, ids in orphan_records.items():
                 acc = per_type_counts.setdefault(
@@ -628,6 +676,7 @@ class FSIndexer:
                 if effective_orphan_action != OrphanAction.INDEX:
                     db_removed, disk_removed = await self._apply_orphan_action(
                         rt, ids, effective_orphan_action,
+                        id_sources=orphan_sources.get(rt),
                     )
 
                 acc["orphans_db_removed"] = db_removed

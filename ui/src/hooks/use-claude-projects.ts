@@ -332,7 +332,7 @@ export function useAllSkills(options: { enabled?: boolean } = {}) {
 
 /**
  * Get a display name for a Claude Code project.
- * Converts encoded names like "-Users-shlom-Documents-dev-test" to "~/Documents/dev/test"
+ * Converts encoded names like "-Users-alice-Documents-dev-test" to "~/Documents/dev/test"
  */
 export function getProjectDisplayName(project: ProjectListItem): string {
   // Use the last folder name from cwd

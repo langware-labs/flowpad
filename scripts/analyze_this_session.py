@@ -2,7 +2,7 @@
 session and report what happens end-to-end.
 
 Session under analysis: ff041ecd-bdb8-4bc4-b875-959a7913a958
-JSONL: ~/.claude/projects/-Users-shlom-Documents-dev-flowpad-oss/<sid>.jsonl
+JSONL: ~/.claude/projects/<encoded repo path>/<sid>.jsonl
 
 Notable real-world finding: this session was driven through plan-mode
 attachments (`"attachment":{"type":"plan_mode",...}`) rather than explicit
@@ -37,7 +37,8 @@ from flow_sdk.transcript_analyzer.entries.exit_plan_mode import ExitPlanModeEntr
 from flow_sdk.transcript_analyzer.transcript import AgentTranscriptFile
 
 SESSION_ID = "ff041ecd-bdb8-4bc4-b875-959a7913a958"
-ENCODED_PROJECT = "-Users-shlom-Documents-dev-flowpad-oss"
+# Claude projects-dir encoding of this checkout's absolute path ("/" → "-")
+ENCODED_PROJECT = str(Path(__file__).resolve().parents[1]).replace("/", "-")
 JSONL = (
     Path.home() / ".claude" / "projects" / ENCODED_PROJECT / f"{SESSION_ID}.jsonl"
 )

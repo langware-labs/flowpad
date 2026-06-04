@@ -48,6 +48,13 @@ class TypeMetadata:
     # through, create persists the entity + asset_ref but never writes the file
     # (the "File is missing" workflow bug).
     default_body_fn: Any = None
+    # True ⇒ the entity is the sole editor of its backing file: every entity
+    # save re-renders the file from ``default_body_fn`` (not just create), so
+    # entity-side edits (e.g. a dialog changing frontmatter fields) reach the
+    # on-disk source of truth instead of silently diverging until the next
+    # rescan reverts them. Leave False for files users also edit by hand in
+    # other editors (the markdown family).
+    owns_main_ref: bool = False
     # Per-type pydantic metadata model — the FS↔DB schema (see TypeInfo.meta_model).
     meta_model: Any = None
 
@@ -68,6 +75,7 @@ class TypeMetadata:
             asset_hash_fn=self.asset_hash_fn,
             post_sync_fn=self.post_sync_fn,
             default_body_fn=self.default_body_fn,
+            owns_main_ref=self.owns_main_ref,
             meta_model=self.meta_model,
             locations=["index"],
             metadata=self,

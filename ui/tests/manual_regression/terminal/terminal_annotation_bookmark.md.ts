@@ -76,13 +76,23 @@ test.describe('terminal_annotation_bookmark', () => {
     const gutter = page.locator('[data-testid="annotation-gutter"]').first();
     await expect(gutter).toBeAttached({ timeout: 10_000 });
 
-    // ── Step 2: Click first "+" button in annotation gutter ───────────────────
+    // ── Step 2: Click a "+" button in the annotation gutter ───────────────────
+    // Target a mid-gutter cell, not .last(): the bottom cell sits below the
+    // viewport (clipped) and the empty cells are opacity-0 + occluded, so only a
+    // force-click reaches them. The gutter also re-renders as the PTY streams, so
+    // re-resolve the trigger inside the poll (recount + re-pick mid) and retry the
+    // force-click within the same 5s budget — a detach just retries cleanly.
     const gutterTriggers = gutter.locator('[aria-haspopup="dialog"]');
-    const plusBtn = gutterTriggers.last();
-    await plusBtn.click({ force: true });
+    const popover = page.locator('[data-radix-popper-content-wrapper]');
+    await expect(async () => {
+      const n = await gutterTriggers.count();
+      const plusBtn = gutterTriggers.nth(Math.floor(n / 2));
+      await plusBtn.scrollIntoViewIfNeeded().catch(() => {});
+      await plusBtn.click({ force: true }).catch(() => {});
+      await expect(popover).toBeVisible({ timeout: 800 });
+    }).toPass({ timeout: 5_000 });
 
     // ── Step 3: Select "Bookmark" from the annotation type picker ─────────────
-    const popover = page.locator('[data-radix-popper-content-wrapper]');
     await expect(popover).toBeVisible({ timeout: 5_000 });
     const bookmarkBtn = popover.getByText('Bookmark').first();
     await expect(bookmarkBtn).toBeVisible({ timeout: 3_000 });

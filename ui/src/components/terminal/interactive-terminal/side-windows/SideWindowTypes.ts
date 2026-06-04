@@ -23,7 +23,7 @@ export const SIDE_TABS: Record<SideTabId, SideTabDescriptor> = {
   shell:   { id: 'shell',   label: 'Shell',   icon: SquareTerminal, description: 'Sidecar plain shell alongside Claude Code' },
   git:     { id: 'git',     label: 'Git',     icon: GitBranch,      description: 'Git status of the working directory' },
   prompts: { id: 'prompts', label: 'Prompts', icon: MessageSquare,  description: 'Index of prompts sent in this session' },
-  queue:   { id: 'queue',   label: 'Queue',   icon: ListOrdered,    description: 'Queued prompts to send when the session becomes idle' },
+  queue:   { id: 'queue',   label: 'Queue',   icon: ListOrdered,    description: 'Prompts queued for this agent; the backend injects each when the worker is ready' },
   files:   { id: 'files',   label: 'Files',   icon: Paperclip,      description: 'Input files attached to this session' },
   dir:     { id: 'dir',     label: 'Dir',     icon: FolderTree,     description: 'Browse the working directory' },
   context: { id: 'context', label: 'Context', icon: Layers,         description: 'Context entities attached to this process — plans, skills, project, …' },

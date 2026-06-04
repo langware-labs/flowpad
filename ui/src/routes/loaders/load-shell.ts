@@ -313,6 +313,17 @@ async function routePlainShellPointer(pointer: string): Promise<void> {
     throw replace(`/dock/shell/${linkedProcess.terminalDockPointer.pointer}`);
   }
 
+  // Cache miss — cold navigation (hard refresh / deep link / page.goto): the
+  // loader runs before useActiveTerminals warms the cache. The shell carries
+  // its owner directly (Shell.agentic_process_id, the reverse of
+  // AgenticProcess.shell_id), so a plain get-by-id resolves ownership — no
+  // reverse scan over processes.
+  const shell = await Shell.getById<Shell>(shellId).catch(() => null);
+  if (shell?.agentic_process_id) {
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
+    throw replace(`/dock/shell/${new TypeId(AgenticProcess.type, shell.agentic_process_id).toString()}`);
+  }
+
   try {
     await loadShell(shellId);
     return;

@@ -18,7 +18,6 @@ import { useContext } from '@src/hooks/useContext';
 import { useInputDir } from '@src/hooks/use-input-dir';
 import { useInstancePreferences } from '@src/hooks/use-instance-preferences';
 import { DockPointer, useDockNavigation } from '@src/navigation';
-import { useAgenticQueue } from '@src/hooks/useAgenticQueue';
 import { useFS } from '@src/hooks/useFS';
 import { useShell } from '@src/hooks/useShell';
 import { FitAddon } from '@xterm/addon-fit';
@@ -320,13 +319,6 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       pushSideTabs({ tabs, active: tab });
     },
     [sideWindowTabs, activeSideTab, pushSideTabs],
-  );
-
-  // Queue hook — idle injection of queued prompts
-  const { queue, addEntry, removeEntry, setEnabled, moveEntry } = useAgenticQueue(
-    process?.id,
-    processIsActive,
-    shellRef,
   );
 
   // Input dir info for file attachment workflow.
@@ -1488,21 +1480,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
                   <PromptIndexPanel prompts={mergedPrompts} onScrollToLine={scrollAnnotationToLine} />
                 )}
                 {activeSideTab === SideTabId.Queue && process && (
-                  <QueuePanel
-                    queue={queue}
-                    onAdd={(e) => {
-                      void addEntry(e);
-                    }}
-                    onRemove={(i) => {
-                      void removeEntry(i);
-                    }}
-                    onMove={(i, d) => {
-                      void moveEntry(i, d);
-                    }}
-                    onSetEnabled={(v) => {
-                      void setEnabled(v);
-                    }}
-                  />
+                  <QueuePanel process={process} />
                 )}
                 {activeSideTab === SideTabId.Files && inputDirInfo && (
                   <InputFilesPanel
@@ -1539,13 +1517,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
           fileCount={fileCount}
           isActive={processIsActive}
           promptCount={mergedPrompts.length}
-          queue={queue}
-          onQueueAdd={(e) => {
-            void addEntry(e);
-          }}
-          onQueueRemove={(i) => {
-            void removeEntry(i);
-          }}
+          process={process}
           openTabs={ribbonOpenTabs}
           activeSideTab={ribbonActiveSideTab}
           onOpenSideTab={(tab) => {
