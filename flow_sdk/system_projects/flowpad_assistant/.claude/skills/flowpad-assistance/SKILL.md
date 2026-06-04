@@ -29,6 +29,9 @@ description: |
       ``flow`` CLI command for this). Triggered by "send X to my conversation
       with Y", "attach this doc to the Z conversation", "message Y the report".
       See ``message.md``.
+  NOT handled here: building a website / web app / SaaS / dashboard — even when
+  phrased as "using flowpad assistant". That is the separate ``web-app-builder``
+  skill (copy-as-is template + setup); invoke it instead of the records action.
 tags:
 - flowpad
 - ui
@@ -54,6 +57,13 @@ allowed-tools:
 # Flowpad assistance
 
 A multi-action skill for the Flowpad app. Identify the requested action from the user message, then follow the matching section/file below. Actions can be composed: a request like *"create a task and open it"* is `records` (creating) followed by `navigate` (opening).
+
+> **Building a website or web app is not an action of this skill.** If the
+> user asks to build/create a website, web app, SaaS, dashboard, or landing
+> page — even phrased as "build me a website using flowpad assistant" — stop
+> and invoke the `web-app-builder` skill, which bootstraps a tested full-stack
+> template into the session's working directory. Do not hand-write HTML/JS
+> files or route this through `records`.
 
 ## Action: context
 
