@@ -29,3 +29,11 @@ export * from './types/index';
 export * from './schema/index';
 export { FSRef } from './fs/FSRef';
 export { FrontMatterFsRef } from './fs/FrontMatterFsRef';
+export type {
+  PathContextData,
+  PlanContextData,
+  MarkdownContextData,
+  SkillContextData,
+  ClaudeMdContextData,
+  ClaudeCommandContextData,
+} from './context-data-schemas';

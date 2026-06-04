@@ -87,23 +87,27 @@ export function useProcessAssets(
         const synthetic: AssetDescriptor[] = [
           ...agentsRef.current.map<AssetDescriptor>((a) => ({
             typeid: `agent-${a.id}`,
-            source: 'user_dir',
+            source: a.project_id ? 'project_dir' : 'user_dir',
             posix_path: (a as { asset_ref?: string }).asset_ref ?? null,
+            project_id: a.project_id ?? null,
           })),
           ...skillsRef.current.map<AssetDescriptor>((s) => ({
             typeid: `skill-${s.id}`,
-            source: 'user_dir',
+            source: s.project_id ? 'project_dir' : 'user_dir',
             posix_path: (s as { asset_ref?: string }).asset_ref ?? null,
+            project_id: s.project_id ?? null,
           })),
           ...markdownsRef.current.map<AssetDescriptor>((m) => ({
             typeid: `markdown-${m.id}`,
             source: m.project_id ? 'project_dir' : 'user_dir',
             posix_path: (m as { asset_ref?: string }).asset_ref ?? null,
+            project_id: m.project_id ?? null,
           })),
           ...specsRef.current.map<AssetDescriptor>((s) => ({
             typeid: `spec-${s.id}`,
-            source: 'user_dir',
+            source: s.project_id ? 'project_dir' : 'user_dir',
             posix_path: null,
+            project_id: s.project_id ?? null,
           })),
         ];
         if (tickRef.current === tick) setDescriptors(synthetic);

@@ -48,7 +48,7 @@ async def main(target: Path) -> int:
         from flow_sdk.config import ComputeProviderType, StorageProvider
         from flow_sdk.flowpad_types.enums import WorkerType
         from flow_sdk.flowpad_types.runtime_environment import RuntimeEnvironment
-        from flow_sdk.fs_records.agent_record import AgentRecord
+        from flow_sdk.fs_store.fs_record import FSRecord as AgentRecord
         from flow_sdk.server.routes.bootstrap import _new_provider_id
 
         # Prerequisites the AgenticProcess driver expects (mirrors the

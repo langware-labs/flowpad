@@ -1,13 +1,15 @@
-"""``AgentTranscript`` — eager-parsed unified transcript across workers."""
+"""``AgentTranscriptFile`` — eager-parsed unified transcript across workers."""
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Iterator
 
 from .entries import (
+    AssistantMessageEntry,
     ExitPlanModeEntry,
     FileEditEntry,
     FileReadEntry,
@@ -43,12 +45,17 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class AgentTranscript:
+class AgentTranscriptFile:
     """Parsed view of a single agent's transcript JSONL file.
 
     Construction is eager: the file is read, every line dispatched through
-    the worker-specific ``Parser``, and ``self.entries`` is populated. This
-    matches v1's static-only scope; live event streams are not handled here.
+    the worker-specific ``Parser``, and ``self.entries`` is populated.
+
+    Also supports **incremental delta parsing** via ``parse_delta()`` —
+    the same parser instance is fed new lines appended to the file since
+    the previous call. The retained un-folded buffer keeps folding correct
+    across delta boundaries. See ``TranscriptStreamer`` for the runtime
+    that consumes this.
     """
 
     def __init__(
@@ -66,7 +73,23 @@ class AgentTranscript:
         )
         parser_cls = get_parser_class(worker_type, self.transcript_format)
         self._parser = parser_cls(session_id=session_id)
-        self.entries: list[TranscriptEntry] = self._parse()
+
+        # ── delta state ──
+        # Bytes already consumed from the file.
+        self._byte_offset: int = 0
+        # Monotonic line counter passed to parser.feed(raw, idx).
+        self._line_idx: int = 0
+        # Pre-fold retained list. Folding spans delta boundaries, so we must
+        # refold the FULL list every call — partial folding would lose
+        # entries split across two appends (e.g. one assistant message
+        # written across multiple JSONL lines sharing entry_id).
+        self._unfolded: list[TranscriptEntry] = []
+        # Cut index into folded ``self.entries`` for the delta API.
+        self._last_emitted: int = 0
+        self.entries: list[TranscriptEntry] = []
+
+        # Initial read.
+        self._read_and_fold()
 
     @property
     def session_id(self) -> str:
@@ -75,29 +98,144 @@ class AgentTranscript:
 
     # ── parsing ──────────────────────────────────────────────────────────────
 
-    def _parse(self) -> list[TranscriptEntry]:
-        out: list[TranscriptEntry] = []
+    def _read_and_fold(self) -> list[TranscriptEntry]:
+        """Read new bytes from ``_byte_offset`` to last newline, feed parser,
+        append to ``_unfolded``, refold full retained list, set ``self.entries``.
+
+        Trailing incomplete line (no final ``\\n``) is buffered until the next
+        call. Truncate/rewrite resets state and re-parses from offset 0.
+        """
         if not self.path.exists():
-            logger.debug("AgentTranscript: file not found at %s", self.path)
-            return out
+            return self.entries
+
         try:
-            with self.path.open("r", encoding="utf-8") as f:
-                for idx, line in enumerate(f):
-                    line = line.strip()
-                    if not line:
-                        continue
-                    try:
-                        raw = json.loads(line)
-                    except json.JSONDecodeError:
-                        logger.debug(
-                            "AgentTranscript: skipping malformed JSONL line %d in %s",
-                            idx, self.path,
-                        )
-                        continue
-                    out.extend(self._parser.feed(raw, idx))
+            file_size = self.path.stat().st_size
         except OSError as exc:
-            logger.debug("AgentTranscript: read failed %s: %s", self.path, exc)
-        return self._fold_tool_results(out)
+            logger.debug("AgentTranscriptFile: stat failed %s: %s", self.path, exc)
+            return self.entries
+
+        # Truncate / rewrite — file shrank. Reset everything.
+        if file_size < self._byte_offset:
+            self._reset_state()
+
+        try:
+            with self.path.open("rb") as f:
+                f.seek(self._byte_offset)
+                new_bytes = f.read()
+        except OSError as exc:
+            logger.debug("AgentTranscriptFile: read failed %s: %s", self.path, exc)
+            return self.entries
+
+        if not new_bytes:
+            return self.entries
+
+        # Partial-line buffering: consume only up to the last complete line.
+        last_newline = new_bytes.rfind(b"\n")
+        if last_newline == -1:
+            # No complete line yet — defer until next call.
+            return self.entries
+        complete_part = new_bytes[: last_newline + 1]
+        self._byte_offset += len(complete_part)
+
+        for raw_line in complete_part.decode("utf-8", errors="replace").splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            try:
+                raw = json.loads(line)
+            except json.JSONDecodeError:
+                logger.debug(
+                    "AgentTranscriptFile: skipping malformed JSONL line %d in %s",
+                    self._line_idx, self.path,
+                )
+                self._line_idx += 1
+                continue
+            self._unfolded.extend(self._parser.feed(raw, self._line_idx))
+            self._line_idx += 1
+
+        # Refold the FULL retained list — folds may span delta boundaries.
+        # Both fold passes mutate the survivor entry in place (assistant_messages
+        # joins `.text`/`.thinking`; tool_results writes ``stdout_preview`` /
+        # ``content_preview`` / ``exit_code`` / etc. on the call entry). With
+        # repeated folds (one per delta), an in-place mutation from an earlier
+        # fold would feed back into the next fold's input — producing duplicated
+        # joined text and other re-mutation artifacts. We fold over shallow
+        # copies so ``self._unfolded`` stays pristine across delta boundaries.
+        snapshot = [copy.copy(e) for e in self._unfolded]
+        folded = self._fold_assistant_messages(snapshot)
+        self.entries = self._fold_tool_results(folded)
+        return self.entries
+
+    def _reset_state(self) -> None:
+        """Reset delta state + parser; preserves the resolved session_id so the
+        parser doesn't lose it on truncate/rewrite. Used by truncate detection
+        and ``force_reparse``."""
+        session_id = self._parser.session_id
+        parser_cls = get_parser_class(self.worker_type, self.transcript_format)
+        self._parser = parser_cls(session_id=session_id)
+        self._byte_offset = 0
+        self._line_idx = 0
+        self._unfolded = []
+        self._last_emitted = 0
+        self.entries = []
+
+    def parse_delta(self) -> list[TranscriptEntry]:
+        """Read new bytes since the previous call and return only entries
+        appended since the previous call.
+
+        Idempotent within the same offset state — calling repeatedly without
+        new file content returns []. After ``__init__``, the constructor's
+        initial read counts as "unseen" until the first ``parse_delta`` call,
+        which returns ALL entries. The streamer uses this to flush history
+        to subscribers on first notification.
+        """
+        previous_count = self._last_emitted
+        self._read_and_fold()
+        new_only = self.entries[previous_count:]
+        self._last_emitted = len(self.entries)
+        return new_only
+
+    def force_reparse(self) -> None:
+        """Reset offset/state to 0 and re-read the full file. Next ``parse_delta``
+        re-emits the entire history. Debug knob; used by ``streamer.force_reparse``.
+        """
+        self._reset_state()
+        self._read_and_fold()
+
+    @staticmethod
+    def _fold_assistant_messages(
+        entries: list[TranscriptEntry],
+    ) -> list[TranscriptEntry]:
+        """Merge same-entry_id AssistantMessageEntry rows (Claude writes one
+        line per content block sharing the same message.id). Semantic tool
+        entries keep their own row.
+        """
+        groups: dict[str, list[AssistantMessageEntry]] = {}
+        for e in entries:
+            if not isinstance(e, AssistantMessageEntry) or not e.entry_id:
+                continue
+            groups.setdefault(e.entry_id, []).append(e)
+
+        if not any(len(g) > 1 for g in groups.values()):
+            return entries
+
+        dropped_ids: set[int] = set()
+        for grp in groups.values():
+            if len(grp) <= 1:
+                continue
+            survivor = grp[0]
+            texts: list[str] = [survivor.text] if survivor.text else []
+            thinkings: list[str] = [survivor.thinking] if survivor.thinking else []
+            for extra in grp[1:]:
+                if extra.text:
+                    texts.append(extra.text)
+                if extra.thinking:
+                    thinkings.append(extra.thinking)
+                dropped_ids.add(id(extra))
+            survivor.text = "\n".join(texts) if texts else ""
+            survivor.thinking = "\n".join(thinkings) if thinkings else None
+
+        return [e for e in entries if id(e) not in dropped_ids]
 
     @staticmethod
     def _fold_tool_results(entries: list[TranscriptEntry]) -> list[TranscriptEntry]:
@@ -284,14 +422,12 @@ class AgentTranscript:
 
     @property
     def latest_plan(self) -> ToolUseEntry | None:
-        """Most recent plan-emitting tool_use across workers, or None.
+        """Most recent ``ExitPlanModeEntry`` across workers, or None.
 
-        Recognizes:
-          * ``ExitPlanMode`` — claude (returns the ``ExitPlanModeEntry``
-            subclass; ``plan_file_path`` is a real file claude wrote to disk).
-          * ``update_plan`` — codex (returns a generic ``ToolUseEntry``;
-            ``tool_input`` carries ``{explanation, plan: [{step, status}]}``
-            inline — the caller materializes the file).
+        Both Claude and Codex emit ``ExitPlanModeEntry`` (Codex synthesized
+        from its ``<proposed_plan>`` marker by the Codex parser). The Codex
+        TODO-checklist tool (``update_plan``) is intentionally NOT matched
+        here — per Codex's own developer prompt it is unrelated to Plan Mode.
 
         Used by ``AgenticProcess._transcript_plan`` to drive the UI's
         "Open last plan" button uniformly across workers.
@@ -299,7 +435,7 @@ class AgentTranscript:
         for entry in reversed(self.entries):
             if not isinstance(entry, ToolUseEntry):
                 continue
-            if entry.tool_name in ("ExitPlanMode", "update_plan"):
+            if entry.tool_name == "ExitPlanMode":
                 return entry
         return None
 

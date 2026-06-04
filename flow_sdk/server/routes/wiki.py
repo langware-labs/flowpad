@@ -71,8 +71,19 @@ async def resolve_wiki_link(
         None,
         description="When multiple candidates match, prefer this record type.",
     ),
+    space: str = Query(
+        "@local",
+        description="The space the name resolves within (default '@local' = the local instance).",
+    ),
 ):
-    """Resolve a wikilink target by name."""
+    """Resolve a wikilink target by name within a space.
+
+    ``space`` is the org/scope separator from the ``wiki/<space>/<name>`` URL.
+    Only ``@local`` (the local store) is supported today; the parameter is
+    accepted so the URL contract is stable for future remote/workspace spaces.
+    """
+    if space and space != "@local":
+        logger.warning("[wiki/resolve] non-local space %r not yet supported; resolving locally", space)
     candidates = await get_async_default_store().find_entities_by_uname_or_name(name)
     if not candidates:
         return JSONResponse(content=None)

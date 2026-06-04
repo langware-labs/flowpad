@@ -17,7 +17,6 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from flow_sdk.fs_store import get_default_records_root, set_default_records_root
-from flow_sdk.fs_records.skill_record import SkillRecord  # noqa: F401 — trigger registration
 from flow_sdk.server.app import app
 from starlette.testclient import TestClient
 

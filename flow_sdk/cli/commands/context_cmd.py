@@ -16,13 +16,17 @@ Error contract (parsed by the agent — keep stable):
 
 from __future__ import annotations
 
-import json
-import os
-from typing import Any, Optional
+from typing import Optional
 
 import requests
 import typer
 from typing_extensions import Annotated
+
+from flow_sdk.cli.commands._common import (
+    discover_port as _discover_port,
+    fail as _fail,
+    ok as _ok,
+)
 
 
 context_app = typer.Typer(
@@ -39,25 +43,6 @@ EXIT_INVALID_ARG = 2
 EXIT_NO_ACTIVE_TAB = 3
 EXIT_NOT_FOUND = 4
 EXIT_CONNECTION_ERROR = 5
-
-
-def _discover_port() -> int:
-    from flow_sdk.discovery.flowpad_discovery import read_server_info
-
-    info = read_server_info()
-    if info:
-        return info.port
-    return int(os.environ.get("LOCAL_SERVER_PORT", "9007"))
-
-
-def _fail(exit_code: int, error_code: str, message: str) -> None:
-    typer.echo(f"Error: {message}", err=True)
-    typer.echo(json.dumps({"ok": False, "error_code": error_code, "error": message}), err=True)
-    raise typer.Exit(exit_code)
-
-
-def _ok(payload: dict[str, Any]) -> None:
-    typer.echo(json.dumps({"ok": True, **payload}))
 
 
 @context_app.command(

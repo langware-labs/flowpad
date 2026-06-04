@@ -1,5 +1,6 @@
 export * from './Membership';
 export * from './TypeId';
+export * from './asset-editor';
 export * from './ApiUrl';
 export * from './ActionInfo';
 export * from './BootstrapInfo';

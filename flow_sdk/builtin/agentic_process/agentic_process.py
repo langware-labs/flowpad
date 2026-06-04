@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from functools import cached_property
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, List
+from typing import TYPE_CHECKING, Any, Callable, ClassVar, List
 from uuid import uuid4
 
 from pydantic import SerializationInfo, model_serializer, model_validator
@@ -41,21 +41,33 @@ from flow_sdk.builtin.agentic_process.cli_drivers.claude import (
 from flow_sdk.core import Entity, action
 from flow_sdk.core.flow.streaming.response_handler import StreamingResponseHandler
 from flow_sdk.flowpad_types.enums import ProcessType, WorkerType
-from flow_sdk.fs_records.agent_status import WorkerStatus, is_terminal as is_worker_terminal
-from flow_sdk.fs_records.agentic_process_lifecycle import ProcessStatus
+from flow_sdk.builtin.worker_status import WorkerStatus, is_terminal as is_worker_terminal
+from flow_sdk.builtin.process_lifecycle import ProcessStatus
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.builtin.agentic_process.status_predicates import is_ready_for_input
-from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
+from flow_sdk.builtin.agentic_process.status_predicates import is_ready_for_input, is_process_startable
+from flow_sdk.fs_store.indexer.functions.claude_sessions import get_claude_session
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 
 if TYPE_CHECKING:
+    from flow_sdk.builtin.agentic_process.prompt_queue import PromptQueue
     from flow_sdk.builtin.faas.compute_node import ComputeNode
     from flow_sdk.builtin.shell import Shell
-    from flow_sdk.transcript_analyzer import AgentTranscript
+    from flow_sdk.transcript_analyzer import AgentTranscriptFile
     from flow_sdk.transcript_analyzer.entries.tool_use import ToolUseEntry
 
 logger = logging.getLogger(__name__)
+
+# Detached background tasks that must outlive the request that spawned them
+# (e.g. ``self-restart``, which kills the very worker — and therefore the CLI
+# child process — that issued the request). ``asyncio`` only holds a weak
+# reference to running tasks, so without a strong ref here they could be
+# garbage-collected mid-flight. Tasks remove themselves on completion.
+_DETACHED_TASKS: set["asyncio.Task"] = set()
+
+# Grace period before a detached self-restart tears down the worker, giving the
+# HTTP response time to flush back to the (about-to-die) caller.
+_SELF_RESTART_GRACE_S = 0.5
 
 
 # ── Asset descriptors ──────────────────────────────────────────────────────────
@@ -126,6 +138,10 @@ _PROMPT_WORKERS: dict[str, Any] = {}
 # concurrent refresh-driven calls can't both run recovery on the same process.
 _OPEN_LOCKS: dict[str, asyncio.Lock] = {}
 
+# Per-process serialization for prompt-queue drains so two ready edges can't
+# pop+inject the same head twice.
+_QUEUE_LOCKS: dict[str, asyncio.Lock] = {}
+
 
 # Worker statuses for which an OS-pid liveness reconciliation is meaningful.
 # Terminal statuses (COMPLETE, ERROR, INTERRUPTED, INACTIVE) already encode the
@@ -137,6 +153,16 @@ _NON_TERMINAL_WORKER_STATUSES = frozenset({
     WorkerStatus.TOOL_RUNNING,
     WorkerStatus.TOOL_CALL,
     WorkerStatus.UNKNOWN,
+})
+
+# Underlying terminal statuses eligible for the PENDING_USER / INACTIVE
+# projection in ``_discover_status_from_transcript``. INACTIVE / API_TIMEOUT
+# are excluded — they're already terminal-with-cause and don't get the
+# user-facing 5-min grace window.
+_PROJECTABLE_TERMINAL = frozenset({
+    WorkerStatus.COMPLETE,
+    WorkerStatus.ERROR,
+    WorkerStatus.INTERRUPTED,
 })
 
 
@@ -153,7 +179,7 @@ def _shell_worker_pid_alive(shell_id: str) -> bool:
 
         import psutil as _psutil
 
-        from flow_sdk.fs_store.record import get_default_records_data_root, record_stem
+        from flow_sdk.fs_store.record_paths import get_default_records_data_root, record_stem
 
         path = (
             get_default_records_data_root()
@@ -199,6 +225,26 @@ def _get_open_lock(process_id: str) -> asyncio.Lock:
     return lock
 
 
+def _get_queue_lock(process_id: str) -> asyncio.Lock:
+    lock = _QUEUE_LOCKS.get(process_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        _QUEUE_LOCKS[process_id] = lock
+    return lock
+
+
+async def _read_json_body() -> dict | ApiFailResponse:
+    """JSON object body of the current request, or an ``ApiFailResponse``
+    the action can return as-is."""
+    request_info = get_current_request_info()
+    if not request_info:
+        return ApiFailResponse(message="No request info")
+    body = await request_info.get_post_data()
+    if not isinstance(body, dict):
+        return ApiFailResponse(message="Expected JSON object body")
+    return body
+
+
 def _write_plan_frontmatter(file_path: str, fields: dict) -> None:
     """Upsert YAML frontmatter key/values in a plan .md file."""
     import re
@@ -225,63 +271,6 @@ def _write_plan_frontmatter(file_path: str, fields: dict) -> None:
         )
         new_content = f"---\n{lines}\n---\n{content}"
     p.write_text(new_content, encoding="utf-8")
-
-
-def _render_codex_plan_markdown(tool_input: dict) -> str:
-    """Render a codex ``update_plan`` tool_input dict to a markdown checklist.
-
-    Codex's plan-mode emits plans as ``{explanation, plan: [{step, status}]}``
-    where ``status`` ∈ ``pending``/``in_progress``/``completed``. We render
-    completed steps as ticked, in-progress with an explicit marker, and
-    pending as unticked.
-    """
-    explanation = str(tool_input.get("explanation") or "").strip()
-    steps = tool_input.get("plan") or []
-    lines: list[str] = ["# Plan", ""]
-    if explanation:
-        lines.append(explanation)
-        lines.append("")
-    if isinstance(steps, list):
-        for step in steps:
-            if not isinstance(step, dict):
-                continue
-            text = str(step.get("step") or "").strip()
-            status = str(step.get("status") or "").strip().lower()
-            if not text:
-                continue
-            if status == "completed":
-                lines.append(f"- [x] {text}")
-            elif status == "in_progress":
-                lines.append(f"- [ ] **(in progress)** {text}")
-            else:
-                lines.append(f"- [ ] {text}")
-    return "\n".join(lines) + "\n"
-
-
-def _materialize_codex_update_plan(entry: "ToolUseEntry", session_key: str) -> str:
-    """Write a codex ``update_plan`` tool_use to ``<flow_home>/plans/codex/<key>.md``.
-
-    Codex's plan is structured JSON in the ``function_call`` args, not a
-    file claude-style. The flowpad UI's "Open last plan" button still
-    expects a file path, so we render and write each plan update into a
-    flowpad-managed location keyed on the session id (or the agentic
-    process id when the session id is missing). The file is overwritten
-    on every call so step-status updates are visible immediately.
-
-    Returns the absolute path written, or "" if rendering failed.
-    """
-    from flow_sdk.instance_settings import get_instance_settings
-
-    try:
-        plan_dir = get_instance_settings().flow_home / "plans" / "codex"
-        plan_dir.mkdir(parents=True, exist_ok=True)
-        safe_key = (session_key or "session").replace("/", "_").replace("\\", "_")
-        plan_path = plan_dir / f"{safe_key}.md"
-        plan_path.write_text(_render_codex_plan_markdown(entry.tool_input or {}), encoding="utf-8")
-        return str(plan_path)
-    except Exception:
-        logger.exception("AgenticProcess: failed to materialize codex update_plan to disk")
-        return ""
 
 
 async def _index_additional_dir(path: str) -> None:
@@ -319,90 +308,18 @@ async def _index_session_on_close(session_id: str, display_name: str | None = No
                   when the JSONL has no user-set custom-title.
     """
     try:
-        from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
-        record = ClaudeSessionRecord.get(session_id)
+        record = get_claude_session(session_id)
         if record:
             if display_name:
                 inst = object.__getattribute__(record, "__dict__")
                 if not inst.get("custom_title"):
-                    record.name = display_name
-                    _ = record.search_content  # populate _fts_cache
-                    cache = inst.get("_fts_cache")
-                    object.__setattr__(
-                        record, "_fts_cache",
-                        (display_name[:120], cache[1] if cache else None),
-                    )
+                    # Base search_title reads record.name → FTS title becomes
+                    # the truncated display_name.
+                    record.name = display_name[:120]
             await record.sync_to_db()
             logger.debug("[AgenticProcess] indexed session %s on close", session_id)
     except Exception:
         logger.debug("[AgenticProcess] failed to index session %s on close", session_id, exc_info=True)
-
-
-async def _poll_for_completion(agentic_process_id: str, _session_id: str | None) -> None:
-    """Background task: poll the transcript until terminal worker_status, then save.
-
-    Called from AgenticProcess.start_pty() after launching the worker. The
-    transcript path and tail-status calculation are driver-owned so Claude and
-    Codex visible processes follow the same status flow.
-    """
-    TERMINAL = {WorkerStatus.COMPLETE, WorkerStatus.ERROR, WorkerStatus.INTERRUPTED}
-
-    await asyncio.sleep(1)  # give the worker time to start and write the first JSONL entry
-    for _ in range(1800):  # poll up to 30 min (1800 * 1 s)
-        await asyncio.sleep(1)
-        try:
-            # Fetch entity fresh from DB — use module-level AgenticProcess via
-            # globals() to avoid forward-reference issues (class defined below).
-            _AgenticProcess = globals().get("AgenticProcess")
-            if _AgenticProcess is None:
-                return
-            proc = await _AgenticProcess.get_by_id(agentic_process_id)
-            if proc is None:
-                return  # entity deleted
-
-            new_status = proc._discover_status_from_transcript()
-            if new_status is None:
-                continue  # transcript not written yet
-            try:
-                status_enum = WorkerStatus(str(new_status))
-            except ValueError:
-                continue
-
-            if status_enum == WorkerStatus.API_TIMEOUT:
-                await proc._on_timeout()
-                continue  # keep polling — visible may recover; invisible will go INACTIVE
-
-            if status_enum not in TERMINAL:
-                continue  # still running or unknown
-
-            if proc.status in {
-                ProcessStatus.STOPPING.value,
-                ProcessStatus.STOPPED.value,
-                ProcessStatus.FAILED.value,
-            }:
-                return  # already up to date — WS was already sent
-
-            if await proc.is_running():
-                await proc.notify_updated()
-                logger.info(
-                    "AgenticProcess %s: completion monitor broadcast worker_status=%s with lifecycle=%s",
-                    agentic_process_id,
-                    new_status,
-                    proc.status,
-                )
-                return
-
-            proc.status = ProcessStatus.STOPPED.value
-            await proc.save()
-            logger.info(
-                "AgenticProcess %s: completion monitor set lifecycle=%s worker_status=%s",
-                agentic_process_id,
-                proc.status,
-                new_status,
-            )
-            return
-        except Exception:
-            logger.debug("_poll_for_completion error for %s", agentic_process_id, exc_info=True)
 
 
 def _build_run_result(proc: "AgenticProcess") -> "RunResult":
@@ -414,11 +331,11 @@ def _build_run_result(proc: "AgenticProcess") -> "RunResult":
     token_usage: dict | None = None
     if proc.session_id:
         try:
-            record = ClaudeSessionRecord.get(proc.session_id)
+            record = get_claude_session(proc.session_id)
             if record:
-                text = record.last_assistant_text or ""
-                models_used = list(record.models_used) if hasattr(record, "models_used") else []
-                token_usage = record.token_usage if hasattr(record, "token_usage") else None
+                text = getattr(record, "last_assistant_text", None) or ""
+                models_used = list(getattr(record, "models_used", []) or [])
+                token_usage = getattr(record, "token_usage", None)
         except Exception:
             pass
 
@@ -444,6 +361,7 @@ def _build_run_result(proc: "AgenticProcess") -> "RunResult":
 
 class AgenticProcess(Entity):
     _api_visible = True
+    _icon: ClassVar[str | None] = "Workflow"
     type: str = APIField(default="agentic_process")
 
     instruction_content: str | None = APIField(default=None)
@@ -457,7 +375,6 @@ class AgenticProcess(Entity):
     use_worker_history: bool = APIField(default=False)
     shell_mode: bool = APIField(default=False, description="False=direct PTY spawn (default), True=legacy zsh intermediary")
     project_id: str | None = APIField(default=None)
-    project_encoded_name: str | None = APIField(default=None)
     collaboration_room_id: str | None = APIField(
         default=None,
         description="CollaborationRoom this process was spawned in, if any",
@@ -494,6 +411,9 @@ class AgenticProcess(Entity):
     shell_id: str | None = APIField(default=None)
     sidecar_shell_id: str | None = APIField(default=None)
     visible: bool = APIField(default=False, description="Whether this process is visible in the tabs view")
+    last_active_at: str | None = APIField(
+        default=None, description="ISO timestamp of the tab's last activation (resolver recency seed)"
+    )
     auto_rename: bool = APIField(
         default=True,
         description=(
@@ -509,7 +429,6 @@ class AgenticProcess(Entity):
             "Null for legacy rows pre-dating this field."
         ),
     )
-    queue: dict | None = APIField(default=None)
     restart_required: bool = APIField(
         default=False,
         description=(
@@ -535,6 +454,15 @@ class AgenticProcess(Entity):
         ),
     )
     additional_dirs: list[str] = APIField(default_factory=list, description="Extra directories passed to Claude via --add-dir")
+    load_flowpad_assistant: bool | None = APIField(
+        default=None,
+        description=(
+            "Per-process override for mounting the Flowpad Assistant project "
+            "(--add-dir → its .claude/skills + agents become discoverable). "
+            "None inherits the global ServiceConfig.load_flowpad_assistant. "
+            "Resolve via the assistant_enabled property; the driver reads that."
+        ),
+    )
     embedded_agent_ids: list[str] = APIField(default_factory=list, description="Agent ids injected via --agents at session launch")
     embedded_asset_refs: list[TypeId] = APIField(
         default_factory=list,
@@ -552,6 +480,82 @@ class AgenticProcess(Entity):
             "affordance survives a refresh without re-running the line trigger."
         ),
     )
+    terminal_at: datetime | None = APIField(
+        default=None,
+        description=(
+            "Timestamp at which worker_status first entered a terminal state "
+            "(COMPLETE/ERROR/INTERRUPTED). Used by the serializer to project to "
+            "WorkerStatus.PENDING_USER for the first 5 minutes and INACTIVE after. "
+            "Cleared when the worker resumes (next non-terminal underlying status)."
+        ),
+    )
+
+    def tooltip_summary(self) -> dict[str, str | None]:
+        # cli_config.last_prompt is the eventual home for the most recent prompt,
+        # but nothing writes it today — fall back to instruction_content (the
+        # initial instruction, also what ProcessToolbar renders as the prompt
+        # banner). Strip so whitespace-only values don't render an empty line.
+        cfg = self.cli_config if isinstance(self.cli_config, dict) else {}
+        raw = cfg.get("last_prompt") or self.instruction_content or ""
+        if not isinstance(raw, str):
+            return {"name": self.name, "subtitle": None}
+        subtitle = raw.strip() or None
+        return {"name": self.name, "subtitle": subtitle}
+
+    # ── Binding freeze ────────────────────────────────────────────────────────
+    # Once an AgenticProcess has a ``session_id``, its ``project_id`` and
+    # ``workdir`` are frozen: the Claude/Codex transcript on disk is keyed to
+    # those values, and any later rewrite silently drifts the record away from
+    # where the jsonl actually lives (see 4c5bd6e4 incident — heal/recover
+    # paths re-stamped these fields against the active dock's project, while
+    # the session had been started elsewhere).
+    #
+    # ``_binding_lock_armed`` is flipped True by ``_arm_binding_lock`` after
+    # construction. Until armed, all writes pass through — Pydantic
+    # construction must be able to set the fields freely. Once armed,
+    # ``__setattr__`` refuses writes to ``project_id`` / ``workdir`` when
+    # ``session_id`` is set and the new value differs from the current one.
+    # The marker lives in ``__dict__`` (not a model field), so it isn't
+    # serialised and re-loaded entities re-arm via the same validator.
+
+    _BINDING_FROZEN_FIELDS: ClassVar[frozenset[str]] = frozenset(("project_id", "workdir"))
+
+    @model_validator(mode="after")
+    def _arm_binding_lock(self) -> "AgenticProcess":
+        # ``object.__setattr__`` bypasses our hook so the marker is set
+        # unconditionally even though the field isn't declared on the model.
+        object.__setattr__(self, "_binding_lock_armed", True)
+        return self
+
+    def __setattr__(self, key: str, value: Any) -> None:
+        # The freeze only refuses **rebinds** — writes that change one
+        # truthy value to a *different* truthy value — once
+        # ``session_id`` is set. Initialization from None (the
+        # ``get_project()`` lazy-fill path) and same-value writes are
+        # allowed; this prevents the silent re-stamp class of bugs while
+        # leaving normal lifecycle fills working.
+        #
+        # The lock is armed by ``_arm_binding_lock`` after construction,
+        # so Pydantic field assignment during ``__init__`` always passes
+        # through.
+        if (
+            key in AgenticProcess._BINDING_FROZEN_FIELDS
+            and self.__dict__.get("_binding_lock_armed")
+            and self.__dict__.get("session_id")
+        ):
+            current = self.__dict__.get(key)
+            if current and value and current != value:
+                logger.info(
+                    "[AgenticProcess %s] refused rebind of %s: binding frozen by session_id=%s "
+                    "(current=%r attempted=%r)",
+                    self.__dict__.get("id", "<no-id>"),
+                    key,
+                    self.__dict__.get("session_id"),
+                    current,
+                    value,
+                )
+                return
+        super().__setattr__(key, value)
 
     @model_validator(mode="after")
     def _bubble_process_type_from_context_data(self) -> "AgenticProcess":
@@ -681,10 +685,21 @@ class AgenticProcess(Entity):
         self.context_data = context
 
     async def _get_local_compute_node(self):
-        """Return the local compute node used for shell creation and recovery."""
+        """Return the local compute node used for shell creation and recovery.
+
+        Retry once on None — the @local compute_node is bootstrap-created and
+        never deleted, so a None result is always a transient cache/DB-contention
+        miss under heavy parallel writes (see Cluster #10 in debug_log.md). The
+        retry invalidates any stale uname_cache entry before the second lookup.
+        """
         from flow_sdk.builtin.faas.compute_node import ComputeNode
 
-        return await ComputeNode.get_by_uname("local")
+        cn = await ComputeNode.get_by_uname("local")
+        if cn is None:
+            from flow_sdk.core.cache.entity_cache import uname_cache
+            uname_cache.invalidate("compute_node", "local")
+            cn = await ComputeNode.get_by_uname("local")
+        return cn
 
     async def _drop_stale_shell(
         self,
@@ -883,12 +898,11 @@ class AgenticProcess(Entity):
             if execution_info is not None:
                 self._record_worker_started_at(execution_info.started_at)
 
-            if not worker_is_alive:
-                # Start background task to detect completion via transcript polling.
-                asyncio.create_task(
-                    _poll_for_completion(self.id, self.session_id),
-                    name=f"completion-monitor-{self.id[:8]}",
-                )
+            # Completion detection is now driven by the TranscriptStreamer
+            # subscriber (transcript_subscriber.py → on_transcript_change →
+            # _flush_transcript_change). Lifecycle flips to STOPPED/FAILED
+            # are handled by _on_pty_exit on real worker process death.
+            # No 1 Hz polling task needed any more.
 
             self.status = ProcessStatus.RUNNING.value
             # Capture snapshot of the freshly-launched config and clear the
@@ -972,13 +986,103 @@ class AgenticProcess(Entity):
             return exit_result
         return await self.start_pty()
 
-    def _bind_project_id(self, project_id: str) -> None:
-        """Set ``project_id`` and append the matching Project TypeId to the
-        process's shared context."""
+    @action.post(action_name="self-restart")
+    async def http_self_restart(self) -> ApiSuccessResponse:
+        """Detached restart — safe to call from *inside* the running worker.
+
+        The intended caller is the worker itself: ``flow process restart`` run
+        from within a session, e.g. to pick up a newly-installed MCP server.
+        The catch is that the calling CLI process is a **child** of the worker
+        this restart is about to kill (``exit()`` SIGTERMs the worker and all
+        its descendants). Doing the exit()+start_pty() inline would therefore
+        tear down the HTTP client mid-request, and — depending on the ASGI
+        server's disconnect semantics — could even cancel this handler before
+        ``start_pty()`` runs, leaving the process stuck STOPPED.
+
+        So we don't restart inline. We schedule the work on the server event
+        loop and return immediately: the ``{"scheduled": true}`` response
+        reaches the about-to-die caller, and the restart runs to completion
+        independently of the dropped client connection.
+
+        Unlike the UI ``restart`` button (whose frontend emits its own local
+        ``'restarted'`` event to re-attach the terminal), a server-initiated
+        restart has no client-side signal. So once the fresh PTY is up we emit
+        the ``worker.restarted`` entity event over the WS watcher channel; the
+        frontend bridges it back to the same terminal re-attach path.
+        """
+        process_id = self.id
+
+        async def _run() -> None:
+            try:
+                # Let the HTTP response flush before we kill the worker (and,
+                # with it, the CLI child that is waiting on that response).
+                await asyncio.sleep(_SELF_RESTART_GRACE_S)
+                proc = await AgenticProcess.get_by_id(process_id)
+                if proc is None:
+                    logger.warning("self-restart: process %s vanished before restart", process_id)
+                    return
+                result = await proc.http_restart()
+                if isinstance(result, ApiSuccessResponse):
+                    # Tell every WS watcher (the UI terminal) to re-attach to
+                    # the freshly-spawned PTY. Payload mirrors the open payload
+                    # (pty_id / shell_id / worker_pid) for clients that want it.
+                    await proc.emit_entity_event("worker.restarted", result.data or {})
+                else:
+                    logger.error(
+                        "self-restart: restart failed for %s: %s",
+                        process_id,
+                        getattr(result, "message", "?"),
+                    )
+            except Exception:
+                logger.exception("self-restart: background restart failed for %s", process_id)
+
+        task = asyncio.create_task(_run(), name=f"self-restart-{self.id[:8]}")
+        _DETACHED_TASKS.add(task)
+        task.add_done_callback(_DETACHED_TASKS.discard)
+
+        return ApiSuccessResponse(
+            data={"scheduled": True, "id": self.id, "status": self.status}
+        )
+
+    def _bind_project_id(self, project_id: str) -> bool:
+        """Polite bind: set ``project_id`` (honouring the freeze) and append
+        the matching Project TypeId on success.
+
+        Returns ``True`` if the binding landed, ``False`` if the freeze
+        refused the write. Callers that need to write through the freeze
+        (e.g. project-recovery, where the new id is known-correct) must
+        use ``_force_rebind_project_id`` instead.
+        """
         self.project_id = project_id
+        if self.project_id != project_id:
+            return False  # write was refused by the binding-freeze guard
         self.add_shared_context_entities(
             TypeId(type=BuiltinEntityType.PROJECT.value, id=project_id)
         )
+        return True
+
+    def _force_rebind_project_id(self, project_id: str) -> None:
+        """Bypass the binding-freeze and set ``project_id`` unconditionally.
+
+        Use only when the caller has confirmed the new id is correct
+        (e.g. ``Project.recover_by_path`` resurrected the dangling FK and
+        the new Project entity is the canonical replacement). Also appends
+        the matching Project TypeId to shared context.
+        """
+        object.__setattr__(self, "project_id", project_id)
+        self.add_shared_context_entities(
+            TypeId(type=BuiltinEntityType.PROJECT.value, id=project_id)
+        )
+
+    def _force_rebind_workdir(self, workdir: str) -> None:
+        """Bypass the binding-freeze and set ``workdir`` unconditionally.
+
+        Use only when the caller has confirmed the new path is correct
+        (e.g. the on-disk transcript moved). Most heal/upsert paths must
+        leave ``workdir`` alone on session-bound processes — see the freeze
+        comment at the top of this class.
+        """
+        object.__setattr__(self, "workdir", workdir)
 
     # NOTE: per-subclass project-id projection that used to live here moved
     # to ``Entity.get_implicit_private_context_entities`` in the base. Every
@@ -1003,7 +1107,10 @@ class AgenticProcess(Entity):
             project = await Project.recover_by_path(self.workdir)
             if not project:
                 return ApiFailResponse(message=f"Could not recover a project for {self.workdir}")
-            self._bind_project_id(project.id)
+            # Recovery legitimately replaces a dangling FK with the canonical
+            # Project — bypass the freeze so session-bound processes (the only
+            # ones that ever need recovery) actually move.
+            self._force_rebind_project_id(project.id)
             await self.save()
             return ApiSuccessResponse(data={"project": project.model_dump(mode="json")})
         except Exception as e:
@@ -1027,6 +1134,7 @@ class AgenticProcess(Entity):
             new_proc = AgenticProcess.fork(
                 session_id=self.session_id,
                 workdir=self.workdir,
+                project_id=self.project_id,
                 visible=visible,
                 shared_context_entities=list(self.shared_context_entities or []),
             )
@@ -1064,6 +1172,140 @@ class AgenticProcess(Entity):
             if deadline and time.monotonic() > deadline:
                 raise TimeoutError(f"Process did not reach idle state within {timeout}s")
             await asyncio.sleep(2.0)
+
+    # ── Prompt queue ──────────────────────────────────────────────────────────
+
+    def _record_dir(self) -> "Path":
+        """This process's record folder (deterministic from type+id)."""
+        from flow_sdk.fs_store.fs_record import record_stem
+        from flow_sdk.fs_store.record_paths import get_default_records_root
+
+        return get_default_records_root() / "agentic_process" / record_stem("agentic_process", self.id)
+
+    @property
+    def queue(self) -> "PromptQueue":
+        """The process's file-backed FIFO prompt queue (``prompt_queue.json``)."""
+        from flow_sdk.builtin.agentic_process.prompt_queue import PromptQueue
+
+        return PromptQueue(FSRef(self._record_dir() / "prompt_queue.json"))
+
+    def _queue_state(self) -> dict:
+        """Queue state for entity payloads — never raises (a serializer
+        exception would poison the whole entity dump)."""
+        try:
+            return self.queue.read()
+        except Exception:
+            return {"enabled": True, "entries": []}
+
+    def _queue_ready(self) -> bool:
+        """Drain-local readiness — superset of ``is_ready_for_input`` that also
+        admits a cold (startable) AP for its FIRST prompt.
+
+        Cold start is deliberate for BOTH modes: the first queued prompt boots
+        the worker *with* it — ``prompt()`` routes a cold PTY to
+        ``start_pty(instruction=head)`` (launch arg) and a cold headless AP to
+        ``headless_prompt``. Both are deterministic and dodge the
+        boot-empty-then-write-stdin readline race (the original "lost first
+        prompt" bug). Follow-up prompts inject via stdin only once the worker is
+        genuinely idle post-turn (``is_ready_for_input``)."""
+        if is_ready_for_input(self):
+            return True
+        return not getattr(self, "_turn_in_flight", False) and is_process_startable(self.status)
+
+    def _schedule_queue_drain(self, source: str) -> None:
+        """Fire-and-forget a drain attempt; never block the caller."""
+        try:
+            task = asyncio.create_task(self._maybe_drain_queue(source))
+        except RuntimeError:
+            return  # no running loop (sync context) — nothing to drain into
+        task.add_done_callback(lambda t: self._log_drain_task_exc(t, source))
+
+    def _log_drain_task_exc(self, task: "asyncio.Task", source: str) -> None:
+        exc = None if task.cancelled() else task.exception()
+        if exc is not None:
+            try:
+                self.queue.log("error", source, error=f"drain task: {exc!r}")
+            except Exception:
+                pass
+
+    async def _maybe_drain_queue(self, source: str) -> None:
+        """Inject the FIFO head into the worker iff enabled + non-empty + ready.
+
+        One entry per call. Pop-persists the head BEFORE injecting so a re-fired
+        ready edge can never re-inject it. Runs under a per-process lock.
+        """
+        q = self.queue
+        async with _get_queue_lock(self.id):
+            state = q.read()
+            if not state.get("enabled", True) or not state.get("entries"):
+                q.log("drain_check", source, reason="empty_or_disabled")
+                return
+            if not self._queue_ready():
+                q.log(
+                    "drain_check", source, reason="not_ready",
+                    status=self.status,
+                    worker_status=str(self._discover_status_from_transcript() or ""),
+                )
+                return
+            q.log("drain_check", source, reason="ok")
+            head = q.pop(source=source)  # persists removal + logs "pop"
+            if head is None:
+                return
+            q.log("inject", source, entry_id=head.get("id"), prompt=str(head.get("prompt", ""))[:200])
+            try:
+                await self.notify_updated()
+            except Exception:
+                pass
+        # Release the lock BEFORE prompt() — it may run start_pty (long) and is
+        # itself serialized by _PROMPT_LOCKS / _OPEN_LOCKS.
+        try:
+            await self.prompt(head["prompt"])
+            q.log("injected", source, entry_id=head.get("id"))
+        except Exception as e:  # noqa: BLE001 — already popped; record the loss
+            q.log("error", source, entry_id=head.get("id"), error=str(e))
+
+    @action.post(action_name="enqueue")
+    async def _enqueue_action(self) -> ApiSuccessResponse | ApiFailResponse:
+        body = await _read_json_body()
+        if isinstance(body, ApiFailResponse):
+            return body
+        prompt = (body.get("prompt") or "").strip()
+        if not prompt:
+            return ApiFailResponse(message="prompt is required")
+        self.queue.enqueue(prompt, source=str(body.get("source") or "ui"))
+        await self.notify_updated()
+        self._schedule_queue_drain("enqueue")
+        return ApiSuccessResponse(data=self.queue.read())
+
+    @action.post(action_name="dequeue")
+    async def _dequeue_action(self) -> ApiSuccessResponse | ApiFailResponse:
+        body = await _read_json_body()
+        if isinstance(body, ApiFailResponse):
+            return body
+        ident = body.get("id", body.get("index"))
+        if ident is None:
+            return ApiFailResponse(message="id or index is required")
+        self.queue.dequeue(ident)
+        await self.notify_updated()
+        return ApiSuccessResponse(data=self.queue.read())
+
+    @action.post(action_name="clear-queue")
+    async def _clear_queue_action(self) -> ApiSuccessResponse | ApiFailResponse:
+        self.queue.clear()
+        await self.notify_updated()
+        return ApiSuccessResponse(data=self.queue.read())
+
+    @action.post(action_name="set-queue-enabled")
+    async def _set_queue_enabled_action(self) -> ApiSuccessResponse | ApiFailResponse:
+        body = await _read_json_body()
+        if isinstance(body, ApiFailResponse):
+            return body
+        enabled = bool(body.get("enabled", True))
+        self.queue.set_enabled(enabled)
+        await self.notify_updated()
+        if enabled:
+            self._schedule_queue_drain("enable")
+        return ApiSuccessResponse(data=self.queue.read())
 
     # ── Execution ─────────────────────────────────────────────────────────────
 
@@ -1135,7 +1377,7 @@ class AgenticProcess(Entity):
         Raises:
             TimeoutError: if the process does not reach idle within ``timeout``.
         """
-        from flow_sdk.fs_records.agent_status import (
+        from flow_sdk.builtin.worker_status import (
             WorkerStatus as _WS,
             _has_pending_tool_use,
             _last_assistant_stop_reason,
@@ -1511,7 +1753,7 @@ class AgenticProcess(Entity):
         descriptor = self.transcript
         return descriptor.path if descriptor else None
 
-    def _load_transcript(self, descriptor=None) -> "AgentTranscript | None":
+    def _load_transcript(self, descriptor=None) -> "AgentTranscriptFile | None":
         """Worker-agnostic transcript loader.
 
         Resolves the JSONL via the vendor driver and parses it through the
@@ -1519,13 +1761,13 @@ class AgenticProcess(Entity):
         session is attached or the file is missing. Per-request load — no
         caching; eager parse is fast enough for current sizes.
         """
-        from flow_sdk.transcript_analyzer import AgentTranscript
+        from flow_sdk.transcript_analyzer import AgentTranscriptFile
 
         descriptor = descriptor or self.transcript
         if descriptor is None or not descriptor.path.exists():
             return None
         try:
-            return AgentTranscript(
+            return AgentTranscriptFile(
                 self.driver.name,
                 descriptor.path,
                 session_id=descriptor.session_id,
@@ -1588,19 +1830,18 @@ class AgenticProcess(Entity):
         return ApiFailResponse(message=f"unknown transcript sub-path: {sub_path_raw!r}")
 
     async def _transcript_plan(
-        self, transcript: "AgentTranscript | None",
+        self, transcript: "AgentTranscriptFile | None",
     ) -> ApiSuccessResponse | ApiFailResponse:
         """Resolve the latest plan, persist ``plan_path`` (existence-gated),
         and return the indexed Markdown.
 
         Resolution order for the path:
-          1. ``transcript.latest_plan`` — re-resolved every call so codex
-             ``update_plan`` step-status updates are reflected immediately.
-             - Claude (``ExitPlanModeEntry``): use the on-disk
-               ``plan_file_path`` claude already wrote.
-             - Codex (``update_plan`` ``ToolUseEntry``): render the inline
-               structured plan to ``<flow_home>/plans/codex/<session>.md``
-               and use that path.
+          1. ``transcript.latest_plan`` — an ``ExitPlanModeEntry`` emitted by
+             either worker's parser (Claude from its ``ExitPlanMode`` tool;
+             Codex synthesized from a ``<proposed_plan>`` marker).
+             ``plan_file_path`` is the on-disk file the worker wrote — Claude
+             writes directly; Codex's stream worker writes when it sees the
+             marker on its JSONL stream.
           2. ``self.plan_path`` if already set (cache fallback).
           3. Most recent ``plan_mode`` attachment's ``planFilePath`` (Claude
              interactive PTY plan-mode).
@@ -1618,11 +1859,6 @@ class AgenticProcess(Entity):
             latest = transcript.latest_plan
             if isinstance(latest, ExitPlanModeEntry):
                 plan_file_path = latest.plan_file_path
-            elif latest is not None and latest.tool_name == "update_plan":
-                # Codex's plan lives inline in the function_call args; the
-                # UI's plan button expects a file path, so we materialize
-                # the rendered markdown into a flowpad-managed location.
-                plan_file_path = _materialize_codex_update_plan(latest, transcript.session_id or self.id)
 
         if not plan_file_path:
             plan_file_path = self.plan_path or ""
@@ -1659,9 +1895,13 @@ class AgenticProcess(Entity):
                 )
 
         try:
-            from flow_sdk.fs_records.markdown_record import MarkdownRecord
+            from flow_sdk.fs_store.fs_ref import FSRef as _FSRef
+            from flow_sdk.fs_store.indexer.functions.markdown import extract_markdown
 
-            rec = MarkdownRecord.from_file(Path(plan_file_path))
+            records = extract_markdown(_FSRef(Path(plan_file_path)))
+            if not records:
+                return ApiFailResponse(message=f"could not parse {plan_file_path}")
+            rec = records[0]
             await rec.sync_to_db()
             return ApiSuccessResponse(data={"markdown": rec.meta_dict(), "plan_path": plan_file_path})
         except Exception as e:
@@ -1669,11 +1909,11 @@ class AgenticProcess(Entity):
             return ApiFailResponse(message=str(e))
 
     def _transcript_prompts(
-        self, transcript: "AgentTranscript | None",
+        self, transcript: "AgentTranscriptFile | None",
     ) -> ApiSuccessResponse:
         """Return the user-prompt list straight from the transcript.
 
-        Filters applied by ``AgentTranscript.prompts`` (sidechain, empty,
+        Filters applied by ``AgentTranscriptFile.prompts`` (sidechain, empty,
         Claude Code synthetic markers). Output shape mirrors the entry's
         ``to_dict()`` envelope so the TS analyzer mirror's ``fromJson``
         factory can hydrate ``UserMessageEntry`` instances directly.
@@ -1686,7 +1926,7 @@ class AgenticProcess(Entity):
 
     def _transcript_full(
         self,
-        transcript: "AgentTranscript | None",
+        transcript: "AgentTranscriptFile | None",
         descriptor=None,
     ) -> ApiSuccessResponse:
         if transcript is None or descriptor is None:
@@ -1712,7 +1952,7 @@ class AgenticProcess(Entity):
             "entries": [e.to_dict() for e in transcript.entries],
         })
 
-    def _transcript_header(self, transcript: "AgentTranscript") -> dict[str, Any]:
+    def _transcript_header(self, transcript: "AgentTranscriptFile") -> dict[str, Any]:
         meta = transcript._session_meta_payload()
         if not meta:
             return {}
@@ -1748,14 +1988,14 @@ class AgenticProcess(Entity):
         Merges the agent spec into cli_config.agents_json so it survives across
         HTTP requests without relying on in-memory state.
         """
-        from flow_sdk.fs_records.agent_record import AgentRecord
+        from flow_sdk.fs_store.operations.agent import extract_agent_from_path, agent_to_cli_json  # noqa: PLC0415
         if not asset_ref:
             return ApiFailResponse(message="asset_ref is required")
         abs_path = Path("/" + asset_ref.lstrip("/"))
         if not abs_path.exists():
             return ApiFailResponse(message=f"Agent file not found: {abs_path}")
-        agent = AgentRecord.from_file(abs_path)
-        agent_entry = agent.to_agents_cli_json()
+        agent = extract_agent_from_path(abs_path)
+        agent_entry = agent_to_cli_json(agent)
         # Merge into cli_config so the agent is durably stored on the entity.
         cli_opts = ClaudeCliOptions.from_json(self.cli_config or {})
         cli_opts.agents_json = {**(cli_opts.agents_json or {}), **agent_entry}
@@ -1806,14 +2046,14 @@ class AgenticProcess(Entity):
         Adds the agent's name to the persisted embedded_agent_ids list and stores
         the agent object in the in-memory _embedded_agents list.
         """
-        from flow_sdk.fs_records.agent_record import AgentRecord
+        from flow_sdk.fs_store.operations.agent import load_agent as _load_agent  # noqa: PLC0415
+        from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
+        from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
         _agents: list = object.__getattribute__(self, "__dict__").setdefault("_embedded_agents", [])
         if isinstance(agent, str):
-            rec = AgentRecord.load_agent(agent) or AgentRecord(name=agent, id=agent)
-        elif isinstance(agent, AgentRecord):
-            rec = agent
+            rec = _load_agent(agent) or FSRecord(type=RecordType.AGENT, name=agent, id=agent)
         else:
-            # duck-type: anything with to_agents_json
+            # duck-type: Record or anything with name/id
             rec = agent
         _agents.append(rec)
         name = rec.name if hasattr(rec, "name") else str(agent)
@@ -1846,28 +2086,11 @@ class AgenticProcess(Entity):
     # Claude discovers them via `--add-dir <record_dir>/assets`.
 
     async def _assets_dir_path(self) -> "Path":
-        """The filesystem directory where embedded assets are materialized."""
-        from flow_sdk.fs_records.agentic_process_record import AgenticProcessRecord
-        from flow_sdk.fs_store.record import get_default_records_root, record_stem
+        """The filesystem directory where embedded assets are materialized.
 
-        record = None
-        try:
-            record = await self.get_record()
-        except Exception:
-            pass
-
-        if record and record.record_dir:
-            return record.assets_dir
-
-        # Fallback: synthesize the path from the process id if the record can't
-        # be resolved (e.g. the process was saved moments ago and the store
-        # hasn't reindexed). Must match ``AgenticProcessRecord.assets_dir``
-        # (``<record_dir>/execution/assets``) or attach + read paths diverge.
-        root = get_default_records_root()
-        d = root / AgenticProcessRecord._record_type / record_stem(
-            AgenticProcessRecord._record_type, self.id
-        )
-        a = d / "execution" / "assets"
+        ``<records_root>/agentic_process/agentic_process-@<id>/execution/assets``
+        """
+        a = self._record_dir() / "execution" / "assets"
         a.mkdir(parents=True, exist_ok=True)
         return a
 
@@ -1886,13 +2109,13 @@ class AgenticProcess(Entity):
         type is unsupported for embedding. Raises for resolution / IO failures.
         """
         import shutil
-        from flow_sdk.fs_records.agent_record import AgentRecord
-        from flow_sdk.fs_records.skill_record import SkillRecord
+        from flow_sdk.fs_store.operations.agent import get_agent, load_agent as _load_agent  # noqa: PLC0415
+        from flow_sdk.fs_store.operations.skill import get_skill, copy_skill_to
 
         if ref.type == "agent":
             # Resolve by id (uuid5-derived from the .md path) first, then fall back
             # to name-based lookup for agents the UI knows by name only.
-            agent = AgentRecord.get(ref.id) or AgentRecord.load_agent(ref.id)
+            agent = get_agent(ref.id) or _load_agent(ref.id)
             if agent is None:
                 raise FileNotFoundError(f"Agent not found: {ref.id}")
             target_dir = assets_dir / ".claude" / "agents"
@@ -1905,11 +2128,11 @@ class AgenticProcess(Entity):
             return agent.name or ref.id
 
         if ref.type == "skill":
-            skill = SkillRecord.get(ref.id)
+            skill = get_skill(ref.id)
             if skill is None:
                 raise FileNotFoundError(f"Skill not found: {ref.id}")
             target_root = assets_dir / ".claude" / "skills"
-            skill.copy_to(target_root)
+            copy_skill_to(skill, target_root)
             return skill.name or ref.id
 
         return None  # Unsupported type — caller decides to fail loudly.
@@ -1917,17 +2140,17 @@ class AgenticProcess(Entity):
     async def _unmaterialize_entity(self, ref: TypeId, assets_dir: "Path") -> None:
         """Best-effort removal of the files laid down by _materialize_entity."""
         import shutil
-        from flow_sdk.fs_records.agent_record import AgentRecord
-        from flow_sdk.fs_records.skill_record import SkillRecord
+        from flow_sdk.fs_store.operations.agent import get_agent, load_agent as _load_agent  # noqa: PLC0415
+        from flow_sdk.fs_store.operations.skill import get_skill
 
         if ref.type == "agent":
-            agent = AgentRecord.get(ref.id) or AgentRecord.load_agent(ref.id)
+            agent = get_agent(ref.id) or _load_agent(ref.id)
             name = agent.name if agent else ref.id
             target = assets_dir / ".claude" / "agents" / f"{name}.md"
             if target.exists():
                 target.unlink()
         elif ref.type == "skill":
-            skill = SkillRecord.get(ref.id)
+            skill = get_skill(ref.id)
             name = skill.name if skill else ref.id
             target = assets_dir / ".claude" / "skills" / name
             if target.exists():
@@ -2146,15 +2369,15 @@ class AgenticProcess(Entity):
         """
         try:
             if ref.type == "agent":
-                from flow_sdk.fs_records.agent_record import AgentRecord
-                rec = AgentRecord.get(ref.id) or AgentRecord.load_agent(ref.id)
+                from flow_sdk.fs_store.operations.agent import get_agent, load_agent as _load_agent  # noqa: PLC0415
+                rec = get_agent(ref.id) or _load_agent(ref.id)
                 if rec is None:
                     return None
                 name = rec.name or ref.id
                 return assets_dir / ".claude" / "agents" / f"{name}.md"
             if ref.type == "skill":
-                from flow_sdk.fs_records.skill_record import SkillRecord
-                rec = SkillRecord.get(ref.id)
+                from flow_sdk.fs_store.operations.skill import get_skill
+                rec = get_skill(ref.id)
                 if rec is None:
                     return None
                 name = rec.name or ref.id
@@ -2216,10 +2439,11 @@ class AgenticProcess(Entity):
             return None
 
     def _finalized_restart_cli_options(self) -> WorkerCLIOptions:
-        """Build the launch options used for worker restart comparison.
-
-        This mirrors the persisted/process-derived CLI inputs used by
-        ``start_pty()`` but intentionally excludes runtime-only env injection.
+        """Launch-options snapshot for restart-comparison hashing. Excludes
+        runtime env injection + resume-gated transcript cwd lookup — those are
+        derived from transcript state that drifts between start-time and
+        save-time, which would light a phantom restart glow. The live launch
+        path applies them; the hash strips ``resume`` via ``restart_payload_from_cli_options``.
         """
         driver = self._restart_driver()
         if driver is None:
@@ -2227,20 +2451,9 @@ class AgenticProcess(Entity):
         cmd = driver.cli_options(self)
 
         # Server-restart resume: process had a shell but cli_config didn't
-        # encode resume. This is part of the effective launch shape.
+        # encode resume. Effective launch shape; stripped from the hash.
         if not getattr(cmd, "resume", False) and self.session_id:
             cmd.resume = self._is_exist_claude_resume_session(self.session_id)
-
-        # Claude-only transcript cwd plumbing. Keep this sync and reproducible
-        # so start-time and save-time snapshots use the same persisted inputs.
-        if hasattr(cmd, "fork_session_id"):
-            fork_session_id = getattr(cmd, "fork_session_id", None)
-            if fork_session_id or (getattr(cmd, "resume", False) and self.session_id):
-                lookup_id = fork_session_id or self.session_id
-                session_rec = self._discover_claude_record_session(lookup_id)
-                if session_rec and session_rec.cwd:
-                    cmd.env_vars["CLAUDE_PROJECT_DIR"] = session_rec.cwd
-                    cmd.workdir = session_rec.cwd
 
         return cmd
 
@@ -2448,6 +2661,7 @@ class AgenticProcess(Entity):
         ready = is_ready_for_input(self, computed)
         d["ready_for_input"] = ready
         d["ready_for_input_since"] = self._ready_for_input_since() if ready else None
+        d["queue"] = self._queue_state()
         return d
 
     @model_serializer(mode="wrap")
@@ -2462,6 +2676,7 @@ class AgenticProcess(Entity):
         ready = is_ready_for_input(self, computed)
         data["ready_for_input"] = ready
         data["ready_for_input_since"] = self._ready_for_input_since() if ready else None
+        data["queue"] = self._queue_state()
         # Surface the live launch command so the UI (run drawer, session info
         # popover, etc.) can show what was actually spawned. Failure-tolerant:
         # if a driver hasn't been wired or the cli_config is malformed, omit
@@ -2477,15 +2692,18 @@ class AgenticProcess(Entity):
         missing = [a for a in ("exe_folder", "input_folder", "output_folder", "assets_folder") if not data.get(a)]
         if missing and self.id:
             try:
-                from flow_sdk.fs_records.agentic_process_record import AgenticProcessRecord
-                rec = AgenticProcessRecord(id=self.id)
-                default = rec.default_path
-                if default is not None:
-                    rec.path = str(default)
-                    for attr in missing:
-                        ref = getattr(rec, attr, None)
-                        if ref is not None:
-                            data[attr] = ref.to_dict()
+                base = self._record_dir()
+                folder_map = {
+                    "exe_folder": base / "execution",
+                    "input_folder": base / "execution" / "input",
+                    "output_folder": base / "execution" / "output",
+                    "assets_folder": base / "execution" / "assets",
+                }
+                for attr in missing:
+                    p = folder_map.get(attr)
+                    if p is not None:
+                        p.mkdir(parents=True, exist_ok=True)
+                        data[attr] = FSRef(p).to_dict()
             except Exception:
                 pass
         return data
@@ -2539,6 +2757,15 @@ class AgenticProcess(Entity):
             and not _shell_worker_pid_alive(self.shell_id)
         ):
             return WorkerStatus.INACTIVE
+
+        # Project terminal underlying status to PENDING_USER (recent) or
+        # INACTIVE (aged > 5min) based on ``terminal_at``. The 5-minute window
+        # used to be FE-derived from ``ready_for_input_since``; this brings
+        # the decision backend-side so every consumer (serializer, get_status,
+        # is_ready_for_input) sees the same projected value.
+        if derived in _PROJECTABLE_TERMINAL and self.terminal_at is not None:
+            age = (datetime.now(timezone.utc) - self.terminal_at).total_seconds()
+            return WorkerStatus.PENDING_USER if age < 300 else WorkerStatus.INACTIVE
         return derived
 
     @action.all(action_name="status")
@@ -2629,6 +2856,47 @@ class AgenticProcess(Entity):
 
         logger.info("AgenticProcess %s: injecting message: %s", self.id, message[:80])
         await self.send(message)
+
+    @property
+    def assistant_enabled(self) -> bool:
+        """Whether the Flowpad Assistant project is mounted for this process.
+
+        The per-process ``load_flowpad_assistant`` flag wins when explicitly
+        set (True/False); otherwise it inherits the global
+        ``ServiceConfig.load_flowpad_assistant`` default. The driver reads
+        THIS (not the global) when building the worker's ``--add-dir`` set.
+        """
+        if self.load_flowpad_assistant is not None:
+            return self.load_flowpad_assistant
+        from flow_sdk.config import default_service_config  # noqa: PLC0415
+        return default_service_config.load_flowpad_assistant
+
+    @property
+    def resolved_add_dirs(self) -> list[str]:
+        """The ``--add-dir`` set the driver should mount for this process.
+
+        ``additional_dirs`` plus the Flowpad Assistant project root prepended
+        when :attr:`assistant_enabled` (de-duped so an explicit copy in
+        ``additional_dirs`` doesn't double it). Both the PTY and print-mode
+        driver paths read this so they mount the same surface.
+        """
+        dirs = list(self.additional_dirs or [])
+        if not self.assistant_enabled:
+            return dirs
+        from flow_sdk.config import flowpad_assistant_project_root  # noqa: PLC0415
+        core_dir = str(flowpad_assistant_project_root())
+        return [core_dir] + [d for d in dirs if d != core_dir]
+
+    def enable_assistant(self) -> "AgenticProcess":
+        """Mount the Flowpad Assistant for this process (skills/agents discoverable).
+
+        Currently just flips the per-process ``load_flowpad_assistant`` flag
+        on; the driver picks it up via :attr:`assistant_enabled` when building
+        the worker command. Returns ``self`` for chaining — the caller persists
+        via ``save()``.
+        """
+        self.load_flowpad_assistant = True
+        return self
 
     @action.post(action_name="add-dir")
     async def add_dir(self, path: str) -> "ApiResponse":
@@ -2887,7 +3155,7 @@ class AgenticProcess(Entity):
     # ── Project ───────────────────────────────────────────────────────────────
 
     async def get_project(self) -> None:
-        """Resolve project_id, workdir, and project_encoded_name from DB ancestry."""
+        """Resolve project_id and workdir from DB ancestry."""
         from flow_sdk.builtin.project import Project
 
         if not self.project_id:
@@ -2907,34 +3175,16 @@ class AgenticProcess(Entity):
                 )
             self._bind_project_id(local_project.id)
 
-        if self.project_id and (not self.workdir or not self.project_encoded_name):
+        if self.project_id and not self.workdir:
             project = await Project.get_by_id(self.project_id)
             if project and project.fs_storage_mount_path:
-                if not self.workdir:
-                    self.workdir = str(project.fs_storage_mount_path)
-                if not self.project_encoded_name:
-                    self.project_encoded_name = project.project_encoded_name
+                self.workdir = str(project.fs_storage_mount_path)
 
     @action.get(action_name="input-dir")
     async def get_input_dir(self):
         """Return the absolute path of this process's input directory, creating it if needed."""
-        from flow_sdk.fs_records.agentic_process_record import AgenticProcessRecord
-        from flow_sdk.fs_store.record import get_default_records_root, record_stem
-
-        record = None
-        try:
-            record = await self.get_record()
-        except Exception:
-            pass
-
-        if record and record.record_dir:
-            input_dir = record.input_dir
-        else:
-            uid = self.id
-            root = get_default_records_root()
-            record_dir = root / AgenticProcessRecord._record_type / record_stem(AgenticProcessRecord._record_type, uid)
-            input_dir = record_dir / "input"
-            input_dir.mkdir(parents=True, exist_ok=True)
+        input_dir = self._record_dir() / "input"
+        input_dir.mkdir(parents=True, exist_ok=True)
 
         shell = await self.shell()
         compute_node_id = await shell.resolve_compute_node_typeid_str() if shell else "compute_node-@local"
@@ -2951,11 +3201,199 @@ class AgenticProcess(Entity):
         """Check if there's a resumable Claude session for this agentic process."""
         return self._discover_claude_record_session(session_id) is not None
 
-    def _discover_claude_record_session(self, session_id: str | None) -> ClaudeSessionRecord | None:
-        """Discover the ClaudeSessionRecord associated with this agentic process's session_id."""
+    def _discover_claude_record_session(self, session_id: str | None) -> "Record | None":
+        """Discover the Claude session Record associated with this agentic process's session_id."""
         if not session_id:
             return None
-        return ClaudeSessionRecord.get(session_id)
+        return get_claude_session(session_id)
+
+    # Bursty turn writes ~10-50 entries in 1s; cap at 1000 so a pathological
+    # writer can't grow the buffer without bound.
+    _DEBOUNCE_BUFFER_CAP = 1000
+    # Coalesce a burst of JSONL writes into one flush so the FE gets at most
+    # one entity-update broadcast per second per AP.
+    _DEBOUNCE_SECONDS = 1.0
+
+    async def on_transcript_change(self, jsonl_path: "Path", entries: list) -> None:
+        """TranscriptStreamer subscriber entry-point on this AP.
+
+        Buffers entries and arms a 1-second debounce timer; the streamer fires
+        at filesystem speed but the FE only sees one broadcast per quiescent
+        window per AP. The flush (:meth:`_flush_transcript_change`) handles
+        plan detection, status transition detection, and notify_updated.
+
+        ``jsonl_path`` is informational only — the canonical path is resolved
+        by :meth:`_discover_status_from_transcript` via the driver, which also
+        carries the headless ``_turn_in_flight`` short-circuit and visible-PTY
+        liveness reconciliation that ``driver.tail_status`` alone misses.
+        """
+        pending = getattr(self, "_pending_entries", None)
+        if pending is None:
+            object.__setattr__(self, "_pending_entries", [])
+            pending = self._pending_entries
+        pending.extend(entries)
+        if len(pending) > self._DEBOUNCE_BUFFER_CAP:
+            overflow = len(pending) - self._DEBOUNCE_BUFFER_CAP
+            del pending[:overflow]
+            logger.warning(
+                "AgenticProcess %s: on_transcript_change buffer overflow (dropped %d entries)",
+                self.id, overflow,
+            )
+
+        task = getattr(self, "_debounce_task", None)
+        if task is None or task.done():
+            object.__setattr__(
+                self, "_debounce_task",
+                asyncio.create_task(
+                    self._flush_transcript_change(),
+                    name=f"ap-flush-{self.id[:8]}",
+                ),
+            )
+
+    async def _process_transcript_entries(self, entries: list) -> None:
+        """Per-entry side effects: plan.create + file-op cross-link emission.
+
+        Extracted from :meth:`_flush_transcript_change` so unit tests can drive
+        the loop without manipulating the AP's lifecycle ``status`` field.
+        FileEditEntry maps to ``file.write`` (semantically: contents changed).
+        """
+        from flow_sdk.transcript_analyzer.entries.exit_plan_mode import ExitPlanModeEntry
+        from flow_sdk.transcript_analyzer.entries.file_edit import FileEditEntry
+        from flow_sdk.transcript_analyzer.entries.file_read import FileReadEntry
+        from flow_sdk.transcript_analyzer.entries.file_write import FileWriteEntry
+        from flow_sdk.transcript_analyzer.file_cross_link import cross_link_file_to_process
+
+        # Dedup cross-link calls per (path) within one flush — Claude/Codex
+        # often write+read the same .md file multiple times in a turn, and the
+        # helper hits the DB once per call (5 markdown-subclass lookups each).
+        cross_linked: set[str] = set()
+        for entry in entries:
+            if isinstance(entry, ExitPlanModeEntry) and entry.plan_file_path:
+                # Order matters: cross-link save first so the entity-update
+                # WS broadcast precedes plan.create. Consumers reading
+                # AP.private_context_entities on the event see the link.
+                await self.on_plan_created(entry)
+                await self.emit_entity_event(
+                    "plan.create",
+                    {"plan_file_path": entry.plan_file_path, "session_id": self.session_id},
+                )
+                continue
+
+            if isinstance(entry, (FileReadEntry, FileWriteEntry, FileEditEntry)):
+                path = getattr(entry, "path", None)
+                if not path or not path.endswith(".md"):
+                    continue
+                op = "read" if isinstance(entry, FileReadEntry) else "write"
+                # Cross-link save before the file.{op} broadcast — WS messages
+                # are delivered in send order, so a consumer subscribed to both
+                # sees the cross-link applied before acting on file.{op}.
+                if path not in cross_linked:
+                    await cross_link_file_to_process(path, self)
+                    cross_linked.add(path)
+                await self.emit_entity_event(
+                    f"file.{op}",
+                    {"path": path, "tool_name": getattr(entry, "tool_name", "")},
+                )
+
+    async def _flush_transcript_change(self) -> None:
+        """Run after the debounce window on this AP's transcript.
+
+        Drains the buffer, processes plan detection (per-entry), re-derives
+        worker_status via :meth:`_discover_status_from_transcript` (the same
+        wrapper the serializer + get_status use, so the broadcast can never
+        disagree with what consumers compute on demand), and broadcasts only
+        on a status transition. Migrates the API_TIMEOUT → ``_on_timeout``
+        invocation from the deleted ``_poll_for_completion``.
+
+        The in-memory ``self.status`` may be ~1s stale after the sleep but
+        the only stale path is "AP was stopped externally during the window"
+        — covered by the lifecycle guard below. notify_updated broadcasts
+        the in-memory state; downstream observers are idempotent.
+        """
+        try:
+            await asyncio.sleep(self._DEBOUNCE_SECONDS)
+
+            if self.status != ProcessStatus.RUNNING.value:
+                return
+
+            entries = list(getattr(self, "_pending_entries", []))
+            object.__setattr__(self, "_pending_entries", [])
+            await self._process_transcript_entries(entries)
+
+            # Single source of truth: same helper the serializer/get_status use.
+            current = self._discover_status_from_transcript()
+            previous = getattr(self, "_last_broadcast_status", None)
+
+            # Maintain terminal_at: set on transition INTO a clean terminal
+            # (COMPLETE/ERROR/INTERRUPTED), clear on transition OUT. Used by
+            # the projection layer to surface PENDING_USER for 5 min before
+            # collapsing to INACTIVE. Not set for INACTIVE/API_TIMEOUT — those
+            # are stuck / already-aged states, not the "session just finished"
+            # case the user-facing PendingUser window is meant for.
+            _CLEAN_TERMINAL = {
+                WorkerStatus.COMPLETE, WorkerStatus.ERROR, WorkerStatus.INTERRUPTED,
+            }
+            if current in _CLEAN_TERMINAL and self.terminal_at is None:
+                self.terminal_at = datetime.now(timezone.utc)
+                try:
+                    await self.save()
+                except Exception:
+                    logger.debug(
+                        "AgenticProcess %s: terminal_at save failed", self.id, exc_info=True,
+                    )
+            elif current not in _CLEAN_TERMINAL and current != WorkerStatus.PENDING_USER \
+                    and self.terminal_at is not None:
+                self.terminal_at = None
+                try:
+                    await self.save()
+                except Exception:
+                    logger.debug(
+                        "AgenticProcess %s: terminal_at clear failed", self.id, exc_info=True,
+                    )
+
+            if current == previous:
+                return
+            object.__setattr__(self, "_last_broadcast_status", current)
+
+            if current == WorkerStatus.API_TIMEOUT:
+                try:
+                    await self._on_timeout()
+                except Exception:
+                    logger.debug(
+                        "AgenticProcess %s: _on_timeout failed", self.id, exc_info=True,
+                    )
+
+            await self.notify_updated()
+
+            # Drain the prompt queue on a transition INTO a ready state. This is
+            # the single AP-level seam for both PTY *and* headless turns (both
+            # write the transcript that lands here), so no driver coupling.
+            if current in (WorkerStatus.IDLE, WorkerStatus.COMPLETE, WorkerStatus.INTERRUPTED):
+                self._schedule_queue_drain("ready")
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.debug(
+                "AgenticProcess %s: _flush_transcript_change failed",
+                self.id, exc_info=True,
+            )
+
+    async def on_plan_created(self, entry) -> None:
+        """T7: Connect a freshly-detected plan to this AgenticProcess.
+
+        Delegates to the shared
+        :func:`flow_sdk.transcript_analyzer.plan_cross_link.cross_link_plan_to_process`
+        helper — single source of truth shared with PlanHandler (indexer) and
+        ``listen.py:_create_plan_annotation`` (hook). Sets ``plan_path`` if
+        unset and cross-links via ``private_context_entities`` both directions.
+        """
+        from flow_sdk.transcript_analyzer.plan_cross_link import cross_link_plan_to_process
+
+        await cross_link_plan_to_process(
+            entry.plan_file_path,
+            self.session_id or entry.session_id,
+            proc=self,
+        )
 
     async def _find_resumable_session(self, session_id: str) -> str | None:
         """Walk up the fork chain to find a session ID with a transcript on disk."""
@@ -2963,7 +3401,7 @@ class AgenticProcess(Entity):
         seen: set[str] = set()
         while candidate and candidate not in seen:
             seen.add(candidate)
-            if ClaudeSessionRecord.get(candidate) is not None:
+            if get_claude_session(candidate) is not None:
                 return candidate
             procs = await AgenticProcess.get_all()
             parent = next((p for p in procs if p.session_id == candidate), None)
@@ -3065,5 +3503,3 @@ class AgenticProcess(Entity):
             asyncio.run_coroutine_threadsafe(_update_state(), main_loop)
 
         return _on_pty_exit
-# bench-marker 1777146382
-# bench-trigger-1777146659

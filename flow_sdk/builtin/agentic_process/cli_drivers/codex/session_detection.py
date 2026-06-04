@@ -10,7 +10,10 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from flow_sdk.fs_records.codex.codex_session import CodexSessionRecord
+from flow_sdk.fs_store.indexer.functions.codex_sessions import (
+    discover_codex_session_paths_iter,
+    extract_codex_session_from_path,
+)
 
 
 _HEAD_LINES = 256
@@ -150,7 +153,7 @@ def _read_candidate(path: Path) -> _Candidate | None:
 
     if not session_id:
         try:
-            record = CodexSessionRecord.from_jsonl(path)
+            record = extract_codex_session_from_path(path)
             session_id = record.session_id
             cwd = cwd or record.cwd
         except Exception:
@@ -190,7 +193,7 @@ def _find_matching_candidates(
         lower_bound = lower_bound - timedelta(seconds=30)
 
     matches: list[_Candidate] = []
-    for path in CodexSessionRecord.discover_paths_iter(limit=limit) or []:
+    for path in discover_codex_session_paths_iter(limit=limit) or []:
         candidate = _read_candidate(path)
         if not candidate:
             continue

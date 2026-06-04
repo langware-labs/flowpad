@@ -19,8 +19,27 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.fs_records._frontmatter import _extract_body, _extract_frontmatter, _yaml_load
-from flow_sdk.fs_records.markdown_record import MarkdownRecord
+from flow_sdk.fs_store.indexer._frontmatter import _extract_body, _extract_frontmatter, _yaml_load
+from flow_sdk.fs_store.indexer.functions.markdown import (
+    markdown_gen_id as _markdown_gen_id,
+    markdown_id as _markdown_id,
+    extract_markdown as _extract_markdown,
+)
+
+class _MarkdownRecordAdapter:
+    _mintable = True
+    @staticmethod
+    def getId(ref):
+        return _markdown_id(ref)
+    @staticmethod
+    def genId(ref):
+        return _markdown_gen_id(ref)
+    @staticmethod
+    def from_file(path):
+        from flow_sdk.fs_store.fs_ref import FSRef
+        return _extract_markdown(FSRef(path))[0]
+
+MarkdownRecord = _MarkdownRecordAdapter
 from flow_sdk.fs_store.fs_ref import FSRef
 
 
@@ -51,7 +70,7 @@ def test_getId_without_asset_id_returns_path_uuid5(tmp_path: Path) -> None:
 
 def test_getId_reads_asset_id_from_frontmatter(tmp_path: Path) -> None:
     """Legacy `asset_id:` field is still read."""
-    known = "11111111-2222-3333-4444-555555555555"
+    known = "11111111-2222-4333-8444-555555555555"
     p = tmp_path / "b.md"
     _write_md(p, "# body\n", frontmatter=f"asset_id: {known}\ntitle: T\n")
     assert MarkdownRecord.getId(FSRef(p)) == known
@@ -59,7 +78,7 @@ def test_getId_reads_asset_id_from_frontmatter(tmp_path: Path) -> None:
 
 def test_getId_reads_id_from_frontmatter(tmp_path: Path) -> None:
     """New `id:` field is read with precedence."""
-    known = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+    known = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
     p = tmp_path / "c.md"
     _write_md(p, "# body\n", frontmatter=f"id: {known}\ntitle: T\n")
     assert MarkdownRecord.getId(FSRef(p)) == known
@@ -139,7 +158,7 @@ def test_getId_after_genId_returns_minted(tmp_path: Path) -> None:
 
 def test_genId_does_not_overwrite_existing_asset_id(tmp_path: Path) -> None:
     """Legacy `asset_id:` is respected; no rewrite, no rename to `id`."""
-    preexisting = "deadbeef-dead-beef-dead-beefdeadbeef"
+    preexisting = "deadbeef-dead-4eef-8ead-beefdeadbeef"
     p = tmp_path / "h.md"
     _write_md(p, "# body\n", frontmatter=f"asset_id: {preexisting}\ntitle: T\n")
     mtime_before = p.stat().st_mtime
@@ -153,7 +172,7 @@ def test_genId_does_not_overwrite_existing_asset_id(tmp_path: Path) -> None:
 
 def test_genId_respects_existing_id_key(tmp_path: Path) -> None:
     """`id:` already in frontmatter counts — no new mint."""
-    existing = "12345678-1234-1234-1234-123456789012"
+    existing = "12345678-1234-4234-8234-123456789012"
     p = tmp_path / "i.md"
     _write_md(p, "# body\n", frontmatter=f"id: {existing}\ntitle: T\n")
     mtime_before = p.stat().st_mtime
@@ -188,7 +207,8 @@ def test_claude_plan_genId_also_mints(tmp_path: Path) -> None:
     Mirrors the markdown contract: idempotent, migration-safe (writes the
     derived path-uuid5 so any existing DB row by that id stays valid).
     """
-    from flow_sdk.fs_records.claude.claude_plan import ClaudePlanRecord
+    from flow_sdk.fs_store.indexer.functions.claude_plan import claude_plan_gen_id
+    ClaudePlanRecord = type('CP', (), {'genId': staticmethod(claude_plan_gen_id)})
 
     p = tmp_path / "plan.md"
     p.write_text("some plan body", encoding="utf-8")

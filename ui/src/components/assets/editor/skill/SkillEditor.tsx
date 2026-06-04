@@ -9,7 +9,7 @@ import {
   SkillParseError,
 } from '@sdk';
 import { Button } from '@src/components/ui/button';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { Code, Eye, RefreshCw, Save } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { SkillMarkdownView } from './SkillMarkdownView';
@@ -34,7 +34,6 @@ export function SkillEditor({
   onSkillUpdated,
 }: SkillEditorProps) {
   const { project, computeNode } = useAgentContext();
-  const { toast } = useToast();
   const [skill, setSkill] = useState<Skill | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -217,17 +216,16 @@ export function SkillEditor({
       }
     } catch (error) {
       console.error('[SkillEditor] Failed to save file:', error);
-      toast({
+      notify.error({
         title: 'Save Failed',
-        description: itemInfo.isDir
+        message: itemInfo.isDir
           ? 'Failed to save skill. Please check the SKILL.md format.'
           : 'Failed to save file.',
-        variant: 'destructive',
       });
     } finally {
       setIsSaving(false);
     }
-  }, [activeSkillManager, itemInfo, editedContent, hasChanges, onSkillUpdated, fsTypeId, toast]);
+  }, [activeSkillManager, itemInfo, editedContent, hasChanges, onSkillUpdated, fsTypeId]);
 
   if (isLoading) {
     return (

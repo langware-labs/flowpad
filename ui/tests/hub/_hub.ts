@@ -33,15 +33,11 @@ export async function hubAvailable(): Promise<{ ok: boolean; reason?: string }> 
   }
 }
 
-export async function readEnvLocal(repo: string): Promise<Record<string, string>> {
+/** Parse dotenv text into a key→value map (skips comments/blanks, strips a
+ *  matching pair of surrounding quotes). Shared by `readEnvLocal` and the
+ *  per-instance harness in `_instances.ts`. */
+export function parseDotEnv(text: string): Record<string, string> {
   const out: Record<string, string> = {};
-  const p = path.join(repo, '.env.local');
-  let text: string;
-  try {
-    text = await fs.readFile(p, 'utf-8');
-  } catch {
-    return out;
-  }
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.trim();
     if (!line || line.startsWith('#') || !line.includes('=')) continue;
@@ -54,6 +50,14 @@ export async function readEnvLocal(repo: string): Promise<Record<string, string>
     out[k] = v;
   }
   return out;
+}
+
+export async function readEnvLocal(repo: string): Promise<Record<string, string>> {
+  try {
+    return parseDotEnv(await fs.readFile(path.join(repo, '.env.local'), 'utf-8'));
+  } catch {
+    return {};
+  }
 }
 
 export interface HubLoginResult {
@@ -72,6 +76,31 @@ export async function hubLogin(email: string, password: string): Promise<HubLogi
   const token = body.data.api_key || body.data.token;
   if (!token) throw new Error(`hub login: no token in response: ${JSON.stringify(body)}`);
   return { token, user: body.data.user ?? {} };
+}
+
+/** Read a shared conversation's title straight from the hub (authenticated GET).
+ *  Used by the reflection-proxy tests to verify a reflected rename landed on the
+ *  hub, independent of any backend↔backend fan-out. Returns null on non-200. */
+export async function hubConversationTitle(token: string, convId: string): Promise<string | null> {
+  const r = await fetch(`${HUB_URL}/api/v1/graph/conversation/${convId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!r.ok) return null;
+  const body = (await r.json()) as { data?: { title?: string } };
+  return body.data?.title ?? null;
+}
+
+/** Read the hub's watcher list for a conversation (the GET side of the `watch`
+ *  action — its `ConnectedThrough` peers). Non-empty once a backend has
+ *  registered a hub watch (e.g. via BrowserContextWatch). Returns null on
+ *  non-200, else the (possibly empty) list. */
+export async function hubConversationWatchers(token: string, convId: string): Promise<unknown[] | null> {
+  const r = await fetch(`${HUB_URL}/api/v1/graph/conversation/${convId}/watch`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!r.ok) return null;
+  const body = (await r.json()) as { data?: unknown[] };
+  return Array.isArray(body.data) ? body.data : null;
 }
 
 export async function getAliceCreds() {

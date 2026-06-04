@@ -30,7 +30,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.claude.session_history import 
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.stream_worker import (
     ClaudeCLIStreamWorker,
 )
-from flow_sdk.fs_records.agent_status import WorkerStatus, _tail_status
+from flow_sdk.builtin.worker_status import WorkerStatus, _tail_status
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 from flow_sdk.transcript_analyzer import (
     TranscriptDescriptor,
@@ -66,11 +66,12 @@ class ClaudeDriver:
         registers embedded agents via ``--agents``; sets ``CLAUDE_PROJECT_DIR``
         env from the workdir.
 
-        The Flowpad Assistant mount is gated by ``ServiceConfig.load_flowpad_assistant``
-        — set to ``False`` to keep the SDK-shipped skills/agents out of the session.
+        The Flowpad Assistant mount is gated by ``process.assistant_enabled`` —
+        the per-process ``load_flowpad_assistant`` flag, falling back to the
+        global ``ServiceConfig.load_flowpad_assistant``. Set the flag (e.g.
+        ``process.enable_assistant()``) to override per process; ``None`` keeps
+        the global default.
         """
-        from flow_sdk.config import default_service_config, flowpad_assistant_project_root
-
         cmd = ClaudeCliOptions.from_json(process.cli_config)
         cmd.session_id = process.session_id
         cmd.workdir = process.workdir
@@ -79,12 +80,7 @@ class ClaudeDriver:
             cmd.fork_session_id = None
         if cmd.workdir:
             cmd.env_vars.setdefault("CLAUDE_PROJECT_DIR", cmd.workdir)
-        if default_service_config.load_flowpad_assistant:
-            core_dir = str(flowpad_assistant_project_root())
-            extra = [d for d in (process.additional_dirs or []) if d != core_dir]
-            cmd.add_dirs = [core_dir] + extra
-        else:
-            cmd.add_dirs = list(process.additional_dirs or [])
+        cmd.add_dirs = process.resolved_add_dirs
         agents_json = process.get_agents_json()
         if agents_json:
             cmd.agents_json = agents_json
@@ -151,16 +147,6 @@ class ClaudeDriver:
         # can override via cli_config["model"] / ["effort"].
         parent_model = cli_cfg.get("model") or "sonnet"
         parent_effort = cli_cfg.get("effort")
-        # Mirror the add_dirs gate used by ``cli_options`` (PTY mode) so the
-        # print-mode worker sees the same skill/agent mount surface.
-        from flow_sdk.config import default_service_config, flowpad_assistant_project_root
-        if default_service_config.load_flowpad_assistant:
-            core_dir = str(flowpad_assistant_project_root())
-            extra = [d for d in (process.additional_dirs or []) if d != core_dir]
-            ctx_add_dirs = [core_dir] + extra
-        else:
-            ctx_add_dirs = list(process.additional_dirs or [])
-
         # Mirror PTY path's FLOWPAD_EXECUTION_SCOPE injection
         # (agentic_process.py:786-788) so headless workers can route
         # CLI calls (e.g. ``flow workflow report``) back to this process.
@@ -179,11 +165,11 @@ class ClaudeDriver:
             resume_session_id=(fork_source or process.session_id) if (is_resume or fork_source) else None,
             session_id=process.session_id if fork_source else (None if is_resume else process.session_id),
             fork_session=bool(fork_source),
-            add_dirs=ctx_add_dirs,
+            add_dirs=process.resolved_add_dirs,
         )
 
         # Lifecycle: flip to RUNNING before launching the worker.
-        from flow_sdk.fs_records.agentic_process_lifecycle import ProcessStatus
+        from flow_sdk.builtin.process_lifecycle import ProcessStatus
         if process.status != ProcessStatus.RUNNING.value:
             process.status = ProcessStatus.RUNNING.value
             try:
@@ -291,8 +277,8 @@ class ClaudeDriver:
         """Path to the Claude session JSONL — None when no session_id yet."""
         if not process.session_id:
             return None
-        from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
-        record = ClaudeSessionRecord.get(process.session_id)
+        from flow_sdk.fs_store.indexer.functions.claude_sessions import get_claude_session
+        record = get_claude_session(process.session_id)
         if record and record.jsonl_path:
             path = Path(record.jsonl_path)
             if path.exists():

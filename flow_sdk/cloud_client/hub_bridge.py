@@ -76,6 +76,7 @@ async def _maybe_eager_pull_bundle(
     fm_id: str,
     attachment_filename: str,
     attachments: Any,
+    body_status: Any = None,
 ) -> None:
     """Pull the .flowmsg bundle in the background when the FM carries an
     asset-entity TYPE_ID attachment. No-op otherwise — keeps media-bearing
@@ -94,7 +95,7 @@ async def _maybe_eager_pull_bundle(
     _INFLIGHT_BUNDLE_PULLS.add(fm_id)
     try:
         from flow_sdk.app.actions.flow_message_action import _download_and_unpack_bundle
-        await _download_and_unpack_bundle(fm_id, attachment_filename)
+        await _download_and_unpack_bundle(fm_id, attachment_filename, body_status=body_status)
         logger.info("[bridge] eager bundle pulled fm=%s", fm_id)
     except Exception as e:  # noqa: BLE001
         logger.warning("[bridge] eager bundle pull failed fm=%s (non-fatal): %s", fm_id, e)
@@ -260,6 +261,21 @@ class HubWsBridge:
             return
 
         try:
+            if op in ("child_created", "child_updated", "child_deleted"):
+                # child_* ops invert the envelope: ``to_entity`` is the PARENT
+                # (etype/eid here), ``from_entity`` is the changed child, and
+                # ``data`` is the child JSON. Materialize the child locally as
+                # an is_child of the parent. The local save(notify=True) then
+                # drives the FE via the normal create/update/delete op path.
+                await self._handle_child_op(
+                    op,
+                    parent_type=etype,
+                    parent_id=eid,
+                    child_type=from_etype,
+                    child_id=from_eid,
+                    data=data,
+                )
+                return
             if etype == "flow_message":
                 parent_conv_id = from_eid if from_etype == "conversation" else None
                 await self._handle_flow_message_op(op, eid, data, parent_conv_id)
@@ -291,6 +307,60 @@ class HubWsBridge:
             parent_id=resolved_parent_id,
             data=data if isinstance(data, dict) else {},
         )
+
+    async def _handle_child_op(
+        self,
+        op: str,
+        parent_type: Optional[str],
+        parent_id: Optional[str],
+        child_type: Optional[str],
+        child_id: Optional[str],
+        data: dict,
+    ) -> None:
+        """Materialize a peer's is_child change locally.
+
+        Generic for any child type: upsert (create/update) or delete the child
+        with ``parent_type_id`` pointing at the parent and ``remote=True``. The
+        ``save(notify=True)`` / ``delete`` then emits the normal local
+        create/update/delete data_op that the FE already reacts to (e.g. the
+        comment gutter re-queries on a comment op).
+        """
+        from flow_sdk.builtin.user import User  # noqa: PLC0415
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+        # child identity comes from from_entity; fall back to the payload.
+        if not child_type:
+            child_type = data.get("type") if isinstance(data, dict) else None
+        if not child_id:
+            child_id = data.get("id") if isinstance(data, dict) else None
+        if not child_type or not child_id:
+            logger.debug("hub_bridge: child op %s missing child identity", op)
+            return
+        cls = SchemaRegistry.get_entity_cls(child_type)
+        if cls is None:
+            logger.debug("hub_bridge: child op for unknown type %s", child_type)
+            return
+
+        if op == "child_deleted":
+            try:
+                await cls.delete_by_id(child_id)
+            except Exception:
+                logger.exception("hub_bridge: child_deleted local delete failed %s-%s", child_type, child_id)
+            return
+
+        # create / update → upsert via the shared helper. The child's own
+        # ``parent_type_id`` (e.g. the markdown doc) wins over the op envelope's
+        # hub container (e.g. the conversation, used only for fanout).
+        if isinstance(data, dict) and not data.get("id"):
+            data = {**data, "id": child_id}
+        envelope_ref = f"{parent_type}-{parent_id}" if parent_type and parent_id else None
+        local_user = await User.get_local()
+        someone_typeid = local_user.typeid if local_user else None
+        try:
+            await cls.upsert_from_hub_child(data, envelope_ref, someone_typeid)
+            logger.info("[bridge] %s materialized %s-%s", op, child_type, child_id)
+        except Exception:
+            logger.exception("hub_bridge: child upsert save failed %s-%s", child_type, child_id)
 
     async def _handle_flow_message_op(
         self,
@@ -393,6 +463,8 @@ class HubWsBridge:
                         # sync already materialized the row, so the open conversation
                         # ``on('message')`` listener still fires.
                         emit_live_create=True,
+                        # Inbound from the hub: this row mirrors a hub counterpart.
+                        remote=True,
                     )
                     logger.info(
                         "[bridge] inbound persisted fm=%s conv=%s", fm_id, conversation_id,
@@ -414,6 +486,7 @@ class HubWsBridge:
                     fm_id,
                     (payload.get("attachment_filename") or "").strip(),
                     payload.get("attachment") or [],
+                    body_status=payload.get("body_status"),
                 ))
 
             # Auto-ack delivery — receiver-side acks are the only signal that
@@ -443,6 +516,7 @@ class HubWsBridge:
             local_user = await User.get_local()
             someone_typeid = local_user.typeid if local_user else None
             prev_body_status = getattr(existing, "body_status", None)
+            from flow_sdk.builtin.flow_message import delivery_advances  # noqa: PLC0415
             for field in (
                 "delivery_status",
                 "delivered_at",
@@ -452,8 +526,17 @@ class HubWsBridge:
                 "body_status",
                 "attachment_filename",
             ):
-                if field in data:
-                    setattr(existing, field, data[field])
+                if field not in data:
+                    continue
+                if field == "delivery_status" and not delivery_advances(
+                    getattr(existing, "delivery_status", None), data[field]
+                ):
+                    # Monotonic: never let a lower-ranked (or unknown) status
+                    # downgrade the local row — e.g. a body-status UPDATE that
+                    # carries a stale "created", or an out-of-order frame, must
+                    # not knock "sent"/"delivered" backward.
+                    continue
+                setattr(existing, field, data[field])
             await existing.save(someone_typeid, notify=True)
             # Body just landed on the hub — pull it now so asset chips become
             # clickable without a refresh. ``_maybe_eager_pull_bundle`` is a
@@ -483,18 +566,41 @@ class HubWsBridge:
                     fm_id,
                     (getattr(existing, "attachment_filename", "") or "").strip(),
                     getattr(existing, "attachment", None) or [],
+                    body_status=new_body_status,
                 ))
             return
 
         if op == "delete":
             existing = await FlowMessage.get_one({"id": fm_id})
+            conv_id = parent_conv_id or (
+                getattr(existing, "conversation_id", None) if existing is not None else None
+            )
             if existing is not None:
-                await FlowMessage.delete_by_id(fm_id)
+                # Erase the message's entire existence — DB row + relationships
+                # AND the on-disk record folder (body bundle, metadata, .hash).
+                # ``delete_by_id`` would leave the folder behind.
+                await existing.destroy()
+            # Drop the dangling conversation pointer so an open conversation view
+            # removes the bubble instead of rendering a permanent "Loading
+            # message…" placeholder for the now-deleted FlowMessage.
+            if conv_id:
+                from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
+                from flow_sdk.fs_store.operations.conversation import prune_message_pointer  # noqa: PLC0415
+                from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
+                try:
+                    rec = FSRecord(type=RecordType.CONVERSATION, id=conv_id)
+                    await prune_message_pointer(rec, fm_id, notify=True)
+                except Exception:
+                    logger.exception("hub_bridge: pointer prune failed fm=%s conv=%s", fm_id, conv_id)
             return
 
     async def _handle_conversation_op(self, op: str, conv_id: str, data: dict) -> None:
-        """Passive upsert of Conversation lifecycle changes (status, participants,
-        message_status_visible) so the local entity stays in sync.
+        """Passive upsert of Conversation lifecycle changes (title, status,
+        participants, message_status_visible) so the local entity stays in sync.
+
+        ``title`` is included so a peer's rename (sent over HTTP or WS and reflected
+        to the hub) fans out and lands on the local row here — otherwise a renamed
+        conversation would never update on the other side.
 
         Drops projection-guarded fields (``message_count``, ``message_ids``)
         before save — those are owned by ``ConversationRecord.sync_to_db``."""
@@ -507,8 +613,8 @@ class HubWsBridge:
         # Strip fields not on the local model or guarded against direct write.
         _PROJECTED = {"message_count", "message_ids"}
         _LOCAL_FIELDS = {
-            "id", "type", "remote_project_id", "remote_project_name",
-            "participants", "message_status_visible",
+            "id", "type", "title", "remote_project_id", "remote_project_name",
+            "participants", "message_status_visible", "shared_context_entities",
         }
         clean = {k: v for k, v in data.items() if k in _LOCAL_FIELDS and k not in _PROJECTED}
         clean["id"] = conv_id
@@ -533,7 +639,8 @@ class HubWsBridge:
             await Conversation.delete_by_id(conv_id)
             return
 
-        for field in ("message_status_visible", "participants", "remote_project_id", "remote_project_name"):
+        for field in ("title", "message_status_visible", "participants", "remote_project_id",
+                      "remote_project_name", "shared_context_entities"):
             if field in clean:
                 setattr(existing, field, clean[field])
         await existing.save(someone_typeid, notify=True)

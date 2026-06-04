@@ -51,6 +51,54 @@ class FlowMessageKind(str, Enum):
     INVITATION = "invitation"
 
 
+class DeliveryStatus(str, Enum):
+    """Delivery-receipt lifecycle of a FlowMessage. Monotonic. Single source of
+    truth — imported by both the client (here) and the hub.
+
+    CREATED   — local only; the hub has NOT accepted it (🕐 Pending).
+    SENT      — accepted/stored on the hub (✓).
+    DELIVERED — recipient's client pulled it (✓✓).
+    RECEIVED  — recipient read it (✓✓ blue).
+
+    The hub never stores CREATED — that is a purely client-local pre-accept state.
+    """
+    CREATED = "created"
+    SENT = "sent"
+    DELIVERED = "delivered"
+    RECEIVED = "received"
+
+
+# Monotonic order — list index is the rank.
+DELIVERY_ORDER: tuple[DeliveryStatus, ...] = (
+    DeliveryStatus.CREATED,
+    DeliveryStatus.SENT,
+    DeliveryStatus.DELIVERED,
+    DeliveryStatus.RECEIVED,
+)
+# O(1) rank lookup. ``DeliveryStatus`` is a str-Enum, so each member hashes and
+# compares equal to its value — one key per status serves both enum and raw-str
+# callers (e.g. ``_RANK["sent"]`` and ``_RANK[DeliveryStatus.SENT]`` both hit).
+_RANK: dict[Any, int] = {s: i for i, s in enumerate(DELIVERY_ORDER)}
+
+
+def delivery_rank(status: Any) -> int:
+    """Rank of a delivery status (enum or raw str). Unknown/None → -1."""
+    return _RANK.get(status, -1)
+
+
+def delivery_advances(current: Any, incoming: Any) -> bool:
+    """True iff ``incoming`` is a known status whose rank is >= ``current``'s.
+
+    Enforces the monotonic lifecycle so a stale/out-of-order update can't
+    downgrade a row. Unknown ``incoming`` is rejected; unknown/None ``current``
+    is treated as CREATED (rank 0).
+    """
+    ir = delivery_rank(incoming)
+    if ir < 0:
+        return False
+    return ir >= max(delivery_rank(current), 0)
+
+
 # Single source of truth for the body filename on the hub blob store.
 # Bodies live under flow_message/<id>/fs/<BODY_FILENAME>.
 BODY_FILENAME = "body.flowmsg"
@@ -67,6 +115,42 @@ class BodyNotReadyError(Exception):
 # Inline-text PROMPT attachments don't use a prefix — their `data` is the text.
 FILE_VFS_PREFIX = "data/"
 PROMPT_FILE_VFS_PREFIX = "prompt/"
+
+# TYPE_ID attachment types that ride in the body bundle but never materialize a
+# standard local record folder (which is what ``_type_id_record_materialized``
+# probes) — either conversation plumbing (conversation/flow_message/task, the
+# UI's STRUCTURAL_ATTACHMENT_TYPES), a remote reference resolved on accept
+# (git_repo), or an indexer-owned type whose bundle unpack creates only an
+# entity ROW, never a records folder (claude_session — the transcript content
+# rides as a FILE attachment). They must NOT gate the message-level
+# ``body_downloaded`` signal, or a message carrying one would be stuck behind
+# the Download button forever.
+_NON_MATERIALIZING_TYPE_IDS = frozenset(
+    {"conversation", "flow_message", "task", "git_repo", "claude_session"}
+)
+
+
+def _type_id_record_materialized(data: str) -> bool:
+    """Sync disk probe: does the entity referenced by a TYPE_ID attachment have
+    a materialized record folder on local disk?
+
+    Disk is the source of truth (docs/CLAUDE.md rule 1): a materialized record
+    is a folder at ``<records_root>/<type>/<type>-@<id>/`` with a
+    ``metadata.json``. The body-bundle unpack reindexes assets *before* it fans
+    the entity UPDATE, so by the time a re-serialize observes this the folder
+    exists. Structural plumbing types are treated as always-present (they don't
+    render and may not have a standard folder)."""
+    if "-" not in data:
+        return True
+    etype, eid = data.split("-", 1)
+    if etype in _NON_MATERIALIZING_TYPE_IDS:
+        return True
+    try:
+        from flow_sdk.fs_store.record_paths import get_default_records_root, record_stem
+        folder = get_default_records_root() / etype / record_stem(etype, eid)
+        return (folder / "metadata.json").exists()
+    except Exception:
+        return False
 
 
 class Attachment(BaseModel):
@@ -94,6 +178,17 @@ class Attachment(BaseModel):
 
 
 class FlowMessage(Entity):
+    # Beyond the base local flags, a FlowMessage owns its body/download and
+    # read state locally. A hub metadata refresh must not reset these:
+    #   * body_status  — download/delivery lifecycle on THIS machine; reset
+    #     would re-trigger an already-completed body download.
+    #   * is_read / is_archived — local inbox state, not the hub's to dictate.
+    #   * received_at  — when THIS device received it.
+    #   * is_draft     — a local draft has no hub twin; never let a refresh flip it.
+    LOCAL_ONLY_FIELDS: ClassVar[frozenset[str]] = Entity.LOCAL_ONLY_FIELDS | frozenset({
+        "body_status", "is_read", "is_archived", "received_at", "is_draft",
+    })
+
     type: str = APIField(default="flow_message")
     text: str = APIField(...)
     instruction: Optional[str] = APIField(None)
@@ -107,10 +202,14 @@ class FlowMessage(Entity):
     is_read: bool = APIField(default=False)
     is_archived: bool = APIField(default=False)
     # Receipt state — mirrors the hub-side schema. Monotonic:
-    # created → delivered → received. Stamped only by the hub on
-    # mark_delivered / mark_received actions; the bridge propagates updates
-    # to the local row via data_op_msg(update).
-    delivery_status: str = APIField(default="created")
+    # created → sent → delivered → received.
+    #   created  — local only; the hub has NOT accepted it (no add_message ACK).
+    #   sent     — accepted/stored on the hub (the hub stamps it on persist and
+    #              returns it in the add_message response).
+    #   delivered/received — stamped by the hub on mark_delivered / mark_received.
+    # The bridge propagates hub updates to the local row via data_op_msg(update),
+    # guarded so a lower-ranked status can never downgrade a higher one.
+    delivery_status: str = APIField(default=DeliveryStatus.CREATED.value)
     delivered_at: Optional[datetime] = APIField(default=None)
     received_at: Optional[datetime] = APIField(default=None)
     # NOTE: ``context`` (list[TypeId]) was renamed and consolidated into the
@@ -160,17 +259,74 @@ class FlowMessage(Entity):
                 # bundle; the sender sees it set the moment the file is staged.
                 resolved = storage.get_storage_path(vfs_subpath)
                 att["local_path"] = resolved if resolved and Path(resolved).exists() else None
+        # Message-level download signal (transient, API-only — computed after
+        # the per-file local_path resolution above so it can read it). True once
+        # the body bundle has been pulled + unpacked locally: every renderable
+        # body attachment is on disk (files have a resolved local_path, entity
+        # assets have a materialized record folder). The UI switches the whole
+        # message between a single Download button and rendered chips off this
+        # one flag, so the transcript and the context panel share state.
+        data["body_downloaded"] = self._compute_body_downloaded(data.get("attachment") or [])
         return data
+
+    def _compute_body_downloaded(self, atts: list[dict[str, Any]]) -> bool:
+        if not self.has_body():
+            return False
+        for att in atts:
+            atype = att.get("attachment_type")
+            if atype == AttachmentType.FILE.value:
+                if not att.get("local_path"):
+                    return False
+            elif atype == AttachmentType.PROMPT.value:
+                if (att.get("data") or "").startswith(PROMPT_FILE_VFS_PREFIX) and not att.get(
+                    "local_path"
+                ):
+                    return False
+            elif atype == AttachmentType.TYPE_ID.value:
+                if not _type_id_record_materialized(att.get("data") or ""):
+                    return False
+        return True
+
+    def is_body_downloaded(self) -> bool:
+        """Disk-probe twin of the serializer's ``body_downloaded`` flag for
+        backend callers that need the signal without paying for a full
+        ``model_dump`` — e.g. the per-message catch-up loop deciding whether
+        to (re-)pull the body bundle. Same semantics as
+        ``_compute_body_downloaded`` (keep the two in sync): True once every
+        body attachment is materialized locally."""
+        if not self.has_body():
+            return False
+        storage = None
+        for att in self.attachment or []:
+            t = att.attachment_type
+            if t == AttachmentType.TYPE_ID:
+                if not _type_id_record_materialized(att.data or ""):
+                    return False
+                continue
+            vfs_subpath: Optional[str] = None
+            if t == AttachmentType.FILE:
+                vfs_subpath = att.data or ""
+            elif t == AttachmentType.PROMPT and (att.data or "").startswith(PROMPT_FILE_VFS_PREFIX):
+                vfs_subpath = att.data
+            if not vfs_subpath:
+                continue
+            if storage is None:
+                from flow_sdk.storage import get_entity_embedded_storage
+                storage = get_entity_embedded_storage(TypeId(type="flow_message", id=self.id))
+            resolved = storage.get_storage_path(vfs_subpath)
+            if not (resolved and Path(resolved).exists()):
+                return False
+        return True
 
     async def to_file(self, dest_dir: Path | None = None) -> Path:
         """Pack this FlowMessage + attachments into a .flowmsg zip. Returns path to zip."""
-        from flow_sdk.fs_records.flow_message_bundle import pack_bundle
+        from flow_sdk.builtin.flow_message_bundle import pack_bundle
         return await pack_bundle(self, dest_dir)
 
     @classmethod
     async def from_file(cls, zip_path: Path, local_user_id: str, *, overwrite: bool = False) -> "FlowMessage":
         """Unpack .flowmsg, materialize entities, append pointer to conversation."""
-        from flow_sdk.fs_records.flow_message_bundle import unpack_bundle
+        from flow_sdk.builtin.flow_message_bundle import unpack_bundle
         return await unpack_bundle(zip_path, local_user_id, overwrite=overwrite)
 
     # -------- Header / Body interface (principle #6) -------- #
@@ -293,7 +449,8 @@ class FlowMessage(Entity):
         from flow_sdk.app.actions.flow_message_action import _download_and_unpack_bundle
         filename = self.attachment_filename or BODY_FILENAME
         ok = await _download_and_unpack_bundle(
-            self.id, filename, asset_dest_root=asset_dest_root, on_progress=on_progress,
+            self.id, filename, body_status=self.body_status,
+            asset_dest_root=asset_dest_root, on_progress=on_progress,
         )
         if not ok:
             raise RuntimeError(f"download_body failed for fm={self.id}")

@@ -1,4 +1,4 @@
-import { useSettings } from '@sdk/react/hooks/use-settings';
+import { useInstancePreferences } from '@sdk/react/hooks/use-instance-preferences';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { DatabasePaths, TerminalType } from '@sdk';
 import { useSystemTools } from '@src/hooks/use-system-tools';
@@ -7,7 +7,7 @@ import { Checkbox } from '@src/components/ui/checkbox';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@src/components/ui/collapsible';
 import { Label } from '@src/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@src/components/ui/radio-group';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { AlertTriangle, BarChart3, ChevronDown, Copy, FolderOpen } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { DbStatsDialog } from './db-stats';
@@ -20,8 +20,7 @@ export function DangerZone() {
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [showDbStats, setShowDbStats] = useState(false);
   const [paths, setPaths] = useState<DatabasePaths | null>(null);
-  const { toast } = useToast();
-  const { settings } = useSettings();
+  const { preferences } = useInstancePreferences();
 
   // Fetch paths on mount
   useEffect(() => {
@@ -36,17 +35,16 @@ export function DangerZone() {
     setShowClearConfirm(false);
     try {
       const result = await clearAllData();
-      toast({
+      notify.success({
         title: 'Database Cleared',
-        description: result.message || 'All data has been cleared. Redirecting to home...',
+        message: result.message || 'All data has been cleared. Redirecting to home...',
       });
       setTimeout(() => { window.location.href = '/'; }, 1500);
     } catch (error) {
       console.error('Failed to clear database:', error);
-      toast({
+      notify.error({
         title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to clear database',
-        variant: 'destructive',
+        message: error instanceof Error ? error.message : 'Failed to clear database',
       });
     }
   };
@@ -54,13 +52,12 @@ export function DangerZone() {
   const handleBackupDb = async () => {
     try {
       const result = await backup();
-      toast({ title: 'Database Backed Up', description: result.message });
+      notify.success({ title: 'Database Backed Up', message: result.message });
     } catch (error) {
       console.error('Failed to backup database:', error);
-      toast({
+      notify.error({
         title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to backup database',
-        variant: 'destructive',
+        message: error instanceof Error ? error.message : 'Failed to backup database',
       });
     }
   };
@@ -72,10 +69,9 @@ export function DangerZone() {
       else await openLogsFolder();
     } catch (error) {
       console.error(`Failed to open ${folderType} folder:`, error);
-      toast({
+      notify.error({
         title: 'Error',
-        description: error instanceof Error ? error.message : `Failed to open ${folderType} folder`,
-        variant: 'destructive',
+        message: error instanceof Error ? error.message : `Failed to open ${folderType} folder`,
       });
     }
   };
@@ -83,16 +79,15 @@ export function DangerZone() {
   const handleCopyPath = async (path: string) => {
     try {
       await navigator.clipboard.writeText(path);
-      toast({
+      notify.success({
         title: 'Copied',
-        description: 'Path copied to clipboard',
+        message: 'Path copied to clipboard',
       });
     } catch (error) {
       console.error('Failed to copy path:', error);
-      toast({
+      notify.error({
         title: 'Error',
-        description: 'Failed to copy path to clipboard',
-        variant: 'destructive',
+        message: 'Failed to copy path to clipboard',
       });
     }
   };
@@ -154,9 +149,9 @@ export function DangerZone() {
                 <div className="flex items-center gap-2">
                   <Checkbox
                     id="show-system-skills"
-                    checked={settings.showSystemSkills}
+                    checked={preferences.showSystemSkills}
                     onCheckedChange={(checked) => {
-                      settings.showSystemSkills = checked === true;
+                      preferences.showSystemSkills = checked === true;
                     }}
                   />
                   <Label htmlFor="show-system-skills" className="cursor-pointer text-sm">
@@ -171,9 +166,9 @@ export function DangerZone() {
                     whether a sidecar OS Terminal window is also opened.
                   </p>
                   <RadioGroup
-                    value={settings.defaultTerminal}
+                    value={preferences.defaultTerminal}
                     onValueChange={(value) => {
-                      settings.defaultTerminal = value as TerminalType;
+                      preferences.defaultTerminal = value as TerminalType;
                     }}
                   >
                     <div className="flex items-center gap-2">

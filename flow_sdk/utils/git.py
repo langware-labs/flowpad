@@ -89,6 +89,26 @@ def repo_id(repo_full_name: str) -> str:
     return str(uuid.uuid5(uuid.NAMESPACE_DNS, f"repo:{repo_full_name}"))
 
 
+def derive_repo_leaf_from_url(project_url: str) -> str:
+    """Extract the repo folder name from a git URL.
+
+    Handles https / ssh / scp-style git URLs:
+      https://github.com/foo/bar.git   → bar
+      git@github.com:foo/bar.git       → bar
+      https://example.com/some/repo/   → repo
+    Returns empty string when the URL has no usable trailing segment.
+    """
+    if not project_url:
+        return ""
+    leaf = project_url.strip().rstrip("/").split("/")[-1]
+    # ssh form `git@host:owner/repo.git` leaves "owner/repo.git" or just "repo.git"
+    if ":" in leaf and "/" not in leaf:
+        leaf = leaf.split(":")[-1]
+    if leaf.endswith(".git"):
+        leaf = leaf[:-4]
+    return leaf
+
+
 def _url_matches(path: str, project_url: str) -> bool:
     """Return True if the git repo at path has an origin URL matching project_url."""
     try:
@@ -112,7 +132,7 @@ def find_local_repo_for_url(project_url: str) -> Optional[str]:
         return None
 
     from pathlib import Path as _Path
-    from flow_sdk.fs_records._claude_projects import iter_claude_project_paths
+    from flow_sdk.fs_store.indexer.functions._claude_projects import iter_claude_project_paths
 
     claude_paths = list(iter_claude_project_paths())
 

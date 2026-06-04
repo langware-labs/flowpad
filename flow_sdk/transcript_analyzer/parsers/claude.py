@@ -63,7 +63,13 @@ _META_TYPES = frozenset({
     "permission-mode",
     "last-prompt",
     "custom-title",
+    # Newer Claude Code session-envelope lines (no chat content).
+    "mode",
+    "agent-name",
+    "bridge-session",
 })
+
+_ATTACHMENT_TYPE_PLAN_MODE_EXIT = "plan_mode_exit"
 
 
 def _resolve_id(raw: dict) -> str:
@@ -133,6 +139,17 @@ class ClaudeParser:
                 summary_text=str(raw.get("summary") or ""),
                 **base,
             )]
+        if rtype == "attachment":
+            att = raw.get("attachment")
+            if isinstance(att, dict) and att.get("type") == _ATTACHMENT_TYPE_PLAN_MODE_EXIT:
+                plan_file_path = str(att.get("planFilePath") or "")
+                if plan_file_path:
+                    return [ExitPlanModeEntry(
+                        tool_name="ExitPlanMode",
+                        tool_use_id=base["id"],
+                        tool_input={"plan": "", "planFilePath": plan_file_path},
+                        **base,
+                    )]
         if rtype in _META_TYPES:
             return [MetaEntry(meta_kind=rtype, payload=raw, **base)]
         return [UnknownEntry(raw_data=raw, **base)]

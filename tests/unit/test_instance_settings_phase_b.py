@@ -19,7 +19,6 @@ import pytest
 from flow_sdk.instance_settings import (
     BaseInstanceSettings,
     DevInstanceSettings,
-    SecretsNotEnabledError,
     TestInstanceSettings,
     _resolve_flow_home_from_env,
     _resolve_instance_name_from_env,
@@ -46,7 +45,7 @@ def isolate_env(monkeypatch):
     "default" resolution must set FLOW_INSTANCE=prod explicitly to win over
     the auto-set PYTEST_CURRENT_TEST (FLOW_INSTANCE has highest precedence).
     """
-    for k in ("FLOW_INSTANCE", "FLOWPAD_DEV", "FLOWPAD_TEST", "FLOW_HOME"):
+    for k in ("FLOW_INSTANCE", "FLOWPAD_DEV", "FLOWPAD_TEST", "FLOW_HOME", "SOD_ENC_KEY"):
         monkeypatch.delenv(k, raising=False)
     reset_instance_settings()
     yield
@@ -193,12 +192,25 @@ def test_consent_marker_path(monkeypatch, tmp_path):
 # sod accessor — consent gate
 # ----------------------------------------------------------------------
 
-def test_sod_raises_without_consent(monkeypatch, tmp_path):
+def test_sod_available_without_consent_and_no_keychain_on_empty_read(monkeypatch, tmp_path):
+    """The store is always available (decoupled from login/consent), and reading
+    a never-written store resolves NO key — so it never touches the keychain."""
     monkeypatch.setenv("FLOW_HOME", str(tmp_path))
     monkeypatch.setenv("FLOW_INSTANCE", "prod")
+    monkeypatch.delenv("SOD_ENC_KEY", raising=False)
+
+    import keyring
+
+    def _explode(*_, **__):
+        raise AssertionError("empty-store read must not touch the keychain")
+
+    monkeypatch.setattr(keyring, "get_password", _explode)
+    monkeypatch.setattr(keyring, "set_password", _explode)
+
     s = get_instance_settings()
-    with pytest.raises(SecretsNotEnabledError):
-        _ = s.sod
+    sod = s.sod  # available, no raise
+    assert sod is not None
+    assert sod.read("never-written") is None  # lazy: no key resolved, no keychain
 
 
 def test_sod_returns_file_sod_storage_with_consent(monkeypatch, tmp_path):
@@ -232,12 +244,14 @@ def test_sod_returns_file_sod_storage_with_consent(monkeypatch, tmp_path):
     assert ("Flowpad.ai.sod_key", "prod") in storage
 
 
-def test_sod_keychain_key_cached_across_calls(monkeypatch, tmp_path):
-    """Two `.sod` accesses should hit the keychain exactly once (cache)."""
+def test_sod_keychain_key_minted_once_then_memoized(monkeypatch, tmp_path):
+    """The key is resolved lazily on the first real write (mint = 1 get + 1 set)
+    and memoized on the instance — subsequent ops never re-touch the keychain.
+    Merely obtaining `.sod` resolves nothing."""
     monkeypatch.setenv("FLOW_HOME", str(tmp_path))
     monkeypatch.setenv("FLOW_INSTANCE", "prod")
+    monkeypatch.delenv("SOD_ENC_KEY", raising=False)
 
-    from cryptography.fernet import Fernet
     storage: dict[tuple[str, str], str] = {}
     call_count = {"get": 0, "set": 0}
 
@@ -254,17 +268,159 @@ def test_sod_keychain_key_cached_across_calls(monkeypatch, tmp_path):
     monkeypatch.setattr(keyring, "set_password", _set)
 
     s = get_instance_settings()
+
+    # Obtaining the store and reading an empty store resolve no key.
+    sod = s.sod
+    assert sod.read("nope") is None
+    assert call_count == {"get": 0, "set": 0}
+
+    # First real write mints the key once: 1 get (miss) + 1 set (generate).
+    sod.write("k", "v")
+    assert call_count == {"get": 1, "set": 1}
+
+    # All subsequent reads/writes reuse the memoized key — no more keychain.
+    for _ in range(5):
+        _ = s.sod.read("k")
+        s.sod.write("k2", "v2")
+    assert call_count == {"get": 1, "set": 1}
+    # And the marker was auto-created on first use (decoupled from login).
+    assert s.consent_marker_path.exists()
+
+
+# ----------------------------------------------------------------------
+# SOD_ENC_KEY env bypass — signed Electron launcher hands off the key
+# ----------------------------------------------------------------------
+
+def test_sod_env_key_bypasses_keychain(monkeypatch, tmp_path):
+    """When SOD_ENC_KEY env is set, .sod returns a working storage without
+    ever calling keyring, and the consent marker is auto-created."""
+    monkeypatch.setenv("FLOW_HOME", str(tmp_path))
+    monkeypatch.setenv("FLOW_INSTANCE", "prod")
+
+    from cryptography.fernet import Fernet
+    monkeypatch.setenv("SOD_ENC_KEY", Fernet.generate_key().decode())
+
+    call_count = {"get": 0, "set": 0}
+
+    def _boom_get(*_a, **_kw):
+        call_count["get"] += 1
+        raise AssertionError("keyring.get_password must not be called when SOD_ENC_KEY env is set")
+
+    def _boom_set(*_a, **_kw):
+        call_count["set"] += 1
+        raise AssertionError("keyring.set_password must not be called when SOD_ENC_KEY env is set")
+
+    import keyring
+    monkeypatch.setattr(keyring, "get_password", _boom_get)
+    monkeypatch.setattr(keyring, "set_password", _boom_set)
+
+    s = get_instance_settings()
+    assert not s.consent_marker_path.exists()
+
+    sod = s.sod
+    sod.write("k", "v")
+    assert sod.read("k") == "v"
+
+    # Marker auto-created on first .sod access; keychain never touched.
+    assert s.consent_marker_path.exists()
+    assert call_count == {"get": 0, "set": 0}
+
+
+def test_seed_sod_key_populates_memo_and_marker(monkeypatch, tmp_path):
+    """seed_sod_key (called from /secrets/seed-key after the signed Electron
+    launcher has minted + written to the keychain via flow-rs) installs the
+    key in the InstanceSettings._sod_key_memo cache, touches the consent
+    marker, and never invokes keyring. Subsequent .sod access uses the
+    seeded key."""
+    monkeypatch.setenv("FLOW_HOME", str(tmp_path))
+    monkeypatch.setenv("FLOW_INSTANCE", "prod")
+    monkeypatch.delenv("SOD_ENC_KEY", raising=False)
+
+    import keyring
+    monkeypatch.setattr(keyring, "get_password",
+                        lambda *_a, **_k: (_ for _ in ()).throw(
+                            AssertionError("keyring.get_password must not be called after seed_sod_key")))
+    monkeypatch.setattr(keyring, "set_password",
+                        lambda *_a, **_k: (_ for _ in ()).throw(
+                            AssertionError("keyring.set_password must not be called after seed_sod_key")))
+
+    from cryptography.fernet import Fernet
+    from flow_sdk.cli.auth.secrets import seed_sod_key
+    key = Fernet.generate_key().decode()
+
+    s = get_instance_settings()
+    assert not s.consent_marker_path.exists()
+
+    assert seed_sod_key(key) is True
+    assert s.consent_marker_path.exists()
+
+    # .sod access uses the seeded key via _sod_key_memo — no keyring touch.
+    sod = s.sod
+    sod.write("k", "v")
+    assert sod.read("k") == "v"
+
+
+def test_seed_sod_key_rejects_empty(monkeypatch, tmp_path):
+    monkeypatch.setenv("FLOW_HOME", str(tmp_path))
+    monkeypatch.setenv("FLOW_INSTANCE", "prod")
+    from flow_sdk.cli.auth.secrets import seed_sod_key
+    assert seed_sod_key("") is False
+    s = get_instance_settings()
+    assert not s.consent_marker_path.exists()
+
+
+def test_is_secrets_enabled_false_when_marker_but_no_keychain(monkeypatch, tmp_path):
+    """User deleted the keychain entry out-of-band (e.g. via Keychain Access
+    app) but the .secrets_enabled marker file survived. is_secrets_enabled()
+    must NOT trust the stale marker — otherwise the SecretApprovalDialog
+    redirect in /auth/login_callback never fires and Python silently
+    re-mints a new python3.x-owned key in _fetch_or_create_sod_key."""
+    monkeypatch.setenv("FLOW_HOME", str(tmp_path))
+    monkeypatch.setenv("FLOW_INSTANCE", "prod")
+    monkeypatch.delenv("SOD_ENC_KEY", raising=False)
+
+    import keyring
+    monkeypatch.setattr(keyring, "get_password", lambda *_a, **_k: None)
+
+    from flow_sdk.cli.auth.secrets import is_secrets_enabled
+    s = get_instance_settings()
+    s.instance_dir.mkdir(parents=True)
+    s.consent_marker_path.touch()  # stale marker, no keychain entry
+
+    assert is_secrets_enabled() is False
+
+
+def test_is_secrets_enabled_true_when_marker_and_keychain_present(monkeypatch, tmp_path):
+    """Marker + reachable keychain entry => enabled."""
+    monkeypatch.setenv("FLOW_HOME", str(tmp_path))
+    monkeypatch.setenv("FLOW_INSTANCE", "prod")
+    monkeypatch.delenv("SOD_ENC_KEY", raising=False)
+
+    import keyring
+    monkeypatch.setattr(keyring, "get_password", lambda svc, acct: "fake-key" if acct == "prod" else None)
+
+    from flow_sdk.cli.auth.secrets import is_secrets_enabled
+    s = get_instance_settings()
     s.instance_dir.mkdir(parents=True)
     s.consent_marker_path.touch()
 
-    # First access: 1 get (cache miss), 1 set (generate key)
-    _ = s.sod
-    assert call_count == {"get": 1, "set": 1}
+    assert is_secrets_enabled() is True
 
-    # Subsequent accesses: no further keychain calls
-    for _ in range(5):
-        _ = s.sod
-    assert call_count == {"get": 1, "set": 1}
+
+def test_is_secrets_enabled_true_when_env_set(monkeypatch, tmp_path):
+    """SOD_ENC_KEY env set => is_secrets_enabled() returns True even with no
+    marker file (lets bootstrap proceed to the first .sod access, where
+    the marker actually gets touched)."""
+    monkeypatch.setenv("FLOW_HOME", str(tmp_path))
+    monkeypatch.setenv("FLOW_INSTANCE", "prod")
+
+    from cryptography.fernet import Fernet
+    monkeypatch.setenv("SOD_ENC_KEY", Fernet.generate_key().decode())
+
+    from flow_sdk.cli.auth.secrets import is_secrets_enabled
+    s = get_instance_settings()
+    assert not s.consent_marker_path.exists()
+    assert is_secrets_enabled() is True
 
 
 # ----------------------------------------------------------------------

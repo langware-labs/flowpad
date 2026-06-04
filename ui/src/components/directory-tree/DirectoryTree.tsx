@@ -353,7 +353,12 @@ export const DirectoryTree = forwardRef<DirectoryTreeHandle, DirectoryTreeProps>
                         tree.cancelRename();
                       }
                     }}
-                    onBlur={() => tree.cancelRename()}
+                    onBlur={() => {
+                      // Don't cancel mid-commit: a stray blur firing while
+                      // performRename is awaiting the backend would unmount
+                      // the input before the rename lands (cluster #11).
+                      if (!tree.state.renameCommitting) tree.cancelRename();
+                    }}
                     className="flex-1 rounded border bg-background px-1 py-0.5 text-xs focus:outline-none focus:ring-1 focus:ring-primary"
                     autoFocus
                     onClick={(e) => e.stopPropagation()}

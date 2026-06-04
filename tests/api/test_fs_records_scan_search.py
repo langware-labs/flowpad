@@ -16,9 +16,9 @@ import pytest
 
 from flow_sdk.fs_store import get_default_records_root, set_default_records_root
 
-# Trigger type auto-registration
-from flow_sdk.fs_records.skill_record import SkillRecord  # noqa: F401
-from flow_sdk.fs_records.task import TaskResource  # noqa: F401
+from flow_sdk.fs_store.indexer.functions.task import extract_task
+from flow_sdk.fs_store.fs_record import FSRecord
+TaskResource = FSRecord  # noqa: F401
 
 
 # ---------------------------------------------------------------------------
@@ -33,15 +33,38 @@ def isolate_records_root(tmp_path, monkeypatch):
     USER_HOME_FOLDER root (Path.home()) does not walk the developer's real
     ~/.claude/skills/, which can hold hundreds of test-fixture leftovers and
     blow the 30s test timeout on cold metadata writes.
+
+    FLOW_INSTANCE=test + FLOWPAD_TEST_SANDBOX route _resolve_scope_root
+    through TestInstanceSettings so asset_ref computation lands inside the
+    sandbox; without these the cached oss-instance Path.home() wins and
+    skill markdown is written into the developer's real ~/.claude/skills/.
+
+    records_root and fake_home are siblings — never nest fake_home under
+    records_root, or upsert_main_ref's shadow guard refuses to write
+    SKILL.md (the asset path would be a descendant of records_root).
     """
+    from flow_sdk.fs_store.indexer import reset_shared_indexer
+    from flow_sdk.instance_settings import reset_instance_settings
     original = get_default_records_root()
-    set_default_records_root(tmp_path)
+    records_root = tmp_path / "records"
+    records_root.mkdir()
+    set_default_records_root(records_root)
     fake_home = tmp_path / "_home"
     fake_home.mkdir()
     monkeypatch.setenv("HOME", str(fake_home))
     monkeypatch.setenv("USERPROFILE", str(fake_home))
+    monkeypatch.setenv("FLOW_INSTANCE", "test")
+    monkeypatch.setenv("FLOWPAD_TEST_SANDBOX", str(fake_home))
+    reset_instance_settings()
+    # The shared indexer caches default_roots() at construction time, so a
+    # cached oss-instance indexer would still walk the developer's real home
+    # even after we rebind InstanceSettings — force a rebuild against the
+    # sandbox.
+    reset_shared_indexer()
     yield tmp_path
     set_default_records_root(original)
+    reset_instance_settings()
+    reset_shared_indexer()
 
 
 async def _bootstrap(client):

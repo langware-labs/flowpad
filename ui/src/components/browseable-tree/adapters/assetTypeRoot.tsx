@@ -3,6 +3,9 @@ import { Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import apiClient from '@sdk/client';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
+import { AssetMode, AssetRoutingMethod } from '@src/navigation/asset-doc-types';
+import { VFSPath } from '@sdk';
 import { ViewType } from '@src/types/ViewType';
 import type { AssetTypeInfo } from '@src/hooks/use-asset-types';
 import type { SearchResult } from '@src/hooks/use-asset-search';
@@ -16,7 +19,11 @@ import { config } from '@sdk';
 export interface AssetTypeRootDeps {
   /** Per-row refresh callback, e.g. systemTools.indexType from useSystemTools.
    *  Receives the active filter so per-type scans can scope to the same. */
-  indexType: (typeName: string, scope?: { user: boolean; projects: string[] }) => Promise<{ indexed?: number } | void>;
+  indexType: (
+    typeName: string,
+    scope?: { user: boolean; projects: string[] },
+    options?: { force?: boolean; orphanAction?: 'index' | 'ignore' | 'delete' },
+  ) => Promise<{ indexed?: number } | void>;
   /** Called when the "New" toolbar button is clicked for a creatable type. */
   onNew?: (typeName: string) => void;
   /** Types that can be created via "New"; others render without the plus button. */
@@ -48,28 +55,24 @@ interface AssetPointerParts {
  *   `wiki/<encoded name>`
  */
 export function parseAssetPointer(pointer: string | null | undefined): AssetPointerParts {
-  if (!pointer) return { mode: null, typeName: null, vfsPath: null, wikiName: null };
-  if (pointer.startsWith('editor/')) {
-    const rest = pointer.slice('editor/'.length);
-    const slash = rest.indexOf('/');
-    if (slash < 0) return { mode: 'editor', typeName: rest || null, vfsPath: null, wikiName: null };
-    return {
-      mode: 'editor',
-      typeName: rest.slice(0, slash) || null,
-      vfsPath: rest.slice(slash + 1) || null,
-      wikiName: null,
-    };
-  }
+  const empty: AssetPointerParts = { mode: null, typeName: null, vfsPath: null, wikiName: null };
+  if (!pointer) return empty;
+  // `list/` isn't an AssetDocPointer mode — handle it directly.
   if (pointer.startsWith('list/')) {
-    return { mode: 'list', typeName: pointer.slice('list/'.length) || null, vfsPath: null, wikiName: null };
+    return { ...empty, mode: 'list', typeName: pointer.slice('list/'.length) || null };
   }
-  if (pointer.startsWith('wiki/')) {
-    const raw = pointer.slice('wiki/'.length);
-    let name = raw;
-    try { name = decodeURIComponent(raw); } catch { /* keep raw */ }
-    return { mode: 'wiki', typeName: 'markdown', vfsPath: null, wikiName: name || null };
+  try {
+    const ptr = AssetDocPointer.parse(pointer);
+    if (ptr.mode === AssetMode.WIKI) {
+      return { ...empty, mode: 'wiki', typeName: 'markdown', wikiName: ptr.wikiName || null };
+    }
+    // editor mode: typeName = the editor; vfsPath only exists for the vfs method.
+    const vfsPath =
+      ptr.method === AssetRoutingMethod.VFS ? VFSPath.parse(ptr.value).entitySubPath || null : null;
+    return { ...empty, mode: 'editor', typeName: ptr.editor || null, vfsPath };
+  } catch {
+    return empty;
   }
-  return { mode: null, typeName: null, vfsPath: null, wikiName: null };
 }
 
 function resolveAssetIcon(iconName: string | null, className = 'h-4 w-4 flex-shrink-0'): React.ReactNode {
@@ -104,6 +107,18 @@ async function fetchAssetsOfType(
 }
 
 /**
+ * Canonical tree-node id for an asset. The path is normalized to the same
+ * leading-slash-stripped form `DockPointer.forAssetEditor` uses for the
+ * pointer, so the id built from a search result's `asset_ref` (`/Users/…`)
+ * matches the id built from a URL pointer's `vfsPath` (`Users/…`). Without
+ * this, the deep-link freshness check in `useBrowseableTree` never finds the
+ * leaf among its parent's children and force-refreshes in a loop.
+ */
+function assetNodeId(typeName: string, path: string): string {
+  return `asset:${typeName}:${path.replace(/^\/+/, '')}`;
+}
+
+/**
  * Build a child Browseable from a SearchResult.
  */
 function assetChild(typeName: string, iconName: string | null, result: SearchResult, onAfterDelete?: () => void): Browseable {
@@ -134,7 +149,7 @@ function assetChild(typeName: string, iconName: string | null, result: SearchRes
     });
   }
   return {
-    id: `asset:${typeName}:${result.asset_ref}`,
+    id: assetNodeId(typeName, result.asset_ref),
     kind: 'asset',
     label,
     icon: resolveAssetIcon(iconName, 'h-3.5 w-3.5 flex-shrink-0'),
@@ -279,7 +294,7 @@ export function assetTypeRoot(type: AssetTypeInfo, deps: AssetTypeRootDeps): Bro
       }
       if (!parsed.vfsPath) return [root];
       const leaf: Browseable = {
-        id: `asset:${type.type_name}:${parsed.vfsPath}`,
+        id: assetNodeId(type.type_name, parsed.vfsPath),
         kind: 'asset',
         label: basename(parsed.vfsPath),
         icon: resolveAssetIcon(type.icon, 'h-3.5 w-3.5 flex-shrink-0'),

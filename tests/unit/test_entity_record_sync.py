@@ -130,7 +130,7 @@ class TestEntityRecordCwdSync:
     async def test_entity_first_record_scan_later(self, sync_db):
         """Entity created via API then record scanned → same DB row."""
         from flow_sdk.builtin.project import Project
-        from flow_sdk.fs_records.claude.claude_project import ClaudeProjectFsRecord
+        from flow_sdk.fs_store.fs_record import FSRecord as ClaudeProjectFsRecord
         from flow_sdk.fs_store.path_utils import canonical_posix_path
 
         mount_path = "/tmp/testproject_entity_first"
@@ -160,7 +160,7 @@ class TestEntityRecordCwdSync:
     async def test_record_scan_first_entity_created_later(self, sync_db):
         """Record scanned first → Project entity exists at the canonical cwd."""
         from flow_sdk.builtin.project import Project
-        from flow_sdk.fs_records.claude.claude_project import ClaudeProjectFsRecord
+        from flow_sdk.fs_store.fs_record import FSRecord as ClaudeProjectFsRecord
         from flow_sdk.fs_store.path_utils import canonical_posix_path
 
         mount_path = "/tmp/testproject2_record_first"
@@ -187,7 +187,7 @@ class TestEntityRecordCwdSync:
     async def test_from_record_no_duplicate_on_rescan(self, sync_db):
         """Calling from_record twice for the same canonical cwd yields one entity."""
         from flow_sdk.builtin.project import Project
-        from flow_sdk.fs_records.claude.claude_project import ClaudeProjectFsRecord
+        from flow_sdk.fs_store.fs_record import FSRecord as ClaudeProjectFsRecord
         from flow_sdk.fs_store.path_utils import canonical_posix_path
         from flow_sdk.db.drivers.query import QueryFilter
 

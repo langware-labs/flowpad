@@ -7,7 +7,7 @@ import {
   DialogTitle,
 } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { FolderOpen, Loader2 } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 
@@ -29,7 +29,6 @@ export function NewProjectDialog({
   onPickFolder,
   onCreate,
 }: NewProjectDialogProps) {
-  const { toast } = useToast();
   const [name, setName] = useState('');
   const [parent, setParent] = useState(defaultParentFolder);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -51,14 +50,13 @@ export function NewProjectDialog({
       await onCreate(name.trim(), parent.trim());
       onOpenChange(false);
     } catch (err) {
-      toast({
+      notify.error({
         title: err instanceof Error ? err.message : 'Failed to create project',
-        variant: 'destructive',
       });
     } finally {
       setIsSubmitting(false);
     }
-  }, [canCreate, name, parent, onCreate, onOpenChange, toast]);
+  }, [canCreate, name, parent, onCreate, onOpenChange]);
 
   const handleBrowse = useCallback(async () => {
     if (!onPickFolder) return;

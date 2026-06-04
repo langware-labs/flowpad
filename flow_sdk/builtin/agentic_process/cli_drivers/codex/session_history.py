@@ -62,13 +62,11 @@ def codex_transcript_path_for_process(process_id: str) -> Path:
 
     Lazily imported to avoid pulling Record machinery at module import time.
     """
-    from flow_sdk.fs_records.agentic_process_record import AgenticProcessRecord
-    from flow_sdk.fs_store.record import get_default_records_root, record_stem
+    from flow_sdk.fs_store.fs_record import record_stem
+    from flow_sdk.fs_store.record_paths import get_default_records_root
 
     root = get_default_records_root()
-    d = root / AgenticProcessRecord._record_type / record_stem(
-        AgenticProcessRecord._record_type, process_id
-    )
+    d = root / "agentic_process" / record_stem("agentic_process", process_id)
     d.mkdir(parents=True, exist_ok=True)
     return d / "codex_transcript.jsonl"
 

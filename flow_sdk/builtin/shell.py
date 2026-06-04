@@ -14,15 +14,16 @@ import asyncio
 import logging
 import os
 from datetime import datetime, timezone
+from flow_sdk._compat import StrEnum
 from typing import TYPE_CHECKING, ClassVar
 
 import psutil
 
-from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.api_field import APIField, Persist
 from flow_sdk.core import action
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
-from flow_sdk.fs_records.shell_record import ShellStatus, read_auto_rename
+from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 
@@ -30,9 +31,52 @@ if TYPE_CHECKING:
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerCLIOptions, WorkerExecutionInfo
     from flow_sdk.builtin.faas.compute_node import ComputeNode
     from flow_sdk.builtin.faas.pty_session import Pty
-    from flow_sdk.fs_records.shell_record import ShellRecord
 
 logger = logging.getLogger(__name__)
+
+
+class ShellStatus(StrEnum):
+    IDLE = "idle"
+    RUNNING = "running"
+    CLOSING = "closing"
+    CLOSED = "closed"
+    ERROR = "error"
+
+
+def get_shell_record(uid: str) -> FSRecord | None:
+    """O(1) lookup of the shell FSRecord by id. Returns None if not found."""
+    return FSRecord.load_or_none(BuiltinEntityType.SHELL.value, uid)
+
+
+def shell_pty_stream_path(record_id: str, pty_pid: str | None):
+    """Path to the .pty stream file for a shell session."""
+    from pathlib import Path
+    from flow_sdk.fs_store.fs_record import record_stem
+    from flow_sdk.fs_store.record_paths import get_default_records_data_root
+
+    if pty_pid is None:
+        raise ValueError("No pty_pid set")
+    stem = record_stem(BuiltinEntityType.SHELL.value, record_id)
+    return get_default_records_data_root() / BuiltinEntityType.SHELL.value / stem / f"{pty_pid}.pty"
+
+
+def close_shell_record(record: FSRecord) -> None:
+    """Set status to CLOSED, delete the .pty stream file. Idempotent.
+
+    The status write goes through the unified ``save_metadata_field`` path; the
+    .pty unlink is resource-lifecycle (not metadata sync) and stays here.
+    """
+    if record.__dict__.get("status") == ShellStatus.CLOSED.value:
+        return
+    pty_pid = record.__dict__.get("pty_pid")
+    if pty_pid is not None:
+        try:
+            p = shell_pty_stream_path(record.id, pty_pid)
+            if p.exists():
+                p.unlink()
+        except (OSError, ValueError):
+            pass
+    record.save_metadata_field("status", ShellStatus.CLOSED.value)
 
 class Shell(Entity):
     """Entity representing a shell tab (PTY session).
@@ -53,7 +97,7 @@ class Shell(Entity):
     collaboration_room_id: str | None = APIField(
         default=None, description="CollaborationRoom this shell is shared into (null = not shared)"
     )
-    tab_order: int = APIField(default=0)
+    tab_order: int = APIField(default=0, persist=Persist.FALSE)
     created_at: str | None = APIField(default=None, description="ISO creation timestamp")
     last_active_at: str | None = APIField(default=None, description="ISO last activity timestamp")
     error_message: str | None = APIField(default=None, description="Error message when status=error")
@@ -67,8 +111,6 @@ class Shell(Entity):
         ),
     )
     last_launch_cmd: dict | None = APIField(default=None, description="Serialized WorkerCLIOptions from the last launch() call")
-
-    _api_visible: ClassVar[bool] = True
 
     # ── Internal helpers ──────────────────────────────────────────────────────
 
@@ -486,12 +528,14 @@ class Shell(Entity):
 
         Non-destructive. Returns b"" if stream file does not exist yet.
         """
-        from flow_sdk.fs_records.shell_record import ShellRecord  # noqa: PLC0415
-
-        record = ShellRecord.get(self.pty_pid or self.id)
-        if record and record.pty_stream_ref.exists():
-            return record.pty_stream_ref.read_bytes()
-        return b""
+        record = get_shell_record(self.pty_pid or self.id)
+        if record is None:
+            return b""
+        try:
+            p = shell_pty_stream_path(record.id, record.__dict__.get("pty_pid"))
+        except ValueError:
+            return b""
+        return p.read_bytes() if p.exists() else b""
 
     def output(self):
         """Stream live PTY output as it arrives. Delegates to self.pty.output()."""
@@ -686,75 +730,12 @@ class Shell(Entity):
         return max(getattr(s, "tab_order", 0) for s in all_shells) + 1
 
     # ── Record sync ───────────────────────────────────────────────────────────
-
-    @classmethod
-    async def from_record(
-        cls,
-        record: "ShellRecord",
-        compute_node_typeid: str | None = None,
-    ) -> "Shell | None":
-        """Create or update a Shell entity from a ShellRecord."""
-        import re
-
-        _UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", re.I)
-        if not _UUID_RE.match(record.id):
-            logger.debug(f"[Shell.from_record] Skipping non-UUID record id: {record.id!r}")
-            return None
-
-        existing = await cls.get_one({"id": record.id})
-        if existing:
-            existing.sync_from_record(record)
-            if not existing.compute_node_id and compute_node_typeid:
-                parts = str(compute_node_typeid).split("-", 1)
-                existing.compute_node_id = parts[1] if len(parts) == 2 else str(compute_node_typeid)
-            await existing.save()
-            return existing
-
-        cn_id: str | None = None
-        if compute_node_typeid:
-            parts = str(compute_node_typeid).split("-", 1)
-            cn_id = parts[1] if len(parts) == 2 else str(compute_node_typeid)
-
-        entity = cls(
-            id=record.id,
-            name=record.data.get("name"),
-            workdir=record.data.get("workdir"),
-            tab_order=record.data.get("tab_order") or await cls.next_tab_order(),
-            pty_pid=record.data.get("pty_pid"),
-            created_at=record.data.get("created_at"),
-            last_active_at=record.data.get("last_active_at"),
-            status=(record.status.value if hasattr(record.status, "value") else record.status) or ShellStatus.IDLE.value,
-            compute_node_id=cn_id,
-            compute_node_uname=record.data.get("compute_node_uname"),
-            auto_rename=read_auto_rename(record.data),
-        )
-        await entity.save()
-
-        if compute_node_typeid:
-            try:
-                from flow_sdk.api.type_id import TypeId as TId
-
-                cn_tid = TId(compute_node_typeid) if isinstance(compute_node_typeid, str) else compute_node_typeid
-                cn = await Entity.get_by_typeid(cn_tid)
-                if cn:
-                    await cn.attach_child(entity.typeid)
-            except Exception as e:
-                logger.debug(f"Failed to attach Shell {entity.id} to {compute_node_typeid}: {e}")
-
-        return entity
-
-    def sync_from_record(self, record: "ShellRecord") -> None:
-        """Update entity fields from a ShellRecord."""
-        self.name = record.data.get("name")
-        self.workdir = record.data.get("workdir")
-        self.tab_order = record.data.get("tab_order", 0)
-        self.pty_pid = record.data.get("pty_pid")
-        self.created_at = record.data.get("created_at")
-        self.last_active_at = record.data.get("last_active_at")
-        self.compute_node_uname = record.data.get("compute_node_uname")
-        self.auto_rename = read_auto_rename(record.data)
-        status = record.status
-        self.status = status.value if hasattr(status, "value") else (status or ShellStatus.IDLE.value)
+    # Field sync (disk↔DB) is handled generically by the base ``Entity``:
+    # ``Entity.from_record`` hydrates the entity from the record's meta_dict,
+    # and ``Entity.store``/``save`` mirror the persisted fields (per ShellMeta)
+    # back to metadata.json. Shell-specific side effects on adopt — tab ordering
+    # and compute-node binding — live in the PTY action that owns that context
+    # (faas/pty_actions.py), not in a per-type override here.
 
     # ── HTTP actions ──────────────────────────────────────────────────────────
 

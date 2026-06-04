@@ -3,6 +3,7 @@ import {
   AgenticProcess,
   dataContext,
   dataManager,
+  DockPointerData,
   Project,
   Shell,
   ShellStatus,
@@ -97,7 +98,10 @@ function processFromCache(id: string): AgenticProcess | undefined {
   );
 }
 
-function toShellTab(s: WireShell): TerminalTab {
+// `toShellTab`/`toProcessTab`/`byTabOrder`/`mergePreservingOrder` are exported for
+// Phase-0 characterization tests (behaviour-neutral). The wire→tab mapping and the
+// ordering/merge invariants are locked by `ui/tests/unit/tab-*.test.ts`.
+export function toShellTab(s: WireShell): TerminalTab {
   const cached = shellFromCache(s.id);
   const isClosing = s.status === ShellStatus.CLOSING;
   return {
@@ -116,7 +120,7 @@ function toShellTab(s: WireShell): TerminalTab {
   };
 }
 
-function toProcessTab(p: WireProcess): TerminalTab {
+export function toProcessTab(p: WireProcess): TerminalTab {
   const cached = processFromCache(p.id);
   const linkedShellId = p.shell_id ?? cached?.shell_id ?? '';
   const linkedShell = linkedShellId ? shellFromCache(linkedShellId) : undefined;
@@ -139,7 +143,7 @@ function toProcessTab(p: WireProcess): TerminalTab {
   };
 }
 
-function byTabOrder(a: TerminalTab, b: TerminalTab): number {
+export function byTabOrder(a: TerminalTab, b: TerminalTab): number {
   if (a.tabOrder !== b.tabOrder) return a.tabOrder - b.tabOrder;
   // Stable secondary: plain shells before processes when tab_order is equal.
   if (a.type !== b.type) return a.type === 'plain' ? -1 : 1;
@@ -161,10 +165,21 @@ export function terminalProcessId(tab: TerminalTab): string | null {
   return tab.targetTypeId.type === AgenticProcess.type ? tab.targetTypeId.id : null;
 }
 
+/**
+ * The pointer terminal surfaces navigate to: the live PTY route. Prefers the
+ * AgenticProcess's ``terminalDockPointer`` (its default ``dockPointer`` is the
+ * read-only lens/transcript) over the plain shell pointer.
+ */
+export function terminalDockPointer(tab: TerminalTab): DockPointerData | null {
+  return tab.agenticProcess?.terminalDockPointer ?? tab.shell?.dockPointer ?? null;
+}
+
 // ─── Module-level shared state ──────────────────────────────────────────────
 
 let terminalState: TerminalTab[] = [];
 let initialFetchStarted = false;
+let firstFetchCompleted = false;
+let inFlightFirstFetch: Promise<TerminalTab[]> | null = null;
 let wsSubscribed = false;
 let wsRefetchTimer: ReturnType<typeof setTimeout> | null = null;
 const listeners = new Set<() => void>();
@@ -239,7 +254,12 @@ function ensureWsSubscription(): void {
 /**
  * Non-destructive merge of a freshly-fetched strip into the current one.
  *
- *   - First fetch (prev empty): adopt the server's sort order (`byTabOrder`).
+ *   - First fetch (`firstFetchCompleted` false): adopt the server's sort order
+ *     (`byTabOrder`). Any state already in `prev` (e.g. a route-loader
+ *     optimistic pre-seed) is discarded so the strip starts from the server's
+ *     canonical order. `prev.length === 0` is NOT a sufficient proxy — the
+ *     loader can seed one tab before this runs, which trapped that tab at
+ *     index 0 (the "selected tab becomes first after refresh" bug).
  *   - Existing tabs (key present in both): kept in their current local index,
  *     replaced in place with refreshed wire data (name, isDisabled, cached
  *     refs). Server `tab_order` is intentionally ignored — once a tab has a
@@ -252,8 +272,12 @@ function ensureWsSubscription(): void {
  * indices of existing tabs, which is the exact "tabs moving around" problem
  * this function exists to prevent.
  */
-function mergePreservingOrder(prev: TerminalTab[], fetched: TerminalTab[]): TerminalTab[] {
-  if (prev.length === 0) return fetched.slice().sort(byTabOrder);
+export function mergePreservingOrder(
+  prev: TerminalTab[],
+  fetched: TerminalTab[],
+  firstFetchCompleted: boolean,
+): TerminalTab[] {
+  if (!firstFetchCompleted) return fetched.slice().sort(byTabOrder);
   const fetchedByKey = new Map<string, TerminalTab>();
   for (const t of fetched) fetchedByKey.set(terminalTargetKey(t), t);
   const kept: TerminalTab[] = [];
@@ -286,6 +310,11 @@ function mergePreservingOrder(prev: TerminalTab[], fetched: TerminalTab[]): Term
 export async function fetchActiveTerminals(): Promise<TerminalTab[]> {
   const computeNodeId = dataContext.computeNode?.id;
   if (!computeNodeId) return [];
+  // Mark the first fetch as in-flight so the hook's subscribe gate
+  // (`initialFetchStarted`) skips its own kickoff when a route loader is
+  // already driving this call. We only flip `firstFetchCompleted` on success
+  // so a network failure here doesn't lock the merge into preserve-order.
+  initialFetchStarted = true;
   const action = new ActionInfo('terminals', 'compute_node', computeNodeId, 'GET');
   action.subpath = 'list';
   const result = await dataManager.callAction<unknown, ActiveTerminalsResponse>(action);
@@ -304,9 +333,26 @@ export async function fetchActiveTerminals(): Promise<TerminalTab[]> {
     ...result.pure_shells.map(toShellTab),
     ...result.visible_processes.map(toProcessTab),
   ];
-  const next = mergePreservingOrder(terminalState, fetched);
+  const next = mergePreservingOrder(terminalState, fetched, firstFetchCompleted);
   setTerminalState(next);
+  firstFetchCompleted = true;
   return next;
+}
+
+/**
+ * Idempotent first-fetch. Loaders that need the strip populated before the
+ * route renders should `await` this — concurrent callers share the same
+ * in-flight request, and subsequent callers are no-ops returning the current
+ * `terminalState`. Subsequent (post-first) refreshes should go through
+ * `fetchActiveTerminals` directly.
+ */
+export async function ensureTerminalsFetched(): Promise<TerminalTab[]> {
+  if (firstFetchCompleted) return terminalState;
+  if (inFlightFirstFetch) return inFlightFirstFetch;
+  inFlightFirstFetch = fetchActiveTerminals().finally(() => {
+    inFlightFirstFetch = null;
+  });
+  return inFlightFirstFetch;
 }
 
 export interface TerminalCloseResponse {
@@ -356,30 +402,6 @@ function removeTerminalShared(target: TerminalTab | TypeId | string): void {
 function updateTerminalShared(target: TerminalTab | TypeId | string, patch: Partial<TerminalTab>): void {
   const key = terminalTargetKey(target);
   setTerminalState(terminalState.map((t) => (terminalTargetKey(t) === key ? { ...t, ...patch } : t)));
-}
-
-/**
- * Optimistically insert a row built from a freshly-loaded process + its shell.
- * Called by route loaders so the strip reflects a newly-active process *before*
- * the next terminals/list refetch completes — closes the race window in
- * which TabbedTerminal's self-heal effect would otherwise pick a stale tab.
- */
-export function pushLoadedProcessTab(process: AgenticProcess, shell: Shell): void {
-  const tab: TerminalTab = {
-    targetTypeId: new TypeId(AgenticProcess.type, process.id),
-    shellId: shell.id,
-    processId: process.id,
-    tabOrder: shell.tab_order ?? 0,
-    name: process.name ?? null,
-    type: 'claude',
-    isDisabled: shell.status === ShellStatus.CLOSING,
-    statusReason: shell.status === ShellStatus.CLOSING ? 'Closing...' : '',
-    projectId: process.project_id ?? shell.project_id ?? null,
-    projectDisplayName: null,
-    shell,
-    agenticProcess: process,
-  };
-  pushTerminalShared(tab);
 }
 
 export interface UseTerminalsResult {

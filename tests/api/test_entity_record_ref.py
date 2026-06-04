@@ -11,7 +11,7 @@ import pytest_asyncio
 
 from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.builtin.workspace import Workspace
-from flow_sdk.fs_store.record import Record
+from flow_sdk.fs_store.fs_record import FSRecord as Record
 
 
 @pytest_asyncio.fixture(autouse=True)

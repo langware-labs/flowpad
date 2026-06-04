@@ -111,7 +111,7 @@ async def test_markdown_in_folder_skips_whiteboard_md(tmp_path: Path) -> None:
         board_folder,
         record_type=RecordType.FOLDER,
     )
-    refs = await markdown_in_folder_fn([folder_ref], IndexerOptions(verbose=False))
+    refs = markdown_in_folder_fn([folder_ref], IndexerOptions(verbose=False))
     md_refs = [r for r in refs if r.record_type == RecordType.MARKDOWN]
     assert md_refs == [], (
         "WHITE_BOARD.md must not be double-indexed as MARKDOWN "

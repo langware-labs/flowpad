@@ -5,6 +5,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/c
 import { cn } from '@src/lib/utils';
 import { FileText, Info, MessageSquare, StickyNote, Tag } from 'lucide-react';
 import { useDockNavigation } from '@src/navigation';
+import { APIEntity } from '@sdk/APIEntity';
 import { useContext } from '@sdk/react/hooks';
 import React, { useState } from 'react';
 import type { AnnotationElement, AnnotationElementKind } from './use-annotation-gutter';
@@ -814,7 +815,9 @@ function AnnotationCell({
             type="button"
             className="flex items-center gap-1.5 rounded px-1.5 py-1 text-left text-xs text-blue-400 hover:bg-accent"
             onClick={() => {
-              if (agenticProcessTypeId) navigation.openPlan(agenticProcessTypeId, filePath);
+              if (agenticProcessTypeId) {
+                navigation.openPlan(agenticProcessTypeId, filePath);
+              }
               setOpen(false);
             }}
           >

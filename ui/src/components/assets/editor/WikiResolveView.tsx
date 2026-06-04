@@ -6,14 +6,16 @@ import { useCallback, useEffect, useState } from 'react';
 import { Button } from '@src/components/ui/button';
 import { RadioGroup, RadioGroupItem } from '@src/components/ui/radio-group';
 import { Label } from '@src/components/ui/label';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { MarkdownEditor } from './markdown/MarkdownEditor';
 
 interface WikiResolveViewProps {
-  /** Decoded wiki name from the `/dock/assets/wiki/<name>` pointer. */
+  /** Decoded wiki name from the `/dock/assets/wiki/<space>/<name>` pointer. */
   name: string;
+  /** The space the name resolves within (default @local). */
+  space?: string;
 }
 
 interface ResolveResult {
@@ -33,24 +35,23 @@ type CreateAsType = 'markdown' | 'whiteboard';
  *
  * On miss: type picker offering "Create as markdown" / "Create as whiteboard".
  */
-export function WikiResolveView({ name }: WikiResolveViewProps) {
+export function WikiResolveView({ name, space = '@local' }: WikiResolveViewProps) {
   const { computeNode } = useAgentContext();
   const typeIdStr = computeNode?.typeId?.toString();
-  const { toast } = useToast();
   const { navigation } = useDockNavigation();
   const queryClient = useQueryClient();
   const [creating, setCreating] = useState(false);
   const [createAs, setCreateAs] = useState<CreateAsType>('markdown');
 
   const { data, isLoading, error } = useQuery<ResolveResult | null>({
-    queryKey: ['wiki-resolve', name],
+    queryKey: ['wiki-resolve', name, space],
     queryFn: async () => {
       // /wiki/resolve returns the resource shape directly (no {status,data}
       // envelope). Wrap the raw body in {data} so the apiClient interceptor's
       // unconditional `.data.data` extract yields the parsed JSON — same trick
       // dataManager.callAction uses for raw-response endpoints.
       const body = (await apiClient.get<ResolveResult | null>('/wiki/resolve', {
-        params: { name },
+        params: { name, space },
         transformResponse: (raw: string) => ({ data: JSON.parse(raw) }),
       })) as ResolveResult | null;
       if (!body || typeof body !== 'object' || !('type' in body) || !('id' in body)) return null;
@@ -71,29 +72,28 @@ export function WikiResolveView({ name }: WikiResolveViewProps) {
     try {
       if (createAs === 'whiteboard') {
         const saved = await Whiteboard.createInProject(dataContext.project ?? null, name);
-        toast({ title: 'Whiteboard created', description: `[[${name}]]` });
+        notify.success({ title: 'Whiteboard created', message: `[[${name}]]` });
         void queryClient.invalidateQueries({ queryKey: ['wiki-resolve', name] });
         if (saved.asset_ref) {
           navigation.openDock(DockPointer.forAssetEditor('whiteboard', saved.asset_ref));
         }
       } else {
         const saved = await Markdown.createInProject(dataContext.project ?? null, name);
-        toast({ title: 'Markdown created', description: `[[${name}]]` });
+        notify.success({ title: 'Markdown created', message: `[[${name}]]` });
         void queryClient.invalidateQueries({ queryKey: ['wiki-resolve', name] });
         if (saved.asset_ref) {
           navigation.openDock(DockPointer.forAssetEditor('markdown', saved.asset_ref));
         }
       }
     } catch (err) {
-      toast({
+      notify.error({
         title: `Could not create ${createAs}`,
-        description: err instanceof Error ? err.message : String(err),
-        variant: 'destructive',
+        message: err instanceof Error ? err.message : String(err),
       });
     } finally {
       setCreating(false);
     }
-  }, [createAs, name, navigation, queryClient, toast]);
+  }, [createAs, name, navigation, queryClient]);
 
   if (!computeNode?.typeId) {
     return (

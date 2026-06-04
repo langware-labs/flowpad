@@ -28,5 +28,4 @@ class Whiteboard(Entity):
     name: str = APIField(default="")
     description: str = APIField(default="")
     asset_ref: str = APIField(default="")
-    _api_visible: ClassVar[bool] = True
-    _icon: ClassVar[str] = "Palette"
+

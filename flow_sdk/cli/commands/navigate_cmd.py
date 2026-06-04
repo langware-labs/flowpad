@@ -16,13 +16,16 @@ parse the outcome.
 
 from __future__ import annotations
 
-import json
-import os
-from typing import Any
 
 import requests
 import typer
 from typing_extensions import Annotated
+
+from flow_sdk.cli.commands._common import (
+    discover_port as _discover_port,
+    fail as _fail,
+    ok as _ok,
+)
 
 
 navigate_app = typer.Typer(
@@ -39,27 +42,6 @@ EXIT_INVALID_ARG = 2
 EXIT_NO_ACTIVE_TAB = 3
 EXIT_ENTITY_NOT_FOUND = 4
 EXIT_CONNECTION_ERROR = 5
-
-
-def _discover_port() -> int:
-    """Find the running server's port (same helper pattern as flow_cli)."""
-    from flow_sdk.discovery.flowpad_discovery import read_server_info
-
-    server_info = read_server_info()
-    if server_info:
-        return server_info.port
-    return int(os.environ.get("LOCAL_SERVER_PORT", "9007"))
-
-
-def _fail(exit_code: int, error_code: str, message: str) -> None:
-    """Print a parseable error envelope to stderr and exit with the given code."""
-    typer.echo(f"Error: {message}", err=True)
-    typer.echo(json.dumps({"ok": False, "error_code": error_code, "error": message}), err=True)
-    raise typer.Exit(exit_code)
-
-
-def _ok(payload: dict[str, Any]) -> None:
-    typer.echo(json.dumps({"ok": True, **payload}))
 
 
 @navigate_app.command(

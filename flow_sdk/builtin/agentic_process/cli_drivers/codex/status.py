@@ -23,7 +23,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from flow_sdk.fs_records.agent_status import WorkerStatus
+from flow_sdk.builtin.worker_status import WorkerStatus
 
 logger = logging.getLogger(__name__)
 

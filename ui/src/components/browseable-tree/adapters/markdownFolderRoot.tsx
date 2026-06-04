@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileText, Folder, Library, Plus, RefreshCw, User as UserIcon } from 'lucide-react';
+import { FileText, Folder, FolderPlus, Library, Network, Plus, RefreshCw, User as UserIcon } from 'lucide-react';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import apiClient from '@sdk/client';
 import { fsStore, TypeId } from '@sdk';
@@ -8,6 +8,7 @@ import { ViewType } from '@src/types/ViewType';
 import type { AssetTypeInfo, AssetTypeVault } from '@src/hooks/use-asset-types';
 import type {
   Browseable,
+  BrowseableDragData,
   BrowseableRoot,
   ToolbarAction,
 } from '@src/components/browseable-tree/types';
@@ -21,16 +22,115 @@ import type { AssetFilter } from '@src/components/assets/assetFilter';
 export interface MarkdownFolderRootDeps {
   /** Reindex callback for the "Scan" toolbar button. Forwards the active
    *  filter so per-type scans honor the same scope. */
-  indexType: (typeName: string, scope?: { user: boolean; projects: string[] }) => Promise<{ indexed?: number } | void>;
+  indexType: (
+    typeName: string,
+    scope?: { user: boolean; projects: string[] },
+    options?: { force?: boolean; orphanAction?: 'index' | 'ignore' | 'delete' },
+  ) => Promise<{ indexed?: number } | void>;
   /** Called when the root-level "New" toolbar is clicked (falls back to the
    *  legacy flow which creates under .claude/docs). */
   onNew?: (typeName: string) => void;
+  /** Called when a vault/folder wants a new child folder. */
+  onCreateFolder?: (target: MarkdownFolderTarget) => void;
+  /** Called when a markdown file/folder is dropped onto a folder target. */
+  onMoveItem?: (item: MarkdownDragItem, target: MarkdownFolderTarget) => Promise<void> | void;
   /** Called after a successful scan. */
   onScanComplete?: (typeName: string) => void;
   /** Max entries to fetch per folder from the filesystem. Default 500. */
   folderPageSize?: number;
   /** Active filter — used by the count badge so it tracks scope/project. */
   filter?: AssetFilter;
+  /** Open the docs knowledge browser for a vault root (its absolute vfs path).
+   *  Wired by the host (AssetsPage) to navigation.openDock — toolbar actions are
+   *  side-effects, so navigation is performed by the host, not here. */
+  onOpenKnowledgeBrowser?: (absPath: string) => void;
+}
+
+export interface MarkdownFolderTarget {
+  typeName: string;
+  typeid: string;
+  relPath: string;
+  absPath: string;
+  label: string;
+}
+
+export interface MarkdownDragItem extends BrowseableDragData {
+  kind: 'markdown-file' | 'markdown-folder';
+  typeName: string;
+  typeid: string;
+  relPath: string;
+  absPath: string;
+  isDir: boolean;
+}
+
+export function markdownFolderNodeId(typeid: string, absPath: string): string {
+  return `md-folder:${typeid}:${absPath || '/'}`;
+}
+
+function normalizeRelPath(path: string): string {
+  return path.replace(/^\/+/, '').replace(/\/+$/, '');
+}
+
+function parentRelPath(path: string): string {
+  const normalized = normalizeRelPath(path);
+  const idx = normalized.lastIndexOf('/');
+  return idx <= 0 ? '' : normalized.slice(0, idx);
+}
+
+function isMarkdownDragItem(data: BrowseableDragData): data is MarkdownDragItem {
+  return (
+    (data.kind === 'markdown-file' || data.kind === 'markdown-folder') &&
+    typeof data.typeName === 'string' &&
+    typeof data.typeid === 'string' &&
+    typeof data.relPath === 'string' &&
+    typeof data.absPath === 'string'
+  );
+}
+
+function canDropMarkdownItem(target: MarkdownFolderTarget, data: BrowseableDragData): boolean {
+  if (!isMarkdownDragItem(data)) return false;
+  if (data.typeName !== target.typeName || data.typeid !== target.typeid) return false;
+  const sourceRel = normalizeRelPath(data.relPath);
+  const targetRel = normalizeRelPath(target.relPath);
+  if (!sourceRel) return false;
+  if (parentRelPath(sourceRel) === targetRel) return false;
+  if (data.kind === 'markdown-folder') {
+    if (sourceRel === targetRel) return false;
+    if (targetRel.startsWith(`${sourceRel}/`)) return false;
+  }
+  return true;
+}
+
+function folderTarget(args: {
+  typeName: string;
+  typeid: string;
+  relPath: string;
+  absPath: string;
+  label: string;
+}): MarkdownFolderTarget {
+  return {
+    typeName: args.typeName,
+    typeid: args.typeid,
+    relPath: normalizeRelPath(args.relPath),
+    absPath: args.absPath,
+    label: args.label,
+  };
+}
+
+function folderToolbar(
+  target: MarkdownFolderTarget,
+  onCreateFolder?: (target: MarkdownFolderTarget) => void,
+): ToolbarAction[] | undefined {
+  if (!onCreateFolder) return undefined;
+  return [
+    {
+      id: `new-folder:${target.typeid}:${target.relPath || 'root'}`,
+      icon: <FolderPlus />,
+      label: `New folder in ${target.label}`,
+      run: () => onCreateFolder(target),
+      showBusyIndicator: false,
+    },
+  ];
 }
 
 function resolveAssetIcon(iconName: string | null | undefined): React.ReactNode {
@@ -115,10 +215,28 @@ function folderBrowseable(args: {
   label: string;
   kind: 'vault-root' | 'folder';
   folderPageSize: number;
+  onCreateFolder?: (target: MarkdownFolderTarget) => void;
+  onMoveItem?: (item: MarkdownDragItem, target: MarkdownFolderTarget) => Promise<void> | void;
+  onOpenKnowledgeBrowser?: (absPath: string) => void;
 }): Browseable {
-  const { typeName, typeid, relPath, absPath, label, kind, folderPageSize } = args;
+  const { typeName, typeid, relPath, absPath, label, kind, folderPageSize, onCreateFolder, onMoveItem, onOpenKnowledgeBrowser } = args;
+  const target = folderTarget({ typeName, typeid, relPath, absPath, label });
+  // The knowledge-browser button sits only on the docs root (vault-root), which
+  // has a single scannable path; subfolders don't get their own browser.
+  const kbAction: ToolbarAction[] =
+    kind === 'vault-root' && onOpenKnowledgeBrowser
+      ? [
+          {
+            id: `kbrowser:${typeid}:${absPath}`,
+            icon: <Network />,
+            label: 'Open knowledge browser',
+            run: () => onOpenKnowledgeBrowser(absPath),
+            showBusyIndicator: false,
+          },
+        ]
+      : [];
   return {
-    id: `md-folder:${typeid}:${absPath || '/'}`,
+    id: markdownFolderNodeId(typeid, absPath),
     kind,
     label,
     icon:
@@ -129,7 +247,33 @@ function folderBrowseable(args: {
       ),
     hasChildren: true,
     pointer: DockPointer.forAssetFolder(typeName, typeid, relPath),
-    listChildren: async () => {
+    toolbar: [...folderToolbar(target, onCreateFolder), ...kbAction],
+    dragData: kind === 'folder'
+      ? {
+          kind: 'markdown-folder',
+          id: `md-folder:${typeid}:${absPath}`,
+          label,
+          typeName,
+          typeid,
+          relPath: normalizeRelPath(relPath),
+          absPath,
+          isDir: true,
+        }
+      : undefined,
+    canDrop: onMoveItem ? (data) => canDropMarkdownItem(target, data) : undefined,
+    onDrop: onMoveItem
+      ? (data) => {
+          if (!isMarkdownDragItem(data)) return;
+          return onMoveItem(data, target);
+        }
+      : undefined,
+    listChildren: async (opts) => {
+      // `refresh:true` comes from deep-link freshness in useBrowseableTree —
+      // the leaf was missing from a previously-cached listing, so drop
+      // fsStore.browseCache for this folder before refetching from disk.
+      if (opts?.refresh) {
+        fsStore.getState().invalidate(new TypeId(typeid), relPath || '/', 'browse');
+      }
       const entries = await fsStore
         .getState()
         .listDirectory(new TypeId(typeid), relPath || '/');
@@ -153,6 +297,8 @@ function folderBrowseable(args: {
             label: name,
             kind: 'folder',
             folderPageSize,
+            onCreateFolder,
+            onMoveItem,
           });
         }
         return {
@@ -162,6 +308,16 @@ function folderBrowseable(args: {
           icon: <FileText className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />,
           hasChildren: false as const,
           pointer: DockPointer.forAssetEditor(typeName, childAbs),
+          dragData: {
+            kind: 'markdown-file',
+            id: `md-file:${typeid}:${childAbs}`,
+            label: name,
+            typeName,
+            typeid,
+            relPath: normalizeRelPath(childRel),
+            absPath: childAbs,
+            isDir: false,
+          },
         };
       });
     },
@@ -241,6 +397,9 @@ export function markdownFolderRoot(
       label: v.label,
       kind: 'vault-root',
       folderPageSize,
+      onCreateFolder: deps.onCreateFolder,
+      onMoveItem: deps.onMoveItem,
+      onOpenKnowledgeBrowser: deps.onOpenKnowledgeBrowser,
     }),
     icon: vaultIcon(v),
   });
@@ -300,6 +459,8 @@ export function markdownFolderRoot(
               label: seg,
               kind: 'folder',
               folderPageSize,
+              onCreateFolder: deps.onCreateFolder,
+              onMoveItem: deps.onMoveItem,
             }),
           );
         }
@@ -334,6 +495,8 @@ export function markdownFolderRoot(
               label: seg,
               kind: 'folder',
               folderPageSize,
+              onCreateFolder: deps.onCreateFolder,
+              onMoveItem: deps.onMoveItem,
             }),
           );
         }

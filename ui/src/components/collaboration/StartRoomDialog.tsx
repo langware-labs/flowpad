@@ -2,7 +2,7 @@ import { CollaborationRoom, dataContext, getOrCreateLocalMemberId, Project } fro
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { LogIn, Plus, Users } from 'lucide-react';
 import { useState } from 'react';
@@ -22,7 +22,6 @@ export function StartRoomDialog({ open, onClose, defaultName }: StartRoomDialogP
   const [joinName, setJoinName] = useState(defaultName ?? '');
   const [busy, setBusy] = useState(false);
   const { navigation } = useDockNavigation();
-  const { toast } = useToast();
 
   const canCreate = !!hostName.trim() && !busy;
   const normalizedCode = joinCode.trim().toUpperCase();
@@ -34,9 +33,9 @@ export function StartRoomDialog({ open, onClose, defaultName }: StartRoomDialogP
     try {
       const currentProject = dataContext.project;
       if (!currentProject?.id) {
-        toast({
+        notify.info({
           title: 'No project selected',
-          description: 'Open a project before starting a collaboration.',
+          message: 'Open a project before starting a collaboration.',
         });
         return;
       }
@@ -44,9 +43,9 @@ export function StartRoomDialog({ open, onClose, defaultName }: StartRoomDialogP
         projectId: currentProject.id,
         hostName: hostName.trim(),
       });
-      toast({
+      notify.success({
         title: 'Room started',
-        description: currentProject.session_code
+        message: currentProject.session_code
           ? `Share code ${currentProject.session_code} to invite.`
           : undefined,
       });
@@ -54,7 +53,7 @@ export function StartRoomDialog({ open, onClose, defaultName }: StartRoomDialogP
       onClose();
     } catch (err) {
       console.error('[StartRoomDialog] create failed', err);
-      toast({ title: 'Could not start room', description: String((err as Error).message ?? err) });
+      notify.info({ title: 'Could not start room', message: String((err as Error).message ?? err) });
     } finally {
       setBusy(false);
     }
@@ -66,7 +65,7 @@ export function StartRoomDialog({ open, onClose, defaultName }: StartRoomDialogP
     try {
       const resolved = await Project.resolveByCode(normalizedCode);
       if (!resolved) {
-        toast({ title: 'Project not found', description: `No project matches "${normalizedCode}".` });
+        notify.info({ title: 'Project not found', message: `No project matches "${normalizedCode}".` });
         return;
       }
       const memberId = getOrCreateLocalMemberId();

@@ -172,6 +172,9 @@ export interface RestApiMessage extends BaseMessage {
   sub_path?: string | null;
   query_params?: Record<string, unknown> | null;
   body?: Record<string, unknown> | null;
+  // Per-call hub-reflection opt-in (default false). The WS-REST handler copies
+  // this onto request_info.hub_reflect (the HTTP path uses the Hub-Reflect header).
+  hub_reflect?: boolean;
 }
 
 export interface ResponseMessage extends BaseMessage {

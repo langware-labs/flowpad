@@ -23,8 +23,8 @@ tags: [whiteboard, smoke]
 * Response body MUST NOT contain `"Unknown entity type"` — that signals the backend doesn't know `whiteboard`.
 
 ### S3: Excalidraw bundle lazy-loads + editor mounts
-* POST `${API_URL}/api/v1/graph/whiteboard` with body `{"name":"smoke-s3","description":"smoke s3"}`. Capture the returned `asset_ref` (e.g. `/Users/<u>/.claude/whiteboards/smoke-s3`).
-* Navigate to `${APP_URL}/dock/assets/editor/whiteboard/<asset_ref-without-leading-slash>`.
+* POST `${API_URL}/api/v1/graph/whiteboard` with body `{"name":"smoke-s3","description":"smoke s3"}`. Capture the returned `id` (e.g. `2351dedc-…`) and `asset_ref`.
+* Navigate to `${APP_URL}/dock/assets/editor/whiteboard/typeid/whiteboard-<id>` (the AssetDocPointer grammar requires an explicit `typeid/` or `vfs/` method segment; a bare `asset_ref` path now renders "Invalid asset pointer").
 * Wait up to 5s for `[data-testid="whiteboard-editor"]` to appear.
 * Validate `.excalidraw.excalidraw-container` is in the DOM with `clientHeight` > 100 AND < 100000 (the CSS-import-missing regression inflates this to 33,554,432).
 * Validate no React error boundary visible (no `heading "Error"` in document).

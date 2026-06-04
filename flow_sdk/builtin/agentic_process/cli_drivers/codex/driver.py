@@ -36,7 +36,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers.codex.stream_worker import (
     CodexCLIStreamWorker,
 )
 from flow_sdk.flowpad_types.enums import WorkerType
-from flow_sdk.fs_records.agent_status import WorkerStatus
+from flow_sdk.builtin.worker_status import WorkerStatus
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 from flow_sdk.transcript_analyzer import (
     TranscriptDescriptor,
@@ -68,14 +68,10 @@ class CodexDriver:
         on this), and the runtime path inlines the agent body via
         ``compose_prompt`` instead.
         """
-        from flow_sdk.config import flowpad_assistant_project_root
-
         cmd = CodexCliOptions.from_json(process.cli_config)
         cmd.session_id = process.session_id
         cmd.workdir = process.workdir
-        core_dir = str(flowpad_assistant_project_root())
-        extra = [d for d in (process.additional_dirs or []) if d != core_dir]
-        cmd.add_dirs = [core_dir] + extra
+        cmd.add_dirs = process.resolved_add_dirs
         agents_json = process.get_agents_json()
         if agents_json:
             cmd.skill_names = list(agents_json.keys())
@@ -142,7 +138,7 @@ class CodexDriver:
         except OSError:
             logger.debug("CodexDriver.headless_prompt: failed to pre-touch transcript", exc_info=True)
 
-        from flow_sdk.fs_records.agentic_process_lifecycle import ProcessStatus
+        from flow_sdk.builtin.process_lifecycle import ProcessStatus
         if process.status != ProcessStatus.RUNNING.value:
             process.status = ProcessStatus.RUNNING.value
             try:

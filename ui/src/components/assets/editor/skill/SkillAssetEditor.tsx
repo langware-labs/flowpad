@@ -38,7 +38,9 @@ export function SkillAssetEditor({ fsRef, skill: providedSkill }: SkillAssetEdit
     },
     [sourcePath],
   );
-  const chatTarget = editorRef.vpath;
+  // chatTarget MUST be the entity's TypeId — MarkdownEditor builds `new TypeId(chatTarget)`.
+  // Passing a path here is what caused the "Invalid typeId" crash.
+  const chatTarget = skill ? skill.typeId.toString() : null;
   const skillExecutionTarget = skill ? skill.typeId.toString() : null;
   const { navigation } = useDockNavigation();
   const onDelete = useCallback(async () => {

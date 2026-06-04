@@ -1,16 +1,19 @@
 import type { Editor as MilkdownEditorInstance } from '@milkdown/core';
 import { EditorWithSidePanel, type ExtraSideTab } from '@src/components/milkdown-editor/EditorWithSidePanel';
 import { MilkdownEditor } from '@src/components/milkdown-editor/MilkdownEditor';
+import { ReviewSurface } from '@src/components/assets/editor/markdown/ReviewSurface';
 import { Button } from '@src/components/ui/button';
 import { WikiToolbar } from '@src/components/wiki-toolbar';
 import { useMarkdownContent } from '@src/hooks/use-markdown-content';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { FSRef } from '@sdk';
+import { FSRef, TypeId } from '@sdk';
 import { downloadFile } from '@sdk/utils/utils';
 import Editor, { type OnMount } from '@monaco-editor/react';
-import { ChevronDown, ChevronRight, Download, Eye, ExternalLink, FileCode, FilePlus2, GraduationCap, MessageSquareDiff, Pencil, RefreshCw, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Download, Eye, ExternalLink, FileCode, FilePlus2, GraduationCap, MessageSquareDiff, Pencil, RefreshCw, Send, Trash2 } from 'lucide-react';
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
+import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
+import { genericEntityShareSource } from '@src/hooks/share-sources';
 import { useTheme } from 'next-themes';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -237,6 +240,14 @@ function MarkdownEditorContent({
   } = useMarkdownContent(fsRef, { autoSave: true, autoSaveMs: 2000 });
 
   const [propsExpanded, setPropsExpanded] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+
+  const shareSource = useMemo(() => {
+    if (!chatTarget) return null;
+    const label =
+      (typeof sourcePath === 'string' ? sourcePath.split('/').pop() : null) || undefined;
+    return genericEntityShareSource(new TypeId(chatTarget), { label });
+  }, [chatTarget, sourcePath]);
 
   // On-disk caret line shared across all editor backends. Null means "user has
   // not clicked yet" — chat header badge is hidden in that case. Persists across
@@ -381,6 +392,24 @@ function MarkdownEditorContent({
   }
 
   // ── Editor ─────────────────────────────────────────────────────────────────
+  const shareButton = shareSource ? (
+    <button
+      type="button"
+      title="Share to conversation"
+      onClick={() => setShareOpen(true)}
+      data-testid="markdown-editor-share"
+      className="flex-shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+    >
+      <Send className="h-3.5 w-3.5" />
+    </button>
+  ) : null;
+  const headerActions = shareButton ? (
+    <>
+      {toolbar}
+      {shareButton}
+    </>
+  ) : toolbar;
+
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <EditorHeader
@@ -392,9 +421,16 @@ function MarkdownEditorContent({
         onOpenExternal={handleOpenExternal}
         onDownload={handleDownload}
         onDelete={handleDelete}
-        actions={toolbar}
+        actions={headerActions}
         showLearningMode={showLearningMode}
       />
+      {shareSource && shareOpen && (
+        <ShareToConversationDialog
+          open={shareOpen}
+          onClose={() => setShareOpen(false)}
+          source={shareSource}
+        />
+      )}
 
       {hasFields && (
         <div className="flex-shrink-0 border-b">
@@ -446,6 +482,8 @@ function MarkdownEditorContent({
                 onCursorLineChange={handleEditorLineChange}
                 initialLine={initialBodyLine}
               />
+            ) : viewMode === 'review' ? (
+              <ReviewSurface body={body} docTypeId={chatTarget} />
             ) : (
               <MilkdownEditor
                 content={body}

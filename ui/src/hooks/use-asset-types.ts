@@ -1,59 +1,76 @@
 import { useEffect, useState } from 'react';
-import apiClient from '@sdk/client';
+import { apiClient } from '@sdk/client';
+import { dataManager } from '@sdk';
 
 export interface AssetTypeVault {
-  /** Entity typeid in VFS form, e.g. "compute_node-@local" or "project-<uuid>". */
   typeid: string;
-  /** Path relative to the typeid. Empty string for the entity root itself. */
   relPath: string;
-  /** Human-readable label: "User" for the user vault, the project name for
-   *  project vaults, or the folder name for env-supplied dirs. */
   label: string;
-  /** Absolute filesystem path corresponding to (typeid, relPath). Primarily used
-   *  for the parent_path filter when drilling into a folder. */
-  absPath: string;
-  /** 'user' | 'project' | 'system' — same scope axis used by record filtering.
-   *  Used by the markdown tree to drop vaults outside the active filter. */
   scope: string;
-  /** Synthetic project_id (uuid5 of the project mount) for project vaults; null
-   *  otherwise. Matches what indexed records under this vault carry. */
-  project_id: string | null;
 }
 
 export interface AssetTypeInfo {
   type_name: string;
   label: string;
   icon: string | null;
-  creatable?: boolean;
-  /** Optional per-type list of vault roots used for folder-tree rendering.
-   *  Populated for markdown; absent for asset types that stay flat. */
+  creatable: boolean;
+  browseable: boolean;
   vaults?: AssetTypeVault[];
 }
 
-interface UseAssetTypesResult {
-  types: AssetTypeInfo[];
-  isLoading: boolean;
+/** Title-case a snake_case type name: "claude_memory" -> "Claude Memory". */
+function humanize(typeName: string): string {
+  return typeName
+    .split('_')
+    .map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w))
+    .join(' ');
 }
 
-export function useAssetTypes(): UseAssetTypesResult {
-  const [types, setTypes] = useState<AssetTypeInfo[]>([]);
+/** Static asset-type metadata sourced from the frontend SchemaRegistry.
+ *  Guarded so it degrades to [] if the registry isn't ready yet (e.g. a
+ *  component test that mounts before bootstrap/loadTypes ran). */
+function staticAssetTypes(): AssetTypeInfo[] {
+  return (dataManager?.getAllTypeInfos?.() ?? [])
+    .filter((t) => t.browseable)
+    .map((t) => ({
+      type_name: t.type_name,
+      label: humanize(t.type_name),
+      icon: t.icon,
+      creatable: t.creatable,
+      browseable: t.browseable,
+    }));
+}
+
+/**
+ * Asset-type catalog for the asset browser.
+ *
+ * Static metadata (type_name/label/icon/creatable/browseable) comes from the
+ * frontend SchemaRegistry — no per-type fetch. The only runtime piece is
+ * markdown ``vaults`` (per-project doc roots): we still fetch ``/assets/types``
+ * but consume ONLY its vaults, merging them onto the markdown entry.
+ */
+export function useAssetTypes(): { types: AssetTypeInfo[]; isLoading: boolean } {
+  const [types, setTypes] = useState<AssetTypeInfo[]>(() => staticAssetTypes());
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
-    setIsLoading(true);
+    // `types` is already seeded from staticAssetTypes() by the useState
+    // initializer; the effect only fetches the runtime markdown vaults and
+    // merges them onto that base (no second static recompute).
     apiClient
-      .get('/assets/types')
-      .then((data: unknown) => {
+      .get<{ types: AssetTypeInfo[] }>('/assets/types')
+      .then((res) => {
         if (cancelled) return;
-        const d = data as { types?: AssetTypeInfo[] } | null;
-        setTypes(d?.types ?? []);
+        const vaults =
+          (res?.types || []).find((t) => t.type_name === 'markdown')?.vaults || [];
+        setTypes((prev) =>
+          prev.map((t) => (t.type_name === 'markdown' ? { ...t, vaults } : t)),
+        );
         setIsLoading(false);
       })
       .catch(() => {
-        if (cancelled) return;
-        setTypes([]);
-        setIsLoading(false);
+        if (!cancelled) setIsLoading(false);
       });
     return () => {
       cancelled = true;

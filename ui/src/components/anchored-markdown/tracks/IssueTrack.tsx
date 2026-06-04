@@ -14,6 +14,7 @@ export interface IssueMark {
 
 export const ISSUE_TRACK_WIDTH = 96;
 
+/** @deprecated Use buildMarkerTrack from '../tracks/MarkerTrack' with kind: 'issue' items. */
 export function buildIssueTrack(items: AnchoredItem<IssueMark>[]): AnchoredTrack<IssueMark> {
   return {
     id: 'issues',
@@ -24,7 +25,7 @@ export function buildIssueTrack(items: AnchoredItem<IssueMark>[]): AnchoredTrack
   };
 }
 
-function IssueChip({ issue }: { issue: IssueMark }) {
+export function IssueChip({ issue }: { issue: IssueMark }) {
   const tone =
     issue.severity === 'error'
       ? 'bg-destructive/10 text-destructive border-destructive/30'

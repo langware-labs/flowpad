@@ -22,7 +22,13 @@ from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.builtin.flow_message import FlowMessage
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.discovery.notify import send_resource_sync
-from flow_sdk.fs_records.conversation_record import ConversationRecord
+from flow_sdk.fs_store.operations.conversation import (
+    append_message_pointer,
+    default_jsonl_path,
+    from_jsonl,
+    message_pointers,
+    project_pointers_to_entity,
+)
 from flow_sdk.fs_store import SyncOperation
 from flow_sdk.fs_store.record_types import RecordType
 
@@ -111,12 +117,11 @@ async def ensure_conversation_entity(
         parent_id = project_id or ""
         parent_record_type = RecordType.PROJECT
 
-    rec = ConversationRecord.from_jsonl(
-        ConversationRecord.default_jsonl_path(conv.id),
+    rec = from_jsonl(
+        default_jsonl_path(conv.id),
         parent_id, conv.id, parent_type=parent_record_type,
     )
     rec.save()
-    rec.link_to_parent_record()
     return conv
 
 
@@ -128,6 +133,7 @@ async def materialize_flow_message(
     bundle_ts: Optional[str] = None,
     notify: bool = True,
     emit_live_create: bool = False,
+    remote: bool = False,
 ) -> FlowMessage:
     """Create or upsert a FlowMessage, append its pointer to the conversation,
     project ``message_ids`` / ``message_count``, and (optionally) notify.
@@ -146,17 +152,46 @@ async def materialize_flow_message(
     ``payload`` is anything ``FlowMessage.model_validate`` accepts; ``id`` may
     be omitted (allocated) or pre-populated (idempotent upsert when the same
     id already exists).
+
+    ``remote=True`` marks the payload as a hub-origin copy: the saved row is
+    flagged ``remote=True`` and, on re-materialize of an existing row, the
+    invalidation rule (LWW by ``updated_date``, see ``Entity.is_stale``) is
+    applied — refreshing hub-owned fields while preserving local-only state.
+    Local-origin producers (e.g. draft send) leave it ``False``; those paths
+    flip ``remote`` themselves after a successful hub push.
     """
     payload = dict(payload)  # don't mutate caller's dict
     payload.setdefault("conversation_id", conversation_id)
+
+    # Single hub-origin signal: either the explicit param or a remote flag
+    # carried in the payload (some callers, e.g. invitation preview, set it
+    # inline). Both route the existing-row path through the LWW invalidation.
+    remote = remote or bool(payload.get("remote"))
 
     fm_id = payload.get("id")
     existing = await FlowMessage.get_one({"id": fm_id}) if fm_id else None
     is_new = existing is None
     if existing is not None:
-        # Idempotent upsert — keep the row, ensure the pointer exists, return.
         fm = existing
+        # ``remote`` marks this as a hub-origin payload. For those we apply the
+        # invalidation rule (LWW by ``updated_date``): refresh the local copy
+        # only when the hub copy is newer, preserving local-only fields
+        # (body/download state). A local-origin re-materialize keeps the row
+        # untouched (idempotent upsert).
+        if remote and FlowMessage.is_stale(existing, payload):
+            merged = FlowMessage.merge_hub_payload(existing, payload)
+            merged["remote"] = True
+            fm = FlowMessage.model_validate(merged)
+            fm = await fm.save(someone_typeid, notify=False)
+        elif remote and not existing.remote:
+            # Not stale, but the local row never got flagged remote (legacy
+            # rows from before remote-marking) — flip the flag without touching
+            # content.
+            existing.remote = True
+            fm = await existing.save(someone_typeid, notify=False)
     else:
+        if remote:
+            payload = {**payload, "remote": True}
         fm = FlowMessage.model_validate(payload)
         if not payload.get("id"):
             fm.id = FlowMessage.allocate_id(payload)
@@ -198,16 +233,17 @@ async def materialize_flow_message(
         parent_id = conv.project_id or ""
         parent_type = RecordType.PROJECT
 
-    rec = ConversationRecord.from_jsonl(
-        ConversationRecord.default_jsonl_path(conv.id),
+    rec = from_jsonl(
+        default_jsonl_path(conv.id),
         parent_id, conv.id, parent_type=parent_type,
     )
 
     ts = bundle_ts or datetime.now(UTC).isoformat()
-    existing_ids = {p.id for p in rec.message_pointers()}
+    existing_ids = {p.id for p in message_pointers(rec)}
     if fm.id not in existing_ids:
-        rec.append_message_pointer(fm.id, ts)
+        append_message_pointer(rec, fm.id, ts)
         await rec.sync_to_db(notify=False)
+        await project_pointers_to_entity(rec, notify=False)
 
     if notify:
         try:

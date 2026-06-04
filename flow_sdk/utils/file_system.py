@@ -6,16 +6,31 @@ from pathlib import Path
 # Resolved once at import time — covers macOS /var/folders → /private/var/folders
 _SYSTEM_TEMP_DIR = Path(tempfile.gettempdir()).resolve()
 
+# Standard OS temp roots, independent of the current process's $TMPDIR. A server
+# launched with the default $TMPDIR resolves only its own /var/folders subtree;
+# these prefixes also catch /tmp and other-subtree temp paths that a *different*
+# process (e.g. a test run) created. Matched against the RESOLVED path, so /tmp
+# and /var/folders are compared in their /private/* canonical form on macOS.
+_TEMP_PREFIXES = ("/tmp/", "/private/tmp/", "/var/folders/", "/private/var/folders/")
+
 
 def is_temp_path(path: Path | str) -> bool:
-    """Return True if *path* lives inside the system temporary directory.
+    """Return True if *path* lives in a system temporary location.
 
-    Handles macOS where ``tempfile.gettempdir()`` returns an unresolved symlink
-    (``/var/folders/...``) while actual paths start with ``/private/var/folders/...``.
-    Also covers ``/tmp`` on Linux and ``%TEMP%`` on Windows via the same resolve.
+    The single, unified temp predicate. Matches BOTH the current process's
+    resolved ``$TMPDIR`` subtree AND the standard OS temp roots — so e.g.
+    ``/tmp/...`` is caught on macOS even though ``gettempdir()`` returns a
+    ``/var/folders/...`` path there, and temp dirs created under a different
+    ``$TMPDIR`` than this process's are still recognised.
     """
     try:
-        return Path(path).resolve().is_relative_to(_SYSTEM_TEMP_DIR)
+        resolved = Path(path).resolve()
+    except (OSError, ValueError):
+        return False
+    if resolved.as_posix().startswith(_TEMP_PREFIXES):
+        return True
+    try:
+        return resolved.is_relative_to(_SYSTEM_TEMP_DIR)
     except (OSError, ValueError):
         return False
 

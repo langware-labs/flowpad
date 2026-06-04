@@ -17,6 +17,7 @@ import { MarkdownViewer } from '@src/components/markdown-viewer';
 import { ProcessTerminal } from '@src/components/process-terminal';
 import { SettingsView } from '@src/components/settings-view/SettingsView';
 import { ShowView } from '@src/components/show-view/ShowView';
+import { AppHost } from '@src/components/app-host/AppHost';
 import { FilterName, getAllFilterDefinitions } from '@src/components/simple-file-manager';
 import { TasksViewer } from '@src/components/tasks-viewer/TasksViewer';
 import { HomeLanding } from '@src/pages/home-landing';
@@ -26,7 +27,6 @@ import { SearchView } from '@src/pages/search-view/SearchView';
 import { ConnectionStatus, dataContext, navigator, ShellStatus, type OAuthConnection } from '@sdk';
 import { useAuth, useContext } from '@sdk/react/hooks';
 import { AssetsPage } from '@src/components/assets/AssetsPage';
-import { CollaborationPage } from '@src/components/collaboration';
 import { ConnectionsManager } from '@src/components/connections-manager';
 import { ConversationRoute } from '@src/components/conversation';
 import { InboxView } from '@src/components/inbox-view/InboxView';
@@ -41,7 +41,7 @@ import { useActiveViewer } from '@src/hooks/flow-hooks';
 import { useViewerStore } from '@src/hooks/flow-hooks/useViewerStore';
 import { useContentPanelStore } from '@src/hooks/use-content-panel-store';
 import { useEnvVarsStore } from '@src/hooks/use-env-vars-store';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import {
   terminalTargetKey,
   terminalTransportShellId,
@@ -54,13 +54,24 @@ import { useSendMessageStore } from '@src/store/use-send-message-store';
 import { useSurveyStore } from '@src/store/use-survey-store';
 import { ViewType } from '@src/types/ViewType';
 import { LogIn } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+
+// Lazy-loaded: GraphView pulls in sigma.js + @sigma/node-image, which run
+// WebGL init (gl.getParameter) at module load. Importing it eagerly crashes
+// the entire app in any WebGL-less context (headless browsers, GPU-disabled
+// CI, software-render fallbacks). Loading it only when the graph tab opens
+// keeps app bootstrap independent of WebGL availability.
+const GraphView = lazy(() =>
+  import('@src/components/graph-view/GraphView').then((m) => ({ default: m.GraphView })),
+);
+const DocsGraphView = lazy(() =>
+  import('@src/components/graph-view/DocsGraphView').then((m) => ({ default: m.DocsGraphView })),
+);
 import { UserDropdown } from './user-dropdown/user-dropdown';
 
 export function ContentPanel() {
   // Get navigation instance for URL-first architecture
   const { navigation, currentDock, isDockUrl } = useDockNavigation();
-  const { toast } = useToast();
 
   const { user } = useAuth();
 
@@ -173,12 +184,12 @@ export function ContentPanel() {
       const transportShellId = terminalTransportShellId(tab);
       const shell = transportShellId ? (tab.shell ?? null) : null;
       if (shell?.status !== ShellStatus.CLOSING) {
-        toast({ title: 'Shell is disconnected', variant: 'destructive' });
+        notify.error({ title: 'Shell is disconnected' });
       }
       const aliveTab = terminalTabs.find((t) => terminalTargetKey(t) !== targetKey && !t.isDisabled);
       if (aliveTab) navigateToTab(aliveTab);
     }
-  }, [currentDock, navigateToTab, terminalsLoading, terminalTabs, toast]);
+  }, [currentDock, navigateToTab, terminalsLoading, terminalTabs]);
 
   const { editorActivePath, checkpointHash } = useMemo(() => {
     return {
@@ -433,6 +444,31 @@ export function ContentPanel() {
           </TabsContent>
 
           <TabsContent
+            value={ViewType.APPS}
+            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
+          >
+            <AppHost />
+          </TabsContent>
+
+          <TabsContent
+            value={ViewType.GRAPH}
+            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
+          >
+            <Suspense fallback={null}>
+              <GraphView />
+            </Suspense>
+          </TabsContent>
+
+          <TabsContent
+            value={ViewType.K_BROWSER}
+            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
+          >
+            <Suspense fallback={null}>
+              <DocsGraphView />
+            </Suspense>
+          </TabsContent>
+
+          <TabsContent
             value={ViewType.HOME}
             className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
           >
@@ -505,7 +541,7 @@ export function ContentPanel() {
             value={ViewType.PROJECT}
             className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
           >
-            <CollaborationPage />
+            <AssetsPage />
           </TabsContent>
 
           <TabsContent

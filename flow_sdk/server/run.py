@@ -139,11 +139,6 @@ from flow_sdk.instance_settings import get_instance_settings, reset_instance_set
 reset_instance_settings()
 get_instance_settings()
 
-# Configuration
-# Use 0.0.0.0 to listen on all interfaces (both IPv4 and IPv6)
-DEFAULT_HOST = "0.0.0.0"
-
-
 def main():
     """Start the minihub server."""
     startup_start = time.time()
@@ -152,10 +147,10 @@ def main():
         print(f"[pid={os.getpid()}] Another server instance is already running. Exiting.")
         sys.exit(0)
 
-    host = os.environ.get("MINIHUB_HOST", DEFAULT_HOST)
-    port = get_instance_settings().port
-    # Auto-reload disabled by default; set MINIHUB_RELOAD=true to enable for development
-    reload_enabled = os.environ.get("MINIHUB_RELOAD", "false").lower() == "true"
+    settings = get_instance_settings()
+    host = settings.host
+    port = settings.port
+    reload_enabled = settings.reload_enabled
 
     print(f"Starting Flowpad server at http://{host}:{port}")
     print(f"Bootstrap endpoint: http://{host}:{port}/api/v1/graph/bootstrap")

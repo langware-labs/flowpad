@@ -93,12 +93,22 @@ The terminal event has `text: "complete"` and `current: null`.
 
 ## Conflict Detection
 
-Each scan/index operation acquires a slot in `_COMPUTE_ACTIVITIES`, keyed by
-`"{entity_typeid}:{job_name}"`. A duplicate request while the job is running
-returns **409 Conflict**. Slots are released in `finally` blocks and also
-auto-expire after `timeout_seconds`.
+Each scan/index operation acquires a slot in the module-level
+`_COMPUTE_ACTIVITIES` registry, keyed by `"{entity_typeid}:{job_name}"`.
+`ComputeNode._start_activity()` raises `RuntimeError("Job '<name>' already
+running")` when a live slot exists, which the `fs-records` action handlers
+translate into a **409 Conflict** response. Slots are released by
+`ComputeNode._complete_activity()` in `finally` blocks and also auto-expire
+once `started_at` is older than `timeout_seconds` (`InProcessActivity.is_timed_out`),
+or once the latest table reports completion (`is_complete`).
 
-**Source:** `flow_sdk/builtin/faas/in_process_activity.py`.
+**Sources:** the registry, `_start_activity`/`_complete_activity`, and the
+`"{entity_typeid}:{job_name}"` key live in
+`flow_sdk/builtin/faas/compute_node.py`; the `InProcessActivity` dataclass
+(`job_name`, `entity_id`, `started_at`, `timeout_seconds`, `is_timed_out`,
+`is_complete`) lives in `flow_sdk/builtin/faas/in_process_activity.py`. The
+`finally`-block releases and 409 responses are in
+`flow_sdk/builtin/faas/fs_records_actions.py`.
 
 ---
 
@@ -108,17 +118,26 @@ auto-expire after `timeout_seconds`.
 
 ```ts
 const {
+  // reactive snapshot fields
   currentActivity,  // SystemActivity | null
   progressTable,    // IndexProgressTable | null
   scanInfo,         // ScanInfo | null
+  lastScanResult,   // LastScanResult | null
   busy,             // currentActivity !== null
+  // bound methods
   clearIndex, clearAllData,
   backup, archive, restore,
   indexType, indexTypes,
   resetAndRescan,
-  fastScan,
+  getPaths, getStats, getDbSettings, setDbPath,
+  openBackupFolder, openDbFolder, openLogsFolder,
 } = useSystemTools();
 ```
+
+> The hook does **not** expose `fastScan` / `fastScanProject` /
+> `hardRefreshProject` / `discoverByPath`. Those live only on the
+> `systemTools` singleton — call them as `systemTools.fastScan()` etc. The
+> hook surfaces the snapshot fields plus the bound methods listed above.
 
 All components using the hook see the same singleton state.
 

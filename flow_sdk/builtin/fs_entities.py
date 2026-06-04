@@ -11,7 +11,6 @@ from flow_sdk.request_context.methods import get_entity_storage
 
 class FSItem(Entity):
     type: str = APIField(default="fs_item")
-    _api_visible: ClassVar[bool] = True
     _blob: bytes | None = None
     encoding: str = APIField("utf-8")  # TODO make this a enum / string
     is_dir: bool | None = APIField(False)

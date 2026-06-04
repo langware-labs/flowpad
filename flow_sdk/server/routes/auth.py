@@ -13,6 +13,7 @@ The handler validates the api-key, finalizes the login, and either redirects to
 """
 
 import logging
+import os
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Query
@@ -55,11 +56,17 @@ async def login_callback(
         if not flowpad_api_key:
             raise ValueError("No API key provided. Expected 'flowpad-api-key' parameter.")
 
-        # Pre-flight the OS-keychain approval so the user sees Flowpad's friendly
-        # explanation dialog before keyring.set_password (in _finalize_login)
-        # triggers the raw OS prompt. The SPA route triggers
-        # secretApprovalGate.request() and then re-invokes this callback.
-        if not secrets_enabled:
+        # Pre-flight the OS-keychain approval ONLY under signed Electron
+        # (FLOWPAD_DESKTOP=1, set by electron/uv-manager.js::start()). Only
+        # there does the /electron/keychain-approval SPA route make sense:
+        # it triggers the dialog whose handleApprove calls electronAPI
+        # provisionSodKey → IPC → bundled flow-rs binary → SecItemAdd, so the
+        # keychain entry's ACL trust list shows flow-rs (Langware-signed)
+        # rather than the unsigned uv-bundled python3.x. In web/CLI mode
+        # there is no Electron, no IPC, and no signed binary to own the
+        # write — we fall through to _finalize_login and accept the raw
+        # system prompt attributed to python3.x as the CLI/web posture.
+        if not secrets_enabled and os.environ.get("FLOWPAD_DESKTOP") == "1":
             qs = urlencode({"flowpad-api-key": flowpad_api_key, "next": next or ""})
             return RedirectResponse(url=f"/electron/keychain-approval?{qs}", status_code=302)
 

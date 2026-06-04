@@ -33,14 +33,12 @@ async def _entity_asset_ref(ent) -> str:
     if path:
         return path
     try:
-        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
         rec = await ent.get_record()
         if rec is None:
-            record_cls = SchemaRegistry.get_record_cls(ent.type or ent.get_type())
-            if record_cls:
-                ent_name = getattr(ent, "name", None) or getattr(ent, "uname", None)
-                if ent_name:
-                    rec = record_cls.get(ent_name)
+            from flow_sdk.fs_store.fs_record import FSRecord
+            ent_name = getattr(ent, "name", None) or getattr(ent, "uname", None)
+            if ent_name:
+                rec = FSRecord.load_or_none(ent.type or ent.get_type(), ent_name)
         if rec:
             ar = getattr(rec, "_asset_ref", None)
             if ar is not None:
@@ -100,7 +98,7 @@ async def search_records(
     from flow_sdk.core.entity.entity_model import Entity
     from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
     from flow_sdk.db.drivers.sqlite.sqlite_driver import SearchCalibration  # noqa: PLC0415
-    from flow_sdk.server.search_filters import ScopeFilter  # noqa: PLC0415
+    from flow_sdk.server.search_filters import ScopeFilter, resolve_project_scope  # noqa: PLC0415
     import json as _json  # noqa: PLC0415
 
     # Build the unified ScopeFilter. If `user` param is absent (legacy
@@ -111,6 +109,9 @@ async def search_records(
         if user is not None or projects is not None
         else None
     )
+    # Resolve project *uname* tokens (e.g. ``@flowpad_assistant``) to entity
+    # ids so the scope match stays symmetric with how records are stamped.
+    scope_filter = resolve_project_scope(scope_filter)
 
     tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
 

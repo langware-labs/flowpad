@@ -23,6 +23,10 @@ export interface AssetDescriptor {
   posix_path: string | null;
   /** Matched source dir for path-discovered assets; null for EMBEDDED/INLINE. */
   source_dir?: string | null;
+  /** Project id stamped on the backing entity record; null for user-scoped or
+   *  process-local (embedded/inline/workdir) assets. Lets scope-aware UIs
+   *  filter by specific project ids without re-fetching. */
+  project_id?: string | null;
 }
 
 /**

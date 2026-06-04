@@ -1,7 +1,7 @@
 import { useCallback, useRef } from 'react';
 import { AgenticProcess } from '@sdk';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { toast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 
 /**
  * Hook that resumes a Claude/Codex worker session in a ProcessTerminal.
@@ -21,7 +21,7 @@ export function useResumeInTerminal() {
         try {
           const p = await AgenticProcess.getByWorkerId(workerId);
           if (!p) {
-            toast({ title: 'Session not found', description: `Session ${workerId} is not in Claude or Codex history.`, variant: 'destructive' });
+            notify.error({ title: 'Session not found', message: `Session ${workerId} is not in Claude or Codex history.`, id: `session-not-found:${workerId}` });
             return;
           }
           // The bookmark/open-session UX wants the live PTY (the timestamp

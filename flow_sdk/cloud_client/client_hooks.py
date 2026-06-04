@@ -13,9 +13,6 @@ from flow_sdk.cloud_client.constants import EXPIRY_LEEWAY_SECONDS
 from flow_sdk.cloud_client.error_reporter import hub_error_reporter
 
 
-AUTH_FAILURE_STATUS_CODES = {401, 402, 424}
-
-
 class HubAuthExpiredError(httpx.RequestError):
     """Raised when a request is aborted before network due to local expiry."""
 
@@ -33,9 +30,10 @@ async def _on_request(request: httpx.Request) -> None:
     if "Authorization" in request.headers or _is_public_auth_path(request.url.path):
         return
 
-    env_api_key = os.environ.get("FLOWPAD_CLOUD_API_KEY") or None
-    if env_api_key:
-        request.headers["Authorization"] = f"Bearer {env_api_key}"
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+    api_key = get_instance_settings().cloud_api_key
+    if api_key:
+        request.headers["Authorization"] = f"Bearer {api_key}"
         return
 
     creds = load_credentials()
@@ -60,19 +58,19 @@ async def _on_response(response: httpx.Response) -> None:
         return
 
     await response.aread()
-    path = request_path(response.request.url)
-    if status_code in AUTH_FAILURE_STATUS_CODES:
-        # HTTP 401/402/424 on an authenticated call — the hub is telling us
-        # our credentials are no longer valid. Distinct from a WS-layer
-        # rejection (which only flips connection_status to AUTH_REJECTED),
-        # this drops login state via invalidate_hub_login.
-        await invalidate_hub_login("rejected")
-        return
-
+    # Every hub 4xx/5xx — including 401/402/424 — is surfaced through the
+    # error reporter so it becomes a HubClientErrorInfo warning in the UI
+    # (createHubRequestFailedWarning), carrying method/path/status/message
+    # for debugging. We deliberately do NOT drop login state on a 401: the
+    # status alone can't tell "not authenticated" from "not authorized for
+    # this entity/action" (RBAC denial). Real credential loss is signalled
+    # elsewhere — by an auth-failure envelope on a 2xx (handled above), or
+    # by the hub closing the WS with an auth close code (handled in
+    # ws_client._handle_closed_connection).
     await hub_error_reporter.report(
         status_code=status_code,
         method=response.request.method,
-        path=path,
+        path=request_path(response.request.url),
         message=_response_message(response),
     )
 

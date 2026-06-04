@@ -38,12 +38,14 @@ def lookup_project_id_by_uname(uname: str) -> str | None:
     the project hasn't been created yet, or on any DB-access error.
     """
     import sqlite3
+
+    from flow_sdk.db.drivers.sqlite.connection import open_sqlite  # noqa: PLC0415
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
     db_path = get_instance_settings().db_path
     if not db_path:
         return None
     try:
-        conn = sqlite3.connect(str(db_path))
+        conn = open_sqlite(db_path)
     except sqlite3.Error:
         return None
     try:
@@ -57,6 +59,48 @@ def lookup_project_id_by_uname(uname: str) -> str | None:
         return None
     finally:
         conn.close()
+
+
+def classify_path(path: str | Path) -> str | None:
+    """Classify a filesystem path into a scope tag matching ``default_roots()``.
+
+    Returns ``"system"`` when ``path`` lives under the SDK-shipped system
+    project, ``"user"`` when under InstanceSettings.user_home, ``"project"``
+    when under ``Path.cwd()``, else ``None``. Used by HTTP create handlers to
+    stamp scope at create time so POST-created records match indexer-discovered
+    ones.
+    """
+    if not path:
+        return None
+    try:
+        target = Path(path).resolve()
+    except (OSError, ValueError):
+        return None
+
+    try:
+        from flow_sdk.config import flowpad_assistant_project_root  # noqa: PLC0415
+        system_root = flowpad_assistant_project_root().resolve()
+        if target == system_root or system_root in target.parents:
+            return "system"
+    except Exception:
+        pass
+
+    try:
+        from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+        user_home = get_instance_settings().user_home.resolve()
+        if target == user_home or user_home in target.parents:
+            return "user"
+    except Exception:
+        pass
+
+    try:
+        cwd = Path.cwd().resolve()
+        if target == cwd or cwd in target.parents:
+            return "project"
+    except OSError:
+        pass
+
+    return None
 
 
 def default_roots() -> list[FSRef]:
@@ -76,13 +120,28 @@ def default_roots() -> list[FSRef]:
             record_type=RecordType.USER_HOME_FOLDER,
             scope=Scope.USER.value,
         ),
-        FSRef(
-            cwd,
-            record_type=RecordType.CWD_ROOT,
-            scope=Scope.PROJECT.value,
-            project_id=Project.derive_id_for_path(cwd),
-        ),
     ]
+
+    # Only register the CWD as a project root when it isn't the user's home
+    # directory. The desktop app can launch the backend with cwd=$HOME; treating
+    # $HOME as a project root makes project_folder_walker_fn recurse the whole
+    # home tree (Desktop, ~/Library/Mobile Documents, other-app containers, the
+    # media library) — each first access trips a macOS TCC prompt attributed to
+    # Flowpad. USER_HOME_FOLDER already covers home via targeted expanders, so a
+    # home-rooted CWD_ROOT adds nothing but that recursive walk.
+    try:
+        cwd_is_home = cwd.resolve() == settings.user_home.resolve()
+    except OSError:
+        cwd_is_home = False
+    if not cwd_is_home:
+        roots.append(
+            FSRef(
+                cwd,
+                record_type=RecordType.CWD_ROOT,
+                scope=Scope.PROJECT.value,
+                project_id=Project.derive_id_for_path(cwd),
+            )
+        )
 
     try:
         from flow_sdk.config import (

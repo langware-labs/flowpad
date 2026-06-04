@@ -1,9 +1,12 @@
-import { useEffect, useMemo, useRef } from 'react';
-import { ExternalLink, FileCheck2, FileText, FolderOpen, MessageSquare, Sparkles, User } from 'lucide-react';
+import { useMemo } from 'react';
+import { ExternalLink } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import { APIEntity, TypeId } from '@sdk';
+import { lucideByName } from '@src/lib/lucide-by-name';
+import { APIEntity, TypeId, dataManager } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
+import { editorForType } from '@src/navigation/asset-doc-types';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 
 /**
@@ -50,15 +53,34 @@ interface EntityChipProps {
  * render in the same tab strip — keeping them here means the strip and any
  * entity chip stay visually consistent.
  */
-export const ICON_BY_TYPE: Record<string, LucideIcon> = {
-  project: FolderOpen,
-  task: FileText,
-  conversation: MessageSquare,
-  spec: FileCheck2,
-  user: User,
-  skill: Sparkles,
-  markdown: FileText,
-};
+/** Icon for an entity type from the SchemaRegistry (backend TypeInfo.icon is
+ *  the single source of truth), with an ExternalLink fallback. */
+export function iconForEntity(type: string): LucideIcon {
+  // Guarded: dataManager may be uninitialized in isolated unit tests that mount
+  // a component before bootstrap/loadTypes ran.
+  const name = dataManager?.iconForType?.(type);
+  return (name && lucideByName(name)) || ExternalLink;
+}
+
+/**
+ * Backwards-compatible map facade over {@link iconForEntity}. Reads icons from
+ * the SchemaRegistry (no hardcoded list); ``ICON_BY_TYPE[type]`` and
+ * ``ICON_BY_TYPE.task`` both resolve a LucideIcon, or undefined when the type
+ * has no backend icon (so existing ``?? ExternalLink`` fallbacks still work).
+ */
+export const ICON_BY_TYPE: Record<string, LucideIcon> = new Proxy(
+  {} as Record<string, LucideIcon>,
+  {
+    get(_t, prop): LucideIcon | undefined {
+      // The trap also fires for symbol keys + introspection props like
+      // `toString` (React-refresh / Object spread). Only resolve real
+      // string type-names; everything else is "no icon".
+      if (typeof prop !== 'string') return undefined;
+      const name = dataManager?.iconForType?.(prop);
+      return name ? lucideByName(name) : undefined;
+    },
+  },
+);
 
 /**
  * Per-entity-type styling. Stable across the app so a "project" chip always
@@ -74,6 +96,8 @@ const STYLE_BY_TYPE: Record<string, string> = {
     'border border-emerald-500/40 bg-emerald-500/10 text-emerald-700 hover:bg-emerald-500/20 dark:text-emerald-300',
   spec:
     'border border-amber-500/40 bg-amber-500/10 text-amber-700 hover:bg-amber-500/20 dark:text-amber-300',
+  git_repo:
+    'border border-slate-500/40 bg-slate-500/10 text-slate-700 hover:bg-slate-500/20 dark:text-slate-300',
 };
 const DEFAULT_STYLE =
   'border border-border bg-muted/30 text-muted-foreground hover:bg-muted hover:text-foreground';
@@ -123,14 +147,10 @@ export function EntityChip({ entity, inside, onClick, title, size = 'chip' }: En
         return;
       }
       if (!resolved || !resolved.id) return;
-      const pointer = buildDockPointer(
-        resolved as { type: string; id: string },
-        inside,
-        entity.assetRef ?? undefined,
-      );
+      const pointer = buildDockPointer(resolved as { type: string; id: string }, inside);
       if (pointer) navigation.openDock(pointer);
     };
-  }, [onClick, resolved, inside, navigation, entity.assetRef]);
+  }, [onClick, resolved, inside, navigation]);
 
   const baseLayout =
     size === 'chip'
@@ -159,10 +179,9 @@ export function EntityChip({ entity, inside, onClick, title, size = 'chip' }: En
  * router validates and 404s gracefully if there is no matching view —
  * silent no-ops on click are worse than a visible "unknown view" page.
  */
-function buildDockPointer(
+export function buildDockPointer(
   resolved: { type: string; id: string },
   inside: { type: string; id: string } | undefined,
-  assetRef?: string,
 ): DockPointer | null {
   switch (resolved.type) {
     case 'project':
@@ -173,19 +192,18 @@ function buildDockPointer(
       return DockPointer.forSpec(resolved.id);
     case 'conversation':
       return DockPointer.forConversation(resolved.id);
-    // Asset entities open in the Assets editor by VFS path. When
-    // ``assetRef`` is missing the chip data hasn't loaded yet (recipient is
-    // still fetching the entity row from a freshly arrived share); return
-    // null so the click is a no-op. ``ContextEntityChip`` defers the
-    // navigation until the entity resolves — falling back to ``resolved.id``
-    // here would bake the entity UUID into the URL, which the asset editor's
-    // path-keyed ``useEntityByPath`` can never resolve.
-    case 'skill':
-    case 'agent':
-    case 'markdown':
-      if (!assetRef) return null;
-      return DockPointer.forAssetEditor(resolved.type, assetRef);
-    default:
+    case 'claude_session':
+      // ClaudeTranscript: the entity id IS the Claude session id — open the
+      // transcript lens (same target as ProcessToolbar's "Open transcript").
+      return DockPointer.forLensTranscript('claude', resolved.id);
+    default: {
+      // Asset-editor types (markdown family, agent, skill, workflow, whiteboard)
+      // open by their TypeId — no asset_ref needed; the loader resolves the
+      // entity. This is why the chip never has to defer on an unresolved path.
+      const editor = editorForType(resolved.type);
+      if (editor) {
+        return AssetDocPointer.forTypeId(editor, new TypeId(resolved.type, resolved.id)).toDockPointer();
+      }
       try {
         return DockPointer.fromUrl(resolved.type, resolved.id);
       } catch {
@@ -195,6 +213,7 @@ function buildDockPointer(
         console.warn(`[EntityChip] no dock target for type=${resolved.type}`);
         return null;
       }
+    }
   }
 }
 
@@ -217,53 +236,19 @@ interface ContextEntityChipProps {
  * ``entity.privateContextEntities`` use this wrapper instead of
  * hand-constructing each chip.
  */
-const ASSET_CHIP_TYPES = new Set(['skill', 'agent', 'markdown']);
 
 export function ContextEntityChip({ typeId, inside, onClick, title, size }: ContextEntityChipProps) {
+  // Resolve the display name; navigation is owned by the single ``EntityChip``.
+  // Asset types navigate by TypeId (the loader resolves the entity), so there's
+  // no asset_ref to fetch and no deferral/prewarm dance — the chip just renders.
   const { data } = useEntity<APIEntity<any>>(typeId);
   const resolvedName = data?.displayName ?? typeId.toString();
-  // Asset entities (skill / agent / markdown) carry an `asset_ref` VFS path —
-  // the address the Assets editor opens. Forward it so the chip navigates to
-  // the real file rather than falling back to the bare entity id.
-  const assetRef = (data as unknown as { asset_ref?: string | null })?.asset_ref ?? null;
-
-  // Deferred-click handling for asset chips whose entity row hasn't arrived
-  // yet (typical right after Alice shares a skill — the FlowMessage shows up
-  // first, the Skill row is materialized once the eager bundle pull lands).
-  // Without this, clicking before ``assetRef`` resolves would either no-op
-  // (post-fix) or — pre-fix — bake the entity UUID into the URL, where the
-  // asset editor's path-keyed lookup would 404 and cache that forever.
-  const { navigation } = useDockNavigation();
-  const pendingNavRef = useRef(false);
-  const needsDeferral = ASSET_CHIP_TYPES.has(typeId.type) && !assetRef;
-
-  useEffect(() => {
-    if (!pendingNavRef.current) return;
-    if (!assetRef) return;
-    pendingNavRef.current = false;
-    const pointer = DockPointer.forAssetEditor(typeId.type, assetRef);
-    if (pointer) navigation.openDock(pointer);
-  }, [assetRef, typeId.type, navigation]);
-
-  // When the entity row isn't ready, swallow the click into a pending flag
-  // and let the effect above fire navigation as soon as ``assetRef`` lands.
-  // Otherwise let ``EntityChip`` route the click through its default
-  // ``buildDockPointer`` path.
-  const deferringOnClick = needsDeferral
-    ? () => {
-        if (onClick) {
-          onClick();
-          return;
-        }
-        pendingNavRef.current = true;
-      }
-    : onClick;
 
   return (
     <EntityChip
-      entity={{ typeId, type: typeId.type, id: typeId.id, name: resolvedName, assetRef }}
+      entity={{ typeId, type: typeId.type, id: typeId.id, name: resolvedName }}
       inside={inside}
-      onClick={deferringOnClick}
+      onClick={onClick}
       title={title}
       size={size}
     />

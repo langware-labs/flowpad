@@ -163,15 +163,23 @@ def set_default_test_sod_driver(sod_driver: SodDriver):
 
 
 def get_current_sod_store():
+    """Resolve the active SOD store.
+
+    Order:
+      1. ``service.sod_driver`` — cloud/hub runtime (GCP/file SOD). Unchanged.
+      2. ``test_sod_override`` — explicit test/embedding hook.
+      3. ``get_instance_settings().sod`` — the single per-instance desktop
+         store (keychain/env Fernet key over ``<inst>/sodot``). Always
+         available; the key resolves lazily on first real secret access.
+    """
     global test_sod_override
     service: FlowpadService | None = get_current_service()
-    if service is None or service.sod_driver is None:
-        if test_sod_override:
-            if not default_service_config.development:
-                raise Exception("get_current_sod_store: SOD override allowed only in development mode")
-            return test_sod_override
-        raise Exception("get_current_sod_store: No service or sod_driver")
-    return service.sod_driver
+    if service is not None and service.sod_driver is not None:
+        return service.sod_driver
+    if test_sod_override is not None:
+        return test_sod_override
+    from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+    return get_instance_settings().sod
 
 
 def get_current_email_provider():
@@ -277,10 +285,13 @@ async def set_user_credentials(user, name: str, value: Any, foreign_key: str):
     return await sod_store.write_user_sod(_sod_key(user, name), value, foreign_key)
 
 
-async def delete_user_credentials(user, name: str):
-    """Delete user credentials from SOD storage."""
+async def delete_user_credentials(user, name: str, foreign_key: str | None = None):
+    """Delete user credentials from SOD storage.
+
+    ``foreign_key`` mirrors set/get so callers can target the exact composed key.
+    """
     sod_store: SodDriver = get_current_sod_store()
-    return await sod_store.delete_user_sod(_sod_key(user, name))
+    return await sod_store.delete_user_sod(_sod_key(user, name), foreign_key)
 
 
 async def get_entity_credentials(entity, name: str) -> Any:

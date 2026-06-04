@@ -1,0 +1,121 @@
+"""Driven test: workspace-folder discovery in ``get_all_projects``.
+
+Every non-hidden top-level folder under ``<user_home>/Flowpad workspace`` must
+be discovered, minted a stable v5 id, and materialized as a persisted Project
+entity — the exact same reconcile → mint → materialize path Claude/Codex
+cwds take. Drives the real SQLite persistence layer (no mocks of save/query).
+"""
+
+import uuid
+from pathlib import Path
+
+import pytest
+import pytest_asyncio
+
+import flow_sdk.db.drivers.db_driver as db_driver_mod
+from flow_sdk.db.drivers.db_driver import DBConfig
+from flow_sdk.db.drivers.sqlite.sqlite_driver import SQLiteDBDriver
+
+
+@pytest_asyncio.fixture
+async def project_db(tmp_path):
+    """Isolated SQLite driver with the ``project`` type registered."""
+    cfg = DBConfig()
+    cfg.database = str(tmp_path / "workspace_projects.db")
+    driver = SQLiteDBDriver(cfg)
+    await driver.open()
+
+    from flow_sdk.core.entity.entity_model import Entity
+    from flow_sdk.schema.entity_factory import type_registry
+
+    if type_registry.get("project") is None:
+        from flow_sdk.builtin.project import Project
+        type_registry.register("project", Project)
+
+    old_instances = db_driver_mod._driver_instances.copy()
+    db_driver_mod._driver_instances["sqlite"] = driver
+    old_db = Entity.__dict__.get("_db")
+    Entity._db = driver
+
+    yield driver
+
+    db_driver_mod._driver_instances.clear()
+    db_driver_mod._driver_instances.update(old_instances)
+    if old_db is None:
+        if "_db" in Entity.__dict__:
+            delattr(Entity, "_db")
+    else:
+        Entity._db = old_db
+    await driver.close()
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+@pytest.mark.asyncio
+async def test_workspace_folders_materialize_as_projects(project_db, tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    ws = home / "Flowpad workspace"
+    ws.mkdir(parents=True)
+    (ws / "proj_a").mkdir()
+    (ws / "proj_b").mkdir()
+    (ws / ".hidden").mkdir()            # dotfolder -> skipped
+    (ws / "readme.md").write_text("x")  # file -> skipped
+
+    # Settings is a frozen dataclass: build a modified copy that redirects the
+    # three discovery paths + isolates the capsule root, while inheriting the
+    # rest of the real test settings. Claude/Codex point at absent paths so
+    # only the workspace scan contributes.
+    import dataclasses
+
+    import flow_sdk.instance_settings as isettings
+    records_root = tmp_path / "records"
+    records_root.mkdir()
+    patched = dataclasses.replace(
+        isettings.get_instance_settings(),
+        user_home=home,
+        claude_projects_dir=home / ".claude" / "projects",
+        codex_config_path=home / ".codex" / "config.toml",
+        records_root=records_root,
+    )
+    import flow_sdk.fs_store.operations.all_projects as ap
+    monkeypatch.setattr(ap, "get_instance_settings", lambda: patched)
+    monkeypatch.setattr(isettings, "get_instance_settings", lambda: patched)
+
+    from flow_sdk.builtin.project import Project
+    from flow_sdk.fs_store.identifier import is_valid_entity_id
+    from flow_sdk.fs_store.path_utils import canonical_posix_path
+
+    # tmp_path is under the system temp dir, so include_temp=True is required
+    # for the sandbox workspace folders to survive the temp filter.
+    projects = await ap.get_all_projects(include_temp=True, create_missing=True)
+
+    by_name = {p.name: p for p in projects}
+    assert "proj_a" in by_name, by_name
+    assert "proj_b" in by_name, by_name
+    assert ".hidden" not in by_name
+    assert "readme.md" not in by_name
+
+    for name in ("proj_a", "proj_b"):
+        info = by_name[name]
+        cwd = canonical_posix_path(ws / name)
+
+        # No worker tag — pure workspace folder.
+        assert info.worker_types == [], info.worker_types
+        # Minted this call.
+        assert info.is_new is True
+
+        # Id is a valid entity id (v5) and equals the deterministic derivation.
+        assert is_valid_entity_id(info.project_id), info.project_id
+        assert uuid.UUID(info.project_id).version == 5
+        assert info.project_id == Project.derive_id_for_path(cwd)
+
+        # Persisted: queryable by its natural key, same id.
+        persisted = await Project.find_by_cwd(cwd)
+        assert persisted is not None, f"{name} not persisted"
+        assert persisted.id == info.project_id
+
+    # Idempotent: a second call reuses the rows, mints nothing new.
+    again = await ap.get_all_projects(include_temp=True, create_missing=True)
+    again_by_name = {p.name: p for p in again}
+    for name in ("proj_a", "proj_b"):
+        assert again_by_name[name].is_new is False
+        assert again_by_name[name].project_id == by_name[name].project_id

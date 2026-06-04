@@ -18,6 +18,7 @@ import { attachmentDataString, type Attachment } from '@sdk/entities/flow-messag
 import {
   Download,
   ExternalLink,
+  FolderOpen,
   Pencil,
   Eye,
   Lock,
@@ -27,12 +28,13 @@ import {
   Users,
   type LucideIcon,
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
+import { notify } from '@src/notifications';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { resolveWorkdir } from './apply-project-choice';
-import { fileAttachmentUrl } from './attachment-url';
-import { ICON_BY_TYPE } from './EntityChip';
+import { localAttachmentUrl, editorPathForLocalFile } from './attachment-url';
+import { ICON_BY_TYPE, buildDockPointer } from './EntityChip';
 import { buildAssistancePrompt } from './prompt-building';
 import {
   buildAttachmentEntries,
@@ -81,40 +83,16 @@ function humanType(type: string): string {
   return type.charAt(0).toUpperCase() + type.slice(1).replace(/_/g, ' ');
 }
 
-/** Build the canonical dock pointer for an entity TypeId, mirroring EntityChip. */
+/** Canonical dock pointer for an entity TypeId — delegates to the single
+ *  EntityChip dispatch (``buildDockPointer``). Asset types navigate by TypeId
+ *  (the loader resolves the entity), so the legacy ``assetRef`` arg is
+ *  accepted-but-ignored. */
 function dockPointerFor(
   typeId: TypeId,
   inside?: { type: string; id: string },
-  assetRef?: string,
+  _assetRef?: string,
 ): DockPointer | null {
-  switch (typeId.type) {
-    case 'project':
-      return DockPointer.forProject(
-        typeId.id,
-        inside?.type === 'conversation' ? { conversationId: inside.id } : undefined,
-      );
-    case 'task':
-      return DockPointer.forTasks(
-        typeId.id,
-        inside?.type === 'conversation' ? { conversationId: inside.id } : undefined,
-      );
-    case 'spec':
-      return DockPointer.forSpec(typeId.id);
-    case 'conversation':
-      return DockPointer.forConversation(typeId.id);
-    // Asset entities open in the Assets editor, addressed by VFS path —
-    // fall back to the entity id when the asset_ref isn't known yet.
-    case 'skill':
-    case 'agent':
-    case 'markdown':
-      return DockPointer.forAssetEditor(typeId.type, assetRef || typeId.id);
-    default:
-      try {
-        return DockPointer.fromUrl(typeId.type, typeId.id);
-      } catch {
-        return null;
-      }
-  }
+  return buildDockPointer({ type: typeId.type, id: typeId.id }, inside);
 }
 
 /**
@@ -307,7 +285,7 @@ export function ConversationContextPanel({
       if (!anchorMessageId || !task || starting) return;
       const workdir = await resolveWorkdir(task.project_id);
       if (!workdir) {
-        toast.warning('Map this conversation to a local project first.');
+        notify.warning({ title: 'Map this conversation to a local project first.' });
         return;
       }
       setStarting(true);
@@ -326,7 +304,7 @@ export function ConversationContextPanel({
         proc.openTerminalDock();
       } catch (err) {
         console.error('[ContextPanel] start session failed', err);
-        toast.error('Failed to start session');
+        notify.error({ title: 'Failed to start session' });
       } finally {
         setStarting(false);
       }
@@ -340,6 +318,21 @@ export function ConversationContextPanel({
     if (ensureMapped) ensureMapped(run);
     else void run();
   }, [startSession, sharedTypeIds, privateTypeIds, ensureMapped]);
+
+  // Pull the bundle for the message that contributed an entity attachment. One
+  // bundle materializes every attachment, so the originating bubble AND every
+  // context row for those entities flip to "downloaded" together on the UPDATE.
+  // Gated on project selection (assets land in the conversation's `.claude`).
+  const handleDownloadEntity = useCallback(
+    (messageId: string) => {
+      const fm = orderedMessages.find((m) => m.id === messageId);
+      if (!fm) return;
+      const run = () => void fm.downloadAttachments();
+      if (ensureMapped) ensureMapped(run);
+      else void run();
+    },
+    [orderedMessages, ensureMapped],
+  );
 
   if (orderedMessages.length === 0) {
     return (
@@ -359,6 +352,7 @@ export function ConversationContextPanel({
         selectedSet={selectedSet}
         selectedEntityKey={entityKey}
         onSelectEntity={onSelectEntity}
+        onDownloadEntity={handleDownloadEntity}
       />
 
       <PrivateContextSection
@@ -390,6 +384,9 @@ interface SharedContextSectionProps {
   selectedSet: ReadonlySet<string>;
   selectedEntityKey: string | null;
   onSelectEntity?: (entityKey: string, messageIds: string[]) => void;
+  /** Pull the bundle for the message that contributed an entity (gated on
+   *  project selection). Drives the "Download <type>" row action. */
+  onDownloadEntity?: (messageId: string) => void;
 }
 
 function SharedContextSection({
@@ -400,6 +397,7 @@ function SharedContextSection({
   selectedSet,
   selectedEntityKey,
   onSelectEntity,
+  onDownloadEntity,
 }: SharedContextSectionProps) {
   const { navigation } = useDockNavigation();
   const containerInside = useMemo(() => ({ type: Conversation.type, id: conversationId }), [conversationId]);
@@ -433,13 +431,19 @@ function SharedContextSection({
                 typeId={entry.typeId}
                 originMessageIds={entry.originMessageIds}
                 isHighlighted={isRowHighlighted(rowKey, entry.originMessageIds)}
+                needsDownload={!!entry.downloadable && !entry.downloaded}
+                onDownload={
+                  onDownloadEntity && entry.downloadOriginMessageId
+                    ? () => onDownloadEntity(entry.downloadOriginMessageId!)
+                    : undefined
+                }
                 onSelect={
                   onSelectEntity && entry.originMessageIds.length > 0
                     ? () => onSelectEntity(rowKey, entry.originMessageIds)
                     : undefined
                 }
-                onOpen={(assetRef) => {
-                  const ptr = dockPointerFor(entry.typeId, containerInside, assetRef);
+                onOpen={() => {
+                  const ptr = dockPointerFor(entry.typeId, containerInside);
                   if (ptr) navigation.openDock(ptr);
                 }}
               />
@@ -496,6 +500,12 @@ interface SharedEntityRowProps {
   /** Fired with the resolved asset_ref (when the entity is an asset) so the
    *  parent can route skill/agent/markdown rows to the Assets editor. */
   onOpen: (assetRef?: string) => void;
+  /** True when this entity rides in a message bundle that hasn't been pulled
+   *  yet — the row shows "Download <type>" instead of "Open". Mirrors the
+   *  transcript bubble's state (both read the message's `body_downloaded`). */
+  needsDownload?: boolean;
+  /** Pull the originating message's bundle (gated on project selection). */
+  onDownload?: () => void;
 }
 
 function SharedEntityRow({
@@ -504,6 +514,8 @@ function SharedEntityRow({
   isHighlighted,
   onSelect,
   onOpen,
+  needsDownload,
+  onDownload,
 }: SharedEntityRowProps) {
   const { data: entity } = useEntity(typeId);
   const name = entity?.displayName ?? typeId.id;
@@ -527,10 +539,20 @@ function SharedEntityRow({
           : 'Reveal the message that introduced this'
       }
     >
-      <RowAction onClick={() => onOpen(assetRef)} title={`${primaryLabel} ${humanType(typeId.type)}: ${name}`}>
-        {primaryIcon}
-        {primaryLabel}
-      </RowAction>
+      {needsDownload && onDownload ? (
+        <RowAction
+          onClick={onDownload}
+          title={`Download ${humanType(typeId.type)} — not pulled to this device yet`}
+        >
+          <Download className="h-3 w-3" />
+          Download {humanType(typeId.type)}
+        </RowAction>
+      ) : (
+        <RowAction onClick={() => onOpen(assetRef)} title={`${primaryLabel} ${humanType(typeId.type)}: ${name}`}>
+          {primaryIcon}
+          {primaryLabel}
+        </RowAction>
+      )}
     </Row>
   );
 }
@@ -560,7 +582,9 @@ function TranscriptRow({
   // Defensive: stale/malformed rows can have a non-string `data`; the bare
   // `.split` used to take down the whole context panel.
   const dataStr = attachmentDataString(attachment);
-  const downloadUrl = fileAttachmentUrl(messageId, dataStr);
+  // Only resolves to a URL when the bytes are local — a not-yet-downloaded /
+  // dangling transcript yields null, so "View" stays inert rather than 404ing.
+  const downloadUrl = localAttachmentUrl(messageId, attachment);
 
   const handleView = () => {
     if (localPath) {
@@ -568,7 +592,7 @@ function TranscriptRow({
       // Form 2 branch (POSIX or Windows-style absolute paths are both
       // forwarded to ``TranscriptViewer path={…}``).
       navigation.openLens('claude', 'transcript', encodeURIComponent(localPath));
-    } else {
+    } else if (downloadUrl) {
       window.open(downloadUrl, '_blank', 'noopener,noreferrer');
     }
   };
@@ -614,8 +638,14 @@ function AttachmentRow({
   // bytes from the FlowMessage's embedded VFS.
   // Defensive: stale/malformed rows can have a non-string `data`; the bare
   // `.split` used to crash the whole context panel for the entire conv.
+  const { navigation } = useDockNavigation();
   const dataStr = attachmentDataString(attachment);
-  const downloadUrl = fileAttachmentUrl(messageId, dataStr);
+  // Null until the bytes are local — keeps the Download action from 404ing on a
+  // body that was never pulled (see localAttachmentUrl).
+  const downloadUrl = localAttachmentUrl(messageId, attachment);
+  // Absolute path once the bytes are local — the editor opens this (standard
+  // file dock pointer), mirroring the message bubble's file chip.
+  const localPath = attachment.local_path ?? null;
   const filename = dataStr.split('/').pop() || dataStr || '(unknown)';
   const typeLabel = kind === 'prompt-file' ? 'Prompt file' : 'File';
 
@@ -628,13 +658,33 @@ function AttachmentRow({
       onFocus={onSelect}
       focusTitle="Reveal the message this file is attached to"
     >
-      <RowAction
-        onClick={() => window.open(downloadUrl, '_blank', 'noopener,noreferrer')}
-        title={`Download ${filename}`}
-      >
-        <Download className="h-3 w-3" />
-        Download
-      </RowAction>
+      {localPath && (
+        <>
+          <RowAction
+            onClick={() => navigation.openEditor(editorPathForLocalFile(localPath))}
+            title={`Open ${filename} in the editor`}
+          >
+            <ExternalLink className="h-3 w-3" />
+            Open
+          </RowAction>
+          <RowAction
+            onClick={() => void openExternalFromComputeNode('@local', localPath, { select: true })}
+            title={`Reveal ${filename} in the file manager`}
+          >
+            <FolderOpen className="h-3 w-3" />
+            Reveal
+          </RowAction>
+        </>
+      )}
+      {downloadUrl && (
+        <RowAction
+          onClick={() => window.open(downloadUrl, '_blank', 'noopener,noreferrer')}
+          title={`Download ${filename}`}
+        >
+          <Download className="h-3 w-3" />
+          Download
+        </RowAction>
+      )}
     </Row>
   );
 }
@@ -696,13 +746,13 @@ function PrivateContextSection({
       const action = new ActionInfo('derive-task', 'flow_message', anchorMessageId, 'POST');
       const res = await dataManager.callAction<unknown, { process_id?: string; task_id?: string }>(action);
       if (res?.task_id || res?.process_id) {
-        toast.success('Deriving task with Claude…');
+        notify.success({ title: 'Deriving task with Claude…' });
       } else {
-        toast.error('Failed to start task derivation');
+        notify.error({ title: 'Failed to start task derivation' });
       }
     } catch (err) {
       console.error('[PrivateContext] derive-task failed', err);
-      toast.error('Failed to derive task');
+      notify.error({ title: 'Failed to derive task' });
     } finally {
       setAdding(false);
     }
@@ -747,11 +797,11 @@ function PrivateContextSection({
           console.error('[PrivateContext] linking spec to conversation failed', convErr);
         }
       }
-      toast.success('Spec created');
+      notify.success({ title: 'Spec created' });
       if (spec.id) navigation.openDock(DockPointer.forSpec(spec.id));
     } catch (err) {
       console.error('[PrivateContext] add-spec failed', err);
-      toast.error('Failed to create spec');
+      notify.error({ title: 'Failed to create spec' });
     } finally {
       setAdding(false);
     }
@@ -773,13 +823,13 @@ function PrivateContextSection({
       const skill = new Skill({ name, shared_context_entities: [fmTypeIdString] } as Partial<Skill>);
       const scopeIds = projectTypeId ? [projectTypeId] : [];
       await skill.save(scopeIds);
-      toast.success('Skill created');
+      notify.success({ title: 'Skill created' });
       if (skill.asset_ref) {
         navigation.openDock(DockPointer.forAssetEditor('skill', skill.asset_ref));
       }
     } catch (err) {
       console.error('[PrivateContext] add-skill failed', err);
-      toast.error('Failed to create skill');
+      notify.error({ title: 'Failed to create skill' });
     } finally {
       setAdding(false);
     }

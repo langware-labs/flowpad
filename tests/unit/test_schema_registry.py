@@ -142,20 +142,6 @@ def test_register_idempotent_merges_locations(tmp_path):
     _fresh_registry()
 
 
-def test_register_idempotent_merges_record_cls(tmp_path):
-    _fresh_registry()
-    with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
-
-        class FakeRecordCls:
-            pass
-
-        SchemaRegistry.register(TypeInfo(type_name="t"))
-        SchemaRegistry.register(TypeInfo(type_name="t", record_cls=FakeRecordCls))
-        info = SchemaRegistry.get("t")
-    assert info.record_cls is FakeRecordCls
-    _fresh_registry()
-
-
 def test_register_parent_type_builds_subtypes(tmp_path):
     _fresh_registry()
     with patch("flow_sdk.fs_store.schema_registry._schema_dir", lambda: tmp_path):
@@ -351,15 +337,17 @@ async def test_get_index_status_never_indexed(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_get_index_status_stale_when_old(tmp_path):
-    old_time = "2020-01-01T00:00:00+00:00"
-    with (
-        patch.object(SchemaRegistry, "get_last_index_at", return_value=old_time),
-        patch.object(SchemaRegistry, "get_last_scan_at", return_value=old_time),
-    ):
-        status = await SchemaRegistry.get_index_status()
+async def test_get_index_status_stale_when_changes_pending(tmp_path):
+    """`stale` now means "changes pending next index" — driven by the
+    project record's ``index_required`` sentinel, not a 24h timer."""
+    from types import SimpleNamespace
+
+    proj = SimpleNamespace(indexed_at="2020-01-01T00:00:00+00:00", index_required=True)
+    scope = SimpleNamespace(projects=["11111111-2222-4333-8444-555555555555"])
+    with patch.object(SchemaRegistry, "_project_record_for_status", return_value=proj):
+        status = await SchemaRegistry.get_index_status(scope=scope)
     assert status.stale is True
-    assert all(t.stale for t in status.per_type)
+    assert status.never_indexed is False
 
 
 @pytest.mark.asyncio

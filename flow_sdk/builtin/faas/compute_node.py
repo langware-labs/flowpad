@@ -21,12 +21,12 @@ from flow_sdk.config import ComputeProviderType, StorageProvider
 from flow_sdk.config import ComputeProviderType as ComputeProviderEnum
 from flow_sdk.core import action
 from flow_sdk.core.entity import Entity
-from flow_sdk.core.resource_management.scan.system_profile.types import SystemProfile
+from flow_sdk.builtin.faas.system_profile_types import SystemProfile
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.flowpad_types.compute_types import CLICommand, SendFileEntry
 from flow_sdk.flowpad_types.machine_status import MACHINE_STATUS_SCRIPT, MachineStatus, NetworkConnection, ProcessInfo
 from flow_sdk.flowpad_types.runtime_environment import ComputeNodeSize, ExecutionEnvironmentStatus, RuntimeEnvironment
-from flow_sdk.fs_records.claude.claude_debug_log import clear_debug_errors
+from flow_sdk.fs_store.operations.claude_debug_log import clear_debug_errors
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
 
@@ -35,13 +35,14 @@ from flow_sdk.builtin.faas.fs_records_actions import FsRecordsActionsMixin
 from flow_sdk.builtin.faas.ops_actions import OpsActionsMixin
 from flow_sdk.builtin.faas.pty_actions import PtyActionsMixin
 from flow_sdk.builtin.faas.scan_actions import ScanActionsMixin
+from flow_sdk.builtin.faas.analytics import AnalyticsActionsMixin
 
 # Module-level activity registry: key = "{entity_typeid}:{job_name}"
 # Prevents duplicate concurrent scan/index jobs on the same compute node.
 _COMPUTE_ACTIVITIES: dict[str, "Any"] = {}
 
 
-class ComputeNode(PtyActionsMixin, FsRecordsActionsMixin, OpsActionsMixin, ScanActionsMixin, DesktopActionsMixin, Entity):
+class ComputeNode(PtyActionsMixin, FsRecordsActionsMixin, OpsActionsMixin, ScanActionsMixin, AnalyticsActionsMixin, DesktopActionsMixin, Entity):
     _api_visible = True
     type: str = APIField(default=BuiltinEntityType.COMPUTE_NODE.value)
     name: str = APIField(default="")
@@ -543,7 +544,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         sidecar_ids = {p.sidecar_shell_id for p in all_processes if getattr(p, "sidecar_shell_id", None)}
         excluded_shell_ids = owned_shell_ids | sidecar_ids
 
-        from flow_sdk.fs_records.shell_record import ShellStatus
+        from flow_sdk.builtin.shell import ShellStatus
         terminal_shell_states = {
             ShellStatus.CLOSING.value,
             ShellStatus.CLOSED.value,
@@ -591,7 +592,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
     async def _mark_shell_closing(self, shell_id: str) -> bool:
         from flow_sdk.builtin.shell import Shell as ShellEntity
-        from flow_sdk.fs_records.shell_record import ShellStatus
+        from flow_sdk.builtin.shell import ShellStatus
 
         shell = await ShellEntity.get_by_id(shell_id)
         if not shell:
@@ -610,7 +611,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
     async def _terminal_close(self, body: dict, background_tasks: BackgroundTasks) -> ApiResponse:
         from flow_sdk.builtin.agentic_process import AgenticProcess
         from flow_sdk.builtin.shell import Shell as ShellEntity
-        from flow_sdk.fs_records.agentic_process_lifecycle import ProcessStatus
+        from flow_sdk.builtin.process_lifecycle import ProcessStatus
 
         targets = body.get("targets") if isinstance(body, dict) else None
         if not isinstance(targets, list):
@@ -750,7 +751,10 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             for s in dep_shells:
                 s.project_id = recovered.id
             for p in dep_procs:
-                p._bind_project_id(recovered.id)
+                # Force-rebind: every dep_proc here has the dangling FK and may
+                # be session-bound — the polite `_bind_project_id` would be
+                # silently refused by the freeze for those.
+                p._force_rebind_project_id(recovered.id)
             await asyncio.gather(
                 *(s.save() for s in dep_shells),
                 *(p.save() for p in dep_procs),
@@ -761,6 +765,76 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             "project": recovered.model_dump(mode="json"),
             "rebound": rebound,
         })
+
+    @action.post(action_name="create-project-from-git")
+    async def _create_project_from_git(self) -> ApiResponse:
+        """Clone a git URL into the desktop workspace and materialize a Project.
+
+        Body:
+            { "project_url": "<url>",
+              "target_name": "<optional override>",
+              "branch":      "<optional ref to check out at clone time>" }
+
+        Collision policy: if the derived (or supplied) folder name already
+        exists under AGENT_MOUNT_FOLDER, refuse and return the next-free
+        suggestion in ``data.suggested_name``. The caller re-submits with
+        ``target_name`` set to accept the suggestion.
+        """
+        from flow_sdk.builtin.project import Project
+        from flow_sdk.config import AGENT_MOUNT_FOLDER
+        from flow_sdk.utils.git import derive_repo_leaf_from_url, git_clone
+
+        request_info = get_current_request_info()
+        body = await request_info.get_post_data() if request_info else {}
+        project_url = (body or {}).get("project_url")
+        target_name = (body or {}).get("target_name")
+        branch = (body or {}).get("branch") or None
+        if not isinstance(project_url, str) or not project_url.strip():
+            return ApiFailResponse(message="project_url (str) is required", status_code=400)
+        # A branch ref is passed straight into git's argv as the value of `--branch`.
+        # The subprocess call is argv-style (no shell), so this is structurally
+        # safe against command injection — but a malformed ref still produces a
+        # confusing error, and rejecting it here keeps the failure mode clean.
+        if branch is not None:
+            import re as _re
+            _GIT_REF_RE = _re.compile(r"^(?!-)[A-Za-z0-9._/-]+$")
+            if not isinstance(branch, str) or not _GIT_REF_RE.match(branch) or ".." in branch or "@{" in branch:
+                return ApiFailResponse(
+                    message=f"Invalid branch name: {branch!r}",
+                    status_code=400,
+                )
+
+        leaf = (target_name or derive_repo_leaf_from_url(project_url)).strip()
+        if not leaf:
+            return ApiFailResponse(
+                message=f"Could not derive a folder name from URL: {project_url}",
+                status_code=400,
+            )
+
+        target_dir = os.path.join(AGENT_MOUNT_FOLDER, leaf)
+        if os.path.exists(target_dir):
+            # If caller explicitly chose this name, refuse — they need to pick another.
+            # Otherwise propose the next-free `<leaf>-N` so the dialog can offer it.
+            suggested = leaf
+            n = 2
+            while os.path.exists(os.path.join(AGENT_MOUNT_FOLDER, f"{leaf}-{n}")):
+                n += 1
+            suggested = f"{leaf}-{n}"
+            return ApiFailResponse(
+                message=f"'{leaf}' already exists in workspace",
+                data={"suggested_name": suggested, "attempted_name": leaf},
+                status_code=409,
+            )
+
+        ok, msg = await git_clone(project_url, target_dir, branch=branch)
+        if not ok:
+            return ApiFailResponse(message=msg, status_code=400)
+
+        project = Project(name=target_dir)
+        await project.save()
+        await project.setup_for_desktop()
+
+        return ApiSuccessResponse(data={"project": project.model_dump(mode="json")})
 
     @action.get(action_name="session-transcript")
     async def _session_transcript(self): return await self._pty_session_transcript()
@@ -817,6 +891,15 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
     @action.all(action_name="scan-item")
     async def scan_item_action(self): return await self._scan_item()
+
+    @action.all(action_name="get-cost-overview")
+    async def get_cost_overview_action(self): return await self._analytics_cost_overview()
+
+    @action.all(action_name="get-claude-usage")
+    async def get_claude_usage_action(self): return await self._analytics_claude_usage()
+
+    @action.all(action_name="get-claude-context")
+    async def get_claude_context_action(self): return await self._analytics_claude_context()
 
     @action.all(action_name="clear-skill-usage")
     async def clear_skill_usage_action(self): return await self._scan_clear_skill_usage()
@@ -952,7 +1035,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         """Apply cloud search results to local records (mark ignored / save fix suggestions)."""
         from datetime import datetime, timezone
 
-        from flow_sdk.fs_records.claude.claude_error import ClaudeErrorRecord, ErrorStatus, Fix
+        from flow_sdk.fs_store.operations.claude_error import ErrorStatus, Fix, get_by_fingerprint
 
         if not results:
             return
@@ -963,7 +1046,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             fp = r.get("fingerprint", "")
             if not fp:
                 continue
-            rec = ClaudeErrorRecord.get_by_fingerprint(fp)
+            rec = get_by_fingerprint(fp)
             if rec is None:
                 continue
             if r.get("action") == "ignore":
@@ -983,7 +1066,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         """Spawn an AgenticProcess for each error with a saved cloud fix instruction."""
         from flow_sdk.builtin.agentic_process import AgenticProcess
         from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeCliOptions
-        from flow_sdk.fs_records.claude.claude_error import ClaudeErrorRecord, Fix
+        from flow_sdk.fs_store.operations.claude_error import Fix, get_by_fingerprint
 
         request_info = get_current_request_info()
         body = await request_info.get_post_data()
@@ -993,7 +1076,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
         spawned = []
         for fp in fingerprints:
-            rec = ClaudeErrorRecord.get_by_fingerprint(fp)
+            rec = get_by_fingerprint(fp)
             fix = getattr(rec, "fix", None)
             fix_instruction = fix.instruction if isinstance(fix, Fix) else ""
             if rec is None or not fix_instruction:
@@ -1028,7 +1111,7 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
     @action.get(action_name="worker-history")
     async def worker_history_action(self) -> ApiResponse:
         """Unified Recent Sessions list across every worker (claude, codex, …)."""
-        from flow_sdk.fs_records.worker_history import get_worker_history
+        from flow_sdk.builtin.worker_history import get_worker_history
 
         request_info = get_current_request_info()
         limit_raw = request_info.get_param("limit") if request_info else None

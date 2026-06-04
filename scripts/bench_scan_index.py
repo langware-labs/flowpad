@@ -21,7 +21,7 @@ from pathlib import Path
 
 async def main(rebuild: bool) -> None:
     # Ensure fs_records auto-register before we ask the indexer for types.
-    import flow_sdk.fs_records  # noqa: F401
+    import flow_sdk.fs_store.indexer.registrations  # noqa: F401
     from flow_sdk.db import get_db_driver
     from flow_sdk.fs_store.indexer.builtin import INDEXABLE_TYPES, get_shared_indexer
     from flow_sdk.fs_store.indexer.index_function import IndexerOptions

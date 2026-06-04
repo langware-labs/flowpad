@@ -18,7 +18,6 @@ from datetime import datetime, timezone
 import pytest
 
 from flow_sdk.fs_store import get_default_records_root, set_default_records_root
-from flow_sdk.fs_records.skill_record import SkillRecord  # noqa: F401 — trigger registration
 from flow_sdk.server.app import app
 from starlette.testclient import TestClient
 from tests.test_settings import test_service_config

@@ -27,7 +27,7 @@ from flow_sdk.builtin.agentic_process.status_predicates import (
     is_ready_for_input,
     WorkerMode,
 )
-from flow_sdk.fs_records.agent_status import (
+from flow_sdk.builtin.worker_status import (
     _RUNNING_STATUSES,
     _TERMINAL_STATUSES,
     _tail_status,
@@ -91,6 +91,7 @@ EXPECTED_WORKER_VALUES = {
     "tool_running",
     "api_error",
     "api_timeout",
+    "pending_user",
     "unknown",
 }
 
@@ -185,7 +186,7 @@ def test_tail_status_tool_running(tmp_path: Path):
 
 
 def test_tail_status_waiting(tmp_path: Path):
-    """Active file + last entry is a fresh user message (<30s) → WAITING."""
+    """Active file + last entry is a fresh user message (<90s) → WAITING."""
     f = tmp_path / "session.jsonl"
     now_iso = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime())
     _write_jsonl(f, [

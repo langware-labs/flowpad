@@ -9,11 +9,12 @@ import {
   Users,
   type LucideIcon,
 } from 'lucide-react';
-import { toast } from 'sonner';
+import { notify } from '@src/notifications';
 import type { APIEntity } from '@sdk';
 import { Skill, Spec, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { useChipPrewarm } from '@src/navigation/useChipPrewarm';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ICON_BY_TYPE } from '../conversation/EntityChip';
 
@@ -108,6 +109,21 @@ export function EntityContextPanel({ entity }: EntityContextPanelProps) {
   }, [entity]);
 
   const { navigation } = useDockNavigation();
+  const prewarm = useChipPrewarm();
+
+  /**
+   * Chip click → optionally pre-warm the BE self-heal, then navigate. When
+   * the parent entity harvested a path for this typeid (file-backed types:
+   * plan, markdown, skill, etc.), `prewarm` fires a GET with `?hint_path=`
+   * so a not-yet-indexed row exists by the time the dock view loads.
+   */
+  const openChip = async (typeId: TypeId, assetRef: string | null | undefined) => {
+    const sidecar = entity.getContextEntryData(typeId);
+    const hintPath = typeof sidecar?.path === 'string' ? sidecar.path : undefined;
+    await prewarm(typeId, hintPath);
+    const ptr = dockPointerFor(typeId, assetRef);
+    if (ptr) navigation.openDock(ptr);
+  };
 
   const handleSubmit = async (event?: FormEvent<HTMLFormElement>) => {
     event?.preventDefault();
@@ -126,7 +142,7 @@ export function EntityContextPanel({ entity }: EntityContextPanelProps) {
         await spec.save(projectScopeIds);
         if (spec.id) {
           await entity.shareContextEntities(new TypeId(Spec.type, spec.id));
-          toast.success('Plan created');
+          notify.success({ title: 'Plan created' });
           navigation.openDock(DockPointer.forSpec(spec.id));
         }
       } else {
@@ -137,7 +153,7 @@ export function EntityContextPanel({ entity }: EntityContextPanelProps) {
         await skill.save(projectScopeIds);
         if (skill.id) {
           await entity.shareContextEntities(new TypeId(Skill.type, skill.id));
-          toast.success('Skill created');
+          notify.success({ title: 'Skill created' });
           if (skill.asset_ref) {
             navigation.openDock(DockPointer.forAssetEditor('skill', skill.asset_ref));
           }
@@ -147,7 +163,7 @@ export function EntityContextPanel({ entity }: EntityContextPanelProps) {
       setTitleDraft('');
     } catch (err) {
       console.error(`[EntityContextPanel] add-${kind} failed`, err);
-      toast.error(`Failed to create ${kind}`);
+      notify.error({ title: `Failed to create ${kind}` });
     } finally {
       setAdding(false);
     }
@@ -178,8 +194,7 @@ export function EntityContextPanel({ entity }: EntityContextPanelProps) {
                 key={typeId.toString()}
                 typeId={typeId}
                 onOpen={(assetRef) => {
-                  const ptr = dockPointerFor(typeId, assetRef);
-                  if (ptr) navigation.openDock(ptr);
+                  void openChip(typeId, assetRef);
                 }}
               />
             ))}
@@ -198,8 +213,7 @@ export function EntityContextPanel({ entity }: EntityContextPanelProps) {
                 key={typeId.toString()}
                 typeId={typeId}
                 onOpen={(assetRef) => {
-                  const ptr = dockPointerFor(typeId, assetRef);
-                  if (ptr) navigation.openDock(ptr);
+                  void openChip(typeId, assetRef);
                 }}
               />
             ))}

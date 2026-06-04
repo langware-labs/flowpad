@@ -218,7 +218,7 @@ async def test_unpack_conversation_bundle_relinks_existing_top_flow_message(
     from flow_sdk.builtin.conversation import Conversation
     from flow_sdk.builtin.flow_message import FlowMessage
     from flow_sdk.builtin.user import User
-    from flow_sdk.fs_records.flow_message_bundle import unpack_bundle
+    from flow_sdk.builtin.flow_message_bundle import unpack_bundle
 
     local_user = await User.get_one({"uname": "local"})
     owner_typeid = local_user.typeid if local_user else None

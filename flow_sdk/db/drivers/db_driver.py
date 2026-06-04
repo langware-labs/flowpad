@@ -158,9 +158,6 @@ class DBDriver(Generic[RecordType]):
         record.updated_by = None
         record.updated_date = None
 
-    def set_db_name(self, db_name: str):
-        raise NotImplementedError("set_db_name is not implemented")
-
     def validate_schema(self, schemas):
         """Validate that entity schemas match database schema.
 

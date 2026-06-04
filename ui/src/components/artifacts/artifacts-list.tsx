@@ -1,5 +1,5 @@
 import { Artifact, ArtifactType } from '@sdk';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { useArtifactActions } from '@src/hooks/flow-hooks';
 import { useCurrentArtifacts } from '@src/hooks/flow-hooks';
 import { FileText, Loader2 } from 'lucide-react';
@@ -23,7 +23,6 @@ interface ArtifactsListProps {
 export const ArtifactsList: React.FC<ArtifactsListProps> = ({ filterType, groupByType = true, className = '' }) => {
   const { data: artifacts = [], isLoading } = useCurrentArtifacts();
   const { deleteArtifact, isDeleting } = useArtifactActions();
-  const { toast } = useToast();
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   // Filter artifacts
@@ -56,21 +55,20 @@ export const ArtifactsList: React.FC<ArtifactsListProps> = ({ filterType, groupB
       setDeletingId(artifactId);
       try {
         await deleteArtifact(artifactId);
-        toast({
+        notify.success({
           title: 'Artifact deleted',
-          description: 'The artifact has been removed successfully.',
+          message: 'The artifact has been removed successfully.',
         });
       } catch (error) {
-        toast({
+        notify.error({
           title: 'Failed to delete',
-          description: error instanceof Error ? error.message : 'An error occurred',
-          variant: 'destructive',
+          message: error instanceof Error ? error.message : 'An error occurred',
         });
       } finally {
         setDeletingId(null);
       }
     },
-    [deleteArtifact, toast],
+    [deleteArtifact],
   );
 
   if (isLoading) {

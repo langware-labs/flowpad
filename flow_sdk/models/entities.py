@@ -98,12 +98,34 @@ except ImportError as e:
 # These have more complex dependencies - skip for now
 # from builtin.page import Page  # noqa: F401
 # from builtin.task import Task  # noqa: F401
-# from builtin.comment import Comment  # noqa: F401
 # from builtin.question import Question  # noqa: F401
+
+try:
+    from flow_sdk.builtin.comment import Comment  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import Comment: {e}")
 
 try:
     from flow_sdk.builtin.claude_memory_entities import Markdown, Docs, ClaudeMemory, ClaudeRules, ClaudePlan, ClaudeMd  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import claude memory entities: {e}")
+
+try:
+    # ClaudeSession (ClaudeTranscript) — must register independently of the
+    # indexer registrations import, or a receiver that never ran an index walk
+    # can't materialize shared claude_session stubs (get_entity_cls → None).
+    from flow_sdk.builtin.claude_session import ClaudeSession  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import ClaudeSession: {e}")
+
+try:
+    from flow_sdk.builtin.markdown_index import MarkdownIndex  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import MarkdownIndex: {e}")
+
+try:
+    from flow_sdk.builtin.git_repo import GitRepo  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import GitRepo: {e}")
 
 __all__ = []

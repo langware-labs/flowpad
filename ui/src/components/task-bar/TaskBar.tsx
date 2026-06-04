@@ -21,7 +21,8 @@ import { TaskCard } from './TaskCard';
 import { TaskDetailPanel } from './TaskDetailPanel';
 import { SharedTaskView } from './SharedTaskView';
 import { BulkReminderButton } from './BulkReminderButton';
-import { AskHelpDialog } from './AskHelpDialog';
+import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
+import { taskRequestShareSource } from '@src/hooks/share-sources';
 import { BULK_SELECT_MIN_TASKS, isTaskActive, isTaskArchived, isTaskPending, type TaskTab } from './constants';
 import './TaskBar.css';
 
@@ -42,6 +43,10 @@ export function TaskBar() {
 
   // Scenario B: ask-for-help dialog
   const [askHelpOpen, setAskHelpOpen] = useState(false);
+  // Recreate the source each time the dialog opens so its resolve-once cache
+  // resets (a fresh ask-help mints a fresh Task).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const askHelpSource = useMemo(() => taskRequestShareSource(), [askHelpOpen]);
 
   const isOnArchivedTab = selectedTab === 'archived';
 
@@ -343,7 +348,11 @@ export function TaskBar() {
         }}
       />
 
-      <AskHelpDialog open={askHelpOpen} onClose={() => setAskHelpOpen(false)} />
+      <ShareToConversationDialog
+        open={askHelpOpen}
+        onClose={() => setAskHelpOpen(false)}
+        source={askHelpSource}
+      />
     </div>
   );
 }

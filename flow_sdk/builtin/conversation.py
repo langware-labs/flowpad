@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import datetime
 from typing import ClassVar, List, Optional, TYPE_CHECKING
 
@@ -70,7 +71,7 @@ class Conversation(Entity):
     remote_project_name: Optional[str] = APIField(None)
     message_count: int = APIField(0)
     message_ids: Optional[str] = APIField(None)  # JSON-encoded [{"typeid": ..., "ts": ...}]
-    participants: list[dict] = APIField(default_factory=list)  # [{user_id, email, name}]
+    participants: list[dict] = APIField(default_factory=list)  # [{user_id, email, name, role}]
     # When False, hub suppresses delivery_status fan-out to the original
     # sender (delivered/received UPDATE frames are filtered by hub-side
     # Conversation._fanout_status_update). Co-recipients still see them.
@@ -92,6 +93,7 @@ class Conversation(Entity):
     # NOTE: task_id moved into ``shared_context_entities``. Use
     # ``conv.first_context_of_type('task', bucket='shared')`` to read it back.
     _api_visible: ClassVar[bool] = True
+    _icon: ClassVar[str | None] = "MessageSquare"
 
     async def share(self, recipients: Optional[List[str]] = None) -> "Conversation":
         """Push to hub + invite recipients via the standard hub pattern.
@@ -117,6 +119,10 @@ class Conversation(Entity):
         from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
 
         await super().share()
+        # Link each shared-context doc to this conversation locally (the hub
+        # doesn't host doc types). This makes the doc effective-remote so a
+        # comment on it auto-shares under the conversation (the hub parent).
+        await self._link_context_to_conversation()
         if not recipients:
             return self
         creds = load_credentials()
@@ -150,6 +156,55 @@ class Conversation(Entity):
                     body,
                 )
         return self
+
+    async def _link_context_to_conversation(self, refs=None, someone_typeid: str | None = None) -> None:
+        """Set ``parent_type_id`` = this conversation on each local shared-context
+        entity (e.g. the shared markdown).
+
+        The hub does NOT host doc types like ``markdown``, so the doc itself is
+        never pushed to the hub. Instead we make the conversation its parent
+        locally: the conversation IS remote, so the doc's ``effective_remote``
+        is True, and a child create under the doc (a comment) auto-shares under
+        the conversation (the nearest hub-known ancestor). Best-effort.
+
+        ``refs`` (TypeId/str/dict, or a list thereof) targets a specific subset —
+        used by the existing-conversation share path (``handle_add_message``) to
+        link only the items just shared. When omitted, links the full
+        ``shared_context_entities`` set (the new-conversation path from
+        ``share()``)."""
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+        conv_typeid_str = str(self.typeid)
+        targets = refs if refs is not None else (self.shared_context_entities or [])
+        if not isinstance(targets, (list, tuple)):
+            targets = [targets]
+        for ref in targets:
+            try:
+                if isinstance(ref, TypeId):
+                    tid = ref
+                elif isinstance(ref, str):
+                    tid = TypeId(ref)
+                elif isinstance(ref, dict) and ref.get("type") and ref.get("id"):
+                    tid = TypeId(f"{ref['type']}-{ref['id']}")
+                else:
+                    continue
+                cls = SchemaRegistry.get_entity_cls(tid.type)
+                if cls is None or not tid.id or "parent_type_id" not in cls.model_fields:
+                    continue
+                ent = await cls.get_one({"id": tid.id})
+                if ent is None or getattr(ent, "parent_type_id", None) == conv_typeid_str:
+                    continue
+                ent.parent_type_id = conv_typeid_str
+                try:
+                    # ``created_by`` is a bare user uuid, NOT a someone_typeid —
+                    # save() parses its owner as a TypeId, so passing it failed
+                    # every link save. Use the caller's someone_typeid (the
+                    # add_message path) or fall back to an ownerless save.
+                    await ent.save(someone_typeid or None)
+                except Exception as e:  # noqa: BLE001
+                    logging.warning("[conv.share] link context %s failed (non-fatal): %s", tid, e)
+            except Exception as e:  # noqa: BLE001
+                logging.warning("[conv.share] link context entity %r failed (non-fatal): %s", ref, e)
 
     def _first_message_landing_path(self) -> Optional[str]:
         """Return ``/flow_message/<id>`` for the earliest FM in this conv, or None.
@@ -238,16 +293,40 @@ class Conversation(Entity):
         async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
             return await client.post(path, body)
 
+    async def remove_message(self, flow_message_id: str) -> dict:
+        """Delete a FlowMessage from this conversation on the hub.
+
+        Hits ``POST <hub>/api/v1/graph/conversation/<id>/remove_message`` via the
+        standard cloud client. The hub enforces the gate (sender of the message
+        OR conversation owner), removes the child + deletes the FlowMessage, then
+        fans a DELETE data-op out to every participant. Returns the response
+        ``data`` (``{flow_message_id}``).
+        """
+        from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
+        from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
+        from flow_sdk.core.urls.service_urls import build_hub_url  # noqa: PLC0415
+
+        if not self.id:
+            raise RuntimeError("Conversation.id is required")
+        if not flow_message_id:
+            raise RuntimeError("flow_message_id is required")
+        creds = load_credentials()
+        if not creds or not creds.api_key:
+            raise RuntimeError("Cloud login required before remove_message()")
+        path = build_hub_url(self, action="remove_message")
+        async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
+            return await client.post(path, {"flow_message_id": flow_message_id})
+
 
     @property
     def data_path(self) -> str:
         """Canonical path to this conversation's jsonl pointer index.
 
-        Always derived from ``ConversationRecord.default_jsonl_path(self.id)``
+        Always derived from ``default_jsonl_path(self.id)``
         so on-disk layout is uniform; no per-instance storage.
         """
-        from flow_sdk.fs_records.conversation_record import ConversationRecord  # noqa: PLC0415
-        return str(ConversationRecord.default_jsonl_path(self.id))
+        from flow_sdk.fs_store.operations.conversation import default_jsonl_path  # noqa: PLC0415
+        return str(default_jsonl_path(self.id))
 
     def __setattr__(self, key, value):
         if (

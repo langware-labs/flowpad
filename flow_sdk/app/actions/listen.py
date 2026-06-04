@@ -268,17 +268,22 @@ async def _create_plan_annotation(tool_input: dict, session_id: str) -> None:
     """On ``PreToolUse:ExitPlanMode``, persist ``plan_path`` on the linked
     AgenticProcess and create a ``plan:`` Annotation for the gutter.
 
-    Path resolution prefers ``tool_input["planFilePath"]`` (emitted directly
-    by Claude Code on every ExitPlanMode call) and falls back to the older
-    Write/Edit cache for older Claude versions. The save on AgenticProcess
-    broadcasts an entity-update over WS, which is what flips the
-    "Open Plan" button on in the live UI without polling.
+    Path resolution prefers ``tool_input["planFilePath"]`` (emitted directly by
+    Claude Code on every ExitPlanMode call) and falls back to the older
+    Write/Edit cache for older Claude versions.
+
+    The cross-link work (resolving the ClaudePlan + AgenticProcess, setting
+    ``plan_path``, populating ``private_context_entities`` both directions) is
+    delegated to :func:`cross_link_plan_to_process` — the shared helper used by
+    PlanHandler (indexer) and the TranscriptStreamer subscriber. Annotation
+    creation stays here since it's a UI-gutter affordance specific to this path.
     Non-critical: errors are logged and swallowed.
     """
     try:
         from flow_sdk.builtin.agentic_process import AgenticProcess
         from flow_sdk.builtin.annotation import Annotation
         from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter
+        from flow_sdk.transcript_analyzer.plan_cross_link import cross_link_plan_to_process
 
         plan_text = tool_input.get("plan", "")
 
@@ -294,34 +299,25 @@ async def _create_plan_annotation(tool_input: dict, session_id: str) -> None:
             # Drain the cache to avoid cross-session drift.
             _last_file_op_path_by_session.pop(session_id, None)
 
-        now_iso = datetime.now(timezone.utc).isoformat()
-        agentic_processes = await AgenticProcess.get_all(
+        # Cross-link is best-effort: no-op when plan_file_path is empty or
+        # doesn't exist on disk. Its return value is NOT the source of
+        # truth for the annotation's target_id — resolved separately below.
+        await cross_link_plan_to_process(plan_file_path, session_id)
+
+        # Resolve AgenticProcess by session_id directly so the annotation has
+        # a non-empty target_id even when the plan file is unknown (older
+        # Claude Code versions, or no prior Write op cached). Restores the
+        # pre-873f0989 behaviour without re-inlining the cross-link logic.
+        agentic_process_id = ""
+        procs = await AgenticProcess.get_all(
             entities_filter=QueryFilter(match=ExpressionNode(session_id=session_id))
         )
-        agentic_process = agentic_processes[0] if agentic_processes else None
-        agentic_process_id = agentic_process.id if agentic_process else ""
+        if procs:
+            agentic_process_id = procs[0].id
 
-        # Persist plan_path on the entity — this is the single field the UI
-        # button reads. The save() WS broadcast lights up the "Open Plan"
-        # button in real time. Gated on file existence so the invariant
-        # ``hasPlan = !!plan_path`` is upheld by every writer.
-        if (
-            agentic_process
-            and plan_file_path
-            and Path(plan_file_path).exists()
-            and agentic_process.plan_path != plan_file_path
-        ):
-            agentic_process.plan_path = plan_file_path
-            try:
-                await agentic_process.save()
-            except Exception:
-                logger.debug(
-                    "_create_plan_annotation: agentic_process.save() failed for %s",
-                    agentic_process.id, exc_info=True,
-                )
-
+        # Annotation row for the gutter — UI-specific, stays local.
+        now_iso = datetime.now(timezone.utc).isoformat()
         content = plan_text[:50] if plan_text else "Plan created"
-
         annotation = Annotation(
             labels=["plan:"],
             target_type=AgenticProcess.get_type(),

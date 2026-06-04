@@ -18,7 +18,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from flow_sdk.core.entity.entity_model import Entity
-from flow_sdk.fs_store.type_id import TypeId
+from flow_sdk.fs_store.type_id import TypeId, is_named_id
 
 from .websocket import (
     get_active_connection,
@@ -59,9 +59,39 @@ async def _lookup_entity(type_name: str, entity_id: str) -> Optional[Entity]:
     if entity_cls is None:
         return None
     try:
+        # Named refs (e.g. "project-@local") resolve by uname, not raw id —
+        # `get_by_id` does a literal id lookup and misses the "@name" form.
+        if is_named_id(entity_id):
+            return await entity_cls.get_by_uname(entity_id[1:])
         return await entity_cls.get_by_id(entity_id)
     except Exception:
         return None
+
+
+async def _with_project_path(ctx: dict) -> dict:
+    """Enrich a browser-context snapshot with the current project's on-disk path.
+
+    The UI mirrors ``CurrentProjectTypeId`` (a ``project-<id>`` string), but an
+    agent that materializes a record needs the project's filesystem mount, not
+    just its id — otherwise it writes into the worker's cwd (for the global
+    Flowpad Assistant that is the system project, not the user's current one).
+    Resolve it here so ``flow context list`` also carries ``CurrentProjectPath``
+    and the records skill can target the user's current project. Best-effort:
+    on any miss the key is simply omitted.
+    """
+    out = dict(ctx or {})
+    proj_tid = out.get("CurrentProjectTypeId")
+    if not proj_tid:
+        return out
+    try:
+        tid = TypeId(proj_tid)
+        proj = await _lookup_entity(tid.type, tid.id) if tid.id else None
+        mount = getattr(proj, "fs_storage_mount_path", None) if proj else None
+        if mount:
+            out["CurrentProjectPath"] = str(mount)
+    except Exception:
+        pass
+    return out
 
 
 @router.post("/api/v1/agent/navigate/entity")
@@ -138,7 +168,7 @@ async def get_browser_context(connection_id: Optional[str] = None):
         return {
             "ok": True,
             "connection_id": connection_id,
-            "context": dict(info.browser_context or {}),
+            "context": await _with_project_path(info.browser_context or {}),
         }
 
     active = get_active_connection_info()
@@ -148,5 +178,5 @@ async def get_browser_context(connection_id: Optional[str] = None):
     return {
         "ok": True,
         "connection_id": cid,
-        "context": dict(info.browser_context or {}),
+        "context": await _with_project_path(info.browser_context or {}),
     }

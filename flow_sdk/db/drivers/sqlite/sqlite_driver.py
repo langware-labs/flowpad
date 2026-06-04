@@ -41,13 +41,13 @@ class TransactionHandler:
 from dataclasses import dataclass
 
 from .connection import (
-    DEVELOPMENT,
     Base,
     EntitySchema,
     RelationshipSchema,
     get_database_path,
     get_database_url,
     install_pragmas_and_immediate,
+    is_development,
 )
 
 
@@ -277,24 +277,46 @@ class SQLiteDBDriver(DBDriver):
     )
 
     def __init__(self, cfg: Optional[DBConfig] = None):
-        if not cfg:
-            cfg = DBConfig()
-            cfg.database = get_database_path()
-        super().__init__(cfg)
+        # Do NOT snapshot the per-instance db path here — defer to ``open()``
+        # so a ``reinit_db`` / ``override_db_path`` swap is picked up by a
+        # freshly-constructed driver. Callers that pass an explicit
+        # ``DBConfig(database=...)`` (e.g. the session-scoped test driver)
+        # keep their override because ``open()`` only resolves when
+        # ``config.database`` is falsy.
+        super().__init__(cfg or DBConfig())
         self.engine: Optional[AsyncEngine] = None
         self.session_factory: Optional[async_sessionmaker] = None
-        self.development: bool = DEVELOPMENT
         self.initialized_types: Set[str] = set()
+        # Track whether ``config.database`` was provided by the caller vs.
+        # lazy-resolved from settings on first ``open()``. ``close()`` drops
+        # the lazy-resolved value so a subsequent ``open()`` re-reads the
+        # current ``get_database_path()`` instead of pinning the stale path.
+        # Callers passing explicit ``DBConfig(database=...)`` keep their
+        # override across close/reopen cycles.
+        self._database_was_lazy: bool = not bool(self.config.database)
 
     # ==================== Connection Management ====================
 
     async def open(self):
         """Initialize database connection."""
         if self.engine is not None:
+            # Engine is alive, but a concurrent or partially-completed close()
+            # may have nulled the session factory (it clears the factory before
+            # awaiting engine.dispose()). Rebuild it from the live engine rather
+            # than returning a driver that can't create sessions — otherwise
+            # callers hit ``'NoneType' object is not callable`` at session_factory().
+            if self.session_factory is None:
+                self.session_factory = async_sessionmaker(
+                    self.engine, class_=AsyncSession, expire_on_commit=False
+                )
             return
         from sqlalchemy.ext.asyncio import create_async_engine
         from sqlalchemy.pool import NullPool
 
+        # Lazy per-instance resolution — see ``__init__`` for rationale.
+        if not self.config.database:
+            self.config.database = get_database_path()
+            self._database_was_lazy = True
         db_path = self.config.database or ":memory:"
         url = get_database_url(db_path)
         # NullPool: every operation opens a fresh aiosqlite connection
@@ -376,11 +398,23 @@ class SQLiteDBDriver(DBDriver):
     async def close(self):
         """Close database connection and ensure worker threads stop."""
         if self.engine:
-            # Clear session factory first to prevent new sessions
+            # Null both references synchronously BEFORE the await on dispose().
+            # engine.dispose() yields the event loop; if another coroutine ran
+            # _session_ctx() in that window with engine!=None but factory=None,
+            # open()'s early-return would skip rebuilding and the caller would
+            # call None(). Clearing engine here too means a concurrent open()
+            # sees a fully-closed driver and rebuilds cleanly.
+            engine = self.engine
             self.session_factory = None
-            # Dispose the engine — closes all pooled connections + worker threads.
-            await self.engine.dispose()
             self.engine = None
+            # Dispose the engine — closes all pooled connections + worker threads.
+            await engine.dispose()
+        # Drop the lazily-resolved path so the next ``open()`` re-reads
+        # ``get_database_path()`` — picks up any ``override_db_path`` swap
+        # that landed after the previous open. Callers who passed an
+        # explicit ``DBConfig(database=...)`` keep their override.
+        if self._database_was_lazy:
+            self.config.database = None
 
     # ==================== FTS5 Full-Text Search ====================
 
@@ -727,86 +761,6 @@ class SQLiteDBDriver(DBDriver):
             result = await session.execute(text(sql), bindings)
             return result.scalar() or 0
 
-    async def count_orphans_by_type(
-        self,
-        type_name: str | None = None,
-        scope: "object | None" = None,
-    ) -> int:
-        """Count orphan entities, optionally filtered by type and/or ScopeFilter.
-
-        Orphan = a row whose Layer 1 source file no longer exists. The flag
-        lives inside the JSON `data` blob (written by the indexer's
-        `_mark_orphans_in_db`), so we read it via `json_extract`. Same
-        pattern as `_load_entity_state_map` for scope/project_id.
-        """
-        if not self.session_factory:
-            return 0
-        bindings: dict = {}
-        type_clause = ""
-        if type_name:
-            type_clause = "type = :type AND "
-            bindings["type"] = type_name
-        scope_clause = self._scope_sql_clause(scope, bindings)
-        sql = (
-            f"SELECT COUNT(*) FROM entities WHERE {type_clause}"
-            f"json_extract(data, '$.orphan') = 1{scope_clause}"
-        )
-        async with self._session_ctx() as session:
-            result = await session.execute(text(sql), bindings)
-            return result.scalar() or 0
-
-    async def mark_orphans_by_type(
-        self,
-        type_name: str,
-        ids: list[str],
-        orphaned: bool,
-        orphan_since_iso: str | None = None,
-    ) -> int:
-        """Bulk-update the JSON `data.orphan` (and `data.orphan_since`) flag
-        on the given entity ids of a given type.
-
-        Direct SQL — bypasses the ORM's per-class `get_by_id` filter, which
-        otherwise misses rows for record types that have no typed entity
-        subclass registered (the typical case for fs_records like
-        `markdown`, `claude_session`, `skill`, etc.).
-
-        `orphan_since` is preserved if the row is already marked orphan; only
-        first-time orphans get the timestamp. When clearing the flag, both
-        the `orphan` boolean and the `orphan_since` key are removed/falsed.
-
-        Returns the number of rows actually changed.
-        """
-        if not ids or not self.session_factory:
-            return 0
-        placeholders = ",".join(f":id_{i}" for i in range(len(ids)))
-        bindings: dict[str, str | None] = {f"id_{i}": v for i, v in enumerate(ids)}
-        bindings["type"] = type_name
-        if orphaned:
-            bindings["since"] = orphan_since_iso
-            sql = (
-                "UPDATE entities "
-                "SET data = json_set("
-                "    json_set(data, '$.orphan', json('true')), "
-                "    '$.orphan_since', COALESCE(json_extract(data, '$.orphan_since'), :since)"
-                ") "
-                f"WHERE type = :type AND id IN ({placeholders}) "
-                "  AND (json_extract(data, '$.orphan') IS NULL "
-                "       OR json_extract(data, '$.orphan') != 1)"
-            )
-        else:
-            sql = (
-                "UPDATE entities "
-                "SET data = json_set("
-                "    json_remove(data, '$.orphan_since'), "
-                "    '$.orphan', json('false')"
-                ") "
-                f"WHERE type = :type AND id IN ({placeholders}) "
-                "  AND json_extract(data, '$.orphan') = 1"
-            )
-        async with self._session_ctx() as session:
-            r = await session.execute(text(sql), bindings)
-            return r.rowcount or 0
-
     async def delete_entities_by_type(
         self,
         type_name: str | None = None,
@@ -870,16 +824,6 @@ class SQLiteDBDriver(DBDriver):
         """Rollback a transaction."""
         await handler.rollback()
         await handler.close()
-
-    def set_db_name(self, db_name: str):
-        """Set database name (path for SQLite)."""
-        if self.development:
-            import tempfile
-
-            # Convert Neo4j-style db name to SQLite file path
-            db_file = f"flowpad_{db_name}.db"
-            self.config.database = os.path.join(tempfile.gettempdir(), db_file)
-            logger.info(f"SQLite database path set to: {self.config.database}")
 
     def validate_schema(self, schemas: List[Dict[str, Any]]) -> None:
         """Validate that entity schemas match database schema.

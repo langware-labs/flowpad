@@ -16,7 +16,7 @@ import { useScrollSync } from '@sdk/pty-sync/ui/useScrollSync.js';
 import { XTermHarness } from '@sdk/pty-sync/ui/XTermHarness.js';
 import { useContext } from '@src/hooks/useContext';
 import { useInputDir } from '@src/hooks/use-input-dir';
-import { useSettings } from '@src/hooks/use-settings';
+import { useInstancePreferences } from '@src/hooks/use-instance-preferences';
 import { DockPointer, useDockNavigation } from '@src/navigation';
 import { useAgenticQueue } from '@src/hooks/useAgenticQueue';
 import { useFS } from '@src/hooks/useFS';
@@ -207,7 +207,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const [bufferFlushCount, setBufferFlushCount] = useState(0);
   const anchorsResolvedRef = useRef(false);
 
-  const { settings } = useSettings();
+  const { preferences } = useInstancePreferences();
   const { shell } = useShell(sessionId);
   const [shellReady, setShellReady] = useState(false);
   // Keep shellRef in sync so callbacks and hooks that capture shellRef still work.
@@ -516,7 +516,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const handleOpenLastPlan = useCallback(() => {
     if (!agenticProcessTypeId || !process?.plan_path) return;
     navigation.openPlan(agenticProcessTypeId, process.plan_path);
-  }, [process?.plan_path, agenticProcessTypeId, navigation]);
+  }, [process, agenticProcessTypeId, navigation]);
 
   // On mount (and whenever the process identity changes), proactively call
   // getPlan() once so the button restores after a reload — the line trigger
@@ -966,8 +966,8 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
 
   // Ref so the output handler always reads the latest bufferSyncUpdates without
   // requiring the effect to re-subscribe when the setting changes.
-  const bufferSyncUpdatesRef = useRef(settings.bufferSyncUpdates);
-  bufferSyncUpdatesRef.current = settings.bufferSyncUpdates;
+  const bufferSyncUpdatesRef = useRef(preferences.bufferSyncUpdates);
+  bufferSyncUpdatesRef.current = preferences.bufferSyncUpdates;
 
   // Unified PTY lifecycle effect driven by Shell 'status' events.
   // On 'connected': reset xterm to a clean slate, write replay chunks,
@@ -1432,7 +1432,6 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
                     viewportY={viewportY}
                     rows={rows}
                     cellHeight={metricsCellHeight}
-                    projectEncodedName={dataContext.project?.fs_storage_mount_path?.replace(/\//g, '-')}
                     expanded={gutterExpanded}
                     onOpen={() => setGutterExpanded(true)}
                     onClose={() => setGutterExpanded(false)}

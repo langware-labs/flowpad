@@ -35,19 +35,19 @@ __all__ = [
 def total_cost_usd(worker: str, jsonl_path) -> float:
     """Sum the USD cost of every usage entry in a transcript JSONL.
 
-    Wraps ``AgentTranscript`` + ``pricing_for`` so callers that just want a
+    Wraps ``AgentTranscriptFile`` + ``pricing_for`` so callers that just want a
     bottom-line dollar figure don't have to walk the usage list themselves.
     Returns 0.0 for an empty / unreadable transcript (does not raise) — the
     caller decides whether to treat 0 as "not yet billed" vs "free".
     """
     from pathlib import Path
-    from ..transcript import AgentTranscript
+    from ..transcript import AgentTranscriptFile
 
     path = Path(jsonl_path)
     if not path.is_file():
         return 0.0
     try:
-        t = AgentTranscript(worker, path)
+        t = AgentTranscriptFile(worker, path)
     except Exception:
         return 0.0
     total = 0.0
@@ -76,7 +76,7 @@ def legacy_input_output_rates(model: str | None) -> tuple[float, float]:
 
     Returns the bare-input (``cache=none``) and ``output`` rates as
     $/1M tokens — matching the legacy ``MODEL_PRICING[model] = {"input": .., "output": ..}``
-    contract in ``flow_sdk/core/resource_management/scan/system_profile/utils.py``.
+    contract consumed by ``flow_sdk/builtin/faas/analytics/_pricing.py``.
     """
     from .base import ItemPrice
 
