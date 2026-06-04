@@ -9,7 +9,7 @@ import os
 logger = logging.getLogger(__name__)
 import re
 from collections import defaultdict
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, nullcontext
 from contextvars import ContextVar
 from datetime import datetime
 from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Set, Tuple
@@ -23,7 +23,13 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from flow_sdk.api.api_types.type_id import TypeId
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType, DBBaseRecord, DBBaseRelationship, EntityChild
-from flow_sdk.db.drivers.db_driver import DBConfig, DBDriver, DBResetProfile
+from flow_sdk.db.drivers.db_driver import (
+    _DB_LIFECYCLE_LOCK,
+    _lifecycle_in_progress,
+    DBConfig,
+    DBDriver,
+    DBResetProfile,
+)
 from flow_sdk.db.drivers.path_model import NodeConnection, NodesPath
 from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp
 from flow_sdk.flowpad_types.enums import ExpansionType, RelationshipDirection
@@ -920,9 +926,26 @@ class SQLiteDBDriver(DBDriver):
         if standalone is not None:
             yield standalone
             return
-        if not self.session_factory:
-            await self.open()
-        async with self.session_factory() as session:
+        # Gate ONLY the factory-resolution + session-open against the DB
+        # lifecycle lock (NOT the whole query): a destructive clear/restore/
+        # path-switch must not unlink/swap the file while a fresh session is
+        # being born on the old engine. Holding the lock here means a waiting
+        # lifecycle mutator cannot proceed to dispose+unlink until no new
+        # session is mid-open; combined with the mutator's own engine dispose
+        # (which reaps idle conns), this closes the deleted-file-engine window
+        # for the dominant fresh-session path. We release before yielding so
+        # the query itself never holds the lifecycle lock.
+        #
+        # The lifecycle mutator's OWN coroutine sets _lifecycle_in_progress
+        # while it holds the lock (see db_lifecycle_guard); its nested opens
+        # (init_db / bootstrap rebuild / clear_index) must bypass here or they
+        # would re-acquire this non-reentrant lock and self-deadlock.
+        lock_ctx = nullcontext() if _lifecycle_in_progress.get() else _DB_LIFECYCLE_LOCK
+        async with lock_ctx:
+            if not self.session_factory:
+                await self.open()
+            session = self.session_factory()
+        async with session:
             token = _standalone_session_var.set(session)
             try:
                 yield session

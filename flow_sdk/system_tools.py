@@ -357,40 +357,51 @@ async def clear_all_data() -> ClearAllResult:
 
     # 4. Close DB, delete file, reinitialize
     from flow_sdk.db.database import close_db, init_db  # noqa: PLC0415
-    from flow_sdk.db.drivers.db_driver import _driver_instances, get_db_driver, LazyDBDriver  # noqa: PLC0415
+    from flow_sdk.db.drivers.db_driver import (  # noqa: PLC0415
+        _driver_instances,
+        db_lifecycle_guard,
+        get_db_driver,
+        LazyDBDriver,
+    )
     from flow_sdk.db.db_entity import DBEntity  # noqa: PLC0415
     from flow_sdk.db.db_relationship import DBRelationship  # noqa: PLC0415
 
-    # Close the SQLiteDriver's own engine before wiping the file
-    sqlite_driver = _driver_instances.get("sqlite")
-    if sqlite_driver is not None:
-        await sqlite_driver.close()
+    # Serialize the entire close→unlink→init→repoint→bootstrap block against
+    # any overlapping lifecycle swap AND against fresh-session opens so no two
+    # engines can straddle the unlink. The guard also flags this coroutine so
+    # the nested session opens below (init_db / bootstrap rebuild) bypass the
+    # same non-reentrant lock instead of self-deadlocking.
+    async with db_lifecycle_guard():
+        # Close the SQLiteDriver's own engine before wiping the file
+        sqlite_driver = _driver_instances.get("sqlite")
+        if sqlite_driver is not None:
+            await sqlite_driver.close()
 
-    await close_db()
-    db_path.unlink()
-    logger.info(f"Database file deleted: {db_path}")
-    await init_db()
+        await close_db()
+        db_path.unlink()
+        logger.info(f"Database file deleted: {db_path}")
+        await init_db()
 
-    # DBEntity._db / DBRelationship._db are LazyDBDriver descriptors that
-    # snapshot the active driver on first access. After ``init_db`` builds
-    # a fresh driver, point both class-level caches at it so reads/writes
-    # go through the new instance — otherwise we read from a closed driver
-    # whose connections were torn down above (silent split-brain).
-    new_driver = get_db_driver()
-    DBEntity._db = new_driver
-    DBRelationship._db = new_driver
+        # DBEntity._db / DBRelationship._db are LazyDBDriver descriptors that
+        # snapshot the active driver on first access. After ``init_db`` builds
+        # a fresh driver, point both class-level caches at it so reads/writes
+        # go through the new instance — otherwise we read from a closed driver
+        # whose connections were torn down above (silent split-brain).
+        new_driver = get_db_driver()
+        DBEntity._db = new_driver
+        DBRelationship._db = new_driver
 
-    # Invalidate the bootstrap cache and immediately rebuild the @local
-    # entities. Without the rebuild, subsequent requests addressed via
-    # `/compute_node/@local/...` cannot resolve `@local` (it has just been
-    # wiped) and the request middleware returns "Invalid request" until the
-    # client happens to call /bootstrap again.
-    from flow_sdk.server.routes.bootstrap import (  # noqa: PLC0415
-        bootstrap,
-        invalidate_bootstrap_cache,
-    )
-    invalidate_bootstrap_cache()
-    await bootstrap()
+        # Invalidate the bootstrap cache and immediately rebuild the @local
+        # entities. Without the rebuild, subsequent requests addressed via
+        # `/compute_node/@local/...` cannot resolve `@local` (it has just been
+        # wiped) and the request middleware returns "Invalid request" until the
+        # client happens to call /bootstrap again.
+        from flow_sdk.server.routes.bootstrap import (  # noqa: PLC0415
+            bootstrap,
+            invalidate_bootstrap_cache,
+        )
+        invalidate_bootstrap_cache()
+        await bootstrap()
 
     return ClearAllResult(
         backup_path=backup.backup_path,
@@ -446,18 +457,25 @@ async def restore(backup_path: str) -> RestoreResult:
 
     from flow_sdk.core.cache.entity_cache import entity_cache, uname_cache  # noqa: PLC0415
     from flow_sdk.db.database import close_db, init_db  # noqa: PLC0415
+    from flow_sdk.db.drivers.db_driver import db_lifecycle_guard  # noqa: PLC0415
 
-    await close_db()
-    shutil.copy2(src, db_path)
-    logger.info(f"Database restored from: {src}")
+    # Same dispose→swap-file→reinit shape as clear_all_data — serialize it
+    # under the shared lifecycle lock so a restore can't straddle a concurrent
+    # clear/path-switch (or a fresh session open) and leave an engine bound to
+    # the just-overwritten file. The guard flags this coroutine so the nested
+    # init_db / clear_index session opens bypass the non-reentrant lock.
+    async with db_lifecycle_guard():
+        await close_db()
+        shutil.copy2(src, db_path)
+        logger.info(f"Database restored from: {src}")
 
-    entity_cache.clear()
-    uname_cache.clear()
+        entity_cache.clear()
+        uname_cache.clear()
 
-    await init_db()
+        await init_db()
 
-    # Clear index — it no longer reflects the restored DB
-    await clear_index()
+        # Clear index — it no longer reflects the restored DB
+        await clear_index()
 
     return RestoreResult(message=f"Database restored from {src.name}. Index cleared.")
 
