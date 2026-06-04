@@ -1234,10 +1234,14 @@ class AgenticProcess(Entity):
         except Exception:
             return {"enabled": True, "entries": []}
 
-    def _queue_ready(self) -> bool:
+    def _queue_ready(self, worker_status: "WorkerStatus | None") -> bool:
         """Drain-local readiness — superset of ``is_ready_for_input`` that also
         admits (a) a PENDING_USER worker and (b) a cold (startable) **headless**
         AP for its FIRST prompt.
+
+        ``worker_status`` is the transcript status the caller already resolved
+        (``_maybe_drain_queue`` reads the tail once and reuses it here and in
+        its not-ready log line — a second tail-read per drain check is waste).
 
         (a) ``is_ready_for_input`` (truth-tabled, intentionally left untouched)
         only admits IDLE/COMPLETE/INTERRUPTED. ``PENDING_USER`` — a completed
@@ -1256,15 +1260,9 @@ class AgenticProcess(Entity):
         popped head (the original "lost first prompt" bug). So the drain
         withholds cold-start from visible processes.
         """
-        # Resolve the transcript status once (RUNNING only) and reuse it.
-        resolved = (
-            self._discover_status_from_transcript()
-            if self.status == ProcessStatus.RUNNING.value
-            else None
-        )
-        if is_ready_for_input(self, worker_status=resolved):
+        if is_ready_for_input(self, worker_status=worker_status):
             return True
-        if resolved == WorkerStatus.PENDING_USER:
+        if worker_status == WorkerStatus.PENDING_USER:
             return True
         return (
             not self.visible
@@ -1312,11 +1310,18 @@ class AgenticProcess(Entity):
             if not state.get("enabled", True) or not state.get("entries"):
                 q.log("drain_check", source, reason="empty_or_disabled")
                 return
-            if not self._queue_ready():
+            # One transcript tail-read per drain check, shared by the readiness
+            # gate and the not-ready log line.
+            resolved = (
+                self._discover_status_from_transcript()
+                if self.status == ProcessStatus.RUNNING.value
+                else None
+            )
+            if not self._queue_ready(resolved):
                 q.log(
                     "drain_check", source, reason="not_ready",
                     status=self.status,
-                    worker_status=str(self._discover_status_from_transcript() or ""),
+                    worker_status=str(resolved or ""),
                 )
                 return
             q.log("drain_check", source, reason="ok")
