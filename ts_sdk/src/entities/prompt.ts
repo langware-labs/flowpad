@@ -27,7 +27,16 @@ export class Prompt extends APIEntity<Prompt> implements IPrompt {
 
   name: string = '';
   text?: string | null;
-  icon?: string | null;
+  private _icon: string | null = null;
+
+  /** Accessor-pair override + own enumerable mirror — see `Group.icon`. */
+  get icon(): string | null {
+    return this._icon;
+  }
+
+  set icon(v: string | null) {
+    this._icon = v ?? null;
+  }
   color?: string | null;
   project_id?: string | null;
 
@@ -35,6 +44,14 @@ export class Prompt extends APIEntity<Prompt> implements IPrompt {
     super(entity);
     this.name = entity.name ?? '';
     this.text = entity.text ?? null;
+    Object.defineProperty(this, 'icon', {
+      enumerable: true,
+      configurable: true,
+      get: () => this._icon,
+      set: (v: string | null | undefined) => {
+        this._icon = v ?? null;
+      },
+    });
     this.icon = entity.icon ?? null;
     this.color = entity.color ?? null;
     this.project_id = entity.project_id ?? null;
