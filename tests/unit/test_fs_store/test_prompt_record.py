@@ -1,0 +1,106 @@
+"""Unit tests for the PROMPT record recipe (docs/prompt-library.md):
+walker, frontmatter parsing (validate-on-adopt ids), gen_id idempotence,
+emoji icon round-trip, and the reserved file-only ``queue`` block.
+"""
+from pathlib import Path
+
+import pytest
+
+from flow_sdk.fs_store.fs_ref import FSRef
+from flow_sdk.fs_store.indexer.functions.prompt import (
+    _read_prompt_frontmatter_id,
+    extract_prompt,
+    prompt_gen_id,
+    prompt_project_fn,
+)
+from flow_sdk.fs_store.record_types import RecordType
+
+pytestmark = pytest.mark.timeout(5)  # do not increase timeout without approval
+
+V4_ID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+V7_ID = "0190a0a0-aaaa-7bbb-8ccc-eeeeeeeeeeee"  # foreign version — must be rejected
+
+
+def _write_md(path: Path, body: str, frontmatter: str | None = None) -> Path:
+    text = f"---\n{frontmatter}---\n\n{body}" if frontmatter else body
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def test_walker_finds_only_prompts_md(tmp_path: Path):
+    _write_md(tmp_path / "prompts" / "a.md", "A")
+    _write_md(tmp_path / "prompts" / "b.md", "B")
+    _write_md(tmp_path / "prompts" / "notes.txt", "not md")
+    _write_md(tmp_path / "docs" / "c.md", "outside prompts/")
+    refs = prompt_project_fn([FSRef(tmp_path)], opts=None)
+    names = sorted(Path(r.path).name for r in refs)
+    assert names == ["a.md", "b.md"]
+    assert all(r.record_type == RecordType.PROMPT for r in refs)
+
+
+def test_extract_full_frontmatter(tmp_path: Path):
+    p = _write_md(
+        tmp_path / "prompts" / "review.md",
+        "Review the current diff.\n",
+        frontmatter=f'id: {V4_ID}\nname: Review my diff\nicon: Search\ncolor: "#7aa2f7"\ngroup_id: {V4_ID}\n',
+    )
+    [rec] = extract_prompt(FSRef(p))
+    assert rec.id == V4_ID
+    assert rec.name == "Review my diff"
+    assert rec.icon == "Search"
+    assert rec.color == "#7aa2f7"
+    assert rec.group_id == V4_ID
+    assert rec.text == "Review the current diff."
+    assert rec.type == RecordType.PROMPT
+
+
+def test_extract_name_falls_back_to_stem_and_optionals_absent(tmp_path: Path):
+    p = _write_md(tmp_path / "prompts" / "quick-fix.md", "Just do it.")
+    [rec] = extract_prompt(FSRef(p))
+    assert rec.name == "quick-fix"
+    assert rec.text == "Just do it."
+    assert getattr(rec, "icon", None) is None
+    assert getattr(rec, "color", None) is None
+    assert getattr(rec, "group_id", None) is None
+
+
+def test_foreign_version_id_rejected_v4_adopted(tmp_path: Path):
+    """Entity-id policy: only v4/v5 frontmatter ids are adopted."""
+    p7 = _write_md(tmp_path / "prompts" / "seven.md", "x", frontmatter=f"id: {V7_ID}\n")
+    assert _read_prompt_frontmatter_id(p7) is None
+    [rec] = extract_prompt(FSRef(p7))
+    assert rec.id != V7_ID  # derived uuid5(path) instead
+
+    p4 = _write_md(tmp_path / "prompts" / "four.md", "x", frontmatter=f"id: {V4_ID}\n")
+    assert _read_prompt_frontmatter_id(p4) == V4_ID
+
+
+def test_gen_id_idempotent_and_preserves_fields(tmp_path: Path):
+    p = _write_md(
+        tmp_path / "prompts" / "keep.md",
+        "Body stays.\n",
+        frontmatter='name: Keeper\nicon: "🚀"\n',
+    )
+    first = prompt_gen_id(FSRef(p))
+    second = prompt_gen_id(FSRef(p))
+    assert first == second
+    assert _read_prompt_frontmatter_id(p) == first
+    [rec] = extract_prompt(FSRef(p))
+    assert rec.name == "Keeper"
+    assert rec.icon == "🚀"  # emoji round-trips through yaml quoting
+    assert rec.text == "Body stays."
+
+
+def test_reserved_queue_block_stays_file_only(tmp_path: Path):
+    p = _write_md(
+        tmp_path / "prompts" / "flagged.md",
+        "Run it.",
+        frontmatter="name: Flagged\nqueue:\n  clear_first: true\n  ensure_enabled: true\n",
+    )
+    [rec] = extract_prompt(FSRef(p))
+    assert rec.name == "Flagged"
+    assert rec.text == "Run it."
+    # v1: the queue block is reserved — parsed file stays intact, no record field
+    assert getattr(rec, "queue", None) in (None, {})
+    assert "clear_first" in p.read_text()

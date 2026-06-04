@@ -100,6 +100,11 @@ try:
 except ImportError as e:
     print(f"[WARN] Failed to import Group: {e}")
 
+try:
+    from flow_sdk.builtin.prompt import Prompt  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import Prompt: {e}")
+
 # These have more complex dependencies - skip for now
 # from builtin.page import Page  # noqa: F401
 # from builtin.task import Task  # noqa: F401
