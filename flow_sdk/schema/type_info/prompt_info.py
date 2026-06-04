@@ -21,7 +21,10 @@ PROMPT = TypeMetadata(
     gen_id_fn=prompt_gen_id,
     indexed_by_default=True,
     browseable=True,
-    creatable=True,
+    # v1: creation lives in the Prompt Library menu (PromptEditDialog with the
+    # generic pickers); the AssetsPage quick-create path needs a descriptor in
+    # quick-create/registry.ts before this flips on.
+    creatable=False,
     icon="BookMarked",
     api_visible=True,
     index_fields=["name", "group_id"],

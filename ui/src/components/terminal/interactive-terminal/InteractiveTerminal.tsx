@@ -1517,6 +1517,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
           fileCount={fileCount}
           isActive={processIsActive}
           promptCount={mergedPrompts.length}
+          process={process}
           openTabs={ribbonOpenTabs}
           activeSideTab={ribbonActiveSideTab}
           onOpenSideTab={(tab) => {

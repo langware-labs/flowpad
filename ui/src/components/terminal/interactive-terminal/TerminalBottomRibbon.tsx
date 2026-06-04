@@ -1,8 +1,10 @@
 import React from 'react';
+import type { AgenticProcess } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { cn } from '@src/lib/utils';
-import { FileText } from 'lucide-react';
+import { BookMarked, FileText } from 'lucide-react';
+import { PromptLibraryMenu } from '@src/components/prompt-library/PromptLibraryMenu';
 import { SIDE_TABS, SideTabId, type SideTabId as SideTabIdType } from './side-windows';
 
 interface TerminalBottomRibbonProps {
@@ -14,6 +16,8 @@ interface TerminalBottomRibbonProps {
   onOpenSideTab: (tab: SideTabIdType) => void;
   hasLastPlan?: boolean;
   onOpenLastPlan?: () => void;
+  /** Enables the Prompt Library button (prompt → queue needs a process). */
+  process?: AgenticProcess | null;
 }
 
 const RIBBON_TABS: SideTabIdType[] = [
@@ -22,6 +26,9 @@ const RIBBON_TABS: SideTabIdType[] = [
   SideTabId.Prompts,
   SideTabId.Files,
   SideTabId.Dir,
+  // The prompt QUEUE side-tab (previously URL-only) — paired with the
+  // Prompt Library button below so "add to queue" has a visible destination.
+  SideTabId.Queue,
 ];
 
 export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
@@ -33,6 +40,7 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
   onOpenSideTab,
   hasLastPlan = false,
   onOpenLastPlan,
+  process = null,
 }) => {
   return (
     <div className="flex items-center border-t bg-muted/30 px-4 py-1.5">
@@ -110,6 +118,27 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
               </Tooltip>
             );
           })}
+          {/* Prompt Library — distinct from the transcript "Prompts" tab:
+              browse the foldered prompt library; click a prompt to enqueue
+              it (docs/prompt-library.md). Pure composition; all behavior
+              lives in PromptLibraryMenu / the generic groups layer. */}
+          {process && (
+            <PromptLibraryMenu
+              process={process}
+              projectId={process.project_id ?? null}
+              trigger={
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-7 p-0"
+                  aria-label="Prompt Library"
+                  title="Prompt Library — click a prompt to add it to the queue"
+                >
+                  <BookMarked className="h-4 w-4" />
+                </Button>
+              }
+            />
+          )}
         </TooltipProvider>
       </div>
     </div>
