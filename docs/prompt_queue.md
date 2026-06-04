@@ -1,3 +1,7 @@
+---
+id: 09474521-194a-59cc-8af2-002eaba7fa7d
+---
+
 # Prompt Queue
 
 Backend-owned FIFO of pending prompts per `AgenticProcess`, with a zero-logic

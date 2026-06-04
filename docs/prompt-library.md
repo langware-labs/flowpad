@@ -1,3 +1,7 @@
+---
+id: 6d726bd7-5dac-5bce-8812-6509f0779843
+---
+
 # Prompt Library — managed prompts, foldered, one click to queue
 
 A library of reusable prompts, organized in folders, opened from the terminal
