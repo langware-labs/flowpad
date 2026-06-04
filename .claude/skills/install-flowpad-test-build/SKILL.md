@@ -1,16 +1,10 @@
 ---
-
+id: 664c9bc2-4afa-528d-b7c5-a3998c27aecf
 name: install-flowpad-test-build
-description: Install and validate a teammate-delivered FlowPad test build. Builds the matching backend from source, installs the provided Electron app, and verifies FlowPad ownership of the SOD key in the OS credential store.
-tags:
-
-* setup
-* install
-* test-build
-* flowpad
-* keychain
-* flow-rs
-
+description: Install and validate a teammate-delivered FlowPad test build. Builds
+  the matching backend from source, installs the provided Electron app, and verifies
+  FlowPad ownership of the SOD key in the OS credential store.
+tags: ''
 ---
 
 # Install a FlowPad Test Build
