@@ -205,7 +205,9 @@ Runs all test suites in sequence across 11 phases. **You never advance to the ne
 Skill(skill="loop", args='30m "Do not stop untill all passed or flagged. flagged means this test exposes significant gap hence senior dev review is required to decide on next step"')
 ```
 
-The loop keeps the cycle driving forward unattended; it naturally ends when the QA Cycle Summary is printed (every test passed or flagged).
+The loop keeps the cycle driving forward unattended; it naturally ends when the QA Cycle Summary is printed (every test passed or flagged). The loop never overrides the [circuit breaker](#circuit-breaker): on repeated same-class anomalies, a loop tick performs the meta-RCA instead of more forward grinding.
+
+**Step 0.5 — create the cycle-state file.** Create `<output-dir>/<timestamp>/cycle-state.md` (phase, per-item dispositions, owners, instance locks, pending validations) and update it at every milestone — see [Durable cycle state](#durable-cycle-state).
 
 ---
 
@@ -216,6 +218,7 @@ The loop keeps the cycle driving forward unattended; it naturally ends when the 
 - **Never skip** a failing test without explicit user instruction given at invocation time. "It was already failing" is not a reason to move on. Mid-cycle, the only alternative to fixing is flagging.
 - **Backend/infra ownership**: For phases 2, 3, 5, and 7–11, you own the machine. You may restart the backend server (`uv run -m flow_sdk.server.run`), the frontend, named instances (`scripts/instance_ctl.sh`), and the local hub as needed between runs.
 - **No flaky tolerance**: `retries` stays 0 everywhere. A test that passes on re-run with no code change is not green — it is evidence of a real race and is flag-worthy. Never add retries, reruns, or `@flaky` markers, and never raise any timeout (see CLAUDE.md non-negotiables).
+- **Integrity & resilience**: every verdict, destructive op, infra launch, and anomaly response is governed by [Run Integrity & Resilience](#run-integrity--resilience-non-negotiable) — machine-read verdicts, one writer per instance, daemonized services, durable cycle state, circuit breaker.
 
 ---
 
@@ -709,6 +712,7 @@ Inject at `<!-- REPORT_DATA -->`:
 ```
 _results/
   2026-03-04T10-30-00/
+    cycle-state.md                 ← durable orchestration ledger (phase, dispositions, owners, locks)
     phase8--chat.json              ← raw Playwright JSON reporter output, per category
     phase8-summary.json            ← aggregated per-test pass/fail list (Phase 9's work list)
     chat--chat_input_controls.json
@@ -730,11 +734,45 @@ File naming: `<category>--<scenario-name>.json`.
 - Never let a single scenario failure stop the entire cycle
 - **Never launch a tester without a current test index file**
 
+## Run Integrity & Resilience (non-negotiable)
+
+Hard rules learned from cycle post-mortems. They bind every role, the manager most of all.
+
+### Verdicts are machine-read, never eyeballed
+- Every pass/fail decision comes from a machine-readable source: the Playwright/pytest JSON report, or the runner's exit code captured **immediately** (`run …; echo "exit=$?"` as the very next statement).
+- NEVER judge a run through a `tail`/`grep`-filtered pipe — filters eat the `N failed` heading and the failure list, leaving only the rows you hoped for.
+- NEVER let a trailing command (echo, grep, curl) mask the runner's exit code in a pipeline or compound command.
+- Absence of failure artifacts is NOT evidence of success. A run whose verdict was lost (truncated output, killed process, masked exit) has NO verdict — rerun it properly; do not reconstruct a verdict from fragments.
+
+### Repeated signals are real until proven environmental
+- The same failure signature in two independent runs is REAL by default. Each "environmental / contamination / degraded instance" claim must be proven, not asserted: produce a passing comparable of the same test on the SAME instance and config. No comparable → the failure stands.
+- A baseline established on one instance never validates another. Record a verdict only against the instance/config the validation actually ran on.
+
+### Shared services are daemons, never session children
+- Backends, hubs, and named instances are launched DETACHED (instance_ctl or a setsid-equivalent) so they survive the orchestrator session. Never host shared infra as a manager/teammate background shell task — a session reset then cascades into an infra outage that fails everyone's runs.
+- After any session disruption, re-validate the environment (services healthy, PATH/tooling resolves) before interpreting any test result produced across the disruption.
+
+### One writer per instance
+- Exactly one actor may run tests, clear DBs, or restart a given instance at a time. The manager grants exclusivity explicitly (named in a message/task) and reclaims it explicitly. Two actors clearing/running on one instance is how false failures are manufactured.
+- Every destructive op (DB clear, backend restart) ends with a deterministic readiness check — poll the bootstrap/health endpoint until it returns a valid payload. Never a blind sleep.
+
+### Durable cycle state
+- Maintain `<output-dir>/<timestamp>/cycle-state.md`: current phase, per-item dispositions, owners, granted instance locks, pending validations. Update it at every milestone (phase gate, fix landed, verdict recorded).
+- After a session/team loss, rebuild from cycle-state + result JSONs + debug_log — never from memory. Work products must always make a team death cost a re-read, not a re-do.
+
+### Circuit breaker
+- TWO anomalies of the same class — unexplained run/process death, repeated team loss, the same validation re-run without ever producing an accepted machine-read verdict, repeated infra outage — HALT forward execution. Perform a meta-RCA on the orchestration/harness itself (not the tests) before resuming; record the finding (flagged.md if unresolved).
+- The Autonomous Run Policy means "don't wait for humans" — it does not mean "keep grinding through anomalies." Stopping to examine the harness is part of the job, not a violation of the loop.
+
+---
+
 ## Autonomous Run Policy
 
 **You do not stop to ask questions — no matter what. No one is on the other side to answer during e2e.** This applies to every role (manager, tester, debugger, fixer, analysis expert) from the moment a job starts until the final summary is printed. The only permitted user interaction is job-type clarification at invocation time, before any work begins.
 
 Every decision is made from the documented defaults in this skill. When something genuinely requires human judgment, it does not pause the cycle — it becomes **`flagged`** and the cycle moves on.
+
+"No questions" is about not WAITING on humans; it never licenses grinding through anomalies. The [circuit breaker](#circuit-breaker) is part of this policy: repeated same-class anomalies stop forward execution for a self-directed meta-RCA — still autonomous, still no questions.
 
 ### `flagged` — definition
 

@@ -55,6 +55,7 @@ Work through these in order, stopping when you have sufficient confidence:
 ### 5. Formulate RCA
 - State the root cause in one sentence: what broke, where, and why
 - Distinguish between: code bug, environment issue, test scenario issue, flaky timing
+- **An "environment/contamination" classification must be PROVEN, not asserted**: produce a passing comparable of the same test on the SAME instance and config. No comparable → the failure stands as real. The same failure signature across two independent runs is real by default. A baseline from a different instance proves nothing about this one.
 - Rate your confidence: high / medium / low
 - If the root cause is architectural or unfixable without violating a non-negotiable: include `Recommendation: flagged` with the reasoning — the manager will record it per the Autonomous Run Policy
 

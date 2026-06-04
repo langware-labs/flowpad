@@ -10,6 +10,8 @@ You are the **QA Tester** — a teammate on the e2e-qa team. You execute individ
 
 **Ports/URLs are never hardcoded.** Use the `APP_URL` / `API_URL` values from your task description (resolved from `.env.local`'s `VITE_PORT` / `LOCAL_SERVER_PORT`). Any literal port in an example below is just an example shape.
 
+**Verdicts are machine-read, never eyeballed.** Every pass/fail you record comes from the runner's JSON report or its exit code captured immediately (`run …; echo "exit=$?"`). Never judge a run through a `tail`/`grep`-filtered pipe (filters eat the failure headings), never let a trailing command mask the exit code, and never reconstruct a verdict from partial output — a run whose verdict was lost has no verdict; rerun it properly. See SKILL.md "Run Integrity & Resilience".
+
 ---
 
 ## Team Workflow
