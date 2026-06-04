@@ -12,6 +12,9 @@
  */
 import { test, expect, request as pwRequest, type Page } from '@playwright/test';
 import { dismissSetupModal } from './helpers';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 
 const API = process.env.QA_API_URL || 'http://localhost:6003';
 const PANEL = '[data-testid="entity-execution-panel"]';
@@ -34,11 +37,53 @@ const TEXTAREA = 'textarea[placeholder="Ask about this doc…"]';
 // markdown-family editors (plan/claude_md/claude_memory) reach the SAME panel
 // via a Chat side-tab; covered structurally by the markdown-editor tests and
 // not re-driven here because the headless side-tab activation is unreliable.
-const HOME = process.env.HOME || '/Users/shlom';
+//
+// SELF-PROVISIONED: beforeAll writes both fixtures into the user's real
+// ~/.claude/{agents,skills} (the editors resolve vfs paths there), afterAll
+// fully purges them (entity row + shadow dir + source file) via the
+// fs-records DELETE endpoint. Never assume these files pre-exist — squatting
+// fixtures in global dirs are indistinguishable from test leaks and get
+// wiped by cleanups.
+const HOME = process.env.HOME || os.homedir();
+const FIXTURE_AGENT = 'qa-docchat-agent-fixture';
+const FIXTURE_SKILL = 'qa-docchat-skill-fixture';
+const AGENT_MD = path.join(HOME, '.claude', 'agents', `${FIXTURE_AGENT}.md`);
+const SKILL_DIR = path.join(HOME, '.claude', 'skills', FIXTURE_SKILL);
 const DOCS: Array<{ type: string; editor: string; machinePath: string }> = [
-  { type: 'agent', editor: 'agent', machinePath: `${HOME}/.claude/agents/ea-test-agent-1776959943595.md` },
-  { type: 'skill', editor: 'skill', machinePath: `${HOME}/.claude/skills/amd_mock` },
+  { type: 'agent', editor: 'agent', machinePath: AGENT_MD },
+  { type: 'skill', editor: 'skill', machinePath: SKILL_DIR },
 ];
+
+function writeFixtures() {
+  fs.mkdirSync(path.dirname(AGENT_MD), { recursive: true });
+  fs.writeFileSync(
+    AGENT_MD,
+    `---\nname: ${FIXTURE_AGENT}\ndescription: doc-chat per-type QA fixture (agent editor)\n---\n\nQA fixture agent body.\n`,
+    'utf-8',
+  );
+  fs.mkdirSync(SKILL_DIR, { recursive: true });
+  fs.writeFileSync(
+    path.join(SKILL_DIR, 'SKILL.md'),
+    `---\nname: ${FIXTURE_SKILL}\ndescription: doc-chat per-type QA fixture (skill editor)\n---\n\nQA fixture skill body.\n`,
+    'utf-8',
+  );
+}
+
+/** Full purge of one fixture: resolve the entity id by name via /search, then
+ * DELETE /fs-records/<type>/<id> (row + FTS + shadow dir + source file). Falls
+ * back to plain fs removal when the entity was never indexed. */
+async function purgeFixture(rq: any, type: string, name: string, diskPath: string) {
+  try {
+    const resp = await rq.get(`${API}/api/v1/search?record_type=${type}&q=${encodeURIComponent(name)}`);
+    const results: Array<{ record_id: string; name: string }> =
+      (await resp.json())?.data?.results ?? [];
+    const hit = results.find((r) => r.name === name);
+    if (hit) {
+      await rq.delete(`${API}/api/v1/graph/compute_node/@local/fs-records/${type}/${hit.record_id}`);
+    }
+  } catch { /* best effort — fall through to disk cleanup */ }
+  fs.rmSync(diskPath, { recursive: true, force: true });
+}
 
 let CN_TYPEID = '';
 function vfsUrl(editor: string, machinePath: string): string {
@@ -90,6 +135,9 @@ async function readPanelTarget(page: Page): Promise<string | null> {
 
 test.describe('doc-chat per type', () => {
   test.beforeAll(async () => {
+    // Materialize the agent/skill fixtures BEFORE indexing so the index pass
+    // below mints their entities and asset_ref → TypeId resolution works.
+    writeFixtures();
     const rq = await pwRequest.newContext();
     const boot = (await (await rq.get(`${API}/api/v1/graph/bootstrap`)).json()).data;
     const cn = boot.default_compute_node;
@@ -98,6 +146,13 @@ test.describe('doc-chat per type', () => {
     for (const t of ['agent', 'skill', 'plan', 'claude_memory', 'markdown']) {
       await rq.post(`${API}/api/v1/graph/compute_node/@local/fs-records/index?type=${t}`);
     }
+    await rq.dispose();
+  });
+
+  test.afterAll(async () => {
+    const rq = await pwRequest.newContext();
+    await purgeFixture(rq, 'agent', FIXTURE_AGENT, AGENT_MD);
+    await purgeFixture(rq, 'skill', FIXTURE_SKILL, SKILL_DIR);
     await rq.dispose();
   });
 
@@ -135,7 +190,7 @@ test.describe('doc-chat per type', () => {
     await dismissSetupModal(page);
 
     // skill → agent editor: the target string must change type.
-    await page.goto(vfsUrl('skill', `${HOME}/.claude/skills/amd_mock`));
+    await page.goto(vfsUrl('skill', SKILL_DIR));
     await openChatPanel(page);
     let tFirst = '';
     await expect(async () => {
@@ -144,7 +199,7 @@ test.describe('doc-chat per type', () => {
       tFirst = t!;
     }).toPass({ timeout: 20_000 });
 
-    await page.goto(vfsUrl('agent', `${HOME}/.claude/agents/ea-test-agent-1776959943595.md`));
+    await page.goto(vfsUrl('agent', AGENT_MD));
     await openChatPanel(page);
     await expect(async () => {
       const t = await readPanelTarget(page);
