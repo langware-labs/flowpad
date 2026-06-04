@@ -28,9 +28,10 @@ tags: [whiteboard, create, persistence]
 * Validate `WHITE_BOARD.md` exists.
 * Validate `board.json` either exists OR will be created on first save (the editor lazy-creates it).
 
-### C3: Frontmatter id stamped
-* `cat <folder>/WHITE_BOARD.md` → frontmatter MUST contain `id:` (UUID format), `name: <board-name>`, `description: ...`.
-* Validate the BEGIN/END mermaid markers are present in the file body.
+### C3: Frontmatter id stamped (after index)
+* Right after first save, WHITE_BOARD.md has the BEGIN/END mermaid block but NO frontmatter — the editor's autosave only splices the mermaid block; the frontmatter `id:` is stamped by the indexer (`whiteboard_gen_id`), not on save. Validate the BEGIN/END mermaid markers are present in the file body at this point.
+* Trigger an index: POST `${API_URL}/api/v1/graph/compute_node/@local/fs-records/index?type=whiteboard`; wait ~3s.
+* `cat <folder>/WHITE_BOARD.md` → frontmatter MUST now contain `id:` (a valid v5/v4 UUID). The BEGIN/END mermaid markers MUST survive the frontmatter stamp.
 
 ### C4: Draw + autosave + thumbnail
 * In the editor tab, run via `browser_evaluate`:
@@ -47,7 +48,7 @@ tags: [whiteboard, create, persistence]
   ```
 * Wait 1500ms past debounce.
 * Validate `<folder>/board.json` mtime updated AND parses as JSON with `kind: "excalidraw"` and `data.elements.length >= 2`.
-* Validate `<folder>/thumbnail.svg` exists (size > 200 bytes).
+* Validate `<folder>/thumbnail.svg` exists (size > 200 bytes). Note: the thumbnail is the LAST write in the persist sequence (board.json → WHITE_BOARD.md → exportToSvg → thumbnail.svg), so poll for it for a few seconds after board.json appears rather than checking once.
 
 ### C5: Reload preserves content
 * Navigate away (`${APP_URL}/`), then back to the editor URL.
