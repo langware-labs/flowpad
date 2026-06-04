@@ -761,6 +761,24 @@ class SQLiteDBDriver(DBDriver):
             result = await session.execute(text(sql), bindings)
             return result.scalar() or 0
 
+    async def list_entity_sources_by_type(
+        self,
+        type_name: str,
+    ) -> dict[str, tuple[str | None, str | None, str | None]]:
+        """Return ``{id: (asset_ref, scope, project_id)}`` for every row of
+        ``type_name``. One lean SELECT — used by the indexer's orphan
+        detection to include DB rows that have no shadow record dir."""
+        if not self.session_factory:
+            return {}
+        sql = (
+            "SELECT id, json_extract(data, '$.asset_ref'), "
+            "json_extract(data, '$.scope'), json_extract(data, '$.project_id') "
+            "FROM entities WHERE type = :type"
+        )
+        async with self._session_ctx() as session:
+            result = await session.execute(text(sql), {"type": type_name})
+            return {str(row[0]): (row[1], row[2], row[3]) for row in result.fetchall()}
+
     async def delete_entities_by_type(
         self,
         type_name: str | None = None,
