@@ -159,7 +159,7 @@ def _extract_mcp_json(data: dict, source_file: str) -> list[dict]:
                 continue
             srv = _snake_keys(body)
             srv.update({
-                "type": RecordType.CLAUDE_MCP_SERVER.value,
+                "type": RecordType.CLAUDE_MCP_JSON_ENTRY.value,
                 "json_path": f"/mcpServers/{_escape_json_pointer(name)}",
                 "source_file": source_file,
                 "name": name,
