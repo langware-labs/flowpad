@@ -2337,6 +2337,7 @@ class AgenticProcess(Entity):
                 limit=10000,
             ))
             ranked = sorted(sources, key=lambda s: -len(s[0]))
+            own_project_id = str(self.project_id or "")
             for ent in entities:
                 ar_raw = getattr(ent, "asset_ref", None) or ""
                 if not ar_raw:
@@ -2349,6 +2350,20 @@ class AgenticProcess(Entity):
                 if match is None:
                     continue
                 src_dir, src = match
+                # USER_DIR is the real $HOME, so its prefix swallows every
+                # indexed asset on the machine — including OTHER projects'
+                # checkouts under ~/. An entity that is project-scoped to a
+                # different project must not ride in via that swallow (it
+                # would render as a misleading "user" asset). Explicit mounts
+                # (own PROJECT_DIR / WORKDIR / ADDITIONAL_DIR) stay
+                # authoritative: matching one of those shows the asset
+                # regardless of its scope stamp.
+                if (
+                    src == AssetSource.USER_DIR
+                    and getattr(ent, "scope", None) == "project"
+                    and str(getattr(ent, "project_id", None) or "") != own_project_id
+                ):
+                    continue
                 descriptors.append(AssetDescriptor(
                     typeid=f"{ent.type or ent.get_type()}-{ent.id}",
                     source=src,
