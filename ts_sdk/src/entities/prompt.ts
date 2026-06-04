@@ -73,7 +73,11 @@ export class Prompt extends APIEntity<Prompt> implements IPrompt {
       project_id: opts.projectId ?? null,
     });
     prompt.group_id = opts.groupId ?? null;
-    return prompt.save();
+    // Project-scoped save (POST /graph/project/<id>/prompt): the backend
+    // resolves the .md location from the request scope — an unscoped save
+    // would land the file under user_home instead of <project>/prompts/.
+    const { TypeId } = await import('../models/TypeId');
+    return prompt.save(opts.projectId ? new TypeId('project', opts.projectId) : []);
   }
 
   /**

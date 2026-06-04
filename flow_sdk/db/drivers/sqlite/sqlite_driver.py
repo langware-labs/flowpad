@@ -1337,10 +1337,17 @@ class SQLiteDBDriver(DBDriver):
                 parts.append(cond)
             return (or_(*parts), True) if parts else (None, False)
 
-        # Leaf node
-        if len(expr.operands) < 2:
+        # Leaf node. The null-test ops are unary — ``operands=[field]`` is the
+        # canonical wire shape (a trailing JSON null does not survive axios GET
+        # param serialization); a legacy ``[field, None]`` is also accepted.
+        if expr.op in (QueryOp.IS_NULL, QueryOp.IS_NOT_NULL):
+            if not expr.operands:
+                return None, False
+            field_name, value = expr.operands[0], None
+        elif len(expr.operands) < 2:
             return None, False
-        field_name, value = expr.operands[0], expr.operands[1]
+        else:
+            field_name, value = expr.operands[0], expr.operands[1]
 
         # PROP references and non-string field names are not SQL-pushable
         if not isinstance(field_name, str) or isinstance(value, ExpressionNode):
@@ -2628,6 +2635,13 @@ class SQLiteDBDriver(DBDriver):
                 for op in expression.operands
             )
 
+        # Null-test ops are unary: [field] is canonical, [field, None] accepted.
+        if expression.op in (QueryOp.IS_NULL, QueryOp.IS_NOT_NULL):
+            if not expression.operands:
+                return False
+            attr_value = attributes.get(expression.operands[0])
+            return attr_value is None if expression.op == QueryOp.IS_NULL else attr_value is not None
+
         if len(expression.operands) < 2:
             return False
 
@@ -2649,11 +2663,6 @@ class SQLiteDBDriver(DBDriver):
         attr_name = operand1
         target_value = operand2
         attr_value = attributes.get(attr_name)
-
-        if expression.op == QueryOp.IS_NULL:
-            return attr_value is None
-        elif expression.op == QueryOp.IS_NOT_NULL:
-            return attr_value is not None
 
         if attr_value is None:
             if attr_name in ["is_child", "is_final"] and isinstance(target_value, bool):
