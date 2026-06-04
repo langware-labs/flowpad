@@ -339,7 +339,7 @@ def _build_run_result(proc: "AgenticProcess") -> "RunResult":
         except Exception:
             pass
 
-    status_enum = proc._discover_status_from_transcript()
+    status_enum = proc.fetch_worker_status()
     if status_enum is None:
         try:
             lifecycle = ProcessStatus(proc.status)
@@ -1188,7 +1188,7 @@ class AgenticProcess(Entity):
         """
         deadline = (time.monotonic() + timeout) if timeout else None
         while True:
-            worker_status = self._discover_status_from_transcript()
+            worker_status = self.fetch_worker_status()
             if worker_status and is_worker_terminal(worker_status):
                 return
             if self.status == ProcessStatus.FAILED.value:
@@ -1313,7 +1313,7 @@ class AgenticProcess(Entity):
             # One transcript tail-read per drain check, shared by the readiness
             # gate and the not-ready log line.
             resolved = (
-                self._discover_status_from_transcript()
+                self.fetch_worker_status()
                 if self.status == ProcessStatus.RUNNING.value
                 else None
             )
@@ -2733,7 +2733,7 @@ class AgenticProcess(Entity):
 
     def to_dict(self) -> dict:
         d = super().to_dict()
-        computed = self._discover_status_from_transcript()
+        computed = self.fetch_worker_status()
         d["worker_status"] = str(computed) if computed else WorkerStatus.IDLE.value
         ready = is_ready_for_input(self, computed)
         d["ready_for_input"] = ready
@@ -2748,7 +2748,7 @@ class AgenticProcess(Entity):
             return data
         if data is None:
             return None
-        computed = self._discover_status_from_transcript()
+        computed = self.fetch_worker_status()
         data["worker_status"] = str(computed) if computed else WorkerStatus.IDLE.value
         ready = is_ready_for_input(self, computed)
         data["ready_for_input"] = ready
@@ -2785,8 +2785,25 @@ class AgenticProcess(Entity):
                 pass
         return data
 
+    def fetch_worker_status(self) -> WorkerStatus | None:
+        """Public accessor for the live worker status.
+
+        Derives the status from the worker's session transcript tail (via the
+        driver) plus liveness reconciliation — see
+        :meth:`_discover_status_from_transcript` for the projection rules.
+        This is the supported entry point; call it instead of the private
+        projection. Each call is a transcript tail-read, so a path that needs
+        the value more than once should fetch once and pass it along (e.g.
+        ``is_ready_for_input(self, worker_status=...)``).
+        """
+        return self._discover_status_from_transcript()
+
     def _discover_status_from_transcript(self) -> WorkerStatus | None:
         """Derive status from the worker's session transcript via the driver.
+
+        Internal projection — do NOT call directly from outside this class;
+        use :meth:`fetch_worker_status`. (Tests monkeypatch THIS method as the
+        single implementation point; the public accessor delegates here.)
 
         If ``stream_transcript`` exited via the post-tool-idle settle (worker
         finished its tool work but hasn't emitted its terminal marker yet),
@@ -2848,7 +2865,7 @@ class AgenticProcess(Entity):
     @action.all(action_name="status")
     async def get_status(self):
         """Return current app status and computed worker_status from transcript."""
-        worker_status = self._discover_status_from_transcript()
+        worker_status = self.fetch_worker_status()
         ready = is_ready_for_input(self, worker_status)
         return ApiSuccessResponse(data={
             "status": self.status,
@@ -3398,7 +3415,7 @@ class AgenticProcess(Entity):
             await self._process_transcript_entries(entries)
 
             # Single source of truth: same helper the serializer/get_status use.
-            current = self._discover_status_from_transcript()
+            current = self.fetch_worker_status()
             previous = getattr(self, "_last_broadcast_status", None)
 
             # Maintain terminal_at: set on transition INTO a clean terminal

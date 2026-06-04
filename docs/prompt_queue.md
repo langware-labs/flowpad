@@ -98,7 +98,7 @@ triggers (each -> _schedule_queue_drain(source), fire-and-forget):
 
 _maybe_drain_queue(source):              [serialized by _QUEUE_LOCKS[id]]
   empty or disabled        -> log drain_check(empty_or_disabled), stop
-  resolved = ONE transcript tail-read (only when status==RUNNING),
+  resolved = fetch_worker_status()   ONE tail-read (only when status==RUNNING),
              shared by the gate and the not-ready log line
   _queue_ready(resolved)?  -> no: log drain_check(not_ready), stop
   pop head                 (persists removal BEFORE injecting)
@@ -131,6 +131,11 @@ Two frontend gotchas this flow encodes:
    itself: `useEntity(process.typeId)`.
 
 ## Readiness — the `_queue_ready` decision
+
+The live worker status is read via **`process.fetch_worker_status()`** — the
+public accessor over the transcript-tail projection
+(`_discover_status_from_transcript` is internal; don't call it directly).
+Each call is a tail-read, so resolve once and pass the value along.
 
 `is_ready_for_input` (truth-tabled: RUNNING and worker in
 {IDLE, COMPLETE, INTERRUPTED}) is intentionally untouched; the drain's gate
