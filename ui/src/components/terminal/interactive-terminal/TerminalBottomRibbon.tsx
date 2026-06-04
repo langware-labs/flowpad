@@ -3,16 +3,12 @@ import { Button } from '@src/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { cn } from '@src/lib/utils';
 import { FileText } from 'lucide-react';
-import type { QueueEntry, QueueState } from '@src/hooks/useAgenticQueue';
 import { SIDE_TABS, SideTabId, type SideTabId as SideTabIdType } from './side-windows';
 
 interface TerminalBottomRibbonProps {
   fileCount: number;
   isActive: boolean;
   promptCount?: number;
-  queue?: QueueState;
-  onQueueAdd?: (entry: QueueEntry) => void;
-  onQueueRemove?: (index: number) => void;
   openTabs: SideTabIdType[];
   activeSideTab: SideTabIdType | null;
   onOpenSideTab: (tab: SideTabIdType) => void;
@@ -32,9 +28,6 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
   fileCount,
   isActive,
   promptCount = 0,
-  queue,
-  onQueueAdd,
-  onQueueRemove,
   openTabs,
   activeSideTab,
   onOpenSideTab,
@@ -43,7 +36,7 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
 }) => {
   return (
     <div className="flex items-center border-t bg-muted/30 px-4 py-1.5">
-      {/* Left: process status LED + queue */}
+      {/* Left: process status LED */}
       <div className="flex items-center gap-2">
         <span
           className={`inline-flex h-2 w-2 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-red-500'}`}

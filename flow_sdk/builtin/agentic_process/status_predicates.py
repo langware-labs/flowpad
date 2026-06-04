@@ -95,7 +95,7 @@ def is_ready_for_input(
         # Don't trigger a transcript read on every call; only resolve if the
         # caller didn't pre-compute it. Callers that do serve hot paths should
         # pass ``worker_status`` explicitly.
-        resolved = process._discover_status_from_transcript()
+        resolved = process.fetch_worker_status()
     else:
         resolved = worker_status
     if resolved is None:
