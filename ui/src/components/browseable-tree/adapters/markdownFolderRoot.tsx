@@ -247,7 +247,7 @@ function folderBrowseable(args: {
       ),
     hasChildren: true,
     pointer: DockPointer.forAssetFolder(typeName, typeid, relPath),
-    toolbar: [...folderToolbar(target, onCreateFolder), ...kbAction],
+    toolbar: [...(folderToolbar(target, onCreateFolder) ?? []), ...kbAction],
     dragData: kind === 'folder'
       ? {
           kind: 'markdown-folder',
