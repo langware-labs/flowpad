@@ -99,6 +99,14 @@ vi.mock('@src/navigation/useDockNavigation', () => ({
   }),
 }));
 
+// The gate also calls react-router's `useNavigation()` directly (routerNav —
+// in-flight transition state), which throws outside a data router. Stub it to
+// the settled state; these tests never exercise an in-flight transition.
+vi.mock('react-router', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('react-router')>()),
+  useNavigation: () => ({ state: 'idle' }),
+}));
+
 const applyProjectToTaskMock = vi.fn(async (_taskId: string, _project: Project) => ({
   saved: true,
   wasReplacement: false,

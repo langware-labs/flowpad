@@ -2,6 +2,18 @@
 id: 5f60991e-d10f-5b95-a1fb-08d34e2b2a66
 ---
 
+> TEST-ISSUE (2026-06-04): This scenario depends on a ProcessToolbar rendered in
+> **embedded mode** (the sidecar / side-window / EntityChatPanel side view that
+> passes `embedded={true}`). In the current UI **no live caller passes
+> `embedded={true}`** to InteractiveTerminal/ProcessToolbar — the `embedded` prop
+> is plumbed through (InteractiveTerminal.tsx → ProcessToolbar.tsx) but dead. The
+> embedded Close (X) button, and the hiding of Fork/Open-Terminal/Worktree/
+> CommitMerge, therefore cannot be reached through any current UI surface, so the
+> scenario's preconditions are unreachable. The DESIGN INVARIANT below
+> (embedded close = pure onClose callback, no process.exit/close) still holds in
+> the code, but there is no host to exercise it end-to-end. Re-enable this
+> scenario once an embedded ProcessToolbar host ships again.
+
 test 1: Close button in embedded ProcessToolbar hides the sidecar without terminating the process
 - open a context where ProcessToolbar is rendered in embedded mode (the sidecar / side-window surfaces — e.g. collaboration page, EntityChatPanel side view, or any caller that passes embedded={true})
 - validate the embedded ProcessToolbar does NOT render Fork / Open-Terminal / CommitMerge / Open-in-Worktree buttons (those are gated on !embedded)

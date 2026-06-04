@@ -97,12 +97,28 @@ async def test_git_repo_share_carries_typeid_to_recipient(
         assert matching, f"bob has no pending invitation; got {pending}"
         matching.sort(key=lambda x: x.get("created_date") or "", reverse=True)
         invitation_id = matching[0]["id"]
+        # members/accept is browser-oriented and ALWAYS 302s (→login = accept
+        # did NOT run; →/conversation|/flow_message = success, role granted
+        # server-side). Mirror the SDK's handle_invitation_accept: do NOT
+        # follow; 200/409 or a conversation/flow_message redirect = success,
+        # login redirect = failure. (raise_for_status rejected the by-design
+        # 302.)
         r = await h.get(
             f"{hub_base_url}/api/v1/graph/members/accept",
             headers=headers_b,
             params={"invitation-id": invitation_id},
         )
-        r.raise_for_status()
+        if r.status_code not in (200, 409):
+            if r.status_code in (301, 302, 303, 307, 308):
+                location = (r.headers.get("location") or r.headers.get("Location") or "")
+                assert "login" not in location.lower(), (
+                    f"accept redirected to login (unauthenticated); location={location[:200]}"
+                )
+                assert ("/conversation/" in location) or ("/flow_message/" in location), (
+                    f"accept returned an unexpected redirect location={location[:200]}"
+                )
+            else:
+                r.raise_for_status()
         r = await h.post(
             f"{hub_base_url}/api/v1/graph/conversation/{conv.id}/join",
             headers=headers_b,

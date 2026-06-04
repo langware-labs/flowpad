@@ -98,12 +98,35 @@ async def _bob_accept_and_join(hub_base_url: str, bob_token: str, bob_email: str
         matching.sort(key=lambda x: x.get("created_date") or "", reverse=True)
         invitation_id = matching[0]["id"]
 
+        # The hub's members/accept is a browser-oriented endpoint: it ALWAYS
+        # returns a 302 — to /login when unauthenticated (the accept did NOT
+        # run), or to the landing /conversation/<id> (or /flow_message/<id>)
+        # on a SUCCESSFUL authenticated accept (the role IS granted
+        # server-side before the redirect). Mirror the production SDK's
+        # handle_invitation_accept (flow_sdk/app/actions/flow_message_action.py
+        # :2589-2619): do NOT follow the redirect (a second authed hop can
+        # itself 302); read the Location and treat 200/409 or a redirect to
+        # the conversation/flow_message landing as success, only a redirect to
+        # login as failure. The old `raise_for_status()` rejected the
+        # by-design 302 and failed every accept.
         r = await h.get(
             f"{hub_base_url}/api/v1/graph/members/accept",
             headers=headers_b,
             params={"invitation-id": invitation_id},
         )
-        r.raise_for_status()
+        if r.status_code not in (200, 409):
+            if r.status_code in (301, 302, 303, 307, 308):
+                location = (r.headers.get("location") or r.headers.get("Location") or "")
+                low = location.lower()
+                assert "login" not in low, (
+                    f"accept redirected to login (request was unauthenticated); "
+                    f"accept did not run. location={location[:200]}"
+                )
+                assert ("/conversation/" in location) or ("/flow_message/" in location), (
+                    f"accept returned an unexpected redirect location={location[:200]}"
+                )
+            else:
+                r.raise_for_status()
 
         r = await h.post(
             f"{hub_base_url}/api/v1/graph/conversation/{conv_id}/join",

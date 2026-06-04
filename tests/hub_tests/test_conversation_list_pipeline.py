@@ -28,9 +28,29 @@ import asyncio
 import time
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 
 import httpx
 import pytest
+
+
+# Sibling flowpad-app checkout holds the SECOND seeded hub user's (bob's)
+# credentials — same resolution as tests/hub_tests/test_members_basic_operations.py.
+REPO_APP = Path(__file__).resolve().parents[2].parent / "flowpad-app"
+
+
+def _read_env_local(repo: Path) -> dict[str, str]:
+    out: dict[str, str] = {}
+    path = repo / ".env.local"
+    if not path.exists():
+        return out
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, _, v = line.partition("=")
+        out[k.strip()] = v.strip().strip('"').strip("'")
+    return out
 
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]
@@ -109,10 +129,20 @@ async def _hub_get_conversation(
 
 
 async def _local_user_typeid() -> str:
-    from flow_sdk.builtin.user import User
+    # Each test runs under a unique, EMPTY FLOW_INSTANCE (autouse
+    # isolated_hub_keyring fixture), so there is no pre-existing uname='local'
+    # user. The old `User.get_one(...) or "user-local"` fallback returned the
+    # literal string "user-local" — an INVALID TypeId — which made
+    # _materialize_invitation's .save("user-local") raise "Invalid TypeId
+    # identifier: 'local'", so no local Invitation/Conversation row was ever
+    # written. get_or_create_local_user() mints (or fetches) the canonical
+    # @local desktop user via its stable v5 id and returns a real User, so we
+    # always hand handle_conversation_list a valid typeid. It is pure DB +
+    # git-config reads — no server/bootstrap prerequisite.
+    from flow_sdk.server.routes.bootstrap import get_or_create_local_user
 
-    u = await User.get_one({"uname": "local"})
-    return u.typeid if u else "user-local"
+    u = await get_or_create_local_user()
+    return u.typeid
 
 
 async def _poll_until(predicate, *, timeout: float = 5.0, interval: float = 0.1):
@@ -293,31 +323,52 @@ async def test_invitations_through_same_pipeline(hub_base_url, hub_login_payload
     from flow_sdk.builtin.invitation import Invitation
     from flow_sdk.builtin.flow_message import FlowMessage
 
-    # Build an Invitation directly on the hub addressed to this user.
+    # The logged-in user (the stashed hub_login_payload user) must be the
+    # RECIPIENT of a pending invitation for handle_conversation_list to
+    # materialize it. The hub correctly SKIPS a self-invitation (POST members
+    # with recipient == sender returns 200 {"message":"Skipped
+    # self-invitation"} and invitation/pending stays empty), so a SECOND
+    # seeded user (bob, from the sibling flowpad-app checkout) must create the
+    # conversation and invite us. Resolve bob's creds the same way
+    # test_members_basic_operations.py does; skip if absent.
     user_info = hub_login_payload.get("user") or {}
     recipient_email = (user_info.get("email") or "").strip()
     if not recipient_email:
         pytest.skip("hub login payload lacked an email; can't test invitation flow")
 
-    conv_id = await _hub_create_conversation(hub_base_url, api_key,
-                                             title=f"inv-{uuid.uuid4()}")
-    headers = {"Authorization": f"Bearer {api_key}"}
+    app_env = _read_env_local(REPO_APP)
+    sender_email = app_env.get("FLOWPAD_CLOUD_USER_EMAIL")
+    sender_pw = app_env.get("FLOWPAD_CLOUD_USER_PASSWORD")
+    if not sender_email or not sender_pw:
+        pytest.skip("missing FLOWPAD_CLOUD_USER_{EMAIL,PASSWORD} in flowpad-app/.env.local")
+    if sender_email.strip().lower() == recipient_email.lower():
+        pytest.skip("sender and recipient are the same hub user; need two distinct seeded users")
+
+    # Log bob (the sender) in and stash HIS creds so Conversation.share() runs
+    # as bob — the same SDK share() path test_members_basic_operations.py
+    # exercises (alice.share(recipients=[bob])), just with the roles flipped so
+    # the invitation is addressed to us (alice). We restore alice's creds
+    # before driving handle_conversation_list.
+    from flow_sdk.cli.auth.credentials import UserHubCredentials, save_credentials
     async with httpx.AsyncClient(timeout=5.0) as h:
-        r = await h.post(
-            f"{hub_base_url}/api/v1/graph/conversation/{conv_id}/members",
-            headers=headers,
-            json={
-                "recipient_email": recipient_email,
-                "invitation_targets": [
-                    {"typeid": f"conversation-{conv_id}", "role": "member"},
-                ],
-                "message": f"conversation-{conv_id}",
-            },
-        )
-    if r.status_code != 200:
-        pytest.skip(
-            f"hub /members create rejected; can't exercise invitation pipeline: {r.status_code} {r.text[:200]}"
-        )
+        r = await h.post(f"{hub_base_url}/api/v1/login",
+                         json={"email": sender_email, "password": sender_pw})
+        if r.status_code != 200:
+            pytest.skip(f"sender (bob) hub login failed: {r.status_code} {r.text[:200]}")
+        sender_data = r.json()["data"]
+    sender_key = sender_data.get("api_key") or sender_data["token"]
+    save_credentials(UserHubCredentials(api_key=sender_key, user=sender_data.get("user") or {}))
+
+    conv = Conversation(title=f"inv-{uuid.uuid4()}")
+    await conv.share(recipients=[recipient_email])
+    if not getattr(conv, "remote", False):
+        pytest.skip("sender share() did not reach the hub; can't exercise invitation pipeline")
+    conv_id = conv.id
+
+    # Restore the recipient's (alice's) credentials — handle_conversation_list
+    # must run as the invited user so its invitation/pending fetch returns the
+    # row bob just addressed to us.
+    _stash_credentials(hub_login_payload)
 
     someone = await _local_user_typeid()
     await handle_conversation_list(someone)

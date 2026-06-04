@@ -11,7 +11,12 @@ test 1: No sniffer hook means no capture surface
 - [bash] run "curl -sS {API_URL}/api/v1/graph/bootstrap"
 - validate data.sniffer_hook is null (default-off: the capture hook is not installed)
 
-test 2: No claude_hook sniffer entity is present by default
-- [bash] run "curl -sS {API_URL}/api/v1/graph/claude_hook"
+test 2: No sniffer agent_hook entity is present by default
+# The sniffer hook is an `agent_hook` entity named "Hooks Sniffer" (uname "sniffer"),
+# NOT a `claude_hook` (that type endpoint 422s). The canonical gate-state check is
+# the hooks-sniffer status action.
+- [bash] run "curl -sS {API_URL}/api/v1/graph/hooks-sniffer"
+- validate the response is 200 with data.enabled == false and data.hook_id == null (default-off: no sniffer hook installed)
+- [bash] run "curl -sS {API_URL}/api/v1/graph/agent_hook"
 - validate the response is 200 with a "data" array
-- validate no entry in data is the flowpad sniffer hook (default-off: the sniffer hook is not auto-created)
+- validate no entry in data has name "Hooks Sniffer" (default-off: the sniffer hook is not auto-created)
