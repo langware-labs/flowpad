@@ -29,10 +29,9 @@ class QueryOp(Enum):
 
 class ExpressionNode(BaseModel):
     model_config = ConfigDict(from_attributes=True, arbitrary_types_allowed=True)
-    # ``None`` is admitted so IS_NULL/IS_NOT_NULL leaves are expressible as
-    # ``operands=[field, None]`` — the driver requires two-operand leaves
-    # (sqlite_driver._expr_to_sql rejects shorter ones as non-pushable) and
-    # ignores the value for the null ops.
+    # IS_NULL/IS_NOT_NULL are unary: canonical wire shape ``operands=[field]``
+    # (a trailing JSON null does not survive axios GET param serialization).
+    # ``None`` stays admitted so the legacy ``[field, None]`` form still parses.
     operands: List[Union["ExpressionNode", StrEnum, str, int, float, bool, List, None]] = []
     op: Optional[QueryOp] = QueryOp.EQ
 

@@ -32,8 +32,12 @@ export interface GroupChildren {
 const byName = (a: { name?: string }, b: { name?: string }) =>
   (a.name ?? '').localeCompare(b.name ?? '');
 
-/** IS_NULL leaf for the virtual-root queries (two-operand shape required). */
-const groupIdIsNull = () => new ExpressionNode({ operands: ['group_id', null], op: '$IS_NULL' });
+/**
+ * IS_NULL leaf for the virtual-root queries. Unary — single-operand shape is
+ * canonical: a trailing `null` operand would be DROPPED by axios GET param
+ * serialization before it reaches the backend.
+ */
+const groupIdIsNull = () => new ExpressionNode({ operands: ['group_id'], op: '$IS_NULL' });
 
 async function queryEntities<T extends IEntity>(type: string, match: ExpressionNode): Promise<T[]> {
   return dataManager.query<any>(new QueryRequest({ type, query: new QueryFilter({ type, match }) }));

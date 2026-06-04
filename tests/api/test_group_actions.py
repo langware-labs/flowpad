@@ -96,23 +96,25 @@ async def test_children_and_roots_queries(bootstrapped_client, user):
     assert member.id in [m.id for m in members]
 
     # roots of the namespace: namespace EQ AND group_id IS_NULL.
-    # NOTE: leaves must carry TWO operands — _expr_to_sql rejects
-    # single-operand leaves as non-pushable (sqlite_driver.py:1341) — so
-    # IS_NULL is expressed as ["group_id", None]; the SDK composes the same.
-    roots = await Group.get_all(
-        entities_filter=QueryFilter(
-            match=ExpressionNode(
-                operands=[
-                    ExpressionNode(group_namespace=ns),
-                    ExpressionNode(operands=["group_id", None], op=QueryOp.IS_NULL),
-                ],
-                op=QueryOp.AND,
+    # IS_NULL is UNARY — ["group_id"] is the canonical wire shape (a trailing
+    # JSON null does not survive axios GET param serialization; this is what
+    # the ts_sdk actually sends). The legacy ["group_id", None] form must keep
+    # working for direct callers.
+    for null_leaf in (
+        ExpressionNode(operands=["group_id"], op=QueryOp.IS_NULL),
+        ExpressionNode(operands=["group_id", None], op=QueryOp.IS_NULL),
+    ):
+        roots = await Group.get_all(
+            entities_filter=QueryFilter(
+                match=ExpressionNode(
+                    operands=[ExpressionNode(group_namespace=ns), null_leaf],
+                    op=QueryOp.AND,
+                )
             )
         )
-    )
-    root_ids = [g.id for g in roots]
-    assert root.id in root_ids
-    assert child.id not in root_ids
+        root_ids = [g.id for g in roots]
+        assert root.id in root_ids
+        assert child.id not in root_ids
 
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval

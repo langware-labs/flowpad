@@ -508,20 +508,29 @@ class FSRecord(Generic[M]):
         return body_fn(entity)
 
     def upsert_main_ref(self, entity) -> None:
-        """Write default_body into asset_ref iff the file doesn't yet exist.
+        """Write default_body into asset_ref iff the file doesn't yet exist —
+        or on EVERY save for ``owns_main_ref`` types (the entity is the file's
+        sole editor, so entity-side edits must reach the on-disk source of
+        truth; otherwise the next rescan would revert them).
 
         No-op if the record has no asset_ref OR no default_body for the type.
         Asset_ref must be under the user's scope_root — never under records_root.
         """
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
         ar = self._asset_ref
         if ar is None:
             return
         path = ar._path
-        if path.exists():
+        info = SchemaRegistry.get(self.type)
+        owns = bool(info and info.owns_main_ref)
+        if path.exists() and not owns:
             return
         body = self.default_body(entity)
         if body is None:
             return
+        if path.exists() and path.read_text(encoding="utf-8") == body:
+            return  # unchanged — don't touch mtime/index hash
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(body, encoding="utf-8")
 

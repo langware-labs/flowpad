@@ -25,6 +25,7 @@ export const EDITOR_TYPES: Record<AssetEditor, RecordType[]> = {
     RecordType.CLAUDE_RULES,
     RecordType.COMMAND,
     RecordType.PLAN,
+    RecordType.PROMPT, // library prompt — md + frontmatter (docs/prompt-library.md)
   ],
   [AssetEditor.AGENT]: [RecordType.AGENT],
   [AssetEditor.SKILL]: [RecordType.SKILL],
