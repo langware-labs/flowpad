@@ -42,8 +42,8 @@ async def cross_link_plan_to_process(
     When ``proc`` is provided (streamer-driven path on the AP itself), mutate
     that live instance — querying by session_id returns a DETACHED copy whose
     saved fields get overwritten by the live AP's subsequent save() calls
-    (see file_cross_link for the same invariant). Pre-hook + indexer call
-    sites pass session_id only.
+    (see file_cross_link for the same invariant). The indexer call site
+    passes session_id only.
 
     Steps:
       1. Resolve ``ClaudePlan`` by ``asset_ref``. If missing, run the scoped
