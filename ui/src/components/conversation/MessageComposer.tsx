@@ -1,25 +1,48 @@
-import { useMemo, useState } from 'react';
-import { File, MessageSquarePlus, Send, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Boxes, File as FileIcon, GitBranch, MessageSquarePlus, Paperclip, Send, Trash2, X } from 'lucide-react';
+import type { AssetDescriptor, FlowMessage } from '@sdk';
 import { sendReply } from '@sdk/entities/notifications';
 import { AttachmentType, type Attachment } from '@sdk/entities/flow-message';
-import type { AssetDescriptor } from '@sdk';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
+import { notify } from '@src/notifications';
 import { cn } from '@src/lib/utils';
+import { AssetPickerPopover } from '@src/components/asset-manager/AssetPickerPopover';
 import { MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_LABEL } from './constants';
-import { AttachMenu, AssetRefChips } from './AttachMenu';
+import { AssetRefChips } from './AttachMenu';
+import { AttachRepoButton } from './AttachRepoButton';
 import { PromptComposerDialog, type QueuedPrompt } from './PromptComposerDialog';
 import { PromptApprovalRow } from './PromptApprovalRow';
+import { useLocalUser } from './useLocalUser';
+import { discardDraftFlowMessage } from './flow-message-drafts';
+
+interface AttachedRepo {
+  typeId: string;
+  label: string;
+}
 
 interface MessageComposerProps {
-  /** Conversation to append to. */
+  /** Conversation to append to. Falls back to the draft's `conversation_id`. */
   conversationId?: string;
   disabled?: boolean;
+  /** Fires after a successful send (fresh reply OR draft promoted to a reply). */
   onSent?: () => void;
   /** Optional queued prompt provided by per-message Add-prompt chips. */
   queuedPrompt?: QueuedPrompt | null;
   /** Update / clear the externally-queued prompt. */
   onQueuedPromptChange?: (prompt: QueuedPrompt | null) => void;
+  /**
+   * Draft mode. When set, this composer edits an existing local-only draft
+   * `FlowMessage` (e.g. a headless agent-drafted reply): it auto-saves edits,
+   * renders as a "Draft" bubble with a Discard action, and on Send discards
+   * the draft then ships through the same `sendReply` path as a fresh reply.
+   * When omitted, it's the regular bottom-of-conversation reply box.
+   */
+  draft?: FlowMessage | null;
+  /** Draft mode only — fires after a successful discard. */
+  onAfterDiscard?: () => void;
 }
+
+const SAVE_DEBOUNCE_MS = 400;
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -27,17 +50,42 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function MessageComposer({ conversationId, disabled, onSent, queuedPrompt, onQueuedPromptChange }: MessageComposerProps) {
+/**
+ * The single conversation composer. Two modes share one implementation
+ * (attach File / Asset / Repo, prompt suggestion, and the `sendReply` send
+ * path): the regular reply box, and — when `draft` is supplied — an editable
+ * draft bubble. This is the one place the conversation attaches assets, so a
+ * feature added here (e.g. Attach Repo) reaches every send surface.
+ */
+export function MessageComposer({
+  conversationId,
+  disabled,
+  onSent,
+  queuedPrompt,
+  onQueuedPromptChange,
+  draft,
+  onAfterDiscard,
+}: MessageComposerProps) {
   const ensureCloudLogin = useCloudLoginGate();
-  const [text, setText] = useState('');
+  const { localUser } = useLocalUser();
+  const isDraftMode = !!draft;
+  const effectiveConversationId = conversationId ?? draft?.conversation_id ?? undefined;
+
+  const [text, setText] = useState(draft?.text ?? '');
   const [files, setFiles] = useState<File[]>([]);
   const [assetRefs, setAssetRefs] = useState<AssetDescriptor[]>([]);
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [dragging, setDragging] = useState(false);
+  const [repoRefs, setRepoRefs] = useState<AttachedRepo[]>([]);
   const [localPrompt, setLocalPrompt] = useState<QueuedPrompt | null>(null);
   const [showPromptDialog, setShowPromptDialog] = useState(false);
-  const canAddPrompt = !!conversationId;
+  const [sending, setSending] = useState(false);
+  const [discarding, setDiscarding] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [dragging, setDragging] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const canAddPrompt = !!effectiveConversationId;
+  const isBusy = sending || discarding;
+  const isDisabled = disabled || isBusy;
 
   const activePrompt = queuedPrompt ?? localPrompt;
   const setActivePrompt = (p: QueuedPrompt | null) => {
@@ -45,9 +93,24 @@ export function MessageComposer({ conversationId, disabled, onSent, queuedPrompt
     else setLocalPrompt(p);
   };
 
-  // Synthesise PROMPT-shaped attachments for the queued prompt so the preview
-  // chip uses the same PromptApprovalRow component the message bubbles use.
-  // One attachment per inline text + one per attached file (data="prompt/<name>").
+  // Draft auto-save: persist edits into the FlowMessage so a reload doesn't
+  // lose them. No-op outside draft mode.
+  const lastSavedRef = useRef(draft?.text ?? '');
+  useEffect(() => {
+    if (!draft) return;
+    if (text === lastSavedRef.current) return;
+    const handle = setTimeout(() => {
+      if (text === lastSavedRef.current) return;
+      draft.text = text;
+      lastSavedRef.current = text;
+      void draft.save().catch((err) => {
+        console.error('[MessageComposer] draft auto-save failed', err);
+      });
+    }, SAVE_DEBOUNCE_MS);
+    return () => clearTimeout(handle);
+  }, [text, draft]);
+
+  // Synthesise PROMPT-shaped attachments so the preview reuses PromptApprovalRow.
   const queuedPromptAttachments: Attachment[] = useMemo(() => {
     if (!activePrompt) return [];
     const list: Attachment[] = [];
@@ -59,8 +122,6 @@ export function MessageComposer({ conversationId, disabled, onSent, queuedPrompt
     }
     return list;
   }, [activePrompt]);
-
-  const isDisabled = disabled || sending;
 
   const addFiles = (incoming: FileList | null) => {
     if (!incoming) return;
@@ -76,8 +137,6 @@ export function MessageComposer({ conversationId, disabled, onSent, queuedPrompt
       }
       return next;
     });
-    // Fresh pick replaces the previous size-rejection notice; if the new
-    // selection has no over-limit files the warning clears.
     setError(
       tooBig.length === 0
         ? null
@@ -87,59 +146,104 @@ export function MessageComposer({ conversationId, disabled, onSent, queuedPrompt
     );
   };
 
-  const removeFile = (index: number) => {
-    setFiles((prev) => prev.filter((_, i) => i !== index));
+  const removeFile = (index: number) => setFiles((prev) => prev.filter((_, i) => i !== index));
+
+  const addAssetRef = (d: AssetDescriptor) =>
+    setAssetRefs((prev) =>
+      prev.some((a) => a.typeid === d.typeid && a.source === d.source) ? prev : [...prev, d],
+    );
+
+  const addRepo = (typeId: string, label: string) =>
+    setRepoRefs((prev) => (prev.some((r) => r.typeId === typeId) ? prev : [...prev, { typeId, label }]));
+
+  const removeRepo = (typeId: string) =>
+    setRepoRefs((prev) => prev.filter((r) => r.typeId !== typeId));
+
+  const buildExtras = (
+    effectivePrompt: QueuedPrompt | null,
+  ): Parameters<typeof sendReply>[3] | undefined => {
+    const extras: NonNullable<Parameters<typeof sendReply>[3]> = {};
+    if (effectivePrompt) {
+      if (effectivePrompt.text) extras.promptText = effectivePrompt.text;
+      if (effectivePrompt.files.length > 0) extras.promptFiles = effectivePrompt.files;
+    }
+    // Assets (skill/agent/markdown/spec) + repos both ride as assetReferences.
+    const refs = [...assetRefs.map((a) => a.typeid), ...repoRefs.map((r) => r.typeId)];
+    if (refs.length > 0) extras.assetReferences = refs;
+    return Object.keys(extras).length > 0 ? extras : undefined;
   };
 
-  const handleSend = async (override?: { prompt?: QueuedPrompt | null }) => {
+  const send = async (effectivePrompt: QueuedPrompt | null) => {
+    if (isBusy) return;
     const trimmed = text.trim();
-    if (sending) return;
-    // `prompt` lives on either react state (queued from the dialog's "Attach to
-    // reply") OR an explicit override (the dialog's "Send" button uses this so
-    // we don't lose the prompt to a state-update race).
-    const effectivePrompt = override && 'prompt' in override ? override.prompt : activePrompt;
-    if (!trimmed && !effectivePrompt && files.length === 0 && assetRefs.length === 0) return;
+    if (
+      !trimmed &&
+      !effectivePrompt &&
+      files.length === 0 &&
+      assetRefs.length === 0 &&
+      repoRefs.length === 0
+    ) {
+      return;
+    }
     setSending(true);
     setError(null);
     try {
       // Cloud reply needs an authenticated hub token; otherwise the hub POST
-      // returns 401 and the send fails silently. Route through OAuth first,
-      // then resume the send on the same click.
+      // 401s and the send fails silently. Route through OAuth first.
       const gate = await ensureCloudLogin();
       if (!gate.ok) {
         setError(gate.error);
+        if (isDraftMode) notify.error({ title: gate.error });
         return;
       }
-      const extras: Parameters<typeof sendReply>[3] = {};
-      if (effectivePrompt) {
-        if (effectivePrompt.text) extras.promptText = effectivePrompt.text;
-        if (effectivePrompt.files.length > 0) extras.promptFiles = effectivePrompt.files;
-      }
-      if (assetRefs.length > 0) {
-        extras.assetReferences = assetRefs.map((a) => a.typeid);
-      }
+      // Draft promotion: discard the local-only draft, then send through the
+      // SAME reply pipeline as a fresh send. Single code path beats forking
+      // the upload/push plumbing for drafts.
+      if (draft) await discardDraftFlowMessage(draft);
       await sendReply(
-        { conversationId },
+        { conversationId: effectiveConversationId },
         trimmed,
         files.length > 0 ? files : undefined,
-        Object.keys(extras).length > 0 ? extras : undefined,
+        buildExtras(effectivePrompt),
       );
-      setText('');
-      setFiles([]);
-      setAssetRefs([]);
-      setActivePrompt(null);
+      if (!isDraftMode) {
+        setText('');
+        setFiles([]);
+        setAssetRefs([]);
+        setRepoRefs([]);
+        setActivePrompt(null);
+      }
       onSent?.();
     } catch (err: unknown) {
+      console.error('[MessageComposer] send failed', err);
       setError(err instanceof Error ? err.message : 'Failed to send reply.');
+      if (isDraftMode) notify.error({ title: 'Failed to send draft' });
     } finally {
       setSending(false);
+    }
+  };
+
+  const handleSend = () => void send(activePrompt);
+
+  const handleDiscard = async () => {
+    if (!draft || isBusy) return;
+    if (!window.confirm('Discard this draft?')) return;
+    setDiscarding(true);
+    try {
+      await discardDraftFlowMessage(draft);
+      onAfterDiscard?.();
+    } catch (err: unknown) {
+      console.error('[MessageComposer] discard failed', err);
+      notify.error({ title: 'Failed to discard draft' });
+    } finally {
+      setDiscarding(false);
     }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey && !e.metaKey && !e.ctrlKey) {
       e.preventDefault();
-      void handleSend();
+      handleSend();
     }
   };
 
@@ -155,81 +259,96 @@ export function MessageComposer({ conversationId, disabled, onSent, queuedPrompt
   };
 
   const canSend =
-    (!!text.trim() || !!activePrompt || files.length > 0 || assetRefs.length > 0) && !isDisabled;
+    (!!text.trim() ||
+      !!activePrompt ||
+      files.length > 0 ||
+      assetRefs.length > 0 ||
+      repoRefs.length > 0) &&
+    !isDisabled;
 
-  return (
-    <div className="space-y-1.5">
-      <div
-        onDragOver={onDragOver}
-        onDragLeave={onDragLeave}
-        onDrop={onDrop}
-        className={cn(
-          'flex items-end gap-2 rounded-md border border-border bg-background px-2 py-1.5 transition-colors focus-within:border-primary/50',
-          dragging && 'border-primary bg-primary/5',
-        )}
+  // ── Shared building blocks (identical in both modes) ────────────────────
+
+  const hiddenFileInput = (
+    <input
+      ref={fileInputRef}
+      type="file"
+      multiple
+      className="sr-only"
+      disabled={isDisabled}
+      onChange={(e) => {
+        addFiles(e.target.files);
+        e.target.value = '';
+      }}
+    />
+  );
+
+  /** File / Asset / Repo — flat buttons, each opening a self-contained surface
+   *  (no nested popovers). This is the attach row both modes render. */
+  const attachButtons = (
+    <>
+      <button
+        type="button"
+        onClick={() => fileInputRef.current?.click()}
+        disabled={isDisabled}
+        title="Attach files"
+        data-testid="attach-file-button"
+        className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
       >
-        <div className="shrink-0 self-end pb-0.5">
-          <AttachMenu
-            assetRefs={assetRefs}
-            onAssetRefsChange={setAssetRefs}
-            onFilesPicked={addFiles}
-            disabled={isDisabled}
-            hideAssetList
-          />
-        </div>
-        <textarea
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder={dragging ? 'Drop files here' : 'Reply to sender…'}
-          rows={1}
-          disabled={isDisabled}
-          className="min-h-[1.5rem] flex-1 resize-none bg-transparent px-1 py-1 text-sm text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
-        />
-        {canAddPrompt && (
+        <Paperclip className="h-3.5 w-3.5" />
+      </button>
+      <AssetPickerPopover
+        trigger={
           <button
             type="button"
-            onClick={() => setShowPromptDialog(true)}
             disabled={isDisabled}
-            title={activePrompt ? 'Edit attached prompt' : 'Suggest a prompt for the other user to approve'}
-            className={cn(
-              'inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-colors disabled:opacity-40',
-              activePrompt
-                ? 'border-emerald-500/60 bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/25 dark:text-emerald-300'
-                : 'border-emerald-500/40 bg-emerald-500/5 text-emerald-700 hover:bg-emerald-500/15 dark:text-emerald-300',
-            )}
+            title="Attach an asset (skill, agent, doc, spec)"
+            data-testid="attach-asset-button"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
           >
-            <MessageSquarePlus className="h-3 w-3" />
-            {activePrompt ? 'Edit prompt' : 'Suggest prompt'}
+            <Boxes className="h-3.5 w-3.5" />
           </button>
-        )}
-        <button
-          type="button"
-          onClick={() => void handleSend()}
-          disabled={!canSend}
-          title="Send"
-          className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-40"
-        >
-          <Send className="h-3.5 w-3.5" />
-        </button>
-      </div>
+        }
+        onPick={addAssetRef}
+        filter={() => true}
+        side="top"
+        searchPlaceholder="Search assets…"
+      />
+      <AttachRepoButton disabled={isDisabled} onAttach={addRepo} />
+    </>
+  );
 
-      {canAddPrompt && activePrompt && (
-        <div className="flex items-start gap-1">
-          <div className="min-w-0 flex-1">
-            <PromptApprovalRow attachments={queuedPromptAttachments} onEdit={() => setShowPromptDialog(true)} />
-          </div>
-          <button
-            type="button"
-            onClick={() => setActivePrompt(null)}
-            title="Remove queued prompt"
-            className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-destructive"
-          >
-            <X className="h-3 w-3" />
-          </button>
-        </div>
+  const promptButton = canAddPrompt ? (
+    <button
+      type="button"
+      onClick={() => setShowPromptDialog(true)}
+      disabled={isDisabled}
+      title={activePrompt ? 'Edit attached prompt' : 'Suggest a prompt for the other user to approve'}
+      className={cn(
+        'inline-flex h-7 shrink-0 items-center gap-1.5 rounded-full border px-2.5 text-xs font-medium transition-colors disabled:opacity-40',
+        activePrompt
+          ? 'border-emerald-500/60 bg-emerald-500/15 text-emerald-700 hover:bg-emerald-500/25 dark:text-emerald-300'
+          : 'border-emerald-500/40 bg-emerald-500/5 text-emerald-700 hover:bg-emerald-500/15 dark:text-emerald-300',
       )}
+    >
+      <MessageSquarePlus className="h-3 w-3" />
+      {activePrompt ? 'Edit prompt' : 'Suggest prompt'}
+    </button>
+  ) : null;
 
+  const sendButton = (
+    <button
+      type="button"
+      onClick={handleSend}
+      disabled={!canSend}
+      title="Send"
+      className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-40"
+    >
+      <Send className="h-3.5 w-3.5" />
+    </button>
+  );
+
+  const chipLists = (
+    <>
       {files.length > 0 && (
         <ul className="space-y-1">
           {files.map((f, i) => (
@@ -237,7 +356,7 @@ export function MessageComposer({ conversationId, disabled, onSent, queuedPrompt
               key={`${f.name}-${i}`}
               className="flex items-center gap-2 rounded border border-input bg-muted/40 px-2 py-1 text-xs"
             >
-              <File className="h-3 w-3 shrink-0 text-muted-foreground" />
+              <FileIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
               <span className="flex-1 truncate text-foreground" title={f.name}>
                 {f.name}
               </span>
@@ -254,26 +373,159 @@ export function MessageComposer({ conversationId, disabled, onSent, queuedPrompt
           ))}
         </ul>
       )}
-
       <AssetRefChips assetRefs={assetRefs} onChange={setAssetRefs} disabled={isDisabled} />
-
-      {error && <p className="text-xs text-destructive">{error}</p>}
-
-      {canAddPrompt && (
-        <PromptComposerDialog
-          open={showPromptDialog}
-          onClose={() => setShowPromptDialog(false)}
-          initial={activePrompt}
-          onQueue={(p) => setActivePrompt(p)}
-          onQueueAndSend={(p) => {
-            // Park the prompt on state so the queued-prompt chip flashes
-            // briefly during send, then ship it via an explicit override so
-            // we don't lose it to React's setState batch.
-            setActivePrompt(p);
-            void handleSend({ prompt: p });
-          }}
-        />
+      {repoRefs.length > 0 && (
+        <ul className="space-y-1" data-testid="attached-repos">
+          {repoRefs.map((r) => (
+            <li
+              key={r.typeId}
+              className="flex items-center gap-2 rounded border border-slate-500/40 bg-slate-500/10 px-2 py-1 text-xs"
+            >
+              <GitBranch className="h-3 w-3 shrink-0 text-slate-600 dark:text-slate-300" />
+              <span className="flex-1 truncate text-foreground" title={r.label}>
+                {r.label}
+              </span>
+              <button
+                type="button"
+                onClick={() => removeRepo(r.typeId)}
+                disabled={isDisabled}
+                className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-destructive disabled:pointer-events-none"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </li>
+          ))}
+        </ul>
       )}
+    </>
+  );
+
+  const promptPreview =
+    canAddPrompt && activePrompt ? (
+      <div className="flex items-start gap-1">
+        <div className="min-w-0 flex-1">
+          <PromptApprovalRow attachments={queuedPromptAttachments} onEdit={() => setShowPromptDialog(true)} />
+        </div>
+        <button
+          type="button"
+          onClick={() => setActivePrompt(null)}
+          title="Remove queued prompt"
+          className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-destructive"
+        >
+          <X className="h-3 w-3" />
+        </button>
+      </div>
+    ) : null;
+
+  const promptDialog = canAddPrompt ? (
+    <PromptComposerDialog
+      open={showPromptDialog}
+      onClose={() => setShowPromptDialog(false)}
+      initial={activePrompt}
+      onQueue={(p) => setActivePrompt(p)}
+      onQueueAndSend={(p) => {
+        setActivePrompt(p);
+        void send(p);
+      }}
+    />
+  ) : null;
+
+  // ── Draft mode: editable "Draft" bubble with Discard + Send ─────────────
+
+  if (isDraftMode) {
+    const senderName = draft?.sender_name?.trim() || (localUser?.name ?? 'You');
+    const initial = (senderName.trim()[0] ?? '?').toUpperCase();
+    return (
+      <div className="flex gap-2">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-xs font-semibold text-white">
+          {initial}
+        </div>
+        <div className="flex min-w-0 flex-1 flex-col gap-1.5 rounded-md border border-dashed border-border bg-muted/20 p-2">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-foreground">{senderName}</span>
+            <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+              Draft
+            </span>
+          </div>
+
+          <div
+            onDragOver={onDragOver}
+            onDragLeave={onDragLeave}
+            onDrop={onDrop}
+            className={cn(
+              'flex flex-col gap-1.5 rounded-md border border-border bg-background px-2 py-1.5 transition-colors focus-within:border-primary/50',
+              dragging && 'border-primary bg-primary/5',
+            )}
+          >
+            <textarea
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={dragging ? 'Drop files here' : 'Edit your draft…'}
+              rows={Math.max(2, Math.min(10, text.split('\n').length + 1))}
+              disabled={isDisabled}
+              className="w-full min-h-[2.5rem] resize-none bg-transparent px-1 py-1 text-sm text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
+            />
+            <div className="flex items-center gap-1.5">
+              {attachButtons}
+              {promptButton}
+              <div className="ml-auto flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => void handleDiscard()}
+                  disabled={isDisabled}
+                  title="Discard draft"
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-40"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+                {sendButton}
+              </div>
+            </div>
+          </div>
+
+          {promptPreview}
+          {chipLists}
+          {error && <p className="text-xs text-destructive">{error}</p>}
+          {hiddenFileInput}
+          {promptDialog}
+        </div>
+      </div>
+    );
+  }
+
+  // ── Regular reply box ───────────────────────────────────────────────────
+
+  return (
+    <div className="space-y-1.5">
+      <div
+        onDragOver={onDragOver}
+        onDragLeave={onDragLeave}
+        onDrop={onDrop}
+        className={cn(
+          'flex items-end gap-2 rounded-md border border-border bg-background px-2 py-1.5 transition-colors focus-within:border-primary/50',
+          dragging && 'border-primary bg-primary/5',
+        )}
+      >
+        <div className="flex shrink-0 items-center gap-1.5 self-end pb-0.5">{attachButtons}</div>
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder={dragging ? 'Drop files here' : 'Reply to sender…'}
+          rows={1}
+          disabled={isDisabled}
+          className="min-h-[1.5rem] flex-1 resize-none bg-transparent px-1 py-1 text-sm text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
+        />
+        {promptButton}
+        {sendButton}
+      </div>
+
+      {promptPreview}
+      {chipLists}
+      {error && <p className="text-xs text-destructive">{error}</p>}
+      {hiddenFileInput}
+      {promptDialog}
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Archive, CheckSquare, Inbox as InboxIcon, MailPlus, RefreshCw, Trash2 } from 'lucide-react';
-import { toast } from 'sonner';
+import { Archive, CheckSquare, Inbox as InboxIcon, MailPlus, RefreshCw, SquarePen, Trash2 } from 'lucide-react';
+import { notify } from '@src/notifications';
+import { NewConversationDialog } from '@src/components/new-conversation-dialog/NewConversationDialog';
 import {
   Conversation,
   FlowMessage,
@@ -22,10 +23,12 @@ import {
 import { useAuth, useCloudStatus } from '@sdk/react/hooks';
 import { useEntitiesQuery, useEntity } from '@src/hooks/entity-hooks';
 import { Button } from '@src/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { BulkConfirmDialog } from '@src/components/ui/bulk-confirm-dialog';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { LoginRequiredOverlay } from '@src/components/login-required-overlay';
 import { useInboxStore } from '@src/store/use-inbox-store';
 import { formatTimeAgo } from '@src/components/project-activity-strip/project-activity-utils';
 import {
@@ -131,6 +134,14 @@ function ConversationListRow({ conv, isFocused, viewMode, onArchive, onToggleRea
     !!myEmail &&
     myEmail === recipientEmail;
   const [accepting, setAccepting] = useState(false);
+
+  // Trash does different things depending on ownership — say which one
+  // up-front so the tooltip distinguishes it from the (reversible) Archive.
+  const deleteLabel = !conv.remote
+    ? 'Delete — removes permanently'
+    : cloudUserId && conv.created_by === cloudUserId
+      ? 'Delete for everyone — permanent'
+      : 'Leave conversation';
 
   // Hide rule depends on view mode:
   //   - 'inbox'     → hide archived rows (default; archived_at && stamp ≥ latest ts)
@@ -300,55 +311,75 @@ function ConversationListRow({ conv, isFocused, viewMode, onArchive, onToggleRea
           </button>
         ) : (
           <>
-            <button
-              className="rounded p-1 hover:bg-muted"
-              title={isUnread ? 'Mark read' : 'Mark unread'}
-              onClick={() => latestMessage?.id && onToggleRead(latestMessage.id, isUnread)}
-            >
-              <CheckSquare className="h-3.5 w-3.5 text-muted-foreground" />
-            </button>
-            <button
-              className="rounded p-1 hover:bg-destructive/10"
-              title="Archive conversation"
-              onClick={() => conv.id && onArchive(conv.id)}
-            >
-              <Archive className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
-            </button>
-            <button
-              className="rounded p-1 hover:bg-destructive/10"
-              title="Delete conversation"
-              onClick={() => {
-                if (!conv.id) return;
-                if (!conv.remote) {
-                  onRequestDelete({ kind: 'local', conversationId: conv.id });
-                } else if (cloudUserId && conv.created_by === cloudUserId) {
-                  onRequestDelete({ kind: 'owner', conversationId: conv.id });
-                } else {
-                  onRequestDelete({ kind: 'leave', conversationId: conv.id });
-                }
-              }}
-              data-testid="inbox-row-delete-button"
-            >
-              <Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
-            </button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  className="rounded p-1 hover:bg-muted"
+                  aria-label={isUnread ? 'Mark read' : 'Mark unread'}
+                  onClick={() => latestMessage?.id && onToggleRead(latestMessage.id, isUnread)}
+                >
+                  <CheckSquare className="h-3.5 w-3.5 text-muted-foreground" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top">{isUnread ? 'Mark read' : 'Mark unread'}</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  className="rounded p-1 hover:bg-destructive/10"
+                  aria-label="Archive conversation"
+                  onClick={() => conv.id && onArchive(conv.id)}
+                >
+                  <Archive className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top">Archive — moves to Archived, kept</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  className="rounded p-1 hover:bg-destructive/10"
+                  aria-label={deleteLabel}
+                  onClick={() => {
+                    if (!conv.id) return;
+                    if (!conv.remote) {
+                      onRequestDelete({ kind: 'local', conversationId: conv.id });
+                    } else if (cloudUserId && conv.created_by === cloudUserId) {
+                      onRequestDelete({ kind: 'owner', conversationId: conv.id });
+                    } else {
+                      onRequestDelete({ kind: 'leave', conversationId: conv.id });
+                    }
+                  }}
+                  data-testid="inbox-row-delete-button"
+                >
+                  <Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top">{deleteLabel}</TooltipContent>
+            </Tooltip>
           </>
         )}
         {isInvitationRow && conv.id && invitationId && (
-          <button
-            type="button"
-            className="rounded p-1 hover:bg-destructive/10"
-            title="Decline (delete) invitation"
-            onClick={() =>
-              onRequestDelete({
-                kind: 'invitation',
-                invitationId,
-                conversationId: conv.id!,
-              })
-            }
-            data-testid="inbox-invitation-delete-button"
-          >
-            <Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
-          </button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className="rounded p-1 hover:bg-destructive/10"
+                aria-label="Decline (delete) invitation"
+                onClick={() =>
+                  onRequestDelete({
+                    kind: 'invitation',
+                    invitationId,
+                    conversationId: conv.id!,
+                  })
+                }
+                data-testid="inbox-invitation-delete-button"
+              >
+                <Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top">Decline (delete) invitation</TooltipContent>
+          </Tooltip>
         )}
       </div>
     </div>
@@ -380,6 +411,7 @@ export function InboxView() {
 
   // Bulk-delete + per-row-delete dialog state.
   const [bulkDialogOpen, setBulkDialogOpen] = useState(false);
+  const [showNewConversation, setShowNewConversation] = useState(false);
   const [rowDelete, setRowDelete] = useState<RowDeleteAction | null>(null);
 
   const request = useMemo(() => new QueryRequest({ type: Conversation.type }), []);
@@ -511,8 +543,9 @@ export function InboxView() {
   const handleDeleteArchived = useCallback(() => {
     if (archivedConvs.length === 0) return;
     if (needsHub && !hubReachable) {
-      toast.error('Cloud disconnected', {
-        description: 'Reconnect to the cloud to delete shared conversations.',
+      notify.error({
+        title: 'Cloud disconnected',
+        message: 'Reconnect to the cloud to delete shared conversations.',
       });
       return;
     }
@@ -525,19 +558,21 @@ export function InboxView() {
       const ok = res.deleted?.length ?? 0;
       const failed = res.failed ?? [];
       if (failed.length === 0) {
-        toast.success(`Deleted ${ok} conversation${ok === 1 ? '' : 's'}`);
+        notify.success({ title: `Deleted ${ok} conversation${ok === 1 ? '' : 's'}` });
       } else {
         const firstFew = failed
           .slice(0, 3)
           .map((f) => `${f.id.slice(0, 8)}: ${f.reason}`)
           .join('\n');
-        toast.error(`Deleted ${ok}, ${failed.length} failed`, {
-          description: firstFew,
+        notify.error({
+          title: `Deleted ${ok}, ${failed.length} failed`,
+          message: firstFew,
         });
       }
     } catch (e) {
-      toast.error('Delete all failed', {
-        description: e instanceof Error ? e.message : String(e),
+      notify.error({
+        title: 'Delete all failed',
+        message: e instanceof Error ? e.message : String(e),
       });
     } finally {
       void refetch();
@@ -547,8 +582,9 @@ export function InboxView() {
   const handleRowDelete = useCallback(
     (action: RowDeleteAction) => {
       if (action.kind !== 'local' && !hubReachable) {
-        toast.error('Cloud disconnected', {
-          description: 'Reconnect to the cloud to delete this conversation.',
+        notify.error({
+          title: 'Cloud disconnected',
+          message: 'Reconnect to the cloud to delete this conversation.',
         });
         return;
       }
@@ -562,26 +598,27 @@ export function InboxView() {
     try {
       if (rowDelete.kind === 'invitation') {
         await declineInvitation({ invitation_id: rowDelete.invitationId });
-        toast.success('Invitation declined');
+        notify.success({ title: 'Invitation declined' });
       } else if (rowDelete.kind === 'owner') {
         await deleteConversation({
           conversation_id: rowDelete.conversationId,
           mode: 'delete_for_all',
         });
-        toast.success('Conversation deleted');
+        notify.success({ title: 'Conversation deleted' });
       } else if (rowDelete.kind === 'leave') {
         await leaveConversation({ conversation_id: rowDelete.conversationId });
-        toast.success('Left conversation');
+        notify.success({ title: 'Left conversation' });
       } else {
         await deleteConversation({
           conversation_id: rowDelete.conversationId,
           mode: 'local',
         });
-        toast.success('Conversation deleted');
+        notify.success({ title: 'Conversation deleted' });
       }
     } catch (e) {
-      toast.error('Delete failed', {
-        description: e instanceof Error ? e.message : String(e),
+      notify.error({
+        title: 'Delete failed',
+        message: e instanceof Error ? e.message : String(e),
       });
     } finally {
       void refetch();
@@ -593,10 +630,11 @@ export function InboxView() {
       if (action.kind !== 'invitation') return;
       try {
         await dismissConversation({ conversation_id: action.conversationId });
-        toast.success('Invitation dismissed');
+        notify.success({ title: 'Invitation dismissed' });
       } catch (e) {
-        toast.error('Dismiss failed', {
-          description: e instanceof Error ? e.message : String(e),
+        notify.error({
+          title: 'Dismiss failed',
+          message: e instanceof Error ? e.message : String(e),
         });
       } finally {
         void refetch();
@@ -649,21 +687,40 @@ export function InboxView() {
 
   // List mode
   return (
-    <div className="flex h-full flex-col">
-      <div className="flex shrink-0 items-center justify-between border-b px-3 py-1.5">
-        {/* LEFT — view selector */}
-        <div
-          className="flex items-center gap-0.5 rounded-md bg-muted/40 p-0.5"
-          role="tablist"
-          aria-label="Inbox view"
-          data-testid="inbox-view-bar"
-        >
-          {renderViewPill('inbox', 'Inbox', InboxIcon)}
-          {renderViewPill('unread', 'Unread', MailPlus)}
-          {renderViewPill('archived', 'Archived', Archive)}
+    <div className="relative flex h-full flex-col">
+      {!cloudUser && (
+        <LoginRequiredOverlay description="Sign in to your Flowpad Cloud account to view your inbox and conversations." />
+      )}
+      <div className="flex shrink-0 items-center border-b px-3 py-1.5">
+        {/* LEFT — view selector. flex-1 here + on RIGHT keeps the CENTER truly centered. */}
+        <div className="flex flex-1 items-center">
+          <div
+            className="flex items-center gap-0.5 rounded-md bg-muted/40 p-0.5"
+            role="tablist"
+            aria-label="Inbox view"
+            data-testid="inbox-view-bar"
+          >
+            {renderViewPill('inbox', 'Inbox', InboxIcon)}
+            {renderViewPill('unread', 'Unread', MailPlus)}
+            {renderViewPill('archived', 'Archived', Archive)}
+          </div>
+        </div>
+        {/* CENTER — new conversation */}
+        <div className="flex shrink-0 items-center">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 text-xs"
+            onClick={() => setShowNewConversation(true)}
+            data-testid="inbox-new-conversation-button"
+            title="Start a new conversation"
+          >
+            <SquarePen className="mr-1 h-3.5 w-3.5" />
+            New
+          </Button>
         </div>
         {/* RIGHT — actions for the current view */}
-        <div className="flex items-center gap-1" data-testid="inbox-action-bar">
+        <div className="flex flex-1 items-center justify-end gap-1" data-testid="inbox-action-bar">
           {!inArchivedView && (
             <Button
               variant="ghost"
@@ -754,6 +811,11 @@ export function InboxView() {
             />
           ))}
       </div>
+
+      <NewConversationDialog
+        open={showNewConversation}
+        onClose={() => setShowNewConversation(false)}
+      />
 
       <BulkConfirmDialog
         open={bulkDialogOpen}

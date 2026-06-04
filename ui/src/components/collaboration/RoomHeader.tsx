@@ -1,6 +1,6 @@
 import type { CollaborationRoom } from '@sdk';
 import { Button } from '@src/components/ui/button';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { Radio, Sparkles, Square } from 'lucide-react';
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 
@@ -22,7 +22,6 @@ function formatStarted(iso: string | null | undefined): string {
 }
 
 export function RoomHeader({ room, isHost, isSupport = false, onEnded }: Props) {
-  const { toast } = useToast();
   const live = room.status === 'active';
   const [editing, setEditing] = useState(false);
   const [draftName, setDraftName] = useState(room.displayName);
@@ -38,11 +37,11 @@ export function RoomHeader({ room, isHost, isSupport = false, onEnded }: Props) 
   const handleEnd = async () => {
     try {
       await room.end();
-      toast({ title: 'Room ended' });
+      notify.success({ title: 'Room ended' });
       onEnded?.();
     } catch (err) {
       console.error('[RoomHeader] end failed', err);
-      toast({ title: 'Could not end room', description: String((err as Error).message ?? err) });
+      notify.info({ title: 'Could not end room', message: String((err as Error).message ?? err) });
     }
   };
 
@@ -59,10 +58,10 @@ export function RoomHeader({ room, isHost, isSupport = false, onEnded }: Props) 
     try {
       room.name = next;
       await room.save();
-      toast({ title: 'Room renamed', description: trimmed || '(cleared)' });
+      notify.success({ title: 'Room renamed', message: trimmed || '(cleared)' });
     } catch (err) {
       console.error('[RoomHeader] rename failed', err);
-      toast({ title: 'Rename failed', description: String((err as Error).message ?? err) });
+      notify.info({ title: 'Rename failed', message: String((err as Error).message ?? err) });
     }
   };
 

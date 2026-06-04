@@ -1,7 +1,10 @@
-import { useAgentContext } from '@src/components/agent-layout/agent-layout';
-import { Agent, FSRef, RecordType, Skill, Whiteboard, Workflow } from '@sdk';
+import { Agent, FSRef, Skill, TypeId, VFSPath, Whiteboard, Workflow } from '@sdk';
+import { useEntity } from '@sdk/react/hooks';
 import { RefreshCw } from 'lucide-react';
-import { useMemo } from 'react';
+import { useAgentContext } from '@src/components/agent-layout/agent-layout';
+import CodeEditor from '@src/components/code-editor/CodeEditor';
+import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
+import { AssetEditor, AssetRoutingMethod, EDITOR_TYPES, editorForType } from '@src/navigation/asset-doc-types';
 import { EntityResolutionGate } from './EntityResolutionGate';
 import { PlainMarkdownAssetEditor } from './markdown/PlainMarkdownAssetEditor';
 import { SkillAssetEditor } from './skill/SkillAssetEditor';
@@ -10,34 +13,13 @@ import { WhiteboardAssetEditor } from './whiteboard/WhiteboardAssetEditor';
 import { WorkflowAssetEditor } from './workflow/WorkflowAssetEditor';
 
 interface AssetEditorRouterProps {
-  /** Pointer in the format "editor/<type>/<vfsSubPath>" */
+  /** The ViewType.ASSETS pointer, e.g. "editor/<editor>/<method>/<value>". */
   pointer: string;
 }
 
-/**
- * Routes an asset editor pointer to the appropriate type-specific editor.
- *
- * Pointer format: "editor/<assetType>/<vfsSubPath...>"
- * vfsSubPath is a VFS entity sub-path (no leading '/') — e.g.:
- *   "editor/skill/Users/shlom/.claude/skills/my-skill"
- *   "editor/agent/Users/shlom/.claude/agents/enricher.md"
- *
- * The router does the string → FSRef conversion once and passes FSRef
- * directly to each editor. Editors never reconstruct paths.
- */
-const EDITABLE_TYPES = new Set<string>([
-  RecordType.SKILL, RecordType.MARKDOWN, RecordType.AGENT,
-  RecordType.WHITEBOARD,
-  RecordType.CLAUDE_MD, 'claude_memory', 'claude_rules',
-  RecordType.COMMAND, RecordType.PLAN, 'workflow',
-  // Projects don't open in the editor — clicking a project row redirects to
-  // its collaboration space (handled at the click site). Listed here so the
-  // row stays clickable.
-  RecordType.PROJECT,
-]);
-
+/** True if `assetType` (a RecordType value) has an asset editor. */
 export function hasEditor(assetType: string): boolean {
-  return EDITABLE_TYPES.has(assetType);
+  return editorForType(assetType) !== undefined;
 }
 
 function ConnectingFallback() {
@@ -49,73 +31,116 @@ function ConnectingFallback() {
   );
 }
 
+/**
+ * Routes an `AssetDocPointer` (editor mode) to the right editor component.
+ *
+ * The routing-method segment is explicit, so the target is resolved without
+ * guessing: `typeid` → load the entity (its `.doc` is the FSRef); `vfs` → build
+ * the FSRef straight from the compute-node-rooted path; `code` → raw CodeEditor.
+ * Editors resolve/refresh the backing entity off the FSRef themselves.
+ */
 export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
-  const { computeNode } = useAgentContext();
-  const [, assetType = '', ...rest] = pointer.split('/');
-  const vfsSubPath = rest.join('/');
-  const typeIdStr = computeNode?.typeId?.toString();
+  const ptr = (() => {
+    try {
+      const p = AssetDocPointer.parse(pointer);
+      p.validate();
+      return p;
+    } catch {
+      return null;
+    }
+  })();
 
-  const fsRef = useMemo(
-    () => (computeNode?.typeId ? new FSRef(vfsSubPath, computeNode.typeId) : null),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [typeIdStr, vfsSubPath],
-  );
+  // Hooks must run unconditionally — resolve the typeid entity (null otherwise).
+  const typeId =
+    ptr && ptr.editor !== AssetEditor.CODE && ptr.method === AssetRoutingMethod.TYPEID
+      ? new TypeId(ptr.value)
+      : null;
+  const { data: typeIdEntity } = useEntity(typeId);
+  const { computeNode } = useAgentContext();
+
+  if (!ptr || !ptr.editor) {
+    return (
+      <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+        Invalid asset pointer
+      </div>
+    );
+  }
+
+  // code: file-only, no entity. CodeEditor parses the compute-node-rooted path.
+  if (ptr.editor === AssetEditor.CODE) {
+    return <CodeEditor activePath={ptr.value} />;
+  }
+
+  // Derive the FSRef + the record type for this asset.
+  let fsRef: FSRef | null = null;
+  let assetType: string;
+  if (ptr.method === AssetRoutingMethod.TYPEID) {
+    if (!typeIdEntity) return <ConnectingFallback />;
+    const e = typeIdEntity as { asset_ref?: string };
+    // Build the FSRef from the entity's canonical asset_ref (the path the
+    // editors' EntityResolutionGate matches on — the folder for skill/whiteboard,
+    // the .md for agent/markdown). Editors derive their own inner doc.
+    fsRef =
+      e.asset_ref && computeNode?.typeId
+        ? new FSRef(e.asset_ref.replace(/^\//, ''), computeNode.typeId)
+        : null;
+    assetType = typeId!.type;
+  } else {
+    const vfs = VFSPath.parse(ptr.value);
+    if (!vfs.typeId) return <ConnectingFallback />;
+    fsRef = new FSRef(vfs.entitySubPath, vfs.typeId);
+    // vfs lost the precise record type; fall back to the editor's primary type.
+    assetType = (EDITOR_TYPES[ptr.editor][0] as string | undefined) ?? ptr.editor;
+  }
 
   if (!fsRef) return <ConnectingFallback />;
 
-  switch (assetType) {
-    case RecordType.SKILL:
+  switch (ptr.editor) {
+    case AssetEditor.SKILL:
       return (
         <EntityResolutionGate<Skill>
           type={Skill.type}
           fsRef={fsRef}
           typeLabel="skill"
-          render={(skill) => <SkillAssetEditor fsRef={fsRef} skill={skill} />}
+          render={(skill) => <SkillAssetEditor fsRef={fsRef!} skill={skill} />}
         />
       );
-    case RecordType.AGENT:
+    case AssetEditor.AGENT:
       return (
         <EntityResolutionGate<Agent>
           type={Agent.type}
           fsRef={fsRef}
           typeLabel="agent"
-          render={(agent) => <AgentAssetEditor fsRef={fsRef} agent={agent} />}
+          render={(agent) => <AgentAssetEditor fsRef={fsRef!} agent={agent} />}
         />
       );
-    case RecordType.WHITEBOARD:
+    case AssetEditor.WHITEBOARD:
       return (
         <EntityResolutionGate<Whiteboard>
           type={Whiteboard.type}
           fsRef={fsRef}
           typeLabel="whiteboard"
-          render={(whiteboard) => <WhiteboardAssetEditor fsRef={fsRef} whiteboard={whiteboard} />}
+          render={(whiteboard) => <WhiteboardAssetEditor fsRef={fsRef!} whiteboard={whiteboard} />}
         />
       );
-    case 'workflow':
+    case AssetEditor.WORKFLOW:
       return (
         <EntityResolutionGate<Workflow>
           type={Workflow.type}
           fsRef={fsRef}
           typeLabel="workflow"
-          render={(workflow) => <WorkflowAssetEditor fsRef={fsRef} workflow={workflow} />}
+          render={(workflow) => <WorkflowAssetEditor fsRef={fsRef!} workflow={workflow} />}
         />
       );
-    case RecordType.MARKDOWN:
-    case RecordType.CLAUDE_MD:
-    case 'claude_memory':
-    case 'claude_rules':
-    case RecordType.COMMAND:
-    case RecordType.PLAN:
-      // Plain markdown is intentionally NOT wrapped in EntityResolutionGate.
-      // Files like a raw `CLAUDE.md` may have no backing first-class entity,
-      // and `PlainMarkdownAssetEditor` already tolerates `entity=null` (the
-      // Run button just disables with a "no backing entity" tooltip). Wrapping
-      // here would regress to a missing-asset card for those files.
+    case AssetEditor.MARKDOWN:
+      // Markdown family (markdown, claude_md, claude_memory, claude_rules,
+      // command, plan) is intentionally NOT gated — a raw file may have no
+      // first-class entity; PlainMarkdownAssetEditor tolerates entity=null.
       return <PlainMarkdownAssetEditor fsRef={fsRef} assetType={assetType} />;
     default:
       return (
         <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
-          No editor for type: {assetType}
+          No editor for: {ptr.editor}
         </div>
       );
   }

@@ -35,7 +35,12 @@ async def store_env_var_value(entity_var: EnvVar, value: str, entity_typeid: Typ
                 raise HTTPException(status_code=404, detail=f"User entity not found for typeid {entity_typeid}")
 
             cred_name = entity_var.ref_name or entity_var.name
-            await set_user_credentials(user_entity, cred_name, value, "")
+            # foreign_key=user_entity.id matches the convention used by the
+            # OAuth device-flow path in flow_sdk.app.actions.desktop_oauth so
+            # writes/reads/deletes hit the same composed SOD key. Passing ""
+            # would fall back to request_info.user_foreign_key (None on desktop)
+            # and raise inside _get_user_sod_key.
+            await set_user_credentials(user_entity, cred_name, value, user_entity.id)
         else:
             await set_entity_credentials(entity_typeid, entity_var.name, value)
 

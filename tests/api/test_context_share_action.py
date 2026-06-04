@@ -53,6 +53,35 @@ async def test_share_context_appends_single_typeid(bootstrapped_client):
 
 
 @pytest.mark.asyncio
+async def test_share_context_round_trips_data(bootstrapped_client):
+    """POST with ``data: {path: ...}`` should persist into the sidecar and
+    survive a re-read. This is what powers the chip 404 self-heal."""
+    task = await _make_task(bootstrapped_client)
+    plan_id = _new_id()
+    plan_path = "/Users/shlom/.claude/plans/some-plan.md"
+
+    resp = await bootstrapped_client.post(
+        f"/api/v1/graph/task/{task['id']}/share-context",
+        json={"typeid": f"plan-{plan_id}", "data": {"path": plan_path}},
+    )
+    assert resp.status_code == 200, resp.text
+    data = resp.json()["data"]
+    assert data["ok"] is True
+    assert data["shared_context_entities"] == [f"plan-{plan_id}"]
+    assert data["shared_context_entity_data"] == {
+        f"plan-{plan_id}": {"path": plan_path}
+    }
+
+    reread = await bootstrapped_client.get(f"/api/v1/graph/task/{task['id']}")
+    assert reread.status_code == 200, reread.text
+    body = reread.json()["data"]
+    assert body["shared_context_entities"] == [f"plan-{plan_id}"]
+    assert body["shared_context_entity_data"] == {
+        f"plan-{plan_id}": {"path": plan_path}
+    }
+
+
+@pytest.mark.asyncio
 async def test_share_context_batch_typeids(bootstrapped_client):
     task = await _make_task(bootstrapped_client)
     a, b = _new_id(), _new_id()

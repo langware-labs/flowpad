@@ -32,6 +32,17 @@ const EMPTY_STATE: BrowseableTreeState = {
 export function useBrowseableTree(roots: BrowseableRoot[]) {
   const [state, setState] = useState<BrowseableTreeState>(EMPTY_STATE);
 
+  // Ref mirror of `loadStates` for the async workers (`loadChildren`,
+  // `expandParentsForPointer`) to read WITHOUT listing `state.loadStates` in
+  // their dep arrays. Each `setLoadState` mutates `loadStates`; if the workers
+  // depended on it they'd be recreated on every fetch, and the consumer effect
+  // in <BrowseableTree> (keyed on `expandParentsForPointer`'s identity) would
+  // re-run — re-entering the walk before its async guard latches and firing a
+  // burst of redundant child fetches. Render-phase assignment keeps the ref at
+  // the latest committed value.
+  const loadStatesRef = useRef(state.loadStates);
+  loadStatesRef.current = state.loadStates;
+
   // Track in-flight fetches to prevent duplicate work on quick toggles.
   const inflight = useRef(new Map<string, Promise<Browseable[]>>());
 
@@ -73,7 +84,7 @@ export function useBrowseableTree(roots: BrowseableRoot[]) {
       const pending = inflight.current.get(node.id);
       if (pending) return pending;
 
-      const current = state.loadStates.get(node.id);
+      const current = loadStatesRef.current.get(node.id);
       if (current?.status === 'ready') return current.children;
 
       setLoadState(node.id, { status: 'loading' });
@@ -94,7 +105,7 @@ export function useBrowseableTree(roots: BrowseableRoot[]) {
       inflight.current.set(node.id, p);
       return p;
     },
-    [state.loadStates, setLoadState],
+    [setLoadState],
   );
 
   const expand = useCallback(
@@ -210,20 +221,44 @@ export function useBrowseableTree(roots: BrowseableRoot[]) {
         return { ...prev, expandedIds };
       });
 
-      // For each expandable node that doesn't yet have cached children,
-      // trigger a fresh load. We don't try to stitch a partial chain into
-      // the cache; the adapter's listChildren is the source of truth.
+      // Load each expandable node; capture the parent-of-leaf's children so
+      // the freshness check below sees them without a stale closure read.
+      const leaf = chain[chain.length - 1];
+      const parent = chain.length >= 2 ? chain[chain.length - 2] : null;
+      let parentChildren: Browseable[] | null = null;
       for (const node of nodesToExpand) {
         if (!node.listChildren) continue;
-        const existing = state.loadStates.get(node.id);
-        if (existing?.status !== 'ready') {
-          await loadChildren(node);
+        const existing = loadStatesRef.current.get(node.id);
+        const children =
+          existing?.status === 'ready'
+            ? existing.children
+            : await loadChildren(node);
+        if (parent && node.id === parent.id) parentChildren = children;
+      }
+
+      // Deep-link freshness: leaf missing from parent's listing → just-created
+      // file the cached listing pre-dates. Force-refresh past both caches.
+      if (parent && parent.listChildren && parentChildren) {
+        const leafPresent = parentChildren.some((c) => c.id === leaf.id);
+        if (!leafPresent) {
+          inflight.current.delete(parent.id);
+          setLoadState(parent.id, { status: 'loading' });
+          try {
+            const refreshed = await parent.listChildren({ refresh: true });
+            setLoadState(parent.id, { status: 'ready', children: refreshed });
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            setLoadState(parent.id, { status: 'error', message });
+          }
         }
       }
 
-      return chain[chain.length - 1];
+      return leaf;
     },
-    [roots, state.loadStates, loadChildren],
+    // `setLoadState` is stable (useCallback []), so listing it doesn't
+    // reintroduce identity churn. `state.loadStates` is deliberately read via
+    // `loadStatesRef` instead of being a dep — see the ref's comment.
+    [roots, loadChildren, setLoadState],
   );
 
   return {

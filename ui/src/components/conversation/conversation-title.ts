@@ -1,4 +1,4 @@
-import type { Conversation } from '@sdk';
+import type { Conversation, ConversationParticipant } from '@sdk';
 import { participantLabel } from './participant-display';
 
 /**
@@ -22,4 +22,29 @@ export function deriveConversationTitle(conv: Conversation | null | undefined): 
   if (parts.length > 0) return parts.join(', ');
   if (conv.id) return `Conversation ${conv.id.slice(0, 8)}`;
   return 'Conversation';
+}
+
+/**
+ * Slack-style autofill title for a *new* conversation:
+ *   "<me>, <p1>, <p2> - <Mon D HH:MM>"
+ * Empty participants degrades to "New conversation - <Mon D HH:MM>".
+ *
+ * The ``when`` Date is taken from the caller so the autofill stays stable
+ * across re-renders within a session (the open-dialog memoises it).
+ */
+export function formatAutoTitle(
+  participants: ConversationParticipant[],
+  myLabel: string,
+  when: Date,
+): string {
+  const day = when.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const time = when.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+  const dateSuffix = `${day} ${time}`;
+  if (participants.length === 0) return `New conversation - ${dateSuffix}`;
+  const others = participants.map(participantLabel).join(', ');
+  return `${myLabel}, ${others} - ${dateSuffix}`;
 }

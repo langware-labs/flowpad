@@ -14,7 +14,7 @@ import {
 import { AgenticProcess } from '@sdk';
 
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
-import { toast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useTranscript, type WorkerType } from '@src/hooks/use-transcript';
 
@@ -337,7 +337,7 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
     void (async () => {
       const process = await AgenticProcess.getByWorkerId(sessionId).catch(() => null);
       if (!process) {
-        toast({ title: 'Process not found', description: `No live process for session ${sessionId}.`, variant: 'destructive' });
+        notify.error({ title: 'Process not found', message: `No live process for session ${sessionId}.` });
         return;
       }
       navigation.openDockPointer(process.terminalDockPointer);

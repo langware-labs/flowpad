@@ -121,8 +121,15 @@ export function useEntityByPath<T extends APIEntity<T>>(
       const out: T[] = [];
       for (const row of rows ?? []) {
         if (!row.type) row.type = type;
-        const inst = EntityFactory.createEntity(row as never) as T | undefined;
-        if (inst) out.push(inst);
+        try {
+          const inst = EntityFactory.createEntity(row as never) as T | undefined;
+          if (inst) out.push(inst);
+        } catch (e) {
+          // Per-row isolation: one unhydratable row (e.g. a non-conforming id
+          // the TypeId ctor rejects) must NOT fail the whole list. Skip it so
+          // the rest — including the doc we're resolving — still resolves.
+          console.warn('[useEntityByPath] skipping unhydratable row', (row as { id?: string }).id, e);
+        }
       }
       return out;
     },
@@ -148,8 +155,11 @@ export function useEntityByPath<T extends APIEntity<T>>(
   // Treat an orphan match the same as "no match" for discover-eligibility:
   // the file is gone, so discoverByPath would 404 anyway. Skip the round-trip.
   const bulkMatchIsOrphan = !!(bulkMatch && (bulkMatch as { orphan?: boolean }).orphan === true);
+  // NB: intentionally NOT gated on ``!bulkError`` — if the bulk list errored
+  // (e.g. a malformed row slipped past per-row isolation), the single-file
+  // discover is exactly the recovery path, so it must still run.
   const shouldDiscover =
-    enabled && autoDiscover && bulkSettled && !bulkMatch && !bulkError;
+    enabled && autoDiscover && bulkSettled && !bulkMatch;
 
   const {
     data: discoverData,

@@ -3,7 +3,7 @@ import { Button } from '@src/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Switch } from '@src/components/ui/switch';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
-import { toast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import {
   ERROR_TIME_SPANS,
   ErrorCategory,
@@ -676,7 +676,7 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
     try {
       const result = await clearAll();
       if (!result) {
-        toast({ title: 'Cleared' });
+        notify.success({ title: 'Cleared' });
         return;
       }
       const parts: string[] = [];
@@ -685,16 +685,16 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
       if (result.deleted_error_records > 0) parts.push(`${result.deleted_error_records} error record${result.deleted_error_records !== 1 ? 's' : ''}`);
       const msg = parts.length > 0 ? `Cleared ${parts.join(' and ')}` : 'Nothing to clear';
       const skipped = result.skipped_debug_logs.length;
-      toast({
+      notify.success({
         title: msg,
-        description: result.truncated_debug_logs > 0
+        message: result.truncated_debug_logs > 0
           ? `${result.truncated_debug_logs} log${result.truncated_debug_logs !== 1 ? 's' : ''} from active sessions were emptied but not deleted. They will be removed after those sessions end.`
           : skipped > 0
             ? `${skipped} file${skipped !== 1 ? 's' : ''} could not be cleared. Retry after active sessions end.`
             : undefined,
       });
     } catch (e) {
-      toast({ title: 'Failed to clear errors', description: String(e), variant: 'destructive' });
+      notify.error({ title: 'Failed to clear errors', message: String(e) });
     } finally {
       setIsClearing(false);
     }
@@ -707,7 +707,7 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
       if (!parsed) return;
       const options: Record<string, string> = {};
       if (timestamp) options.ts = timestamp;
-      navigation.openLens('claude', 'transcript', `${parsed.projectEncodedName}/${parsed.sessionId}`, options);
+      navigation.openLens('claude', 'transcript', parsed.sessionId, options);
     },
     [navigation],
   );
@@ -730,10 +730,10 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
       void createTaskForError(error, instruction ? { instruction } : undefined).then(({ taskId, shellId }) => {
         if (taskId && shellId) {
           const description = instruction ? 'Claude is applying the fix.' : 'Claude is investigating the error.';
-          toast({ title: 'Session started', description });
+          notify.success({ title: 'Session started', message: description });
           void navigation.openSession(shellId, { skipPermissions: true });
         } else {
-          toast({ title: 'Failed to start session', variant: 'destructive' });
+          notify.error({ title: 'Failed to start session' });
         }
       });
     },
@@ -789,7 +789,7 @@ export function ClaudeErrorsViewer({ initialStatusSlug }: ClaudeErrorsViewerProp
       const toAnalyse = results.filter((r) => r.action === 'analyse');
       setCloudResultsModal({ ignored: toIgnore.length, fixResults: toFix, remaining: toAnalyse.length });
     } catch (e) {
-      toast({ title: 'Cloud search failed', description: String(e), variant: 'destructive' });
+      notify.error({ title: 'Cloud search failed', message: String(e) });
     } finally {
       setIsSearchingCloud(false);
     }

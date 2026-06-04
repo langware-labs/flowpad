@@ -65,6 +65,19 @@ export async function openInboxMessage(messageId: string): Promise<OpenResult | 
   return dataManager.callAction<null, OpenResult>(action);
 }
 
+/**
+ * Pull new/changed hub messages for ONE conversation into the local store.
+ * The backend (`conversation-message-sync`) lists the conversation's child
+ * FlowMessages in a single request and refreshes only the stale ones (LWW by
+ * updated_date), so the local live query reflects the hub on resolve. Replaces
+ * the old per-message backfill loop (one `openInboxMessage` per pointer).
+ */
+export async function syncConversationMessages(conversationId: string): Promise<void> {
+  const action = new ActionInfo('conversation-message-sync', null, null, 'POST');
+  action.bodyParameters = { conversation_id: conversationId };
+  await dataManager.callAction(action);
+}
+
 /** Bulk mark all read / unread / archive all */
 export async function bulkUpdateMessages(
   patch: { is_read?: boolean; is_archived?: boolean },

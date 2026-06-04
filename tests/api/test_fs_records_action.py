@@ -4,9 +4,9 @@ import pytest
 
 from flow_sdk.fs_store import set_default_records_root, get_default_records_root
 
-# Import record classes to trigger auto-registration in the type_registry.
-from flow_sdk.fs_records.skill_record import SkillRecord  # noqa: F401
-from flow_sdk.fs_records.task import TaskResource  # noqa: F401
+from flow_sdk.fs_store.indexer.functions.task import extract_task
+from flow_sdk.fs_store.fs_record import FSRecord
+TaskResource = FSRecord  # noqa: F401
 
 
 @pytest.fixture(autouse=True)

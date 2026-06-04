@@ -13,9 +13,9 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.fs_records.conversation_record import ConversationRecord
+from flow_sdk.fs_store.operations.conversation import default_data_dir, default_jsonl_path, from_jsonl
 from flow_sdk.fs_store import RecordType
-from flow_sdk.fs_store.record import get_default_records_data_root, record_stem
+from flow_sdk.fs_store.record_paths import get_default_records_data_root, record_stem
 
 # ---------------------------------------------------------------------------
 # Existing happy paths — updated to the new on-disk contract.
@@ -67,7 +67,7 @@ async def test_conversation_create_under_project_upserts_participants(bootstrapp
     # Standard records-data location. ``data_path`` is now a derived
     # @property on ``Conversation`` (not a stored field), so it isn't part
     # of the API payload — we just verify the canonical path exists on disk.
-    expected_jsonl = ConversationRecord.default_jsonl_path(conv_id)
+    expected_jsonl = default_jsonl_path(conv_id)
     assert expected_jsonl.exists(), f"expected {expected_jsonl} to exist"
 
     # Both emails are now Users in the contact list.
@@ -156,7 +156,7 @@ async def test_append_conversation_writes_into_records_data_jsonl(bootstrapped_c
     assert append.json()["status"] == "SUCCESS"
 
     # The pointer line lands in the records-data-rooted jsonl.
-    jsonl_path = ConversationRecord.default_jsonl_path(conv_id)
+    jsonl_path = default_jsonl_path(conv_id)
     assert jsonl_path.exists()
     contents = jsonl_path.read_text(encoding="utf-8")
     assert append.json()["data"]["flow_message_id"] in contents
@@ -180,7 +180,7 @@ async def test_two_creates_yield_two_distinct_records_data_dirs(bootstrapped_cli
         )
         ids.append(resp.json()["data"]["conversation_id"])
 
-    a, b = (ConversationRecord.default_data_dir(i) for i in ids)
+    a, b = (default_data_dir(i) for i in ids)
     assert a != b
     assert a.exists() and b.exists()
     assert a.parent == b.parent  # both under <root>/conversation/
@@ -205,7 +205,7 @@ async def test_jsonl_path_not_under_project_mount(bootstrapped_client):
         json={"project_id": project_id, "participants": []},
     )
     conv_id = resp.json()["data"]["conversation_id"]
-    jsonl = ConversationRecord.default_jsonl_path(conv_id).resolve()
+    jsonl = default_jsonl_path(conv_id).resolve()
 
     assert mount_path not in jsonl.parents, (
         f"jsonl {jsonl} unexpectedly lives under project mount {mount_path}"
@@ -266,7 +266,7 @@ async def test_create_under_system_project_does_not_touch_sdk_tree(bootstrapped_
     assert resp.status_code == 200, resp.text
     conv_id = resp.json()["data"]["conversation_id"]
 
-    jsonl = ConversationRecord.default_jsonl_path(conv_id).resolve()
+    jsonl = default_jsonl_path(conv_id).resolve()
     assert mount_path not in jsonl.parents
     assert "system_projects" not in jsonl.parts
 
@@ -291,7 +291,7 @@ async def test_directory_uses_canonical_record_stem_not_slug(bootstrapped_client
     )
     conv_id = resp.json()["data"]["conversation_id"]
 
-    parent_dir = ConversationRecord.default_jsonl_path(conv_id).parent
+    parent_dir = default_jsonl_path(conv_id).parent
     assert parent_dir.name == f"{RecordType.CONVERSATION}-@{conv_id}"
     assert "leak-check" not in parent_dir.name
     assert "@" not in parent_dir.name.replace("-@", "")  # only the canonical separator

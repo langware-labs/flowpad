@@ -1,18 +1,20 @@
 import { AssetEditorRouter, hasEditor } from '@src/components/assets/editor/AssetEditorRouter';
 import { WikiResolveView } from '@src/components/assets/editor/WikiResolveView';
+import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
+import { AssetMode, AssetRoutingMethod, DEFAULT_WIKI_SPACE } from '@src/navigation/asset-doc-types';
 import { InputDialog } from '@src/components/ui/input-dialog';
 import { Button } from '@src/components/ui/button';
 import { getDescriptor } from '@src/components/quick-create';
 import { RecordSearchBar } from '@src/components/record-search-bar/RecordSearchBar';
 import { InlineSearchResults } from '@src/pages/home-landing/InlineSearchResults';
 import type { SearchFilters, SearchResult as RecordSearchResult } from '@src/hooks/use-record-search';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { navigateToResult } from '@src/navigation/record-type-nav';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { dataContext, RecordType, systemTools } from '@sdk';
+import { dataContext, fsManager, fsStore, RecordType, systemTools, TypeId, VFSPath } from '@sdk';
 import apiClient from '@sdk/client';
-import { BookOpen, ChevronRight, PackageSearch, PanelLeft, PanelLeftClose, X } from 'lucide-react';
+import { AlertCircle, BookOpen, ChevronRight, PackageSearch, PanelLeft, PanelLeftClose, X } from 'lucide-react';
 import {
   Breadcrumb,
   BreadcrumbItem,
@@ -25,14 +27,25 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tool
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { AssetFilter } from './assetFilter';
 import { DEFAULT_ASSET_FILTER } from './assetFilter';
-import { defaultScopeFilter } from '@src/lib/scope-filter';
+import { applyScopeToParams, defaultScopeFilter } from '@src/lib/scope-filter';
 import type { ScopeFilter } from '@src/lib/scope-filter';
+import { useIndexStatus } from '@src/hooks/use-index-status';
+import { formatTimeAgo } from '@src/utils/format-time-ago';
 import { projectIdForPath } from './utils';
 import { ScopeFilterBar } from '@src/components/scope-filter/ScopeFilterBar';
+import { ProjectScopeBadge } from './ProjectScopeBadge';
+import { ViewType } from '@src/types/ViewType';
 import { AssetListView } from './AssetListView';
+import { MarkdownIndexPanel } from './MarkdownIndexPanel';
 import { BrowseableTree } from '@src/components/browseable-tree';
+import { refreshNode } from '@src/components/browseable-tree/refresh-store';
 import { assetTypeRoot } from '@src/components/browseable-tree/adapters/assetTypeRoot';
-import { markdownFolderRoot } from '@src/components/browseable-tree/adapters/markdownFolderRoot';
+import {
+  markdownFolderNodeId,
+  markdownFolderRoot,
+  type MarkdownDragItem,
+  type MarkdownFolderTarget,
+} from '@src/components/browseable-tree/adapters/markdownFolderRoot';
 import { useAssetTypes, type AssetTypeVault } from '@src/hooks/use-asset-types';
 import { useSystemTools } from '@src/hooks/use-system-tools';
 import type { SearchResult } from '@src/hooks/use-asset-search';
@@ -60,11 +73,13 @@ interface ParsedAssetPointer {
   folderRelPath: string | null;
   /** Only set when mode === 'wiki'. Decoded link target name. */
   wikiName: string | null;
+  /** Only set when mode === 'wiki'. The space the name resolves within (default @local). */
+  wikiSpace: string | null;
 }
 
 function parseAssetPointer(pointer: string | undefined): ParsedAssetPointer {
   const empty: ParsedAssetPointer = {
-    mode: null, typeName: null, folderTypeid: null, folderRelPath: null, wikiName: null,
+    mode: null, typeName: null, folderTypeid: null, folderRelPath: null, wikiName: null, wikiSpace: null,
   };
   if (!pointer) return empty;
   if (pointer.startsWith('editor/')) {
@@ -86,10 +101,14 @@ function parseAssetPointer(pointer: string | undefined): ParsedAssetPointer {
     }
   }
   if (pointer.startsWith('wiki/')) {
-    const raw = pointer.slice('wiki/'.length);
+    // Canonical grammar: wiki/<space>/<name>. Space defaults to @local.
+    const rest = pointer.slice('wiki/'.length);
+    const slash = rest.indexOf('/');
+    const space = slash >= 0 ? rest.slice(0, slash) : DEFAULT_WIKI_SPACE;
+    const raw = slash >= 0 ? rest.slice(slash + 1) : rest;
     let name = raw;
     try { name = decodeURIComponent(raw); } catch { /* keep raw */ }
-    return { ...empty, mode: 'wiki', typeName: 'markdown', wikiName: name || null };
+    return { ...empty, mode: 'wiki', typeName: 'markdown', wikiName: name || null, wikiSpace: space || DEFAULT_WIKI_SPACE };
   }
   return empty;
 }
@@ -144,6 +163,58 @@ const SIDEBAR_WIDTH_KEY = 'wiki:sidebar-width';
 const SIDEBAR_DEFAULT_WIDTH = 224;
 const SIDEBAR_MIN_WIDTH = 160;
 const SIDEBAR_MAX_WIDTH = 560;
+
+function normalizeTreePath(path: string): string {
+  return path.replace(/^\/+/, '').replace(/\/+$/, '');
+}
+
+function basenamePath(path: string): string {
+  const trimmed = path.replace(/\/+$/, '');
+  const idx = trimmed.lastIndexOf('/');
+  return idx >= 0 ? trimmed.slice(idx + 1) : trimmed;
+}
+
+function dirnamePath(path: string): string {
+  const trimmed = path.replace(/\/+$/, '');
+  const idx = trimmed.lastIndexOf('/');
+  if (idx < 0) return '';
+  if (idx === 0) return '/';
+  return trimmed.slice(0, idx);
+}
+
+/**
+ * Extract the editor + absolute path from a vfs-addressed editor pointer, for
+ * the rename/move "follow the open file" logic. Returns null for typeid/code/
+ * wiki pointers (no file path in the URL to follow).
+ */
+function parseAssetEditorPointer(pointer: string | undefined): { typeName: string; absPath: string } | null {
+  if (!pointer?.startsWith('editor/')) return null;
+  let ptr: AssetDocPointer;
+  try {
+    ptr = AssetDocPointer.parse(pointer);
+  } catch {
+    return null;
+  }
+  if (ptr.mode !== AssetMode.EDITOR || ptr.method !== AssetRoutingMethod.VFS || !ptr.editor) return null;
+  const vfs = VFSPath.parse(ptr.value);
+  return { typeName: ptr.editor, absPath: `/${vfs.entitySubPath.replace(/^\/+/, '')}` };
+}
+
+function joinRelPath(parent: string, name: string): string {
+  const base = normalizeTreePath(parent);
+  const cleanName = name.replace(/^\/+/, '').replace(/\/+$/, '');
+  return base ? `${base}/${cleanName}` : cleanName;
+}
+
+function joinAbsPath(parent: string, name: string): string {
+  const base = parent.replace(/\/+$/, '');
+  const cleanName = name.replace(/^\/+/, '').replace(/\/+$/, '');
+  return base && base !== '/' ? `${base}/${cleanName}` : `/${cleanName}`;
+}
+
+function isValidFolderName(name: string): boolean {
+  return !!name && name !== '.' && name !== '..' && !/[\\/]/.test(name);
+}
 
 /** Breadcrumb rendered above the folder-filtered AssetListView. Each crumb
  *  except the last navigates to that ancestor; the last is the current page.
@@ -206,7 +277,6 @@ function FolderBreadcrumb({
 }
 
 export function AssetsPage() {
-  const { toast } = useToast();
   const { currentDock, navigation } = useDockNavigation();
   const { types: allTypes, isLoading: typesLoading } = useAssetTypes();
   const { indexType, busy, resetAndRescan } = useSystemTools();
@@ -214,18 +284,42 @@ export function AssetsPage() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [newTypeTarget, setNewTypeTarget] = useState<string | null>(null);
   const [newTypeDialogOpen, setNewTypeDialogOpen] = useState(false);
+  const [newFolderTarget, setNewFolderTarget] = useState<MarkdownFolderTarget | null>(null);
+  const [newFolderDialogOpen, setNewFolderDialogOpen] = useState(false);
   // Use the canonical synthetic project_id (uuid5 of mount_path) so the
   // selection round-trips with what the indexer stamps on records and what
   // the picker emits — independent of how dataContext bootstraps the Project.
   const currentProjectId = projectIdForPath(dataContext.project?.fs_storage_mount_path);
+  // When hosted under `/dock/project/<id>`, the project is locked from the URL.
+  // The first segment of the pointer is the projectId; the rest is the same
+  // sub-pointer shape AssetsPage already uses under `/dock/assets/<sub>`.
+  const isProjectView = currentDock?.viewType === ViewType.PROJECT;
+  const { projectId: urlProjectId, assetSubPointer } = isProjectView
+    ? DockPointer.splitProjectPointer(currentDock?.pointer)
+    : { projectId: null, assetSubPointer: currentDock?.pointer ?? '' };
+  // Memoized so downstream `useMemo`/`useCallback` deps stay stable across
+  // renders — without this, every render rebuilt `wikiRoots`, `listFilter`,
+  // and `handleMoveMarkdownItem` because the spread produced a fresh object.
+  const lockedScope = useMemo(
+    () => (urlProjectId ? defaultScopeFilter(urlProjectId) : null),
+    [urlProjectId],
+  );
+  const effectivePointer = isProjectView ? assetSubPointer : (currentDock?.pointer ?? '');
   // Initial scope seeded from the current project so the Project chip's count
   // is accurate from the first render. Seeding lives in `defaultScopeFilter`
   // (lib/scope-filter.ts) so every surface gets the same context-aware default
   // instead of each consumer reinventing it.
   const [assetFilter, setAssetFilter] = useState<AssetFilter>(() => ({
     ...DEFAULT_ASSET_FILTER,
-    scope: defaultScopeFilter(currentProjectId),
+    scope: lockedScope ?? defaultScopeFilter(currentProjectId),
   }));
+  // When locked, force the scope from the URL every render. Without this,
+  // useState would hold the seed from the first mount and the asset list
+  // would not refilter if the user navigates to a different project URL.
+  const effectiveFilter = useMemo<AssetFilter>(
+    () => (lockedScope ? { ...assetFilter, scope: lockedScope } : assetFilter),
+    [lockedScope, assetFilter],
+  );
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFilters, setSearchFilters] = useState<SearchFilters>({});
   const [selectedResultIndex, setSelectedResultIndex] = useState(-1);
@@ -242,15 +336,39 @@ export function AssetsPage() {
   });
   const [isResizingSidebar, setIsResizingSidebar] = useState(false);
 
+  // Project-page index state comes from the project record's own ``.hash``
+  // (the project IS a record): never_indexed → CTA, stale → "changes pending".
+  // Only meaningful under a locked project scope; global assets keep the plain
+  // "refresh search data" rebuild.
+  const { state: idxState, refresh: refreshIdxStatus } = useIndexStatus(
+    lockedScope ?? undefined,
+  );
+  const projIdx = isProjectView && idxState.phase === 'ready' ? idxState.status : null;
+  const neverIndexed = projIdx?.never_indexed ?? false;
+  const changesPending = projIdx?.stale ?? false;
+  const lastIndexedAt = projIdx?.last_indexed_at ?? null;
+
   useEffect(() => { setSelectedResultIndex(-1); }, [searchQuery]);
 
   useEffect(() => {
     void systemTools.refreshActivityStatus();
   }, []);
 
-  const handleRebuildIndex = useCallback(() => {
-    void resetAndRescan(assetFilter.scope);
-  }, [resetAndRescan, assetFilter]);
+  const handleRebuildIndex = useCallback(async () => {
+    // Project view → Fast index scoped to the project (re-stamps the project's
+    // own index sentinel). Global view → legacy full reset+rescan.
+    if (isProjectView) {
+      const params = new URLSearchParams();
+      applyScopeToParams(params, effectiveFilter.scope);
+      try {
+        await apiClient.post(`/graph/compute_node/@local/fs-records/index?${params.toString()}`);
+      } finally {
+        refreshIdxStatus();
+      }
+      return;
+    }
+    void resetAndRescan();
+  }, [isProjectView, effectiveFilter.scope, refreshIdxStatus, resetAndRescan]);
 
   const handleSearchSubmit = useCallback(() => {
     const q = searchQuery.trim();
@@ -306,8 +424,27 @@ export function AssetsPage() {
   }, [sidebarWidth]);
 
   const handleScopeChange = useCallback((scope: ScopeFilter) => {
+    if (lockedScope) return;
     setAssetFilter(prev => ({ ...prev, scope }));
-  }, []);
+  }, [lockedScope]);
+
+  // Asset-shaped pointers (`forAssetEditor`, `forAssetFolder`, `forAssetList`)
+  // open at `/dock/assets/<sub>`. Under `/dock/project/<id>` we must rebase
+  // them onto the project URL or every tree click, breadcrumb, or row click
+  // would jump out of the project shell.
+  const navigateAsset = useCallback((p: DockPointer) => {
+    navigation.openDock(DockPointer.rebaseAssetsOntoProject(p, urlProjectId));
+  }, [navigation, urlProjectId]);
+
+  // BrowseableTree's adapters key selection off `ViewType.ASSETS` pointers,
+  // so in project view we synthesize one from the sub-pointer. Memoized so
+  // the tree's `expandParentsForPointer` effect doesn't re-run every render.
+  const treeActivePointer = useMemo<DockPointer | null>(() => {
+    if (isProjectView) {
+      return new DockPointer(ViewType.ASSETS, effectivePointer || undefined);
+    }
+    return currentDock ?? null;
+  }, [isProjectView, effectivePointer, currentDock]);
 
   const {
     mode,
@@ -315,7 +452,8 @@ export function AssetsPage() {
     folderTypeid,
     folderRelPath,
     wikiName,
-  } = parseAssetPointer(currentDock?.pointer);
+    wikiSpace,
+  } = parseAssetPointer(effectivePointer);
   const isEditorMode = mode === 'editor';
   const isFolderMode = mode === 'folder';
   const isWikiMode = mode === 'wiki';
@@ -342,6 +480,114 @@ export function AssetsPage() {
     setNewTypeDialogOpen(true);
   }, []);
 
+  const handleCreateFolder = useCallback((target: MarkdownFolderTarget) => {
+    setNewFolderTarget(target);
+    setNewFolderDialogOpen(true);
+  }, []);
+
+  const handleNewFolderConfirm = useCallback(async (rawName: string) => {
+    const name = rawName.trim();
+    if (!newFolderTarget || !isValidFolderName(name)) {
+      notify.error({ title: 'Invalid folder name' });
+      return;
+    }
+
+    const typeId = new TypeId(newFolderTarget.typeid);
+    const folderRelPath = joinRelPath(newFolderTarget.relPath, name);
+
+    try {
+      if (await fsManager.exists(typeId, folderRelPath)) {
+        notify.error({ title: 'Folder already exists' });
+        return;
+      }
+      await fsManager.mkdir(typeId, folderRelPath);
+      fsStore.getState().invalidate(typeId, newFolderTarget.relPath || '/', 'browse');
+      refreshNode(markdownFolderNodeId(newFolderTarget.typeid, newFolderTarget.absPath));
+      setRefreshKey((k) => k + 1);
+      notify.success({ title: 'Folder created' });
+    } catch (err) {
+      console.error('[AssetsPage] Failed to create folder:', err);
+      notify.error({ title: 'Failed to create folder' });
+    } finally {
+      setNewFolderTarget(null);
+    }
+  }, [newFolderTarget]);
+
+  const handleMoveMarkdownItem = useCallback(async (
+    item: MarkdownDragItem,
+    target: MarkdownFolderTarget,
+  ) => {
+    const name = basenamePath(item.relPath) || item.label;
+    if (!name) return;
+
+    const typeId = new TypeId(item.typeid);
+    const sourceRel = normalizeTreePath(item.relPath);
+    const destRel = joinRelPath(target.relPath, name);
+    const destAbs = joinAbsPath(target.absPath, name);
+    const sourceParentRel = dirnamePath(sourceRel);
+    const sourceParentAbs = dirnamePath(item.absPath);
+
+    if (sourceRel === destRel) return;
+
+    try {
+      if (await fsManager.exists(typeId, destRel)) {
+        notify.error({ title: 'Destination already has an item with that name' });
+        return;
+      }
+
+      await fsManager.move(typeId, sourceRel, destRel);
+
+      const store = fsStore.getState();
+      store.invalidate(typeId, sourceRel, 'all');
+      store.invalidate(typeId, destRel, 'all');
+      store.invalidate(typeId, sourceParentRel || '/', 'browse');
+      store.invalidate(typeId, target.relPath || '/', 'browse');
+      refreshNode(markdownFolderNodeId(item.typeid, sourceParentAbs));
+      refreshNode(markdownFolderNodeId(item.typeid, target.absPath));
+
+      const activeEditor = parseAssetEditorPointer(effectivePointer);
+      const sourceAbs = item.absPath.replace(/\/+$/, '');
+      const activeEditorInMovedFolder = !!(
+        activeEditor &&
+        item.kind === 'markdown-folder' &&
+        activeEditor.typeName === item.typeName &&
+        activeEditor.absPath.startsWith(`${sourceAbs}/`)
+      );
+      if (activeEditor?.typeName === item.typeName && activeEditor.absPath === sourceAbs) {
+        navigateAsset(DockPointer.forAssetEditor(item.typeName, destAbs));
+      } else if (activeEditorInMovedFolder && activeEditor) {
+        const suffix = activeEditor.absPath.slice(sourceAbs.length).replace(/^\/+/, '');
+        const nextAbs = suffix ? `${destAbs}/${suffix}` : destAbs;
+        navigateAsset(DockPointer.forAssetEditor(item.typeName, nextAbs));
+      } else if (item.kind === 'markdown-folder' && effectivePointer) {
+        const folder = DockPointer.parseAssetFolderPointer(effectivePointer);
+        if (folder && folder.typeName === item.typeName && folder.typeid === item.typeid) {
+          const currentRel = normalizeTreePath(folder.relPath);
+          if (currentRel === sourceRel || currentRel.startsWith(`${sourceRel}/`)) {
+            const suffix = currentRel.slice(sourceRel.length).replace(/^\/+/, '');
+            const nextRel = suffix ? `${destRel}/${suffix}` : destRel;
+            navigateAsset(DockPointer.forAssetFolder(item.typeName, item.typeid, nextRel));
+          }
+        }
+      }
+
+      setRefreshKey((k) => k + 1);
+
+      try {
+        await indexType('markdown', effectiveFilter.scope, { force: true });
+      } catch (err) {
+        console.error('[AssetsPage] Markdown reindex after move failed:', err);
+        notify.error({ title: 'Moved, but reindex failed' });
+        return;
+      }
+
+      notify.success({ title: 'Moved' });
+    } catch (err) {
+      console.error('[AssetsPage] Failed to move markdown item:', err);
+      notify.error({ title: 'Failed to move item' });
+    }
+  }, [effectiveFilter.scope, effectivePointer, indexType, navigateAsset]);
+
   const wikiRoots = useMemo(
     () =>
       visibleTypes.map((t) => {
@@ -349,19 +595,33 @@ export function AssetsPage() {
           return markdownFolderRoot(t, {
             indexType,
             onNew: handleNew,
+            onCreateFolder: handleCreateFolder,
+            onMoveItem: handleMoveMarkdownItem,
             onScanComplete: handleScanComplete,
-            filter: assetFilter,
+            filter: effectiveFilter,
+            onOpenKnowledgeBrowser: (absPath) =>
+              navigation.openDock(DockPointer.forKnowledgeBrowser(absPath, 'vfs')),
           });
         }
         return assetTypeRoot(t, {
           indexType,
           onNew: handleNew,
           creatableTypes,
-          filter: assetFilter,
+          filter: effectiveFilter,
           onScanComplete: handleScanComplete,
         });
       }),
-    [visibleTypes, indexType, handleNew, creatableTypes, assetFilter, handleScanComplete],
+    [
+      visibleTypes,
+      indexType,
+      handleNew,
+      handleCreateFolder,
+      handleMoveMarkdownItem,
+      creatableTypes,
+      effectiveFilter,
+      handleScanComplete,
+      navigation,
+    ],
   );
 
   // Resolve the absolute path of the selected folder (from vault metadata),
@@ -381,34 +641,34 @@ export function AssetsPage() {
 
   const listFilter = useMemo<AssetFilter>(() => {
     if (isFolderMode && folderAbsPath) {
-      return { ...assetFilter, parentPath: folderAbsPath };
+      return { ...effectiveFilter, parentPath: folderAbsPath };
     }
-    return assetFilter;
-  }, [assetFilter, isFolderMode, folderAbsPath]);
+    return effectiveFilter;
+  }, [effectiveFilter, isFolderMode, folderAbsPath]);
 
   const handleNewConfirm = useCallback(async (name: string) => {
     if (!name.trim() || !newTypeTarget) return;
     const descriptor = getDescriptor(newTypeTarget);
     if (!descriptor) {
-      toast({ title: `Cannot create ${newTypeTarget}`, variant: 'destructive' });
+      notify.error({ title: `Cannot create ${newTypeTarget}` });
       setNewTypeTarget(null);
       return;
     }
     try {
       const res = await descriptor.create({ project: dataContext.project ?? null, name });
-      toast({ title: res.toastTitle });
+      notify.success({ title: res.toastTitle });
       if (res.pointer) {
-        navigation.openDock(res.pointer);
+        navigateAsset(res.pointer);
         setNewTypeTarget(null);
         return;
       }
       setRefreshKey((k) => k + 1);
     } catch (err) {
       console.error('[AssetsPage] Failed to create:', err);
-      toast({ title: 'Failed to create', variant: 'destructive' });
+      notify.error({ title: 'Failed to create' });
     }
     setNewTypeTarget(null);
-  }, [newTypeTarget, navigation, toast]);
+  }, [newTypeTarget, navigateAsset]);
 
   const handleRowClick = useCallback((result: SearchResult) => {
     // Projects open in their collaboration space (the "project room"), not
@@ -419,17 +679,17 @@ export function AssetsPage() {
     }
     const path = result.asset_ref;
     if (!path || !path.startsWith('/')) {
-      toast({
+      notify.error({
         title: 'Asset has no file on disk',
-        description: `${result.name || result.record_id} is indexed without a valid source path and cannot be opened.`,
-        variant: 'destructive',
+        message: `${result.name || result.record_id} is indexed without a valid source path and cannot be opened.`,
       });
       return;
     }
-    navigation.openDock(DockPointer.forAssetEditor(result.record_type, path));
-  }, [navigation, toast]);
+    navigateAsset(DockPointer.forAssetEditor(result.record_type, path));
+  }, [navigateAsset, navigation]);
 
   const handleProjectFilter = useCallback(async (label: string) => {
+    if (lockedScope) return;
     try {
       const data = await apiClient.get('/search?record_type=project&limit=200') as { results?: { record_id: string; name: string }[] } | null;
       const projects = data?.results ?? [];
@@ -443,7 +703,7 @@ export function AssetsPage() {
     } catch {
       // ignore
     }
-  }, []);
+  }, [lockedScope]);
 
   return (
     <div className="flex h-full flex-col">
@@ -488,27 +748,60 @@ export function AssetsPage() {
               </div>
             )}
           </div>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-9 w-9 shrink-0"
-                onClick={handleRebuildIndex}
-                disabled={busy}
-                aria-label="Refresh search data"
-                data-testid="rebuild-index"
-              >
-                <PackageSearch className={`h-4 w-4 ${busy ? 'animate-spin' : ''}`} />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Refresh search data</TooltipContent>
-          </Tooltip>
-          <ScopeFilterBar
-            scope={assetFilter.scope}
-            currentProjectId={currentProjectId}
-            onScopeChange={handleScopeChange}
-          />
+          {isProjectView && neverIndexed ? (
+            // Never indexed → clear call-to-action (same action, clearer label).
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 shrink-0 gap-1.5"
+              onClick={() => void handleRebuildIndex()}
+              disabled={busy}
+              data-testid="index-now-cta"
+            >
+              <PackageSearch className={`h-4 w-4 ${busy ? 'animate-spin' : ''}`} />
+              Index now
+            </Button>
+          ) : (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="relative h-9 w-9 shrink-0"
+                  onClick={() => void handleRebuildIndex()}
+                  disabled={busy}
+                  aria-label={isProjectView ? 'Re-index project' : 'Refresh search data'}
+                  data-testid="rebuild-index"
+                >
+                  <PackageSearch className={`h-4 w-4 ${busy ? 'animate-spin' : ''}`} />
+                  {isProjectView && changesPending && (
+                    <AlertCircle
+                      className="absolute -right-0.5 -top-0.5 h-3 w-3 text-amber-500"
+                      data-testid="changes-pending-badge"
+                    />
+                  )}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {isProjectView
+                  ? changesPending
+                    ? 'Changes pending next index'
+                    : lastIndexedAt
+                      ? `Last indexed ${formatTimeAgo(lastIndexedAt)}`
+                      : 'Re-index project'
+                  : 'Refresh search data'}
+              </TooltipContent>
+            </Tooltip>
+          )}
+          {lockedScope && urlProjectId ? (
+            <ProjectScopeBadge projectId={urlProjectId} />
+          ) : (
+            <ScopeFilterBar
+              scope={effectiveFilter.scope}
+              currentProjectId={currentProjectId}
+              onScopeChange={handleScopeChange}
+            />
+          )}
         </div>
       </div>
 
@@ -524,9 +817,9 @@ export function AssetsPage() {
           <div className="h-full overflow-y-auto" style={{ width: sidebarWidth }}>
             <BrowseableTree
               roots={wikiRoots}
-              activePointer={currentDock ?? null}
+              activePointer={treeActivePointer}
               isLoading={typesLoading && wikiRoots.length === 0}
-              onNavigate={(p) => navigation.openDock(p)}
+              onNavigate={navigateAsset}
             />
           </div>
         </div>
@@ -548,27 +841,30 @@ export function AssetsPage() {
         {/* Main content: editor when in editor mode, list view otherwise */}
         <div className="min-w-0 flex-1">
           {isWikiMode && wikiName ? (
-            <WikiResolveView name={wikiName} />
-          ) : isEditorMode && currentDock?.pointer ? (
-            <AssetEditorRouter pointer={currentDock.pointer} />
+            <WikiResolveView name={wikiName} space={wikiSpace ?? DEFAULT_WIKI_SPACE} />
+          ) : isEditorMode && effectivePointer ? (
+            <AssetEditorRouter pointer={effectivePointer} />
           ) : isFolderMode ? (
-            <div className="flex h-full flex-col">
-              <FolderBreadcrumb
-                crumbs={folderCrumbs}
-                onNavigate={(p) => navigation.openDock(p)}
-                onClear={() => navigation.openDock(DockPointer.forAssetList('markdown'))}
-              />
-              <div className="min-h-0 flex-1">
-                <AssetListView
-                  recordType="markdown"
-                  onNew={creatableTypes.has('markdown') ? () => handleNew('markdown') : undefined}
-                  refreshKey={refreshKey}
-                  onRowClick={hasEditor('markdown') ? handleRowClick : undefined}
-                  filter={listFilter}
-                  onFilterChange={setAssetFilter}
-                  onProjectFilter={handleProjectFilter}
+            <div className="flex h-full">
+              <div className="flex min-w-0 flex-1 flex-col">
+                <FolderBreadcrumb
+                  crumbs={folderCrumbs}
+                  onNavigate={navigateAsset}
+                  onClear={() => navigateAsset(DockPointer.forAssetList('markdown'))}
                 />
+                <div className="min-h-0 flex-1">
+                  <AssetListView
+                    recordType="markdown"
+                    onNew={creatableTypes.has('markdown') ? () => handleNew('markdown') : undefined}
+                    refreshKey={refreshKey}
+                    onRowClick={hasEditor('markdown') ? handleRowClick : undefined}
+                    filter={listFilter}
+                    onFilterChange={setAssetFilter}
+                    onProjectFilter={handleProjectFilter}
+                  />
+                </div>
               </div>
+              {folderAbsPath && <MarkdownIndexPanel folderAbsPath={folderAbsPath} />}
             </div>
           ) : selectedType ? (
             <AssetListView
@@ -576,7 +872,7 @@ export function AssetsPage() {
               onNew={creatableTypes.has(selectedType) ? () => handleNew(selectedType) : undefined}
               refreshKey={refreshKey}
               onRowClick={hasEditor(selectedType) ? handleRowClick : undefined}
-              filter={assetFilter}
+              filter={effectiveFilter}
               onFilterChange={setAssetFilter}
               onProjectFilter={handleProjectFilter}
             />
@@ -596,6 +892,15 @@ export function AssetsPage() {
         placeholder="Name"
         confirmLabel="Create"
         onConfirm={(name) => void handleNewConfirm(name)}
+      />
+      <InputDialog
+        open={newFolderDialogOpen}
+        onOpenChange={setNewFolderDialogOpen}
+        title="New Folder"
+        description={`Create a folder in ${newFolderTarget?.label ?? 'this folder'}.`}
+        placeholder="Folder name"
+        confirmLabel="Create"
+        onConfirm={(name) => void handleNewFolderConfirm(name)}
       />
     </div>
   );

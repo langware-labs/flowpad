@@ -26,16 +26,17 @@ export class Skill extends APIEntity<Skill> {
     this.scope = entity.scope;
   }
 
+  /** Default open target: the asset editor (URL-first navigate target). */
+  override get dockPointer(): DockPointerData {
+    return this.assetEditorPointer('skill') ?? super.dockPointer;
+  }
+
   override get editorDockPointer(): DockPointerData {
-    const path = this.asset_ref ?? this.id;
-    return new DockPointerData(ViewType.ASSETS, `editor/skill/${path}`);
+    return this.assetEditorPointer('skill') ?? super.editorDockPointer;
   }
 
   override get searchDockPointer(): DockPointerData {
-    if (this.asset_ref) {
-      return new DockPointerData(ViewType.ASSETS, `editor/skill/${this.asset_ref.replace(/^\//, '')}`);
-    }
-    return this.dockPointer;
+    return this.assetEditorPointer('skill') ?? this.dockPointer;
   }
 
   /** FrontMatterFsRef for SKILL.md. Resolves compute node from dataContext. */

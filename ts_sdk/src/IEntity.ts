@@ -45,6 +45,11 @@ export interface IEntity extends Partial<IResource> {
   /** True when this entity has a hub-side counterpart at the same id; refreshable from the hub. */
   remote?: boolean;
   /**
+   * Canonical parent reference as a "<type>-<id>" TypeId string. Single source
+   * of truth for parentage (supersedes the legacy per-type ``data.parent_id``).
+   */
+  parent_type_id?: string | null;
+  /**
    * Wire-bound shared context. Each entry is a TypeId-formatted string
    * ("type-id"). Read via the typed ``sharedContextEntities`` getter.
    * Frontend code must NOT push to this array directly — call a backend
@@ -59,6 +64,22 @@ export interface IEntity extends Partial<IResource> {
    * private context locally** — it just renders this array as-is.
    */
   private_context_entities?: string[];
+  /**
+   * Per-entry sidecar data harvested by the backend at detection time.
+   * Keyed by ``str(typeid)``. For file-backed entries this is typically
+   * ``{path}`` so the dock loader can self-heal a 404 via ``?hint_path=...``
+   * without a reverse-id lookup. Read via ``getContextEntryData(typeid)``.
+   *
+   * BOTH fields are LOCAL-ONLY despite the "shared/private" prefix — the
+   * prefix tracks which typeid bucket the entry indexes, not its wire
+   * visibility. The stored ``path`` is an absolute filesystem path on the
+   * writer's machine. The backend's ``share()`` excludes both fields from
+   * the hub push so peers don't receive each other's local FS layout.
+   * ``toJSON`` does still emit the shared sidecar so FE→local-BE
+   * round-trips preserve the hint within the same machine.
+   */
+  shared_context_entity_data?: Record<string, Record<string, unknown>>;
+  private_context_entity_data?: Record<string, Record<string, unknown>>;
 }
 
 export const defaultEntityType = 'entity_base';

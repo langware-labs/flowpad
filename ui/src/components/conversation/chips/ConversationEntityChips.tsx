@@ -38,7 +38,9 @@ export function ConversationEntityChips({ conversation }: ConversationEntityChip
       {chips.map((typeId) => {
         const key = ChipKey.forTypeId(typeId);
         if (exclude.has(key)) return null;
-        return <ContextEntityChip key={key} typeId={typeId} inside={inside} />;
+        return (
+          <ContextEntityChip key={key} typeId={typeId} inside={inside} />
+        );
       })}
     </>
   );

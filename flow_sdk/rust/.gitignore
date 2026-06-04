@@ -1,0 +1,8 @@
+target/
+Cargo.lock
+__pycache__/
+*.pyc
+.pytest_cache/
+*.so
+*.dylib
+*.pyd

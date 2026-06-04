@@ -1,69 +1,79 @@
-"""Phase 7b skip-fresh tests.
+"""Skip-fresh tests for the on-disk ``.hash`` index-state model.
 
-Covers the `asset_hash` / `is_valid` API on Record and the DB-preload
-skip-fresh path in `FSIndexer.index()`.
+Covers the ``FSRecord`` index-state block (``record_hash`` / ``indexed_hash`` /
+``indexed_at`` / ``index_required`` / ``orphan`` / ``write_hash``) and the
+indexer's ``.hash``-based skip-fresh path in ``FSIndexer.index()``. Freshness
+reuses the existing ``FSRef.fingerprint`` (mtime+size), digested into the
+sentinel filename — there is no parallel hash primitive.
 """
 
 from __future__ import annotations
 
-import asyncio
 import os
 import time as _time
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
 
 from flow_sdk.db import get_db_driver
 from flow_sdk.fs_store.fs_ref import FSRef
+from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.indexer import FSIndexer, IndexerOptions
 from flow_sdk.fs_store.indexer.functions.markdown import markdown_flat_fn
 from flow_sdk.fs_store.record_types import RecordType
-from flow_sdk.fs_records.markdown_record import MarkdownRecord
 
 
-@pytest.mark.asyncio
-async def test_asset_hash_reads_source_mtime(tmp_path: Path) -> None:
-    md = tmp_path / "x.md"
-    md.write_text("# hi\n", encoding="utf-8")
-    rec = MarkdownRecord.from_file(md)
-    ah = rec.asset_hash
-    assert ah > 0
-    assert abs(ah - md.stat().st_mtime) < 0.1
+# ── FSRecord index-state block ───────────────────────────────────────────
 
-
-def test_asset_hash_for_ref_file(tmp_path: Path) -> None:
-    md = tmp_path / "x.md"
-    md.write_text("# hi\n")
-    ref = FSRef(md, read_only=True)
-    ts = MarkdownRecord.asset_hash_for_ref(ref)
-    assert ts == md.stat().st_mtime
-
-
-@pytest.mark.asyncio
-async def test_is_valid_requires_updated_date_newer_than_asset(tmp_path: Path) -> None:
-    md = tmp_path / "y.md"
+def test_record_hash_nonempty_and_changes_with_source(tmp_path: Path) -> None:
+    md = tmp_path / "doc.md"
     md.write_text("body", encoding="utf-8")
+    rec = FSRecord(type="markdown", id="t-doc-1", asset_ref=FSRef(md))
+    h1 = rec.record_hash
+    assert h1  # non-empty digest
+    new_ts = _time.time() + 5
+    os.utime(md, (new_ts, new_ts))
+    assert FSRecord(type="markdown", id="t-doc-1", asset_ref=FSRef(md)).record_hash != h1
 
-    rec = MarkdownRecord.from_file(md)
-    # No updated_date → not valid
-    assert rec.is_valid() is False
 
-    # updated_date in the past → asset is newer → not valid
-    past = datetime.fromtimestamp(md.stat().st_mtime - 10, tz=timezone.utc)
-    object.__getattribute__(rec, "__dict__")["updated_date"] = past
-    assert rec.is_valid() is False
+def test_index_required_and_write_hash(tmp_path: Path) -> None:
+    md = tmp_path / "doc.md"
+    md.write_text("body", encoding="utf-8")
+    rec = FSRecord(type="markdown", id="t-doc-2", asset_ref=FSRef(md))
 
-    # updated_date in the future → valid
-    future = datetime.fromtimestamp(md.stat().st_mtime + 10, tz=timezone.utc)
-    object.__getattribute__(rec, "__dict__")["updated_date"] = future
-    assert rec.is_valid() is True
+    # Never indexed → no sentinel → required, no timestamp.
+    assert rec.indexed_hash is None
+    assert rec.indexed_at is None
+    assert rec.index_required is True
 
+    rec.write_hash()
+    assert rec.indexed_hash == rec.record_hash
+    assert rec.indexed_at is not None
+    assert rec.index_required is False
+
+    # Source changes → required again.
+    new_ts = _time.time() + 5
+    os.utime(md, (new_ts, new_ts))
+    assert FSRecord(type="markdown", id="t-doc-2", asset_ref=FSRef(md)).index_required is True
+
+    rec.clear_hash()
+    assert FSRecord(type="markdown", id="t-doc-2", asset_ref=FSRef(md)).indexed_hash is None
+
+
+def test_record_orphan_dynamic(tmp_path: Path) -> None:
+    md = tmp_path / "doc.md"
+    md.write_text("body", encoding="utf-8")
+    rec = FSRecord(type="markdown", id="t-orphan-1", asset_ref=FSRef(md))
+    assert rec.orphan is False
+    md.unlink()
+    assert rec.orphan is True
+
+
+# ── Indexer integration ──────────────────────────────────────────────────
 
 @pytest.mark.asyncio
 async def test_indexer_skips_fresh_on_second_run(tmp_path: Path) -> None:
-    """First run indexes, second run should report every ref as skipped."""
-    # markdown_flat_fn looks under <root>/.claude/docs/**/*.md
+    """First run indexes, second run skips by hash, a mutated file re-indexes."""
     root = tmp_path / "proj"
     docs = root / ".claude" / "docs"
     docs.mkdir(parents=True)
@@ -71,29 +81,24 @@ async def test_indexer_skips_fresh_on_second_run(tmp_path: Path) -> None:
     (docs / "b.md").write_text("# b\n", encoding="utf-8")
 
     driver = get_db_driver()
-
     idx = FSIndexer()
     idx.add_root(FSRef(root, record_type=RecordType.USER_HOME_FOLDER))
     idx.add_function(RecordType.USER_HOME_FOLDER, markdown_flat_fn)
-
-    # Clean any prior MARKDOWN rows for these two paths.
     await driver.delete_entities_by_type(str(RecordType.MARKDOWN))
 
-    # First run: everything new.
     r1 = await idx.index(IndexerOptions(verbose=False, types=[RecordType.MARKDOWN]))
     per1 = r1.per_type.get(RecordType.MARKDOWN)
     assert per1 is not None, f"no MARKDOWN in result: {r1.per_type.keys()}"
     assert per1.indexed == 2
     assert per1.skipped == 0
 
-    # Second run: DB rows exist with updated_date >= asset mtime → all skipped.
+    # Second run: sentinels exist, sources unchanged → all skipped (no DB read).
     r2 = await idx.index(IndexerOptions(verbose=False, types=[RecordType.MARKDOWN]))
     per2 = r2.per_type[RecordType.MARKDOWN]
     assert per2.indexed == 0
     assert per2.skipped == 2
 
-    # Mutate one file → it should re-index while the other stays skipped.
-    # mtime has 1s resolution on some filesystems — push 2s to be safe.
+    # Mutate one file → it re-indexes; the other stays skipped.
     new_ts = _time.time() + 2
     (docs / "a.md").write_text("# a updated\n", encoding="utf-8")
     os.utime(docs / "a.md", (new_ts, new_ts))
@@ -105,12 +110,8 @@ async def test_indexer_skips_fresh_on_second_run(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_indexer_restamps_stale_scope_on_skip_fresh(tmp_path: Path) -> None:
-    """Skip-fresh must NOT skip rows whose stored scope differs from the
-    FSRef walk's scope — those rows were written before scope-stamping was
-    wired and need re-parsing to pick up the walk-time value."""
-    from sqlalchemy import text
-
+async def test_force_reindexes_everything(tmp_path: Path) -> None:
+    """`force` (Full mode) bypasses the sentinel and re-indexes unchanged files."""
     root = tmp_path / "proj"
     docs = root / ".claude" / "docs"
     docs.mkdir(parents=True)
@@ -119,43 +120,12 @@ async def test_indexer_restamps_stale_scope_on_skip_fresh(tmp_path: Path) -> Non
 
     driver = get_db_driver()
     await driver.delete_entities_by_type(str(RecordType.MARKDOWN))
-
     idx = FSIndexer()
-    # Root carries scope=user so the walk stamps every produced record.
-    idx.add_root(FSRef(root, record_type=RecordType.USER_HOME_FOLDER, scope="user"))
+    idx.add_root(FSRef(root, record_type=RecordType.USER_HOME_FOLDER))
     idx.add_function(RecordType.USER_HOME_FOLDER, markdown_flat_fn)
 
-    # First run — both rows indexed with scope=user.
-    r1 = await idx.index(IndexerOptions(verbose=False, types=[RecordType.MARKDOWN]))
-    assert r1.per_type[RecordType.MARKDOWN].indexed == 2
-
-    async with driver._session_ctx() as session:
-        rows = (await session.execute(
-            text("SELECT id, json_extract(data, '$.scope') FROM entities WHERE type='markdown'")
-        )).fetchall()
-    assert len(rows) == 2
-    assert all(r[1] == "user" for r in rows), f"expected scope=user, got {[r[1] for r in rows]}"
-
-    # Corrupt one row: strip scope from its JSON blob.
-    victim_id = rows[0][0]
-    async with driver._session_ctx() as session:
-        await session.execute(
-            text("UPDATE entities SET data = json_remove(data, '$.scope') WHERE id = :i"),
-            {"i": victim_id},
-        )
-        await session.commit()
-
-    # Second run, no `force` — the un-corrupted row stays fresh (skipped),
-    # the corrupted row must be re-parsed so its scope gets re-stamped.
-    r2 = await idx.index(IndexerOptions(verbose=False, types=[RecordType.MARKDOWN]))
-    per2 = r2.per_type[RecordType.MARKDOWN]
-    assert per2.indexed == 1, f"expected 1 re-parse, got {per2.indexed}"
-    assert per2.skipped == 1, f"expected 1 skipped, got {per2.skipped}"
-
-    # The corrupted row should now have scope=user again.
-    async with driver._session_ctx() as session:
-        scope_after = (await session.execute(
-            text("SELECT json_extract(data, '$.scope') FROM entities WHERE id = :i"),
-            {"i": victim_id},
-        )).scalar()
-    assert scope_after == "user", f"scope not re-stamped: {scope_after!r}"
+    await idx.index(IndexerOptions(verbose=False, types=[RecordType.MARKDOWN]))
+    rf = await idx.index(IndexerOptions(verbose=False, types=[RecordType.MARKDOWN], force=True))
+    perf = rf.per_type[RecordType.MARKDOWN]
+    assert perf.indexed == 2
+    assert perf.skipped == 0

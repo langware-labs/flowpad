@@ -23,7 +23,7 @@ import { ExpansionType } from './expand';
 import { EntityFactory } from '../schema/factory';
 import { SubscriptionMap, TypeIdMap, WatchMap, WatchQueryMap } from './map';
 import { ExpansionRequest, QueryRequest } from './query';
-import { ActionType, JSONSchemaParser } from './schema';
+import { ActionType, JSONSchemaParser, TypeInfo } from './schema';
 import { IStream, IStreamConfig, WSStream } from './stream';
 import { ptyOrphanBuffer } from '../services/shell/ptyOrphanBuffer';
 
@@ -74,6 +74,13 @@ export class DataManager<T extends Manageable> extends EventEmitter {
   entities: TypeIdMap<EntityRef<T>> = new TypeIdMap<EntityRef<T>>();
 
   schemas: { [type: string]: JSONSchemaParser } = {};
+  /**
+   * Frontend SchemaRegistry — complete reflection of the backend type registry
+   * (TypeInfo + nested JSON schema), populated once from the bootstrap ``types``
+   * payload via {@link loadTypes}. Single source of truth for type metadata
+   * (icon/browseable/creatable/fields) and validation schemas.
+   */
+  typeInfos: { [type: string]: TypeInfo } = {};
   streams: WSStream[] = [];
   saveIntervalMs: number = 5000;
   isPopupOpen = false;
@@ -121,33 +128,60 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     return this.schemas[type.toLowerCase()];
   }
 
-  public async loadSchemas(allSchemasJson?: any) {
-    if (!Array.isArray(allSchemasJson)) {
+  /** TypeInfo for a type (icon/browseable/creatable/fields/schema). */
+  public getTypeInfo(type: string): TypeInfo | undefined {
+    if (typeof type !== 'string') return undefined;
+    return this.typeInfos[type.toLowerCase()];
+  }
+
+  /** All registered TypeInfos (the frontend SchemaRegistry). */
+  public getAllTypeInfos(): TypeInfo[] {
+    return Object.values(this.typeInfos);
+  }
+
+  /**
+   * Single source of truth for a type's icon — the lucide icon name authored on
+   * the backend (TypeInfo.icon). Null when unknown / icon-less; callers fall
+   * back to a generic icon.
+   */
+  public iconForType(type: string): string | null {
+    if (typeof type !== 'string') return null;
+    return this.typeInfos[type.toLowerCase()]?.icon ?? null;
+  }
+
+  /**
+   * Load the bootstrap ``types`` payload into the frontend SchemaRegistry.
+   * Populates {@link typeInfos} and, for entity-backed types, derives the
+   * {@link schemas} (JSONSchemaParser) map so getSchema()/APIEntity validation
+   * keep working off the same single channel. Replaces the former loadSchemas.
+   */
+  public async loadTypes(types?: TypeInfo[]) {
+    if (!Array.isArray(types)) {
       try {
-        allSchemasJson = await apiClient.get(config.API_PREFIXES.schema);
-        if (!allSchemasJson) {
+        types = await apiClient.get<TypeInfo[]>(config.API_PREFIXES.schema);
+        if (!types) {
           return null;
         }
       } catch (error) {
-        console.error('Error loading schemas', error);
+        console.error('Error loading types', error);
         throw error;
       }
     }
-    for (const schemaJson of allSchemasJson) {
-      const schema = new JSONSchemaParser(schemaJson);
-      if (!schema.entity_type) {
-        console.warn('Schema does not have a type property', schemaJson);
+    for (const typeInfo of types) {
+      if (!typeInfo?.type_name) {
+        console.warn('TypeInfo has no type_name', typeInfo);
         continue;
       }
-      if (this.schemas[schema.entity_type]) {
-        // console.warn(
-        //   `Schema already loaded for type: ${schema.entity_type}, skipping`,
-        // );
-        continue;
+      this.typeInfos[typeInfo.type_name.toLowerCase()] = typeInfo;
+      if (typeInfo.schema) {
+        const schema = new JSONSchemaParser(typeInfo.schema);
+        const schemaKey = schema.entity_type ?? typeInfo.type_name.toLowerCase();
+        if (!this.schemas[schemaKey]) {
+          this.schemas[schemaKey] = schema;
+        }
       }
-      this.schemas[schema.entity_type] = schema;
     }
-    return allSchemasJson;
+    return types;
   }
 
   setScanInfo(info: ScanInfo): void {
@@ -341,6 +375,19 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     // Create FlowData from JSON
     const elementType = flowDataJson.element_type || flowDataJson.elementType || 'notification';
     const attributes = flowDataJson.attributes || {};
+
+    // Transport-level envelope from Python Entity.emit_entity_event — never
+    // ingested into the flow stream or renderer pipeline. Route straight to
+    // the entity's onEntityEvent hook.
+    if (elementType === 'entity_event') {
+      const event = String(attributes.event ?? '');
+      const payload = (attributes.payload as Record<string, unknown>) ?? {};
+      if (typeof (entity as any).onEntityEvent === 'function') {
+        (entity as any).onEntityEvent(event, payload);
+      }
+      return;
+    }
+
     // Backend sends content as 'flow_value', fallback to 'content' for compatibility
     const content = flowDataJson.flow_value ?? flowDataJson.content ?? '';
 
@@ -772,6 +819,16 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       }
       return entity;
     } catch (error) {
+      // A 404 means the referenced entity no longer exists — e.g. a stale
+      // project_id carried by an old shell/agentic_process record whose
+      // project was since removed. That's an expected "it's gone" case, not a
+      // failure: return null quietly (the signature already allows it) instead
+      // of logging a console error and throwing. Mirrors the 404→null pattern
+      // used by compute-node/agentic-process/shell entity loaders.
+      if (isApiError(error) && error.response?.status === 404) {
+        ref.status = EntityStatus.ERROR;
+        return null;
+      }
       console.error(`store.ts:Error fetching entity by type ID: ${typeId.toString()}`, error);
       ref.status = EntityStatus.ERROR;
       throw error;
@@ -837,7 +894,13 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         }
         ref.status = EntityStatus.FETCHING;
         const endpoint = `${GRAPH_API_PREFIX}${scope_path}/${entity.typeId.type}/${ref.entity.typeId.id}`;
-        newEntityJson = (await apiClient.put<IEntity>(endpoint, entityJson)) as IEntity;
+        // A remote entity's save reflects to the hub: the server forwards the PUT,
+        // merges the hub's authoritative response (incl. server times) back onto the
+        // local row + broadcasts, and returns the merged entity. Local-only entities
+        // omit the header and save purely locally. The server still re-gates on
+        // remote + logged-in, so an offline remote entity falls back to local.
+        const reflectConfig = entity.remote ? { headers: { 'Hub-Reflect': 'true' } } : undefined;
+        newEntityJson = (await apiClient.put<IEntity>(endpoint, entityJson, reflectConfig)) as IEntity;
       }
       if (!newEntityJson) {
         throw new Error('No data returned');
@@ -911,7 +974,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
 
     const endpoint = actionInfo.actionUrl;
 
-    let requestConfig = undefined;
+    let requestConfig: any = undefined;
     if (actionInfo.isRawResponse) {
       requestConfig = {
         transformResponse: (data: any) => {
@@ -919,6 +982,16 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         },
         signal: actionInfo.abortSignal || undefined,
         responseType: actionInfo.responseType || undefined,
+      };
+    }
+
+    // Per-call hub-reflection opt-in: send the `Hub-Reflect` header so the local
+    // server forwards this call to the hub (default is don't-reflect). Applies to
+    // every verb branch below since they all pass `requestConfig`.
+    if (actionInfo.hubReflect) {
+      requestConfig = {
+        ...(requestConfig ?? {}),
+        headers: { ...(requestConfig?.headers ?? {}), 'Hub-Reflect': 'true' },
       };
     }
 
@@ -990,6 +1063,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       sub_path: actionInfo.subpath,
       query_params: actionInfo.queryParameters as Record<string, unknown> | null,
       body: actionInfo.bodyParameters as Record<string, unknown> | null,
+      hub_reflect: actionInfo.hubReflect,
     };
 
     const response = await connectionManager.sendRestApiMessage<Res>(message, options);

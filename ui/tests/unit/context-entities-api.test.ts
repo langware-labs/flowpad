@@ -86,6 +86,60 @@ describe('context_entities entity API (display-only)', () => {
     expect(containsTypeId(conv.privateContextEntities, new TypeId('project', PROJ_ID))).toBe(true);
   });
 
+  describe('per-entry sidecar data (getContextEntryData)', () => {
+    const PLAN_ID = '55555555-aaaa-4bbb-9ccc-000000000099';
+    const planTypeIdString = `plan-${PLAN_ID}`;
+    const planTypeId = new TypeId('plan', PLAN_ID);
+    const planPath = '/Users/shlom/.claude/plans/some-plan.md';
+
+    it('returns undefined when no data was harvested for the typeid', () => {
+      const task = new Task({
+        title: 't',
+        private_context_entities: [planTypeIdString],
+      } as Partial<Task>);
+      expect(task.getContextEntryData(planTypeId)).toBeUndefined();
+    });
+
+    it('deserializes shared_context_entity_data from the wire and looks up by TypeId', () => {
+      const task = new Task({
+        title: 't',
+        shared_context_entities: [planTypeIdString],
+        shared_context_entity_data: { [planTypeIdString]: { path: planPath } },
+      } as Partial<Task>);
+      expect(task.getContextEntryData(planTypeId)).toEqual({ path: planPath });
+      // String form also works (matches how chip code constructs the key).
+      expect(task.getContextEntryData(planTypeIdString)).toEqual({ path: planPath });
+    });
+
+    it('private sidecar wins on collision (matches backend precedence)', () => {
+      const task = new Task({
+        title: 't',
+        shared_context_entities: [planTypeIdString],
+        private_context_entities: [planTypeIdString],
+        shared_context_entity_data: { [planTypeIdString]: { path: '/shared/path.md' } },
+        private_context_entity_data: { [planTypeIdString]: { path: '/private/path.md' } },
+      } as Partial<Task>);
+      expect(task.getContextEntryData(planTypeId)).toEqual({ path: '/private/path.md' });
+    });
+
+    it('toJSON emits shared sidecar only — private sidecar stays local', () => {
+      const task = new Task({
+        title: 't',
+        shared_context_entities: [planTypeIdString],
+        private_context_entities: [planTypeIdString],
+        shared_context_entity_data: { [planTypeIdString]: { path: planPath } },
+        private_context_entity_data: { [planTypeIdString]: { path: '/private/only.md' } },
+      } as Partial<Task>);
+      const json = task.toJSON();
+      expect(json.shared_context_entity_data).toEqual({
+        [planTypeIdString]: { path: planPath },
+      });
+      // private_context_entity_data must NOT appear on the wire — matches the
+      // BE share() exclusion of the same field.
+      expect(json.private_context_entity_data).toBeUndefined();
+    });
+  });
+
   it('contextOfType(type, bucket?) filters by bucket', () => {
     const task = new Task({
       title: 't',

@@ -192,6 +192,114 @@
   font-size: 0.8rem;
 }
 
+/* Table-block component — add/delete row/col, drag handles, alignment.
+   Wraps each <table> in a .milkdown-table-block container. The component
+   toggles `data-show="true|false"` on handles + button groups based on
+   cell hover / focus; we key visibility off that attribute. */
+.milkdown-editor-wrapper .milkdown-table-block {
+  position: relative;
+  margin: 1rem 0;
+}
+
+.milkdown-editor-wrapper .milkdown-table-block .table-wrapper {
+  position: relative;
+  overflow: visible;
+}
+
+/* Default: hide all floating handles + button groups. */
+.milkdown-editor-wrapper .milkdown-table-block [data-show="false"] {
+  display: none !important;
+}
+
+.milkdown-editor-wrapper .milkdown-table-block [data-show="true"] {
+  display: flex;
+}
+
+/* Drag handle pill that lives above each column / left of each row. */
+.milkdown-editor-wrapper .milkdown-table-block .handle.cell-handle {
+  position: absolute;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 2px;
+  background: hsl(var(--background));
+  border: 1px solid hsl(var(--border));
+  border-radius: 4px;
+  color: hsl(var(--muted-foreground));
+  cursor: grab;
+  user-select: none;
+  z-index: 3;
+}
+
+.milkdown-editor-wrapper .milkdown-table-block .handle.cell-handle:active {
+  cursor: grabbing;
+}
+
+/* Button group inside a handle: alignment buttons + delete-row/col. */
+.milkdown-editor-wrapper .milkdown-table-block .button-group {
+  align-items: center;
+  gap: 2px;
+}
+
+.milkdown-editor-wrapper .milkdown-table-block .button-group button,
+.milkdown-editor-wrapper .milkdown-table-block button.add-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border: 1px solid hsl(var(--border));
+  border-radius: 3px;
+  background: hsl(var(--background));
+  color: hsl(var(--muted-foreground));
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.milkdown-editor-wrapper .milkdown-table-block .button-group button:hover,
+.milkdown-editor-wrapper .milkdown-table-block button.add-button:hover {
+  background: hsl(var(--muted));
+  color: hsl(var(--foreground));
+}
+
+/* Add row / col line handles (the "+" between rows/columns). */
+.milkdown-editor-wrapper .milkdown-table-block .handle.line-handle {
+  position: absolute;
+  align-items: center;
+  justify-content: center;
+  z-index: 3;
+}
+
+/* Render the icon span as compact text — the default theme passes raw
+   strings like "+", "−", "=", "left" via tableBlockConfig.renderButton. */
+.milkdown-editor-wrapper .milkdown-table-block .milkdown-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  font-size: 11px;
+  pointer-events: none;
+}
+
+/* Cell / row / column selection overlay drawn over the table. */
+.milkdown-editor-wrapper .milkdown-table-block .selection {
+  position: absolute;
+  pointer-events: none;
+  background: hsl(var(--primary) / 0.08);
+  border: 1px solid hsl(var(--primary) / 0.4);
+  z-index: 1;
+}
+
+/* Drag-preview ghost shown while dragging a row/column. */
+.milkdown-editor-wrapper .milkdown-table-block .drag-preview {
+  position: absolute;
+  pointer-events: none;
+  opacity: 0.6;
+  z-index: 4;
+}
+
 /* Prism Syntax Highlighting - Dark theme */
 .milkdown-editor-wrapper .ProseMirror pre code {
   background: none;

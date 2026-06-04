@@ -11,14 +11,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@src/components/ui/alert-dialog';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 
 const TITLE = 'Allow Flowpad to use system keychain';
 const DESCRIPTION =
   'Flowpad needs to store your login token and any app secrets you add in your operating system keychain. ' +
   'Approving here will trigger your OS keychain prompt — please choose Always Allow when it appears.';
-const CANCEL_TOAST = { title: 'Login canceled', description: 'Keychain approval was not granted' };
-const USER_CANCEL_TOAST = { title: 'Access canceled', description: 'You can enable keychain access from the warnings menu later.' };
+const CANCEL_TOAST = { title: 'Login canceled', message: 'Keychain approval was not granted' };
+const USER_CANCEL_TOAST = { title: 'Access canceled', message: 'You can enable keychain access from the warnings menu later.' };
 
 /**
  * Globally-mounted approval dialog.
@@ -31,7 +31,6 @@ const SecretApprovalDialog = () => {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const settledRef = useRef(false);
-  const { toast } = useToast();
   const queryClient = useQueryClient();
 
   useEffect(() => {
@@ -41,10 +40,10 @@ const SecretApprovalDialog = () => {
     });
   }, []);
 
-  const settle = (approved: boolean, withToast?: { title: string; description?: string }) => {
+  const settle = (approved: boolean, withToast?: { title: string; message?: string }) => {
     if (settledRef.current) return;
     settledRef.current = true;
-    if (withToast) toast(withToast);
+    if (withToast) notify.info(withToast);
     secretApprovalGate.resolve(approved);
     setOpen(false);
   };
@@ -53,7 +52,21 @@ const SecretApprovalDialog = () => {
     if (busy) return;
     setBusy(true);
     try {
-      const result = await secretsService.enable();
+      // Under signed Electron: Electron mints + stores the Fernet key in
+      // the OS keychain via the bundled flow-rs binary (signed Mach-O at
+      // Contents/Resources/flow-rs/flow-rs), so the ACL trust list lists
+      // flow-rs rather than the unsigned uv-bundled python3.x. The minted
+      // value is then seeded into Python via /secrets/seed-key so Python
+      // never makes a keyring write of its own. Plain web/CLI falls back
+      // to Python's keyring write via /secrets/enable.
+      const provisionSodKey = (window as unknown as {
+        electronAPI?: { provisionSodKey?: () => Promise<string> };
+      }).electronAPI?.provisionSodKey;
+
+      const result = provisionSodKey
+        ? await secretsService.seedKey(await provisionSodKey())
+        : await secretsService.enable();
+
       if (result?.enabled) {
         // Update the cache so any subscriber (e.g. warnings popover) sees the
         // new state immediately, without waiting for a re-fetch round-trip.

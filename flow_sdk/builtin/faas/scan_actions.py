@@ -1,21 +1,9 @@
 """ScanActionsMixin — resource scanning & agentic process actions for ComputeNode."""
 from __future__ import annotations
 
-import asyncio
 import logging
 
-from flow_sdk.core.resource_management.scan.system_profile import (
-    get_resource_summary as _get_resource_summary,
-)
-from flow_sdk.core.resource_management.scan.system_profile import (
-    scan_item as _scan_item,
-)
-from flow_sdk.core.resource_management.scan.system_profile import (
-    scan_project as _scan_project,
-)
-from flow_sdk.core.resource_management.scan.system_profile import (
-    scan_resources as _scan_resources,
-)
+from flow_sdk.builtin.faas import scan_indexer
 from flow_sdk.builtin.faas.project_list import (
     list_projects_from_indexer as _list_projects_from_indexer,
 )
@@ -36,14 +24,14 @@ def _resolve_session_record(session_id: str, hint: str | None = None):
         return None, None
 
     if hint != "codex":
-        from flow_sdk.fs_records.claude.claude_session import ClaudeSessionRecord
-        rec = ClaudeSessionRecord.get(session_id)
+        from flow_sdk.fs_store.indexer.functions.claude_sessions import get_claude_session
+        rec = get_claude_session(session_id)
         if rec is not None:
             return rec, "claude"
 
     if hint != "claude":
-        from flow_sdk.fs_records.codex import CodexSessionRecord
-        rec = CodexSessionRecord.get(session_id)
+        from flow_sdk.fs_store.indexer.functions.codex_sessions import get_codex_session
+        rec = get_codex_session(session_id)
         if rec is not None:
             return rec, "codex"
 
@@ -51,6 +39,12 @@ def _resolve_session_record(session_id: str, hint: str | None = None):
 
 
 class ScanActionsMixin:
+    async def _scan_scoped_roots(self):
+        """Full-coverage (user + all projects) indexer roots for resource scans."""
+        from flow_sdk.fs_store.operations.all_projects import get_all_scope_filter
+
+        return await self._resolve_scoped_roots(await get_all_scope_filter())
+
     async def _scan_resources(self) -> ApiResponse:
         """Scan specific resource type with optional time window filtering.
 
@@ -90,16 +84,14 @@ class ScanActionsMixin:
             time_window = {"start": time_start, "end": time_end}
 
         try:
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(
-                None,
-                lambda: _scan_resources(
-                    resource_type=resource_type,
-                    time_window=time_window,
-                    parent_id=parent_id,
-                    limit=limit,
-                    offset=offset,
-                ),
+            scoped_roots = await self._scan_scoped_roots()
+            result = await scan_indexer.scan_resources_from_indexer(
+                resource_type,
+                scoped_roots,
+                time_window=time_window,
+                parent_id=parent_id,
+                limit=limit,
+                offset=offset,
             )
             return ApiSuccessResponse(data=result)
         except Exception as e:
@@ -116,8 +108,8 @@ class ScanActionsMixin:
             ApiResponse with dict mapping resource_type -> count
         """
         try:
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(None, _get_resource_summary)
+            scoped_roots = await self._scan_scoped_roots()
+            result = await scan_indexer.get_resource_summary_from_indexer(scoped_roots)
             return ApiSuccessResponse(data=result)
         except Exception as e:
             logging.exception(f"get-resource-summary failed: {e}")
@@ -144,16 +136,28 @@ class ScanActionsMixin:
         if not item_type:
             return ApiFailResponse(message="type parameter is required")
 
-        limit_str = request_info.get_param("limit")
-        limit = int(limit_str) if limit_str else 100
-        session_id = request_info.get_param("session_id") or None
+        # Cost / usage / context moved to dedicated analytics actions
+        # (get-cost-overview / get-claude-usage / get-claude-context).
+        # scan-item now only serves a flat resource-type list (e.g. skills).
+        _ITEM_TO_RESOURCE = {
+            "skills": "skill",
+            "agents": "agent",
+            "commands": "command",
+            "hooks": "hook",
+            "mcpServers": "mcp_server",
+            "plugins": "plugin",
+            "sessions": "claude_session",
+        }
+        resource = _ITEM_TO_RESOURCE.get(item_type)
+        if resource is None:
+            return ApiSuccessResponse(data=None)
 
         try:
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(
-                None, lambda: _scan_item(item_type=item_type, limit=limit, session_id=session_id)
+            scoped_roots = await self._scan_scoped_roots()
+            res = await scan_indexer.scan_resources_from_indexer(
+                resource, scoped_roots, limit=0
             )
-            return ApiSuccessResponse(data=result)
+            return ApiSuccessResponse(data=res.get("items", []))
         except Exception as e:
             logging.exception(f"scan-item failed: {e}")
             return ApiFailResponse(message=str(e))
@@ -161,7 +165,7 @@ class ScanActionsMixin:
     async def _scan_clear_skill_usage(self) -> ApiResponse:
         """Clear all skill usage counters from ~/.claude.json."""
         try:
-            from flow_sdk.core.resource_management.scan.system_profile.settings import clear_skill_usage
+            from flow_sdk.fs_store.operations.claude_settings import clear_skill_usage
 
             cleared = clear_skill_usage()
             return ApiSuccessResponse(data={"cleared": cleared})
@@ -220,14 +224,10 @@ class ScanActionsMixin:
         include_sessions = sessions_str != "false"
 
         try:
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(
-                None,
-                lambda: _scan_project(
-                    project_encoded_name=project,
-                    session_limit=limit,
-                    include_sessions=include_sessions,
-                ),
+            result = await scan_indexer.scan_project_from_indexer(
+                project_encoded_name=project,
+                session_limit=limit,
+                include_sessions=include_sessions,
             )
             return ApiSuccessResponse(data=result)
         except Exception as e:
@@ -348,6 +348,20 @@ class ScanActionsMixin:
                             best, best_len = p, len(str(mp))
                     if best:
                         project_id = best.id
+                except Exception:
+                    pass
+
+            # Default workdir to the project's mount path when only project_id
+            # was supplied. Worktree callers (and any flow that needs a workdir
+            # distinct from the project root) keep working because they pass
+            # an explicit workdir, which we don't overwrite.
+            if project_id and not workdir:
+                try:
+                    from flow_sdk.builtin.project import Project
+
+                    proj = await Project.get_by_id(project_id)
+                    if proj is not None and proj.fs_storage_mount_path:
+                        workdir = str(proj.fs_storage_mount_path)
                 except Exception:
                     pass
 
@@ -499,11 +513,10 @@ class ScanActionsMixin:
             cli_factory_key = "codex" if is_codex else "claude"
             wt_enum = WorkerType.CODEX if is_codex else WorkerType.CLAUDE_CODE
 
-            # Resolve workdir + project + project_encoded_name from the session record.
+            # Resolve workdir + project_id from the session record.
             # Transcript cwd is the authoritative restore location; project_id is
             # derived from it so worktrees / nested checkouts don't collapse into
             # the active dock project.
-            project_encoded_name = None
             session_name: str | None = None
             try:
                 from flow_sdk.builtin.project import Project
@@ -518,7 +531,6 @@ class ScanActionsMixin:
                     rec_cwd = getattr(session_rec, "cwd", None)
                     if rec_cwd and not workdir:
                         workdir = rec_cwd
-                    project_encoded_name = getattr(session_rec, "project_encoded_name", None)
                     rec_name = getattr(session_rec, "name", None) or ""
                     if rec_name and rec_name != session_id:
                         session_name = rec_name
@@ -527,11 +539,6 @@ class ScanActionsMixin:
                     project = await Project.recover_by_path(workdir)
                     if project:
                         project_id = project.id
-                        project_encoded_name = project.project_encoded_name or project_encoded_name
-                elif project_id:
-                    project = await Project.get_by_id(project_id)
-                    if project and not project_encoded_name:
-                        project_encoded_name = project.project_encoded_name
             except Exception:
                 logging.debug(
                     "ComputeNode %s upsertSessionProcess session context resolve failed for %s",
@@ -548,37 +555,43 @@ class ScanActionsMixin:
                 process = existing[0]
                 changed = False
                 context_data = dict(process.context_data or {})
+                # Track which fields actually moved so we can mirror exactly
+                # those changes into context_data and the linked Shell —
+                # honouring the binding freeze on session-bound processes.
+                workdir_bound = False
+                project_bound = False
                 if workdir and process.workdir != workdir:
                     process.workdir = workdir
-                    changed = True
-                if workdir and context_data.get("workdir") != workdir:
-                    context_data["workdir"] = workdir
-                    changed = True
+                    if process.workdir == workdir:
+                        workdir_bound = True
+                        changed = True
                 if project_id and process.project_id != project_id:
-                    process._bind_project_id(project_id)
-                    changed = True
-                if project_id and context_data.get("project_id") != project_id:
+                    if process._bind_project_id(project_id):
+                        project_bound = True
+                        changed = True
+                if workdir_bound and context_data.get("workdir") != workdir:
+                    context_data["workdir"] = workdir
+                if project_bound and context_data.get("project_id") != project_id:
                     context_data["project_id"] = project_id
-                    changed = True
-                if project_encoded_name and process.project_encoded_name != project_encoded_name:
-                    process.project_encoded_name = project_encoded_name
-                    changed = True
                 if session_name and not process.name:
                     process.name = session_name
                     changed = True
                 if changed:
                     process.context_data = context_data
                     await process.save()
-                if process.shell_id and (workdir or project_id):
+                # Only propagate to the linked Shell for fields that actually
+                # moved on the process — otherwise the Shell would silently
+                # drift away from a frozen process binding.
+                if process.shell_id and (workdir_bound or project_bound):
                     try:
                         from flow_sdk.builtin.shell import Shell
 
                         shell = await Shell.get_by_id(process.shell_id)
                         shell_changed = False
-                        if shell and workdir and shell.workdir != workdir:
+                        if shell and workdir_bound and shell.workdir != workdir:
                             shell.workdir = workdir
                             shell_changed = True
-                        if shell and project_id and shell.project_id != project_id:
+                        if shell and project_bound and shell.project_id != project_id:
                             shell.project_id = project_id
                             shell_changed = True
                         if shell and shell_changed:
@@ -608,6 +621,20 @@ class ScanActionsMixin:
             # Create new process directly on this compute node
             owner = request_info.someone_typeid if request_info else None
 
+            # Default workdir to the project's mount path when only project_id
+            # was supplied. Worktree callers pass their own workdir and aren't
+            # affected. (Rule 2: at create-time the binding is project-rooted
+            # unless the caller explicitly overrides.)
+            if project_id and not workdir:
+                try:
+                    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+                    proj = await Project.get_by_id(project_id)
+                    if proj is not None and proj.fs_storage_mount_path:
+                        workdir = str(proj.fs_storage_mount_path)
+                except Exception:
+                    pass
+
             context_data = {}
             if workdir:
                 context_data["workdir"] = workdir
@@ -620,7 +647,7 @@ class ScanActionsMixin:
                 use_worker_history=True,
                 context_data=context_data,
                 project_id=project_id or None,
-                project_encoded_name=project_encoded_name or None,
+                workdir=workdir or None,
                 visible=True,
                 **({"name": session_name} if session_name else {}),
             )
@@ -738,8 +765,7 @@ class ScanActionsMixin:
             worker_type: optional — "claude" | "codex" to skip the other lookup.
 
         Returns ApiSuccessResponse with:
-            session_id, worker_type, transcript_path, project_encoded_name
-            (claude only — None for codex), cwd, project_id, session_name.
+            session_id, worker_type, transcript_path, cwd, project_id, session_name.
 
         Returns ApiFailResponse(status_code=404) when not found in either history.
         """
@@ -783,11 +809,6 @@ class ScanActionsMixin:
                 or getattr(rec, "source_file", None)
                 or None
             )
-            project_encoded_name = (
-                getattr(rec, "project_encoded_name", None) or None
-                if worker_type == "claude"
-                else None
-            )
 
             project_id: str | None = None
             if cwd:
@@ -795,10 +816,6 @@ class ScanActionsMixin:
                     project = await Project.recover_by_path(cwd)
                     if project:
                         project_id = project.id
-                        if worker_type == "claude":
-                            project_encoded_name = (
-                                project.project_encoded_name or project_encoded_name
-                            )
                 except Exception:
                     logging.debug(
                         "ComputeNode %s findSession project recover failed for %s",
@@ -812,7 +829,6 @@ class ScanActionsMixin:
                     "session_id": session_id,
                     "worker_type": worker_type,
                     "transcript_path": str(transcript_path) if transcript_path else None,
-                    "project_encoded_name": project_encoded_name,
                     "cwd": cwd,
                     "project_id": project_id,
                     "session_name": session_name,

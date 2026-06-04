@@ -14,9 +14,9 @@ from pathlib import Path
 
 import pytest
 
-from flow_sdk.fs_records.conversation_record import ConversationRecord
+from flow_sdk.fs_store.operations.conversation import default_data_dir, default_jsonl_path, from_jsonl
 from flow_sdk.fs_store import RecordDataRef, RecordType
-from flow_sdk.fs_store.record import (
+from flow_sdk.fs_store.record_paths import (
     get_default_records_data_root,
     record_stem,
 )
@@ -36,14 +36,14 @@ def test_default_data_dir_resolves_under_records_data_root():
         / RecordType.CONVERSATION
         / record_stem(RecordType.CONVERSATION, record_id)
     )
-    assert ConversationRecord.default_data_dir(record_id) == expected
+    assert default_data_dir(record_id) == expected
 
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 def test_default_jsonl_path_ends_with_conversation_jsonl():
     """The file inside the data dir is named `conversation.jsonl`."""
     record_id = "bb-positive"
-    p = ConversationRecord.default_jsonl_path(record_id)
+    p = default_jsonl_path(record_id)
     assert p.name == "conversation.jsonl"
     assert p.parent.name == record_stem(RecordType.CONVERSATION, record_id)
 
@@ -56,11 +56,11 @@ def test_default_data_dir_relocates_when_records_data_dir_changes(monkeypatch, t
     the override is scoped to this test.
     """
     monkeypatch.setattr(
-        "flow_sdk.fs_store.record.get_default_records_data_root",
+        "flow_sdk.fs_store.record_paths.get_default_records_data_root",
         lambda: tmp_path,
     )
     record_id = "cc-relocates"
-    resolved = ConversationRecord.default_data_dir(record_id)
+    resolved = default_data_dir(record_id)
     assert tmp_path in resolved.parents or resolved.parent.parent == tmp_path
     assert str(resolved).startswith(str(tmp_path))
 
@@ -68,8 +68,8 @@ def test_default_data_dir_relocates_when_records_data_dir_changes(monkeypatch, t
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 def test_two_different_ids_get_distinct_directories():
     """Each Conversation gets its own folder by id stem — no collisions."""
-    p1 = ConversationRecord.default_data_dir("dd-id-one")
-    p2 = ConversationRecord.default_data_dir("dd-id-two")
+    p1 = default_data_dir("dd-id-one")
+    p2 = default_data_dir("dd-id-two")
     assert p1 != p2
     assert p1.name != p2.name
 
@@ -82,7 +82,7 @@ def test_helper_matches_record_data_ref_resolve():
     parallel implementation.
     """
     record_id = "ee-agrees-with-registry"
-    via_helper = ConversationRecord.default_data_dir(record_id)
+    via_helper = default_data_dir(record_id)
     via_registry = RecordDataRef(
         id=record_id, type=RecordType.CONVERSATION, format="jsonl"
     ).resolve_data_dir()
@@ -103,7 +103,7 @@ def test_path_is_never_under_system_projects_tree():
     folder; the old handler joined paths from there and ended up writing
     user data into the dev tree (would be read-only in a packaged install).
     """
-    p = ConversationRecord.default_jsonl_path("ff-never-system-projects")
+    p = default_jsonl_path("ff-never-system-projects")
     assert "system_projects" not in p.parts, (
         f"path {p} unexpectedly contains the system_projects segment"
     )
@@ -117,7 +117,7 @@ def test_directory_name_does_not_leak_email_or_slug():
     addresses into filesystem paths and broke the records-data convention.
     """
     record_id = "gg-no-slug"
-    parent = ConversationRecord.default_jsonl_path(record_id).parent
+    parent = default_jsonl_path(record_id).parent
     assert parent.name == f"{RecordType.CONVERSATION}-@{record_id}"
     # Sanity: the dir name MUST NOT contain '@' twice (i.e. an email) or
     # any other path-unfriendly chars beyond the canonical separator.
@@ -129,9 +129,9 @@ def test_empty_id_rejected():
     """Empty id must raise — never silently bucket multiple Conversations
     into a shared `conversation-@/` folder."""
     with pytest.raises(ValueError):
-        ConversationRecord.default_data_dir("")
+        default_data_dir("")
     with pytest.raises(ValueError):
-        ConversationRecord.default_jsonl_path("")
+        default_jsonl_path("")
 
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
@@ -141,5 +141,5 @@ def test_default_data_dir_path_is_absolute():
     Guards against a future regression where a relative path slips through
     (e.g. if `flow_home` ever resolves to `.` somewhere).
     """
-    p = ConversationRecord.default_data_dir("hh-is-absolute")
+    p = default_data_dir("hh-is-absolute")
     assert p.is_absolute(), f"expected absolute path, got {p}"

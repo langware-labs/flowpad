@@ -7,6 +7,7 @@ import { ClaudeContextViewer } from './ClaudeContextViewer';
 import { ClaudeErrorsViewer } from './ClaudeErrorsViewer';
 import { ClaudeTasksViewer } from './ClaudeTasksViewer';
 import { FsRecordsScannerViewer } from './FsRecordsScannerViewer';
+import { LlmIndexersViewer } from './LlmIndexersViewer';
 import { TranscriptViewer } from './shared/transcript-features';
 import { HeartbeatEventsViewer } from './HeartbeatEventsViewer';
 import { TriggerLogViewer } from './TriggerLogViewer';
@@ -16,7 +17,7 @@ import { TriggerLogViewer } from './TriggerLogViewer';
  *
  * URL structure: /dock/lens/{category}/{type}/{ref}
  * Examples:
- * - /dock/lens/claude/transcript/{projectEncodedName}/{sessionId}
+ * - /dock/lens/claude/transcript/{sessionId}
  * - /dock/lens/claude/tasks/{sessionId}
  */
 export function LensViewer() {
@@ -74,7 +75,22 @@ export function LensViewer() {
 
       // Form 3: legacy two-segment claude form. Bridge to abs path.
       if (workerType === 'claude' && ref.includes('/')) {
+        // Guard: the legacy form is exactly `<projectEncodedName>/<sessionId>`
+        // with a single internal "/". If the prefix contains more slashes, the
+        // ref is a mangled absolute path that lost its leading "/" (e.g. via
+        // react-router's "//" normalisation) — refuse to silently rewrite it
+        // under ~/.claude/projects/ and surface a clear error instead.
         const lastSlash = ref.lastIndexOf('/');
+        if (ref.substring(0, lastSlash).includes('/')) {
+          return (
+            <div className="flex h-full items-center justify-center p-4 text-muted-foreground">
+              <div className="text-center">
+                <p className="text-lg font-medium">Invalid transcript path</p>
+                <p className="mt-1 text-sm">Got a relative-looking ref with multiple segments: <code>{ref}</code></p>
+              </div>
+            </div>
+          );
+        }
         const projectEncodedName = ref.substring(0, lastSlash);
         const sessionId = ref.substring(lastSlash + 1);
         const rawHome = dataContext.bootstrapInfo?.desktop_info?.paths?.home;
@@ -112,7 +128,6 @@ export function LensViewer() {
         <ClaudeTasksViewer
           sessionId={lensParts.ref}
           selectedActiveForm={currentDock?.options?.active_form}
-          projectEncodedName={currentDock?.options?.project}
         />
       );
     case 'heartbeat/events':
@@ -131,6 +146,8 @@ export function LensViewer() {
       return <ClaudeContextViewer />;
     case 'fs-records/scan':
       return <FsRecordsScannerViewer />;
+    case 'fs-records/llm-indexers':
+      return <LlmIndexersViewer />;
     case 'trigger/log':
       return <TriggerLogViewer triggerId={lensParts.ref} />;
     default:

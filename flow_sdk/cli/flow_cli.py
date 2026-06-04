@@ -21,6 +21,7 @@ from flow_sdk.cli.config_manager import (
     setup_defaults,
 )
 from flow_sdk.cli.env_loader import cli_init
+from flow_sdk.instance_settings import get_instance_settings
 
 # Initialize CLI - load environment variables as first step
 cli_init()
@@ -47,7 +48,7 @@ def _discover_port() -> int:
     server_info = read_server_info()
     if server_info:
         return server_info.port
-    return int(os.environ.get("LOCAL_SERVER_PORT", "9007"))
+    return get_instance_settings().port
 
 
 @app.callback(invoke_without_command=True)
@@ -230,7 +231,7 @@ def start(ctx: typer.Context):
     if ctx.invoked_subcommand is not None:
         return
 
-    port = int(os.environ.get("LOCAL_SERVER_PORT", "9007"))
+    port = get_instance_settings().port
     _start_service(port)
 
     # Skip browser open when launched from Electron (it has its own BrowserWindow)
@@ -267,7 +268,7 @@ def service():
 
     Example: flow start service
     """
-    port = int(os.environ.get("LOCAL_SERVER_PORT", "9007"))
+    port = get_instance_settings().port
     _start_service(port)
 
 
@@ -347,7 +348,7 @@ def trace():
     from flow_sdk.server.reporters import PrintReporter
     from flow_sdk.server.state import reporter_registry
 
-    port = int(os.environ.get("LOCAL_SERVER_PORT", "9007"))
+    port = get_instance_settings().port
 
     typer.echo(f"Starting Flow trace server on port {port}...")
 
@@ -754,7 +755,6 @@ def hooks_report(
             if project_settings.exists():
                 return (metadata or None), str(project_settings)
 
-        from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
         fallback_path = get_instance_settings().claude_settings_json_path
         settings_path = str(fallback_path) if fallback_path.exists() else None
         return (metadata or None), settings_path
@@ -857,7 +857,7 @@ def hooks_report(
                         if verbose:
                             typer.echo(f"  Request failed: {e}")
             else:
-                port = int(os.environ.get("LOCAL_SERVER_PORT", "9007"))
+                port = get_instance_settings().port
                 fallback_url = f"http://127.0.0.1:{port}/api/hooks/report"
                 if verbose:
                     typer.echo(f"\nNo server.json found, using legacy fallback (port {port})")
@@ -976,6 +976,9 @@ app.add_typer(record_app, name="record")
 
 from flow_sdk.cli.commands.workflow_cmd import workflow_app
 app.add_typer(workflow_app, name="workflow")
+
+from flow_sdk.cli.commands.process_cmd import process_app
+app.add_typer(process_app, name="process")
 
 from flow_sdk.cli.commands.migrate_cmd import migrate_app
 app.add_typer(migrate_app, name="migrate")

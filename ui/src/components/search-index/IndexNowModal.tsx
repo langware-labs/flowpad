@@ -8,8 +8,8 @@ import {
 } from '@src/components/ui/alert-dialog';
 import { Button } from '@src/components/ui/button';
 import { useSystemTools } from '@src/hooks/use-system-tools';
-import { CheckCircle2, Circle, Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { ActivityIndicator } from './ActivityIndicator';
 
 export interface IndexNowModalProps {
   open: boolean;
@@ -19,11 +19,8 @@ export interface IndexNowModalProps {
 }
 
 export function IndexNowModal({ open, types, onComplete, onDeny }: IndexNowModalProps) {
-  const { indexTypes, currentActivity, progressTable } = useSystemTools();
+  const { indexTypes } = useSystemTools();
   const [phase, setPhase] = useState<'confirm' | 'indexing'>('confirm');
-
-  const indexing = phase === 'indexing' && currentActivity === 'index';
-  const table = indexing ? progressTable : null;
 
   async function startIndexing() {
     setPhase('indexing');
@@ -48,34 +45,7 @@ export function IndexNowModal({ open, types, onComplete, onDeny }: IndexNowModal
           </AlertDialogDescription>
         </AlertDialogHeader>
 
-        {phase === 'indexing' && table && (
-          <div className="flex flex-col gap-1 py-2">
-            {types.map((t) => {
-              const row = table.rows.find((r) => r.type_name === t);
-              const isDone = row != null && row.total > 0 && row.done >= row.total;
-              const isCurrent = table.current === t;
-              return (
-                <div key={t} className="flex items-center gap-2 text-sm">
-                  {isDone ? (
-                    <CheckCircle2 className="h-4 w-4 text-green-500" />
-                  ) : isCurrent ? (
-                    <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                  ) : (
-                    <Circle className="h-4 w-4 text-muted-foreground/40" />
-                  )}
-                  <span className={isDone ? 'text-muted-foreground line-through' : isCurrent ? '' : 'text-muted-foreground/60'}>
-                    {t}
-                  </span>
-                  {row && row.total > 0 && (
-                    <span className="ml-auto text-xs tabular-nums text-muted-foreground">
-                      {row.done}/{row.total}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
+        {phase === 'indexing' && <ActivityIndicator variant="list" types={types} />}
 
         {phase === 'confirm' && (
           <AlertDialogFooter>

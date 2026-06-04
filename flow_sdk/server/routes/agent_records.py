@@ -1,28 +1,23 @@
-"""Agent-driven schema + record routes.
+"""Agent-driven schema routes.
 
 Companion to ``routes/navigate.py``. Lets a local agent (invoked via
-``flow schema ...`` and ``flow record ...``) discover the type registry
-and persist new on-disk records via the canonical FSIndexer pipeline.
+``flow schema ...``) discover the type registry and per-type creation
+recipes. Record indexing lives elsewhere: ``flow record index`` drives the
+canonical generic indexer at
+``POST /api/v1/graph/compute_node/@local/fs-records/index`` directly, so
+there is no agent-specific index endpoint to keep in sync.
 
 Error contract (CLI mirrors it exactly):
 
     200 ok                  — JSON success body
-    400 INVALID_ARG         — bad path / unknown type / parse error
-    404 NOT_FOUND           — type or path doesn't exist
-    500 INDEX_FAILED        — indexer raised
+    400 INVALID_ARG         — unknown type
+    404 NOT_FOUND           — type doesn't exist
 """
 
 from __future__ import annotations
 
-import logging
-from pathlib import Path
-from typing import Optional
-
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -59,7 +54,65 @@ _CREATION_HINTS: dict[str, dict] = {
         },
         "after_index": "Resulting TypeId is `task-<task_id>` — pass it to `flow navigate entity` to open.",
     },
+    "markdown_index": {
+        "location": "<source_dir>/index.md",
+        "manifest_fields": {
+            "type": "markdown_index (literal)",
+            "title": "human-readable folder name",
+            "inputs_hash": "sha256 of (template_version + prompt_version + sorted source file hashes + sorted child index.md hashes) — set by rebuild agent",
+            "template_version": "int (default 1)",
+            "prompt_version": "int (default 1)",
+            "parent_ref": "TypeId of the parent markdown_index entity (one folder up), or empty for root",
+            "file_count": "int — direct source files in this folder (excluding index.md itself)",
+            "subfolder_count": "int — child folders that also have an index.md",
+            "latest_process_ref": "TypeId of the most recent AgenticProcess that rebuilt this index",
+        },
+        "example": {
+            "type": "markdown_index",
+            "title": "auth",
+            "inputs_hash": "",
+            "template_version": 1,
+            "prompt_version": 1,
+            "parent_ref": "",
+            "file_count": 0,
+            "subfolder_count": 0,
+            "latest_process_ref": "",
+        },
+        "after_index": "Resulting TypeId is `markdown_index-<uuid>`. Trigger a rebuild via the LLM Indexers panel or by spawning an AgenticProcess with context_data.kind='markdown_index_rebuild' targeted at this TypeId.",
+    },
 }
+
+
+def _derive_creation_hint(info) -> dict | None:
+    """Build a creation recipe straight from the type's registered schema.
+
+    Generic for any ``creatable`` type whose primary asset is a single file
+    (``main_layout == "file"``): the agent writes one markdown file with YAML
+    frontmatter at ``<project_cwd>/<main_subdir>/<safe-title>.md`` and indexes
+    it. Every coordinate — the subfolder, the uid field, the frontmatter
+    fields — is sourced from ``TypeInfo`` so nothing is hardcoded per type and
+    new file-layout types become agent-creatable for free. Folder-layout and
+    otherwise-irregular types are left to the ``_CREATION_HINTS`` override
+    table. Returns None when no generic recipe applies.
+    """
+    if not info.creatable or not info.main_subdir or info.main_layout != "file":
+        return None
+    uid = info.uid_field
+    fields: dict[str, str] = {
+        uid: "uuid v4 (you generate it; write it into the frontmatter `id:` — this becomes the entity id)",
+    }
+    for f in info.index_fields:
+        fields[f] = f"see json_schema for `{f}`"
+    example: dict = {uid: "11111111-2222-3333-4444-555555555555"}
+    for f in info.index_fields:
+        example[f] = "" if f != "tags" else []
+    return {
+        "location": f"<project_cwd>/{info.main_subdir}/<safe-title>.md",
+        "format": "markdown file: YAML frontmatter (the fields below) followed by the document content as the markdown body",
+        "manifest_fields": fields,
+        "example": example,
+        "after_index": f"Resulting TypeId is `{info.type_name}-<{uid}>` — pass it to `flow navigate entity` to open.",
+    }
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -89,7 +142,6 @@ async def list_schema():
         if info is None:
             continue
         d = info.to_dict()
-        d["has_record_cls"] = info.record_cls is not None
         d["has_entity_cls"] = info.entity_cls is not None
         types.append(d)
     return {"ok": True, "types": types}
@@ -110,88 +162,23 @@ async def get_schema_info(type_name: str):
         return _error(404, "NOT_FOUND", f"Unknown type: {type_name}")
 
     payload = info.to_dict()
-    payload["has_record_cls"] = info.record_cls is not None
     payload["has_entity_cls"] = info.entity_cls is not None
 
-    # Pull the pydantic JSON schema when the record class exposes one
-    # (most Record subclasses are pydantic models). Optional — absence
-    # is fine, the creation hint already tells the agent enough.
-    if info.record_cls is not None:
+    if info.entity_cls is not None:
         try:
-            payload["json_schema"] = info.record_cls.model_json_schema()
+            payload["json_schema"] = info.entity_cls.model_json_schema()
         except Exception:  # noqa: BLE001
             pass
 
-    payload["creation"] = _CREATION_HINTS.get(
-        type_name,
-        {
+    # Override table first (irregular layouts: task's manifest.json, the
+    # markdown_index computed fields), then a schema-derived recipe for any
+    # plain file-layout type, then the "unsupported" fallback.
+    payload["creation"] = (
+        _CREATION_HINTS.get(type_name)
+        or _derive_creation_hint(info)
+        or {
             "location": "(no built-in recipe — ask the user where to put the file or read the indexer source)",
             "manifest_fields": {},
-        },
+        }
     )
     return {"ok": True, "type": payload}
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# /api/v1/agent/record/index — run the indexer on a path
-# ─────────────────────────────────────────────────────────────────────────────
-
-
-class IndexRecordRequest(BaseModel):
-    """Body for POST /api/v1/agent/record/index.
-
-    ``path`` is an absolute filesystem path to a file or directory the agent
-    has just written to disk. ``types`` is an optional restriction that
-    speeds up indexing by only parsing the named types — pass it whenever
-    you know what you wrote (e.g. ``["task"]`` after writing a manifest).
-    """
-
-    path: str
-    types: Optional[list[str]] = None
-
-
-@router.post("/api/v1/agent/record/index")
-async def index_record(req: IndexRecordRequest):
-    """Run the canonical FSIndexer over the user's known roots.
-
-    The agent supplies ``path`` purely as a sanity check + for logging —
-    we still walk the shared indexer's full root set, then return the
-    counts. Filtering to ``types`` keeps parsing+upsert work proportional
-    to what the agent actually created.
-    """
-    p = Path(req.path).expanduser()
-    if not p.exists():
-        return _error(404, "NOT_FOUND", f"Path does not exist: {p}")
-
-    from flow_sdk.fs_store.indexer import IndexerOptions, get_shared_indexer  # noqa: PLC0415
-    from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
-
-    record_types: list[RecordType] | None = None
-    if req.types:
-        record_types = []
-        for t in req.types:
-            try:
-                record_types.append(RecordType(t))
-            except ValueError:
-                return _error(400, "INVALID_ARG", f"Unknown record type: {t}")
-
-    try:
-        result = await get_shared_indexer().index(
-            IndexerOptions(verbose=False, types=record_types),
-        )
-    except Exception as e:  # noqa: BLE001
-        logger.exception("agent record/index failed for path=%s", p)
-        return _error(500, "INDEX_FAILED", f"Indexer raised: {e}")
-
-    per_type = {
-        str(t): {"indexed": r.indexed, "errors": r.errors, "skipped": r.skipped}
-        for t, r in result.per_type.items()
-    }
-    return {
-        "ok": True,
-        "path": str(p),
-        "total_indexed": result.total_indexed,
-        "total_errors": result.total_errors,
-        "duration_ms": result.duration_ms,
-        "per_type": per_type,
-    }

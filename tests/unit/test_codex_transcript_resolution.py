@@ -12,8 +12,8 @@ from flow_sdk.builtin.agentic_process.cli_drivers.codex.session_history import (
     codex_transcript_path_for_process,
 )
 from flow_sdk.flowpad_types.enums import WorkerType
-from flow_sdk.fs_records.agentic_process_lifecycle import ProcessStatus
-from flow_sdk.fs_store.record import get_default_records_root, set_default_records_root
+from flow_sdk.builtin.process_lifecycle import ProcessStatus
+from flow_sdk.fs_store.record_paths import get_default_records_root, set_default_records_root
 from flow_sdk.instance_settings import get_instance_settings, reset_instance_settings
 from flow_sdk.transcript_analyzer import TranscriptFormat, TranscriptSource
 

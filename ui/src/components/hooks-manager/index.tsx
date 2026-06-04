@@ -2,7 +2,7 @@ import { TypeId, AgentHook, Trigger, HookScope } from '@sdk';
 import { useContext, useEntity, useProject } from '@sdk/react/hooks';
 import { Button } from '@src/components/ui/button';
 import { Switch } from '@src/components/ui/switch';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Plus, Webhook, Trash2, Edit, Zap, ChevronDown, ChevronRight, Power } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
@@ -30,8 +30,6 @@ function TriggerInline({ trigger, onEdit, onDelete, onRefresh }: TriggerInlinePr
   const counter = activeTrigger.counter;
   const lastTriggered = activeTrigger.last_triggered ?? null;
 
-  const { toast } = useToast();
-
   const handleToggleEnabled = useCallback(
     async (enabled: boolean) => {
       try {
@@ -39,14 +37,13 @@ function TriggerInline({ trigger, onEdit, onDelete, onRefresh }: TriggerInlinePr
         await trigger.save();
         onRefresh();
       } catch (error: unknown) {
-        toast({
+        notify.error({
           title: 'Failed to update trigger',
-          description: error instanceof Error ? error.message : 'Unknown error',
-          variant: 'destructive',
+          message: error instanceof Error ? error.message : 'Unknown error',
         });
       }
     },
-    [trigger, onRefresh, toast],
+    [trigger, onRefresh],
   );
 
   return (
@@ -100,7 +97,6 @@ export function HooksManager({ entityTypeId }: HooksManagerProps) {
   const [expandedHooks, setExpandedHooks] = useState<Set<string>>(new Set());
 
   const { currentDock } = useDockNavigation();
-  const { toast } = useToast();
   const { project } = useProject();
   const { snifferEnabled } = useContext();
   const { isLoading: snifferLoading, isToggling: snifferToggling, enable: snifferEnable, disable: snifferDisable } = useSnifferContext();
@@ -110,26 +106,24 @@ export function HooksManager({ entityTypeId }: HooksManagerProps) {
       const hooksList = await AgentHook.list();
       setHooks(hooksList);
     } catch (error: unknown) {
-      toast({
+      notify.error({
         title: ToastTitle.FAILED_TO_LOAD_HOOKS,
-        description: error instanceof Error ? error.message : ErrorMessage.COULD_NOT_LOAD_HOOKS,
-        variant: 'destructive',
+        message: error instanceof Error ? error.message : ErrorMessage.COULD_NOT_LOAD_HOOKS,
       });
     }
-  }, [toast]);
+  }, []);
 
   const fetchTriggers = useCallback(async () => {
     try {
       const triggersList = await Trigger.list();
       setTriggers(triggersList);
     } catch (error: unknown) {
-      toast({
+      notify.error({
         title: ToastTitle.FAILED_TO_LOAD_TRIGGERS,
-        description: error instanceof Error ? error.message : ErrorMessage.COULD_NOT_LOAD_TRIGGERS,
-        variant: 'destructive',
+        message: error instanceof Error ? error.message : ErrorMessage.COULD_NOT_LOAD_TRIGGERS,
       });
     }
-  }, [toast]);
+  }, []);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -171,15 +165,14 @@ export function HooksManager({ entityTypeId }: HooksManagerProps) {
     try {
       await hook.delete();
       await fetchHooks();
-      toast({
+      notify.success({
         title: ToastTitle.HOOK_DELETED,
-        description: ToastDescription.HOOK_DELETED,
+        message: ToastDescription.HOOK_DELETED,
       });
     } catch (error: unknown) {
-      toast({
+      notify.error({
         title: ToastTitle.FAILED_TO_DELETE_HOOK,
-        description: error instanceof Error ? error.message : ErrorMessage.COULD_NOT_DELETE_HOOK,
-        variant: 'destructive',
+        message: error instanceof Error ? error.message : ErrorMessage.COULD_NOT_DELETE_HOOK,
       });
     }
   };
@@ -193,15 +186,14 @@ export function HooksManager({ entityTypeId }: HooksManagerProps) {
       await hook.save();
       setShowHookForm(false);
       await fetchHooks();
-      toast({
+      notify.success({
         title: ToastTitle.HOOK_SAVED,
-        description: ToastDescription.HOOK_SAVED,
+        message: ToastDescription.HOOK_SAVED,
       });
     } catch (error: unknown) {
-      toast({
+      notify.error({
         title: ToastTitle.FAILED_TO_SAVE_HOOK,
-        description: error instanceof Error ? error.message : ErrorMessage.COULD_NOT_SAVE_HOOK,
-        variant: 'destructive',
+        message: error instanceof Error ? error.message : ErrorMessage.COULD_NOT_SAVE_HOOK,
       });
     }
   };
@@ -223,15 +215,14 @@ export function HooksManager({ entityTypeId }: HooksManagerProps) {
       await trigger.delete();
       await fetchTriggers();
       await fetchTriggersForHooks();
-      toast({
+      notify.success({
         title: ToastTitle.TRIGGER_DELETED,
-        description: ToastDescription.TRIGGER_DELETED,
+        message: ToastDescription.TRIGGER_DELETED,
       });
     } catch (error: unknown) {
-      toast({
+      notify.error({
         title: ToastTitle.FAILED_TO_DELETE_TRIGGER,
-        description: error instanceof Error ? error.message : ErrorMessage.COULD_NOT_DELETE_TRIGGER,
-        variant: 'destructive',
+        message: error instanceof Error ? error.message : ErrorMessage.COULD_NOT_DELETE_TRIGGER,
       });
     }
   };
@@ -254,15 +245,14 @@ export function HooksManager({ entityTypeId }: HooksManagerProps) {
       await fetchTriggers();
       await fetchTriggersForHooks();
 
-      toast({
+      notify.success({
         title: ToastTitle.TRIGGER_SAVED,
-        description: ToastDescription.TRIGGER_SAVED,
+        message: ToastDescription.TRIGGER_SAVED,
       });
     } catch (error: unknown) {
-      toast({
+      notify.error({
         title: ToastTitle.FAILED_TO_SAVE_TRIGGER,
-        description: error instanceof Error ? error.message : ErrorMessage.COULD_NOT_SAVE_TRIGGER,
-        variant: 'destructive',
+        message: error instanceof Error ? error.message : ErrorMessage.COULD_NOT_SAVE_TRIGGER,
       });
     }
   };

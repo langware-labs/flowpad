@@ -18,10 +18,17 @@ import {
   TypeId,
 } from '@sdk';
 import { fetchActiveTerminals } from '@src/hooks/useActiveTerminals';
-import { toast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { DockPointer } from '@src/navigation';
 import { redirect } from 'react-router';
 import { describeProcessStartError, loadProcess, ProcessLoadError } from './load-process';
+
+/** Map the `{ title, description }` shape from `describeProcessStartError`
+ *  onto the unified notify error payload. */
+function notifyProcessStartError(error: unknown): void {
+  const { title, description } = describeProcessStartError(error);
+  notify.error({ title, message: description });
+}
 import { loadShell, resolveDefaultTab, ShellLoadError } from './load-shell';
 import { loadConversation } from './load-conversation';
 
@@ -29,6 +36,29 @@ function recoveryUrl(projectId: string, roomId: string | null): string {
   return roomId
     ? `/dock/project/${projectId}/collaboration_room/${roomId}`
     : `/dock/project/${projectId}`;
+}
+
+/**
+ * Load a Project by id: fetch the entity via dataManager and write
+ * `CurrentProjectTypeId` into context. Nothing else.
+ *
+ * This is the URL-first project primitive: every loader that lands on an
+ * entity owned by a project (shell, agentic_process, conversation, plan, …)
+ * must call this before any runtime side effect, so `dataContext.project`
+ * reflects the URL-resolved owner — not whatever was active before.
+ *
+ * Throws if the project can't be fetched. Callers decide how to recover
+ * (e.g. process.recoverProject() for dangling project_id refs).
+ */
+export async function loadProject(projectId: string): Promise<Project> {
+  const project = await dataManager.getByTypeId<Project>(
+    new TypeId(Project.type, projectId),
+  );
+  await dataContext.setContextEntityTypeId(
+    ContextEntitiesEnum.CurrentProjectTypeId,
+    new TypeId(Project.type, projectId),
+  );
+  return project;
 }
 
 /**
@@ -65,21 +95,16 @@ export async function loadProjectRoute(pointer: string | undefined): Promise<voi
   // calls hit immediately (no render blank → re-render).
   let project: Project | null = null;
   try {
-    project = await dataManager.getByTypeId<Project>(new TypeId(Project.type, projectId));
+    project = await loadProject(projectId);
   } catch {
-    toast({
+    notify.error({
       title: 'Project not found',
-      description: "This project doesn't exist or is no longer available.",
-      variant: 'destructive',
+      message: "This project doesn't exist or is no longer available.",
     });
     // eslint-disable-next-line @typescript-eslint/only-throw-error
     throw redirect('/');
   }
 
-  await dataContext.setContextEntityTypeId(
-    ContextEntitiesEnum.CurrentProjectTypeId,
-    new TypeId(Project.type, projectId),
-  );
   if (project?.fs_storage_mount_path) {
     dataContext.setWorkdir(project.fs_storage_mount_path);
   }
@@ -125,27 +150,24 @@ export async function loadProjectRoute(pointer: string | undefined): Promise<voi
     } catch (e) {
       if (!(e instanceof ProcessLoadError)) throw e;
       if (e.kind === 'entity_not_found') {
-        toast({
+        notify.error({
           title: 'Session not found',
-          description: 'Agentic process does not exist.',
-          variant: 'destructive',
+          message: 'Agentic process does not exist.',
         });
       } else if (e.kind === 'network_error') {
-        toast({
+        notify.error({
           title: 'Couldn’t reach backend',
-          description: 'Try again in a moment.',
-          variant: 'destructive',
+          message: 'Try again in a moment.',
         });
       } else if (
         e.kind === 'runtime_terminated' ||
         e.kind === 'pty_attach_failed'
       ) {
-        toast({ ...describeProcessStartError(e.cause ?? e), variant: 'destructive' });
+        notifyProcessStartError(e.cause ?? e);
       } else {
-        toast({
+        notify.error({
           title: 'Session unavailable',
-          description: 'No shell is linked to this process.',
-          variant: 'destructive',
+          message: 'No shell is linked to this process.',
         });
       }
       // eslint-disable-next-line @typescript-eslint/only-throw-error
@@ -161,19 +183,17 @@ export async function loadProjectRoute(pointer: string | undefined): Promise<voi
     } catch (e) {
       if (!(e instanceof ShellLoadError)) throw e;
       if (e.kind === 'not_found') {
-        toast({
+        notify.error({
           title: 'Shell not found',
-          description: 'This terminal no longer exists.',
-          variant: 'destructive',
+          message: 'This terminal no longer exists.',
         });
       } else if (e.kind === 'error_status') {
-        toast({
+        notify.error({
           title: 'Shell unavailable',
-          description: e.errorMessage ?? 'Shell error',
-          variant: 'destructive',
+          message: e.errorMessage ?? 'Shell error',
         });
       } else {
-        toast({ ...describeProcessStartError(e.cause ?? e), variant: 'destructive' });
+        notifyProcessStartError(e.cause ?? e);
       }
       // eslint-disable-next-line @typescript-eslint/only-throw-error
       throw redirect(recoveryUrl(projectId, roomId));

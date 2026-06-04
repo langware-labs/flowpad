@@ -149,6 +149,20 @@ export default {
               '0 0 0 1px hsl(var(--primary) / 0.65), 0 0 8px 0 hsl(var(--primary) / 0.50)',
           },
         },
+        'pending-glow-once': {
+          '0%': {
+            boxShadow:
+              '0 0 0 1px hsl(var(--primary) / 0.40), 0 0 4px 0 hsl(var(--primary) / 0.30)',
+          },
+          '25%, 75%': {
+            boxShadow:
+              '0 0 0 2px hsl(var(--primary) / 0.85), 0 0 12px 2px hsl(var(--primary) / 0.65)',
+          },
+          '100%': {
+            boxShadow:
+              '0 0 0 1px hsl(var(--primary) / 0.40), 0 0 4px 0 hsl(var(--primary) / 0.30)',
+          },
+        },
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
@@ -159,6 +173,7 @@ export default {
         typing: 'typing 1.5s steps(20, end), blink 0.75s step-end infinite',
         'float-background': 'float-background 15s ease infinite',
         'pending-glow': 'pending-glow 3.6s ease-in-out infinite',
+        'pending-glow-once': 'pending-glow-once 3s ease-in-out 1 forwards',
       },
     },
   },

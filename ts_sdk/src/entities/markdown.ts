@@ -1,5 +1,6 @@
 import { APIEntity, registerEntity } from '../APIEntity';
 import { IEntity } from '../IEntity';
+import { DockPointerData } from '../models/DockPointer';
 
 export interface IMarkdown extends IEntity {
   name?: string;
@@ -50,6 +51,15 @@ export class Markdown extends APIEntity<Markdown> implements IMarkdown {
     this.links = entity.links;
     this.scope = entity.scope;
     this.project_id = entity.project_id;
+  }
+
+  /**
+   * Default open target: the markdown asset editor. Drives URL-first
+   * navigation (e.g. `flow navigate entity markdown-<id>`); without this the
+   * base `APIEntity.dockPointer` (HOME) would send the doc to the home view.
+   */
+  override get dockPointer(): DockPointerData {
+    return this.assetEditorPointer('markdown') ?? super.dockPointer;
   }
 
   /**

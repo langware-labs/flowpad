@@ -1,22 +1,34 @@
 ---
 id: 7953ed01-9be0-5756-b063-39298f6c5186
 name: flowpad-assistance
-description: "Flowpad assistance — drives the Flowpad app on behalf of the user. Supported\
-  \ actions:\n  • context — read what the user is currently looking at (current project,\n\
-  \    process, workspace, etc.) so other actions can compose without asking\n   \
-  \ for an id. Triggered by phrases like \"current X\", \"this X\", \"the\n    one\
-  \ I'm in\".\n  • navigate — drive the active browser tab to a Flowpad entity by\
-  \ TypeId\n    (e.g. \"shell-<uuid>\", \"markdown-<uuid>\", \"project-<uuid>\",\n\
-  \    \"agentic_process-<uuid>\"). Triggered when the user asks to open, show,\n\
-  \    navigate to, or jump to an entity. See ``navigate.md``.\n  • records — entities/records\
-  \ CRUD. Discover types via ``flow schema list``,\n    get the JSON shape via ``flow\
-  \ schema info <type>``, materialize a\n    record on disk, then run ``flow record\
-  \ index <path>`` to persist it.\n    Triggered by \"create a task / skill / agent\
-  \ / workflow\", \"make a new\n    X\", \"add an X\". See ``records.md``.\n  • search\
-  \ — Search local files, skills, agents, specs, plans and other\n    assets via ``flow\
-  \ record search <query> <time> <limit>`` (SQLite FTS5).\n    Use this whenever the\
-  \ user asks to find / look up / show / search for\n    something without giving\
-  \ an explicit TypeId. See ``search.md``.\n"
+description: |
+  Flowpad assistance — drives the Flowpad app on behalf of the user. Supported actions:
+    • context — read what the user is currently looking at (current project,
+      process, workspace, etc.) so other actions can compose without asking
+      for an id. Triggered by phrases like "current X", "this X", "the
+      one I'm in".
+    • navigate — drive the active browser tab to a Flowpad entity by TypeId
+      (e.g. "shell-<uuid>", "markdown-<uuid>", "project-<uuid>",
+      "agentic_process-<uuid>"). Triggered when the user asks to open, show,
+      navigate to, or jump to an entity. See ``navigate.md``.
+    • records — entities/records CRUD. Discover types via ``flow schema list``,
+      get the JSON shape via ``flow schema info <type>``, materialize a
+      record on disk, then run ``flow record index <path>`` to persist it.
+      Triggered by "create a task / skill / agent / workflow", "make a new
+      X", "add an X". See ``records.md``.
+    • search — Search local files, skills, agents, specs, plans and other
+      assets via ``flow record search <query> <time> <limit>`` (SQLite FTS5).
+      Use this whenever the user asks to find / look up / show / search for
+      something without giving an explicit TypeId. See ``search.md``.
+    • process — restart the calling agentic-process session via ``flow process restart``
+      (kills + re-spawns the worker, resuming the session). Use after installing an
+      MCP server so the new config loads, or when the user says "restart this
+      session / process / agent". Defaults to the current process. See ``process.md``.
+    • message — send a message (optionally with file attachments) into a
+      conversation via the backend's ``add_message`` HTTP action (there is no
+      ``flow`` CLI command for this). Triggered by "send X to my conversation
+      with Y", "attach this doc to the Z conversation", "message Y the report".
+      See ``message.md``.
 tags:
 - flowpad
 - ui
@@ -24,6 +36,7 @@ tags:
 - context
 - records
 - search
+- message
 allowed-tools:
 - Bash(flow context list:*)
 - Bash(flow navigate entity:*)
@@ -31,6 +44,8 @@ allowed-tools:
 - Bash(flow schema info:*)
 - Bash(flow record index:*)
 - Bash(flow record search:*)
+- Bash(flow process restart:*)
+- Bash(curl:*)
 - Read
 - Write
 - Edit
@@ -103,5 +118,7 @@ For any action other than `context`, open the matching file in this skill direct
 | navigate | [`navigate.md`](navigate.md) |
 | records  | [`records.md`](records.md) |
 | search   | [`search.md`](search.md) |
+| process  | [`process.md`](process.md) |
+| message  | [`message.md`](message.md) |
 
 When composing actions (e.g. "navigate to the current X" or "create a task and open it"), read both files end-to-end before you start running commands.

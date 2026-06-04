@@ -13,11 +13,10 @@ import {
 import { Input } from '@src/components/ui/input';
 import { Label } from '@src/components/ui/label';
 import { Textarea } from '@src/components/ui/textarea';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { Plus, Trash2 } from 'lucide-react';
 
 export function SecretsSection() {
-  const { toast } = useToast();
   const [enabled, setEnabled] = useState<boolean | null>(null);
   const [secrets, setSecrets] = useState<AppSecretSummary[]>([]);
   const [busy, setBusy] = useState(false);
@@ -49,10 +48,9 @@ export function SecretsSection() {
       const list = await secretsService.list();
       setSecrets(list ?? []);
     } catch (error) {
-      toast({
+      notify.error({
         title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to load secrets',
-        variant: 'destructive',
+        message: error instanceof Error ? error.message : 'Failed to load secrets',
       });
     }
   };
@@ -63,19 +61,17 @@ export function SecretsSection() {
       const result = await secretsService.enable();
       if (result?.enabled) {
         setEnabled(true);
-        toast({ title: 'Secrets enabled' });
+        notify.success({ title: 'Secrets enabled' });
       } else {
-        toast({
+        notify.error({
           title: 'Could not enable secrets',
-          description: 'Keychain approval was not granted',
-          variant: 'destructive',
+          message: 'Keychain approval was not granted',
         });
       }
     } catch (error) {
-      toast({
+      notify.error({
         title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to enable secrets',
-        variant: 'destructive',
+        message: error instanceof Error ? error.message : 'Failed to enable secrets',
       });
     } finally {
       setBusy(false);
@@ -97,12 +93,11 @@ export function SecretsSection() {
       setShowAdd(false);
       resetForm();
       await refreshList();
-      toast({ title: 'Secret saved', description: trimmed });
+      notify.success({ title: 'Secret saved', message: trimmed });
     } catch (error) {
-      toast({
+      notify.error({
         title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to save secret',
-        variant: 'destructive',
+        message: error instanceof Error ? error.message : 'Failed to save secret',
       });
     } finally {
       setBusy(false);
@@ -114,12 +109,11 @@ export function SecretsSection() {
     try {
       await secretsService.delete(secretName);
       await refreshList();
-      toast({ title: 'Secret deleted', description: secretName });
+      notify.success({ title: 'Secret deleted', message: secretName });
     } catch (error) {
-      toast({
+      notify.error({
         title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to delete secret',
-        variant: 'destructive',
+        message: error instanceof Error ? error.message : 'Failed to delete secret',
       });
     } finally {
       setBusy(false);

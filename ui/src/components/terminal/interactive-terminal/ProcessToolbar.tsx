@@ -26,11 +26,9 @@ import {
   DropdownMenuLabel,
 } from '@src/components/ui/dropdown-menu';
 import { BugPlay, ExternalLink, Filter, GitFork, Info, RotateCcw, ScrollText, SlidersHorizontal, SquareTerminal, X } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { useToast } from '@src/hooks/use-toast';
-import { ToastAction } from '@src/components/ui/toast';
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { closeTerminalTargets } from '@src/hooks/useActiveTerminals';
 import { PTYViewer } from './pty-viewer';
 import { PTYEventsViewer } from './pty-events-viewer';
 import { CommandStatusViewer } from './command-status-viewer';
@@ -104,33 +102,27 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
     [process, canToggle],
   );
 
-  // Toast when API_TIMEOUT detected — auto-dismisses if status recovers
-  const { toast, dismiss } = useToast();
-  const apiTimeoutToastId = useRef<string | null>(null);
+  // Sticky toast while API_TIMEOUT; the stable id dedupes (no re-show guard
+  // needed) and auto-dismisses once the status recovers.
   useEffect(() => {
+    const typeId = String(process.typeId);
+    const id = `api-timeout:${typeId}`;
     if (process.workerStatus === WorkerStatus.API_TIMEOUT) {
-      if (apiTimeoutToastId.current) return; // already shown
-      const { id } = toast({
+      notify.warning({
+        id,
         title: 'Agent is taking a long time to respond',
-        description: 'The Anthropic API may be slow or unresponsive.',
-        duration: Infinity,
-        action: (
-          <div className="flex gap-2">
-            <ToastAction altText="Terminate" onClick={() => { void closeTerminalTargets([process.typeId]); dismiss(id); apiTimeoutToastId.current = null; }}>
-              Terminate
-            </ToastAction>
-            <ToastAction altText="Keep Waiting" onClick={() => { dismiss(id); apiTimeoutToastId.current = null; }}>
-              Keep Waiting
-            </ToastAction>
-          </div>
-        ),
+        message: 'The Anthropic API may be slow or unresponsive.',
+        durationMs: null,
+        typeId,
+        actions: [
+          { label: 'Terminate', command: 'terminal.terminate', args: { typeId } },
+          { label: 'Keep Waiting', command: 'notification.dismiss', args: { id } },
+        ],
       });
-      apiTimeoutToastId.current = id;
-    } else if (apiTimeoutToastId.current) {
-      dismiss(apiTimeoutToastId.current);
-      apiTimeoutToastId.current = null;
+    } else {
+      notify.dismiss(id);
     }
-  }, [process.workerStatus]);
+  }, [process.workerStatus, process.typeId]);
 
   const handleFork = async () => {
     if (isForking) return;
@@ -414,12 +406,7 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
             }
             disabled={!hasTranscript}
             onClick={() => {
-              void (async () => {
-                const sessionId = process.session_id!;
-                const record = await ClaudeSessionRecord.discover(sessionId).catch(() => null);
-                const projectEncodedName = record?.project_encoded_name ?? workdir.replace(/\//g, '-');
-                navigation.openLens('claude', 'transcript', `${projectEncodedName}/${sessionId}`);
-              })();
+              navigation.openLens('claude', 'transcript', process.session_id!);
             }}
           />
         )}

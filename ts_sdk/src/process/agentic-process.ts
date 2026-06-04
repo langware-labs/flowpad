@@ -214,13 +214,6 @@ export interface IAgenticProcess extends IEntity {
   readonly worker_status?: WorkerStatus;
   session_id?: string | null;
   /**
-   * URL-encoded cwd Claude CLI ran in — used to locate the session jsonl at
-   * ~/.claude/projects/<project_encoded_name>/<session_id>.jsonl. Populated
-   * server-side after the first claude turn lands; read by helpers like
-   * runLearningJob's transcriptPathForRunner.
-   */
-  project_encoded_name?: string | null;
-  /**
    * USD cost of this process's session transcript so far. Computed
    * server-side from the session jsonl via
    * flow_sdk.transcript_analyzer.pricing.total_cost_usd; not persisted on
@@ -238,6 +231,8 @@ export interface IAgenticProcess extends IEntity {
   shell_id?: string | null;
   /** Whether this process is visible in the tabs view */
   visible?: boolean;
+  /** ISO timestamp of the tab's last activation. Resolver recency seed (Bug 1). */
+  last_active_at?: string | null;
   /** Sidecar plain shell PTY session ID */
   sidecar_shell_id?: string | null;
   /** True when PTY OSC title escapes may update `name`. Cleared the first time the user manually renames this tab. */
@@ -259,6 +254,11 @@ export interface IAgenticProcess extends IEntity {
   cli_config?: Record<string, any>;
   /** Extra directories passed to Claude via --add-dir */
   additional_dirs?: string[];
+  /** Per-process override for mounting the Flowpad Assistant project
+   *  (--add-dir → its .claude/skills + agents become discoverable). When
+   *  null/undefined it inherits the global ServiceConfig.load_flowpad_assistant.
+   *  Set via {@link enableAssistant}. */
+  load_flowpad_assistant?: boolean | null;
   /** TypeIds of entities materialized under the process's assets dir. */
   embedded_asset_refs?: TypeId[];
   /** Owning project ID */
@@ -382,19 +382,24 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    *   `execute` action, which routes to `prompt()` → `send()` and writes the
    *   text into the running PTY's stdin so the worker picks it up as its
    *   first user message.
+   * @param project - Optional project to run the tab in. Defaults to the active
+   *   `dataContext.project`. Pass an explicit project when the prompt relies on
+   *   project-scoped assets (e.g. a `.claude/skills` skill that only lives in a
+   *   specific system project) so the spawned worker's cwd can discover them.
    * @returns The spawned AgenticProcess (already navigated to).
    */
   static async openTab(
     workerType: 'claude_code' | 'codex',
     prompt?: string,
+    project?: { id?: string; fs_storage_mount_path?: string | null } | null,
   ): Promise<AgenticProcess> {
     const computeNode = dataContext.computeNode;
     if (!computeNode) throw new Error('[AgenticProcess.openTab] No local compute node');
-    const project = dataContext.project;
+    const proj = project ?? dataContext.project;
     const process = await computeNode.createProcess(
       {
-        workdir: project?.fs_storage_mount_path ?? undefined,
-        ...(project?.id ? { projectId: project.id } : {}),
+        workdir: proj?.fs_storage_mount_path ?? undefined,
+        ...(proj?.id ? { projectId: proj.id } : {}),
         workerType,
       },
       { visible: true, watchProcess: false },
@@ -801,6 +806,24 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this.cli_config = cmd.toJson();
   }
 
+  /** Enable the Flowpad Assistant mount for this process — its
+   *  `.claude/skills` + agents become discoverable via `--add-dir`.
+   *
+   *  Sets the per-process `load_flowpad_assistant` flag, notifies local
+   *  subscribers via an entity event, then persists. The backend driver reads
+   *  the flag via `assistant_enabled` (falling back to the global default) when
+   *  building the worker command; because the flag changes the resolved
+   *  `--add-dir` set, the backend `save()` hook recomputes `restart_required`
+   *  naturally and reflects both the flag and `restart_required` back to the
+   *  frontend "as is" (no special-casing). */
+  async enableAssistant(): Promise<this> {
+    this.load_flowpad_assistant = true;
+    // Optimistic local notify so subscribers can react before the round-trip.
+    this.onEntityEvent('assistant.enabled', { load_flowpad_assistant: true });
+    await this.save();
+    return this;
+  }
+
   /** Append a directory to additional_dirs (passed to Claude via --add-dir). */
   async addDir(path: string): Promise<void> {
     const actionInfo = new ActionInfo('add-dir', AgenticProcess.type, this.id, 'POST');
@@ -821,8 +844,23 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
 
   async shell(): Promise<Shell | null> {
     if (!this.shell_id) return null;
+    const w = (typeof window !== 'undefined' ? window : undefined) as
+      | { __shellNavT0?: number }
+      | undefined;
+    const t0 = w?.__shellNavT0;
+    const stamp = (label: string, start: number) => {
+      if (t0 === undefined) return;
+      const now = performance.now();
+      // eslint-disable-next-line no-console
+      console.log(`[PERF] +${(now - t0).toFixed(0)}ms ${label} took ${(now - start).toFixed(1)}ms`);
+    };
+    const sImport = performance.now();
     const { Shell } = await import('../entities/shell');
-    return Shell.getById(this.shell_id);
+    stamp('process.shell: dynamic import("../entities/shell")', sImport);
+    const sGet = performance.now();
+    const result = await Shell.getById<Shell>(this.shell_id);
+    stamp('process.shell: Shell.getById', sGet);
+    return result;
   }
 
   /** The PTY connection for this process — delegates to the linked Shell. */
@@ -1133,14 +1171,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    */
   get error(): Error | null {
     return this._error;
-  }
-
-  /**
-   * Handle incoming FlowData from backend entity notification.
-   */
-  handleFlowData(flowData: FlowData): void {
-    super.handleFlowData(flowData);
-    this._handleFlowData(flowData);
   }
 
   /**
@@ -1584,7 +1614,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     processor.on(FlowEvents.DATA, (fd: FlowData) => {
       try {
         this.flowDataStream.ingest(fd);
-        this._handleFlowData(fd);
       } catch (err) {
         console.error('[AgenticProcess.prompt] ingest error', err);
       }
@@ -2041,6 +2070,24 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   }
 
   /**
+   * Bridge backend-initiated restarts to the local 'restarted' event.
+   *
+   * The UI restart button drives {@link restart} client-side, which emits
+   * 'restarted' directly. A *server*-initiated restart (e.g. the agent running
+   * `flow process restart` after installing an MCP, via the backend
+   * `self-restart` action) has no such client signal — the backend instead
+   * pushes a `worker.restarted` entity event once the fresh PTY is up. Re-emit
+   * it as the same local 'restarted' event so {@link InteractiveTerminal}
+   * clears and re-attaches to the new PTY without any extra wiring.
+   */
+  onEntityEvent(event: string, payload: Record<string, unknown>): void {
+    super.onEntityEvent(event, payload);
+    if (event === 'worker.restarted') {
+      this.emit('restarted', { process: this, payload });
+    }
+  }
+
+  /**
    * Write raw text to the live PTY stdin.
    * The shell must have an active PTY (call start() first).
    *
@@ -2205,32 +2252,6 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * (following Flow's pattern of state management via FlowData messages).
    * @internal
    */
-  _handleFlowData(data: FlowData): void {
-    const elementType = data.attributes?.['element-type'];
-
-    if (elementType === 'status' && typeof data.data === 'object' && data.data !== null) {
-      const statusData = data.data as Record<string, unknown>;
-      if (
-        statusData.status &&
-        typeof statusData.status === 'string' &&
-        statusData.status !== this.workerStatus
-      ) {
-        const oldWorker = this.workerStatus;
-        this.workerStatus = statusData.status as WorkerStatus;
-        this.emit('state_change', {
-          field: 'workerStatus',
-          oldValue: oldWorker,
-          newValue: this.workerStatus,
-        });
-        if (this.workerStatus === WorkerStatus.COMPLETE) {
-          this._handleComplete();
-        } else if (this.workerStatus === WorkerStatus.ERROR || this.workerStatus === WorkerStatus.INTERRUPTED) {
-          this._handleError(new Error(`Process ended with worker status: ${this.workerStatus}`));
-        }
-      }
-    }
-  }
-
   /**
    * Called by the store when the backend pushes an entity update via WebSocket.
    * Propagates state changes (including COMPLETE) so output() terminates correctly.
@@ -2286,8 +2307,8 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * (``output()``, ``waitForExecutionComplete``) can resolve.
    *
    * Caller contract: only invoke on a real transition into COMPLETE. The
-   * existing call sites in ``_handleFlowData`` / ``onEntityUpdate`` are
-   * gated by ``newValue !== oldValue`` so this is naturally one-per-edge.
+   * call site in ``onEntityUpdate`` is gated by ``newValue !== oldValue`` so
+   * this is naturally one-per-edge.
    * @internal
    */
   _handleComplete(): void {

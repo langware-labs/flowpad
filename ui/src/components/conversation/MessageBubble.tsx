@@ -1,5 +1,5 @@
 import { useState, type MouseEvent, type ReactNode } from 'react';
-import { Pencil, Check, CheckCheck } from 'lucide-react';
+import { Pencil, Check, CheckCheck, Clock, Trash2 } from 'lucide-react';
 import type { FlowMessage } from '@sdk';
 import type { ConversationMessage } from '@sdk/entities/conversation';
 import { AttachmentType, type DeliveryStatus } from '@sdk/entities/flow-message';
@@ -10,6 +10,7 @@ import { useLocalUser } from './useLocalUser';
 import { PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT } from './constants';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
 import { flowMessageSpecTypeId } from './flow-message-helpers';
+import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 
 interface MessageBubbleProps {
   message: ConversationMessage;
@@ -18,6 +19,11 @@ interface MessageBubbleProps {
   task?: ITask;
   senderName: string;
   onEditName?: (newName: string) => void;
+  /** When set, renders a delete (trash) control on the bubble. The parent
+   *  decides who may delete (sender or conversation owner) and only passes
+   *  this for messages the local user is allowed to remove. Clicking it opens
+   *  a destructive confirm dialog; on confirm this fires. */
+  onDeleteMessage?: () => void;
   onApproveAndExecute?: (attachmentIndex: number) => void;
   /** Spawn a Claude Code session pre-loaded with the receiver-context prompt
    *  (spec + transcript + conversation + attachments). Renders an emerald CTA
@@ -61,6 +67,17 @@ interface MessageBubbleProps {
 function DeliveryReceipt({ status }: { status: DeliveryStatus | undefined }) {
   if (!status) return null;
   if (status === 'created') {
+    // `created` = written to the local store, NOT yet accepted by the hub.
+    // Show a clock ("Pending"), not a ✓ — a single check here would give false
+    // confidence the recipient got it when the outbound hub push may have failed.
+    return (
+      <span title="Pending" className="inline-flex items-center text-muted-foreground/70">
+        <Clock className="h-3 w-3" strokeWidth={2.5} />
+      </span>
+    );
+  }
+  if (status === 'sent') {
+    // `sent` = accepted/stored on the hub (one check). Not yet pulled by the recipient.
     return (
       <span title="Sent" className="inline-flex items-center text-muted-foreground/70">
         <Check className="h-3 w-3" strokeWidth={2.5} />
@@ -127,6 +144,7 @@ export function MessageBubble({
   task,
   senderName,
   onEditName,
+  onDeleteMessage,
   onApproveAndExecute,
   onImplementPlan,
   onOpenPlanSession,
@@ -138,6 +156,7 @@ export function MessageBubble({
 }: MessageBubbleProps) {
   const [editing, setEditing] = useState(false);
   const [editValue, setEditValue] = useState('');
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const { localUser } = useLocalUser();
 
   const isFromOther = !!(flowMessage?.sender_id && localUser?.id && flowMessage.sender_id !== localUser.id);
@@ -243,6 +262,16 @@ export function MessageBubble({
               <Pencil className="h-2.5 w-2.5" />
             </button>
           )}
+          {onDeleteMessage && !editing && (
+            <button
+              onClick={() => setConfirmingDelete(true)}
+              className="text-muted-foreground/50 transition-colors hover:text-destructive"
+              title="Delete message"
+              aria-label="Delete message"
+            >
+              <Trash2 className="h-2.5 w-2.5" />
+            </button>
+          )}
           {time && (
             <span className="text-[10px] text-muted-foreground">
               {time}
@@ -250,7 +279,11 @@ export function MessageBubble({
             </span>
           )}
           {showReceipt && <DeliveryReceipt status={flowMessage?.delivery_status} />}
-          <MessageChips flowMessageId={flowMessageId} />
+          <MessageChips
+            flowMessageId={flowMessageId}
+            conversationId={flowMessage?.conversation_id ?? undefined}
+            messageText={message.content}
+          />
         </div>
         {message.content && message.content !== PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT && (() => {
           const claudeQuote = parseClaudeQuote(message.content);
@@ -280,6 +313,17 @@ export function MessageBubble({
         )}
         {footer}
       </div>
+      {onDeleteMessage && (
+        <ConfirmDialog
+          open={confirmingDelete}
+          onOpenChange={setConfirmingDelete}
+          title="Delete this message?"
+          description="This permanently deletes the message and all of its data for everyone in the conversation. This can't be undone."
+          confirmLabel="Delete"
+          variant="destructive"
+          onConfirm={onDeleteMessage}
+        />
+      )}
     </div>
   );
 }

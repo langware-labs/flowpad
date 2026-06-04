@@ -33,9 +33,21 @@ ENV_SQLITE_DATABASE_PATH = "SQLITE_DATABASE_PATH"
 ENV_FS_RECORD_PATH = "FS_RECORD_PATH"
 ENV_FLOWPAD_CLAUDE_HOME = "FLOWPAD_CLAUDE_HOME"
 ENV_CODEX_HOME = "CODEX_HOME"
+ENV_FLOWPAD_HUB_URL = "FLOWPAD_HUB_URL"
+ENV_MINIHUB_HOST = "MINIHUB_HOST"
+ENV_MINIHUB_RELOAD = "MINIHUB_RELOAD"
+ENV_VITE_PORT = "VITE_PORT"
+ENV_FLOWPAD_CLOUD_API_KEY = "FLOWPAD_CLOUD_API_KEY"
+ENV_FLOWPAD_CLOUD_API_URL = "FLOWPAD_CLOUD_API_URL"
+ENV_FLOWPAD_DOCKER_PUBLIC_URL = "FLOWPAD_DOCKER_PUBLIC_URL"
+# Pass-through SOD Fernet key (e.g. supplied by Electron after it read the
+# keychain) — when set, the per-instance sodot uses it directly and never
+# touches the OS keychain. Same var that binds ServiceConfig.sod_enc_key.
+ENV_SOD_ENC_KEY = "SOD_ENC_KEY"
 
 DEFAULT_PROD_PORT = 9007
 DEFAULT_DB_DRIVER = "sqlite"
+DEFAULT_MINIHUB_HOST = "0.0.0.0"
 
 # Phase B additions — instance identity + sod accessor.
 INSTANCE_NAME_RE = re.compile(r"^[a-z0-9_-]{1,32}$")
@@ -43,9 +55,12 @@ SOD_KEY_KEYCHAIN_SERVICE = "Flowpad.ai.sod_key"
 CONSENT_MARKER_FILENAME = ".secrets_enabled"
 SODOT_FILENAME = "sodot"
 
-# Module-level cache for the per-instance Fernet key. Populated once per
-# (process, instance_name) — the keychain prompt fires at most once.
-_SOD_KEY_CACHE: dict[str, bytes] = {}
+# Sentinel for the per-instance memoized key/store fields, set on the frozen
+# dataclass via ``object.__setattr__`` (see ``sod_key`` / ``sod``). _UNSET means
+# "not resolved yet". The memo lives on the (cached) InstanceSettings object, so
+# there is no separate module-level key cache — the keychain prompt fires at
+# most once per process, the first time a real secret is read or written.
+_UNSET = object()
 
 
 class SecretsNotEnabledError(RuntimeError):
@@ -88,6 +103,9 @@ class BaseInstanceSettings:
     inbox_last_fetch_path: Path
     conversation_last_sync_path: Path
 
+    # ---- Toplog filter file (watched by the builtin FSOp toplog trigger) ----
+    toplog_config_path: Path
+
     # ---- Database ----
     db_driver: str               # "sqlite" | "neo4j" | "networkx"
 
@@ -125,6 +143,17 @@ class BaseInstanceSettings:
 
     # ---- Cloud login: max wait for browser-mode callback. Override via CLOUD_LOGIN_TIMEOUT_SECONDS. ----
     cloud_login_timeout_seconds: float = 300.0
+
+    # ---- Hub & cloud endpoints (env-driven; None when unset). ----
+    hub_url: str | None = None
+    cloud_api_key: str | None = None
+    cloud_api_url: str | None = None
+    docker_public_url: str | None = None
+
+    # ---- Dev-server binding / reload — read once from MINIHUB_*/VITE_* env. ----
+    host: str = DEFAULT_MINIHUB_HOST
+    reload_enabled: bool = False
+    vite_port: int | None = None
 
     # ---- Sniffer: single source of truth for whether the desktop bootstrap
     # auto-installs the Claude-Code hooks into ~/.claude/settings.json.
@@ -202,6 +231,7 @@ class BaseInstanceSettings:
             monitor_log_path=instance_dir / "logs" / "monitor.log",
             inbox_last_fetch_path=instance_dir / "inbox.json",
             conversation_last_sync_path=instance_dir / "conversation_sync.json",
+            toplog_config_path=instance_dir / "toplog.json",
             db_driver=os.environ.get(ENV_DESKTOP_DB, DEFAULT_DB_DRIVER).lower(),
             user_home=Path.home(),
             claude_home=claude_home,
@@ -225,6 +255,13 @@ class BaseInstanceSettings:
             cloud_user_email=os.environ.get("FLOWPAD_CLOUD_USER_EMAIL") or None,
             cloud_user_pass=os.environ.get("FLOWPAD_CLOUD_USER_PASSWORD") or None,
             cloud_login_timeout_seconds=cls._resolve_login_timeout(),
+            hub_url=os.environ.get(ENV_FLOWPAD_HUB_URL) or None,
+            cloud_api_key=os.environ.get(ENV_FLOWPAD_CLOUD_API_KEY) or None,
+            cloud_api_url=os.environ.get(ENV_FLOWPAD_CLOUD_API_URL) or None,
+            docker_public_url=(os.environ.get(ENV_FLOWPAD_DOCKER_PUBLIC_URL) or "").strip() or None,
+            host=cls._resolve_host(),
+            reload_enabled=os.environ.get(ENV_MINIHUB_RELOAD, "").lower() == "true",
+            vite_port=cls._resolve_vite_port(),
         )
 
     # -----------------------------------------------------------------
@@ -301,6 +338,25 @@ class BaseInstanceSettings:
             return int(env)
         return default_port
 
+    @staticmethod
+    def _resolve_vite_port() -> int | None:
+        env = os.environ.get(ENV_VITE_PORT)
+        if env and env.isdigit():
+            return int(env)
+        return None
+
+    @staticmethod
+    def _resolve_host() -> str:
+        """Return MINIHUB_HOST exactly as the user set it, or the default.
+
+        Uses an explicit ``is None`` check so an intentional
+        ``MINIHUB_HOST=""`` (e.g. to defer to uvicorn's default binding
+        behavior) is preserved rather than silently coerced to
+        ``DEFAULT_MINIHUB_HOST`` by a truthy-or check.
+        """
+        env = os.environ.get(ENV_MINIHUB_HOST)
+        return env if env is not None else DEFAULT_MINIHUB_HOST
+
     # -----------------------------------------------------------------
     # Cross-instance shared paths (computed; not per-instance prefixed)
     # -----------------------------------------------------------------
@@ -352,59 +408,92 @@ class BaseInstanceSettings:
         return self.instance_dir / CONSENT_MARKER_FILENAME
 
     @property
-    def sod(self) -> "FileSodStorage":
-        """Per-instance encrypted-secrets accessor.
+    def sod_key(self) -> bytes:
+        """Resolve (once, memoized) the per-instance Fernet key.
 
-        Raises :class:`SecretsNotEnabledError` if ``enable_secrets()`` has
-        not yet been called for this instance. This is the single
-        structural guard that prevents accidental keychain prompts from
-        upstream code paths.
+        Resolution order:
+          1. ``SOD_ENC_KEY`` env — a pass-through key (e.g. forwarded by
+             Electron after it unlocked the keychain). Used verbatim; the
+             keychain AND the consent marker are bypassed (env ⇒ consent).
+          2. The OS keychain (``_fetch_or_create_sod_key``), auto-minting on
+             first use. We also ensure the ``.secrets_enabled`` marker exists
+             so the non-prompting ``is_secrets_enabled()`` sentinel reflects
+             reality — decoupled from cloud login: any first secret use sets
+             it up, not just login.
+
+        Memoized on this (frozen, process-cached) instance via
+        ``object.__setattr__`` — so the keychain prompt fires at most once per
+        process. ``dataclasses.replace`` drops this memo (not a dataclass
+        field); that's fine, the next access lazily re-resolves.
         """
-        if not self.consent_marker_path.exists():
-            raise SecretsNotEnabledError(
-                f"Secrets not enabled for instance {self.instance_name!r}. "
-                f"Call enable_secrets() first."
-            )
+        cached = getattr(self, "_sod_key_memo", _UNSET)
+        if cached is not _UNSET:
+            return cached
+
+        env_key = os.environ.get(ENV_SOD_ENC_KEY)
+        if env_key:
+            key_bytes = env_key.encode()
+        else:
+            key_bytes = _fetch_or_create_sod_key(self.instance_name)
+
+        # Decoupled-from-login sentinel: record that this instance's local
+        # secret store is set up, without ever gating availability on it.
+        # Runs in both the env-key and keychain-mint paths so the marker is
+        # consistent regardless of how the key was sourced.
+        try:
+            self.instance_dir.mkdir(parents=True, exist_ok=True)
+            if not self.consent_marker_path.exists():
+                self.consent_marker_path.touch(mode=0o600)
+        except OSError:
+            pass
+
+        object.__setattr__(self, "_sod_key_memo", key_bytes)
+        return key_bytes
+
+    @property
+    def sod(self) -> "FileSodStorage":
+        """Per-instance encrypted-secrets store — ALWAYS available.
+
+        The Fernet key is resolved lazily (see ``sod_key``) on the first real
+        encrypt/decrypt, so merely obtaining the store — or reading a store
+        whose file does not exist yet — never touches the keychain. There is
+        no consent gate: the store works regardless of cloud-login state.
+        Memoized so every caller shares one ``FileSodStorage`` instance.
+        """
+        cached = getattr(self, "_sod_store_memo", _UNSET)
+        if cached is not _UNSET:
+            return cached
         from flow_sdk.sod.file_sod import FileSodStorage
-        key = _fetch_or_create_sod_key(self.instance_name)
-        return FileSodStorage(key=key, file_path=self.sodot_path)
+        store = FileSodStorage(key_provider=lambda: self.sod_key, file_path=self.sodot_path)
+        object.__setattr__(self, "_sod_store_memo", store)
+        return store
 
 
 def _fetch_or_create_sod_key(instance_name: str) -> bytes:
-    """Return the Fernet key for ``instance_name`` from the OS keychain.
+    """Return the per-instance Fernet key from the OS keychain, minting a new
+    random key on first use under ``Flowpad.ai.sod_key`` / ``<instance_name>``.
 
-    Generates a new key on first use and stores it under
-    ``Flowpad.ai.sod_key`` / ``<instance_name>``. This is the ONLY function
-    permitted to trigger a fresh OS keychain prompt — and it should only
-    be called from ``enable_secrets()`` or, after consent, from the
-    ``InstanceSettings.sod`` accessor (which itself gates on the consent
-    marker, so the first call has always been preceded by the
-    enable_secrets-triggered prompt).
-
-    Cached per-process: the keychain is hit at most once per instance per
-    process, even across many ``instance.sod`` accesses.
+    This is the keychain-touching primitive (it can trigger the OS prompt).
+    Callers memoize the result on the InstanceSettings instance (see
+    ``sod_key``), so it runs at most once per process.
     """
-    if instance_name in _SOD_KEY_CACHE:
-        return _SOD_KEY_CACHE[instance_name]
-
     import keyring
     from cryptography.fernet import Fernet
 
     stored = keyring.get_password(SOD_KEY_KEYCHAIN_SERVICE, instance_name)
     if stored:
-        key_bytes = stored.encode() if isinstance(stored, str) else stored
-    else:
-        key_bytes = Fernet.generate_key()
-        keyring.set_password(SOD_KEY_KEYCHAIN_SERVICE, instance_name, key_bytes.decode())
-    _SOD_KEY_CACHE[instance_name] = key_bytes
+        return stored.encode() if isinstance(stored, str) else stored
+    key_bytes = Fernet.generate_key()
+    keyring.set_password(SOD_KEY_KEYCHAIN_SERVICE, instance_name, key_bytes.decode())
     return key_bytes
 
 
 def _reset_sod_key_cache() -> None:
-    """Test helper. Drops the cached Fernet keys so the next ``instance.sod``
-    access re-reads from the keychain. Production code must not call this.
+    """Back-compat no-op. The Fernet key is now memoized per-instance (see
+    ``sod_key``); ``reset_instance_settings`` drops the instance cache, which
+    drops the memo with it. Kept so existing callers/tests don't break.
     """
-    _SOD_KEY_CACHE.clear()
+    return None
 
 
 # Public alias — code reads ``InstanceSettings`` for type annotations.

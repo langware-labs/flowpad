@@ -9,18 +9,24 @@ import {
 
   TypeId,
 } from '@sdk';
-import { useEntitiesQuery, useEntity } from '@sdk/react/hooks';
+import { useAuth, useEntitiesQuery, useEntity } from '@sdk/react/hooks';
 import type { ITask } from '@sdk/entities/task';
-import { openInboxMessage } from '@src/components/inbox-view/inbox-api';
+import { syncConversationMessages } from '@src/components/inbox-view/inbox-api';
 import { markFlowMessagesReceived } from '@sdk/entities/flow-message';
 import { FlowMessageBubble } from './FlowMessageBubble';
 import { MessageComposer } from './MessageComposer';
 import { useApproveAndExecute } from './useApproveAndExecute';
 import { useImplementPlan } from './useImplementPlan';
 import { useLocalUser } from './useLocalUser';
+import { useMembers } from '@src/hooks/use-members';
 import { buildConversationItems, ConversationItemKind } from './conversation-items';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+
+// Cap the initial messages window so long conversations don't fetch + watch
+// every FlowMessage they've ever held. Newest-first so the visible window is
+// always at the bottom of the conversation; older messages load on demand.
+const CONVERSATION_MESSAGES_WINDOW = 500;
 
 interface ConversationViewProps {
   conversationId: string;
@@ -54,10 +60,31 @@ export function ConversationView({
   onMostRecentMessageChange,
   onApproveAndExecuteFired,
 }: ConversationViewProps) {
-  const { data: conversation, refetch } = useEntity<Conversation>(
-    new TypeId(Conversation.type, conversationId),
+  const conversationTypeId = useMemo(
+    () => new TypeId(Conversation.type, conversationId),
+    [conversationId],
   );
+  const { data: conversation, refetch } = useEntity<Conversation>(conversationTypeId);
   const { localUser } = useLocalUser();
+
+  // Member roster used to resolve a message's hub-authoritative sender_id to
+  // a display name. Precedence is `conversation.participants` (entity-cache,
+  // updated via the live-query whenever the hub pushes a change) FIRST, with
+  // the explicit hub fetch in `useMembers` as the initial-load source while
+  // the entity cache is still cold. This keeps post-kick/role-change updates
+  // visible immediately (the entity update fires before the next user-driven
+  // refresh) while still getting a populated roster on first paint.
+  // `rosterReady` is true once the hub has answered for this conv at least
+  // once (success or failure) — FlowMessageBubble uses it to gate the alert
+  // glyph so legitimate load windows don't flash UNRESOLVED.
+  const { members: memberRoster, ready: rosterReady, refresh: refreshMembers } = useMembers(conversationTypeId);
+  const participants = useMemo(
+    () =>
+      conversation?.participants && conversation.participants.length > 0
+        ? conversation.participants
+        : memberRoster,
+    [conversation?.participants, memberRoster],
+  );
 
   const pointers = conversation?.conversationMessageIds ?? [];
 
@@ -86,47 +113,49 @@ export function ConversationView({
     enabled: !!conversationId,
   });
 
-  // Backfill missing FlowMessage entities. `backfilledIds` tracks ids whose
-  // bundle finished unpacking — adding an id flips the bubble's React key,
-  // forcing a one-shot remount so its `useEntity` re-fetches. Without this,
-  // a bubble that 404'd on first mount (FM not yet materialized) would never
-  // re-attempt and stay stuck on "Loading message…".
-  const requestedRef = useRef<Set<string>>(new Set());
-  const [backfilledIds, setBackfilledIds] = useState<ReadonlySet<string>>(() => new Set());
+  // All FlowMessages in this conversation, fetched in ONE live query (replaces
+  // the per-bubble `useEntity` N+1). The query is the source of truth for
+  // message bodies; the conversation's pointer list still drives order. Match
+  // is wrapped in $AND for the same reason as the drafts query (the SDK's
+  // plain-object shorthand doesn't recursively wrap operands). Capped at
+  // CONVERSATION_MESSAGES_WINDOW newest rows so long-running conversations
+  // don't fetch + watch O(total) entities on every open; older messages
+  // load on demand via a `created_date $LT` cursor extension here.
+  const messagesRequest = useMemo(() => new QueryRequest({
+    type: FlowMessage.type,
+    scope: [],
+    name: `messages:${conversationId}`,
+    query: new QueryFilter({
+      match: {
+        op: '$AND',
+        operands: [{ op: '$EQ', operands: ['conversation_id', conversationId] }],
+      } as Record<string, unknown>,
+      limit: CONVERSATION_MESSAGES_WINDOW,
+      order_by: { created_date: 'desc' },
+    }),
+  }), [conversationId]);
+  const { data: conversationMessages = [] } = useEntitiesQuery<FlowMessage>(messagesRequest, {
+    enabled: !!conversationId,
+  });
+  const messagesById = useMemo(
+    () => new Map(conversationMessages.filter((m) => m.id).map((m) => [m.id as string, m])),
+    [conversationMessages],
+  );
+
+  // Pull this conversation's hub messages once per open (and whenever the
+  // pointer set changes — a new reply landed). The backend syncs only the
+  // new/changed messages in a single request (LWW by updated_date); the live
+  // `messagesById` query above renders whatever lands, so no per-message
+  // backfill loop or remount-keying is needed.
   useEffect(() => {
-    if (pointers.length === 0) return;
-    let cancelled = false;
-    (async () => {
-      for (const ptr of pointers) {
-        if (cancelled) return;
-        if (requestedRef.current.has(ptr.id)) continue;
-        const fmTypeId = new TypeId(FlowMessage.type, ptr.id);
-        const local = await dataManager.getByTypeId<FlowMessage>(fmTypeId).catch(() => null);
-        if (local) continue;
-        requestedRef.current.add(ptr.id);
-        try {
-          await openInboxMessage(ptr.id);
-          if (cancelled) return;
-          setBackfilledIds((prev) => {
-            if (prev.has(ptr.id)) return prev;
-            const next = new Set(prev);
-            next.add(ptr.id);
-            return next;
-          });
-        } catch {
-          // Drop from the set so a future render can retry once the user
-          // refreshes; avoid hammering the hub on transient failures.
-          requestedRef.current.delete(ptr.id);
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-    // We deliberately key on the joined pointer list (not `pointers` identity)
-    // so brand-new replies trigger a fetch but identical re-renders don't.
+    if (!conversationId) return;
+    void syncConversationMessages(conversationId).catch(() => {
+      // Hub offline / not configured — the local query still renders what we
+      // already have; avoid surfacing transient sync failures to the user.
+    });
+    // Re-sync when the pointer set changes so brand-new replies pull through.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pointers.map((p) => p.id).join(',')]);
+  }, [conversationId, pointers.map((p) => p.id).join(',')]);
 
   // Approve & Execute is task-bound. Pass an inert task to the hook when no
   // task is present so we can keep the call unconditional, then suppress the
@@ -182,8 +211,8 @@ export function ConversationView({
   );
 
   const orderedItems = useMemo(
-    () => buildConversationItems(pointers, draftMessages, backfilledIds),
-    [pointers, backfilledIds, draftMessages],
+    () => buildConversationItems(pointers, draftMessages),
+    [pointers, draftMessages],
   );
 
   // Surface the most-recent message id so the parent's Context tab can default
@@ -208,20 +237,32 @@ export function ConversationView({
   // conversation order — same id every render, so we still only scroll on
   // genuine selection changes. The "set" identity is compared via the joined
   // string so a re-render of the same array doesn't re-fire.
+  //
+  // Two-phase (arm → fire) so URL deep links (/conversation/<id>/message/<id>)
+  // work: on a cold load the selection lands before the bubbles have rendered
+  // (messages stream in via the live query), so a single same-tick
+  // querySelector would miss. The pending id stays armed until the target
+  // exists in the DOM — the fire effect re-runs as messages/items land.
   const selectionKey = (selectedMessageIds ?? []).join(',');
   const scrollTargetId = (selectedMessageIds ?? [])[0] ?? null;
+  const pendingScrollIdRef = useRef<string | null>(null);
   const prevSelectionKeyRef = useRef<string | undefined>(undefined);
   useEffect(() => {
     const prev = prevSelectionKeyRef.current;
     prevSelectionKeyRef.current = selectionKey;
-    if (!scrollTargetId) return;
-    if (prev === undefined) return; // skip first mount
-    if (prev === selectionKey) return;
-    const el = document.querySelector<HTMLElement>(
-      `[data-testid="message-bubble-${CSS.escape(scrollTargetId)}"]`,
-    );
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    if (prev === selectionKey) return; // re-render of the same selection
+    pendingScrollIdRef.current = scrollTargetId;
   }, [selectionKey, scrollTargetId]);
+  useEffect(() => {
+    const target = pendingScrollIdRef.current;
+    if (!target) return;
+    const el = document.querySelector<HTMLElement>(
+      `[data-testid="message-bubble-${CSS.escape(target)}"]`,
+    );
+    if (!el) return; // bubble not rendered yet — retry on the next data tick
+    pendingScrollIdRef.current = null;
+    el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [selectionKey, orderedItems, messagesById]);
 
   // Read-ack emission: when the conversation panel is open, batch-mark all
   // current pointers as `received`. The hub honors monotonicity + sender-skip
@@ -248,20 +289,51 @@ export function ConversationView({
 
   const conversationStatusVisible = conversation?.message_status_visible !== false;
 
+  // The conversation owner (created_by == the local cloud user) may delete ANY
+  // message; everyone may delete their own. The per-bubble sender check is done
+  // inside FlowMessageBubble — this only supplies the owner half of the gate.
+  const { cloudUser } = useAuth();
+  const cloudUserId = cloudUser?.id ?? null;
+  // Owner = either created_by matches (recipient side, where the hub stamped the
+  // cloud-user id) OR the local user holds role "owner" in the participant
+  // roster (creator side, where created_by is the local user id). The roster is
+  // the hub-authoritative signal on both sides.
+  const isConversationOwner =
+    !!cloudUserId &&
+    ((!!conversation?.created_by && conversation.created_by === cloudUserId) ||
+      (participants ?? []).some(
+        (p) => p.user_id === cloudUserId && (p.role ?? '').toLowerCase() === 'owner',
+      ));
+
+  // Delete a message everywhere. The loader/live-query owns the list, so we
+  // only fire the SDK action and let the resulting data-op re-render the view
+  // (no optimistic list mutation — URL/loader-first).
+  const handleDeleteMessage = useCallback((messageId: string) => {
+    void new FlowMessage({ id: messageId }).remove().catch((err) => {
+      console.error('[conversation] delete message failed', messageId, err);
+    });
+  }, []);
+
   const [hubSyncing, setHubSyncing] = useState(false);
+  // Full reload: messages AND members. The button is the user's explicit
+  // "pull everything fresh from the hub" — so it force-reloads the roster
+  // (refreshMembers re-fetches, bypassing the per-instance members cache),
+  // re-syncs this conversation's messages, and re-reads the conversation
+  // entity. Each leg is independent + best-effort so one offline hop doesn't
+  // block the others.
   const handleRefresh = useCallback(async () => {
     setHubSyncing(true);
     try {
-      try {
-        await fetchConversations();
-      } catch {
-        // Hub may be offline / not configured — local refetch still runs.
-      }
+      await Promise.allSettled([
+        fetchConversations(),
+        syncConversationMessages(conversationId),
+        refreshMembers(),
+      ]);
       await refetch();
     } finally {
       setHubSyncing(false);
     }
-  }, [refetch]);
+  }, [refetch, refreshMembers, conversationId]);
 
   return (
     <div className="space-y-3">
@@ -291,16 +363,21 @@ export function ConversationView({
                 <FlowMessageBubble
                   key={item.key}
                   messageId={id}
+                  fm={messagesById.get(id) ?? null}
                   timestamp={item.timestamp}
                   task={task}
-                  participants={conversation?.participants}
+                  participants={participants}
+                  rosterReady={rosterReady}
                   onApproveAndExecute={canApproveAndExecute ? runApprove : undefined}
                   onImplementPlan={task && !openPlanSession ? runImplementPlan : undefined}
                   onOpenPlanSession={openPlanSession}
                   onViewPlan={runViewPlan}
                   isSelected={(selectedMessageIds ?? []).includes(id)}
                   onSelect={onSelectMessage ? () => onSelectMessage(id) : undefined}
+                  isConversationOwner={isConversationOwner}
+                  onDeleteMessage={handleDeleteMessage}
                   conversationStatusVisible={conversationStatusVisible}
+                  ensureProjectMapped={ensureMapped}
                 />
               );
             }
@@ -309,11 +386,13 @@ export function ConversationView({
               <FlowMessageBubble
                 key={item.key}
                 messageId={id}
+                fm={item.draft}
                 timestamp={item.draft.created_date instanceof Date
                   ? item.draft.created_date.toISOString()
                   : (item.draft.created_date ?? '')}
                 task={task}
-                participants={conversation?.participants}
+                participants={participants}
+                rosterReady={rosterReady}
                 isDraft
                 onDraftSent={() => void refetch()}
                 isSelected={!!id && (selectedMessageIds ?? []).includes(id)}

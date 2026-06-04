@@ -1,7 +1,8 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Conversation, type Task, TypeId } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { History, Layers, PanelRightClose, PanelRightOpen } from 'lucide-react';
+import { cn } from '@src/lib/utils';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
 import { TabbedSideDrawer } from '@src/components/ui/side-drawer';
 import { useProcessesForTarget } from '@src/components/entity-execution-panel/hooks/useProcessesForTarget';
@@ -13,6 +14,7 @@ import { ChipsExcludeProvider } from './chips/ChipsExcludeContext';
 import { taskChipKeys } from './chips/keys';
 import { ConversationBottomRibbon, type ConversationSideTab } from './ConversationBottomRibbon';
 import { ConversationContextPanel } from './ConversationContextPanel';
+import { MembersAvatarStack } from './MembersAvatarStack';
 
 interface ConversationPanelProps {
   /** Optional. Project-scoped conversations have no task. */
@@ -31,6 +33,20 @@ interface ConversationPanelProps {
    */
   variant?: 'default' | 'compact';
   className?: string;
+  /**
+   * URL-derived selected message id (the `/message/<id>` pointer segment).
+   * When it changes, the panel syncs its selection to that single bubble —
+   * highlight + scroll-into-view follow. Hosts without a message-deep-link
+   * URL shape simply omit it and selection stays panel-local.
+   */
+  selectedMessageId?: string | null;
+  /**
+   * URL-first bubble clicks: when provided, clicking a message navigates
+   * (the host builds the `/message/<id>` dock pointer) instead of writing
+   * local selection state — the URL change flows back via
+   * `selectedMessageId`. Omitted → local-state selection (embedded hosts).
+   */
+  onMessageNavigate?: (messageId: string) => void;
 }
 
 /**
@@ -62,6 +78,73 @@ interface ConversationPanelProps {
  * shared-terminal affordances all live in the Context tab now, scoped to
  * whichever message the user has selected.
  */
+/**
+ * Click-to-rename for the conversation title. Click the text → inline input;
+ * Enter/blur commits, Escape cancels. Commit is just ``conv.title = next;
+ * conv.save()`` — the backend's save→data_op broadcast updates every other
+ * client viewing this conversation (e.g. a second tab) via ``useEntity``.
+ */
+export function EditableConversationTitle({
+  conv,
+  fallback,
+  className = 'text-xs font-medium',
+}: {
+  conv: Conversation | null;
+  fallback: string;
+  /** Text styling (size/weight/truncation) applied to both the static span and the edit input. */
+  className?: string;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+
+  if (!conv) return <span className={className}>{fallback}</span>;
+
+  const display = (conv.title ?? '').trim() || fallback;
+
+  const commit = async () => {
+    setEditing(false);
+    const next = draft.trim();
+    if (!next || next === (conv.title ?? '')) return;
+    conv.title = next;
+    try {
+      await conv.save();
+    } catch {
+      // best-effort; the optimistic title stays until the next sync
+    }
+  };
+
+  if (editing) {
+    return (
+      <input
+        autoFocus
+        data-testid="conversation-title-input"
+        className={cn('min-w-0 flex-1 border-b border-border bg-transparent text-foreground outline-none', className)}
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') e.currentTarget.blur();
+          else if (e.key === 'Escape') setEditing(false);
+        }}
+      />
+    );
+  }
+
+  return (
+    <span
+      data-testid="conversation-title"
+      className={cn('cursor-text rounded px-0.5 hover:bg-muted', className)}
+      title="Click to rename"
+      onClick={() => {
+        setDraft(conv.title ?? '');
+        setEditing(true);
+      }}
+    >
+      {display}
+    </span>
+  );
+}
+
 export function ConversationPanel({
   task,
   conversationId,
@@ -69,6 +152,8 @@ export function ConversationPanel({
   headerLabel = 'Conversation',
   variant = 'default',
   className,
+  selectedMessageId,
+  onMessageNavigate,
 }: ConversationPanelProps) {
   // One gate, two subject shapes. Remote provenance always lives on the
   // conversation; the gate stamps the task when present (task owns project_root
@@ -104,12 +189,28 @@ export function ConversationPanel({
   // that contributed it.
   const [selectedMessageIds, setSelectedMessageIds] = useState<string[]>([]);
   const [selectedEntityKey, setSelectedEntityKey] = useState<string | null>(null);
+  // URL → selection sync (mirrors the transcript viewer's entry-id sync):
+  // when the host passes a `/message/<id>` deep-link segment, the panel's
+  // selection derives from it. Entity-mode multi-selection stays panel-local
+  // (clicking a context entity doesn't change the URL), but any URL change
+  // wholesale-replaces it with the single linked bubble.
+  useEffect(() => {
+    if (!selectedMessageId) return;
+    setSelectedMessageIds([selectedMessageId]);
+    setSelectedEntityKey(null);
+  }, [selectedMessageId]);
   const selectOneMessage = useCallback(
     (id: string) => {
+      // URL-first when the host supports it: navigating re-enters via the
+      // `selectedMessageId` effect above. No optimistic local write.
+      if (onMessageNavigate) {
+        onMessageNavigate(id);
+        return;
+      }
       setSelectedMessageIds([id]);
       setSelectedEntityKey(null);
     },
-    [],
+    [onMessageNavigate],
   );
   const selectEntity = useCallback(
     (entityKey: string, messageIds: string[]) => {
@@ -204,7 +305,10 @@ export function ConversationPanel({
         <div className="flex min-w-0 flex-1 flex-col">
           {headerLabel !== null && (
             <div className={headerWrapper}>
-              <span>{headerLabel}</span>
+              <EditableConversationTitle conv={convEntity ?? null} fallback={headerLabel} />
+              <MembersAvatarStack
+                typeId={new TypeId(Conversation.type, conversationId)}
+              />
             </div>
           )}
           <div className={`${bodyWrapper} min-h-0 flex-1 overflow-y-auto`}>

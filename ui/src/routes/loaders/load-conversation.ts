@@ -1,5 +1,10 @@
 /**
- * Conversation dock loader for /dock/conversation/<conversationId>.
+ * Conversation dock loader for
+ * /dock/conversation/<conversationId>[/message/<messageId>].
+ *
+ * The optional `/message/<id>` deep-link segment is view-level state — the
+ * route component derives the selected bubble from `currentDock` and scrolls
+ * it into view; the loader only resolves the conversation (head segment).
  *
  * Pure primitive `loadConversation(id)`:
  *   - Cache-first fetch of the Conversation entity.
@@ -28,7 +33,8 @@ import {
   TypeId,
 } from '@sdk';
 import { Conversation as ConversationEntity, Task as TaskEntity } from '@sdk';
-import { toast } from '@src/hooks/use-toast';
+import { DockPointer } from '@src/navigation/DockPointer';
+import { notify } from '@src/notifications';
 import { redirect } from 'react-router';
 
 export class ConversationLoadError extends Error {
@@ -114,19 +120,19 @@ export async function loadConversationRoute(pointer: string | undefined): Promis
     return;
   }
 
-  // Pointers can in principle have trailing segments; the conversation view
-  // only uses the head id (matches `ConversationRoute.tsx`).
-  const conversationId = pointer.split('/')[0];
+  // Trailing segments (e.g. `/message/<id>`) are view-level deep-link state;
+  // the loader only needs the head id. Same parser as `ConversationRoute.tsx`
+  // so the pointer grammar lives in exactly one place.
+  const { conversationId } = DockPointer.parseConversationPointer(pointer);
   if (!conversationId) return;
 
   try {
     await loadConversation(conversationId);
   } catch (e) {
     if (!(e instanceof ConversationLoadError)) throw e;
-    toast({
+    notify.error({
       title: 'Conversation not found',
-      description: 'This conversation no longer exists.',
-      variant: 'destructive',
+      message: 'This conversation no longer exists.',
     });
     // eslint-disable-next-line @typescript-eslint/only-throw-error
     throw redirect('/dock/inbox');

@@ -88,6 +88,7 @@ def _response_payload(entity: Entity) -> dict[str, Any]:
         "id": entity.id,
         "type": entity.get_type(),
         "shared_context_entities": [str(t) for t in entity.shared_context_entities],
+        "shared_context_entity_data": dict(entity.shared_context_entity_data or {}),
     }
 
 
@@ -95,7 +96,12 @@ def _response_payload(entity: Entity) -> dict[str, Any]:
 async def share_context() -> ApiResponse:
     """Append one or many TypeIds to the target entity's
     ``shared_context_entities`` and persist. Idempotent — already-present
-    TypeIds are no-ops."""
+    TypeIds are no-ops.
+
+    Optional ``data`` (dict) in the body is forwarded as per-entry sidecar
+    storage — applied to every typeid in the call. Used by file-backed
+    chips to carry ``{path}`` so a 404 self-heal on click can single-file-
+    index without a reverse-id lookup."""
     entity = await _resolve_target_entity()
     request_info = get_current_request_info()
     try:
@@ -103,7 +109,13 @@ async def share_context() -> ApiResponse:
     except JSONDecodeError:
         body = {}
     typeids = _parse_typeids(body)
-    changed = entity.add_shared_context_entities(*typeids)
+    data = body.get("data")
+    if data is not None and not isinstance(data, dict):
+        raise HTTPException(
+            status_code=400,
+            detail="context-share: 'data' must be an object when provided",
+        )
+    changed = entity.add_shared_context_entities(*typeids, data=data)
     if changed:
         await entity.save(request_info.someone_typeid)
     return ApiSuccessResponse(data={"ok": changed, **_response_payload(entity)})

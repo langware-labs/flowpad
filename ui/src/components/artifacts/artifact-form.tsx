@@ -4,7 +4,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from '@src/components/ui/input';
 import { Label } from '@src/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
-import { useToast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { useArtifactActions } from '@src/hooks/flow-hooks';
 import { Loader2 } from 'lucide-react';
 import React, { useCallback, useMemo, useState } from 'react';
@@ -37,7 +37,6 @@ const initialFormState: FormState = {
 
 export const ArtifactForm: React.FC<ArtifactFormProps> = ({ open, onOpenChange, onSuccess }) => {
   const { addArtifact, isAdding } = useArtifactActions();
-  const { toast } = useToast();
   const [formState, setFormState] = useState<FormState>(initialFormState);
 
   const artifactTypeOptions = useMemo(() => getArtifactTypeOptions(), []);
@@ -67,10 +66,9 @@ export const ArtifactForm: React.FC<ArtifactFormProps> = ({ open, onOpenChange, 
       e.preventDefault();
 
       if (!formState.name.trim()) {
-        toast({
+        notify.error({
           title: 'Validation error',
-          description: 'Name is required',
-          variant: 'destructive',
+          message: 'Name is required',
         });
         return;
       }
@@ -113,22 +111,21 @@ export const ArtifactForm: React.FC<ArtifactFormProps> = ({ open, onOpenChange, 
 
       try {
         await addArtifact(artifactData);
-        toast({
+        notify.success({
           title: 'Artifact created',
-          description: `${formState.name} has been added successfully.`,
+          message: `${formState.name} has been added successfully.`,
         });
         setFormState(initialFormState);
         onOpenChange(false);
         onSuccess?.();
       } catch (error) {
-        toast({
+        notify.error({
           title: 'Failed to create artifact',
-          description: error instanceof Error ? error.message : 'An error occurred',
-          variant: 'destructive',
+          message: error instanceof Error ? error.message : 'An error occurred',
         });
       }
     },
-    [formState, addArtifact, toast, onOpenChange, onSuccess],
+    [formState, addArtifact, onOpenChange, onSuccess],
   );
 
   const handleCancel = useCallback(() => {

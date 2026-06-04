@@ -29,7 +29,8 @@ import { Bookmark as BookmarkIcon, Copy, FolderOpen, Save, Send, ShieldOff, Stic
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './milkdown.css';
 import { planNotePlugins } from './plan-note-plugin';
-import { SendPlanNotificationDialog } from './SendSpecNotificationDialog';
+import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
+import { extractPlanTitle, planSpecShareSource } from '@src/hooks/share-sources';
 
 function parseFrontmatter(raw: string): { executed: boolean; body: string } {
   const m = raw.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
@@ -75,6 +76,17 @@ const PlanFileEditor: React.FC = () => {
   // State
   const [isExecuting, setIsExecuting] = useState(false);
   const [showShareDialog, setShowShareDialog] = useState(false);
+  // Stable source while the dialog is open so a retry reuses the same Spec/Task.
+  const shareSource = useMemo(
+    () =>
+      planSpecShareSource({
+        title: extractPlanTitle(fileContent, filePath),
+        content: fileContent,
+        processId: agenticProcess?.id ?? null,
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [showShareDialog, filePath],
+  );
 
   // Bookmark state for this plan file
   const [planBookmark, setPlanBookmark] = useState<Bookmark | null>(null);
@@ -90,11 +102,11 @@ const PlanFileEditor: React.FC = () => {
       await planBookmark.delete();
       setPlanBookmark(null);
     } else if (agenticProcess) {
-      const pointer = `${agenticProcess.typeId.toString()}/${filePath}`;
+      const planPointer = DockPointer.forPlan(agenticProcess.typeId, filePath).pointer;
       const b = new Bookmark({
         bookmark_type: 'plan',
         title: filePath.split('/').pop()?.replace(/\.md$/, '') ?? 'Plan',
-        data: { file_path: filePath, navigation_path: `/dock/plan/${pointer}` },
+        data: { file_path: filePath, navigation_path: `/dock/plan/${planPointer}` },
         status: 'open',
       });
       await b.save([]);
@@ -102,22 +114,16 @@ const PlanFileEditor: React.FC = () => {
     }
   }, [planBookmark, filePath, agenticProcess]);
 
-  // Auto-download file content if not cached
+  // Refetch on every nav — Update Plan rewrites the file via the agent.
+  const fsRef = useRef(fs);
+  fsRef.current = fs;
+  const computeNodeId = computeNodeTypeId?.id ?? null;
   useEffect(() => {
-    if (!filePath || !computeNodeTypeId) return;
-    if (cached) return;
-
-    const downloadContent = async () => {
-      if (!fs) return;
-      try {
-        await fs.download(filePath, false);
-      } catch (error) {
-        console.error('[SepcEditor] Error downloading plan:', filePath, error);
-      }
-    };
-
-    void downloadContent();
-  }, [filePath, computeNodeTypeId, cached, fs]);
+    if (!filePath || !computeNodeId || !fsRef.current) return;
+    void fsRef.current.refetch(filePath).catch((error) => {
+      console.error('[SpecEditor] Error refetching plan:', filePath, error);
+    });
+  }, [filePath, computeNodeId]);
 
   // Stable onChange ref — MilkdownEditor's useEditor depends on [onChange],
   // so a changing identity would re-initialize the editor and lose focus.
@@ -280,13 +286,10 @@ const PlanFileEditor: React.FC = () => {
         </div>
       </div>
 
-      <SendPlanNotificationDialog
+      <ShareToConversationDialog
         open={showShareDialog}
         onClose={() => setShowShareDialog(false)}
-        planFilePath={filePath}
-        planContent={fileContent}
-        workdir={agenticProcess?.workdir}
-        processId={agenticProcess?.id}
+        source={shareSource}
       />
 
       {/* Editor body */}
@@ -421,12 +424,14 @@ const SpecEntityEditor: React.FC = () => {
         </div>
       </div>
 
-      <SendPlanNotificationDialog
+      <ShareToConversationDialog
         open={showShareDialog}
         onClose={() => setShowShareDialog(false)}
-        planFilePath={syntheticPath}
-        planContent={localContent ?? spec.content ?? ''}
-        workdir={null}
+        source={planSpecShareSource({
+          title: extractPlanTitle(localContent ?? spec.content ?? '', syntheticPath),
+          content: localContent ?? spec.content ?? '',
+          processId: null,
+        })}
       />
 
       <div className="min-h-0 flex-1">

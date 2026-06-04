@@ -1,6 +1,7 @@
 import { ConnectionManager, TypeId } from '@sdk';
 import { FlowMessage } from '@sdk/entities/flow-message';
 import { useEffect, useState } from 'react';
+import { createKeyedDispatch } from './keyed-event-dispatch';
 
 /** A live body-transfer reading for one FlowMessage. */
 export interface FlowMessageProgress {
@@ -26,14 +27,25 @@ export interface FlowMessageProgress {
  * a terminal `bytes_done >= bytes_total` event clears the reading so the
  * bar disappears and the chip's own state takes over).
  */
+// One shared `on_flow_data` listener on the ConnectionManager singleton,
+// routed by FlowMessage id to the registered per-bubble readers. Keeps the
+// emitter at a single listener no matter how many messages are on screen
+// (see keyed-event-dispatch.ts).
+const onFlowDataByMessageId = createKeyedDispatch<[TypeId, unknown]>(
+  (handler) => {
+    const cm = ConnectionManager.getInstance();
+    cm.on('on_flow_data', handler);
+    return () => cm.off('on_flow_data', handler);
+  },
+  (typeId) => (typeId?.type === FlowMessage.type ? typeId?.id : null),
+);
+
 export function useFlowMessageProgress(messageId: string): FlowMessageProgress | null {
   const [progress, setProgress] = useState<FlowMessageProgress | null>(null);
 
   useEffect(() => {
     setProgress(null);
-    const cm = ConnectionManager.getInstance();
-    const handler = (typeId: TypeId, flowData: unknown) => {
-      if (typeId?.type !== FlowMessage.type || typeId?.id !== messageId) return;
+    return onFlowDataByMessageId(messageId, (_typeId, flowData) => {
       const fd = (flowData ?? {}) as {
         element_type?: string;
         elementType?: string;
@@ -55,9 +67,7 @@ export function useFlowMessageProgress(messageId: string): FlowMessageProgress |
         bytesTotal: total,
         fraction: total > 0 ? Math.min(1, done / total) : 0,
       });
-    };
-    cm.on('on_flow_data', handler);
-    return () => cm.off('on_flow_data', handler);
+    });
   }, [messageId]);
 
   return progress;

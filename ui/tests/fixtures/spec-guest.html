@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Spec-conformant MCP UI guest fixture</title>
+  <style>body { font-family: system-ui, sans-serif; padding: 16px; }</style>
+</head>
+<body>
+  <h1 id="title">Guest Ready</h1>
+  <pre id="last-input">(waiting)</pre>
+  <button id="callTool">callTool('ping')</button>
+  <button id="readResource">readResource('ui://test/foo')</button>
+  <button id="message">ui/message</button>
+
+  <script>
+    // Minimal spec-conformant MCP Apps guest fixture for E2E tests.
+    (function () {
+      let requestId = 0;
+      const pending = new Map();
+
+      function sendRequest(method, params) {
+        const id = ++requestId;
+        return new Promise((resolve, reject) => {
+          pending.set(id, { resolve, reject });
+          window.parent.postMessage({ jsonrpc: '2.0', id, method, params }, '*');
+        });
+      }
+      function sendNotification(method, params) {
+        window.parent.postMessage({ jsonrpc: '2.0', method, params }, '*');
+      }
+
+      window.addEventListener('message', (event) => {
+        const data = event.data;
+        if (!data || data.jsonrpc !== '2.0') return;
+        if (data.id !== undefined && (data.result !== undefined || data.error !== undefined)) {
+          const slot = pending.get(data.id);
+          if (slot) {
+            pending.delete(data.id);
+            if (data.error) slot.reject(new Error(data.error.message ?? 'rpc error'));
+            else slot.resolve(data.result);
+          }
+        } else if (data.method === 'ui/notifications/tool-input') {
+          document.getElementById('last-input').textContent = JSON.stringify(data.params, null, 2);
+        }
+      });
+
+      window.addEventListener('load', async () => {
+        try {
+          await sendRequest('ui/initialize', {
+            protocolVersion: '2025-06-18',
+            appInfo: { name: 'spec-guest-fixture', version: '1.0.0' },
+            appCapabilities: {},
+          });
+          sendNotification('ui/notifications/initialized', {});
+          document.getElementById('title').textContent = 'Guest Initialized';
+        } catch (e) {
+          document.getElementById('title').textContent = 'Init failed: ' + e.message;
+        }
+      });
+
+      document.getElementById('callTool').addEventListener('click', async () => {
+        const result = await sendRequest('tools/call', { name: 'ping', arguments: {} });
+        document.getElementById('last-input').textContent = 'callTool → ' + JSON.stringify(result);
+      });
+      document.getElementById('readResource').addEventListener('click', async () => {
+        const result = await sendRequest('resources/read', { uri: 'ui://test/foo' });
+        document.getElementById('last-input').textContent = 'readResource → ' + JSON.stringify(result);
+      });
+      document.getElementById('message').addEventListener('click', async () => {
+        await sendRequest('ui/message', { role: 'user', content: [{ type: 'text', text: 'hello host' }] });
+        document.getElementById('last-input').textContent = 'message sent';
+      });
+    })();
+  </script>
+</body>
+</html>

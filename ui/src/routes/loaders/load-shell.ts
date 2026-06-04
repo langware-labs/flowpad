@@ -24,7 +24,6 @@ import {
   ContextEntitiesEnum,
   dataContext,
   dataManager,
-  Project,
   QueryRequest,
   Shell,
   ShellStatus,
@@ -38,8 +37,9 @@ import {
   type TerminalTab,
 } from '@src/hooks/useActiveTerminals';
 import { showCleanupModal } from '@src/components/recovery/cleanup-modal';
-import { toast } from '@src/hooks/use-toast';
+import { notify } from '@src/notifications';
 import { DockPointer } from '@src/navigation';
+import { bumpLastActive } from '@src/tabs/last-active';
 import { replace } from 'react-router';
 import { perfLog, perfTime } from './_perf';
 import {
@@ -47,6 +47,7 @@ import {
   loadProcess,
   ProcessLoadError,
 } from './load-process';
+import { loadProject } from './load-project';
 import {
   loadNextProcess,
   type CleanupRecord,
@@ -103,6 +104,18 @@ export async function loadShell(shellId: string): Promise<Shell> {
   if (shell.status === ShellStatus.ERROR) {
     throw new ShellLoadError('error_status', shellId, shell.error_message ?? null);
   }
+
+  // ── Project phase — URL-first: resolve project into context BEFORE
+  // `shell.start()` runs, so anything downstream reads the right project.
+  if (shell.project_id) {
+    await loadProject(shell.project_id).catch(() => {
+      // Dangling project_id — fall through to workdir-based resolve below.
+      return systemTools.resolveProjectContext(shell.workdir ?? undefined, shell);
+    });
+  } else {
+    await systemTools.resolveProjectContext(shell.workdir ?? undefined, shell);
+  }
+
   try {
     await perfTime('shell.start (PTY attach)', () =>
       shell.start({ cols: Shell.DEFAULT_COLS, rows: Shell.DEFAULT_ROWS, workdir: shell.workdir ?? undefined }),
@@ -113,16 +126,9 @@ export async function loadShell(shellId: string): Promise<Shell> {
 
   dataContext.setActiveShellId(shell.id);
   dataContext.setActiveTerminalTargetTypeId(shell.typeId);
+  bumpLastActive(shell); // recency seed for resolveActive (Bug 1)
   dataContext.setWorkdir(shell.workdir ?? dataContext.project?.fs_storage_mount_path ?? null);
   await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProcessTypeId, null);
-  if (shell.project_id) {
-    await dataContext.setContextEntityTypeId(
-      ContextEntitiesEnum.CurrentProjectTypeId,
-      new TypeId(Project.type, shell.project_id),
-    );
-  } else {
-    await systemTools.resolveProjectContext(shell.workdir ?? undefined, shell);
-  }
   return shell;
 }
 
@@ -177,7 +183,7 @@ function handleCleanups(cleaned: CleanupRecord[]): void {
   if (cleaned.length === 0) return;
   if (cleaned.length === 1) {
     const c = cleaned[0];
-    toast({ title: c.title, description: c.description, variant: 'destructive' });
+    notify.error({ title: c.title, message: c.description });
     return;
   }
   showCleanupModal({ count: cleaned.length });
@@ -281,10 +287,9 @@ async function routeProcessPointer(processId: string): Promise<void> {
       next.loaded.kind === 'process'
         ? next.loaded.process.name ?? next.loaded.process.displayName ?? fallbackPointer
         : next.loaded.shell.name ?? fallbackPointer;
-    toast({
+    notify.error({
       title: `Terminal "${requestedName}" not found`,
-      description: `${directCleanup.title} — opened "${fallbackName}" instead.`,
-      variant: 'destructive',
+      message: `${directCleanup.title} — opened "${fallbackName}" instead.`,
     });
     // eslint-disable-next-line @typescript-eslint/only-throw-error
     throw replace(`/dock/shell/${fallbackPointer}`);
@@ -337,10 +342,9 @@ async function routePlainShellPointer(pointer: string): Promise<void> {
       throw replace('/dock/shell');
     }
     const fallbackPointer = loadedToPointer(next.loaded);
-    toast({
+    notify.error({
       title: 'Opened a different terminal',
-      description: `Couldn't load ${shellId.slice(0, 8)}… (${directCleanup.title}) — opened ${fallbackPointer} instead.`,
-      variant: 'destructive',
+      message: `Couldn't load ${shellId.slice(0, 8)}… (${directCleanup.title}) — opened ${fallbackPointer} instead.`,
     });
     // eslint-disable-next-line @typescript-eslint/only-throw-error
     throw replace(`/dock/shell/${fallbackPointer}`);
@@ -351,13 +355,18 @@ async function routePlainShellPointer(pointer: string): Promise<void> {
 // failures that originated outside `loadNextProcess`. Phrasing matches.
 function buildProcessCleanupForRoute(e: ProcessLoadError): CleanupRecord {
   switch (e.kind) {
-    case 'not_found':
+    case 'entity_not_found':
       return { kind: 'process_not_found', processId: e.processId, title: 'Session not found', description: 'Agentic process does not exist.' };
-    case 'start_failed': {
+    case 'network_error': {
+      const desc = describeProcessStartError(e.cause ?? e);
+      return { kind: 'process_start_failed', processId: e.processId, shellId: e.shellId ?? undefined, title: 'Couldn’t reach backend', description: desc.description };
+    }
+    case 'runtime_terminated':
+    case 'pty_attach_failed': {
       const desc = describeProcessStartError(e.cause ?? e);
       return { kind: 'process_start_failed', processId: e.processId, shellId: e.shellId ?? undefined, title: desc.title, description: desc.description };
     }
-    case 'no_shell':
+    case 'shell_entity_missing':
       return { kind: 'process_no_shell', processId: e.processId, shellId: e.shellId ?? undefined, title: 'Session unavailable', description: 'No shell is linked to this process.' };
     case 'project_missing':
       return { kind: 'process_project_missing', processId: e.processId, shellId: e.shellId ?? undefined, title: 'Project not found', description: 'Could not recover this session’s project.' };
@@ -401,10 +410,9 @@ export async function loadShellRoute(pointer: string | undefined): Promise<void>
       connectionManager.waitForConnected(5000),
     );
   } catch {
-    toast({
+    notify.error({
       title: 'No realtime connection',
-      description: 'Terminal may be unresponsive until the connection recovers.',
-      variant: 'destructive',
+      message: 'Terminal may be unresponsive until the connection recovers.',
     });
   }
 

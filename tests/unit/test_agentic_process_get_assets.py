@@ -65,7 +65,11 @@ async def tree(tmp_path: Path, monkeypatch):
 
     # Override the test-instance sandbox so user_home points at our tmp.
     # TestInstanceSettings reads FLOWPAD_TEST_SANDBOX in _resolve_sandbox().
+    # FLOW_INSTANCE=test routes get_instance_settings() to TestInstanceSettings;
+    # without it, .env.local's FLOW_INSTANCE=oss wins the resolver and the
+    # sandbox env var is ignored.
     from flow_sdk.instance_settings import reset_instance_settings
+    monkeypatch.setenv("FLOW_INSTANCE", "test")
     monkeypatch.setenv("FLOWPAD_TEST_SANDBOX", str(user_home))
     reset_instance_settings()
 

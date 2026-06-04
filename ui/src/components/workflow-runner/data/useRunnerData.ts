@@ -19,6 +19,7 @@ import {
   Workflow,
   dataContext,
 } from '@sdk';
+import { ClaudeSessionRecord } from '@sdk/resource_management/fs_records/claude/claude-session.js';
 import {
   parseClaudeTranscriptUsage,
   type UsageEntry,
@@ -94,7 +95,6 @@ interface RunFiles {
 function useRunFiles(selectedRuns: AgenticProcess[]): Map<string, RunFiles> {
   const [files, setFiles] = useState<Map<string, RunFiles>>(new Map());
   const computeNodeId = dataContext.computeNodeTypeId;
-  const homeDir = dataContext.computeNode?.home_dir;
 
   // Build the cache key from id+output_folder path so we re-load when a
   // run's output_folder is repointed (rare but possible).
@@ -103,7 +103,7 @@ function useRunFiles(selectedRuns: AgenticProcess[]): Map<string, RunFiles> {
       selectedRuns
         .map(
           (r) =>
-            `${r.id}@${r.output_folder?.path ?? '-'}|${r.session_id ?? '-'}|${r.project_encoded_name ?? '-'}`,
+            `${r.id}@${r.output_folder?.path ?? '-'}|${r.session_id ?? '-'}`,
         )
         .join(';'),
     [selectedRuns],
@@ -122,11 +122,10 @@ function useRunFiles(selectedRuns: AgenticProcess[]): Map<string, RunFiles> {
       const tracePath = out ? `${out}/workflow.trace.jsonl` : null;
       const analysisPath = out ? `${out}/workflow.analysis.jsonl` : null;
       const sess = process.session_id ?? null;
-      const proj = process.project_encoded_name ?? null;
-      const transcriptPath =
-        sess && proj && homeDir
-          ? `${homeDir.replace(/\/$/, '')}/.claude/projects/${proj}/${sess}.jsonl`.replace(/^\//, '')
-          : null;
+      const sessionRecord = sess
+        ? await ClaudeSessionRecord.discover(sess).catch(() => null)
+        : null;
+      const transcriptPath = sessionRecord?.jsonl_path ?? null;
       const safeRead = async (p: string | null): Promise<string> => {
         if (!p) return '';
         try {
@@ -158,7 +157,7 @@ function useRunFiles(selectedRuns: AgenticProcess[]): Map<string, RunFiles> {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cacheKey, computeNodeId, homeDir]);
+  }, [cacheKey, computeNodeId]);
 
   return files;
 }

@@ -31,7 +31,7 @@ import type { MachineStatus, ProcessInfo } from './machine-status';
 import { ServiceControlError } from './service-control';
 import { Shell } from '../shell';
 import { PtyConnection } from '../../services/shell/ptyConnection';
-import { GitRepo } from '../git-repo';
+import { GitWorkdir } from '../git-workdir';
 
 /** Callback for when a new machine session is detected */
 export type MachineSessionCallback = (sessionId: string, session: Shell) => void;
@@ -44,8 +44,6 @@ export interface FindSessionResult {
   session_id: string;
   worker_type: WorkerKind;
   transcript_path: string | null;
-  /** Encoded project dir name under `~/.claude/projects/`. Null for codex. */
-  project_encoded_name: string | null;
   cwd: string | null;
   project_id: string | null;
   session_name: string | null;
@@ -736,11 +734,11 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
   }
 
   /**
-   * Create a GitRepo helper bound to this compute node and the given directory.
+   * Create a workdir-bound git ops helper for this compute node.
    * @param workDir - Absolute path to the working directory
    */
-  git(workDir: string): GitRepo {
-    return new GitRepo(workDir, this.id);
+  git(workDir: string): GitWorkdir {
+    return new GitWorkdir(workDir, this.id);
   }
 
 }

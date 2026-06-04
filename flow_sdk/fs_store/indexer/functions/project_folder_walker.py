@@ -30,7 +30,7 @@ from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 
 
-async def project_folder_walker_fn(
+def project_folder_walker_fn(
     nodes: list[FSRef], opts: IndexerOptions,
 ) -> list[FSRef]:
     """Walk each project root, emit one FOLDER FSRef per surviving directory."""

@@ -11,7 +11,7 @@ import { ScopeBar, type ScopeBarOption } from '@src/components/ui/scope-bar';
  * state, not the source of truth.
  *
  * Chip → ScopeFilter mapping:
- *   "User"    {user: true,  projects: keep current}
+ *   "User"    {user: true,  projects: cleared}  (else chipFor() reads as "All")
  *   "Project" {user: false, projects: keep current (or fall through to picker)}
  *   "Both"    {user: true,  projects: keep current}
  *
@@ -48,8 +48,8 @@ export function ScopeFilterBar({
   const options: ScopeBarOption<ChipKey>[] = useMemo(() => [
     {
       value: 'both',
-      label: 'Both',
-      title: 'Both user assets and selected projects assets',
+      label: 'All',
+      title: 'User assets plus selected projects',
     },
     {
       value: 'user',
@@ -69,7 +69,10 @@ export function ScopeFilterBar({
 
   const handleChange = (next: ChipKey) => {
     if (next === 'user') {
-      onScopeChange({ user: true, projects: scope.projects });
+      // "User" = user assets only (per the chip's label). Clear projects —
+      // keeping them would yield {user:true, projects:[...]} which is the
+      // "All" chip, so the user could never actually land on user-only.
+      onScopeChange({ user: true, projects: [] });
       return;
     }
     if (next === 'project') {

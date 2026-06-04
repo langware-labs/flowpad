@@ -11,14 +11,15 @@ import {
   AgenticProcess,
   ContextEntitiesEnum,
   dataContext,
-  Project,
   Shell,
   systemTools,
   TypeId,
 } from '@sdk';
 import { estimateCols, estimateRows } from '@src/components/terminal/interactive-terminal/terminalConfig';
-import { pushLoadedProcessTab } from '@src/hooks/useActiveTerminals';
+import { ensureTerminalsFetched } from '@src/hooks/useActiveTerminals';
+import { bumpLastActive } from '@src/tabs/last-active';
 import { perfLog, perfTime } from './_perf';
+import { loadProject } from './load-project';
 
 /**
  * Two-tier error classification — ``severity`` decides route control flow,
@@ -150,6 +151,31 @@ export async function loadProcess(
     throw new ProcessLoadError('entity_not_found', processId);
   }
 
+  // ── Project phase — URL-first: resolve the owning project into context
+  // BEFORE any runtime side effect. `process.start()` and its downstream
+  // (claude-session discovery, CWD selection for `claude --resume`, etc.)
+  // read `dataContext.project`; if that still reflects the previously-active
+  // project, the PTY launches in the wrong CWD and Claude can't find the
+  // transcript. Doing the project write here makes every consumer URL-first.
+  if (process.project_id) {
+    try {
+      await perfTime('loadProject', () => loadProject(process!.project_id!));
+    } catch (cause) {
+      // The stored project_id can dangle when the project was deleted under
+      // us. Recover via the backend's 3-phase recover_by_path, then continue.
+      const status = (cause as { response?: { status?: number }; status?: number })?.response?.status
+        ?? (cause as { status?: number })?.status;
+      if (status !== 404) throw cause;
+      const recovered = await process.recoverProject().catch(() => null);
+      if (!recovered) {
+        throw new ProcessLoadError('project_missing', processId, process.shell_id ?? null, cause);
+      }
+      await loadProject(recovered.id);
+    }
+  } else {
+    await systemTools.resolveProjectContext(process.workdir, process);
+  }
+
   // ── Runtime phase (soft errors — entity is fine, runtime isn't) ────────
   let shell: Shell | null = null;
   try {
@@ -167,44 +193,28 @@ export async function loadProcess(
     throw new ProcessLoadError('shell_entity_missing', processId, process.shell_id ?? null);
   }
 
-  // Optimistically insert the row into the shared strip state so TabbedTerminal's
-  // self-heal effect doesn't fire during the gap before the next
-  // ``active-terminals`` refetch reflects the newly-visible process.
-  pushLoadedProcessTab(process, shell);
+  // Populate the strip from the server (idempotent — no-op after the first
+  // call in this session) so TabbedTerminal mounts with the full list, sorted
+  // by server `tab_order`. The previous approach pushed a single optimistic
+  // row before the fetch, which trapped that row at index 0 on hard refresh
+  // (the merge's preserve-order branch keyed off `prev.length === 0`). Doing
+  // the fetch here closes the self-heal race without seeding the order.
+  await perfTime('ensureTerminalsFetched', () => ensureTerminalsFetched());
 
-  dataContext.setActiveShellId(shell.id);
-  dataContext.setActiveTerminalTargetTypeId(new TypeId(AgenticProcess.type, processId));
-  dataContext.setWorkdir(
-    process.workdir ?? shell.workdir ?? dataContext.project?.fs_storage_mount_path ?? null,
+  await perfTime('dataContext sync setters (shellId/target/workdir)', async () => {
+    dataContext.setActiveShellId(shell!.id);
+    dataContext.setActiveTerminalTargetTypeId(new TypeId(AgenticProcess.type, processId));
+    bumpLastActive(process); // recency seed on the process (tab identity) — Bug 1
+    dataContext.setWorkdir(
+      process!.workdir ?? shell!.workdir ?? dataContext.project?.fs_storage_mount_path ?? null,
+    );
+  });
+  await perfTime('setContextEntityTypeId(CurrentProcessTypeId)', () =>
+    dataContext.setContextEntityTypeId(
+      ContextEntitiesEnum.CurrentProcessTypeId,
+      new TypeId(AgenticProcess.type, processId),
+    ),
   );
-  await dataContext.setContextEntityTypeId(
-    ContextEntitiesEnum.CurrentProcessTypeId,
-    new TypeId(AgenticProcess.type, processId),
-  );
-  if (process.project_id) {
-    try {
-      await dataContext.setContextEntityTypeId(
-        ContextEntitiesEnum.CurrentProjectTypeId,
-        new TypeId(Project.type, process.project_id),
-      );
-    } catch (cause) {
-      // The stored project_id can dangle when the project was deleted under us.
-      // Recover via the backend's 3-phase recover_by_path, then continue.
-      const status = (cause as { response?: { status?: number }; status?: number })?.response?.status
-        ?? (cause as { status?: number })?.status;
-      if (status !== 404) throw cause;
-      const recovered = await process.recoverProject().catch(() => null);
-      if (!recovered) {
-        throw new ProcessLoadError('project_missing', processId, process.shell_id ?? null, cause);
-      }
-      await dataContext.setContextEntityTypeId(
-        ContextEntitiesEnum.CurrentProjectTypeId,
-        new TypeId(Project.type, recovered.id),
-      );
-    }
-  } else {
-    await systemTools.resolveProjectContext(process.workdir, process);
-  }
 
   return { process, shell };
 }

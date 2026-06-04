@@ -14,7 +14,7 @@ from flow_sdk.config import AGENT_MOUNT_FOLDER, PLATFORM_WIN32, StorageProvider
 from flow_sdk.fs_store.path_utils import canonical_posix_path
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.flowpad_types.enums import AuthRole
-from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.api_field import APIField, Persist
 from flow_sdk.api.type_id import TypeId
 from flow_sdk.builtin.faas.compute_node import ComputeNode
 from flow_sdk.builtin.worker_sessions import get_worker_sessions
@@ -78,16 +78,16 @@ class Project(Entity):
     # querying records. Records remain backend-only.
     session_count: int = APIField(
         default=0,
+        persist=Persist.FALSE,
         description="Total session count across providers (Claude + Codex) at this project's cwd. "
                     "Denormalized from the matching ProjectFsRecord at indexer-write time.",
     )
     last_session_at: str | None = APIField(
         default=None,
+        persist=Persist.FALSE,
         description="ISO timestamp of the most recent session activity at this project's cwd, "
                     "denormalized from the matching ProjectFsRecord. Null if no sessions yet.",
     )
-    _api_visible: ClassVar[bool] = True
-    _icon: ClassVar[str] = "FolderOpen"
 
     @model_validator(mode="after")
     def set_fs_storage_mount_path(self):
@@ -130,7 +130,11 @@ class Project(Entity):
             try:
                 os.makedirs(self.fs_storage_mount_path, exist_ok=True)
             except OSError as e:
-                logging.warning(
+                # Non-fatal and expected for discovered/external project roots
+                # (e.g. decoded Claude project paths on read-only mounts). Debug,
+                # not warning — otherwise enumerating many such projects floods
+                # the log with hundreds of non-actionable lines.
+                logging.debug(
                     f"Project: could not create mount path {self.fs_storage_mount_path!r}: {e}"
                 )
         if self.fs_storage_mount_path:
@@ -313,13 +317,6 @@ class Project(Entity):
         proj.id = cls.allocate_id(create_kwargs)
         await proj.save(notify=notify)
         return proj
-
-    @property
-    def project_encoded_name(self) -> str | None:
-        """Encoded project path used to locate transcript files."""
-        if not self.fs_storage_mount_path:
-            return None
-        return str(self.fs_storage_mount_path).replace("/", "-")
 
     @property
     def main_ref(self):
@@ -591,3 +588,4 @@ class Project(Entity):
             return ApiFailResponse(message="member_id is required")
         updated = await self._touch_member(member_id)
         return ApiSuccessResponse(data={"ok": updated, "members": self.members})
+

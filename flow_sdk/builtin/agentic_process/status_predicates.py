@@ -14,12 +14,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from flow_sdk._compat import StrEnum
-from flow_sdk.fs_records.agent_status import (
+from flow_sdk.builtin.worker_status import (
     WorkerStatus,
     is_running as is_worker_running,
     is_terminal as is_worker_terminal,
 )
-from flow_sdk.fs_records.agentic_process_lifecycle import (
+from flow_sdk.builtin.process_lifecycle import (
     ProcessStatus,
     is_running as is_process_running,
     is_startable as is_process_startable,
