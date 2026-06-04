@@ -1133,8 +1133,12 @@ class AgenticProcess(Entity):
         Shell projecting its ``process_id``). Derived from the ``shell_id``
         field so the process and its shell carry each other as lineage chips,
         both directions."""
+        from flow_sdk.api.api_types.identifier import is_valid_entity_id  # noqa: PLC0415
+
         refs = super().get_implicit_private_context_entities()
-        if self.shell_id:
+        # Guard the id (see Shell.get_implicit_private_context_entities): a
+        # malformed shell_id must skip the chip during serialization, not raise.
+        if is_valid_entity_id(self.shell_id):
             refs.append(TypeId(type=BuiltinEntityType.SHELL.value, id=self.shell_id))
         return refs
 
