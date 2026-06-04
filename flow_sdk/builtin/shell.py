@@ -127,10 +127,15 @@ class Shell(Entity):
         AgenticProcess projecting its ``shell_id``). Derived from the stored
         ``agentic_process_id`` field — a cheap getattr, no reverse scan — so the shell
         and its process carry each other as lineage chips, both directions."""
+        from flow_sdk.api.api_types.identifier import is_valid_entity_id  # noqa: PLC0415
         from flow_sdk.api.api_types.type_id import TypeId  # noqa: PLC0415
 
         refs = super().get_implicit_private_context_entities()
-        if self.agentic_process_id:
+        # Guard the id: this runs inside entity serialization, so a malformed
+        # value (a non-UUID slipping into the field) must skip the chip, never
+        # raise — an exception here 500s the whole /terminals/list response and
+        # white-screens every WS client.
+        if is_valid_entity_id(self.agentic_process_id):
             refs.append(TypeId(type=BuiltinEntityType.AGENTIC_PROCESS.value, id=self.agentic_process_id))
         return refs
 
