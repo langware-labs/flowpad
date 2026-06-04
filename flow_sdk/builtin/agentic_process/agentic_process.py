@@ -1128,6 +1128,16 @@ class AgenticProcess(Entity):
     # ``get_implicit_private_context_entities`` here if AP wants to add
     # more implicit chips (e.g. ``collaboration_room_id`` → room chip).
 
+    def get_implicit_private_context_entities(self) -> List[TypeId]:
+        """Project the owned shell into private context (the reverse of
+        Shell projecting its ``process_id``). Derived from the ``shell_id``
+        field so the process and its shell carry each other as lineage chips,
+        both directions."""
+        refs = super().get_implicit_private_context_entities()
+        if self.shell_id:
+            refs.append(TypeId(type=BuiltinEntityType.SHELL.value, id=self.shell_id))
+        return refs
+
     @action.post(action_name="recover-project")
     async def recover_project_action(self) -> ApiSuccessResponse | ApiFailResponse:
         """Re-attach this process to a Project derived from its ``workdir``.
@@ -3527,6 +3537,11 @@ class AgenticProcess(Entity):
             if shell:
                 if not await shell.ensure_live_compute_node_binding():
                     raise RuntimeError(f"Compute node not found for linked shell {shell.id}")
+                # Backfill the reverse link for shells created before the field
+                # existed (or by a restart path that didn't set it).
+                if shell.agentic_process_id != self.id:
+                    shell.agentic_process_id = self.id
+                    await shell.save()
                 return shell
 
         prev = self.context_data.pop("_prev_tab_order", None)
@@ -3558,6 +3573,11 @@ class AgenticProcess(Entity):
             "workdir": workdir,
             "tab_order": tab_order,
             "project_id": self.project_id,
+            # Reverse of self.shell_id — the shell carries its owning process
+            # so a bare-shell URL resolves the owner by get-by-id, no scan.
+            # NB: named agentic_process_id (NOT process_id — that key is the OS
+            # PID written by the PTY layer, pty_actions.py:394).
+            "agentic_process_id": self.id,
         }
         if shell_id:
             shell_kwargs["id"] = shell_id
