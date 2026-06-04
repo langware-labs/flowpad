@@ -58,7 +58,7 @@ async def test_share_context_round_trips_data(bootstrapped_client):
     survive a re-read. This is what powers the chip 404 self-heal."""
     task = await _make_task(bootstrapped_client)
     plan_id = _new_id()
-    plan_path = "/Users/shlom/.claude/plans/some-plan.md"
+    plan_path = "/Users/alice/.claude/plans/some-plan.md"
 
     resp = await bootstrapped_client.post(
         f"/api/v1/graph/task/{task['id']}/share-context",

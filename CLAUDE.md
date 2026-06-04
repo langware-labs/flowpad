@@ -48,7 +48,7 @@ npm run dev
 
 The frontend runs at `http://localhost:$VITE_PORT` and calls the backend at `http://localhost:$LOCAL_SERVER_PORT` via the `__API_URL__` define in `vite.config.ts`.
 
-> **Hub at `$FLOWPAD_HUB_URL` (default `localhost:8093`) is served by `/Users/shlom/Documents/dev/test_flowpad/FlowPad/` (run via `flowpad/run.py`, ships `flowpad/hub/routers/auth.py` with `/api/v1/login`) — NOT the minimal `flow-hub/` stub in this tree. Don't `pkill`/install into the wrong one.**
+> **Hub at `$FLOWPAD_HUB_URL` (default `localhost:8093`) is served by the sibling checkout `../test_flowpad/FlowPad/` (run via `flowpad/run.py`, ships `flowpad/hub/routers/auth.py` with `/api/v1/login`) — NOT the minimal `flow-hub/` stub in this tree. Don't `pkill`/install into the wrong one.**
 
 ### Spinning up an extra named instance (`scripts/instance_ctl.sh`)
 

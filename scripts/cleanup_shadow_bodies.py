@@ -14,8 +14,8 @@ shadow .md is the only copy of the body will lose that body.
 
 Also nukes the CWD-mirror "phantom" trees created by the buggy LocalStorageDriver
 on POSIX before today's storage_driver fix:
-    /Users/shlom/Documents/dev/flowpad-oss/Users/
-    /Users/shlom/Documents/dev/flowpad-oss/flow_sdk/server/Users/
+    <repo>/Users/
+    <repo>/flow_sdk/server/Users/
 """
 
 from __future__ import annotations
@@ -31,11 +31,14 @@ KEEP_SUFFIXES = {".hash"}
 
 RECORDS_ROOT = Path.home() / ".flow" / "records"
 
+_REPO_OSS = Path(__file__).resolve().parents[1]
+_REPO_APP = _REPO_OSS.parent / "flowpad-app"
+
 PHANTOM_ROOTS = [
-    Path("/Users/shlom/Documents/dev/flowpad-oss/Users"),
-    Path("/Users/shlom/Documents/dev/flowpad-oss/flow_sdk/server/Users"),
-    Path("/Users/shlom/Documents/dev/flowpad-app/Users"),
-    Path("/Users/shlom/Documents/dev/flowpad-app/flow_sdk/server/Users"),
+    _REPO_OSS / "Users",
+    _REPO_OSS / "flow_sdk" / "server" / "Users",
+    _REPO_APP / "Users",
+    _REPO_APP / "flow_sdk" / "server" / "Users",
 ]
 
 

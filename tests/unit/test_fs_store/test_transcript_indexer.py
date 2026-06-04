@@ -469,7 +469,7 @@ async def test_probe_session_end_to_end_scenario(tmp_path: Path, clean_db) -> No
         home,
         session_id=session_id,
         plan_file_path=str(plan_md),
-        encoded_project="-Users-shlom-Documents-dev-flowpad-oss",
+        encoded_project="-Users-alice-Documents-dev-flowpad-oss",
     )
 
     proc = await _save_agentic_process(session_id)

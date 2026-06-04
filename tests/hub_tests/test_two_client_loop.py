@@ -46,8 +46,8 @@ import pytest
 import websockets
 
 
-REPO_OSS = Path("/Users/shlom/Documents/dev/flowpad-oss")
-REPO_APP = Path("/Users/shlom/Documents/dev/flowpad-app")
+REPO_OSS = Path(__file__).resolve().parents[2]
+REPO_APP = Path(__file__).resolve().parents[2].parent / "flowpad-app"
 STOP_AT = 20
 
 

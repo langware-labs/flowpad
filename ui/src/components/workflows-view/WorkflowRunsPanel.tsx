@@ -9,8 +9,8 @@ import type { ProcessEntry } from './workflow-run-store';
 
 /**
  * Claude / Codex name workspace dirs by replacing every non-alphanumeric
- * char with `-` (so `/Users/shlom/.claude/worktrees/foo` becomes
- * `-Users-shlom--claude-worktrees-foo`). Mirrors Claude's own dirname rule
+ * char with `-` (so `/Users/alice/.claude/worktrees/foo` becomes
+ * `-Users-alice--claude-worktrees-foo`). Mirrors Claude's own dirname rule
  * for `~/.claude/projects/<projectEncodedName>/<sessionId>.jsonl`.
  */
 function workdirToProjectEncodedName(workdir: string): string {

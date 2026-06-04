@@ -44,7 +44,7 @@ HUB_URL = os.environ.get("FLOWPAD_HUB_URL", "http://localhost:8093").rstrip("/")
 HUB_API = f"{HUB_URL}/api/v1"
 ALICE_EMAIL = os.environ.get("DEMO_ALICE_EMAIL", "alice@local.test")
 BOB_EMAIL = os.environ.get("DEMO_BOB_EMAIL", "bob@local.test")
-REPO_PATH = "/Users/shlom/Documents/dev/flowpad-oss"
+REPO_PATH = str(Path(__file__).resolve().parents[1])
 
 
 # ---------------------------------------------------------------------------

@@ -35,7 +35,7 @@ test 4: Footer indicator is positioned right of the project path, with a separat
 - [browser] navigate to {APP_URL}/dock/search
 - [browser] click data-testid="rebuild-index"
 - [browser] wait for data-testid="footer-indexing-indicator" to appear
-- [browser] locate the project-path button (footer button containing "/" — e.g. "/Users/shlom/...")
+- [browser] locate the project-path button (footer button containing "/" — e.g. "/Users/<you>/...")
 - [browser] validate the project-path button appears in the DOM BEFORE data-testid="footer-indexing-indicator"
 - [browser] validate a 1-pixel vertical separator span (class containing "bg-border") sits between the project-path and the indicator
 

@@ -342,7 +342,7 @@ Team-based agentic phase using the full methodology — [Run Mode](#run-mode) st
 ### Phase 10 — pytest hub tests (hub + instances required)
 
 1. **Hub preflight**: `set -a; source .env.local; set +a` then check `curl -sf ${FLOWPAD_HUB_URL:-http://localhost:8093}/api/v1/health/status`.
-   - If down: start the hub autonomously from the FlowPad checkout at `/Users/shlom/Documents/dev/test_flowpad/FlowPad/` (run via `flowpad/run.py`, detached, output to a log file), then seed test users via `ops/scripts/setup_test_users.sh` in that checkout, then re-check health.
+   - If down: start the hub autonomously from the FlowPad checkout at the sibling checkout `../test_flowpad/FlowPad/` (run via `flowpad/run.py`, detached, output to a log file), then seed test users via `ops/scripts/setup_test_users.sh` in that checkout, then re-check health.
    - Still down (e.g., its Neo4j Desktop DB isn't running) → mark Phases 10 **and** 11 `flagged` (reason: hub infra unavailable, evidence: startup log excerpt) and continue to the summary.
 2. **Instances**: check `scripts/instance_ctl.sh status` first — **reuse any instance that is already UP** (do not relaunch it; `launch` kills an existing instance before starting, so re-launching a healthy one is a needless restart). Launch only what's missing via `scripts/instance_ctl.sh launch <name>`; if an instance goes unhealthy mid-phase, restart it with `kill <name>` + `launch <name>`.
 3. **Run**:

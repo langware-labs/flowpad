@@ -24,8 +24,8 @@ describe('DockPointer.forAssetFolder', () => {
   });
 
   it('preserves compute_node @local typeid', () => {
-    const dp = DockPointer.forAssetFolder('markdown', 'compute_node-@local', 'Users/shlom/.claude/docs');
-    expect(dp.pointer).toBe('folder/markdown/compute_node-@local/Users/shlom/.claude/docs');
+    const dp = DockPointer.forAssetFolder('markdown', 'compute_node-@local', 'Users/alice/.claude/docs');
+    expect(dp.pointer).toBe('folder/markdown/compute_node-@local/Users/alice/.claude/docs');
   });
 });
 
@@ -48,12 +48,12 @@ describe('DockPointer.parseAssetFolderPointer', () => {
 
   it('handles compute_node-@local typeid and absolute-looking relPath', () => {
     const parsed = DockPointer.parseAssetFolderPointer(
-      'folder/markdown/compute_node-@local/Users/shlom/.claude/docs',
+      'folder/markdown/compute_node-@local/Users/alice/.claude/docs',
     );
     expect(parsed).toEqual({
       typeName: 'markdown',
       typeid: 'compute_node-@local',
-      relPath: 'Users/shlom/.claude/docs',
+      relPath: 'Users/alice/.claude/docs',
     });
   });
 
@@ -104,9 +104,9 @@ describe('applyFilterToParams — parentPath', () => {
     const p = new URLSearchParams();
     applyFilterToParams(p, {
       ...DEFAULT_ASSET_FILTER,
-      parentPath: '/Users/shlom/docs/architecture',
+      parentPath: '/Users/alice/docs/architecture',
     });
-    expect(p.get('parent_path')).toBe('/Users/shlom/docs/architecture');
+    expect(p.get('parent_path')).toBe('/Users/alice/docs/architecture');
   });
 
   it('omits parent_path when unset', () => {

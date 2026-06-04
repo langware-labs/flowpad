@@ -8,7 +8,7 @@
 
 - Backend: `http://localhost:9008` (port set via `LOCAL_SERVER_PORT=9008` in `.env.local`)
 - Frontend: `http://localhost:4098` (VITE_PORT=4098 in `.env.local`, NOT 4097)
-- Backend start command: `cd /Users/shlom/Documents/dev/flowpad-oss && LOCAL_SERVER_PORT=9008 uv run -m flow_sdk.server.run`
+- Backend start command: `cd <repo root> && LOCAL_SERVER_PORT=9008 uv run -m flow_sdk.server.run`
 - Backend reindex endpoint: `POST http://localhost:9008/api/v1/graph/<type>/<id>/wiki/reindex` (per-entity). The path `/api/v1/search/reindex/<type>` does NOT exist (returns 405) — older docs reference it; the actual route was renamed and only the per-entity form remains as of 2026-05-19.
 - Platform: darwin (macOS) — Python 3.10.17, uv 0.10.9
 - Browser: chromium via MCP debugMcp (shared with user's interactive session — can cause tab contention when multiple testers run in parallel)
@@ -266,7 +266,7 @@ The `data-terminal-id` selector from older chat scenarios is unreliable. Use `[d
 Both backends write the same `~/.flow/server.json` lockfile regardless of port. Starting one while the other is up logs `[singleton] Server already running (pid=…) — exiting` and the new instance dies silently. Workaround for QA: kill the wrong-port backend before launching the target one (`kill $(lsof -ti :<other-port>)`). True fix would be per-instance lockfile naming based on port, out of scope for this cycle.
 
 **`uv run` resolves venv from cwd — must `cd` first — 2026-05-02**
-Running `uv run -m flow_sdk.server.run` from flowpad-oss cwd uses `flowpad-oss/.venv` AND reads `flowpad-oss/.env.local` (port 9008). To launch the prod backend (port 9007), `cd /Users/shlom/Documents/dev/flowpad-app && uv run ...` must be the same shell invocation (`&&` chains in the subshell).
+Running `uv run -m flow_sdk.server.run` from flowpad-oss cwd uses `flowpad-oss/.venv` AND reads `flowpad-oss/.env.local` (port 9008). To launch the prod backend (port 9007), `cd ../flowpad-app && uv run ...` (sibling checkout) must be the same shell invocation (`&&` chains in the subshell).
 
 **Backend log scan catches migration drift — 2026-05-02**
 After any field-rename / field-drop migration, grep `/tmp/flow-prod.log` for `no attribute|AttributeError` to catch missed call sites that the type-check might have skipped (e.g. server-side python that the TS type system never sees). Caught one regression in `notification_scanner.py:287` reading `task.conversation_id` post-drop this cycle.

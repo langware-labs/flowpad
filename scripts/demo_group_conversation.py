@@ -45,7 +45,7 @@ import httpx
 
 HUB = os.environ.get("FLOWPAD_HUB_URL", "http://localhost:8093").rstrip("/")
 FLOW_HOME = Path(os.environ.get("FLOW_HOME", str(Path.home() / ".flow")))
-REPO_ROOT = "/Users/shlom/Documents/dev/flowpad-oss"
+REPO_ROOT = str(Path(__file__).resolve().parents[1])
 
 
 # --------------------------------------------------------------------------

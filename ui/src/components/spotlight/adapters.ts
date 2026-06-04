@@ -30,7 +30,7 @@ export function historyDisplayName(e: WorkerHistoryEntry): string {
 }
 
 // Reverse the encoding the indexer uses for claude projects, e.g.
-// "-Users-shlom-Documents-dev-flowpad-oss" → "flowpad-oss".
+// "-Users-alice-Documents-dev-flowpad-oss" → "flowpad-oss".
 export function projectNameFromAssetRef(assetRef: string): string {
   const parts = assetRef.split('/');
   parts.pop();

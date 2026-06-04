@@ -172,7 +172,7 @@ The projects directory is `InstanceSettings.claude_projects_dir` (`claude_home /
 Each subdirectory under `projects/` corresponds to a working directory. The directory name is the absolute filesystem path with `/` replaced by `-`. The leading `/` is stripped and the remainder is prefixed with `-`:
 
 - Working directory `/home/alice/myproject` → `~/.claude/projects/-home-alice-myproject/`
-- Working directory `/Users/shlom/Documents/dev/flow-cli` → `~/.claude/projects/-Users-shlom-Documents-dev-flow-cli/`
+- Working directory `/Users/alice/Documents/dev/flow-cli` → `~/.claude/projects/-Users-alice-Documents-dev-flow-cli/`
 
 `decode_claude_project_dir()` (in `_claude_projects.py`) reverses the encoding, preferring the `cwd` recorded inside the session JSONL and falling back to the encoded-name decode (which also handles Windows drive-letter prefixes).
 

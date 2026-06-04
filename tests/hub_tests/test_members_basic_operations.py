@@ -34,7 +34,7 @@ import httpx
 import pytest
 
 
-REPO_APP = Path("/Users/shlom/Documents/dev/flowpad-app")
+REPO_APP = Path(__file__).resolve().parents[2].parent / "flowpad-app"
 
 
 def _read_env_local(repo: Path) -> dict[str, str]:

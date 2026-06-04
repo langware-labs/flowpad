@@ -93,9 +93,9 @@ Same four methods, three real roots on a dev machine with a fully warm Spotlight
 |-------------------------|---------------:|-------------:|-----------------:|--------------:|-------------:|
 | `flowpad-oss`           |        ~8.5 k  |      212 ms  |          12 ms   |      342 ms   |      99 ms   |
 | `~/Documents/dev`       |        ~131 k  |   12,063 ms  |         250 ms   |   19,316 ms   |     353 ms   |
-| `/Users/shlom`          |       ~1.35 M  |   85,336 ms  |      54,710 ms   |  115,194 ms   |  **484 ms**  |
+| `~`          |       ~1.35 M  |   85,336 ms  |      54,710 ms   |  115,194 ms   |  **484 ms**  |
 
-File counts differ across methods because each sees a different tree: pruned `os.walk` skips noise dirs, `mdfind` only sees Spotlight-covered files, `rglob`/`find` see everything. For the `/Users/shlom` row: `rglob`/`find` found 55,448 `.md` files; `os.walk` pruned found 15,934; `mdfind` found 28,315.
+File counts differ across methods because each sees a different tree: pruned `os.walk` skips noise dirs, `mdfind` only sees Spotlight-covered files, `rglob`/`find` see everything. For the `~` row: `rglob`/`find` found 55,448 `.md` files; `os.walk` pruned found 15,934; `mdfind` found 28,315.
 
 ---
 
@@ -120,7 +120,7 @@ File counts differ across methods because each sees a different tree: pruned `os
 
 1. **At codebase scale (<~100 k dirs under a root), pruned `os.walk` wins**. OS indexes are measurably slower here — the query setup and IPC overhead exceed the walk itself. For record discovery under `~/.flow/records`, under individual project roots, or under any bounded tree, `os.walk` is the right tool.
 
-2. **Crossover is around ~100 k directories under the root**. Above that, OS indexes crush walkers by orders of magnitude. On this dev machine's `/Users/shlom` (1.35 M dirs), `mdfind` ran 113x faster than pruned `os.walk` and 238x faster than `find`.
+2. **Crossover is around ~100 k directories under the root**. Above that, OS indexes crush walkers by orders of magnitude. On this dev machine's `~` (1.35 M dirs), `mdfind` ran 113x faster than pruned `os.walk` and 238x faster than `find`.
 
 3. **The slow bootstrap is not a walker-speed problem; it is a root-set problem.** The fix is to narrow what `iter_claude_project_paths()` returns (stop passing `/` and `$HOME` when JSONL `cwd` fields are corrupt) — not to swap the walker for an OS index. Walking a few codebase-sized roots at a few ms each is already faster than setting up and querying any OS index. (This fix has since landed: `iter_claude_project_paths()` now filters out the roots returned by `_invalid_project_roots()` — i.e. `/` and `$HOME` — so they never reach the walker.)
 
@@ -129,7 +129,7 @@ File counts differ across methods because each sees a different tree: pruned `os
    - macOS requires Spotlight to have indexed the tree; `mdimport` + wait works but coverage can still be partial.
    - Windows requires the Everything service to be running and having finished its initial volume scan, plus the separately-installed `es.exe` CLI.
 
-5. **`mdfind` is not a drop-in replacement for a walker**. It missed ~26% of files on CI (1485 / 2000) even after explicit `mdimport` and a 60 s wait, and in the local run under `/Users/shlom` it reported 28,315 files vs 55,448 from `rglob`. It is a **good-enough approximation** for "find the user-relevant markdown on this machine" but **not** a source-of-truth enumerator for records.
+5. **`mdfind` is not a drop-in replacement for a walker**. It missed ~26% of files on CI (1485 / 2000) even after explicit `mdimport` and a 60 s wait, and in the local run under `~` it reported 28,315 files vs 55,448 from `rglob`. It is a **good-enough approximation** for "find the user-relevant markdown on this machine" but **not** a source-of-truth enumerator for records.
 
 ---
 
