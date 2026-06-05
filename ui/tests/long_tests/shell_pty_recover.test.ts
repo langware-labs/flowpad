@@ -129,7 +129,8 @@ async function attachPtyViaWs(
   manager: ConnectionManager,
   cnId: string,
   shellId: string,
-  sinceSeq = 0,
+  cols?: number,
+  rows?: number,
 ): Promise<AttachContent> {
   const content = await manager.sendRestApiMessage<AttachContent>({
     message_type: 'rest_api_msg',
@@ -141,7 +142,10 @@ async function attachPtyViaWs(
     action: 'terminal-command',
     sub_path: 'attach',
     query_params: null,
-    body: { shell_id: shellId, since_seq: sinceSeq },
+    body: {
+      shell_id: shellId,
+      ...(cols !== undefined && rows !== undefined ? { cols, rows } : {}),
+    },
   });
   return content;
 }
@@ -203,7 +207,7 @@ describe('shell_pty_recover', () => {
     expect(echoOutput).toContain(marker);
 
     // Reattach via WS (simulating browser refresh / reconnect)
-    const attachResult = await attachPtyViaWs(manager, computeNode.id, shellId, 0);
+    const attachResult = await attachPtyViaWs(manager, computeNode.id, shellId);
     expect(attachResult).toBeTruthy();
     expect(attachResult.status).toBe('reattached');
 
@@ -222,7 +226,7 @@ describe('shell_pty_recover', () => {
     const shellId = await createShell(computeNode.id, 'no-pty-shell');
 
     // Attach to shell with no active PTY session
-    const attachResult = await attachPtyViaWs(manager, computeNode.id, shellId, 0);
+    const attachResult = await attachPtyViaWs(manager, computeNode.id, shellId);
     expect(attachResult).toBeTruthy();
     expect(attachResult.status).toBe('not_found');
 
