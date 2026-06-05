@@ -91,6 +91,19 @@ class PtySession(Pty):
         await asyncio.sleep(_FORCE_REPAINT_JIGGLE_S)  # see constant for rationale
         await self._provider.resize_pty(self._pn_id, self._shell_id, cols, rows)
 
+    async def repaint(self, cols: int | None = None, rows: int | None = None) -> None:
+        """Make the running program redraw for an attaching client.
+
+        Asserts the client's terminal size when given and different (a real
+        resize delivers SIGWINCH); otherwise jiggles the winsize at the current
+        size. This is the attach-time size policy — callers pass the client's
+        xterm dims (or None to keep the current size and just repaint).
+        """
+        if cols is not None and rows is not None and (cols != self.cols or rows != self.rows):
+            await self.resize(cols, rows)
+        else:
+            await self.force_repaint()
+
     async def output(self) -> AsyncIterator[bytes]:  # type: ignore[override]
         """Stream live PTY output as it arrives.
 
