@@ -201,7 +201,7 @@ describe('docker_container_pty', () => {
     pc.shellId = shell.id;
     pc.computeNodeId = dockerNode.id;
     pc.started = true;
-    pc._replayDone = true;
+    pc._attached = true;
     pc._attachedPtyId = shell.id;
 
     let accumulated = '';
@@ -259,7 +259,7 @@ describe('docker_container_pty', () => {
         if (!accumulated.includes('docker_shell_start_ok')) {
           const pc: any = (shell as any).ptyConnection;
           throw new Error(
-            `no output; state: started=${pc?.started} replayDone=${pc?.replayDone} isLive=${pc?.isLive} lastSeq=${pc?.lastSeq} accumulated=${accumulated.length}b`,
+            `no output; state: started=${pc?.started} attached=${pc?.attached} isLive=${pc?.isLive} lastSeq=${pc?.lastSeq} accumulated=${accumulated.length}b`,
           );
         }
       },

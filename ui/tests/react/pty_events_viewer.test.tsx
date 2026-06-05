@@ -40,7 +40,7 @@ describe('PTYEventsViewer end-to-end UI', () => {
   it('shows "registered watchers: N" and the fire row when a trigger matches input', async () => {
     const pty = new PtyConnection('test-shell-12345678', 'test-node');
     // Open the live gate so non-replay fires also surface.
-    (pty as unknown as { _replayDone: boolean })._replayDone = true;
+    (pty as unknown as { _attached: boolean })._attached = true;
 
     const shell = makeShellLike(pty);
 
@@ -93,7 +93,7 @@ describe('PTYEventsViewer end-to-end UI', () => {
 
   it('catches up on chunks fed BEFORE the trigger registers (post-replay race)', async () => {
     const pty = new PtyConnection('test-shell-abcdefgh', 'test-node');
-    (pty as unknown as { _replayDone: boolean })._replayDone = true;
+    (pty as unknown as { _attached: boolean })._attached = true;
 
     // Feed lines BEFORE registering — simulates reload race where chunks
     // arrive via replay before the InteractiveTerminal's useEffect calls
@@ -123,7 +123,7 @@ describe('PTYEventsViewer end-to-end UI', () => {
 
   it('built-in close X button is the only X close affordance in the header', async () => {
     const pty = new PtyConnection('test-shell-close', 'test-node');
-    (pty as unknown as { _replayDone: boolean })._replayDone = true;
+    (pty as unknown as { _attached: boolean })._attached = true;
     const shell = makeShellLike(pty, 'test-shell-close');
 
     let open = true;
