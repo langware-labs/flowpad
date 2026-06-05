@@ -40,8 +40,25 @@ pytestmark = pytest.mark.skipif(
 
 from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.faas.compute_node import ComputeNode
-from flow_sdk.compute.providers.desktop.pty_replay_buffer import replay_buffer
 from flow_sdk.config import FLOWPAD_TEMP_DIR
+
+
+def _read_pty_stream(shell_id: str) -> str:
+    """Cumulative PTY output from the on-disk .pty stream file (written on
+    every output chunk from session start — replaces the old replay buffer
+    as the test's capture source)."""
+    from flow_sdk.builtin.shell import get_shell_record, shell_pty_stream_path
+
+    record = get_shell_record(shell_id)
+    if not record:
+        return ""
+    pty_pid = record.__dict__.get("pty_pid")
+    if not pty_pid:
+        return ""
+    path = shell_pty_stream_path(record.id, pty_pid)
+    if not path.exists():
+        return ""
+    return path.read_bytes().decode("utf-8", errors="replace")
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -304,11 +321,8 @@ async def test_clean_claude_pty_stress(bootstrapped_client):
                 f"resp={getattr(start_resp, 'message', start_resp)!r}"
             )
 
-            pty_key = (cn.id, cn.node_provider_id, shell_id)
-
             def _capture_invariants():
-                chunks = replay_buffer.get_replay(pty_key, since_seq=0)
-                full_pty = "".join(c.data.decode("utf-8", errors="replace") for c in chunks)
+                full_pty = _read_pty_stream(shell_id)
                 if not full_pty:
                     return None, None
                 claude_bytes = extract_claude_section(full_pty)

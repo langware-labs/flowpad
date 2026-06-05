@@ -79,6 +79,13 @@ class PtySession(Pty):
             return
         cols, rows = session.cols, session.rows
         await self._provider.resize_pty(self._pn_id, self._shell_id, cols, max(1, rows - 1))
+        # The target must OBSERVE the intermediate size before it is restored:
+        # SIGWINCH is handled asynchronously, and an instant toggle gets
+        # coalesced — zsh's ZLE sees "no change" and never redraws (verified
+        # empirically; vi/claude redraw either way). 50ms gives the process a
+        # scheduling quantum to read the rows-1 winsize. User-approved delay
+        # (2026-06-05) — this is the jiggle protocol, not a race band-aid.
+        await asyncio.sleep(0.05)
         await self._provider.resize_pty(self._pn_id, self._shell_id, cols, rows)
 
     async def output(self) -> AsyncIterator[bytes]:  # type: ignore[override]
