@@ -106,6 +106,41 @@ async def test_force_repaint_noop_without_session():
 
 
 # ---------------------------------------------------------------------------
+# repaint() — attach-time size policy (resize-or-jiggle)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_repaint_resizes_when_size_differs():
+    """repaint(cols, rows) does a single real resize when the size changed."""
+    session = _make_session(cols=80, rows=24)
+    pty, provider, _, _ = _make_pty(session)
+
+    await pty.repaint(100, 40)
+    provider.resize_pty.assert_awaited_once_with(PTY_KEY[1], PTY_KEY[2], 100, 40)
+    assert (session.cols, session.rows) == (100, 40)
+
+
+@pytest.mark.asyncio
+async def test_repaint_jiggles_when_size_unchanged():
+    """repaint() with the current size (or no dims) jiggles via force_repaint."""
+    session = _make_session(cols=80, rows=24)
+    pty, provider, _, _ = _make_pty(session)
+
+    await pty.repaint(80, 24)  # same size → jiggle
+    assert provider.resize_pty.await_args_list == [
+        ((PTY_KEY[1], PTY_KEY[2], 80, 23),),
+        ((PTY_KEY[1], PTY_KEY[2], 80, 24),),
+    ]
+
+    provider.resize_pty.reset_mock()
+    await pty.repaint()  # no dims → jiggle at current size
+    assert provider.resize_pty.await_args_list == [
+        ((PTY_KEY[1], PTY_KEY[2], 80, 23),),
+        ((PTY_KEY[1], PTY_KEY[2], 80, 24),),
+    ]
+
+
+# ---------------------------------------------------------------------------
 # latest_seq — per-session monotonic output counter
 # ---------------------------------------------------------------------------
 

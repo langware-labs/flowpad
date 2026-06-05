@@ -21,6 +21,7 @@ class Pty(ABC):
     - await pty.write(data)     — write bytes to PTY stdin
     - await pty.resize(c, r)    — resize terminal
     - pty.output()              — AsyncIterator streaming live PTY output
+    - await pty.repaint(c, r)   — attach-time size policy (resize-or-jiggle)
     - await pty.force_repaint() — winsize jiggle so the TUI redraws (attach)
     - pty.latest_seq            — monotonic per-session output counter
     - await pty.attach(id)      — add WebSocket connection
@@ -61,6 +62,13 @@ class Pty(ABC):
 
         Each yielded value is one OS read chunk (raw bytes).
         Iteration ends when the PTY is closed or killed.
+        """
+
+    @abstractmethod
+    async def repaint(self, cols: int | None = None, rows: int | None = None) -> None:
+        """Attach-time size policy: resize to (cols, rows) when given and
+        different, else jiggle the winsize at the current size. Makes the
+        running program redraw for a freshly-attached client.
         """
 
     @abstractmethod

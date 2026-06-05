@@ -777,19 +777,17 @@ class PtyActionsMixin:
             )
             return ApiFailResponse(message=f"Failed to attach to session: {e}", data=response_msg.model_dump())
 
-        # Assert the client's size on the PTY, then make the TUI repaint:
-        # a changed size delivers a real SIGWINCH; an unchanged size needs the
-        # winsize jiggle (resize() deliberately skips same-size calls).
+        # Make the running program repaint for this freshly-attached client.
+        # ``repaint`` asserts the client's size (or jiggles the winsize when it
+        # is unchanged/omitted) — the size policy lives on the handle, not here.
+        # 0/missing dims → None (no size override); a real 0 is not a valid size.
         try:
-            cols = int(body.get("cols", 0)) or pty_handle.cols
-            rows = int(body.get("rows", 0)) or pty_handle.rows
+            cols = int(body.get("cols") or 0) or None
+            rows = int(body.get("rows") or 0) or None
         except (TypeError, ValueError):
-            cols, rows = pty_handle.cols, pty_handle.rows
+            cols = rows = None
         try:
-            if cols != pty_handle.cols or rows != pty_handle.rows:
-                await pty_handle.resize(cols, rows)
-            else:
-                await pty_handle.force_repaint()
+            await pty_handle.repaint(cols, rows)
         except Exception as e:
             # Repaint is best-effort: the attach itself succeeded and live
             # output flows regardless.
