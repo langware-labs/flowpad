@@ -16,6 +16,15 @@ if TYPE_CHECKING:
     from flow_sdk.compute.providers.compute_provider import ComputeProvider
     from flow_sdk.compute.providers.desktop.pty_session_manager import PtySessionManager
 
+# Gap between the two winsize calls in force_repaint(). The target must OBSERVE
+# the intermediate (rows-1) size before it is restored: SIGWINCH is handled
+# asynchronously, and an instant toggle gets coalesced — zsh's ZLE sees "no
+# change" and never redraws (verified empirically; vi/claude/codex redraw
+# either way). 50ms gives the process a scheduling quantum to read the smaller
+# winsize. User-approved (2026-06-05) — this is the jiggle protocol, not a race
+# band-aid.
+_FORCE_REPAINT_JIGGLE_S = 0.05
+
 
 class PtySession(Pty):
     """Pty handle backed by any ComputeProvider + shared session manager."""
@@ -79,13 +88,7 @@ class PtySession(Pty):
             return
         cols, rows = session.cols, session.rows
         await self._provider.resize_pty(self._pn_id, self._shell_id, cols, max(1, rows - 1))
-        # The target must OBSERVE the intermediate size before it is restored:
-        # SIGWINCH is handled asynchronously, and an instant toggle gets
-        # coalesced — zsh's ZLE sees "no change" and never redraws (verified
-        # empirically; vi/claude redraw either way). 50ms gives the process a
-        # scheduling quantum to read the rows-1 winsize. User-approved delay
-        # (2026-06-05) — this is the jiggle protocol, not a race band-aid.
-        await asyncio.sleep(0.05)
+        await asyncio.sleep(_FORCE_REPAINT_JIGGLE_S)  # see constant for rationale
         await self._provider.resize_pty(self._pn_id, self._shell_id, cols, rows)
 
     async def output(self) -> AsyncIterator[bytes]:  # type: ignore[override]
