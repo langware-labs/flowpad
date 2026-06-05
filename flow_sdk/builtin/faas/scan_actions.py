@@ -653,9 +653,21 @@ class ScanActionsMixin:
                 except Exception:
                     pass
 
-            context_data = {}
-            if workdir:
-                context_data["workdir"] = workdir
+            # Defense-in-depth: a resumed session must restore into its
+            # original cwd. Creating the process without one would let
+            # get_project() bind an arbitrary ancestor project and bake a
+            # cwd-mismatched `--resume` into cmd_line — the worker then
+            # crash-loops ("No conversation found") under the wrong project.
+            # Fail loudly instead of guessing.
+            if not workdir:
+                return ApiFailResponse(
+                    message=(
+                        f"Session {session_id} resolved but its working "
+                        "directory is unknown — cannot restore it into a project."
+                    )
+                )
+
+            context_data = {"workdir": workdir}
             if project_id:
                 context_data["project_id"] = project_id
 
@@ -690,9 +702,8 @@ class ScanActionsMixin:
                 if is_codex:
                     _cmd.session_id = session_id
                 process.cli_config = _cmd.to_json()
-                rec_cwd = getattr(session_rec, "cwd", None)
-                if not process.workdir and rec_cwd:
-                    process.workdir = rec_cwd
+                # workdir is guaranteed by the create-time guard above — no
+                # rec_cwd backfill needed here anymore.
                 await process.save()
 
             # Atomic: spawn the linked Shell + PTY before returning so the

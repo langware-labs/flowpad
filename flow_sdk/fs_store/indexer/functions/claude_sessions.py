@@ -47,7 +47,7 @@ from flow_sdk.fs_store.indexer.index_function import IndexerOptions
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.instance_settings import get_instance_settings
 
-_HEAD_BYTES = 4096
+_HEAD_LINES = 64
 _TAIL_BYTES = 16384
 
 # Fields populated onto the record by ensure_claude_session_stats. Mirror of
@@ -100,19 +100,30 @@ def _extract_text(content: object) -> str | None:
                 return text if text and not text.startswith("<") else None
     return None
 
-def claude_session_id(ref: FSRef) -> str:
-    """Id = sessionId from JSONL first-line envelope; fallback to filename stem."""
-    try:
-        with ref._path.open("rb") as fh:
-            head = fh.read(_HEAD_BYTES).decode("utf-8", errors="replace")
-        for line in head.splitlines():
+def _iter_head_json(path: str | Path) -> Iterator[dict]:
+    """Yield parsed JSON envelopes from the first ``_HEAD_LINES`` JSONL lines.
+
+    Mirror of ``codex_sessions._iter_head_json``: iterates complete lines and
+    skips unparsable ones. A fixed-byte head slab is NOT safe here — an early
+    oversized entry (e.g. a file-history-snapshot) can push the ``cwd``-bearing
+    line past the byte boundary, and the truncated line's parse error used to
+    abort the scan, silently dropping ``cwd`` (which then bound resumed
+    processes to the wrong project).
+    """
+    with open(path, encoding="utf-8", errors="replace") as fh:
+        for _, line in zip(range(_HEAD_LINES), fh):
             line = line.strip()
             if not line:
                 continue
             try:
-                raw = json.loads(line)
+                yield json.loads(line)
             except json.JSONDecodeError:
-                break
+                continue
+
+def claude_session_id(ref: FSRef) -> str:
+    """Id = sessionId from JSONL head envelope; fallback to filename stem."""
+    try:
+        for raw in _iter_head_json(ref._path):
             sid = raw.get("sessionId")
             if sid:
                 return str(sid)
@@ -129,10 +140,10 @@ def extract_claude_session(ref: FSRef) -> list[FSRecord]:
 def extract_claude_session_from_path(path: str | Path) -> FSRecord:
     """Build a Record from a JSONL transcript path.
 
-    O(1) read cost regardless of transcript size: head ``_HEAD_BYTES`` for
-    envelope fields (session_id / slug / cwd), tail ``_TAIL_BYTES`` for the
-    most-recent ai-title or custom-title. Stats are NOT populated here —
-    call ``ensure_claude_session_stats(rec)`` to lazy-load them.
+    Bounded read cost regardless of transcript size: first ``_HEAD_LINES``
+    lines for envelope fields (session_id / slug / cwd), tail ``_TAIL_BYTES``
+    for the most-recent ai-title or custom-title. Stats are NOT populated
+    here — call ``ensure_claude_session_stats(rec)`` to lazy-load them.
 
     Replaces ``ClaudeSessionRecord.from_jsonl``.
     """
@@ -144,23 +155,18 @@ def extract_claude_session_from_path(path: str | Path) -> FSRecord:
 
     # head — first few lines cover session_id / slug / cwd
     try:
-        with open(path, "rb") as fh:
-            head = fh.read(_HEAD_BYTES).decode("utf-8", errors="replace")
-        for line in head.splitlines():
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                raw = json.loads(line)
-            except json.JSONDecodeError:
-                break
+        for raw in _iter_head_json(path):
             if raw.get("sessionId"):
                 session_id = raw["sessionId"]
             if raw.get("slug"):
                 slug = raw["slug"]
             if not cwd and raw.get("cwd"):
                 cwd = raw["cwd"]
-            if session_id and slug and cwd:
+            # Stop at the first cwd-bearing line. slug/sessionId ride the same
+            # envelope when present, and most transcripts have no slug at all —
+            # requiring it here would force reading all _HEAD_LINES lines
+            # (including multi-hundred-KB snapshot entries) on every listing.
+            if cwd:
                 break
     except OSError:
         pass
