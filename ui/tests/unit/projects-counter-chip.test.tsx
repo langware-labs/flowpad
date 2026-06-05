@@ -128,6 +128,20 @@ describe('ProjectsCounterChip', () => {
     expect(onLaunchProjectPath).toHaveBeenCalledWith('/tmp/fresh-project', 'codex');
   });
 
+  it('opens history via the "Open from history…" row and closes the popover', async () => {
+    const { projectA } = seedBuckets();
+    const onOpenHistory = vi.fn();
+
+    render(<ProjectsCounterChip currentProjectId={projectA} onOpenHistory={onOpenHistory} />);
+    await userEvent.click(screen.getByTestId('projects-counter-chip'));
+    // Without a launch callback only the history action row renders.
+    expect(screen.queryByTestId('projects-counter-open-other')).toBeNull();
+    await userEvent.click(screen.getByTestId('projects-counter-open-history'));
+
+    expect(onOpenHistory).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('projects-counter-popover')).toBeNull();
+  });
+
   it('keeps the chip clickable with zero buckets when a launch callback exists', async () => {
     mockUseTerminalProjectBuckets.mockReturnValue({ buckets: [] });
     const onLaunchProjectPath = vi.fn();

@@ -965,7 +965,11 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
       <div className="flex h-full w-full flex-col">
         {/* Tab Bar */}
         <div className="flex items-center border-b bg-muted" data-testid="terminal-tab-bar">
-          <ProjectsCounterChip currentProjectId={tabsProjectId} onLaunchProjectPath={handleLaunchProjectPath} />
+          <ProjectsCounterChip
+            currentProjectId={tabsProjectId}
+            onLaunchProjectPath={handleLaunchProjectPath}
+            onOpenHistory={() => setHistoryModalOpen(true)}
+          />
           {/* Left Scroll Button — always reserves layout space when tabs
               overflow, so toggling `canScrollLeft` doesn't shift the
               tab row horizontally. Mirrors the right-button pattern. */}
