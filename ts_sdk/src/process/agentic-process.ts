@@ -940,6 +940,14 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     await dataManager.callAction(actionInfo);
   }
 
+  /** Record that this process executed a library prompt: mutual private
+   *  cross-link + usage bump (conversation Approve & Execute path). */
+  async linkExecutedPrompt(promptId: string): Promise<void> {
+    const actionInfo = new ActionInfo('link-executed-prompt', AgenticProcess.type, this.id, 'POST');
+    actionInfo.bodyParameters = { prompt_id: promptId };
+    await dataManager.callAction(actionInfo);
+  }
+
   async shell(): Promise<Shell | null> {
     if (!this.shell_id) return null;
     const w = (typeof window !== 'undefined' ? window : undefined) as { __shellNavT0?: number } | undefined;

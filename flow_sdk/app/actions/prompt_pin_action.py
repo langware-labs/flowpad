@@ -24,7 +24,7 @@ from __future__ import annotations
 import logging
 from json import JSONDecodeError
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 from fastapi import HTTPException
 
@@ -35,28 +35,13 @@ from flow_sdk.builtin.prompt_cross_link import (
     cross_link_prompt_to_process,
     remove_prompt_process_link,
 )
+from flow_sdk.builtin.prompt_helpers import find_or_create_prompt, normalize_prompt_text
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiResponse, ApiSuccessResponse
 
 logger = logging.getLogger(__name__)
 
-#: Max length of the auto-derived prompt name (first line of the text).
-_AUTO_NAME_MAX = 40
-
-
-def normalize_prompt_text(text: str) -> str:
-    """Whitespace-collapsed comparison key — the FE pin-state check must use
-    the same normalization (see ``useLibraryPromptsForProject``)."""
-    return " ".join(text.split())
-
-
-def _auto_name(text: str) -> str:
-    first_line = next((ln.strip() for ln in text.splitlines() if ln.strip()), "")
-    if not first_line:
-        return "Pinned prompt"
-    if len(first_line) <= _AUTO_NAME_MAX:
-        return first_line
-    return first_line[: _AUTO_NAME_MAX - 1].rstrip() + "…"
+__all__ = ["normalize_prompt_text"]  # re-export — FE contract docs point here
 
 
 async def _resolve_process() -> AgenticProcess:
@@ -78,33 +63,6 @@ async def _post_body() -> dict[str, Any]:
         return {}
 
 
-async def _project_prompts(project_id: Optional[str]) -> list[Prompt]:
-    """All library prompts in the given project scope (None → user scope)."""
-    from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter  # noqa: PLC0415
-
-    if project_id:
-        return await Prompt.get_all(entities_filter=QueryFilter(match=ExpressionNode(project_id=project_id)))
-    # Unscoped: match both NULL and '' (filter in Python — IS_NULL misses '').
-    return [p for p in await Prompt.get_all() if not p.project_id]
-
-
-async def _scope_prompt_to_project(prompt: Prompt, project_id: str) -> None:
-    """Pre-compute the project-scoped asset_ref before save.
-
-    The action URL targets the *process*, so the request-context scope would
-    fall back to user_home — resolve the project mount and let the canonical
-    ``_prepare_for_storage`` compute the asset_ref under ``<project>/prompts/``
-    exactly like the UI's project-scoped create (``POST /graph/project/<id>/prompt``).
-    """
-    from flow_sdk.builtin.project import Project  # noqa: PLC0415
-
-    project = await Project.get_by_id(project_id)
-    mount = getattr(project, "fs_storage_mount_path", None) if project else None
-    if not mount:
-        return
-    await prompt._prepare_for_storage(Path(mount))
-
-
 @action.post(action_name="pin-prompt", types="agentic_process")
 async def pin_prompt() -> ApiResponse:
     """Create (or reuse) a library Prompt from a history item's text and
@@ -118,27 +76,42 @@ async def pin_prompt() -> ApiResponse:
     if name_override is not None and not isinstance(name_override, str):
         raise HTTPException(status_code=400, detail="pin-prompt: 'name' must be a string")
 
-    project_id = proc.project_id or None
-    normalized = normalize_prompt_text(text)
-    existing = next(
-        (p for p in await _project_prompts(project_id) if normalize_prompt_text(p.text or "") == normalized),
-        None,
+    prompt = await find_or_create_prompt(
+        text, project_id=proc.project_id or None, name=name_override
     )
-    if existing is not None:
-        prompt = existing
-    else:
-        prompt = Prompt(
-            name=(name_override or _auto_name(text)).strip(),
-            text=text,
-            project_id=project_id,
-        )
-        if project_id:
-            await _scope_prompt_to_project(prompt, project_id)
-        await prompt.save()
-
     await cross_link_prompt_to_process(prompt, proc)
     return ApiSuccessResponse(
         data={"prompt_id": prompt.id, "prompt_type": Prompt.get_type(), "pinned": True}
+    )
+
+
+@action.post(action_name="link-executed-prompt", types="agentic_process")
+async def link_executed_prompt() -> ApiResponse:
+    """Record that this process executed a library prompt: mutual private
+    cross-link (same continuity as pin-from-history) + usage bump.
+
+    Body: {"prompt_id": "<id>"}. Called by the conversation Approve & Execute
+    flow after the headless run is triggered. Idempotent on the link; the
+    usage counter increments on every call (each call = one execution).
+    """
+    proc = await _resolve_process()
+    body = await _post_body()
+    prompt_id = body.get("prompt_id")
+    if not isinstance(prompt_id, str) or not prompt_id:
+        raise HTTPException(status_code=400, detail="link-executed-prompt: 'prompt_id' required")
+
+    prompt = await Prompt.get_by_id(prompt_id)
+    if prompt is None:
+        return ApiSuccessResponse(data={"linked": False, "prompt_id": prompt_id})
+
+    await cross_link_prompt_to_process(prompt, proc)
+    from datetime import datetime, timezone  # noqa: PLC0415
+
+    prompt.use_count = (prompt.use_count or 0) + 1
+    prompt.last_used_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    await prompt.save()
+    return ApiSuccessResponse(
+        data={"linked": True, "prompt_id": prompt_id, "use_count": prompt.use_count}
     )
 
 

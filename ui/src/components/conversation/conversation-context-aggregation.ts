@@ -17,13 +17,7 @@
  *     own context".
  */
 
-import {
-  AgenticProcess,
-  Conversation,
-  FlowMessage,
-  Task,
-  TypeId,
-} from '@sdk';
+import { AgenticProcess, Conversation, FlowMessage, Task, TypeId } from '@sdk';
 import { AttachmentType, attachmentDataString, type Attachment } from '@sdk/entities/flow-message';
 
 const TRANSCRIPT_FILENAME = 'conversation.jsonl';
@@ -137,10 +131,7 @@ export function flowMessageIdSet(orderedMessages: FlowMessage[]): Set<string> {
 /** Things to *exclude* from Shared Context: the conversation itself and
  *  every FlowMessage in the thread (so a message that references itself
  *  doesn't show up as its own context row). */
-export function buildSkipKeys(
-  flowMessageIds: ReadonlySet<string>,
-  conversationId: string,
-): Set<string> {
+export function buildSkipKeys(flowMessageIds: ReadonlySet<string>, conversationId: string): Set<string> {
   const out = new Set<string>();
   for (const id of flowMessageIds) out.add(id);
   out.add(new TypeId(Conversation.type, conversationId).toString());
@@ -160,7 +151,10 @@ export function buildSkipKeys(
 export function buildSharedEntities(
   orderedMessages: FlowMessage[],
   skipKeys: ReadonlySet<string>,
-  conversation?: { sharedContextEntities?: TypeId[]; getContextEntryData?: (t: TypeId) => Record<string, unknown> | undefined } | null,
+  conversation?: {
+    sharedContextEntities?: TypeId[];
+    getContextEntryData?: (t: TypeId) => Record<string, unknown> | undefined;
+  } | null,
 ): SharedEntityAgg[] {
   const byKey = new Map<string, SharedEntityAgg>();
   /** Extract a sidecar path hint from a source's getContextEntryData(typeid).
@@ -197,9 +191,7 @@ export function buildSharedEntities(
     if (fromAttachment) {
       // Materialized once at least one contributing message's bundle is pulled.
       // First attachment contribution replaces the default `true`; later ones OR in.
-      entry.downloaded = entry.downloadable
-        ? entry.downloaded || fromAttachment.downloaded
-        : fromAttachment.downloaded;
+      entry.downloaded = entry.downloadable ? entry.downloaded || fromAttachment.downloaded : fromAttachment.downloaded;
       entry.downloadable = true;
       if (!entry.downloadOriginMessageId && originMessageId) {
         entry.downloadOriginMessageId = originMessageId;
@@ -254,7 +246,7 @@ export function buildTranscriptEntries(orderedMessages: FlowMessage[]): Transcri
 
 /** File attachments (regular + prompt-slot files) across the thread, one row
  *  per attachment. Inline-text PROMPT attachments are skipped — those are
- *  rendered by PromptApprovalRow on the message bubble, not as context rows.
+ *  rendered by the attachment-actions row's PromptAttachmentPreview, not as context rows.
  *  Transcript files are excluded (they're surfaced by `buildTranscriptEntries`
  *  separately). */
 export function buildAttachmentEntries(orderedMessages: FlowMessage[]): AttachmentEntry[] {
@@ -265,10 +257,7 @@ export function buildAttachmentEntries(orderedMessages: FlowMessage[]): Attachme
       if (a.attachment_type === AttachmentType.FILE) {
         if (isTranscriptAttachment(a)) continue;
         out.push({ messageId: fm.id, attachment: a, kind: 'file', originMessageIds: [fm.id] });
-      } else if (
-        a.attachment_type === AttachmentType.PROMPT &&
-        attachmentDataString(a).startsWith('prompt/')
-      ) {
+      } else if (a.attachment_type === AttachmentType.PROMPT && attachmentDataString(a).startsWith('prompt/')) {
         out.push({ messageId: fm.id, attachment: a, kind: 'prompt-file', originMessageIds: [fm.id] });
       }
     }
@@ -287,10 +276,7 @@ export function buildAttachmentEntries(orderedMessages: FlowMessage[]): Attachme
 /** Wrap the conversation's mapped project (if any) as a TypeId for the
  *  Private Context project row. Returns `null` when nothing has been
  *  mapped — neither task.project_id nor conversation.project_id is set. */
-export function resolveProjectTypeId(
-  task: Task | null,
-  conversation: Conversation | null,
-): TypeId | null {
+export function resolveProjectTypeId(task: Task | null, conversation: Conversation | null): TypeId | null {
   const pid = task?.project_id ?? conversation?.project_id ?? null;
   return pid ? new TypeId('project', pid) : null;
 }
