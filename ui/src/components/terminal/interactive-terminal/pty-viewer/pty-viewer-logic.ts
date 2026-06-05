@@ -298,13 +298,26 @@ export function containsClearScrollback(b64: string): boolean {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+/** Base64-encode raw bytes. Encodes in 32KB blocks so large chunks neither
+ *  blow the argument-count limit (`fromCharCode(...bytes)`) nor pay the
+ *  O(n²) cost of single-char string concatenation. */
+function bytesToBase64(bytes: Uint8Array): string {
+  let bin = '';
+  const BLOCK = 0x8000;
+  for (let i = 0; i < bytes.length; i += BLOCK) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + BLOCK));
+  }
+  return btoa(bin);
+}
+
 /** Snapshot the live in-session chunks (xterm memory), b64-encoded for display. */
 export function getXtermChunks(shell: Shell): PtyMemoryChunk[] {
-  return shell.ptyConnection.getSortedChunks().map((c) => {
-    let bin = '';
-    for (let i = 0; i < c.data.length; i++) bin += String.fromCharCode(c.data[i]);
-    return { seq: c.seq, timestamp: c.timestamp, size: c.data.length, data_b64: btoa(bin) };
-  });
+  return shell.ptyConnection.getSortedChunks().map((c) => ({
+    seq: c.seq,
+    timestamp: c.timestamp,
+    size: c.data.length,
+    data_b64: bytesToBase64(c.data),
+  }));
 }
 
 /** Format an epoch-ms timestamp as relative time from base, or absolute time. */
