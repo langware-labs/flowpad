@@ -85,6 +85,16 @@ class Entity(DBEntity):
     tags: List[str] = APIField(default_factory=list)
     system: bool = APIField(default=False, description="True when this entity belongs to an SDK-shipped system project")
     remote: bool = APIField(default=False, description="True when this entity has a hub counterpart at the same id; refreshable from the hub")
+    fetched_at: datetime | None = APIField(
+        default=None,
+        description=(
+            "When THIS device last refreshed the entity from the hub (stamped "
+            "at the hub→local merge boundary). Local-only observability for "
+            "cache-staleness debugging and a future TTL hook — never a "
+            "correctness gate (correctness stays on updated_date/count) and "
+            "never sent to the hub."
+        ),
+    )
     parent_type_id: str | None = APIField(
         default=None,
         description=(
@@ -115,7 +125,7 @@ class Entity(DBEntity):
     # with their own local-only state (e.g. download/body status, on-disk
     # paths). Used by ``is_stale`` / ``merge_hub_payload`` at the remote
     # boundary. ClassVar so pydantic treats it as config, not a field.
-    LOCAL_ONLY_FIELDS: ClassVar[frozenset[str]] = frozenset({"remote", "system"})
+    LOCAL_ONLY_FIELDS: ClassVar[frozenset[str]] = frozenset({"remote", "system", "fetched_at"})
 
     # Orphan-ness ("source asset missing on disk") is no longer a stored field —
     # it is the dynamic ``FSRecord.orphan`` (``not asset_ref.exists()``),
@@ -1147,7 +1157,7 @@ class Entity(DBEntity):
                 "shared_context_entity_data",
                 "created_by", "updated_by",
                 "created_date", "updated_date",
-                "remote", "system",
+                "remote", "system", "fetched_at",
                 "message_count",
                 "tags", "project_id", "participants",
             },
@@ -1340,6 +1350,9 @@ class Entity(DBEntity):
         for field in cls.LOCAL_ONLY_FIELDS:
             if field in cls.model_fields:
                 merged[field] = getattr(local, field, None)
+        # This IS the hub→local refresh boundary — stamp it (after the
+        # LOCAL_ONLY restore loop, which would otherwise carry the stale value).
+        merged["fetched_at"] = datetime.now(timezone.utc)
         return merged
 
     async def save(self: EntityType, owner: DBEntity | TypeId | types.NoneType = None, notify: bool = True) -> EntityType:
