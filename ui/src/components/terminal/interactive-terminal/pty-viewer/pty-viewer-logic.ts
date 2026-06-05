@@ -1,10 +1,12 @@
-import type { Shell, PtySequenceChunkMeta, PtySequenceData } from '@sdk';
+import type { Shell } from '@sdk';
 
-export const enum PtyValidationStatus {
-  MATCH = 'match',
-  MISMATCH = 'mismatch',
-  NO_DATA = 'no_data',
-  PRE_ALIGNMENT = 'pre_alignment',
+/** A live in-session output chunk (xterm memory), b64-encoded for the decoders. */
+export interface PtyMemoryChunk {
+  seq: number;
+  /** Unix epoch milliseconds when the chunk was captured. */
+  timestamp: number;
+  size: number;
+  data_b64: string;
 }
 
 /** A detected terminal control event with its name and optional parameter data. */
@@ -18,8 +20,6 @@ export interface PtyViewerRow {
   seq: number;
   timestamp: number;
   size: number;
-  validationStatus: PtyValidationStatus;
-  mismatchOffset?: number;
   /** Named control sequences detected in this chunk, with parameter data. */
   namedEvents: PtyEvent[];
   /** True if any detected event is high-impact (screen clear, mode switch, etc.). */
@@ -28,21 +28,12 @@ export interface PtyViewerRow {
   isRenderCycle: boolean;
   /** Chunk contains ESC[3J specifically. */
   hasClearScrollback: boolean;
-  /** Chunk is present in _pty.chunks (xterm memory). */
-  inXterm: boolean;
 }
 
 export interface PtyViewerData {
   rows: PtyViewerRow[];
   totalChunks: number;
   totalSizeBytes: number;
-  ptyFileSize: number;
-  alignmentOffset: number;
-  alignmentSeq: number;
-  /** Number of replay chunks NOT present in _pty.chunks. */
-  xtermGapCount: number;
-  /** Highest seq present in _pty.chunks (0 = none). */
-  xtermLastSeq: number;
   /** Seqs of chunks that contain ESC[3J. */
   clearScrollbackSeqs: number[];
 }
@@ -307,28 +298,21 @@ export function containsClearScrollback(b64: string): boolean {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/** Fetch replay buffer chunks + PTY file from server. */
-export async function fetchReplayChunks(shell: Shell): Promise<PtySequenceData> {
-  return shell.fetchPtySequence();
+/** Snapshot the live in-session chunks (xterm memory), b64-encoded for display. */
+export function getXtermChunks(shell: Shell): PtyMemoryChunk[] {
+  return shell.ptyConnection.getSortedChunks().map((c) => {
+    let bin = '';
+    for (let i = 0; i < c.data.length; i++) bin += String.fromCharCode(c.data[i]);
+    return { seq: c.seq, timestamp: c.timestamp, size: c.data.length, data_b64: btoa(bin) };
+  });
 }
 
-/** Count xterm chunks in browser memory. */
-export function getXtermChunkCount(shell: Shell): number {
-  return shell.ptyConnection.getSortedChunks().length;
-}
-
-/** Return the set of seq numbers currently in _pty.chunks (xterm memory). */
-export function getXtermSeqs(shell: Shell): Set<number> {
-  return new Set(shell.ptyConnection.getSortedChunks().map((c) => c.seq));
-}
-
-/** Format timestamp as relative time from base (ms), or absolute time. */
+/** Format an epoch-ms timestamp as relative time from base, or absolute time. */
 export function formatTimestamp(timestamp: number, baseTimestamp?: number): string {
   if (baseTimestamp !== undefined) {
-    const delta = timestamp - baseTimestamp;
-    return `+${(delta * 1000).toFixed(0)}ms`;
+    return `+${(timestamp - baseTimestamp).toFixed(0)}ms`;
   }
-  const d = new Date(timestamp * 1000);
+  const d = new Date(timestamp);
   return d.toLocaleTimeString('en-US', { hour12: false, fractionalSecondDigits: 3 });
 }
 
@@ -383,134 +367,24 @@ export function decodePlainText(b64: string): string {
   } catch { return '(decode error)'; }
 }
 
-// ── PTY file alignment ────────────────────────────────────────────────────────
-
-const ALIGNMENT_MATCH_LENGTH = 32;
-
-/**
- * Find alignment point: search for the LAST occurrence of the first large
- * chunk's data in the PTY file (searching from end avoids false positives
- * from earlier redraws of similar content). Verifies alignment by checking
- * that the next chunk also matches at the expected offset.
- */
-export function findAlignmentPoint(
-  ptyFileBytes: Uint8Array,
-  chunks: PtySequenceChunkMeta[],
-): { fileOffset: number; chunkIdx: number } | null {
-  for (let i = 0; i < chunks.length - 1; i++) {
-    const chunk = chunks[i];
-    const chunkBytes = _b64ToBytes(chunk.data_b64);
-    if (chunkBytes.length < ALIGNMENT_MATCH_LENGTH) continue;
-
-    const nextChunk = chunks[i + 1];
-    const nextBytes = _b64ToBytes(nextChunk.data_b64);
-    const matchLen = Math.min(chunkBytes.length, ALIGNMENT_MATCH_LENGTH);
-
-    for (let j = ptyFileBytes.length - matchLen; j >= 0; j--) {
-      let matched = true;
-      for (let k = 0; k < matchLen; k++) {
-        if (ptyFileBytes[j + k] !== chunkBytes[k]) { matched = false; break; }
-      }
-      if (!matched) continue;
-
-      let fullMatch = true;
-      if (j + chunkBytes.length <= ptyFileBytes.length) {
-        for (let k = 0; k < chunkBytes.length; k++) {
-          if (ptyFileBytes[j + k] !== chunkBytes[k]) { fullMatch = false; break; }
-        }
-      } else { fullMatch = false; }
-      if (!fullMatch) continue;
-
-      const nextOffset = j + chunkBytes.length;
-      const nextMatchLen = Math.min(nextBytes.length, ALIGNMENT_MATCH_LENGTH);
-      if (nextOffset + nextMatchLen > ptyFileBytes.length) continue;
-      let nextOk = true;
-      for (let k = 0; k < nextMatchLen; k++) {
-        if (ptyFileBytes[nextOffset + k] !== nextBytes[k]) { nextOk = false; break; }
-      }
-      if (!nextOk) continue;
-
-      return { fileOffset: j, chunkIdx: i };
-    }
-  }
-  return null;
-}
-
-function validateChunk(
-  ptyFileBytes: Uint8Array,
-  fileOffset: number,
-  chunkB64: string,
-): { status: PtyValidationStatus; mismatchOffset?: number } {
-  const chunkBytes = _b64ToBytes(chunkB64);
-  if (fileOffset + chunkBytes.length > ptyFileBytes.length) return { status: PtyValidationStatus.NO_DATA };
-  for (let i = 0; i < chunkBytes.length; i++) {
-    if (ptyFileBytes[fileOffset + i] !== chunkBytes[i]) return { status: PtyValidationStatus.MISMATCH, mismatchOffset: i };
-  }
-  return { status: PtyValidationStatus.MATCH };
-}
-
-function _b64ToBytes(b64: string): Uint8Array {
-  const bin = atob(b64);
-  const bytes = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-  return bytes;
-}
-
 // ── Build viewer data ─────────────────────────────────────────────────────────
 
-/** Build viewer rows with event detection and byte-by-byte PTY file validation. */
-export function buildViewerData(
-  replayChunks: PtySequenceData,
-  ptyFileBytes: Uint8Array | null,
-  xtermSeqs: Set<number> = new Set(),
-): PtyViewerData {
-  const chunks = replayChunks.chunks;
-
-  let alignmentOffset = -1;
-  let alignmentSeq = -1;
-  let alignmentChunkIdx = -1;
-
-  if (ptyFileBytes && chunks.length > 0) {
-    const alignment = findAlignmentPoint(ptyFileBytes, chunks);
-    if (alignment) {
-      alignmentOffset = alignment.fileOffset;
-      alignmentChunkIdx = alignment.chunkIdx;
-      alignmentSeq = chunks[alignment.chunkIdx].seq;
-    }
-  }
-
-  let fileOffset = alignmentOffset;
+/** Build viewer rows (event detection) from the live in-session chunks. */
+export function buildViewerData(chunks: PtyMemoryChunk[]): PtyViewerData {
   const clearScrollbackSeqs: number[] = [];
 
-  const rows: PtyViewerRow[] = chunks.map((chunk, idx) => {
+  const rows: PtyViewerRow[] = chunks.map((chunk) => {
     const namedEvents = detectNamedEvents(chunk.data_b64);
     const eventNames = namedEvents.map((e) => e.name);
     const hasClearScrollback = eventNames.includes('CLR-SCROLLBACK');
     if (hasClearScrollback) clearScrollbackSeqs.push(chunk.seq);
     const isRenderCycle = detectRenderCycle(namedEvents);
     const hasHighImpactEvent = isRenderCycle || eventNames.some((n) => HIGH_IMPACT_EVENTS.has(n));
-    const inXterm = xtermSeqs.has(chunk.seq);
 
-    let validationStatus = PtyValidationStatus.NO_DATA;
-    let mismatchOffset: number | undefined;
-
-    if (ptyFileBytes !== null && alignmentChunkIdx >= 0) {
-      if (idx < alignmentChunkIdx) {
-        validationStatus = PtyValidationStatus.PRE_ALIGNMENT;
-      } else {
-        const result = validateChunk(ptyFileBytes, fileOffset, chunk.data_b64);
-        validationStatus = result.status;
-        mismatchOffset = result.mismatchOffset;
-        fileOffset += chunk.size;
-      }
-    }
-
-    return { seq: chunk.seq, timestamp: chunk.timestamp, size: chunk.size, validationStatus, mismatchOffset, namedEvents, hasHighImpactEvent, isRenderCycle, hasClearScrollback, inXterm };
+    return { seq: chunk.seq, timestamp: chunk.timestamp, size: chunk.size, namedEvents, hasHighImpactEvent, isRenderCycle, hasClearScrollback };
   });
 
-  const xtermSeqArr = [...xtermSeqs].sort((a, b) => a - b);
-  const xtermLastSeq = xtermSeqArr.length > 0 ? xtermSeqArr[xtermSeqArr.length - 1] : 0;
-  const xtermGapCount = chunks.filter((c) => !xtermSeqs.has(c.seq)).length;
+  const totalSizeBytes = chunks.reduce((acc, c) => acc + c.size, 0);
 
-  return { rows, totalChunks: replayChunks.total_chunks, totalSizeBytes: replayChunks.total_size_bytes, ptyFileSize: ptyFileBytes?.length ?? 0, alignmentOffset, alignmentSeq, xtermGapCount, xtermLastSeq, clearScrollbackSeqs };
+  return { rows, totalChunks: chunks.length, totalSizeBytes, clearScrollbackSeqs };
 }
