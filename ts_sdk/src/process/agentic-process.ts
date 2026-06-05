@@ -296,6 +296,15 @@ export interface IAgenticProcess extends IEntity {
    */
   restart_required?: boolean;
   /**
+   * Reason the last worker launch failed to start (the worker exited within
+   * the backend's instant-exit window). Non-null LATCHES the process out of
+   * auto-recovery: the os-status sweep skips it and plain `open` calls are
+   * refused server-side, so a worker that dies on arrival isn't relaunched
+   * every 5s forever. Cleared only by an explicit user retry
+   * (`start({ retry: true })`) or a launch that survives the window.
+   */
+  start_failure?: string | null;
+  /**
    * MD5 of the worker-relevant snapshot captured at the last successful start().
    * Compared against the current snapshot on every save() to detect drift.
    */
@@ -788,6 +797,13 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * this as the "Restart" affordance on the process toolbar.
    */
   restart_required: boolean = false;
+
+  /**
+   * Reason the last worker launch failed to start (instant-exit latch).
+   * Non-null excludes this process from auto-recovery; clear it via an
+   * explicit user retry — `start({ retry: true })` — never automatically.
+   */
+  start_failure: string | null = null;
 
   /**
    * MD5 of the worker-relevant snapshot captured at the last successful start().
@@ -1935,6 +1951,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
      * worker's first paint isn't wrapped at 80 cols on a wide viewport. */
     cols?: number;
     rows?: number;
+    /** Explicit user retry of a failed-to-start process: clears the
+     * server-side `start_failure` latch before launching. Without it the
+     * backend refuses to respawn a latched process. */
+    retry?: boolean;
   }): Promise<boolean> {
     const { Shell } = await import('../entities/shell');
     // No client-side STOPPING guard. The server's ``open`` action runs
@@ -1981,6 +2001,12 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     // Successful open clears any prior user-stop intent and registers this
     // process for auto-recovery (poll + on_reconnected dispatcher).
     this._userInitiatedStop = false;
+    // A successful open implies the process is not latched (the backend gate
+    // refuses latched opens; retry clears before launching). Clear locally
+    // too: the entity dump drops None fields, so the server-side clear never
+    // arrives as `start_failure: null` — without this a stale latch would
+    // exclude the process from auto-recovery forever.
+    this.start_failure = null;
     _agenticProcessRegistry.add(this);
     _ensureAgenticStaticListeners();
     return true;
@@ -2019,11 +2045,16 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    *     call finish first.
    *   - ``FAILED``: relaunching would loop because the worker can't start
    *     with the current ``cli_options``.
+   *   - ``start_failure``: failed-to-start latch — the worker exited
+   *     instantly on its last launch. Checked separately from FAILED so a
+   *     latched process stays skipped even if the cached ``status`` field
+   *     lags behind the entity update.
    */
   private _isRecoveryEligible(): boolean {
     if (this._userInitiatedStop) return false;
     if (this.status === ProcessStatus.STARTING || this.status === ProcessStatus.STOPPING) return false;
     if (this.status === ProcessStatus.FAILED) return false;
+    if (this.start_failure) return false;
     return true;
   }
 

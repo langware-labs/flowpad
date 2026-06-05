@@ -69,6 +69,15 @@ _DETACHED_TASKS: set["asyncio.Task"] = set()
 # HTTP response time to flush back to the (about-to-die) caller.
 _SELF_RESTART_GRACE_S = 0.5
 
+# Classification threshold (nothing waits on this): a worker that exits less
+# than this many seconds after its launch never really started — its exit is
+# recorded as ``start_failure`` (status FAILED) instead of a normal STOPPED.
+# A latched process is excluded from auto-recovery relaunch until the user
+# explicitly retries. A worker that outlives the window and then dies is a
+# normal stop and stays recoverable (e.g. crash-healing after a backend
+# restart).
+INSTANT_EXIT_WINDOW_SECONDS = 5.0
+
 
 # ── Asset descriptors ──────────────────────────────────────────────────────────
 # Read-side surface for ``AgenticProcess.get_asset_descriptors`` — see plan
@@ -437,6 +446,19 @@ class AgenticProcess(Entity):
             "Set automatically by the save-hook; can also be set externally via API."
         ),
     )
+    start_failure: str | None = APIField(
+        default=None,
+        description=(
+            "Human-readable reason the last worker launch failed to start — set "
+            "when the worker exits within INSTANT_EXIT_WINDOW_SECONDS of its "
+            "launch (or dies while still STARTING). Non-None LATCHES the "
+            "process: auto-recovery sweeps and plain open() calls refuse to "
+            "respawn until an explicit user retry (open with retry=true) "
+            "clears it. This is what breaks the spawn → instant-death → "
+            "auto-reopen loop. Cleared on explicit retry and on any spawn "
+            "that survives past the window."
+        ),
+    )
     last_started_hash: str | None = APIField(
         default=None,
         description=(
@@ -730,8 +752,15 @@ class AgenticProcess(Entity):
         self,
         instruction: str | None = None,
         visible: bool | None = None,
+        retry: bool = False,
     ) -> ApiSuccessResponse | ApiFailResponse:
         """Spawn (or reattach to) this AgenticProcess's PTY worker.
+
+        ``retry=True`` marks an explicit user retry: it clears a
+        ``start_failure`` latch before launching. Without it, a latched
+        process (worker exited instantly on its last launch) refuses to
+        spawn — that refusal is what stops the auto-recovery sweep from
+        relaunching a worker that dies on arrival, every 5 seconds, forever.
 
         This is the PTY entry point — it always materialises a Shell + spawns
         an interactive ``claude`` PTY process, regardless of ``self.visible``.
@@ -756,7 +785,7 @@ class AgenticProcess(Entity):
         self._set_start_lifecycle(True)
         try:
             async with _get_open_lock(self.id):
-                return await self._perform_open(instruction, visible)
+                return await self._perform_open(instruction, visible, retry=retry)
         finally:
             self._set_start_lifecycle(False)
 
@@ -764,16 +793,18 @@ class AgenticProcess(Entity):
         self,
         instruction: str | None = None,
         visible: bool | None = None,
+        retry: bool = False,
     ) -> ApiSuccessResponse | ApiFailResponse:
         """Back-compat alias for :meth:`start_pty`. Prefer ``start_pty`` —
         the bare ``start`` reads as a generic lifecycle word but this method
         only ever spawns a PTY worker (visibility doesn't gate that)."""
-        return await self.start_pty(instruction=instruction, visible=visible)
+        return await self.start_pty(instruction=instruction, visible=visible, retry=retry)
 
     async def _perform_open(
         self,
         instruction: str | None,
         visible: bool | None,
+        retry: bool = False,
     ) -> ApiSuccessResponse | ApiFailResponse:
         """Body of ``start_pty`` (the legacy ``start``/HTTP ``open`` aliases route
         here) — runs while the per-process open lock
@@ -786,6 +817,25 @@ class AgenticProcess(Entity):
             # else. The rest of this function then sees a startable state
             # rather than refusing or spawning under stale assumptions.
             await self.reap_if_orphaned()
+
+            # Failed-to-start latch: the last launch died within the
+            # instant-exit window. Refuse to respawn — the auto-recovery
+            # sweep and route loaders call open() unconditionally, and
+            # honoring them here is what produced the spawn→die→respawn
+            # loop. Only an explicit user retry (retry=True) re-arms.
+            if self.start_failure:
+                if not retry:
+                    return ApiFailResponse(
+                        message=(
+                            f"Process failed to start: {self.start_failure} "
+                            "Auto-relaunch is paused — use Retry to relaunch."
+                        ),
+                    )
+                logger.info(
+                    "AgenticProcess %s: user retry — clearing start_failure latch (%s)",
+                    self.id, self.start_failure,
+                )
+                self.start_failure = None
             self.session_id = self.session_id or str(uuid4())
             reattach_changed = False
             # Set when this fresh spawn consumes a queued prompt as its launch
@@ -1017,11 +1067,15 @@ class AgenticProcess(Entity):
 
     @action.post(action_name="restart")
     async def http_restart(self) -> ApiSuccessResponse | ApiFailResponse:
-        """exit() + start_pty(). Shell entity is preserved and reused."""
+        """exit() + start_pty(). Shell entity is preserved and reused.
+
+        Restart is always an explicit user/worker request, so it carries
+        ``retry=True`` — a ``start_failure`` latch never blocks it.
+        """
         exit_result = await self.exit()
         if isinstance(exit_result, ApiFailResponse) and "No active shell" not in exit_result.message:
             return exit_result
-        return await self.start_pty()
+        return await self.start_pty(retry=True)
 
     @action.post(action_name="self-restart")
     async def http_self_restart(self) -> ApiSuccessResponse:
@@ -3104,17 +3158,21 @@ class AgenticProcess(Entity):
         Action name kept as ``open`` for back-compat with existing UI / TS SDK
         clients; the underlying behaviour is PTY spawn (``start_pty``).
 
-        POST body: {instruction?, visible?, session_id?}
+        POST body: {instruction?, visible?, session_id?, retry?}
+
+        ``retry: true`` is the explicit user-retry signal — it clears the
+        ``start_failure`` latch so a failed-to-start process relaunches.
         """
         request_info = get_current_request_info()
         body = await request_info.get_post_data() if request_info else {}
         instruction = body.get("instruction")
         visible = body.get("visible")
+        retry = bool(body.get("retry"))
         # Support legacy worker_session_id in POST body for older clients
         session_id_override = body.get("session_id") or body.get("worker_session_id")
         if session_id_override:
             self.session_id = session_id_override
-        return await self.start_pty(instruction=instruction, visible=visible)
+        return await self.start_pty(instruction=instruction, visible=visible, retry=retry)
 
     async def reap_if_orphaned(self, *, grace_seconds: int = 10) -> bool:
         """Force-complete a stuck STOPPING transition when the worker is gone.
@@ -3595,9 +3653,18 @@ class AgenticProcess(Entity):
         agentic_process_id = self.id
         session_id = self.session_id
         shell_id = self.shell_id
+        # Closure-bound spawn clock: the callback is created immediately before
+        # the worker is launched, so ``now - spawned_at`` at exit time is the
+        # worker's lifetime. Kept in the closure (not the entity) so the
+        # instant-exit classification can't race a concurrent save.
+        spawned_at = time.monotonic()
 
         def _on_pty_exit(exit_code: int | None) -> None:
-            logger.info("AgenticProcess %s: PTY exited with code %s", agentic_process_id, exit_code)
+            worker_lifetime = time.monotonic() - spawned_at
+            logger.info(
+                "AgenticProcess %s: PTY exited with code %s after %.1fs",
+                agentic_process_id, exit_code, worker_lifetime,
+            )
 
             async def _update_state():
                 try:
@@ -3617,8 +3684,24 @@ class AgenticProcess(Entity):
                         await proc.save()
                         return
                     proc.sidecar_shell_id = None
-                    if proc.status == ProcessStatus.STARTING.value:
+                    if proc.status == ProcessStatus.STARTING.value or (
+                        proc.status == ProcessStatus.RUNNING.value
+                        and worker_lifetime < INSTANT_EXIT_WINDOW_SECONDS
+                    ):
+                        # Failed start — either the worker died before the spawn
+                        # completed, or it exited within the instant-exit window.
+                        # Latch ``start_failure`` so auto-recovery (the 5s os-status
+                        # sweep and plain open() calls) stops relaunching it; only
+                        # an explicit user retry clears the latch.
                         proc.status = ProcessStatus.FAILED.value
+                        proc.start_failure = (
+                            f"Worker exited {worker_lifetime:.1f}s after launch"
+                            f" (exit code {exit_code})."
+                        )
+                        logger.warning(
+                            "AgenticProcess %s: failed to start — %s Auto-relaunch paused until user retry.",
+                            agentic_process_id, proc.start_failure,
+                        )
                     elif proc.status not in {
                         ProcessStatus.STOPPING.value,
                         ProcessStatus.STOPPED.value,

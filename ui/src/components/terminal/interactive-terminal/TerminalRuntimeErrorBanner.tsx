@@ -74,6 +74,28 @@ async function retryStart(processId: string): Promise<boolean> {
   }
 }
 
+/**
+ * Explicit user retry of a failed-to-start process. ``retry: true`` is what
+ * clears the server-side ``start_failure`` latch — a plain ``start()`` would
+ * be refused (that refusal is the loop-breaker; only a user click re-arms).
+ */
+async function retryFailedStart(processId: string): Promise<boolean> {
+  const process = await loadProcessById(processId);
+  if (!process) {
+    notify.error({ title: 'Couldn’t resolve this process.', id: `terminal-recover:${processId}` });
+    return false;
+  }
+  try {
+    await process.start({ visible: true, retry: true });
+    notify.success({ title: 'Relaunched.', id: `terminal-recover:${processId}` });
+    dataContext.setTerminalRuntimeError(null);
+    return true;
+  } catch (err) {
+    notify.error({ title: err instanceof Error ? err.message : 'Retry failed.', id: `terminal-recover:${processId}` });
+    return false;
+  }
+}
+
 async function recoverProject(processId: string): Promise<boolean> {
   const process = await loadProcessById(processId);
   if (!process) {
@@ -159,6 +181,15 @@ const KIND_CONFIG: Record<TerminalRuntimeError['kind'], KindConfig> = {
     actionIcon: RefreshCw,
     action: retryNetwork,
   },
+  failed_to_start: {
+    icon: AlertTriangle,
+    title: 'Failed to start.',
+    detail:
+      'The worker exited immediately after launch, so auto-relaunch is paused. Retry to launch it again.',
+    actionLabel: 'Retry',
+    actionIcon: RefreshCw,
+    action: retryFailedStart,
+  },
 };
 
 /**
@@ -178,6 +209,18 @@ export function TerminalRuntimeErrorBanner() {
   const cfg = KIND_CONFIG[terminalRuntimeError.kind];
   if (!cfg) return null;
 
+  // failed_to_start carries a concrete server-recorded reason on the entity
+  // (`start_failure`, e.g. "Worker exited 0.9s after launch (exit code 1)").
+  // Prefer it over the generic copy when the process is in cache.
+  const latchedReason =
+    terminalRuntimeError.kind === 'failed_to_start'
+      ? AgenticProcess.getByIdFromCache<AgenticProcess>(terminalRuntimeError.processId)
+          ?.start_failure
+      : null;
+  const detail = latchedReason
+    ? `${latchedReason} Auto-relaunch is paused — Retry to launch again.`
+    : cfg.detail;
+
   const Icon = cfg.icon;
   const ActionIcon = cfg.actionIcon;
 
@@ -190,7 +233,7 @@ export function TerminalRuntimeErrorBanner() {
       <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
       <div className="min-w-0 flex-1">
         <div className="font-medium">{cfg.title}</div>
-        {cfg.detail && <div className="text-[11px] opacity-80">{cfg.detail}</div>}
+        {detail && <div className="text-[11px] opacity-80">{detail}</div>}
       </div>
       <Button
         type="button"
