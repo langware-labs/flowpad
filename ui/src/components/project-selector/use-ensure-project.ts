@@ -3,7 +3,7 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useCallback } from 'react';
 
-function canonicalPath(path: string): string {
+export function canonicalPath(path: string): string {
   return path.trim().replace(/\\/g, '/').replace(/\/+$/, '').replace(/^\/+/, '');
 }
 
@@ -17,12 +17,17 @@ function canonicalPath(path: string): string {
  *   3. wire the project to desktop (@local workspace + compute node)
  *   4. set it as the active project + workdir
  *   5. navigate URL-first to /dock/project/<id>
+ *
+ * Pass `{ select: false }` to stop after step 3 — the project is ensured and
+ * desktop-wired, but the active context and URL are left untouched (for
+ * callers that drive their own navigation, e.g. launching a process on the
+ * picked project).
  */
 export function useEnsureProject() {
   const { navigation } = useDockNavigation();
 
   return useCallback(
-    async (rawPath: string): Promise<Project> => {
+    async (rawPath: string, options?: { select?: boolean }): Promise<Project> => {
       if (!dataContext.someone) throw new Error('You must be logged in');
       const normalized = rawPath.trim().replace(/\\/g, '/').replace(/\/+$/, '');
       if (!normalized) throw new Error('Please provide a valid project path');
@@ -36,6 +41,7 @@ export function useEnsureProject() {
         target = await new Project({ name: normalized }).save([dataContext.someone]);
       }
       await target.setupForDesktop();
+      if (options?.select === false) return target;
       await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, target.typeId);
       await dataContext.refreshProject();
       dataContext.setWorkdir(target.fs_storage_mount_path ?? null);
