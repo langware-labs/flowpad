@@ -87,7 +87,7 @@ describe('PtyEvent fire pipeline — end-to-end', () => {
 
       // Resolve replay before registering — we only want LIVE fires
       // for the assertions, not pre-attach replay matches.
-      await waitFor(() => (pty.replayDone ? true : null), 15_000, 'replay done');
+      await waitFor(() => (pty.attached ? true : null), 15_000, 'replay done');
 
       // Snapshot count of fires that already exist (e.g. plan-detection
       // could have fired during banner rendering — irrelevant to us).
