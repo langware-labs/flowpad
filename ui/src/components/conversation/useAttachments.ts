@@ -1,12 +1,8 @@
 import { useCallback, useState } from 'react';
 import { FlowMessage, TypeId, type HubClientErrorInfo } from '@sdk';
-import {
-  AttachmentType,
-  BodyStatus,
-  attachmentDataString,
-  type Attachment,
-} from '@sdk/entities/flow-message';
+import { AttachmentType, BodyStatus, attachmentDataString, type Attachment } from '@sdk/entities/flow-message';
 import { AttachmentChipState } from './AttachmentChip';
+import { isPromptAttachment } from './attachment-actions/prompt-attachment';
 import { isTranscriptAttachment } from './conversation-context-aggregation';
 import { isDownloadableFileAttachment, localAttachmentUrl } from './attachment-url';
 import { useFlowMessageProgress, type FlowMessageProgress } from './useFlowMessageProgress';
@@ -105,21 +101,19 @@ function stateFor(att: Attachment, bodyStatus: BodyStatus): AttachmentChipState 
 function buildItems(fm: FlowMessage | null | undefined, messageId: string): AttachmentView[] {
   if (!fm) return [];
   const bodyStatus = fm.body_status ?? BodyStatus.NA;
-  return (fm.attachment ?? [])
-    .filter(isDownloadableFileAttachment)
-    .map((a) => {
-      const d = attachmentDataString(a);
-      const state = stateFor(a, bodyStatus);
-      return {
-        key: d,
-        filename: d.split('/').pop() || d,
-        state,
-        // localAttachmentUrl is itself gated on local_path, so this is null for
-        // every non-Downloaded state — belt-and-suspenders with `state`.
-        url: state === AttachmentChipState.Downloaded ? localAttachmentUrl(messageId, a) : null,
-        localPath: state === AttachmentChipState.Downloaded ? (a.local_path ?? null) : null,
-      };
-    });
+  return (fm.attachment ?? []).filter(isDownloadableFileAttachment).map((a) => {
+    const d = attachmentDataString(a);
+    const state = stateFor(a, bodyStatus);
+    return {
+      key: d,
+      filename: d.split('/').pop() || d,
+      state,
+      // localAttachmentUrl is itself gated on local_path, so this is null for
+      // every non-Downloaded state — belt-and-suspenders with `state`.
+      url: state === AttachmentChipState.Downloaded ? localAttachmentUrl(messageId, a) : null,
+      localPath: state === AttachmentChipState.Downloaded ? (a.local_path ?? null) : null,
+    };
+  });
 }
 
 /**
@@ -128,10 +122,7 @@ function buildItems(fm: FlowMessage | null | undefined, messageId: string): Atta
  * signals, and the one download entrypoint. Components render from this and
  * never build an `fs/download` URL or call `download_body` directly.
  */
-export function useAttachments(
-  fm: FlowMessage | null | undefined,
-  messageId: string,
-): UseAttachments {
+export function useAttachments(fm: FlowMessage | null | undefined, messageId: string): UseAttachments {
   const [downloading, setDownloading] = useState(false);
   const progress = useFlowMessageProgress(messageId);
   const { error, dismiss } = useFlowMessageDownloadError(messageId);
@@ -142,15 +133,11 @@ export function useAttachments(
   const entities = buildEntities(fm);
   const downloaded = fm?.body_downloaded ?? false;
   const sharesTranscript = (fm?.attachment ?? []).some(isTranscriptAttachment);
-  const hasPrompt = (fm?.attachment ?? []).some(
-    (a) => a.attachment_type === AttachmentType.PROMPT,
-  );
+  // Both prompt generations count: legacy PROMPT and entity-backed TYPE_ID.
+  const hasPrompt = (fm?.attachment ?? []).some(isPromptAttachment);
   // The Download button badge + tooltip: one entry per attached asset
   // (entity typeids + file names) so the user sees what a pull will fetch.
-  const assetLabels = [
-    ...entities.map((t) => `${t.type}-${t.id}`),
-    ...items.map((i) => i.filename),
-  ];
+  const assetLabels = [...entities.map((t) => `${t.type}-${t.id}`), ...items.map((i) => i.filename)];
   const assetCount = assetLabels.length;
 
   const download = useCallback(async () => {

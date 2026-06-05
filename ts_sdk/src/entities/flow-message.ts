@@ -86,10 +86,15 @@ export interface Attachment {
   data: string;
   /** Absolute filesystem path — populated server-side for FILE / PROMPT-file attachments, null for others. */
   local_path?: string | null;
-  /** PROMPT attachments only: the user who suggested the prompt. */
+  /** Prompt attachments (legacy PROMPT or prompt-entity TYPE_ID): the user who suggested the prompt. */
   proposer_id?: string | null;
-  /** PROMPT attachments only: set when the other party approves. */
+  /** Prompt attachments: set when the other party approves. */
   approved_by?: string | null;
+  /** Prompt-entity TYPE_ID attachments: inline copy of the prompt text so receivers
+   *  can preview/execute before the body bundle is downloaded. NOTE: this field (and
+   *  proposer_id/approved_by) must also exist on the HUB's Attachment model — the hub
+   *  silently drops unknown fields on the round-trip. */
+  prompt_preview?: string | null;
 }
 
 /** Delivery receipt. Mirrors the hub-side schema. Monotonic transitions only:
@@ -206,7 +211,10 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   /** Promote a draft message to a real reply: flips is_draft=false, appends to conversation.jsonl, pushes to hub. */
   async sendDraft(): Promise<{ flow_message_id: string; conversation_id: string; message_count: number }> {
     const action = new ActionInfo('send-draft', 'flow_message', this.id ?? null, 'POST');
-    const res = await dataManager.callAction<unknown, { flow_message_id: string; conversation_id: string; message_count: number }>(action);
+    const res = await dataManager.callAction<
+      unknown,
+      { flow_message_id: string; conversation_id: string; message_count: number }
+    >(action);
     return res!;
   }
 
@@ -229,10 +237,7 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     for (const att of this.attachment ?? []) {
       if (att.attachment_type === AttachmentType.FILE) return true;
       if (att.attachment_type === AttachmentType.TYPE_ID) return true;
-      if (
-        att.attachment_type === AttachmentType.PROMPT &&
-        (att.data ?? '').startsWith(PROMPT_FILE_VFS_PREFIX)
-      ) {
+      if (att.attachment_type === AttachmentType.PROMPT && (att.data ?? '').startsWith(PROMPT_FILE_VFS_PREFIX)) {
         return true;
       }
     }

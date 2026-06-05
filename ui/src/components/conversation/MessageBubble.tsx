@@ -2,14 +2,13 @@ import { useState, type MouseEvent, type ReactNode } from 'react';
 import { Pencil, Check, CheckCheck, Clock, Trash2 } from 'lucide-react';
 import type { FlowMessage } from '@sdk';
 import type { ConversationMessage } from '@sdk/entities/conversation';
-import { AttachmentType, type DeliveryStatus } from '@sdk/entities/flow-message';
+import type { DeliveryStatus } from '@sdk/entities/flow-message';
 import type { ITask } from '@sdk/entities/task';
 import { MessageChips } from './chips/MessageChips';
-import { PromptApprovalRow } from './PromptApprovalRow';
+import { AttachmentActionsRow, PromptAttachmentPreview, useAttachmentActions } from './attachment-actions';
 import { useLocalUser } from './useLocalUser';
 import { PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT } from './constants';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
-import { flowMessageSpecTypeId } from './flow-message-helpers';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 
 interface MessageBubbleProps {
@@ -162,36 +161,26 @@ export function MessageBubble({
   const isFromOther = !!(flowMessage?.sender_id && localUser?.id && flowMessage.sender_id !== localUser.id);
   const isOutgoing = !!(flowMessage?.sender_id && localUser?.id && flowMessage.sender_id === localUser.id);
   const showReceipt = isOutgoing && conversationStatusVisible && !flowMessage?.is_draft;
-  // Show the prompt row for ANY message that has a PROMPT attachment so the
-  // sender sees the same preview the receiver does. Approve & Execute is
-  // wired only when it's the other user's still-unapproved prompt — once
-  // every PROMPT on the message is approved, the button disappears (each
-  // approve flips approved_by; backend uses approve_all=true so all of a
-  // message's prompts flip together).
-  const promptAttachments = (flowMessage?.attachment ?? []).filter(
-    (a) => a.attachment_type === AttachmentType.PROMPT,
-  );
-  const firstUnapprovedPromptIdx = (flowMessage?.attachment ?? []).findIndex(
-    (a) => a.attachment_type === AttachmentType.PROMPT && !a.approved_by,
-  );
-  const hasUnapprovedPrompt = firstUnapprovedPromptIdx >= 0;
-  const canApprovePrompt = isFromOther && hasUnapprovedPrompt && !!onApproveAndExecute;
 
-  // Implement Plan / Open Plan Implementation Session: same gating shape as
-  // Approve & Execute — only spec-bearing bubbles from the other user (so the
-  // local user is the recipient) qualify. When `onOpenPlanSession` is set
-  // (a session already exists somewhere in the thread) the row swaps the
-  // emerald chip for an open-link affordance pointing at that session. Both
-  // states share `PromptApprovalRow`'s container so they land in the same
-  // horizontal slot (alongside Approve when both fire).
-  const specTypeId = flowMessageSpecTypeId(flowMessage);
-  const isSpecBearingRecipient = isFromOther && !!specTypeId;
-  const canImplementPlan = isSpecBearingRecipient && !!onImplementPlan && !onOpenPlanSession;
-  const canOpenPlanSession = isSpecBearingRecipient && !!onOpenPlanSession;
-  // View Plan is purely a reader affordance — independent of session state,
-  // so it stays visible even after Implement Plan flips to Open.
-  const canViewPlan = isSpecBearingRecipient && !!onViewPlan;
-  const showPromptRow = promptAttachments.length > 0 || canImplementPlan || canOpenPlanSession || canViewPlan;
+  // Attachment-action pairs: every CTA (Approve & Execute, View/Implement
+  // Plan, …) comes from the registry — the bubble only assembles the context.
+  // The prompt PREVIEW renders for ANY message carrying a prompt attachment
+  // (sender sees what the receiver sees); CTAs gate on isFromOther/approval
+  // inside the descriptors. `hasPlanSession === !!onOpenPlanSession` (set on
+  // every spec-bearing bubble once one session is live in the thread).
+  const { actions, promptAttachments, promptEntityTypeId } = useAttachmentActions({
+    fm: flowMessage,
+    messageId: flowMessageId,
+    isFromOther,
+    hasPlanSession: !!onOpenPlanSession,
+    handlers: {
+      approveAndExecute: onApproveAndExecute,
+      implementPlan: onImplementPlan,
+      openPlanSession: onOpenPlanSession,
+      viewPlan: onViewPlan,
+    },
+  });
+  const showPromptRow = promptAttachments.length > 0 || actions.length > 0;
 
   const startEdit = () => {
     setEditValue(senderName);
@@ -227,7 +216,7 @@ export function MessageBubble({
     <div
       className={`flex gap-2 rounded p-1 transition-colors ${
         onSelect ? 'cursor-pointer' : ''
-      } ${isSelected ? 'ring-1 ring-ring/40 bg-muted/30' : ''}`}
+      } ${isSelected ? 'bg-muted/30 ring-1 ring-ring/40' : ''}`}
       onClick={handleBubbleClick}
       data-testid={flowMessageId ? `message-bubble-${flowMessageId}` : undefined}
     >
@@ -285,30 +274,36 @@ export function MessageBubble({
             messageText={message.content}
           />
         </div>
-        {message.content && message.content !== PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT && (() => {
-          const claudeQuote = parseClaudeQuote(message.content);
-          if (claudeQuote) {
+        {message.content &&
+          message.content !== PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT &&
+          (() => {
+            const claudeQuote = parseClaudeQuote(message.content);
+            if (claudeQuote) {
+              return (
+                <div className={`text-sm ${isBot ? 'italic text-foreground/70' : 'text-foreground/90'}`}>
+                  <span className="font-medium text-muted-foreground">{claudeQuote.prefix}</span>{' '}
+                  <em className="italic text-foreground/85">&ldquo;{claudeQuote.quoted}&rdquo;</em>
+                </div>
+              );
+            }
             return (
               <div className={`text-sm ${isBot ? 'italic text-foreground/70' : 'text-foreground/90'}`}>
-                <span className="font-medium text-muted-foreground">{claudeQuote.prefix}</span>{' '}
-                <em className="italic text-foreground/85">&ldquo;{claudeQuote.quoted}&rdquo;</em>
+                {message.content}
               </div>
             );
-          }
-          return (
-            <div className={`text-sm ${isBot ? 'italic text-foreground/70' : 'text-foreground/90'}`}>
-              {message.content}
-            </div>
-          );
-        })()}
+          })()}
         {showPromptRow && (
-          <PromptApprovalRow
-            attachments={promptAttachments}
-            messageId={flowMessageId}
-            onApprove={canApprovePrompt ? () => onApproveAndExecute(firstUnapprovedPromptIdx) : undefined}
-            onImplementPlan={canImplementPlan ? onImplementPlan : undefined}
-            onOpenPlanSession={canOpenPlanSession ? onOpenPlanSession : undefined}
-            onViewPlan={canViewPlan && specTypeId && onViewPlan ? () => onViewPlan(specTypeId.id) : undefined}
+          <AttachmentActionsRow
+            actions={actions}
+            preview={
+              promptAttachments.length > 0 ? (
+                <PromptAttachmentPreview
+                  attachments={promptAttachments}
+                  messageId={flowMessageId}
+                  promptEntityTypeId={promptEntityTypeId}
+                />
+              ) : undefined
+            }
           />
         )}
         {footer}
