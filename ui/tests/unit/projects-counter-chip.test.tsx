@@ -86,7 +86,7 @@ describe('ProjectsCounterChip', () => {
     expect(screen.queryByTestId('projects-counter-open-other')).toBeNull();
   });
 
-  it('opens the picker excluding already-open projects and launches the picked worker on it', async () => {
+  it('arms claude from the row, excludes already-open projects, and launches on pick', async () => {
     const { projectA } = seedBuckets();
     // /tmp/11111111 and /tmp/22222222 are the mount paths of the open buckets.
     mockUseAllProjects.mockReturnValue({
@@ -100,24 +100,19 @@ describe('ProjectsCounterChip', () => {
 
     render(<ProjectsCounterChip currentProjectId={projectA} onLaunchProjectPath={onLaunchProjectPath} />);
     await userEvent.click(screen.getByTestId('projects-counter-chip'));
-    await userEvent.click(screen.getByTestId('projects-counter-open-other'));
+    // Clicking the worker icon on the row arms it and opens the picker.
+    await userEvent.click(screen.getByTestId('projects-counter-open-claude'));
 
     // Already-open project is filtered out of the picker.
     expect(screen.getByTestId('projects-counter-picker')).toBeTruthy();
     expect(screen.queryByText('/tmp/11111111')).toBeNull();
 
-    // Worker buttons are disabled until a project is selected.
-    const claudeButton = screen.getByTestId('projects-counter-picker-open-claude');
-    expect(claudeButton.hasAttribute('disabled')).toBe(true);
-
+    // Picking a project launches the armed worker immediately.
     await userEvent.click(screen.getByText('fresh-project'));
-    expect(claudeButton.hasAttribute('disabled')).toBe(false);
-
-    await userEvent.click(claudeButton);
     expect(onLaunchProjectPath).toHaveBeenCalledWith('/tmp/fresh-project', 'claude_code');
   });
 
-  it('launches codex when the codex worker button is clicked', async () => {
+  it('launches codex when armed via the codex worker icon', async () => {
     const { projectA } = seedBuckets();
     mockUseAllProjects.mockReturnValue({
       projects: [{ cwd: '/tmp/fresh-project', modified_at: null }] as never,
@@ -127,9 +122,8 @@ describe('ProjectsCounterChip', () => {
 
     render(<ProjectsCounterChip currentProjectId={projectA} onLaunchProjectPath={onLaunchProjectPath} />);
     await userEvent.click(screen.getByTestId('projects-counter-chip'));
-    await userEvent.click(screen.getByTestId('projects-counter-open-other'));
+    await userEvent.click(screen.getByTestId('projects-counter-open-codex'));
     await userEvent.click(screen.getByText('fresh-project'));
-    await userEvent.click(screen.getByTestId('projects-counter-picker-open-codex'));
 
     expect(onLaunchProjectPath).toHaveBeenCalledWith('/tmp/fresh-project', 'codex');
   });
