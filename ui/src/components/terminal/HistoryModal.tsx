@@ -66,13 +66,30 @@ function formatFullDate(iso: string | null | undefined): string {
 
 type SortDir = 'desc' | 'asc';
 const SORT_STORAGE_KEY = 'flowpad.historyModal.sortDir';
-function readStoredSortDir(): SortDir {
-  if (typeof window === 'undefined') return 'desc';
-  try {
-    return window.localStorage.getItem(SORT_STORAGE_KEY) === 'asc' ? 'asc' : 'desc';
-  } catch {
-    return 'desc';
-  }
+const ALL_PROJECTS_STORAGE_KEY = 'flowpad.historyModal.allProjects';
+
+// localStorage-backed useState. `parse` maps the raw stored value (null when
+// absent/unavailable) to the typed value, doubling as the default.
+function usePersistedState<T extends string | boolean>(
+  key: string,
+  parse: (raw: string | null) => T,
+): [T, React.Dispatch<React.SetStateAction<T>>] {
+  const [value, setValue] = useState<T>(() => {
+    if (typeof window === 'undefined') return parse(null);
+    try {
+      return parse(window.localStorage.getItem(key));
+    } catch {
+      return parse(null);
+    }
+  });
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(key, String(value));
+    } catch {
+      // localStorage may be unavailable (private mode, quota, etc.) — preference simply doesn't persist.
+    }
+  }, [key, value]);
+  return [value, setValue];
 }
 
 function WorkerIcon({ workerType }: { workerType: WorkerHistoryEntry['worker_type'] }) {
@@ -96,23 +113,24 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
   const { entries, isLoading } = useWorkerHistory(30, { enabled: open });
   const { project: currentProject } = useProject();
 
-  const [allProjects, setAllProjects] = useState(true);
+  const [allProjects, setAllProjects] = usePersistedState(
+    ALL_PROJECTS_STORAGE_KEY,
+    (raw) => raw === 'true',
+  );
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(() => new Set());
   const [peekKey, setPeekKey] = useState<string | null>(null);
   const [peekProcess, setPeekProcess] = useState<AgenticProcess | null>(null);
   const [peekResolving, setPeekResolving] = useState(false);
-  const [sortDir, setSortDir] = useState<SortDir>(readStoredSortDir);
+  const [sortDir, setSortDir] = usePersistedState<SortDir>(
+    SORT_STORAGE_KEY,
+    (raw) => (raw === 'asc' ? 'asc' : 'desc'),
+  );
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState('');
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(SORT_STORAGE_KEY, sortDir);
-    } catch {
-      // localStorage may be unavailable (private mode, quota, etc.) — preference simply doesn't persist.
-    }
-  }, [sortDir]);
+  // No active project → nothing to scope to; behave as "all projects".
+  const effectiveAllProjects = allProjects || !currentProject;
 
   // Reset selection + peek + search when modal closes so a new open starts clean.
   useEffect(() => {
@@ -134,11 +152,9 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
 
   const visible = useMemo(() => {
     const currentProjectId = currentProject?.id ?? null;
-    const projectScoped = allProjects
+    const projectScoped = effectiveAllProjects
       ? entries
-      : entries.filter(
-          (e) => currentProjectId != null && e.project_id === currentProjectId,
-        );
+      : entries.filter((e) => e.project_id === currentProjectId);
     const q = query.trim().toLowerCase();
     const filtered = q
       ? projectScoped.filter((e) => {
@@ -156,7 +172,7 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
       return sortDir === 'desc' ? tb - ta : ta - tb;
     });
     return sorted;
-  }, [entries, allProjects, currentProject?.id, sortDir, query]);
+  }, [entries, effectiveAllProjects, currentProject?.id, sortDir, query]);
 
   // Drop selections that are no longer visible after a filter change.
   useEffect(() => {
@@ -269,7 +285,7 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
               >
                 <Checkbox
                   className="h-3 w-3"
-                  checked={allProjects}
+                  checked={effectiveAllProjects}
                   onCheckedChange={(v) => setAllProjects(v === true)}
                   disabled={!currentProject}
                 />
@@ -350,34 +366,36 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
             )}
           </div>
         )}
-        {selectedKeys.size > 0 && (
-          <div
-            className="mt-1 flex items-center justify-between gap-2 rounded bg-muted/40 px-2 py-1"
-            data-testid="history-selection-bar"
-          >
-            <span className="text-[11px] text-muted-foreground">
-              {selectedKeys.size} selected
-            </span>
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => setSelectedKeys(new Set())}
-                className="rounded border border-border px-2 py-0.5 text-[11px] font-medium hover:bg-muted"
-                data-testid="history-clear-selection"
-              >
-                Clear
-              </button>
-              <button
-                type="button"
-                onClick={handleOpenAllSelected}
-                className="rounded bg-primary px-2 py-0.5 text-[11px] font-medium text-primary-foreground hover:bg-primary/90"
-                data-testid="history-open-selected"
-              >
-                Open all
-              </button>
-            </div>
+        {/* Always rendered (invisible when empty) so the first selection doesn't shift the list. */}
+        <div
+          className={cn(
+            'mt-1 flex items-center justify-between gap-2 rounded bg-muted/40 px-2 py-1',
+            selectedKeys.size === 0 && 'invisible',
+          )}
+          data-testid="history-selection-bar"
+        >
+          <span className="text-[11px] text-muted-foreground">
+            {selectedKeys.size} selected
+          </span>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setSelectedKeys(new Set())}
+              className="rounded border border-border px-2 py-0.5 text-[11px] font-medium hover:bg-muted"
+              data-testid="history-clear-selection"
+            >
+              Clear
+            </button>
+            <button
+              type="button"
+              onClick={handleOpenAllSelected}
+              className="rounded bg-primary px-2 py-0.5 text-[11px] font-medium text-primary-foreground hover:bg-primary/90"
+              data-testid="history-open-selected"
+            >
+              Open all
+            </button>
           </div>
-        )}
+        </div>
         <div className="flex min-h-0 flex-1">
           <div className="flex min-w-0 flex-1 flex-col">
             {isLoading && visible.length === 0 ? (
