@@ -14,6 +14,7 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { CodexIcon } from '@src/components/icons/CodexIcon';
+import { useEnsureProject } from '@src/components/project-selector';
 import { Button } from '@src/components/ui/button';
 import {
   ContextMenu,
@@ -58,7 +59,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { allowRename } from './rename-rules';
 import { HistoryModal } from './HistoryModal';
 import InteractiveTerminal from './interactive-terminal';
-import { ProjectsCounterChip } from './ProjectsCounterChip';
+import { ProjectsCounterChip, type ProjectWorkerType } from './ProjectsCounterChip';
 import { TerminalOpenerToolbar } from './openers/TerminalOpenerToolbar';
 import type { OpenerDescriptor } from './openers/tab_opener_types';
 
@@ -351,13 +352,21 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
 
   // "Start Claude" button — creates AgenticProcess entity, then emits onTabOpen
   // so the consumer can navigate / tag / start.
+  // `launch` overrides the project the process is pinned to (and its workdir);
+  // used by the projects-counter chip to start a tab on a not-yet-open project.
   const startAgenticTab = useCallback(
-    async (kind: 'claude' | 'codex', workerType?: 'claude_code' | 'codex') => {
+    async (
+      kind: 'claude' | 'codex',
+      workerType?: 'claude_code' | 'codex',
+      launch?: { projectId: string; cwd?: string | null },
+    ) => {
       if (tabCreationLockRef.current) return;
       tabCreationLockRef.current = true;
       setPendingTabCreation({ kind, targetKey: null, targetShellId: null, targetProcessId: null });
+      const launchProjectId = launch?.projectId ?? spawnProjectId;
       const result = await navigation.openNewClaudeProcess({
-        ...(spawnProjectId ? { projectId: spawnProjectId } : {}),
+        ...(launchProjectId ? { projectId: launchProjectId } : {}),
+        ...(launch?.cwd ? { cwd: launch.cwd } : {}),
         ...(workerType ? { workerType } : {}),
       });
       if (!result) {
@@ -407,6 +416,31 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
 
   const handleStartClaude = useCallback(() => startAgenticTab('claude', 'claude_code'), [startAgenticTab]);
   const handleStartCodex = useCallback(() => startAgenticTab('codex', 'codex'), [startAgenticTab]);
+
+  // Projects-counter chip → "Open another project…" pick. Ensure the Project
+  // entity exists for the picked path (no context switch / navigation — the
+  // launched process drives navigation URL-first via onTabOpen), then start
+  // an agentic tab of the picked worker type pinned to it. The new bucket
+  // appears in the chip's list automatically once the tab lands in
+  // terminalState.
+  const ensureProject = useEnsureProject();
+  const handleLaunchProjectPath = useCallback(
+    async (cwd: string, workerType: ProjectWorkerType) => {
+      try {
+        const project = await ensureProject(cwd, { select: false });
+        await startAgenticTab(workerType === 'codex' ? 'codex' : 'claude', workerType, {
+          projectId: project.id,
+          cwd: project.fs_storage_mount_path,
+        });
+      } catch (error) {
+        notify.error({
+          title: 'Failed to open project',
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    },
+    [ensureProject, startAgenticTab],
+  );
 
   const startTerminalTab = useCallback(
     async (computeNode?: ComputeNode) => {
@@ -931,7 +965,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
       <div className="flex h-full w-full flex-col">
         {/* Tab Bar */}
         <div className="flex items-center border-b bg-muted" data-testid="terminal-tab-bar">
-          <ProjectsCounterChip currentProjectId={tabsProjectId} />
+          <ProjectsCounterChip currentProjectId={tabsProjectId} onLaunchProjectPath={handleLaunchProjectPath} />
           {/* Left Scroll Button — always reserves layout space when tabs
               overflow, so toggling `canScrollLeft` doesn't shift the
               tab row horizontally. Mirrors the right-button pattern. */}
