@@ -15,6 +15,7 @@ import { PtySyncSession } from '@sdk/pty-sync/PtySyncSession.js';
 import { useScrollSync } from '@sdk/pty-sync/ui/useScrollSync.js';
 import { XTermHarness } from '@sdk/pty-sync/ui/XTermHarness.js';
 import { useContext } from '@src/hooks/useContext';
+import { useEntity } from '@src/hooks/entity-hooks';
 import { useInputDir } from '@src/hooks/use-input-dir';
 import { useInstancePreferences } from '@src/hooks/use-instance-preferences';
 import { DockPointer, useDockNavigation } from '@src/navigation';
@@ -212,6 +213,22 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // Keep shellRef in sync so callbacks and hooks that capture shellRef still work.
   shellRef.current = shell;
   const processIsActive = process?.status === ProcessStatus.RUNNING;
+
+  // Live failed-to-start latch → banner. The loader only classifies a latched
+  // process on navigation; when the worker dies instantly while this tab is
+  // already mounted (first death, or a failed Retry), the only signal is the
+  // entity update flipping `start_failure`. The loader-context `process` is
+  // not reactive, so subscribe via useEntity and surface the banner here.
+  const { data: liveProcess } = useEntity<AgenticProcess>(process?.typeId ?? null);
+  const liveStartFailure = liveProcess?.start_failure ?? null;
+  useEffect(() => {
+    if (!liveStartFailure || !process) return;
+    dataContext.setTerminalRuntimeError({
+      kind: 'failed_to_start',
+      processId: process.id,
+      shellId: process.shell_id ?? null,
+    });
+  }, [liveStartFailure, process]);
 
   // Notify parent when the worker session ID becomes known (or clears)
   useEffect(() => {

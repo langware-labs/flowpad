@@ -189,3 +189,115 @@ async def test_process_restart_preserves_shell_id():
     assert isinstance(result, ApiSuccessResponse)
     # shell entity survived exit — same shell_id going into start_pty()
     assert process.shell_id == "shell-3"
+
+
+# ---------------------------------------------------------------------------
+# Failed-to-start latch (`start_failure`) — instant-exit classification and
+# the open() gate. The latch is what breaks the spawn → instant-death →
+# auto-reopen loop; the long-lived-exit case asserts crash-healing survives.
+# ---------------------------------------------------------------------------
+
+
+def _latchable_process(**overrides):
+    base = dict(
+        id="proc-latch",
+        shell_id="shell-latch",
+        sidecar_shell_id=None,
+        session_id=None,  # skip the _index_session_on_close task
+        context_data={},
+        status="running",
+        start_failure=None,
+    )
+    base.update(overrides)
+    return AgenticProcess.model_construct(**base)
+
+
+async def _fire_exit_callback(process, *, lifetime: float, exit_code=None):
+    """Create the exit callback with a controlled spawn clock, fire it, and
+    let the scheduled state update run to completion."""
+    from flow_sdk.builtin.agentic_process import agentic_process as ap_module
+
+    # ``ap_module.time`` IS the stdlib time module, which asyncio also uses —
+    # so patch each call site in its own narrow scope with a constant
+    # ``return_value`` (a shared side_effect list gets drained by the loop).
+    with patch.object(ap_module.time, "monotonic", return_value=100.0):
+        on_exit = process._make_pty_exit_callback()  # captures spawned_at=100.0
+    with patch.object(AgenticProcess, "get_by_id", new_callable=AsyncMock, return_value=process), \
+         patch.object(AgenticProcess, "save", new_callable=AsyncMock) as mock_save:
+        with patch.object(ap_module.time, "monotonic", return_value=100.0 + lifetime):
+            on_exit(exit_code)  # reads monotonic() once → lifetime
+        # run_coroutine_threadsafe scheduled _update_state on this loop —
+        # yield until it has run (save awaited) instead of sleeping.
+        import asyncio
+        for _ in range(20):
+            await asyncio.sleep(0)
+            if mock_save.await_count:
+                break
+    return mock_save
+
+
+@pytest.mark.asyncio
+async def test_instant_exit_latches_failed_to_start():
+    """A worker that dies within the instant-exit window lands in FAILED with
+    `start_failure` set — the latch that stops the auto-recovery sweep."""
+    process = _latchable_process()
+    mock_save = await _fire_exit_callback(process, lifetime=0.9, exit_code=None)
+
+    assert mock_save.await_count, "_update_state never ran"
+    assert process.status == "failed"
+    assert process.start_failure is not None
+    assert "0.9s after launch" in process.start_failure
+
+
+@pytest.mark.asyncio
+async def test_long_lived_exit_stays_recoverable():
+    """A worker that outlives the window and then dies is a normal STOPPED —
+    no latch — so crash-healing (auto-reopen after backend restart) still works."""
+    process = _latchable_process()
+    mock_save = await _fire_exit_callback(process, lifetime=120.0, exit_code=None)
+
+    assert mock_save.await_count, "_update_state never ran"
+    assert process.status == "stopped"
+    assert process.start_failure is None
+
+
+@pytest.mark.asyncio
+async def test_open_gate_refuses_latched_process():
+    """open() on a latched process is refused without spawning anything —
+    this is what stops the 5s auto-recovery sweep from relaunching it."""
+    from flow_sdk.responses.response import ApiFailResponse
+
+    process = _latchable_process(status="failed", start_failure="Worker exited 0.9s after launch (exit code 1).")
+
+    with patch.object(AgenticProcess, "reap_if_orphaned", new_callable=AsyncMock, return_value=False), \
+         patch.object(AgenticProcess, "get_project", new_callable=AsyncMock) as mock_get_project:
+        result = await process._perform_open(None, None, retry=False)
+
+    assert isinstance(result, ApiFailResponse)
+    assert "failed to start" in result.message.lower()
+    assert "retry" in result.message.lower()
+    # Gate returned before any launch work — project resolution never ran.
+    mock_get_project.assert_not_awaited()
+    # Latch is NOT cleared by a refused open.
+    assert process.start_failure is not None
+
+
+@pytest.mark.asyncio
+async def test_open_gate_retry_clears_latch():
+    """open(retry=True) — the explicit user retry — clears the latch and
+    proceeds into the launch path."""
+    process = _latchable_process(status="failed", shell_id=None, start_failure="Worker exited 0.9s after launch (exit code 1).")
+
+    # Let the launch path proceed past the gate, then stop it deterministically
+    # at cli-options finalization — we only assert gate semantics here.
+    with patch.object(AgenticProcess, "reap_if_orphaned", new_callable=AsyncMock, return_value=False), \
+         patch.object(AgenticProcess, "get_project", new_callable=AsyncMock), \
+         patch.object(AgenticProcess, "save", new_callable=AsyncMock), \
+         patch.object(AgenticProcess, "_finalized_restart_cli_options", side_effect=RuntimeError("STOP_TEST")):
+        result = await process._perform_open(None, None, retry=True)
+
+    # The latch was cleared by the retry before the (test-injected) failure.
+    assert process.start_failure is None
+    from flow_sdk.responses.response import ApiFailResponse
+    assert isinstance(result, ApiFailResponse)
+    assert result.message == "STOP_TEST"
