@@ -642,6 +642,7 @@ class FSRecord(Generic[M]):
         from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
         from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
         from flow_sdk.db import get_db_driver  # noqa: PLC0415
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
         from flow_sdk import wiki  # noqa: PLC0415
 
         try:
@@ -653,7 +654,11 @@ class FSRecord(Generic[M]):
                 self.type, self.id, wiki_exc,
             )
 
-        entity = await Entity.get_one(QueryFilter.parse({"id": self.id}))
+        # Query through the registered typed class — a base-``Entity`` query
+        # doesn't match typed rows, which silently skipped the row delete
+        # (destroy() left the entity behind).
+        entity_cls = SchemaRegistry.get_entity_cls(self.type) or Entity
+        entity = await entity_cls.get_one(QueryFilter.parse({"id": self.id}))
         if entity is not None:
             driver = get_db_driver()
             if hasattr(driver, "fts_delete"):

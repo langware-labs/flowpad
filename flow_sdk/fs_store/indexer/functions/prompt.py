@@ -8,6 +8,7 @@ body = the prompt text. Mirrors the SPEC recipe in ``spec.py``.
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 
 from flow_sdk.fs_store.fs_record import FSRecord
@@ -141,6 +142,17 @@ def extract_prompt(ref: FSRef) -> list[FSRecord]:
         extra["color"] = str(color)
     if group_id:
         extra["group_id"] = group_id
+    # Usage tracking round-trips through frontmatter so a reindex doesn't
+    # reset it (junk values are ignored, not coerced into errors).
+    try:
+        extra["use_count"] = int(fields.get("use_count", 0) or 0)
+    except (TypeError, ValueError):
+        pass
+    last_used_at = fields.get("last_used_at")
+    if isinstance(last_used_at, datetime):  # YAML parses bare timestamps as datetime
+        extra["last_used_at"] = last_used_at.isoformat().replace("+00:00", "Z")
+    elif isinstance(last_used_at, str) and last_used_at:
+        extra["last_used_at"] = last_used_at
     rec = FSRecord(
         type=RecordType.PROMPT,
         id=rec_id,

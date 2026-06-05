@@ -1370,7 +1370,7 @@ class Entity(DBEntity):
         get_auth_cache().invalidate_entity(self.typeid)
         return self
 
-    async def _prepare_for_storage(self) -> None:
+    async def _prepare_for_storage(self, scope_root: "Path | None" = None) -> None:
         """Resolve scope-derived fields on the entity before DB save.
 
         For Records that declare ``_main_subdir``, this resolves scope_root
@@ -1378,6 +1378,11 @@ class Entity(DBEntity):
         string is mirrored onto ``entity.asset_ref`` (and ``parent_path`` if
         present) so the DB row persists them on first save without needing
         a second round-trip.
+
+        ``scope_root`` overrides the request-context resolution — for callers
+        whose URL targets a different entity than the scope the asset should
+        land under (e.g. pin-prompt targets a process but scopes the Prompt
+        to its project).
         """
         if getattr(self, "asset_ref", None):
             return  # Already set (entity update or explicit caller-set path).
@@ -1385,7 +1390,7 @@ class Entity(DBEntity):
         info = SchemaRegistry.get(type_name)
         if info is None or info.main_subdir is None:
             return
-        scope_root = await self._resolve_scope_root()
+        scope_root = scope_root or await self._resolve_scope_root()
         if scope_root is None:
             return
         # Transient FSRecord just to compute the asset_ref convention.

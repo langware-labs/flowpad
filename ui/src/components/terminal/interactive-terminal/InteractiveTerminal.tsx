@@ -293,9 +293,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       } else {
         delete nextOptions[ACTIVE_SIDE_WINDOW_PARAM];
       }
-      navigation.openDock(
-        new DockPointer(currentDock.viewType, currentDock.pointer, nextOptions, currentDock.layout),
-      );
+      navigation.openDock(new DockPointer(currentDock.viewType, currentDock.pointer, nextOptions, currentDock.layout));
     },
     [currentDock, navigation],
   );
@@ -556,7 +554,9 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // Hold the latest `refreshPrompts` in a ref so the xterm `onData` effect
   // doesn't have to re-subscribe whenever the hook returns a new identity.
   const refreshPromptsRef = useRef<typeof refreshPrompts>(refreshPrompts);
-  useEffect(() => { refreshPromptsRef.current = refreshPrompts; }, [refreshPrompts]);
+  useEffect(() => {
+    refreshPromptsRef.current = refreshPrompts;
+  }, [refreshPrompts]);
 
   // Debounced refetch fired ~1s after the user presses Enter in the terminal.
   // Mashing Enter coalesces into one fetch 1s after the last keystroke.
@@ -568,9 +568,12 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       refreshPromptsRef.current?.();
     }, 1000);
   }, []);
-  useEffect(() => () => {
-    if (enterRefetchTimerRef.current) clearTimeout(enterRefetchTimerRef.current);
-  }, []);
+  useEffect(
+    () => () => {
+      if (enterRefetchTimerRef.current) clearTimeout(enterRefetchTimerRef.current);
+    },
+    [],
+  );
 
   // Build a {timestamp → absRow} index from prompt annotations so we can
   // attach click-to-scroll behavior to transcript prompts whose annotation
@@ -1141,43 +1144,49 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     };
   }, [shell, terminalReady]);
 
-  const reportFirstPromptIfNeeded = useCallback((prompt: string) => {
-    const submittedPrompt = prompt.trim();
-    if (!process || firstPromptReportedRef.current || !submittedPrompt) return;
-    firstPromptReportedRef.current = true;
-    void process
-      .reportEvent(AgenticProcessEventName.FirstPrompt, {
-        prompt: submittedPrompt,
-        sent_at: new Date().toISOString(),
-      })
-      .then((result) => {
-        console.debug('[InteractiveTerminal] first_prompt report_event accepted', result);
-      })
-      .catch((err: unknown) => {
-        firstPromptReportedRef.current = false;
-        console.warn('[InteractiveTerminal] first_prompt report_event failed', err);
-      });
-  }, [process]);
+  const reportFirstPromptIfNeeded = useCallback(
+    (prompt: string) => {
+      const submittedPrompt = prompt.trim();
+      if (!process || firstPromptReportedRef.current || !submittedPrompt) return;
+      firstPromptReportedRef.current = true;
+      void process
+        .reportEvent(AgenticProcessEventName.FirstPrompt, {
+          prompt: submittedPrompt,
+          sent_at: new Date().toISOString(),
+        })
+        .then((result) => {
+          console.debug('[InteractiveTerminal] first_prompt report_event accepted', result);
+        })
+        .catch((err: unknown) => {
+          firstPromptReportedRef.current = false;
+          console.warn('[InteractiveTerminal] first_prompt report_event failed', err);
+        });
+    },
+    [process],
+  );
 
-  const collectFirstPromptInput = useCallback((data: string) => {
-    if (firstPromptReportedRef.current || !data || data.startsWith('\x1b')) return;
-    let buffer = firstPromptBufferRef.current;
-    for (const ch of data) {
-      if (ch === '\r' || ch === '\n') {
-        reportFirstPromptIfNeeded(buffer);
-        buffer = '';
-        continue;
+  const collectFirstPromptInput = useCallback(
+    (data: string) => {
+      if (firstPromptReportedRef.current || !data || data.startsWith('\x1b')) return;
+      let buffer = firstPromptBufferRef.current;
+      for (const ch of data) {
+        if (ch === '\r' || ch === '\n') {
+          reportFirstPromptIfNeeded(buffer);
+          buffer = '';
+          continue;
+        }
+        if (ch === '\u007f' || ch === '\b') {
+          buffer = buffer.slice(0, -1);
+          continue;
+        }
+        if (ch >= ' ' && ch !== '\u007f') {
+          buffer += ch;
+        }
       }
-      if (ch === '\u007f' || ch === '\b') {
-        buffer = buffer.slice(0, -1);
-        continue;
-      }
-      if (ch >= ' ' && ch !== '\u007f') {
-        buffer += ch;
-      }
-    }
-    firstPromptBufferRef.current = buffer;
-  }, [reportFirstPromptIfNeeded]);
+      firstPromptBufferRef.current = buffer;
+    },
+    [reportFirstPromptIfNeeded],
+  );
 
   // Input handler
   useEffect(() => {
@@ -1499,11 +1508,14 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
                   />
                 )}
                 {activeSideTab === SideTabId.Prompts && (
-                  <PromptIndexPanel prompts={mergedPrompts} onScrollToLine={scrollAnnotationToLine} />
+                  <PromptIndexPanel
+                    prompts={mergedPrompts}
+                    onScrollToLine={scrollAnnotationToLine}
+                    process={process ?? null}
+                    projectId={process?.project_id ?? null}
+                  />
                 )}
-                {activeSideTab === SideTabId.Queue && process && (
-                  <QueuePanel process={process} />
-                )}
+                {activeSideTab === SideTabId.Queue && process && <QueuePanel process={process} />}
                 {activeSideTab === SideTabId.Files && inputDirInfo && (
                   <InputFilesPanel
                     computeNodeTypeId={inputDirInfo.computeNodeTypeId}
