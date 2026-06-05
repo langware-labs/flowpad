@@ -1,7 +1,8 @@
 """Unit tests for the new Pty API surface.
 
-Covers: write(), snapshot(), connections, cols, rows, name property, output().
-Uses LocalPtySession with mocked provider/manager/buffer — no real OS PTY.
+Covers: write(), force_repaint(), latest_seq, connections, cols, rows, name
+property, output(). Uses LocalPtySession with mocked provider/manager — no
+real OS PTY.
 """
 
 from __future__ import annotations
@@ -13,7 +14,6 @@ import pytest
 
 from flow_sdk.compute.providers.desktop.local_pty_session import LocalPtySession
 from flow_sdk.compute.providers.desktop.pty_session_manager import PtySessionManager, PtySessionState
-from flow_sdk.compute.providers.desktop.pty_replay_buffer import OutputChunk, PtyReplayBuffer
 
 PTY_KEY = ("cn-1", "pn-1", "shell-1")
 
@@ -23,22 +23,19 @@ def _make_session(cols: int = 80, rows: int = 24, name: str | None = None) -> Pt
     return state
 
 
-def _make_pty(session: PtySessionState | None = None) -> tuple[LocalPtySession, MagicMock, MagicMock, MagicMock]:
+def _make_pty(session: PtySessionState | None = None) -> tuple[LocalPtySession, MagicMock, MagicMock, None]:
     provider = MagicMock()
     provider.is_pty_alive = MagicMock(return_value=True)
     provider.send_pty_input = AsyncMock()
+    provider.resize_pty = AsyncMock()
 
     mgr = MagicMock()
     mgr.sessions = {}
     if session is not None:
         mgr.sessions[PTY_KEY] = session
 
-    buf = MagicMock()
-    buf.get_replay = MagicMock(return_value=[])
-    buf.get_latest_seq = MagicMock(return_value=0)
-
-    pty = LocalPtySession(PTY_KEY[0], PTY_KEY[1], PTY_KEY[2], provider, mgr, buf)
-    return pty, provider, mgr, buf
+    pty = LocalPtySession(PTY_KEY[0], PTY_KEY[1], PTY_KEY[2], provider, mgr)
+    return pty, provider, mgr, None
 
 
 # ---------------------------------------------------------------------------
@@ -68,25 +65,100 @@ async def test_write_uses_session_dims():
 
 
 # ---------------------------------------------------------------------------
-# snapshot() — renamed from get_replay()
+# force_repaint() — winsize jiggle for attach-time TUI redraw
 # ---------------------------------------------------------------------------
 
-def test_snapshot_delegates_to_buffer():
-    """snapshot(since) calls buf.get_replay with the correct key and since value."""
+@pytest.mark.asyncio
+async def test_force_repaint_jiggles_winsize():
+    """force_repaint() calls provider.resize_pty twice (rows-1 then rows) with
+    no net change to the recorded session size."""
+    session = _make_session(cols=120, rows=40)
+    pty, provider, _, _ = _make_pty(session)
+
+    await pty.force_repaint()
+
+    assert provider.resize_pty.await_args_list == [
+        ((PTY_KEY[1], PTY_KEY[2], 120, 39),),
+        ((PTY_KEY[1], PTY_KEY[2], 120, 40),),
+    ]
+    assert session.cols == 120 and session.rows == 40
+
+
+@pytest.mark.asyncio
+async def test_force_repaint_one_row_floor():
+    """A 1-row terminal jiggles to max(1, rows-1) == 1, not 0."""
+    session = _make_session(cols=80, rows=1)
+    pty, provider, _, _ = _make_pty(session)
+
+    await pty.force_repaint()
+    assert provider.resize_pty.await_args_list == [
+        ((PTY_KEY[1], PTY_KEY[2], 80, 1),),
+        ((PTY_KEY[1], PTY_KEY[2], 80, 1),),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_force_repaint_noop_without_session():
+    """force_repaint() is a no-op when the session does not exist."""
+    pty, provider, _, _ = _make_pty(session=None)
+    await pty.force_repaint()
+    provider.resize_pty.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# repaint() — attach-time size policy (resize-or-jiggle)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_repaint_resizes_when_size_differs():
+    """repaint(cols, rows) does a single real resize when the size changed."""
+    session = _make_session(cols=80, rows=24)
+    pty, provider, _, _ = _make_pty(session)
+
+    await pty.repaint(100, 40)
+    provider.resize_pty.assert_awaited_once_with(PTY_KEY[1], PTY_KEY[2], 100, 40)
+    assert (session.cols, session.rows) == (100, 40)
+
+
+@pytest.mark.asyncio
+async def test_repaint_jiggles_when_size_unchanged():
+    """repaint() with the current size (or no dims) jiggles via force_repaint."""
+    session = _make_session(cols=80, rows=24)
+    pty, provider, _, _ = _make_pty(session)
+
+    await pty.repaint(80, 24)  # same size → jiggle
+    assert provider.resize_pty.await_args_list == [
+        ((PTY_KEY[1], PTY_KEY[2], 80, 23),),
+        ((PTY_KEY[1], PTY_KEY[2], 80, 24),),
+    ]
+
+    provider.resize_pty.reset_mock()
+    await pty.repaint()  # no dims → jiggle at current size
+    assert provider.resize_pty.await_args_list == [
+        ((PTY_KEY[1], PTY_KEY[2], 80, 23),),
+        ((PTY_KEY[1], PTY_KEY[2], 80, 24),),
+    ]
+
+
+# ---------------------------------------------------------------------------
+# latest_seq — per-session monotonic output counter
+# ---------------------------------------------------------------------------
+
+def test_latest_seq_reads_session_counter():
+    """latest_seq reads session.seq (advanced by next_seq())."""
     session = _make_session()
-    pty, _, _, buf = _make_pty(session)
+    pty, _, _, _ = _make_pty(session)
 
-    pty.snapshot(since=5)
-    buf.get_replay.assert_called_once_with(PTY_KEY, 5)
+    assert pty.latest_seq == 0
+    assert session.next_seq() == 1
+    assert session.next_seq() == 2
+    assert pty.latest_seq == 2
 
 
-def test_snapshot_default_since_zero():
-    """snapshot() with no args uses since=0."""
-    session = _make_session()
-    pty, _, _, buf = _make_pty(session)
-
-    pty.snapshot()
-    buf.get_replay.assert_called_once_with(PTY_KEY, 0)
+def test_latest_seq_zero_without_session():
+    """latest_seq is 0 when the session does not exist."""
+    pty, _, _, _ = _make_pty(session=None)
+    assert pty.latest_seq == 0
 
 
 # ---------------------------------------------------------------------------

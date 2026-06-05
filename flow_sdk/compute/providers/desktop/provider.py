@@ -1051,11 +1051,9 @@ class LocalComputeProvider(ComputeProvider):
 
     def reset_all_sessions(self, cn_id: str, pn_id: str | None = None) -> int:
         """Clear all in-memory PTY state for a node. Returns count of sessions cleared."""
-        from .pty_replay_buffer import replay_buffer
         from .pty_session_manager import session_manager
         node_keys = [k for k in session_manager.sessions if k[0] == cn_id]
         for key in node_keys:
-            replay_buffer.clear(key)
             del session_manager.sessions[key]
         if pn_id:
             provider_keys = [k for k in self._pty_sessions if k[0] == pn_id]
@@ -1066,9 +1064,8 @@ class LocalComputeProvider(ComputeProvider):
     def get_pty_session(self, cn_id: str, shell_id: str) -> "PtySession | None":
         """Return a LocalPtySession handle if an active session exists."""
         from .local_pty_session import LocalPtySession
-        from .pty_replay_buffer import replay_buffer
         from .pty_session_manager import session_manager
         for key in session_manager.sessions:
             if key[0] == cn_id and key[2] == shell_id:
-                return LocalPtySession(key[0], key[1], key[2], self, session_manager, replay_buffer)
+                return LocalPtySession(key[0], key[1], key[2], self, session_manager)
         return None

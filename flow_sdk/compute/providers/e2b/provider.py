@@ -542,12 +542,11 @@ class E2BComputeProvider(ComputeProvider):
         cn_id and shell_id match (regardless of provider_node_id, since we
         look up by ComputeNode id + shell id).
         """
-        from flow_sdk.compute.providers.desktop.pty_replay_buffer import replay_buffer
         from flow_sdk.compute.providers.desktop.pty_session_manager import session_manager
 
         from .e2b_pty_session import E2BPtySession
 
         for key in session_manager.sessions:
             if key[0] == cn_id and key[2] == shell_id:
-                return E2BPtySession(key[0], key[1], key[2], self, session_manager, replay_buffer)
+                return E2BPtySession(key[0], key[1], key[2], self, session_manager)
         return None

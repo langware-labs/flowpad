@@ -501,10 +501,10 @@ class Shell(Entity):
     async def _wait_for_shell_ready(self, timeout: float = 5.0, idle_ms: int = 150) -> None:
         """Wait until the PTY output has been silent for idle_ms milliseconds.
 
-        Polls the replay buffer sequence number. When output stops arriving the
+        Polls the session's output-chunk counter. When output stops arriving the
         shell is at its prompt with readline initialised — safe to inject input.
         """
-        from flow_sdk.compute.providers.desktop.pty_replay_buffer import replay_buffer
+        from flow_sdk.compute.providers.desktop.pty_session_manager import session_manager
 
         # Resolve the real provider_node_id used by the append path
         # (pty_actions.py uses ``compute_node.node_provider_id``). The bare
@@ -520,7 +520,8 @@ class Shell(Entity):
         deadline = asyncio.get_event_loop().time() + timeout
         last_seq = -1
         while asyncio.get_event_loop().time() < deadline:
-            current_seq = replay_buffer.get_latest_seq(pty_key)
+            session = session_manager.sessions.get(pty_key)
+            current_seq = session.seq if session else 0
             if current_seq > 0 and current_seq == last_seq:
                 return  # output has stopped — shell is at prompt
             last_seq = current_seq
@@ -855,51 +856,3 @@ class Shell(Entity):
             return ApiFailResponse(message="vars is required")
         await self.set_env(**vars_dict)
         return ApiSuccessResponse(data={"vars": list(vars_dict.keys())})
-
-    @action.get(action_name="fetch-pty-sequence")
-    async def fetch_pty_sequence(self) -> ApiResponse:
-        """HTTP: Return replay buffer chunk metadata for PTY debugging."""
-        import base64
-
-        if not await self.ensure_live_compute_node_binding():
-            return ApiFailResponse(message=f"Compute node not found for shell session ({self._compute_node_lookup_hint()})")
-
-        pty_handle = self.compute_node.get_pty(self.id)
-        if pty_handle is None:
-            return ApiSuccessResponse(data={"chunks": [], "total_chunks": 0, "total_size_bytes": 0})
-
-        chunks = pty_handle.snapshot(0)
-        if not chunks:
-            return ApiSuccessResponse(data={"chunks": [], "total_chunks": 0, "total_size_bytes": 0})
-
-        preview_bytes = 32
-        chunks_meta = [
-            {
-                "seq": chunk.seq,
-                "timestamp": chunk.timestamp,
-                "size": len(chunk.data),
-                "data_b64": base64.b64encode(chunk.data).decode("ascii"),
-                "preview_b64": base64.b64encode(chunk.data[:preview_bytes]).decode("ascii"),
-            }
-            for chunk in chunks
-        ]
-        total_size_bytes = sum(len(c.data) for c in chunks)
-        next_seq = chunks[-1].seq + 1
-
-        pty_file_b64 = None
-        try:
-            record = await self.get_record()
-            if record and record.pty_stream_ref.exists():
-                pty_file_b64 = base64.b64encode(record.pty_stream_ref.read_bytes()).decode("ascii")
-        except Exception as e:
-            logger.warning(f"[Shell.fetch_pty_sequence] Failed to read PTY file: {e}")
-
-        return ApiSuccessResponse(
-            data={
-                "chunks": chunks_meta,
-                "total_chunks": len(chunks_meta),
-                "total_size_bytes": total_size_bytes,
-                "next_seq": next_seq,
-                "pty_file_b64": pty_file_b64,
-            }
-        )

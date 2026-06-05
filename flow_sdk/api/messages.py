@@ -248,7 +248,6 @@ class PtySessionStatusMessage(BaseMessage):
     message_type: str = WSMessageType.PTY_SESSION_STATUS_MSG.value
     shell_id: str
     status: str  # "connected", "reattached", "not_found", "expired"
-    replay_truncated: bool = False
     latest_seq: Optional[int] = None
 
 
