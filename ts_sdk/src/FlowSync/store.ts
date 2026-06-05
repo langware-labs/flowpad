@@ -861,9 +861,12 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     if (!ref) {
       throw new Error('Can not create, Entity not defined');
     }
-    if (ref.status === EntityStatus.FETCHING) {
-      // TODO There probably should be a better way to handle this
-      await this.waitForTypeId(selfTypeId);
+    // Serialize on any in-flight request for this ref. A loop, not a single
+    // await: a concurrent save() can flip the ref back to FETCHING between our
+    // wake-up and our own status check. A rejection belongs to the *other*
+    // request — this save is a fresh attempt, so swallow it and re-check.
+    while (ref.status === EntityStatus.FETCHING) {
+      await this.waitForTypeId(selfTypeId).catch(() => {});
     }
 
     const entity = ref.entity;
@@ -885,15 +888,16 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         ref.status = EntityStatus.FETCHING;
         const endpoint = `${GRAPH_API_PREFIX}${scope_path}/${entity.typeId.type}`;
         newEntityJson = (await apiClient.post<IEntity>(endpoint, entityJson)) as IEntity;
-      } else if (ref.status === EntityStatus.READY) {
-        if (!ref.entity) {
-          throw new Error('Entity missing on ref');
-        }
-        if (!ref.entity.typeId.id) {
+      } else {
+        // Saved entity → always attempt the PUT. Deliberately not gated on
+        // ref.status: a stale ERROR from a previous request would otherwise
+        // skip both branches and latch every subsequent save() into the
+        // 'No data returned' throw below.
+        if (!entity.typeId.id) {
           throw new Error('Entity missing id on ref');
         }
         ref.status = EntityStatus.FETCHING;
-        const endpoint = `${GRAPH_API_PREFIX}${scope_path}/${entity.typeId.type}/${ref.entity.typeId.id}`;
+        const endpoint = `${GRAPH_API_PREFIX}${scope_path}/${entity.typeId.type}/${entity.typeId.id}`;
         // A remote entity's save reflects to the hub: the server forwards the PUT,
         // merges the hub's authoritative response (incl. server times) back onto the
         // local row + broadcasts, and returns the merged entity. Local-only entities
@@ -907,14 +911,13 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       }
       ref.entity = this.castAndDeepAssign(newEntityJson);
       ref.status = EntityStatus.READY;
+      ref.error = null;
       if (ref.entity) {
         ref.entity.dirty = false;
       }
       return ref.entity as U;
     } catch (error) {
       console.error(`Error saving entity by ID: ${selfTypeId.toString()}`, error);
-      // @ts-ignore
-      console.log('testUserToken', apiClient.testUserToken);
       ref.status = EntityStatus.ERROR;
       if (isApiError(error)) {
         ref.error = error;
