@@ -9,7 +9,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/c
 import { notify } from '@src/notifications';
 import { useAllProjects } from '@src/hooks/use-all-projects';
 import { useTerminalProjectBuckets, type TerminalProjectBucket } from '@src/hooks/useActiveTerminals';
-import { ChevronLeft, Layers, Loader2, RotateCcw } from 'lucide-react';
+import { ChevronLeft, History, Layers, Loader2, RotateCcw } from 'lucide-react';
 import React, { useMemo, useState } from 'react';
 
 /** Agentic worker kinds offered by the picker's worker toolbar. */
@@ -26,6 +26,12 @@ interface ProjectsCounterChipProps {
    * worker type. The host owns ensure + launch.
    */
   onLaunchProjectPath?: (cwd: string, workerType: ProjectWorkerType) => void | Promise<void>;
+  /**
+   * When provided, the popover gains an "Open from history…" row below the
+   * action rows — yet another way to reopen a past session. Clicking it
+   * closes the popover and calls this; the host owns the history modal.
+   */
+  onOpenHistory?: () => void;
 }
 
 // Sort: current project first, then live before loading/missing, then by name.
@@ -135,7 +141,11 @@ const ProjectPickerPanel: React.FC<{
   );
 };
 
-export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({ currentProjectId, onLaunchProjectPath }) => {
+export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
+  currentProjectId,
+  onLaunchProjectPath,
+  onOpenHistory,
+}) => {
   const [open, setOpen] = useState(false);
   // Non-null while the picker is shown; carries the worker armed by the
   // clicked icon on the "Open another project…" row.
@@ -151,9 +161,9 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({ curren
   const terminalTotal = buckets.reduce((sum, b) => sum + b.tabs.length, 0);
   const projectTotal = buckets.length;
   const isEmpty = projectTotal === 0;
-  // With a launch callback the chip stays clickable even with zero buckets —
-  // the popover then offers only the "Open another project…" row.
-  const isChipDisabled = isEmpty && !onLaunchProjectPath;
+  // With an action callback the chip stays clickable even with zero buckets —
+  // the popover then offers only the action rows.
+  const isChipDisabled = isEmpty && !onLaunchProjectPath && !onOpenHistory;
   const tooltipText = `${projectTotal} active project${projectTotal === 1 ? '' : 's'} with ${terminalTotal} terminal${
     terminalTotal === 1 ? '' : 's'
   }`;
@@ -347,6 +357,24 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({ curren
                       </Button>
                     ))}
                   </div>
+                </li>
+              ) : null}
+              {onOpenHistory ? (
+                // "Open from history…" — yet another way to reopen a past
+                // session; same set-apart action styling as the row above.
+                <li className={onLaunchProjectPath || isEmpty ? 'mt-1' : 'mt-2 border-t border-border pt-2'}>
+                  <button
+                    type="button"
+                    data-testid="projects-counter-open-history"
+                    onClick={() => {
+                      handleOpenChange(false);
+                      onOpenHistory();
+                    }}
+                    className="flex w-full items-center gap-2 rounded-md border border-dashed border-border/80 px-2 py-1.5 text-left text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
+                  >
+                    <History className="h-3 w-3 shrink-0" />
+                    <span className="min-w-0 flex-1 truncate">Open from history…</span>
+                  </button>
                 </li>
               ) : null}
             </ul>
