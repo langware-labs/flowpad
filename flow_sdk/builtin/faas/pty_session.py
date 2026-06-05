@@ -21,8 +21,8 @@ class Pty(ABC):
     - await pty.write(data)     — write bytes to PTY stdin
     - await pty.resize(c, r)    — resize terminal
     - pty.output()              — AsyncIterator streaming live PTY output
-    - pty.snapshot(since)       — get buffered output chunks (reconnect recovery)
-    - pty.latest_seq            — current replay buffer head
+    - await pty.force_repaint() — winsize jiggle so the TUI redraws (attach)
+    - pty.latest_seq            — monotonic per-session output counter
     - await pty.attach(id)      — add WebSocket connection
     - await pty.detach(id)      — remove WebSocket connection
     - pty.connections           — frozenset of attached WebSocket connection IDs
@@ -64,17 +64,15 @@ class Pty(ABC):
         """
 
     @abstractmethod
-    def snapshot(self, since: int = 0) -> list:
-        """Get output chunks with seq > since.
-
-        Use on reconnect: store latest_seq before disconnect, pass on return.
-        Buffer bounds: 2 MB / 5000 chunks. Oldest chunks evicted first.
+    async def force_repaint(self) -> None:
+        """Force a TUI repaint by toggling the winsize (SIGWINCH) with no net
+        size change. Attach-only; never used for regular resizes.
         """
 
     @property
     @abstractmethod
     def latest_seq(self) -> int:
-        """Current maximum sequence number in the replay buffer. 0 if no output yet."""
+        """Monotonic per-session output-chunk counter. 0 if no output yet."""
 
     @abstractmethod
     async def attach(self, connection_id: str) -> None:

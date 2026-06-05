@@ -29,6 +29,7 @@ class PtySessionState(BaseModel):
     name: Optional[str] = None  # Display name for the session
     terminal_id: Optional[str] = None
     last_seq_received: Optional[int] = None
+    seq: int = 0  # Monotonic output-chunk counter (activity signal; no data stored)
     compute_node_id: Optional[str] = None
     cols: int = 80
     rows: int = 24
@@ -37,6 +38,11 @@ class PtySessionState(BaseModel):
     output_queues: list = Field(default_factory=list)  # asyncio.Queue feeds for Pty.output()
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    def next_seq(self) -> int:
+        """Advance and return the monotonic output-chunk counter."""
+        self.seq += 1
+        return self.seq
 
     @property
     def connection_id(self) -> Optional[str]:

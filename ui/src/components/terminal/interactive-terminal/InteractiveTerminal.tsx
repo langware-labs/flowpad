@@ -1052,14 +1052,17 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       // Reset xterm to a clean slate for this session.
       term.reset();
 
-      // Replay buffered chunks from the SDK into xterm.
+      // Write live-session chunks accumulated since attach into xterm.
+      // There is no server byte-replay anymore — these are only the bytes
+      // (e.g. the attach-time repaint) that arrived before this subscription,
+      // closing the attach→subscribe race.
       const chunks = shell.getPtyChunks();
       for (const chunk of chunks) {
         ptySyncRef.current.processChunk(chunk);
         term.write(chunk.data);
       }
 
-      // Signal buffer ready after xterm processes replay writes.
+      // Signal buffer ready after xterm processes the buffered writes.
       if (chunks.length > 0) {
         term.write('', () => {
           anchorsResolvedRef.current = false;
@@ -1068,7 +1071,9 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         });
       }
 
-      // Send resize so the process redraws for current dimensions.
+      // Assert this client's size on the PTY — the resulting SIGWINCH makes
+      // the running TUI repaint at the real xterm dimensions (the attach-time
+      // jiggle only repainted at the PTY's previous size).
       if (shell.connected) void shell.resize(term.cols, term.rows);
 
       // Subscribe to live output (unsubscribe any prior subscription first).
@@ -1184,8 +1189,8 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       const fit = fitAddonRef.current;
       ptySyncRef.current.resetSession();
 
-      // connect({ force: true }) resets seq + replayDone, then re-attaches
-      // and re-subscribes the output handler once replayDone flips true again.
+      // attachPty({ force: true }) resets attach state, then re-attaches
+      // and re-subscribes the output handler once the attach completes.
       const shell = shellRef.current;
       void shell?.attachPty({ cols: term?.cols ?? 80, rows: term?.rows ?? 24, force: true });
 

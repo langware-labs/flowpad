@@ -1973,8 +1973,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       if (shell.compute_node_id) shell.ptyConnection.computeNodeId = shell.compute_node_id;
     }
     await shell.attachPty({
-      cols: options?.cols ?? Shell.DEFAULT_COLS,
-      rows: options?.rows ?? Shell.DEFAULT_ROWS,
+      // Real xterm size only — undefined means "keep current size, just repaint".
+      cols: options?.cols,
+      rows: options?.rows,
       timeout: options?.ptyTimeout,
       ptyId: result.pty_id,
     });
