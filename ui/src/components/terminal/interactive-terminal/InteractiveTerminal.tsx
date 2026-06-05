@@ -123,7 +123,7 @@ function saveTraceFilters(f: TraceFilters): void {
 }
 
 import { DARK_THEME, LIGHT_THEME } from './terminalThemes';
-import { FONT_FAMILY, FONT_SIZE_PX } from './terminalConfig';
+import { FONT_FAMILY, FONT_SIZE_PX, openTerminalLink } from './terminalConfig';
 
 // ── Side-window state lives in the URL (?sideWindows=…&activeSideWindow=…) ──
 // Source of truth: `currentDock.options`. Same shape as ?editorMode in
@@ -770,7 +770,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         allowProposedApi: true,
       });
 
-      term.loadAddon(new WebLinksAddon());
+      term.loadAddon(new WebLinksAddon(openTerminalLink));
 
       const fit = new FitAddon();
       term.loadAddon(fit);
