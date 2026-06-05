@@ -165,6 +165,10 @@ async def project_pointers_to_entity(rec: FSRecord, notify: bool = True) -> None
         return
     conv._set_projection("message_ids", new_ids, _PROJECTION_SENTINEL)
     conv._set_projection("message_count", new_count, _PROJECTION_SENTINEL)
+    # The projection write IS the "reconciled from hub/disk" moment for a
+    # conversation — make it observable on the row the UI renders. Normal
+    # field (not in _PROJECTED_FIELDS), so no sentinel needed.
+    conv.fetched_at = datetime.now(UTC)
     latest_ts = pointers[-1].ts if pointers else None
     if latest_ts:
         try:
