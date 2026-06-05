@@ -88,10 +88,14 @@ function _ensureAgenticStaticListeners(): void {
   _agenticListenersRegistered = true;
   void import('../websocket').then(({ ConnectionManager }) => {
     const cm = ConnectionManager.getInstance();
-    cm.on('on_reconnected', () => { void _dispatchRecoverySweep(); });
+    cm.on('on_reconnected', () => {
+      void _dispatchRecoverySweep();
+    });
   });
   if (_pollTimer === null) {
-    _pollTimer = setInterval(() => { void _dispatchRecoverySweep(); }, _POLL_INTERVAL_MS);
+    _pollTimer = setInterval(() => {
+      void _dispatchRecoverySweep();
+    }, _POLL_INTERVAL_MS);
   }
 }
 
@@ -895,8 +899,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /** Remove a queued prompt by its id (string) or list index (number). */
   async dequeue(idOrIndex: string | number): Promise<void> {
     const actionInfo = new ActionInfo('dequeue', AgenticProcess.type, this.id, 'POST');
-    actionInfo.bodyParameters =
-      typeof idOrIndex === 'number' ? { index: idOrIndex } : { id: idOrIndex };
+    actionInfo.bodyParameters = typeof idOrIndex === 'number' ? { index: idOrIndex } : { id: idOrIndex };
     await dataManager.callAction(actionInfo);
   }
 
@@ -913,11 +916,33 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     await dataManager.callAction(actionInfo);
   }
 
+  // ── Pin-from-history (docs/prompt-library.md) ───────────────────────────────
+  // Pin = create/reuse a library Prompt from a history item's text; the
+  // backend mutually cross-links the Prompt and this process into each
+  // other's PRIVATE context entities. Unpin = remove link + delete the
+  // prompt from the library. Private context is backend-mutated only.
+
+  /** Pin a history item's text into the prompt library. Idempotent by normalized text. */
+  async pinPrompt(text: string, name?: string): Promise<{ promptId: string }> {
+    const actionInfo = new ActionInfo('pin-prompt', AgenticProcess.type, this.id, 'POST');
+    actionInfo.bodyParameters = { text, ...(name ? { name } : {}) };
+    const result = await dataManager.callAction<
+      { text: string; name?: string },
+      { prompt_id: string; pinned: boolean }
+    >(actionInfo);
+    return { promptId: result.prompt_id };
+  }
+
+  /** Unpin: remove the prompt↔process link and delete the prompt from the library. */
+  async unpinPrompt(promptId: string): Promise<void> {
+    const actionInfo = new ActionInfo('unpin-prompt', AgenticProcess.type, this.id, 'POST');
+    actionInfo.bodyParameters = { prompt_id: promptId };
+    await dataManager.callAction(actionInfo);
+  }
+
   async shell(): Promise<Shell | null> {
     if (!this.shell_id) return null;
-    const w = (typeof window !== 'undefined' ? window : undefined) as
-      | { __shellNavT0?: number }
-      | undefined;
+    const w = (typeof window !== 'undefined' ? window : undefined) as { __shellNavT0?: number } | undefined;
     const t0 = w?.__shellNavT0;
     const stamp = (label: string, start: number) => {
       if (t0 === undefined) return;
@@ -997,10 +1022,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    *
    * Returns an unsubscribe function.
    */
-  onPlan<T = string | null>(
-    options: { validate?: boolean },
-    handler: (payload: T) => void,
-  ): () => void {
+  onPlan<T = string | null>(options: { validate?: boolean }, handler: (payload: T) => void): () => void {
     const validate = options.validate ?? false;
 
     const check = async (): Promise<void> => {
@@ -1013,7 +1035,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       }
     };
 
-    const unsubStatus = this.on('status', () => { void check(); });
+    const unsubStatus = this.on('status', () => {
+      void check();
+    });
     void check();
 
     return () => unsubStatus();
@@ -1054,10 +1078,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     const { fromJson, UserMessageEntry } = await import('../transcript-analyzer');
     const actionInfo = new ActionInfo('transcript', AgenticProcess.type, this.id, 'POST');
     actionInfo.subpath = 'prompts';
-    const response = await dataManager.callAction<
-      unknown,
-      { prompts?: Record<string, unknown>[] | null }
-    >(actionInfo);
+    const response = await dataManager.callAction<unknown, { prompts?: Record<string, unknown>[] | null }>(actionInfo);
     const raw = response?.prompts ?? [];
     const out: import('../transcript-analyzer').UserMessageEntry[] = [];
     for (const r of raw) {
@@ -1071,12 +1092,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * Fetch the parsed worker transcript from the process-specific transcript source.
    */
   async getTranscript(): Promise<import('../transcript-analyzer').AgentTranscript> {
-    const {
-      AgentTranscript,
-      TranscriptFormat,
-      TranscriptSource,
-      fromJson,
-    } = await import('../transcript-analyzer');
+    const { AgentTranscript, TranscriptFormat, TranscriptSource, fromJson } = await import('../transcript-analyzer');
     const actionInfo = new ActionInfo('transcript', AgenticProcess.type, this.id, 'POST');
     actionInfo.subpath = 'full';
     const response = await dataManager.callAction<
@@ -1094,10 +1110,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     const rawEntries = response?.entries ?? [];
     const entries = rawEntries.map((entry) => fromJson(entry));
     const format = Object.values(TranscriptFormat).includes(response?.transcript_format as never)
-      ? response?.transcript_format as TranscriptFormatType
+      ? (response?.transcript_format as TranscriptFormatType)
       : null;
     const source = Object.values(TranscriptSource).includes(response?.transcript_source as never)
-      ? response?.transcript_source as TranscriptSourceType
+      ? (response?.transcript_source as TranscriptSourceType)
       : null;
     const path = response?.path ?? response?.transcript_path ?? '';
     return new AgentTranscript(
@@ -1388,8 +1404,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   ): Promise<AgenticProcessReportEventResult> {
     const actionInfo = new ActionInfo('report_event', AgenticProcess.type, this.id, 'GET');
     actionInfo.subpath = name;
-    const requestId =
-      globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const requestId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     actionInfo.queryParameters = {
       data: JSON.stringify(data),
       request_id: requestId,
@@ -1638,8 +1653,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       actionInfo.bodyParameters = { entity_ref: ref.toString() };
       await dataManager.callAction(actionInfo);
       const refStr = ref.toString();
-      this.embedded_asset_refs = (this.embedded_asset_refs ?? [])
-        .filter((r) => String(r) !== refStr);
+      this.embedded_asset_refs = (this.embedded_asset_refs ?? []).filter((r) => String(r) !== refStr);
     },
     list: (): TypeId[] => [...(this.embedded_asset_refs ?? [])],
   };
@@ -1975,7 +1989,13 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     actionInfo.bodyParameters = options ?? {};
     const result = await dataManager.callAction<
       unknown,
-      { shell_id: string; pty_id: string; session_id: string | null; status?: string; shell: Record<string, unknown> } | null
+      {
+        shell_id: string;
+        pty_id: string;
+        session_id: string | null;
+        status?: string;
+        shell: Record<string, unknown>;
+      } | null
     >(actionInfo);
     if (!result) throw new Error('Process could not be opened (process may be terminated)');
     if (result.status) {
@@ -2111,7 +2131,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     const data = await dataManager.callAction<{ visible: boolean }, Record<string, unknown>>(actionInfo);
     if (!data?.id) throw new Error('Fork failed: backend returned no process data');
     dataManager.updateEntityFromJson(data);
-    const newProcess = await dataManager.getByTypeId<AgenticProcess>(new TypeId(AgenticProcess.type, data.id as string));
+    const newProcess = await dataManager.getByTypeId<AgenticProcess>(
+      new TypeId(AgenticProcess.type, data.id as string),
+    );
     if (!newProcess) throw new Error(`Fork failed: new process ${data.id} not found after registration`);
     await newProcess.start();
     return newProcess;
