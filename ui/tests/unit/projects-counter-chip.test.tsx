@@ -77,13 +77,13 @@ describe('ProjectsCounterChip', () => {
     expect(screen.getByRole('button', { name: '22222222 1' })).toBeTruthy();
   });
 
-  it('hides the "Open another project" row when no launch callback is provided', async () => {
+  it('hides the action strip when no callbacks are provided', async () => {
     const { projectA } = seedBuckets();
 
     render(<ProjectsCounterChip currentProjectId={projectA} />);
     await userEvent.click(screen.getByTestId('projects-counter-chip'));
 
-    expect(screen.queryByTestId('projects-counter-open-other')).toBeNull();
+    expect(screen.queryByTestId('projects-counter-actions')).toBeNull();
   });
 
   it('arms claude from the row, excludes already-open projects, and launches on pick', async () => {
@@ -128,18 +128,64 @@ describe('ProjectsCounterChip', () => {
     expect(onLaunchProjectPath).toHaveBeenCalledWith('/tmp/fresh-project', 'codex');
   });
 
-  it('opens history via the "Open from history…" row and closes the popover', async () => {
+  it('opens history via the strip icon button and closes the popover', async () => {
     const { projectA } = seedBuckets();
     const onOpenHistory = vi.fn();
 
     render(<ProjectsCounterChip currentProjectId={projectA} onOpenHistory={onOpenHistory} />);
     await userEvent.click(screen.getByTestId('projects-counter-chip'));
-    // Without a launch callback only the history action row renders.
-    expect(screen.queryByTestId('projects-counter-open-other')).toBeNull();
+    // Without a launch callback the strip carries only the history button.
+    expect(screen.queryByTestId('projects-counter-open-claude')).toBeNull();
     await userEvent.click(screen.getByTestId('projects-counter-open-history'));
 
     expect(onOpenHistory).toHaveBeenCalledTimes(1);
     expect(screen.queryByTestId('projects-counter-popover')).toBeNull();
+  });
+
+  it('renders a label-free icon strip with worker and history buttons', async () => {
+    const { projectA } = seedBuckets();
+    const onOpenHistory = vi.fn();
+
+    render(
+      <ProjectsCounterChip
+        currentProjectId={projectA}
+        onLaunchProjectPath={vi.fn()}
+        onOpenHistory={onOpenHistory}
+      />,
+    );
+    await userEvent.click(screen.getByTestId('projects-counter-chip'));
+
+    // All actions live inside the strip — no label lines.
+    const strip = screen.getByTestId('projects-counter-actions');
+    expect(strip.contains(screen.getByTestId('projects-counter-open-claude'))).toBe(true);
+    expect(strip.contains(screen.getByTestId('projects-counter-open-codex'))).toBe(true);
+    const historyButton = screen.getByTestId('projects-counter-open-history');
+    expect(strip.contains(historyButton)).toBe(true);
+    expect(screen.queryByText('Open another project…')).toBeNull();
+    expect(screen.queryByText('Open from history…')).toBeNull();
+
+    await userEvent.click(historyButton);
+    expect(onOpenHistory).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('projects-counter-popover')).toBeNull();
+  });
+
+  it('sorts buckets alphabetically without bumping the current project to the top', async () => {
+    const idZebra = '33333333-3333-4333-8333-333333333333';
+    const idAlpha = '44444444-4444-4444-8444-444444444444';
+    mockUseTerminalProjectBuckets.mockReturnValue({
+      buckets: [makeBucket(idZebra, 'zebra', 1), makeBucket(idAlpha, 'alpha', 1)],
+    });
+
+    // zebra is current — it must stay in alphabetical position, only highlighted.
+    render(<ProjectsCounterChip currentProjectId={idZebra} />);
+    await userEvent.click(screen.getByTestId('projects-counter-chip'));
+
+    const rows = screen
+      .getAllByRole('button')
+      .map((b) => b.textContent ?? '')
+      .filter((t) => t.startsWith('alpha') || t.startsWith('zebra'));
+    expect(rows).toEqual(['alpha1', 'zebra1']);
+    expect(screen.getByRole('button', { name: 'zebra 1' }).getAttribute('aria-current')).toBe('true');
   });
 
   it('keeps the chip clickable with zero buckets when a launch callback exists', async () => {
@@ -151,6 +197,6 @@ describe('ProjectsCounterChip', () => {
     const chip = screen.getByTestId('projects-counter-chip');
     expect(chip.hasAttribute('disabled')).toBe(false);
     await userEvent.click(chip);
-    expect(screen.getByTestId('projects-counter-open-other')).toBeTruthy();
+    expect(screen.getByTestId('projects-counter-actions')).toBeTruthy();
   });
 });
