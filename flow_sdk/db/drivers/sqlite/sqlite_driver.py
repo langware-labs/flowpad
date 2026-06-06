@@ -292,6 +292,11 @@ class SQLiteDBDriver(DBDriver):
         super().__init__(cfg or DBConfig())
         self.engine: Optional[AsyncEngine] = None
         self.session_factory: Optional[async_sessionmaker] = None
+        # Read-only sessions: same engine/pool, but connections carry
+        # ``FLOW_WRITER_OPT=False`` so the ``begin`` listener emits no
+        # BEGIN — SELECTs run in DBAPI autocommit against a WAL snapshot
+        # and never queue on the writer lock. See connection.py.
+        self.reader_session_factory: Optional[async_sessionmaker] = None
         self.initialized_types: Set[str] = set()
         # Track whether ``config.database`` was provided by the caller vs.
         # lazy-resolved from settings on first ``open()``. ``close()`` drops
@@ -315,6 +320,8 @@ class SQLiteDBDriver(DBDriver):
                 self.session_factory = async_sessionmaker(
                     self.engine, class_=AsyncSession, expire_on_commit=False
                 )
+            if self.reader_session_factory is None:
+                self.reader_session_factory = self._make_reader_session_factory()
             return
         from sqlalchemy.ext.asyncio import create_async_engine
         from sqlalchemy.pool import NullPool
@@ -342,6 +349,21 @@ class SQLiteDBDriver(DBDriver):
             await self._migrate_schema(conn)
 
         self.session_factory = async_sessionmaker(self.engine, class_=AsyncSession, expire_on_commit=False)
+        self.reader_session_factory = self._make_reader_session_factory()
+
+    def _make_reader_session_factory(self) -> async_sessionmaker:
+        """Session factory for read-only driver methods.
+
+        Derives an option-engine from the live engine with
+        ``FLOW_WRITER_OPT=False`` — same NullPool, same pragmas (engine
+        events propagate to ``execution_options()`` copies), but the
+        ``begin`` listener skips BEGIN IMMEDIATE so reads never take the
+        SQLite writer lock (WAL gives each SELECT a consistent snapshot).
+        """
+        from flow_sdk.db.drivers.sqlite.connection import FLOW_WRITER_OPT  # noqa: PLC0415
+
+        reader_engine = self.engine.execution_options(**{FLOW_WRITER_OPT: False})
+        return async_sessionmaker(reader_engine, class_=AsyncSession, expire_on_commit=False)
 
     async def _migrate_schema(self, conn):
         """Simple schema migration: add missing columns."""
@@ -412,6 +434,7 @@ class SQLiteDBDriver(DBDriver):
             # sees a fully-closed driver and rebuilds cleanly.
             engine = self.engine
             self.session_factory = None
+            self.reader_session_factory = None
             self.engine = None
             # Dispose the engine — closes all pooled connections + worker threads.
             await engine.dispose()
@@ -519,7 +542,7 @@ class SQLiteDBDriver(DBDriver):
             return t if already_prefix else t + "*"
 
         fts_query = " ".join(_fts_term(t) for t in query.split())
-        async with self._session_ctx() as session:
+        async with self._session_ctx(write=False) as session:
             await session.execute(text("""
                 CREATE VIRTUAL TABLE IF NOT EXISTS entities_fts USING fts5(
                     entity_id, type, name, title, description, content,
@@ -640,7 +663,7 @@ class SQLiteDBDriver(DBDriver):
         """
         if not self.session_factory:
             return []
-        async with self._session_ctx() as session:
+        async with self._session_ctx(write=False) as session:
             # Apply LIMIT *before* joining entities_fts. FTS5 has no usable
             # B-tree index on plain columns like entity_id, so joining the
             # full type-filtered set against the virtual table degrades to
@@ -763,7 +786,7 @@ class SQLiteDBDriver(DBDriver):
             # Need a WHERE for the AND-prefix to bind correctly.
             scope_clause = " WHERE " + scope_clause.lstrip(" AND ")
         sql = f"SELECT COUNT(*) FROM entities {type_clause}{scope_clause}"
-        async with self._session_ctx() as session:
+        async with self._session_ctx(write=False) as session:
             result = await session.execute(text(sql), bindings)
             return result.scalar() or 0
 
@@ -781,7 +804,7 @@ class SQLiteDBDriver(DBDriver):
             "json_extract(data, '$.scope'), json_extract(data, '$.project_id') "
             "FROM entities WHERE type = :type"
         )
-        async with self._session_ctx() as session:
+        async with self._session_ctx(write=False) as session:
             result = await session.execute(text(sql), {"type": type_name})
             return {str(row[0]): (row[1], row[2], row[3]) for row in result.fetchall()}
 
@@ -893,8 +916,15 @@ class SQLiteDBDriver(DBDriver):
         return self.session_factory()
 
     @asynccontextmanager
-    async def _session_ctx(self) -> "AsyncIterator[AsyncSession]":
+    async def _session_ctx(self, *, write: bool = True) -> "AsyncIterator[AsyncSession]":
         """Single canonical session context for driver methods.
+
+        ``write`` selects the transaction discipline for a FRESH session:
+        writer sessions (default) BEGIN IMMEDIATE up-front; reader sessions
+        (``write=False``, used by SELECT-only driver methods) emit no BEGIN
+        at all so they never queue on the SQLite writer lock (WAL snapshot
+        reads). An ambient bound session is always reused regardless of
+        ``write`` — with one exception, see (2).
 
         Resolution order:
 
@@ -904,11 +934,16 @@ class SQLiteDBDriver(DBDriver):
 
         2. Standalone-task-bound session (set by an outer call to
            _session_ctx() in the same task): yield it. The outer caller
-           commits/closes when its block exits.
+           commits/closes when its block exits. EXCEPTION: a write request
+           never reuses an ambient READER session — writing through a
+           no-BEGIN connection would fall back to a DBAPI-level deferred
+           transaction and reintroduce the read→write upgrade trap that
+           BEGIN IMMEDIATE exists to prevent. It falls through and opens a
+           fresh writer session instead.
 
-        3. No bound session: open a fresh one, register it as the standalone
-           task-bound session, commit on success, rollback on exception,
-           close on exit.
+        3. No bound session: open a fresh one (writer or reader factory per
+           ``write``), register it as the standalone task-bound session,
+           commit on success, rollback on exception, close on exit.
 
         The contextvar handoff in (2) prevents nested driver calls in the
         same task from racing for the SQLite writer lock against themselves.
@@ -923,7 +958,7 @@ class SQLiteDBDriver(DBDriver):
             yield bound
             return
         standalone = _standalone_session_var.get()
-        if standalone is not None:
+        if standalone is not None and not (write and standalone.info.get("flow_reader")):
             yield standalone
             return
         # Gate ONLY the factory-resolution + session-open against the DB
@@ -944,7 +979,14 @@ class SQLiteDBDriver(DBDriver):
         async with lock_ctx:
             if not self.session_factory:
                 await self.open()
-            session = self.session_factory()
+            factory = (
+                self.session_factory
+                if write
+                else (self.reader_session_factory or self.session_factory)
+            )
+            session = factory()
+            if not write:
+                session.info["flow_reader"] = True
         async with session:
             token = _standalone_session_var.set(session)
             try:
@@ -1210,7 +1252,7 @@ class SQLiteDBDriver(DBDriver):
 
     async def get_by_prop(self, property_key: str, property_value: str, entity_type: str) -> Optional[DBBaseRecord]:
         """Get entity by property value."""
-        async with self._session_ctx() as session:
+        async with self._session_ctx(write=False) as session:
             # Check if property is a direct column (excluding 'data' which is the JSON column)
             if property_key in EntitySchema.__table__.columns and property_key != "data":
                 column = getattr(EntitySchema, property_key)
@@ -1255,7 +1297,7 @@ class SQLiteDBDriver(DBDriver):
 
     async def get_by_key(self, key: str, entity_type: str) -> Optional[DBBaseRecord]:
         """Get entity by key (case-insensitive)."""
-        async with self._session_ctx() as session:
+        async with self._session_ctx(write=False) as session:
             result = await session.execute(
                 select(EntitySchema).where(
                     EntitySchema.type == entity_type,
@@ -1308,7 +1350,7 @@ class SQLiteDBDriver(DBDriver):
             if entities_filter.limit:
                 query = query.limit(entities_filter.limit)
 
-        async with self._session_ctx() as session:
+        async with self._session_ctx(write=False) as session:
             result = await session.execute(query)
             entities = [self._schema_to_entity(s) for s in result.scalars().all()]
 
@@ -1515,7 +1557,7 @@ class SQLiteDBDriver(DBDriver):
 
     async def _count_role_relationships(self, entity_id: str) -> int:
         """Count incoming role relationships to an entity."""
-        async with self._session_ctx() as session:
+        async with self._session_ctx(write=False) as session:
             result = await session.execute(
                 select(func.count())
                 .select_from(RelationshipSchema)
@@ -1591,7 +1633,7 @@ class SQLiteDBDriver(DBDriver):
 
     async def get_relationship_by_id(self, rid: str) -> Optional[DBBaseRelationship]:
         """Get relationship by ID."""
-        async with self._session_ctx() as session:
+        async with self._session_ctx(write=False) as session:
             result = await session.execute(select(RelationshipSchema).where(RelationshipSchema.id == rid))
             schema = result.scalar_one_or_none()
             if not schema:
@@ -1600,7 +1642,7 @@ class SQLiteDBDriver(DBDriver):
 
     async def get_all_relationships(self, relationships_filter: QueryFilter) -> List[DBBaseRelationship]:
         """Get all relationships matching filter."""
-        async with self._session_ctx() as session:
+        async with self._session_ctx(write=False) as session:
             query = select(RelationshipSchema)
             if relationships_filter.type:
                 query = query.where(RelationshipSchema.type == relationships_filter.type)
@@ -1636,7 +1678,7 @@ class SQLiteDBDriver(DBDriver):
         self, to_typeid: TypeId, relationships_filter: QueryFilter, from_filter: QueryFilter
     ) -> List[DBBaseRelationship]:
         """Get incoming relationships to an entity."""
-        async with self._session_ctx() as session:
+        async with self._session_ctx(write=False) as session:
             query = select(RelationshipSchema).where(RelationshipSchema.to_id == to_typeid.id)
             if relationships_filter.type:
                 query = query.where(RelationshipSchema.type == relationships_filter.type)
@@ -1655,7 +1697,7 @@ class SQLiteDBDriver(DBDriver):
         self, from_typeid: TypeId, relationships_filter: QueryFilter, to_filter: QueryFilter
     ) -> List[DBBaseRelationship]:
         """Get outgoing relationships from an entity."""
-        async with self._session_ctx() as session:
+        async with self._session_ctx(write=False) as session:
             query = select(RelationshipSchema).where(RelationshipSchema.from_id == from_typeid.id)
             if relationships_filter.type:
                 query = query.where(RelationshipSchema.type == relationships_filter.type)
@@ -1821,7 +1863,7 @@ class SQLiteDBDriver(DBDriver):
     async def _load_relationship_graph_with_filter(self, rel_filter: QueryFilter) -> Dict[str, List[dict]]:
         """Load relationships into adjacency list with filter applied."""
         graph = defaultdict(list)
-        async with self._session_ctx() as session:
+        async with self._session_ctx(write=False) as session:
             query = select(RelationshipSchema)
             if rel_filter.type:
                 query = query.where(RelationshipSchema.type == rel_filter.type)
@@ -1852,7 +1894,7 @@ class SQLiteDBDriver(DBDriver):
         self, root: TypeId, relationship_filter: QueryFilter | None = None, child_filter: QueryFilter | None = None
     ) -> List[EntityChild]:
         """Get direct children of an entity."""
-        async with self._session_ctx() as session:
+        async with self._session_ctx(write=False) as session:
             query = select(RelationshipSchema).where(
                 RelationshipSchema.from_id == root.id,
                 RelationshipSchema.type == "role",
@@ -1894,7 +1936,7 @@ class SQLiteDBDriver(DBDriver):
             visited.add(current_id)
 
             # Get children
-            async with self._session_ctx() as session:
+            async with self._session_ctx(write=False) as session:
                 query = select(RelationshipSchema).where(
                     RelationshipSchema.from_id == current_id,
                     RelationshipSchema.type == "role",
@@ -1933,7 +1975,7 @@ class SQLiteDBDriver(DBDriver):
             visited.add(current_id)
 
             # Get parent relationships (incoming role relationships with is_child=True)
-            async with self._session_ctx() as session:
+            async with self._session_ctx(write=False) as session:
                 query = select(RelationshipSchema).where(
                     RelationshipSchema.to_id == current_id,
                     RelationshipSchema.type == "role",
@@ -1969,7 +2011,7 @@ class SQLiteDBDriver(DBDriver):
         peers = []
         peer_ids = set()
 
-        async with self._session_ctx() as session:
+        async with self._session_ctx(write=False) as session:
             # Outgoing
             if direction in [None, "outgoing", "both"]:
                 query = select(RelationshipSchema).where(RelationshipSchema.from_id == e.id)
@@ -2008,7 +2050,7 @@ class SQLiteDBDriver(DBDriver):
         common = nodes1.intersection(nodes2)
         for node_id in common:
             # Get entity and check filter
-            async with self._session_ctx() as session:
+            async with self._session_ctx(write=False) as session:
                 result = await session.execute(select(EntitySchema).where(EntitySchema.id == node_id))
                 schema = result.scalar_one_or_none()
                 if schema:
@@ -2125,7 +2167,7 @@ class SQLiteDBDriver(DBDriver):
                 return True
 
             # Get children
-            async with self._session_ctx() as session:
+            async with self._session_ctx(write=False) as session:
                 query = select(RelationshipSchema).where(
                     RelationshipSchema.from_id == current,
                     RelationshipSchema.type == "role",
@@ -2254,7 +2296,7 @@ class SQLiteDBDriver(DBDriver):
     async def _load_relationship_graph(self, rel_type: str) -> Dict[str, List[dict]]:
         """Load relationships into adjacency list."""
         graph = defaultdict(list)
-        async with self._session_ctx() as session:
+        async with self._session_ctx(write=False) as session:
             result = await session.execute(select(RelationshipSchema).where(RelationshipSchema.type == rel_type))
             for rel in result.scalars():
                 graph[rel.from_id].append(
@@ -2331,7 +2373,7 @@ class SQLiteDBDriver(DBDriver):
 
         # Batch load ALL relationships in one query
         rels_by_id = {}
-        async with self._session_ctx() as session:
+        async with self._session_ctx(write=False) as session:
             result = await session.execute(select(RelationshipSchema).where(RelationshipSchema.id.in_(all_rel_ids)))
             for schema in result.scalars():
                 rel = self._schema_to_relationship(schema)
@@ -2348,7 +2390,7 @@ class SQLiteDBDriver(DBDriver):
         # Batch load ALL entities in one query
         entities_by_id = {}
         if all_entity_ids:
-            async with self._session_ctx() as session:
+            async with self._session_ctx(write=False) as session:
                 result = await session.execute(select(EntitySchema).where(EntitySchema.id.in_(all_entity_ids)))
                 for schema in result.scalars():
                     entity = self._schema_to_entity(schema)
@@ -2392,7 +2434,7 @@ class SQLiteDBDriver(DBDriver):
                 continue
             visited.add(current_id)
 
-            async with self._session_ctx() as session:
+            async with self._session_ctx(write=False) as session:
                 result = await session.execute(
                     select(RelationshipSchema).where(
                         RelationshipSchema.from_id == current_id, RelationshipSchema.type == "role"
