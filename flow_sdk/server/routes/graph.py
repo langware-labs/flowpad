@@ -278,6 +278,15 @@ async def handle_request(
             _hr_bench("after hub reflect")
             return ApiResponse.success(data=hub_data)
         except HubError as e:
+            # A hub REJECTION (4xx/5xx) of a mutation must reach the client —
+            # falling back to the local handler would turn a denial (e.g. the
+            # members role-change/remove 403 from the hub's authorization
+            # gates) into a silent fake success and drift local state from the
+            # hub. Only transport failures (status_code == 0: DNS, refused,
+            # timeout — i.e. offline) keep the degraded local fallback, and
+            # GETs always do (a stale local read beats an error).
+            if request_info.method.upper() != "GET" and e.status_code >= 400:
+                raise HTTPException(status_code=e.status_code, detail=e.reason)
             service_log.warn(
                 f"[hub-reflect] {request_info.action} on {entity_for_reflect.type}/{entity_for_reflect.id} "
                 f"falling back to local: {e}"

@@ -376,15 +376,18 @@ async def hub_put(
     entity_type: BuiltinEntityType,
     entity_id: str,
     payload: dict[str, Any],
+    action: str | None = None,
     *,
     scope: list[tuple[str, str]] | None = None,
 ) -> Optional[dict[str, Any]]:
-    """PUT to a hub entity endpoint (update). Returns the response `data` dict on success.
+    """PUT to a hub entity endpoint (update), or to an entity-action endpoint
+    when ``action`` is given (e.g. ``members`` role change → PUT
+    ``/<type>/<id>/members``). Returns the response `data` dict on success.
 
     Returns None only when FLOWPAD_HUB_URL is not configured (offline mode).
     Raises HubError on transport failure or non-200 response.
     """
-    url = hub_graph_url(entity_type, entity_id, scope=scope)
+    url = hub_graph_url(entity_type, entity_id, action, scope=scope)
     if not url:
         logger.debug("[hub] FLOWPAD_HUB_URL not set — skipping PUT %s/%s", entity_type, entity_id)
         return None

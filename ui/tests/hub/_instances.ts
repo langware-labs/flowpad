@@ -81,3 +81,21 @@ export async function getInstance(name: string): Promise<ResolvedInstance> {
 
   return { name, apiUrl, email, sdk };
 }
+
+/** Find the pending invitation for `convId` on the receiver's freshly-synced
+ *  local DB. `fetchConversations()` is the production hub catch-up (pulls the
+ *  conversation + invitation lists from the hub into local SQL); without it
+ *  `Invitation.query` only sees stale rows. Prefers an exact conv match; this
+ *  hub doesn't always stamp `target_url_path`, so falls back to the NEWEST
+ *  unaccepted invite addressed to this instance — the sort is what skips stale
+ *  invitations left in the persistent instance DB. Mirrors `matrix.bob`. */
+export async function findPendingInvitation(inst: ResolvedInstance, convId: string): Promise<any> {
+  await inst.sdk.fetchConversations();
+  const all: any[] = await (inst.sdk.Invitation as any).query({ query: {} }, true);
+  const exact = all.find((inv) => !inv.accepted && (inv.target_url_path || '').includes(convId));
+  if (exact) return exact;
+  const mine = all
+    .filter((inv) => !inv.accepted && inv.recipient_email === inst.email)
+    .sort((a, b) => String(b.created_date ?? '').localeCompare(String(a.created_date ?? '')));
+  return mine[0] ?? null;
+}
