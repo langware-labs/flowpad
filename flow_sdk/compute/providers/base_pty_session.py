@@ -72,6 +72,7 @@ class PtySession(Pty):
         if session:
             session.cols = cols
             session.rows = rows
+        self._record_resize(session, cols, rows)
 
     async def force_repaint(self) -> None:
         """Force a TUI repaint by toggling the winsize (SIGWINCH) with no net
@@ -87,9 +88,25 @@ class PtySession(Pty):
         if session is None:
             return
         cols, rows = session.cols, session.rows
+        # Both jiggle flips are recorded as resize frames: output the TUI
+        # emits between them is calibrated to (rows-1), and replay must
+        # interpret it at that size or cursor-relative repaints garble.
         await self._provider.resize_pty(self._pn_id, self._shell_id, cols, max(1, rows - 1))
+        self._record_resize(session, cols, max(1, rows - 1))
         await asyncio.sleep(_FORCE_REPAINT_JIGGLE_S)  # see constant for rationale
         await self._provider.resize_pty(self._pn_id, self._shell_id, cols, rows)
+        self._record_resize(session, cols, rows)
+
+    @staticmethod
+    def _record_resize(session, cols: int, rows: int) -> None:
+        """Append a resize frame to the session's stream file (best-effort)."""
+        stream = getattr(session, "pty_stream_file", None) if session else None
+        if stream is None:
+            return
+        try:
+            stream.write_resize(cols, rows)
+        except OSError:
+            pass  # persistence is best-effort; never break the resize path
 
     async def repaint(self, cols: int | None = None, rows: int | None = None) -> None:
         """Make the running program redraw for an attaching client.
