@@ -1,3 +1,7 @@
+---
+id: f0556960-20fc-5a1b-98ef-ad0ce43e00e4
+---
+
 # Title
 
 UTF-8 input: codepoint silently dropped when `write(Uint8Array)` splits a sequence leaving a `0x80` continuation byte in interim state

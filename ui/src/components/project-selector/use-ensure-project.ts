@@ -7,6 +7,15 @@ export function canonicalPath(path: string): string {
   return path.trim().replace(/\\/g, '/').replace(/\/+$/, '').replace(/^\/+/, '');
 }
 
+/** Make `project` the active project context — current-project pointer,
+ *  refreshed project snapshot, workdir. Shared by the select flows below and
+ *  by callers that adopt a project without navigating to it. */
+export async function selectProjectContext(project: Project): Promise<void> {
+  await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, project.typeId);
+  await dataContext.refreshProject();
+  dataContext.setWorkdir(project.fs_storage_mount_path ?? null);
+}
+
 /**
  * Idempotent project ensure-and-select used by both the QuickCreate flows and
  * the Home `+` menu's "Project (local)" / "Project (git)" entries.
@@ -42,9 +51,7 @@ export function useEnsureProject() {
       }
       await target.setupForDesktop();
       if (options?.select === false) return target;
-      await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, target.typeId);
-      await dataContext.refreshProject();
-      dataContext.setWorkdir(target.fs_storage_mount_path ?? null);
+      await selectProjectContext(target);
       navigation.openDock(DockPointer.forProject(target.id));
       return target;
     },
@@ -62,9 +69,7 @@ export function useSelectExistingProject() {
   return useCallback(
     async (project: Project): Promise<void> => {
       await project.setupForDesktop();
-      await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, project.typeId);
-      await dataContext.refreshProject();
-      dataContext.setWorkdir(project.fs_storage_mount_path ?? null);
+      await selectProjectContext(project);
       navigation.openDock(DockPointer.forProject(project.id));
     },
     [navigation],

@@ -125,6 +125,8 @@ interface FlowMessageBubbleProps {
    *  through this, which opens the project picker first if none is selected and
    *  resumes the download after a pick. */
   ensureProjectMapped?: (run: () => void | Promise<void>) => void;
+  /** Project shell to use when opening asset entity attachments. */
+  attachmentProjectId?: string | null;
 }
 
 export function FlowMessageBubble({
@@ -146,6 +148,7 @@ export function FlowMessageBubble({
   rosterReady = false,
   conversationStatusVisible = true,
   ensureProjectMapped,
+  attachmentProjectId,
 }: FlowMessageBubbleProps) {
   // Prefer the FlowMessage handed down from the parent's batched conversation
   // query; fall back to a per-id fetch only when it wasn't provided (so the
@@ -270,15 +273,6 @@ export function FlowMessageBubble({
     displayName = 'unknown';
   }
 
-  // Telemetry: warn once per (conv, sender_id) when we landed on the alert
-  // label — the warn lives in an effect (NOT the render body) so re-renders
-  // don't flood devtools. NOTE: the ``useEffect`` itself is hoisted ABOVE the
-  // early returns (``if (!fm)`` / ``if (isDraft)``) — see near the other hooks
-  // — because a hook called after a conditional return changes the per-render
-  // hook count and trips React's "Rendered more hooks than during the previous
-  // render". Here we only derive the boolean it keys on.
-  const isAlertLabel = displayName === UNRESOLVED_SENDER_LABEL;
-
   // When task is present, role tracks the original task initiator (sender) vs
   // recipient. For project-scoped conversations (no task), use the local user
   // as the "sender" perspective.
@@ -400,6 +394,7 @@ export function FlowMessageBubble({
                     key={`asset:${typeId.type}-${typeId.id}`}
                     typeId={typeId}
                     inside={{ type: 'conversation', id: fm.conversation_id ?? '' }}
+                    projectId={attachmentProjectId}
                   />
                 ))}
               </div>
