@@ -401,6 +401,13 @@ class PtyActionsMixin:
                 rows=rows,
             )
             session_state.pty_stream_file = pty_stream_file
+            # Resume the seq counter past any previous server process's epoch
+            # (recovery respawns into the SAME stream file): seqs must stay
+            # monotonic within one file or the frontend's replay-vs-live
+            # dedup drops post-restart output — "PTY looks dead after restart".
+            persisted_max = pty_stream_file.max_seq()
+            if persisted_max > session_state.seq:
+                session_state.seq = persisted_max
 
             # Write-through: create/update the Shell DB entity from the record
             # via the generic base sync, then apply the shell-specific side
