@@ -173,6 +173,23 @@ class PtyStreamFile:
                 events.append(frame)
         return {"v": header["v"], "cols": header["cols"], "rows": header["rows"], "events": events}
 
+    def max_seq(self) -> int:
+        """Highest output-frame seq persisted in the file (0 if none).
+
+        Used at PTY (re)spawn to resume the session's seq counter past the
+        previous server process's epoch: seqs must stay MONOTONIC within one
+        stream file or the frontend's replay-vs-live dedup (``chunk.seq <=
+        replay.lastSeq``) wrongly drops post-restart output — the terminal
+        looks dead after a server restart.
+        """
+        frames = self.read_frames()
+        if frames is None:
+            return 0
+        return max(
+            (e[2] for e in frames["events"] if e[0] == "o" and len(e) > 2 and isinstance(e[2], int)),
+            default=0,
+        )
+
     def read_all(self) -> bytes:
         """Concatenated raw output bytes (resize frames excluded), or ``b""``.
 
