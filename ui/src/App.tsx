@@ -1,18 +1,16 @@
 import '@src/styles/highlightjs.css';
 import { trackEvent } from '@src/utils/analytics';
-import { CapabilityKinds, config, dataContext, navigator } from '@sdk';
-import { useAuth, useCapability, useGlobalEvents, useWarnings } from '@sdk/react/hooks';
+import { CapabilityKinds, config, navigator } from '@sdk';
+import { useAuth, useCapability, useGlobalEvents } from '@sdk/react/hooks';
 import { TooltipProvider } from '@src/components/ui/tooltip';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { NotificationOutlet, NotificationCommandBridge, initNotificationIngest } from '@src/notifications';
 import { ActivityProgressModalRoot } from '@src/components/search-index/ActivityProgressModalRoot';
 import { CleanupModal } from '@src/components/recovery/cleanup-modal';
 import { DeleteAssetModal } from '@src/components/assets/delete-asset-modal';
-import { useEffect, useRef, useState } from 'react';
-import { DesktopSetupModal, DESKTOP_SETUP_REASON_AUTH_FAILURE } from '@src/components/desktop-setup-modal';
+import { useEffect, useRef } from 'react';
 import { GitHubDeviceFlowModal } from '@src/components/oauth/GitHubDeviceFlowModal';
 import SecretApprovalDialog from '@src/components/secret-approval-dialog';
-import MigrateLegacyKeychain from '@src/components/migrate-legacy-keychain';
 import { initNotificationListener } from '@src/store/use-notification-store';
 import { SnifferProvider } from '@src/contexts/SnifferContext';
 import { FloatingChatProvider } from '@src/components/floating-chat';
@@ -29,62 +27,6 @@ const queryClient = new QueryClient({
     },
   },
 });
-
-// Component that handles desktop setup modal (must be inside QueryClientProvider)
-const DesktopSetupModalHandler = () => {
-  const { someone } = useAuth();
-  const [showDesktopSetup, setShowDesktopSetup] = useState(false);
-  const [authFailure, setAuthFailure] = useState(false);
-  const { isOAuthConfigured, isLlmConfigLoading } = useWarnings();
-
-  // Listen for custom event to open desktop setup modal
-  useEffect(() => {
-    const handleOpenDesktopSetup = (event: Event) => {
-      const detail = (event as CustomEvent<{ reason?: string }>).detail;
-      if (detail?.reason === DESKTOP_SETUP_REASON_AUTH_FAILURE) {
-        setAuthFailure(true);
-      }
-      setShowDesktopSetup(true);
-    };
-    window.addEventListener('open-desktop-setup', handleOpenDesktopSetup);
-    return () => {
-      window.removeEventListener('open-desktop-setup', handleOpenDesktopSetup);
-    };
-  }, []);
-
-  // Show desktop setup modal on first load if LLM is NOT configured
-  useEffect(() => {
-    if (!someone) return;
-
-    // Wait for LLM config query to complete before deciding to show modal
-    if (isLlmConfigLoading) return;
-
-    // Check if desktop_info exists in bootstrap data (indicates desktop mode)
-    const bootstrapInfo = dataContext.bootstrapInfo;
-    const desktopInfo = bootstrapInfo?.desktop_info;
-    const hasDesktopInfo = !!desktopInfo;
-
-    // Show modal on first launch if the user didn't do oauth or has API key. If he has oauth, we don't need the modal.
-    if (hasDesktopInfo && !showDesktopSetup && !isOAuthConfigured) {
-      const hasSeenModal = localStorage.getItem('llm-setup-modal-seen');
-      if (!hasSeenModal) {
-        setShowDesktopSetup(true);
-      }
-    }
-  }, [someone, showDesktopSetup, isOAuthConfigured, isLlmConfigLoading]);
-
-  return (
-    <DesktopSetupModal
-      isOpen={showDesktopSetup}
-      authFailure={authFailure}
-      onClose={() => {
-        setShowDesktopSetup(false);
-        setAuthFailure(false);
-        localStorage.setItem('llm-setup-modal-seen', 'true');
-      }}
-    />
-  );
-};
 
 // Bootstrap-error UX is handled by the router's root `errorElement`
 // (`<ErrorScreen/>` in `router.tsx`). The root loader (`loadRoot`) re-throws
@@ -152,10 +94,8 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
         <ActivityProgressModalRoot />
         <GlobalEvents />
         <CapabilityWarmup />
-        <DesktopSetupModalHandler />
         <GitHubDeviceFlowModal />
         <SecretApprovalDialog />
-        <MigrateLegacyKeychain />
         <SnifferProvider>
           <FloatingChatProvider>
             {children}

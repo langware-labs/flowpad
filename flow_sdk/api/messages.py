@@ -263,9 +263,9 @@ class LlmConfigMessage(BaseMessage):
     """
 
     message_type: str = WSMessageType.LLM_CONFIG_MSG.value
-    is_configured: bool  # True if any auth method is available
-    auth_method: str  # "oauth", "api_key", or "none"
-    auth_data: Optional[dict] = None  # Full ClaudeCodeAuthStatus as dict
+    is_configured: bool  # True if the relevant provider auth is available
+    auth_method: str  # Provider or auth mechanism name, e.g. "github" or "anthropic"
+    auth_data: Optional[dict] = None  # Optional provider-specific auth metadata
     # OAuth request fields (for tracking which OAuth request completed)
     oauth_request_id: Optional[str] = None
     status: Optional[OAuthMessageStatus] = None

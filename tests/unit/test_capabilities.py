@@ -19,6 +19,16 @@ def test_capability_kind_ontology_prefix_matching():
     assert claude_kinds == {CapabilityKind.CLAUDE_CLI.value}
 
 
+def test_harness_capability_specs_include_install_homepages():
+    registry = get_capability_registry()
+
+    claude = registry.get(CapabilityKind.CLAUDE_CLI.value).spec
+    codex = registry.get(CapabilityKind.CODEX_CLI.value).spec
+
+    assert claude.homepage_url == "https://docs.anthropic.com/en/docs/claude-code/getting-started"
+    assert codex.homepage_url == "https://openai.com/codex/"
+
+
 @pytest.mark.asyncio
 async def test_cli_capability_check_uses_executable_resolution(monkeypatch):
     import flow_sdk.core.capabilities.registry as registry_mod
@@ -33,7 +43,7 @@ async def test_cli_capability_check_uses_executable_resolution(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_cli_capability_install_runs_agentic_process_then_rechecks(monkeypatch):
+async def test_cli_capability_install_starts_agentic_process(monkeypatch):
     import flow_sdk.core.capabilities.registry as registry_mod
 
     seen_prompts: list[str | None] = []
@@ -53,8 +63,6 @@ async def test_cli_capability_install_runs_agentic_process_then_rechecks(monkeyp
 
     result = await get_capability_registry().install(CapabilityKind.CODEX_CLI.value)
 
-    # Post-install re-check: codex still missing → not available, but the run
-    # itself succeeded and its process id is surfaced.
     assert result.result.available is False
     assert result.result.process_id == "install-process-id"
     assert result.result.details["prompt"] == registry_mod.DEFAULT_INSTALL_PROMPT
@@ -62,7 +70,55 @@ async def test_cli_capability_install_runs_agentic_process_then_rechecks(monkeyp
 
 
 @pytest.mark.asyncio
-async def test_cli_capability_install_failure_short_circuits_recheck(monkeypatch):
+async def test_capability_install_process_uses_default_harness_worker(monkeypatch, tmp_path):
+    import flow_sdk.builtin.agentic_process as agentic_process_pkg
+    import flow_sdk.core.capabilities.registry as registry_mod
+    import flow_sdk.instance_settings as instance_settings_pkg
+    from flow_sdk.responses.response import ApiSuccessResponse
+
+    created: list[dict] = []
+    scheduled: list[tuple[str, str]] = []
+
+    class FakeAgenticProcess:
+        def __init__(self, **kwargs):
+            self.id = "install-process-id"
+            self.name = kwargs.get("name")
+            self.context_data = kwargs.get("context_data") or {}
+            created.append(kwargs)
+
+        async def save(self, notify=True):
+            return self
+
+        async def prompt(self, prompt):
+            created.append({"prompt": prompt})
+            return ApiSuccessResponse(data={"status": "started", "worker": "codex"})
+
+    async def fake_resolve_default_harness_kind():
+        return CapabilityKind.CODEX_CLI.value
+
+    monkeypatch.setattr(instance_settings_pkg, "get_instance_settings", lambda: SimpleNamespace(flow_home=str(tmp_path)))
+    monkeypatch.setattr(agentic_process_pkg, "AgenticProcess", FakeAgenticProcess)
+    monkeypatch.setattr(registry_mod, "resolve_default_harness_kind", fake_resolve_default_harness_kind)
+    monkeypatch.setattr(registry_mod, "_schedule_install_monitor", lambda process_id, kind: scheduled.append((process_id, kind)))
+
+    result = await registry_mod.run_capability_install_process(
+        registry_mod.get_capability_registry().get(CapabilityKind.CLAUDE_CLI.value).spec
+    )
+
+    process_kwargs = created[0]
+    assert process_kwargs["worker_type"] == "codex"
+    assert process_kwargs["cli_config"]["worker_type"] == "codex"
+    assert process_kwargs["context_data"]["install_harness_kind"] == CapabilityKind.CODEX_CLI.value
+    assert created[1]["prompt"] == registry_mod.DEFAULT_INSTALL_PROMPT
+    assert result.ok is True
+    assert result.process_id == "install-process-id"
+    assert result.details["harness_kind"] == CapabilityKind.CODEX_CLI.value
+    assert result.details["worker_type"] == "codex"
+    assert scheduled == [("install-process-id", CapabilityKind.CLAUDE_CLI.value)]
+
+
+@pytest.mark.asyncio
+async def test_cli_capability_install_failure_is_returned(monkeypatch):
     import flow_sdk.core.capabilities.registry as registry_mod
 
     async def fake_install_process(spec):

@@ -4,6 +4,7 @@ import asyncio
 import shutil
 import subprocess
 from abc import ABC, abstractmethod
+from typing import Any
 
 from flow_sdk.core.capabilities.models import (
     CapabilityCheck,
@@ -22,23 +23,13 @@ class CapabilityRunner(ABC):
         ...
 
     async def install(self) -> CapabilityResult:
-        """Default install: run the capability's install agentic process.
+        """Default install: start the capability's install agentic process.
 
-        The process runs the spec's ``install_prompt`` (or
-        ``DEFAULT_INSTALL_PROMPT``); afterwards the capability is re-checked
-        so ``available`` reflects the install outcome.
+        The browser needs the process id while the worker is still running, so
+        install starts the prompt and returns immediately. A background monitor
+        refreshes the capability row after the worker reaches a terminal state.
         """
-        run = await run_capability_install_process(self.spec)
-        if not run.ok:
-            return run
-        check = await self.check()
-        return run.model_copy(
-            update={
-                "available": check.available,
-                "message": f"{run.message} {check.message}",
-                "details": {**run.details, **check.details},
-            }
-        )
+        return await run_capability_install_process(self.spec)
 
     @abstractmethod
     async def test(self) -> CapabilityResult:
@@ -226,48 +217,131 @@ class ChromeAuthenticatedBrowsingRunner(CapabilityRunner):
 
 # Placeholder install prompt — proves the install→agentic-process wiring.
 DEFAULT_INSTALL_PROMPT = "count till 10"
+_INSTALL_MONITOR_TASKS: set[asyncio.Task] = set()
+
+
+async def resolve_default_harness_kind() -> str:
+    """Resolve the user-selected default harness capability to a concrete leaf."""
+    check = await get_capability_registry().check(CapabilityKind.HARNESS.value)
+    reference = check.result.details.get("reference_kind")
+    if not check.result.available or not isinstance(reference, str):
+        raise RuntimeError(f"Default harness is not available: {check.result.message}")
+    return reference
+
+
+def build_install_worker_config(harness_kind: str) -> tuple[str, dict[str, Any]]:
+    """Return AgenticProcess worker_type + cli_config for a harness leaf kind."""
+    if harness_kind == CapabilityKind.CLAUDE_CLI.value:
+        from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeCliOptions
+        from flow_sdk.flowpad_types.enums import WorkerType
+
+        return WorkerType.CLAUDE_CODE.value, ClaudeCliOptions(permission_mode="bypassPermissions").to_json()
+    if harness_kind == CapabilityKind.CODEX_CLI.value:
+        from flow_sdk.builtin.agentic_process.cli_drivers.codex.cli import CodexCliOptions
+        from flow_sdk.flowpad_types.enums import WorkerType
+
+        return WorkerType.CODEX.value, CodexCliOptions(permission_mode="bypassPermissions").to_json()
+    raise RuntimeError(f"Unsupported install harness kind: {harness_kind}")
+
+
+def _schedule_install_monitor(process_id: str, kind: str) -> None:
+    task = asyncio.create_task(
+        _monitor_capability_install_process(process_id, kind),
+        name=f"capability-install-{kind}:{process_id[:8]}",
+    )
+    _INSTALL_MONITOR_TASKS.add(task)
+    task.add_done_callback(_INSTALL_MONITOR_TASKS.discard)
+
+
+def _last_install_parts(capability: Any) -> tuple[dict, dict]:
+    """The persisted install-start result and its details dict, tolerating absence."""
+    started = capability.last_install if isinstance(capability.last_install, dict) else {}
+    details = started.get("details") if isinstance(started.get("details"), dict) else {}
+    return started, details
+
+
+async def _monitor_capability_install_process(process_id: str, kind: str) -> None:
+    from flow_sdk.builtin.agentic_process import AgenticProcess
+    from flow_sdk.builtin.capability import Capability
+
+    capability = await Capability.get_by_kind(kind)
+    if capability is None:
+        return
+    try:
+        process = await AgenticProcess.get_by_id(process_id)
+        if process is None:
+            raise RuntimeError(f"Install process {process_id} was not found.")
+        await process.wait()
+        check = await get_capability_registry().check(kind)
+        capability.last_check = check.result.model_dump(mode="json")
+        started, started_details = _last_install_parts(capability)
+        capability.last_install = CapabilityResult(
+            ok=bool(started.get("ok", True)) and check.result.ok,
+            available=check.result.available,
+            message=f"{started.get('message') or 'Install process completed.'} {check.result.message}",
+            details={**started_details, **check.result.details},
+            process_id=process_id,
+        ).model_dump(mode="json")
+        await capability.save(notify=True)
+    except Exception as exc:
+        _, started_details = _last_install_parts(capability)
+        capability.last_install = CapabilityResult(
+            ok=False,
+            available=False,
+            message=f"Install process failed: {exc}",
+            details={**started_details, "error": str(exc)},
+            process_id=process_id,
+        ).model_dump(mode="json")
+        await capability.save(notify=True)
 
 
 async def run_capability_install_process(spec: CapabilitySpec) -> CapabilityResult:
-    """Run a capability's install as a headless agentic process.
+    """Start a capability's install as a headless agentic process.
 
     The worker runs the spec's ``install_prompt`` (or
-    ``DEFAULT_INSTALL_PROMPT``) and the result carries ``process_id`` so UI
-    surfaces can show/open the run.
+    ``DEFAULT_INSTALL_PROMPT``) using the default harness selected by the
+    ``harness`` capability. The result carries ``process_id`` immediately so UI
+    surfaces can show/open the run while it is still active.
     """
     from pathlib import Path
 
     from flow_sdk.builtin.agentic_process import AgenticProcess
-    from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeCliOptions
     from flow_sdk.builtin.capability import capability_id_for_kind
     from flow_sdk.instance_settings import get_instance_settings
+    from flow_sdk.responses.response import ApiFailResponse
 
     prompt = spec.install_prompt or DEFAULT_INSTALL_PROMPT
     workdir = Path(get_instance_settings().flow_home) / "capability-installs"
     workdir.mkdir(parents=True, exist_ok=True)
 
-    cli_options = ClaudeCliOptions(permission_mode="bypassPermissions")
+    try:
+        harness_kind = await resolve_default_harness_kind()
+        worker_type, cli_config = build_install_worker_config(harness_kind)
+    except Exception as exc:
+        return CapabilityResult(
+            ok=False,
+            available=False,
+            message=f"Install process could not start: {exc}",
+            details={"prompt": prompt},
+        )
+
     target_typeid_str = f"capability-{capability_id_for_kind(spec.kind)}"
     process = AgenticProcess(
         name=f"Install {spec.name}",
         workdir=str(workdir),
         visible=False,
-        cli_config=cli_options.to_json(),
-        context_data={"capability_kind": spec.kind, "install_prompt": prompt},
+        worker_type=worker_type,
+        cli_config=cli_config,
+        context_data={
+            "capability_kind": spec.kind,
+            "install_prompt": prompt,
+            "install_harness_kind": harness_kind,
+        },
         target_typeid_str=target_typeid_str,
     )
     await process.save(notify=True)
     try:
-        result = await AgenticProcess.run(
-            prompt,
-            id=process.id,
-            name=process.name,
-            workdir=str(workdir),
-            cli_config=cli_options.to_json(),
-            context_data=process.context_data,
-            target_typeid_str=target_typeid_str,
-            visible=False,
-        )
+        start_result = await process.prompt(prompt)
     except Exception as exc:
         return CapabilityResult(
             ok=False,
@@ -276,12 +350,26 @@ async def run_capability_install_process(spec: CapabilitySpec) -> CapabilityResu
             details={"prompt": prompt},
             process_id=process.id,
         )
-    text = (result.text or "").strip()
+    if isinstance(start_result, ApiFailResponse):
+        return CapabilityResult(
+            ok=False,
+            available=False,
+            message=f"Install process failed to start: {start_result.message}",
+            details={"prompt": prompt, "harness_kind": harness_kind, "worker_type": worker_type},
+            process_id=process.id,
+        )
+
+    _schedule_install_monitor(process.id, spec.kind)
     return CapabilityResult(
         ok=True,
-        available=False,  # caller re-checks and overwrites
-        message="Install process completed.",
-        details={"prompt": prompt, "output": text[:1000], "session_id": result.session_id},
+        available=False,
+        message="Install process started.",
+        details={
+            "prompt": prompt,
+            "harness_kind": harness_kind,
+            "worker_type": worker_type,
+            "start": start_result.data or {},
+        },
         process_id=process.id,
     )
 
@@ -378,12 +466,14 @@ def get_default_capability_specs() -> list[CapabilitySpec]:
             kind=CapabilityKind.CLAUDE_CLI.value,
             description="Claude Code command-line harness.",
             icon="Bot",
+            homepage_url="https://docs.anthropic.com/en/docs/claude-code/getting-started",
         ),
         CapabilitySpec(
             name="Codex CLI",
             kind=CapabilityKind.CODEX_CLI.value,
             description="Codex command-line harness.",
             icon="Terminal",
+            homepage_url="https://openai.com/codex/",
         ),
         CapabilitySpec(
             name="Chrome Authenticated Browsing",

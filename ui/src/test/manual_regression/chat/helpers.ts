@@ -1,26 +1,14 @@
 import { type Page, expect } from '@playwright/test';
 
-/**
- * Dismiss the DesktopSetupModal if it appears.
- * The modal shows on first load when localStorage key 'llm-setup-modal-seen' is not set.
- * We set it before navigating so it never appears, and also try to dismiss if it still does.
- */
+/** Kept for older manual tests; the desktop setup modal no longer exists. */
 export async function dismissSetupModal(page: Page) {
-  // Pre-set localStorage to suppress the modal before page loads
-  await page.addInitScript(() => {
-    localStorage.setItem('llm-setup-modal-seen', 'true');
-  });
+  await page.addInitScript(() => {});
 }
 
 /** Navigate to landing and wait for it to fully load. */
 export async function gotoLanding(page: Page) {
   // The home landing is at /dock/home (root / redirects to FlowPage which loads home)
   await page.goto('/dock/home');
-  // Handle setup modal (DesktopSetupModal) if it appears despite localStorage suppression
-  const skipButton = page.getByRole('button', { name: 'Skip' });
-  if (await skipButton.isVisible({ timeout: 2_000 }).catch(() => false)) {
-    await skipButton.click();
-  }
   // Handle WelcomeModal ("Set up Flowpad" / "Welcome to Flowpad!") which appears
   // after a DB reset when scanInfo.never_indexed=true. Bootstrap can take 5–10s on a
   // fresh DB, so use a 12s timeout to ensure the modal is caught before we wait for the heading.

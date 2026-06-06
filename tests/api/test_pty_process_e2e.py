@@ -382,12 +382,10 @@ async def test_get_by_worker_id_404(bootstrapped_client):
 def test_flowpad_pty_pid_in_env():
     """Verify that FLOWPAD_PTY_SESSION_ID is set in the PTY environment.
 
-    We verify this by checking the source code includes the env var injection.
-    This test doesn't need the server — it's a pure source inspection.
+    This test doesn't need the server -- it checks the generic PTY env builder
+    used before spawning any interactive terminal child process.
     """
-    import inspect
+    from flow_sdk.compute.providers.desktop.provider import _build_interactive_pty_env
 
-    from flow_sdk.compute.providers.desktop.provider import LocalComputeProvider
-
-    source = inspect.getsource(LocalComputeProvider.get_or_create_pty_session)
-    assert "FLOWPAD_PTY_SESSION_ID" in source, "FLOWPAD_PTY_SESSION_ID should be set in get_or_create_pty_session"
+    env = _build_interactive_pty_env("test-session-id")
+    assert env["FLOWPAD_PTY_SESSION_ID"] == "test-session-id"

@@ -99,8 +99,8 @@ export class CapabilityManager extends EventEmitter {
     const available = capabilities.some((candidate) => this.getResult(candidate)?.available === true);
     const checked = capabilities.some((candidate) => this.getResult(candidate) !== null);
     const processId =
-      result?.process_id ??
-      capabilities.map((candidate) => this.getResult(candidate)?.process_id).find(Boolean) ??
+      this.getProcessId(capability) ??
+      capabilities.map((candidate) => this.getProcessId(candidate)).find(Boolean) ??
       null;
     const resolvedKind = capability
       ? ((result?.details?.reference_kind as string | undefined) ?? capability.reference_kind ?? capability.kind)
@@ -162,6 +162,24 @@ export class CapabilityManager extends EventEmitter {
     return this.runAction(queryKind, 'test');
   }
 
+  async setReferenceKind(queryKind: string, referenceKind: string): Promise<CapabilitySnapshot> {
+    const query = this.normalizeKind(queryKind);
+    const reference = this.normalizeKind(referenceKind);
+    await this.load();
+    const capability = this.capabilities.find((candidate) => candidate.kind === query);
+    if (!capability) {
+      throw new Error(`Capability ${query} was not found`);
+    }
+    if (!this.kindMatches(query, reference) || reference === query) {
+      throw new Error(`Capability ${query} cannot reference ${reference}`);
+    }
+    capability.reference_kind = reference;
+    await capability.save();
+    this.actionResults.delete(query);
+    await this.load(true);
+    return this.check(query);
+  }
+
   private async runAction(queryKind: string, actionName: CapabilityActionName): Promise<CapabilitySnapshot> {
     const query = this.normalizeKind(queryKind);
     await this.load();
@@ -201,8 +219,20 @@ export class CapabilityManager extends EventEmitter {
   private getResult(capability: Capability): CapabilityResult | null {
     return (
       this.actionResults.get(capability.kind)?.result ??
+      capability.last_install ??
       capability.last_check ??
       capability.last_test ??
+      null
+    );
+  }
+
+  private getProcessId(capability: Capability | null): string | null {
+    if (!capability) return null;
+    return (
+      this.actionResults.get(capability.kind)?.result.process_id ??
+      capability.last_install?.process_id ??
+      capability.last_test?.process_id ??
+      capability.last_check?.process_id ??
       null
     );
   }

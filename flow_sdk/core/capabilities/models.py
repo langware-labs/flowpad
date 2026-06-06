@@ -30,6 +30,7 @@ class CapabilitySpec(BaseModel):
     kind: str
     description: str = ""
     icon: str = "BadgeCheck"
+    homepage_url: str | None = None
     dependent_capability_kinds: list[str] = Field(default_factory=list)
     # CapabilityReference: this capability is a pointer — check/install/test
     # resolve the referenced kind in turn. Seed default only; the live value
