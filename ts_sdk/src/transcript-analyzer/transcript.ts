@@ -13,6 +13,8 @@ export enum TranscriptFormat {
   CLAUDE_JSONL = 'claude_jsonl',
   CODEX_STREAM = 'codex_stream',
   CODEX_ROLLOUT = 'codex_rollout',
+  COPILOT_STREAM = 'copilot_stream',
+  COPILOT_EVENTS = 'copilot_events',
 }
 
 export enum TranscriptSource {

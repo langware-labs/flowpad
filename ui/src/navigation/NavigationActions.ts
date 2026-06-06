@@ -292,9 +292,9 @@ export class NavigationActions {
   }
 
   /**
-   * Resolve a worker/session/thread id (Claude or Codex) and navigate to it.
+   * Resolve a worker/session/thread id and navigate to it.
    * Backend auto-discovers worker_type. Returns null when the id is unknown
-   * to either Claude or Codex history; caller is expected to surface a toast.
+   * to worker history; caller is expected to surface a toast.
    */
   async openWorkerSession(workerId: string): Promise<AgenticProcess | null> {
     const process = await AgenticProcess.getByWorkerId(workerId).catch((err) => {
@@ -326,7 +326,7 @@ export class NavigationActions {
   async openNewClaudeProcess(options?: {
     cwd?: string;
     projectId?: string;
-    workerType?: 'claude_code' | 'codex';
+    workerType?: 'claude_code' | 'codex' | 'copilot';
   }): Promise<{ processId: string; shellId: string | null; dockPointer: IDockPointer } | null> {
     try {
       const computeNode = dataContext.computeNode;

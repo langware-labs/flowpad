@@ -1,6 +1,6 @@
 """Unified worker history surface for the "Recent Sessions" UI.
 
-Per-worker providers (currently Claude and Codex) collect sessions from each
+Per-worker providers collect sessions from each
 agent's native history source. ``get_worker_history`` merges, deduplicates,
 sorts and caps the combined list so the frontend can render it from a single
 response.
@@ -34,6 +34,7 @@ logger = logging.getLogger(__name__)
 class WorkerType(str, Enum):
     CLAUDE = "claude"
     CODEX = "codex"
+    COPILOT = "copilot"
 
 
 class WorkerHistoryEntry(BaseModel):
@@ -178,7 +179,7 @@ def _normalize_worker_type(wt: object) -> WorkerType:
     """Map AgenticProcess.worker_type (flowpad_types enum) → local WorkerType.
 
     The entity's enum carries ``claude_code``/``unsecured_claude``/``codex``
-    etc.; the UI surface only distinguishes claude vs codex. None defaults
+    etc.; the UI surface distinguishes claude/codex/copilot. None defaults
     to claude — matches ``AgenticProcess.spawn``'s legacy default.
     """
     if wt is None:
@@ -186,6 +187,8 @@ def _normalize_worker_type(wt: object) -> WorkerType:
     val = (wt.value if hasattr(wt, "value") else str(wt)).lower()
     if "codex" in val:
         return WorkerType.CODEX
+    if "copilot" in val:
+        return WorkerType.COPILOT
     return WorkerType.CLAUDE
 
 
@@ -422,6 +425,87 @@ def _collect_codex_entries_sync(
     return result
 
 
+def _collect_copilot_entries_sync(
+    limit: int, process_index: ProcessIndex
+) -> list[WorkerHistoryEntry]:
+    """Blocking body of ``get_copilot_worker_history``. Runs under ``to_thread``."""
+    from flow_sdk.builtin.agentic_process.cli_drivers.copilot.session_history import (
+        copilot_session_state_root,
+        read_copilot_session_meta,
+    )
+
+    root = copilot_session_state_root()
+    if not root.is_dir():
+        return []
+
+    candidates: list[tuple[float, Path]] = []
+    for jsonl in root.glob("*/events.jsonl"):
+        try:
+            candidates.append((jsonl.stat().st_mtime, jsonl))
+        except OSError:
+            continue
+    candidates.sort(key=lambda x: -x[0])
+    candidates = candidates[: max(limit + 5, limit * 4 + 50)]
+
+    result: list[WorkerHistoryEntry] = []
+    seen: set[str] = set()
+    for mtime, jsonl_path in candidates:
+        meta = read_copilot_session_meta(jsonl_path)
+        sid = str(meta.get("id") or jsonl_path.parent.name)
+        if not sid or sid in seen:
+            continue
+        seen.add(sid)
+
+        cwd = meta.get("cwd") or None
+        if _is_scratch_cwd(cwd):
+            continue
+
+        message_count, last_user_message = _copilot_stats(jsonl_path)
+        last_prompt = _pick_last_prompt(last_user_message)
+        ap_id, ap_name = process_index.get(sid, (None, None))
+        result.append(
+            WorkerHistoryEntry(
+                worker_type=WorkerType.COPILOT,
+                worker_id=sid,
+                project_id=_project_id_for(cwd, None),
+                project_name=_basename(cwd),
+                project_cwd=cwd,
+                last_active_time=datetime.fromtimestamp(mtime, tz=timezone.utc),
+                name=ap_name,
+                last_prompt=last_prompt,
+                git_branch=None,
+                message_count=message_count,
+                agentic_process_id=ap_id,
+            )
+        )
+    return result
+
+
+def _copilot_stats(jsonl_path: Path) -> tuple[Optional[int], Optional[str]]:
+    import json
+
+    count = 0
+    last_user: Optional[str] = None
+    try:
+        with jsonl_path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                if not line.strip():
+                    continue
+                try:
+                    raw = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if raw.get("type") == "user.message":
+                    count += 1
+                    data = raw.get("data") if isinstance(raw.get("data"), dict) else {}
+                    content = data.get("content")
+                    if isinstance(content, str) and content.strip():
+                        last_user = content.strip()
+    except OSError:
+        return None, None
+    return (count if count > 0 else None), last_user
+
+
 async def get_claude_worker_history(
     limit: int, process_index: Optional[ProcessIndex] = None
 ) -> list[WorkerHistoryEntry]:
@@ -450,9 +534,18 @@ async def get_codex_worker_history(
     return await asyncio.to_thread(_collect_codex_entries_sync, limit, idx)
 
 
+async def get_copilot_worker_history(
+    limit: int, process_index: Optional[ProcessIndex] = None
+) -> list[WorkerHistoryEntry]:
+    """Return the most-recent N Copilot sessions, newest first."""
+    idx = process_index if process_index is not None else {}
+    return await asyncio.to_thread(_collect_copilot_entries_sync, limit, idx)
+
+
 WORKER_HISTORY_PROVIDERS: dict[WorkerType, WorkerHistoryProvider] = {
     WorkerType.CLAUDE: get_claude_worker_history,
     WorkerType.CODEX: get_codex_worker_history,
+    WorkerType.COPILOT: get_copilot_worker_history,
 }
 
 

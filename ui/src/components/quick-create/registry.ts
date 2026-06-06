@@ -41,6 +41,10 @@ export interface QuickCreateDescriptor {
   codexProjectSubFolder?: string;
   /** Codex user-scope sub-folder. Falls back to codexProjectSubFolder, then defaultSubFolder. */
   codexUserSubFolder?: string;
+  /** Copilot project-scope sub-folder. Falls back to defaultSubFolder when omitted. */
+  copilotProjectSubFolder?: string;
+  /** Copilot user-scope sub-folder. Falls back to copilotProjectSubFolder, then defaultSubFolder. */
+  copilotUserSubFolder?: string;
   /** Creation function — shared between the quick-create dialog and AssetsPage. */
   create: (args: QuickCreateCreateArgs) => Promise<QuickCreateResult>;
 }
@@ -58,6 +62,10 @@ export function subFolderFor(descriptor: QuickCreateDescriptor, harness: Harness
     if (scope === 'user') return descriptor.codexUserSubFolder ?? descriptor.codexProjectSubFolder ?? descriptor.defaultSubFolder;
     return descriptor.codexProjectSubFolder ?? descriptor.defaultSubFolder;
   }
+  if (harness === 'copilot') {
+    if (scope === 'user') return descriptor.copilotUserSubFolder ?? descriptor.copilotProjectSubFolder ?? descriptor.defaultSubFolder;
+    return descriptor.copilotProjectSubFolder ?? descriptor.defaultSubFolder;
+  }
   return descriptor.defaultSubFolder;
 }
 
@@ -69,6 +77,8 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     defaultSubFolder: '.claude/skills',
     codexProjectSubFolder: '.agents/skills',
     codexUserSubFolder: '.codex/skills',
+    copilotProjectSubFolder: '.copilot/skills',
+    copilotUserSubFolder: '.copilot/skills',
     create: async ({ project, name, folderVfsPath }) => {
       const saved = await Skill.createInProject(project, name, folderVfsPath);
       return {
@@ -84,6 +94,8 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     defaultSubFolder: '.claude/agents',
     codexProjectSubFolder: '.codex/agents',
     codexUserSubFolder: '.codex/agents',
+    copilotProjectSubFolder: '.copilot/agents',
+    copilotUserSubFolder: '.copilot/agents',
     create: async ({ project, name, folderVfsPath }) => {
       const saved = await Agent.createInProject(project, name, folderVfsPath);
       return {
@@ -98,6 +110,7 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     Icon: WorkflowIcon,
     defaultSubFolder: '.claude/workflows',
     codexProjectSubFolder: '.codex/workflows',
+    copilotProjectSubFolder: '.copilot/workflows',
     create: async ({ project, name, folderVfsPath }) => {
       const saved = await Workflow.createInProject(project, name, folderVfsPath);
       return {
@@ -112,6 +125,7 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     Icon: CheckSquare,
     defaultSubFolder: '.claude/tasks',
     codexProjectSubFolder: '.codex/tasks',
+    copilotProjectSubFolder: '.copilot/tasks',
     create: async ({ project, name }) => {
       const task = await Task.createInProject(project, name);
       return {
@@ -126,6 +140,7 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     Icon: FileText,
     defaultSubFolder: '.claude/docs',
     codexProjectSubFolder: '.codex/docs',
+    copilotProjectSubFolder: '.copilot/docs',
     create: async ({ project, name }) => {
       const md = await Markdown.createInProject(project, name);
       return {
@@ -140,6 +155,7 @@ export const QUICK_CREATE_REGISTRY: QuickCreateDescriptor[] = [
     Icon: Palette,
     defaultSubFolder: '.claude/whiteboards',
     codexProjectSubFolder: '.codex/whiteboards',
+    copilotProjectSubFolder: '.copilot/whiteboards',
     create: async ({ project, name, folderVfsPath }) => {
       const saved = await Whiteboard.createInProject(project, name, folderVfsPath);
       return {

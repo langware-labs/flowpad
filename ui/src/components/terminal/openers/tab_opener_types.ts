@@ -5,6 +5,7 @@ import type { ComponentType, SVGProps } from 'react';
 export type OpenerId =
   | 'claude'
   | 'codex'
+  | 'copilot'
   | 'claude-resume-by-id'
   | 'terminal'
   | 'sandbox'

@@ -1,7 +1,8 @@
 """Resolve a worker session id to its on-disk JSONL path.
 
 One helper, two glob branches — Claude (``~/.claude/projects/<encoded>/<sid>.jsonl``)
-and Codex (``~/.codex/sessions/**/rollout-*-<sid>.jsonl``). Used by every entry
+Codex (``~/.codex/sessions/**/rollout-*-<sid>.jsonl``), and Copilot
+(``~/.copilot/session-state/<sid>/events.jsonl``). Used by every entry
 point that exposes a transcript: the ``/api/v1/workers/<wtype>/<sid>/transcript``
 route, ``AgenticProcess.transcript()`` action, and any in-process consumer that
 has ``(worker_type, session_id)`` and needs the actual file.
@@ -25,6 +26,10 @@ def _codex_sessions_dir() -> Path:
     return Path.home() / ".codex" / "sessions"
 
 
+def _copilot_session_state_dir() -> Path:
+    return Path.home() / ".copilot" / "session-state"
+
+
 class TranscriptNotFoundError(LookupError):
     """Raised when no JSONL exists for ``(worker_type, session_id)``."""
 
@@ -40,6 +45,8 @@ def resolve_session_jsonl(worker_type: str, session_id: str) -> Path:
         return _resolve_claude(session_id)
     if wt == "codex":
         return _resolve_codex(session_id)
+    if wt == "copilot":
+        return _resolve_copilot(session_id)
     raise ValueError(f"Unsupported worker_type: {worker_type!r}")
 
 
@@ -75,3 +82,17 @@ def _resolve_codex(session_id: str) -> Path:
     if len(matches) > 1:
         matches.sort(key=lambda p: p.stat().st_mtime, reverse=True)
     return matches[0]
+
+
+def _resolve_copilot(session_id: str) -> Path:
+    sessions = _copilot_session_state_dir()
+    if not sessions.is_dir():
+        raise TranscriptNotFoundError(
+            f"~/.copilot/session-state/ not found; cannot resolve session {session_id}"
+        )
+    path = sessions / session_id / "events.jsonl"
+    if not path.exists():
+        raise TranscriptNotFoundError(
+            f"No copilot events JSONL found for session_id={session_id}"
+        )
+    return path
