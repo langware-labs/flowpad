@@ -306,7 +306,7 @@ class PtyActionsMixin:
             if session_state_holder:
                 ss = session_state_holder[0]
                 if ss.pty_stream_file:
-                    ss.pty_stream_file.write(data)
+                    ss.pty_stream_file.write(data, seq)
                 # Feed Pty.output() iterators
                 for _q in ss.output_queues:
                     asyncio.run_coroutine_threadsafe(_q.put(data), main_loop)
@@ -392,8 +392,14 @@ class PtyActionsMixin:
                     existing_record.save_metadata(patch)
                 record = existing_record
 
-            # Create PtyStreamFile at the record's pty stream path
-            pty_stream_file = PtyStreamFile(path=shell_pty_stream_path(record.id, record.__dict__.get("pty_pid")))
+            # Create PtyStreamFile at the record's pty stream path. Initial
+            # winsize goes in the framed header — replay interprets output at
+            # the recorded sizes (resize frames are appended on every change).
+            pty_stream_file = PtyStreamFile(
+                path=shell_pty_stream_path(record.id, record.__dict__.get("pty_pid")),
+                cols=cols,
+                rows=rows,
+            )
             session_state.pty_stream_file = pty_stream_file
 
             # Write-through: create/update the Shell DB entity from the record
