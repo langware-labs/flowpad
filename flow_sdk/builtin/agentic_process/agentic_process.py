@@ -753,6 +753,7 @@ class AgenticProcess(Entity):
         instruction: str | None = None,
         visible: bool | None = None,
         retry: bool = False,
+        session_id_override: str | None = None,
     ) -> ApiSuccessResponse | ApiFailResponse:
         """Spawn (or reattach to) this AgenticProcess's PTY worker.
 
@@ -775,19 +776,29 @@ class AgenticProcess(Entity):
         - Idempotent call on live process: Shell.start_pty() detects alive PTY
           and returns without re-spawning.
 
-        Body runs under a per-process ``_OPEN_LOCKS`` lock so two concurrent
-        refresh-driven open calls (e.g. two browser tabs) can't both run
-        recovery on the same process and double-spawn Claude.
+        Body runs under a per-process ``_OPEN_LOCKS`` lock and reloads the
+        process after acquiring it, so two concurrent refresh-driven open calls
+        (e.g. two browser tabs) can't both run recovery from stale process
+        snapshots and double-spawn Claude.
         """
-        # Suppress the restart-required auto-flag while start_pty() mutates fields
-        # (status, session_id are tracked, but those mutations are not "drift").
-        # Cleared on success after we capture the new snapshot.
-        self._set_start_lifecycle(True)
-        try:
-            async with _get_open_lock(self.id):
-                return await self._perform_open(instruction, visible, retry=retry)
-        finally:
-            self._set_start_lifecycle(False)
+        async with _get_open_lock(self.id):
+            fresh = await AgenticProcess.get_by_id(self.id)
+            if fresh is None and not self.exist_in_db:
+                await self.save()
+                fresh = await AgenticProcess.get_by_id(self.id)
+            if fresh is None:
+                return ApiFailResponse(message=f"Process not found: {self.id}")
+            if session_id_override:
+                fresh.session_id = session_id_override
+
+            # Suppress the restart-required auto-flag while start_pty() mutates
+            # fields (status, session_id are tracked, but those mutations are
+            # not "drift"). Cleared on success after we capture the new snapshot.
+            fresh._set_start_lifecycle(True)
+            try:
+                return await fresh._perform_open(instruction, visible, retry=retry)
+            finally:
+                fresh._set_start_lifecycle(False)
 
     async def start(
         self,
@@ -3119,7 +3130,11 @@ class AgenticProcess(Entity):
     # ── Close ─────────────────────────────────────────────────────────────────
 
     async def close(self) -> bool:
-        """Terminate this process and close its linked shell.
+        """Terminate this process and close its linked shell entity.
+
+        The Shell row is deleted by ``shell.close()``, but ``shell_id`` stays
+        reserved on the process so a future open reuses the same process-owned
+        tab identity instead of allocating a second shell from a stale opener.
 
         Returns True on success, False if already terminated or on error.
         """
@@ -3137,7 +3152,6 @@ class AgenticProcess(Entity):
                 if shell:
                     await shell.close()
 
-            self.shell_id = None
             self.sidecar_shell_id = None
             self.status = ProcessStatus.STOPPED.value
             await self.save()
@@ -3170,9 +3184,12 @@ class AgenticProcess(Entity):
         retry = bool(body.get("retry"))
         # Support legacy worker_session_id in POST body for older clients
         session_id_override = body.get("session_id") or body.get("worker_session_id")
-        if session_id_override:
-            self.session_id = session_id_override
-        return await self.start_pty(instruction=instruction, visible=visible, retry=retry)
+        return await self.start_pty(
+            instruction=instruction,
+            visible=visible,
+            retry=retry,
+            session_id_override=session_id_override,
+        )
 
     async def reap_if_orphaned(self, *, grace_seconds: int = 10) -> bool:
         """Force-complete a stuck STOPPING transition when the worker is gone.
@@ -3319,6 +3336,8 @@ class AgenticProcess(Entity):
     @action.post(action_name="close")
     async def _http_close(self) -> ApiSuccessResponse | ApiFailResponse:
         """HTTP: Permanent teardown — kill worker + delete shell entity.
+
+        Keeps ``shell_id`` on the AgenticProcess as the reserved tab identity.
 
         Delegates to close(), then returns an ApiResponse for the HTTP layer.
         """
