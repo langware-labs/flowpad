@@ -3,7 +3,8 @@
 
 Today the strip is `pure_shells ∪ visible_processes`:
   - pure_shells: shells NOT owned by any AgenticProcess (via shell_id or
-    sidecar_shell_id) and not in a terminal status (CLOSING/CLOSED/ERROR).
+    sidecar_shell_id) and not pointing back via agentic_process_id, and not in
+    a terminal status (CLOSING/CLOSED/ERROR).
   - visible_processes: AgenticProcesses with `visible == true`.
 
 `reap_if_orphaned` is patched to a no-op so the test exercises only membership
@@ -27,15 +28,22 @@ from flow_sdk.builtin.shell import Shell, ShellStatus
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 @pytest.mark.asyncio
 async def test_terminal_list_membership():
+    visible_ap_id = str(uuid.uuid4())
     plain = Shell(id=str(uuid.uuid4()), status="running", tab_order=0)
     closing = Shell(id=str(uuid.uuid4()), status=ShellStatus.CLOSING.value, tab_order=1)
     owned = Shell(id=str(uuid.uuid4()), status="running", tab_order=2)
     sidecar = Shell(id=str(uuid.uuid4()), status="running", tab_order=3)
-    for s in (plain, closing, owned, sidecar):
+    reverse_owned = Shell(
+        id=str(uuid.uuid4()),
+        status="running",
+        tab_order=4,
+        agentic_process_id=visible_ap_id,
+    )
+    for s in (plain, closing, owned, sidecar, reverse_owned):
         await s.save()
 
     visible_ap = AgenticProcess(
-        id=str(uuid.uuid4()), visible=True, shell_id=owned.id, sidecar_shell_id=sidecar.id
+        id=visible_ap_id, visible=True, shell_id=owned.id, sidecar_shell_id=sidecar.id
     )
     hidden_ap = AgenticProcess(id=str(uuid.uuid4()), visible=False)
     for p in (visible_ap, hidden_ap):
@@ -53,6 +61,7 @@ async def test_terminal_list_membership():
     assert closing.id not in pure_ids          # terminal status excluded
     assert owned.id not in pure_ids            # owned by an AP (shell_id) excluded
     assert sidecar.id not in pure_ids          # sidecar of an AP excluded
+    assert reverse_owned.id not in pure_ids    # reverse-owned by an AP excluded
 
     # visible_processes: only the visible AP
     assert visible_ap.id in visible_ids

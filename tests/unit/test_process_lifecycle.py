@@ -2,7 +2,7 @@
 
 Tests:
 - process.exit()    — keeps shell entity alive (status=idle)
-- process.close()   — deletes shell entity permanently
+- process.close()   — deletes shell entity, keeps shell_id reserved
 - process.restart() — shell_id preserved across exit + start
 - shell.terminate_worker() — SIGTERM then SIGKILL on worker_pid
 """
@@ -136,7 +136,7 @@ async def test_process_exit_keeps_shell():
 
 @pytest.mark.asyncio
 async def test_process_close_deletes_shell():
-    """process._http_close() calls internal close() which deletes the shell entity."""
+    """process._http_close() deletes the shell entity but keeps the shell_id reserved."""
     process = AgenticProcess.model_construct(
         id="proc-2",
         shell_id="shell-2",
@@ -154,8 +154,82 @@ async def test_process_close_deletes_shell():
 
     assert isinstance(result, ApiSuccessResponse)
     mock_shell.close.assert_awaited_once()
-    # shell_id cleared after permanent close
-    assert process.shell_id is None
+    # shell_id stays reserved for the next open; close deletes the Shell row.
+    assert process.shell_id == "shell-2"
+    assert process.sidecar_shell_id is None
+
+
+@pytest.mark.asyncio
+async def test_start_pty_reloads_process_inside_open_lock_and_applies_session_override():
+    """start_pty() must run open recovery on the locked, freshly loaded process."""
+    stale = AgenticProcess.model_construct(
+        id="proc-open-lock",
+        shell_id="stale-shell",
+        session_id=None,
+        context_data={},
+    )
+    fresh = AgenticProcess.model_construct(
+        id="proc-open-lock",
+        shell_id="fresh-shell",
+        session_id=None,
+        context_data={},
+    )
+
+    from flow_sdk.responses.response import ApiSuccessResponse
+    expected = ApiSuccessResponse(data={"shell_id": "fresh-shell"})
+    calls = []
+
+    async def fake_perform_open(self, instruction, visible, retry=False):
+        calls.append((self, instruction, visible, retry, self.session_id))
+        return expected
+
+    with patch.object(AgenticProcess, "get_by_id", new_callable=AsyncMock, return_value=fresh), \
+         patch.object(AgenticProcess, "_perform_open", new=fake_perform_open):
+        result = await stale.start_pty(
+            instruction="resume",
+            visible=True,
+            retry=True,
+            session_id_override="session-override",
+        )
+
+    assert result is expected
+    assert calls == [(fresh, "resume", True, True, "session-override")]
+    assert stale.session_id is None
+
+
+@pytest.mark.asyncio
+async def test_start_pty_saves_unsaved_process_before_locked_reload():
+    """Direct SDK-created processes still persist before start_pty() opens them."""
+    unsaved = AgenticProcess.model_construct(
+        id="proc-unsaved-open",
+        shell_id=None,
+        session_id=None,
+        context_data={},
+        created_by=None,
+    )
+    fresh = AgenticProcess.model_construct(
+        id="proc-unsaved-open",
+        shell_id=None,
+        session_id=None,
+        context_data={},
+        created_by="test",
+    )
+
+    from flow_sdk.responses.response import ApiSuccessResponse
+    expected = ApiSuccessResponse(data={"id": "proc-unsaved-open"})
+
+    async def fake_perform_open(self, instruction, visible, retry=False):
+        return expected
+
+    with patch.object(AgenticProcess, "get_by_id", new_callable=AsyncMock, side_effect=[None, fresh]) as get_by_id, \
+         patch.object(AgenticProcess, "save", new_callable=AsyncMock) as save, \
+         patch.object(AgenticProcess, "_perform_open", new=fake_perform_open):
+        result = await unsaved.start_pty()
+
+    assert result is expected
+    assert get_by_id.await_args_list[0].args == ("proc-unsaved-open",)
+    assert get_by_id.await_args_list[1].args == ("proc-unsaved-open",)
+    save.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------
