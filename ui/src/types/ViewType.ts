@@ -65,6 +65,7 @@ export interface ViewerMeta {
     | 'Home'
     | 'Zap'
     | 'CheckSquare'
+    | 'BadgeCheck'
     | 'SearchIcon'
     | 'Workflow'
     | 'Users'
@@ -277,6 +278,12 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
   [ViewType.TRIGGERS]: {
     title: 'Triggers',
     iconName: 'Zap',
+    tabLocation: 'dedicated',
+    canAddAsTab: true,
+  },
+  [ViewType.CAPABILITIES]: {
+    title: 'Capabilities',
+    iconName: 'BadgeCheck',
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },

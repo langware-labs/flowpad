@@ -1,7 +1,7 @@
 import '@src/styles/highlightjs.css';
 import { trackEvent } from '@src/utils/analytics';
-import { config, dataContext, navigator } from '@sdk';
-import { useAuth, useGlobalEvents, useWarnings } from '@sdk/react/hooks';
+import { CapabilityKinds, config, dataContext, navigator } from '@sdk';
+import { useAuth, useCapability, useGlobalEvents, useWarnings } from '@sdk/react/hooks';
 import { TooltipProvider } from '@src/components/ui/tooltip';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { NotificationOutlet, NotificationCommandBridge, initNotificationIngest } from '@src/notifications';
@@ -91,6 +91,16 @@ const DesktopSetupModalHandler = () => {
 // service-unavailable / network / config errors before any React tree mounts,
 // so a parallel inline error UI here is no longer needed.
 
+// Warm the capability cache at startup so harness consumers (interactive tab
+// openers, capability badges) render from a settled snapshot instead of each
+// triggering its own first check. Module-level so AppContent re-renders don't
+// remount it.
+const CapabilityWarmup = () => {
+  useCapability(CapabilityKinds.ClaudeCode);
+  useCapability(CapabilityKinds.Codex);
+  return null;
+};
+
 // Component that handles auth logic
 const AppContent = ({ children }: { children: React.ReactNode }) => {
   const { user, someone } = useAuth();
@@ -141,6 +151,7 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
         <Spotlight />
         <ActivityProgressModalRoot />
         <GlobalEvents />
+        <CapabilityWarmup />
         <DesktopSetupModalHandler />
         <GitHubDeviceFlowModal />
         <SecretApprovalDialog />
