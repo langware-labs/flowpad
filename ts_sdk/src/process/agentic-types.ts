@@ -177,7 +177,7 @@ export enum WorkerMode {
  * ``ui/src/components/icons/process-icons.ts``).
  *
  * Two axes:
- * - **vendor**: which CLI worker (`claude`, `codex`, generic fallback)
+ * - **vendor**: which CLI worker (`claude`, `codex`, `copilot`, generic fallback)
  * - **state**: `fresh` (this process started a new session) vs `restored`
  *   (this process resumed a prior `session_id`)
  */
@@ -186,6 +186,8 @@ export type ProcessIconKey =
   | 'claude-restore'
   | 'codex'
   | 'codex-restore'
+  | 'copilot'
+  | 'copilot-restore'
   | 'generic'
   | 'generic-restore';
 

@@ -94,7 +94,7 @@ async function resolveProcessAndOpenTerminal(
     if (!hasFallback) {
       notify.error({
         title: 'Session not found',
-        message: `Session ${workerId} is not in Claude or Codex history.`,
+        message: `Session ${workerId} is not in Claude, Codex, or Copilot history.`,
       });
     }
     return false;
@@ -133,7 +133,8 @@ export function searchResultToTerminalRow(r: SearchResult): SpotlightRow {
 }
 
 export function workerHistoryToRow(e: WorkerHistoryEntry): SpotlightRow {
-  const recordType = e.worker_type === 'codex' ? 'codex_session' : 'claude_session';
+  const recordType =
+    e.worker_type === 'codex' ? 'codex_session' : e.worker_type === 'copilot' ? 'copilot_session' : 'claude_session';
   return {
     key: `${e.worker_type}:${e.worker_id}`,
     recordType,

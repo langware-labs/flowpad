@@ -853,9 +853,11 @@ export interface ProjectListItem {
   session_count: number;
   claude_session_count?: number;
   codex_session_count?: number;
+  copilot_session_count?: number;
   modified_at: string | null;
   claude?: boolean;
   codex?: boolean;
+  copilot?: boolean;
   worker_types?: string[];
   /** True when this project entry represents an SDK-shipped system project. */
   system?: boolean;
@@ -869,6 +871,7 @@ export interface ListProjectsResponse {
   total_count: number;
   claude_count?: number;
   codex_count?: number;
+  copilot_count?: number;
   both_count?: number;
   none_count?: number;
 }

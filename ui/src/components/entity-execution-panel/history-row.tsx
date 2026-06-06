@@ -1,6 +1,7 @@
 import type { AgenticProcess } from '@sdk';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { CodexIcon } from '@src/components/icons/CodexIcon';
+import { CopilotIcon } from '@src/components/icons/CopilotIcon';
 import type { WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
 
 /**
@@ -91,10 +92,13 @@ interface WorkerIconProps {
   className?: string;
 }
 
-/** Tiny worker-vendor glyph (Claude vs Codex). Defaults to Claude. */
+/** Tiny worker-vendor glyph. Defaults to Claude. */
 export function WorkerIcon({ workerType, className = 'h-3 w-3 shrink-0' }: WorkerIconProps) {
   if (workerType === 'codex') {
     return <CodexIcon className={`${className} text-emerald-500`} />;
+  }
+  if (workerType === 'copilot') {
+    return <CopilotIcon className={`${className} text-sky-500`} />;
   }
   return <ClaudeIcon className={`${className} text-orange-500`} />;
 }

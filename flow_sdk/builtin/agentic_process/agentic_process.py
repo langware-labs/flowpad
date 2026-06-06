@@ -34,10 +34,7 @@ from flow_sdk.builtin.agentic_process.cli_drivers import (
     WorkerDriver,
     get_driver,
 )
-from flow_sdk.builtin.agentic_process.cli_drivers.claude import (
-    ClaudeCliOptions,
-    ClaudeCLIStreamWorker,
-)
+from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeCliOptions
 from flow_sdk.core import Entity, action
 from flow_sdk.core.flow.streaming.response_handler import StreamingResponseHandler
 from flow_sdk.flowpad_types.enums import ProcessType, WorkerType
@@ -927,7 +924,7 @@ class AgenticProcess(Entity):
             shell = await self._get_or_create_shell()
             self.shell_id = shell.id
             self.status = ProcessStatus.STARTING.value
-            if self.driver.name == WorkerType.CODEX.value:
+            if self.driver.name in (WorkerType.CODEX.value, WorkerType.COPILOT.value):
                 self._record_worker_started_at(datetime.now(timezone.utc).isoformat())
             # Save STARTING + shell_id before launching the worker so a
             # concurrent revalidation observes the in-flight start instead
@@ -1708,9 +1705,8 @@ class AgenticProcess(Entity):
     # processes that are ready-for-input. PTY/interactive processes reject
     # with 409 — they use the terminal tab UX.
     #
-    # The worker (ClaudeCLIStreamWorker) runs ``claude -p --output-format
-    # stream-json`` per turn; its events map to FlowData via
-    # ``claude_event_to_flowdata.convert_event`` and land on the shared
+    # The driver-specific stream worker runs one print-mode turn; its events
+    # map to FlowData and land on the shared
     # StreamingResponseHandler queue for streaming back to the caller.
 
     @action.post(action_name="prompt")
@@ -1752,13 +1748,31 @@ class AgenticProcess(Entity):
                 status_code=409,
             )
 
+        had_session = bool(self.session_id)
+        if not self.session_id and bool(getattr(self.driver, "preassign_interactive_session_id", False)):
+            self.session_id = str(uuid4())
+            try:
+                await self.save()
+            except Exception:
+                logger.warning("prompt: preassigned session_id save failed", exc_info=True)
+
+        try:
+            env_vars = dict(self.driver.cli_options(self).env_vars)
+        except Exception:
+            env_vars = dict((self.cli_config or {}).get("env_vars") or {})
+
         # Context for the worker, reconstructed from the AgenticProcess entity.
+        # Fresh preassigned sessions must be passed as ``session_id``; only
+        # existing sessions should be sent as ``resume_session_id``.
         context = _AgenticContext(
             workdir=self.workdir,
-            env_vars=dict(self.cli_options.env_vars) if hasattr(self, "cli_options") else {},
+            env_vars=env_vars,
             model=(self.cli_config or {}).get("model"),
             permission_mode=(self.cli_config or {}).get("permission_mode", "bypassPermissions"),
-            resume_session_id=self.session_id,
+            effort=(self.cli_config or {}).get("effort"),
+            add_dirs=list(self.resolved_add_dirs or []),
+            session_id=self.session_id if self.session_id and not had_session else None,
+            resume_session_id=self.session_id if had_session else None,
         )
 
         # Inline embedded-agent definitions (and persona directive when a single
@@ -1772,7 +1786,7 @@ class AgenticProcess(Entity):
 
         async def _run_turn() -> None:
             """Drive the worker → handler pipeline. Runs as a background task."""
-            worker = ClaudeCLIStreamWorker()
+            worker = self.driver.stream_worker(self)
             _PROMPT_WORKERS[self.id] = worker
             try:
                 async with lock:
@@ -1793,8 +1807,9 @@ class AgenticProcess(Entity):
                     async for fd in worker.execute(prompt=composed_prompt, context=context):
                         await handler.on_flow_data(fd)
                         # Persist session_id on first capture so subsequent turns resume.
-                        if worker.get_session_id() and not self.session_id:
-                            self.session_id = worker.get_session_id()
+                        sid = worker.get_session_id()
+                        if sid and sid != self.session_id:
+                            self.session_id = sid
                             try:
                                 await self.save()
                             except Exception:

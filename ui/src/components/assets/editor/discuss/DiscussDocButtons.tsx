@@ -3,20 +3,23 @@ import { AgenticProcess, type FSRef } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { CodexIcon } from '@src/components/icons/CodexIcon';
+import { CopilotIcon } from '@src/components/icons/CopilotIcon';
 import { Loader2 } from 'lucide-react';
+import type { ComponentType } from 'react';
 
-type WorkerType = 'claude_code' | 'codex';
+type WorkerType = 'claude_code' | 'codex' | 'copilot';
 
 interface Harness {
   workerType: WorkerType;
   name: string;
-  Icon: typeof ClaudeIcon;
+  Icon: ComponentType<{ className?: string }>;
   iconClassName?: string;
 }
 
 const HARNESSES: Harness[] = [
   { workerType: 'claude_code', name: 'claude', Icon: ClaudeIcon, iconClassName: 'text-orange-500' },
   { workerType: 'codex', name: 'codex', Icon: CodexIcon },
+  { workerType: 'copilot', name: 'copilot', Icon: CopilotIcon, iconClassName: 'text-sky-500' },
 ];
 
 interface Props {

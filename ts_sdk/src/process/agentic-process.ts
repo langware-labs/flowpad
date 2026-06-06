@@ -417,7 +417,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * (e.g. an editor "discuss this doc" button) that needs to launch a
    * harness tab pre-filled with a user prompt.
    *
-   * @param workerType - `'claude_code'` or `'codex'`
+   * @param workerType - `'claude_code'`, `'codex'`, or `'copilot'`
    * @param prompt - Optional initial user prompt. Placed on the process's
    *   prompt queue (not injected directly): the backend drains the queue head
    *   as the worker's launch instruction when the dock starts it, so the
@@ -430,7 +430,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * @returns The spawned AgenticProcess (already navigated to).
    */
   static async openTab(
-    workerType: 'claude_code' | 'codex',
+    workerType: 'claude_code' | 'codex' | 'copilot',
     prompt?: string,
     project?: { id?: string; fs_storage_mount_path?: string | null } | null,
   ): Promise<AgenticProcess> {
@@ -589,7 +589,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /**
    * Resolve a worker/session/thread id to a ready-to-use AgenticProcess.
    *
-   * Single round-trip: backend auto-discovers worker_type (Claude or Codex),
+   * Single round-trip: backend auto-discovers worker_type,
    * resolves cwd + project from the on-disk session record, upserts the
    * AgenticProcess (heals existing or creates+starts a new one), and returns
    * the full entity dict. We hydrate the dataManager cache directly — no
@@ -661,7 +661,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   get transcriptDockPointer(): DockPointerData {
     if (!this.session_id) return this.terminalDockPointer;
     const wt = (this.worker_type ?? 'claude').toLowerCase();
-    const worker = wt === 'codex' ? 'codex' : 'claude';
+    const worker = wt === 'codex' ? 'codex' : wt === 'copilot' ? 'copilot' : 'claude';
     return new DockPointerData(ViewType.LENS, `${worker}/transcript/${this.session_id}`);
   }
 
@@ -697,13 +697,14 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * React component via the ``pickProcessIcon`` registry. Two axes drive
    * the choice:
    *
-   * - **vendor**: ``worker_type`` ('claude' / 'codex' / fallback)
+   * - **vendor**: ``worker_type`` ('claude' / 'codex' / 'copilot' / fallback)
    * - **state**: fresh-start vs ``wasRestoredFromSession``
    */
   get icon(): ProcessIconKey {
     const wt = (this.worker_type ?? '').toLowerCase();
     const restored = this.wasRestoredFromSession;
     if (wt === 'codex') return restored ? 'codex-restore' : 'codex';
+    if (wt === 'copilot') return restored ? 'copilot-restore' : 'copilot';
     // Default to claude — that's what AgenticProcess.spawn produces today
     // (ClaudeCliOptions hardcoded), so an unset worker_type means claude.
     if (wt === '' || wt === 'claude' || wt.startsWith('claude_') || wt.startsWith('claude-')) {
@@ -771,7 +772,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /** False=direct PTY spawn (default), True=legacy zsh intermediary */
   shell_mode?: boolean;
 
-  /** CLI worker vendor (e.g. 'claude', 'codex'). Drives icon selection. */
+  /** CLI worker vendor (e.g. 'claude', 'codex', 'copilot'). Drives icon selection. */
   worker_type?: string | null;
 
   /** Discriminates how this process is being used (chat vs execution). */

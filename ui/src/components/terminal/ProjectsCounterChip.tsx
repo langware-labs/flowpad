@@ -1,6 +1,7 @@
 import { ContextEntitiesEnum, dataContext, Project } from '@sdk';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { CodexIcon } from '@src/components/icons/CodexIcon';
+import { CopilotIcon } from '@src/components/icons/CopilotIcon';
 import { canonicalPath, projectListToSelectorItems, ProjectSelector } from '@src/components/project-selector';
 import { Button } from '@src/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
@@ -12,7 +13,7 @@ import { ChevronLeft, History, Layers, Loader2, RotateCcw } from 'lucide-react';
 import React, { useMemo, useState } from 'react';
 
 /** Agentic worker kinds offered by the picker's worker toolbar. */
-export type ProjectWorkerType = 'claude_code' | 'codex';
+export type ProjectWorkerType = 'claude_code' | 'codex' | 'copilot';
 
 interface ProjectsCounterChipProps {
   /** Project that the surrounding tab strip is currently scoped to. Used to highlight that row. */
@@ -59,7 +60,7 @@ interface PickerWorker {
   workerType: ProjectWorkerType;
   name: string;
   testId: string;
-  Icon: React.FC<{ className?: string }>;
+  Icon: React.ComponentType<{ className?: string }>;
   iconClassName: string;
 }
 
@@ -77,6 +78,13 @@ const PICKER_WORKERS: PickerWorker[] = [
     testId: 'projects-counter-open-codex',
     Icon: CodexIcon,
     iconClassName: 'text-emerald-500',
+  },
+  {
+    workerType: 'copilot',
+    name: 'Copilot',
+    testId: 'projects-counter-open-copilot',
+    Icon: CopilotIcon,
+    iconClassName: 'text-sky-500',
   },
 ];
 
