@@ -25,6 +25,7 @@ export interface ICapability extends IEntity {
   kind: string;
   description?: string;
   icon?: string | null;
+  homepage_url?: string | null;
   dependent_capability_kinds?: string[];
   /** CapabilityReference pointer: kind this row delegates to (e.g. Default harness → harness.claude.cli). */
   reference_kind?: string | null;
@@ -43,6 +44,7 @@ export class Capability extends APIEntity<Capability> implements ICapability {
   name: string = '';
   kind: string = '';
   description: string = '';
+  homepage_url: string | null = null;
   dependent_capability_kinds: string[] = [];
   reference_kind: string | null = null;
   install_prompt: string | null = null;
@@ -80,6 +82,7 @@ export class Capability extends APIEntity<Capability> implements ICapability {
     this.kind = entity.kind ?? this.kind;
     this.description = entity.description ?? this.description;
     this.icon = entity.icon ?? this.icon;
+    this.homepage_url = entity.homepage_url ?? this.homepage_url;
     this.dependent_capability_kinds = entity.dependent_capability_kinds ?? this.dependent_capability_kinds;
     this.reference_kind = entity.reference_kind ?? this.reference_kind;
     this.install_prompt = entity.install_prompt ?? this.install_prompt;

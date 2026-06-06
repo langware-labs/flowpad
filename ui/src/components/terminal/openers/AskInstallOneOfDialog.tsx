@@ -1,5 +1,4 @@
-import type { CapabilityResult } from '@sdk';
-import { capabilityManager } from '@sdk';
+import { capabilityManager, CapabilityKinds } from '@sdk';
 import { useCapability } from '@sdk/react/hooks';
 import { Button } from '@src/components/ui/button';
 import {
@@ -9,16 +8,16 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@src/components/ui/dialog';
-import { Download, Loader2 } from 'lucide-react';
+import { CheckCircle2, ExternalLink, Loader2, RefreshCw } from 'lucide-react';
 import { useState } from 'react';
 
 /**
- * "Install one of" capability picker.
+ * Harness capability picker.
  *
- * Opened when an interactive tab needs a harness but NO matching capability is
- * available on this machine. Lists the candidate capabilities (one row per
- * kind); clicking Install calls that capability's backend `install` action via
- * the capability manager and surfaces the result message inline.
+ * Opened when an interactive tab needs a harness that is not available on this
+ * machine. Lists the supported harness capabilities, validates each row with
+ * `useCapability`, links to the install homepage, and lets the user select an
+ * available harness as the default `harness.reference_kind`.
  */
 interface Props {
   /** Capability kinds to offer, or null when the dialog is closed. */
@@ -26,31 +25,38 @@ interface Props {
   onClose: () => void;
 }
 
-function installResultText(result: CapabilityResult | null | undefined): string | null {
-  if (!result) return null;
-  return result.message || (result.available ? 'Installed.' : 'Install did not complete.');
-}
+const HOMEPAGE_FALLBACKS: Record<string, string> = {
+  [CapabilityKinds.ClaudeCode]: 'https://docs.anthropic.com/en/docs/claude-code/getting-started',
+  [CapabilityKinds.Codex]: 'https://openai.com/codex/',
+};
 
-function CapabilityInstallRow({ kind }: { kind: string }) {
-  const { capability, available, result } = useCapability(kind, { autoCheck: false });
-  const [installing, setInstalling] = useState(false);
-  const [installMessage, setInstallMessage] = useState<string | null>(null);
+function CapabilityHarnessRow({
+  kind,
+  selected,
+  onSelected,
+}: {
+  kind: string;
+  selected: boolean;
+  onSelected: () => void;
+}) {
+  const { capability, available, result, isLoading, check } = useCapability(kind);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
 
   const title = capability?.name ?? kind;
   const description = capability?.description ?? '';
+  const homepage = capability?.homepage_url ?? HOMEPAGE_FALLBACKS[kind] ?? null;
 
-  const onInstall = async () => {
-    setInstalling(true);
-    setInstallMessage(null);
+  const onUse = async () => {
+    setSaving(true);
+    setMessage(null);
     try {
-      const snapshot = await capabilityManager.install(kind);
-      setInstallMessage(installResultText(snapshot.result));
-      // Re-check so availability (and any opener warnings) reflect the install.
-      await capabilityManager.check(kind);
+      await capabilityManager.setReferenceKind(CapabilityKinds.Harness, kind);
+      onSelected();
     } catch (error) {
-      setInstallMessage(error instanceof Error ? error.message : String(error));
+      setMessage(error instanceof Error ? error.message : String(error));
     } finally {
-      setInstalling(false);
+      setSaving(false);
     }
   };
 
@@ -60,43 +66,86 @@ function CapabilityInstallRow({ kind }: { kind: string }) {
       data-testid={`install-one-of-row-${kind}`}
     >
       <div className="min-w-0 flex-1">
-        <div className="truncate text-sm font-medium">{title}</div>
+        <div className="flex min-w-0 items-center gap-2">
+          <div className="truncate text-sm font-medium">{title}</div>
+          {selected && (
+            <span className="inline-flex shrink-0 items-center gap-1 rounded-sm bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-600 dark:text-emerald-400">
+              <CheckCircle2 className="h-3 w-3" />
+              Default
+            </span>
+          )}
+        </div>
         <div className="truncate text-xs text-muted-foreground">{kind}</div>
         {description && <div className="mt-1 text-xs text-muted-foreground">{description}</div>}
-        {(installMessage ?? result?.message) && (
+        {(message ?? result?.message) && (
           <div className="mt-1 text-xs text-amber-600 dark:text-amber-500">
-            {installMessage ?? result?.message}
+            {message ?? result?.message}
           </div>
         )}
       </div>
-      <Button
-        size="sm"
-        variant="secondary"
-        className="shrink-0 gap-1.5"
-        disabled={installing || available}
-        onClick={() => void onInstall()}
-        data-testid={`install-one-of-button-${kind}`}
-      >
-        {installing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
-        {available ? 'Installed' : 'Install'}
-      </Button>
+      <div className="flex shrink-0 items-center gap-1">
+        <Button
+          size="icon"
+          variant="ghost"
+          className="h-8 w-8"
+          disabled={isLoading}
+          onClick={() => void check()}
+          aria-label={`Re-check ${title}`}
+          data-testid={`install-one-of-check-${kind}`}
+        >
+          {isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+        </Button>
+        {homepage && (
+          <Button
+            size="icon"
+            variant="outline"
+            className="h-8 w-8"
+            asChild
+            aria-label={`Open ${title} install page`}
+            data-testid={`install-one-of-link-${kind}`}
+          >
+            <a href={homepage} target="_blank" rel="noreferrer">
+              <ExternalLink className="h-3.5 w-3.5" />
+            </a>
+          </Button>
+        )}
+        <Button
+          size="sm"
+          variant="secondary"
+          className="gap-1.5"
+          disabled={!available || saving || selected}
+          onClick={() => void onUse()}
+          data-testid={`install-one-of-button-${kind}`}
+        >
+          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+          {selected ? 'Using' : 'Use'}
+        </Button>
+      </div>
     </div>
   );
 }
 
 export function AskInstallOneOfDialog({ kinds, onClose }: Props) {
+  const defaultHarness = useCapability(CapabilityKinds.Harness);
+  const selectedKind = defaultHarness.resolvedKind;
+
   return (
     <Dialog open={!!kinds?.length} onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-md" data-testid="install-one-of-dialog">
         <DialogHeader>
-          <DialogTitle>No harness available</DialogTitle>
+          <DialogTitle>Harness is required</DialogTitle>
           <DialogDescription>
-            Starting this tab needs one of the following installed on this machine.
+            Select an available harness, or install one from its homepage and re-check it.
           </DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-2">
           {(kinds ?? []).map((kind) => (
-            <CapabilityInstallRow key={kind} kind={kind} />
+            <CapabilityHarnessRow
+              key={kind}
+              kind={kind}
+              selected={selectedKind === kind}
+              onSelected={onClose}
+            />
           ))}
         </div>
       </DialogContent>

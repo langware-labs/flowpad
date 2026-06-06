@@ -41,7 +41,8 @@ OAUTH_CALLBACK_TIMEOUT = 120
 ANTHROPIC_CLIENT_ID_DEFAULT = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 ANTHROPIC_AUTH_URL = "https://claude.ai/oauth/authorize"
 ANTHROPIC_TOKEN_URL = "https://console.anthropic.com/v1/oauth/token"
-ANTHROPIC_SCOPES = ["user:profile", "user:inference", "user:sessions:claude_code"]
+ANTHROPIC_SCOPES = ["user:profile", "user:inference"]
+ANTHROPIC_CREDENTIALS_NAME = "anthropic_credentials"
 
 # GitHub OAuth Device Flow (RFC 8628). No client_secret — register OAuth App,
 # enable Device Flow, then set GITHUB_CLIENT_ID env var or replace the default.
@@ -442,38 +443,44 @@ async def _exchange_github_device_code(session: DesktopOAuthSession) -> dict:
     return {"kind": "success", "access_token": token, "token_type": body.get("token_type"), "scope": body.get("scope")}
 
 
-async def _save_github_token_to_sod(user_id: str, access_token: str) -> bool:
-    """Persist the token under ``github_credentials`` for the original session user.
+async def _resolve_auth_session_user(user_id: str):
+    """Resolve the user an OAuth grant should bind to, or ``None``.
 
-    Prefers the session-pinned ``user_id`` (the requester captured at /auth time)
-    over any current request context so a long-poll that crosses request
+    Prefers the session-pinned ``user_id`` (the requester captured at /auth
+    time) over any current request context so a long-poll that crosses request
     boundaries (re-signin, token rotation, different /wait-callback caller)
-    can't bind the grant to the wrong account."""
-    try:
-        from flow_sdk.builtin.user import User
-        from flow_sdk.request_context.methods import (
-            get_current_request_info,
-            set_user_credentials,
-        )
+    can't bind the grant to the wrong account.
 
-        user = None
-        # Path B FIRST: the user captured when the device flow was initiated.
-        # This is the only resolution that's stable across the full poll window.
-        if user_id:
-            try:
-                user = await User.get_by_id(user_id)
-            except Exception:
-                user = None
-        # Path A fallback: the current request's user. Only used if Path B fails
-        # outright (e.g. the original user was deleted) — accepts the rebinding
-        # risk only when the alternative is total token loss.
-        if not user:
-            request_info = get_current_request_info()
-            if request_info and getattr(request_info, "user", None):
-                try:
-                    user = await User.get_by_typeid(request_info.user)
-                except Exception:
-                    user = None
+    Path B FIRST: the user captured when the device flow was initiated — the
+    only resolution that's stable across the full poll window. Path A fallback:
+    the current request's user, only when Path B fails outright (e.g. the
+    original user was deleted) — accepts the rebinding risk only when the
+    alternative is total token loss."""
+    from flow_sdk.builtin.user import User
+    from flow_sdk.request_context.methods import get_current_request_info
+
+    if user_id:
+        try:
+            user = await User.get_by_id(user_id)
+            if user:
+                return user
+        except Exception:
+            pass
+    request_info = get_current_request_info()
+    if request_info and getattr(request_info, "user", None):
+        try:
+            return await User.get_by_typeid(request_info.user)
+        except Exception:
+            return None
+    return None
+
+
+async def _save_github_token_to_sod(user_id: str, access_token: str) -> bool:
+    """Persist the token under ``github_credentials`` for the original session user."""
+    try:
+        from flow_sdk.request_context.methods import set_user_credentials
+
+        user = await _resolve_auth_session_user(user_id)
         if not user:
             logger.warning(f"_save_github_token_to_sod: no user found for id={user_id!r}")
             return False
@@ -482,6 +489,113 @@ async def _save_github_token_to_sod(user_id: str, access_token: str) -> bool:
     except Exception as e:
         logger.error(f"_save_github_token_to_sod failed: {e}")
         return False
+
+
+def _normalize_anthropic_token_response(token_response: dict) -> dict:
+    """Persist only Flowpad-owned Anthropic OAuth fields, never Claude Code credentials."""
+    now = int(time.time() * 1000)
+    expires_at = token_response.get("expires_at")
+    expires_in = token_response.get("expires_in")
+    if expires_at is None and expires_in is not None:
+        try:
+            expires_at = now + int(expires_in) * 1000
+        except (TypeError, ValueError):
+            expires_at = None
+
+    scope = token_response.get("scope")
+    scopes = token_response.get("scopes")
+    if scopes is None and isinstance(scope, str):
+        scopes = scope.split()
+
+    credentials = {
+        "provider": "anthropic",
+        "access_token": token_response.get("access_token"),
+        "refresh_token": token_response.get("refresh_token"),
+        "token_type": token_response.get("token_type"),
+        "scope": scope,
+        "scopes": scopes or [],
+        "expires_at": expires_at,
+        "created_at": now,
+    }
+    for key in (
+        "account",
+        "account_uuid",
+        "email",
+        "organization",
+        "organization_name",
+        "organization_uuid",
+        "subscription_type",
+        "rate_limit_tier",
+    ):
+        if key in token_response:
+            credentials[key] = token_response[key]
+    return credentials
+
+
+async def _save_anthropic_token_to_sod(user_id: str, token_response: dict) -> bool:
+    """Persist Anthropic OAuth tokens in Flowpad-owned SOD, pinned to the auth session user."""
+    try:
+        from flow_sdk.request_context.methods import set_user_credentials
+
+        credentials = _normalize_anthropic_token_response(token_response)
+        if not credentials.get("access_token"):
+            logger.warning("_save_anthropic_token_to_sod: token response did not include access_token")
+            return False
+
+        user = await _resolve_auth_session_user(user_id)
+        if not user:
+            logger.warning(f"_save_anthropic_token_to_sod: no user found for id={user_id!r}")
+            return False
+
+        await set_user_credentials(user, ANTHROPIC_CREDENTIALS_NAME, credentials, user.id)
+        return True
+    except Exception as e:
+        logger.error(f"_save_anthropic_token_to_sod failed: {e}")
+        return False
+
+
+async def get_anthropic_token_for_current_user() -> tuple[dict | None, str | None]:
+    """Return ``(credentials, error)`` for the current request user."""
+    try:
+        from flow_sdk.builtin.user import User
+        from flow_sdk.request_context.methods import get_current_request_info, get_user_credentials
+
+        request_info = get_current_request_info()
+        if not request_info or not getattr(request_info, "user", None):
+            return None, None
+        user = await User.get_by_typeid(request_info.user)
+        if not user:
+            return None, None
+        try:
+            credentials = await get_user_credentials(user, ANTHROPIC_CREDENTIALS_NAME, user.id)
+            return credentials if isinstance(credentials, dict) else None, None
+        except KeyError:
+            return None, None
+    except Exception as e:
+        logger.warning(f"Anthropic token lookup failed: {e}")
+        return None, str(e)
+
+
+async def delete_anthropic_token_for_current_user() -> ApiResponse:
+    """Delete the current user's Flowpad-owned Anthropic OAuth SOD entry."""
+    try:
+        from flow_sdk.builtin.user import User
+        from flow_sdk.request_context.methods import delete_user_credentials, get_current_request_info
+
+        request_info = get_current_request_info()
+        if not request_info or not getattr(request_info, "user", None):
+            return ApiFailResponse(message="No request user")
+        user = await User.get_by_typeid(request_info.user)
+        if not user:
+            return ApiFailResponse(message="User not found")
+        await delete_user_credentials(user, ANTHROPIC_CREDENTIALS_NAME, user.id)
+        return ApiSuccessResponse(
+            message="Anthropic disconnected",
+            data={"remaining_attachment_count": 0},
+        )
+    except Exception as e:
+        logger.exception(f"Anthropic disconnect error: {e}")
+        return ApiFailResponse(message=f"Anthropic disconnect error: {e}")
 
 
 async def _poll_github_device_until_done(
@@ -713,30 +827,20 @@ async def handle_desktop_oauth_callback(code: str, state: str) -> ApiResponse:
             if not access_token:
                 return ApiFailResponse(message="No access token in response")
 
-            # Save fresh OAuth tokens so Claude Code can pick them up
-            from flow_sdk.builtin.faas.claude_code_auth import (
-                detect_claude_code_auth,
-                extract_user_profile_from_token_response,
-                save_oauth_token_response,
-            )
-
-            save_oauth_token_response(token_response)
-
-            # Detect auth status after saving
-            claude_auth = await detect_claude_code_auth()
-            llm_configured = claude_auth.is_authenticated
-
-            # Extract user profile from token response
-            user_profile = extract_user_profile_from_token_response(token_response)
-            if user_profile:
-                claude_auth.user_profile = user_profile
+            saved = await _save_anthropic_token_to_sod(session.user_id, token_response)
+            if not saved:
+                return ApiFailResponse(
+                    message=(
+                        "Could not save Anthropic OAuth credentials to Flowpad's credential store. "
+                        "No Claude Code credentials were written."
+                    )
+                )
 
             # Send WebSocket notification that OAuth completed successfully
             try:
                 await _broadcast_llm_config_msg(
-                    is_configured=llm_configured,
-                    auth_method=claude_auth.auth_method.value,
-                    auth_data=claude_auth.model_dump(),
+                    is_configured=True,
+                    auth_method="anthropic",
                     oauth_request_id=state,
                     status=OAuthMessageStatus.SUCCESS,
                 )

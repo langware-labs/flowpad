@@ -270,11 +270,11 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
   const [resumeByIdOpen, setResumeByIdOpen] = useState(false);
   // Harness capability state (cache warmed at app startup). Drives the "!"
-  // sub-icon on the claude/codex openers and the install-one-of popup.
+  // sub-icon on the claude/codex openers and the harness-required popup.
   const claudeCapability = useCapability(CapabilityKinds.ClaudeCode);
   const codexCapability = useCapability(CapabilityKinds.Codex);
   const [installChoiceKinds, setInstallChoiceKinds] = useState<string[] | null>(null);
-  // askInstallOneOf — open the install-one-of popup for the given capability kinds.
+  // askInstallOneOf — open the harness-required popup for the given capability kinds.
   const askInstallOneOf = useCallback((kinds: string[]) => setInstallChoiceKinds(kinds), []);
   const { resumeInTerminal } = useResumeInTerminal();
   const [hasTabOverflow, setHasTabOverflow] = useState(false);
@@ -381,17 +381,18 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
       if (tabCreationLockRef.current) return;
       tabCreationLockRef.current = true;
       setPendingTabCreation({ kind, targetKey: null, targetShellId: null, targetProcessId: null });
-      // Harness gate: when NO harness capability is available at all, the
-      // process can only fail at PTY spawn — ask which harness to install
-      // instead of creating a doomed tab.
+      // Harness gate: validate the exact requested worker harness before
+      // creating a process that can only fail at PTY spawn.
       try {
-        const harness = await capabilityManager.ensureChecked('harness');
+        const requiredKind =
+          workerType === 'codex'
+            ? CapabilityKinds.Codex
+            : workerType === 'claude_code'
+              ? CapabilityKinds.ClaudeCode
+              : CapabilityKinds.Harness;
+        const harness = await capabilityManager.ensureChecked(requiredKind);
         if (harness.checked && !harness.available) {
-          askInstallOneOf(
-            harness.capabilities.length
-              ? harness.capabilities.map((c) => c.kind)
-              : [...HARNESS_CAPABILITY_KINDS],
-          );
+          askInstallOneOf([...HARNESS_CAPABILITY_KINDS]);
           clearPendingTabCreation();
           return;
         }

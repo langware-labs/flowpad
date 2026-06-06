@@ -277,16 +277,21 @@ async def _start_inbox_catchup() -> None:
 
 async def _start_cloud_ws_listener() -> None:
     """Start the outbound authenticated hub WebSocket listener when logged in."""
-    try:
-        from flow_sdk.cloud_client.hub_bridge import hub_ws_bridge
-        from flow_sdk.cloud_client.ws_client import hub_ws_manager
+    import asyncio as _asyncio
 
-        # Install the bridge before starting the manager so the inbound
-        # dispatcher is ready to consume frames the moment the WS connects.
-        hub_ws_bridge.install()
-        await hub_ws_manager.start()
-    except Exception as e:
-        logging.getLogger(__name__).info("Cloud WS listener: failed to start (%s)", e)
+    async def _run() -> None:
+        try:
+            from flow_sdk.cloud_client.hub_bridge import hub_ws_bridge
+            from flow_sdk.cloud_client.ws_client import hub_ws_manager
+
+            # Install the bridge before starting the manager so the inbound
+            # dispatcher is ready to consume frames the moment the WS connects.
+            hub_ws_bridge.install()
+            await hub_ws_manager.start()
+        except Exception as e:
+            logging.getLogger(__name__).info("Cloud WS listener: failed to start (%s)", e)
+
+    _asyncio.create_task(_run(), name="cloud-ws-listener-startup")
 
 
 async def _shutdown_extras():

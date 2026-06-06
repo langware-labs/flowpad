@@ -136,8 +136,8 @@ class ScanActionsMixin:
         if not item_type:
             return ApiFailResponse(message="type parameter is required")
 
-        # Cost / usage / context moved to dedicated analytics actions
-        # (get-cost-overview / get-claude-usage / get-claude-context).
+        # Cost / context moved to dedicated analytics actions
+        # (get-cost-overview / get-claude-context).
         # scan-item now only serves a flat resource-type list (e.g. skills).
         _ITEM_TO_RESOURCE = {
             "skills": "skill",

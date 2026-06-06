@@ -39,7 +39,10 @@ The backend capability infrastructure lives under `flow_sdk/core/capabilities`.
 Each capability has a runner that implements:
 
 - `check()`: returns whether the capability is available on this machine.
-- `install()`: attempts or describes installation.
+- `install()`: starts a headless install `AgenticProcess` and returns its
+  `process_id` immediately. The worker is selected by resolving the default
+  `harness` capability to a concrete leaf such as `harness.claude.cli` or
+  `harness.codex.cli`.
 - `test()`: validates that the installed capability actually works.
 
 The entity actions are exposed on `capability`:
@@ -66,8 +69,9 @@ const { available, capability, check, install, test, activeProcess } =
 ```
 
 `available` is true when any matching descendant capability has a successful
-backend result. `activeProcess` is populated when a capability test returns an
-`AgenticProcess` id, such as the authenticated Chrome browsing probe.
+backend result. `activeProcess` is populated when a capability action returns
+an `AgenticProcess` id, such as an install run or the authenticated Chrome
+browsing probe.
 
 For non-React code, use the singleton manager:
 

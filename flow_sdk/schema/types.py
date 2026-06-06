@@ -89,7 +89,6 @@ class EntityType(StrEnum):
     # previously referenced a non-existent CLAUDE_MCP_SERVER member and raised
     # AttributeError on any .mcp.json with servers.)
     CLAUDE_MCP_JSON_ENTRY = "claude_mcp_json:entry"
-    CLAUDE_USAGE = "claude_usage"
     CODEX_SESSION = "codex_session"
     # DEPRECATED 2026-05-09: codex projects now stored as PROJECT with a
     # codex_project=True provenance flag. Kept for backward compatibility.

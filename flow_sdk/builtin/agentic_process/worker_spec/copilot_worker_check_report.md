@@ -1,3 +1,7 @@
+---
+id: d0a58455-ec85-56e1-8085-c1f6c2dc77cd
+---
+
 # GitHub Copilot CLI Worker Pre-Development Check Report
 
 Validation date: 2026-06-06
@@ -7,14 +11,15 @@ Validation date: 2026-06-06
 GitHub Copilot CLI was installed and validated against the worker
 pre-development checklist.
 
-Result: **Ready for a headless MVP implementation**, with remaining validation
-needed before claiming full worker-spec parity.
+Result: **Ready for headless implementation**, with a few adapter decisions
+called out below.
 
 The CLI exposes the core command-line surface FlowPad needs: headless prompt
 mode, JSONL output, streaming controls, preassigned session ids, resume flags,
 model selection, reasoning effort, `--add-dir`, and permission bypass flags.
-After policy access became available, successful assistant and shell tool-use
-fixtures were captured.
+After policy access became available, successful assistant, shell tool-use,
+resume, add-dir, stdin prompt, tool-failure, bad-model, cancellation, and
+visible PTY startup probes were captured.
 
 ## Environment
 
@@ -36,6 +41,11 @@ Captured fixtures:
 - `tool_use_pwd.stderr`: empty on success.
 - `cancel.jsonl`: SIGTERM before any JSONL was emitted.
 - `cancel_tool.jsonl`: SIGTERM after session start, before model/tool completion.
+- `resume.jsonl`: successful `--resume=<session-id>` headless prompt.
+- `tool_failure_false.jsonl`: shell command with nonzero exit status.
+- `bad_model.jsonl`: invalid model flag failure.
+- `add_dir_read.jsonl`: read from a path mounted via `--add-dir`.
+- `stdin_prompt.jsonl`: prompt supplied on stdin without `-p`.
 - `logs/`: Copilot process logs.
 
 ## Verified CLI Surface
@@ -57,9 +67,14 @@ Captured fixtures:
 - [x] Reasoning effort can be selected with `--effort` / `--reasoning-effort`.
 - [x] Session id can be preassigned with `--session-id <id>`.
 - [x] Resume exists with `--resume[=value]` and `--continue`.
+- [x] `--resume=<session-id>` works in headless prompt mode.
+- [x] Prompt can be supplied through stdin without `-p`.
 - [x] Preassigned session id creates `~/.copilot/session-state/<id>/workspace.yaml`.
 - [x] Successful sessions create `~/.copilot/session-state/<id>/events.jsonl`.
 - [x] Successful sessions create `~/.copilot/session-state/<id>/session.db`.
+- [x] `--add-dir` grants access to files outside `cwd`.
+- [x] Visible PTY mode starts, runs the initial prompt, and can be exited with `/exit`.
+- [x] Visible PTY mode may show a folder-trust prompt before running.
 - [x] Logs can be redirected with `--log-dir`.
 - [x] Auth can use `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, `GITHUB_TOKEN`, stored credentials, or GitHub CLI OAuth.
 
@@ -193,6 +208,131 @@ Representative tool result:
 }
 ```
 
+## Additional Validation Fixtures
+
+### Resume
+
+Command shape:
+
+```bash
+copilot --resume=1a7566ad-c911-432e-b1cd-dbc0422a93eb \
+  -p "This is a resume validation. Reply with exactly: resumed ok" \
+  --output-format=json \
+  --stream=on \
+  --no-ask-user \
+  --allow-all
+```
+
+Fixture: `/private/tmp/copilot-worker-check/resume.jsonl`
+
+Result: exit code `0`, final assistant content `resumed ok`, terminal
+`result.sessionId` preserved as `1a7566ad-c911-432e-b1cd-dbc0422a93eb`.
+
+### Tool Failure
+
+Fixture: `/private/tmp/copilot-worker-check/tool_failure_false.jsonl`
+
+Prompt asked Copilot to run exactly `false`.
+
+Result: Copilot process exit code `0`; tool result reported command failure in
+tool telemetry:
+
+```json
+{
+  "type": "tool.execution_complete",
+  "data": {
+    "success": true,
+    "result": {
+      "content": "\n<shellId: 0 completed with exit code 1>"
+    },
+    "toolTelemetry": {
+      "properties": {
+        "shell_error_category": "command_nonzero_exit"
+      },
+      "metrics": {
+        "exit_code": 1
+      }
+    }
+  }
+}
+```
+
+Implementation implication: shell nonzero exit is a tool-result condition, not
+a worker process failure. The parser should surface the tool result and retain
+`exit_code`, while `tail_status` should continue until the terminal `result`.
+
+### Bad Model
+
+Fixture: `/private/tmp/copilot-worker-check/bad_model.jsonl`
+
+Command used `--model not-a-real-copilot-model`.
+
+Result: process exit code `1`; stdout contained one startup JSONL event and
+stderr contained:
+
+```text
+Error: Model "not-a-real-copilot-model" from --model flag is not available.
+```
+
+Implementation implication: spawn/stream worker must treat nonzero exit with no
+terminal `result` as `WorkerStatus.ERROR` and preserve stderr as the error
+message.
+
+### Add-Dir
+
+Fixture: `/private/tmp/copilot-worker-check/add_dir_read.jsonl`
+
+The prompt asked Copilot to read
+`/private/tmp/copilot-worker-check/extra-dir/outside.txt` while the process
+`cwd` was `/private/tmp/copilot-worker-check/ws` and the command included:
+
+```bash
+--add-dir /private/tmp/copilot-worker-check/extra-dir
+```
+
+Result: exit code `0`; Copilot used the `view` tool and returned
+`extra-dir-secret-value`.
+
+### Stdin Prompt
+
+Fixture: `/private/tmp/copilot-worker-check/stdin_prompt.jsonl`
+
+Command shape:
+
+```bash
+printf 'Say stdin-ok in one sentence.\n' | copilot \
+  --output-format=json \
+  --stream=on \
+  --no-ask-user \
+  --allow-all
+```
+
+Result: exit code `0`; final assistant content `stdin-ok.`
+
+Implementation implication: use stdin for headless prompts to avoid exposing
+long prompt text in process arguments.
+
+### Visible PTY Startup
+
+Command shape:
+
+```bash
+copilot -i "Reply with pty-ok only." \
+  --allow-all \
+  --no-auto-update \
+  --no-custom-instructions \
+  -C /private/tmp/copilot-worker-check/ws \
+  --no-remote
+```
+
+Result: interactive TUI started in a PTY, displayed a folder trust prompt,
+accepted temporary trust, ran the prompt, rendered `pty-ok`, and exited cleanly
+with `/exit`.
+
+Implementation implication: visible mode is viable, but FlowPad should either
+pre-trust process workdirs, document the trust prompt, or launch in a mode that
+does not block startup on trust confirmation.
+
 ## Schema Mapping
 
 | FlowPad need | Copilot field/event | Status | Notes |
@@ -213,7 +353,7 @@ Representative tool result:
 | Turn start | `assistant.turn_start` | Supported | Has `turnId` and `interactionId`. |
 | Turn end | `assistant.turn_end` | Supported | Has `turnId`; terminal result follows. |
 | Terminal success | `result.exitCode == 0` | Supported | Carries `sessionId` and usage. |
-| Terminal error | Nonzero process exit plus stderr; policy-denial fixture | Partial | Need a model/tool error JSONL fixture. |
+| Terminal error | Nonzero process exit plus stderr; bad-model fixture | Supported | No terminal `result` emitted for invalid model. |
 | Usage/cost | `result.usage`; `assistant.message.data.outputTokens` | Partial | Output tokens observed; input/cache token fields not observed. |
 
 ## Transcript Storage
@@ -247,7 +387,7 @@ headless streaming. Recommended implementation:
 | `TOOL_RUNNING` | `tool.execution_start` without matching `tool.execution_complete` | Supported |
 | `API_ERROR` | Not captured | Unknown |
 | `COMPLETE` | `result.exitCode == 0` | Supported |
-| `ERROR` | Nonzero process exit; policy-denial fixture | Partial |
+| `ERROR` | Nonzero process exit with no terminal `result`; bad-model fixture | Supported |
 | `INTERRUPTED` | SIGTERM produced exit code `143`; no structured terminal JSONL observed | Partial |
 | `INACTIVE` | Process-local transcript stale mtime fallback | Supported by FlowPad strategy |
 | `API_TIMEOUT` | Not captured | Unknown |
@@ -275,22 +415,19 @@ rather than relying on Copilot to write one.
 - `--allow-all-paths` disables file path verification.
 - `--secret-env-vars` can redact named environment variable values.
 - `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, and `GITHUB_TOKEN` are redacted by default.
-- Prompt text is passed as a command argument with `-p`; stdin prompt support was not proven from local help output.
+- Prompt text can be passed either with `-p` or through stdin. Prefer stdin for FlowPad headless prompts to avoid exposing long prompt text in process arguments.
 
-## Remaining Validation Before Full Spec Parity
+## Remaining Decisions Before Full Spec Parity
 
-- [ ] Capture a model/API error fixture that emits JSONL, not just stderr.
-- [ ] Capture a tool failure fixture, such as a shell command exiting nonzero.
-- [ ] Validate `--resume=<session-id>` after a successful session.
-- [ ] Validate whether stdin prompt input is supported or only `-p <text>`.
-- [ ] Validate visible PTY mode.
-- [ ] Validate add-dir behavior with a file outside cwd.
+- [ ] Capture a runtime model/API error fixture if one can be induced without changing account policy.
 - [ ] Decide how much reasoning content FlowPad should render or suppress.
 - [ ] Add pricing/token accounting policy for `premiumRequests`, `outputTokens`, and missing input/cache token fields.
+- [ ] Decide visible-mode trust prompt handling.
+- [ ] Implement worker-owned interrupted terminal frame on cancellation.
 
 ## Readiness Decision
 
-Decision: **Ready for headless MVP implementation**.
+Decision: **Ready for headless implementation**.
 
 Recommended first implementation should mirror the Codex driver:
 

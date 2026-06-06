@@ -28,6 +28,7 @@ class Capability(Entity):
     kind: str = APIField(default="")
     description: str = APIField(default="")
     icon: str = APIField(default="BadgeCheck")
+    homepage_url: str | None = APIField(default=None)
     dependent_capability_kinds: list[str] = APIField(default_factory=list)
     # CapabilityReference pointer: kind of the capability this row delegates
     # to (e.g. the Default harness row referencing harness.claude.cli).
@@ -48,6 +49,7 @@ class Capability(Entity):
             kind=spec.kind,
             description=spec.description,
             icon=spec.icon,
+            homepage_url=spec.homepage_url,
             dependent_capability_kinds=list(spec.dependent_capability_kinds),
             reference_kind=spec.reference_kind,
             install_prompt=spec.install_prompt,
@@ -76,6 +78,7 @@ class Capability(Entity):
                 "kind",
                 "description",
                 "icon",
+                "homepage_url",
                 "dependent_capability_kinds",
                 "install_prompt",
                 "uname",

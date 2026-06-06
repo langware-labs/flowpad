@@ -23,8 +23,8 @@ os.environ["TESTING"] = "true"
 #
 # Several flow_sdk modules still hard-code `Path.home() / ".claude"` (e.g.
 # transcript_analyzer/resolver.py, fs_records/claude/claude_settings/__init__.py,
-# fs_records/claude/claude_debug_log.py, builtin/faas/claude_code_auth.py,
-# server/routes/bootstrap.py). They bypass InstanceSettings.claude_home — the
+# fs_records/claude/claude_debug_log.py, server/routes/bootstrap.py). They
+# bypass InstanceSettings.claude_home — the
 # contract violation flagged at flow_sdk/core/.../system_profile/utils.py:9.
 #
 # Overriding HOME redirects every Path.home() call (including those direct
