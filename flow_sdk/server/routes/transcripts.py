@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-_SUPPORTED_WORKERS: frozenset[str] = frozenset({"claude", "codex"})
+_SUPPORTED_WORKERS: frozenset[str] = frozenset({"claude", "codex", "copilot"})
 
 
 def _error(status_code: int, code: str, message: str) -> JSONResponse:
@@ -107,7 +107,8 @@ async def get_worker_session_transcript(worker_type: str, session_id: str):
 
     Server resolves the on-disk JSONL path via ``resolve_session_jsonl``
     (Claude: globs ``~/.claude/projects/*/<sid>.jsonl``; Codex: globs
-    ``~/.codex/sessions/**/rollout-*-<sid>.jsonl``). Callers never need to
+    ``~/.codex/sessions/**/rollout-*-<sid>.jsonl``; Copilot:
+    ``~/.copilot/session-state/<sid>/events.jsonl``). Callers never need to
     know the encoded directory layout — pass ``(worker_type, session_id)``
     and get the transcript.
 

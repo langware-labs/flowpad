@@ -18,6 +18,7 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { CodexIcon } from '@src/components/icons/CodexIcon';
+import { CopilotIcon } from '@src/components/icons/CopilotIcon';
 import { useEnsureProject } from '@src/components/project-selector';
 import { Button } from '@src/components/ui/button';
 import {
@@ -84,6 +85,10 @@ function isCodexProcess(process?: AgenticProcess | null): boolean {
   return process?.worker_type?.trim().toLowerCase() === 'codex';
 }
 
+function isCopilotProcess(process?: AgenticProcess | null): boolean {
+  return process?.worker_type?.trim().toLowerCase() === 'copilot';
+}
+
 /** Opener warning for a harness: set when its backend capability check ran and failed. */
 function harnessWarning(capability: UseCapabilityResult): string | null {
   if (!capability.checked || capability.available) return null;
@@ -93,7 +98,7 @@ function harnessWarning(capability: UseCapabilityResult): string | null {
 function shouldAutoSavePtyTitle(session: TerminalTab, process?: AgenticProcess | null): boolean {
   const resolvedProcess = process ?? session.agenticProcess ?? null;
   if (!resolvedProcess) return session.targetTypeId.type === Shell.type;
-  return !isCodexProcess(resolvedProcess);
+  return !isCodexProcess(resolvedProcess) && !isCopilotProcess(resolvedProcess);
 }
 
 interface TabbedTerminalProps {
@@ -258,7 +263,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
   const renameInputRef = useRef<HTMLInputElement>(null);
   const shouldSelectRenameInputRef = useRef(false);
   const [pendingTabCreation, setPendingTabCreation] = useState<{
-    kind: 'claude' | 'codex' | 'terminal';
+    kind: 'claude' | 'codex' | 'copilot' | 'terminal';
     targetKey: string | null;
     targetShellId: string | null;
     targetProcessId: string | null;
@@ -374,8 +379,8 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
   // used by the projects-counter chip to start a tab on a not-yet-open project.
   const startAgenticTab = useCallback(
     async (
-      kind: 'claude' | 'codex',
-      workerType?: 'claude_code' | 'codex',
+      kind: 'claude' | 'codex' | 'copilot',
+      workerType?: 'claude_code' | 'codex' | 'copilot',
       launch?: { projectId: string; cwd?: string | null },
     ) => {
       if (tabCreationLockRef.current) return;
@@ -451,6 +456,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
 
   const handleStartClaude = useCallback(() => startAgenticTab('claude', 'claude_code'), [startAgenticTab]);
   const handleStartCodex = useCallback(() => startAgenticTab('codex', 'codex'), [startAgenticTab]);
+  const handleStartCopilot = useCallback(() => startAgenticTab('copilot', 'copilot'), [startAgenticTab]);
 
   // Projects-counter chip → "Open another project…" pick. Ensure the Project
   // entity exists for the picked path (no context switch / navigation — the
@@ -463,7 +469,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
     async (cwd: string, workerType: ProjectWorkerType) => {
       try {
         const project = await ensureProject(cwd, { select: false });
-        await startAgenticTab(workerType === 'codex' ? 'codex' : 'claude', workerType, {
+        await startAgenticTab(workerType === 'codex' ? 'codex' : workerType === 'copilot' ? 'copilot' : 'claude', workerType, {
           projectId: project.id,
           cwd: project.fs_storage_mount_path,
         });
@@ -868,6 +874,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
   const isTabCreationPending = pendingTabCreation !== null;
   const isClaudeCreationPending = pendingTabCreation?.kind === 'claude';
   const isCodexCreationPending = pendingTabCreation?.kind === 'codex';
+  const isCopilotCreationPending = pendingTabCreation?.kind === 'copilot';
   const isTerminalCreationPending = pendingTabCreation?.kind === 'terminal';
   const sandboxAvailable = !!dataContext.bootstrapInfo?.sandbox_available && !!dataContext.sandboxComputeNode;
   const dockerNodes = dataContext.dockerComputeNodes;
@@ -901,6 +908,18 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
         available: true,
         warning: codexWarning,
         pendingInline: isCodexCreationPending,
+        disabled: isTabCreationPending,
+      },
+      {
+        id: 'copilot',
+        label: 'Start Copilot',
+        Icon: CopilotIcon,
+        iconClassName: 'text-sky-500',
+        onActivate: () => {
+          void handleStartCopilot();
+        },
+        available: true,
+        pendingInline: isCopilotCreationPending,
         disabled: isTabCreationPending,
       },
       {
@@ -963,6 +982,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
     modLabel,
     handleStartClaude,
     handleStartCodex,
+    handleStartCopilot,
     handleStartTerminal,
     handleStartSandbox,
     handleStartDocker,
@@ -1046,17 +1066,37 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
               const isDisabled = session.isDisabled;
               const workerType = sessionProcess?.worker_type?.toLowerCase() ?? '';
               const providerKind =
-                session.targetTypeId.type === Shell.type ? 'shell' : workerType === 'codex' ? 'codex' : 'claude';
+                session.targetTypeId.type === Shell.type
+                  ? 'shell'
+                  : workerType === 'codex'
+                    ? 'codex'
+                    : workerType === 'copilot'
+                      ? 'copilot'
+                      : 'claude';
               const ProviderIcon =
-                providerKind === 'codex' ? CodexIcon : providerKind === 'claude' ? ClaudeIcon : SquareTerminal;
+                providerKind === 'codex'
+                  ? CodexIcon
+                  : providerKind === 'copilot'
+                    ? CopilotIcon
+                    : providerKind === 'claude'
+                      ? ClaudeIcon
+                      : SquareTerminal;
               const providerIconClassName =
                 providerKind === 'codex'
                   ? 'text-emerald-500'
+                  : providerKind === 'copilot'
+                    ? 'text-sky-500'
                   : providerKind === 'claude'
                     ? 'text-orange-500'
                     : 'text-muted-foreground';
               const providerLabel =
-                providerKind === 'codex' ? 'Codex tab' : providerKind === 'claude' ? 'Claude Code tab' : 'Shell tab';
+                providerKind === 'codex'
+                  ? 'Codex tab'
+                  : providerKind === 'copilot'
+                    ? 'Copilot tab'
+                    : providerKind === 'claude'
+                      ? 'Claude Code tab'
+                      : 'Shell tab';
               const tabTestId =
                 session.targetTypeId.type === Shell.type
                   ? `tab-shell-${session.targetTypeId.id}`
@@ -1370,7 +1410,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
               if (!processId) {
                 notify.error({
                   title: 'Session not found',
-                  message: `Session ${entry.worker_id} is not in Claude or Codex history.`,
+                  message: `Session ${entry.worker_id} is not in Claude, Codex, or Copilot history.`,
                   id: `session-not-found:${entry.worker_id}`,
                 });
                 return;
