@@ -6,7 +6,7 @@ id: f167e843-4f52-5252-8a2c-fae98ce44479
 
 ## Overview
 
-The terminal system provides interactive PTY (pseudo-terminal) sessions in the browser via xterm.js. It spans four layers: **PTY process** (OS-level), **backend session management** (Python/FastAPI), **WebSocket transport**, and **frontend rendering** (React/xterm.js). Sessions survive page refreshes via replay buffers and sequence-based reattachment.
+The terminal system provides interactive PTY (pseudo-terminal) sessions in the browser via xterm.js. It spans four layers: **PTY process** (OS-level), **backend session management** (Python/FastAPI), **WebSocket transport**, and **frontend rendering** (React/xterm.js). Sessions survive page refreshes via **attach-time history replay**: the backend records a framed stream (output + resize events) per session; on reattach the client replays it through a headless xterm at the recorded sizes, restores the serialized result, and the attach repaint refreshes the live frame (see §13).
 
 ---
 
@@ -18,16 +18,16 @@ The terminal system provides interactive PTY (pseudo-terminal) sessions in the b
 OS PTY fd (raw bytes)
   → daemon read_thread (1024-byte reads)
   → on_output callback
-  → PtyReplayBuffer.append() assigns monotonic seq number
+  → PtySessionState.next_seq() assigns monotonic seq number
+  → PtyStreamFile.write(data, seq) appends a framed output line to disk (§10)
   → PtyOutputMessage.from_bytes() base64-encodes data
   → WebSocket send to all attached connection_ids
   → ConnectionManager dispatches 'pty_output_msg'
   → ShellManager.handlePtyOutputMsg()
       - atob() → Uint8Array → TextDecoder({ stream: true }) → string
       - routes to ShellSession.appendPtyOutput(data, seq)
-  → InteractiveTerminal onPtyData listener
-      - if reattaching: push to reattachBufferRef[]
-      - else: term.write(data)
+  → InteractiveTerminal output listener
+      - term.write(decoded string)
   → xterm.js renders ANSI → DOM
 ```
 
@@ -51,8 +51,8 @@ User keystroke in xterm.js
 | Segment | Format |
 |---------|--------|
 | PTY fd → read_thread | Raw bytes |
-| read_thread → replay buffer | Raw bytes (`OutputChunk.data`) |
-| replay buffer → WebSocket | Base64 string in JSON (`PtyOutputMessage.data`) |
+| read_thread → stream file | Framed JSONL line: base64 + seq (§10) |
+| read_thread → WebSocket | Base64 string in JSON (`PtyOutputMessage.data`) |
 | WebSocket → ShellManager | `atob()` → `Uint8Array` → `TextDecoder('utf-8', { stream: true })` → string |
 | ShellManager → xterm.js | UTF-8 string via `term.write()` |
 | xterm.js → ShellManager (input) | UTF-8 string via `term.onData()` |
@@ -115,7 +115,7 @@ These are sent as `rest_api_msg` over WebSocket (not plain HTTP):
 | Operation | Body Fields | Response | Purpose |
 |-----------|-------------|----------|---------|
 | `start` | `session_id`, `name?`, `cols` (default 80), `rows` (default 24), `working_dir?`, `initial_command?` | `{ status: "connected" }` | Spawn new PTY process |
-| `attach` | `session_id`, `since_seq?` | Replay chunks + `{ status: "reattached", latest_seq, replay_truncated }` | Reattach after refresh |
+| `attach` | `pty_id`/`shell_id`, `cols?`, `rows?` | `{ status: "reattached", latest_seq }` | Reattach after refresh — NO byte replay; asserts the client size (or jiggles the winsize) so the running TUI repaints its live frame. History comes from the framed-stream replay (§13). `since_seq` from older clients is ignored. |
 | `input` | `session_id`, `data` | `{ status: "ok" }` | Send keystrokes to PTY stdin |
 | `resize` | `session_id`, `cols`, `rows` | `{ status: "ok" }` | Update terminal dimensions |
 | `close` | `session_id` | `{ status: "ok" }` | Kill PTY process and cleanup |
@@ -173,7 +173,6 @@ All responses are wrapped in `ResponseMessage`:
   "message_id": "uuid",
   "session_id": "shell-1709...",
   "status": "connected",
-  "replay_truncated": false,
   "latest_seq": 42
 }
 ```
@@ -224,23 +223,9 @@ class PtySessionState:
     provider_session_data: dict       # Provider metadata (e.g., PID)
 ```
 
-#### Replay Buffer (in-memory, `pty_replay_buffer.py`)
+#### History persistence (on-disk, `pty_stream_file.py`)
 
-Per-session circular buffer:
-
-```python
-class SessionBuffer:
-    chunks: Deque[OutputChunk]    # Circular deque of output chunks
-    total_size_bytes: int         # Tracked for eviction
-    next_seq: int                 # Next sequence number to assign
-
-class OutputChunk:
-    seq: int                      # Monotonic sequence number
-    data: bytes                   # Raw PTY output
-    timestamp: float              # Unix timestamp
-```
-
-**Limits**: 2MB max per session, 5000 chunks max. Evicts oldest when exceeded (never evicts last chunk).
+The in-memory `PtyReplayBuffer` was **removed** (commit `4466d9bc`): replaying raw recorded bytes into a terminal at a different width garbles cursor-relative repaints (ink/Claude TUIs erase-and-repaint N lines calibrated to the width at emission time). It was replaced by the framed on-disk stream (§10) plus client-side replay at the recorded sizes (§13). The per-session `seq` counter now lives on `PtySessionState`.
 
 #### Database-Persisted State
 
@@ -351,22 +336,28 @@ Exponential backoff with jitter:
 
 ```
 1. Page loads → InteractiveTerminal mounts with empty xterm
-2. session.ptyStarted=true (from entity/persistence) but ptyOwnedByUs=false
-3. connectPty() detects reattach needed
-4. reattachBufferRef = []  ← start buffering live output
-5. shellManager.reattachSessionFromServer(sessionId, sinceSeq)
-6. Backend: snapshot replay buffer BEFORE attaching connection
-7. Backend: attach connection → live output starts flowing
-8. Backend: send replay chunks (seq > sinceSeq) as pty_output_msg
-9. Backend: send pty_session_status_msg { status: "reattached", latest_seq }
-10. Frontend: replay chunks arrive → buffered in reattachBufferRef
-11. Frontend: live chunks also arrive → also buffered
-12. Frontend: flush complete → write all buffered data to xterm at once
-13. reattachBufferRef = null  ← stop buffering, direct write mode
-14. ptyOwnedByUsRef = true
+2. Shell attaches over WS (terminal-command/attach) → live chunks start
+   buffering in PtyConnection.chunks; backend asserts client size or jiggles
+   the winsize so the running TUI repaints its live frame
+3. onConnected (InteractiveTerminal):
+   a. GET /api/v1/shell/{pty_id}/pty-stream  → framed history (§10)
+   b. replayPtyStream(): headless xterm fed the frames AT THE RECORDED SIZES
+      (resize frames honored, streaming TextDecoder), then SerializeAddon
+      → serialized VT string + lastSeq (highest replayed output seq)
+   c. term.reset() → write(serialized)  ← full scrollback restored
+   d. write buffered live chunks with seq > lastSeq (dedup — stream frames
+      and WS chunks share the per-session seq)
+   e. shell.resize(term.cols, term.rows) → SIGWINCH → TUI repaints at the
+      client's real dimensions
+   f. subscribe live output
+4. Any failure in (a)/(b) → silent fallback to live-only (step c..f without
+   history) — identical to pre-replay behavior
 ```
 
-**Race condition prevention**: Replay buffer is snapshotted BEFORE the connection is attached. This ensures replay chunks have lower seq numbers than live output, maintaining ordering.
+**Race prevention**: an in-flight replay is cancelled by a connect-generation
+token when the shell reconnects/disconnects mid-fetch; seq dedup prevents
+double-applying output that is both in the fetched stream and in the live
+chunk buffer.
 
 ### 5.3 Sequence Number Deduplication
 
@@ -661,7 +652,10 @@ For `initial_command` (e.g., `claude --session-id xxx`):
 | `flow_sdk/compute/providers/local_compute_provider.py` | Backend | PTY spawn, read, write, resize, cross-platform |
 | `flow_sdk/builtin/faas/compute_node.py` | Backend | REST action handlers, output routing, session coordination |
 | `flow_sdk/builtin/faas/pty_session_manager.py` | Backend | Session lifecycle, TTL cleanup, connection tracking |
-| `flow_sdk/builtin/faas/pty_replay_buffer.py` | Backend | Circular output buffer (2MB/5000 chunks per session) |
+| `flow_sdk/compute/providers/desktop/pty_stream_file.py` | Backend | Framed on-disk stream: output(+seq)/resize frames, rolling truncation (§10) |
+| `flow_sdk/compute/providers/base_pty_session.py` | Backend | Pty handle: resize/repaint + resize-frame recording (incl. jiggle flips) |
+| `flow_sdk/server/routes/pty_stream.py` | Backend | `GET /api/v1/shell/{id}/pty-stream` — serves the framed stream (§13) |
+| `ui/src/components/terminal/interactive-terminal/pty-replay.ts` | Frontend | Attach-time replay: headless xterm + SerializeAddon at recorded sizes |
 | `flow_sdk/api/messages.py` | Backend | PtyOutputMessage, PtySessionStatusMessage definitions |
 | `flow_sdk/builtin/agentic_processor.py` | Backend | start-pty, resume-pty, kill-pty actions |
 | `server/routes/websocket.py` | Transport | WebSocket endpoint, connection management, message routing |
@@ -675,31 +669,63 @@ For `initial_command` (e.g., `claude --session-id xxx`):
 | `ui/src/components/terminal/interactive-terminal/ProcessToolbar.tsx` | Frontend UI | CLI flag toggles, restart overlay |
 | `ui/src/hooks/use-shell.ts` | Frontend | React hooks for shell state (useShell, useShellSession) |
 | `ui/src/store/use-terminal-state-store.ts` | Frontend | Zustand store for active session ID |
-| `flow_sdk/builtin/faas/pty_stream_file.py` | Backend | Rolling file buffer for PTY output persistence |
 
 ---
 
-## 10. PTY Stream File Persistence
+## 10. PTY Stream File Persistence (framed)
 
-Each PTY session can optionally persist its raw output to a `.pty` file on disk via `PtyStreamFile`. This enables recovery of terminal history after a server restart.
+Each PTY session persists its output to a `.pty` file on disk via
+`PtyStreamFile` (`flow_sdk/compute/providers/desktop/pty_stream_file.py`).
+The file is the source for attach-time history replay (§13) and survives
+server restarts.
 
 ### 10.1 Storage
 
-Files are stored at:
 ```
-~/.flow/records/shell_session/<shell_session>-@<uid>/<pty_pid>.pty
+~/.flow/instances/<name>/records_data/shell/shell-@<uid>/<pty_pid>.pty
 ```
 
-### 10.2 Rolling Buffer Strategy
+### 10.2 Format — framed JSONL
 
-`PtyStreamFile` appends every PTY output chunk to the file. When the file exceeds `max_size_bytes` (default 10 MB), the oldest data is discarded: the last `max_size_bytes` bytes are read and the file is rewritten with only that tail. This bounds disk usage per session while retaining recent history.
+Raw-byte logs cannot be replayed safely (see §13.2), so the file is a framed
+JSONL stream: one JSON value per line.
 
-### 10.3 Lifecycle
+```
+{"v": 1, "cols": 100, "rows": 30}      ← header: format version + initial size
+["o", "<base64 output chunk>", 42]      ← output frame (one PTY read) + seq
+["r", [80, 24]]                         ← resize frame (cols, rows)
+```
 
-- **Created**: On first PTY output write (lazy — no file until data arrives).
-- **Written**: Each `on_pty_output` callback appends to the file.
-- **Deleted**: When the session is closed (`ShellSession.close()` or `PtySessionManager.close_session()`).
-- **Recovered**: On server restart, the `.pty` file provides terminal history for sessions that were running before the crash.
+- **Output frames** carry the same per-session `seq` as the WS
+  `pty_output_msg` chunks — replaying clients dedup against buffered live
+  chunks by seq.
+- **Resize frames** are appended for every actual winsize change, at their
+  exact stream position: `PtySession.resize()` and **both** flips of the
+  `force_repaint()` jiggle (output emitted between the flips is calibrated to
+  the transient size and must be reinterpreted at it).
+- **Legacy detection**: files not starting with `{` are pre-framing raw bytes,
+  surfaced as `v: 0` with unknown size; the client skips replay for them
+  (replaying at a guessed width is exactly the garble this design removes).
+
+### 10.3 Rolling truncation — frame boundaries only
+
+When the file exceeds `max_size_bytes` (default 10 MB) it is compacted to 75%
+by dropping **whole frames** from the front — never splitting an escape
+sequence mid-byte. The header is rewritten to the winsize in effect at the
+first retained frame (resize frames folded in as they are dropped). A torn
+final line (crash mid-write) is dropped by the reader. The writer caches the
+file size in memory, so the hot output path performs no `stat()` per chunk.
+
+### 10.4 Lifecycle
+
+- **Created**: lazily on first write (header + first frame).
+- **Written**: every `on_pty_output` chunk (PTY read thread) and every resize
+  (event loop) — a small lock prevents torn lines across the two writers.
+- **Deleted**: when the session is closed.
+- **Recovered**: after a server restart the file still serves full history to
+  reattaching clients; the shell record recovery (§11) respawns the PTY.
+- Each refresh appends the attach-repaint output (a few rows), so the file
+  grows slowly with refresh count — bounded by the rolling cap.
 
 ## 11. Shell Session Recovery
 
@@ -751,3 +777,110 @@ close_session()
 | `list-shell-sessions` | GET | List all ShellSessionRecords on disk |
 | `get-shell-session` | GET | Get a single record by `session_id` query param |
 | `update-shell-session` | POST | Update mutable fields: `name`, `is_visible`, `tab_order` |
+
+---
+
+## 13. Attach-Time History Replay
+
+Restores **full terminal scrollback on page refresh / reattach** without
+garbling, even across resizes. Replaces the removed raw-byte
+`PtyReplayBuffer` (`4466d9bc`). Design validated by a fuzz matrix before
+implementation — see §13.5.
+
+### 13.1 Architecture
+
+```
+            RECORD (server, always-on)                REPLAY (client, on attach)
+┌────────────────────────────────────────┐   ┌─────────────────────────────────────────┐
+│ on_pty_output(data)                    │   │ GET /api/v1/shell/{pty_id}/pty-stream   │
+│   seq = session.next_seq()             │   │   → {v, cols, rows, events[]}           │
+│   PtyStreamFile.write(data, seq)  ──┐  │   │ replayPtyStream():                      │
+│                                     │  │   │   headless xterm @ header size          │
+│ PtySession.resize(c, r)             │  │   │   for each frame:                       │
+│   provider.resize_pty(...)          │  │   │     "o" → write(streaming-decoded text) │
+│   PtyStreamFile.write_resize(c, r) ─┤  │   │     "r" → await flush; term.resize(c,r) │
+│                                     │  │   │   SerializeAddon.serialize()            │
+│ force_repaint() jiggle (both flips)─┘  │   │ visible xterm: reset() → write(serial)  │
+│                                        │   │ write live chunks with seq > lastSeq    │
+│         <pty_pid>.pty (framed JSONL,   │   │ shell.resize(real dims) → TUI repaints  │
+│          10MB rolling, §10)            │   │ subscribe live output                   │
+└────────────────────────────────────────┘   └─────────────────────────────────────────┘
+```
+
+This is the industry pattern (VS Code's pty-host runs `@xterm/headless` +
+SerializeAddon; tmux/zellij keep a server-side grid): **never replay raw
+bytes — interpret them once in a terminal emulator at the sizes they were
+emitted for, then serialize the resulting state.** Flowpad runs the emulator
+client-side (in the page) instead of server-side: the framed file preserves
+everything needed, and the browser already ships the exact same xterm engine
+as the visible terminal.
+
+### 13.2 Why raw replay garbles (the removed design)
+
+PTY output is calibrated to the winsize at emission time. ink/React TUIs
+(Claude Code) repaint by cursor-up-N + erase-line + reprint; with a different
+width, lines wrap differently, the cursor-relative moves land on the wrong
+rows, and the screen smears. The same bytes are only meaningful at the
+recorded size — hence resize frames at exact stream positions, and replay in
+an emulator that honors them. xterm reflow then converges the final state:
+content written at width A and reflowed to B equals content written at B.
+
+### 13.3 Non-negotiable disciplines (fuzz-derived)
+
+1. **Decode bytes → string with a streaming `TextDecoder` before
+   `term.write()`** — never feed re-chunked raw `Uint8Array`s. xterm.js's own
+   binary input path silently DROPS a 3-byte UTF-8 char whose trailing bytes
+   arrive in a separate `write()` (`[E2 80][94]` → em-dash lost; `—`, `›`,
+   `…`, and emoji-ZWJ are all `E2 80 xx`). The live WS path
+   (`ptyConnection.appendOutput`) already does this; the replayer must too.
+2. **Flush queued writes before every resize** — xterm's write queue is
+   async; a resize that overtakes queued output reinterprets it at the wrong
+   width.
+3. **Record every actual winsize change**, including both repaint-jiggle
+   flips.
+4. **Preserve recorded chunk boundaries** in the framed file; dedup
+   replay-vs-live by the shared seq.
+5. The stream endpoint returns the standard `ApiSuccessResponse` envelope —
+   the ts_sdk axios interceptor unwraps `response.data.data`; bare JSON
+   silently breaks the client.
+
+### 13.4 Known upstream issues (with repros)
+
+| Issue | Impact | Workaround | Repro / link |
+|-------|--------|------------|--------------|
+| xterm.js drops a multi-byte UTF-8 char when a `write(Uint8Array)` split leaves a `0x80` continuation byte in interim decoder state (`Utf8ToUtf32.decode` counts interim bytes by value-truthiness; `0x80 & 0x3F === 0`) | chars like `—` `›` ZWJ vanish at unlucky chunk boundaries | string-decode discipline (§13.3.1) | [xtermjs/xterm.js#6003](https://github.com/xtermjs/xterm.js/issues/6003) · `tests/pty_fuzz/xterm-utf8-split-repro.mjs` |
+| `@xterm/headless` 6.0.0 declares `module: lib/xterm.mjs` but ships `lib-headless/xterm-headless.mjs` — bundlers preferring `module` (Vite) cannot resolve the package | frontend build fails | vite alias in `ui/vite.config.ts` pointing at the shipped `.mjs` | `tests/pty_fuzz/xterm-headless-module-entry-repro.mjs` |
+| `SerializeAddon` loses the leading blank cells of a wrapped continuation row (+1 adjacent cell at exact-fit boundaries); such rows arise from reflow gaps when a resize lands mid-soft-wrapped-line | rare cosmetic loss inside one historical wrapped line | none (bounded-loss oracle documents it in `pty-replay-production.test.ts`) | `tests/pty_fuzz/serialize-wrapped-blank-repro.mjs` |
+
+### 13.5 Validation
+
+- **Theory matrix** (`ui/tests/unit/pty-replay-equivalence.test.ts`):
+  17 bash content strategies × 6 resize schedules × 6 chunk-split schedules +
+  serialize→restore + negative controls + 3×3MB real Claude session streams —
+  759/759. Negative control reproduces the old garble on demand (naive
+  different-width replay diverges for every width-exercising strategy).
+- **Production matrix** (`ui/tests/unit/pty-replay-production.test.ts`):
+  fixtures recorded through the real `PtyStreamFile` writer (incl. 64KB-cap
+  truncation set), replayed through the real `replayPtyStream()` — 123/123.
+- **Backend** (`tests/unit/test_pty_stream_file.py`,
+  `tests/api/test_pty_stream_endpoint.py`): framed format, frame-boundary
+  truncation, header rewrite, legacy/torn-line handling, resize-frame
+  ordering through the real HTTP API.
+- **Fuzzer**: generators + recorder + axes documented in
+  `tests/pty_fuzz/README.md` (`strategies.sh`, `record_streams.py`
+  `--production` mode).
+- **Live e2e** (debugMCP, isolated `instance_ctl` instance): 5,024px of
+  adversarial scrollback + 2 mid-history resizes survives refresh pixel-clean
+  (pre-replay behavior: 624px live frame only); typing/live-stream/restart
+  all functional after replay; refreshes idempotent.
+
+### 13.6 Refresh vs Restart — two recovery paths
+
+| | Refresh (attach replay) | Restart session |
+|---|---|---|
+| Mechanism | framed-stream replay (§13.1) | kill PTY + respawn `claude --resume <session_id>` |
+| Source | `<pty_pid>.pty` (exact bytes, recorded sizes) | Claude's session transcript (`.jsonl`) |
+| Live process | untouched | restarted |
+| Depth | 10MB rolling window | full conversation re-render |
+| Use | every reattach, automatic | deep fallback (stream truncated/lost, legacy v0 session) |
+

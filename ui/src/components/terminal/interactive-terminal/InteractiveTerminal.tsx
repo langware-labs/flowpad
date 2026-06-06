@@ -22,6 +22,7 @@ import { DockPointer, useDockNavigation } from '@src/navigation';
 import { useFS } from '@src/hooks/useFS';
 import { useShell } from '@src/hooks/useShell';
 import { FitAddon } from '@xterm/addon-fit';
+import { fetchPtyStream, replayPtyStream } from './pty-replay';
 import { SearchAddon } from '@xterm/addon-search';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { Terminal as XTerm } from '@xterm/xterm';
@@ -1065,45 +1066,81 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       }
     };
 
+    let connectGen = 0; // cancellation token: a newer connect/disconnect wins
+
     const onConnected = () => {
-      const term = terminalRef.current;
-      if (!term) return;
+      const gen = ++connectGen;
+      void (async () => {
+        const term = terminalRef.current;
+        if (!term) return;
 
-      // Reset xterm to a clean slate for this session.
-      term.reset();
+        // Fetch + replay the recorded framed stream (full history at the
+        // recorded sizes — see pty-replay.ts). Falls back to live-only on
+        // any failure (404 legacy/no stream, replay error).
+        let historySerialized: string | null = null;
+        let historyLastSeq = 0;
+        try {
+          const ptyId = shell.pty_pid ?? shell.id;
+          const stream = await fetchPtyStream(ptyId);
+          if (stream) {
+            const replay = await replayPtyStream(stream);
+            if (replay) {
+              historySerialized = replay.serialized;
+              historyLastSeq = replay.lastSeq;
+            }
+          }
+        } catch (e) {
+          console.warn('[InteractiveTerminal] history replay failed, live-only:', e);
+        }
+        if (gen !== connectGen) return; // superseded while fetching
 
-      // Write live-session chunks accumulated since attach into xterm.
-      // There is no server byte-replay anymore — these are only the bytes
-      // (e.g. the attach-time repaint) that arrived before this subscription,
-      // closing the attach→subscribe race.
-      const chunks = shell.getPtyChunks();
-      for (const chunk of chunks) {
-        ptySyncRef.current.processChunk(chunk);
-        term.write(chunk.data);
-      }
+        // Reset xterm to a clean slate for this session, then restore the
+        // replayed history (scrollback + final screen + cursor).
+        term.reset();
+        if (historySerialized) term.write(historySerialized);
 
-      // Signal buffer ready after xterm processes the buffered writes.
-      if (chunks.length > 0) {
-        term.write('', () => {
-          anchorsResolvedRef.current = false;
-          ptySyncRef.current.notifyBufferReady();
-          setBufferFlushCount((c) => c + 1);
-        });
-      }
+        // Write live-session chunks accumulated since attach into xterm,
+        // skipping chunks already covered by the replayed stream (frames
+        // carry the same per-session seq as WS chunks). Chunks are decoded
+        // with a STREAMING TextDecoder — xterm's raw-Uint8Array path drops
+        // multi-byte chars split across writes (xtermjs/xterm.js#6003).
+        // Skipped chunks are decoded too so partial-char state stays aligned
+        // across the dedup boundary.
+        const chunks = shell.getPtyChunks();
+        const chunkDecoder = new TextDecoder('utf-8', { fatal: false });
+        let wrote = Boolean(historySerialized);
+        for (const chunk of chunks) {
+          ptySyncRef.current.processChunk(chunk);
+          const text = chunkDecoder.decode(chunk.data, { stream: true });
+          if (chunk.seq <= historyLastSeq) continue;
+          term.write(text);
+          wrote = true;
+        }
 
-      // Assert this client's size on the PTY — the resulting SIGWINCH makes
-      // the running TUI repaint at the real xterm dimensions (the attach-time
-      // jiggle only repainted at the PTY's previous size).
-      if (shell.connected) void shell.resize(term.cols, term.rows);
+        // Signal buffer ready after xterm processes the buffered writes.
+        if (wrote) {
+          term.write('', () => {
+            anchorsResolvedRef.current = false;
+            ptySyncRef.current.notifyBufferReady();
+            setBufferFlushCount((c) => c + 1);
+          });
+        }
 
-      // Subscribe to live output (unsubscribe any prior subscription first).
-      unsubOutput?.();
-      unsubOutput = shell.onOutput(handlePtyData);
+        // Assert this client's size on the PTY — the resulting SIGWINCH makes
+        // the running TUI repaint at the real xterm dimensions (the attach-time
+        // jiggle only repainted at the PTY's previous size).
+        if (shell.connected) void shell.resize(term.cols, term.rows);
 
-      setShellReady(true);
+        // Subscribe to live output (unsubscribe any prior subscription first).
+        unsubOutput?.();
+        unsubOutput = shell.onOutput(handlePtyData);
+
+        setShellReady(true);
+      })();
     };
 
     const onDisconnected = () => {
+      connectGen++; // cancel any in-flight history replay
       unsubOutput?.();
       unsubOutput = undefined;
       setShellReady(false);
@@ -1129,6 +1166,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     if (shell.connected) onConnected();
 
     return () => {
+      connectGen++; // cancel any in-flight history replay
       unsubStatus();
       unsubOutput?.();
 
