@@ -281,6 +281,18 @@ export function resolveProjectTypeId(task: Task | null, conversation: Conversati
   return pid ? new TypeId('project', pid) : null;
 }
 
+/** Project shell for asset pointers opened from this conversation: the mapped
+ *  project (task first, then conversation), else the caller's current project.
+ *  Single source for the fallback chain used by attachment chips and the
+ *  shared-context rows. */
+export function resolveAttachmentProjectId(
+  task: { project_id?: string | null } | null | undefined,
+  conversation: { project_id?: string | null } | null | undefined,
+  currentProjectId?: string | null,
+): string | null {
+  return task?.project_id ?? conversation?.project_id ?? currentProjectId ?? null;
+}
+
 /** Flatten the aggregated private rows + mapped project into a TypeId list,
  *  in the order the prompt builders expect: project first, then tasks, then
  *  agentic processes. */
