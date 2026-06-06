@@ -1,7 +1,6 @@
 import { ContextEntitiesEnum, dataContext, Project } from '@sdk';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { CodexIcon } from '@src/components/icons/CodexIcon';
-import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { canonicalPath, projectListToSelectorItems, ProjectSelector } from '@src/components/project-selector';
 import { Button } from '@src/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
@@ -19,42 +18,33 @@ interface ProjectsCounterChipProps {
   /** Project that the surrounding tab strip is currently scoped to. Used to highlight that row. */
   currentProjectId?: string | null;
   /**
-   * When provided, the popover gains an "Open another project…" row below the
-   * bucket list, carrying one icon button per worker type. Clicking a worker
-   * opens the embedded picker with that worker armed; picking a project
-   * immediately calls this with the project's filesystem path and the armed
-   * worker type. The host owns ensure + launch.
+   * When provided, the action strip below the bucket list carries one icon
+   * button per worker type. Clicking a worker opens the embedded picker with
+   * that worker armed; picking a project immediately calls this with the
+   * project's filesystem path and the armed worker type. The host owns
+   * ensure + launch.
    */
   onLaunchProjectPath?: (cwd: string, workerType: ProjectWorkerType) => void | Promise<void>;
   /**
-   * When provided, the popover gains an "Open from history…" row below the
-   * action rows — yet another way to reopen a past session. Clicking it
-   * closes the popover and calls this; the host owns the history modal.
+   * When provided, the action strip gains a history icon button — yet another
+   * way to reopen a past session. Clicking it closes the popover and calls
+   * this; the host owns the history modal.
    */
   onOpenHistory?: () => void;
 }
-
-// Sort: current project first, then live before loading/missing, then by name.
-const STATE_RANK: Record<TerminalProjectBucket['state'], number> = {
-  live: 1,
-  loading: 2,
-  missing: 3,
-};
 
 function bucketDisplayName(bucket: TerminalProjectBucket): string {
   return bucket.project?.getDisplayName() ?? bucket.project?.name ?? bucket.projectId;
 }
 
-function compareBuckets(
-  a: TerminalProjectBucket,
-  b: TerminalProjectBucket,
-  currentProjectId: string | null | undefined,
-): number {
-  const currentDiff = Number(b.projectId === currentProjectId) - Number(a.projectId === currentProjectId);
-  if (currentDiff) return currentDiff;
-  const stateDiff = STATE_RANK[a.state] - STATE_RANK[b.state];
-  if (stateDiff) return stateDiff;
-  return bucketDisplayName(a).localeCompare(bucketDisplayName(b));
+// Sort: alphabetical by display name, projectId tie-break. Deliberately NOT
+// current-first or state-ranked — the list keeps a stable order as the user
+// switches projects or buckets change state; the current row is highlighted
+// instead of moved.
+function compareBuckets(a: TerminalProjectBucket, b: TerminalProjectBucket): number {
+  return (
+    bucketDisplayName(a).localeCompare(bucketDisplayName(b)) || a.projectId.localeCompare(b.projectId)
+  );
 }
 
 function bucketRowLabel(bucket: TerminalProjectBucket): string {
@@ -63,8 +53,8 @@ function bucketRowLabel(bucket: TerminalProjectBucket): string {
   return `Project unavailable (${bucket.projectId.slice(0, 8)})`;
 }
 
-// Worker entries for the "Open another project…" row — mirrors the tab
-// strip's opener buttons.
+// Worker entries for the action strip — mirrors the tab strip's opener
+// buttons.
 interface PickerWorker {
   workerType: ProjectWorkerType;
   name: string;
@@ -91,8 +81,8 @@ const PICKER_WORKERS: PickerWorker[] = [
 ];
 
 /**
- * Picker panel shown after a worker icon on the "Open another project…" row
- * is clicked. Mounted only then, so its data hooks (compute-node project
+ * Picker panel shown after a worker icon on the action strip is clicked.
+ * Mounted only then, so its data hooks (compute-node project
  * scan) never run for the plain counter chip. Projects that already have an
  * open bucket in the strip are excluded. The worker is already armed —
  * picking a project launches it immediately (one click).
@@ -148,15 +138,12 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
 }) => {
   const [open, setOpen] = useState(false);
   // Non-null while the picker is shown; carries the worker armed by the
-  // clicked icon on the "Open another project…" row.
+  // clicked icon on the action strip.
   const [pickerWorker, setPickerWorker] = useState<PickerWorker | null>(null);
   const [recoveringId, setRecoveringId] = useState<string | null>(null);
   const { buckets } = useTerminalProjectBuckets();
 
-  const sorted = useMemo(
-    () => [...buckets].sort((a, b) => compareBuckets(a, b, currentProjectId)),
-    [buckets, currentProjectId],
-  );
+  const sorted = useMemo(() => [...buckets].sort(compareBuckets), [buckets]);
 
   const terminalTotal = buckets.reduce((sum, b) => sum + b.tabs.length, 0);
   const projectTotal = buckets.length;
@@ -178,11 +165,6 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
         .map(canonicalPath),
     [buckets],
   );
-
-  // Per-type icon comes from the backend type registry (TypeInfo.icon) — see
-  // CLAUDE.md "Type icons". Resolved at render time so the bootstrap-loaded
-  // registry is in place.
-  const ProjectTypeIcon = iconForType(Project.type);
 
   const chipClass = `mx-1 inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-border bg-background px-2 text-xs font-medium tabular-nums hover:bg-accent hover:text-accent-foreground focus:outline-none focus:ring-1 focus:ring-ring ${
     isChipDisabled ? 'cursor-default opacity-50 hover:bg-background hover:text-foreground' : ''
@@ -259,6 +241,37 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
     if (workerType) void onLaunchProjectPath?.(cwd, workerType);
   };
 
+  // Action strip contents — one entry per worker (arms the picker) plus the
+  // history opener, gated by the host-provided callbacks. A single list so
+  // every action renders through the same icon-button markup below.
+  const stripActions = [
+    ...(onLaunchProjectPath
+      ? PICKER_WORKERS.map((worker) => ({
+          key: worker.workerType as string,
+          Icon: worker.Icon,
+          iconClassName: worker.iconClassName,
+          label: `Open ${worker.name} on another project`,
+          testId: worker.testId,
+          onClick: () => setPickerWorker(worker),
+        }))
+      : []),
+    ...(onOpenHistory
+      ? [
+          {
+            key: 'history',
+            Icon: History,
+            iconClassName: '',
+            label: 'Open from history',
+            testId: 'projects-counter-open-history',
+            onClick: () => {
+              handleOpenChange(false);
+              onOpenHistory();
+            },
+          },
+        ]
+      : []),
+  ];
+
   return (
     <TooltipProvider delayDuration={400}>
       <Popover open={open} onOpenChange={handleOpenChange}>
@@ -328,53 +341,33 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
                   </li>
                 );
               })}
-              {onLaunchProjectPath ? (
-                // "Open another project…" — same row anatomy as the buckets
-                // above, but visually set apart: a wider gap with a horizontal
-                // rule, and a subtle dashed border marking it as an action
-                // rather than an open project. Clicking a worker icon opens
-                // the project picker with that worker armed — picking a
-                // project then launches it immediately (one click).
+              {stripActions.length ? (
+                // Action strip — compact icon buttons set apart from the
+                // bucket rows by a horizontal rule, no label line. Worker
+                // icons open the project picker with that worker armed
+                // (picking a project launches it immediately); the history
+                // icon reopens a past session (the host owns the modal).
+                // Meaning is carried by tooltips/aria-labels.
                 <li className={isEmpty ? '' : 'mt-2 border-t border-border pt-2'}>
                   <div
-                    data-testid="projects-counter-open-other"
-                    className="flex w-full items-center gap-2 rounded-md border border-dashed border-border/80 px-2 py-1 text-left text-sm text-muted-foreground"
+                    data-testid="projects-counter-actions"
+                    className="flex w-full items-center justify-center gap-2 px-2 py-1"
                   >
-                    <ProjectTypeIcon className="h-3 w-3 shrink-0" />
-                    <span className="min-w-0 flex-1 truncate">Open another project…</span>
-                    {PICKER_WORKERS.map((worker) => (
+                    {stripActions.map((action) => (
                       <Button
-                        key={worker.workerType}
+                        key={action.key}
                         variant="secondary"
                         size="icon"
                         className="h-7 w-7 shrink-0 rounded"
-                        onClick={() => setPickerWorker(worker)}
-                        aria-label={`Open ${worker.name} on another project`}
-                        title={`Open ${worker.name} on another project`}
-                        data-testid={worker.testId}
+                        onClick={action.onClick}
+                        aria-label={action.label}
+                        title={action.label}
+                        data-testid={action.testId}
                       >
-                        <worker.Icon className={`h-4 w-4 ${worker.iconClassName}`} />
+                        <action.Icon className={`h-4 w-4 ${action.iconClassName}`} />
                       </Button>
                     ))}
                   </div>
-                </li>
-              ) : null}
-              {onOpenHistory ? (
-                // "Open from history…" — yet another way to reopen a past
-                // session; same set-apart action styling as the row above.
-                <li className={onLaunchProjectPath || isEmpty ? 'mt-1' : 'mt-2 border-t border-border pt-2'}>
-                  <button
-                    type="button"
-                    data-testid="projects-counter-open-history"
-                    onClick={() => {
-                      handleOpenChange(false);
-                      onOpenHistory();
-                    }}
-                    className="flex w-full items-center gap-2 rounded-md border border-dashed border-border/80 px-2 py-1.5 text-left text-sm text-muted-foreground hover:bg-muted hover:text-foreground"
-                  >
-                    <History className="h-3 w-3 shrink-0" />
-                    <span className="min-w-0 flex-1 truncate">Open from history…</span>
-                  </button>
                 </li>
               ) : null}
             </ul>
