@@ -127,6 +127,13 @@ class Entity(DBEntity):
     # boundary. ClassVar so pydantic treats it as config, not a field.
     LOCAL_ONLY_FIELDS: ClassVar[frozenset[str]] = frozenset({"remote", "system", "fetched_at"})
 
+    # Mirror-image of LOCAL_ONLY_FIELDS for ``remote=True`` rows: fields the
+    # HUB owns and local bookkeeping must never move. ``updated_date`` is the
+    # LWW clock (``is_stale`` compares it) — a local re-stamp runs the clock
+    # ahead of the hub, pinning ``is_stale`` False and masking real hub
+    # changes. Respected by ``from_record`` (the disk→DB re-index path).
+    HUB_AUTHORITATIVE_FIELDS: ClassVar[frozenset[str]] = frozenset({"updated_date"})
+
     # Orphan-ness ("source asset missing on disk") is no longer a stored field —
     # it is the dynamic ``FSRecord.orphan`` (``not asset_ref.exists()``),
     # computed on demand by the index/scan layer. Nothing to persist.
@@ -462,6 +469,12 @@ class Entity(DBEntity):
                 entity = Entity(**create_kwargs)
         else:
             entity.type = record_type
+            # Hub-owned fields (the LWW clock), captured before the setattr loop
+            # can overwrite them with stale disk-mirrored values from meta_dict().
+            hub_owned = {
+                f: getattr(entity, f, None)
+                for f in type(entity).HUB_AUTHORITATIVE_FIELDS
+            }
             all_updates = {**data, **record_domain, **stamp}
             for k, v in all_updates.items():
                 # Restrict to declared model fields so read-only computed
@@ -472,10 +485,20 @@ class Entity(DBEntity):
                 if field is not None:
                     v = TypeAdapter(field.annotation).validate_python(v)
                 setattr(entity, k, v)
-            # from_record is the disk→DB sync path; updated_date must advance to
-            # "now" so the indexer's skip-fresh check (file_mtime ≤ updated_date)
-            # can detect the next change. Reset so apply_update_fields stamps it.
-            entity._db.reset_update_fields(entity)
+            if getattr(entity, "remote", False):
+                # Hub-authoritative rows: restore HUB_AUTHORITATIVE_FIELDS — a
+                # disk→DB re-index must not move the hub's clock (see the
+                # classvar). Index freshness is carried by the on-disk .hash
+                # sentinel, not by updated_date. The driver preserves a
+                # non-None updated_date on save.
+                for f, v in hub_owned.items():
+                    setattr(entity, f, v)
+            else:
+                # from_record is the disk→DB sync path; updated_date must advance
+                # to "now" so the transcript indexer's freshness check
+                # (file_mtime ≤ updated_date) can detect the next change. Reset
+                # so apply_update_fields stamps it.
+                entity._db.reset_update_fields(entity)
 
         # Propagate PropertyRecord values to matching entity fields
         already_set = set(data.keys()) | set(record_domain.keys())
