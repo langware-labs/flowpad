@@ -10,6 +10,7 @@ Modules layout::
         cli_worker_base_driver.py  ← this file
         claude/                    ← ClaudeDriver + Claude CLI specifics
         codex/                     ← CodexDriver + Codex CLI specifics
+        copilot/                   ← CopilotDriver + GitHub Copilot specifics
 
 Bringing all the cross-vendor types into one file (instead of a ``base/``
 sub-package) keeps the import graph flat: vendor drivers depend on this
@@ -308,7 +309,7 @@ def restart_payload_from_cli_options(options: WorkerCLIOptions) -> dict[str, Any
 def factory(cli_json: dict, worker_type: str) -> WorkerCLIOptions:
     """Return the correct WorkerCLIOptions subclass for the given worker_type.
 
-    String keys (``"claude"``, ``"codex"``) are the wire form used by
+    String keys (``"claude"``, ``"codex"``, ``"copilot"``) are the wire form used by
     serialised ``AgenticProcess.cli_config`` — kept stable across enum
     renames. Local imports break the cli_drivers/<vendor> → base cycle.
     """
@@ -318,6 +319,9 @@ def factory(cli_json: dict, worker_type: str) -> WorkerCLIOptions:
     if worker_type == "codex":
         from flow_sdk.builtin.agentic_process.cli_drivers.codex.cli import CodexCliOptions
         return CodexCliOptions.from_json(cli_json)
+    if worker_type == "copilot":
+        from flow_sdk.builtin.agentic_process.cli_drivers.copilot.cli import CopilotCliOptions
+        return CopilotCliOptions.from_json(cli_json)
     raise ValueError(f"Unknown worker_type: {worker_type!r}")
 
 
@@ -340,7 +344,7 @@ class WorkerDriver(Protocol):
     - **Discovery**: where the transcript lives + how to read its tail.
     """
 
-    name: str  # wire id: "claude" | "codex"
+    name: str  # wire id: "claude" | "codex" | "copilot"
     preassign_interactive_session_id: bool
 
     # ── CLI shape ────────────────────────────────────────────────────────────
@@ -369,6 +373,15 @@ class WorkerDriver(Protocol):
         """Headless one-shot turn: spawn the worker, capture session_id onto
         ``process``, manage lifecycle. Returns an ApiResponse the caller can
         send back over HTTP."""
+        ...
+
+    def stream_worker(self, process: "AgenticProcess") -> AgenticWorker:
+        """Return a worker instance for HTTP print-mode streaming.
+
+        This is separate from ``headless_prompt`` because the HTTP ``prompt``
+        action streams FlowData directly to the response while still needing
+        the vendor-specific subprocess wrapper and transcript path.
+        """
         ...
 
     async def report_event(
@@ -453,6 +466,7 @@ def get_driver(worker_type: Any) -> WorkerDriver:
         "claude_code_cli": "claude",
         "claude": "claude",
         "codex": "codex",
+        "copilot": "copilot",
     }
     name = aliases.get(key, key)
 
@@ -466,6 +480,9 @@ def get_driver(worker_type: Any) -> WorkerDriver:
     elif name == "codex":
         from flow_sdk.builtin.agentic_process.cli_drivers.codex.driver import CodexDriver
         driver = CodexDriver()
+    elif name == "copilot":
+        from flow_sdk.builtin.agentic_process.cli_drivers.copilot.driver import CopilotDriver
+        driver = CopilotDriver()
     else:
         raise ValueError(f"No WorkerDriver registered for worker_type={worker_type!r}")
 

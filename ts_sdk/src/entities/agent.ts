@@ -22,6 +22,8 @@ export enum WorkerType {
   AUTO = 'auto',
   PYDANTIC_AI = 'pydantic_ai',
   CLAUDE_CODE = 'claude_code',
+  CODEX = 'codex',
+  COPILOT = 'copilot',
   SIMPLE = 'simple',
 }
 

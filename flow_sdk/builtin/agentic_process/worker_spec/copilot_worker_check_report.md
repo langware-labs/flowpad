@@ -1,3 +1,7 @@
+---
+id: d1f2906b-a574-5b9e-a721-7423ab6fce88
+---
+
 # GitHub Copilot CLI Worker Pre-Development Check Report
 
 Validation date: 2026-06-06
@@ -7,14 +11,15 @@ Validation date: 2026-06-06
 GitHub Copilot CLI was installed and validated against the worker
 pre-development checklist.
 
-Result: **Ready for a headless MVP implementation**, with remaining validation
-needed before claiming full worker-spec parity.
+Result: **Headless MVP implemented and validated**, with a few remaining items
+before claiming full worker-spec parity.
 
 The CLI exposes the core command-line surface FlowPad needs: headless prompt
 mode, JSONL output, streaming controls, preassigned session ids, resume flags,
 model selection, reasoning effort, `--add-dir`, and permission bypass flags.
-After policy access became available, successful assistant and shell tool-use
-fixtures were captured.
+After policy access became available, successful assistant, shell tool-use,
+tool-failure, cancellation, resume, HTTP prompt, and visible PTY validations
+were captured.
 
 ## Environment
 
@@ -36,6 +41,8 @@ Captured fixtures:
 - `tool_use_pwd.stderr`: empty on success.
 - `cancel.jsonl`: SIGTERM before any JSONL was emitted.
 - `cancel_tool.jsonl`: SIGTERM after session start, before model/tool completion.
+- `copilot_stream_tool_failure.jsonl`: shell tool command with nonzero exit.
+- `copilot_stream_bad_model.jsonl`: bad model stderr-only failure.
 - `logs/`: Copilot process logs.
 
 ## Verified CLI Surface
@@ -46,6 +53,7 @@ Captured fixtures:
 - [x] CLI config/state directory defaults to `~/.copilot`.
 - [x] `COPILOT_HOME` can override configuration and state location.
 - [x] Headless prompt mode exists via `-p, --prompt <text>`.
+- [x] Headless prompt input works via stdin when no `-p` argument is supplied.
 - [x] JSONL output exists via `--output-format=json`.
 - [x] Streaming is configurable via `--stream <on|off>`.
 - [x] Non-interactive no-question mode exists via `--no-ask-user`.
@@ -275,27 +283,27 @@ rather than relying on Copilot to write one.
 - `--allow-all-paths` disables file path verification.
 - `--secret-env-vars` can redact named environment variable values.
 - `COPILOT_GITHUB_TOKEN`, `GH_TOKEN`, and `GITHUB_TOKEN` are redacted by default.
-- Prompt text is passed as a command argument with `-p`; stdin prompt support was not proven from local help output.
+- Prompt text can be passed as a command argument with `-p`; FlowPad uses stdin for headless execution so prompt text is not exposed in `ps`.
 
 ## Remaining Validation Before Full Spec Parity
 
 - [ ] Capture a model/API error fixture that emits JSONL, not just stderr.
-- [ ] Capture a tool failure fixture, such as a shell command exiting nonzero.
-- [ ] Validate `--resume=<session-id>` after a successful session.
-- [ ] Validate whether stdin prompt input is supported or only `-p <text>`.
-- [ ] Validate visible PTY mode.
+- [x] Capture a tool failure fixture, such as a shell command exiting nonzero.
+- [x] Validate `--resume=<session-id>` after a successful session.
+- [x] Validate stdin prompt input.
+- [x] Validate visible PTY mode.
 - [ ] Validate add-dir behavior with a file outside cwd.
 - [ ] Decide how much reasoning content FlowPad should render or suppress.
 - [ ] Add pricing/token accounting policy for `premiumRequests`, `outputTokens`, and missing input/cache token fields.
 
 ## Readiness Decision
 
-Decision: **Ready for headless MVP implementation**.
+Decision: **Headless MVP implementation is validated**.
 
-Recommended first implementation should mirror the Codex driver:
+Implemented shape mirrors the Codex driver:
 
 - `CopilotCliOptions` for argv/env serialization.
-- `CopilotCLIStreamWorker` that spawns `copilot -p ... --output-format=json`.
+- `CopilotCLIStreamWorker` that spawns `copilot --output-format=json --stream=on ...` and sends the prompt through stdin.
 - Process-local transcript tee for stdout JSONL.
 - `copilot/event_to_flowdata.py` mapping assistant deltas, final messages,
   reasoning, tool calls, tool results, status events, result events, and errors.

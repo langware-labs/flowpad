@@ -201,6 +201,7 @@ export class CapabilityManager extends EventEmitter {
   private getResult(capability: Capability): CapabilityResult | null {
     return (
       this.actionResults.get(capability.kind)?.result ??
+      capability.last_install ??
       capability.last_check ??
       capability.last_test ??
       null

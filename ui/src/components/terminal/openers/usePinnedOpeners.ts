@@ -4,7 +4,7 @@ import type { OpenerId } from './tab_opener_types';
 const STORAGE_KEY = 'flowpad.terminal.pinnedOpeners';
 const LAST_OPENER_STORAGE_KEY = 'flowpad.terminal.lastOpener';
 
-const VALID_IDS: OpenerId[] = ['claude', 'codex', 'claude-resume-by-id', 'terminal', 'sandbox', 'docker', 'history'];
+const VALID_IDS: OpenerId[] = ['claude', 'codex', 'copilot', 'claude-resume-by-id', 'terminal', 'sandbox', 'docker', 'history'];
 
 function isValidOpenerId(value: unknown): value is OpenerId {
   return typeof value === 'string' && (VALID_IDS as string[]).includes(value);
