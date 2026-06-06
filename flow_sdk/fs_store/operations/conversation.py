@@ -19,7 +19,7 @@ import json
 from pathlib import Path
 
 from flow_sdk.fs_store import Pointer
-from flow_sdk.fs_store.fs_record import FSRecord, record_stem
+from flow_sdk.fs_store.fs_record import FSRecord, record_stem, write_text_if_changed
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.type_id import TypeId
@@ -89,10 +89,11 @@ def write_pointers(rec: FSRecord, pointers: list[Pointer]) -> None:
     path = _jsonl_path_for(rec)
     if not path:
         raise ValueError("FSRecord has no id; cannot resolve jsonl path")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as fh:
-        for p in pointers:
-            fh.write(p.to_jsonl_line() + "\n")
+    # Identical-content rewrites are skipped: the record freshness fingerprint
+    # is mtime+size, so a byte-identical rewrite would still read as "source
+    # changed" and re-arm the GET-time record refresh — the authoritative
+    # reconcile calls this on every conversation open.
+    write_text_if_changed(path, "".join(p.to_jsonl_line() + "\n" for p in pointers))
 
 
 async def prune_message_pointer(

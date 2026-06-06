@@ -18,6 +18,7 @@ rewrite semantics:
 
 from __future__ import annotations
 
+import os
 import uuid
 from unittest.mock import AsyncMock, patch
 
@@ -119,6 +120,29 @@ async def test_bare_row_reprojects_when_everything_current():
 
     assert _pointer_ids(conv) == ids  # rewrite preserved the full set
     project_mock.assert_awaited()     # projection ALWAYS recomputed
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_in_sync_reconcile_leaves_jsonl_untouched():
+    """A reconcile whose merged pointer set already matches the on-disk index
+    must NOT rewrite the file. The record freshness fingerprint is mtime+size,
+    so a byte-identical rewrite still reads as "source changed" and re-arms the
+    GET-time record refresh — which stamped phantom ``updated_date`` bumps on
+    remote conversations (the "1m last activity with no new message" bug)."""
+    conv = "aaaa0008-1111-4111-8111-000000000008"
+    ids = ["bbbb0008-1111-4111-8111-00000000000%d" % i for i in range(1, 3)]
+    _write_jsonl(conv, ids)
+    path = default_jsonl_path(conv)
+    # Pin a fixed past mtime so any rewrite is detectable regardless of the
+    # filesystem's timestamp resolution.
+    os.utime(path, (1_000_000_000, 1_000_000_000))
+    before = path.stat().st_mtime_ns
+
+    await _run(conv, [_hub_child(i) for i in ids], {i: _fm(i) for i in ids})
+
+    assert path.stat().st_mtime_ns == before  # file not rewritten
+    assert _pointer_ids(conv) == ids          # and still holds the same set
 
 
 @pytest.mark.asyncio
