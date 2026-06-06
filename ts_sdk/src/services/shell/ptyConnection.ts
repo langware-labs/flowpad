@@ -52,6 +52,14 @@ function stripAnsi(s: string): string {
   return s.replace(ANSI_RE, '');
 }
 
+/** Decode a base64 string into raw bytes (PTY chunks travel base64 over WS/REST). */
+export function base64ToBytes(b64: string): Uint8Array {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
 export class PtyConnection {
   shellId: string;
   computeNodeId: string;
@@ -171,9 +179,7 @@ export class PtyConnection {
     let bytes: Uint8Array;
     let decoded: string;
     try {
-      const binaryStr = atob(base64Data);
-      bytes = new Uint8Array(binaryStr.length);
-      for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+      bytes = base64ToBytes(base64Data);
       decoded = this.decoder.decode(bytes, { stream: true });
     } catch (e) {
       console.warn('[PtyConnection] Failed to decode base64 PTY data:', e);
