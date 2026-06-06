@@ -9,6 +9,7 @@ export * from './useAuth';
 export * from './useCloudStatus';
 export * from './useConnectionStatus';
 export * from './useContext';
+export * from './useCapability';
 export * from './useEntityEnv';
 export * from './useFS';
 export * from './useFSStore';

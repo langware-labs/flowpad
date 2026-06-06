@@ -109,6 +109,17 @@ async def _on_server_startup():
 
     threading.Thread(target=run_old_record_cleanup, daemon=True, name="old-record-cleanup").start()
 
+    # Seed system Capability rows (claude/codex/chrome + the Default-harness
+    # reference). The generic graph routes hit the DB directly — they never
+    # pass through Capability.get_all's lazy ensure_seeded — so a fresh
+    # instance must seed deterministically at boot.
+    try:
+        from flow_sdk.builtin.capability import Capability
+
+        await Capability.ensure_seeded()
+    except Exception as _e:  # noqa: BLE001
+        print(f"  Capability seed: failed ({_e})")
+
     # Search uses FTS5 (built into SQLite) — no external index needed.
     print("  Search index: FTS5 (SQLite built-in)")
 

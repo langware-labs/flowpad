@@ -1,7 +1,10 @@
 import {
   AgenticProcess,
+  capabilityManager,
+  CapabilityKinds,
   dataContext,
   getDisplayStatus,
+  HARNESS_CAPABILITY_KINDS,
   isProcessRunning,
   isReadyForInput,
   ProcessStatus,
@@ -10,6 +13,7 @@ import {
   ViewType,
   type ComputeNode,
 } from '@sdk';
+import { useCapability, type UseCapabilityResult } from '@sdk/react/hooks';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
@@ -60,6 +64,7 @@ import { allowRename } from './rename-rules';
 import { HistoryModal } from './HistoryModal';
 import InteractiveTerminal from './interactive-terminal';
 import { ProjectsCounterChip, type ProjectWorkerType } from './ProjectsCounterChip';
+import { AskInstallOneOfDialog } from './openers/AskInstallOneOfDialog';
 import { TerminalOpenerToolbar } from './openers/TerminalOpenerToolbar';
 import type { OpenerDescriptor } from './openers/tab_opener_types';
 
@@ -77,6 +82,12 @@ import { consumePendingIntent, peekPendingIntent } from '@src/tabs/pending-inten
 
 function isCodexProcess(process?: AgenticProcess | null): boolean {
   return process?.worker_type?.trim().toLowerCase() === 'codex';
+}
+
+/** Opener warning for a harness: set when its backend capability check ran and failed. */
+function harnessWarning(capability: UseCapabilityResult): string | null {
+  if (!capability.checked || capability.available) return null;
+  return capability.result?.message ?? 'This harness is not available on this machine.';
 }
 
 function shouldAutoSavePtyTitle(session: TerminalTab, process?: AgenticProcess | null): boolean {
@@ -258,6 +269,13 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
   const tabRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
   const [resumeByIdOpen, setResumeByIdOpen] = useState(false);
+  // Harness capability state (cache warmed at app startup). Drives the "!"
+  // sub-icon on the claude/codex openers and the install-one-of popup.
+  const claudeCapability = useCapability(CapabilityKinds.ClaudeCode);
+  const codexCapability = useCapability(CapabilityKinds.Codex);
+  const [installChoiceKinds, setInstallChoiceKinds] = useState<string[] | null>(null);
+  // askInstallOneOf — open the install-one-of popup for the given capability kinds.
+  const askInstallOneOf = useCallback((kinds: string[]) => setInstallChoiceKinds(kinds), []);
   const { resumeInTerminal } = useResumeInTerminal();
   const [hasTabOverflow, setHasTabOverflow] = useState(false);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
@@ -363,6 +381,23 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
       if (tabCreationLockRef.current) return;
       tabCreationLockRef.current = true;
       setPendingTabCreation({ kind, targetKey: null, targetShellId: null, targetProcessId: null });
+      // Harness gate: when NO harness capability is available at all, the
+      // process can only fail at PTY spawn — ask which harness to install
+      // instead of creating a doomed tab.
+      try {
+        const harness = await capabilityManager.ensureChecked('harness');
+        if (harness.checked && !harness.available) {
+          askInstallOneOf(
+            harness.capabilities.length
+              ? harness.capabilities.map((c) => c.kind)
+              : [...HARNESS_CAPABILITY_KINDS],
+          );
+          clearPendingTabCreation();
+          return;
+        }
+      } catch {
+        // Capability API unavailable (older backend) — don't block tab creation.
+      }
       const launchProjectId = launch?.projectId ?? spawnProjectId;
       const result = await navigation.openNewClaudeProcess({
         ...(launchProjectId ? { projectId: launchProjectId } : {}),
@@ -411,7 +446,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
       pushTerminal(newTab);
       onTabOpen?.(newTab);
     },
-    [clearPendingTabCreation, navigation, onTabOpen, pushTerminal, spawnProjectId],
+    [askInstallOneOf, clearPendingTabCreation, navigation, onTabOpen, pushTerminal, spawnProjectId],
   );
 
   const handleStartClaude = useCallback(() => startAgenticTab('claude', 'claude_code'), [startAgenticTab]);
@@ -836,6 +871,8 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
   const isTerminalCreationPending = pendingTabCreation?.kind === 'terminal';
   const sandboxAvailable = !!dataContext.bootstrapInfo?.sandbox_available && !!dataContext.sandboxComputeNode;
   const dockerNodes = dataContext.dockerComputeNodes;
+  const claudeWarning = harnessWarning(claudeCapability);
+  const codexWarning = harnessWarning(codexCapability);
   const openers = useMemo<OpenerDescriptor[]>(() => {
     const list: OpenerDescriptor[] = [
       {
@@ -847,6 +884,9 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
           void handleStartClaude();
         },
         available: true,
+        // Warned opener: the toolbar's activate() routes to the Capabilities
+        // screen instead of launching.
+        warning: claudeWarning,
         pendingInline: isClaudeCreationPending,
         disabled: isTabCreationPending,
       },
@@ -859,6 +899,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
           void handleStartCodex();
         },
         available: true,
+        warning: codexWarning,
         pendingInline: isCodexCreationPending,
         disabled: isTabCreationPending,
       },
@@ -927,6 +968,8 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
     handleStartDocker,
     sandboxAvailable,
     dockerNodes,
+    claudeWarning,
+    codexWarning,
     isClaudeCreationPending,
     isCodexCreationPending,
     isTerminalCreationPending,
@@ -1308,6 +1351,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
           )}
         </div>
       </div>
+      <AskInstallOneOfDialog kinds={installChoiceKinds} onClose={() => setInstallChoiceKinds(null)} />
       <HistoryModal
         open={historyModalOpen}
         onOpenChange={setHistoryModalOpen}

@@ -53,6 +53,7 @@ export enum ViewType {
   AGENTIC_PROCESS = 'agentic_process', // Process terminal view (Layer 3)
   SEARCH = 'search', // Record semantic search view
   TRIGGERS = 'triggers', // Activation rules browser + editor
+  CAPABILITIES = 'capabilities', // System capability checks/install/test
   PLAN = 'plan', // Plan viewer with Milkdown editor
   CRON = 'cron', // Scheduled cron jobs manager
   WORKFLOWS = 'workflows', // Workflows manager with markdown editor

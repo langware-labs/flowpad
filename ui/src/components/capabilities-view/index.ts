@@ -1,0 +1,1 @@
+export { CapabilitiesView } from './CapabilitiesView';

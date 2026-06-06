@@ -20,6 +20,13 @@ export interface OpenerDescriptor {
   iconClassName?: string;
   onActivate: () => void;
   available: boolean;
+  /**
+   * Capability warning — set when the harness behind this opener failed its
+   * backend capability check (e.g. `codex` not on the backend's PATH). The
+   * toolbar renders a small "!" sub-icon on the opener and appends the
+   * message to its tooltip. The opener stays clickable.
+   */
+  warning?: string | null;
   pendingInline?: boolean;
   disabled?: boolean;
   dockerNodes?: ComputeNode[];
