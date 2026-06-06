@@ -538,16 +538,30 @@ class FSIndexer:
         ) -> list[tuple[FSRef, Any, str, FSRecord, bool]]:
             out: list[tuple[FSRef, Any, str, FSRecord, bool]] = []
             for ref, info in items:
-                if info.gen_id_fn is not None:
-                    ref_id = info.gen_id_fn(ref)
-                else:
+                # Per-ref tolerance: one unreadable source (e.g. a non-UTF-8
+                # file blowing up a frontmatter read) must not abort the whole
+                # index run. Fall back to the path-derived id and mark the ref
+                # stale — the parse path's own try/except then counts it in
+                # the per-type ``errors`` accounting instead of raising out.
+                try:
+                    if info.gen_id_fn is not None:
+                        ref_id = info.gen_id_fn(ref)
+                    else:
+                        ref_id = mint_uuid(str(ref._path))
+                    probe = FSRecord(type=str(ref.record_type), id=ref_id, asset_ref=ref)
+                    # Skip-fresh: pure on-disk equality, no parse, no DB. The
+                    # probe record reads its own `.hash` sentinel (shadow home)
+                    # and the source's current hash via `get_hash`. Fresh when
+                    # unchanged. `opts.force` (Full mode) bypasses it.
+                    fresh = bool(ref_id) and not opts.force and not probe.index_required
+                except Exception as e:
+                    logging.warning(
+                        "[FSIndexer] probe failed for %s (%s): %r — falling through to parse",
+                        ref._path, ref.record_type, e,
+                    )
                     ref_id = mint_uuid(str(ref._path))
-                probe = FSRecord(type=str(ref.record_type), id=ref_id, asset_ref=ref)
-                # Skip-fresh: pure on-disk equality, no parse, no DB. The probe
-                # record reads its own `.hash` sentinel (shadow home) and the
-                # source's current hash via `get_hash`. Fresh when unchanged.
-                # `opts.force` (Full mode) bypasses it.
-                fresh = bool(ref_id) and not opts.force and not probe.index_required
+                    probe = FSRecord(type=str(ref.record_type), id=ref_id, asset_ref=ref)
+                    fresh = False
                 out.append((ref, info, ref_id, probe, fresh))
             return out
 
