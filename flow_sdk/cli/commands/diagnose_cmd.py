@@ -271,6 +271,13 @@ def diagnose_command(
         text = sys.stdin.readline().strip()
     except (EOFError, KeyboardInterrupt):
         text = ""
+    # Immediate acknowledgment — the bootstrap + agent spin-up before the first
+    # "Diagnosing (session=…)" line can take several seconds; without this the
+    # user is left staring at a blank screen wondering if anything happened.
+    typer.echo(
+        ("Running a full diagnostic sweep" if not text else "Diagnosing your issue")
+        + " — spinning up the agent (this can take a few seconds)…"
+    )
     rc = asyncio.run(_run_diagnose(text, timeout))
     raise typer.Exit(rc)
 
