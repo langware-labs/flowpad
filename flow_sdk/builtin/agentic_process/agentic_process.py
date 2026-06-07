@@ -793,7 +793,11 @@ class AgenticProcess(Entity):
             # not "drift"). Cleared on success after we capture the new snapshot.
             fresh._set_start_lifecycle(True)
             try:
-                return await fresh._perform_open(instruction, visible, retry=retry)
+                result = await fresh._perform_open(instruction, visible, retry=retry)
+                for field_name in self.__class__.model_fields:
+                    if hasattr(fresh, field_name):
+                        setattr(self, field_name, getattr(fresh, field_name))
+                return result
             finally:
                 fresh._set_start_lifecycle(False)
 
