@@ -1807,8 +1807,21 @@ class AgenticProcess(Entity):
                     async for fd in worker.execute(prompt=composed_prompt, context=context):
                         await handler.on_flow_data(fd)
                         # Persist session_id on first capture so subsequent turns resume.
+                        # Adopt-on-change (not only when unset): workers report the id
+                        # from structured CLI events, and the worker's actual id must
+                        # win when a preassigned id failed to stick or the CLI rotates
+                        # ids across resumed turns — a stale id points at a session
+                        # that doesn't exist. Rotation of an established id is logged
+                        # so a misbehaving extractor can't clobber silently.
                         sid = worker.get_session_id()
                         if sid and sid != self.session_id:
+                            if self.session_id:
+                                logger.warning(
+                                    "prompt: worker rotated session_id %s -> %s (process %s)",
+                                    self.session_id,
+                                    sid,
+                                    self.id,
+                                )
                             self.session_id = sid
                             try:
                                 await self.save()

@@ -95,12 +95,7 @@ def is_ready_for_input(
         # Don't trigger a transcript read on every call; only resolve if the
         # caller didn't pre-compute it. Callers that do serve hot paths should
         # pass ``worker_status`` explicitly.
-        fetch_status = getattr(process, "fetch_worker_status", None)
-        if callable(fetch_status):
-            resolved = fetch_status()
-        else:
-            discover_status = getattr(process, "_discover_status_from_transcript", None)
-            resolved = discover_status() if callable(discover_status) else None
+        resolved = process.fetch_worker_status()
     else:
         resolved = worker_status
     if resolved is None:
