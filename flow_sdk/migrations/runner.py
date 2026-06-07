@@ -34,6 +34,12 @@ from typing import Any
 import typer
 from filelock import FileLock, Timeout
 
+from flow_sdk.agentic_run_consts import (
+    AGENT_WARMUP_INTERVAL_S,
+    AGENT_WARMUP_TICKS,
+    DEFAULT_TRANSCRIPT_TIMEOUT_S,
+)
+
 from . import status as migration_status
 from .status import Decision, MigrationRecord, MigrationStatus
 
@@ -270,11 +276,11 @@ async def _drive_migration(
     # driver pre-assigns ``ap.session_id`` so that alone is unreliable;
     # transcript-file-exists-with-content is the canonical "started"
     # signal (see runner_entrypoint.py:72-87).
-    for _ in range(150):  # 15.0s in 100ms ticks
+    for _ in range(AGENT_WARMUP_TICKS):
         tp = ap.driver.transcript_path(ap)
         if tp and tp.exists() and tp.stat().st_size > 0:
             break
-        await asyncio.sleep(0.1)
+        await asyncio.sleep(AGENT_WARMUP_INTERVAL_S)
 
     tp = ap.driver.transcript_path(ap)
     if not tp or not tp.exists() or tp.stat().st_size == 0:
@@ -428,7 +434,7 @@ async def _run_if_needed_async(
 def run_if_needed(
     version: str | None = None,
     *,
-    transcript_timeout: float = 1800.0,
+    transcript_timeout: float = DEFAULT_TRANSCRIPT_TIMEOUT_S,
 ) -> int:
     """Synchronous entry point usable from CLI / `flow start`.
 
