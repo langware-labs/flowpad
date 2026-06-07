@@ -1,9 +1,9 @@
 """BasePtySession — shared Pty handle body used by every provider.
 
 LocalPtySession, E2BPtySession, and DockerPtySession all wrap the shared
-PtySessionManager + PtyReplayBuffer in the exact same way; only the provider
-type attribute differs. This module holds the shared body; the per-provider
-subclasses are trivial type-annotation shells.
+PtySessionManager in the exact same way; only the provider type attribute
+differs. This module holds the shared body; the per-provider subclasses are
+trivial type-annotation shells.
 """
 from __future__ import annotations
 
@@ -14,12 +14,20 @@ from flow_sdk.builtin.faas.pty_session import Pty
 
 if TYPE_CHECKING:
     from flow_sdk.compute.providers.compute_provider import ComputeProvider
-    from flow_sdk.compute.providers.desktop.pty_replay_buffer import OutputChunk, PtyReplayBuffer
     from flow_sdk.compute.providers.desktop.pty_session_manager import PtySessionManager
+
+# Gap between the two winsize calls in force_repaint(). The target must OBSERVE
+# the intermediate (rows-1) size before it is restored: SIGWINCH is handled
+# asynchronously, and an instant toggle gets coalesced — zsh's ZLE sees "no
+# change" and never redraws (verified empirically; vi/claude/codex redraw
+# either way). 50ms gives the process a scheduling quantum to read the smaller
+# winsize. User-approved (2026-06-05) — this is the jiggle protocol, not a race
+# band-aid.
+_FORCE_REPAINT_JIGGLE_S = 0.05
 
 
 class PtySession(Pty):
-    """Pty handle backed by any ComputeProvider + shared session manager + replay buffer."""
+    """Pty handle backed by any ComputeProvider + shared session manager."""
 
     def __init__(
         self,
@@ -28,14 +36,12 @@ class PtySession(Pty):
         shell_id: str,
         provider: "ComputeProvider",
         mgr: "PtySessionManager",
-        buf: "PtyReplayBuffer",
     ) -> None:
         self._cn_id = cn_id
         self._pn_id = pn_id
         self._shell_id = shell_id
         self._provider = provider
         self._mgr = mgr
-        self._buf = buf
 
     @property
     def _pty_key(self) -> tuple:
@@ -66,6 +72,54 @@ class PtySession(Pty):
         if session:
             session.cols = cols
             session.rows = rows
+        self._record_resize(session, cols, rows)
+
+    async def force_repaint(self) -> None:
+        """Force a TUI repaint by toggling the winsize (SIGWINCH) with no net
+        size change.
+
+        Attach-only: a freshly attached client has a blank terminal and needs
+        the running program (claude/vim/readline) to redraw its live frame.
+        Deliberately bypasses resize()'s same-size skip by calling the
+        provider directly, and restores the exact current size so the next
+        real resize() still no-ops correctly.
+        """
+        session = self._mgr.sessions.get(self._pty_key)
+        if session is None:
+            return
+        cols, rows = session.cols, session.rows
+        # Both jiggle flips are recorded as resize frames: output the TUI
+        # emits between them is calibrated to (rows-1), and replay must
+        # interpret it at that size or cursor-relative repaints garble.
+        await self._provider.resize_pty(self._pn_id, self._shell_id, cols, max(1, rows - 1))
+        self._record_resize(session, cols, max(1, rows - 1))
+        await asyncio.sleep(_FORCE_REPAINT_JIGGLE_S)  # see constant for rationale
+        await self._provider.resize_pty(self._pn_id, self._shell_id, cols, rows)
+        self._record_resize(session, cols, rows)
+
+    @staticmethod
+    def _record_resize(session, cols: int, rows: int) -> None:
+        """Append a resize frame to the session's stream file (best-effort)."""
+        stream = getattr(session, "pty_stream_file", None) if session else None
+        if stream is None:
+            return
+        try:
+            stream.write_resize(cols, rows)
+        except OSError:
+            pass  # persistence is best-effort; never break the resize path
+
+    async def repaint(self, cols: int | None = None, rows: int | None = None) -> None:
+        """Make the running program redraw for an attaching client.
+
+        Asserts the client's terminal size when given and different (a real
+        resize delivers SIGWINCH); otherwise jiggles the winsize at the current
+        size. This is the attach-time size policy — callers pass the client's
+        xterm dims (or None to keep the current size and just repaint).
+        """
+        if cols is not None and rows is not None and (cols != self.cols or rows != self.rows):
+            await self.resize(cols, rows)
+        else:
+            await self.force_repaint()
 
     async def output(self) -> AsyncIterator[bytes]:  # type: ignore[override]
         """Stream live PTY output as it arrives.
@@ -91,10 +145,6 @@ class PtySession(Pty):
                 session.output_queues.remove(q)
             except ValueError:
                 pass
-
-    def snapshot(self, since: int = 0) -> list["OutputChunk"]:
-        """Return buffered output chunks with seq > since."""
-        return self._buf.get_replay(self._pty_key, since)
 
     async def attach(self, connection_id: str) -> None:
         await self._mgr.attach_session(self._pty_key, connection_id)
@@ -139,27 +189,24 @@ class PtySession(Pty):
         happens after a real server SIGKILL.
         """
         self._signal_output_queues()
-        self._buf.clear(self._pty_key)
         self._mgr.sessions.pop(self._pty_key, None)
         await self._provider.close_pty_session(self._pn_id, self._shell_id)
 
     async def close(self) -> None:
         """Permanent teardown: kill OS PTY, close disk record, clear in-memory state."""
         self._signal_output_queues()
-        self._buf.clear(self._pty_key)
         await self._mgr.close_session(self._pty_key)
         await self._provider.close_pty_session(self._pn_id, self._shell_id)
 
     async def close_for_connection(self, connection_id: str | None) -> None:
         """Detach connection; destroy session only if no connections remain."""
         await self._mgr.close_for_connection(self._pty_key, connection_id)
-        if self._pty_key not in self._mgr.sessions:
-            self._buf.clear(self._pty_key)
 
     @property
     def latest_seq(self) -> int:
-        """Current maximum sequence number in the replay buffer."""
-        return self._buf.get_latest_seq(self._pty_key)
+        """Monotonic per-session output counter (0 if no output yet)."""
+        session = self._mgr.sessions.get(self._pty_key)
+        return session.seq if session else 0
 
     def _signal_output_queues(self) -> None:
         """Send None sentinel to all output() iterators to stop them."""

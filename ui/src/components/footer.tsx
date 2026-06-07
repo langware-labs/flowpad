@@ -1,4 +1,3 @@
-import { ClaudeUsageChip } from '@src/components/claude-usage-chip/ClaudeUsageChip';
 import { PendingActionsChip } from '@src/components/footer/PendingActionsChip';
 import { usePendingCompletionSound } from '@src/components/footer/usePendingCompletionSound';
 import { PoweredBy } from '@src/components/powered-by';
@@ -95,7 +94,7 @@ export function Footer({ className = '' }: FooterProps) {
           )}
         </div>
 
-        {/* Usage chip + version + Powered by on the right */}
+        {/* Version + Powered by on the right */}
         <div className="ml-auto flex items-center gap-2">
           <PendingActionsChip />
           <IndexerStatusPill />
@@ -109,7 +108,6 @@ export function Footer({ className = '' }: FooterProps) {
             <BookOpen className="h-3.5 w-3.5" />
             <span>Flowpad docs</span>
           </button>
-          <ClaudeUsageChip />
           {version && <VersionPopover currentVersion={version} />}
           <PoweredBy />
         </div>

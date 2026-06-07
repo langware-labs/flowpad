@@ -60,6 +60,20 @@ def parse_record_stem(stem: str) -> tuple[str, str]:
     return rt, uid
 
 
+def write_text_if_changed(path: Path, text: str) -> None:
+    """Write ``text`` to ``path`` unless the file already holds exactly that
+    content. Record freshness fingerprints are mtime+size, so a byte-identical
+    rewrite would still read as "source changed" and re-arm index refreshes
+    (e.g. the GET-time ``check_and_refresh_record``)."""
+    try:
+        if path.exists() and path.read_text(encoding="utf-8") == text:
+            return
+    except OSError:
+        pass
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
 def _get_default_records_root() -> Path:
     """Lazy lookup so tests can monkeypatch FS_RECORD_PATH between sessions."""
     from flow_sdk.fs_store.record_paths import get_default_records_root  # noqa: PLC0415
@@ -529,10 +543,7 @@ class FSRecord(Generic[M]):
         body = self.default_body(entity)
         if body is None:
             return
-        if path.exists() and path.read_text(encoding="utf-8") == body:
-            return  # unchanged — don't touch mtime/index hash
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(body, encoding="utf-8")
+        write_text_if_changed(path, body)  # unchanged → don't touch mtime/index hash
 
     # ── DB integration ────────────────────────────────────────────────────
 
@@ -642,6 +653,7 @@ class FSRecord(Generic[M]):
         from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
         from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
         from flow_sdk.db import get_db_driver  # noqa: PLC0415
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
         from flow_sdk import wiki  # noqa: PLC0415
 
         try:
@@ -653,7 +665,11 @@ class FSRecord(Generic[M]):
                 self.type, self.id, wiki_exc,
             )
 
-        entity = await Entity.get_one(QueryFilter.parse({"id": self.id}))
+        # Query through the registered typed class — a base-``Entity`` query
+        # doesn't match typed rows, which silently skipped the row delete
+        # (destroy() left the entity behind).
+        entity_cls = SchemaRegistry.get_entity_cls(self.type) or Entity
+        entity = await entity_cls.get_one(QueryFilter.parse({"id": self.id}))
         if entity is not None:
             driver = get_db_driver()
             if hasattr(driver, "fts_delete"):

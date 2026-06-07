@@ -324,7 +324,8 @@ async def test_start_promotes_stuck_starting_process_to_live_when_pty_is_attacha
 
     with patch.object(AgenticProcess, "shell", new=AsyncMock(return_value=shell)), \
          patch.object(AgenticProcess, "save", new=AsyncMock()) as save, \
-         patch.object(AgenticProcess, "get_project", new=AsyncMock()) as get_project:
+         patch.object(AgenticProcess, "get_project", new=AsyncMock()) as get_project, \
+         patch.object(AgenticProcess, "get_by_id", new_callable=AsyncMock, return_value=proc):
         result = await proc.start_pty()
 
     assert isinstance(result, ApiSuccessResponse)
@@ -356,7 +357,8 @@ async def test_start_persists_visible_true_on_running_reattach():
 
     with patch.object(AgenticProcess, "shell", new=AsyncMock(return_value=shell)), \
          patch.object(AgenticProcess, "save", new=AsyncMock()) as save, \
-         patch.object(AgenticProcess, "get_project", new=AsyncMock()) as get_project:
+         patch.object(AgenticProcess, "get_project", new=AsyncMock()) as get_project, \
+         patch.object(AgenticProcess, "get_by_id", new_callable=AsyncMock, return_value=proc):
         result = await proc.start_pty(visible=True)
 
     assert isinstance(result, ApiSuccessResponse)

@@ -43,6 +43,11 @@ try:
 except ImportError as e:
     print(f"[WARN] Failed to import ComputeNode: {e}")
 
+try:
+    from flow_sdk.builtin.capability import Capability  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import Capability: {e}")
+
 # Flow entity
 try:
     from flow_sdk.builtin.process import Flow  # noqa: F401

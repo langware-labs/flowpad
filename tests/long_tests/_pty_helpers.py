@@ -35,6 +35,27 @@ async def write_and_collect(
     return bytes(buf)
 
 
+def read_pty_stream(shell_id: str) -> str:
+    """Cumulative PTY output from the on-disk .pty stream file.
+
+    The stream file is written on every output chunk from session start, so it
+    is the capture source for tests that used to read the in-memory replay
+    buffer (now removed).
+    """
+    from flow_sdk.builtin.shell import get_shell_record, shell_pty_stream_path
+
+    record = get_shell_record(shell_id)
+    if not record:
+        return ""
+    pty_pid = record.__dict__.get("pty_pid")
+    if not pty_pid:
+        return ""
+    path = shell_pty_stream_path(record.id, pty_pid)
+    if not path.exists():
+        return ""
+    return path.read_bytes().decode("utf-8", errors="replace")
+
+
 async def close_shell(shell) -> None:
     """Best-effort teardown — stops the PTY and deletes the Shell entity."""
     try:

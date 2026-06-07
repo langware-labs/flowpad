@@ -1,6 +1,7 @@
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { CodexIcon } from '@src/components/icons/CodexIcon';
+import { CopilotIcon } from '@src/components/icons/CopilotIcon';
 import { getProjectDisplayName } from '@src/hooks/use-claude-projects';
 import { useAllProjects } from '@src/hooks/use-all-projects';
 import {
@@ -240,6 +241,9 @@ function ProjectSelectList({
                     )}
                     {project.codex && (
                       <CodexIcon className="h-3.5 w-3.5 shrink-0 text-emerald-500" aria-label="Codex project" />
+                    )}
+                    {project.copilot && (
+                      <CopilotIcon className="h-3.5 w-3.5 shrink-0 text-sky-500" aria-label="Copilot project" />
                     )}
                     <span className="truncate font-medium">{getProjectDisplayName(project)}</span>
                     {isSystem && (

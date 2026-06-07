@@ -18,6 +18,7 @@ export function workerLabel(worker: string | undefined): string {
   const key = worker.toLowerCase();
   if (key.startsWith('claude')) return 'Claude';
   if (key.startsWith('codex')) return 'Codex';
+  if (key.startsWith('copilot')) return 'Copilot';
   // Capitalize unknown worker keys for a sensible default.
   return key.charAt(0).toUpperCase() + key.slice(1);
 }
@@ -29,6 +30,7 @@ export function workerIcon(worker: string | undefined): ComponentType<{ classNam
     const w = worker.toLowerCase();
     if (w.startsWith('claude')) return 'claude';
     if (w.startsWith('codex')) return 'codex';
+    if (w.startsWith('copilot')) return 'copilot';
     return 'generic';
   })();
   return pickProcessIcon(key);

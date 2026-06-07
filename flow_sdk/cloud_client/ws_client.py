@@ -99,7 +99,9 @@ def _hub_ssl_context() -> ssl.SSLContext:
 
 
 async def _load_ws_credentials() -> UserHubCredentials | None:
-    creds = load_credentials()
+    # load_credentials may touch macOS Keychain via the SOD key provider. Keep
+    # that blocking OS call off the event loop.
+    creds = await asyncio.to_thread(load_credentials)
     if not creds:
         raise HubWebSocketLoginRequiredError("Cloud login required before connecting hub WebSocket.")
 

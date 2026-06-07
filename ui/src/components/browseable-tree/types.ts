@@ -158,4 +158,10 @@ export interface BrowseableTreeProps {
 
   /** Extra class name on the outer container. */
   className?: string;
+
+  /** localStorage key persisting the expanded-ids set — see `useBrowseableTree`. */
+  persistKey?: string;
+
+  /** Node ids expanded when no persisted state exists (e.g. the root id). */
+  defaultExpandedIds?: string[];
 }

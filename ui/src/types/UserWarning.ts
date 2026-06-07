@@ -43,34 +43,6 @@ export interface UserWarning {
 }
 
 /**
- * Create a warning for LLM not configured
- */
-export function createLlmNotConfiguredWarning(): UserWarning {
-  return {
-    id: 'llm-not-configured',
-    icon: 'AlertTriangle',
-    color: 'yellow',
-    message: 'LLM Not Configured',
-    description: 'Configure your AI provider to enable agent functionality',
-    targetView: ViewType.AI_CONFIG,
-  };
-}
-
-/**
- * Create a warning for LLM disconnected
- */
-export function createLlmDisconnectedWarning(): UserWarning {
-  return {
-    id: 'llm-disconnected',
-    icon: 'X',
-    color: 'red',
-    message: 'LLM Disconnected',
-    description: 'Your AI connection has been lost. Click to reconnect.',
-    targetView: ViewType.AI_CONFIG,
-  };
-}
-
-/**
  * Create a warning for cloud not connected
  */
 export function createCloudDisconnectedWarning(): UserWarning {

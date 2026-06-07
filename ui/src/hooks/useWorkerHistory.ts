@@ -3,7 +3,7 @@ import { useMemo } from 'react';
 import { useAction } from './use-action';
 import { useContext } from './useContext';
 
-export type WorkerType = 'claude' | 'codex';
+export type WorkerType = 'claude' | 'codex' | 'copilot';
 
 export interface WorkerHistoryEntry {
   worker_type: WorkerType;

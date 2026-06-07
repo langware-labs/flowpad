@@ -1,7 +1,6 @@
 import { FlowData } from '@sdk';
 import { cn } from '@src/lib/utils';
-import React, { useEffect } from 'react';
-import { DESKTOP_SETUP_REASON_AUTH_FAILURE } from './desktop-setup-modal';
+import React from 'react';
 
 interface ErrorSectionProps {
   flowData: FlowData;
@@ -10,19 +9,6 @@ interface ErrorSectionProps {
 
 const ErrorSection: React.FC<ErrorSectionProps> = ({ flowData, className }) => {
   const errorMessage = flowData?.data || flowData?.content || 'Unknown error occurred';
-
-  // Detect auth error and open desktop setup modal
-  useEffect(() => {
-    if (
-      errorMessage &&
-      typeof errorMessage === 'string' &&
-      errorMessage.includes('Claude authentication not configured')
-    ) {
-      window.dispatchEvent(
-        new CustomEvent('open-desktop-setup', { detail: { reason: DESKTOP_SETUP_REASON_AUTH_FAILURE } }),
-      );
-    }
-  }, [errorMessage]);
 
   if (!flowData) {
     console.error('ErrorSection: Invalid flowData');

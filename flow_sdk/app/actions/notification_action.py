@@ -101,38 +101,50 @@ async def _attach_prompt(
     proposer_id: Optional[str],
     prompt_text: str,
     prompt_files: list,
+    *,
+    project_id: Optional[str] = None,
 ) -> None:
-    """Append a PROMPT attachment to the FlowMessage.
+    """Attach prompts as library ``Prompt`` entities (TYPE_ID attachments).
 
-    `prompt_text` (if non-empty) is stored inline in `data`. Each file in
-    `prompt_files` is written to the entity VFS at `prompt/{filename}` and
-    appended as a separate PROMPT attachment whose `data` is that VFS subpath.
+    The typed text and each uploaded prompt file's content are minted/reused
+    as real Prompt entities via ``find_or_create_prompt`` (dedup by
+    normalized text within the conversation's project scope) and attached as
+    TYPE_ID entries carrying ``proposer_id`` (approval lifecycle) and
+    ``prompt_preview`` (inline text so receivers can preview/execute before
+    the body bundle downloads). Prompts thus behave like every other entity
+    attachment — they ride the body bundle (``_pack_prompt_attachment``) and
+    land in the receiver's library. Legacy ``AttachmentType.PROMPT`` messages
+    keep working read-side; new sends are entity-backed.
     """
-    from flow_sdk.builtin.flow_message import PROMPT_FILE_VFS_PREFIX, Attachment, AttachmentType
-    from flow_sdk.storage import get_entity_embedded_storage
+    from flow_sdk.builtin.flow_message import Attachment, AttachmentType
+    from flow_sdk.builtin.prompt import Prompt
+    from flow_sdk.builtin.prompt_helpers import find_or_create_prompt
+
+    texts: list[tuple[str, Optional[str]]] = []  # (text, name hint)
+    if prompt_text:
+        texts.append((prompt_text, None))
+    for uf in prompt_files or []:
+        if not hasattr(uf, "read"):
+            continue
+        filename = getattr(uf, "filename", None) or "prompt.txt"
+        raw = await uf.read()
+        content = raw.decode("utf-8", errors="replace") if isinstance(raw, (bytes, bytearray)) else str(raw)
+        if content.strip():
+            texts.append((content, Path(filename).stem or None))
 
     new_atts: list = list(reply_fm.attachment or [])
-    if prompt_text:
+    seen_prompt_ids: set[str] = set()
+    for text, name_hint in texts:
+        prompt = await find_or_create_prompt(text, project_id=project_id, name=name_hint)
+        if prompt.id in seen_prompt_ids:
+            continue  # inline text and a file with identical content dedup to one
+        seen_prompt_ids.add(prompt.id)
         new_atts.append(Attachment(
-            attachment_type=AttachmentType.PROMPT,
-            data=prompt_text,
+            attachment_type=AttachmentType.TYPE_ID,
+            data=str(TypeId(type=Prompt.get_type(), id=prompt.id)),
             proposer_id=proposer_id,
+            prompt_preview=text,
         ))
-    if prompt_files:
-        storage = get_entity_embedded_storage(reply_fm.typeid)
-        for uf in prompt_files:
-            if not hasattr(uf, "read"):
-                continue
-            filename = getattr(uf, "filename", None) or "prompt.txt"
-            vfs_subpath = f"{PROMPT_FILE_VFS_PREFIX}{filename}"
-            local_path = Path(storage.get_storage_path(vfs_subpath))
-            local_path.parent.mkdir(parents=True, exist_ok=True)
-            local_path.write_bytes(await uf.read())
-            new_atts.append(Attachment(
-                attachment_type=AttachmentType.PROMPT,
-                data=vfs_subpath,
-                proposer_id=proposer_id,
-            ))
     reply_fm.attachment = new_atts
 
 
@@ -672,7 +684,10 @@ async def handle_add_message(body: dict, someone_typeid: str) -> ApiResponse:
         await _attach_asset_references(reply_fm, asset_references)
 
     if prompt_text or prompt_files:
-        await _attach_prompt(reply_fm, sender_id, prompt_text, prompt_files)
+        await _attach_prompt(
+            reply_fm, sender_id, prompt_text, prompt_files,
+            project_id=getattr(conv, "project_id", None) or None,
+        )
 
     # A conversation reply goes to the hub whenever it's hub-mirrored
     # (``conv.remote`` is the load-bearing signal). Local-only conversations
@@ -843,19 +858,39 @@ async def set_project_mapping() -> ApiResponse:
 # ────────────────────────────────────────────────────────────────────────────
 
 
+def _is_prompt_attachment(a: Any) -> bool:
+    """True for any prompt attachment kind: legacy inline/file ``PROMPT``,
+    or an entity-backed TYPE_ID entry pointing at a ``prompt`` entity.
+
+    CONTRACT: the type literal must equal ``Prompt.get_type()`` and the FE
+    mirror (``ui/.../attachment-actions/prompt-attachment.ts``) must match —
+    both sides gate the same approve/preview behavior off this predicate.
+    """
+    from flow_sdk.builtin.flow_message import AttachmentType  # noqa: PLC0415
+
+    if a.attachment_type == AttachmentType.PROMPT:
+        return True
+    if a.attachment_type == AttachmentType.TYPE_ID:
+        # data is "<type>-<id>"; type is everything before the first dash
+        # (same convention as flow_message._type_id_record_materialized).
+        return (a.data or "").split("-", 1)[0] == "prompt"
+    return False
+
+
 @action.post(action_name="approve-prompt", types=["flow_message"])
 async def approve_prompt() -> ApiResponse:
-    """Mark PROMPT attachments on a FlowMessage as approved by the current user.
+    """Mark prompt attachments on a FlowMessage as approved by the current user.
 
-    The frontend then runs the prompt in a forked Claude session.
+    Covers both legacy ``AttachmentType.PROMPT`` entries and entity-backed
+    prompt TYPE_ID entries (``_is_prompt_attachment``). The frontend then runs
+    the prompt in a forked Claude session.
     Body: { attachment_index?: number, approve_all?: bool }
-      - With approve_all=True (default for the conversation flow): every PROMPT
+      - With approve_all=True (default for the conversation flow): every prompt
         attachment on the message flips to approved in one shot, so the typed
         text and any attached prompt files all execute as a single Claude turn.
       - Without approve_all: only the targeted attachment_index (or the first
-        unapproved PROMPT) is approved.
+        unapproved prompt) is approved.
     """
-    from flow_sdk.builtin.flow_message import AttachmentType
     from flow_sdk.builtin.flow_message import FlowMessage as FM
 
     request_info = get_current_request_info()
@@ -877,7 +912,7 @@ async def approve_prompt() -> ApiResponse:
     if approve_all:
         approved_indices: list[int] = []
         for i, a in enumerate(new_atts):
-            if a.attachment_type == AttachmentType.PROMPT and not a.approved_by:
+            if _is_prompt_attachment(a) and not a.approved_by:
                 new_atts[i] = a.model_copy(update={"approved_by": approver_id})
                 approved_indices.append(i)
         if not approved_indices:
@@ -888,11 +923,11 @@ async def approve_prompt() -> ApiResponse:
 
     target_idx: Optional[int] = None
     if isinstance(idx, int) and 0 <= idx < len(new_atts):
-        if new_atts[idx].attachment_type == AttachmentType.PROMPT:
+        if _is_prompt_attachment(new_atts[idx]):
             target_idx = idx
     if target_idx is None:
         for i, a in enumerate(new_atts):
-            if a.attachment_type == AttachmentType.PROMPT and not a.approved_by:
+            if _is_prompt_attachment(a) and not a.approved_by:
                 target_idx = i
                 break
     if target_idx is None:

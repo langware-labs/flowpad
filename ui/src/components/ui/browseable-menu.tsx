@@ -24,6 +24,12 @@ export interface BrowseableMenuProps {
   contentClassName?: string;
   align?: 'start' | 'center' | 'end';
   emptyState?: ReactNode;
+  /** Highlighted pointer — purely visual (row highlight + ancestor auto-expand), no navigation. */
+  activePointer?: DockPointer | null;
+  /** localStorage key persisting the tree's expanded-ids set. */
+  persistKey?: string;
+  /** Node ids expanded when no persisted state exists (e.g. the root id). */
+  defaultExpandedIds?: string[];
 }
 
 export const BrowseableMenu: React.FC<BrowseableMenuProps> = ({
@@ -35,12 +41,22 @@ export const BrowseableMenu: React.FC<BrowseableMenuProps> = ({
   contentClassName,
   align = 'end',
   emptyState,
+  activePointer = null,
+  persistKey,
+  defaultExpandedIds,
 }) => (
   <Popover open={open} onOpenChange={onOpenChange}>
     <PopoverTrigger asChild>{trigger}</PopoverTrigger>
     <PopoverContent align={align} className={contentClassName ?? 'w-80 p-1'}>
       <div className="max-h-96 overflow-y-auto">
-        <BrowseableTree roots={roots} activePointer={null} onNavigate={onNavigate} emptyState={emptyState} />
+        <BrowseableTree
+          roots={roots}
+          activePointer={activePointer}
+          onNavigate={onNavigate}
+          emptyState={emptyState}
+          persistKey={persistKey}
+          defaultExpandedIds={defaultExpandedIds}
+        />
       </div>
     </PopoverContent>
   </Popover>

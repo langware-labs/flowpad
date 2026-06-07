@@ -155,7 +155,6 @@ class DockerComputeProvider(ComputeProvider):
         conn.unregister_pty(session_id)
 
     def get_pty_session(self, cn_id: str, shell_id: str):
-        from flow_sdk.compute.providers.desktop.pty_replay_buffer import replay_buffer
         from flow_sdk.compute.providers.desktop.pty_session_manager import session_manager
 
         from .docker_pty_session import DockerPtySession
@@ -167,10 +166,10 @@ class DockerComputeProvider(ComputeProvider):
         for machine_id in docker_registry._workers:
             key = (cn_id, machine_id, shell_id)
             if key in session_manager.sessions:
-                return DockerPtySession(cn_id, machine_id, shell_id, self, session_manager, replay_buffer)
+                return DockerPtySession(cn_id, machine_id, shell_id, self, session_manager)
         for key in session_manager.sessions:
             if key[0] == cn_id and key[2] == shell_id:
-                return DockerPtySession(key[0], key[1], key[2], self, session_manager, replay_buffer)
+                return DockerPtySession(key[0], key[1], key[2], self, session_manager)
         return None
 
     # ---------------------------------------------------------------- FS (M2 stubs)

@@ -1,15 +1,12 @@
 import { type Page, expect } from '@playwright/test';
 
 /**
- * Dismiss the DesktopSetupModal if it appears.
- * Sets localStorage key before page loads so the modal never shows.
- * Also pre-pins the terminal/sandbox/docker openers so their inline test ids
- * render — by default nothing is pinned, and the openers live inside a
- * dropdown menu which is not directly selectable by test id.
+ * Pre-pin the terminal/sandbox/docker openers so their inline test ids render.
+ * By default nothing is pinned, and the openers live inside a dropdown menu
+ * which is not directly selectable by test id.
  */
 export async function dismissSetupModal(page: Page) {
   await page.addInitScript(() => {
-    localStorage.setItem('llm-setup-modal-seen', 'true');
     localStorage.setItem(
       'flowpad.terminal.pinnedOpeners',
       JSON.stringify(['terminal', 'sandbox', 'docker']),
@@ -23,12 +20,6 @@ export async function dismissSetupModal(page: Page) {
  */
 export async function gotoShell(page: Page) {
   await page.goto('/dock/shell/new_terminal');
-
-  // Handle setup modal if it appears
-  const skipButton = page.getByRole('button', { name: 'Skip' });
-  if (await skipButton.isVisible({ timeout: 2_000 }).catch(() => false)) {
-    await skipButton.click();
-  }
 
   // Wait for URL to settle (new_terminal redirects to /dock/shell/<sessionId>)
   await page.waitForURL(/\/dock\/shell\/shell-/, { timeout: 15_000 });
