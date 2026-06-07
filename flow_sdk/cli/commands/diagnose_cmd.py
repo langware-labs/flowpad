@@ -19,7 +19,7 @@ import json
 import logging
 import sys
 from pathlib import Path
-from typing import List, Optional
+from typing import Optional
 
 import typer
 
@@ -243,19 +243,17 @@ async def _run_diagnose(message: str, transcript_timeout: float) -> int:
 # helper is a hyphenated sibling, not a subcommand, so a free-text message like
 # ``flow diagnose report me`` can't be mistaken for it.
 def diagnose_command(
-    message: Optional[List[str]] = typer.Argument(
-        None,
-        help=(
-            "Ignored — you'll always be prompted to type or paste the issue, so "
-            "apostrophes, quotes and special characters work without shell quoting. "
-            "Press Enter to submit; empty = full sweep."
-        ),
-    ),
     timeout: float = typer.Option(
         DEFAULT_TRANSCRIPT_TIMEOUT_S, "--timeout", help="Transcript stream budget in seconds."
     ),
 ) -> None:
-    """Diagnose a Flowpad issue and report the outcome to the app's Feed."""
+    """Diagnose a Flowpad issue; you'll be prompted to type or paste it.
+
+    Prompts you to describe or paste what you saw (Enter to submit; empty = full
+    diagnostic sweep), then diagnoses, repairs what's safe, and records the result
+    to the app's Feed. Text given on the command line is ignored — type it at the
+    prompt so apostrophes/quotes work without shell quoting.
+    """
     _quiet_logs()
     # Always read the message from stdin — never from argv. Anything typed after
     # `flow diagnose` on the command line is intentionally ignored, because the
