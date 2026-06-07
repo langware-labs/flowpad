@@ -46,6 +46,8 @@ class ReleaseInfo(BaseModel):
 
 class HubInfo(BaseModel):
     version: Optional[str] = None
+    deployed_at: Optional[str] = None
+    generated_at: Optional[str] = None
 
 
 class VersionCheckResponse(BaseModel):
@@ -58,6 +60,20 @@ class VersionCheckResponse(BaseModel):
 
 def _normalize_tag(tag: str) -> str:
     return tag.lstrip("vV")
+
+
+def _optional_str(value: Any) -> Optional[str]:
+    return value if isinstance(value, str) else None
+
+
+def _hub_info_from_raw(hub_raw: dict[str, Any] | None) -> Optional[HubInfo]:
+    if not hub_raw:
+        return None
+    return HubInfo(
+        version=_optional_str(hub_raw.get("version")),
+        deployed_at=_optional_str(hub_raw.get("deployed_at")),
+        generated_at=_optional_str(hub_raw.get("generated_at")),
+    )
 
 
 async def _fetch_pypi(client: httpx.AsyncClient) -> PypiInfo:
@@ -128,7 +144,7 @@ async def check_version() -> VersionCheckResponse:
             hub.get_info(),
         )
     releases, github_error = github_result
-    hub_info = HubInfo(version=hub_raw.get("version")) if hub_raw else None
+    hub_info = _hub_info_from_raw(hub_raw)
     resp = VersionCheckResponse(
         pypi=pypi_info,
         latest_release=releases[0] if releases else None,
