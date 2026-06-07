@@ -563,7 +563,11 @@ class Shell(Entity):
             p = shell_pty_stream_path(record.id, record.__dict__.get("pty_pid"))
         except ValueError:
             return b""
-        return p.read_bytes() if p.exists() else b""
+        if not p.exists():
+            return b""
+        from flow_sdk.compute.providers.desktop.pty_stream_file import PtyStreamFile
+
+        return PtyStreamFile(p).read_all()
 
     def output(self):
         """Stream live PTY output as it arrives. Delegates to self.pty.output()."""

@@ -1073,7 +1073,9 @@ class LocalComputeProvider(ComputeProvider):
                     if process.isalive():
                         process.terminate(force=True)
                 except Exception as e:
-                    logger.warning(f"Error terminating PTY process: {str(e)}")
+                    message = str(e)
+                    if "there was no child process" not in message and "waitpid" not in message:
+                        logger.warning(f"Error terminating PTY process: {message}")
 
             del self._pty_sessions[pty_key]
 

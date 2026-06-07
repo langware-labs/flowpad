@@ -982,7 +982,7 @@ class SQLiteDBDriver(DBDriver):
             factory = (
                 self.session_factory
                 if write
-                else (self.reader_session_factory or self.session_factory)
+                else (getattr(self, "reader_session_factory", None) or self.session_factory)
             )
             session = factory()
             if not write:
