@@ -45,6 +45,53 @@ async def _feed_entry_ids() -> set[str]:
         return set()
 
 
+class _Renderer:
+    """Compact transcript renderer for `flow diagnose`.
+
+    Shows the agent's narration on its own line (``▸ …`` — the valuable part) and
+    collapses each tool action into a single inline progress box (``▪``), so the
+    user sees liveness without a line per Bash/Read call and without the
+    ``↳ (tool result received)`` noise.
+    """
+
+    def __init__(self) -> None:
+        self._row_open = False  # an unfinished "▪ ▪ ▪" progress row is on screen
+
+    def _close_row(self) -> None:
+        if self._row_open:
+            typer.echo("")  # terminate the inline progress row
+            self._row_open = False
+
+    def feed(self, entry: dict) -> None:
+        msg = entry.get("message")
+        if not isinstance(msg, dict):
+            return
+        role = msg.get("role")
+        content = msg.get("content")
+        if not isinstance(content, list):
+            return
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            btype = block.get("type")
+            if role == "assistant" and btype == "text":
+                text = (block.get("text") or "").strip()
+                if text:
+                    self._close_row()
+                    typer.echo(f"  ▸ {text[:240]}")
+            elif role == "assistant" and btype == "tool_use":
+                # One inline box per tool action — a liveness pulse, no detail.
+                if not self._row_open:
+                    typer.echo("  ", nl=False)
+                    self._row_open = True
+                typer.echo("▪ ", nl=False)
+            # tool_result blocks are intentionally not rendered — the box already
+            # marked the step.
+
+    def finish(self) -> None:
+        self._close_row()
+
+
 def _find_skill_dir() -> Optional[Path]:
     """Locate the installed flow-diagnose skill directory."""
     candidates = [
@@ -61,7 +108,7 @@ def _find_skill_dir() -> Optional[Path]:
 async def _run_diagnose(message: str, transcript_timeout: float) -> int:
     from flow_sdk.agentic_run_consts import AGENT_WARMUP_INTERVAL_S, AGENT_WARMUP_TICKS
     from flow_sdk.builtin.agentic_process import AgenticProcess
-    from flow_sdk.migrations.runner import _bootstrap_local, _render_entry
+    from flow_sdk.migrations.runner import _bootstrap_local
 
     skill_dir = _find_skill_dir()
     if not skill_dir:
@@ -126,15 +173,17 @@ async def _run_diagnose(message: str, transcript_timeout: float) -> int:
         return _tx_size() > min_size
 
     rendered = 0  # entries already printed across turns (transcript is append-only)
+    renderer = _Renderer()
 
     async def _stream_new() -> None:
         nonlocal rendered
         idx = 0
         async for entry in ap.stream_transcript(timeout=transcript_timeout):
             if idx >= rendered:
-                _render_entry(entry)
+                renderer.feed(entry)
             idx += 1
         rendered = idx
+        renderer.finish()  # close any open progress row before the next message
 
     # The worker can end its turn early — diagnosing but not repairing/reporting.
     # Drive it across up to MAX_TURNS: turn 0 runs the skill; each retry nudges
