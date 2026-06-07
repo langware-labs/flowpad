@@ -315,12 +315,15 @@ class ScanActionsMixin:
 
             # Worker selection — accept ``worker_type`` from the AgenticContext
             # so the UI can launch alternate CLI tabs from the same opener flow
-            # that spawns Claude.
+            # that spawns Claude. An unknown value is a hard error: silently
+            # substituting Claude launches the wrong worker with no signal
+            # (e.g. a UI that knows 'copilot' talking to a backend that
+            # doesn't), which is far more confusing than a failed request.
             worker_type_raw = context_data.pop("worker_type", None) or WorkerType.CLAUDE_CODE.value
             try:
                 worker_type = WorkerType(worker_type_raw)
             except ValueError:
-                worker_type = WorkerType.CLAUDE_CODE
+                return ApiFailResponse(message=f"Unknown worker_type: {worker_type_raw!r}")
 
             model = context_data.pop("model", None) or None
             permission_mode = context_data.pop("permission_mode", "bypassPermissions")
