@@ -32,6 +32,7 @@ export * from './collaboration-room';
 export * from './siteconfig';
 export * from './conversation';
 export * from './conversation-send';
+export * from './feed-entry';
 export * from './flow-message';
 export * from './invitation';
 export * from './spec';
