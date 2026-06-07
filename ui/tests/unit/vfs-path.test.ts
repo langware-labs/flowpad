@@ -359,23 +359,23 @@ describe('VFSPath', () => {
     it('should handle execute-flow URL path', () => {
       // This is the actual path from the compile bug
       const urlPath =
-        'vfs://compute_node-6bc04758-6594-47bc-9545-1383eff24446/Users/shlom/Flowpad workspace/.claude/skills/walla-test.md';
+        'vfs://compute_node-6bc04758-6594-47bc-9545-1383eff24446/Users/alice/Flowpad workspace/.claude/skills/walla-test.md';
       const vpath = VFSPath.parse(urlPath);
 
       expect(vpath.type).toBe('compute_node');
       expect(vpath.id).toBe('6bc04758-6594-47bc-9545-1383eff24446');
-      expect(vpath.entitySubPath).toBe('Users/shlom/Flowpad workspace/.claude/skills/walla-test.md');
+      expect(vpath.entitySubPath).toBe('Users/alice/Flowpad workspace/.claude/skills/walla-test.md');
       expect(vpath.filename).toBe('walla-test.md');
       expect(vpath.absVfsPath).not.toContain('vfs://');
     });
 
     it('should match paths with and without protocol for directory tree selection', () => {
       // Root folder path (no protocol, created programmatically)
-      const rootPath = 'compute_node-6bc04758-6594-47bc-9545-1383eff24446/Users/shlom/Flowpad workspace/.claude/skills';
+      const rootPath = 'compute_node-6bc04758-6594-47bc-9545-1383eff24446/Users/alice/Flowpad workspace/.claude/skills';
 
       // Selected path from URL (with protocol)
       const selectedPath =
-        'vfs://compute_node-6bc04758-6594-47bc-9545-1383eff24446/Users/shlom/Flowpad workspace/.claude/skills/test.md';
+        'vfs://compute_node-6bc04758-6594-47bc-9545-1383eff24446/Users/alice/Flowpad workspace/.claude/skills/test.md';
 
       const rootVpath = VFSPath.parse(rootPath);
       const selectedVpath = VFSPath.parse(selectedPath);

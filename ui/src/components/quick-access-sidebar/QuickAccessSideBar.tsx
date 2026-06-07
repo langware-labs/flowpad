@@ -13,7 +13,7 @@ import { ArrowLeft, Check, Folder, FolderOpen, FolderPlus, ListTree, Loader2, Re
 import { useMemo, useState } from 'react';
 import './QuickAccessSideBar.css';
 
-/** Show last 2 path segments, e.g. "/Users/shlom/Documents/dev/test" → "dev/test" */
+/** Show last 2 path segments, e.g. "/Users/alice/Documents/dev/test" → "dev/test" */
 function getShortName(project: ProjectListItem): string {
   const raw = project.cwd || project.name || project.encoded_name;
   const parts = raw.replace(/\/+$/, '').split('/').filter(Boolean);

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Container script — orchestrates stages A-F.
-# See plan: /Users/shlom/.claude/plans/once-done-add-to-dreamy-aurora.md
+# See plan: ~/.claude/plans/once-done-add-to-dreamy-aurora.md
 
 set -euo pipefail
 

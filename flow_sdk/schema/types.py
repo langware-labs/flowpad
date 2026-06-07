@@ -81,7 +81,14 @@ class EntityType(StrEnum):
     CLAUDE_SETTINGS_JSON_ATTRIBUTION = "claude_settings_json:attribution"
     CLAUDE_MANAGED_SETTINGS = "claude_managed_settings"
     CLAUDE_MCP_JSON = "claude_mcp_json"
-    CLAUDE_USAGE = "claude_usage"
+    # Per-server fragment of a ``.mcp.json`` file, emitted by the source-file
+    # extractor (fs_store/source_file_records.py) for the /fs-records/file
+    # settings API. Follows the ``claude_settings_json:permissions`` fragment
+    # convention: the *file* shape is Claude-specific, while the server entity
+    # itself is the agent-neutral MCP_SERVER asset above. (The extractor
+    # previously referenced a non-existent CLAUDE_MCP_SERVER member and raised
+    # AttributeError on any .mcp.json with servers.)
+    CLAUDE_MCP_JSON_ENTRY = "claude_mcp_json:entry"
     CODEX_SESSION = "codex_session"
     # DEPRECATED 2026-05-09: codex projects now stored as PROJECT with a
     # codex_project=True provenance flag. Kept for backward compatibility.
@@ -98,6 +105,7 @@ class EntityType(StrEnum):
     MARKDOWN = "markdown"
     MARKDOWN_INDEX = "markdown_index"
     SPEC = "spec"
+    PROMPT = "prompt"
     CONVERSATION = "conversation"
     WHITEBOARD = "whiteboard"
     DATASET = "dataset"

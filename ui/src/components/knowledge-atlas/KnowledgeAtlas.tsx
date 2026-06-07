@@ -13,10 +13,13 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { DiffContent } from '@src/components/code-editor/DiffContent';
 import {
   buildAtlasLayout,
+  fetchDiff,
   fetchDoc,
   fetchDocsGraph,
+  postStamp,
   treePath,
   xPath,
   type AtlasLayout,
@@ -37,7 +40,11 @@ const ICONS = {
   search: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM20 20l-4-4',
   doc: 'M7 3h7l4 4v14H7zM14 3v4h4',
   refresh: ['M21 12a9 9 0 1 1-2.64-6.36', 'M21 3v6h-6'],
+  stamp: ['M5 21h14', 'M12 3v8', 'M8 11h8l1 6H7z'],
 };
+
+/** File statuses that count as "changed since last stamp". */
+const CHANGED_FILE = new Set(['modified', 'added', 'removed']);
 
 /* ---- markdown-lite → design prose blocks ---------------------------------- */
 type ProseBlock =
@@ -267,6 +274,12 @@ export function KnowledgeAtlas({ root }: { root: string }) {
   const [drawerOpen, setDrawerOpen] = useState(false); // gates the slide-in (separate frame)
   const [cmdOpen, setCmdOpen] = useState(false);
   const [docBody, setDocBody] = useState<{ blocks: ProseBlock[]; loading: boolean }>({ blocks: [], loading: false });
+  const [changesMode, setChangesMode] = useState(false);
+  const [stamping, setStamping] = useState(false);
+  const [drawerTab, setDrawerTab] = useState<'doc' | 'changes'>('doc');
+  const [diffBody, setDiffBody] = useState<{ diff: string; skipped: string | null; loading: boolean }>({
+    diff: '', skipped: null, loading: false,
+  });
 
   const rootName = useMemo(() => root.replace(/\/+$/, '').split('/').pop() || root, [root]);
 
@@ -321,6 +334,8 @@ export function KnowledgeAtlas({ root }: { root: string }) {
     const n = layout?.byId[id];
     if (!n || n.type !== 'doc') return;
     setFocus(id);
+    // Ghosts have no on-disk doc — land on the Changes tab (old vs nothing).
+    setDrawerTab(n.isGhost ? 'changes' : 'doc');
     if (drawerRef.current) drawerRef.current.scrollTop = 0;
     // commit a closed frame first, THEN add .open so the slide-in transition
     // fires. setTimeout (not rAF) so it runs even when painting is throttled.
@@ -335,7 +350,7 @@ export function KnowledgeAtlas({ root }: { root: string }) {
   /* drawer content */
   useEffect(() => {
     const n = focus ? layout?.byId[focus] : null;
-    if (!n || !n.relPath) { setDocBody({ blocks: [], loading: false }); return; }
+    if (!n || !n.relPath || n.isGhost) { setDocBody({ blocks: [], loading: false }); return; }
     let cancelled = false;
     setDocBody({ blocks: [], loading: true });
     fetchDoc(root, n.relPath)
@@ -343,6 +358,33 @@ export function KnowledgeAtlas({ root }: { root: string }) {
       .catch(() => { if (!cancelled) setDocBody({ blocks: [], loading: false }); });
     return () => { cancelled = true; };
   }, [focus, layout, root]);
+
+  /* drawer diff (Changes tab) */
+  useEffect(() => {
+    const n = focus ? layout?.byId[focus] : null;
+    if (!n || !n.relPath || drawerTab !== 'changes') {
+      setDiffBody({ diff: '', skipped: null, loading: false });
+      return;
+    }
+    let cancelled = false;
+    setDiffBody({ diff: '', skipped: null, loading: true });
+    fetchDiff(root, n.relPath)
+      .then(({ diff, skipped }) => { if (!cancelled) setDiffBody({ diff, skipped, loading: false }); })
+      .catch(() => { if (!cancelled) setDiffBody({ diff: '', skipped: 'error', loading: false }); });
+    return () => { cancelled = true; };
+  }, [focus, layout, root, drawerTab]);
+
+  /* stamp (explicit user action) */
+  const stamp = useCallback(async () => {
+    if (!root || stamping) return;
+    setStamping(true);
+    try {
+      await postStamp(root);
+      setReloadKey((k) => k + 1); // rescan → fresh statuses
+    } catch { /* surfaced by the rescan state */ } finally {
+      setStamping(false);
+    }
+  }, [root, stamping]);
 
   /* pan */
   const onDown = (e: React.MouseEvent) => {
@@ -409,14 +451,32 @@ export function KnowledgeAtlas({ root }: { root: string }) {
     return () => window.removeEventListener('keydown', h);
   }, [cmdOpen, drawerOpen, focus, fit, closeDoc]);
 
-  /* highlight set */
+  /* changed-since-stamp set (files + their stale folder chain) */
+  const changedSet = useMemo(() => {
+    if (!layout) return new Set<string>();
+    const s = new Set<string>();
+    for (const n of layout.nodes) {
+      if (n.type === 'doc' && CHANGED_FILE.has(n.status)) s.add(n.id);
+      if (n.type !== 'doc' && (n.status === 'stale' || n.status === 'removed')) s.add(n.id);
+    }
+    return s;
+  }, [layout]);
+  const changedCount = useMemo(
+    () => (layout ? layout.nodes.filter((n) => n.type === 'doc' && CHANGED_FILE.has(n.status)).length : 0),
+    [layout],
+  );
+
+  /* highlight set — hover/focus adjacency wins; else changes-mode lights the changed web */
   const hot = hover || focus;
   const hotSet = useMemo(() => {
-    if (!hot || !layout) return null;
-    const s = new Set([hot]);
-    layout.adj[hot]?.forEach((x) => s.add(x));
-    return s;
-  }, [hot, layout]);
+    if (hot && layout) {
+      const s = new Set([hot]);
+      layout.adj[hot]?.forEach((x) => s.add(x));
+      return s;
+    }
+    if (changesMode && changedSet.size > 0) return changedSet;
+    return null;
+  }, [hot, layout, changesMode, changedSet]);
 
   /* wiki target resolution: file stem or folder name → node */
   const resolveTarget = useMemo(() => {
@@ -460,13 +520,28 @@ export function KnowledgeAtlas({ root }: { root: string }) {
               const cls = 'xlink' + (isHot ? ' hot' : hotSet ? ' fade' : '');
               return <path key={e.id} className={cls} d={xPath(a, b)} />;
             })}
-            {/* structural tree */}
-            {layout.tedges.map((e) => {
+            {/* structural tree — with the indexed summary flowing along the edge */}
+            {layout.tedges.map((e, i) => {
               const a = layout.byId[e.a], b = layout.byId[e.b];
               if (!a || !b) return null;
               const isHot = hotSet && hotSet.has(e.a) && hotSet.has(e.b);
               const cls = 'flow-edge' + (isHot ? ' hot' : hotSet ? ' dim' : '');
-              return <path key={e.id} className={cls} d={treePath(a, b)} />;
+              const pid = `kb-te-${i}`;
+              const label = e.summary
+                ? (e.summary.length > 96 ? e.summary.slice(0, 96) + '…' : e.summary)
+                : null;
+              return (
+                <g key={e.id}>
+                  <path id={pid} className={cls} d={treePath(a, b)} />
+                  {label && (
+                    <text className={'edge-label' + (isHot ? ' hot' : hotSet ? ' dim' : '')} dy={-5}>
+                      <textPath href={`#${pid}`} startOffset="50%" textAnchor="middle">
+                        {label}
+                      </textPath>
+                    </text>
+                  )}
+                </g>
+              );
             })}
             {/* anchor dots on tree endpoints */}
             {layout.nodes.map((n) => (
@@ -480,7 +555,10 @@ export function KnowledgeAtlas({ root }: { root: string }) {
             const active = focus === n.id || hover === n.id;
             return (
               <div key={n.id}
-                className={'node ' + n.type + (active ? ' active' : '') + (faded ? ' faded' : '')}
+                className={
+                  'node ' + n.type + ' st-' + n.status + (n.isGhost ? ' ghost' : '') +
+                  (active ? ' active' : '') + (faded ? ' faded' : '')
+                }
                 style={{ left: n.cx, top: n.cy }}
                 onMouseEnter={() => setHover(n.id)} onMouseLeave={() => setHover(null)}
                 onClick={() => { if (n.type === 'doc') openDoc(n.id); }}>
@@ -489,6 +567,11 @@ export function KnowledgeAtlas({ root }: { root: string }) {
                   <div className="ttl">{n.title}</div>
                   {n.sub && <div className="sub">{n.sub}</div>}
                   {n.type === 'doc' && n.deg > 0 && <div className="deg">{n.deg}</div>}
+                  {n.type === 'doc' && n.status !== 'fresh' && n.status !== 'manual' && (
+                    <div className={'st st-' + n.status} data-testid="kb-status-badge" title={n.status}>
+                      {n.status === 'added' ? '+' : n.status === 'removed' ? '−' : n.status === 'modified' ? '●' : '○'}
+                    </div>
+                  )}
                 </div>
               </div>
             );
@@ -501,6 +584,19 @@ export function KnowledgeAtlas({ root }: { root: string }) {
         <div className="topbar">
           <div className="brand"><span className="mark" /><div><b>Knowledge Atlas</b><span>{rootName}</span></div></div>
           <div className="spacer" />
+          {changedCount > 0 && (
+            <div
+              className={'pill warn' + (changesMode ? ' on' : '')}
+              data-testid="kb-changed-chip"
+              title="Highlight changes since the last stamp"
+              onClick={() => setChangesMode((m) => !m)}
+            >
+              <span className="wdot" /><span>{changedCount} changed</span>
+            </div>
+          )}
+          <div className="pill" data-testid="kb-stamp" title="Stamp the current state as the baseline" onClick={stamp}>
+            <Icon d={ICONS.stamp} s={14} /><span>{stamping ? 'Stamping…' : 'Stamp baseline'}</span>
+          </div>
           <div className="pill" onClick={() => setCmdOpen(true)}>
             <Icon d={ICONS.search} s={14} /><span>Search</span><span className="kbd">⌘K</span>
           </div>
@@ -518,6 +614,8 @@ export function KnowledgeAtlas({ root }: { root: string }) {
           <div className="lt">Legend</div>
           <div className="lr"><svg width="22" height="8"><path d="M1 4 C8 4 14 4 21 4" fill="none" stroke="var(--flow)" strokeWidth="1.8" /></svg>Structure</div>
           <div className="lr"><svg width="22" height="8"><path d="M1 4 C8 4 14 4 21 4" fill="none" stroke="var(--rubric)" strokeWidth="1.6" strokeDasharray="2 4" /></svg>Cross-link</div>
+          <div className="lr"><span className="sw warn" />Changed</div>
+          <div className="lr"><span className="sw ghost" />Removed</div>
         </div>
 
         {!drawerOpen && layout && <div className="hint">Drag to pan · scroll to zoom · click a node to read</div>}
@@ -530,7 +628,10 @@ export function KnowledgeAtlas({ root }: { root: string }) {
           <>
             <div className="drawer-head">
               <div>
-                <div className="eye">{focusNode.kicker ?? 'Docs'}</div>
+                <div className="eye">
+                  {focusNode.kicker ?? 'Docs'}
+                  {focusNode.status !== 'fresh' && focusNode.status !== 'unindexed' ? ` · ${focusNode.status}` : ''}
+                </div>
                 <h2>{focusNode.title}</h2>
               </div>
               <button className="drawer-x" onClick={closeDoc}><Icon d="M6 6l12 12M18 6L6 18" s={16} sw={2} /></button>
@@ -542,20 +643,50 @@ export function KnowledgeAtlas({ root }: { root: string }) {
                   <div className="m"><div className="k">Cross-links</div><div className="v">{focusNode.deg}</div></div>
                 )}
               </div>
-              <div className="d-prose">
-                {docBody.loading
-                  ? <p className="lead" style={{ color: 'var(--ink-faint)', fontStyle: 'italic' }}>Reading…</p>
-                  : <ProseBlocks blocks={docBody.blocks} resolve={resolveTarget} onNav={openDoc} />}
-              </div>
-              {partners.length > 0 && (
-                <div className="d-links">
-                  <div className="lh">Connected · {partners.length}</div>
-                  {partners.map((p) => (
-                    <span className="d-chip" key={p.id} onClick={() => openDoc(p.id)}>
-                      <span className="cd" />{p.title}
-                    </span>
-                  ))}
+              {(CHANGED_FILE.has(focusNode.status)) && (
+                <div className="d-tabs">
+                  {!focusNode.isGhost && (
+                    <span className={'d-tab' + (drawerTab === 'doc' ? ' active' : '')}
+                      onClick={() => setDrawerTab('doc')}>Entry</span>
+                  )}
+                  <span className={'d-tab' + (drawerTab === 'changes' ? ' active' : '')}
+                    data-testid="kb-changes-tab" onClick={() => setDrawerTab('changes')}>Changes</span>
                 </div>
+              )}
+              {drawerTab === 'changes' ? (
+                <div className="d-diff" data-testid="kb-diff-panel">
+                  {diffBody.loading ? (
+                    <p className="d-diff-note">Computing diff…</p>
+                  ) : diffBody.skipped ? (
+                    <p className="d-diff-note">Diff unavailable ({diffBody.skipped}).</p>
+                  ) : diffBody.diff ? (
+                    <DiffContent diffString={diffBody.diff} sideBySide={false} />
+                  ) : (
+                    <p className="d-diff-note">No line changes vs the stamped baseline.</p>
+                  )}
+                </div>
+              ) : focusNode.isGhost ? (
+                <div className="d-prose">
+                  <p className="lead">This entry was removed since the last stamp — it exists only in the baseline.</p>
+                </div>
+              ) : (
+                <>
+                  <div className="d-prose">
+                    {docBody.loading
+                      ? <p className="lead" style={{ color: 'var(--ink-faint)', fontStyle: 'italic' }}>Reading…</p>
+                      : <ProseBlocks blocks={docBody.blocks} resolve={resolveTarget} onNav={openDoc} />}
+                  </div>
+                  {partners.length > 0 && (
+                    <div className="d-links">
+                      <div className="lh">Connected · {partners.length}</div>
+                      {partners.map((p) => (
+                        <span className="d-chip" key={p.id} onClick={() => openDoc(p.id)}>
+                          <span className="cd" />{p.title}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </>

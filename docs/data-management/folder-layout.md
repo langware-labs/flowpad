@@ -172,7 +172,7 @@ The projects directory is `InstanceSettings.claude_projects_dir` (`claude_home /
 Each subdirectory under `projects/` corresponds to a working directory. The directory name is the absolute filesystem path with `/` replaced by `-`. The leading `/` is stripped and the remainder is prefixed with `-`:
 
 - Working directory `/home/alice/myproject` → `~/.claude/projects/-home-alice-myproject/`
-- Working directory `/Users/shlom/Documents/dev/flow-cli` → `~/.claude/projects/-Users-shlom-Documents-dev-flow-cli/`
+- Working directory `/Users/alice/Documents/dev/flow-cli` → `~/.claude/projects/-Users-alice-Documents-dev-flow-cli/`
 
 `decode_claude_project_dir()` (in `_claude_projects.py`) reverses the encoding, preferring the `cwd` recorded inside the session JSONL and falling back to the encoded-name decode (which also handles Windows drive-letter prefixes).
 
@@ -255,7 +255,6 @@ These types represent data sourced from Claude Code's own files. The records are
 | `ACTIVE_SESSIONS` | `"active_sessions"` | Virtual container — scans `~/.claude/projects/` for recent sessions |
 | `ACTIVE_SESSION` | `"active_session"` | Single active session (mtime within 5 minutes) |
 | `CLAUDE_DEBUG_LOG` | `"claude_debug_log"` | `~/.claude/debug/<session-uuid>.txt` |
-| `CLAUDE_USAGE` | `"claude_usage"` | API rate-limit/usage (fetched from Anthropic API, not a file) |
 
 ### Transcript Entry Records
 
@@ -347,7 +346,6 @@ These are defined next to their type in `flow_sdk/fs_store/indexer/functions/<ty
 | `PLUGIN` | `~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/` |
 | `MCP_SERVER` | Entries in `mcp.json` / `.mcp.json` / `.claude/mcp.json` |
 | `ACCOUNT` | `~/.claude.json` (deprecated) |
-| `CLAUDE_USAGE` | Anthropic API (not a file) |
 | `CLAUDE_ERROR` | Synced from `~/.claude/debug/*.txt` into `<records_root>/claude_error/` |
 | `CODEX_SESSION` / `CODEX_PROJECT` | `~/.codex/sessions/` (see `codex_sessions.py` / `codex_projects.py`) |
 | `SESSION_ANALYSIS` / `SESSION_CLASSIFICATION` | `<records_root>/<type>/<type>-@<uid>/` |

@@ -323,7 +323,7 @@ TypeId is the entity-addressing prefix in [VFS paths](./vfs.md):
 ```
 vfs://{typeid}/{entity_sub_path}
        ↓
-  compute_node-@local/Users/shlom/file.md
+  compute_node-@local/Users/alice/file.md
 ```
 
 In HTTP routes, the TypeId is split across path segments:

@@ -3,6 +3,7 @@ import { useProject } from '@sdk/react/hooks';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { CodexIcon } from '@src/components/icons/CodexIcon';
+import { CopilotIcon } from '@src/components/icons/CopilotIcon';
 import {
   NewProjectDialog,
   NewProjectFromGitDialog,
@@ -119,7 +120,7 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
   // live AgenticProcess immediately. Create the process, then navigate to its
   // terminal dock pointer (URL-first; the loader owns the rendered view).
   const handleStartSession = useCallback(
-    async (workerType: 'claude_code' | 'codex') => {
+    async (workerType: 'claude_code' | 'codex' | 'copilot') => {
       onOpenChange(false);
       const result = await navigation.openNewClaudeProcess({ workerType });
       if (!result) {
@@ -186,6 +187,10 @@ export function QuickCreateMenu({ children, open, onOpenChange, onPick }: QuickC
           <DropdownMenuItem onSelect={() => void handleStartSession('codex')}>
             <CodexIcon className="mr-2 h-4 w-4 text-emerald-500" />
             Codex session
+          </DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => void handleStartSession('copilot')}>
+            <CopilotIcon className="mr-2 h-4 w-4 text-sky-500" />
+            Copilot session
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuLabel>New project</DropdownMenuLabel>

@@ -6,8 +6,11 @@ import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popo
 import { useMembers } from '@src/hooks/use-members';
 import { useLocalUser } from './useLocalUser';
 import {
+  assignableRoles,
+  canInviteMembers,
   participantInitials,
   participantLabel,
+  participantRank,
   participantRoleLabel,
 } from './participant-display';
 
@@ -29,19 +32,26 @@ interface MembersAvatarStackProps {
  * pattern; this component is purely presentational.
  */
 export function MembersAvatarStack({ typeId }: MembersAvatarStackProps) {
-  const { members, addMember, removeMember } = useMembers(typeId);
+  const { members, addMember, removeMember, setRole } = useMembers(typeId);
   const { localUser } = useLocalUser();
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState('');
   const [inviting, setInviting] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
+  const [changingId, setChangingId] = useState<string | null>(null);
 
-  // The remove affordance is OWNER ONLY (the hub enforces it too — this just
-  // hides the control for everyone else). Owner = the roster row whose role is
-  // 'owner'; I'm the owner iff that row's user_id is mine.
-  const ownerId = members.find((m) => (m.role ?? '').toLowerCase() === 'owner')?.user_id ?? null;
-  const iAmOwner = !!localUser?.id && ownerId === localUser.id;
+  // My roster row drives every affordance gate: rank for the role selector
+  // (mirrors the hub's ``can_assign`` ceiling), owner for remove, admin+ for
+  // invite. The hub enforces all of these too — hiding here just keeps the UI
+  // from offering controls that would 403.
+  const me = members.find((m) => !!m.user_id && !!localUser?.id && m.user_id === localUser.id) ?? null;
+  const iAmOwner = participantRank(me) === 0;
+  // Invite gate applies only when my roster row resolved. A local-only /
+  // not-yet-shared conversation has an empty roster (no ``me``) — keep the
+  // form there, since this popover is also the first-share entry point and
+  // the sharer becomes the owner.
+  const mayInvite = me === null ? true : canInviteMembers(me);
 
   const handleRemove = async (userId: string) => {
     setRemovingId(userId);
@@ -53,6 +63,19 @@ export function MembersAvatarStack({ typeId }: MembersAvatarStackProps) {
       // row as-is rather than surfacing a modal in this compact popover.
     } finally {
       setRemovingId(null);
+    }
+  };
+
+  const handleRoleChange = async (userId: string, role: string) => {
+    setChangingId(userId);
+    try {
+      await setRole(userId, role);
+    } catch {
+      // The selector is already ceiling-gated, so a hub denial here is a
+      // stale-roster/transient case; the post-change refresh in setRole didn't
+      // run, so the row simply keeps showing the hub-authoritative role.
+    } finally {
+      setChangingId(null);
     }
   };
 
@@ -68,7 +91,12 @@ export function MembersAvatarStack({ typeId }: MembersAvatarStackProps) {
       await addMember(candidate);
       setEmail('');
     } catch (err) {
-      setInviteError(err instanceof Error ? err.message : 'Invite failed');
+      const message = err instanceof Error ? err.message : 'Invite failed';
+      // Re-inviting an accepted member is hub-rejected (400 "use change_role")
+      // — point at the roster's role selector instead of echoing the raw error.
+      setInviteError(/change_role/i.test(message)
+        ? 'Already a member — change their role in the list above'
+        : message);
     } finally {
       setInviting(false);
     }
@@ -128,6 +156,10 @@ export function MembersAvatarStack({ typeId }: MembersAvatarStackProps) {
         <ul className="flex flex-col gap-1.5">
           {members.map((p, i) => {
             const role = participantRoleLabel(p);
+            // Role selector mirrors the hub ``can_assign`` ceiling: options
+            // strictly below my rank, only on members strictly below my rank,
+            // never my own row / the owner. Empty = render the static label.
+            const roles = assignableRoles(me, p);
             return (
               <li
                 key={p.user_id || p.email || i}
@@ -139,7 +171,31 @@ export function MembersAvatarStack({ typeId }: MembersAvatarStackProps) {
                   </AvatarFallback>
                 </Avatar>
                 <span className="flex-1 truncate">{participantLabel(p)}</span>
-                {role && (
+                {roles.length > 0 ? (
+                  <select
+                    aria-label={`Change role of ${participantLabel(p)}`}
+                    data-testid="member-role-select"
+                    value={(p.role ?? '').toLowerCase()}
+                    disabled={changingId === p.user_id}
+                    onChange={(e) => void handleRoleChange(p.user_id as string, e.target.value)}
+                    className="rounded border border-transparent bg-transparent text-[10px] uppercase tracking-wide text-muted-foreground outline-none transition-colors hover:border-border focus:border-primary disabled:opacity-40"
+                  >
+                    {/* Current role stays selectable when it's outside the
+                        offered menu (a rankable-but-not-assignable role like
+                        ``guest``, or a comma-joined multi-role value) so the
+                        select never shows a blank value. */}
+                    {!roles.includes((p.role ?? '').toLowerCase()) && (
+                      <option value={(p.role ?? '').toLowerCase()} disabled>
+                        {role}
+                      </option>
+                    )}
+                    {roles.map((r) => (
+                      <option key={r} value={r}>
+                        {r}
+                      </option>
+                    ))}
+                  </select>
+                ) : role && (
                   <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
                     {role}
                   </span>
@@ -164,6 +220,9 @@ export function MembersAvatarStack({ typeId }: MembersAvatarStackProps) {
             );
           })}
         </ul>
+        {/* Invite — admin+/owner only (the hub policy method-scopes the
+            mutating ``members`` action; a plain member's POST would 403). */}
+        {mayInvite && (
         <div className="mt-2 border-t border-border pt-2">
           <form
             className="flex items-center gap-1.5"
@@ -199,6 +258,7 @@ export function MembersAvatarStack({ typeId }: MembersAvatarStackProps) {
             </div>
           )}
         </div>
+        )}
       </PopoverContent>
     </Popover>
   );

@@ -43,6 +43,11 @@ try:
 except ImportError as e:
     print(f"[WARN] Failed to import ComputeNode: {e}")
 
+try:
+    from flow_sdk.builtin.capability import Capability  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import Capability: {e}")
+
 # Flow entity
 try:
     from flow_sdk.builtin.process import Flow  # noqa: F401
@@ -94,6 +99,16 @@ try:
     from flow_sdk.builtin.whiteboard import Whiteboard  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import Whiteboard: {e}")
+
+try:
+    from flow_sdk.builtin.group import Group  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import Group: {e}")
+
+try:
+    from flow_sdk.builtin.prompt import Prompt  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import Prompt: {e}")
 
 # These have more complex dependencies - skip for now
 # from builtin.page import Page  # noqa: F401

@@ -25,6 +25,8 @@
   --rubric-dim: rgb(5 150 105 / 0.12);
   --flow:       rgb(67 56 202 / 0.55);   /* structural edge (indigo) */
   --sel:        rgb(5 150 105 / 0.16);
+  --kb-warn:     rgb(180 83 9);          /* changed-since-stamp (amber, = context_private) */
+  --kb-warn-dim: rgb(180 83 9 / 0.14);
 
   --serif: 'Newsreader', Georgia, serif;
   --mono:  'IBM Plex Mono', ui-monospace, monospace;
@@ -48,6 +50,8 @@
   --rubric-dim: rgb(16 185 129 / 0.16);
   --flow:       rgb(99 102 241 / 0.55);
   --sel:        rgb(16 185 129 / 0.2);
+  --kb-warn:     rgb(245 158 11);
+  --kb-warn-dim: rgb(245 158 11 / 0.18);
 }
 
 .kb-atlas * { box-sizing: border-box; }
@@ -60,6 +64,12 @@
 .kb-atlas .flow-edge { fill: none; stroke: var(--flow); stroke-width: 1.6; transition: stroke .2s, stroke-width .2s, stroke-opacity .2s; }
 .kb-atlas .flow-edge.dim { stroke-opacity: .35; }
 .kb-atlas .flow-edge.hot { stroke: var(--ink-soft); stroke-width: 2; }
+
+/* indexed summary flowing along a tree edge */
+.kb-atlas .edge-label { font-family: var(--serif); font-style: italic; font-size: 11px;
+  fill: var(--ink-faint); pointer-events: none; transition: fill .2s, opacity .2s; }
+.kb-atlas .edge-label.hot { fill: var(--ink-soft); }
+.kb-atlas .edge-label.dim { opacity: .25; }
 
 .kb-atlas .xlink { fill: none; stroke: var(--rubric); stroke-width: 1.4; stroke-opacity: .2;
   stroke-dasharray: 2 5; transition: stroke-opacity .2s, stroke-width .2s; }
@@ -107,6 +117,33 @@
 .kb-atlas .node.section.active .card { background: var(--rubric-dim); }
 
 .kb-atlas .node.doc .card { width: 196px; }
+
+/* ---- Index-status overlay ----------------------------------------- */
+/* status badge: mirrors the deg badge, top-LEFT */
+.kb-atlas .node .st { position: absolute; top: -7px; left: -7px; width: 18px; height: 18px;
+  border-radius: 9px; font-family: var(--mono); font-size: 11px; line-height: 1;
+  display: grid; place-items: center; box-shadow: 0 2px 6px -1px hsl(0 0% 0% / .4); }
+.kb-atlas .node .st.st-modified { background: var(--kb-warn); color: hsl(var(--background)); }
+.kb-atlas .node .st.st-added { background: var(--rubric); color: hsl(var(--background)); }
+.kb-atlas .node .st.st-removed { background: var(--paper); color: var(--ink-soft); border: 1px dashed var(--ink-faint); box-shadow: none; }
+.kb-atlas .node .st.st-unindexed { background: var(--paper); color: var(--ink-faint); border: 1px solid var(--kb-edge); box-shadow: none; }
+
+/* ghost (removed-since-stamp) cards */
+.kb-atlas .node.ghost .card { border-style: dashed; background: transparent; }
+.kb-atlas .node.ghost { opacity: .45; }
+.kb-atlas .node.ghost .ttl { color: var(--ink-soft); text-decoration: line-through; text-decoration-color: var(--ink-faint); }
+
+/* stale folder pills */
+.kb-atlas .node.section.st-stale .card { border-color: var(--kb-warn); box-shadow: 0 0 0 2px var(--kb-warn-dim); }
+.kb-atlas .node.root.st-stale .card { box-shadow: 0 0 0 3px var(--kb-warn-dim); }
+
+/* changed chip + legend swatches */
+.kb-atlas .pill.warn { color: var(--kb-warn); border-color: var(--kb-warn); }
+.kb-atlas .pill.warn.on { background: var(--kb-warn-dim); }
+.kb-atlas .pill .wdot { width: 7px; height: 7px; border-radius: 50%; background: var(--kb-warn); }
+.kb-atlas .legend .sw { width: 14px; height: 8px; border-radius: 3px; display: inline-block; }
+.kb-atlas .legend .sw.warn { background: var(--kb-warn); }
+.kb-atlas .legend .sw.ghost { border: 1px dashed var(--ink-faint); background: transparent; }
 
 /* edge endpoint dots */
 .kb-atlas .anchor { fill: var(--paper); stroke: var(--flow); stroke-width: 1.5; }
@@ -203,6 +240,15 @@
 .kb-atlas .d-prose code { font-family: var(--mono); font-size: .88em; background: var(--paper-2);
   border: 1px solid var(--edge-soft); border-radius: 4px; padding: 0 4px; }
 .kb-atlas .d-prose pre code { border: none; background: none; padding: 0; }
+
+/* drawer tabs + diff panel */
+.kb-atlas .d-tabs { display: flex; gap: 16px; margin: 0 0 18px; border-bottom: 1px solid var(--kb-edge); }
+.kb-atlas .d-tab { font-family: var(--mono); font-size: 10px; letter-spacing: .16em; text-transform: uppercase;
+  color: var(--ink-faint); padding: 0 2px 8px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.kb-atlas .d-tab:hover { color: var(--ink-soft); }
+.kb-atlas .d-tab.active { color: var(--rubric); border-bottom-color: var(--rubric); }
+.kb-atlas .d-diff { border: 1px solid var(--kb-edge); border-radius: 8px; overflow: hidden; }
+.kb-atlas .d-diff-note { font-size: 14px; color: var(--ink-soft); font-style: italic; padding: 6px 2px; }
 
 .kb-atlas .d-links { margin-top: 26px; padding-top: 18px; border-top: 1px solid var(--kb-edge); }
 .kb-atlas .d-links .lh { font-family: var(--mono); font-size: 9px; letter-spacing: .18em; text-transform: uppercase; color: var(--ink-faint); margin-bottom: 10px; }

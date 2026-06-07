@@ -1,35 +1,40 @@
 import React, { useState } from 'react';
 import { Button } from '@src/components/ui/button';
 import { Switch } from '@src/components/ui/switch';
-import type { QueueEntry, QueueState } from '@src/hooks/useAgenticQueue';
+import { useEntity } from '@src/hooks/entity-hooks/useEntity';
+import type { AgenticProcess } from '@sdk/process/agentic-process';
 
 interface QueuePanelProps {
-  queue: QueueState;
-  onAdd: (entry: QueueEntry) => void;
-  onRemove: (index: number) => void;
-  onMove: (index: number, direction: 'up' | 'down') => void;
-  onSetEnabled: (enabled: boolean) => void;
+  /**
+   * The process whose queue this panel shows. The panel is purely
+   * declarative: it reads ``queue`` (reflected backend state, refreshed live
+   * via ``data_op``) and mutates exclusively through the entity's queue action
+   * methods. There is no client-side queue state or injection logic — the
+   * backend owns the file and the drain.
+   */
+  process: AgenticProcess;
 }
 
-export const QueuePanel: React.FC<QueuePanelProps> = ({
-  queue,
-  onAdd,
-  onRemove,
-  onMove,
-  onSetEnabled,
-}) => {
+export const QueuePanel: React.FC<QueuePanelProps> = ({ process }) => {
+  // The ONLY local state is the draft text in the add box — pure input UI.
   const [promptText, setPromptText] = useState('');
-  const [delay, setDelay] = useState(0);
-  const [delayUnit, setDelayUnit] = useState<'sec' | 'min'>('sec');
 
-  const entries = queue.entries ?? [];
+  // Subscribe to the entity so queue mutations re-render this panel. The
+  // `process` prop comes from the loader context (a stable object ref) and
+  // `data_op` updates mutate it IN PLACE — without a subscription React never
+  // re-renders. `useEntity` returns the same cached instance but forces a
+  // re-render on every update. (Reactive read only — still zero queue logic.)
+  const live = useEntity<AgenticProcess>(process.typeId).data ?? process;
+
+  const queue = live.queue;
+  const entries = queue?.entries ?? [];
+  const enabled = queue?.enabled ?? true;
 
   const handleAdd = () => {
-    if (!promptText.trim()) return;
-    const delaySec = delayUnit === 'min' ? delay * 60 : delay;
-    onAdd({ queue_entry_type: 'prompt', queue_entry_data: { prompt: promptText.trim() }, delay: delaySec });
+    const text = promptText.trim();
+    if (!text) return;
+    void live.enqueue(text);
     setPromptText('');
-    setDelay(0);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -45,10 +50,18 @@ export const QueuePanel: React.FC<QueuePanelProps> = ({
       <div className="flex items-center gap-2 border-b px-3 py-2">
         <span className="text-sm font-medium">Prompt Queue</span>
         <Switch
-          checked={queue.enabled}
-          onCheckedChange={onSetEnabled}
+          checked={enabled}
+          onCheckedChange={(v) => void live.setQueueEnabled(v)}
         />
-        <span className="text-xs text-muted-foreground">{queue.enabled ? 'on' : 'off'}</span>
+        <span className="text-xs text-muted-foreground">{enabled ? 'on' : 'off'}</span>
+        {entries.length > 0 && (
+          <button
+            className="ml-auto text-[10px] text-muted-foreground hover:text-destructive"
+            onClick={() => void live.clearQueue()}
+          >
+            Clear
+          </button>
+        )}
       </div>
 
       {/* Queue entries */}
@@ -60,30 +73,13 @@ export const QueuePanel: React.FC<QueuePanelProps> = ({
         ) : (
           <div className="divide-y">
             {entries.map((entry, i) => (
-              <div key={i} className="flex items-start gap-2 px-3 py-2 text-xs hover:bg-muted/30">
+              <div key={entry.id} className="flex items-start gap-2 px-3 py-2 text-xs hover:bg-muted/30">
                 <span className="mt-0.5 w-4 shrink-0 text-right text-muted-foreground">{i + 1}.</span>
-                <div className="min-w-0 flex-1">
-                  <p className="break-words leading-relaxed">{entry.queue_entry_data.prompt}</p>
-                  <p className="mt-0.5 text-[10px] text-muted-foreground">
-                    {(entry.delay ?? 0) === 0
-                      ? 'inject immediately'
-                      : `delay: ${(entry.delay ?? 0) >= 60 ? `${Math.round((entry.delay ?? 0) / 60)}m` : `${entry.delay}s`}`}
-                  </p>
-                </div>
-                <div className="flex shrink-0 flex-col gap-0.5">
-                  <Button
-                    variant="ghost" size="sm" className="h-5 w-5 p-0"
-                    onClick={() => onMove(i, 'up')} disabled={i === 0}
-                  >↑</Button>
-                  <Button
-                    variant="ghost" size="sm" className="h-5 w-5 p-0"
-                    onClick={() => onMove(i, 'down')} disabled={i === entries.length - 1}
-                  >↓</Button>
-                  <button
-                    className="flex h-5 w-5 items-center justify-center text-muted-foreground hover:text-destructive"
-                    onClick={() => onRemove(i)}
-                  >×</button>
-                </div>
+                <p className="min-w-0 flex-1 break-words leading-relaxed">{entry.prompt}</p>
+                <button
+                  className="flex h-5 w-5 shrink-0 items-center justify-center text-muted-foreground hover:text-destructive"
+                  onClick={() => void live.dequeue(entry.id)}
+                >×</button>
               </div>
             ))}
           </div>
@@ -94,33 +90,11 @@ export const QueuePanel: React.FC<QueuePanelProps> = ({
       <div className="border-t p-3 space-y-2">
         <textarea
           className="w-full rounded-md border bg-background px-2.5 py-2 text-xs resize-none h-20 focus:outline-none focus:ring-1 focus:ring-ring"
-          placeholder="Next prompt to auto-inject when agent goes idle. Press Enter to add."
+          placeholder="Next prompt — injected when the agent next goes idle. Press Enter to add."
           value={promptText}
           onChange={(e) => setPromptText(e.target.value)}
           onKeyDown={handleKeyDown}
         />
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-muted-foreground shrink-0">Delay</span>
-          <input
-            type="range"
-            min={0}
-            max={delayUnit === 'sec' ? 60 : 30}
-            value={delay}
-            onChange={(e) => setDelay(Number(e.target.value))}
-            className="flex-1 accent-amber-500"
-          />
-          <span className="text-xs w-8 text-right tabular-nums">{delay}{delayUnit === 'sec' ? 's' : 'm'}</span>
-          <div className="flex rounded-md border text-[10px] overflow-hidden shrink-0">
-            <button
-              className={`px-1.5 py-0.5 ${delayUnit === 'sec' ? 'bg-muted font-semibold' : 'text-muted-foreground'}`}
-              onClick={() => { setDelayUnit('sec'); setDelay(0); }}
-            >Sec</button>
-            <button
-              className={`px-1.5 py-0.5 ${delayUnit === 'min' ? 'bg-muted font-semibold' : 'text-muted-foreground'}`}
-              onClick={() => { setDelayUnit('min'); setDelay(0); }}
-            >Min</button>
-          </div>
-        </div>
         <Button size="sm" className="w-full h-7 text-xs" onClick={handleAdd} disabled={!promptText.trim()}>
           Add to Queue
         </Button>

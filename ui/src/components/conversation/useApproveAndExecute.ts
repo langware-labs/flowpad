@@ -1,11 +1,4 @@
-import {
-  AgenticProcess,
-  Conversation,
-  dataManager,
-  isWorkerTerminal,
-  ProcessStatus,
-  TypeId,
-} from '@sdk';
+import { AgenticProcess, Conversation, dataManager, isWorkerTerminal, ProcessStatus, TypeId } from '@sdk';
 import { resolveWorkdir } from './apply-project-choice';
 import { useEntity } from '@sdk/react/hooks';
 import { ActionInfo } from '@sdk/models/ActionInfo';
@@ -14,7 +7,7 @@ import type { FlowData } from '@sdk/flow_processing';
 import { FlowElementTypes } from '@sdk/flow_processing/flow-element-types';
 import { notify } from '@src/notifications';
 import { useProcessesForTarget } from '@src/components/entity-execution-panel';
-import { approveAndReload, buildMergedPrompt } from './prompt-building';
+import { approveAndReload, buildMergedPrompt, promptEntityIdsOf } from './prompt-building';
 
 interface UseApproveAndExecuteOptions {
   /** Task to scope the run to. Pass an inert task (`{id: '', metadata: {}}`)
@@ -44,14 +37,13 @@ function extractAssistantText(items: readonly FlowData[]): string {
  * up to the next terminal worker status. Subscribes before triggering so the
  * reuse case (worker_status already COMPLETE from a prior turn) sees the new
  * turn's flow_data events before any state_change fires. */
-async function captureTurn(
-  process: AgenticProcess,
-  trigger: () => Promise<unknown>,
-): Promise<readonly FlowData[]> {
+async function captureTurn(process: AgenticProcess, trigger: () => Promise<unknown>): Promise<readonly FlowData[]> {
   const captured: FlowData[] = [];
   let turnStarted = false;
   let resolveDone: (() => void) | null = null;
-  const done = new Promise<void>((r) => { resolveDone = r; });
+  const done = new Promise<void>((r) => {
+    resolveDone = r;
+  });
 
   const dataHandler = (fd: FlowData) => {
     captured.push(fd);
@@ -110,13 +102,12 @@ function wrapAsPromptResponse(text: string): string {
   const escaped = text.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
   return `Prompt response: "${escaped}"`;
 }
-export function useApproveAndExecute(
-  { task, conversationId }: UseApproveAndExecuteOptions,
-): UseApproveAndExecuteResult {
+export function useApproveAndExecute({
+  task,
+  conversationId,
+}: UseApproveAndExecuteOptions): UseApproveAndExecuteResult {
   const useTaskScope = !!task.id;
-  const targetVfsPath = conversationId
-    ? new TypeId('conversation', conversationId).toString()
-    : '';
+  const targetVfsPath = conversationId ? new TypeId('conversation', conversationId).toString() : '';
 
   const { data: conversation } = useEntity<Conversation>(
     conversationId ? new TypeId(Conversation.type, conversationId) : null,
@@ -169,9 +160,7 @@ export function useApproveAndExecute(
           runProcess.visible = false;
           await runProcess.save();
         }
-        captured = await captureTurn(runProcess, () =>
-          runProcess.executeInstruction(promptText, { sync: false }),
-        );
+        captured = await captureTurn(runProcess, () => runProcess.executeInstruction(promptText, { sync: false }));
       } else {
         // Fresh spawn. For task-bound A&E, fork from ``task.my_process_id``'s
         // Claude session so the headless run inherits the original
@@ -197,14 +186,21 @@ export function useApproveAndExecute(
           { headless: true, visible: false },
         );
         runProcess = spawned.process;
-        captured = await captureTurn(runProcess, () =>
-          runProcess.executeInstruction(promptText, { sync: false }),
-        );
+        captured = await captureTurn(runProcess, () => runProcess.executeInstruction(promptText, { sync: false }));
       }
     } catch (err) {
       console.error('[approveAndExecute] failed', err);
       notify.error({ title: 'Failed to run Approve & Execute.' });
       return;
+    }
+
+    // Execute-time continuity with pin-from-history: mutually cross-link each
+    // executed library prompt with the run's process and bump its usage
+    // counter. Fire-and-forget — a link failure must not eat the reply.
+    for (const promptId of promptEntityIdsOf(flowMessage)) {
+      void runProcess.linkExecutedPrompt(promptId).catch((err) => {
+        console.warn('[approveAndExecute] link-executed-prompt failed', err);
+      });
     }
 
     const text = extractAssistantText(captured);

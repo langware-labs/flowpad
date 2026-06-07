@@ -51,6 +51,61 @@ export function participantRoleLabel(participant: ConversationParticipant | null
   return participant?.role?.trim() || '';
 }
 
+/** Standard role ladder, highest first — mirrors the hub's ``ROLE_RANK``
+ *  (``flowpad/hub/core/auth/role_hierarchy.py``), the single source of truth
+ *  the hub's ``can_assign`` gate enforces. Index = rank (lower index = more
+ *  privileged). Custom/unknown roles rank as ``null`` (not on the ladder). */
+const ROLE_LADDER = ['owner', 'full-access', 'admin', 'editor', 'member', 'reader', 'guest'] as const;
+
+/** Rank of a single standard role (0 = owner), or null for custom/unknown. */
+function roleRank(role: string | null | undefined): number | null {
+  const idx = ROLE_LADDER.indexOf((role ?? '').trim().toLowerCase() as (typeof ROLE_LADDER)[number]);
+  return idx === -1 ? null : idx;
+}
+
+/** Highest (most privileged) standard rank from a participant's role field.
+ *  The hub joins multi-role members as ``"a, b"`` — take the best rank. */
+export function participantRank(participant: ConversationParticipant | null | undefined): number | null {
+  const raw = participant?.role ?? '';
+  let best: number | null = null;
+  for (const part of raw.split(',')) {
+    const r = roleRank(part);
+    if (r !== null && (best === null || r < best)) best = r;
+  }
+  return best;
+}
+
+/** Membership roles the picker may offer — the ladder minus ``owner`` (not
+ *  strictly below anyone, ownership moves via ``leave``) and the
+ *  non-membership ``full-access``/``guest`` (rankable, never assignable). */
+const ASSIGNABLE_ROLES = ['admin', 'editor', 'member', 'reader'] as const;
+
+/** Roles the caller may assign to a given member, mirroring the hub's
+ *  ``can_assign`` ceiling: assigned role strictly below the caller's rank AND
+ *  the member's current rank strictly below the caller's; never self, never a
+ *  row without a resolved rank or user id (the role-change PUT selects the
+ *  member by ``user_id``). Empty array = no role-change affordance. */
+export function assignableRoles(
+  me: ConversationParticipant | null | undefined,
+  target: ConversationParticipant | null | undefined,
+): string[] {
+  const myRank = participantRank(me);
+  const targetRank = participantRank(target);
+  if (myRank === null || targetRank === null) return [];
+  if (!target?.user_id) return [];
+  if (me?.user_id === target.user_id) return []; // self-change is hub-banned
+  if (targetRank <= myRank) return []; // peers and above are untouchable
+  return ASSIGNABLE_ROLES.filter((r) => (roleRank(r) as number) > myRank);
+}
+
+/** True when the caller may invite new members: the hub policy grants the
+ *  mutating ``members`` action to admin and above (owner via the default
+ *  ``owner: *`` policy). */
+export function canInviteMembers(me: ConversationParticipant | null | undefined): boolean {
+  const rank = participantRank(me);
+  return rank !== null && rank <= (roleRank('admin') as number);
+}
+
 /** First-letter initials for the avatar fallback. Strips non-letters and
  *  caps at two characters. Falls back to "?" so the avatar never goes blank. */
 export function participantInitials(participant: ConversationParticipant | null | undefined): string {

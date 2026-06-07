@@ -1,7 +1,8 @@
-import { dataManager, FlowMessage, TypeId } from '@sdk';
+import { dataManager, FlowMessage, Prompt, TypeId } from '@sdk';
 import { ActionInfo } from '@sdk/models/ActionInfo';
-import { AttachmentType } from '@sdk/entities/flow-message';
+import { AttachmentType, type Attachment } from '@sdk/entities/flow-message';
 import { isDownloadableFileAttachment } from './attachment-url';
+import { isPromptEntityAttachment, promptEntityIdOf } from './attachment-actions/prompt-attachment';
 
 /** Title-case the type slug for human-friendly type labels. */
 function humanType(type: string): string {
@@ -69,10 +70,7 @@ export function buildSharedAndPrivateContextSection(
  * just exposes the available shared/private entities so Claude can answer
  * questions from any participant.
  */
-export function buildAssistancePrompt(
-  sharedTypeIds: readonly TypeId[],
-  privateTypeIds: readonly TypeId[],
-): string {
+export function buildAssistancePrompt(sharedTypeIds: readonly TypeId[], privateTypeIds: readonly TypeId[]): string {
   const ctx = buildSharedAndPrivateContextSection(sharedTypeIds, privateTypeIds);
   const intro =
     'Use Flowpad Assistant to help answer questions from the user. ' +
@@ -87,9 +85,7 @@ export function buildAssistancePrompt(
  * - File-backed (`prompt/<filename>`) → fetch via `local_path`. Falls back to
  *   a placeholder string if the fetch fails so the prompt stays runnable.
  */
-export async function resolvePromptText(
-  att: { data: string; local_path?: string | null },
-): Promise<string> {
+export async function resolvePromptText(att: { data: string; local_path?: string | null }): Promise<string> {
   if (att.data && att.data.startsWith('prompt/') && att.local_path) {
     try {
       const res = await fetch(att.local_path);
@@ -100,6 +96,25 @@ export async function resolvePromptText(
     return `(Attached prompt file: ${att.data})`;
   }
   return att.data ?? '';
+}
+
+/**
+ * Resolve a prompt-entity TYPE_ID attachment to its text: the local library
+ * Prompt's `.text` when materialized, else the `prompt_preview` inline copy.
+ * Exported for `useApproveAndExecute` to map executed prompt ids.
+ */
+export async function resolvePromptEntityText(att: Attachment): Promise<string> {
+  const promptId = promptEntityIdOf(att);
+  if (promptId) {
+    const prompt = await dataManager.getByTypeId<Prompt>(new TypeId(Prompt.type, promptId)).catch(() => null);
+    if (prompt?.text) return prompt.text;
+  }
+  return att.prompt_preview ?? '';
+}
+
+/** Prompt-entity ids attached to a message (for execute-time cross-linking). */
+export function promptEntityIdsOf(flowMessage: FlowMessage): string[] {
+  return (flowMessage.attachment ?? []).map(promptEntityIdOf).filter((id): id is string => !!id);
 }
 
 /**
@@ -119,9 +134,8 @@ export async function resolvePromptText(
  * raw ``fs/download`` URL here, so a body that was never uploaded can't 404.
  */
 export async function buildMergedPrompt(flowMessage: FlowMessage): Promise<string> {
-  const promptAtts = (flowMessage.attachment ?? []).filter(
-    (a) => a.attachment_type === AttachmentType.PROMPT,
-  );
+  const promptAtts = (flowMessage.attachment ?? []).filter((a) => a.attachment_type === AttachmentType.PROMPT);
+  const promptEntityAtts = (flowMessage.attachment ?? []).filter(isPromptEntityAttachment);
   const fileAtts = (flowMessage.attachment ?? []).filter(isDownloadableFileAttachment);
 
   // Pull the body bundle once so every file-backed attachment's local_path is
@@ -135,6 +149,14 @@ export async function buildMergedPrompt(flowMessage: FlowMessage): Promise<strin
 
   const inlineParts: string[] = [];
   const promptFilePaths: string[] = [];
+
+  // Entity-backed prompts: prefer the local library entity's text (the
+  // post-download source of truth), falling back to the inline
+  // `prompt_preview` copy that rides the message header.
+  for (const att of promptEntityAtts) {
+    const text = await resolvePromptEntityText(att);
+    if (text) inlineParts.push(text);
+  }
 
   for (const att of promptAtts) {
     const isFile = !!att.data && att.data.startsWith('prompt/');

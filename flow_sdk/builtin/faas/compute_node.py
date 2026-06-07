@@ -505,9 +505,10 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         Wire shape: ``{pure_shells, visible_processes, checked_at}``.
           - ``pure_shells``: Shell entity dicts that are NOT background plumbing
             for any AgenticProcess. A shell is "pure" iff no AgenticProcess
-            (visible or not) owns it via ``shell_id``. This deliberately drops
-            both visible-process-owned shells (they show up via the process row)
-            and invisible-process-owned orphans.
+            (visible or not) owns it via ``shell_id`` / ``sidecar_shell_id`` and
+            it does not point back to a process via ``agentic_process_id``. This
+            deliberately drops both visible-process-owned shells (they show up
+            via the process row) and invisible-process-owned orphans.
           - ``visible_processes``: AgenticProcess entity dicts with
             ``visible == true``. After ``createProcess`` becomes atomic, every
             visible process has a populated ``shell_id``.
@@ -536,13 +537,15 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         visible_processes = [p for p in all_processes if getattr(p, "visible", False)]
 
         # 4. Drop background shells: any shell owned by an AgenticProcess
-        # (regardless of visibility) is plumbing for that process and is
-        # represented by the process row instead. Sidecars are already a
-        # subset of "owned by a process" but we keep the explicit set for
-        # readability and to honor the unconditional sidecar exclusion.
+        # (regardless of visibility, and via either forward or reverse link)
+        # is plumbing for that process and is represented by the process row
+        # instead. Sidecars are already a subset of "owned by a process" but
+        # we keep the explicit set for readability and to honor the
+        # unconditional sidecar exclusion.
         owned_shell_ids = {p.shell_id for p in all_processes if getattr(p, "shell_id", None)}
         sidecar_ids = {p.sidecar_shell_id for p in all_processes if getattr(p, "sidecar_shell_id", None)}
-        excluded_shell_ids = owned_shell_ids | sidecar_ids
+        reverse_owned_shell_ids = {s.id for s in all_shells if getattr(s, "agentic_process_id", None)}
+        excluded_shell_ids = owned_shell_ids | sidecar_ids | reverse_owned_shell_ids
 
         from flow_sdk.builtin.shell import ShellStatus
         terminal_shell_states = {
@@ -894,9 +897,6 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
     @action.all(action_name="get-cost-overview")
     async def get_cost_overview_action(self): return await self._analytics_cost_overview()
-
-    @action.all(action_name="get-claude-usage")
-    async def get_claude_usage_action(self): return await self._analytics_claude_usage()
 
     @action.all(action_name="get-claude-context")
     async def get_claude_context_action(self): return await self._analytics_claude_context()

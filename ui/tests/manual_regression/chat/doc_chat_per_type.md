@@ -3,13 +3,29 @@ id: 239cd419-8f92-5bee-bdf5-40e3188a2b6d
 ---
 
 test 1: Doc-chat panel mounts on every editable doc-type with asset_ref-resolved target
-- for each url under `{plan,agent,skill,markdown,claude_md,claude_memory}` open the corresponding asset editor URL
-  - plan: {APP_URL}/dock/assets/editor/plan/Users/shlom/.claude/plans/zazzy-toasting-newell.md
-  - agent: {APP_URL}/dock/assets/editor/agent/Users/shlom/.claude/agents/ea-test-agent-1776959943595.md
-  - skill: {APP_URL}/dock/assets/editor/skill/Users/shlom/.claude/skills/amd_mock
-  - markdown: {APP_URL}/dock/assets/editor/markdown/Users/shlom/Documents/dev/flowpad-oss/docs/discovery.md
-  - claude_md: {APP_URL}/dock/assets/editor/claude_md/Users/shlom/Documents/dev/flowpad-oss/CLAUDE.md
-  - claude_memory: {APP_URL}/dock/assets/editor/claude_memory/Users/shlom/.claude/projects/-Users-shlom-Documents-dev-flowpad-oss/memory/MEMORY.md
+
+> REWRITTEN 2026-06-04 to the CANONICAL AssetDocPointer grammar (load-asset.ts):
+>   /dock/assets/editor/<editor>/<method>/<value>
+> where <editor> is an AssetEditor enum value (NOT a record type), <method>=vfs,
+> and for vfs <value> = "<computeNodeTypeId>/<relPath>" (machine path minus its
+> leading slash; URL-encode segments with spaces). Record types plan/claude_md/
+> claude_memory/command all map to the `markdown` editor (asset-editor.ts
+> EDITOR_TYPES); agent→agent, skill→skill. Fixtures must be ENTITIES the instance
+> has indexed (so asset_ref → TypeId resolves via useEntityByPath).
+>
+> SCOPE: the agent and skill editors EMBED the EntityExecutionPanel (composer
+> always visible) and are the per-type regression guard here. The markdown-family
+> editors reach the SAME panel via a Chat side-tab keyed by the same `chatTarget`
+> (entity typeid) — covered structurally by the markdown-editor tests; not
+> re-driven here because the headless Chat side-tab activation is unreliable.
+>
+- compute node typeid = `compute_node-<bootstrap default_compute_node.id>`
+- for each editable doc-type, open `{APP_URL}/dock/assets/editor/<editor>/vfs/<computeNodeTypeId>/<relPath>`:
+  - agent: editor=agent, path `~/.claude/agents/qa-docchat-agent-fixture.md`
+  - skill: editor=skill, path `~/.claude/skills/qa-docchat-skill-fixture`
+  - (both fixtures are SELF-PROVISIONED by the test's beforeAll — written to
+    disk, indexed, then fully purged in afterAll. They must never be assumed
+    to pre-exist on the machine.)
 - validate `[data-testid="entity-execution-panel"]` is present
 - validate the panel's nearest React fiber `EntityExecutionPanel` has prop `target` matching `<type>-<uuid>` (proves asset_ref → entity TypeId resolution via useEntityByPath)
 - validate the chat textarea with placeholder "Ask about this doc…" is visible and NOT disabled (`taDisabled === false`)

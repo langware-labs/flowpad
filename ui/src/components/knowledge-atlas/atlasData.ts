@@ -6,17 +6,23 @@
 // every file is a doc card. Cross-links ([[wiki]], kind "context_shared") bow
 // out to the right of the deeper endpoint, exactly like the prototype.
 
+export type NodeStatus = 'fresh' | 'modified' | 'added' | 'removed' | 'stale' | 'unindexed' | 'manual';
+
 export type GraphNodeIn = {
   type: string; // "markdown_index" (folder) | "markdown" (file)
   id: string;
   label: string;
   key: string;
   rel_path?: string;
+  status?: NodeStatus;
+  is_ghost?: boolean;
+  generated_at?: string;
 };
 export type GraphEdgeIn = {
   from: { type: string; id: string };
   to: { type: string; id: string };
   kind: string; // "child" | "context_shared"
+  summary?: string; // indexed one-liner along the tree edge — docs-graph only, not part of the shared dep_graph payload
 };
 
 export type AtlasNode = {
@@ -30,8 +36,10 @@ export type AtlasNode = {
   cy: number;
   halfW: number;
   deg: number; // cross-link degree (doc badges)
+  status: NodeStatus; // vs the stamped baseline
+  isGhost: boolean; // removed since last stamp (exists only in the baseline)
 };
-export type AtlasEdge = { id: string; a: string; b: string };
+export type AtlasEdge = { id: string; a: string; b: string; summary?: string };
 export type AtlasLayout = {
   nodes: AtlasNode[];
   byId: Record<string, AtlasNode>;
@@ -68,6 +76,22 @@ export async function fetchDoc(root: string, rel: string): Promise<{ title: stri
   return { title: env?.data?.title ?? rel, content: env?.data?.content ?? '' };
 }
 
+export async function postStamp(root: string): Promise<{ folders_stamped: number; blobs_written: number }> {
+  const res = await fetch(`/api/v1/docs-graph/stamp?root=${encodeURIComponent(root)}`, { method: 'POST' });
+  if (!res.ok) throw new Error(`stamp failed: ${res.status}`);
+  const env = (await res.json()) as { data?: { folders_stamped?: number; blobs_written?: number } } | null;
+  return { folders_stamped: env?.data?.folders_stamped ?? 0, blobs_written: env?.data?.blobs_written ?? 0 };
+}
+
+export async function fetchDiff(root: string, rel: string): Promise<{ diff: string; skipped: string | null }> {
+  const res = await fetch(
+    `/api/v1/docs-graph/diff?root=${encodeURIComponent(root)}&rel=${encodeURIComponent(rel)}`,
+  );
+  if (!res.ok) throw new Error(`diff fetch failed: ${res.status}`);
+  const env = (await res.json()) as { data?: { diff?: string; skipped?: string | null } } | null;
+  return { diff: env?.data?.diff ?? '', skipped: env?.data?.skipped ?? null };
+}
+
 export function buildAtlasLayout(nodesIn: GraphNodeIn[], edgesIn: GraphEdgeIn[]): AtlasLayout {
   const inByKey = new Map(nodesIn.map((n) => [n.key, n]));
 
@@ -75,6 +99,7 @@ export function buildAtlasLayout(nodesIn: GraphNodeIn[], edgesIn: GraphEdgeIn[])
   // gives the canvas its tidy section-above-docs rhythm.
   const children = new Map<string, string[]>();
   const hasParent = new Set<string>();
+  const edgeSummary = new Map<string, string>(); // "parent>child" → indexed one-liner
   for (const e of edgesIn) {
     if (e.kind !== 'child') continue;
     const p = keyOf(e.from);
@@ -83,6 +108,7 @@ export function buildAtlasLayout(nodesIn: GraphNodeIn[], edgesIn: GraphEdgeIn[])
     if (!arr) children.set(p, (arr = []));
     arr.push(c);
     hasParent.add(c);
+    if (e.summary) edgeSummary.set(`${p}>${c}`, e.summary);
   }
   const order = (k: string) => {
     const n = inByKey.get(k);
@@ -146,6 +172,8 @@ export function buildAtlasLayout(nodesIn: GraphNodeIn[], edgesIn: GraphEdgeIn[])
       cy,
       halfW,
       deg: deg[key] ?? 0,
+      status: src.status ?? 'fresh',
+      isGhost: src.is_ghost ?? false,
     };
     nodes.push(node);
     byId[key] = node;
@@ -157,7 +185,10 @@ export function buildAtlasLayout(nodesIn: GraphNodeIn[], edgesIn: GraphEdgeIn[])
   const tedges: AtlasEdge[] = [];
   for (const [p, kids] of children) {
     if (!byId[p]) continue;
-    for (const k of kids) if (byId[k]) tedges.push({ id: `t:${p}>${k}`, a: p, b: k });
+    for (const k of kids) {
+      if (!byId[k]) continue;
+      tedges.push({ id: `t:${p}>${k}`, a: p, b: k, summary: edgeSummary.get(`${p}>${k}`) });
+    }
   }
 
   const adj: Record<string, Set<string>> = {};

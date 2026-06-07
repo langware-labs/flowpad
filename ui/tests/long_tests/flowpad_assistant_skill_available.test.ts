@@ -6,10 +6,10 @@
  * the global ServiceConfig.load_flowpad_assistant) launches the worker with
  * `--add-dir <…/system_projects/flowpad_assistant>`, so that project's
  * `.claude/skills` are discoverable. We assert the worker can see the
- * dedicated test skill `flowpad-test-skill` shipped under that project.
+ * bundled `transcript-analyzer` skill shipped under that project.
  *
  * The skill lives at
- *   flow_sdk/system_projects/flowpad_assistant/.claude/skills/flowpad-test-skill/SKILL.md
+ *   flow_sdk/system_projects/flowpad_assistant/.claude/skills/transcript-analyzer/SKILL.md
  *
  * Requires: running backend at localhost:$LOCAL_SERVER_PORT + Claude Code installed.
  * Real Claude subprocess — skips gracefully when Claude is rate-limited.
@@ -22,7 +22,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-const TEST_SKILL = 'flowpad-test-skill';
+const TEST_SKILL = 'transcript-analyzer';
 
 function textContent(outputs: FlowData[]): string {
   return outputs
@@ -64,11 +64,11 @@ describe('Flowpad Assistant mount — skill availability', () => {
     await apiTestSetup(getTestSignupInfo(), ctx.task.name);
   });
 
-  it('assistant-enabled process can see the flowpad-test-skill (mounted via --add-dir)', async (context: any) => {
+  it('assistant-enabled process can see the transcript-analyzer skill (mounted via --add-dir)', async (context: any) => {
     const workdir = fs.mkdtempSync(path.join(os.tmpdir(), 'ap-assistant-skill-'));
     // No explicit worker_type / flag: load_flowpad_assistant is unset, so it
     // inherits the global default (True) → the Flowpad Assistant project is
-    // mounted and its skills (incl. flowpad-test-skill) are discoverable.
+    // mounted and its skills (incl. transcript-analyzer) are discoverable.
     const proc = await new AgenticProcess({ workdir }).save([]);
     // Sanity: the per-process flag round-trips from the backend "as is".
     expect(proc.load_flowpad_assistant ?? null, 'flag should default to null (inherit global)').toBeNull();

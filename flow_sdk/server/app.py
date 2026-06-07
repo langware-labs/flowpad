@@ -68,6 +68,7 @@ from .routes import (
     favorites_router,
     markdown_index_router,
     docs_graph_router,
+    pty_stream_router,
 )
 
 
@@ -107,6 +108,17 @@ async def _on_server_startup():
     from flow_sdk.fs_store.operations.record_retention import run_old_record_cleanup
 
     threading.Thread(target=run_old_record_cleanup, daemon=True, name="old-record-cleanup").start()
+
+    # Seed system Capability rows (claude/codex/chrome + the Default-harness
+    # reference). The generic graph routes hit the DB directly — they never
+    # pass through Capability.get_all's lazy ensure_seeded — so a fresh
+    # instance must seed deterministically at boot.
+    try:
+        from flow_sdk.builtin.capability import Capability
+
+        await Capability.ensure_seeded()
+    except Exception as _e:  # noqa: BLE001
+        print(f"  Capability seed: failed ({_e})")
 
     # Search uses FTS5 (built into SQLite) — no external index needed.
     print("  Search index: FTS5 (SQLite built-in)")
@@ -265,16 +277,21 @@ async def _start_inbox_catchup() -> None:
 
 async def _start_cloud_ws_listener() -> None:
     """Start the outbound authenticated hub WebSocket listener when logged in."""
-    try:
-        from flow_sdk.cloud_client.hub_bridge import hub_ws_bridge
-        from flow_sdk.cloud_client.ws_client import hub_ws_manager
+    import asyncio as _asyncio
 
-        # Install the bridge before starting the manager so the inbound
-        # dispatcher is ready to consume frames the moment the WS connects.
-        hub_ws_bridge.install()
-        await hub_ws_manager.start()
-    except Exception as e:
-        logging.getLogger(__name__).info("Cloud WS listener: failed to start (%s)", e)
+    async def _run() -> None:
+        try:
+            from flow_sdk.cloud_client.hub_bridge import hub_ws_bridge
+            from flow_sdk.cloud_client.ws_client import hub_ws_manager
+
+            # Install the bridge before starting the manager so the inbound
+            # dispatcher is ready to consume frames the moment the WS connects.
+            hub_ws_bridge.install()
+            await hub_ws_manager.start()
+        except Exception as e:
+            logging.getLogger(__name__).info("Cloud WS listener: failed to start (%s)", e)
+
+    _asyncio.create_task(_run(), name="cloud-ws-listener-startup")
 
 
 async def _shutdown_extras():
@@ -342,6 +359,7 @@ server.add_router(dep_graph_router)
 server.add_router(version_router)
 server.add_router(favorites_router)
 server.add_router(markdown_index_router, prefix="/api/v1")
+server.add_router(pty_stream_router, prefix="/api/v1")
 server.add_router(docs_graph_router)
 
 server.on_startup(_on_server_startup)

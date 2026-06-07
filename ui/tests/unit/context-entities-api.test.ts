@@ -90,7 +90,7 @@ describe('context_entities entity API (display-only)', () => {
     const PLAN_ID = '55555555-aaaa-4bbb-9ccc-000000000099';
     const planTypeIdString = `plan-${PLAN_ID}`;
     const planTypeId = new TypeId('plan', PLAN_ID);
-    const planPath = '/Users/shlom/.claude/plans/some-plan.md';
+    const planPath = '/Users/alice/.claude/plans/some-plan.md';
 
     it('returns undefined when no data was harvested for the typeid', () => {
       const task = new Task({

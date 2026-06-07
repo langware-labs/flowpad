@@ -38,7 +38,7 @@ describe('DockPointer plan pointer round-trip', () => {
   // an embedded "//", which react-router normalized away — silently demoting
   // the absolute path to a relative one after a URL round-trip.
   it('survives full buildDockUrl → parseDockUrl round-trip for absolute path', () => {
-    const filePath = '/Users/shlom/.claude/plans/we-would-like-the-snoopy-dijkstra.md';
+    const filePath = '/Users/alice/.claude/plans/we-would-like-the-snoopy-dijkstra.md';
     const dp = DockPointer.forPlan(processTypeId, filePath);
     const url = buildDockUrl('/', ViewType.PLAN, dp.pointer);
 

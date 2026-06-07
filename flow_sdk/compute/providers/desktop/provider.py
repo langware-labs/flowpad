@@ -36,6 +36,53 @@ from flow_sdk.flowpad_types.runtime_environment import ComputeNodeSize
 
 logger = logging.getLogger(__name__)
 
+_INHERITED_NO_COLOR_ENV_VARS = (
+    "NO_COLOR",
+    "NODE_DISABLE_COLORS",
+    # Set by Codex automation sessions; interactive Flowpad PTYs should not
+    # inherit the parent automation contract.
+    "CODEX_CI",
+)
+
+_FALSEY_COLOR_ENV_VARS = (
+    "CLICOLOR",
+    "CLICOLOR_FORCE",
+    "FORCE_COLOR",
+)
+
+_FALSEY_ENV_VALUES = {"0", "false", "no", "off"}
+
+
+def _build_interactive_pty_env(
+    session_id: str,
+    extra_env: dict[str, str] | None = None,
+) -> dict[str, str]:
+    """Build the environment for a visible, interactive PTY child process.
+
+    The server may itself be launched from automation with color-suppressing
+    variables (for example NO_COLOR or CODEX_CI). A Flowpad PTY is an
+    interactive xterm, so inherited automation markers must not leak into
+    Claude/Codex/plain shells by default. Explicit per-worker env still wins
+    through ``extra_env``.
+    """
+    env = {k: v for k, v in os.environ.items() if not k.startswith("CLAUDECODE")}
+
+    for key in _INHERITED_NO_COLOR_ENV_VARS:
+        env.pop(key, None)
+
+    for key in _FALSEY_COLOR_ENV_VARS:
+        if env.get(key, "").strip().lower() in _FALSEY_ENV_VALUES:
+            env.pop(key, None)
+
+    env["TERM"] = "xterm-256color"
+    if not env.get("COLORTERM"):
+        env["COLORTERM"] = "truecolor"
+    env["FLOWPAD_PTY_SESSION_ID"] = session_id
+
+    if extra_env:
+        env.update(extra_env)
+    return env
+
 # Cross-platform PTY support
 PTY_AVAILABLE = False
 PtyProcess = None
@@ -594,16 +641,11 @@ class LocalComputeProvider(ComputeProvider):
         pty_key = (provider_node_id, session_id)
 
         if pty_key not in self._pty_sessions:
-            # Create environment — strip CLAUDECODE* to prevent nesting detection
-            env = {k: v for k, v in os.environ.items() if not k.startswith("CLAUDECODE")}
-            env["TERM"] = "xterm-256color"
-            env["FLOWPAD_PTY_SESSION_ID"] = session_id
+            env = _build_interactive_pty_env(session_id, extra_env)
 
             if spawn_args is not None:
                 # Direct spawn: caller provides exact argv (e.g. Claude CLI directly)
                 final_spawn_args = spawn_args
-                if extra_env:
-                    env.update(extra_env)
             else:
                 # Shell spawn: detect and configure the user's default shell
                 if sys.platform == PLATFORM_WIN32:
@@ -1051,11 +1093,9 @@ class LocalComputeProvider(ComputeProvider):
 
     def reset_all_sessions(self, cn_id: str, pn_id: str | None = None) -> int:
         """Clear all in-memory PTY state for a node. Returns count of sessions cleared."""
-        from .pty_replay_buffer import replay_buffer
         from .pty_session_manager import session_manager
         node_keys = [k for k in session_manager.sessions if k[0] == cn_id]
         for key in node_keys:
-            replay_buffer.clear(key)
             del session_manager.sessions[key]
         if pn_id:
             provider_keys = [k for k in self._pty_sessions if k[0] == pn_id]
@@ -1066,9 +1106,8 @@ class LocalComputeProvider(ComputeProvider):
     def get_pty_session(self, cn_id: str, shell_id: str) -> "PtySession | None":
         """Return a LocalPtySession handle if an active session exists."""
         from .local_pty_session import LocalPtySession
-        from .pty_replay_buffer import replay_buffer
         from .pty_session_manager import session_manager
         for key in session_manager.sessions:
             if key[0] == cn_id and key[2] == shell_id:
-                return LocalPtySession(key[0], key[1], key[2], self, session_manager, replay_buffer)
+                return LocalPtySession(key[0], key[1], key[2], self, session_manager)
         return None

@@ -72,7 +72,7 @@ ALICE_PW = os.environ.get("DEMO_ALICE_PW", "alice-pw-1234")
 BOB_EMAIL = os.environ.get("DEMO_BOB_EMAIL", "bob@local.test")
 BOB_PW = os.environ.get("DEMO_BOB_PW", "bob-pw-1234")
 
-REPO_PATH = "/Users/shlom/Documents/dev/flowpad-oss"
+REPO_PATH = str(Path(__file__).resolve().parents[1])
 
 
 # --- local entity creation -------------------------------------------------

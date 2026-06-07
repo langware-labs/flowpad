@@ -1,8 +1,8 @@
-"""AnalyticsActionsMixin — cost / usage / context analytics for ComputeNode.
+"""AnalyticsActionsMixin — cost / context analytics for ComputeNode.
 
 These are NOT filesystem scans: cost is a pure aggregation over indexed
-sessions, usage is an Anthropic API probe, context is a ``claude -p /context``
-subprocess. They live here (faas/analytics) rather than the indexer.
+sessions and context is a ``claude -p /context`` subprocess. They live here
+(faas/analytics) rather than the indexer.
 """
 
 from __future__ import annotations
@@ -30,16 +30,6 @@ class AnalyticsActionsMixin:
             return ApiSuccessResponse(data=get_cost_overview(sessions))
         except Exception as e:
             logging.exception("get-cost-overview failed: %s", e)
-            return ApiFailResponse(message=str(e))
-
-    async def _analytics_claude_usage(self) -> ApiResponse:
-        """Anthropic rate-limit usage probe (action: get-claude-usage)."""
-        from flow_sdk.builtin.faas.analytics.claude_usage import _fetch_claude_usage_async
-
-        try:
-            return ApiSuccessResponse(data=await _fetch_claude_usage_async())
-        except Exception as e:
-            logging.exception("get-claude-usage failed: %s", e)
             return ApiFailResponse(message=str(e))
 
     async def _analytics_claude_context(self) -> ApiResponse:

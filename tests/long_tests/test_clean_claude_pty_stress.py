@@ -40,8 +40,8 @@ pytestmark = pytest.mark.skipif(
 
 from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.faas.compute_node import ComputeNode
-from flow_sdk.compute.providers.desktop.pty_replay_buffer import replay_buffer
 from flow_sdk.config import FLOWPAD_TEMP_DIR
+from tests.long_tests._pty_helpers import read_pty_stream
 
 # ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -304,11 +304,8 @@ async def test_clean_claude_pty_stress(bootstrapped_client):
                 f"resp={getattr(start_resp, 'message', start_resp)!r}"
             )
 
-            pty_key = (cn.id, cn.node_provider_id, shell_id)
-
             def _capture_invariants():
-                chunks = replay_buffer.get_replay(pty_key, since_seq=0)
-                full_pty = "".join(c.data.decode("utf-8", errors="replace") for c in chunks)
+                full_pty = read_pty_stream(shell_id)
                 if not full_pty:
                     return None, None
                 claude_bytes = extract_claude_section(full_pty)

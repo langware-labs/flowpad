@@ -1,0 +1,23 @@
+# deps
+node_modules/
+.venv/
+__pycache__/
+
+# builds
+.next/
+out/
+dist/
+
+# env (committed: .env.example only)
+.env
+.env.local
+.env.*.local
+
+# tooling
+.cache/
+*.tsbuildinfo
+next-env.d.ts
+
+# supabase local state
+supabase/.temp/
+supabase/.branches/

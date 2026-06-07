@@ -60,6 +60,20 @@ def parse_record_stem(stem: str) -> tuple[str, str]:
     return rt, uid
 
 
+def write_text_if_changed(path: Path, text: str) -> None:
+    """Write ``text`` to ``path`` unless the file already holds exactly that
+    content. Record freshness fingerprints are mtime+size, so a byte-identical
+    rewrite would still read as "source changed" and re-arm index refreshes
+    (e.g. the GET-time ``check_and_refresh_record``)."""
+    try:
+        if path.exists() and path.read_text(encoding="utf-8") == text:
+            return
+    except OSError:
+        pass
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+
+
 def _get_default_records_root() -> Path:
     """Lazy lookup so tests can monkeypatch FS_RECORD_PATH between sessions."""
     from flow_sdk.fs_store.record_paths import get_default_records_root  # noqa: PLC0415
@@ -508,22 +522,28 @@ class FSRecord(Generic[M]):
         return body_fn(entity)
 
     def upsert_main_ref(self, entity) -> None:
-        """Write default_body into asset_ref iff the file doesn't yet exist.
+        """Write default_body into asset_ref iff the file doesn't yet exist —
+        or on EVERY save for ``owns_main_ref`` types (the entity is the file's
+        sole editor, so entity-side edits must reach the on-disk source of
+        truth; otherwise the next rescan would revert them).
 
         No-op if the record has no asset_ref OR no default_body for the type.
         Asset_ref must be under the user's scope_root — never under records_root.
         """
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
         ar = self._asset_ref
         if ar is None:
             return
         path = ar._path
-        if path.exists():
+        info = SchemaRegistry.get(self.type)
+        owns = bool(info and info.owns_main_ref)
+        if path.exists() and not owns:
             return
         body = self.default_body(entity)
         if body is None:
             return
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(body, encoding="utf-8")
+        write_text_if_changed(path, body)  # unchanged → don't touch mtime/index hash
 
     # ── DB integration ────────────────────────────────────────────────────
 
@@ -633,6 +653,7 @@ class FSRecord(Generic[M]):
         from flow_sdk.core.entity.entity_model import Entity  # noqa: PLC0415
         from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
         from flow_sdk.db import get_db_driver  # noqa: PLC0415
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
         from flow_sdk import wiki  # noqa: PLC0415
 
         try:
@@ -644,7 +665,11 @@ class FSRecord(Generic[M]):
                 self.type, self.id, wiki_exc,
             )
 
-        entity = await Entity.get_one(QueryFilter.parse({"id": self.id}))
+        # Query through the registered typed class — a base-``Entity`` query
+        # doesn't match typed rows, which silently skipped the row delete
+        # (destroy() left the entity behind).
+        entity_cls = SchemaRegistry.get_entity_cls(self.type) or Entity
+        entity = await entity_cls.get_one(QueryFilter.parse({"id": self.id}))
         if entity is not None:
             driver = get_db_driver()
             if hasattr(driver, "fts_delete"):

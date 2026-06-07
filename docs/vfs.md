@@ -37,10 +37,10 @@ In desktop/local mode the named id `@local` is used for all bootstrap entities.
 ## Parsing Examples
 
 ```
-vfs://compute_node-@local/Users/shlom/file.md
+vfs://compute_node-@local/Users/alice/file.md
   type:           "compute_node"
   id:             "@local"
-  entitySubPath:  "Users/shlom/file.md"
+  entitySubPath:  "Users/alice/file.md"
 
 agent-@local/skills/test.md          (no protocol prefix)
   type:           "agent"
@@ -52,10 +52,10 @@ compute_node-@local/                  (entity root, no sub-path)
   id:             "@local"
   entitySubPath:  ""
 
-/Users/shlom/file.md                  (bare absolute path, no TypeId)
+/Users/alice/file.md                  (bare absolute path, no TypeId)
   type:           null
   id:             null
-  entitySubPath:  "Users/shlom/file.md"
+  entitySubPath:  "Users/alice/file.md"
 ```
 
 ### Bare absolute path fallback (Python only)
@@ -74,8 +74,8 @@ All paths stored internally use forward slashes with no leading slash:
 
 | OS Input                             | Normalized `entitySubPath` |
 | ------------------------------------ | -------------------------- |
-| `/Users/shlom/file.md` (macOS/Linux) | `Users/shlom/file.md`      |
-| `C:\Users\shlom\file.md` (Windows)   | `Users/shlom/file.md`      |
+| `/Users/alice/file.md` (macOS/Linux) | `Users/alice/file.md`      |
+| `C:\Users\alice\file.md` (Windows)   | `Users/alice/file.md`      |
 
 Windows drive letters (`C:\`, `D:\`) are stripped. Backslashes are converted to forward slashes.
 
@@ -90,14 +90,14 @@ All filesystem operations go through the graph catch-all route. The URL encodes 
 ### Examples
 
 ```
-GET    /api/v1/graph/compute_node/@local/fs/browse/Users/shlom
-GET    /api/v1/graph/compute_node/@local/fs/download/Users/shlom/file.md
-POST   /api/v1/graph/compute_node/@local/fs/upload/Users/shlom
-POST   /api/v1/graph/compute_node/@local/fs/write/Users/shlom/file.md
-POST   /api/v1/graph/compute_node/@local/fs/mkdir/Users/shlom/new-dir
-DELETE /api/v1/graph/compute_node/@local/fs/delete/Users/shlom/file.md
-GET    /api/v1/graph/compute_node/@local/fs/download_zip/Users/shlom/folder
-POST   /api/v1/graph/compute_node/@local/fs/upload_zip/Users/shlom/folder
+GET    /api/v1/graph/compute_node/@local/fs/browse/Users/alice
+GET    /api/v1/graph/compute_node/@local/fs/download/Users/alice/file.md
+POST   /api/v1/graph/compute_node/@local/fs/upload/Users/alice
+POST   /api/v1/graph/compute_node/@local/fs/write/Users/alice/file.md
+POST   /api/v1/graph/compute_node/@local/fs/mkdir/Users/alice/new-dir
+DELETE /api/v1/graph/compute_node/@local/fs/delete/Users/alice/file.md
+GET    /api/v1/graph/compute_node/@local/fs/download_zip/Users/alice/folder
+POST   /api/v1/graph/compute_node/@local/fs/upload_zip/Users/alice/folder
 ```
 
 ### Request flow

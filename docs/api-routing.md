@@ -58,7 +58,7 @@ When no explicit action appears in the URL, the HTTP method determines the actio
 | `/agent` | — | — | `agent` | `read` (implicit GET) | — |
 | `/agent/@local` | — | `agent/@local` | — | `read` (implicit GET) | — |
 | `/workspace/@local/agent` | — | `workspace/@local` | `agent` | `read` (implicit GET) | — |
-| `/agent/@local/fs/browse/Users/shlom` | — | `agent/@local` | — | `fs` | `browse/Users/shlom` |
+| `/agent/@local/fs/browse/Users/alice` | — | `agent/@local` | — | `fs` | `browse/Users/alice` |
 | `/compute_node/@local/terminal-command` | — | `compute_node/@local` | — | `terminal-command` | — |
 | `/workspace/@local/agent/@local/control` | `workspace/@local` | `agent/@local` | — | `control` | — |
 | `/agentic_process/{id}/state` | — | `agentic_process/{id}` | — | `state` | — |
@@ -220,7 +220,7 @@ Registered globally as `@action.all(action_name="fs")` in `flow_sdk/actions/fs/m
 The `sub_path` is parsed into `{fs_action}/{entity_sub_path}`:
 
 ```
-GET  /api/v1/graph/compute_node/@local/fs/browse/Users/shlom
+GET  /api/v1/graph/compute_node/@local/fs/browse/Users/alice
                                         ── ────── ──────────
                                         action  fs_action  entity path
 ```
@@ -414,7 +414,7 @@ What `ApiUrl.toString()` produces:
 | List agents | `name='read', resourceType='agent'` | `/graph/agent` |
 | Get agent | `name='read', resourceType='agent', resourceId='@local'` | `/graph/agent/@local` |
 | Create task under workspace | `name='create', resourceType='task', scope=[ws.typeId]` | `/graph/workspace/@local/task` |
-| Browse files | `name='fs', target=cn.typeId, subpath='browse/Users/shlom'` | `/graph/compute_node/@local/fs/browse/Users/shlom` |
+| Browse files | `name='fs', target=cn.typeId, subpath='browse/Users/alice'` | `/graph/compute_node/@local/fs/browse/Users/alice` |
 | Terminal command | `name='terminal-command', target=cn.typeId, method='POST'` | `/graph/compute_node/@local/terminal-command` |
 | Add label | `name='label', target=entity.typeId, subpath='my-tag', method='POST'` | `/graph/agent/@local/label/my-tag` |
 

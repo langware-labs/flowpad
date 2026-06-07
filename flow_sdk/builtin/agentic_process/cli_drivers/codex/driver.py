@@ -194,6 +194,9 @@ class CodexDriver:
         asyncio.create_task(_run_turn(), name=f"codex-{process.id[:8]}")
         return ApiSuccessResponse(data={"status": "started", "worker": self.name})
 
+    def stream_worker(self, process: "AgenticProcess") -> CodexCLIStreamWorker:
+        return CodexCLIStreamWorker.for_process(process.id)
+
     # ── Transcript discovery ─────────────────────────────────────────────────
 
     def transcript_descriptor(self, process: "AgenticProcess") -> TranscriptDescriptor | None:

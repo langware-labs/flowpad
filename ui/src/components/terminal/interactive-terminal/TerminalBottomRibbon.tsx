@@ -1,23 +1,23 @@
 import React from 'react';
+import type { AgenticProcess } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { cn } from '@src/lib/utils';
-import { FileText } from 'lucide-react';
-import type { QueueEntry, QueueState } from '@src/hooks/useAgenticQueue';
+import { BookMarked, FileText } from 'lucide-react';
+import { PromptLibraryMenu } from '@src/components/prompt-library/PromptLibraryMenu';
 import { SIDE_TABS, SideTabId, type SideTabId as SideTabIdType } from './side-windows';
 
 interface TerminalBottomRibbonProps {
   fileCount: number;
   isActive: boolean;
   promptCount?: number;
-  queue?: QueueState;
-  onQueueAdd?: (entry: QueueEntry) => void;
-  onQueueRemove?: (index: number) => void;
   openTabs: SideTabIdType[];
   activeSideTab: SideTabIdType | null;
   onOpenSideTab: (tab: SideTabIdType) => void;
   hasLastPlan?: boolean;
   onOpenLastPlan?: () => void;
+  /** Enables the Prompt Library button (prompt → queue needs a process). */
+  process?: AgenticProcess | null;
 }
 
 const RIBBON_TABS: SideTabIdType[] = [
@@ -26,24 +26,25 @@ const RIBBON_TABS: SideTabIdType[] = [
   SideTabId.Prompts,
   SideTabId.Files,
   SideTabId.Dir,
+  // The prompt QUEUE side-tab (previously URL-only) — paired with the
+  // Prompt Library button below so "add to queue" has a visible destination.
+  SideTabId.Queue,
 ];
 
 export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
   fileCount,
   isActive,
   promptCount = 0,
-  queue,
-  onQueueAdd,
-  onQueueRemove,
   openTabs,
   activeSideTab,
   onOpenSideTab,
   hasLastPlan = false,
   onOpenLastPlan,
+  process = null,
 }) => {
   return (
     <div className="flex items-center border-t bg-muted/30 px-4 py-1.5">
-      {/* Left: process status LED + queue */}
+      {/* Left: process status LED */}
       <div className="flex items-center gap-2">
         <span
           className={`inline-flex h-2 w-2 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-red-500'}`}
@@ -117,6 +118,27 @@ export const TerminalBottomRibbon: React.FC<TerminalBottomRibbonProps> = ({
               </Tooltip>
             );
           })}
+          {/* Prompt Library — distinct from the transcript "Prompts" tab:
+              browse the foldered prompt library; click a prompt to enqueue
+              it (docs/prompt-library.md). Pure composition; all behavior
+              lives in PromptLibraryMenu / the generic groups layer. */}
+          {process && (
+            <PromptLibraryMenu
+              process={process}
+              projectId={process.project_id ?? null}
+              trigger={
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 w-7 p-0"
+                  aria-label="Prompt Library"
+                  title="Prompt Library — click a prompt to add it to the queue"
+                >
+                  <BookMarked className="h-4 w-4" />
+                </Button>
+              }
+            />
+          )}
         </TooltipProvider>
       </div>
     </div>

@@ -26,7 +26,7 @@
  * Requires: a running backend at LOCAL_SERVER_PORT (default 9008) + Claude
  * Code installed.
  */
-import { AgenticProcess, ComputeNode, GRAPH_API_PREFIX, apiClient } from '@sdk';
+import { AgenticProcess, ComputeNode, GRAPH_API_PREFIX, Shell, apiClient } from '@sdk';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
 import * as fs from 'fs';
@@ -41,33 +41,27 @@ import * as path from 'path';
 const ANSI_RE =
   /\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07]*\x07|\x1b[()][@-Z\\^_`a-z{|}~]/g;
 
-interface ChunkMeta {
-  seq: number;
-  size: number;
-  data_b64: string;
-}
-
-async function fetchPtyScrollback(shellId: string): Promise<string> {
-  const url = `${GRAPH_API_PREFIX}/shell/${shellId}/fetch-pty-sequence`;
-  const resp = (await apiClient.get(url)) as { chunks: ChunkMeta[] } | { data: { chunks: ChunkMeta[] } };
-  // apiClient may unwrap `data` for us; tolerate both shapes.
-  const payload = 'chunks' in resp ? resp : (resp as any).data;
-  const chunks: ChunkMeta[] = payload?.chunks ?? [];
-  const raw = chunks
-    .map((c) => Buffer.from(c.data_b64, 'base64').toString('latin1'))
+/** Decode the live in-session chunk store (filled while attached) to plain text.
+ *  Replaces the deleted server fetch-pty-sequence endpoint as the scrollback
+ *  source — the test attaches to the PTY before execute, so claude's render
+ *  of the typed prompt streams into shell.getPtyChunks(). */
+function readAttachedScrollback(shell: Shell): string {
+  const decoder = new TextDecoder('utf-8');
+  const raw = shell
+    .getPtyChunks()
+    .map((c) => decoder.decode(c.data))
     .join('');
   return raw.replace(ANSI_RE, '');
 }
 
 async function waitForMarker(
-  shellId: string,
+  shell: Shell,
   marker: string,
   budgetMs: number,
 ): Promise<{ found: boolean; elapsedMs: number }> {
   const start = performance.now();
   while (performance.now() - start < budgetMs) {
-    const stripped = await fetchPtyScrollback(shellId).catch(() => '');
-    if (stripped.includes(marker)) {
+    if (readAttachedScrollback(shell).includes(marker)) {
       return { found: true, elapsedMs: performance.now() - start };
     }
     await new Promise((r) => setTimeout(r, 50));
@@ -103,6 +97,12 @@ describe('AgenticProcess.openTab timing — regression for shell.write 5s stall'
       const shellId = proc.shell_id;
       if (!shellId) throw new Error('createProcess returned without shell_id');
 
+      // Attach to the PTY so claude's live output streams into the SDK chunk
+      // store (the marker poll below reads it — there is no server replay).
+      const shell = await Shell.getById<Shell>(shellId);
+      if (!shell) throw new Error(`Shell ${shellId} not found`);
+      await shell.attachPty({});
+
       // Step 2 — execute: writes prompt into running PTY via `shell.write`
       // (this is where the 5 s _wait_for_shell_ready timeout used to hide).
       const tExecuteStart = performance.now();
@@ -112,7 +112,7 @@ describe('AgenticProcess.openTab timing — regression for shell.write 5s stall'
       const tExecuteMs = performance.now() - tExecuteStart;
 
       // Step 3 — poll PTY scrollback until claude has rendered the marker.
-      const { found, elapsedMs: tVisibleMs } = await waitForMarker(shellId, marker, 6000);
+      const { found, elapsedMs: tVisibleMs } = await waitForMarker(shell, marker, 6000);
       const tTotalMs = performance.now() - t0;
 
       console.log('[open_tab_timing] createProcess:    ', tCreateMs.toFixed(0), 'ms');
@@ -128,9 +128,12 @@ describe('AgenticProcess.openTab timing — regression for shell.write 5s stall'
       }
 
       if (!found) {
+        const nChunks = shell.getPtyChunks().length;
+        const sample = readAttachedScrollback(shell).slice(-300);
         context.skip(
           `marker never appeared in PTY scrollback (claude may be unavailable / quota). ` +
-            `execute=${tExecuteMs.toFixed(0)}ms total=${tTotalMs.toFixed(0)}ms`,
+            `execute=${tExecuteMs.toFixed(0)}ms total=${tTotalMs.toFixed(0)}ms ` +
+            `chunks=${nChunks} attached=${shell.attached} tail=${JSON.stringify(sample)}`,
         );
       }
 

@@ -576,7 +576,13 @@ export class DockPointer implements IDockPointer {
     options?: { selected?: string },
     layout: Layout = Layout.DOCK,
   ): DockPointer {
-    const pointer = `${method}/${value}`;
+    // vfs paths are absolute — strip the leading "/" so the method<->path
+    // delimiter isn't an embedded "//" in the URL (react-router normalizes
+    // "//" to "/", silently demoting the path to a relative one). The parser
+    // re-adds it. Same hazard + fix as forPlan above.
+    const cleanValue =
+      method === 'vfs' && value.startsWith('/') ? value.slice(1) : value;
+    const pointer = `${method}/${cleanValue}`;
     const queryOptions: Record<string, string> = {};
     if (options?.selected) queryOptions.selected = options.selected;
     return new DockPointer(
@@ -587,18 +593,21 @@ export class DockPointer implements IDockPointer {
     );
   }
 
-  /** Split a K_BROWSER pointer into `{ method, value }` (default method `vfs`). */
+  /** Split a K_BROWSER pointer into `{ method, value }` (default method `vfs`).
+   *  vfs values get their leading "/" re-added (forKnowledgeBrowser strips it);
+   *  legacy double-slash URLs (`vfs//Users/…`) parse identically. */
   static parseKnowledgeBrowserPointer(
     pointer: string | undefined,
   ): { method: 'vfs' | 'typeid'; value: string } | null {
     if (!pointer) return null;
     const idx = pointer.indexOf('/');
     if (idx < 0) return { method: 'vfs', value: pointer };
-    const method = pointer.slice(0, idx);
-    return {
-      method: method === 'typeid' ? 'typeid' : 'vfs',
-      value: pointer.slice(idx + 1),
-    };
+    const method = pointer.slice(0, idx) === 'typeid' ? 'typeid' : 'vfs';
+    let value = pointer.slice(idx + 1);
+    if (method === 'vfs' && value && !value.startsWith('/') && !/^[A-Za-z]:[/\\]/.test(value)) {
+      value = `/${value}`;
+    }
+    return { method, value };
   }
 
   /**
@@ -749,11 +758,11 @@ export class DockPointer implements IDockPointer {
    * Create a dock pointer for the transcript lens, dispatching by worker.
    *
    * - claude: ref is `<projectEncodedName>/<sessionId>` (legacy claude viewer).
-   * - codex (and other workers): ref is the URL-encoded absolute path to the
+   * - codex/copilot: ref is the URL-encoded absolute path to the
    *   rollout JSONL — the generic viewer fetches it via `useTranscript`.
    */
   static forLensTranscript(
-    workerType: 'claude' | 'codex',
+    workerType: 'claude' | 'codex' | 'copilot',
     ref: string,
     layout: Layout = Layout.DOCK,
     options?: Record<string, string>,

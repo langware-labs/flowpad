@@ -100,7 +100,7 @@ def _stray_shadow_bodies(entity_type: str, entity_id: str) -> list[Path]:
 
 
 def _download_via_api(asset_ref: str) -> tuple[int, bytes]:
-    # asset_ref is absolute: /Users/shlom/.claude/agents/foo.md
+    # asset_ref is absolute: ~/.claude/agents/foo.md
     # Endpoint URL: /api/v1/graph/compute_node/@local/fs/download/<sub_path>
     # The compute_node mount is /, so sub_path == asset_ref (with single leading /)
     sub = asset_ref if asset_ref.startswith("/") else "/" + asset_ref

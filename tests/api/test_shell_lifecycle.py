@@ -264,6 +264,7 @@ async def test_terminals_close_agentic_process_marks_intent(bootstrapped_client)
     assert process_resp.status_code == 200, process_resp.text
     process_after = ApiResponse(**process_resp.json()).data
     assert process_after["visible"] is False
+    assert process_after["shell_id"] == shell_id
     assert process_after["status"] in {ProcessStatus.STOPPING.value, ProcessStatus.STOPPED.value}
 
     list_after_resp = await bootstrapped_client.get("/api/v1/graph/compute_node/@local/terminals/list")

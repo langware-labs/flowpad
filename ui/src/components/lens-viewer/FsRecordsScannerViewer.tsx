@@ -19,8 +19,9 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { SearchFilters, useRecordSearch } from '@src/hooks/use-record-search';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
 import { ScopeFilterBar } from '@src/components/scope-filter/ScopeFilterBar';
-import { applyScopeToParams, defaultScopeFilter, scopeFilterEqual, scopeFilterKey, type ScopeFilter } from '@src/lib/scope-filter';
+import { applyScopeToParams, scopeFilterEqual, scopeFilterKey, type ScopeFilter } from '@src/lib/scope-filter';
 import { projectIdForPath } from '@src/components/assets/utils';
+import { useClaudeProjectList } from '@src/hooks/use-claude-projects';
 
 const BASE = '/graph/compute_node/@local/fs-records';
 const SCAN_PATH = `${BASE}/scan`;
@@ -290,8 +291,44 @@ export function FsRecordsScannerViewer() {
   // user sees one consistent view of "what scope am I operating on".
   const { navigation } = useDockNavigation();
   const currentProjectId = projectIdForPath(dataContext.project?.fs_storage_mount_path);
-  const [scope, setScope] = useState<ScopeFilter>(() => defaultScopeFilter(currentProjectId));
-  const scopeIsDefault = scopeFilterEqual(scope, defaultScopeFilter(currentProjectId));
+  // Default scope is "All" with every project selected. Project ids arrive
+  // async (useClaudeProjectList), so seed user+current-project immediately and
+  // widen to the full project set once the list loads — unless the user has
+  // already touched the scope chips.
+  const [scope, setScope] = useState<ScopeFilter>(() => ({
+    user: true,
+    projects: currentProjectId ? [currentProjectId] : [],
+  }));
+  const scopeTouched = useRef(false);
+  const handleScopeChange = useCallback((next: ScopeFilter) => {
+    scopeTouched.current = true;
+    setScope(next);
+  }, []);
+
+  const { projects: projectList } = useClaudeProjectList();
+  const allProjectIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const p of projectList) {
+      const pid = projectIdForPath(p.cwd || p.name);
+      if (pid) ids.add(pid);
+    }
+    return [...ids];
+  }, [projectList]);
+
+  useEffect(() => {
+    if (scopeTouched.current || allProjectIds.length === 0) return;
+    setScope((prev) =>
+      scopeFilterEqual(prev, { user: true, projects: allProjectIds })
+        ? prev
+        : { user: true, projects: allProjectIds },
+    );
+  }, [allProjectIds]);
+
+  const allProjectsSelected =
+    allProjectIds.length > 0 && allProjectIds.every((id) => scope.projects.includes(id));
+  const scopeIsDefault = allProjectIds.length === 0
+    ? scope.user
+    : scopeFilterEqual(scope, { user: true, projects: allProjectIds });
   const scopeQs = useCallback((): string => {
     const p = new URLSearchParams();
     applyScopeToParams(p, scope);
@@ -588,8 +625,32 @@ export function FsRecordsScannerViewer() {
           <ScopeFilterBar
             scope={scope}
             currentProjectId={currentProjectId}
-            onScopeChange={setScope}
+            onScopeChange={handleScopeChange}
           />
+          <button
+            type="button"
+            onClick={() => handleScopeChange({ user: scope.user, projects: allProjectIds })}
+            disabled={allProjectIds.length === 0}
+            aria-pressed={allProjectsSelected}
+            title={allProjectsSelected ? 'Every project is selected' : 'Select every project'}
+            data-testid="scope-all-projects"
+            className={`flex h-7 items-center gap-1 rounded-md px-2.5 text-xs font-medium transition-colors ${
+              allProjectsSelected
+                ? 'bg-accent text-accent-foreground'
+                : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
+            } disabled:cursor-not-allowed disabled:opacity-50`}
+          >
+            All projects
+            {allProjectIds.length > 0 && (
+              <span
+                className={`inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full px-1 text-[10px] ${
+                  allProjectsSelected ? 'bg-primary text-primary-foreground' : 'bg-muted text-muted-foreground'
+                }`}
+              >
+                {allProjectIds.length}
+              </span>
+            )}
+          </button>
         </div>
         <div className="flex items-center gap-1">
           <Tooltip>

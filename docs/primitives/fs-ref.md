@@ -24,7 +24,7 @@ id: 1b0e33a4-9337-56ff-ae6b-ca0d3c303ba5
 
 ## VFSPath
 
-1. **VFSPath format**: `"{entity_type}-{entity_id}/{entity_sub_path}"` — encodes both who owns the file (the ComputeNode TypeId) and where it is (path relative to the compute node's mount root). Example: `compute_node-@local/Users/shlom/.claude/skills/my-skill/SKILL.md`. With protocol: `"vfs://{abs_vfspath}"`. `entity_sub_path` never has a leading slash.
+1. **VFSPath format**: `"{entity_type}-{entity_id}/{entity_sub_path}"` — encodes both who owns the file (the ComputeNode TypeId) and where it is (path relative to the compute node's mount root). Example: `compute_node-@local/Users/alice/.claude/skills/my-skill/SKILL.md`. With protocol: `"vfs://{abs_vfspath}"`. `entity_sub_path` never has a leading slash.
 
 2. The typeId segment uses `{type}-{id}` where `id` is a UUID or `@name` (e.g. `@local`). The separator between typeId and `entity_sub_path` is always a single `/`.
 

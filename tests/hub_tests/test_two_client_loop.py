@@ -46,8 +46,8 @@ import pytest
 import websockets
 
 
-REPO_OSS = Path("/Users/shlom/Documents/dev/flowpad-oss")
-REPO_APP = Path("/Users/shlom/Documents/dev/flowpad-app")
+REPO_OSS = Path(__file__).resolve().parents[2]
+REPO_APP = Path(__file__).resolve().parents[2].parent / "flowpad-app"
 STOP_AT = 20
 
 
@@ -160,13 +160,28 @@ async def test_two_client_loop(hub_base_url):
         print(f"pending: bob has {len(matching)} invitation(s); accepting {invitation_id[:8]}")
 
         # 4) bob accepts via the canonical /graph/members/accept endpoint.
+        # It is browser-oriented and ALWAYS 302s (→login = accept did NOT run;
+        # →/conversation|/flow_message = success, role granted server-side).
+        # Mirror the SDK's handle_invitation_accept: do NOT follow; 200/409 or
+        # a conversation/flow_message redirect = success, login redirect =
+        # failure. (raise_for_status + .json() rejected the by-design 302.)
         r = await h.get(
             f"{hub_base_url}/api/v1/graph/members/accept",
             headers=headers_b,
             params={"invitation-id": invitation_id},
         )
-        r.raise_for_status()
-        print(f"accept: ok ({r.json().get('message','')[:80]})")
+        if r.status_code in (301, 302, 303, 307, 308):
+            location = (r.headers.get("location") or r.headers.get("Location") or "")
+            assert "login" not in location.lower(), (
+                f"accept redirected to login (unauthenticated); location={location[:200]}"
+            )
+            assert ("/conversation/" in location) or ("/flow_message/" in location), (
+                f"accept returned an unexpected redirect location={location[:200]}"
+            )
+            print(f"accept: ok (302 → {location[:80]})")
+        else:
+            r.raise_for_status()
+            print(f"accept: ok ({r.json().get('message','')[:80]})")
 
         # 5) bob joins → adds himself to participants so fanout reaches him.
         r = await h.post(
