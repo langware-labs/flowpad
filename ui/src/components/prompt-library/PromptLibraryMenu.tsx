@@ -1,6 +1,7 @@
-import React, { useMemo, useState, type ReactNode } from 'react';
+import React, { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { BookMarked, ListPlus, Pencil, Plus } from 'lucide-react';
 import { Prompt, type AgenticProcess, type IEntity } from '@sdk';
+import type { DockPointer } from '@src/navigation/DockPointer';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { BrowseableMenu, useMenuDialogs } from '@src/components/ui/browseable-menu';
 import { groupRoot } from '@src/components/browseable-tree/adapters/groupRoot';
@@ -32,6 +33,25 @@ export interface PromptLibraryMenuProps {
 export const PromptLibraryMenu: React.FC<PromptLibraryMenuProps> = ({ process, projectId = null, trigger }) => {
   const { requestName, confirm, dialogs } = useMenuDialogs();
   const [editState, setEditState] = useState<{ prompt?: Prompt; groupId: string | null } | null>(null);
+  const [open, setOpen] = useState(false);
+  const [activePointer, setActivePointer] = useState<DockPointer | null>(null);
+
+  // On each open, highlight the last-used prompt (by last_used_at, falling
+  // back to updated_date). Purely visual: BrowseableTree expands its ancestor
+  // chain and marks the row selected — no navigation.
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    void Prompt.lastUsedForProject(projectId).then((prompt) => {
+      if (cancelled) return;
+      setActivePointer(
+        prompt ? AssetDocPointer.forEntity({ type: Prompt.type, typeId: prompt.typeId }).toDockPointer() : null,
+      );
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, projectId]);
 
   const handle = useMemo(
     () =>
@@ -93,6 +113,12 @@ export const PromptLibraryMenu: React.FC<PromptLibraryMenuProps> = ({ process, p
         trigger={trigger}
         roots={[handle.root]}
         onNavigate={handle.onNavigate}
+        open={open}
+        onOpenChange={setOpen}
+        // First layer open by default (even when empty); expansion persists.
+        persistKey="flowpad.promptLibrary.expanded"
+        defaultExpandedIds={[handle.root.id]}
+        activePointer={activePointer}
         emptyState={<p className="p-3 text-center text-xs text-muted-foreground">No prompts yet — create one below.</p>}
       />
       <PromptEditDialog

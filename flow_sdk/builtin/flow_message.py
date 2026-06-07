@@ -167,14 +167,27 @@ class Attachment(BaseModel):
     only — never stored in DB). For FILE attachments it holds the absolute filesystem
     path resolved via the entity's embedded storage.
 
-    proposer_id / approved_by apply to PROMPT attachments — proposer_id is the user
-    who suggested the prompt; approved_by is set when the other party approves it.
+    proposer_id / approved_by apply to prompt attachments (legacy PROMPT and
+    prompt-entity TYPE_ID alike) — proposer_id is the user who suggested the
+    prompt; approved_by is set when the other party approves it.
+
+    prompt_preview applies to prompt-entity TYPE_ID attachments: an inline
+    copy of the prompt text that rides the message header so receivers can
+    preview (and execute) the prompt BEFORE pulling the body bundle — the
+    same no-download property legacy inline PROMPT attachments had.
+
+    HUB SCHEMA MIRROR: ``proposer_id`` / ``approved_by`` / ``prompt_preview``
+    must also exist on the hub's Attachment model
+    (FlowPad: ``flowpad/hub/core/network/flow_message.py``) — the hub
+    validates attachments through its own pydantic model and silently DROPS
+    unknown fields on the round-trip, which strips the receiver's preview.
     """
     attachment_type: AttachmentType
     data: str
     local_path: Optional[str] = None
     proposer_id: Optional[str] = None
     approved_by: Optional[str] = None
+    prompt_preview: Optional[str] = None
 
 
 class FlowMessage(Entity):

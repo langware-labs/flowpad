@@ -89,6 +89,14 @@ async def reflect_to_hub(a: Action, entity: Entity, body: dict[str, Any], method
         # the JSON body and raises HubError on non-200 (e.g. 403 owner-only),
         # which propagates to the caller verbatim.
         hub_resp = await hub_delete(et, entity.id, action=a.action_name, payload=body or {})
+    elif verb in ("put", "patch") and a.action_name == "members":
+        # Role change — PUT ``/<type>/<id>/members`` with ``{user_id|user_email|
+        # invitation_id, role}``. Without this branch the generic PUT below would
+        # reflect the body as a bare entity update onto ``/<type>/<id>``, silently
+        # writing the member selector onto the conversation row instead of hitting
+        # the hub's gated ``update_membership``. Raises HubError on non-200 (e.g.
+        # 403 from the hub's ``can_assign`` ceiling), propagated to the caller.
+        hub_resp = await hub_put(et, entity.id, body or {}, action=a.action_name)
     elif verb in ("put", "patch"):
         # A bare entity field update (the generic ``update`` CRUD action, e.g. a
         # conversation rename) reflects as a hub PUT to ``/<type>/<id>``. Merge the
@@ -105,10 +113,10 @@ async def reflect_to_hub(a: Action, entity: Entity, body: dict[str, Any], method
     else:
         hub_resp = await hub_post(et, body or {}, entity.id, action=a.action_name)
 
-    # After a successful remove the hub returns a message, not a roster — so
-    # re-fetch the canonical roster to mirror locally (keeps participants in
-    # sync without a second client round-trip).
-    if verb == "delete" and a.action_name == "members":
+    # After a successful members mutation (remove / role change) the hub returns
+    # a message, not a roster — so re-fetch the canonical roster to mirror
+    # locally (keeps participants in sync without a second client round-trip).
+    if verb in ("delete", "put", "patch") and a.action_name == "members":
         refreshed = await hub_get(et, entity.id, action=a.action_name)
         if refreshed is not None:
             hub_resp = refreshed

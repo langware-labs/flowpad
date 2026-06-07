@@ -44,6 +44,10 @@ from flow_sdk.instance_settings import (
 )
 
 
+def _is_electron_desktop() -> bool:
+    return os.environ.get("FLOWPAD_DESKTOP") == "1"
+
+
 def is_secrets_enabled() -> bool:
     """Non-prompting check: is the per-instance secret store actually
     reachable right now?
@@ -56,7 +60,10 @@ def is_secrets_enabled() -> bool:
       * The consent marker exists AND a Fernet entry actually sits in
         the OS keychain at ``(Flowpad.ai.sod_key, <instance_name>)``.
 
-    The keychain probe at the end is what prevents the gate from falsely
+    In Electron desktop, marker-only state returns False instead of probing
+    keychain; the signed launcher must provide ``SOD_ENC_KEY`` or seed the
+    in-process memo. Outside Electron, the keychain probe at the end prevents
+    the gate from falsely
     claiming "enabled" when the user has deleted the keychain entry
     out-of-band (Keychain Access, ``security delete-generic-password``,
     fresh machine) and left the marker file behind. Without it the
@@ -82,6 +89,9 @@ def is_secrets_enabled() -> bool:
         return True
 
     if not s.consent_marker_path.exists():
+        return False
+
+    if _is_electron_desktop():
         return False
 
     # Marker present but no env/memo — confirm the keychain entry too.
@@ -122,7 +132,9 @@ def read_legacy_sod_key() -> str | None:
     keychain slot ``(Flowpad.ai.sod_key, <instance>)`` — the slot Python's
     ``_fetch_or_create_sod_key`` uses — or None if absent.
 
-    Idempotent and prompt-free in the typical case: Python reads its own
+    In Electron desktop this deliberately returns None: the backend must not
+    touch the legacy Python-owned Keychain item. Outside Electron it is
+    idempotent and prompt-free in the typical case: Python reads its own
     previously-written entry (same binary identity ⇒ ACL match). Used by
     the one-shot migration flow in /secrets/migrate-to-flow-rs so the
     signed Electron launcher can re-write the SAME key value via the
@@ -130,6 +142,9 @@ def read_legacy_sod_key() -> str | None:
     the ACL trust list from python3.x to flow-rs without losing the
     sodot file's contents.
     """
+    if _is_electron_desktop():
+        return None
+
     import keyring  # noqa: PLC0415
 
     from flow_sdk.instance_settings.base_settings import SOD_KEY_KEYCHAIN_SERVICE  # noqa: PLC0415
@@ -149,8 +164,13 @@ def cleanup_legacy_sod_key() -> bool:
     this point on; the env handoff (uv-manager.js::_loadSodKey) and the
     seeded memo cover all sod access paths.
 
-    Returns True on success or absent, False on error.
+    Returns True on success or absent, False on error. In Electron desktop this
+    is a no-op because deleting the legacy Python-owned item would itself be a
+    backend keychain access.
     """
+    if _is_electron_desktop():
+        return True
+
     import keyring  # noqa: PLC0415
     from keyring.errors import PasswordDeleteError  # noqa: PLC0415
 
@@ -216,6 +236,8 @@ def enable_secrets() -> bool:
     """
     s = get_instance_settings()
     if s.consent_marker_path.exists():
+        if _is_electron_desktop():
+            return is_secrets_enabled()
         return True
     try:
         _ = s.sod_key  # resolves env/keychain, memoizes, auto-creates marker on mint
@@ -317,6 +339,15 @@ def recover_orphaned_sodot() -> dict | None:
     # env-key / in-process-memo / on-disk-marker check, prompt-free.
     if not _consent_previously_granted(settings):
         return None
+
+    if _is_electron_desktop():
+        from flow_sdk.instance_settings.base_settings import (  # noqa: PLC0415
+            ENV_SOD_ENC_KEY,
+            _UNSET,
+        )
+
+        if not os.environ.get(ENV_SOD_ENC_KEY) and getattr(settings, "_sod_key_memo", _UNSET) is _UNSET:
+            return None
 
     sodot_path = settings.sodot_path
     if not sodot_path.exists():

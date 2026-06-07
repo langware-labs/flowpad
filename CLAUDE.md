@@ -140,3 +140,7 @@ If a test fails on time, the production code is too slow or stalls — that's th
 
 * **Validators must agree at v4/v5.** The frontend `ts_sdk/src/models/TypeId.ts` regex (`…-[45]xxx-…`) and the hub `flowpad/hub/api/identifier.py` must accept exactly v4/v5. A mismatch (e.g. a stricter frontend) means a backend-minted id can poison entity resolution — see the v7 incident where one fixture's v7 frontmatter id broke `useEntityByPath`'s whole bulk list.
 
+
+## Type icons (non-negotiable)
+
+**Every per-type icon in the UI comes from the backend type registry (`TypeInfo.icon`) — never hardcode a glyph for an entity type at a call site.** Resolve it at render time via `iconForType(type)` (`ui/src/components/graph-view/icons/iconRegistry.ts`), which reads the bootstrap-loaded SchemaRegistry and falls back to a generic document glyph for unknown/icon-less types. If a type's icon is wrong or missing, fix its `TypeInfo` (`flow_sdk/schema/type_info/<type>_*info.py`) so every surface picks it up — don't patch the one component.

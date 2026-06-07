@@ -79,10 +79,7 @@ describe('useAttachments index truth table', () => {
 const SKILL_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const MD_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 
-function fmWithEntities(
-  body_status: BodyStatus,
-  body_downloaded: boolean,
-): FlowMessage {
+function fmWithEntities(body_status: BodyStatus, body_downloaded: boolean): FlowMessage {
   return new FlowMessage({
     id: MSG_ID,
     body_status,
@@ -126,11 +123,7 @@ describe('useAttachments entity surface', () => {
     const { result } = renderHook(() => useAttachments(fm, MSG_ID));
     // 2 entities + 1 file = 3
     expect(result.current.assetCount).toBe(3);
-    expect(result.current.assetLabels).toEqual([
-      `skill-${SKILL_ID}`,
-      `markdown-${MD_ID}`,
-      'notes.txt',
-    ]);
+    expect(result.current.assetLabels).toEqual([`skill-${SKILL_ID}`, `markdown-${MD_ID}`, 'notes.txt']);
   });
 
   it('null message → no entities, not downloaded, zero count', () => {
@@ -138,5 +131,37 @@ describe('useAttachments entity surface', () => {
     expect(result.current.entities).toEqual([]);
     expect(result.current.downloaded).toBe(false);
     expect(result.current.assetCount).toBe(0);
+  });
+});
+
+describe('useAttachments prompt-entity attachments', () => {
+  beforeEach(async () => {
+    await unitTestSetup();
+  });
+
+  const PROMPT_ID = 'e5e5e5e5-0000-4000-8000-000000000005';
+
+  function fmWithPromptEntity(): FlowMessage {
+    return new FlowMessage({
+      id: MSG_ID,
+      body_status: BodyStatus.READY,
+      attachment: [
+        {
+          attachment_type: AttachmentType.TYPE_ID,
+          data: `prompt-${PROMPT_ID}`,
+          prompt_preview: 'do the thing',
+        },
+      ],
+    });
+  }
+
+  it('hasPrompt is true for entity-backed prompts (both generations count)', () => {
+    const { result } = renderHook(() => useAttachments(fmWithPromptEntity(), MSG_ID));
+    expect(result.current.hasPrompt).toBe(true);
+  });
+
+  it('the prompt entity still rides `entities` (it needs the body bundle)', () => {
+    const { result } = renderHook(() => useAttachments(fmWithPromptEntity(), MSG_ID));
+    expect(result.current.entities.map((t) => `${t.type}-${t.id}`)).toEqual([`prompt-${PROMPT_ID}`]);
   });
 });

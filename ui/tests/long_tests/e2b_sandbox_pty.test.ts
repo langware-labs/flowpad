@@ -279,7 +279,7 @@ describe('e2b_sandbox_pty', () => {
     pc.shellId = shell.id;
     pc.computeNodeId = sandboxNode.id;
     pc.started = true;
-    pc._replayDone = true;
+    pc._attached = true;
     pc._attachedPtyId = shell.id;
 
     let accumulated = '';
@@ -360,7 +360,7 @@ describe('e2b_sandbox_pty', () => {
           if (!accumulated.includes('e2b_shell_start_fix_ok')) {
             const pc: any = (shell as any).ptyConnection;
             throw new Error(
-              `no output via shell.onOutput; ptyConnection state: started=${pc?.started} replayDone=${pc?.replayDone} isLive=${pc?.isLive} lastSeq=${pc?.lastSeq} accumulated=${accumulated.length}b`,
+              `no output via shell.onOutput; ptyConnection state: started=${pc?.started} attached=${pc?.attached} isLive=${pc?.isLive} lastSeq=${pc?.lastSeq} accumulated=${accumulated.length}b`,
             );
           }
         },

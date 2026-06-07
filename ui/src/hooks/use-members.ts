@@ -49,6 +49,12 @@ export interface UseMembersResult {
   /** Remove a member by user id. OWNER ONLY — the hub rejects non-owner (and
    *  owner-self) callers with 403, which throws here. Refreshes after. */
   removeMember: (userId: string) => Promise<void>;
+  /** Change a member's role. Gated hub-side by the role-grant chokepoint
+   *  (``can_assign``: assign strictly below your rank, on a member strictly
+   *  below your rank, never self/owner) — denials throw (403). ``role`` is a
+   *  lowercase policy role (``admin``/``editor``/``member``/``reader``).
+   *  Refreshes the roster after so the new role shows immediately. */
+  setRole: (userId: string, role: string) => Promise<void>;
 }
 
 /**
@@ -136,6 +142,22 @@ export function useMembers(typeId: TypeId | null): UseMembersResult {
     [entity, refresh],
   );
 
+  // Change a member's role by user id. The hub's ``can_assign`` gate rejects
+  // out-of-ceiling callers with 403, which propagates as a thrown error here;
+  // callers should surface it. Refreshes the roster after so the row shows
+  // the new role without a manual reload.
+  const setRole = useCallback(
+    async (userId: string, role: string) => {
+      const trimmedId = userId.trim();
+      const trimmedRole = role.trim().toLowerCase();
+      if (!trimmedId || !trimmedRole) return;
+      if (!entity) throw new Error('useMembers: entity not loaded; cannot change role');
+      await (entity as any).setMemberRole(trimmedId, trimmedRole);
+      await refresh();
+    },
+    [entity, refresh],
+  );
+
   // Prefer the freshly-fetched list; fall back to whatever the entity cache
   // has. Entities without a ``participants`` field surface as the shared
   // EMPTY_MEMBERS constant so the array identity is stable.
@@ -150,5 +172,5 @@ export function useMembers(typeId: TypeId | null): UseMembersResult {
     [refreshed, error],
   );
 
-  return { members, loading, ready, error, refresh, addMember, removeMember };
+  return { members, loading, ready, error, refresh, addMember, removeMember, setRole };
 }

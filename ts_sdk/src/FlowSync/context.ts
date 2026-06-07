@@ -127,7 +127,8 @@ export type TerminalRuntimeErrorKind =
   | 'pty_attach_failed'
   | 'project_missing'
   | 'network_error'
-  | 'project_mismatch';
+  | 'project_mismatch'
+  | 'failed_to_start';
 
 export interface TerminalRuntimeError {
   kind: TerminalRuntimeErrorKind;

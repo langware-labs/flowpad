@@ -7,8 +7,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Key, Terminal, Settings } from 'lucide-react';
 import React from 'react';
 import { ApiKeysView } from '../api-keys-view/api-keys-view';
-import { ClaudeAuthStatus } from '../claude-auth-status';
-import { HooksView } from '../hooks-view/hooks-view';
+import { CapabilitiesView } from '../capabilities-view';
 
 export const AIConfigView: React.FC = () => {
   const { agent } = useAgentContext();
@@ -28,11 +27,11 @@ export const AIConfigView: React.FC = () => {
 
   // Get default CLI - this could come from agent config or system settings
   // For now, we'll show a placeholder
-  const defaultCLI = 'Claude Code (Latest)';
+  const defaultCLI = 'Default harness';
 
   // Handle Configure LLM button click
   const handleConfigureLLM = () => {
-    window.dispatchEvent(new CustomEvent('open-desktop-setup'));
+    handleTabChange(AIConfigSubview.LLM_APIS);
   };
 
   return (
@@ -67,7 +66,7 @@ export const AIConfigView: React.FC = () => {
       <div className="border-b bg-background px-4 py-2">
         <Button variant="default" size="sm" onClick={handleConfigureLLM}>
           <Key className="mr-1.5 h-4 w-4" />
-          Configure LLM
+          Manage API keys
         </Button>
       </div>
 
@@ -81,18 +80,17 @@ export const AIConfigView: React.FC = () => {
             </TabsTrigger>
             <TabsTrigger value={AIConfigSubview.CLIS} className="h-7 text-xs">
               <Terminal className="mr-1.5 h-3.5 w-3.5" />
-              CLIs
+              Harnesses
             </TabsTrigger>
           </TabsList>
         </div>
 
         <TabsContent value={AIConfigSubview.LLM_APIS} className="mt-0 h-[calc(100%-40px)] overflow-auto p-4">
-          <ClaudeAuthStatus />
           <ApiKeysView />
         </TabsContent>
 
         <TabsContent value={AIConfigSubview.CLIS} className="mt-0 h-[calc(100%-40px)] overflow-auto">
-          <HooksView />
+          <CapabilitiesView />
         </TabsContent>
       </Tabs>
     </div>

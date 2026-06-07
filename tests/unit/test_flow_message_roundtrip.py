@@ -295,3 +295,128 @@ class TestUnpackBundle:
         pointer = json.loads(lines[0])
         assert pointer["typeid"] == f"flow_message-{fm_id}"
         assert "ts" in pointer
+
+
+# ---------------------------------------------------------------------------
+# Prompt-entity attachment pack/unpack (conversation send-prompt)
+# ---------------------------------------------------------------------------
+
+_PROMPT_UUID = "e5e5e5e5-0000-4000-8000-000000000005"
+
+
+class TestPromptAttachmentRoundtrip:
+    @pytest.mark.asyncio
+    async def test_pack_with_prompt_attachment(self, tmp_path):
+        """pack_bundle writes prompt.md (frontmatter + text) for prompt attachments."""
+        from flow_sdk.builtin.prompt import Prompt
+
+        fm = _make_flow_message()
+        fm.attachment = [Attachment(
+            attachment_type=AttachmentType.TYPE_ID,
+            data=f"prompt-{_PROMPT_UUID}",
+            prompt_preview="Fix the bug in auth.",
+        )]
+
+        mock_prompt = Prompt(name="Fix the bug", text="Fix the bug in auth.", use_count=2)
+        mock_prompt.id = _PROMPT_UUID
+
+        with patch.object(Prompt, "get_one", new=AsyncMock(return_value=mock_prompt)):
+            zip_path = await pack_bundle(fm, dest_dir=tmp_path)
+
+        with zipfile.ZipFile(zip_path, "r") as zf:
+            expected = f"attachment/prompt-@{_PROMPT_UUID}/prompt.md"
+            assert expected in zf.namelist()
+            content = zf.read(expected).decode("utf-8")
+            assert "Fix the bug in auth." in content
+            assert _PROMPT_UUID in content  # frontmatter id round-trips
+            assert "use_count: 2" in content
+
+    @pytest.mark.asyncio
+    async def test_unpack_creates_prompt_entity(self, tmp_path):
+        """unpack_bundle materializes a library Prompt (user scope) from prompt.md."""
+        from flow_sdk.builtin.prompt import Prompt
+        from flow_sdk.builtin.user import User
+
+        fm_id = "abab8888-0000-4000-8000-000000000008"
+        prompt_md = (
+            f"---\nid: {_PROMPT_UUID}\nname: Fix the bug\nuse_count: 2\n---\n\nFix the bug in auth.\n"
+        )
+        fm_data = {
+            "id": fm_id,
+            "type": "flow_message",
+            "text": "carrier",
+            "shared_context_entities": [],
+            "attachment": [{
+                "attachment_type": "type_id",
+                "data": f"prompt-{_PROMPT_UUID}",
+                "prompt_preview": "Fix the bug in auth.",
+            }],
+        }
+        zip_path = _write_flowmsg_zip(
+            tmp_path, fm_data,
+            {f"attachment/prompt-@{_PROMPT_UUID}/prompt.md": prompt_md.encode("utf-8")},
+        )
+
+        saved: dict = {}
+
+        async def capture_save(self, *args, **kwargs):  # noqa: ANN001
+            saved["prompt"] = self
+            return self
+
+        saved_fm = FlowMessage(text="carrier")
+        saved_fm.id = fm_id
+
+        with (
+            patch.object(User, "get_one", new=AsyncMock(return_value=None)),
+            patch.object(FlowMessage, "get_one", new=AsyncMock(return_value=None)),
+            patch.object(FlowMessage, "save", new=AsyncMock(return_value=saved_fm)),
+            patch.object(Prompt, "get_one", new=AsyncMock(return_value=None)),
+            patch.object(Prompt, "save", new=capture_save),
+            patch("flow_sdk.discovery.notify.send_resource_sync", return_value=True),
+        ):
+            await unpack_bundle(zip_path, "local-user-id")
+
+        prompt = saved.get("prompt")
+        assert prompt is not None, "unpack must materialize the Prompt entity"
+        assert prompt.id == _PROMPT_UUID
+        assert prompt.name == "Fix the bug"
+        assert prompt.text == "Fix the bug in auth."
+        assert prompt.use_count == 2
+        assert prompt.project_id is None  # receiver-side: user scope
+
+    @pytest.mark.asyncio
+    async def test_unpack_prompt_create_once(self, tmp_path):
+        """An existing receiver-side Prompt is NOT clobbered by a re-unpack."""
+        from flow_sdk.builtin.prompt import Prompt
+        from flow_sdk.builtin.user import User
+
+        fm_id = "cdcd9999-0000-4000-8000-000000000009"
+        fm_data = {
+            "id": fm_id,
+            "type": "flow_message",
+            "text": "carrier",
+            "shared_context_entities": [],
+            "attachment": [],
+        }
+        zip_path = _write_flowmsg_zip(
+            tmp_path, fm_data,
+            {f"attachment/prompt-@{_PROMPT_UUID}/prompt.md": b"---\nname: x\n---\n\nx\n"},
+        )
+
+        existing = Prompt(name="receiver edit", text="edited locally")
+        existing.id = _PROMPT_UUID
+        prompt_save = AsyncMock()
+        saved_fm = FlowMessage(text="carrier")
+        saved_fm.id = fm_id
+
+        with (
+            patch.object(User, "get_one", new=AsyncMock(return_value=None)),
+            patch.object(FlowMessage, "get_one", new=AsyncMock(return_value=None)),
+            patch.object(FlowMessage, "save", new=AsyncMock(return_value=saved_fm)),
+            patch.object(Prompt, "get_one", new=AsyncMock(return_value=existing)),
+            patch.object(Prompt, "save", new=prompt_save),
+            patch("flow_sdk.discovery.notify.send_resource_sync", return_value=True),
+        ):
+            await unpack_bundle(zip_path, "local-user-id")
+
+        prompt_save.assert_not_called()

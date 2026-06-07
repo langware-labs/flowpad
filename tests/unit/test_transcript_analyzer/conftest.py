@@ -25,3 +25,18 @@ def codex_stream_jsonl() -> Path:
 @pytest.fixture()
 def codex_rollout_jsonl() -> Path:
     return _RESOURCES / "codex_rollout.jsonl"
+
+
+@pytest.fixture()
+def copilot_stream_jsonl() -> Path:
+    return _RESOURCES / "copilot_stream_stdin_prompt.jsonl"
+
+
+@pytest.fixture()
+def copilot_tool_failure_jsonl() -> Path:
+    return _RESOURCES / "copilot_stream_tool_failure.jsonl"
+
+
+@pytest.fixture()
+def copilot_bad_model_jsonl() -> Path:
+    return _RESOURCES / "copilot_stream_bad_model.jsonl"
