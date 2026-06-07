@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import sys
 from pathlib import Path
 from typing import List, Optional
 
@@ -244,7 +245,11 @@ async def _run_diagnose(message: str, transcript_timeout: float) -> int:
 def diagnose_command(
     message: Optional[List[str]] = typer.Argument(
         None,
-        help="What you saw — free text or a pasted error. Omit to run a full sweep.",
+        help=(
+            "Ignored — you'll always be prompted to type or paste the issue, so "
+            "apostrophes, quotes and special characters work without shell quoting. "
+            "Press Enter to submit; empty = full sweep."
+        ),
     ),
     timeout: float = typer.Option(
         DEFAULT_TRANSCRIPT_TIMEOUT_S, "--timeout", help="Transcript stream budget in seconds."
@@ -252,7 +257,20 @@ def diagnose_command(
 ) -> None:
     """Diagnose a Flowpad issue and report the outcome to the app's Feed."""
     _quiet_logs()
-    text = " ".join(message).strip() if message else ""
+    # Always read the message from stdin — never from argv. Anything typed after
+    # `flow diagnose` on the command line is intentionally ignored, because the
+    # shell mangles free text (apostrophes like "can't", quotes) before we ever
+    # see it. Reading from stdin lets the user type/paste anything. A single
+    # Enter submits; empty input falls back to a full diagnostic sweep.
+    if sys.stdin.isatty():
+        typer.echo(
+            "Describe the issue or paste the error, then press Enter "
+            "(leave empty for a full diagnostic sweep):"
+        )
+    try:
+        text = sys.stdin.readline().strip()
+    except (EOFError, KeyboardInterrupt):
+        text = ""
     rc = asyncio.run(_run_diagnose(text, timeout))
     raise typer.Exit(rc)
 

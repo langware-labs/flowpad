@@ -403,8 +403,8 @@ flow diagnose-report \
 ```
 
 This creates a hidden support Conversation + a summary message + a `new` Feed entry directly in the
-local store, and prints JSON with the created ids — or `{"skipped": ...}` if the app hasn't
-completed a first run (console-only is fine then). Do **not** fail the run if this step errors; the
+local store (creating the `@local` user/project if needed), and prints JSON with the created ids. It
+works on a fresh install too — do not skip it. Do **not** fail the run if this step errors; the
 console report from Step 6 still stands.
 
 ## Reference Files
