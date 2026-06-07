@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 
 from flow_sdk.discovery.notify import send_resource_sync
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
+from flow_sdk.schema.types import EntityType
 from flow_sdk.fs_store import SyncOperation
 from flow_sdk.fs_store.type_id import TypeId
 
@@ -150,6 +151,24 @@ async def _pack_spec_attachment(entry_id: str, attachment_dir: Path) -> None:
     (spec_dir / "spec.md").write_text(spec_md, encoding="utf-8")
 
 
+async def _pack_prompt_attachment(entry_id: str, attachment_dir: Path) -> None:
+    """Write ``attachment/prompt-@<id>/prompt.md`` (frontmatter + text body).
+
+    Rendered via ``_prompt_default_body`` so the frontmatter (id/name/icon/
+    color/use_count/last_used_at) round-trips through ``extract_prompt`` —
+    the same write path the entity's own ``owns_main_ref`` save uses.
+    """
+    from flow_sdk.builtin.prompt import Prompt
+    from flow_sdk.schema.type_info.prompt_info import _prompt_default_body
+
+    prompt = await Prompt.get_one({"id": entry_id})
+    if not prompt:
+        return
+    prompt_dir = attachment_dir / f"prompt-@{entry_id}"
+    prompt_dir.mkdir(parents=True, exist_ok=True)
+    (prompt_dir / "prompt.md").write_text(_prompt_default_body(prompt), encoding="utf-8")
+
+
 async def _pack_task_attachment(entry_id: str, attachment_dir: Path) -> None:
     """Write ``attachment/task-@<id>/header.json`` (whitelisted Task fields)."""
     from flow_sdk.builtin.task import Task
@@ -256,6 +275,11 @@ async def _pack_attachment_entry(
     """Dispatch a single attachment entry to the correct per-type packer.
 
     Repo/URL attachments have no bytes to bundle — silently skipped.
+
+    TODO: at ~10+ branches consider a TypeInfo-driven ``pack_attachment``
+    hook instead of growing this dispatch (currently 8: spec, prompt, task,
+    conversation, flow_message, claude_session, fs-rooted). Each type has a
+    distinct serialization, so the registry hook is the only generic form.
     """
     if entry.attachment_type in (AttachmentType.FILE, AttachmentType.PROMPT):
         _pack_file_attachment(entry, flow_message, attachment_dir)
@@ -268,6 +292,8 @@ async def _pack_attachment_entry(
         return
     if entry_type == BuiltinEntityType.SPEC.value:
         await _pack_spec_attachment(entry_id, attachment_dir)
+    elif entry_type == EntityType.PROMPT.value:
+        await _pack_prompt_attachment(entry_id, attachment_dir)
     elif entry_type == BuiltinEntityType.TASK.value:
         await _pack_task_attachment(entry_id, attachment_dir)
     elif entry_type == BuiltinEntityType.CONVERSATION.value:
@@ -574,6 +600,37 @@ def _merge_conversation_jsonl(bundle_jsonl: Path, dest: Path) -> None:
 # unpack_bundle
 # ---------------------------------------------------------------------------
 
+async def _create_prompt_from_file(prompt_file: Path, prompt_id: str, owner_typeid) -> None:
+    """Materialize a bundled ``prompt.md`` as a local library Prompt entity.
+
+    Parsed with the indexer's own ``extract_prompt`` so frontmatter fidelity
+    matches a normal rescan. The receiver-side Prompt lands at USER scope
+    (``project_id=None`` → ``<user_home>/prompts/``): the conversation's
+    project is unmapped at unpack time, and prompts aren't project-coupled
+    for execution. The ``owns_main_ref`` save writes the backing .md and the
+    record folder — which is what flips ``body_downloaded``.
+    """
+    from flow_sdk.builtin.prompt import Prompt
+    from flow_sdk.fs_store.fs_ref import FSRef
+    from flow_sdk.fs_store.indexer.functions.prompt import extract_prompt
+
+    try:
+        [rec] = extract_prompt(FSRef(prompt_file))
+        prompt = Prompt.model_validate({
+            "id": prompt_id,
+            "name": rec.name or "Shared prompt",
+            "text": rec.text or "",
+            "icon": getattr(rec, "icon", None),
+            "color": getattr(rec, "color", None),
+            "use_count": getattr(rec, "use_count", 0) or 0,
+            "last_used_at": getattr(rec, "last_used_at", None),
+            "project_id": None,
+        })
+        await prompt.save(owner_typeid)
+    except Exception as e:
+        logger.warning("unpack_bundle: could not create Prompt from %s: %s", prompt_file, e)
+
+
 async def unpack_bundle(
     zip_path: Path,
     local_user_id: str,
@@ -632,8 +689,9 @@ async def unpack_bundle(
                 top_fm_already_exists = True
 
         # 4. Materialize attachments
-        # Process in dependency order: spec → task → conversation → flow_message
+        # Process in dependency order: prompt/spec → task → conversation → flow_message
         _TYPE_ORDER = {
+            EntityType.PROMPT.value: 0,
             BuiltinEntityType.SPEC.value: 0,
             BuiltinEntityType.TASK.value: 1,
             BuiltinEntityType.CONVERSATION.value: 2,
@@ -662,7 +720,16 @@ async def unpack_bundle(
                         fs_rooted_restored = True
                     continue
 
-                if entry_type == BuiltinEntityType.SPEC.value:
+                if entry_type == EntityType.PROMPT.value:
+                    prompt_file = entry_dir / "prompt.md"
+                    if prompt_file.exists():
+                        # Create-once, same contract as SPEC below: a re-unpack
+                        # must not clobber receiver-side library edits.
+                        from flow_sdk.builtin.prompt import Prompt  # noqa: PLC0415
+                        if overwrite or await Prompt.get_one({"id": entry_id}) is None:
+                            await _create_prompt_from_file(prompt_file, entry_id, owner_typeid)
+
+                elif entry_type == BuiltinEntityType.SPEC.value:
                     spec_file = entry_dir / "spec.md"
                     if spec_file.exists():
                         # Create-once: ``_create_spec_from_file`` saves

@@ -3,6 +3,7 @@ import { useProject } from '@sdk/react/hooks';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { CodexIcon } from '@src/components/icons/CodexIcon';
+import { CopilotIcon } from '@src/components/icons/CopilotIcon';
 import {
   NewProjectDialog,
   NewProjectFromGitDialog,
@@ -98,7 +99,7 @@ export function QuickCreateModal({ open, onOpenChange, onPick }: QuickCreateModa
   // Coding-agent sessions launch a live AgenticProcess immediately, then we
   // navigate to its terminal dock pointer (URL-first; the loader owns the view).
   const handleStartSession = useCallback(
-    async (workerType: 'claude_code' | 'codex') => {
+    async (workerType: 'claude_code' | 'codex' | 'copilot') => {
       onOpenChange(false);
       const result = await navigation.openNewClaudeProcess({ workerType });
       if (!result) {
@@ -226,6 +227,13 @@ export function QuickCreateModal({ open, onOpenChange, onPick }: QuickCreateModa
       label: 'Codex',
       iconClassName: 'text-emerald-500',
       onClick: () => void handleStartSession('codex'),
+    },
+    {
+      key: 'copilot',
+      Icon: CopilotIcon,
+      label: 'Copilot',
+      iconClassName: 'text-sky-500',
+      onClick: () => void handleStartSession('copilot'),
     },
   ];
 

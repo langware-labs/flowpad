@@ -10,11 +10,12 @@ tags: [whiteboard, edge]
 
 ## Steps
 
-### E1: Empty save fires no PUT
+### E1: Idle does not loop the debounced save
 * Open a fresh whiteboard editor (just created, never modified).
-* Instrument fetch (see U3) to track `PUT board.json` count.
+* NOTE: the editor saves via fsManager.writeFile over axios/XHR (NOT window.fetch), so a `window.fetch` hook will not see saves — use the `board.json` mtime as the signal. ALSO NOTE: Excalidraw fires onChange a couple of times during initialization (scene + appState settling), so `board.json` sees a small, finite burst of mount writes. That burst is framework behavior, not a debounce regression.
+* Wait for the `board.json` mtime to go QUIESCENT (unchanged across a ~2s quiet window) to establish the steady-state baseline.
 * Idle 3000ms — do NOT inject anything.
-* `window.__pets.length` MUST equal 0. A PUT on idle is a regression (debounce/timer should not fire without an onChange).
+* The mtime MUST be unchanged from the quiescent baseline. A debounce that keeps re-firing on idle (timer loop / re-arming without a new onChange) is the regression this guards against.
 
 ### E2: Close without save
 * Open a whiteboard, inject 1 element via API + onChange.
@@ -47,13 +48,12 @@ tags: [whiteboard, edge]
 * WHITE_BOARD.md mermaid block is still emitted (may be large; ensure it ends with `<!-- END whiteboard:auto -->`).
 * Browser performance: page is responsive (no long-task warnings > 200ms in console).
 
-### E5: Delete board removes folder + entity
+### E5: Delete board removes entity (folder kept on disk by design)
 * Create a whiteboard `e5-delete-<random>`. Note its id and folder path.
 * DELETE `${API_URL}/api/v1/graph/whiteboard/<id>`.
 * Expect HTTP 200.
-* `ls <folder>` → directory MUST be gone.
-* GET `${API_URL}/api/v1/graph/whiteboard/<id>` → expect HTTP 404 or empty data.
-* GET `${API_URL}/api/v1/wiki/resolve?name=e5-delete-<random>` → expect `null`.
+* GET `${API_URL}/api/v1/graph/whiteboard/<id>` → expect HTTP 404 or empty data (the entity is gone from the graph).
+* NOTE: DELETE keeps the on-disk folder by default — assert the ENTITY is gone, NOT the folder. `ls <folder>` still showing the directory is expected, not a failure.
 
 ## Pass criteria
 

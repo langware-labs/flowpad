@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DockPointer } from '@src/navigation/DockPointer';
 import type { Browseable, BrowseableRoot } from './types';
 
@@ -15,22 +15,60 @@ export interface BrowseableTreeState {
   loadStates: Map<string, LoadState>;
 }
 
-const EMPTY_STATE: BrowseableTreeState = {
-  expandedIds: new Set(),
-  loadStates: new Map(),
-};
+export interface BrowseableTreeOptions {
+  /**
+   * localStorage key for the expanded-ids set. When given, the initial state
+   * is read from localStorage and every expansion change is written back.
+   */
+  persistKey?: string;
+  /**
+   * Node ids expanded when there is no persisted state yet (e.g. the root id
+   * so the first layer opens by default).
+   */
+  defaultExpandedIds?: string[];
+}
+
+/** Read the persisted expanded-ids set; null when absent/unreadable. */
+function readPersistedExpandedIds(persistKey: string): Set<string> | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(persistKey);
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return null;
+    return new Set(parsed.filter((v): v is string => typeof v === 'string'));
+  } catch {
+    return null;
+  }
+}
 
 /**
  * State + logic for <BrowseableTree>.
  *
  * Mirrors the shape of `useDirectoryTree`:
- *  - `expandedIds` holds the currently expanded node ids (local, ephemeral).
+ *  - `expandedIds` holds the currently expanded node ids (local by default;
+ *    pass `persistKey` to restore/persist via localStorage, and
+ *    `defaultExpandedIds` to seed first-open expansion).
  *  - `loadStates` tracks per-node children fetches (idle / loading / ready / error).
  *  - `expandParentsForPointer(p)` walks the owning root's pathFor() and
  *    expands every ancestor, priming the cache for each along the way.
  */
-export function useBrowseableTree(roots: BrowseableRoot[]) {
-  const [state, setState] = useState<BrowseableTreeState>(EMPTY_STATE);
+export function useBrowseableTree(roots: BrowseableRoot[], options: BrowseableTreeOptions = {}) {
+  const { persistKey, defaultExpandedIds } = options;
+  const [state, setState] = useState<BrowseableTreeState>(() => ({
+    expandedIds: (persistKey ? readPersistedExpandedIds(persistKey) : null) ?? new Set(defaultExpandedIds ?? []),
+    loadStates: new Map(),
+  }));
+
+  // Persist expansion changes (mirror of PromptIndexPanel's sort-dir pattern).
+  useEffect(() => {
+    if (!persistKey) return;
+    try {
+      window.localStorage.setItem(persistKey, JSON.stringify([...state.expandedIds]));
+    } catch {
+      // localStorage may be unavailable (private mode, quota) — expansion simply doesn't persist.
+    }
+  }, [persistKey, state.expandedIds]);
 
   // Ref mirror of `loadStates` for the async workers (`loadChildren`,
   // `expandParentsForPointer`) to read WITHOUT listing `state.loadStates` in
@@ -59,10 +97,7 @@ export function useBrowseableTree(roots: BrowseableRoot[]) {
     [state.loadStates],
   );
 
-  const isExpanded = useCallback(
-    (id: string): boolean => state.expandedIds.has(id),
-    [state.expandedIds],
-  );
+  const isExpanded = useCallback((id: string): boolean => state.expandedIds.has(id), [state.expandedIds]);
 
   const setLoadState = useCallback((id: string, next: LoadState) => {
     setState((prev) => {
@@ -229,10 +264,7 @@ export function useBrowseableTree(roots: BrowseableRoot[]) {
       for (const node of nodesToExpand) {
         if (!node.listChildren) continue;
         const existing = loadStatesRef.current.get(node.id);
-        const children =
-          existing?.status === 'ready'
-            ? existing.children
-            : await loadChildren(node);
+        const children = existing?.status === 'ready' ? existing.children : await loadChildren(node);
         if (parent && node.id === parent.id) parentChildren = children;
       }
 

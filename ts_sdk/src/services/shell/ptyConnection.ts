@@ -52,6 +52,14 @@ function stripAnsi(s: string): string {
   return s.replace(ANSI_RE, '');
 }
 
+/** Decode a base64 string into raw bytes (PTY chunks travel base64 over WS/REST). */
+export function base64ToBytes(b64: string): Uint8Array {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
 export class PtyConnection {
   shellId: string;
   computeNodeId: string;
@@ -61,7 +69,7 @@ export class PtyConnection {
   restarting = false;
   lastSeq = 0;
 
-  /** Replay chunks keyed by seq. */
+  /** Live in-session output chunks keyed by seq — feeds pty-sync (VT rebuild, gutters). */
   readonly chunks: Map<number, OutputChunk> = new Map();
 
   private readonly decoder = new TextDecoder('utf-8', { fatal: false });
@@ -83,14 +91,14 @@ export class PtyConnection {
   /** Pending raw text not yet terminated by \n. Fed into the line stream. */
   private _lineBuffer = '';
 
-  /** onReady subscribers — fired once when replay completes + live stream opens. */
+  /** onReady subscribers — fired once when attach completes + live stream opens. */
   private readonly _readyListeners = new Set<() => void>();
 
   /** onDisconnect subscribers — fired when WS closes. */
   private readonly _disconnectListeners = new Set<() => void>();
 
-  /** True once attach() has finished replay and the output gate is open. */
-  private _replayDone = false;
+  /** True once attach() has completed and the output gate is open. */
+  private _attached = false;
 
   /** Backend PTY ID currently attached in this browser client. */
   private _attachedPtyId: string | null = null;
@@ -108,22 +116,22 @@ export class PtyConnection {
 
   // ── Status ────────────────────────────────────────────────────────────────
 
-  /** True once attach() has finished replay (no WS dependency — safe in unit tests). */
-  get replayDone(): boolean {
-    return this._replayDone;
+  /** True once attach() has completed (no WS dependency — safe in unit tests). */
+  get attached(): boolean {
+    return this._attached;
   }
 
-  /** True if this connection is fully attached to the given PTY (started + replay done). */
+  /** True if this connection is fully attached to the given PTY. */
   isAttachedTo(ptyId: string): boolean {
-    return this.started && this._replayDone && this._attachedPtyId === ptyId;
+    return this.started && this._attached && this._attachedPtyId === ptyId;
   }
 
   /**
-   * True when replay is done AND the WS is live.
+   * True when attach is complete AND the WS is live.
    * Equivalent to the old shell.connected.
    */
   get isReady(): boolean {
-    return this._replayDone && this.isLive;
+    return this._attached && this.isLive;
   }
 
   /** True when the backend PTY is started and WS is live (no replay gate). */
@@ -139,7 +147,7 @@ export class PtyConnection {
 
   // ── Sorted chunk accessor ─────────────────────────────────────────────────
 
-  /** Sorted replay chunks — read on ready to write into xterm. */
+  /** Sorted live-session chunks — feeds VirtualTerminal rebuild on resize. */
   getSortedChunks(): OutputChunk[] {
     return [...this.chunks.values()].sort((a, b) => a.seq - b.seq);
   }
@@ -153,7 +161,7 @@ export class PtyConnection {
 
   /**
    * Route a pty_output_msg chunk into this connection.
-   * Stores chunk for replay; notifies live listeners only after isReady.
+   * Stores the chunk for pty-sync; notifies live listeners once attached.
    */
   routeOutput(data: string, seq?: number, timestamp_ms?: number): string | null {
     return this.appendOutput(data, seq, timestamp_ms);
@@ -171,9 +179,7 @@ export class PtyConnection {
     let bytes: Uint8Array;
     let decoded: string;
     try {
-      const binaryStr = atob(base64Data);
-      bytes = new Uint8Array(binaryStr.length);
-      for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+      bytes = base64ToBytes(base64Data);
       decoded = this.decoder.decode(bytes, { stream: true });
     } catch (e) {
       console.warn('[PtyConnection] Failed to decode base64 PTY data:', e);
@@ -182,12 +188,12 @@ export class PtyConnection {
     if (seq !== undefined) {
       this.chunks.set(seq, { seq, data: bytes, timestamp: timestamp_ms ?? Date.now() });
     }
-    // Feed line listeners regardless of replay state — triggers must fire
-    // for replayed output too so reload-time pattern detection works.
+    // Feed line listeners regardless of attach state — triggers must fire
+    // for orphan-flushed output too so early pattern detection works.
     this._feedLineBuffer(decoded);
-    // Only fire live listeners after replay phase is complete.
-    // Gate on _replayDone only (not isLive) so unit tests work without a WS.
-    if (this._replayDone) {
+    // Only fire live listeners once attach has completed.
+    // Gate on _attached only (not isLive) so unit tests work without a WS.
+    if (this._attached) {
       for (const listener of this._listeners) {
         try {
           listener(decoded, seq);
@@ -337,7 +343,7 @@ export class PtyConnection {
       label: trig.label,
       line,
       match: Array.from(match).slice(0, 8) as string[],
-      duringReplay: duringReplay ?? !this._replayDone,
+      duringReplay: duringReplay ?? !this._attached,
     };
     this._eventFires.push(fire);
     while (this._eventFires.length > PtyConnection.MAX_EVENT_FIRES) {
@@ -369,14 +375,14 @@ export class PtyConnection {
   }
 
   /**
-   * Subscribe to the "ready" event — fires every time replay completes
+   * Subscribe to the "ready" event — fires every time attach completes
    * (including after reconnects). Fires immediately if already ready.
    * Returns an unsubscribe function.
    */
   onReady(fn: () => void): () => void {
     this._readyListeners.add(fn);
-    // Fire immediately if replay is already done (mount of an existing terminal).
-    if (this._replayDone) fn();
+    // Fire immediately if already attached (mount of an existing terminal).
+    if (this._attached) fn();
     return () => this._readyListeners.delete(fn);
   }
 
@@ -409,7 +415,7 @@ export class PtyConnection {
       const msg = e instanceof Error ? e.message : String(e);
       if (msg.includes('PTY session not found')) {
         this.started = false;
-        this._replayDone = false;
+        this._attached = false;
         this._attachedPtyId = null;
         this._emitDisconnect();
       } else {
@@ -442,9 +448,17 @@ export class PtyConnection {
   /**
    * Attach (or re-attach) to a backend PTY.
    * Idempotent and deduped — safe to call on every tab switch.
+   *
+   * No byte replay: the server asserts the client's size on the PTY and
+   * forces the running TUI to repaint its live frame (winsize jiggle when
+   * the size is unchanged). Pass cols/rows so the asserted size matches
+   * this client's xterm.
    */
-  async attach(ptyId: string, opts: { force?: boolean; timeout?: number } = {}): Promise<void> {
-    const { force = false, timeout } = opts;
+  async attach(
+    ptyId: string,
+    opts: { force?: boolean; timeout?: number; cols?: number; rows?: number } = {},
+  ): Promise<void> {
+    const { force = false, timeout, cols, rows } = opts;
     const targetPtyId = ptyId;
 
     if (!this.computeNodeId) return;
@@ -456,49 +470,32 @@ export class PtyConnection {
       return this._attachPromise;
     }
 
-    if (this.started && this._replayDone && this._attachedPtyId === targetPtyId && !force) {
-      // Already attached and replay done — no-op
+    if (this.started && this._attached && this._attachedPtyId === targetPtyId && !force) {
+      // Already attached — no-op (also avoids a redundant repaint jiggle)
       return;
     }
 
     const attachWork = (async () => {
       if (this._attachedPtyId !== targetPtyId) {
         this.clear();
-        this._replayDone = false;
+        this._attached = false;
       }
-      if (this.lastSeq > 0) this.lastSeq = 0;
 
-      const latestSeq = await this._reattach(targetPtyId, this.lastSeq, timeout);
-      if (latestSeq === undefined) {
-        this._replayDone = false;
+      const ok = await this._reattach(targetPtyId, timeout, cols, rows);
+      if (!ok) {
+        this._attached = false;
         this._attachedPtyId = null;
         throw new Error(`PTY ${targetPtyId} not found for shell ${this.shellId}`);
-      }
-
-      // Drain replay: server streams pty_output_msg before the attach response
-      // resolves. Poll until lastSeq catches up (or 2s deadline).
-      if (latestSeq > 0 && this.lastSeq < latestSeq) {
-        await new Promise<void>((resolve) => {
-          const deadline = Date.now() + 2000;
-          const check = () => {
-            if (this.lastSeq >= latestSeq || Date.now() >= deadline) {
-              resolve();
-            } else {
-              setTimeout(check, 5);
-            }
-          };
-          setTimeout(check, 0);
-        });
       }
 
       const _t0 = (typeof window !== 'undefined' ? window : globalThis) as Record<string, unknown>;
       if (_t0.__shellNavT0 !== undefined)
         console.log(
-          `[PERF] +${(performance.now() - (_t0.__shellNavT0 as number)).toFixed(0)}ms PtyConnection.attach() replayDone=true (shell=${this.shellId.slice(0, 8)})`,
+          `[PERF] +${(performance.now() - (_t0.__shellNavT0 as number)).toFixed(0)}ms PtyConnection.attach() attached=true (shell=${this.shellId.slice(0, 8)})`,
         );
 
       this._attachedPtyId = targetPtyId;
-      this._replayDone = true;
+      this._attached = true;
       this._emitReady();
     })();
 
@@ -520,11 +517,11 @@ export class PtyConnection {
 
   /**
    * Called by Shell when the WebSocket connection closes.
-   * Signals disconnect without destroying chunk state (replay still valid).
+   * Signals disconnect without destroying chunk state (pty-sync keeps using it).
    */
   handleWsClose(): void {
-    if (this._replayDone || this.started) {
-      this._replayDone = false;
+    if (this._attached || this.started) {
+      this._attached = false;
       this._emitDisconnect();
     }
   }
@@ -603,22 +600,32 @@ export class PtyConnection {
   /** Reset all attach state for a force re-attach. */
   private _doReset(): void {
     this.clear();
-    this._replayDone = false;
+    this._attached = false;
     this._attachedPtyId = null;
     this._attachPromise = null;
     this._attachingPtyId = null;
     this._emitDisconnect();
   }
 
-  private async _reattach(ptyId: string, sinceSeq = 0, timeout?: number): Promise<number | undefined> {
-    if (!this.computeNodeId) return undefined;
+  private async _reattach(
+    ptyId: string,
+    timeout?: number,
+    cols?: number,
+    rows?: number,
+  ): Promise<boolean> {
+    if (!this.computeNodeId) return false;
     const { ActionInfo } = await import('../../models/index.js');
     const { dataManager } = await import('../../APIEntity.js');
     const { ConnectionManager } = await import('../../websocket.js');
     const connection_id = ConnectionManager.getInstance().id;
     const action = new ActionInfo('terminal-command', 'compute_node', this.computeNodeId, 'POST');
     action.subpath = 'attach';
-    action.bodyParameters = { shell_id: this.shellId, pty_id: ptyId, since_seq: sinceSeq, connection_id };
+    action.bodyParameters = {
+      shell_id: this.shellId,
+      pty_id: ptyId,
+      connection_id,
+      ...(cols !== undefined && rows !== undefined ? { cols, rows } : {}),
+    };
     const result = await dataManager.callActionOverWS<any, any>(
       action,
       timeout !== undefined ? { timeout } : undefined,
@@ -626,7 +633,7 @@ export class PtyConnection {
 
     if (result?.status === 'not_found') {
       this.started = false;
-      return undefined;
+      return false;
     }
 
     this.started = true;
@@ -635,6 +642,6 @@ export class PtyConnection {
     const { ptyOrphanBuffer } = await import('./ptyOrphanBuffer.js');
     ptyOrphanBuffer.flush(this.shellId, this);
 
-    return result?.latest_seq;
+    return true;
   }
 }

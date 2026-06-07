@@ -22,7 +22,12 @@
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { hubAvailable } from './_hub';
 import { pollUntil } from './_matrix';
-import { getInstance, instanceAvailable, type ResolvedInstance } from './_instances';
+import {
+  findPendingInvitation,
+  getInstance,
+  instanceAvailable,
+  type ResolvedInstance,
+} from './_instances';
 
 let skipReason: string | null = null;
 let dev1: ResolvedInstance;
@@ -49,26 +54,6 @@ const post = (apiUrl: string, p: string, body?: unknown) =>
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body ?? {}),
   }).then((r) => r.json());
-
-/** Find the pending invitation for `convId` on the receiver's freshly-synced
- *  local DB. `fetchConversations()` is the production hub catch-up (pulls the
- *  conversation + invitation lists from the hub into local SQL); without it
- *  `Invitation.query` only sees stale rows. Mirrors `matrix.bob`. */
-async function findPendingInvitation(inst: ResolvedInstance, convId: string): Promise<any> {
-  await inst.sdk.fetchConversations();
-  const all: any[] = await (inst.sdk.Invitation as any).query({ query: {} }, true);
-  // Prefer an exact conv match; but this hub doesn't always stamp
-  // target_url_path, so fall back to the NEWEST unaccepted invite addressed to
-  // this instance — the sort is what skips stale invitations left in the
-  // persistent instance DB. Mirrors matrix.bob.
-  const exact = all.find((inv) => !inv.accepted && (inv.target_url_path || '').includes(convId));
-  if (exact) return exact;
-  const mine = all
-    .filter((inv) => !inv.accepted && inv.recipient_email === inst.email)
-    .sort((a, b) => String(b.created_date ?? '').localeCompare(String(a.created_date ?? '')));
-  return mine[0] ?? null;
-}
-
 
 describe('two SDK clients in one process (realm per instance)', () => {
   it('isolated realms + backends — a skill on dev-1 does not exist on dev-2', async () => {

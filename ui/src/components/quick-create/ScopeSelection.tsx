@@ -1,6 +1,7 @@
 import type { Project } from '@sdk';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { CodexIcon } from '@src/components/icons/CodexIcon';
+import { CopilotIcon } from '@src/components/icons/CopilotIcon';
 import { Button } from '@src/components/ui/button';
 import { Input } from '@src/components/ui/input';
 import { ScopeBar, type ScopeBarOption } from '@src/components/ui/scope-bar';
@@ -9,7 +10,7 @@ import { CircleSlash, FolderOpen, Layers, Pencil } from 'lucide-react';
 import { useCallback } from 'react';
 
 export type ScopeKind = 'user' | 'project' | 'folder';
-export type HarnessKind = 'all' | 'claude' | 'codex' | 'none';
+export type HarnessKind = 'all' | 'claude' | 'codex' | 'copilot' | 'none';
 
 export interface Scope {
   kind: ScopeKind;
@@ -43,6 +44,7 @@ const HARNESS_OPTIONS: { value: HarnessKind; title: string; Icon: React.Componen
   { value: 'all', title: 'All harnesses', Icon: Layers },
   { value: 'claude', title: 'Claude Code', Icon: ClaudeIcon },
   { value: 'codex', title: 'Codex', Icon: CodexIcon },
+  { value: 'copilot', title: 'Copilot', Icon: CopilotIcon },
   { value: 'none', title: 'None (project root)', Icon: CircleSlash },
 ];
 

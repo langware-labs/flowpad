@@ -24,7 +24,7 @@ describe('DockPointer.forAssetFolder', () => {
   });
 
   it('preserves compute_node @local typeid', () => {
-    const dp = DockPointer.forAssetFolder('markdown', 'compute_node-@local', 'Users/shlom/.claude/docs');
+    const dp = DockPointer.forAssetFolder('markdown', 'compute_node-@local', 'Users/alice/.claude/docs');
     expect(dp.pointer).toBe('folder/markdown/compute_node-@local/Users/alice/.claude/docs');
   });
 });
@@ -53,7 +53,7 @@ describe('DockPointer.parseAssetFolderPointer', () => {
     expect(parsed).toEqual({
       typeName: 'markdown',
       typeid: 'compute_node-@local',
-      relPath: 'Users/shlom/.claude/docs',
+      relPath: 'Users/alice/.claude/docs',
     });
   });
 

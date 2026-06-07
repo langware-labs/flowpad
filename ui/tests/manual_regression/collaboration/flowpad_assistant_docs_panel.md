@@ -9,13 +9,16 @@ id: 8a3c1f29-4b7e-4d6a-9f12-2c5e8a1b3d40
 # tests assert the current, intended surface (asset browser mounts cleanly +
 # the seeded doc is indexed/searchable), not the removed DOCS sidebar.
 
-test 1: Open the Flowpad Assistant space from the sidebar
-- navigate to {APP_URL}/dock/home
-- wait for the sidebar to render
-- click the "Flowpad Assistant" button in the sidebar (data-testid="sidebar-flowpad-assistant" or text "Flowpad Assistant")
-- wait up to 2 seconds for navigation
-- validate the URL contains "/dock/project/" (the assistant opens its project space)
-- validate the project asset browser rendered (the "Assets" heading and a "Project: @flowpad" scope indicator with the asset-type tree)
+# Corrected 2026-06-04: the "Flowpad Assistant" button (FlowpadAssistantButton)
+# toggles the global FLOATING CHAT — it does NOT navigate to /dock/project/.
+# The assistant's project space is reached by direct navigation to
+# /dock/project/@flowpad_assistant, which renders the asset browser. Rewritten
+# to that real surface.
+
+test 1: Open the Flowpad Assistant project space (asset browser)
+- navigate to {APP_URL}/dock/project/@flowpad_assistant
+- wait for the project view to render
+- validate the project asset browser rendered (the "Assets" heading and a "Project:" scope indicator with the asset-type tree)
 - validate the page does NOT contain the text "No editor for type: project"
 - check console for errors
 - validate no errors appeared

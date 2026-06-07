@@ -31,14 +31,20 @@ Pins the post-correction invariants:
 > that aren't yet implemented (sidecar `index.md.json` in the record folder; a
 > folder-tree docs viewer with Obsidian-style folder-note routing + Index side
 > panel). Run S1–S6, S8, S11 for the current pipeline.
+>
+> **LLM gate:** S5, S6, S11 (and S8's 9-file invariant, which depends on S5
+> generating the `index.md` files) drive a real rebuild AgenticProcess that calls
+> Claude — they require `ANTHROPIC_API_KEY` in the backend env and skip
+> (live-claude dependency) when absent. The deterministic subset S1–S4 runs
+> without a key.
 
 ## Steps
 
 ### S1: Backend reachable + entity type registered
 * `GET ${API_URL}/api/v1/graph/bootstrap` → HTTP 200 with `"status":"SUCCESS"` in the body.
 * `GET ${API_URL}/api/v1/agent/schema/markdown_index` → HTTP 200.
-* Response body must contain: `has_record_cls: true`, `has_entity_cls: true`.
-* Response body must contain: `indexed_by_default: false`, `browseable: false`. (System entity — not crawled, not in records browser.)
+* Response `type` must contain: `has_entity_cls: true`. NOTE: `has_record_cls` no longer exists — the entity/record split was unified, so the schema exposes only `has_entity_cls`; do not assert `has_record_cls`.
+* Response `type` must contain: `indexed_by_default: false`, `browseable: false`. (System entity — not crawled, not in records browser.)
 * Note: `parent_type` may or may not be populated — self-referential parent_type registration is best-effort and not required for smoke.
 
 ### S2: Seed a small docs tree
@@ -56,10 +62,11 @@ Pins the post-correction invariants:
 * Wait for the scan page; click `[data-testid="toolbar-llm-indexers"]`.
 * Assert URL is now `${APP_URL}/dock/lens/fs-records/llm-indexers/`.
 * Assert `[data-testid="llm-indexers-lens"]` is in the DOM.
-* Assert `[data-testid="llm-indexers-table"]` is present (even if empty).
+* Assert EITHER `[data-testid="llm-indexers-table"]` OR the empty-state text "No MarkdownIndex entities yet." is present. NOTE: the table renders only when ≥1 MarkdownIndex entity exists; with none, the empty-state shows instead (the table is NOT present-when-empty).
 
 ### S4: Register the seeded docs root as a MarkdownIndex
 * `POST ${API_URL}/api/v1/graph/markdown_index` body `{"vault_root":"${TMP_DOCS}","asset_ref":"${TMP_DOCS}/index.md","name":"smoke"}` → capture returned `id` (full TypeId: `markdown_index-<uuid>`). (The panel doesn't expose an "Add" button — direct POST is the only path today.)
+* The panel's ScopeFilterBar filters by scope: a `${TMP_DOCS}` (=/tmp) vault_root is outside every project mount, so it is "user-area" and only shows when the **User** (or All) scope chip is selected. Click the "User" chip first.
 * Click "Refresh" in the panel; assert the new row appears in `[data-testid="llm-indexers-table"]` whose `Vault root` column shows `${TMP_DOCS}`.
 * Row status pill MUST read "never run".
 

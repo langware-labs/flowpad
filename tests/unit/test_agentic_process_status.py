@@ -242,7 +242,7 @@ class _FakeProcess:
         self._worker = worker
         self.session_id = session_id
 
-    def _discover_status_from_transcript(self) -> WorkerStatus | None:
+    def fetch_worker_status(self) -> WorkerStatus | None:
         return self._worker
 
 

@@ -1,4 +1,4 @@
-"""Canonical project list: Claude scan ∪ Codex scan ∪ Project.get_all(), deduped
+"""Canonical project list: worker scans ∪ Project.get_all(), deduped
 by canonical posix cwd. When ``create_missing=True``, materializes a Project for
 any FS-discovered cwd not yet in the entity table (id via ``Project.derive_id_for_path``).
 """
@@ -27,7 +27,7 @@ class ProjectInfo:
     cwd: str                                              # canonical posix path
     name: str                                             # display name (basename, or entity override)
     project_id: str                                       # Project entity id (uuid5-of-cwd)
-    worker_types: list[str] = field(default_factory=list) # ['claude'] / ['codex'] / both
+    worker_types: list[str] = field(default_factory=list) # worker provenance keys
     is_new: bool = False                                  # entity was created by THIS call
     modified_at: str | None = None                        # entity updated_date, when known
 
@@ -60,14 +60,17 @@ def iter_workspace_project_paths(include_temp: bool = False) -> Iterator[Path]:
     """Yield every immediate, non-hidden subdirectory of the Flowpad workspace.
 
     Each top-level folder under ``<user_home>/Flowpad workspace`` whose name does
-    not start with ``.`` is treated as a project, even with no Claude or Codex
+    not start with ``.`` is treated as a project, even with no worker
     worker history. Hidden folders (``.claude``, ``.flow``, ``.git`` …) are
     skipped. Same semantics as the Claude/Codex iterators: only existing dirs,
     temp paths excluded unless ``include_temp``.
     """
     workspace = get_instance_settings().user_home / "Flowpad workspace"
     try:
-        children = workspace.iterdir()
+        # list() forces eager evaluation: iterdir() is a lazy generator, so a
+        # missing workspace dir would otherwise raise at the for-loop below,
+        # outside this guard.
+        children = list(workspace.iterdir())
     except OSError:
         return
     for child in children:

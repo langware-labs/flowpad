@@ -19,6 +19,13 @@ export interface ProjectSelectorProps {
   isLoading?: boolean;
   /** Override the empty-state copy (e.g. inside a modal). */
   emptyMessage?: string;
+  /**
+   * Ids to hide from the list (e.g. projects that are already open in the
+   * hosting surface). Matched exactly against item `id`s — derive both from
+   * the same key (see `projectListToSelectorItems`). Applied before the text
+   * filter.
+   */
+  excludeIds?: ReadonlyArray<string>;
 }
 
 function timeAgo(iso?: string | null): string | null {
@@ -50,13 +57,16 @@ export function ProjectSelector({
   onSelect,
   isLoading = false,
   emptyMessage,
+  excludeIds,
 }: ProjectSelectorProps) {
   const [filter, setFilter] = useState('');
 
   const filtered = useMemo(() => {
+    const excluded = excludeIds?.length ? new Set(excludeIds) : null;
     const q = filter.trim().toLowerCase();
     return projects
       .filter((p) => {
+        if (excluded?.has(p.id)) return false;
         if (!q) return true;
         return p.name.toLowerCase().includes(q) || (p.path ?? '').toLowerCase().includes(q);
       })
@@ -65,7 +75,7 @@ export function ProjectSelector({
         const tb = b.modifiedAt ? new Date(b.modifiedAt).getTime() : 0;
         return tb - ta;
       });
-  }, [projects, filter]);
+  }, [projects, filter, excludeIds]);
 
   return (
     <div className="flex h-full flex-col gap-2">
@@ -88,7 +98,7 @@ export function ProjectSelector({
           </div>
         ) : filtered.length === 0 ? (
           <div className="py-6 text-center text-xs text-muted-foreground">
-            {filter ? 'No matches' : emptyMessage ?? 'No projects'}
+            {filter ? 'No matches' : (emptyMessage ?? 'No projects')}
           </div>
         ) : (
           <div className="space-y-0.5">
@@ -107,15 +117,9 @@ export function ProjectSelector({
                 >
                   <div className="flex items-baseline gap-2">
                     <span className="truncate text-sm font-medium">{p.name}</span>
-                    {ago && (
-                      <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">{ago}</span>
-                    )}
+                    {ago && <span className="ml-auto shrink-0 text-[10px] text-muted-foreground">{ago}</span>}
                   </div>
-                  {p.path && (
-                    <div className="truncate font-mono text-[10px] text-muted-foreground">
-                      {p.path}
-                    </div>
-                  )}
+                  {p.path && <div className="truncate font-mono text-[10px] text-muted-foreground">{p.path}</div>}
                 </button>
               );
             })}

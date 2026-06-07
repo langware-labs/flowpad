@@ -57,11 +57,15 @@ elements exist in the current codebase (`AssetsPage.tsx`, `AssetListView.tsx`).
 - [browser] wait for page to load
 - [browser] validate treeitems with names "Agent", "Skill", "Workflow", and "Markdown" each appear in the role="tree" (case-insensitive)
 
-### test 5: Expand a type via its chevron prefix-match selector
-- [browser] navigate to {APP_URL}/dock/assets/list/skill
+### test 5: Expand a POPULATED type via its chevron prefix-match selector
+# NOTE: pick a type whose level-1 row shows a non-zero count badge — an empty
+# type (e.g. skill at 0 records in a fresh env) has no children to expand, so
+# asserting level-2 items on it would be a self-inflicted test-issue.
+- [browser] navigate to {APP_URL}/dock/assets
 - [browser] wait for page to load
-- [browser] click the first element whose data-testid starts with "browseable-chevron-asset-type:skill:"
-- [browser] wait up to 3s for at least one treeitem at aria-level 2 to appear under the skill root
+- [browser] pick a level-1 treeitem whose accessible name contains a number (count > 0)
+- [browser] click the chevron whose data-testid starts with "browseable-chevron-asset-type:" inside that row
+- [browser] wait up to 3s for at least one treeitem at aria-level 2 to appear under that root
 
 ### test 6: API smoke test — /api/v1/assets/types
 - [bash] curl -s {API_URL}/api/v1/assets/types | jq -r '.status'

@@ -1,4 +1,4 @@
-import { FlowMessage, GitRepo, TypeId, User } from '@sdk';
+import { FlowMessage, GitRepo, Prompt, TypeId, User } from '@sdk';
 import { isValidIdentifier } from '@sdk/models/TypeId';
 import { useEntity } from '@sdk/react/hooks';
 import { useEffect, useState } from 'react';
@@ -14,11 +14,7 @@ import { GitRepoChip } from '@src/components/git/GitRepoChip';
 import { useLocalUser } from './useLocalUser';
 import { localBundleUrl } from './flow-message-drafts';
 import { MessageComposer } from './MessageComposer';
-import {
-  participantLabelByUserId,
-  UNRESOLVED_SENDER_LABEL,
-  warnUnresolvedSender,
-} from './participant-display';
+import { participantLabelByUserId, UNRESOLVED_SENDER_LABEL, warnUnresolvedSender } from './participant-display';
 import { useAttachments } from './useAttachments';
 import { editorPathForLocalFile } from './attachment-url';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -76,7 +72,6 @@ function DownloadAttachmentsButton({
   );
 }
 
-
 interface FlowMessageBubbleProps {
   messageId: string;
   /** The FlowMessage entity, supplied by the parent's batched conversation
@@ -130,6 +125,8 @@ interface FlowMessageBubbleProps {
    *  through this, which opens the project picker first if none is selected and
    *  resumes the download after a pick. */
   ensureProjectMapped?: (run: () => void | Promise<void>) => void;
+  /** Project shell to use when opening asset entity attachments. */
+  attachmentProjectId?: string | null;
 }
 
 export function FlowMessageBubble({
@@ -151,14 +148,13 @@ export function FlowMessageBubble({
   rosterReady = false,
   conversationStatusVisible = true,
   ensureProjectMapped,
+  attachmentProjectId,
 }: FlowMessageBubbleProps) {
   // Prefer the FlowMessage handed down from the parent's batched conversation
   // query; fall back to a per-id fetch only when it wasn't provided (so the
   // bubble still works in isolation). Passing null to useEntity disables the
   // fetch — the same pattern the creator lookup below uses.
-  const { data: fetchedFm } = useEntity<FlowMessage>(
-    fmProp ? null : new TypeId(FlowMessage.type, messageId),
-  );
+  const { data: fetchedFm } = useEntity<FlowMessage>(fmProp ? null : new TypeId(FlowMessage.type, messageId));
   const fm = fmProp ?? fetchedFm;
   // Resolve the message author via `created_by`. Used as the sender-name
   // fallback for messages that carry no `sender_id`/`sender_name` — notably
@@ -166,9 +162,7 @@ export function FlowMessageBubble({
   // `created_by` can be a non-entity sentinel (e.g. "system") for hub-authored
   // messages — guard so the TypeId constructor doesn't throw on those.
   const { data: creator } = useEntity<User>(
-    fm?.created_by && isValidIdentifier(fm.created_by)
-      ? new TypeId(User.type, fm.created_by)
-      : null,
+    fm?.created_by && isValidIdentifier(fm.created_by) ? new TypeId(User.type, fm.created_by) : null,
   );
   const { localUser, updateName } = useLocalUser();
   const { navigation } = useDockNavigation();
@@ -200,20 +194,19 @@ export function FlowMessageBubble({
   // ``displayName`` is computed further below; recompute the alert condition
   // here from the same inputs so this can live before that code.
   const unresolvedSenderId =
-    fm && !isDraft && fm.sender_id && rosterReady
-      && !participantLabelByUserId(participants, fm.sender_id)
-      && !(localUser?.id && fm.sender_id === localUser.id)
-      && !(fm.sender_name?.trim())
-      && !(creator?.name?.trim() || creator?.email?.trim())
+    fm &&
+    !isDraft &&
+    fm.sender_id &&
+    rosterReady &&
+    !participantLabelByUserId(participants, fm.sender_id) &&
+    !(localUser?.id && fm.sender_id === localUser.id) &&
+    !fm.sender_name?.trim() &&
+    !(creator?.name?.trim() || creator?.email?.trim())
       ? fm.sender_id
       : null;
   useEffect(() => {
     if (!unresolvedSenderId) return;
-    warnUnresolvedSender(
-      unresolvedSenderId,
-      fm?.conversation_id ?? null,
-      participants?.length ?? 0,
-    );
+    warnUnresolvedSender(unresolvedSenderId, fm?.conversation_id ?? null, participants?.length ?? 0);
   }, [unresolvedSenderId, fm?.conversation_id, participants?.length]);
 
   if (!fm) {
@@ -261,9 +254,7 @@ export function FlowMessageBubble({
   //      alerting on.
   //   6b. otherwise the benign 'unknown' string (roster still loading, no
   //      sender_id at all, etc.)
-  const rosterLabel = fm.sender_id
-    ? participantLabelByUserId(participants, fm.sender_id)
-    : null;
+  const rosterLabel = fm.sender_id ? participantLabelByUserId(participants, fm.sender_id) : null;
   const wireSenderName = fm.sender_name?.trim() || null;
   let displayName: string;
   if (overrideName) {
@@ -282,15 +273,6 @@ export function FlowMessageBubble({
     displayName = 'unknown';
   }
 
-  // Telemetry: warn once per (conv, sender_id) when we landed on the alert
-  // label — the warn lives in an effect (NOT the render body) so re-renders
-  // don't flood devtools. NOTE: the ``useEffect`` itself is hoisted ABOVE the
-  // early returns (``if (!fm)`` / ``if (isDraft)``) — see near the other hooks
-  // — because a hook called after a conditional return changes the per-render
-  // hook count and trips React's "Rendered more hooks than during the previous
-  // render". Here we only derive the boolean it keys on.
-  const isAlertLabel = displayName === UNRESOLVED_SENDER_LABEL;
-
   // When task is present, role tracks the original task initiator (sender) vs
   // recipient. For project-scoped conversations (no task), use the local user
   // as the "sender" perspective.
@@ -299,14 +281,13 @@ export function FlowMessageBubble({
       ? 'sender'
       : 'recipient'
     : isCurrentUser
-    ? 'sender'
-    : 'recipient';
+      ? 'sender'
+      : 'recipient';
 
   // The invitation-kind placeholder stores the target conversation's TypeId
   // in `text` (the hub reuses Invitation.message as a conv-id pointer). That
   // string is plumbing, not a message — never render it as bubble content.
-  const isConvIdPointer = !!fm.conversation_id
-    && fm.text === `conversation-${fm.conversation_id}`;
+  const isConvIdPointer = !!fm.conversation_id && fm.text === `conversation-${fm.conversation_id}`;
   const message: ConversationMessage = {
     role,
     content: isConvIdPointer ? '' : (fm.text ?? ''),
@@ -317,10 +298,12 @@ export function FlowMessageBubble({
   // Files + entities (Skill / Markdown / Spec / git_repo) come from the single
   // `useAttachments` surface, along with the message-level `downloaded` flag.
   // `git_repo` is a remote reference rendered via its own accept-and-work modal
-  // (no bundle download), so it's split out and always shown; the rest ride in
-  // the body bundle and only render as live chips once `downloaded`.
+  // (no bundle download), so it's split out and always shown; `prompt` entities
+  // render via the attachment-actions row's PromptAttachmentPreview (inside
+  // MessageBubble), not as generic chips; the rest ride in the body bundle and
+  // only render as live chips once `downloaded`.
   const gitRepoEntities = entities.filter((t) => t.type === GitRepo.type);
-  const otherEntities = entities.filter((t) => t.type !== GitRepo.type);
+  const otherEntities = entities.filter((t) => t.type !== GitRepo.type && t.type !== Prompt.type);
   const hasAttachments = attachmentItems.length > 0 || entities.length > 0;
   const bodyStatus = fm.body_status ?? BodyStatus.NA;
   const hasBody = bodyStatus !== BodyStatus.NA;
@@ -343,128 +326,119 @@ export function FlowMessageBubble({
   // project, so a download with no project selected opens the picker first and
   // resumes after a pick.
   const triggerDownload = () =>
-    ensureProjectMapped
-      ? ensureProjectMapped(() => handleDownloadBody())
-      : void handleDownloadBody();
+    ensureProjectMapped ? ensureProjectMapped(() => handleDownloadBody()) : void handleDownloadBody();
 
-  const progressPct =
-    progress && progress.bytesTotal > 0 ? Math.round(progress.fraction * 100) : null;
+  const progressPct = progress && progress.bytesTotal > 0 ? Math.round(progress.fraction * 100) : null;
 
-  const footer = hasAttachments || downloadError || isBareTranscriptShare ? (
-    <div className="mt-2 space-y-1.5">
-      {isBareTranscriptShare && (
-        <div className="flex items-center gap-1.5 text-[11px] italic text-muted-foreground">
-          <FileText className="h-3 w-3 shrink-0" />
-          Shared a session transcript — see the Context tab
-        </div>
-      )}
-      {downloadError && (
-        <div
-          className="flex items-start gap-2 rounded-md border border-orange-500/30 bg-orange-500/10 px-2 py-1.5 text-[11px] text-orange-700 dark:text-orange-300"
-          role="alert"
-        >
-          <AlertCircle className="mt-0.5 h-3 w-3 shrink-0" />
-          <div className="min-w-0 flex-1">
-            <div className="font-medium">Could not download</div>
-            <div className="break-all text-[10px] text-orange-700/80 dark:text-orange-300/80">
-              {downloadError.method} {downloadError.path} {downloadError.statusCode}
-              : {downloadError.message}
-            </div>
+  const footer =
+    hasAttachments || downloadError || isBareTranscriptShare ? (
+      <div className="mt-2 space-y-1.5">
+        {isBareTranscriptShare && (
+          <div className="flex items-center gap-1.5 text-[11px] italic text-muted-foreground">
+            <FileText className="h-3 w-3 shrink-0" />
+            Shared a session transcript — see the Context tab
           </div>
-          <button
-            type="button"
-            onClick={dismissDownloadError}
-            className="shrink-0 rounded p-0.5 text-orange-700/70 hover:bg-orange-500/20 hover:text-orange-700 dark:text-orange-300/70 dark:hover:text-orange-200"
-            title="Dismiss"
-            aria-label="Dismiss download error"
+        )}
+        {downloadError && (
+          <div
+            className="flex items-start gap-2 rounded-md border border-orange-500/30 bg-orange-500/10 px-2 py-1.5 text-[11px] text-orange-700 dark:text-orange-300"
+            role="alert"
           >
-            <X className="h-3 w-3" />
-          </button>
-        </div>
-      )}
-      {progress && (
-        <div className="flex items-center gap-2">
-          <div className="h-1 flex-1 overflow-hidden rounded-full bg-muted">
-            <div
-              className={cn(
-                'h-full rounded-full bg-primary transition-all',
-                progressPct === null && 'animate-pulse',
-              )}
-              style={{ width: progressPct === null ? '100%' : `${progressPct}%` }}
-            />
-          </div>
-          <span className="text-[10px] tabular-nums text-muted-foreground">
-            {progress.phase === 'upload' ? 'Uploading' : 'Downloading'}
-            {progressPct === null ? '…' : ` ${progressPct}%`}
-          </span>
-        </div>
-      )}
-      {/* git_repo references open the accept-and-work modal directly — no
-          bundle download needed, so they render in both states. */}
-      {gitRepoEntities.length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {gitRepoEntities.map((typeId) => (
-            <GitRepoChip key={`asset:${typeId.type}-${typeId.id}`} typeId={typeId} />
-          ))}
-        </div>
-      )}
-      {downloaded ? (
-        <>
-          {otherEntities.length > 0 && (
-            <div className="flex flex-wrap gap-1">
-              {otherEntities.map((typeId) => (
-                <ContextEntityChip
-                  key={`asset:${typeId.type}-${typeId.id}`}
-                  typeId={typeId}
-                  inside={{ type: 'conversation', id: fm.conversation_id ?? '' }}
-                />
-              ))}
+            <AlertCircle className="mt-0.5 h-3 w-3 shrink-0" />
+            <div className="min-w-0 flex-1">
+              <div className="font-medium">Could not download</div>
+              <div className="break-all text-[10px] text-orange-700/80 dark:text-orange-300/80">
+                {downloadError.method} {downloadError.path} {downloadError.statusCode}: {downloadError.message}
+              </div>
             </div>
-          )}
-          {attachmentItems.map((item) => (
-            <AttachmentChip
-              key={item.key}
-              url={item.url ?? ''}
-              filename={item.filename}
-              state={item.state}
-              downloading={item.state === AttachmentChipState.Ready && downloading}
-              onDownload={
-                item.state === AttachmentChipState.Ready ? triggerDownload : undefined
-              }
-              onOpenInEditor={
-                item.localPath
-                  ? () => navigation.openEditor(editorPathForLocalFile(item.localPath!))
-                  : undefined
-              }
-              onRevealInFolder={
-                item.localPath
-                  ? () => void openExternalFromComputeNode('@local', item.localPath!, { select: true })
-                  : undefined
-              }
-            />
-          ))}
-          {attachmentItems.length > 1 && (
-            <a
-              href={localBundleUrl(messageId)}
-              download
-              className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            <button
+              type="button"
+              onClick={dismissDownloadError}
+              className="shrink-0 rounded p-0.5 text-orange-700/70 hover:bg-orange-500/20 hover:text-orange-700 dark:text-orange-300/70 dark:hover:text-orange-200"
+              title="Dismiss"
+              aria-label="Dismiss download error"
             >
-              <Download className="h-3 w-3" />
-              Download all attachments
-            </a>
-          )}
-        </>
-      ) : hasBody && assetCount > 0 ? (
-        <DownloadAttachmentsButton
-          count={assetCount}
-          labels={assetLabels}
-          uploading={bodyStatus === BodyStatus.UPLOADING}
-          downloading={downloading}
-          onDownload={triggerDownload}
-        />
-      ) : null}
-    </div>
-  ) : null;
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+        )}
+        {progress && (
+          <div className="flex items-center gap-2">
+            <div className="h-1 flex-1 overflow-hidden rounded-full bg-muted">
+              <div
+                className={cn('h-full rounded-full bg-primary transition-all', progressPct === null && 'animate-pulse')}
+                style={{ width: progressPct === null ? '100%' : `${progressPct}%` }}
+              />
+            </div>
+            <span className="text-[10px] tabular-nums text-muted-foreground">
+              {progress.phase === 'upload' ? 'Uploading' : 'Downloading'}
+              {progressPct === null ? '…' : ` ${progressPct}%`}
+            </span>
+          </div>
+        )}
+        {/* git_repo references open the accept-and-work modal directly — no
+          bundle download needed, so they render in both states. */}
+        {gitRepoEntities.length > 0 && (
+          <div className="flex flex-wrap gap-1">
+            {gitRepoEntities.map((typeId) => (
+              <GitRepoChip key={`asset:${typeId.type}-${typeId.id}`} typeId={typeId} />
+            ))}
+          </div>
+        )}
+        {downloaded ? (
+          <>
+            {otherEntities.length > 0 && (
+              <div className="flex flex-wrap gap-1">
+                {otherEntities.map((typeId) => (
+                  <ContextEntityChip
+                    key={`asset:${typeId.type}-${typeId.id}`}
+                    typeId={typeId}
+                    inside={{ type: 'conversation', id: fm.conversation_id ?? '' }}
+                    projectId={attachmentProjectId}
+                  />
+                ))}
+              </div>
+            )}
+            {attachmentItems.map((item) => (
+              <AttachmentChip
+                key={item.key}
+                url={item.url ?? ''}
+                filename={item.filename}
+                state={item.state}
+                downloading={item.state === AttachmentChipState.Ready && downloading}
+                onDownload={item.state === AttachmentChipState.Ready ? triggerDownload : undefined}
+                onOpenInEditor={
+                  item.localPath ? () => navigation.openEditor(editorPathForLocalFile(item.localPath!)) : undefined
+                }
+                onRevealInFolder={
+                  item.localPath
+                    ? () => void openExternalFromComputeNode('@local', item.localPath!, { select: true })
+                    : undefined
+                }
+              />
+            ))}
+            {attachmentItems.length > 1 && (
+              <a
+                href={localBundleUrl(messageId)}
+                download
+                className="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <Download className="h-3 w-3" />
+                Download all attachments
+              </a>
+            )}
+          </>
+        ) : hasBody && assetCount > 0 ? (
+          <DownloadAttachmentsButton
+            count={assetCount}
+            labels={assetLabels}
+            uploading={bodyStatus === BodyStatus.UPLOADING}
+            downloading={downloading}
+            onDownload={triggerDownload}
+          />
+        ) : null}
+      </div>
+    ) : null;
 
   return (
     <MessageBubble
@@ -473,14 +447,16 @@ export function FlowMessageBubble({
       flowMessage={fm}
       task={task ?? undefined}
       senderName={displayName}
-      onEditName={isCurrentUser ? (newName) => {
-        setOverrideName(newName);
-        void updateName(newName);
-      } : undefined}
-      onDeleteMessage={
-        onDeleteMessage && (isCurrentUser || isConversationOwner)
-          ? () => onDeleteMessage(messageId)
+      onEditName={
+        isCurrentUser
+          ? (newName) => {
+              setOverrideName(newName);
+              void updateName(newName);
+            }
           : undefined
+      }
+      onDeleteMessage={
+        onDeleteMessage && (isCurrentUser || isConversationOwner) ? () => onDeleteMessage(messageId) : undefined
       }
       onApproveAndExecute={onApproveAndExecute ? (idx) => onApproveAndExecute(messageId, idx) : undefined}
       onImplementPlan={onImplementPlan ? () => onImplementPlan(messageId) : undefined}

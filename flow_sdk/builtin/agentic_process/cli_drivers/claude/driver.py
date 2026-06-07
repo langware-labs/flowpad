@@ -257,6 +257,9 @@ class ClaudeDriver:
         asyncio.create_task(_run_turn(), name=f"claude-{process.id[:8]}")
         return ApiSuccessResponse(data={"status": "started", "worker": self.name})
 
+    def stream_worker(self, process: "AgenticProcess") -> ClaudeCLIStreamWorker:
+        return ClaudeCLIStreamWorker()
+
     async def report_event(
         self,
         process: "AgenticProcess",

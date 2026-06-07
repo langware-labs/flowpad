@@ -40,6 +40,7 @@ ENV_VITE_PORT = "VITE_PORT"
 ENV_FLOWPAD_CLOUD_API_KEY = "FLOWPAD_CLOUD_API_KEY"
 ENV_FLOWPAD_CLOUD_API_URL = "FLOWPAD_CLOUD_API_URL"
 ENV_FLOWPAD_DOCKER_PUBLIC_URL = "FLOWPAD_DOCKER_PUBLIC_URL"
+ENV_FLOWPAD_DESKTOP = "FLOWPAD_DESKTOP"
 # Pass-through SOD Fernet key (e.g. supplied by Electron after it read the
 # keychain) — when set, the per-instance sodot uses it directly and never
 # touches the OS keychain. Same var that binds ServiceConfig.sod_enc_key.
@@ -477,6 +478,12 @@ def _fetch_or_create_sod_key(instance_name: str) -> bytes:
     Callers memoize the result on the InstanceSettings instance (see
     ``sod_key``), so it runs at most once per process.
     """
+    if os.environ.get(ENV_FLOWPAD_DESKTOP) == "1":
+        raise SecretsNotEnabledError(
+            "Desktop backend refused Python keychain access for SOD key; "
+            "Electron must provide SOD_ENC_KEY or seed the key via signed flow-rs."
+        )
+
     import keyring
     from cryptography.fernet import Fernet
 
