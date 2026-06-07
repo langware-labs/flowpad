@@ -16,12 +16,33 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from pathlib import Path
 from typing import List, Optional
 
 import typer
 
 from flow_sdk.agentic_run_consts import DEFAULT_TRANSCRIPT_TIMEOUT_S
+
+
+def _quiet_logs() -> None:
+    """Silence backend INFO/WARNING logging so the user only sees the diagnose
+    stream and the final result — not internal noise like the service_log INFO
+    line or the pre-existing ``@local … legacy random id`` warnings from
+    bootstrap. ERROR/CRITICAL still surface.
+    """
+    logging.disable(logging.WARNING)
+
+
+async def _feed_entry_ids() -> set[str]:
+    """Current FeedEntry ids (best-effort; empty set on any failure)."""
+    try:
+        from flow_sdk.builtin.feed_entry import FeedEntry
+
+        items = await FeedEntry.get_all()
+        return {fe.id for fe in items if getattr(fe, "id", None)}
+    except Exception:
+        return set()
 
 
 def _find_skill_dir() -> Optional[Path]:
@@ -56,13 +77,26 @@ async def _run_diagnose(message: str, transcript_timeout: float) -> int:
     # Bootstrap @local + a compute node so the headless worker can run (also
     # guarantees @local exists for the reporting phase).
     cn = await _bootstrap_local()
+    feed_before = await _feed_entry_ids()
 
     prompt_text = (
-        "Use the flow-diagnose skill to diagnose and (where safe) repair the "
-        "user's Flowpad issue, then run its reporting phase.\n\n"
+        "Use the flow-diagnose skill to diagnose the user's Flowpad issue, repair "
+        "it ONLY when you safely can, and record the outcome — all in THIS turn.\n\n"
         f"The skill directory is mounted at {skill_dir}; read its SKILL.md and "
         "follow it exactly. You may read sibling files it references (e.g. "
         "references/catalog.md).\n\n"
+        "Fix conservatively. Apply a repair ONLY when BOTH hold: (1) you have a "
+        "confident diagnosis and know exactly what to do, and (2) it's a safe, "
+        "reversible fix you can perform on this machine yourself (e.g. removing a "
+        "stale server.lock/server.pid/server.json for a dead PID, freeing port "
+        "9007, installing FUSE for a Linux AppImage). If the cause is unclear, or "
+        "the fix is the user's to make (re-install, re-sign the app, cloud/account "
+        "actions, anything off this machine) or is risky/destructive, do NOT "
+        "attempt it — tell the user exactly what to do instead.\n\n"
+        "Your FINAL action MUST be to run `flow diagnose-report` to record the "
+        "outcome to the app's Feed — set --status to `fixed` when you repaired it, "
+        "`needs_action` when the user must act, `informational`, or `unrecognized`. "
+        "Do NOT end your turn until diagnose-report has run.\n\n"
         "User-reported text — may be free text or a pasted error; empty means "
         f'run a full sweep:\n"{message}"\n\n'
         f"--- BEGIN SKILL (flow-diagnose/SKILL.md) ---\n{skill_md}\n--- END SKILL ---"
@@ -74,28 +108,76 @@ async def _run_diagnose(message: str, transcript_timeout: float) -> int:
         workdir=str(Path.cwd()),
         visible=False,
     )
-    await ap.prompt(prompt_text)
 
-    # Wait for the worker to write its first transcript line (canonical "started"
-    # signal — see the migration runner).
-    for _ in range(AGENT_WARMUP_TICKS):
+    def _tx_size() -> int:
         tp = ap.driver.transcript_path(ap)
-        if tp and tp.exists() and tp.stat().st_size > 0:
-            break
-        await asyncio.sleep(AGENT_WARMUP_INTERVAL_S)
-    tp = ap.driver.transcript_path(ap)
-    if not tp or not tp.exists() or tp.stat().st_size == 0:
-        typer.echo("ERROR: diagnose agent never wrote a transcript line during warmup", err=True)
-        return 1
+        try:
+            return tp.stat().st_size if tp and tp.exists() else 0
+        except OSError:
+            return 0
 
-    typer.echo(f"  Diagnosing (session={(ap.session_id or '')[:8]})…")
-    try:
+    async def _await_growth(min_size: int) -> bool:
+        """Wait for the transcript to grow past ``min_size`` — i.e. the (re-)
+        prompted turn has actually started writing. Reuses the warmup budget."""
+        for _ in range(AGENT_WARMUP_TICKS):
+            if _tx_size() > min_size:
+                return True
+            await asyncio.sleep(AGENT_WARMUP_INTERVAL_S)
+        return _tx_size() > min_size
+
+    rendered = 0  # entries already printed across turns (transcript is append-only)
+
+    async def _stream_new() -> None:
+        nonlocal rendered
+        idx = 0
         async for entry in ap.stream_transcript(timeout=transcript_timeout):
-            _render_entry(entry)
+            if idx >= rendered:
+                _render_entry(entry)
+            idx += 1
+        rendered = idx
+
+    # The worker can end its turn early — diagnosing but not repairing/reporting.
+    # Drive it across up to MAX_TURNS: turn 0 runs the skill; each retry nudges
+    # the SAME session to finish. "Done" == a new Feed entry was recorded.
+    nudge = (
+        "You have NOT run `flow diagnose-report` yet, so nothing was recorded. "
+        "If you have a confident diagnosis and a safe fix you can apply yourself, "
+        "apply it now; otherwise leave it for the user. Then run `flow "
+        'diagnose-report --summary "..." --status '
+        "fixed|needs_action|informational|unrecognized` as your final action. Do "
+        "not stop until diagnose-report has run."
+    )
+    MAX_TURNS = 3
+    try:
+        for turn in range(MAX_TURNS):
+            size_before = _tx_size()
+            await ap.prompt(prompt_text if turn == 0 else nudge)
+            if not await _await_growth(size_before):
+                typer.echo("ERROR: diagnose agent never started writing within warmup", err=True)
+                return 1
+            typer.echo(
+                f"  Diagnosing (session={(ap.session_id or '')[:8]})…"
+                if turn == 0
+                else "  …agent stopped before recording — nudging it to finish."
+            )
+            await _stream_new()
+            new_ids = (await _feed_entry_ids()) - feed_before
+            if new_ids:
+                typer.echo(
+                    f"  ✓ Recorded to the Feed (feed_entry {sorted(new_ids)[0][:8]}). "
+                    "Open the app's home screen to see it."
+                )
+                return 0
     except (KeyboardInterrupt, asyncio.CancelledError):
         typer.echo("Diagnose interrupted.", err=True)
         return 130
-    return 0
+
+    typer.echo(
+        "  ⚠ The diagnostic could not record a result after retries — the agent "
+        "kept ending early. See the findings above; re-run `flow diagnose` to retry.",
+        err=True,
+    )
+    return 1
 
 
 # Two sibling top-level leaf commands (registered in flow_cli.py via
@@ -112,6 +194,7 @@ def diagnose_command(
     ),
 ) -> None:
     """Diagnose a Flowpad issue and report the outcome to the app's Feed."""
+    _quiet_logs()
     text = " ".join(message).strip() if message else ""
     rc = asyncio.run(_run_diagnose(text, timeout))
     raise typer.Exit(rc)
@@ -128,6 +211,7 @@ def diagnose_report_command(
     platform: str = typer.Option("", "--platform", help="macOS | Windows | Linux."),
 ) -> None:
     """Persist a flow-diagnose report (Conversation + FlowMessage + FeedEntry) via the SDK."""
+    _quiet_logs()
     from flow_sdk.diagnostics.report import create_diagnostic_report
 
     res = asyncio.run(

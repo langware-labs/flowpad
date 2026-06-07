@@ -120,6 +120,14 @@ Read `references/catalog.md` for each entry's exact detection + repair. If sever
 
 ### Step 4 — Auto-repairable entries: detect, repair, confirm
 
+**Apply the fix yourself — but only when you safely can.** Run a repair only when BOTH hold:
+(1) your diagnosis is confident and you know exactly what to do, and (2) it's a safe, reversible
+fix you can perform on this machine (e.g. delete a stale `server.lock`/`server.pid` for a dead
+PID, free port 9007, install FUSE). For the auto-repairable cases below, actually run the commands
+— don't just recommend them. But if you're unsure of the cause, or the fix is the user's to make
+(re-install, re-sign, cloud/account actions) — i.e. the Step 5 items — do NOT attempt it; describe
+exactly what the user should do instead. Stay conservative and reversible — never destructive.
+
 CRITICAL: Never suggest raising the 30-second health timeout or any other wait/retry/backoff
 budget. The timeout is correct; fix the underlying stall or contention instead.
 
