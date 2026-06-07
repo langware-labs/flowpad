@@ -3,20 +3,23 @@
 Quick reference for the flow-diagnose skill. Each entry: cause, detection command(s) per
 platform, repair class, and repair action or workaround.
 
+> **Ports:** use `$PORT` / `$VITE_PORT` resolved in SKILL.md Step 1 — do not hardcode. `9007` /
+> `4097` shown below are the packaged-desktop / dev defaults (the desktop app pins `9007`).
+
 ---
 
 ## A. Runtime / Backend — AUTO-REPAIRABLE
 
-### A1 Port 9007 occupied
+### A1 Port occupied ($PORT, default 9007)
 - **Cause**: A previous backend process did not exit cleanly and is still holding the port.
 - **Detection**:
-  - macOS/Linux: `lsof -ti tcp:9007`
-  - Windows: `netstat -ano | findstr :9007`
+  - macOS/Linux: `lsof -ti tcp:$PORT`
+  - Windows: `netstat -ano | findstr ":$PORT"`
 - **Repair**: `flow stop` → if still held, SIGTERM/SIGKILL (mac/linux) or `taskkill /PID <pid> /F` (win). Tell user to relaunch.
 
 ### A2 Backend unhealthy / failed to respond within 30 s
 - **Cause**: Stale lock from dead PID, DB corruption, or disk full.
-- **Detection**: `curl -fsS http://localhost:9007/health/status` → not `{"data":true}`.
+- **Detection**: `curl -fsS http://localhost:$PORT/health/status` → not `{"data":true}`.
 - **Repair**:
   - Stale lock: verify `server.pid` PID is dead → delete `server.lock` + `server.pid` → relaunch.
   - DB corruption: backend auto-recovers from `~/.flow/instances/<name>/backups/` on next launch.
@@ -39,7 +42,7 @@ platform, repair class, and repair action or workaround.
 
 ### B5 Blank page / 404 on /assets/*.js or *.css
 - **Cause**: Wheel built without running `build_ui.py`; `server/static/assets/` is empty.
-- **Detection**: Open http://localhost:9007 → 404 errors on JS/CSS assets.
+- **Detection**: Open http://localhost:$PORT → 404 errors on JS/CSS assets.
 - **Repair**: `uv tool install flowpad --force` (or `pip install --force-reinstall flowpad`), restart backend.
 
 ---
