@@ -983,6 +983,10 @@ app.add_typer(process_app, name="process")
 from flow_sdk.cli.commands.migrate_cmd import migrate_app
 app.add_typer(migrate_app, name="migrate")
 
+from flow_sdk.cli.commands.diagnose_cmd import diagnose_command, diagnose_report_command
+app.command("diagnose")(diagnose_command)
+app.command("diagnose-report")(diagnose_report_command)
+
 
 @log_app.callback(invoke_without_command=True)
 def log_show(
