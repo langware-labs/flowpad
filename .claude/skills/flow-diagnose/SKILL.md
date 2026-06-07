@@ -20,6 +20,16 @@ Analyzes Flowpad installation and runtime issues, performs auto-repairs where sa
 user's machine, explains build/CI-side problems with workarounds, and always ends with a
 plain-language "To Summarize:" line.
 
+## Operating rules
+
+- You run **autonomously and headless** — you **CANNOT ask the user any questions** and no human
+  will reply mid-run. Never pause for confirmation or input. Make the most reasonable assumption,
+  proceed, and note the assumption in the report.
+- Do the **whole job in one go** and do not end your turn until it's done:
+  diagnose → root cause → prove it → fix (when safe) → validate → end-to-end check → record.
+- Apply fixes yourself only when safe **and** capable (Step 4); otherwise advise the user (Step 5).
+- Never raise or add any timeout/retry/backoff/poll budget to mask a symptom.
+
 ## Instructions
 
 ### Step 1 — Detect platform, read optional error text
@@ -36,22 +46,33 @@ The input may be a **free-text description of a symptom** or a **verbatim pasted
 both the same. If any text was provided, go to Step 3 (classify it). If it was empty, run the full
 sweep in Step 2.
 
+**Resolve the ports first — do NOT hardcode them** (instances vary; only examples below use
+literals). Backend port: read it from the instance's `server.json`, falling back to
+`$LOCAL_SERVER_PORT`, then the packaged-desktop default `9007`:
+
+```bash
+PORT=$(python3 -c "import json,os,pathlib; inst=os.environ.get('FLOW_INSTANCE','prod'); p=pathlib.Path.home()/'.flow'/'instances'/inst/'server.json'; print(json.load(open(p))['port'] if p.exists() else os.environ.get('LOCAL_SERVER_PORT','9007'))")
+```
+
+Frontend dev-server port: `${VITE_PORT:-4097}`. Use `$PORT` / `$VITE_PORT` in every URL and port
+check below. (The packaged desktop app uses `9007` and serves the UI on that same port.)
+
 ### Step 2 — Full diagnostic sweep (no error text given)
 
 Run ALL checks below, collect all results, THEN report. Do not stop at the first finding.
 
-**2a. Port 9007**
+**2a. Backend port ($PORT, default 9007)**
 ```bash
 # macOS/Linux
-lsof -ti tcp:9007
-# Windows (PowerShell)
-netstat -ano | findstr :9007
+lsof -ti tcp:$PORT
+# Windows (PowerShell): $PORT resolved as above
+netstat -ano | findstr ":$PORT"
 ```
 Expected: empty (port free). Any PID = potential conflict.
 
 **2b. Backend health**
 ```bash
-curl -fsS http://localhost:9007/health/status
+curl -fsS http://localhost:$PORT/health/status
 ```
 Expected: `{"data":true}`. Anything else or curl error = unhealthy.
 
@@ -118,18 +139,30 @@ Read `references/catalog.md` for each entry's exact detection + repair. If sever
 **The catalog is knowledge, not a fence.** If the symptom matches nothing above, do **not** give up
 — go to **Step 5b (unrecognized issue)** and diagnose it generally.
 
-### Step 4 — Auto-repairable entries: detect, repair, confirm
+### Step 4 — Repair: root cause → prove → fix → validate
 
-**Apply the fix yourself — but only when you safely can.** Run a repair only when BOTH hold:
-(1) your diagnosis is confident and you know exactly what to do, and (2) it's a safe, reversible
-fix you can perform on this machine (e.g. delete a stale `server.lock`/`server.pid` for a dead
-PID, free port 9007, install FUSE). For the auto-repairable cases below, actually run the commands
-— don't just recommend them. But if you're unsure of the cause, or the fix is the user's to make
-(re-install, re-sign, cloud/account actions) — i.e. the Step 5 items — do NOT attempt it; describe
-exactly what the user should do instead. Stay conservative and reversible — never destructive.
+For each issue you intend to fix, work through these four sub-steps and **show your evidence** in
+the output — never jump straight from symptom to guess:
+
+1. **Root cause.** Identify the actual underlying cause, not the surface symptom — e.g. not
+   "backend not responding" but "a stale `server.pid` points to dead PID 17268, so startup aborts".
+2. **Prove it.** Back the root cause with concrete evidence: a command output, a log line, or a
+   small reproduction showing that this cause produces this symptom (e.g. `kill -0 17268` → dead,
+   and `curl …/health/status` → connection refused). If you cannot prove it, say so and treat it as
+   unrecognized (Step 5b) — do not fix on a hunch.
+3. **Fix** — but ONLY when safe and you're capable: (a) your diagnosis is confident, and (b) it's a
+   safe, reversible fix you can perform on this machine (e.g. delete a stale
+   `server.lock`/`server.pid`/`server.json` for a dead PID, free port 9007, install FUSE). Actually
+   run the commands — don't just recommend them. If the fix is the user's to make (re-install,
+   re-sign, cloud/account actions) or is risky/destructive, do NOT attempt it — describe exactly
+   what the user should do (Step 5).
+4. **Validate.** Re-run the exact check that exposed the problem and show it now passes (e.g.
+   `curl -fsS …/health/status` → `{"data":true}`, the port is free, the stale file is gone).
 
 CRITICAL: Never suggest raising the 30-second health timeout or any other wait/retry/backoff
 budget. The timeout is correct; fix the underlying stall or contention instead.
+
+The per-issue repair details (A1–F13) below are the **"how"** for the Fix sub-step:
 
 ---
 
@@ -291,7 +324,7 @@ Safe workaround: download and reinstall from the `.dmg` on the GitHub Releases p
 
 When the symptom matches no catalog entry, still diagnose it generally — don't bail:
 
-1. **Gather evidence**: `curl -fsS http://localhost:9007/health/status`; the newest files under
+1. **Gather evidence**: `curl -fsS http://localhost:$PORT/health/status`; the newest files under
    `~/.flow/logs/{server,monitor,main_desktop}`; instance state in `~/.flow/instances/<name>/`
    (`flowpad.db`, `server.lock`, `server.pid`, `server.json`); disk space.
 2. **Reason** about the most likely root cause from that evidence.
@@ -304,6 +337,33 @@ Never raise or add any timeout/retry/backoff to mask a symptom — fix the root 
 
 ---
 
+### Step 5c — End-to-end validation (headless Playwright)
+
+After repairing, prove the **app actually works end-to-end** — not just that one check passed. Do
+this headlessly and autonomously (no questions):
+
+1. **Ensure the backend is up.** If your fix was meant to unblock startup, start it now
+   (`flow start`, or `uv run -m flow_sdk.server.run` in the background) and wait for
+   `curl -fsS http://localhost:$PORT/health/status` to return `{"data":true}` (`$PORT` resolved in
+   Step 1).
+2. **Drive the UI with Playwright (headless, Chromium).** Use the copy already in `ui/`
+   (`@playwright/test`). If the browser binary isn't installed, install it once:
+   `cd ui && npx playwright install chromium`.
+3. **Check the app launches:** navigate to the app URL — the backend serves the UI at
+   `http://localhost:$PORT` (the Vite dev server, if running, is at `http://localhost:${VITE_PORT:-4097}`)
+   — and assert the page renders (the home landing mounts, `body` has content, no fatal console error).
+4. **Check the specific issue is resolved:** assert the symptom the user described (or you found) is
+   gone — e.g. the app reaches the home screen instead of a blank page/error; the affected feature
+   now works.
+5. Implement this as a tiny throwaway headless Playwright script run with node; capture pass/fail.
+
+If end-to-end validation genuinely doesn't apply (a macOS signing / Windows SmartScreen /
+auto-update issue that can't be exercised locally, or the app truly can't be launched on this
+machine), **skip it and say why** — never fake a pass.
+
+Record the validation outcome (passed / failed / skipped + why) in the Step 6 report and the Step 7
+summary. If validation fails, the issue is NOT fixed — set the report status to `needs_action`.
+
 ### Step 6 — Final output format
 
 Always use this structure:
@@ -313,19 +373,26 @@ Always use this structure:
 Platform: <macOS / Windows / Linux>
 Date:     <timestamp>
 
-[FOUND] <issue title> — <FIXED | NEEDS USER ACTION | INFORMATIONAL>
-  Detection: <what was checked>
-  Action:    <what was done or recommended>
+[FOUND] <issue title> — <FIXED | NEEDS USER ACTION | INFORMATIONAL | UNRECOGNIZED>
+  Root cause: <the underlying cause, not the symptom>
+  Proof:      <evidence this is the cause (command output / log line / repro)>
+  Action:     <what you did (if fixed), or exactly what the user must do>
+  Validation: <the check you re-ran + its result>
 
 [OK] <check name> — no issues
+
+End-to-end: <headless Playwright check — passed | failed | skipped (reason)>
 
 To Summarize: <plain-language 1-3 sentence summary of findings and next step>
 ```
 
-### Step 7 — Report to the app Feed (always runs; SDK-direct, no API)
+### Step 7 — Report to the app Feed (ALWAYS runs; SDK-direct, works offline)
 
-After printing the report, persist it so it surfaces on the Home landing Feed. Use the SDK helper —
-**never an HTTP API** (the backend may be down; this writes straight to the local instance DB):
+After printing the report, persist it so it surfaces on the Home landing Feed. Run the command below
+**every time** — it is the SDK helper, **not an HTTP API**. It writes **directly to the local
+instance database and works even when the backend is DOWN** (it opens the DB itself; no running
+server needed). **Never skip this step on the assumption that the backend must be up** — that
+assumption is wrong, and skipping it means the user sees nothing.
 
 ```bash
 flow diagnose-report \
@@ -360,15 +427,20 @@ Platform: macOS (Darwin)
 Date: 2026-06-04 09:15:00
 
 [FOUND] Stale server lock (A2) — FIXED
-  Detection: server.pid held PID 4821; kill -0 4821 → dead
-  Action:    Deleted ~/.flow/instances/prod/server.lock and server.pid.
-             Please relaunch Flowpad.
+  Root cause: A previous backend (PID 4821) crashed, leaving server.lock/server.pid
+              behind; the singleton guard sees the lock and aborts every new start.
+  Proof:      server.pid → 4821; `kill -0 4821` → dead; `curl …/health/status` → refused.
+  Action:     Deleted ~/.flow/instances/prod/server.lock and server.pid.
+  Validation: Started the backend; `curl …/health/status` → {"data":true}.
 
 [OK] Port 9007 — free
 [OK] Disk space — 42 GB free
 [OK] Cloud/hub — informational only (local app unaffected)
 
-To Summarize: A leftover lock file from a previously crashed backend was preventing startup. It has been removed. Relaunch Flowpad and it should start normally.
+End-to-end: passed — headless Playwright loaded http://localhost:9007; the home
+            landing rendered (no blank page, no fatal console error).
+
+To Summarize: A leftover lock file from a crashed backend was blocking startup. I removed it, restarted the backend, and confirmed via a headless browser check that the app now loads normally.
 ```
 
 ### Example 2: macOS damaged-app error

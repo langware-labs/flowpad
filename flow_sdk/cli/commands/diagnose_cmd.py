@@ -49,9 +49,13 @@ class _Renderer:
     """Compact transcript renderer for `flow diagnose`.
 
     Shows the agent's narration on its own line (``▸ …`` — the valuable part) and
-    collapses each tool action into a single inline progress box (``▪``), so the
+    collapses each tool action into a single inline progress dot (``·``), so the
     user sees liveness without a line per Bash/Read call and without the
     ``↳ (tool result received)`` noise.
+
+    Glyphs are restricted to non-emoji codepoints — Windows consoles convert
+    emoji-presentation chars (e.g. ``▪`` → ``:black_small_square:``, ``⚠`` →
+    ``:warning:``) to shortcode text, so we avoid them.
     """
 
     def __init__(self) -> None:
@@ -80,11 +84,11 @@ class _Renderer:
                     self._close_row()
                     typer.echo(f"  ▸ {text[:240]}")
             elif role == "assistant" and btype == "tool_use":
-                # One inline box per tool action — a liveness pulse, no detail.
+                # One inline dot per tool action — a liveness pulse, no detail.
                 if not self._row_open:
                     typer.echo("  ", nl=False)
                     self._row_open = True
-                typer.echo("▪ ", nl=False)
+                typer.echo("· ", nl=False)
             # tool_result blocks are intentionally not rendered — the box already
             # marked the step.
 
@@ -143,7 +147,10 @@ async def _run_diagnose(message: str, transcript_timeout: float) -> int:
         "Your FINAL action MUST be to run `flow diagnose-report` to record the "
         "outcome to the app's Feed — set --status to `fixed` when you repaired it, "
         "`needs_action` when the user must act, `informational`, or `unrecognized`. "
-        "Do NOT end your turn until diagnose-report has run.\n\n"
+        "`flow diagnose-report` writes DIRECTLY to the local database and works "
+        "even when the backend is DOWN — it does NOT need a running server, so "
+        "never skip it on the assumption that a backend is required. Do NOT end "
+        "your turn until diagnose-report has run.\n\n"
         "User-reported text — may be free text or a pasted error; empty means "
         f'run a full sweep:\n"{message}"\n\n'
         f"--- BEGIN SKILL (flow-diagnose/SKILL.md) ---\n{skill_md}\n--- END SKILL ---"
@@ -190,9 +197,10 @@ async def _run_diagnose(message: str, transcript_timeout: float) -> int:
     # the SAME session to finish. "Done" == a new Feed entry was recorded.
     nudge = (
         "You have NOT run `flow diagnose-report` yet, so nothing was recorded. "
-        "If you have a confident diagnosis and a safe fix you can apply yourself, "
-        "apply it now; otherwise leave it for the user. Then run `flow "
-        'diagnose-report --summary "..." --status '
+        "It writes DIRECTLY to the local database and works even when the backend "
+        "is down — do not skip it. If you have a confident diagnosis and a safe "
+        "fix you can apply yourself, apply it now; otherwise leave it for the "
+        'user. Then run `flow diagnose-report --summary "..." --status '
         "fixed|needs_action|informational|unrecognized` as your final action. Do "
         "not stop until diagnose-report has run."
     )
@@ -222,7 +230,7 @@ async def _run_diagnose(message: str, transcript_timeout: float) -> int:
         return 130
 
     typer.echo(
-        "  ⚠ The diagnostic could not record a result after retries — the agent "
+        "  ! The diagnostic could not record a result after retries — the agent "
         "kept ending early. See the findings above; re-run `flow diagnose` to retry.",
         err=True,
     )
