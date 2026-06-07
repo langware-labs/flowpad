@@ -60,11 +60,17 @@ async def test_create_diagnostic_report_creates_entities():
 
 
 @pytest.mark.asyncio
-async def test_create_diagnostic_report_skips_without_local(monkeypatch):
-    """With no @local user/project, the report degrades to a console-only no-op."""
-    async def _none(*a, **k):
-        return None
+async def test_create_diagnostic_report_self_bootstraps_local():
+    """The reporter CREATES @local if missing instead of skipping, so a fresh
+    install (app never ran a first time) still records a Feed entry."""
+    from flow_sdk.builtin.project import Project
+    from flow_sdk.builtin.user import User
 
-    monkeypatch.setattr("flow_sdk.builtin.user.User.get_one", _none)
-    result = await create_diagnostic_report(summary="x", status="informational")
-    assert result.get("skipped")
+    # Simulate a clean instance: no @local user/project pre-created here. (The DB
+    # is fresh per session; this asserts create_diagnostic_report stands them up.)
+    result = await create_diagnostic_report(summary="fresh install check", status="fixed")
+
+    assert "skipped" not in result, result
+    assert result["feed_entry_id"], result
+    assert await User.get_one({"uname": "local"}) is not None
+    assert await Project.get_by_prop("uname", "local", "project") is not None

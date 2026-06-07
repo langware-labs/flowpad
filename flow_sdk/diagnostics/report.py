@@ -12,9 +12,9 @@ It creates, all locally:
   2. a summary ``FlowMessage`` appended to that conversation, and
   3. a ``FeedEntry`` (kind ``message_suggest``) that the Home-landing Feed renders.
 
-If the @local user/project don't exist yet (the app has never completed a first
-run), there is no UI to show a Feed in anyway, so it degrades to a no-op and
-returns a ``skipped`` sentinel — the caller still prints the report to console.
+The @local user/project are CREATED if they don't exist yet (idempotent) — a
+fresh checkout that never completed a first run still records the report, so it
+shows the moment the app launches.
 """
 from __future__ import annotations
 
@@ -52,13 +52,12 @@ async def create_diagnostic_report(
 ) -> dict:
     """Persist a flow-diagnose report as a hidden Conversation + FlowMessage +
     FeedEntry via the SDK. Returns ``{feed_entry_id, conversation_id,
-    flow_message_id}``, or ``{"skipped": <reason>}`` when @local isn't set up.
+    flow_message_id}``. Creates the @local user/project if missing, so it always
+    records.
     """
     from flow_sdk.builtin.conversation import Conversation
     from flow_sdk.builtin.feed_entry import FeedEntry, FeedKind, FeedStatus, MessageSuggest
     from flow_sdk.builtin.flow_message import FlowMessage
-    from flow_sdk.builtin.project import Project
-    from flow_sdk.builtin.user import User
     from flow_sdk.db.database import init_db
     from flow_sdk.fs_store.operations.conversation import (
         append_message_pointer,
@@ -67,19 +66,21 @@ async def create_diagnostic_report(
         project_pointers_to_entity,
     )
     from flow_sdk.fs_store.record_types import RecordType
+    from flow_sdk.server.routes.bootstrap import (
+        get_or_create_local_project,
+        get_or_create_local_user,
+    )
 
     # Open the instance DB in-process (idempotent; creates tables if missing).
     await init_db()
 
-    user = await User.get_one({"uname": "local"})
-    project = await Project.get_by_prop("uname", "local", "project")
-    if not user or not project:
-        logger.info(
-            "[diagnose-report] @local user/project missing — app has not "
-            "completed a first run; skipping entity creation."
-        )
-        return {"skipped": "no @local user/project (app has not completed first run)"}
-
+    # Ensure the @local user/project exist — CREATE them if missing (idempotent)
+    # rather than skipping. On a fresh checkout the app may not have completed a
+    # first run, but the report must still be recorded so it shows once the app
+    # launches. (Skipping here was the cause of "no result recorded" on a clean
+    # Windows install.)
+    user = await get_or_create_local_user()
+    project = await get_or_create_local_project(desktop_user=user)
     owner = user.typeid
 
     # 1) Conversation — created normally, hidden at the end (step 3) so the
