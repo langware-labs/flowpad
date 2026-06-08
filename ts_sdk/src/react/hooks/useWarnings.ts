@@ -8,13 +8,10 @@ import {
   createHubRequestFailedWarning,
   createLlmNotConfiguredWarning,
   createNoComputeNodeWarning,
-  createSecretsNotEnabledWarning,
   createSnifferNotFoundWarning,
   dataContext,
   dataManager,
   HubClientErrorInfo,
-  secretApprovalGate,
-  secretsService,
   UserWarning,
 } from '../..';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -78,26 +75,6 @@ export function useWarnings() {
     cloudConnectionStatus,
   } = context;
   const queryClient = useQueryClient();
-
-  const { data: secretsEnabledData } = useQuery({
-    queryKey: ['secrets-is-enabled'],
-    queryFn: async (): Promise<{ enabled: boolean }> => {
-      try {
-        const result = await secretsService.isEnabled();
-        return { enabled: Boolean(result?.enabled) };
-      } catch (error) {
-        console.error('[useWarnings] Error probing secrets enablement:', error);
-        // Treat probe failure as "not enabled" so the warning prompts the user to act.
-        return { enabled: false };
-      }
-    },
-    enabled: isDesktop,
-    staleTime: Infinity,
-    refetchInterval: false,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-  });
-  const isSecretsEnabled = secretsEnabledData?.enabled ?? false;
 
   const { data: llmConfigData, isLoading: isLlmConfigLoading, refetch: refetchLlmConfig } = useQuery({
     queryKey: ['is-llm-configured', user?.typeId?.toString()],
@@ -240,21 +217,8 @@ export function useWarnings() {
       warnings.push(createSnifferNotFoundWarning());
     }
 
-    // OS keychain access for app-secrets not yet approved
-    if (!isSecretsEnabled) {
-      const secretsWarning: UserWarning = {
-        ...createSecretsNotEnabledWarning(),
-        onClick: () => {
-          // Dialog updates the React-query cache via queryClient.setQueryData on
-          // success — the warning disappears automatically when the cache flips.
-          void secretApprovalGate.request();
-        },
-      };
-      warnings.push(secretsWarning);
-    }
-
     return warnings;
-  }, [isDesktop, isLlmConfigured, cloudLoginAvailable, cloudConnectionStatus, computeNode, snifferEnabled, isSecretsEnabled, lastHubError]);
+  }, [isDesktop, isLlmConfigured, cloudLoginAvailable, cloudConnectionStatus, computeNode, snifferEnabled, lastHubError]);
 
   // Update context warnings when computed warnings change
   useEffect(() => {
