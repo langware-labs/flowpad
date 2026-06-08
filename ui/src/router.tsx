@@ -126,8 +126,9 @@ export const router = createBrowserRouter(
         <Route path="*" element={<DevToDockRedirect />} />
       </Route>
 
-      {/* Deep-link bridge: pops the SecretApprovalDialog when the
-          /auth/login_callback handler detects keychain access isn't approved. */}
+      {/* Deep-link bridge: silently provisions keychain access (via
+          secretApprovalGate.request) when the /auth/login_callback handler
+          detects it isn't set up, then re-invokes the callback. */}
       <Route path="electron/keychain-approval" element={<KeychainApproval />} />
 
       {/* Global catch-all */}
