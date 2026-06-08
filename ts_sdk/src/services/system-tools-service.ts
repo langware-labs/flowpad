@@ -5,6 +5,7 @@ import { EventEmitter } from 'events';
 import { dataContext } from '../FlowSync/context';
 import { ContextEntitiesEnum } from '../FlowSync/context';
 import { Project } from '../entities/project';
+import { FlowpadDiagnosis } from '../entities/flowpad-diagnosis';
 import { QueryRequest } from '../FlowSync/query';
 import { TypeId } from '../models/TypeId';
 import { connectionManager } from '../websocket';
@@ -613,6 +614,25 @@ export class SystemToolsService extends EventEmitter {
         await entity.save();
       }
     }
+  }
+
+  // ---- System diagnoses (flowpad_diagnosis) --------------------------------
+
+  /** List all recorded diagnoses, newest first when a created timestamp exists. */
+  async getDiagnoses(): Promise<FlowpadDiagnosis[]> {
+    const rows = await FlowpadDiagnosis.query<FlowpadDiagnosis>(
+      new QueryRequest({ type: FlowpadDiagnosis.type, scope: [] }),
+    );
+    return rows.sort((a, b) =>
+      String((b as { created_at?: string }).created_at ?? '').localeCompare(
+        String((a as { created_at?: string }).created_at ?? ''),
+      ),
+    );
+  }
+
+  /** Delete a diagnosis by id. */
+  async deleteDiagnosis(id: string): Promise<void> {
+    await dataManager.delete(new TypeId(FlowpadDiagnosis.type, id));
   }
 
   // ---- OS folder openers ---------------------------------------------------
