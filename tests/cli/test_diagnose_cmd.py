@@ -1,25 +1,22 @@
-"""CLI tests for `flow diagnose` and `flow diagnose-report`.
+"""CLI tests for `flow diagnose`.
 
-These exercise the CLI plumbing only — the agent run (`_run_diagnose`) and the
-SDK reporter (`create_diagnostic_report`) are mocked, so no worker is spawned and
-no DB is touched. The reporter's real behavior is covered by
-tests/unit/test_diagnostic_report.py.
+These exercise the CLI plumbing only — the agent run (`_run_diagnose`) is mocked,
+so no worker is spawned and no DB is touched. The SDK reporter's real behavior is
+covered by tests/unit/test_diagnostic_report.py.
 """
 import asyncio
-import json
 import logging
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from typer.testing import CliRunner
 
-from flow_sdk.cli.commands.diagnose_cmd import _find_skill_dir, _Renderer, _report_marker_path
+from flow_sdk.cli.commands.diagnose_cmd import _find_skill_dir, _print_agent_text
 from flow_sdk.cli.flow_cli import app
 
 runner = CliRunner()
 
 _RUN = "flow_sdk.cli.commands.diagnose_cmd._run_diagnose"
-_REPORT = "flow_sdk.diagnostics.report.create_diagnostic_report"
 
 
 @pytest.fixture(autouse=True)
@@ -93,76 +90,23 @@ def test_diagnose_passes_timeout_through():
 
 
 # --------------------------------------------------------------------------- #
-# flow diagnose-report — thin wrapper over the SDK reporter
-# --------------------------------------------------------------------------- #
-
-def test_diagnose_report_prints_json_ids():
-    fake = {"feed_entry_id": "fe1", "conversation_id": "c1", "flow_message_id": "m1"}
-    with patch(_REPORT, new=AsyncMock(return_value=fake)) as mock_rep:
-        result = runner.invoke(
-            app,
-            ["diagnose-report", "--summary", "freed port", "--status", "fixed",
-             "--platform", "macOS"],
-        )
-    assert result.exit_code == 0, result.output
-    assert json.loads(result.output.strip()) == fake
-    assert mock_rep.call_args.kwargs["summary"] == "freed port"
-    assert mock_rep.call_args.kwargs["status"] == "fixed"
-    assert mock_rep.call_args.kwargs["platform"] == "macOS"
-
-
-def test_diagnose_report_requires_summary():
-    result = runner.invoke(app, ["diagnose-report", "--status", "fixed"])
-    assert result.exit_code != 0  # --summary is required
-
-
-def test_diagnose_report_status_defaults_informational():
-    with patch(_REPORT, new=AsyncMock(return_value={"skipped": "x"})) as mock_rep:
-        result = runner.invoke(app, ["diagnose-report", "--summary", "s"])
-    assert result.exit_code == 0
-    assert mock_rep.call_args.kwargs["status"] == "informational"
-
-
-def test_diagnose_report_writes_completion_marker(tmp_path, monkeypatch):
-    # The marker is how the parent `flow diagnose` reliably learns the agent's
-    # child `flow diagnose-report` ran (cross-process, no DB diff).
-    monkeypatch.setenv("FLOW_HOME", str(tmp_path))
-    fake = {"feed_entry_id": "fe9", "conversation_id": "c", "flow_message_id": "m"}
-    with patch(_REPORT, new=AsyncMock(return_value=fake)):
-        result = runner.invoke(app, ["diagnose-report", "--summary", "s", "--status", "fixed"])
-    assert result.exit_code == 0
-    marker = _report_marker_path()
-    assert marker == tmp_path / "diagnostics" / "last_report.json"
-    assert marker.exists()
-    assert json.loads(marker.read_text())["feed_entry_id"] == "fe9"
-
-
-# --------------------------------------------------------------------------- #
-# _Renderer — compact transcript rendering
+# _print_agent_text — streams only assistant narration
 # --------------------------------------------------------------------------- #
 
 def _entry(role, blocks):
     return {"message": {"role": role, "content": blocks}}
 
 
-def test_renderer_shows_narration_and_pulse_not_tool_noise(capsys):
-    r = _Renderer()
-    r.feed(_entry("assistant", [{"type": "text", "text": "Checking port"}]))
-    r.feed(_entry("assistant", [{"type": "tool_use", "name": "Bash"}]))
-    r.feed(_entry("assistant", [{"type": "tool_use", "name": "Bash"}]))
-    r.feed(_entry("user", [{"type": "tool_result", "content": "x"}]))  # ignored
-    r.finish()
+def test_print_agent_text_shows_assistant_narration(capsys):
+    _print_agent_text(_entry("assistant", [{"type": "text", "text": "Checking port"}]))
     out = capsys.readouterr().out
-    assert "▸ Checking port" in out          # narration kept
-    assert "·" in out                         # progress pulse rendered
-    assert "Bash" not in out                  # tool name suppressed
-    assert "tool result" not in out           # tool-result noise suppressed
+    assert "▸ Checking port" in out
 
 
-def test_renderer_ignores_non_message_entries(capsys):
-    r = _Renderer()
-    r.feed({"type": "system", "subtype": "init"})  # no "message" key
-    r.finish()
+def test_print_agent_text_ignores_tool_use_and_non_assistant(capsys):
+    _print_agent_text(_entry("assistant", [{"type": "tool_use", "name": "Bash"}]))
+    _print_agent_text(_entry("user", [{"type": "text", "text": "ignored"}]))
+    _print_agent_text({"type": "system", "subtype": "init"})  # no "message" key
     assert capsys.readouterr().out == ""
 
 
