@@ -60,6 +60,32 @@ async def test_create_diagnostic_report_creates_entities():
 
 
 @pytest.mark.asyncio
+async def test_create_diagnostic_report_attaches_type_id():
+    """``attachment_type_id`` rides the summary message as a TYPE_ID attachment so
+    the support card can carry the structured diagnosis entity."""
+    from flow_sdk.builtin.flow_message import AttachmentType, FlowMessage
+    from flow_sdk.server.routes.bootstrap import (
+        get_or_create_local_project,
+        get_or_create_local_user,
+    )
+
+    user = await get_or_create_local_user()
+    await get_or_create_local_project(desktop_user=user)
+
+    diag_typeid = "flowpad_diagnosis-94c12421-2e7c-5240-a4ac-82d014eec1e6"
+    result = await create_diagnostic_report(
+        summary="Backend stuck on Starting; cleared a stale lock.",
+        status="fixed",
+        attachment_type_id=diag_typeid,
+    )
+
+    msg = await FlowMessage.get_one({"id": result["flow_message_id"]})
+    assert msg is not None
+    atts = [a for a in (msg.attachment or []) if a.attachment_type == AttachmentType.TYPE_ID]
+    assert [a.data for a in atts] == [diag_typeid]
+
+
+@pytest.mark.asyncio
 async def test_create_diagnostic_report_self_bootstraps_local():
     """The reporter CREATES @local if missing instead of skipping, so a fresh
     install (app never ran a first time) still records a Feed entry."""
