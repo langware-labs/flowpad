@@ -5,12 +5,9 @@ import {
   createCloudDisconnectedWarning,
   createHubRequestFailedWarning,
   createNoComputeNodeWarning,
-  createSecretsNotEnabledWarning,
   createSnifferNotFoundWarning,
   dataContext,
   HubClientErrorInfo,
-  secretApprovalGate,
-  secretsService,
   UserWarning,
 } from '../..';
 import { useQuery } from '@tanstack/react-query';
@@ -111,21 +108,8 @@ export function useWarnings() {
       warnings.push(createSnifferNotFoundWarning());
     }
 
-    // OS keychain access for app-secrets not yet approved
-    if (!isSecretsEnabled) {
-      const secretsWarning: UserWarning = {
-        ...createSecretsNotEnabledWarning(),
-        onClick: () => {
-          // Dialog updates the React-query cache via queryClient.setQueryData on
-          // success — the warning disappears automatically when the cache flips.
-          void secretApprovalGate.request();
-        },
-      };
-      warnings.push(secretsWarning);
-    }
-
     return warnings;
-  }, [isDesktop, cloudLoginAvailable, cloudConnectionStatus, computeNode, snifferEnabled, isSecretsEnabled, lastHubError]);
+  }, [isDesktop, cloudLoginAvailable, cloudConnectionStatus, computeNode, snifferEnabled, lastHubError]);
 
   // Update context warnings when computed warnings change
   useEffect(() => {

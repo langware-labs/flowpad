@@ -6,6 +6,11 @@ base.mac = base.mac || {};
 // Custom sign function for macOS
 base.mac.sign = path.resolve(__dirname, "signing/mac-sign.js");
 
+// Sign the bundled flow-rs.exe sidecar on Windows. electron-builder's
+// azureSignOptions signs the app/installer but not extraResources, so this
+// afterPack hook signs flow-rs.exe with the same Trusted Signing identity.
+base.afterPack = path.resolve(__dirname, "signing/sign-flow-rs-win.js");
+
 // Allow CI to override the version without modifying package.json — the
 // flowpad-desktop build-desktop.yml workflow takes a `release_tag` input
 // (e.g. `v0.9.1`) and creates the GitHub release at that tag, but does not
