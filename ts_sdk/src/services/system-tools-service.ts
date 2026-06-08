@@ -623,10 +623,9 @@ export class SystemToolsService extends EventEmitter {
     const rows = await FlowpadDiagnosis.query<FlowpadDiagnosis>(
       new QueryRequest({ type: FlowpadDiagnosis.type, scope: [] }),
     );
-    return rows.sort((a, b) =>
-      String((b as { created_at?: string }).created_at ?? '').localeCompare(
-        String((a as { created_at?: string }).created_at ?? ''),
-      ),
+    return rows.sort(
+      (a, b) =>
+        new Date(b.created_date ?? 0).getTime() - new Date(a.created_date ?? 0).getTime(),
     );
   }
 

@@ -6,6 +6,13 @@ import { useCallback, useMemo, useState } from 'react';
 
 const TRIM = 220;
 
+/** Format a feed entry's `created_date` (ISO string or Date) as a local date+time (empty if absent). */
+function formatRecorded(value?: string | Date): string {
+  if (!value) return '';
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleString();
+}
+
 interface FeedEntryCardProps {
   entry: FeedEntry;
   busy: boolean;
@@ -20,10 +27,14 @@ function FeedEntryCard({ entry, busy, onDismiss, onSend }: FeedEntryCardProps) {
   const body = suggest?.message_text ?? '';
   const isLong = body.length > TRIM;
   const shown = expanded || !isLong ? body : `${body.slice(0, TRIM).trimEnd()}…`;
+  const recorded = formatRecorded(entry.created_date);
 
   return (
     <div className="rounded-lg border bg-muted/40 px-3 py-2 text-left">
       <p className="text-sm font-medium">{header}</p>
+      {recorded && (
+        <p className="mt-0.5 text-[11px] text-muted-foreground">{recorded}</p>
+      )}
       {body && (
         <p className="mt-1 whitespace-pre-wrap text-xs text-muted-foreground">{shown}</p>
       )}
@@ -63,7 +74,13 @@ export function Feed() {
   const request = useMemo(() => new QueryRequest({ type: FeedEntry.type }), []);
   const { data: entries = [], refetch } = useEntitiesQuery<FeedEntry>(request);
   const newEntries = useMemo(
-    () => entries.filter((e) => e.feed_status === 'new'),
+    () =>
+      entries
+        .filter((e) => e.feed_status === 'new')
+        .sort(
+          (a, b) =>
+            new Date(b.created_date ?? 0).getTime() - new Date(a.created_date ?? 0).getTime(),
+        ),
     [entries],
   );
   const refetchVoid = useCallback(async () => {
