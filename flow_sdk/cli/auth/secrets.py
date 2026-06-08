@@ -94,12 +94,25 @@ def is_secrets_enabled() -> bool:
     if _is_electron_desktop():
         return False
 
-    # Marker present but no env/memo — confirm the keychain entry too.
+    # Marker present but no env/memo — confirm the keychain entry too. Probe the
+    # SAME slot _fetch_or_create_sod_key writes: the signed-binary <instance>.flow-rs
+    # slot when the vendored flow-rs is in use (macOS/Windows pip installs),
+    # else the legacy bare slot via keyring (Linux / disabled).
     try:
+        from flow_sdk.flow_rs_binary import (  # noqa: PLC0415
+            FLOW_RS_ACCOUNT_SUFFIX,
+            flow_rs_get_restricted,
+            vendored_flow_rs_enabled,
+        )
+
+        if vendored_flow_rs_enabled():
+            account = f"{s.instance_name}{FLOW_RS_ACCOUNT_SUFFIX}"
+            return flow_rs_get_restricted(SOD_KEY_KEYCHAIN_SERVICE, account) is not None
+
         import keyring  # noqa: PLC0415
         return keyring.get_password(SOD_KEY_KEYCHAIN_SERVICE, s.instance_name) is not None
     except Exception:  # noqa: BLE001
-        # Keyring unavailable (test env, locked keychain, transient
+        # Keychain unavailable (test env, locked keychain, transient
         # platform error): fall back to trusting the marker so we don't
         # force re-approval on every check under recoverable failures.
         return True
