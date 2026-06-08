@@ -1,49 +1,32 @@
 /**
- * Promise-based bridge between non-React code (navigationService) and the
- * globally-mounted SecretApprovalDialog. Listeners are notified only when the
- * dialog should *open*; the dialog manages its own close state and reports the
- * user's decision via ``resolve()``.
+ * Provisions OS-keychain-backed secrets for the current install and resolves
+ * with whether it succeeded. Runs silently — there is no in-app dialog; the
+ * OS keychain prompt (which the app cannot suppress) is the only user-visible
+ * interaction.
  *
- * Flow:
- *   1. Caller invokes ``secretApprovalGate.request()`` → all subscribed
- *      listeners fire (the dialog opens itself); returns a Promise.
- *   2. The dialog handles the user's choice and calls ``resolve(approved)``,
- *      which settles the Promise. The dialog closes itself.
+ * Under signed Electron the Fernet key is minted + stored in the OS keychain
+ * via the bundled flow-rs binary and seeded into Python via /secrets/seed-key,
+ * so the keychain ACL trust list lists flow-rs rather than the unsigned
+ * uv-bundled python3.x. Plain web/CLI falls back to Python's keyring write via
+ * /secrets/enable.
  */
-
-type Resolver = (approved: boolean) => void;
-type OpenListener = () => void;
-
-let pending: Resolver | null = null;
-const listeners = new Set<OpenListener>();
+import { secretsService } from './secrets-service';
 
 export const secretApprovalGate = {
-  /** Open the approval dialog; resolves with the user's decision. */
-  request(): Promise<boolean> {
-    return new Promise<boolean>((resolve) => {
-      // If a previous request is still open, settle it as cancelled before starting a new one.
-      if (pending) {
-        const prev = pending;
-        pending = null;
-        prev(false);
-      }
-      pending = resolve;
-      listeners.forEach((l) => l());
-    });
-  },
+  /** Provision keychain-backed secrets; resolves true on success. */
+  async request(): Promise<boolean> {
+    try {
+      const provisionSodKey = (globalThis as unknown as {
+        electronAPI?: { provisionSodKey?: () => Promise<string> };
+      }).electronAPI?.provisionSodKey;
 
-  /** Called by the dialog after the user makes a decision. */
-  resolve(approved: boolean): void {
-    const r = pending;
-    pending = null;
-    r?.(approved);
-  },
+      const result = provisionSodKey
+        ? await secretsService.seedKey(await provisionSodKey())
+        : await secretsService.enable();
 
-  /** Subscribe to open requests. Returns an unsubscribe function. */
-  subscribe(cb: OpenListener): () => void {
-    listeners.add(cb);
-    return () => {
-      listeners.delete(cb);
-    };
+      return Boolean(result?.enabled);
+    } catch {
+      return false;
+    }
   },
 };

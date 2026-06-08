@@ -10,7 +10,7 @@ import { CleanupModal } from '@src/components/recovery/cleanup-modal';
 import { DeleteAssetModal } from '@src/components/assets/delete-asset-modal';
 import { useEffect, useRef } from 'react';
 import { GitHubDeviceFlowModal } from '@src/components/oauth/GitHubDeviceFlowModal';
-import SecretApprovalDialog from '@src/components/secret-approval-dialog';
+import MigrateLegacyKeychain from '@src/components/migrate-legacy-keychain';
 import { initNotificationListener } from '@src/store/use-notification-store';
 import { SnifferProvider } from '@src/contexts/SnifferContext';
 import { FloatingChatProvider } from '@src/components/floating-chat';
@@ -95,7 +95,7 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
         <GlobalEvents />
         <CapabilityWarmup />
         <GitHubDeviceFlowModal />
-        <SecretApprovalDialog />
+        <MigrateLegacyKeychain />
         <SnifferProvider>
           <FloatingChatProvider>
             {children}
