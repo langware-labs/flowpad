@@ -1,15 +1,28 @@
-"""flow-diagnose reporting — SDK-direct, no HTTP, no hub.
+"""flow-diagnose reporter — SDK-direct, no HTTP, no hub.
 
-``create_diagnostic_report`` is called in-process by the ``flow diagnose-report``
-CLI command at the end of a flow-diagnose run. It writes the report straight to
-the local instance store (the same SQLite DB / FS records the backend reads), so
-it works **whether or not the backend is running** — which is the point, since
-``flow diagnose`` runs precisely when the backend may be down.
+This script lives **next to the flow-diagnose SKILL.md** and is what the skill's
+final step (Step 7) runs to record a diagnosis. Run it as a script, e.g.:
+
+    uv run python <skill_dir>/report.py \
+        --summary "Cleared a stale lock; backend starts now." \
+        --status fixed \
+        --details "<the full == Flowpad Diagnostic Report == block>" \
+        --platform macOS \
+        --attachment-type-id flowpad_diagnosis-<id>
+
+It prints a JSON line ``{"feed_entry_id", "conversation_id", "flow_message_id"}``.
+
+It writes the report straight to the local instance store (the same SQLite DB / FS
+records the backend reads), so it works **whether or not the backend is running** —
+which is the point, since ``flow diagnose`` runs precisely when the backend may be
+down. Because it runs in a fresh process, it opens the DB itself (``init_db()`` —
+idempotent; a no-op if already open).
 
 It creates, all locally:
   1. a hidden support ``Conversation`` (``dismissed_at`` stamped so it stays out
      of the Recent strip until the user clicks "Send to Support"),
-  2. a summary ``FlowMessage`` appended to that conversation, and
+  2. a summary ``FlowMessage`` appended to that conversation (optionally carrying
+     the diagnosis as a ``TYPE_ID`` attachment), and
   3. a ``FeedEntry`` (kind ``message_suggest``) that the Home-landing Feed renders.
 
 The @local user/project are CREATED if they don't exist yet (idempotent) — a
@@ -151,3 +164,46 @@ async def create_diagnostic_report(
         "conversation_id": conv.id,
         "flow_message_id": msg.id,
     }
+
+
+def _parse_args(argv: list[str] | None = None):
+    import argparse
+
+    p = argparse.ArgumentParser(description="Record a flow-diagnose report to the local store.")
+    p.add_argument("--summary", required=True, help="One-paragraph human summary.")
+    p.add_argument(
+        "--status",
+        default="informational",
+        help="fixed | needs_action | informational | unrecognized",
+    )
+    p.add_argument("--details", default="", help="Full diagnostic report block.")
+    p.add_argument("--platform", default="", help="macOS | Windows | Linux.")
+    p.add_argument(
+        "--attachment-type-id",
+        dest="attachment_type_id",
+        default=None,
+        help="Optional '<type>-<id>' (e.g. flowpad_diagnosis-<id>) attached to the message.",
+    )
+    return p.parse_args(argv)
+
+
+async def _amain(argv: list[str] | None = None) -> int:
+    import json
+
+    args = _parse_args(argv)
+    res = await create_diagnostic_report(
+        summary=args.summary,
+        status=args.status,
+        details=args.details,
+        platform=args.platform,
+        attachment_type_id=args.attachment_type_id,
+    )
+    print(json.dumps(res))
+    return 0
+
+
+if __name__ == "__main__":
+    import asyncio
+    import sys
+
+    sys.exit(asyncio.run(_amain()))
