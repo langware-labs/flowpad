@@ -5,18 +5,20 @@ from types import SimpleNamespace
 
 import pytest
 
-from flow_sdk.core.capabilities import CapabilityKind, CapabilityResult, get_capability_registry
-from flow_sdk.core.capabilities.models import CapabilityValue
 import flow_sdk.core.capabilities.discovery as discovery_mod
+from flow_sdk.core.capabilities import CapabilityKind, CapabilityResult, get_capability_registry
 from flow_sdk.core.capabilities.discovery import get_capability_value, set_capability_value
+from flow_sdk.core.capabilities.models import CapabilityValue
 
 
 @pytest.fixture(autouse=True)
 def _clear_discovery_dict():
     """Discovery values are a module-global dict — isolate every test."""
     discovery_mod._VALUES.clear()
+    discovery_mod._DISCOVERED_ONCE.clear()
     yield
     discovery_mod._VALUES.clear()
+    discovery_mod._DISCOVERED_ONCE.clear()
 
 
 def _seed_cli_value(kind: str, folder: str) -> None:
@@ -304,6 +306,9 @@ async def test_run_discovery_populates_dict_and_mirrors_rows(monkeypatch, tmp_pa
     class FakeRow:
         def __init__(self, kind):
             self.kind = kind
+            self.reference_kind = (
+                CapabilityKind.CODEX_CLI.value if kind == CapabilityKind.HARNESS.value else None
+            )
             self.value = None
             self.value_type = None
             self.last_check = None
@@ -346,6 +351,72 @@ async def test_run_discovery_populates_dict_and_mirrors_rows(monkeypatch, tmp_pa
     assert mirrored[CapabilityKind.CODEX_CLI.value][2]["available"] is True
     assert mirrored[CapabilityKind.CLAUDE_CLI.value][2]["available"] is False
     assert CapabilityKind.HARNESS.value in discovered
+    assert discovery_mod._DISCOVERED_ONCE.is_set()
+
+
+@pytest.mark.asyncio
+async def test_partial_run_discovery_does_not_mark_full_sweep(monkeypatch, tmp_path):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+
+    async def fake_probe(executables):
+        return {
+            "path": str(bin_dir),
+            "executables": {exe: str(bin_dir / exe) for exe in executables},
+        }
+
+    async def fake_mirror(discovered):
+        return None
+
+    monkeypatch.setattr(discovery_mod, "_run_env_probe", fake_probe)
+    monkeypatch.setattr(discovery_mod, "_mirror_to_rows", fake_mirror)
+
+    await discovery_mod.run_discovery([CapabilityKind.CODEX_CLI.value])
+
+    assert get_capability_value(CapabilityKind.CODEX_CLI.value) is not None
+    assert not discovery_mod._DISCOVERED_ONCE.is_set()
+
+
+@pytest.mark.asyncio
+async def test_ensure_discovered_runs_one_full_sweep(monkeypatch):
+    calls = []
+
+    async def fake_full_sweep(kinds):
+        calls.append(kinds)
+        discovery_mod._DISCOVERED_ONCE.set()
+        return {}
+
+    monkeypatch.setattr(discovery_mod, "_run_discovery_inner", fake_full_sweep)
+
+    assert await discovery_mod.ensure_discovered() is True
+    assert await discovery_mod.ensure_discovered() is True
+    assert calls == [None]
+
+
+@pytest.mark.asyncio
+async def test_compute_harness_state_reports_default_and_installed(monkeypatch):
+    import flow_sdk.core.capabilities.harness_state as harness_state_mod
+
+    async def fake_ensure_discovered():
+        return True
+
+    runner = get_capability_registry().get(CapabilityKind.HARNESS.value)
+
+    async def fake_reference():
+        return CapabilityKind.CODEX_CLI.value
+
+    monkeypatch.setattr(harness_state_mod, "ensure_discovered", fake_ensure_discovered)
+    monkeypatch.setattr(runner, "_resolve_reference_kind", fake_reference)
+    _seed_cli_value(CapabilityKind.CODEX_CLI.value, "/bin")
+
+    state = await harness_state_mod.compute_harness_state()
+
+    assert state["show_harness_select"] is False
+    by_kind = {h["kind"]: h for h in state["harnesses"]}
+    assert by_kind[CapabilityKind.CODEX_CLI.value]["installed"] is True
+    assert by_kind[CapabilityKind.CODEX_CLI.value]["is_default"] is True
+    assert by_kind[CapabilityKind.CLAUDE_CLI.value]["installed"] is False
+    assert by_kind[CapabilityKind.CLAUDE_CLI.value]["is_default"] is False
 
 
 @pytest.mark.asyncio

@@ -814,9 +814,6 @@ class AgenticProcess(Entity):
             fresh._set_start_lifecycle(True)
             try:
                 result = await fresh._perform_open(instruction, visible, retry=retry)
-                for field_name in self.__class__.model_fields:
-                    if hasattr(fresh, field_name):
-                        setattr(self, field_name, getattr(fresh, field_name))
                 return result
             finally:
                 fresh._set_start_lifecycle(False)
@@ -843,6 +840,7 @@ class AgenticProcess(Entity):
         is held. All lifecycle decisions (reattach vs recover vs fresh) live
         here; the caller is responsible for the lock and the start-lifecycle
         flag."""
+        cleared_start_failure = False
         try:
             # If we're stuck in STOPPING with a dead worker (orphan from a
             # crashed close()/exit()), reset to STOPPED before doing anything
@@ -868,6 +866,7 @@ class AgenticProcess(Entity):
                     self.id, self.start_failure,
                 )
                 self.start_failure = None
+                cleared_start_failure = True
             self.session_id = self.session_id or str(uuid4())
             reattach_changed = False
             # True iff this open is respawning a dead worker (after-restart
@@ -1091,10 +1090,15 @@ class AgenticProcess(Entity):
             logger.exception(f"AgenticProcess {self.id} start_pty error: {e}")
             self.shell_id = None
             self.status = ProcessStatus.FAILED.value
-            # Latch the launch failure: the UI surfaces it (terminal error
-            # banner with Retry) and open()/auto-recovery stop retrying a
-            # spawn that can't succeed (e.g. "Command not found: 'codex'").
-            self.start_failure = str(e)
+            # Latch normal launch failures: the UI surfaces them and
+            # open()/auto-recovery stops retrying a spawn that can't succeed.
+            # For an explicit Retry that fails before launch after clearing an
+            # existing latch, leave the latch cleared so the refused-open gate
+            # does not immediately block subsequent attempts.
+            if retry and cleared_start_failure:
+                self.start_failure = None
+            else:
+                self.start_failure = str(e)
             await self.save()
             self._requeue_failed_launch(launched_head)
             return ApiFailResponse(message=str(e))

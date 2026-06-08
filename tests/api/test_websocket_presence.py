@@ -26,11 +26,18 @@ def _flush(ws):
     `presence` no longer ACKs (the client doesn't await it), so tests that
     introspect server state after sending presence need their own barrier.
     The WS handler processes messages sequentially, so a `pong` reply
-    guarantees every earlier message on this socket has been handled.
+    guarantees every earlier message on this socket has been handled. Other
+    server tasks can enqueue data_op messages on the same socket, so skip
+    unrelated frames until the barrier pong arrives.
     """
-    ws.send_json({"message_type": "ping", "message_id": "barrier", "text": "x"})
-    pong = ws.receive_json()
-    assert pong["message_type"] == "pong"
+    marker = f"barrier-{uuid.uuid4()}"
+    ws.send_json({"message_type": "ping", "message_id": marker, "text": marker})
+    last = None
+    for _ in range(50):
+        last = ws.receive_json()
+        if last.get("message_type") == "pong" and last.get("text") == marker:
+            return
+    pytest.fail(f"timed out waiting for barrier pong; last frame={last!r}")
 
 
 @pytest.mark.asyncio
