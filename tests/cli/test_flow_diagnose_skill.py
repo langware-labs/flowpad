@@ -7,10 +7,11 @@ that script (not a deleted `flow_sdk.diagnostics` import / `flow diagnose-report
 CLI). If any of that drifts, the recording step silently breaks at runtime.
 """
 import importlib.util
-from pathlib import Path
 
-_REPO = Path(__file__).resolve().parents[2]
-_SKILL_DIR = _REPO / ".claude" / "skills" / "flow-diagnose"
+from flow_sdk.config import flowpad_assistant_project_root
+
+# The skill ships inside the package so `flow diagnose` finds it from any cwd.
+_SKILL_DIR = flowpad_assistant_project_root() / ".claude" / "skills" / "flow-diagnose"
 _SKILL_MD = _SKILL_DIR / "SKILL.md"
 _REPORT = _SKILL_DIR / "report.py"
 
