@@ -18,8 +18,8 @@ import { getColumns } from './columns/columnRegistry';
 import type { ColumnActions } from './columns/columnRegistry';
 import { scopeTag } from './columns/columnHelpers';
 import type { SearchResult } from '@src/hooks/use-asset-search';
-import { useClaudeProjectList, getProjectDisplayName } from '@src/hooks/use-claude-projects';
-import { projectIdForPath } from './utils';
+import { useProjectList, getProjectDisplayName } from '@src/hooks/use-claude-projects';
+import { recordProjectIdForPath } from './utils';
 import { useContext } from '@src/hooks/useContext';
 import { fsManager } from '@sdk';
 
@@ -76,14 +76,16 @@ export function AssetDataTable({ results, total, page, pageSize, onPageChange, r
   // Build a project_id → display-name lookup so the scope column can render
   // human-readable project names instead of the project_id UUID. The API today
   // returns `project_name: null` on rows, so we resolve here client-side via
-  // the same project list that powers `ProjectPickerModal` — uuid5(project:cwd)
-  // matches the `project_id` stamped on records by the indexer.
-  const { projects } = useClaudeProjectList();
+  // the same project list that powers `ProjectPickerModal`. New rows may carry
+  // Project.id; older rows may carry record_project_id.
+  const { projects } = useProjectList();
   const projectNameById = React.useMemo(() => {
     const m = new Map<string, string>();
     for (const p of projects) {
-      const pid = projectIdForPath(p.cwd || p.name);
-      if (pid) m.set(pid, getProjectDisplayName(p));
+      const label = getProjectDisplayName(p);
+      if (p.id) m.set(p.id, label);
+      const recordPid = p.record_project_id || recordProjectIdForPath(p.cwd || p.name);
+      if (recordPid) m.set(recordPid, label);
     }
     return m;
   }, [projects]);

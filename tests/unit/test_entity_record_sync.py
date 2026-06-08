@@ -7,8 +7,7 @@ not through deterministic id derivation.
 """
 
 import uuid
-from typing import ClassVar
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 import pytest_asyncio
@@ -184,12 +183,152 @@ class TestEntityRecordCwdSync:
         assert existing.id == scanned.id
 
     @pytest.mark.asyncio
+    async def test_generic_entity_from_record_dispatches_project_cwd(self, sync_db):
+        """Generic record sync must use Project.from_record, not a uuid4 record id."""
+        from flow_sdk.builtin.project import Project
+        from flow_sdk.core.entity.entity_model import Entity
+        from flow_sdk.fs_store.fs_record import FSRecord as ClaudeProjectFsRecord
+
+        mount_path = "/tmp/testproject_generic_dispatch"
+        random_record_id = "11111111-2222-4333-8444-555555555555"
+
+        mock_record = MagicMock(spec=ClaudeProjectFsRecord)
+        mock_record.type = "project"
+        mock_record._record_type = "project"
+        mock_record.meta_dict.return_value = {
+            "id": random_record_id,
+            "type": "project",
+            "name": mount_path,
+            "cwd": mount_path,
+        }
+        mock_record._property_types = {}
+
+        scanned = await Entity.from_record(mock_record)
+
+        assert scanned.id == Project.derive_id_for_path(mount_path)
+        assert scanned.id != random_record_id
+
+    def test_allocate_id_uses_record_cwd(self):
+        """Project records expose cwd before fs_storage_mount_path is hydrated."""
+        from flow_sdk.builtin.project import Project
+
+        mount_path = "/tmp/testproject_allocate_from_cwd"
+
+        assert Project.allocate_id({"id": "11111111-2222-4333-8444-555555555555", "cwd": mount_path}) == (
+            Project.derive_id_for_path(mount_path)
+        )
+
+    @pytest.mark.asyncio
+    async def test_resolve_project_scope_prefers_canonical_project_list(self, monkeypatch):
+        """URL legacy ids resolve through the same canonical list as the footer."""
+        from types import SimpleNamespace
+
+        from flow_sdk.builtin.project import Project
+        from flow_sdk.fs_store.operations import all_projects as all_projects_mod
+        from flow_sdk.fs_store.operations.all_projects import ProjectInfo
+        from flow_sdk.server.search_filters import ScopeFilter, resolve_project_scope
+
+        cwd = "/tmp/testproject_scope_legacy_id"
+        legacy_id = Project.derive_id_for_path(cwd)
+        stale_entity_id = "11111111-2222-4333-8444-555555555555"
+        canonical_entity_id = "22222222-3333-4444-8555-666666666666"
+
+        async def fake_project_get_all(*_args, **_kwargs):
+            return [
+                SimpleNamespace(
+                    id=stale_entity_id,
+                    project_id=legacy_id,
+                    fs_storage_mount_path=cwd,
+                )
+            ]
+
+        async def fake_get_all_projects(*_args, **_kwargs):
+            assert _kwargs.get("create_missing") is False
+            return [
+                ProjectInfo(
+                    cwd=cwd,
+                    name="testproject_scope_legacy_id",
+                    project_id=canonical_entity_id,
+                    record_project_id=legacy_id or "",
+                )
+            ]
+
+        monkeypatch.setattr(Project, "get_all", fake_project_get_all)
+        monkeypatch.setattr(all_projects_mod, "get_all_projects", fake_get_all_projects)
+
+        resolved = await resolve_project_scope(ScopeFilter(user=True, projects=(legacy_id,)))
+
+        assert resolved is not None
+        assert resolved.projects == (canonical_entity_id,)
+        assert resolved.record_projects == (canonical_entity_id, legacy_id)
+        assert resolved.project_roots == ((canonical_entity_id, cwd),)
+
+    @pytest.mark.asyncio
+    async def test_resolve_project_scope_project_entity_ids_skip_filesystem_scan(self, monkeypatch):
+        """UI default scopes send Project ids and should not walk project roots."""
+        from types import SimpleNamespace
+
+        from flow_sdk.builtin.project import Project
+        from flow_sdk.fs_store.operations import all_projects as all_projects_mod
+        from flow_sdk.server.search_filters import ScopeFilter, resolve_project_scope
+
+        cwd = "/tmp/testproject_scope_entity_id"
+        entity_id = "33333333-4444-4555-8666-777777777777"
+        legacy_id = Project.derive_id_for_path(cwd)
+
+        async def fake_project_get_all(*_args, **_kwargs):
+            return [
+                SimpleNamespace(
+                    id=entity_id,
+                    project_id=None,
+                    fs_storage_mount_path=cwd,
+                )
+            ]
+
+        async def fail_get_all_projects(*_args, **_kwargs):
+            raise AssertionError("Project entity-id scopes must not scan filesystem roots")
+
+        monkeypatch.setattr(Project, "get_all", fake_project_get_all)
+        monkeypatch.setattr(all_projects_mod, "get_all_projects", fail_get_all_projects)
+
+        resolved = await resolve_project_scope(ScopeFilter(user=True, projects=(entity_id,)))
+
+        assert resolved is not None
+        assert resolved.projects == (entity_id,)
+        assert resolved.record_projects == (entity_id, legacy_id)
+        assert resolved.project_roots == ((entity_id, cwd),)
+
+    @pytest.mark.asyncio
+    async def test_resolve_project_scope_already_resolved_skips_db_and_scan(self, monkeypatch):
+        from flow_sdk.builtin.project import Project
+        from flow_sdk.fs_store.operations import all_projects as all_projects_mod
+        from flow_sdk.server.search_filters import ScopeFilter, resolve_project_scope
+
+        async def fail_project_get_all(*_args, **_kwargs):
+            raise AssertionError("already-resolved scope must not query Project rows")
+
+        async def fail_get_all_projects(*_args, **_kwargs):
+            raise AssertionError("already-resolved scope must not scan filesystem roots")
+
+        monkeypatch.setattr(Project, "get_all", fail_project_get_all)
+        monkeypatch.setattr(all_projects_mod, "get_all_projects", fail_get_all_projects)
+
+        sf = ScopeFilter(
+            user=True,
+            projects=("project-id",),
+            record_projects=("record-project-id",),
+            project_roots=(("project-id", "/tmp/testproject_already_resolved"),),
+        )
+
+        assert await resolve_project_scope(sf) is sf
+
+    @pytest.mark.asyncio
     async def test_from_record_no_duplicate_on_rescan(self, sync_db):
         """Calling from_record twice for the same canonical cwd yields one entity."""
         from flow_sdk.builtin.project import Project
+        from flow_sdk.db.drivers.query import QueryFilter
         from flow_sdk.fs_store.fs_record import FSRecord as ClaudeProjectFsRecord
         from flow_sdk.fs_store.path_utils import canonical_posix_path
-        from flow_sdk.db.drivers.query import QueryFilter
 
         mount_path = "/tmp/testproject3_no_dup"
         canonical = canonical_posix_path(mount_path)

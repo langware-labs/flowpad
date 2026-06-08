@@ -416,6 +416,12 @@ class Entity(DBEntity):
         """Create or update an Entity from a Record's meta_dict()."""
         record_type = record.type or record._record_type
         entity_cls = SchemaRegistry.get_entity_cls(record_type) or cls
+        if cls is Entity and entity_cls is not cls and "from_record" in entity_cls.__dict__:
+            token = _SUPPRESS_STORE.set(True)
+            try:
+                return await entity_cls.from_record(record, notify=notify)
+            finally:
+                _SUPPRESS_STORE.reset(token)
         data = record.meta_dict()
         entity_uuid = entity_cls.allocate_id(data)
         # Filter by the *record's* type, not entity_cls.get_type(). The latter

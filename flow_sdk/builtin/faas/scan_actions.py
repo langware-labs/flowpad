@@ -62,7 +62,7 @@ class ScanActionsMixin:
         """Full-coverage (user + all projects) indexer roots for resource scans."""
         from flow_sdk.fs_store.operations.all_projects import get_all_scope_filter
 
-        return await self._resolve_scoped_roots(await get_all_scope_filter())
+        return await self._resolve_scoped_roots(await get_all_scope_filter(create_missing=False))
 
     async def _scan_resources(self) -> ApiResponse:
         """Scan specific resource type with optional time window filtering.

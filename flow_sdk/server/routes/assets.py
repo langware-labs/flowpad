@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse
 router = APIRouter()
 
 
-def _markdown_vaults() -> list[dict]:
+async def _markdown_vaults() -> list[dict]:
     """Enumerate markdown vault roots for the Wiki folder tree.
 
     Each entry carries (typeid, relPath, absPath, label, scope, project_id)
@@ -25,9 +25,15 @@ def _markdown_vaults() -> list[dict]:
     """
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
     from flow_sdk.fs_store.operations.markdown_dirs import doc_search_dirs as _doc_search_dirs  # noqa: PLC0415
+    from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
 
     home = get_instance_settings().user_home.resolve()
+    project_by_cwd = {
+        canonical_posix_path(p.fs_storage_mount_path): p
+        for p in await Project.get_all()
+        if getattr(p, "fs_storage_mount_path", None)
+    }
     seen: set[str] = set()
     vaults: list[dict] = []
     for raw in _doc_search_dirs():
@@ -40,7 +46,7 @@ def _markdown_vaults() -> list[dict]:
         seen.add(abs_path)
         p = Path(abs_path)
         rel_path = abs_path.lstrip("/")
-        scope, project_id, label = _classify_vault(p, home)
+        scope, project_id, record_project_id, label = _classify_vault(p, home, project_by_cwd)
         vaults.append({
             "typeid": "compute_node-@local",
             "relPath": rel_path,
@@ -48,39 +54,50 @@ def _markdown_vaults() -> list[dict]:
             "absPath": abs_path,
             "scope": scope,
             "project_id": project_id,
+            "record_project_id": record_project_id,
         })
     return vaults
 
 
-def _classify_vault(p: Path, home: Path) -> tuple[str, str | None, str]:
-    """Return ``(scope, project_id, label)`` for a vault root path.
+def _classify_vault(p: Path, home: Path, project_by_cwd: dict[str, object]) -> tuple[str, str | None, str | None, str]:
+    """Return ``(scope, project_id, record_project_id, label)`` for a vault root path.
 
     User vault → label "User docs". Project vault → label is
     "Project docs (<name>)" where <name> is the last segment of the
-    project mount path; project_id is the synthetic uuid5 that records
-    under it carry. Other dirs (env-supplied) → label is
+    project mount path; project_id is the Project entity id when resolvable,
+    and record_project_id is the legacy uuid5 id records may carry.
+    Other dirs (env-supplied) → label is
     "Workspace docs (<dir>)", scope falls back to "user".
     """
     from flow_sdk.builtin.project import Project  # noqa: PLC0415
+    from flow_sdk.fs_store.path_utils import canonical_posix_path  # noqa: PLC0415
 
     name = p.name
     parent_name = p.parent.name if p.parent else ""
 
+    def project_ids(project_mount: Path) -> tuple[str | None, str | None]:
+        record_project_id = Project.derive_id_for_path(str(project_mount))
+        proj = project_by_cwd.get(canonical_posix_path(project_mount))
+        entity_id = str(getattr(proj, "id", "") or "") or record_project_id
+        return entity_id, record_project_id
+
     if name == "docs" and parent_name == ".claude":
         if p.parent == home / ".claude":
-            return ("user", None, "User docs")
+            return ("user", None, None, "User docs")
         project_mount = p.parent.parent if p.parent and p.parent.parent else None
         if project_mount is not None:
             project_name = project_mount.name or str(project_mount)
-            return ("project", Project.derive_id_for_path(str(project_mount)), f"Project docs ({project_name})")
+            entity_id, record_project_id = project_ids(project_mount)
+            return ("project", entity_id, record_project_id, f"Project docs ({project_name})")
 
     if name == "docs":
         project_mount = p.parent if p.parent else None
         if project_mount is not None:
             project_name = project_mount.name or "docs"
-            return ("project", Project.derive_id_for_path(str(project_mount)), f"Project docs ({project_name})")
+            entity_id, record_project_id = project_ids(project_mount)
+            return ("project", entity_id, record_project_id, f"Project docs ({project_name})")
 
-    return ("user", None, f"Workspace docs ({name})" if name else "Workspace docs")
+    return ("user", None, None, f"Workspace docs ({name})" if name else "Workspace docs")
 
 
 @router.get("/api/v1/assets/types")
@@ -99,7 +116,7 @@ async def get_asset_types():
                 "creatable": ti.creatable,
             }
             if ti.type_name == "markdown":
-                entry["vaults"] = _markdown_vaults()
+                entry["vaults"] = await _markdown_vaults()
             types.append(entry)
     return JSONResponse(content={"status": "SUCCESS", "data": {"types": types}})
 

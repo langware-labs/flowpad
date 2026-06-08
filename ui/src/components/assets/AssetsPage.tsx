@@ -6,6 +6,7 @@ import { InputDialog } from '@src/components/ui/input-dialog';
 import { Button } from '@src/components/ui/button';
 import { getDescriptor } from '@src/components/quick-create';
 import { RecordSearchBar } from '@src/components/record-search-bar/RecordSearchBar';
+import { SearchScopeToggle } from '@src/components/record-search-bar/SearchScopeToggle';
 import { InlineSearchResults } from '@src/pages/home-landing/InlineSearchResults';
 import type { SearchFilters, SearchResult as RecordSearchResult } from '@src/hooks/use-record-search';
 import { notify } from '@src/notifications';
@@ -29,9 +30,9 @@ import type { AssetFilter } from './assetFilter';
 import { DEFAULT_ASSET_FILTER } from './assetFilter';
 import { applyScopeToParams, defaultScopeFilter } from '@src/lib/scope-filter';
 import type { ScopeFilter } from '@src/lib/scope-filter';
+import { useSearchScopeToggle } from '@src/hooks/use-global-search-scope';
 import { useIndexStatus } from '@src/hooks/use-index-status';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
-import { projectIdForPath } from './utils';
 import { ScopeFilterBar } from '@src/components/scope-filter/ScopeFilterBar';
 import { ProjectScopeBadge } from './ProjectScopeBadge';
 import { ViewType } from '@src/types/ViewType';
@@ -286,10 +287,7 @@ export function AssetsPage() {
   const [newTypeDialogOpen, setNewTypeDialogOpen] = useState(false);
   const [newFolderTarget, setNewFolderTarget] = useState<MarkdownFolderTarget | null>(null);
   const [newFolderDialogOpen, setNewFolderDialogOpen] = useState(false);
-  // Use the canonical synthetic project_id (uuid5 of mount_path) so the
-  // selection round-trips with what the indexer stamps on records and what
-  // the picker emits — independent of how dataContext bootstraps the Project.
-  const currentProjectId = projectIdForPath(dataContext.project?.fs_storage_mount_path);
+  const currentProjectId = dataContext.project?.id ?? null;
   // When hosted under `/dock/project/<id>`, the project is locked from the URL.
   // The first segment of the pointer is the projectId; the rest is the same
   // sub-pointer shape AssetsPage already uses under `/dock/assets/<sub>`.
@@ -374,6 +372,14 @@ export function AssetsPage() {
     const q = searchQuery.trim();
     navigation.openSearch(q ? searchQuery : undefined, searchFilters);
   }, [navigation, searchQuery, searchFilters]);
+  const {
+    scope: searchScope,
+    isLoading: searchScopeLoading,
+    mode: searchScopeMode,
+    setMode: setSearchScopeMode,
+    allProjectCount,
+    currentProjectAvailable,
+  } = useSearchScopeToggle(currentProjectId);
 
   const handleSearchKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'ArrowDown') { e.preventDefault(); setSelectedResultIndex(0); }
@@ -725,6 +731,13 @@ export function AssetsPage() {
         <BookOpen className="h-4 w-4 text-muted-foreground" />
         <span className="ml-1 text-sm font-medium">Assets</span>
         <div className="ml-auto flex items-center gap-2">
+          <SearchScopeToggle
+            value={searchScopeMode}
+            onChange={setSearchScopeMode}
+            allProjectCount={allProjectCount}
+            currentProjectAvailable={currentProjectAvailable}
+            className="shrink-0"
+          />
           <div className="relative w-96 shrink-0">
             <RecordSearchBar
               query={searchQuery}
@@ -740,6 +753,8 @@ export function AssetsPage() {
                 <InlineSearchResults
                   query={searchQuery}
                   filters={searchFilters}
+                  scope={searchScope}
+                  scopeLoading={searchScopeLoading}
                   selectedIndex={selectedResultIndex}
                   onSelectedIndexChange={setSelectedResultIndex}
                   onOpenFullSearch={handleSearchSubmit}

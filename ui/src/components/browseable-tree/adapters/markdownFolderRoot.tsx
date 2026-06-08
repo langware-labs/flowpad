@@ -326,12 +326,16 @@ function folderBrowseable(args: {
 
 /** Mirror of backend ``apply_scope_filter`` for vault listing. Reads the
  *  unified ScopeFilter `{user, projects}`: a user vault is kept iff
- *  `sf.user`; a project vault is kept iff its `project_id` is in
- *  `sf.projects`. Empty `projects` array means no project vaults are kept. */
+ *  `sf.user`; a project vault is kept iff its Project id or legacy
+ *  record_project_id is selected. Empty `projects` means no project vaults. */
 function keepVault(v: AssetTypeVault, filter: AssetFilter): boolean {
   if (v.scope === 'user') return filter.scope.user;
   if (v.scope === 'project') {
-    return v.project_id !== null && filter.scope.projects.includes(v.project_id);
+    const selected = new Set(filter.scope.projects);
+    return (
+      (!!v.project_id && selected.has(v.project_id)) ||
+      (!!v.record_project_id && selected.has(v.record_project_id))
+    );
   }
   return false;
 }

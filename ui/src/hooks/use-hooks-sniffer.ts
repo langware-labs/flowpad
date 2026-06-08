@@ -12,7 +12,7 @@ import {
 } from '@sdk';
 import { useContext, useEntityData } from '@sdk/react/hooks';
 import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
-import { useClaudeProjectList } from './use-claude-projects';
+import { useProjectList } from './use-claude-projects';
 
 export type EventLayer = 'debug' | 'info' | 'raw_notifications' | 'resource';
 
@@ -147,7 +147,7 @@ export function useHooksSniffer() {
   }, []);
 
   const { flowData, clear: clearEntityData } = useEntityData(hookId ? new TypeId(AgentHook.type, hookId) : null);
-  const { projects } = useClaudeProjectList();
+  const { projects } = useProjectList();
   const { computeNode, snifferEnabled, isBootstrapping } = useContext();
   const isLoading = isBootstrapping;
   const status: HooksSnifferStatus = { enabled: snifferEnabled, hook_id: hookId };

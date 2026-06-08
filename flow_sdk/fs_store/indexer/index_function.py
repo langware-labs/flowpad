@@ -231,7 +231,8 @@ def _scope_filter_keeps(
     if scope == "user":
         return sf.user
     if scope == "project":
-        return pid in set(sf.projects)
+        record_projects = tuple(getattr(sf, "record_projects", ()) or ())
+        return pid in set((*sf.projects, *record_projects))
     return True
 
 
@@ -272,7 +273,7 @@ def _scope_filtered_orphans(
     ``asyncio.to_thread``); DB-only orphans resolve it from the row itself
     (no shadow metadata.json exists for them) with the same predicate shape.
     """
-    sf_projects = set(sf.projects)
+    sf_projects = set((*sf.projects, *(getattr(sf, "record_projects", ()) or ())))
 
     def _db_row_keeps(eid: str) -> bool:
         _aref, scope, pid = db_rows[eid]

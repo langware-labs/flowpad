@@ -11,23 +11,37 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+SCOPED_RECORD_TYPES: frozenset[str] = frozenset({
+    "skill", "agent", "markdown", "whiteboard", "workflow", "task",
+    "claude_hook", "claude_rules", "claude_memory", "claude_md",
+    "claude_session", "codex_session", "command", "spec",
+})
+
 
 @dataclass(frozen=True)
 class ScopeFilter:
     """Single source of truth for "which records does the user want".
 
-    Mirrors the frontend ``ScopeFilter`` in
-    ``ui/src/components/assets/assetFilter.ts`` exactly.
+    The wire fields mirror the frontend ``ScopeFilter`` in
+    ``ui/src/components/assets/assetFilter.ts``.
 
     Fields:
       - ``user``     — include user-scope records.
-      - ``projects`` — entity-IDs of projects to include; empty = no projects.
+      - ``projects`` — Project entity ids to include; empty = no projects.
+      - ``record_projects`` — ids accepted when matching persisted
+        ``record.project_id`` values. During the transition this includes the
+        entity id and the legacy uuid5(project:<cwd>) id.
+      - ``project_roots`` — backend-only ``(project_id, cwd)`` pairs used by
+        scan/index paths that already resolved the all-project list and should
+        not re-query or materialize Project rows just to build FS roots.
 
     Wire format on the URL:  ``?user=true&projects=A,B``
     """
 
     user: bool = True
     projects: tuple[str, ...] = field(default_factory=tuple)
+    record_projects: tuple[str, ...] = field(default_factory=tuple)
+    project_roots: tuple[tuple[str, str], ...] = field(default_factory=tuple)
 
     @classmethod
     def from_query_params(cls, params) -> "ScopeFilter":
@@ -59,13 +73,46 @@ class ScopeFilter:
         }
 
 
+def _dedupe(values) -> tuple[str, ...]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for raw in values:
+        value = str(raw or "").strip()
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        out.append(value)
+    return tuple(out)
+
+
+def _dedupe_pairs(values) -> tuple[tuple[str, str], ...]:
+    seen: set[str] = set()
+    out: list[tuple[str, str]] = []
+    for raw_key, raw_value in values:
+        key = str(raw_key or "").strip()
+        value = str(raw_value or "").strip()
+        if not key or not value or key in seen:
+            continue
+        seen.add(key)
+        out.append((key, value))
+    return tuple(out)
+
+
+def scope_record_project_ids(sf: "ScopeFilter | None") -> tuple[str, ...]:
+    """Project ids to compare against persisted record ``project_id`` fields."""
+    if sf is None:
+        return tuple()
+    return _dedupe((*sf.projects, *sf.record_projects))
+
+
 def apply_scope_filter(entities: list, sf: "ScopeFilter | None") -> list:
     """Filter entities by the unified ``ScopeFilter``.
 
     Predicate (uniform across all surfaces — search, fs-records, indexer):
 
       - ``scope == 'user'``    → keep iff ``sf.user``.
-      - ``scope == 'project'`` → keep iff ``project_id`` is in ``sf.projects``.
+      - ``scope == 'project'`` → keep iff ``project_id`` is in
+        ``sf.projects`` or ``sf.record_projects``.
       - ``scope == ''``        → keep (unscoped record types like ``project``
         itself live here; they exist outside the user/project axis and the
         filter has nothing to say about them).
@@ -76,18 +123,12 @@ def apply_scope_filter(entities: list, sf: "ScopeFilter | None") -> list:
     """
     if sf is None:
         return entities
-    pid_set = set(sf.projects)
+    pid_set = set(scope_record_project_ids(sf))
 
     # Record types that ALWAYS have a scope (user/project). Empty scope on
     # one of these means the record skipped the scope-stamp path (a bug, not
     # an exemption) — drop it under an explicit ScopeFilter so search doesn't
     # leak half-classified rows.
-    _SCOPED_TYPES: frozenset[str] = frozenset({
-        "skill", "agent", "markdown", "whiteboard", "workflow", "task",
-        "claude_hook", "claude_rules", "claude_memory", "claude_md",
-        "claude_session", "codex_session", "command", "spec",
-    })
-
     def _keep(e) -> bool:
         s = (getattr(e, "scope", None) or "")
         if s == "user":
@@ -98,34 +139,157 @@ def apply_scope_filter(entities: list, sf: "ScopeFilter | None") -> list:
         # Empty scope on a normally-scoped type = drop. Other unscoped types
         # (e.g. 'project' itself) keep through.
         etype = str(getattr(e, "type", "") or "")
-        if etype in _SCOPED_TYPES:
+        if etype in SCOPED_RECORD_TYPES:
             return False
         return True
 
     return [e for e in entities if _keep(e)]
 
 
-def resolve_project_scope(sf: "ScopeFilter | None") -> "ScopeFilter | None":
-    """Resolve project *uname* tokens in ``sf.projects`` to entity ids.
+async def resolve_project_scope(
+    sf: "ScopeFilter | None",
+    *,
+    create_missing: bool = False,
+) -> "ScopeFilter | None":
+    """Resolve project tokens to entity ids and record-match ids.
 
     System projects (e.g. ``@flowpad_assistant``) are referenced by their
     stable uname in URLs/footer, but records are stamped with the project's
     entity id — the indexer resolves the same way via
     ``lookup_project_id_by_uname``. Resolving here keeps the scope match
-    symmetric with the stamp across every search surface. uuid tokens (the
-    common case) pass through untouched, so this is a no-op for them.
+    symmetric with the stamp across every search surface.
+
+    Compatibility: older fs-record rows may carry the derived
+    uuid5(project:<cwd>) value in ``project_id``. ``projects`` is normalized to
+    real Project entity ids; ``record_projects`` carries both the entity ids
+    and derived ids so row filters still match existing records.
     """
     if sf is None or not sf.projects:
         return sf
-    from flow_sdk.fs_store.indexer.roots import lookup_project_id_by_uname  # noqa: PLC0415
+    if sf.record_projects:
+        return sf
+    from flow_sdk.builtin.project import Project  # noqa: PLC0415
     from flow_sdk.fs_store.identifier import is_valid_uuid  # noqa: PLC0415
+    from flow_sdk.fs_store.indexer.roots import lookup_project_id_by_uname  # noqa: PLC0415
+    from flow_sdk.fs_store.operations.all_projects import get_all_projects  # noqa: PLC0415
 
-    resolved = tuple(
-        tok if is_valid_uuid(tok)
-        else lookup_project_id_by_uname(tok[1:] if tok.startswith("@") else tok) or tok
-        for tok in sf.projects
+    projects = await Project.get_all()
+    by_id = {str(p.id): p for p in projects if getattr(p, "id", None)}
+    by_record_id: dict[str, Project] = {}
+    for proj in projects:
+        candidates = [
+            getattr(proj, "project_id", None),
+            Project.derive_id_for_path(getattr(proj, "fs_storage_mount_path", None)),
+        ]
+        for candidate in candidates:
+            key = str(candidate or "").strip()
+            if key and key not in by_record_id:
+                by_record_id[key] = proj
+
+    normalized_tokens: list[str] = []
+    needs_project_infos = False
+    for tok in sf.projects:
+        token = str(tok or "").strip()
+        if not token:
+            continue
+        if not is_valid_uuid(token):
+            token = lookup_project_id_by_uname(token[1:] if token.startswith("@") else token) or token
+        normalized_tokens.append(token)
+        if token in by_record_id and token not in by_id:
+            needs_project_infos = True
+
+    info_by_id = {}
+    info_by_record_id = {}
+    if needs_project_infos:
+        project_infos = await get_all_projects(create_missing=create_missing)
+        info_by_id = {str(info.project_id): info for info in project_infos if info.project_id}
+        for info in project_infos:
+            candidates = [
+                info.record_project_id,
+                Project.derive_id_for_path(info.cwd),
+            ]
+            for candidate in candidates:
+                key = str(candidate or "").strip()
+                if key and key not in info_by_record_id:
+                    info_by_record_id[key] = info
+
+    entity_ids: list[str] = []
+    record_ids: list[str] = []
+    project_roots: list[tuple[str, str]] = []
+
+    def add_project_info(info) -> None:
+        pid = str(getattr(info, "project_id", "") or "").strip()
+        if pid:
+            entity_ids.append(pid)
+            record_ids.append(pid)
+            cwd = str(getattr(info, "cwd", "") or "").strip()
+            if cwd:
+                project_roots.append((pid, cwd))
+        record_pid = str(getattr(info, "record_project_id", "") or "").strip()
+        if record_pid:
+            record_ids.append(record_pid)
+        derived = Project.derive_id_for_path(getattr(info, "cwd", None))
+        if derived:
+            record_ids.append(derived)
+
+    def add_project(proj) -> None:
+        pid = str(getattr(proj, "id", "") or "").strip()
+        if pid:
+            entity_ids.append(pid)
+            record_ids.append(pid)
+            mount = str(getattr(proj, "fs_storage_mount_path", "") or "").strip()
+            if mount:
+                project_roots.append((pid, mount))
+        legacy_pid = str(getattr(proj, "project_id", "") or "").strip()
+        if legacy_pid:
+            record_ids.append(legacy_pid)
+        derived = Project.derive_id_for_path(getattr(proj, "fs_storage_mount_path", None))
+        if derived:
+            record_ids.append(derived)
+
+    for token in normalized_tokens:
+        info = info_by_id.get(token)
+        if info is not None:
+            add_project_info(info)
+            continue
+
+        info = info_by_record_id.get(token)
+        if info is not None:
+            add_project_info(info)
+            record_ids.append(token)
+            continue
+
+        proj = by_id.get(token)
+        if proj is not None:
+            add_project(proj)
+            continue
+
+        proj = by_record_id.get(token)
+        if proj is not None:
+            add_project(proj)
+            record_ids.append(token)
+            continue
+
+        # Unknown token: preserve it so callers get existing 404 / empty-match
+        # behavior, and so non-Project-scoped custom ids keep matching rows.
+        entity_ids.append(token)
+        record_ids.append(token)
+
+    resolved_projects = _dedupe(entity_ids)
+    resolved_records = _dedupe(record_ids)
+    resolved_roots = _dedupe_pairs((*sf.project_roots, *project_roots))
+    if (
+        resolved_projects == sf.projects
+        and resolved_records == sf.record_projects
+        and resolved_roots == sf.project_roots
+    ):
+        return sf
+    return ScopeFilter(
+        user=sf.user,
+        projects=resolved_projects,
+        record_projects=resolved_records,
+        project_roots=resolved_roots,
     )
-    return sf if resolved == sf.projects else ScopeFilter(user=sf.user, projects=resolved)
 
 
 def apply_folder_filter(entities: list, parent_path: str | None, vault_root: str | None) -> list:
