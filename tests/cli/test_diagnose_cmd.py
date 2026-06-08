@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from typer.testing import CliRunner
 
-from flow_sdk.cli.commands.diagnose_cmd import _find_skill_dir, _print_agent_text
+from flow_sdk.cli.commands.diagnose_cmd import _print_agent_text
 from flow_sdk.cli.flow_cli import app
 
 runner = CliRunner()
@@ -108,13 +108,3 @@ def test_print_agent_text_ignores_tool_use_and_non_assistant(capsys):
     _print_agent_text(_entry("user", [{"type": "text", "text": "ignored"}]))
     _print_agent_text({"type": "system", "subtype": "init"})  # no "message" key
     assert capsys.readouterr().out == ""
-
-
-# --------------------------------------------------------------------------- #
-# _find_skill_dir
-# --------------------------------------------------------------------------- #
-
-def test_find_skill_dir_locates_installed_skill():
-    d = _find_skill_dir()
-    assert d is not None
-    assert (d / "SKILL.md").exists()
