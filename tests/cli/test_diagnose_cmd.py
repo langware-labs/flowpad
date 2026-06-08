@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from typer.testing import CliRunner
 
-from flow_sdk.cli.commands.diagnose_cmd import _print_agent_text
+from flow_sdk.cli.commands.diagnose_cmd import _Renderer
 from flow_sdk.cli.flow_cli import app
 
 runner = CliRunner()
@@ -90,21 +90,29 @@ def test_diagnose_passes_timeout_through():
 
 
 # --------------------------------------------------------------------------- #
-# _print_agent_text — streams only assistant narration
+# _Renderer — narration lines + inline tool-progress dots
 # --------------------------------------------------------------------------- #
 
 def _entry(role, blocks):
     return {"message": {"role": role, "content": blocks}}
 
 
-def test_print_agent_text_shows_assistant_narration(capsys):
-    _print_agent_text(_entry("assistant", [{"type": "text", "text": "Checking port"}]))
+def test_renderer_shows_narration_and_pulse_not_tool_noise(capsys):
+    r = _Renderer()
+    r.feed(_entry("assistant", [{"type": "text", "text": "Checking port"}]))
+    r.feed(_entry("assistant", [{"type": "tool_use", "name": "Bash"}]))
+    r.feed(_entry("assistant", [{"type": "tool_use", "name": "Bash"}]))
+    r.feed(_entry("user", [{"type": "tool_result", "content": "x"}]))  # ignored
+    r.finish()
     out = capsys.readouterr().out
-    assert "▸ Checking port" in out
+    assert "▸ Checking port" in out          # narration kept
+    assert "·" in out                         # progress pulse rendered
+    assert "Bash" not in out                  # tool name suppressed
+    assert "tool result" not in out           # tool-result noise suppressed
 
 
-def test_print_agent_text_ignores_tool_use_and_non_assistant(capsys):
-    _print_agent_text(_entry("assistant", [{"type": "tool_use", "name": "Bash"}]))
-    _print_agent_text(_entry("user", [{"type": "text", "text": "ignored"}]))
-    _print_agent_text({"type": "system", "subtype": "init"})  # no "message" key
+def test_renderer_ignores_non_message_entries(capsys):
+    r = _Renderer()
+    r.feed({"type": "system", "subtype": "init"})  # no "message" key
+    r.finish()
     assert capsys.readouterr().out == ""
