@@ -732,26 +732,41 @@ class SQLiteDBDriver(DBDriver):
     def _scope_sql_clause(
         scope: "object | None",
         bindings: dict,
+        type_name: str | None = None,
     ) -> str:
         """Translate the server-side ScopeFilter predicate (search_filters.py)
         into a SQL fragment for ANDing into WHERE clauses.
 
         Mirrors ``apply_scope_filter`` exactly:
           - scope='user'    kept iff sf.user
-          - scope='project' kept iff project_id IN sf.projects
-          - scope is empty/missing → always kept (unscoped types)
+          - scope='project' kept iff project_id IN sf.projects/record_projects
+          - scope is empty/missing → kept only for non-scoped record types
 
         Returns "" when scope is None (caller-side opt-out). Mutates
         ``bindings`` to add any new bind parameters.
         """
         if scope is None:
             return ""
+        from flow_sdk.server.search_filters import SCOPED_RECORD_TYPES  # noqa: PLC0415
+
         keep_user = bool(getattr(scope, "user", False))
-        projects = tuple(getattr(scope, "projects", ()) or ())
-        clauses: list[str] = [
-            "json_extract(data, '$.scope') IS NULL",
-            "json_extract(data, '$.scope') = ''",
-        ]
+        entity_projects = tuple(getattr(scope, "projects", ()) or ())
+        record_projects = tuple(getattr(scope, "record_projects", ()) or ())
+        projects = tuple(dict.fromkeys((*entity_projects, *record_projects)))
+        clauses: list[str] = []
+        empty_scope = "(json_extract(data, '$.scope') IS NULL OR json_extract(data, '$.scope') = '')"
+        if type_name:
+            if type_name not in SCOPED_RECORD_TYPES:
+                clauses.append(empty_scope)
+        else:
+            scoped_type_placeholders = []
+            for i, record_type in enumerate(sorted(SCOPED_RECORD_TYPES)):
+                key = f"__sf_scoped_type_{i}"
+                bindings[key] = record_type
+                scoped_type_placeholders.append(f":{key}")
+            clauses.append(
+                f"({empty_scope} AND type NOT IN ({','.join(scoped_type_placeholders)}))"
+            )
         if keep_user:
             clauses.append("json_extract(data, '$.scope') = 'user'")
         if projects:
@@ -764,8 +779,10 @@ class SQLiteDBDriver(DBDriver):
                 "(json_extract(data, '$.scope') = 'project' AND "
                 f"json_extract(data, '$.project_id') IN ({','.join(placeholders)}))"
             )
-        # Without `user` and without any projects, the only kept rows are the
-        # unscoped ones (scope IS NULL / '').
+        # Without `user` and without any projects, only non-scoped record
+        # types can still match via the empty-scope branch above.
+        if not clauses:
+            return " AND (0=1)"
         return " AND (" + " OR ".join(clauses) + ")"
 
     async def count_entities_by_type(
@@ -781,7 +798,7 @@ class SQLiteDBDriver(DBDriver):
         if type_name:
             type_clause = "WHERE type = :type"
             bindings["type"] = type_name
-        scope_clause = self._scope_sql_clause(scope, bindings)
+        scope_clause = self._scope_sql_clause(scope, bindings, type_name)
         if scope_clause and not type_clause:
             # Need a WHERE for the AND-prefix to bind correctly.
             scope_clause = " WHERE " + scope_clause.lstrip(" AND ")
@@ -824,7 +841,7 @@ class SQLiteDBDriver(DBDriver):
         else:
             # Preserve named (builtin) entities like @local — only clear anonymous indexed records
             base_where = "uname IS NULL"
-        scope_clause = self._scope_sql_clause(scope, bindings)
+        scope_clause = self._scope_sql_clause(scope, bindings, type_name)
         where_clause = base_where + scope_clause
         async with self._session_ctx() as session:
             await session.execute(

@@ -2,6 +2,7 @@ import { IncomingTaskDialog } from '@src/components/task-receive/IncomingTaskDia
 import { useIncomingTaskStore } from '@src/store/use-incoming-task-store';
 import { UsageBar } from '@src/components/cost-dashboard';
 import { RecordSearchBar } from '@src/components/record-search-bar/RecordSearchBar';
+import { SearchScopeToggle } from '@src/components/record-search-bar/SearchScopeToggle';
 import { NotificationFeed, notify } from '@src/notifications';
 import { type ProjectResourceListItem } from '@src/components/project-resource-list';
 import { ProjectActivityStrip, RecentConversationsStrip, BookmarkColumn } from '@src/components/project-activity-strip';
@@ -15,7 +16,8 @@ import { useAnnotations } from '@src/hooks/use-annotations';
 import { useProjectBookmarks } from '@src/hooks/use-project-bookmarks';
 import { useProjectTasks } from '@src/hooks/use-project-tasks';
 import { useTaskMutations } from '@src/hooks/use-task-mutations';
-import { useClaudeProjectList } from '@src/hooks/use-claude-projects';
+import { useProjectList } from '@src/hooks/use-claude-projects';
+import { useSearchScopeToggle } from '@src/hooks/use-global-search-scope';
 import { useSnifferContext } from '@src/contexts/SnifferContext';
 import { useCollaborationRooms } from '@src/hooks/useCollaborationRooms';
 import { useProjects } from '@src/hooks/use-projects';
@@ -129,7 +131,7 @@ export function HomeLanding() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const { projects: claudeProjects, isLoading: isLoadingClaudeProjects } = useClaudeProjectList();
+  const { projects: claudeProjects, isLoading: isLoadingClaudeProjects } = useProjectList();
   const { project: currentProject } = useProject();
   const { events: snifferEvents } = useSnifferContext();
 
@@ -248,6 +250,15 @@ export function HomeLanding() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFilters, setSearchFilters] = useState<SearchFilters>({});
   const [selectedResultIndex, setSelectedResultIndex] = useState(-1);
+  const currentProjectId = currentProject?.id ?? dataContext.project?.id ?? null;
+  const {
+    scope: searchScope,
+    isLoading: searchScopeLoading,
+    mode: searchScopeMode,
+    setMode: setSearchScopeMode,
+    allProjectCount,
+    currentProjectAvailable,
+  } = useSearchScopeToggle(currentProjectId);
 
   useEffect(() => { setSelectedResultIndex(-1); }, [searchQuery]);
   // Clear post-scan panel when user starts a real search
@@ -509,6 +520,13 @@ export function HomeLanding() {
           <UsageBar />
         </div>
         <div className="flex-1" />
+        <SearchScopeToggle
+          value={searchScopeMode}
+          onChange={setSearchScopeMode}
+          allProjectCount={allProjectCount}
+          currentProjectAvailable={currentProjectAvailable}
+          className="shrink-0"
+        />
         <div className="relative w-72 shrink-0">
           <RecordSearchBar
             query={searchQuery}
@@ -524,6 +542,8 @@ export function HomeLanding() {
               <InlineSearchResults
                 query={searchQuery}
                 filters={searchFilters}
+                scope={searchScope}
+                scopeLoading={searchScopeLoading}
                 selectedIndex={selectedResultIndex}
                 onSelectedIndexChange={setSelectedResultIndex}
                 onOpenFullSearch={handleSearchSubmit}

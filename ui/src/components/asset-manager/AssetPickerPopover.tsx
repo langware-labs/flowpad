@@ -12,6 +12,7 @@ import {
 import { EntityTypeBar, type EntityTypeFilter } from './EntityTypeBar';
 import { ScopeFilterBar } from '@src/components/scope-filter/ScopeFilterBar';
 import { useDefaultScopeFilter } from '@src/hooks/use-default-scope-filter';
+import { useAllProjects } from '@src/hooks/use-all-projects';
 import { Boxes, Lock, Search, type LucideIcon } from 'lucide-react';
 
 interface AssetPickerPopoverProps {
@@ -81,6 +82,14 @@ export function AssetPickerPopover({
   const [query, setQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState<EntityTypeFilter>('all');
   const [scope, setScope, currentProjectId] = useDefaultScopeFilter();
+  const { projects: allProjects } = useAllProjects({ enabled: open });
+  const scopeProjectIds = useMemo(() => {
+    const ids = new Set(scope.projects);
+    for (const p of allProjects) {
+      if (scope.projects.includes(p.id) && p.record_project_id) ids.add(p.record_project_id);
+    }
+    return ids;
+  }, [allProjects, scope.projects]);
 
   // process: null → useProcessAssets returns the synthetic Agent + Skill list
   // pulled from the global entity queries. No process needs to exist yet.
@@ -126,7 +135,7 @@ export function AssetPickerPopover({
         if (type !== typeFilter) return false;
       }
       if (d.project_id) {
-        if (!scope.projects.includes(d.project_id)) return false;
+        if (!scopeProjectIds.has(d.project_id)) return false;
       } else if (!scope.user) {
         return false;
       }
@@ -140,7 +149,7 @@ export function AssetPickerPopover({
       }
       return true;
     });
-  }, [descriptors, filter, query, typeFilter, scope]);
+  }, [descriptors, filter, query, typeFilter, scope, scopeProjectIds]);
 
   const handlePick = useCallback(
     (d: AssetDescriptor) => {

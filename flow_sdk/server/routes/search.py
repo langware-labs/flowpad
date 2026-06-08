@@ -111,7 +111,7 @@ async def search_records(
     )
     # Resolve project *uname* tokens (e.g. ``@flowpad_assistant``) to entity
     # ids so the scope match stays symmetric with how records are stamped.
-    scope_filter = resolve_project_scope(scope_filter)
+    scope_filter = await resolve_project_scope(scope_filter)
 
     tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
 
@@ -210,12 +210,14 @@ async def search_records(
     if pid_set:
         try:
             from flow_sdk.builtin.project import Project  # noqa: PLC0415
-            from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter, QueryOp  # noqa: PLC0415
-            projs = await Project.get_all(QueryFilter(
-                match=ExpressionNode(op=QueryOp.IN, operands=["id", list(pid_set)]),
-                type="project",
-            ))
-            pid_to_name = {p.id: (getattr(p, "name", None) or p.id) for p in projs}
+            projs = await Project.get_all()
+            pid_to_name = {}
+            for p in projs:
+                name = getattr(p, "name", None) or p.id
+                pid_to_name[p.id] = name
+                legacy_pid = Project.derive_id_for_path(getattr(p, "fs_storage_mount_path", None))
+                if legacy_pid:
+                    pid_to_name[legacy_pid] = name
             for r in results:
                 pid = r.get("project_id")
                 if pid and pid in pid_to_name:
