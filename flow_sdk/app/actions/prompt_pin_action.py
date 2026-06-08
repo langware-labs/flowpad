@@ -3,7 +3,7 @@
 The terminal's per-process prompt history (PromptIndexPanel) carries a pin
 button per item: pin = create a library ``Prompt`` from that item's text and
 mutually cross-link the Prompt and its ``AgenticProcess`` into each other's
-PRIVATE context entities (``builtin/prompt_cross_link.py``); unpin = remove
+PRIVATE context entities (via ``core/entity/cross_link.py``); unpin = remove
 the link AND remove the prompt from the library (entity row + backing .md).
 
 Wire shape:
@@ -31,9 +31,9 @@ from fastapi import HTTPException
 from flow_sdk.actions import action
 from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.prompt import Prompt
-from flow_sdk.builtin.prompt_cross_link import (
-    cross_link_prompt_to_process,
-    remove_prompt_process_link,
+from flow_sdk.core.entity.cross_link import (
+    cross_link_entities,
+    uncross_link_entities,
 )
 from flow_sdk.builtin.prompt_helpers import find_or_create_prompt, normalize_prompt_text
 from flow_sdk.request_context.methods import get_current_request_info
@@ -79,7 +79,11 @@ async def pin_prompt() -> ApiResponse:
     prompt = await find_or_create_prompt(
         text, project_id=proc.project_id or None, name=name_override
     )
-    await cross_link_prompt_to_process(prompt, proc)
+    await cross_link_entities(
+        prompt,
+        proc,
+        b_data={"path": prompt.asset_ref} if getattr(prompt, "asset_ref", None) else None,
+    )
     return ApiSuccessResponse(
         data={"prompt_id": prompt.id, "prompt_type": Prompt.get_type(), "pinned": True}
     )
@@ -104,7 +108,11 @@ async def link_executed_prompt() -> ApiResponse:
     if prompt is None:
         return ApiSuccessResponse(data={"linked": False, "prompt_id": prompt_id})
 
-    await cross_link_prompt_to_process(prompt, proc)
+    await cross_link_entities(
+        prompt,
+        proc,
+        b_data={"path": prompt.asset_ref} if getattr(prompt, "asset_ref", None) else None,
+    )
     from datetime import datetime, timezone  # noqa: PLC0415
 
     prompt.use_count = (prompt.use_count or 0) + 1
@@ -130,7 +138,7 @@ async def unpin_prompt() -> ApiResponse:
     if prompt is None:
         return ApiSuccessResponse(data={"pinned": False, "prompt_id": prompt_id})
 
-    await remove_prompt_process_link(prompt, proc)
+    await uncross_link_entities(prompt, proc)
 
     # Remove the backing .md first — Entity.destroy() purges the row + record
     # shadow but deliberately leaves asset files; here "unpin" means the
