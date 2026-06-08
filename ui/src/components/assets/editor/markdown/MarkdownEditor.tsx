@@ -10,8 +10,9 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { FSRef, TypeId } from '@sdk';
 import { downloadFile } from '@sdk/utils/utils';
 import Editor, { type OnMount } from '@monaco-editor/react';
-import { ChevronDown, ChevronRight, Copy, Download, Eye, ExternalLink, FileCode, FilePlus2, GraduationCap, MessageSquareDiff, Pencil, RefreshCw, Send, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Copy, Download, Eye, ExternalLink, FileCode, FilePlus2, GraduationCap, MessageSquareDiff, Pencil, RefreshCw, Trash2 } from 'lucide-react';
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
+import { ShareButton } from '@src/components/entity-actions/ShareButton';
 import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
 import { genericEntityShareSource } from '@src/hooks/share-sources';
 import { useTheme } from 'next-themes';
@@ -393,22 +394,12 @@ function MarkdownEditorContent({
 
   // ── Editor ─────────────────────────────────────────────────────────────────
   const shareButton = shareSource ? (
-    <button
-      type="button"
-      title="Share to conversation"
+    <ShareButton
       onClick={() => setShareOpen(true)}
-      data-testid="markdown-editor-share"
-      className="flex-shrink-0 rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
-    >
-      <Send className="h-3.5 w-3.5" />
-    </button>
+      tooltip="Share to a conversation"
+      testId="markdown-editor-share"
+    />
   ) : null;
-  const headerActions = shareButton ? (
-    <>
-      {toolbar}
-      {shareButton}
-    </>
-  ) : toolbar;
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -421,7 +412,8 @@ function MarkdownEditorContent({
         onOpenExternal={handleOpenExternal}
         onDownload={handleDownload}
         onDelete={handleDelete}
-        actions={headerActions}
+        leadingActions={shareButton}
+        actions={toolbar}
         showLearningMode={showLearningMode}
       />
       {shareSource && shareOpen && (
@@ -584,10 +576,12 @@ interface EditorHeaderProps {
   onDownload?: () => void;
   onDelete?: () => void;
   actions?: React.ReactNode;
+  /** Slot rendered to the left of the review/edit mode chips. */
+  leadingActions?: React.ReactNode;
   showLearningMode?: boolean;
 }
 
-function EditorHeader({ fileName, dirPath, dirty, viewMode, onViewModeChange, onOpenExternal, onDownload, onDelete, actions, showLearningMode }: EditorHeaderProps) {
+function EditorHeader({ fileName, dirPath, dirty, viewMode, onViewModeChange, onOpenExternal, onDownload, onDelete, actions, leadingActions, showLearningMode }: EditorHeaderProps) {
   const visibleModes = EDITOR_MODES.filter((m) => m !== 'learning' || showLearningMode);
   return (
     <div className="flex h-[52px] flex-shrink-0 items-center gap-2 border-b px-3">
@@ -638,6 +632,8 @@ function EditorHeader({ fileName, dirPath, dirty, viewMode, onViewModeChange, on
           )}
         </div>
       </div>
+
+      {leadingActions}
 
       <div className="flex flex-shrink-0 items-center rounded-md border bg-muted/40 p-0.5">
         {visibleModes.map((mode) => {
