@@ -15,7 +15,9 @@ from flow_sdk.api.oauth_api import OAuthAction, OAuthErrorCode, OAuthProvider, O
 from flow_sdk.app.actions.desktop_oauth import (
     _desktop_oauth_sessions,
     cancel_github_device_flow,
+    delete_anthropic_token_for_current_user,
     get_desktop_oauth_auth_url,
+    get_anthropic_token_for_current_user,
     handle_desktop_oauth_callback,
     wait_for_desktop_oauth_callback,
 )
@@ -116,6 +118,8 @@ async def oauth_main() -> ApiResponse:
                 return await _handle_flowpad_cloud_disconnect()
             if provider == "github":
                 return await _handle_github_disconnect()
+            if provider == "anthropic":
+                return await delete_anthropic_token_for_current_user()
             return ApiSuccessResponse(
                 message=f"OAuth {provider} disconnected (desktop stub)",
                 data={"remaining_attachment_count": 0},
@@ -131,25 +135,32 @@ async def oauth_main() -> ApiResponse:
 async def _handle_status(provider: str) -> ApiResponse:
     """Check OAuth connection status for a provider.
 
-    Desktop mode: checks if Anthropic auth is available via detect_claude_code_auth.
-    For GitHub, reads the github_credentials SOD entry. For other providers, returns MISSING.
+    Desktop mode reads Flowpad-owned SOD entries. It never inspects Claude Code's
+    credential store.
     """
     try:
         if provider == "anthropic":
-            try:
-                from flow_sdk.builtin.faas.claude_code_auth import detect_claude_code_auth
-                auth_status = await detect_claude_code_auth()
+            credentials, error = await get_anthropic_token_for_current_user()
+            if error is not None:
                 return ApiSuccessResponse(
                     message="Connection status checked",
                     data={
-                        "status": "available" if auth_status.is_authenticated else "missing",
-                        "has_token": auth_status.is_authenticated,
-                        "is_attached": auth_status.is_authenticated,
-                        "auth_method": auth_status.auth_method.value if hasattr(auth_status, 'auth_method') else "none",
+                        "status": "error",
+                        "has_token": False,
+                        "is_attached": False,
+                        "auth_method": "anthropic",
+                        "error": error,
                     },
                 )
-            except ImportError:
-                pass
+            return ApiSuccessResponse(
+                message="Connection status checked",
+                data={
+                    "status": "available" if credentials else "missing",
+                    "has_token": bool(credentials),
+                    "is_attached": bool(credentials),
+                    "auth_method": "anthropic",
+                },
+            )
 
         if provider == "github":
             token, error = await _get_github_token_for_current_user()

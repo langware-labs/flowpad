@@ -28,6 +28,7 @@ import { ConnectionStatus, dataContext, navigator, ShellStatus, type OAuthConnec
 import { useAuth, useContext } from '@sdk/react/hooks';
 import { AssetsPage } from '@src/components/assets/AssetsPage';
 import { ConnectionsManager } from '@src/components/connections-manager';
+import { CapabilitiesView } from '@src/components/capabilities-view';
 import { ConversationRoute } from '@src/components/conversation';
 import { InboxView } from '@src/components/inbox-view/InboxView';
 import { SurveyView } from '@src/components/survey/SurveyView';
@@ -420,6 +421,13 @@ export function ContentPanel() {
             className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
           >
             <TriggersView />
+          </TabsContent>
+
+          <TabsContent
+            value={ViewType.CAPABILITIES}
+            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
+          >
+            <CapabilitiesView />
           </TabsContent>
 
           <TabsContent

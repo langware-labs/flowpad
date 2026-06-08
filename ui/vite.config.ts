@@ -110,6 +110,13 @@ export default defineConfig(({ mode }) => {
       alias: {
         '@src': path.resolve(__dirname, './src'),
         '@sdk': path.resolve(__dirname, '../ts_sdk/src'),
+        // @xterm/headless 6.0.0 declares module:"lib/xterm.mjs" but ships
+        // lib-headless/xterm-headless.mjs — Node resolves via main, Vite via
+        // module and fails. Point straight at the shipped ESM build.
+        '@xterm/headless': path.resolve(
+          __dirname,
+          'node_modules/@xterm/headless/lib-headless/xterm-headless.mjs',
+        ),
       },
       dedupe: [
         'react',

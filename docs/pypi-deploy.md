@@ -60,6 +60,13 @@ server is *your* build and not the installed/published one.
 
 > Give it `<version>+local` (e.g. `0.2.38+local`). This is a PEP 440 *local
 > version label* — the `+` is required; a bare `-local` will not build.
+>
+> **Redeploying the same base version?** Check what's installed first (bare
+> `flow` prints it). If that version already carries a local label, use the
+> next number as the suffix: `+local2`, `+local3`, … Never reuse a label that
+> is already deployed — with an identical version string you can't tell from
+> `flow` / `upgrade --info` whether the running server is the new build or the
+> previous one.
 
 ### 1. Stop the desktop app if it's running (and remember whether it was)
 

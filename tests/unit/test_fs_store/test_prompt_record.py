@@ -104,3 +104,52 @@ def test_reserved_queue_block_stays_file_only(tmp_path: Path):
     # v1: the queue block is reserved — parsed file stays intact, no record field
     assert getattr(rec, "queue", None) in (None, {})
     assert "clear_first" in p.read_text()
+
+
+def test_extract_usage_counter_round_trip(tmp_path: Path):
+    """use_count / last_used_at survive a reindex (frontmatter → record)."""
+    p = _write_md(
+        tmp_path / "prompts" / "used.md",
+        "Do the thing.",
+        frontmatter=f"id: {V4_ID}\nname: Used\nuse_count: 7\nlast_used_at: 2026-06-05T10:00:00Z\n",
+    )
+    [rec] = extract_prompt(FSRef(p))
+    assert rec.use_count == 7
+    assert rec.last_used_at == "2026-06-05T10:00:00Z"
+
+
+def test_extract_usage_counter_defaults_and_junk(tmp_path: Path):
+    """Absent counters default to 0; junk values are ignored, not errors."""
+    p = _write_md(tmp_path / "prompts" / "fresh.md", "New.", frontmatter="name: Fresh\n")
+    [rec] = extract_prompt(FSRef(p))
+    assert rec.use_count == 0
+    assert getattr(rec, "last_used_at", None) is None
+
+    junk = _write_md(
+        tmp_path / "prompts" / "junk.md",
+        "x",
+        frontmatter="name: Junk\nuse_count: banana\nlast_used_at: 42\n",
+    )
+    [rec2] = extract_prompt(FSRef(junk))
+    assert getattr(rec2, "use_count", None) in (None, 0)
+    assert getattr(rec2, "last_used_at", None) is None
+
+
+def test_default_body_renders_usage_counter(tmp_path: Path):
+    """Entity save path (_prompt_default_body) writes counters extract reads back."""
+    from flow_sdk.builtin.prompt import Prompt
+    from flow_sdk.schema.type_info.prompt_info import _prompt_default_body
+
+    entity = Prompt(name="Counted", text="Count me.", use_count=3, last_used_at="2026-06-05T10:00:00Z")
+    body = _prompt_default_body(entity)
+    p = tmp_path / "prompts" / "counted.md"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(body, encoding="utf-8")
+    [rec] = extract_prompt(FSRef(p))
+    assert rec.use_count == 3
+    assert rec.last_used_at == "2026-06-05T10:00:00Z"
+    assert rec.text == "Count me."
+
+    fresh = Prompt(name="Fresh", text="New.")
+    fresh_body = _prompt_default_body(fresh)
+    assert "use_count" not in fresh_body  # zero-usage prompts stay minimal

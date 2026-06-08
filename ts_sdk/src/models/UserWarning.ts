@@ -46,8 +46,6 @@ export interface UserWarning {
  * Warning IDs for built-in warnings
  */
 export const WARNING_IDS = {
-  LLM_NOT_CONFIGURED: 'llm-not-configured',
-  LLM_DISCONNECTED: 'llm-disconnected',
   CLOUD_DISCONNECTED: 'cloud-disconnected',
   CLOUD_LOGIN_FAILED: 'cloud-login-failed',
   CLOUD_CONNECTION_LOST: 'cloud-connection-lost',
@@ -57,20 +55,6 @@ export const WARNING_IDS = {
   SNIFFER_NOT_FOUND: 'sniffer-not-found',
   SECRETS_NOT_ENABLED: 'secrets-not-enabled',
 } as const;
-
-/**
- * Create a warning for LLM not configured
- */
-export function createLlmNotConfiguredWarning(): UserWarning {
-  return {
-    id: WARNING_IDS.LLM_NOT_CONFIGURED,
-    icon: 'AlertTriangle',
-    color: 'yellow',
-    message: 'LLM Not Configured',
-    description: 'Configure your AI provider to enable agent functionality',
-    targetView: ViewType.AI_CONFIG,
-  };
-}
 
 /**
  * Create a warning for cloud not connected

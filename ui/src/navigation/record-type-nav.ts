@@ -83,7 +83,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
       const sessionId = r.session_id;
       if (sessionId) {
         const p = await navigation.openWorkerSession(sessionId);
-        if (!p) notify.error({ title: 'Session not found', message: `Session ${sessionId} is not in Claude or Codex history.` });
+        if (!p) notify.error({ title: 'Session not found', message: `Session ${sessionId} is not in Claude, Codex, or Copilot history.` });
       }
     },
   },
@@ -93,7 +93,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
       if (sessionId) {
         const p = await AgenticProcess.getByWorkerId(sessionId);
         if (!p) {
-          notify.error({ title: 'Session not found', message: `Session ${sessionId} is not in Claude or Codex history.` });
+          notify.error({ title: 'Session not found', message: `Session ${sessionId} is not in Claude, Codex, or Copilot history.` });
           return;
         }
         navigation.openDockPointer(p.dockPointer, r.created_at ? { t: r.created_at } : undefined);
@@ -108,7 +108,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
       const sessionId = r.session_id;
       if (sessionId) {
         const p = await navigation.openWorkerSession(sessionId);
-        if (!p) notify.error({ title: 'Session not found', message: `Session ${sessionId} is not in Claude or Codex history.` });
+        if (!p) notify.error({ title: 'Session not found', message: `Session ${sessionId} is not in Claude, Codex, or Copilot history.` });
       }
     },
   },
@@ -156,7 +156,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
       const threadId = codexThreadIdFromResult(r);
       const p = await AgenticProcess.getByWorkerId(threadId);
       if (!p) {
-        notify.error({ title: 'Session not found', message: `Session ${threadId} is not in Claude or Codex history.` });
+        notify.error({ title: 'Session not found', message: `Session ${threadId} is not in Claude, Codex, or Copilot history.` });
         return;
       }
       navigation.openDock(p.dockPointer);
@@ -174,12 +174,32 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
       },
     ],
   },
+  copilot_session: {
+    primaryAction: async (r, navigation) => {
+      const sessionId = r.record_id.replace(/^copilot_session-/, '');
+      const p = await AgenticProcess.getByWorkerId(sessionId);
+      if (!p) {
+        notify.error({ title: 'Session not found', message: `Session ${sessionId} is not in Claude, Codex, or Copilot history.` });
+        return;
+      }
+      navigation.openDock(p.dockPointer);
+    },
+    actions: [
+      {
+        icon: FileText,
+        name: 'Transcript',
+        action: (r, navigation) => {
+          if (r.asset_ref) navigation.openDock(DockPointer.forLensTranscript('copilot', r.asset_ref));
+        },
+      },
+    ],
+  },
   claude_session: {
     primaryAction: async (r, navigation) => {
       const sessionId = sessionIdFromResult(r);
       const p = await AgenticProcess.getByWorkerId(sessionId);
       if (!p) {
-        notify.error({ title: 'Session not found', message: `Session ${sessionId} is not in Claude or Codex history.` });
+        notify.error({ title: 'Session not found', message: `Session ${sessionId} is not in Claude, Codex, or Copilot history.` });
         return;
       }
       navigation.openDock(p.dockPointer);

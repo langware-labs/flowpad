@@ -37,16 +37,18 @@ SubscriberCb = Callable[[str, Path, list[TranscriptEntry]], Awaitable[None]]
 def _infer_worker_type(path: Path) -> str:
     """Infer worker_type from the transcript file's path. Matches the canonical
     on-disk layout: Claude under ``~/.claude/projects/...``, Codex under
-    ``~/.codex/sessions/...``.
+    ``~/.codex/sessions/...``, Copilot under ``~/.copilot/session-state/...``.
 
     Returns the key understood by :func:`flow_sdk.transcript_analyzer.parsers.get_parser_class`:
-    ``"claude"`` or ``"codex"``.
+    ``"claude"``, ``"codex"``, or ``"copilot"``.
     """
     parts = path.parts
     if ".claude" in parts:
         return "claude"
     if ".codex" in parts:
         return "codex"
+    if ".copilot" in parts:
+        return "copilot"
     raise ValueError(f"Cannot infer worker_type from path: {path}")
 
 

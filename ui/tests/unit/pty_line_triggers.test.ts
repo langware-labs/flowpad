@@ -17,7 +17,7 @@ function makePty(): PtyConnection {
   const pc = new PtyConnection('test-shell', 'test-node');
   // Lift the post-replay gate so onOutput would also fire — irrelevant for
   // line listeners (which fire regardless), but keeps the test surface clean.
-  (pc as unknown as { _replayDone: boolean })._replayDone = true;
+  (pc as unknown as { _attached: boolean })._attached = true;
   return pc;
 }
 
@@ -79,7 +79,7 @@ describe('PtyConnection.onLine', () => {
 
   it('fires line listeners even when replay is not done (replay-inclusive)', () => {
     const pc = new PtyConnection('test-shell', 'test-node');
-    // _replayDone defaults to false — onOutput would NOT fire, but onLine should.
+    // _attached defaults to false — onOutput would NOT fire, but onLine should.
     const lines: string[] = [];
     pc.onLine((l) => lines.push(l));
 

@@ -4,6 +4,7 @@ import { AgenticProcess, Task } from '@sdk';
 import { ActionInfo } from '@sdk/models/ActionInfo';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { CodexIcon } from '@src/components/icons/CodexIcon';
+import { CopilotIcon } from '@src/components/icons/CopilotIcon';
 import { FavoriteStar } from '@src/components/favorites/FavoriteStar';
 import { useFlowpadAssistantProject } from '@src/components/floating-chat/useFlowpadAssistantProject';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -11,6 +12,7 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { notify } from '@src/notifications';
 import { useChipsExclude } from './ChipsExcludeContext';
 import { ChipKey } from './keys';
+import type { ComponentType } from 'react';
 
 interface MessageChipsProps {
   flowMessageId?: string;
@@ -21,18 +23,19 @@ interface MessageChipsProps {
   messageText?: string;
 }
 
-type WorkerType = 'claude_code' | 'codex';
+type WorkerType = 'claude_code' | 'codex' | 'copilot';
 
 interface Harness {
   workerType: WorkerType;
   name: string;
-  Icon: typeof ClaudeIcon;
+  Icon: ComponentType<{ className?: string }>;
   iconClassName?: string;
 }
 
 const HARNESSES: Harness[] = [
   { workerType: 'claude_code', name: 'claude', Icon: ClaudeIcon, iconClassName: 'text-orange-500' },
   { workerType: 'codex', name: 'codex', Icon: CodexIcon },
+  { workerType: 'copilot', name: 'copilot', Icon: CopilotIcon, iconClassName: 'text-sky-500' },
 ];
 
 function localDownloadUrl(messageId: string): string {

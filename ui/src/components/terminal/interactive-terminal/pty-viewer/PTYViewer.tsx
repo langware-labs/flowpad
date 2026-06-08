@@ -1,16 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
-import { Check, ClipboardList, Loader2, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, X } from 'lucide-react';
+import { Check, ClipboardList, Maximize2, Minimize2, PanelLeftClose, PanelLeftOpen, X } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
-import type { Shell, PtySequenceData, PtySequenceChunkMeta } from '@sdk';
+import type { Shell } from '@sdk';
 import {
-  PtyValidationStatus,
   buildViewerData,
-  fetchReplayChunks,
-  getXtermChunkCount,
+  getXtermChunks,
   formatTimestamp,
   formatBytes,
   decodePlainText,
+  type PtyMemoryChunk,
   type PtyViewerData,
 } from './pty-viewer-logic';
 
@@ -19,20 +18,6 @@ interface Props {
   onClose: () => void;
   shell: Shell | null;
 }
-
-const STATUS_COLORS: Record<PtyValidationStatus, string> = {
-  [PtyValidationStatus.MATCH]: 'text-emerald-400',
-  [PtyValidationStatus.MISMATCH]: 'text-red-400',
-  [PtyValidationStatus.NO_DATA]: 'text-muted-foreground',
-  [PtyValidationStatus.PRE_ALIGNMENT]: 'text-yellow-400',
-};
-
-const STATUS_LABELS: Record<PtyValidationStatus, string> = {
-  [PtyValidationStatus.MATCH]: 'OK',
-  [PtyValidationStatus.MISMATCH]: 'MISMATCH',
-  [PtyValidationStatus.NO_DATA]: '\u2014',
-  [PtyValidationStatus.PRE_ALIGNMENT]: 'pre-align',
-};
 
 // Tag categories for coloring
 const TAG_COLORS = {
@@ -232,16 +217,10 @@ function SegmentRenderer({ segments, showCursor }: { segments: Segment[]; showCu
 function buildLogText(
   shellId: string,
   data: PtyViewerData,
-  replayData: PtySequenceData,
-  xtermChunkCount: number,
+  chunks: PtyMemoryChunk[],
 ): string {
-  const baseTimestamp = replayData.chunks[0]?.timestamp;
-  const statsLine = [
-    `Replay: ${data.totalChunks} chunks (${formatBytes(data.totalSizeBytes)})`,
-    `xterm: ${xtermChunkCount} chunks`,
-    data.ptyFileSize > 0 ? `PTY file: ${formatBytes(data.ptyFileSize)}` : null,
-    data.alignmentSeq >= 0 ? `Aligned at seq ${data.alignmentSeq}` : null,
-  ].filter(Boolean).join('  ');
+  const baseTimestamp = chunks[0]?.timestamp;
+  const statsLine = `xterm memory: ${data.totalChunks} chunks (${formatBytes(data.totalSizeBytes)})`;
 
   const SEP = '─'.repeat(82);
   const lines: string[] = [
@@ -250,20 +229,13 @@ function buildLogText(
     statsLine,
     SEP,
     '',
-    ` ${'seq'.padStart(5)} │ ${'time'.padEnd(10)} │ ${'size'.padStart(7)} │ ${'status'.padEnd(9)} │ events / preview`,
-    `${'─'.repeat(7)}┼${'─'.repeat(12)}┼${'─'.repeat(9)}┼${'─'.repeat(11)}┼${'─'.repeat(42)}`,
+    ` ${'seq'.padStart(5)} │ ${'time'.padEnd(10)} │ ${'size'.padStart(7)} │ events / preview`,
+    `${'─'.repeat(7)}┼${'─'.repeat(12)}┼${'─'.repeat(9)}┼${'─'.repeat(42)}`,
   ];
 
-  const statusLabels: Record<PtyValidationStatus, string> = {
-    [PtyValidationStatus.MATCH]: 'OK',
-    [PtyValidationStatus.MISMATCH]: 'MISMATCH',
-    [PtyValidationStatus.NO_DATA]: '—',
-    [PtyValidationStatus.PRE_ALIGNMENT]: 'pre-align',
-  };
-
+  const bySeq = new Map(chunks.map((c) => [c.seq, c]));
   for (const row of data.rows) {
-    const chunk = replayData.chunks.find(c => c.seq === row.seq);
-    const status = statusLabels[row.validationStatus];
+    const chunk = bySeq.get(row.seq);
     const time = formatTimestamp(row.timestamp, baseTimestamp);
     const size = formatBytes(row.size);
     const eventStr = row.namedEvents.map(e => e.data ? `${e.name}(${e.data})` : e.name).join(' ');
@@ -273,19 +245,17 @@ function buildLogText(
       if (plain) preview = plain.slice(0, 50);
     }
     const content = [eventStr, preview].filter(Boolean).join(' │ ');
-    lines.push(` ${String(row.seq).padStart(5)} │ ${time.padEnd(10)} │ ${size.padStart(7)} │ ${status.padEnd(9)} │ ${content}`);
+    lines.push(` ${String(row.seq).padStart(5)} │ ${time.padEnd(10)} │ ${size.padStart(7)} │ ${content}`);
   }
 
   return lines.join('\n');
 }
 
 export function PTYViewer({ open, onClose, shell }: Props) {
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<PtyViewerData | null>(null);
-  const [replayData, setReplayData] = useState<PtySequenceData | null>(null);
-  const [xtermChunkCount, setXtermChunkCount] = useState(0);
-  const [selectedChunk, setSelectedChunk] = useState<PtySequenceChunkMeta | null>(null);
+  const [chunks, setChunks] = useState<PtyMemoryChunk[]>([]);
+  const [selectedChunk, setSelectedChunk] = useState<PtyMemoryChunk | null>(null);
   const [showCursor, setShowCursor] = useState(true);
   const [expanded, setExpanded] = useState(false);
   const [tableExpanded, setTableExpanded] = useState(false);
@@ -294,41 +264,27 @@ export function PTYViewer({ open, onClose, shell }: Props) {
   const draggingRef = useRef(false);
 
   const handleCopyLog = useCallback(() => {
-    if (!data || !replayData || !shell) return;
-    const text = buildLogText(shell.id, data, replayData, xtermChunkCount);
+    if (!data || !shell) return;
+    const text = buildLogText(shell.id, data, chunks);
     navigator.clipboard.writeText(text).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
-  }, [data, replayData, shell, xtermChunkCount]);
+  }, [data, chunks, shell]);
 
   useEffect(() => {
     if (!open || !shell) return;
-    setLoading(true);
     setError(null);
     setSelectedChunk(null);
 
-    (async () => {
-      try {
-        const replay = await fetchReplayChunks(shell);
-        setReplayData(replay);
-        setXtermChunkCount(getXtermChunkCount(shell));
-
-        let ptyFileBytes: Uint8Array | null = null;
-        if (replay.pty_file_b64) {
-          const bin = atob(replay.pty_file_b64);
-          ptyFileBytes = new Uint8Array(bin.length);
-          for (let i = 0; i < bin.length; i++) ptyFileBytes[i] = bin.charCodeAt(i);
-        }
-
-        const viewerData = buildViewerData(replay, ptyFileBytes);
-        setData(viewerData);
-      } catch (e) {
-        setError(e instanceof Error ? e.message : String(e));
-      } finally {
-        setLoading(false);
-      }
-    })();
+    try {
+      // Snapshot the live in-session chunks (xterm memory) — no server fetch.
+      const memChunks = getXtermChunks(shell);
+      setChunks(memChunks);
+      setData(buildViewerData(memChunks));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
   }, [open, shell]);
 
   const splitContainerRef = useRef<HTMLDivElement>(null);
@@ -351,7 +307,7 @@ export function PTYViewer({ open, onClose, shell }: Props) {
     window.addEventListener('mouseup', onUp);
   }, []);
 
-  const baseTimestamp = replayData?.chunks?.[0]?.timestamp;
+  const baseTimestamp = chunks[0]?.timestamp;
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) { setSelectedChunk(null); onClose(); } }}>
@@ -383,28 +339,17 @@ export function PTYViewer({ open, onClose, shell }: Props) {
           </DialogTitle>
         </DialogHeader>
 
-        {loading && (
-          <div className="flex items-center justify-center py-8">
-            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-          </div>
-        )}
-
         {error && (
           <div className="rounded border border-destructive/50 bg-destructive/10 px-3 py-2 text-xs text-destructive">
             {error}
           </div>
         )}
 
-        {data && !loading && (
+        {data && (
           <>
             {/* Summary stats */}
             <div className="flex gap-4 text-xs text-muted-foreground border-b pb-2 mb-2">
-              <span>Replay: <b className="text-foreground">{data.totalChunks}</b> chunks ({formatBytes(data.totalSizeBytes)})</span>
-              <span>xterm: <b className="text-foreground">{xtermChunkCount}</b> chunks</span>
-              {data.ptyFileSize > 0 && <span>PTY file: <b className="text-foreground">{formatBytes(data.ptyFileSize)}</b></span>}
-              {data.alignmentSeq >= 0 && (
-                <span>Aligned at seq <b className="text-foreground">{data.alignmentSeq}</b></span>
-              )}
+              <span>xterm memory: <b className="text-foreground">{data.totalChunks}</b> chunks ({formatBytes(data.totalSizeBytes)})</span>
             </div>
 
             <div ref={splitContainerRef} className="flex flex-1 min-h-0">
@@ -419,7 +364,6 @@ export function PTYViewer({ open, onClose, shell }: Props) {
                       <th className="text-left px-2 py-1 w-16">seq</th>
                       <th className="text-left px-2 py-1 w-24">time</th>
                       <th className="text-right px-2 py-1 w-16">size</th>
-                      <th className="text-center px-2 py-1 w-20">status</th>
                       <th className="text-left px-2 py-1">
                         <span className="flex items-center gap-1">
                           preview
@@ -434,7 +378,7 @@ export function PTYViewer({ open, onClose, shell }: Props) {
                   </thead>
                   <tbody>
                     {data.rows.map((row) => {
-                      const chunk = replayData?.chunks.find(c => c.seq === row.seq);
+                      const chunk = chunks.find(c => c.seq === row.seq);
                       const isSelected = selectedChunk?.seq === row.seq;
                       return (
                         <tr
@@ -445,9 +389,6 @@ export function PTYViewer({ open, onClose, shell }: Props) {
                           <td className="px-2 py-0.5">{row.seq}</td>
                           <td className="px-2 py-0.5">{formatTimestamp(row.timestamp, baseTimestamp)}</td>
                           <td className="px-2 py-0.5 text-right">{formatBytes(row.size)}</td>
-                          <td className={`px-2 py-0.5 text-center ${STATUS_COLORS[row.validationStatus]}`}>
-                            {STATUS_LABELS[row.validationStatus]}
-                          </td>
                           <td className="px-2 py-0.5 truncate max-w-[300px] text-muted-foreground">
                             {chunk?.data_b64 ? (
                               <TooltipProvider delayDuration={200}>

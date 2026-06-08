@@ -30,4 +30,10 @@ class Prompt(Entity):
     color: Optional[str] = APIField(
         None, description="Hex color from the curated contrast-tested palette."
     )
+    use_count: int = APIField(
+        0, description="Times this prompt was enqueued from the library."
+    )
+    last_used_at: Optional[str] = APIField(
+        None, description="ISO timestamp of the last library enqueue."
+    )
     asset_ref: Optional[str] = APIField(None)

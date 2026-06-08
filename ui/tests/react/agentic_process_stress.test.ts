@@ -32,12 +32,12 @@ function registerProcess(process: AgenticProcess): void {
 }
 
 /**
- * Wait until the shell has replayDone=true (i.e. startPty() has completed).
+ * Wait until the shell has attached=true (i.e. startPty() has completed).
  */
 async function waitForShellReady(shell: Shell, timeoutMs = 15000): Promise<void> {
   await vi.waitFor(
     () => {
-      if (!shell.replayDone) throw new Error('Shell not ready');
+      if (!shell.attached) throw new Error('Shell not ready');
     },
     { timeout: timeoutMs, interval: 200 },
   );
@@ -45,7 +45,7 @@ async function waitForShellReady(shell: Shell, timeoutMs = 15000): Promise<void>
 
 /**
  * Collect raw PTY output from a shell over a time window.
- * Requires shell to have replayDone=true (i.e. connect() must have been called).
+ * Requires shell to have attached=true (i.e. connect() must have been called).
  */
 async function collectPtyOutput(shell: Shell, durationMs: number): Promise<string> {
   const chunks: string[] = [];

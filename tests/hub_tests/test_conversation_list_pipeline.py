@@ -500,3 +500,129 @@ async def test_hub_401_surfaces_clearly(hub_base_url, monkeypatch):
     # both are correct UI signals.
     assert (data.get("auth_required") is True) or (data.get("hub_reachable") is False), \
         f"expected auth_required=True or hub_reachable=False, got {data}"
+
+
+# ---------------------------------------------------------------------------
+# 11. THE INCIDENT SHAPE: bare local projection + equal updated_date heals
+# ---------------------------------------------------------------------------
+
+
+async def test_count_mismatch_equal_date_dispatches_fetch_and_heals(hub_base_url, hub_login_payload):
+    """Reproduce the Jun-4 prod incident: the local Conversation row carries
+    the hub's updated_date (is_stale says current) but a blank projection.
+    The bidirectional count mismatch must dispatch a fetch, and the
+    authoritative reconcile must rebuild message_ids/message_count."""
+    api_key = _stash_credentials(hub_login_payload)
+    from flow_sdk.app.actions.flow_message_action import handle_conversation_list
+    from flow_sdk.builtin.conversation import Conversation, _PROJECTION_SENTINEL
+
+    conv_id = await _hub_create_conversation(hub_base_url, api_key,
+                                             title=f"incident-{uuid.uuid4()}")
+    await _hub_add_message(hub_base_url, api_key, conv_id, "m1")
+    await _hub_add_message(hub_base_url, api_key, conv_id, "m2")
+
+    someone = await _local_user_typeid()
+    await handle_conversation_list(someone)
+    # Wait for the initial materialization to settle (count lands via the
+    # background fetch → projection).
+    settled = await _poll_until(
+        lambda: Conversation.get_one({"id": conv_id}), timeout=10.0,
+    )
+    assert settled is not None
+
+    healthy = await _poll_until(
+        _projected(conv_id, expected_count=2), timeout=10.0,
+    )
+    assert healthy, f"initial sync never projected 2 messages for {conv_id[:8]}"
+
+    # Blank the projection while KEEPING the hub-carried updated_date — the
+    # exact bare-row shape the DB rebuild produced.
+    conv = await Conversation.get_one({"id": conv_id})
+    conv._set_projection("message_ids", None, _PROJECTION_SENTINEL)
+    conv._set_projection("message_count", 0, _PROJECTION_SENTINEL)
+    await conv.save(someone, notify=False)
+    bare = await Conversation.get_one({"id": conv_id})
+    assert not bare.message_ids and int(bare.message_count or 0) == 0  # precondition
+
+    resp = await handle_conversation_list(someone)
+    data = resp.data or {}
+    assert conv_id in data.get("bg_fetch_dispatched", []), \
+        f"count mismatch must dispatch a fetch; got {data.get('bg_fetch_dispatched')}"
+
+    healed = await _poll_until(
+        _projected(conv_id, expected_count=2), timeout=10.0,
+    )
+    assert healed, f"projection not healed for {conv_id[:8]}"
+
+
+def _projected(conv_id: str, *, expected_count: int):
+    """Async predicate: the local row's projection reports expected_count."""
+    from flow_sdk.builtin.conversation import Conversation
+
+    async def _check():
+        c = await Conversation.get_one({"id": conv_id})
+        if c is None:
+            return None
+        return c if int(c.message_count or 0) == expected_count and c.message_ids else None
+
+    return _check
+
+
+# ---------------------------------------------------------------------------
+# 12. created_date is hub-authoritative — wrong local values get repaired
+# ---------------------------------------------------------------------------
+
+
+async def test_created_date_adopted_from_hub(hub_base_url, hub_login_payload):
+    api_key = _stash_credentials(hub_login_payload)
+    from flow_sdk.app.actions.flow_message_action import handle_conversation_list
+    from flow_sdk.builtin.conversation import Conversation
+
+    conv_id = await _hub_create_conversation(hub_base_url, api_key,
+                                             title=f"birthday-{uuid.uuid4()}")
+    someone = await _local_user_typeid()
+    await handle_conversation_list(someone)
+    local = await _poll_until(
+        lambda: Conversation.get_one({"id": conv_id}), timeout=10.0,
+    )
+    assert local is not None
+
+    hub_row = await _hub_get_conversation(hub_base_url, api_key, conv_id)
+    hub_created = Conversation._as_datetime(hub_row.get("created_date"))
+    assert hub_created is not None
+
+    # Corrupt the local birth date (what a DB rebuild does), then re-list.
+    local.created_date = datetime(2030, 1, 1, tzinfo=timezone.utc)
+    await local.save(someone, notify=False)
+
+    await handle_conversation_list(someone)
+    repaired = await Conversation.get_one({"id": conv_id})
+    assert Conversation._as_datetime(repaired.created_date) == hub_created, \
+        f"created_date not repaired: {repaired.created_date} != hub {hub_created}"
+
+
+# ---------------------------------------------------------------------------
+# 13. fetched_at is stamped on hub refresh and never leaves the device
+# ---------------------------------------------------------------------------
+
+
+async def test_fetched_at_stamped_and_not_outbound(hub_base_url, hub_login_payload):
+    api_key = _stash_credentials(hub_login_payload)
+    from flow_sdk.app.actions.flow_message_action import handle_conversation_list
+    from flow_sdk.builtin.conversation import Conversation
+
+    conv_id = await _hub_create_conversation(hub_base_url, api_key,
+                                             title=f"fetched-{uuid.uuid4()}")
+    someone = await _local_user_typeid()
+    await handle_conversation_list(someone)
+    local = await _poll_until(
+        lambda: Conversation.get_one({"id": conv_id}), timeout=10.0,
+    )
+    assert local is not None
+    assert local.fetched_at is not None, "hub-refreshed row must carry fetched_at"
+
+    # LOCAL_ONLY: the outbound hub body must not include it.
+    assert "fetched_at" not in local._hub_body()
+    # And the hub row itself must not have one.
+    hub_row = await _hub_get_conversation(hub_base_url, api_key, conv_id)
+    assert "fetched_at" not in hub_row
