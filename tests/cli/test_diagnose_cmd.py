@@ -116,3 +116,51 @@ def test_renderer_ignores_non_message_entries(capsys):
     r.feed({"type": "system", "subtype": "init"})  # no "message" key
     r.finish()
     assert capsys.readouterr().out == ""
+
+
+# --------------------------------------------------------------------------- #
+# _run_diagnose — must not hang when the transcript stream never self-terminates
+# --------------------------------------------------------------------------- #
+
+@pytest.mark.asyncio
+async def test_run_diagnose_exits_when_recorded_even_if_stream_never_ends():
+    """Regression for the Windows hang: ``_tail_status`` can fail to report
+    COMPLETE (a long final report pushes the terminal markers out of its 4 KB
+    tail window), so ``stream_transcript`` never returns. The command must still
+    exit once the diagnosis is recorded. The 5 s ``wait_for`` is a hang DETECTOR
+    (it makes a regression fail fast) — not a budget to ride past the symptom.
+    """
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from flow_sdk.cli.commands import diagnose_cmd
+
+    class _FakeAP:
+        def __init__(self, **_kw):
+            self.id = "fake-id"
+            self.session_id = "fakesess"
+
+        def enable_assistant(self):
+            pass
+
+        async def prompt(self, _text):
+            return None
+
+        async def stream_transcript(self, timeout=0):
+            # Emit one narration entry, then never terminate (the hang we fix).
+            yield {"message": {"role": "assistant", "content": [{"type": "text", "text": "working"}]}}
+            await asyncio.sleep(3600)
+
+        @classmethod
+        async def get_by_id(cls, _id):
+            # Recording already landed: a flowpad_diagnosis is cross-linked in.
+            return SimpleNamespace(
+                private_context_entities=[SimpleNamespace(type="flowpad_diagnosis")]
+            )
+
+    with (
+        patch("flow_sdk.builtin.agentic_process.AgenticProcess", _FakeAP),
+        patch("flow_sdk.migrations.runner._bootstrap_local", new=AsyncMock(return_value=None)),
+    ):
+        rc = await asyncio.wait_for(diagnose_cmd._run_diagnose("", 1800.0), timeout=5)
+    assert rc == 0
