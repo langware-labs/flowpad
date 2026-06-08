@@ -9,6 +9,11 @@ A dataset holds many ``Example`` rows in one of two physical layouts (see
   occurrences) plus ``«slot».json`` metadata sidecars and an ``example.json``.
   Legacy ``input.txt`` / ``expected.txt`` are still accepted.
 
+Every dataset JSON file (``dataset.json``, ``example.json``, ``«slot».json``) is a
+two-section document — ``{"metadata": {...}, "data": {...}}``. ``metadata`` holds
+flowpad-managed known fields (parsed into typed attributes); ``data`` is a free
+object the use case owns. Both are surfaced on the carrier models below.
+
 The container is the entity; an ``Example`` is a plain Pydantic row parsed from
 disk on demand (a 50k-row CSV stays one record, not 50k entities). The
 train/eval/test split lives *per-example* as ``Example.kind`` — "the eval set"
@@ -67,7 +72,8 @@ class ExampleArtifact(BaseModel):
     files: List[str] = []               # FOLDER: contained file rel-paths (sorted); FILE: [path]
     text: Optional[str] = None          # decoded only for .txt/.md FILE artifacts; else None
     index: Optional[int] = None         # N in "output-2"; None for the bare artifact
-    metadata: Dict[str, Any] = {}       # from the sibling «base»[-N].json sidecar
+    metadata: Dict[str, Any] = {}       # «base»[-N].json `metadata` section (flowpad-managed)
+    data: Dict[str, Any] = {}           # «base»[-N].json `data` section (free, use-case-owned)
     id: str = ""                        # deterministic uuid5
 
 
@@ -81,7 +87,8 @@ class ExampleSlot(BaseModel):
 
     name: str                           # "input" | "output" | "ground_truth"
     artifacts: List["ExampleArtifact"] = []
-    metadata: Dict[str, Any] = {}
+    metadata: Dict[str, Any] = {}       # bare «base».json `metadata` section (slot-level)
+    data: Dict[str, Any] = {}           # bare «base».json `data` section (slot-level, free)
 
     @property
     def primary(self) -> Optional["ExampleArtifact"]:
@@ -104,7 +111,8 @@ class Example(BaseModel):
     kind: ExampleKind = ExampleKind.TRAIN
     input: str = ""                     # back-compat: input.txt/.md text, else "" (folder/binary)
     expected: Optional[str] = None      # back-compat: ground_truth primary text (None ⇒ unlabeled)
-    metadata: Dict[str, Any] = {}
+    metadata: Dict[str, Any] = {}       # example.json `metadata` section (kind/layout lifted from here)
+    data: Dict[str, Any] = {}           # example.json `data` section (free, use-case-owned)
 
     # Structured slots — empty for CSV and legacy text-only IO_FOLDER examples.
     input_slot: Optional[ExampleSlot] = None
@@ -128,6 +136,10 @@ class Dataset(Entity):
     # Denormalized counts surfaced in lists (computed by extract_dataset).
     num_examples: int = APIField(0)
     kind_counts: Dict[str, int] = APIField({})
+
+    # Free `data` section of dataset.json (use-case-owned passthrough). The
+    # `schema` and other known metadata fields ride in the record metadata.
+    data: Optional[Dict[str, Any]] = APIField(default_factory=dict)
 
     created_at: Optional[datetime] = APIField(None)
 

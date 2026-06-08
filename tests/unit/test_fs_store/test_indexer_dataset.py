@@ -35,6 +35,11 @@ pytestmark = pytest.mark.timeout(5)
 
 # ── fixtures ──────────────────────────────────────────────────────────────────
 
+def _doc(metadata: dict | None = None, data: dict | None = None) -> str:
+    """A two-section dataset JSON string: {"metadata": {...}, "data": {...}}."""
+    return json.dumps({"metadata": metadata or {}, "data": data or {}})
+
+
 def _seed_csv_dataset(
     project: Path,
     slug: str,
@@ -44,7 +49,7 @@ def _seed_csv_dataset(
 ) -> Path:
     ds = project / "assets" / "datasets" / slug
     ds.mkdir(parents=True)
-    (ds / "dataset.json").write_text(json.dumps(manifest), encoding="utf-8")
+    (ds / "dataset.json").write_text(_doc(metadata=manifest), encoding="utf-8")
     (ds / "data.csv").write_text(csv_text, encoding="utf-8")
     return ds
 
@@ -55,19 +60,22 @@ def _seed_io_dataset(
     *,
     examples: dict[str, dict],
     manifest: dict | None = None,
+    manifest_data: dict | None = None,
 ) -> Path:
     """Seed an io_folder dataset.
 
+    ``manifest`` / ``manifest_data`` become the dataset.json metadata / data sections.
     Per-example ``spec`` keys (all optional):
       - ``input`` / ``expected`` — shorthand → ``input.txt`` / ``expected.txt``
-      - ``meta`` — dict → ``meta.json``
+      - ``meta`` / ``data`` — dicts → ``meta.json`` metadata / data sections
       - ``files`` — ``{relpath: str | bytes}`` written verbatim (bytes → binary)
       - ``dirs`` — ``{dirname: {fname: str | bytes}}`` for folder artifacts
     """
     ds = project / "assets" / "datasets" / slug
     (ds / "examples").mkdir(parents=True)
     (ds / "dataset.json").write_text(
-        json.dumps(manifest or {"data_layout": "io_folder"}), encoding="utf-8"
+        _doc(metadata=manifest or {"data_layout": "io_folder"}, data=manifest_data),
+        encoding="utf-8",
     )
     for name, spec in examples.items():
         ex = ds / "examples" / name
@@ -76,8 +84,10 @@ def _seed_io_dataset(
             (ex / "input.txt").write_text(spec["input"], encoding="utf-8")
         if "expected" in spec:
             (ex / "expected.txt").write_text(spec["expected"], encoding="utf-8")
-        if "meta" in spec:
-            (ex / "meta.json").write_text(json.dumps(spec["meta"]), encoding="utf-8")
+        if "meta" in spec or "data" in spec:
+            (ex / "meta.json").write_text(
+                _doc(metadata=spec.get("meta"), data=spec.get("data")), encoding="utf-8"
+            )
         for rel, content in spec.get("files", {}).items():
             _write_file(ex / rel, content)
         for dname, members in spec.get("dirs", {}).items():
@@ -339,7 +349,7 @@ def test_input_file_beats_folder(tmp_path: Path) -> None:
 def test_input_layout_hint(tmp_path: Path) -> None:
     ds = _seed_io_dataset(
         tmp_path, "il",
-        examples={"0001": {"input": "x", "files": {"example.json": json.dumps({"layout": "pages"})}}},
+        examples={"0001": {"input": "x", "files": {"example.json": _doc(metadata={"layout": "pages"})}}},
     )
     assert _one(ds).layout == "pages"
 
@@ -469,11 +479,15 @@ def test_native_gt_wins_over_legacy_expected(tmp_path: Path) -> None:
 def test_slot_sidecar_attaches_to_artifact(tmp_path: Path) -> None:
     ds = _seed_io_dataset(
         tmp_path, "sc",
-        examples={"0001": {"files": {"input.pdf": b"%PDF", "input.json": json.dumps({"pages": 3})}}},
+        examples={"0001": {"files": {
+            "input.pdf": b"%PDF",
+            "input.json": _doc(metadata={"pages": 3}, data={"raw": [1, 2]}),
+        }}},
     )
     ex = _one(ds)
-    assert ex.input_slot.primary.metadata == {"pages": 3}
-    assert ex.input_slot.primary.kind == ArtifactKind.FILE  # pdf is the data, json is metadata
+    assert ex.input_slot.primary.metadata == {"pages": 3}   # flowpad-managed section
+    assert ex.input_slot.primary.data == {"raw": [1, 2]}    # free section
+    assert ex.input_slot.primary.kind == ArtifactKind.FILE  # pdf is the data, json is the sidecar
 
 
 def test_numbered_sidecar_attaches_per_index(tmp_path: Path) -> None:
@@ -481,7 +495,7 @@ def test_numbered_sidecar_attaches_per_index(tmp_path: Path) -> None:
         tmp_path, "nsc",
         examples={"0001": {"input": "i",
                            "dirs": {"ground_truth-2": {"grade.json": "{}"}},
-                           "files": {"ground_truth-2.json": json.dumps({"rater": "B"})}}},
+                           "files": {"ground_truth-2.json": _doc(metadata={"rater": "B"})}}},
     )
     ex = _one(ds)
     gt = ex.ground_truth_slot.primary
@@ -492,7 +506,7 @@ def test_numbered_sidecar_attaches_per_index(tmp_path: Path) -> None:
 def test_orphan_bare_sidecar_to_slot_metadata(tmp_path: Path) -> None:
     ds = _seed_io_dataset(
         tmp_path, "osc",
-        examples={"0001": {"input": "i", "files": {"output.json": json.dumps({"note": "x"})}}},
+        examples={"0001": {"input": "i", "files": {"output.json": _doc(metadata={"note": "x"})}}},
     )
     ex = _one(ds)
     assert ex.output_slot.artifacts == []
@@ -502,7 +516,7 @@ def test_orphan_bare_sidecar_to_slot_metadata(tmp_path: Path) -> None:
 def test_json_is_metadata_not_data(tmp_path: Path) -> None:
     ds = _seed_io_dataset(
         tmp_path, "jmd",
-        examples={"0001": {"input": "i", "files": {"ground_truth.json": json.dumps({"m": 1})}}},
+        examples={"0001": {"input": "i", "files": {"ground_truth.json": _doc(metadata={"m": 1})}}},
     )
     ex = _one(ds)
     assert ex.expected is None  # a bare .json is metadata, not gold data
@@ -512,18 +526,20 @@ def test_json_is_metadata_not_data(tmp_path: Path) -> None:
 def test_example_json_canonical(tmp_path: Path) -> None:
     ds = _seed_io_dataset(
         tmp_path, "ejc",
-        examples={"0001": {"input": "i", "files": {"example.json": json.dumps({"kind": "eval", "tag": "x"})}}},
+        examples={"0001": {"input": "i",
+                           "files": {"example.json": _doc(metadata={"kind": "eval"}, data={"tag": "x"})}}},
     )
     ex = _one(ds)
     assert ex.kind == ExampleKind.EVAL
-    assert ex.metadata == {"kind": "eval", "tag": "x"}
+    assert ex.metadata == {"kind": "eval"}   # known section
+    assert ex.data == {"tag": "x"}           # free section
 
 
 def test_example_json_overrides_meta_alias(tmp_path: Path) -> None:
     ds = _seed_io_dataset(
         tmp_path, "ejo",
         examples={"0001": {"input": "i", "meta": {"kind": "train", "a": 1},
-                           "files": {"example.json": json.dumps({"kind": "test", "b": 2})}}},
+                           "files": {"example.json": _doc(metadata={"kind": "test", "b": 2})}}},
     )
     ex = _one(ds)
     assert ex.kind == ExampleKind.TEST            # canonical wins
@@ -542,20 +558,22 @@ def test_meta_json_alias_still_works(tmp_path: Path) -> None:
 def test_reserved_keys_lifted_but_preserved(tmp_path: Path) -> None:
     ds = _seed_io_dataset(
         tmp_path, "rk",
-        examples={"0001": {"input": "i",
-                           "files": {"example.json": json.dumps({"kind": "test", "layout": "pages", "foo": 1})}}},
+        examples={"0001": {"input": "i", "files": {
+            "example.json": _doc(metadata={"kind": "test", "layout": "pages"}, data={"foo": 1}),
+        }}},
     )
     ex = _one(ds)
     assert ex.kind == ExampleKind.TEST
     assert ex.layout == "pages"
-    assert ex.metadata == {"kind": "test", "layout": "pages", "foo": 1}  # still present
+    assert ex.metadata == {"kind": "test", "layout": "pages"}  # lifted yet still present
+    assert ex.data == {"foo": 1}                               # free keys live in data
 
 
 def test_example_id_not_adopted_from_json(tmp_path: Path) -> None:
     foreign = str(uuid.uuid4())
     ds = _seed_io_dataset(
         tmp_path, "eid",
-        examples={"0001": {"input": "i", "files": {"example.json": json.dumps({"id": foreign})}}},
+        examples={"0001": {"input": "i", "files": {"example.json": _doc(metadata={"id": foreign})}}},
     )
     ex = _one(ds)
     assert ex.id == str(uuid.uuid5(uuid.NAMESPACE_DNS, "ds-x:0001"))
@@ -566,10 +584,11 @@ def test_dataset_json_extra_keys_preserved_in_record(tmp_path: Path) -> None:
     ds = _seed_io_dataset(
         tmp_path, "dje",
         examples={"0001": {"input": "i"}},
-        manifest={"data_layout": "io_folder", "owner": "eran"},
+        manifest={"data_layout": "io_folder"},
+        manifest_data={"owner": "eran"},
     )
     rec = extract_dataset(FSRef(ds))[0]
-    assert rec.meta_dict()["metadata"]["owner"] == "eran"
+    assert rec.meta_dict()["metadata"]["data"]["owner"] == "eran"  # free dataset data section
 
 
 # ── determinism / counts / hash ──
@@ -631,8 +650,8 @@ def test_mixed_dataset_endtoend(tmp_path: Path) -> None:
                 },
                 "files": {
                     "output-1.txt": "cand-1", "output-2.txt": "cand-2",
-                    "ground_truth.json": json.dumps({"rater": "A"}),
-                    "example.json": json.dumps({"kind": "eval", "layout": "pages"}),
+                    "ground_truth.json": _doc(metadata={"rater": "A"}),
+                    "example.json": _doc(metadata={"kind": "eval", "layout": "pages"}),
                 },
             },
         },
@@ -657,3 +676,79 @@ def test_mixed_dataset_endtoend(tmp_path: Path) -> None:
     assert meta["num_examples"] == 2
     assert meta["num_multi_output"] == 1
     assert meta["num_annotated"] == 2  # both examples have a ground_truth slot
+
+
+# ── two-section JSON: metadata (flowpad-managed) + data (free) ──
+
+def test_doc_two_section_split(tmp_path: Path) -> None:
+    ds = _seed_io_dataset(
+        tmp_path, "split",
+        examples={"0001": {"input": "i",
+                           "files": {"example.json": _doc(metadata={"kind": "eval"}, data={"foo": 1})}}},
+    )
+    ex = _one(ds)
+    assert ex.kind == ExampleKind.EVAL
+    assert ex.metadata == {"kind": "eval"}
+    assert ex.data == {"foo": 1}
+
+
+def test_flat_example_json_ignored(tmp_path: Path) -> None:
+    """A flat doc (no metadata/data sections) yields empty sections — mandatory."""
+    ds = _seed_io_dataset(
+        tmp_path, "flat",
+        examples={"0001": {"input": "i", "files": {"example.json": json.dumps({"kind": "eval"})}}},
+    )
+    ex = _one(ds)
+    assert ex.kind == ExampleKind.TRAIN  # flat 'kind' not read
+    assert ex.metadata == {}
+    assert ex.data == {}
+
+
+def test_bare_sidecar_two_section(tmp_path: Path) -> None:
+    ds = _seed_io_dataset(
+        tmp_path, "bsc",
+        examples={"0001": {"input": "i",
+                           "files": {"output.json": _doc(metadata={"k": 1}, data={"free": True})}}},
+    )
+    ex = _one(ds)
+    assert ex.output_slot.artifacts == []
+    assert ex.output_slot.metadata == {"k": 1}
+    assert ex.output_slot.data == {"free": True}
+
+
+def test_example_meta_two_section_merge(tmp_path: Path) -> None:
+    """meta.json (alias) + example.json (canonical) merge per section."""
+    ds = _seed_io_dataset(
+        tmp_path, "merge",
+        examples={"0001": {"input": "i",
+                           "meta": {"kind": "train", "a": 1},          # → meta.json metadata
+                           "data": {"x": 1},                            # → meta.json data
+                           "files": {"example.json": _doc(metadata={"kind": "test", "b": 2}, data={"y": 2})}}},
+    )
+    ex = _one(ds)
+    assert ex.kind == ExampleKind.TEST                       # canonical wins
+    assert ex.metadata == {"kind": "test", "a": 1, "b": 2}   # metadata sections merged
+    assert ex.data == {"x": 1, "y": 2}                       # data sections merged
+
+
+def test_dataset_json_two_section(tmp_path: Path) -> None:
+    ds = _seed_io_dataset(
+        tmp_path, "djts",
+        examples={"0001": {"input": "i"}},
+        manifest={"data_layout": "io_folder", "title": "T"},
+        manifest_data={"owner": "eran", "team": "ml"},
+    )
+    meta = extract_dataset(FSRef(ds))[0].meta_dict()["metadata"]
+    assert meta["data_layout"] == "io_folder"          # known field from metadata section
+    assert meta["data"] == {"owner": "eran", "team": "ml"}  # free dataset data section
+
+
+def test_dataset_schema_passthrough(tmp_path: Path) -> None:
+    schema = {"input": {"scan": {"type": "object"}}}
+    ds = _seed_io_dataset(
+        tmp_path, "schema",
+        examples={"0001": {"input": "i"}},
+        manifest={"data_layout": "io_folder", "schema": schema},
+    )
+    meta = extract_dataset(FSRef(ds))[0].meta_dict()["metadata"]
+    assert meta["schema"] == schema  # opaque known field, surfaced verbatim

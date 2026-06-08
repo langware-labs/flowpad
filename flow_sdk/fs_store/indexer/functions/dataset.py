@@ -5,15 +5,20 @@ manifest (which is also the walker's marker file). The manifest declares the
 physical layout; the example rows live beside it:
 
     assets/datasets/<slug>/
-      dataset.json                 # {id?, title, description, data_layout, field_spec, delimiter}
+      dataset.json                 # {"metadata": {id?, data_layout, field_spec, schema, …}, "data": {…}}
       data.csv                     # data_layout == "csv"
       examples/0001/...            # data_layout == "io_folder" (see below)
+
+Every dataset JSON file (``dataset.json``, ``example.json``, ``«slot».json``) is a
+two-section document — ``{"metadata": {…}, "data": {…}}``. ``metadata`` holds
+flowpad-managed known fields; ``data`` is a free, use-case-owned object. Sections
+are mandatory: a flat doc yields empty sections (``_load_doc``).
 
 For ``io_folder`` each ``examples/<name>/`` dir carries up to three slots —
 ``input``, ``output`` (candidate), ``ground_truth`` (gold) — where each slot is
 a file ``«base».«ext»``, a folder ``«base»/``, or numbered occurrences
 ``«base»-«N»`` (multiple outputs / consensus annotations). A sibling
-``«base»[-N].json`` is that artifact's metadata sidecar (``.json`` is never slot
+``«base»[-N].json`` is that artifact's two-section sidecar (``.json`` is never slot
 data). Per-example metadata lives in ``example.json`` (alias: ``meta.json``).
 Back-compat: ``input.txt``/``expected.txt`` still populate ``Example.input`` /
 ``Example.expected`` (the latter folds onto the ground_truth slot).
@@ -96,9 +101,24 @@ def _load_json_dict(path: Path) -> dict[str, Any]:
     return loaded if isinstance(loaded, dict) else {}
 
 
-def _load_manifest(dataset_dir: Path) -> dict[str, Any]:
-    """Load dataset.json, returning {} when absent or malformed."""
-    return _load_json_dict(dataset_dir / MANIFEST)
+def _load_doc(path: Path) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Read a two-section dataset JSON → ``(metadata, data)``.
+
+    Every dataset JSON file is ``{"metadata": {...}, "data": {...}}``. Each
+    section defaults to ``{}`` when absent or non-dict. A flat doc (neither
+    section) yields ``({}, {})`` — the two-section structure is mandatory.
+    """
+    obj = _load_json_dict(path)
+    meta, data = obj.get("metadata"), obj.get("data")
+    return (
+        meta if isinstance(meta, dict) else {},
+        data if isinstance(data, dict) else {},
+    )
+
+
+def _load_manifest(dataset_dir: Path) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Load dataset.json as ``(metadata, data)``; both ``{}`` when absent."""
+    return _load_doc(dataset_dir / MANIFEST)
 
 
 def _dataset_id_from_path(path: Path) -> str:
@@ -117,7 +137,8 @@ def dataset_gen_id(ref: FSRef) -> str:
     path = ref._path
     if not path.is_dir():
         return _dataset_id_from_path(path)
-    return _id_from_manifest(_load_manifest(path), path)
+    meta, _ = _load_manifest(path)
+    return _id_from_manifest(meta, path)
 
 
 # ── parser (shared by both layouts) ───────────────────────────────────────────
@@ -207,18 +228,21 @@ def _resolve_ambiguity(a: Path, b: Path) -> Path:
     return min(a, b, key=lambda p: p.name)
 
 
+_Doc = tuple[dict[str, Any], dict[str, Any]]  # a sidecar's (metadata, data) sections
+
+
 def _assemble_slot(
     ex_dir: Path,
     base: str,
     data: dict[int | None, Path],
-    sidecars: dict[int | None, dict[str, Any]],
+    sidecars: dict[int | None, _Doc],
     example_id: str,
 ) -> ExampleSlot | None:
     """Build one ``ExampleSlot`` from its bucketed data artifacts + sidecars.
 
     Artifacts are ordered (bare first, then numbered ascending); each consumes
-    its matching ``«base»[-N].json`` sidecar into ``.metadata``. A bare sidecar
-    with no data artifact lands in ``slot.metadata``. ``None`` when both empty.
+    its matching ``«base»[-N].json`` sidecar (its ``metadata``/``data`` sections).
+    A bare sidecar with no data artifact lands at slot level. ``None`` when empty.
     """
     if not data and not sidecars:
         return None
@@ -226,10 +250,11 @@ def _assemble_slot(
     artifacts: list[ExampleArtifact] = []
     for index in ordered:
         art = _build_artifact(ex_dir, data[index], index)
-        art.metadata = sidecars.pop(index, {})  # consume the matching sidecar
+        art.metadata, art.data = sidecars.pop(index, ({}, {}))  # consume the matching sidecar
         art.id = _slot_id(example_id, base, index)
         artifacts.append(art)
-    return ExampleSlot(name=base, artifacts=artifacts, metadata=sidecars.get(None, {}))
+    slot_meta, slot_data = sidecars.get(None, ({}, {}))  # orphan bare sidecar → slot level
+    return ExampleSlot(name=base, artifacts=artifacts, metadata=slot_meta, data=slot_data)
 
 
 def _discover_slots(
@@ -242,7 +267,7 @@ def _discover_slots(
     artifact or sidecar.
     """
     data: dict[str, dict[int | None, Path]] = {b: {} for b in bases}
-    sidecars: dict[str, dict[int | None, dict[str, Any]]] = {b: {} for b in bases}
+    sidecars: dict[str, dict[int | None, _Doc]] = {b: {} for b in bases}
     for entry in ex_dir.iterdir():
         is_dir = entry.is_dir()
         for base in bases:
@@ -251,7 +276,7 @@ def _discover_slots(
                 continue
             role, index = verdict
             if role == "sidecar":
-                sidecars[base][index] = _load_json_dict(entry)
+                sidecars[base][index] = _load_doc(entry)
             else:
                 prev = data[base].get(index)
                 data[base][index] = entry if prev is None else _resolve_ambiguity(prev, entry)
@@ -281,12 +306,19 @@ def _primary_text(slot: ExampleSlot | None) -> str | None:
     return None
 
 
-def _load_example_meta(ex_dir: Path) -> dict[str, Any]:
-    """Merge ``meta.json`` (alias) then ``example.json`` (canonical wins)."""
-    merged: dict[str, Any] = {}
+def _load_example_meta(ex_dir: Path) -> _Doc:
+    """Merge ``meta.json`` (alias) then ``example.json`` (canonical wins).
+
+    Each is a two-section doc; the ``metadata`` and ``data`` sections merge
+    independently, with ``example.json`` overriding ``meta.json`` per section.
+    """
+    metadata: dict[str, Any] = {}
+    data: dict[str, Any] = {}
     for fname in (EXAMPLE_META_ALIAS, EXAMPLE_META):
-        merged.update(_load_json_dict(ex_dir / fname))
-    return merged
+        m, d = _load_doc(ex_dir / fname)
+        metadata.update(m)
+        data.update(d)
+    return metadata, data
 
 
 def iter_examples(
@@ -334,7 +366,7 @@ def iter_examples(
         if not ex_dir.is_dir():
             continue
         example_id = _example_id(dataset_id, ex_dir.name)
-        meta = _load_example_meta(ex_dir)
+        ex_meta, ex_data = _load_example_meta(ex_dir)
 
         slots = _discover_slots(ex_dir, (*SLOT_BASES, EXPECTED_LEGACY), example_id)
         input_slot = slots.get("input")
@@ -348,14 +380,15 @@ def iter_examples(
 
         rows.append(Example(
             id=example_id,
-            kind=_coerce_enum(meta.get("kind"), ExampleKind, ExampleKind.TRAIN),
+            kind=_coerce_enum(ex_meta.get("kind"), ExampleKind, ExampleKind.TRAIN),
             input=_primary_text(input_slot) or "",
             expected=_primary_text(gt_slot),  # gold = ground_truth only; output never feeds expected
-            metadata=meta,
+            metadata=ex_meta,
+            data=ex_data,
             input_slot=input_slot,
             output_slot=slots.get("output"),
             ground_truth_slot=gt_slot,
-            layout=meta.get("layout"),
+            layout=ex_meta.get("layout"),
         ))
     return rows
 
@@ -367,12 +400,12 @@ def extract_dataset(ref: FSRef) -> list[FSRecord]:
     path = ref._path
     if not path.is_dir() or not (path / MANIFEST).is_file():
         return []
-    manifest = _load_manifest(path)
+    ds_meta, ds_data = _load_manifest(path)
 
-    ds_id = _id_from_manifest(manifest, path)
-    layout = _coerce_enum(manifest.get("data_layout"), DataLayoutEnum, DataLayoutEnum.CSV)
-    field_spec = manifest.get("field_spec") if isinstance(manifest.get("field_spec"), dict) else {}
-    delimiter = manifest.get("delimiter") or ","
+    ds_id = _id_from_manifest(ds_meta, path)
+    layout = _coerce_enum(ds_meta.get("data_layout"), DataLayoutEnum, DataLayoutEnum.CSV)
+    field_spec = ds_meta.get("field_spec") if isinstance(ds_meta.get("field_spec"), dict) else {}
+    delimiter = ds_meta.get("delimiter") or ","
     examples = iter_examples(path, layout, field_spec, delimiter, dataset_id=ds_id)
 
     kind_counts: dict[str, int] = {}
@@ -389,12 +422,12 @@ def extract_dataset(ref: FSRef) -> list[FSRecord]:
         ):
             num_binary_inputs += 1
 
-    name = manifest.get("title") or path.name
-    description = manifest.get("description") if isinstance(manifest.get("description"), str) else ""
+    name = ds_meta.get("title") or path.name
+    description = ds_meta.get("description") if isinstance(ds_meta.get("description"), str) else ""
     content = "\n".join(p for p in (name, description) if p)
 
     metadata = {
-        **manifest,
+        **ds_meta,  # known dataset fields (incl. `schema`) from the metadata section
         "data_layout": str(layout),
         "field_spec": field_spec,
         "delimiter": delimiter,
@@ -403,6 +436,7 @@ def extract_dataset(ref: FSRef) -> list[FSRecord]:
         "num_annotated": num_annotated,
         "num_multi_output": num_multi_output,
         "num_binary_inputs": num_binary_inputs,
+        "data": ds_data,  # free dataset-level `data` section (use-case-owned)
     }
 
     rec_kwargs: dict[str, Any] = {
