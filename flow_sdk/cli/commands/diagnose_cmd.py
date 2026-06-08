@@ -10,6 +10,7 @@ backend is down). This command is just the runner: spin up the worker, stream, e
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import sys
 from pathlib import Path
@@ -117,16 +118,6 @@ async def _run_diagnose(message: str, transcript_timeout: float) -> int:
     renderer = _Renderer()
     rendered = 0
 
-    async def _stream() -> None:
-        nonlocal rendered
-        idx = 0
-        async for entry in ap.stream_transcript(timeout=transcript_timeout):
-            if idx >= rendered:
-                renderer.feed(entry)
-            idx += 1
-        rendered = idx
-        renderer.finish()  # close any open progress row before the next message
-
     async def _recorded() -> bool:
         """Per-run completion signal: the worker's Step 7 cross-links a
         flowpad_diagnosis into THIS process's private context. A fresh DB read
@@ -136,6 +127,43 @@ async def _run_diagnose(message: str, transcript_timeout: float) -> int:
         if fresh is None:
             return False
         return any(t.type == "flowpad_diagnosis" for t in fresh.private_context_entities)
+
+    async def _consume() -> None:
+        nonlocal rendered
+        idx = 0
+        async for entry in ap.stream_transcript(timeout=transcript_timeout):
+            if idx >= rendered:
+                renderer.feed(entry)
+            idx += 1
+        rendered = idx
+
+    async def _stream() -> None:
+        """Render the worker's transcript, stopping when the turn ends OR — more
+        reliably — when the diagnosis is recorded (Step 7 done).
+
+        We can't depend solely on the transcript's own end-of-turn detection:
+        ``_tail_status`` derives COMPLETE from only the last 4 KB of the JSONL, and
+        a long final report (one big assistant line) can push the terminal markers
+        out of that window, so the stream never sees COMPLETE and polls to its
+        deadline — the command hangs long after the work is done (seen on Windows).
+        ``_recorded()`` is authoritative: once the cross-link exists the run is
+        finished, so we stop then. This is a definitive completion check, not a
+        wait budget — we exit the instant either the stream ends or recording lands.
+        """
+        consumer = asyncio.create_task(_consume())
+        try:
+            while not consumer.done():
+                if await _recorded():
+                    break
+                # Re-check cadence only — there is no give-up timeout; we leave
+                # the loop as soon as the stream finishes or recording is detected.
+                await asyncio.wait({consumer}, timeout=1.5)
+        finally:
+            if not consumer.done():
+                consumer.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await consumer
+            renderer.finish()  # close any open progress row before the next message
 
     nudge_text = (
         "You have NOT recorded the diagnosis yet, so nothing was saved. Complete the "
