@@ -1,12 +1,9 @@
 import { useCallback, useState } from 'react';
 import { FlowMessage, TypeId, type HubClientErrorInfo } from '@sdk';
-import {
-  AttachmentType,
-  BodyStatus,
-  attachmentDataString,
-  type Attachment,
-} from '@sdk/entities/flow-message';
+import { AttachmentType, BodyStatus, attachmentDataString, type Attachment } from '@sdk/entities/flow-message';
 import { AttachmentChipState } from './AttachmentChip';
+import { isPromptAttachment } from './attachment-actions/prompt-attachment';
+import { isTranscriptAttachment } from './conversation-context-aggregation';
 import { isDownloadableFileAttachment, localAttachmentUrl } from './attachment-url';
 import { useFlowMessageProgress, type FlowMessageProgress } from './useFlowMessageProgress';
 import { useFlowMessageDownloadError } from './useFlowMessageDownloadError';
@@ -47,6 +44,13 @@ export interface UseAttachments {
    *  so every renderable attachment is local. The UI switches the whole message
    *  between the Download button and rendered chips off this one flag. */
   downloaded: boolean;
+  /** True when the message carries the `conversation.jsonl` transcript. The
+   *  transcript is deliberately NOT in `items` (it surfaces in the Context
+   *  tab) — this flag lets the bubble say so instead of rendering nothing. */
+  sharesTranscript: boolean;
+  /** True when the message carries a PROMPT attachment (the prompt row
+   *  renders it). */
+  hasPrompt: boolean;
   /** Count of attached assets (files + entities) — the Download button badge. */
   assetCount: number;
   /** Human labels for the Download button tooltip: entity typeids + filenames. */
@@ -97,21 +101,19 @@ function stateFor(att: Attachment, bodyStatus: BodyStatus): AttachmentChipState 
 function buildItems(fm: FlowMessage | null | undefined, messageId: string): AttachmentView[] {
   if (!fm) return [];
   const bodyStatus = fm.body_status ?? BodyStatus.NA;
-  return (fm.attachment ?? [])
-    .filter(isDownloadableFileAttachment)
-    .map((a) => {
-      const d = attachmentDataString(a);
-      const state = stateFor(a, bodyStatus);
-      return {
-        key: d,
-        filename: d.split('/').pop() || d,
-        state,
-        // localAttachmentUrl is itself gated on local_path, so this is null for
-        // every non-Downloaded state — belt-and-suspenders with `state`.
-        url: state === AttachmentChipState.Downloaded ? localAttachmentUrl(messageId, a) : null,
-        localPath: state === AttachmentChipState.Downloaded ? (a.local_path ?? null) : null,
-      };
-    });
+  return (fm.attachment ?? []).filter(isDownloadableFileAttachment).map((a) => {
+    const d = attachmentDataString(a);
+    const state = stateFor(a, bodyStatus);
+    return {
+      key: d,
+      filename: d.split('/').pop() || d,
+      state,
+      // localAttachmentUrl is itself gated on local_path, so this is null for
+      // every non-Downloaded state — belt-and-suspenders with `state`.
+      url: state === AttachmentChipState.Downloaded ? localAttachmentUrl(messageId, a) : null,
+      localPath: state === AttachmentChipState.Downloaded ? (a.local_path ?? null) : null,
+    };
+  });
 }
 
 /**
@@ -120,10 +122,7 @@ function buildItems(fm: FlowMessage | null | undefined, messageId: string): Atta
  * signals, and the one download entrypoint. Components render from this and
  * never build an `fs/download` URL or call `download_body` directly.
  */
-export function useAttachments(
-  fm: FlowMessage | null | undefined,
-  messageId: string,
-): UseAttachments {
+export function useAttachments(fm: FlowMessage | null | undefined, messageId: string): UseAttachments {
   const [downloading, setDownloading] = useState(false);
   const progress = useFlowMessageProgress(messageId);
   const { error, dismiss } = useFlowMessageDownloadError(messageId);
@@ -133,12 +132,12 @@ export function useAttachments(
   const items = buildItems(fm, messageId);
   const entities = buildEntities(fm);
   const downloaded = fm?.body_downloaded ?? false;
+  const sharesTranscript = (fm?.attachment ?? []).some(isTranscriptAttachment);
+  // Both prompt generations count: legacy PROMPT and entity-backed TYPE_ID.
+  const hasPrompt = (fm?.attachment ?? []).some(isPromptAttachment);
   // The Download button badge + tooltip: one entry per attached asset
   // (entity typeids + file names) so the user sees what a pull will fetch.
-  const assetLabels = [
-    ...entities.map((t) => `${t.type}-${t.id}`),
-    ...items.map((i) => i.filename),
-  ];
+  const assetLabels = [...entities.map((t) => `${t.type}-${t.id}`), ...items.map((i) => i.filename)];
   const assetCount = assetLabels.length;
 
   const download = useCallback(async () => {
@@ -160,6 +159,8 @@ export function useAttachments(
     items,
     entities,
     downloaded,
+    sharesTranscript,
+    hasPrompt,
     assetCount,
     assetLabels,
     progress,

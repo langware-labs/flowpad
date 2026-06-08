@@ -160,6 +160,53 @@ def _codex_activity_by_cwd() -> dict[str, dict[str, Any]]:
     return activity
 
 
+def _copilot_activity_by_cwd() -> dict[str, dict[str, Any]]:
+    root = get_instance_settings().user_home / ".copilot" / "session-state"
+    activity: dict[str, dict[str, Any]] = {}
+    if not root.is_dir():
+        return activity
+    for workspace in root.glob("*/workspace.yaml"):
+        cwd = _read_copilot_workspace_cwd(workspace)
+        if not cwd or not _is_valid_project_cwd(cwd):
+            continue
+        canonical = canonical_posix_path(cwd)
+        item = activity.setdefault(
+            canonical,
+            {
+                "session_count": 0,
+                "modified_at": None,
+            },
+        )
+        item["session_count"] = _int_field(item.get("session_count")) + 1
+        event_path = workspace.parent / "events.jsonl"
+        stat_path = event_path if event_path.exists() else workspace
+        try:
+            modified_at = _iso_from_mtime(stat_path.stat().st_mtime)
+        except OSError:
+            modified_at = None
+        if modified_at and modified_at > (item.get("modified_at") or ""):
+            item["modified_at"] = modified_at
+    return activity
+
+
+def _read_copilot_workspace_cwd(path: Path) -> str | None:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("cwd:"):
+            continue
+        value = stripped.split(":", 1)[1].strip()
+        if (value.startswith('"') and value.endswith('"')) or (
+            value.startswith("'") and value.endswith("'")
+        ):
+            value = value[1:-1]
+        return value or None
+    return None
+
+
 def _read_codex_session_cwd(path: Path) -> str | None:
     try:
         with open(path, "rb") as fh:
@@ -189,6 +236,7 @@ def _merge_project(
     *,
     claude: bool = False,
     codex: bool = False,
+    copilot: bool = False,
     claude_dir_name: str | None = None,
     session_count: int = 0,
     modified_at: str | None = None,
@@ -214,10 +262,12 @@ def _merge_project(
             "session_count": 0,
             "claude_session_count": 0,
             "codex_session_count": 0,
+            "copilot_session_count": 0,
             "modified_at": None,
             "scope": ["user"],
             "claude": False,
             "codex": False,
+            "copilot": False,
             "worker_types": [],
         },
     )
@@ -235,9 +285,15 @@ def _merge_project(
         item["codex_session_count"] = (
             _int_field(item.get("codex_session_count")) + session_count
         )
+    if copilot:
+        item["copilot"] = True
+        item["copilot_session_count"] = (
+            _int_field(item.get("copilot_session_count")) + session_count
+        )
     item["session_count"] = (
         _int_field(item.get("claude_session_count"))
         + _int_field(item.get("codex_session_count"))
+        + _int_field(item.get("copilot_session_count"))
     )
     if modified_at and modified_at > (item.get("modified_at") or ""):
         item["modified_at"] = modified_at
@@ -246,6 +302,8 @@ def _merge_project(
         worker_types.append("claude")
     if item["codex"]:
         worker_types.append("codex")
+    if item["copilot"]:
+        worker_types.append("copilot")
     item["worker_types"] = worker_types
 
 
@@ -262,6 +320,7 @@ async def list_projects_from_indexer() -> dict[str, Any]:
 
     all_projects = await get_all_projects(create_missing=True)
     codex_activity = _codex_activity_by_cwd()
+    copilot_activity = _copilot_activity_by_cwd()
     # One pass over claude_root → cwd lookup; otherwise the per-project search
     # below would re-scan and re-decode every JSONL N times (lossy encoder
     # forces JSONL inspection).
@@ -291,6 +350,14 @@ async def list_projects_from_indexer() -> dict[str, Any]:
                 session_count=_int_field(activity.get("session_count")),
                 modified_at=activity.get("modified_at"),
             )
+        if "copilot" in info.worker_types or canonical in copilot_activity:
+            activity = copilot_activity.get(canonical, {})
+            _merge_project(
+                projects_by_cwd, canonical,
+                copilot=True,
+                session_count=_int_field(activity.get("session_count")),
+                modified_at=activity.get("modified_at"),
+            )
         if canonical not in projects_by_cwd:
             # Entity-only project (no Claude/Codex worker history yet)
             _merge_project(
@@ -302,19 +369,32 @@ async def list_projects_from_indexer() -> dict[str, Any]:
         row["id"] = info.project_id or row["id"]
         row["name"] = info.name or row["name"]
 
+    for canonical, activity in copilot_activity.items():
+        if canonical in projects_by_cwd:
+            continue
+        _merge_project(
+            projects_by_cwd,
+            canonical,
+            copilot=True,
+            session_count=_int_field(activity.get("session_count")),
+            modified_at=activity.get("modified_at"),
+        )
+
     projects = list(projects_by_cwd.values())
     projects.sort(key=lambda item: item.get("modified_at") or "", reverse=True)
 
     claude_count = sum(1 for item in projects if item["claude"])
     codex_count = sum(1 for item in projects if item["codex"])
-    both_count = sum(1 for item in projects if item["claude"] and item["codex"])
-    none_count = sum(1 for item in projects if not item["claude"] and not item["codex"])
+    copilot_count = sum(1 for item in projects if item["copilot"])
+    both_count = sum(1 for item in projects if len(item["worker_types"]) > 1)
+    none_count = sum(1 for item in projects if not item["worker_types"])
 
     return {
         "projects": projects,
         "total_count": len(projects),
         "claude_count": claude_count,
         "codex_count": codex_count,
+        "copilot_count": copilot_count,
         "both_count": both_count,
         "none_count": none_count,
     }

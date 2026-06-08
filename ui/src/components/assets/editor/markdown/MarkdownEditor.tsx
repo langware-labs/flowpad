@@ -10,7 +10,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { FSRef, TypeId } from '@sdk';
 import { downloadFile } from '@sdk/utils/utils';
 import Editor, { type OnMount } from '@monaco-editor/react';
-import { ChevronDown, ChevronRight, Download, Eye, ExternalLink, FileCode, FilePlus2, GraduationCap, MessageSquareDiff, Pencil, RefreshCw, Send, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Copy, Download, Eye, ExternalLink, FileCode, FilePlus2, GraduationCap, MessageSquareDiff, Pencil, RefreshCw, Send, Trash2 } from 'lucide-react';
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
 import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
 import { genericEntityShareSource } from '@src/hooks/share-sources';
@@ -600,6 +600,14 @@ function EditorHeader({ fileName, dirPath, dirty, viewMode, onViewModeChange, on
           {dirPath && (
             <span className="min-w-0 truncate text-[11px] text-muted-foreground">{dirPath}</span>
           )}
+          <button
+            title="Copy path"
+            onClick={() => void navigator.clipboard.writeText(dirPath ? `${dirPath}/${fileName}` : fileName)}
+            data-testid="markdown-editor-copy-path"
+            className="flex-shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+          >
+            <Copy className="h-3 w-3" />
+          </button>
           <button
             title="Reveal in Finder"
             onClick={onOpenExternal}

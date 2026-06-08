@@ -11,6 +11,7 @@ import { useInboxStore } from '@src/store/use-inbox-store';
 import { useSpotlightStore } from '@src/store/use-spotlight-store';
 import {
   ArrowLeft,
+  BadgeCheck,
   RefreshCw,
   BookOpen,
   Bug,
@@ -45,6 +46,7 @@ const mainNavItems = [
   // { title: 'Execute Flow', icon: PlaySquare, viewType: ViewType.EXECUTE_FLOW },
   { title: 'Assets', icon: BookOpen, viewType: ViewType.ASSETS },
   { title: 'Triggers', icon: Zap, viewType: ViewType.TRIGGERS },
+  { title: 'Capabilities', icon: BadgeCheck, viewType: ViewType.CAPABILITIES },
 ] as const;
 
 const secondaryNavItems = [

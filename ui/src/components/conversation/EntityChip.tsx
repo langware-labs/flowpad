@@ -39,6 +39,8 @@ interface EntityChipProps {
   inside?: { type: string; id: string };
   /** Optional click override — bypass the standard A-inside-B navigation. */
   onClick?: () => void;
+  /** Project shell to use when the chip opens an asset editor pointer. */
+  projectId?: string | null;
   /** Tooltip text. Defaults to "Open <name>". */
   title?: string;
   /** Visual size — "chip" matches the conversation-toolbar buttons. Default "chip". */
@@ -129,7 +131,7 @@ function resolveTypeAndId(entity: EntityChipEntity): { type: string; id: string 
  * entity has no id (decorative use, e.g. an "Approve & Execute" prompt
  * chip) the chip looks the same but only fires `onClick`.
  */
-export function EntityChip({ entity, inside, onClick, title, size = 'chip' }: EntityChipProps) {
+export function EntityChip({ entity, inside, onClick, projectId, title, size = 'chip' }: EntityChipProps) {
   const { navigation } = useDockNavigation();
   const resolved = resolveTypeAndId(entity);
   const Icon = entity.icon ?? (resolved ? ICON_BY_TYPE[resolved.type] : undefined) ?? ExternalLink;
@@ -148,9 +150,9 @@ export function EntityChip({ entity, inside, onClick, title, size = 'chip' }: En
       }
       if (!resolved || !resolved.id) return;
       const pointer = buildDockPointer(resolved as { type: string; id: string }, inside);
-      if (pointer) navigation.openDock(pointer);
+      if (pointer) navigation.openDock(DockPointer.rebaseAssetsOntoProject(pointer, projectId));
     };
-  }, [onClick, resolved, inside, navigation]);
+  }, [onClick, resolved, inside, navigation, projectId]);
 
   const baseLayout =
     size === 'chip'
@@ -192,6 +194,10 @@ export function buildDockPointer(
       return DockPointer.forSpec(resolved.id);
     case 'conversation':
       return DockPointer.forConversation(resolved.id);
+    case 'claude_session':
+      // ClaudeTranscript: the entity id IS the Claude session id — open the
+      // transcript lens (same target as ProcessToolbar's "Open transcript").
+      return DockPointer.forLensTranscript('claude', resolved.id);
     default: {
       // Asset-editor types (markdown family, agent, skill, workflow, whiteboard)
       // open by their TypeId — no asset_ref needed; the loader resolves the
@@ -219,6 +225,7 @@ interface ContextEntityChipProps {
   typeId: TypeId;
   inside?: { type: string; id: string };
   onClick?: () => void;
+  projectId?: string | null;
   title?: string;
   size?: 'chip' | 'inline';
 }
@@ -233,10 +240,13 @@ interface ContextEntityChipProps {
  * hand-constructing each chip.
  */
 
-export function ContextEntityChip({ typeId, inside, onClick, title, size }: ContextEntityChipProps) {
+export function ContextEntityChip({ typeId, inside, onClick, projectId, title, size }: ContextEntityChipProps) {
   // Resolve the display name; navigation is owned by the single ``EntityChip``.
   // Asset types navigate by TypeId (the loader resolves the entity), so there's
   // no asset_ref to fetch and no deferral/prewarm dance — the chip just renders.
+  // Generic context chips can point at any entity type; the SDK hook's recursive
+  // entity generic has no concrete type here.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data } = useEntity<APIEntity<any>>(typeId);
   const resolvedName = data?.displayName ?? typeId.toString();
 
@@ -245,6 +255,7 @@ export function ContextEntityChip({ typeId, inside, onClick, title, size }: Cont
       entity={{ typeId, type: typeId.type, id: typeId.id, name: resolvedName }}
       inside={inside}
       onClick={onClick}
+      projectId={projectId}
       title={title}
       size={size}
     />

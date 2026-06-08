@@ -480,6 +480,57 @@ async def test_remove_dir_action(tree):
 
 
 @pytest.mark.asyncio
+async def test_foreign_project_skill_under_home_is_hidden(tree):
+    """A skill scoped to a DIFFERENT project must not ride in via the
+    user_home prefix swallow (user_home is the real $HOME in prod, so other
+    projects' checkouts live under it — e.g. ~/Documents/dev/flowpad-app).
+
+    Visibility matrix for the same entity:
+      - plain process (no relation to that project)      → hidden
+      - its dir explicitly in additional_dirs            → ADDITIONAL_DIR
+      - process bound to that project                    → PROJECT_DIR
+    """
+    foreign_root = tree["user_home"] / "dev" / "other-checkout"
+    f_skill_path = foreign_root / ".claude" / "skills" / "f_skill"
+    f_skill_path.mkdir(parents=True, exist_ok=True)
+
+    foreign_project = await Project(
+        id=str(uuid.uuid4()),
+        name=f"foreign_project_{uuid.uuid4().hex[:6]}",
+        fs_storage_mount_path=str(foreign_root),
+    ).save()
+    f_skill_ent = await Skill(
+        id=str(uuid.uuid4()), name=f"f_skill_{uuid.uuid4().hex[:6]}",
+        asset_ref=canonical_posix_path(f_skill_path),
+        scope="project", project_id=foreign_project.id,
+    ).save()
+    try:
+        # 1. Unrelated process: the foreign-project skill is under user_home,
+        #    but its project scope forbids the USER_DIR attribution.
+        proc = _make_proc()
+        descs = await proc.get_asset_descriptors()
+        assert f_skill_ent.id not in {d.typeid.split("-", 1)[1] for d in descs}
+
+        # 2. Explicit mount stays authoritative: additional_dirs surfaces it.
+        proc2 = _make_proc(additional_dirs=[str(foreign_root)])
+        descs2 = await proc2.get_asset_descriptors()
+        extra = _by_source(descs2, AssetSource.ADDITIONAL_DIR)
+        assert f_skill_ent.id in {d.typeid.split("-", 1)[1] for d in extra}
+
+        # 3. A process bound to that project sees it as PROJECT_DIR.
+        proc3 = _make_proc(project_id=foreign_project.id)
+        descs3 = await proc3.get_asset_descriptors()
+        proj = _by_source(descs3, AssetSource.PROJECT_DIR)
+        assert f_skill_ent.id in {d.typeid.split("-", 1)[1] for d in proj}
+    finally:
+        for e in (f_skill_ent, foreign_project):
+            try:
+                await e.delete()
+            except Exception:
+                pass
+
+
+@pytest.mark.asyncio
 async def test_get_asset_descriptors_read_only_partition(tree, monkeypatch):
     """Every descriptor returned by get_asset_descriptors() agrees with
     is_readonly_source — no surprise/dynamic mismatches between actual

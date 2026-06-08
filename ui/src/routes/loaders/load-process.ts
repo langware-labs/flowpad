@@ -17,6 +17,7 @@ import {
 } from '@sdk';
 import { estimateCols, estimateRows } from '@src/components/terminal/interactive-terminal/terminalConfig';
 import { ensureTerminalsFetched } from '@src/hooks/useActiveTerminals';
+import { bumpLastActive } from '@src/tabs/last-active';
 import { perfLog, perfTime } from './_perf';
 import { loadProject } from './load-project';
 
@@ -46,7 +47,8 @@ export type ProcessLoadErrorKind =
   | 'runtime_terminated'    // soft — backend ``open`` returned null (process stopped/orphan)
   | 'shell_entity_missing'  // soft — start succeeded but Shell entity can't be resolved
   | 'pty_attach_failed'     // soft — PTY couldn't attach (compute node, mismatched pty_id, …)
-  | 'project_missing';      // soft — process.project_id points at a deleted Project
+  | 'project_missing'       // soft — process.project_id points at a deleted Project
+  | 'failed_to_start';      // soft — worker exits instantly; backend latched, auto-relaunch paused
 
 export type ProcessLoadErrorSeverity = 'hard' | 'soft';
 
@@ -79,7 +81,19 @@ function classifyRuntimeFailure(
   process: AgenticProcess,
   cause: unknown,
 ): ProcessLoadError {
-  const msg = cause instanceof Error ? cause.message : String(cause ?? '');
+  // ApiFailResponse bodies surface through axios as a generic "Request
+  // failed with status code 500" Error.message — the server's actual
+  // message lives in response.data.message. Prefer it when present.
+  const responseMsg = (cause as { response?: { data?: { message?: string } } })?.response?.data
+    ?.message;
+  const msg = responseMsg ?? (cause instanceof Error ? cause.message : String(cause ?? ''));
+  if (/failed to start/i.test(msg)) {
+    // Backend `open` refused: the worker exited instantly on its last
+    // launch and the process is latched (`start_failure`). Auto-relaunch
+    // is paused — only the banner's explicit Retry (start({retry:true}))
+    // clears it.
+    return new ProcessLoadError('failed_to_start', processId, process.shell_id ?? null, cause);
+  }
   if (/process may be terminated/i.test(msg)) {
     return new ProcessLoadError('runtime_terminated', processId, process.shell_id ?? null, cause);
   }
@@ -203,6 +217,7 @@ export async function loadProcess(
   await perfTime('dataContext sync setters (shellId/target/workdir)', async () => {
     dataContext.setActiveShellId(shell!.id);
     dataContext.setActiveTerminalTargetTypeId(new TypeId(AgenticProcess.type, processId));
+    bumpLastActive(process); // recency seed on the process (tab identity) — Bug 1
     dataContext.setWorkdir(
       process!.workdir ?? shell!.workdir ?? dataContext.project?.fs_storage_mount_path ?? null,
     );

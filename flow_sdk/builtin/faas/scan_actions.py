@@ -14,26 +14,45 @@ from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccess
 def _resolve_session_record(session_id: str, hint: str | None = None):
     """Locate a session record on disk by id, auto-discovering worker_type.
 
-    With ``hint`` set to ``"claude"`` or ``"codex"``, only the matching
-    backend is probed. Without a hint, Claude is tried first, then Codex.
+    With ``hint`` set to ``"claude"``, ``"codex"``, or ``"copilot"``, only
+    the matching backend is probed. Without a hint, Claude is tried first,
+    then Codex, then Copilot.
 
     Returns ``(record, worker_type)`` on hit; ``(None, None)`` on miss.
-    Worker_type is the canonical query/api spelling — ``"claude"`` or ``"codex"``.
+    Worker_type is the canonical query/api spelling.
     """
-    if hint not in (None, "claude", "codex"):
+    if hint not in (None, "claude", "codex", "copilot"):
         return None, None
 
-    if hint != "codex":
+    if hint not in ("codex", "copilot"):
         from flow_sdk.fs_store.indexer.functions.claude_sessions import get_claude_session
         rec = get_claude_session(session_id)
         if rec is not None:
             return rec, "claude"
 
-    if hint != "claude":
+    if hint not in ("claude", "copilot"):
         from flow_sdk.fs_store.indexer.functions.codex_sessions import get_codex_session
         rec = get_codex_session(session_id)
         if rec is not None:
             return rec, "codex"
+
+    if hint not in ("claude", "codex"):
+        from types import SimpleNamespace
+
+        from flow_sdk.builtin.agentic_process.cli_drivers.copilot.session_history import (
+            find_copilot_session_jsonl,
+            read_copilot_session_meta,
+        )
+
+        path = find_copilot_session_jsonl(session_id)
+        if path is not None:
+            meta = read_copilot_session_meta(path)
+            return SimpleNamespace(
+                cwd=meta.get("cwd"),
+                name=session_id,
+                jsonl_path=str(path),
+                source_file=str(path),
+            ), "copilot"
 
     return None, None
 
@@ -136,8 +155,8 @@ class ScanActionsMixin:
         if not item_type:
             return ApiFailResponse(message="type parameter is required")
 
-        # Cost / usage / context moved to dedicated analytics actions
-        # (get-cost-overview / get-claude-usage / get-claude-context).
+        # Cost / context moved to dedicated analytics actions
+        # (get-cost-overview / get-claude-context).
         # scan-item now only serves a flat resource-type list (e.g. skills).
         _ITEM_TO_RESOURCE = {
             "skills": "skill",
@@ -245,6 +264,7 @@ class ScanActionsMixin:
         from flow_sdk.builtin.agentic_process import AgenticProcess
         from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeCliOptions
         from flow_sdk.builtin.agentic_process.cli_drivers.codex import CodexCliOptions
+        from flow_sdk.builtin.agentic_process.cli_drivers.copilot import CopilotCliOptions
         from flow_sdk.flowpad_types.enums import ProcessType, WorkerType
 
         try:
@@ -262,6 +282,12 @@ class ScanActionsMixin:
                 context_raw = {}
 
             visible = bool(body.get("visible", False))
+            # Optional first prompt to seed onto the queue BEFORE the visible
+            # auto-start below, so the worker boots with it as its launch arg
+            # (``_perform_open`` pops the head). Enqueuing here — pre-start —
+            # is what makes launch-via-queue deterministic; a post-start enqueue
+            # would race the boot and fall back to the stdin path.
+            launch_prompt = body.get("launch_prompt")
             result_data = body.get("result")
 
             context_data = dict(context_raw)
@@ -288,14 +314,16 @@ class ScanActionsMixin:
             additional_dirs: list[str] = list(context_data.pop("additional_dirs", None) or [])
 
             # Worker selection — accept ``worker_type`` from the AgenticContext
-            # so the UI can launch a Codex tab from the same opener flow that
-            # spawns Claude. Anything other than ``codex`` falls back to the
-            # historical Claude CLI shape.
+            # so the UI can launch alternate CLI tabs from the same opener flow
+            # that spawns Claude. An unknown value is a hard error: silently
+            # substituting Claude launches the wrong worker with no signal
+            # (e.g. a UI that knows 'copilot' talking to a backend that
+            # doesn't), which is far more confusing than a failed request.
             worker_type_raw = context_data.pop("worker_type", None) or WorkerType.CLAUDE_CODE.value
             try:
                 worker_type = WorkerType(worker_type_raw)
             except ValueError:
-                worker_type = WorkerType.CLAUDE_CODE
+                return ApiFailResponse(message=f"Unknown worker_type: {worker_type_raw!r}")
 
             model = context_data.pop("model", None) or None
             permission_mode = context_data.pop("permission_mode", "bypassPermissions")
@@ -314,6 +342,15 @@ class ScanActionsMixin:
                 context_data.pop("chrome", None)
                 context_data.pop("debug", None)
                 context_data.pop("worktree", None)
+            elif worker_type == WorkerType.COPILOT:
+                cli_opts = CopilotCliOptions(
+                    model=model,
+                    permission_mode=permission_mode,
+                    effort=context_data.pop("effort", None),
+                )
+                context_data.pop("chrome", None)
+                context_data.pop("debug", None)
+                context_data.pop("worktree", None)
             else:
                 cli_opts = ClaudeCliOptions(
                     model=model,
@@ -325,8 +362,8 @@ class ScanActionsMixin:
                     worktree=bool(context_data.pop("worktree", False)),
                 )
 
-            if fork_session and resume_session_id and worker_type != WorkerType.CODEX:
-                # Codex has no fork concept — fall through to plain resume below.
+            if fork_session and resume_session_id and worker_type not in (WorkerType.CODEX, WorkerType.COPILOT):
+                # Codex/Copilot have no fork concept — fall through to plain resume below.
                 cli_opts.resume = True
                 cli_opts.fork_session_id = resume_session_id
             elif resume_session_id:
@@ -413,6 +450,18 @@ class ScanActionsMixin:
 
             logging.info(f"ComputeNode {self.id} created AgenticProcess {process.id}")
 
+            # Seed the launch prompt onto the queue BEFORE any auto-start. Use
+            # the PromptQueue directly (not the enqueue *action*) so we don't
+            # schedule a competing drain — the start_pty below drains the head
+            # as the launch instruction.
+            if launch_prompt and str(launch_prompt).strip():
+                try:
+                    process.queue.enqueue(str(launch_prompt), source="ui")
+                except Exception:
+                    logging.exception(
+                        f"ComputeNode {self.id} createProcess: failed to seed launch prompt for {process.id}"
+                    )
+
             # Visible (PTY) processes spawn the linked Shell here so the
             # frontend gets a fully-attached row in one round-trip; otherwise
             # the tab strip races a Phase-B refresh and ends up empty.
@@ -493,7 +542,7 @@ class ScanActionsMixin:
     ) -> ApiResponse:
         """Find or create an AgenticProcess for ``session_id``.
 
-        Resolves session record on disk (Claude or Codex), heals an existing
+        Resolves session record on disk, heals an existing
         AgenticProcess if one matches ``session_id``, otherwise creates a new
         one and atomically spawns its Shell + PTY. Returns the full entity
         dict so callers can hydrate the frontend cache without a follow-up
@@ -510,8 +559,13 @@ class ScanActionsMixin:
 
         try:
             is_codex = worker_type_raw in ("codex",)
-            cli_factory_key = "codex" if is_codex else "claude"
-            wt_enum = WorkerType.CODEX if is_codex else WorkerType.CLAUDE_CODE
+            is_copilot = worker_type_raw in ("copilot",)
+            cli_factory_key = "copilot" if is_copilot else ("codex" if is_codex else "claude")
+            wt_enum = (
+                WorkerType.COPILOT
+                if is_copilot
+                else (WorkerType.CODEX if is_codex else WorkerType.CLAUDE_CODE)
+            )
 
             # Resolve workdir + project_id from the session record.
             # Transcript cwd is the authoritative restore location; project_id is
@@ -524,7 +578,7 @@ class ScanActionsMixin:
                 if session_rec is None:
                     session_rec, _ = _resolve_session_record(
                         session_id,
-                        hint="codex" if is_codex else "claude",
+                        hint="copilot" if is_copilot else ("codex" if is_codex else "claude"),
                     )
 
                 if session_rec:
@@ -635,9 +689,21 @@ class ScanActionsMixin:
                 except Exception:
                     pass
 
-            context_data = {}
-            if workdir:
-                context_data["workdir"] = workdir
+            # Defense-in-depth: a resumed session must restore into its
+            # original cwd. Creating the process without one would let
+            # get_project() bind an arbitrary ancestor project and bake a
+            # cwd-mismatched `--resume` into cmd_line — the worker then
+            # crash-loops ("No conversation found") under the wrong project.
+            # Fail loudly instead of guessing.
+            if not workdir:
+                return ApiFailResponse(
+                    message=(
+                        f"Session {session_id} resolved but its working "
+                        "directory is unknown — cannot restore it into a project."
+                    )
+                )
+
+            context_data = {"workdir": workdir}
             if project_id:
                 context_data["project_id"] = project_id
 
@@ -667,14 +733,13 @@ class ScanActionsMixin:
                 )
                 _cmd = _cli_factory(process.cli_config, worker_type=cli_factory_key)
                 _cmd.resume = True
-                # Codex resume needs the thread_id passed as the cli session_id
+                # Codex/Copilot resume need the id passed as the cli session_id
                 # (Claude already reads it from process.session_id at args-build time).
-                if is_codex:
+                if is_codex or is_copilot:
                     _cmd.session_id = session_id
                 process.cli_config = _cmd.to_json()
-                rec_cwd = getattr(session_rec, "cwd", None)
-                if not process.workdir and rec_cwd:
-                    process.workdir = rec_cwd
+                # workdir is guaranteed by the create-time guard above — no
+                # rec_cwd backfill needed here anymore.
                 await process.save()
 
             # Atomic: spawn the linked Shell + PTY before returning so the
@@ -705,7 +770,8 @@ class ScanActionsMixin:
         """Auto-discover worker_type, upsert, return ready-to-use AgenticProcess.
 
         Single round-trip resolver: caller passes the worker/session/thread id
-        and optionally a ``worker_type`` query hint (``claude`` or ``codex``)
+        and optionally a ``worker_type`` query hint (``claude``, ``codex``, or
+        ``copilot``)
         to skip the other backend's disk scan. On hit, delegates to the
         shared upsert impl, forwarding the already-resolved record so the
         impl doesn't re-scan.
@@ -717,9 +783,9 @@ class ScanActionsMixin:
             or ""
         ) if request_info else ""
         hint = hint_raw.lower() or None
-        if hint and hint not in ("claude", "codex"):
+        if hint and hint not in ("claude", "codex", "copilot"):
             return ApiFailResponse(
-                message=f"worker_type must be 'claude' or 'codex' (got {hint_raw!r})",
+                message=f"worker_type must be 'claude', 'codex', or 'copilot' (got {hint_raw!r})",
                 status_code=400,
             )
 
@@ -742,7 +808,7 @@ class ScanActionsMixin:
                 return ApiSuccessResponse(data=existing[0].model_dump())
 
             return ApiFailResponse(
-                message=f"Session {worker_id} not found in Claude or Codex history",
+                message=f"Session {worker_id} not found in Claude, Codex, or Copilot history",
                 status_code=404,
             )
 
@@ -755,14 +821,14 @@ class ScanActionsMixin:
         )
 
     async def _scan_find_session(self) -> ApiResponse:
-        """Look up a session by id across Claude and Codex on-disk history.
+        """Look up a session by id across Claude, Codex, and Copilot on-disk history.
 
         Pure read-only resolver: returns the descriptor a caller needs to render
         the transcript and open the session, without creating an AgenticProcess.
 
         Query params (camelCase or snake_case both accepted via get_param):
             session_id: required — UUID/thread id.
-            worker_type: optional — "claude" | "codex" to skip the other lookup.
+            worker_type: optional — "claude" | "codex" | "copilot" to skip other lookups.
 
         Returns ApiSuccessResponse with:
             session_id, worker_type, transcript_path, cwd, project_id, session_name.
@@ -785,9 +851,9 @@ class ScanActionsMixin:
             or ""
         )
         worker_hint = worker_hint_raw.lower() or None
-        if worker_hint and worker_hint not in ("claude", "codex"):
+        if worker_hint and worker_hint not in ("claude", "codex", "copilot"):
             return ApiFailResponse(
-                message=f"worker_type must be 'claude' or 'codex' (got {worker_hint_raw!r})",
+                message=f"worker_type must be 'claude', 'codex', or 'copilot' (got {worker_hint_raw!r})",
                 status_code=400,
             )
 
@@ -795,7 +861,7 @@ class ScanActionsMixin:
             rec, worker_type = _resolve_session_record(session_id, hint=worker_hint)
             if rec is None:
                 return ApiFailResponse(
-                    message=f"Session {session_id} not found in Claude or Codex history",
+                    message=f"Session {session_id} not found in Claude, Codex, or Copilot history",
                     status_code=404,
                 )
 

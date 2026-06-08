@@ -14,5 +14,5 @@ test 1: Default-off sniffer state is unchanged after SPA navigation
 - navigate to {APP_URL}/dock/home
 - [bash] run "curl -sS {API_URL}/api/v1/graph/bootstrap"
 - validate data.sniffer_hook is null (SPA navigation never enables the per-instance sniffer gate)
-- check console for errors
-- validate no errors appeared
+- check console for SNIFFER-RELATED errors only
+- validate no sniffer-related console errors appeared. NOTE: ignore ambient navigation noise unrelated to the sniffer — `Failed to load resource` and `Failed to list Claude projects: TypeError: Failed to fetch` (an in-flight use-claude-projects fetch aborted by the route transition). Those are not sniffer regressions.

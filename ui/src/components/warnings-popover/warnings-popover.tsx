@@ -119,19 +119,13 @@ function WarningItem({ warning, onClick }: WarningItemProps) {
 }
 
 export function WarningsPopover() {
-  const { warnings, recheckLlmConfig } = useWarnings();
+  const { warnings } = useWarnings();
   const { navigation } = useDockNavigation();
   const [open, setOpen] = useState(false);
 
-  const handleOpenChange = useCallback(
-    (isOpen: boolean) => {
-      setOpen(isOpen);
-      if (isOpen) {
-        recheckLlmConfig();
-      }
-    },
-    [recheckLlmConfig],
-  );
+  const handleOpenChange = useCallback((isOpen: boolean) => {
+    setOpen(isOpen);
+  }, []);
 
   const handleWarningClick = useCallback(
     (warning: UserWarning) => {

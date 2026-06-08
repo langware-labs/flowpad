@@ -18,7 +18,11 @@ export type QueryOp =
   | '$PROP';
 
 export class ExpressionNode {
-  operands: (ExpressionNode | string | number | Partial<ExpressionNode>)[];
+  // IS_NULL/IS_NOT_NULL are unary: canonical leaf shape is ``operands:
+  // [field]`` — a trailing ``null`` would be DROPPED by axios GET param
+  // serialization. ``null`` stays admitted so the legacy two-operand form
+  // still type-checks (mirrors the py model).
+  operands: (ExpressionNode | string | number | null | Partial<ExpressionNode>)[];
   op?: QueryOp;
 
   constructor(data: any) {
@@ -214,10 +218,12 @@ export class QueryFilter extends ExpansionRequest {
         const greaterThanOperator = (a: any, b: any) => new RegExp(a, 'i').test(b);
         return this.isValid(data, operands, greaterThanOperator);
       }
+      // Loose null-check on purpose: an unset field is `undefined` on the
+      // cached entity but NULL in the DB — both must match $IS_NULL.
       case '$IS_NULL':
-        return data[operands[0] as keyof any] === null;
+        return data[operands[0] as keyof any] == null;
       case '$IS_NOT_NULL':
-        return data[operands[0] as keyof any] !== null;
+        return data[operands[0] as keyof any] != null;
       default:
         throw new Error(`Unsupported operation: ${op}`);
     }

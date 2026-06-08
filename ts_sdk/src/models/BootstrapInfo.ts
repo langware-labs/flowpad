@@ -23,21 +23,21 @@ export interface EnvInfo {
 export interface AppPaths {
   /** Filesystem root ("/" on Unix, "C:\\" on Windows) */
   root: string;
-  /** User home directory ("Users/shlom") */
+  /** User home directory ("Users/alice") */
   home: string;
-  /** FlowPad workspace folder ("Users/shlom/Flowpad workspace") */
+  /** FlowPad workspace folder ("Users/alice/Flowpad workspace") */
   workspace: string;
-  /** Skills folder ("Users/shlom/Flowpad workspace/.claude/skills") */
+  /** Skills folder ("Users/alice/Flowpad workspace/.claude/skills") */
   skills: string;
-  /** User skills folder ("Users/shlom/.claude/skills") */
+  /** User skills folder ("Users/alice/.claude/skills") */
   user_skills: string;
-  /** System skills folder ("Users/shlom/Flowpad workspace/.flow/system_assets/skills") */
+  /** System skills folder ("Users/alice/Flowpad workspace/.flow/system_assets/skills") */
   system_skills: string;
-  /** System agents folder ("Users/shlom/Flowpad workspace/.flow/system_assets/agents") */
+  /** System agents folder ("Users/alice/Flowpad workspace/.flow/system_assets/agents") */
   system_agents: string;
-  /** Logs folder ("Users/shlom/Flowpad workspace/.flow/logs") */
+  /** Logs folder ("Users/alice/Flowpad workspace/.flow/logs") */
   logs: string;
-  /** Per-instance UI preferences file ("Users/shlom/.flow/instances/<name>/preferences.json") */
+  /** Per-instance UI preferences file ("Users/alice/.flow/instances/<name>/preferences.json") */
   preferences: string;
 }
 

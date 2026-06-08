@@ -208,7 +208,6 @@ GENERIC_NEGATIVE_MUTATIONS: list[tuple[str, dict[str, Any]]] = [
     ("labels",          {"labels": ["x"]}),
     ("target_typeid_str", {"target_typeid_str": "markdown-deadbeef-dead-beef-dead-beefdeadbeef"}),
     ("plan_path",       {"plan_path": "/tmp/some-plan.md"}),
-    ("queue",           {"queue": {"jobs": []}}),
 ]
 
 

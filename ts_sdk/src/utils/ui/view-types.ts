@@ -45,6 +45,7 @@ export enum ViewType {
   SHOW = 'show', // MCP UI display dock pointer
   APPS = 'apps', // Skill UI apps - /dock/apps/<uname>/<router> mounts AppHost
   GRAPH = 'graph', // Built-in dep-graph viewer - /dock/graph/<type>/<id>
+  K_BROWSER = 'k-browser', // Docs knowledge browser - /dock/k-browser/<vfs|typeid>/<value>
   LENS = 'lens', // Lens viewer for specialized content (e.g., transcripts)
   SESSION = 'session', // Live session view (simplified workflow without file)
   TASKS = 'tasks', // Task create/edit view
@@ -52,6 +53,7 @@ export enum ViewType {
   AGENTIC_PROCESS = 'agentic_process', // Process terminal view (Layer 3)
   SEARCH = 'search', // Record semantic search view
   TRIGGERS = 'triggers', // Activation rules browser + editor
+  CAPABILITIES = 'capabilities', // System capability checks/install/test
   PLAN = 'plan', // Plan viewer with Milkdown editor
   CRON = 'cron', // Scheduled cron jobs manager
   WORKFLOWS = 'workflows', // Workflows manager with markdown editor

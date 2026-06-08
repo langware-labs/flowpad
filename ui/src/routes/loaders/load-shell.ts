@@ -39,6 +39,7 @@ import {
 import { showCleanupModal } from '@src/components/recovery/cleanup-modal';
 import { notify } from '@src/notifications';
 import { DockPointer } from '@src/navigation';
+import { bumpLastActive } from '@src/tabs/last-active';
 import { replace } from 'react-router';
 import { perfLog, perfTime } from './_perf';
 import {
@@ -125,6 +126,7 @@ export async function loadShell(shellId: string): Promise<Shell> {
 
   dataContext.setActiveShellId(shell.id);
   dataContext.setActiveTerminalTargetTypeId(shell.typeId);
+  bumpLastActive(shell); // recency seed for resolveActive (Bug 1)
   dataContext.setWorkdir(shell.workdir ?? dataContext.project?.fs_storage_mount_path ?? null);
   await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProcessTypeId, null);
   return shell;
@@ -309,6 +311,17 @@ async function routePlainShellPointer(pointer: string): Promise<void> {
     // shell URL (which would just re-bounce here → flicker).
     // eslint-disable-next-line @typescript-eslint/only-throw-error
     throw replace(`/dock/shell/${linkedProcess.terminalDockPointer.pointer}`);
+  }
+
+  // Cache miss — cold navigation (hard refresh / deep link / page.goto): the
+  // loader runs before useActiveTerminals warms the cache. The shell carries
+  // its owner directly (Shell.agentic_process_id, the reverse of
+  // AgenticProcess.shell_id), so a plain get-by-id resolves ownership — no
+  // reverse scan over processes.
+  const shell = await Shell.getById<Shell>(shellId).catch(() => null);
+  if (shell?.agentic_process_id) {
+    // eslint-disable-next-line @typescript-eslint/only-throw-error
+    throw replace(`/dock/shell/${new TypeId(AgenticProcess.type, shell.agentic_process_id).toString()}`);
   }
 
   try {

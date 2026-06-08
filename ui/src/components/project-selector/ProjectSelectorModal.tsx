@@ -1,10 +1,5 @@
 import { Button } from '@src/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@src/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Plus } from 'lucide-react';
 import { ProjectSelector, type ProjectSelectorItem } from './ProjectSelector';
 
@@ -19,6 +14,8 @@ export interface ProjectSelectorModalProps {
   title?: string;
   /** When provided, renders a small "+" button next to the title. */
   onCreateNew?: () => void;
+  /** Ids to hide from the list — see `ProjectSelectorProps.excludeIds`. */
+  excludeIds?: ReadonlyArray<string>;
 }
 
 /**
@@ -34,6 +31,7 @@ export function ProjectSelectorModal({
   isLoading,
   title = 'Select project',
   onCreateNew,
+  excludeIds,
 }: ProjectSelectorModalProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -60,6 +58,7 @@ export function ProjectSelectorModal({
             projects={projects}
             selectedId={selectedId}
             isLoading={isLoading}
+            excludeIds={excludeIds}
             onSelect={(id) => {
               if (!id) return;
               onSelect(id);

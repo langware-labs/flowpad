@@ -28,9 +28,11 @@ export function BrowseableTree(props: BrowseableTreeProps) {
     error,
     emptyState,
     className = '',
+    persistKey,
+    defaultExpandedIds,
   } = props;
 
-  const tree = useBrowseableTree(roots);
+  const tree = useBrowseableTree(roots, { persistKey, defaultExpandedIds });
   const lastResolvedRef = useRef<string | null>(null);
   const [dragData, setDragData] = useState<BrowseableDragData | null>(null);
 
@@ -44,7 +46,13 @@ export function BrowseableTree(props: BrowseableTreeProps) {
   // Subscribe to external refresh signals (e.g. asset deleted from a hover
   // toolbar). The adapter that emits the signal owns the node id and decides
   // which subtree to invalidate.
-  useEffect(() => subscribeRefresh((nodeId) => { void tree.invalidate(nodeId); }), [tree]);
+  useEffect(
+    () =>
+      subscribeRefresh((nodeId) => {
+        void tree.invalidate(nodeId);
+      }),
+    [tree],
+  );
 
   // Auto-expand ancestors for the active pointer. Dedupe by pointer value so
   // we don't re-walk on every render — but only mark as resolved once a leaf
@@ -82,11 +90,7 @@ export function BrowseableTree(props: BrowseableTreeProps) {
   }
 
   return (
-    <div
-      className={`flex h-full flex-col ${className}`}
-      role="tree"
-      aria-label={header?.title}
-    >
+    <div className={`flex h-full flex-col ${className}`} role="tree" aria-label={header?.title}>
       {header && (
         <div className="flex items-center gap-1 border-b p-1.5">
           <span className="text-xs font-medium text-muted-foreground">{header.title}</span>
@@ -128,21 +132,22 @@ interface RowProps {
   onDragEnd: () => void;
 }
 
-function BrowseableRow({
-  node,
-  level,
-  tree,
-  activePointer,
-  onNavigate,
-  dragData,
-  onDragStart,
-  onDragEnd,
-}: RowProps) {
+function BrowseableRow({ node, level, tree, activePointer, onNavigate, dragData, onDragStart, onDragEnd }: RowProps) {
   const expanded = tree.isExpanded(node.id);
   const loadState = tree.getLoadState(node.id);
   const children = tree.getChildren(node.id);
   const [isDropTarget, setIsDropTarget] = useState(false);
   const [isDropping, setIsDropping] = useState(false);
+
+  // Restored expansion (persistKey / defaultExpandedIds) marks nodes expanded
+  // without the children fetch that interactive expand() runs — load on first
+  // render in that state so restored layers aren't empty.
+  useEffect(() => {
+    if (expanded && loadState.status === 'idle' && node.listChildren) {
+      void tree.loadChildren(node);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expanded, loadState.status, node.id]);
 
   const isSelected = !!(
     node.pointer &&
@@ -151,8 +156,7 @@ function BrowseableRow({
     node.pointer.pointer === activePointer.pointer
   );
 
-  const hasChildrenHint =
-    node.hasChildren === true || (node.hasChildren === 'unknown' && !!node.listChildren);
+  const hasChildrenHint = node.hasChildren === true || (node.hasChildren === 'unknown' && !!node.listChildren);
 
   const handleRowClick = useCallback(() => {
     // Toggle expand on the row click for nodes that have children AND
@@ -174,11 +178,7 @@ function BrowseableRow({
     [node, tree],
   );
 
-  const canAcceptDrop = !!(
-    dragData &&
-    node.onDrop &&
-    (!node.canDrop || node.canDrop(dragData))
-  );
+  const canAcceptDrop = !!(dragData && node.onDrop && (!node.canDrop || node.canDrop(dragData)));
 
   const handleDragStart = useCallback(
     (e: React.DragEvent) => {
@@ -234,14 +234,10 @@ function BrowseableRow({
     <div data-browseable-id={node.id}>
       <div
         className={`group relative flex items-center gap-1 rounded-md p-1.5 text-xs transition-colors ${
-          isSelected ? 'bg-accent text-accent-foreground font-medium' : 'hover:bg-muted'
-        } ${node.pointer ? 'cursor-pointer' : 'cursor-default'} ${
-          node.dragData ? 'active:cursor-grabbing' : ''
-        } ${
+          isSelected ? 'bg-accent font-medium text-accent-foreground' : 'hover:bg-muted'
+        } ${node.pointer ? 'cursor-pointer' : 'cursor-default'} ${node.dragData ? 'active:cursor-grabbing' : ''} ${
           isDropTarget ? 'bg-primary/10 ring-1 ring-primary/40' : ''
-        } ${
-          isDropping ? 'opacity-60' : ''
-        }`}
+        } ${isDropping ? 'opacity-60' : ''}`}
         style={{ marginLeft: `${level * 14}px` }}
         role="treeitem"
         aria-level={level + 1}
@@ -252,7 +248,9 @@ function BrowseableRow({
         onDragEnd={handleDragEnd}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
-        onDrop={(e) => { void handleDrop(e); }}
+        onDrop={(e) => {
+          void handleDrop(e);
+        }}
       >
         <div className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
           {hasChildrenHint ? (
@@ -276,10 +274,7 @@ function BrowseableRow({
             <div className="w-4 flex-shrink-0" />
           )}
 
-          <div
-            className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden"
-            onClick={handleRowClick}
-          >
+          <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden" onClick={handleRowClick}>
             {node.icon}
             <span className="min-w-0 flex-1 truncate" title={node.label}>
               {node.label}
@@ -300,26 +295,17 @@ function BrowseableRow({
       {expanded && (
         <div className="space-y-0.5">
           {loadState.status === 'loading' && children.length === 0 && (
-            <div
-              className="p-1 text-xs text-muted-foreground"
-              style={{ marginLeft: `${(level + 1) * 14}px` }}
-            >
+            <div className="p-1 text-xs text-muted-foreground" style={{ marginLeft: `${(level + 1) * 14}px` }}>
               Loading…
             </div>
           )}
           {loadState.status === 'error' && (
-            <div
-              className="p-1 text-xs text-destructive"
-              style={{ marginLeft: `${(level + 1) * 14}px` }}
-            >
+            <div className="p-1 text-xs text-destructive" style={{ marginLeft: `${(level + 1) * 14}px` }}>
               {loadState.message || 'Failed to load'}
             </div>
           )}
           {loadState.status === 'ready' && children.length === 0 && (
-            <div
-              className="p-1 text-xs text-muted-foreground"
-              style={{ marginLeft: `${(level + 1) * 14}px` }}
-            >
+            <div className="p-1 text-xs text-muted-foreground" style={{ marginLeft: `${(level + 1) * 14}px` }}>
               Empty
             </div>
           )}

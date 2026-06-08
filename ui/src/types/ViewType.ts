@@ -65,6 +65,7 @@ export interface ViewerMeta {
     | 'Home'
     | 'Zap'
     | 'CheckSquare'
+    | 'BadgeCheck'
     | 'SearchIcon'
     | 'Workflow'
     | 'Users'
@@ -236,6 +237,12 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },
+  [ViewType.K_BROWSER]: {
+    title: 'Knowledge Browser',
+    iconName: 'Brain',
+    tabLocation: 'dedicated',
+    canAddAsTab: true,
+  },
   [ViewType.LENS]: {
     title: 'Lens',
     iconName: 'Eye',
@@ -271,6 +278,12 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
   [ViewType.TRIGGERS]: {
     title: 'Triggers',
     iconName: 'Zap',
+    tabLocation: 'dedicated',
+    canAddAsTab: true,
+  },
+  [ViewType.CAPABILITIES]: {
+    title: 'Capabilities',
+    iconName: 'BadgeCheck',
     tabLocation: 'dedicated',
     canAddAsTab: true,
   },

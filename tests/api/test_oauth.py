@@ -4,7 +4,7 @@ OAuth action stub tests for desktop mode.
 Migrated from FlowPad: flowpad/hub/tests/api/test_oauth.py
 Adapted for flow-cli:
 - Uses flow-cli import paths (no flowpad.hub.*)
-- No SOD credential storage (desktop stub)
+- SOD-backed desktop credential status for local providers
 - No multi-user (single @local user)
 - No grant_role, grant_access_to_public_data, or Project creation
 - Tests the desktop OAuth stub responses for API wire compatibility
@@ -12,9 +12,13 @@ Adapted for flow-cli:
 """
 
 import pytest
+from cryptography.fernet import Fernet
 
 from flow_sdk.api.oauth_api import OAuthAction, OAuthErrorCode, OauthClientRequestInfo
+from flow_sdk.config import ServiceConfig, SodProvider
+from flow_sdk.request_context.methods import set_default_test_sod_driver, set_user_credentials
 from flow_sdk.responses.response import ApiResponse, ApiResponseStatus
+from flow_sdk.sod.file_sod import FileSodStorage
 
 
 # -- Unit tests for OAuth types (no server needed) --
@@ -60,6 +64,21 @@ def test_oauth_client_request_info_model():
 
 
 # -- API tests for desktop OAuth stub endpoints --
+
+
+@pytest.fixture
+def _test_sod_driver(tmp_path):
+    key = Fernet.generate_key().decode()
+    cfg = ServiceConfig(
+        development=True,
+        sod_provider=SodProvider.DEV_FILE.value,
+        sod_file_name=str(tmp_path / "test_sod.local"),
+        sod_enc_key=key,
+    )
+    driver = FileSodStorage(cfg)
+    set_default_test_sod_driver(driver)
+    yield driver
+    set_default_test_sod_driver(None)
 
 
 @pytest.mark.asyncio
@@ -167,13 +186,12 @@ async def test_oauth_missing_provider(bootstrapped_client, user):
 
 
 @pytest.mark.asyncio
-async def test_oauth_anthropic_status(bootstrapped_client, user):
+async def test_oauth_anthropic_status(bootstrapped_client, user, _test_sod_driver):
     """
     Test: OAuth status for anthropic provider returns status info.
 
-    The anthropic provider has special handling in desktop mode
-    (detect_claude_code_auth). Even if auth detection fails, it should
-    return a valid response with status=missing.
+    The anthropic provider checks Flowpad-owned SOD credentials in desktop
+    mode. Missing credentials should still return a valid status response.
     """
     client = bootstrapped_client
 
@@ -188,5 +206,26 @@ async def test_oauth_anthropic_status(bootstrapped_client, user):
     data = res["data"]
     assert "status" in data
     assert "has_token" in data
-    # Status can be "available" or "missing" depending on local auth
+    # Status can be "available" or "missing" depending on Flowpad SOD state.
     assert data["status"] in ("available", "missing")
+
+
+@pytest.mark.asyncio
+async def test_oauth_anthropic_status_reflects_flowpad_sod(bootstrapped_client, user, _test_sod_driver):
+    await set_user_credentials(
+        user,
+        "anthropic_credentials",
+        {"provider": "anthropic", "access_token": "test-token"},
+        user.id,
+    )
+
+    response = await bootstrapped_client.get(
+        f"/api/v1/graph/user/{user.id}/oauth/anthropic/status"
+    )
+
+    assert response.status_code == 200, response.text
+    res = response.json()
+    assert res["status"] == ApiResponseStatus.SUCCESS.value
+    assert res["data"]["status"] == "available"
+    assert res["data"]["has_token"] is True
+    assert res["data"]["auth_method"] == "anthropic"

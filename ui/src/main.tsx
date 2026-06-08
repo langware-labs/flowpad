@@ -19,12 +19,30 @@ function defineGlobals() {
   });
 }
 
+// Mouse back/forward buttons (X1/X2) → history navigation. Real browsers map
+// these natively in their own UI layer (not the web platform), so Electron
+// windows never get it — wire it up ourselves, Electron only, to avoid
+// double-navigation in the browser.
+function bindMouseNavButtons() {
+  if (!(window as any).electronAPI) return;
+  window.addEventListener('mouseup', e => {
+    if (e.button === 3) {
+      e.preventDefault();
+      window.history.back();
+    } else if (e.button === 4) {
+      e.preventDefault();
+      window.history.forward();
+    }
+  });
+}
+
 // Resolve backend URL from Electron IPC before rendering (no-op in browser).
 // `<App>` is intentionally NOT wrapped here — it lives inside the router's
 // loader-gated subtree (see `RootLayout` in `router.tsx`) so its hooks only
 // mount after `loadRoot` has finished `initSdk()`.
 async function init() {
   defineGlobals();
+  bindMouseNavButtons();
   await initDesktopBackend(sdkConfig);
 
   ReactDOM.createRoot(document.getElementById('root')!).render(

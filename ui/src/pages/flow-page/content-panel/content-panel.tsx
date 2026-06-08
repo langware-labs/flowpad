@@ -28,6 +28,7 @@ import { ConnectionStatus, dataContext, navigator, ShellStatus, type OAuthConnec
 import { useAuth, useContext } from '@sdk/react/hooks';
 import { AssetsPage } from '@src/components/assets/AssetsPage';
 import { ConnectionsManager } from '@src/components/connections-manager';
+import { CapabilitiesView } from '@src/components/capabilities-view';
 import { ConversationRoute } from '@src/components/conversation';
 import { InboxView } from '@src/components/inbox-view/InboxView';
 import { SurveyView } from '@src/components/survey/SurveyView';
@@ -63,6 +64,9 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useState } from 'react
 // keeps app bootstrap independent of WebGL availability.
 const GraphView = lazy(() =>
   import('@src/components/graph-view/GraphView').then((m) => ({ default: m.GraphView })),
+);
+const DocsGraphView = lazy(() =>
+  import('@src/components/graph-view/DocsGraphView').then((m) => ({ default: m.DocsGraphView })),
 );
 import { UserDropdown } from './user-dropdown/user-dropdown';
 
@@ -420,6 +424,13 @@ export function ContentPanel() {
           </TabsContent>
 
           <TabsContent
+            value={ViewType.CAPABILITIES}
+            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
+          >
+            <CapabilitiesView />
+          </TabsContent>
+
+          <TabsContent
             value={ViewType.CRON}
             className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
           >
@@ -453,6 +464,15 @@ export function ContentPanel() {
           >
             <Suspense fallback={null}>
               <GraphView />
+            </Suspense>
+          </TabsContent>
+
+          <TabsContent
+            value={ViewType.K_BROWSER}
+            className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in shadow-lg data-[state=inactive]:hidden"
+          >
+            <Suspense fallback={null}>
+              <DocsGraphView />
             </Suspense>
           </TabsContent>
 

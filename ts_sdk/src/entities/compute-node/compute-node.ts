@@ -36,8 +36,8 @@ import { GitWorkdir } from '../git-workdir';
 /** Callback for when a new machine session is detected */
 export type MachineSessionCallback = (sessionId: string, session: Shell) => void;
 
-/** CLI worker kind (Claude Code vs Codex) shared across resolver APIs. */
-export type WorkerKind = 'claude' | 'codex';
+/** CLI worker kind shared across resolver APIs. */
+export type WorkerKind = 'claude' | 'codex' | 'copilot';
 
 /** Descriptor returned by {@link ComputeNode.findSession} on hit. */
 export interface FindSessionResult {
@@ -143,6 +143,13 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
       result?: { uname?: string; resultType?: string; sourceSessionId?: string };
       watchProcess?: boolean;
       visible?: boolean;
+      /**
+       * First prompt to seed onto the process's queue server-side, BEFORE the
+       * visible auto-start. The worker then boots with it as its launch
+       * instruction (deterministic — no post-spawn stdin race). Used by
+       * {@link AgenticProcess.openTab}.
+       */
+      launchPrompt?: string;
     },
   ): Promise<import('../../process/agentic-process').AgenticProcess> {
     const { AgenticProcess } = await import('../../process/agentic-process');
@@ -153,6 +160,7 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
       context: serializeAgenticContext(context),
       ...(options?.result ? { result: { uname: options.result.uname, resultType: options.result.resultType, sourceSessionId: options.result.sourceSessionId } } : {}),
       ...(options?.visible !== undefined ? { visible: options.visible } : {}),
+      ...(options?.launchPrompt ? { launch_prompt: options.launchPrompt } : {}),
     };
 
     const response = await dataManager.callAction<unknown, IAgenticProcess>(action);
@@ -168,7 +176,7 @@ export class ComputeNode extends APIEntity<ComputeNode> implements IComputeNode 
   }
 
   /**
-   * Resolve a session id to its on-disk descriptor (Claude or Codex).
+   * Resolve a session id to its on-disk descriptor.
    *
    * Pure read-only lookup: never creates an AgenticProcess. Use
    * `AgenticProcess.getByWorkerId(id)` for the find+open flow.

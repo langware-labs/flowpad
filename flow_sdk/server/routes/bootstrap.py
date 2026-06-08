@@ -548,8 +548,13 @@ async def is_cloud_login_available() -> bool:
         from flow_sdk.cli.auth.hub_login import validate_api_key_async, get_api_key
         from flow_sdk.cli.auth.secrets import is_secrets_enabled
 
-        # Non-prompting probe: skip keychain read entirely if user hasn't approved.
-        if not await asyncio.to_thread(is_secrets_enabled):
+        # Non-prompting probe in normal cases, but macOS Keychain can still
+        # block an unsigned Python process. Bootstrap must remain bounded.
+        try:
+            secrets_enabled = await asyncio.wait_for(asyncio.to_thread(is_secrets_enabled), timeout=1.0)
+        except asyncio.TimeoutError:
+            return False
+        if not secrets_enabled:
             return False
 
         # Read the API key with a short cap. On macOS subprocesses inheriting
@@ -1522,7 +1527,9 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
         )
         notice: Optional[dict] = None
         try:
-            notice = await asyncio.to_thread(recover_orphaned_sodot)
+            notice = await asyncio.wait_for(asyncio.to_thread(recover_orphaned_sodot), timeout=2.0)
+        except asyncio.TimeoutError:
+            logging.warning("[bootstrap] sodot recovery probe timed out; skipping for this boot")
         except Exception as e:
             logging.warning(f"[bootstrap] sodot recovery probe failed (non-fatal): {e}")
         _t.time("recover_orphaned_sodot")

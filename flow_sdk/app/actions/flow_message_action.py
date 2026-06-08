@@ -18,7 +18,7 @@ from typing import Optional
 from flow_sdk._compat import UTC
 from flow_sdk.actions.action_registry import action
 from flow_sdk.builtin.conversation import Conversation
-from flow_sdk.builtin.flow_message import Attachment, AttachmentType, FlowMessage, FlowMessageKind
+from flow_sdk.builtin.flow_message import Attachment, AttachmentType, DeliveryStatus, FlowMessage, FlowMessageKind
 from flow_sdk.builtin.spec import Spec
 from flow_sdk.builtin.task import Task
 from flow_sdk.builtin.user import User
@@ -30,7 +30,9 @@ from flow_sdk.fs_store.operations.conversation import (
     message_pointers,
     project_pointers_to_entity,
     prune_message_pointer,
+    write_pointers,
 )
+from flow_sdk.fs_store.pointer import Pointer
 from flow_sdk.builtin.flow_message_bundle import FlowMessageExistsError
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.type_id import TypeId
@@ -1313,19 +1315,30 @@ async def _process_single_hub_message(raw: dict) -> str | None:
     if not fm_id:
         return None
     existing = await FlowMessage.get_one({"id": fm_id})
-    if existing is not None and not FlowMessage.is_stale(existing, raw):
-        # Already have a current copy. The body (if any) is local-only state,
-        # so a not-stale existing row never needs a re-download.
-        return fm_id
+    # Body first, metadata second — and the two are INDEPENDENT. The body
+    # check must not be keyed on row existence: a row materialized while the
+    # sender was still uploading (bridge CREATE with body_status=uploading)
+    # would otherwise never auto-download its bundle on any later pass,
+    # leaving every bundled entity (task / spec / transcript) unmaterialized
+    # until a manual click. Pull whenever the hub advertises a bundle that
+    # isn't fully on disk yet — ``_download_and_unpack_bundle`` gates on
+    # body_status=READY itself, and ``unpack_bundle`` is idempotent for
+    # re-unpacks (existing rows merge, attachments fill in).
     attachment_filename = (raw.get("attachment_filename") or "").strip()
-    if attachment_filename and existing is None:
-        # First time we see a bundle-bearing message — download + unpack it.
-        # An already-present (now stale) row only needs its metadata refreshed
-        # below; the body bytes are local-only and don't re-download.
-        success = await _download_and_unpack_bundle(
-            fm_id, attachment_filename, body_status=raw.get("body_status"),
-        )
-        return fm_id if success else None
+    if attachment_filename:
+        downloaded = existing is not None and existing.is_body_downloaded()
+        if not downloaded:
+            success = await _download_and_unpack_bundle(
+                fm_id, attachment_filename, body_status=raw.get("body_status"),
+            )
+            if existing is None:
+                # unpack materializes the FM row itself on success; on failure
+                # (body still uploading, transient hub error) leave nothing
+                # behind — the next sync pass retries.
+                return fm_id if success else None
+    if existing is not None and not FlowMessage.is_stale(existing, raw):
+        # Metadata current (body handled above).
+        return fm_id
     # Bundle-less: persist the FM payload as-is, then append the pointer to
     # the conversation's message_ids JSON projection. We DO NOT route through
     # materialize_flow_message / _append_message_to_conversation here —
@@ -1916,55 +1929,21 @@ async def _sync_remote_children(parent_tid: TypeId, child_type: str, someone_typ
             logger.warning("[subtree-sync] materialize %s-%s failed (non-fatal): %s", child_type, raw.get("id"), e)
 
 
-async def _ensure_shared_context_rows(conv: "Conversation", someone_typeid: str | None) -> None:
-    """Materialize a local stub row for each ``shared_context_entities`` member
-    that the recipient doesn't have yet.
-
-    The hub hosts no doc types (markdown, plan, …), so a shared doc's *row* never
-    arrives over the wire — only its typeid does, on the conversation's
-    ``shared_context_entities``. Without a local row the doc can't be resolved,
-    linked to its parent conversation, or carry comments. We create a minimal
-    ``remote=False`` stub (id + parent_type_id + a placeholder name); the doc's
-    content fills in later via the chip-open deploy / bundle-unpack path.
-
-    The stub is ``remote=False``: the hub hosts no doc types, so a markdown never
-    has its OWN hub row. Its ``parent_type_id`` = this (remote) conversation is
-    what makes it *effective*-remote, so a comment on it auto-shares under the
-    conversation (the nearest ancestor that IS hub-hosted). Marking the doc
-    ``remote=True`` would make ``nearest_remote_ancestor`` return the doc itself
-    and the comment create would 422 against the non-existent hub doc type.
-    Best-effort."""
-    from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
-
-    conv_ref = f"{BuiltinEntityType.CONVERSATION.value}-{conv.id}"
-    for ref in conv.shared_context_entities or []:
-        try:
-            tid = ref if isinstance(ref, TypeId) else TypeId(str(ref))
-            cls = SchemaRegistry.get_entity_cls(tid.type)
-            if cls is None or not tid.id:
-                continue
-            if await cls.get_one({"id": tid.id}) is not None:
-                continue  # row exists → _link_context_to_conversation handles it
-            stub = cls.model_validate({
-                "id": tid.id,
-                "remote": False,
-                "parent_type_id": conv_ref,
-                "name": tid.id,
-            })
-            stub.id = tid.id
-            await stub.save(someone_typeid)
-        except Exception as e:  # noqa: BLE001
-            logger.warning("[subtree-sync] stub %s failed (non-fatal): %s", ref, e)
-
-
 async def _sync_shared_context_subtree(conv_id: str, someone_typeid: str | None) -> None:
     """Recursive-share catch-up for one conversation.
 
     For each ``shared_context_entities`` member (e.g. the shared markdown):
-      1. Ensure a local row exists and is marked ``remote=True`` with
-         ``parent_type_id`` = this conversation — so a child create under it
-         (a comment) auto-shares, and so effective-remote resolves.
+      1. Link the locally-materialized ones to this conversation (parent_type_id)
+         so effective-remote resolves and comments auto-share.
       2. Pull its child comments from the hub as remote children.
+
+    NO stub minting here: shared-context rows are materialized exclusively by
+    the bundle download → unpack pipeline (``_process_single_hub_message`` /
+    ``_download_and_unpack_bundle``), which carries the real entity data. A
+    placeholder row minted ahead of the bundle used to permanently block the
+    unpack's exists-check from landing the real fields. Refs whose bundle
+    hasn't arrived yet are simply skipped by the linker and picked up on the
+    next sync pass — order no longer decides the outcome.
 
     This is what lets a recipient who never watched the doc live still see the
     doc + everyone's comments after a sync. Best-effort; never raises."""
@@ -1972,16 +1951,11 @@ async def _sync_shared_context_subtree(conv_id: str, someone_typeid: str | None)
         conv = await Conversation.get_one({"id": conv_id})
         if conv is None or not conv.shared_context_entities:
             return  # nothing shared → no subtree to catch up (skip the hub GET)
-        # 1a) Ensure a local row exists for each shared-context doc. The hub
-        #     never ships the doc's row (no hub doc types), so on a recipient
-        #     that never had the file we mint a remote stub keyed on the shared
-        #     typeid — otherwise the link + comment-attach below have nothing to
-        #     bind to.
-        await _ensure_shared_context_rows(conv, someone_typeid)
-        # 1b) Link each shared-context doc to this conversation so its
-        #     ``effective_remote`` resolves (the doc is NOT a hub entity — the hub
-        #     has no markdown type — its content arrives via the chip-open
-        #     deploy). Reuses the same linker the share path runs.
+        # 1) Link each locally-present shared-context doc to this conversation
+        #    so its ``effective_remote`` resolves (the doc is NOT a hub entity —
+        #    the hub has no markdown type — its content arrives via the bundle
+        #    unpack). Reuses the same linker the share path runs; missing rows
+        #    are skipped (bundle not downloaded yet).
         await conv._link_context_to_conversation()
         # 2) Pull the conversation's hub child entities (comments today; each
         #    carries its real doc parent in ``parent_type_id``). Materialize
@@ -2021,8 +1995,14 @@ async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> Non
             children = await hub_get(
                 BuiltinEntityType.CONVERSATION, conv_id, action="flow_message",
             )
-            # hub_get returns the unwrapped `data` when 200; for a children
-            # listing this is typically a list. Coerce defensively.
+            # hub_get returns the unwrapped `data` when 200 and None on any
+            # failure. None ⇒ we cannot prove anything — abort without
+            # touching local state. An EMPTY LIST is a real answer ("this
+            # conversation has zero messages you may see") and still goes
+            # through the authoritative reconcile below.
+            if children is None:
+                logger.warning("[conv-msg-fetch] %s: children listing unavailable, skipping", conv_id[:8])
+                return
             child_list: list[dict] = []
             if isinstance(children, list):
                 child_list = children
@@ -2033,26 +2013,8 @@ async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> Non
                         child_list = v
                         break
             child_list = [m for m in child_list if isinstance(m, dict) and m.get("id")]
-            if not child_list:
-                return
-            # Oldest first so pointer appends preserve conversation order.
+            # Oldest first — the pointer index is conversation order.
             child_list.sort(key=lambda m: m.get("created_date") or "")
-            # Snapshot the local pointer-id set ONCE before the loop so we can
-            # detect orphan entities (FlowMessage row exists but its pointer
-            # was lost from conversation.jsonl — partial write, manual edit,
-            # any prior bug). The old new-only path would have force-re-fetched
-            # these via the per-id hub_get loop; the LWW `is_stale=False` skip
-            # would silently leave them invisible to the conversation view
-            # without this repair.
-            local_pointer_ids: set[str] = set()
-            try:
-                _rec = from_jsonl(
-                    default_jsonl_path(conv_id),
-                    parent_id="", record_id=conv_id, parent_type=RecordType.PROJECT,
-                )
-                local_pointer_ids = {p.id for p in message_pointers(_rec)}
-            except Exception:  # noqa: BLE001
-                pass
             synced = 0
             for raw_fm in child_list:
                 fm_id = raw_fm["id"]
@@ -2060,23 +2022,6 @@ async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> Non
                 # re-download). is_stale(None, ...) is True so new ids pass.
                 local = await FlowMessage.get_one({"id": fm_id})
                 if not FlowMessage.is_stale(local, raw_fm):
-                    # Row is current. Repair the orphan-pointer case: entity
-                    # exists but no pointer in conversation.jsonl.
-                    if local is not None and fm_id not in local_pointer_ids:
-                        try:
-                            _rec = from_jsonl(
-                                default_jsonl_path(conv_id),
-                                parent_id="", record_id=conv_id, parent_type=RecordType.PROJECT,
-                            )
-                            ts = str(raw_fm.get("created_date") or "")
-                            append_message_pointer(_rec, fm_id, ts)
-                            local_pointer_ids.add(fm_id)
-                            synced += 1
-                        except Exception as e:  # noqa: BLE001
-                            logger.warning(
-                                "[conv-msg-fetch] %s: orphan-pointer repair fm=%s failed: %s",
-                                conv_id[:8], fm_id, e,
-                            )
                     continue
                 try:
                     # Hub's FM payload doesn't carry conversation_id (the graph
@@ -2091,6 +2036,66 @@ async def _fetch_conversation_messages(conv_id: str, someone_typeid: str) -> Non
                         "[conv-msg-fetch] %s: fm=%s failed: %s",
                         conv_id[:8], fm_id, e,
                     )
+            # Authoritative reconcile — the hub child list IS the message set.
+            # Rewrite conversation.jsonl to exactly (hub children, in
+            # created_date order) ∪ (local-pending not yet on the hub), then
+            # re-project unconditionally (no-op when already in sync). One
+            # mechanism covers: offline deletes (local pointer absent on hub →
+            # dropped), bare rows after a DB rebuild (projection rebuilt from
+            # the merged set), and orphan entities (pointer lost from the file
+            # → restored from the hub list).
+            try:
+                rec = from_jsonl(
+                    default_jsonl_path(conv_id),
+                    parent_id="", record_id=conv_id, parent_type=RecordType.PROJECT,
+                )
+                hub_ids = {m["id"] for m in child_list}
+                merged: list[Pointer] = [
+                    Pointer(
+                        TypeId(type=Pointer.DEFAULT_MESSAGE_TYPE, id=m["id"]),
+                        str(m.get("created_date") or "") or datetime.now(UTC).isoformat(),
+                    )
+                    for m in child_list
+                ]
+                dropped = 0
+                for ptr in message_pointers(rec):
+                    if ptr.id in hub_ids:
+                        continue  # hub-confirmed; already in merged
+                    # Local-pending: provably local-born rows the hub can't
+                    # know about yet — pre-accept (CREATED), invitation
+                    # placeholders, drafts, or any row without a confirmed
+                    # hub twin (remote=False). Fail-closed: a pointer whose
+                    # FM row can't be loaded is KEPT, never dropped on
+                    # uncertainty.
+                    try:
+                        fm = await FlowMessage.get_one({"id": ptr.id})
+                    except Exception:  # noqa: BLE001
+                        fm = None
+                    keep = (
+                        fm is None
+                        or fm.delivery_status == DeliveryStatus.CREATED.value
+                        or fm.kind == FlowMessageKind.INVITATION
+                        or bool(getattr(fm, "is_draft", False))
+                        or not fm.remote
+                    )
+                    if keep:
+                        merged.append(ptr)
+                    else:
+                        # remote=True and absent from the hub list ⇒ deleted
+                        # hub-side (or access revoked) — drop the stale copy.
+                        dropped += 1
+                write_pointers(rec, merged)
+                await project_pointers_to_entity(rec, notify=True)
+                if dropped:
+                    logger.info(
+                        "[conv-msg-fetch] %s: reconcile dropped %d hub-deleted pointer(s)",
+                        conv_id[:8], dropped,
+                    )
+            except Exception as e:  # noqa: BLE001
+                logger.warning(
+                    "[conv-msg-fetch] %s: authoritative reconcile failed: %s",
+                    conv_id[:8], e,
+                )
             logger.info(
                 "[conv-msg-fetch] %s: synced %d of %d hub message(s)",
                 conv_id[:8], synced, len(child_list),
@@ -2248,6 +2253,13 @@ async def _upsert_hub_conversation_metadata(
         # non-None updated_date on save.
         if hub_conv.get("updated_date") is not None:
             payload["updated_date"] = hub_conv["updated_date"]
+        # The hub is the source of truth for when the conversation was born —
+        # without this, a locally re-created row (e.g. after a DB rebuild)
+        # claims its re-creation moment as the creation date. The driver
+        # preserves a preset created_date on save.
+        if hub_conv.get("created_date") is not None:
+            payload["created_date"] = hub_conv["created_date"]
+        payload["fetched_at"] = datetime.now(UTC)
         conv = Conversation.model_validate(payload)
         conv.id = conv_id
         return await conv.save(someone_typeid, notify=notify)
@@ -2278,6 +2290,14 @@ async def _upsert_hub_conversation_metadata(
     if not existing.remote:
         existing.remote = True
         changed = True
+    # Always-adopt the hub's created_date (hub-authoritative birth time). This
+    # is idempotent — once converged, subsequent echoes are no-ops — and it
+    # repairs rows that were re-created locally with a bogus created_date
+    # (e.g. after a DB rebuild).
+    hub_created = Conversation._as_datetime(hub_conv.get("created_date"))
+    if hub_created is not None and Conversation._as_datetime(existing.created_date) != hub_created:
+        existing.created_date = hub_created
+        changed = True
     # Carry the hub's updated_date so the local row tracks the hub timestamp
     # (the LWW decision point — see the create branch). Compared via is_stale
     # so an older/equal hub echo never moves the local clock backward. The
@@ -2286,8 +2306,42 @@ async def _upsert_hub_conversation_metadata(
         existing.updated_date = Conversation._as_datetime(hub_conv.get("updated_date"))
         changed = True
     if changed:
+        # We just refreshed this row from a hub payload — stamp the boundary.
+        existing.fetched_at = datetime.now(UTC)
         return await existing.save(someone_typeid, notify=notify)
     return existing
+
+
+def _should_fetch_messages(local_conv: Optional[Conversation], hub_conv: dict) -> bool:
+    """Out-of-sync detection for one conversation — the dispatch gate of the
+    list pipeline. Two independent signals, OR-ed (the hub is the source of
+    truth; either one firing invalidates the local copy via the authoritative
+    reconcile in ``_fetch_conversation_messages``):
+
+    - ``updated_date`` LWW (``Entity.is_stale``): the hub bumps the parent on
+      child add/edit/delete AND on delivery/body status changes, so one cheap
+      parent compare catches every content/status change.
+    - ``message_count`` mismatch, BIDIRECTIONAL: catches drift the date can't
+      prove — e.g. a local row re-created bare from the hub (carries the hub's
+      updated_date, so is_stale says current, but reports 0 messages), or a
+      stale local extra after a missed delete.
+
+    Hub count ``None`` (old hub / pre-field row) ⇒ unknown. Date-only then,
+    EXCEPT when the local projection is empty: an empty cache we cannot
+    verify cheaply is exactly the bare-row incident shape, so dispatch the
+    (single-flight, cheap) fetch and let the authoritative reconcile settle
+    it. A genuinely empty conversation just reconciles to empty again; once
+    the hub ships counts this branch never fires.
+    """
+    if local_conv is None:
+        return True
+    if Conversation.is_stale(local_conv, hub_conv):
+        return True
+    raw_hub_count = hub_conv.get("message_count")
+    if raw_hub_count is None:
+        return not local_conv.message_ids
+    local_count = int(local_conv.message_count or 0)
+    return int(raw_hub_count) != local_count
 
 
 async def handle_conversation_list(someone_typeid: str) -> ApiResponse:
@@ -2371,25 +2425,11 @@ async def handle_conversation_list(someone_typeid: str) -> ApiResponse:
             logger.warning("[conv-list] upsert conv=%s failed: %s",
                            (hub_conv.get("id") or "?")[:8], e)
             continue
-        # Primary signal: the parent Conversation's updated_date — bumped on the
-        # hub whenever a child message is added OR edited, so one cheap parent
-        # compare catches both (count deltas miss edits). ``local_index`` holds
-        # the PRE-upsert local copies (built before this loop from local_list;
-        # _upsert_hub_conversation_metadata mutates a freshly-fetched row, not
-        # this object), so its updated_date is the correct LWW baseline.
-        local_conv = local_index.get(hub_conv.get("id"))
-        if Conversation._as_datetime(hub_conv.get("updated_date")) is not None:
-            should_fetch = Conversation.is_stale(local_conv, hub_conv)
-        else:
-            # Fallback when the hub provides no usable updated_date: the hub's
-            # Conversation entity doesn't always populate message_count (it's
-            # denormalized). Treat None as "unknown" and dispatch.
-            raw_hub_count = hub_conv.get("message_count")
-            hub_count_unknown = raw_hub_count is None
-            hub_count = int(raw_hub_count or 0)
-            local_count = int((local_conv.message_count if local_conv else 0) or 0)
-            should_fetch = hub_count_unknown or hub_count > local_count
-        if should_fetch:
+        # ``local_index`` holds the PRE-upsert local copies (built before this
+        # loop from local_list; _upsert_hub_conversation_metadata mutates a
+        # freshly-fetched row, not this object), so they are the correct
+        # comparison baseline.
+        if _should_fetch_messages(local_index.get(hub_conv.get("id")), hub_conv):
             conv_id = hub_conv.get("id")
             if conv_id:
                 _dispatch_conversation_message_fetch(conv_id, someone_typeid)
@@ -2429,7 +2469,10 @@ async def handle_conversation_list(someone_typeid: str) -> ApiResponse:
                                    (c.id or "?")[:8], e)
 
     # (f) return the freshly-merged list. Background tasks finish after the
-    # response, fanning out their writes via data_op_msg WS frames.
+    # response, fanning out their writes via data_op_msg WS frames. Bare or
+    # drifted rows were dispatched above (count_mismatch / stale_by_date) and
+    # heal through the authoritative reconcile in _fetch_conversation_messages;
+    # their projections stream in via WS data_op as those fetches land.
     merged = await Conversation.get_all({})
     return ApiSuccessResponse(data={
         "conversations": [c.model_dump(mode="json") for c in merged],

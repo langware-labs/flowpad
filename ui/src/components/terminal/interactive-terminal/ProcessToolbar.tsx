@@ -8,7 +8,7 @@
  * `process.restart_required` and the top-left Restart button glows.
  */
 
-import { AgenticProcess, dataManager, Shell } from '@sdk';
+import { AgenticProcess, copyToClipboard, dataContext, dataManager, openTerminalFromComputeNode, Shell } from '@sdk';
 import { hasWorkerStarted, ProcessStatus, WorkerStatus } from '@sdk/process/agentic-types.js';
 import { ClaudeSessionRecord } from '@sdk/resource_management/fs_records/claude/claude-session.js';
 import { CommitMergeButton, OpenInWorktreeButton } from './WorktreeButtons';
@@ -25,8 +25,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuLabel,
 } from '@src/components/ui/dropdown-menu';
-import { BugPlay, ExternalLink, Filter, GitFork, Info, RotateCcw, ScrollText, SlidersHorizontal, SquareTerminal, X } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { BugPlay, Check, Copy, ExternalLink, Filter, GitFork, Info, RotateCcw, ScrollText, SlidersHorizontal, SquareTerminal, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { PTYViewer } from './pty-viewer';
@@ -516,24 +516,32 @@ function IconToggleButton({
   );
 }
 
-function CopyRow({ label, value }: { label: string; value: string }) {
+/** Shared style for the tiny per-row icon buttons (copy / open-in-terminal). */
+const ROW_ICON_BUTTON_CLASS = 'rounded p-0.5 text-muted-foreground hover:bg-accent hover:text-foreground';
+
+function CopyRow({ label, value, extraAction }: { label: string; value: string; extraAction?: ReactNode }) {
   const [copied, setCopied] = useState(false);
   const handleCopy = () => {
-    navigator.clipboard.writeText(value).then(() => {
+    void copyToClipboard(value).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
-    }).catch(() => {});
+    });
   };
   return (
-    <div className="flex gap-2 text-xs">
+    <div className="group flex gap-2 text-xs">
       <span className="w-24 shrink-0 font-medium text-muted-foreground">{label}</span>
-      <button
-        className="break-all text-left font-mono text-[11px] hover:text-foreground cursor-copy"
-        onClick={handleCopy}
-        title="Click to copy"
-      >
-        {copied ? <span className="text-green-500">Copied!</span> : value}
-      </button>
+      <span className="min-w-0 flex-1 select-text break-all font-mono text-[11px]">{value}</span>
+      <span className="flex shrink-0 items-start gap-0.5">
+        <button
+          className={`${ROW_ICON_BUTTON_CLASS} transition-opacity ${copied ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+          onClick={handleCopy}
+          title="Copy to clipboard"
+          aria-label={`Copy ${label}`}
+        >
+          {copied ? <Check className="h-3 w-3 text-green-500" /> : <Copy className="h-3 w-3" />}
+        </button>
+        {extraAction}
+      </span>
     </div>
   );
 }
@@ -620,6 +628,20 @@ function SessionInfoPopover({ process, sessionStartTime, lastMessageTime }: { pr
       ? `cd ${quoted(workdir)} && ${claudeCmd}`
       : claudeCmd;
 
+  // "Open in external terminal": spawn a real OS terminal (Terminal.app / cmd /
+  // gnome-terminal) via the compute node's cross-platform `open-terminal` action.
+  // Pass the bare claude command + cwd separately — the backend composes the
+  // `cd` itself per-OS. The displayed/copied string keeps the `cd … &&` prefix.
+  const computeNodeId = dataContext.computeNode?.id;
+  const openExternalTerminal = () => {
+    if (!computeNodeId) return;
+    void openTerminalFromComputeNode(
+      computeNodeId,
+      claudeCmd,
+      workdir && workdir !== '(not set)' ? workdir : undefined,
+    ).catch((e) => console.error('[SessionInfoPopover] open external terminal failed:', e));
+  };
+
   const linkedShell = process.shell_id
     ? (Shell as unknown as { getByIdFromCache: (id: string) => Shell | null }).getByIdFromCache(process.shell_id)
     : null;
@@ -642,7 +664,6 @@ function SessionInfoPopover({ process, sessionStartTime, lastMessageTime }: { pr
     ['Debug', debug ? 'enabled' : 'disabled'],
     ['Worktree', worktree ? 'enabled' : 'disabled'],
     ['Model', model],
-    ['Command', command],
   ];
 
   return (
@@ -657,12 +678,28 @@ function SessionInfoPopover({ process, sessionStartTime, lastMessageTime }: { pr
       </PopoverTrigger>
       <PopoverContent side="bottom" align="end" className="w-96 p-0">
         <div className="border-b px-3 py-2">
-          <h4 className="text-xs font-semibold">{worker} Session Details</h4>
+          <h4 className="text-xs font-semibold">Harness Session Details</h4>
         </div>
         <div className="space-y-1 px-3 py-2">
           {rows.map(([label, value]) => (
             <CopyRow key={label} label={label} value={value} />
           ))}
+          <CopyRow
+            label="Command"
+            value={command}
+            extraAction={
+              computeNodeId && (
+                <button
+                  className={ROW_ICON_BUTTON_CLASS}
+                  onClick={openExternalTerminal}
+                  title="Open in external terminal"
+                  aria-label="Open command in external terminal"
+                >
+                  <SquareTerminal className="h-3 w-3" />
+                </button>
+              )
+            }
+          />
         </div>
       </PopoverContent>
     </Popover>

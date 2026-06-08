@@ -1,4 +1,4 @@
-import { Agent, TypeId, EntityEnv, EnvVarType } from '@sdk';
+import { Agent, ComputeNode, TypeId, EntityEnv, EnvVarType, apiClient, GRAPH_API_PREFIX } from '@sdk';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
 
@@ -38,6 +38,14 @@ describe('Env Vars API', () => {
         await entityEnv.delete(envVar.name);
       }
     }
+    // Delete the per-test agent — without this every run leaks 4
+    // `test-agent-<ts>` entities into the user's real asset list.
+    // fs-records DELETE is the full purge (entity row + FTS + shadow record
+    // dir + any live source file); a plain graph DELETE would leave an
+    // orphan shadow dir behind per test.
+    await apiClient.delete(
+      `${GRAPH_API_PREFIX}/${ComputeNode.type}/@local/fs-records/${Agent.type}/${agent.typeId.id}`,
+    );
   });
 
   it('should create a valid env var', async () => {

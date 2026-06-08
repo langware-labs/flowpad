@@ -16,7 +16,7 @@ if TYPE_CHECKING:
 
 
 @asynccontextmanager
-async def session() -> "AsyncIterator[AsyncSession]":
+async def session(*, write: bool = True) -> "AsyncIterator[AsyncSession]":
     """Single canonical async DB session for the whole application.
 
     Inside an HTTP request: yields the request-bound session that the
@@ -26,6 +26,13 @@ async def session() -> "AsyncIterator[AsyncSession]":
     Outside a request (CLI, scripts, tests, scheduled tasks): yields a
     fresh session that auto-commits on exit, rolls back on exception,
     and closes when the block ends.
+
+    ``write=False`` requests reader semantics for a fresh session: no
+    BEGIN IMMEDIATE, so SELECTs never queue on the SQLite writer lock
+    (WAL snapshot reads). Use it ONLY for blocks that issue no writes —
+    a write through a reader session falls back to a DBAPI deferred
+    transaction and reintroduces the read→write upgrade trap. An ambient
+    bound session is reused either way.
 
     Usage:
         from flow_sdk.db import session
@@ -42,7 +49,7 @@ async def session() -> "AsyncIterator[AsyncSession]":
             "The active DB driver does not support the unified session() API. "
             "Use get_db_driver() directly for non-SQLite backends."
         )
-    async with ctx() as s:
+    async with ctx(write=write) as s:
         yield s
 
 

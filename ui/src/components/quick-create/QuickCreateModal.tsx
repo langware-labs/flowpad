@@ -3,6 +3,7 @@ import { useProject } from '@sdk/react/hooks';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { CodexIcon } from '@src/components/icons/CodexIcon';
+import { CopilotIcon } from '@src/components/icons/CopilotIcon';
 import {
   NewProjectDialog,
   NewProjectFromGitDialog,
@@ -64,7 +65,7 @@ function DesktopTile({ Icon, label, iconClassName, disabled, onClick }: DesktopT
       )}
     >
       <Icon className={cn('h-7 w-7', iconClassName)} />
-      <span className="max-w-[68px] truncate text-center text-[10px] font-medium leading-tight">{label}</span>
+      <span className="line-clamp-2 w-full break-words px-1 text-center text-[10px] font-medium leading-tight">{label}</span>
     </button>
   );
 }
@@ -98,7 +99,7 @@ export function QuickCreateModal({ open, onOpenChange, onPick }: QuickCreateModa
   // Coding-agent sessions launch a live AgenticProcess immediately, then we
   // navigate to its terminal dock pointer (URL-first; the loader owns the view).
   const handleStartSession = useCallback(
-    async (workerType: 'claude_code' | 'codex') => {
+    async (workerType: 'claude_code' | 'codex' | 'copilot') => {
       onOpenChange(false);
       const result = await navigation.openNewClaudeProcess({ workerType });
       if (!result) {
@@ -133,6 +134,28 @@ export function QuickCreateModal({ open, onOpenChange, onPick }: QuickCreateModa
     },
     [ensureProject],
   );
+
+  // "Open folder" — pick an existing folder, ensure a Project for it, then
+  // launch a default-worker AgenticProcess there and land on its terminal.
+  const handleOpenFolder = useCallback(async () => {
+    onOpenChange(false);
+    const folder = await handlePickFolder();
+    if (!folder) return;
+    try {
+      const project = await ensureProject(folder);
+      const result = await navigation.openNewClaudeProcess({
+        cwd: project.fs_storage_mount_path ?? folder,
+        projectId: project.id,
+      });
+      if (!result) {
+        notify.error({ title: 'Failed to start session' });
+        return;
+      }
+      await navigation.openShellProcess(result.processId);
+    } catch (err) {
+      notify.error({ title: err instanceof Error ? err.message : 'Failed to open folder' });
+    }
+  }, [onOpenChange, handlePickFolder, ensureProject, navigation]);
 
   const handleCreateGitProject = useCallback(
     async (
@@ -205,9 +228,22 @@ export function QuickCreateModal({ open, onOpenChange, onPick }: QuickCreateModa
       iconClassName: 'text-emerald-500',
       onClick: () => void handleStartSession('codex'),
     },
+    {
+      key: 'copilot',
+      Icon: CopilotIcon,
+      label: 'Copilot',
+      iconClassName: 'text-sky-500',
+      onClick: () => void handleStartSession('copilot'),
+    },
   ];
 
   const projectTiles: Array<{ key: string; Icon: LucideIcon; label: string; onClick: () => void }> = [
+    {
+      key: 'open-folder',
+      Icon: FolderOpen,
+      label: 'Open folder',
+      onClick: () => void handleOpenFolder(),
+    },
     {
       key: 'new-local',
       Icon: FolderPlus,
@@ -220,7 +256,7 @@ export function QuickCreateModal({ open, onOpenChange, onPick }: QuickCreateModa
     {
       key: 'new-git',
       Icon: GitBranch,
-      label: 'Project - from git',
+      label: 'Git',
       onClick: () => {
         onOpenChange(false);
         setNewGitProjectOpen(true);

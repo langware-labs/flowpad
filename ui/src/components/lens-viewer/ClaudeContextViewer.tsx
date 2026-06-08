@@ -1,5 +1,4 @@
 import { useClaudeContext } from '@src/hooks/use-claude-context';
-import { useClaudeUsage } from '@src/hooks/use-claude-usage';
 import { useCostOverview } from '@src/hooks/use-cost-overview';
 import { getTodayKey } from '@src/components/cost-dashboard/constants';
 import { cn } from '@src/lib/utils';
@@ -93,7 +92,6 @@ const CAT_COLOR: Record<string, string> = {
 
 export function ClaudeContextViewer({ sessionId, onClose }: { sessionId?: string | null; onClose?: () => void }) {
   const { data, isLoading, refetch } = useClaudeContext(sessionId);
-  const { data: usage } = useClaudeUsage();
   const { data: costOverview } = useCostOverview({ autoFetch: true });
 
   const todayKey = getTodayKey();
@@ -156,7 +154,7 @@ export function ClaudeContextViewer({ sessionId, onClose }: { sessionId?: string
           </div>
         )}
 
-        {data && <Dashboard data={data} usage={usage} todayCost={todayCost} />}
+        {data && <Dashboard data={data} todayCost={todayCost} />}
       </div>
     </div>
   );
@@ -166,11 +164,9 @@ export function ClaudeContextViewer({ sessionId, onClose }: { sessionId?: string
 
 function Dashboard({
   data,
-  usage,
   todayCost,
 }: {
   data: ClaudeContextData;
-  usage: ReturnType<typeof useClaudeUsage>['data'];
   todayCost: number | null;
 }) {
   // Group MCP tools by server
@@ -200,26 +196,6 @@ function Dashboard({
             <p className="text-[11px] text-muted-foreground">context tokens</p>
           </div>
         </div>
-
-        {/* Rate limits */}
-        {usage && (
-          <div className="w-full rounded-xl border bg-card p-3 shadow-sm">
-            <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-              Rate limits
-            </p>
-            <RateRow label="5-hour" pct={usage.five_hour.pct} resetsAt={usage.five_hour.resets_at} />
-            <RateRow label="7-day" pct={usage.seven_day.pct} resetsAt={usage.seven_day.resets_at} />
-            {usage.extra.enabled && (
-              <div className="mt-2 border-t pt-2">
-                <p className="text-[10px] text-muted-foreground">Extra credits</p>
-                <p className="font-mono text-[12px] font-medium">
-                  ${(usage.extra.used_cents / 100).toFixed(2)} /{' '}
-                  ${(usage.extra.limit_cents / 100).toFixed(2)}
-                </p>
-              </div>
-            )}
-          </div>
-        )}
 
         {/* Today's cost */}
         {todayCost !== null && (
@@ -357,38 +333,6 @@ function Card({ title, children }: { title: string; children: React.ReactNode })
     <div className="rounded-xl border bg-card p-4 shadow-sm">
       <SectionHeader>{title}</SectionHeader>
       {children}
-    </div>
-  );
-}
-
-function RateRow({ label, pct, resetsAt }: { label: string; pct: number; resetsAt: string | null }) {
-  const reset = resetsAt
-    ? (() => {
-        try {
-          const d = new Date(resetsAt);
-          const now = new Date();
-          const sameDay = d.toDateString() === now.toDateString();
-          return sameDay
-            ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-            : d.toLocaleDateString([], { month: 'short', day: 'numeric' });
-        } catch {
-          return null;
-        }
-      })()
-    : null;
-
-  return (
-    <div className="mb-1.5">
-      <div className="flex items-center justify-between">
-        <span className="text-[11px] text-muted-foreground">{label}</span>
-        <span className={cn('font-mono text-[12px] font-semibold', pctColor(pct))}>{pct}%</span>
-      </div>
-      <div className="mt-0.5 flex items-center gap-2">
-        <div className="relative h-1 flex-1 overflow-hidden rounded-full bg-muted">
-          <div className={cn('h-full rounded-full', pctBg(pct))} style={{ width: `${pct}%` }} />
-        </div>
-        {reset && <span className="text-[10px] text-muted-foreground/60">@{reset}</span>}
-      </div>
     </div>
   );
 }

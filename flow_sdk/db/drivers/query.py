@@ -29,7 +29,10 @@ class QueryOp(Enum):
 
 class ExpressionNode(BaseModel):
     model_config = ConfigDict(from_attributes=True, arbitrary_types_allowed=True)
-    operands: List[Union["ExpressionNode", StrEnum, str, int, float, bool, List]] = []
+    # IS_NULL/IS_NOT_NULL are unary: canonical wire shape ``operands=[field]``
+    # (a trailing JSON null does not survive axios GET param serialization).
+    # ``None`` stays admitted so the legacy ``[field, None]`` form still parses.
+    operands: List[Union["ExpressionNode", StrEnum, str, int, float, bool, List, None]] = []
     op: Optional[QueryOp] = QueryOp.EQ
 
     def __init__(self, **data):

@@ -85,6 +85,16 @@ class Entity(DBEntity):
     tags: List[str] = APIField(default_factory=list)
     system: bool = APIField(default=False, description="True when this entity belongs to an SDK-shipped system project")
     remote: bool = APIField(default=False, description="True when this entity has a hub counterpart at the same id; refreshable from the hub")
+    fetched_at: datetime | None = APIField(
+        default=None,
+        description=(
+            "When THIS device last refreshed the entity from the hub (stamped "
+            "at the hub→local merge boundary). Local-only observability for "
+            "cache-staleness debugging and a future TTL hook — never a "
+            "correctness gate (correctness stays on updated_date/count) and "
+            "never sent to the hub."
+        ),
+    )
     parent_type_id: str | None = APIField(
         default=None,
         description=(
@@ -95,6 +105,19 @@ class Entity(DBEntity):
             "via the async ``parent()`` accessor."
         ),
     )
+    group_id: str | None = APIField(
+        default=None,
+        description=(
+            "Folder-like containment (docs/entities-groups.md): id of the "
+            "``Group`` this entity lives in; null = ungrouped (tree root). "
+            "Exactly one parent — moving = one field write. Generic for every "
+            "type; a Group's own parent is this same inherited field, so "
+            "nesting needs no extra mechanism. Mutate via the generic "
+            "``set-group`` action (or ``Group.move``) so target/cycle "
+            "validation runs; persisted to metadata.json via ``BaseMeta`` so "
+            "grouping survives an index rebuild."
+        ),
+    )
 
     # Locally-authoritative fields a hub refresh must NEVER overwrite. The hub
     # is the source of truth for *content*; these describe the local copy's own
@@ -102,7 +125,14 @@ class Entity(DBEntity):
     # with their own local-only state (e.g. download/body status, on-disk
     # paths). Used by ``is_stale`` / ``merge_hub_payload`` at the remote
     # boundary. ClassVar so pydantic treats it as config, not a field.
-    LOCAL_ONLY_FIELDS: ClassVar[frozenset[str]] = frozenset({"remote", "system"})
+    LOCAL_ONLY_FIELDS: ClassVar[frozenset[str]] = frozenset({"remote", "system", "fetched_at"})
+
+    # Mirror-image of LOCAL_ONLY_FIELDS for ``remote=True`` rows: fields the
+    # HUB owns and local bookkeeping must never move. ``updated_date`` is the
+    # LWW clock (``is_stale`` compares it) — a local re-stamp runs the clock
+    # ahead of the hub, pinning ``is_stale`` False and masking real hub
+    # changes. Respected by ``from_record`` (the disk→DB re-index path).
+    HUB_AUTHORITATIVE_FIELDS: ClassVar[frozenset[str]] = frozenset({"updated_date"})
 
     # Orphan-ness ("source asset missing on disk") is no longer a stored field —
     # it is the dynamic ``FSRecord.orphan`` (``not asset_ref.exists()``),
@@ -439,6 +469,12 @@ class Entity(DBEntity):
                 entity = Entity(**create_kwargs)
         else:
             entity.type = record_type
+            # Hub-owned fields (the LWW clock), captured before the setattr loop
+            # can overwrite them with stale disk-mirrored values from meta_dict().
+            hub_owned = {
+                f: getattr(entity, f, None)
+                for f in type(entity).HUB_AUTHORITATIVE_FIELDS
+            }
             all_updates = {**data, **record_domain, **stamp}
             for k, v in all_updates.items():
                 # Restrict to declared model fields so read-only computed
@@ -449,10 +485,20 @@ class Entity(DBEntity):
                 if field is not None:
                     v = TypeAdapter(field.annotation).validate_python(v)
                 setattr(entity, k, v)
-            # from_record is the disk→DB sync path; updated_date must advance to
-            # "now" so the indexer's skip-fresh check (file_mtime ≤ updated_date)
-            # can detect the next change. Reset so apply_update_fields stamps it.
-            entity._db.reset_update_fields(entity)
+            if getattr(entity, "remote", False):
+                # Hub-authoritative rows: restore HUB_AUTHORITATIVE_FIELDS — a
+                # disk→DB re-index must not move the hub's clock (see the
+                # classvar). Index freshness is carried by the on-disk .hash
+                # sentinel, not by updated_date. The driver preserves a
+                # non-None updated_date on save.
+                for f, v in hub_owned.items():
+                    setattr(entity, f, v)
+            else:
+                # from_record is the disk→DB sync path; updated_date must advance
+                # to "now" so the transcript indexer's freshness check
+                # (file_mtime ≤ updated_date) can detect the next change. Reset
+                # so apply_update_fields stamps it.
+                entity._db.reset_update_fields(entity)
 
         # Propagate PropertyRecord values to matching entity fields
         already_set = set(data.keys()) | set(record_domain.keys())
@@ -1134,7 +1180,7 @@ class Entity(DBEntity):
                 "shared_context_entity_data",
                 "created_by", "updated_by",
                 "created_date", "updated_date",
-                "remote", "system",
+                "remote", "system", "fetched_at",
                 "message_count",
                 "tags", "project_id", "participants",
             },
@@ -1327,6 +1373,9 @@ class Entity(DBEntity):
         for field in cls.LOCAL_ONLY_FIELDS:
             if field in cls.model_fields:
                 merged[field] = getattr(local, field, None)
+        # This IS the hub→local refresh boundary — stamp it (after the
+        # LOCAL_ONLY restore loop, which would otherwise carry the stale value).
+        merged["fetched_at"] = datetime.now(timezone.utc)
         return merged
 
     async def save(self: EntityType, owner: DBEntity | TypeId | types.NoneType = None, notify: bool = True) -> EntityType:
@@ -1357,7 +1406,7 @@ class Entity(DBEntity):
         get_auth_cache().invalidate_entity(self.typeid)
         return self
 
-    async def _prepare_for_storage(self) -> None:
+    async def _prepare_for_storage(self, scope_root: "Path | None" = None) -> None:
         """Resolve scope-derived fields on the entity before DB save.
 
         For Records that declare ``_main_subdir``, this resolves scope_root
@@ -1365,6 +1414,11 @@ class Entity(DBEntity):
         string is mirrored onto ``entity.asset_ref`` (and ``parent_path`` if
         present) so the DB row persists them on first save without needing
         a second round-trip.
+
+        ``scope_root`` overrides the request-context resolution — for callers
+        whose URL targets a different entity than the scope the asset should
+        land under (e.g. pin-prompt targets a process but scopes the Prompt
+        to its project).
         """
         if getattr(self, "asset_ref", None):
             return  # Already set (entity update or explicit caller-set path).
@@ -1372,7 +1426,7 @@ class Entity(DBEntity):
         info = SchemaRegistry.get(type_name)
         if info is None or info.main_subdir is None:
             return
-        scope_root = await self._resolve_scope_root()
+        scope_root = scope_root or await self._resolve_scope_root()
         if scope_root is None:
             return
         # Transient FSRecord just to compute the asset_ref convention.
@@ -1551,24 +1605,32 @@ class Entity(DBEntity):
         return data
 
     async def grant_access_to_public_data(self: EntityType, public_role=AuthRole.ANONYMOUS_VIEWER.value) -> EntityType:
+        from flow_sdk.builtin.group import Group  # noqa: PLC0415
+
         # Make sure the public entity is a child of the saved entity
         public_entity = await Group.get_public_group()
         await public_entity.grant_role(self.typeid, to_role=public_role)
         return self
 
     async def get_public_data_role(self) -> List[str]:
+        from flow_sdk.builtin.group import Group  # noqa: PLC0415
+
         # Make sure the public entity is a child of the saved entity
         public_entity = await Group.get_public_group()
         public_role, _ = await self.get_roles(public_entity.typeid)
         return public_role
 
     async def enable_public_access(self: EntityType) -> EntityType:
+        from flow_sdk.builtin.group import Group  # noqa: PLC0415
+
         # Grant the public entity the specified role
         public_entity = await Group.get_public_group()
         await self.grant_role(public_entity.typeid)
         return self
 
     async def disable_public_access(self: EntityType) -> EntityType:
+        from flow_sdk.builtin.group import Group  # noqa: PLC0415
+
         # Remove the role from the public entity
         public_entity = await Group.get_public_group()
         await self.remove_role(public_entity.typeid)
@@ -1972,22 +2034,10 @@ class Entity(DBEntity):
         return True
 
 
-class Group(Entity):
-    type: str = APIField(default="group")
-    name: str
-    _unique: ClassVar[List[str]] = ["name"]
-
-    @staticmethod
-    async def get_public_group() -> "Group":
-        public_entity = await Group.get_by_name("public")
-        if not public_entity:
-            public_entity = Group(name="public")
-            await public_entity.save()
-        return public_entity
-
-    @staticmethod
-    async def get_by_name(name="public") -> Optional["Group"]:
-        return await Group.get_one({"name": name})
+# NOTE: the former ACL ``Group`` (name-unique principal with a "public" group)
+# lived here. It was dormant (zero callers) and its ``"group"`` type value has
+# been repurposed for the generic folder-like container entity in
+# ``flow_sdk/builtin/group.py`` (docs/entities-groups.md).
 
 
 from flow_sdk.actions.action_registry import action as _action_registry  # noqa: E402
@@ -2037,6 +2087,38 @@ _action_registry.register(
     action_name="unfavorite",
     function_name="unfavorite",
     handler=_http_unfavorite,
+    methods="post",
+    types="all",
+)
+
+
+async def _http_set_group(self: Entity):
+    """Generic membership move: place this entity into a Group (or ungroup).
+
+    The folder semantics and every rule (target exists, same project, no
+    cycles, namespace immutability) live in ``Group.validate_membership`` —
+    this handler only parses the body and delegates (docs/entities-groups.md).
+    """
+    from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+    from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+    from flow_sdk.builtin.group import Group  # noqa: PLC0415
+
+    request_info = get_current_request_info()
+    body = await request_info.get_post_data() if request_info is not None else {}
+    group_id = body.get("group_id") if isinstance(body, dict) else None
+
+    error = await Group.validate_membership(self, group_id)
+    if error:
+        return ApiFailResponse(message=error)
+    self.group_id = group_id
+    await self.save()
+    return ApiSuccessResponse(data={"group_id": group_id})
+
+
+_action_registry.register(
+    action_name="set-group",
+    function_name="set_group",
+    handler=_http_set_group,
     methods="post",
     types="all",
 )

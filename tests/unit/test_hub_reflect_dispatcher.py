@@ -363,6 +363,79 @@ async def test_reflect_to_hub_forwards_delete_body_and_refreshes_roster(monkeypa
 
 
 @pytest.mark.asyncio
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
+async def test_reflect_to_hub_put_members_targets_action_endpoint_and_refreshes_roster(monkeypatch):
+    """PUT members (role change): must go to ``hub_put(..., action='members')``
+    — the entity-action endpoint — NOT the bare entity update branch, which
+    would silently write the member selector onto the conversation row. Like
+    DELETE, the hub returns a message, so the canonical roster is re-fetched
+    and mirrored onto the local row."""
+    import flow_sdk.server.routes._hub_reflect as mod
+
+    captured = {}
+
+    async def fake_hub_put(entity_type, entity_id=None, payload=None, action=None, **kwargs):
+        captured["payload"] = payload
+        captured["action"] = action
+        captured["et"] = entity_type
+        captured["id"] = entity_id
+        return {"message": "Replaced role of user u-bob to editor"}
+
+    async def fake_hub_get(entity_type, entity_id=None, action=None, **kwargs):
+        # Canonical roster after the change — bob is now editor.
+        return [
+            {"user_id": "u-alice", "role": "owner", "status": "approved"},
+            {"user_id": "u-bob", "role": "editor", "status": "approved"},
+        ]
+
+    async def fake_save(self_=None, **kwargs):
+        captured["saved"] = True
+        return None
+
+    monkeypatch.setattr(mod, "hub_put", fake_hub_put)
+    monkeypatch.setattr(mod, "hub_get", fake_hub_get)
+    monkeypatch.setattr(Conversation, "save", fake_save)
+
+    a = _make_action(methods=("put",))
+    e = _make_entity(remote=True, participants=[{"user_id": "u-bob", "role": "member"}])
+
+    result = await mod.reflect_to_hub(a, e, {"user_id": "u-bob", "role": "editor"}, "put")
+
+    # Selector + role forwarded verbatim to the members ACTION endpoint.
+    assert captured["payload"] == {"user_id": "u-bob", "role": "editor"}
+    assert captured["action"] == "members"
+    assert captured["et"].value == "conversation"
+    assert captured["id"] == e.id
+    # Roster re-fetched after the change and mirrored onto the local row.
+    assert result[1]["role"] == "editor"
+    assert e.participants[1]["role"] == "editor"
+    assert captured.get("saved") is True
+
+
+@pytest.mark.asyncio
+# do not increase timeout without approval
+@pytest.mark.timeout(30)
+async def test_reflect_to_hub_put_members_denial_propagates(monkeypatch):
+    """A hub rejection of a role change (e.g. 403 from the ``can_assign``
+    ceiling) must propagate as HubError — never be swallowed into a local
+    no-op success."""
+    import flow_sdk.server.routes._hub_reflect as mod
+
+    async def fake_hub_put(entity_type, entity_id=None, payload=None, action=None, **kwargs):
+        raise HubError(403, "Not allowed to change this role")
+
+    monkeypatch.setattr(mod, "hub_put", fake_hub_put)
+
+    a = _make_action(methods=("put",))
+    e = _make_entity(remote=True, participants=[{"user_id": "u-bob", "role": "member"}])
+
+    with pytest.raises(HubError) as exc_info:
+        await mod.reflect_to_hub(a, e, {"user_id": "u-bob", "role": "owner"}, "put")
+    assert exc_info.value.status_code == 403
+
+
+@pytest.mark.asyncio
 @pytest.mark.timeout(30)
 async def test_reflect_to_hub_skips_unknown_entity_type(monkeypatch):
     """Entities whose ``type`` isn't a builtin enum value have no hub

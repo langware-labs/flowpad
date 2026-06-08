@@ -364,7 +364,7 @@ describe('VFSPath', () => {
 
       expect(vpath.type).toBe('compute_node');
       expect(vpath.id).toBe('6bc04758-6594-47bc-9545-1383eff24446');
-      expect(vpath.entitySubPath).toBe('Users/shlom/Flowpad workspace/.claude/skills/walla-test.md');
+      expect(vpath.entitySubPath).toBe('Users/alice/Flowpad workspace/.claude/skills/walla-test.md');
       expect(vpath.filename).toBe('walla-test.md');
       expect(vpath.absVfsPath).not.toContain('vfs://');
     });

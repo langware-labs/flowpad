@@ -23,10 +23,12 @@ import {
 import { useAuth, useCloudStatus } from '@sdk/react/hooks';
 import { useEntitiesQuery, useEntity } from '@src/hooks/entity-hooks';
 import { Button } from '@src/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { BulkConfirmDialog } from '@src/components/ui/bulk-confirm-dialog';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
+import { LoginRequiredOverlay } from '@src/components/login-required-overlay';
 import { useInboxStore } from '@src/store/use-inbox-store';
 import { formatTimeAgo } from '@src/components/project-activity-strip/project-activity-utils';
 import {
@@ -132,6 +134,14 @@ function ConversationListRow({ conv, isFocused, viewMode, onArchive, onToggleRea
     !!myEmail &&
     myEmail === recipientEmail;
   const [accepting, setAccepting] = useState(false);
+
+  // Trash does different things depending on ownership — say which one
+  // up-front so the tooltip distinguishes it from the (reversible) Archive.
+  const deleteLabel = !conv.remote
+    ? 'Delete — removes permanently'
+    : cloudUserId && conv.created_by === cloudUserId
+      ? 'Delete for everyone — permanent'
+      : 'Leave conversation';
 
   // Hide rule depends on view mode:
   //   - 'inbox'     → hide archived rows (default; archived_at && stamp ≥ latest ts)
@@ -301,55 +311,75 @@ function ConversationListRow({ conv, isFocused, viewMode, onArchive, onToggleRea
           </button>
         ) : (
           <>
-            <button
-              className="rounded p-1 hover:bg-muted"
-              title={isUnread ? 'Mark read' : 'Mark unread'}
-              onClick={() => latestMessage?.id && onToggleRead(latestMessage.id, isUnread)}
-            >
-              <CheckSquare className="h-3.5 w-3.5 text-muted-foreground" />
-            </button>
-            <button
-              className="rounded p-1 hover:bg-destructive/10"
-              title="Archive conversation"
-              onClick={() => conv.id && onArchive(conv.id)}
-            >
-              <Archive className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
-            </button>
-            <button
-              className="rounded p-1 hover:bg-destructive/10"
-              title="Delete conversation"
-              onClick={() => {
-                if (!conv.id) return;
-                if (!conv.remote) {
-                  onRequestDelete({ kind: 'local', conversationId: conv.id });
-                } else if (cloudUserId && conv.created_by === cloudUserId) {
-                  onRequestDelete({ kind: 'owner', conversationId: conv.id });
-                } else {
-                  onRequestDelete({ kind: 'leave', conversationId: conv.id });
-                }
-              }}
-              data-testid="inbox-row-delete-button"
-            >
-              <Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
-            </button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  className="rounded p-1 hover:bg-muted"
+                  aria-label={isUnread ? 'Mark read' : 'Mark unread'}
+                  onClick={() => latestMessage?.id && onToggleRead(latestMessage.id, isUnread)}
+                >
+                  <CheckSquare className="h-3.5 w-3.5 text-muted-foreground" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top">{isUnread ? 'Mark read' : 'Mark unread'}</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  className="rounded p-1 hover:bg-destructive/10"
+                  aria-label="Archive conversation"
+                  onClick={() => conv.id && onArchive(conv.id)}
+                >
+                  <Archive className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top">Archive — moves to Archived, kept</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  className="rounded p-1 hover:bg-destructive/10"
+                  aria-label={deleteLabel}
+                  onClick={() => {
+                    if (!conv.id) return;
+                    if (!conv.remote) {
+                      onRequestDelete({ kind: 'local', conversationId: conv.id });
+                    } else if (cloudUserId && conv.created_by === cloudUserId) {
+                      onRequestDelete({ kind: 'owner', conversationId: conv.id });
+                    } else {
+                      onRequestDelete({ kind: 'leave', conversationId: conv.id });
+                    }
+                  }}
+                  data-testid="inbox-row-delete-button"
+                >
+                  <Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top">{deleteLabel}</TooltipContent>
+            </Tooltip>
           </>
         )}
         {isInvitationRow && conv.id && invitationId && (
-          <button
-            type="button"
-            className="rounded p-1 hover:bg-destructive/10"
-            title="Decline (delete) invitation"
-            onClick={() =>
-              onRequestDelete({
-                kind: 'invitation',
-                invitationId,
-                conversationId: conv.id!,
-              })
-            }
-            data-testid="inbox-invitation-delete-button"
-          >
-            <Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
-          </button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className="rounded p-1 hover:bg-destructive/10"
+                aria-label="Decline (delete) invitation"
+                onClick={() =>
+                  onRequestDelete({
+                    kind: 'invitation',
+                    invitationId,
+                    conversationId: conv.id!,
+                  })
+                }
+                data-testid="inbox-invitation-delete-button"
+              >
+                <Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="top">Decline (delete) invitation</TooltipContent>
+          </Tooltip>
         )}
       </div>
     </div>
@@ -657,7 +687,10 @@ export function InboxView() {
 
   // List mode
   return (
-    <div className="flex h-full flex-col">
+    <div className="relative flex h-full flex-col">
+      {!cloudUser && (
+        <LoginRequiredOverlay description="Sign in to your Flowpad Cloud account to view your inbox and conversations." />
+      )}
       <div className="flex shrink-0 items-center border-b px-3 py-1.5">
         {/* LEFT — view selector. flex-1 here + on RIGHT keeps the CENTER truly centered. */}
         <div className="flex flex-1 items-center">

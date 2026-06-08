@@ -4,6 +4,21 @@ id: d542a5bb-cbb0-5ce3-8e7f-77d28df66db1
 
 # Two-instance cloud-login isolation + real conversation through local hub
 
+> EXECUTED 2026-06-04 as a PAIRED two-instance run (instance_ctl rig):
+> alice = qa-2 (qa-2@local.test), bob = qa-1 (qa-1@local.test), both
+> cloud-logged-in against the local hub (:8093). The BINDING CRITERION (step 6 —
+> the real alice↔bob conversation round-trip) is encoded in
+> `two_instance_hub_conversation.md.ts` and PASSES 3/3, plus an extra manual
+> bob-on-qa-1-token confirmation. Step 4 (two distinct users logged in
+> simultaneously) is provable in this rig and asserted by the .md.ts (distinct
+> hub user ids). The dev-vs-prod KEYRING-PARTITION steps (5, 8, 9 — and the
+> flowpad-oss `flowpad_api_key:dev` vs flowpad-app `flowpad_api_key` slot scheme
+> in step 2's two-CHECKOUT premise) are CONFIRMED-SKIP: an instance_ctl
+> two-instance rig (two instances out of the SAME checkout) does not reproduce
+> the two-checkout dev/prod keyring-slot partitioning those steps assert.
+> Re-qualify those steps only with the real flowpad-oss + flowpad-app
+> dual-checkout setup.
+
 Verifies that two flow-cli desktop instances on the same machine can hold
 **independent** cloud logins as two different users at the same time, and that
 those two users can carry on a real conversation through the local hub via

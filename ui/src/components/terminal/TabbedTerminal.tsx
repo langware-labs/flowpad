@@ -1,7 +1,10 @@
 import {
   AgenticProcess,
+  capabilityManager,
+  CapabilityKinds,
   dataContext,
   getDisplayStatus,
+  HARNESS_CAPABILITY_KINDS,
   isProcessRunning,
   isReadyForInput,
   ProcessStatus,
@@ -10,10 +13,13 @@ import {
   ViewType,
   type ComputeNode,
 } from '@sdk';
+import { useCapability, type UseCapabilityResult } from '@sdk/react/hooks';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { CodexIcon } from '@src/components/icons/CodexIcon';
+import { CopilotIcon } from '@src/components/icons/CopilotIcon';
+import { useEnsureProject } from '@src/components/project-selector';
 import { Button } from '@src/components/ui/button';
 import {
   ContextMenu,
@@ -34,6 +40,7 @@ import {
 } from '@src/store/pending-actions-store';
 import {
   closeTerminalTargets,
+  terminalDockPointer,
   terminalProcessId,
   terminalTargetKey,
   terminalTransportShellId,
@@ -46,6 +53,7 @@ import {
   ChevronRight,
   Cloud,
   Container,
+  ExternalLink,
   FolderGit2,
   History,
   Loader2,
@@ -56,7 +64,8 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { allowRename } from './rename-rules';
 import { HistoryModal } from './HistoryModal';
 import InteractiveTerminal from './interactive-terminal';
-import { ProjectsCounterChip } from './ProjectsCounterChip';
+import { ProjectsCounterChip, type ProjectWorkerType } from './ProjectsCounterChip';
+import { AskInstallOneOfDialog } from './openers/AskInstallOneOfDialog';
 import { TerminalOpenerToolbar } from './openers/TerminalOpenerToolbar';
 import type { OpenerDescriptor } from './openers/tab_opener_types';
 
@@ -68,15 +77,28 @@ const ClaudeResumeIcon: React.FC<{ className?: string }> = ({ className }) => (
 );
 
 import type { TerminalTab } from '@src/hooks/useActiveTerminals';
+import { resolveActive } from '@src/tabs/tab-model';
+import { buildTabCandidates } from '@src/tabs/tab-candidates';
+import { consumePendingIntent, peekPendingIntent } from '@src/tabs/pending-intent';
 
 function isCodexProcess(process?: AgenticProcess | null): boolean {
   return process?.worker_type?.trim().toLowerCase() === 'codex';
 }
 
+function isCopilotProcess(process?: AgenticProcess | null): boolean {
+  return process?.worker_type?.trim().toLowerCase() === 'copilot';
+}
+
+/** Opener warning for a harness: set when its backend capability check ran and failed. */
+function harnessWarning(capability: UseCapabilityResult): string | null {
+  if (!capability.checked || capability.available) return null;
+  return capability.result?.message ?? 'This harness is not available on this machine.';
+}
+
 function shouldAutoSavePtyTitle(session: TerminalTab, process?: AgenticProcess | null): boolean {
   const resolvedProcess = process ?? session.agenticProcess ?? null;
   if (!resolvedProcess) return session.targetTypeId.type === Shell.type;
-  return !isCodexProcess(resolvedProcess);
+  return !isCodexProcess(resolvedProcess) && !isCopilotProcess(resolvedProcess);
 }
 
 interface TabbedTerminalProps {
@@ -241,7 +263,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
   const renameInputRef = useRef<HTMLInputElement>(null);
   const shouldSelectRenameInputRef = useRef(false);
   const [pendingTabCreation, setPendingTabCreation] = useState<{
-    kind: 'claude' | 'codex' | 'terminal';
+    kind: 'claude' | 'codex' | 'copilot' | 'terminal';
     targetKey: string | null;
     targetShellId: string | null;
     targetProcessId: string | null;
@@ -252,6 +274,13 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
   const tabRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
   const [resumeByIdOpen, setResumeByIdOpen] = useState(false);
+  // Harness capability state (cache warmed at app startup). Drives the "!"
+  // sub-icon on the claude/codex openers and the harness-required popup.
+  const claudeCapability = useCapability(CapabilityKinds.ClaudeCode);
+  const codexCapability = useCapability(CapabilityKinds.Codex);
+  const [installChoiceKinds, setInstallChoiceKinds] = useState<string[] | null>(null);
+  // askInstallOneOf — open the harness-required popup for the given capability kinds.
+  const askInstallOneOf = useCallback((kinds: string[]) => setInstallChoiceKinds(kinds), []);
   const { resumeInTerminal } = useResumeInTerminal();
   const [hasTabOverflow, setHasTabOverflow] = useState(false);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
@@ -322,12 +351,20 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
   useEffect(() => {
     if (visibleSessions.length === 0) return;
     if (hasActiveTab) return;
-    const firstSession = visibleSessions[0];
-    // Self-heal lands on the live terminal, not the transcript. AgenticProcess's
-    // default ``dockPointer`` is read-only (lens/transcript); the terminal pane
-    // wants ``terminalDockPointer`` so the shell-id vs agentic_process-id route
-    // resolves correctly and the actual PTY surfaces.
-    const pointer = firstSession.agenticProcess?.terminalDockPointer ?? firstSession.shell?.dockPointer;
+    // URL-first self-heal via the single resolver: prefer an explicit pending
+    // intent (footer-chip click → Bug 2), else the most-recently-active tab
+    // (project round-trip → Bug 1), else lowest tab_order. We only RESOLVE a key
+    // and navigate; the route loader writes context. Replaces the old
+    // unconditional `visibleSessions[0]` snap.
+    const { activeKey, consumedPendingIntent } = resolveActive({
+      candidates: buildTabCandidates(visibleSessions),
+      urlActiveKey: null, // self-heal only runs when no active tab is in the strip
+      pendingIntentKey: peekPendingIntent(),
+    });
+    if (consumedPendingIntent) consumePendingIntent();
+    const target = visibleSessions.find((s) => terminalTargetKey(s) === activeKey);
+    if (!target) return;
+    const pointer = terminalDockPointer(target);
     if (pointer) navigation.openDockPointer(pointer);
   }, [hasActiveTab, visibleSessions, navigation]);
 
@@ -338,13 +375,39 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
 
   // "Start Claude" button — creates AgenticProcess entity, then emits onTabOpen
   // so the consumer can navigate / tag / start.
+  // `launch` overrides the project the process is pinned to (and its workdir);
+  // used by the projects-counter chip to start a tab on a not-yet-open project.
   const startAgenticTab = useCallback(
-    async (kind: 'claude' | 'codex', workerType?: 'claude_code' | 'codex') => {
+    async (
+      kind: 'claude' | 'codex' | 'copilot',
+      workerType?: 'claude_code' | 'codex' | 'copilot',
+      launch?: { projectId: string; cwd?: string | null },
+    ) => {
       if (tabCreationLockRef.current) return;
       tabCreationLockRef.current = true;
       setPendingTabCreation({ kind, targetKey: null, targetShellId: null, targetProcessId: null });
+      // Harness gate: validate the exact requested worker harness before
+      // creating a process that can only fail at PTY spawn.
+      try {
+        const requiredKind =
+          workerType === 'codex'
+            ? CapabilityKinds.Codex
+            : workerType === 'claude_code'
+              ? CapabilityKinds.ClaudeCode
+              : CapabilityKinds.Harness;
+        const harness = await capabilityManager.ensureChecked(requiredKind);
+        if (harness.checked && !harness.available) {
+          askInstallOneOf([...HARNESS_CAPABILITY_KINDS]);
+          clearPendingTabCreation();
+          return;
+        }
+      } catch {
+        // Capability API unavailable (older backend) — don't block tab creation.
+      }
+      const launchProjectId = launch?.projectId ?? spawnProjectId;
       const result = await navigation.openNewClaudeProcess({
-        ...(spawnProjectId ? { projectId: spawnProjectId } : {}),
+        ...(launchProjectId ? { projectId: launchProjectId } : {}),
+        ...(launch?.cwd ? { cwd: launch.cwd } : {}),
         ...(workerType ? { workerType } : {}),
       });
       if (!result) {
@@ -389,11 +452,37 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
       pushTerminal(newTab);
       onTabOpen?.(newTab);
     },
-    [clearPendingTabCreation, navigation, onTabOpen, pushTerminal, spawnProjectId],
+    [askInstallOneOf, clearPendingTabCreation, navigation, onTabOpen, pushTerminal, spawnProjectId],
   );
 
   const handleStartClaude = useCallback(() => startAgenticTab('claude', 'claude_code'), [startAgenticTab]);
   const handleStartCodex = useCallback(() => startAgenticTab('codex', 'codex'), [startAgenticTab]);
+  const handleStartCopilot = useCallback(() => startAgenticTab('copilot', 'copilot'), [startAgenticTab]);
+
+  // Projects-counter chip → "Open another project…" pick. Ensure the Project
+  // entity exists for the picked path (no context switch / navigation — the
+  // launched process drives navigation URL-first via onTabOpen), then start
+  // an agentic tab of the picked worker type pinned to it. The new bucket
+  // appears in the chip's list automatically once the tab lands in
+  // terminalState.
+  const ensureProject = useEnsureProject();
+  const handleLaunchProjectPath = useCallback(
+    async (cwd: string, workerType: ProjectWorkerType) => {
+      try {
+        const project = await ensureProject(cwd, { select: false });
+        await startAgenticTab(workerType === 'codex' ? 'codex' : workerType === 'copilot' ? 'copilot' : 'claude', workerType, {
+          projectId: project.id,
+          cwd: project.fs_storage_mount_path,
+        });
+      } catch (error) {
+        notify.error({
+          title: 'Failed to open project',
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
+    },
+    [ensureProject, startAgenticTab],
+  );
 
   const startTerminalTab = useCallback(
     async (computeNode?: ComputeNode) => {
@@ -571,6 +660,40 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
       if (session) void closeTabs([session]);
     },
     [visibleSessions, closeTabs],
+  );
+
+  /**
+   * Pop a tab out to an external browser: open its dock URL via the same
+   * `window.open(url, '_blank')` path the footer uses for "current url"
+   * (Electron's setWindowOpenHandler routes it to the system browser), then
+   * navigate this window away so only the external browser is viewing the
+   * session. The backend session must stay alive — closing it would kill
+   * the PTY for the popped-out browser too (it is one shared session), so
+   * this deliberately does NOT go through the close path.
+   */
+  const handleOpenExternalTab = useCallback(
+    (targetKey: string) => {
+      const session = visibleSessions.find((s) => terminalTargetKey(s) === targetKey);
+      const pointer = session && terminalDockPointer(session);
+      if (!pointer) return;
+      navigation.openInNewBrowserTab(pointer);
+      // Detach this window only if it is currently viewing the popped-out
+      // tab: hand the remaining alive tabs to the shared resolver (same
+      // MRU/order precedence as the strip's self-heal), or close the dock
+      // when none remain.
+      if (activeTargetKey !== targetKey) return;
+      const remaining = visibleSessions.filter((s) => terminalTargetKey(s) !== targetKey && !s.isDisabled);
+      const { activeKey } = resolveActive({
+        candidates: buildTabCandidates(remaining),
+        urlActiveKey: null,
+        pendingIntentKey: null,
+      });
+      const next = remaining.find((s) => terminalTargetKey(s) === activeKey);
+      const nextPointer = next && terminalDockPointer(next);
+      if (nextPointer) navigation.openDockPointer(nextPointer);
+      else navigation.closeDock();
+    },
+    [visibleSessions, navigation, activeTargetKey],
   );
 
   const handleCloseAll = useCallback(() => {
@@ -752,9 +875,12 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
   const isTabCreationPending = pendingTabCreation !== null;
   const isClaudeCreationPending = pendingTabCreation?.kind === 'claude';
   const isCodexCreationPending = pendingTabCreation?.kind === 'codex';
+  const isCopilotCreationPending = pendingTabCreation?.kind === 'copilot';
   const isTerminalCreationPending = pendingTabCreation?.kind === 'terminal';
   const sandboxAvailable = !!dataContext.bootstrapInfo?.sandbox_available && !!dataContext.sandboxComputeNode;
   const dockerNodes = dataContext.dockerComputeNodes;
+  const claudeWarning = harnessWarning(claudeCapability);
+  const codexWarning = harnessWarning(codexCapability);
   const openers = useMemo<OpenerDescriptor[]>(() => {
     const list: OpenerDescriptor[] = [
       {
@@ -766,6 +892,9 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
           void handleStartClaude();
         },
         available: true,
+        // Warned opener: the toolbar's activate() routes to the Capabilities
+        // screen instead of launching.
+        warning: claudeWarning,
         pendingInline: isClaudeCreationPending,
         disabled: isTabCreationPending,
       },
@@ -778,7 +907,20 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
           void handleStartCodex();
         },
         available: true,
+        warning: codexWarning,
         pendingInline: isCodexCreationPending,
+        disabled: isTabCreationPending,
+      },
+      {
+        id: 'copilot',
+        label: 'Start Copilot',
+        Icon: CopilotIcon,
+        iconClassName: 'text-sky-500',
+        onActivate: () => {
+          void handleStartCopilot();
+        },
+        available: true,
+        pendingInline: isCopilotCreationPending,
         disabled: isTabCreationPending,
       },
       {
@@ -841,11 +983,14 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
     modLabel,
     handleStartClaude,
     handleStartCodex,
+    handleStartCopilot,
     handleStartTerminal,
     handleStartSandbox,
     handleStartDocker,
     sandboxAvailable,
     dockerNodes,
+    claudeWarning,
+    codexWarning,
     isClaudeCreationPending,
     isCodexCreationPending,
     isTerminalCreationPending,
@@ -884,7 +1029,11 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
       <div className="flex h-full w-full flex-col">
         {/* Tab Bar */}
         <div className="flex items-center border-b bg-muted" data-testid="terminal-tab-bar">
-          <ProjectsCounterChip currentProjectId={tabsProjectId} />
+          <ProjectsCounterChip
+            currentProjectId={tabsProjectId}
+            onLaunchProjectPath={handleLaunchProjectPath}
+            onOpenHistory={() => setHistoryModalOpen(true)}
+          />
           {/* Left Scroll Button — always reserves layout space when tabs
               overflow, so toggling `canScrollLeft` doesn't shift the
               tab row horizontally. Mirrors the right-button pattern. */}
@@ -918,17 +1067,37 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
               const isDisabled = session.isDisabled;
               const workerType = sessionProcess?.worker_type?.toLowerCase() ?? '';
               const providerKind =
-                session.targetTypeId.type === Shell.type ? 'shell' : workerType === 'codex' ? 'codex' : 'claude';
+                session.targetTypeId.type === Shell.type
+                  ? 'shell'
+                  : workerType === 'codex'
+                    ? 'codex'
+                    : workerType === 'copilot'
+                      ? 'copilot'
+                      : 'claude';
               const ProviderIcon =
-                providerKind === 'codex' ? CodexIcon : providerKind === 'claude' ? ClaudeIcon : SquareTerminal;
+                providerKind === 'codex'
+                  ? CodexIcon
+                  : providerKind === 'copilot'
+                    ? CopilotIcon
+                    : providerKind === 'claude'
+                      ? ClaudeIcon
+                      : SquareTerminal;
               const providerIconClassName =
                 providerKind === 'codex'
                   ? 'text-emerald-500'
+                  : providerKind === 'copilot'
+                    ? 'text-sky-500'
                   : providerKind === 'claude'
                     ? 'text-orange-500'
                     : 'text-muted-foreground';
               const providerLabel =
-                providerKind === 'codex' ? 'Codex tab' : providerKind === 'claude' ? 'Claude Code tab' : 'Shell tab';
+                providerKind === 'codex'
+                  ? 'Codex tab'
+                  : providerKind === 'copilot'
+                    ? 'Copilot tab'
+                    : providerKind === 'claude'
+                      ? 'Claude Code tab'
+                      : 'Shell tab';
               const tabTestId =
                 session.targetTypeId.type === Shell.type
                   ? `tab-shell-${session.targetTypeId.id}`
@@ -1000,6 +1169,20 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
                       {displayName}
                     </span>
                   )}
+
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleOpenExternalTab(targetKey);
+                    }}
+                    disabled={isDisabled}
+                    className="rounded p-0.5 opacity-0 transition-opacity hover:bg-muted-foreground/20 group-hover:opacity-100"
+                    aria-label="Open in external browser"
+                    title="Open in external browser"
+                    data-testid={`tab-open-external-${indicatorKey}`}
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                  </button>
 
                   <button
                     onClick={(e) => {
@@ -1209,6 +1392,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
           )}
         </div>
       </div>
+      <AskInstallOneOfDialog kinds={installChoiceKinds} onClose={() => setInstallChoiceKinds(null)} />
       <HistoryModal
         open={historyModalOpen}
         onOpenChange={setHistoryModalOpen}
@@ -1227,7 +1411,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
               if (!processId) {
                 notify.error({
                   title: 'Session not found',
-                  message: `Session ${entry.worker_id} is not in Claude or Codex history.`,
+                  message: `Session ${entry.worker_id} is not in Claude, Codex, or Copilot history.`,
                   id: `session-not-found:${entry.worker_id}`,
                 });
                 return;

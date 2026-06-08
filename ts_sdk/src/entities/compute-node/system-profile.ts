@@ -853,9 +853,11 @@ export interface ProjectListItem {
   session_count: number;
   claude_session_count?: number;
   codex_session_count?: number;
+  copilot_session_count?: number;
   modified_at: string | null;
   claude?: boolean;
   codex?: boolean;
+  copilot?: boolean;
   worker_types?: string[];
   /** True when this project entry represents an SDK-shipped system project. */
   system?: boolean;
@@ -869,6 +871,7 @@ export interface ListProjectsResponse {
   total_count: number;
   claude_count?: number;
   codex_count?: number;
+  copilot_count?: number;
   both_count?: number;
   none_count?: number;
 }
@@ -1017,70 +1020,6 @@ export async function fetchAllSkillsFromComputeNode(computeNodeId: string): Prom
 
 // ═══════════════════════════════════════════════════════════════
 // CLAUDE USAGE / RATE-LIMIT INTERFACES
-// ═══════════════════════════════════════════════════════════════
-
-export interface ClaudeRateLimitWindow {
-  /** Utilization percentage (0-100) */
-  pct: number;
-  /** ISO timestamp when the window resets, or null if unknown */
-  resets_at: string | null;
-}
-
-export interface ClaudeExtraUsage {
-  enabled: boolean;
-  /** Utilization percentage (0-100) */
-  pct: number;
-  /** Consumed credits in cents */
-  used_cents: number;
-  /** Monthly limit in cents */
-  limit_cents: number;
-}
-
-export interface ClaudeUsageData {
-  five_hour: ClaudeRateLimitWindow;
-  seven_day: ClaudeRateLimitWindow;
-  extra: ClaudeExtraUsage;
-  /** ISO timestamp when the data was fetched */
-  fetched_at?: string;
-}
-
-/**
- * Fetch Claude Code rate-limit usage from the Anthropic API via a compute node.
- * The backend caches results for 60 seconds.
- */
-export async function fetchClaudeUsageFromComputeNode(
-  computeNodeId: string,
-): Promise<ClaudeUsageData | null> {
-  const actionInfo = new ActionInfo('get-claude-usage', 'compute_node', computeNodeId, 'GET');
-  const url = `${actionInfo.fullActionUrl}`;
-  try {
-    const response = await fetch(url, { credentials: 'include' });
-    const result = await response.json();
-    if (result.status !== 'SUCCESS') return null;
-    const d = result.data || {};
-    if (!d || Object.keys(d).length === 0) return null;
-    return {
-      five_hour: {
-        pct: Math.round(((d.five_hour?.utilization as number) ?? 0) * 100),
-        resets_at: (d.five_hour?.resets_at as string | null) ?? null,
-      },
-      seven_day: {
-        pct: Math.round(((d.seven_day?.utilization as number) ?? 0) * 100),
-        resets_at: (d.seven_day?.resets_at as string | null) ?? null,
-      },
-      extra: {
-        enabled: (d.extra_usage?.is_enabled as boolean) ?? false,
-        pct: Math.round(((d.extra_usage?.utilization as number) ?? 0) * 100),
-        used_cents: (d.extra_usage?.used_credits as number) ?? 0,
-        limit_cents: (d.extra_usage?.monthly_limit as number) ?? 0,
-      },
-      fetched_at: (d.fetched_at as string | undefined) ?? new Date().toISOString(),
-    };
-  } catch {
-    return null;
-  }
-}
-
 // ═══════════════════════════════════════════════════════════════
 // CLAUDE CONTEXT WINDOW DATA  (/context command)
 // ═══════════════════════════════════════════════════════════════
