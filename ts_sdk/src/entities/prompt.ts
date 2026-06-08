@@ -19,6 +19,10 @@ export interface IPrompt extends IEntity {
   /** Hex from the curated contrast-tested palette. */
   color?: string | null;
   project_id?: string | null;
+  /** Times this prompt was enqueued from the library. */
+  use_count?: number;
+  /** ISO timestamp of the last library enqueue. */
+  last_used_at?: string | null;
 }
 
 @registerEntity
@@ -39,6 +43,8 @@ export class Prompt extends APIEntity<Prompt> implements IPrompt {
   }
   color?: string | null;
   project_id?: string | null;
+  use_count: number = 0;
+  last_used_at: string | null = null;
 
   constructor(entity: Partial<IPrompt> = {}) {
     super(entity);
@@ -55,6 +61,8 @@ export class Prompt extends APIEntity<Prompt> implements IPrompt {
     this.icon = entity.icon ?? null;
     this.color = entity.color ?? null;
     this.project_id = entity.project_id ?? null;
+    this.use_count = entity.use_count ?? 0;
+    this.last_used_at = entity.last_used_at ?? null;
   }
 
   static async create(opts: {
@@ -83,9 +91,46 @@ export class Prompt extends APIEntity<Prompt> implements IPrompt {
   /**
    * prompt → queue: append this prompt's text onto the process's prompt
    * queue (source `library`). The backend owns injection/readiness — see
-   * docs/prompt_queue.md.
+   * docs/prompt_queue.md. Each enqueue counts as a "use": bump the usage
+   * counter + last_used_at and persist (project-scoped, mirroring `create`,
+   * so the backing .md stays under `<project>/prompts/`).
    */
   async enqueueTo(process: AgenticProcess): Promise<void> {
     await process.enqueue(this.text ?? '', 'library');
+    this.use_count = (this.use_count ?? 0) + 1;
+    this.last_used_at = new Date().toISOString();
+    const { TypeId } = await import('../models/TypeId');
+    await this.save(this.project_id ? new TypeId('project', this.project_id) : []);
+  }
+
+  /** All library prompts in a project scope (null → unscoped/user prompts). */
+  static async listForProject(projectId: string | null): Promise<Prompt[]> {
+    const { dataManager } = await import('../APIEntity');
+    const { ExpressionNode, QueryFilter, QueryRequest } = await import('../FlowSync/query');
+    const match = projectId
+      ? new ExpressionNode({ project_id: projectId })
+      : new ExpressionNode({ operands: ['project_id'], op: '$IS_NULL' });
+    return dataManager.query<Prompt>(
+      new QueryRequest({ type: Prompt.type, query: new QueryFilter({ type: Prompt.type, match }) }),
+    );
+  }
+
+  /**
+   * The most recently used prompt in the project — `last_used_at` first,
+   * falling back to `updated_date` so never-used prompts still order.
+   */
+  static async lastUsedForProject(projectId: string | null): Promise<Prompt | null> {
+    const prompts = await Prompt.listForProject(projectId);
+    let best: Prompt | null = null;
+    let bestTime = -Infinity;
+    for (const p of prompts) {
+      const stamp = p.last_used_at ?? (p.updated_date ? new Date(p.updated_date).toISOString() : null);
+      const t = stamp ? Date.parse(stamp) : NaN;
+      if (!Number.isNaN(t) && t > bestTime) {
+        bestTime = t;
+        best = p;
+      }
+    }
+    return best;
   }
 }

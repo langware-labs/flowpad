@@ -758,15 +758,36 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
    * invitees that have no account yet, and still tolerates the legacy
    * ``{member_through, value}`` envelope during the transition).
    *
-   * Invalidates the per-instance cache so the next ``fetchMembers`` reflects
-   * the post-removal roster.
+   * The reflection layer re-fetches the canonical roster after the remove and
+   * returns it as the action response — seed the cache from it so the next
+   * ``fetchMembers`` is free (falls back to invalidation on any other shape).
    */
   public async removeMember(userId: string): Promise<void> {
     const info = new ActionInfo('members', this.typeId.type, this.typeId.id, 'DELETE');
     info.hubReflect = true; // membership change is hub-owned — reflect to the hub
     info.bodyParameters = { user_id: userId };
-    await dataManager.callAction<unknown, unknown>(info);
-    this._membersCache = undefined;
+    const res = await dataManager.callAction<unknown, EntityMember[]>(info);
+    this._membersCache = Array.isArray(res) ? res : undefined;
+  }
+
+  /**
+   * Change a member's role — PUT ``<type>/<id>/members`` with ``{user_id, role}``.
+   * The hub gates this via its role-grant chokepoint (``can_assign``): the
+   * caller may only assign a role strictly below their own, on a member ranked
+   * strictly below their own, never on themselves and never on the owner —
+   * denials surface here as thrown errors (403). ``role`` is a lowercase
+   * policy role (e.g. ``admin`` / ``editor`` / ``member`` / ``reader``).
+   *
+   * The reflection layer re-fetches the canonical roster after the change and
+   * returns it as the action response — seed the cache from it so the next
+   * ``fetchMembers`` is free (falls back to invalidation on any other shape).
+   */
+  public async setMemberRole(userId: string, role: string): Promise<void> {
+    const info = new ActionInfo('members', this.typeId.type, this.typeId.id, 'PUT');
+    info.hubReflect = true; // role change is hub-owned — reflect to the hub
+    info.bodyParameters = { user_id: userId, role };
+    const res = await dataManager.callAction<unknown, EntityMember[]>(info);
+    this._membersCache = Array.isArray(res) ? res : undefined;
   }
 
   /**

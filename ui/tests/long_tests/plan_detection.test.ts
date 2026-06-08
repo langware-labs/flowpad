@@ -125,7 +125,7 @@ describe('AgenticProcess plan detection — end-to-end', () => {
         // eslint-disable-next-line no-console
         console.log(
           `[plan_detection] PTY live=${proc.ptyConnection?.isLive} ` +
-            `replayDone=${proc.ptyConnection?.replayDone} after start. ` +
+            `attached=${proc.ptyConnection?.attached} after start. ` +
             `session_id now=${proc.session_id ?? 'null'}`,
         );
 

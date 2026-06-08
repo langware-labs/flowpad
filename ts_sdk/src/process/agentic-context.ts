@@ -81,10 +81,10 @@ export interface AgenticContext {
    * streams per-event FlowData over HTTP. */
   outputFormat?: string;
 
-  /** Backend worker (`'claude_code'` | `'codex'`). Default: backend's
+  /** Backend worker (`'claude_code'` | `'codex'` | `'copilot'`). Default: backend's
    * `FLOWPAD_DEFAULT_WORKER` (typically claude). Surfaced so the UI can
-   * launch a Codex tab from the same opener flow. */
-  workerType?: 'claude_code' | 'codex';
+   * launch alternate CLI tabs from the same opener flow. */
+  workerType?: 'claude_code' | 'codex' | 'copilot';
 
   /** Discriminates how this process is being used (chat vs execution). */
   processType?: ProcessType;

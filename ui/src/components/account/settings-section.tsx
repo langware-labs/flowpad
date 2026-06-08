@@ -1,11 +1,9 @@
 import { useInstancePreferences } from '@sdk/react/hooks/use-instance-preferences';
 import { ActionInfo, dataContext, dataManager, TerminalType } from '@sdk';
-import { Button } from '@src/components/ui/button';
 import { Checkbox } from '@src/components/ui/checkbox';
 import { Label } from '@src/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@src/components/ui/radio-group';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@src/components/ui/select';
-import { LogIn } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 
 export function SettingsSection() {
@@ -79,20 +77,6 @@ export function SettingsSection() {
             </Label>
           </div>
         </RadioGroup>
-      </div>
-
-      <div>
-        <Button
-          variant="outline"
-          className="w-full justify-start gap-2"
-          onClick={() => {
-            window.dispatchEvent(new CustomEvent('close-account-dialog'));
-            window.dispatchEvent(new CustomEvent('open-desktop-setup'));
-          }}
-        >
-          <LogIn className="h-4 w-4" />
-          Login to Anthropic
-        </Button>
       </div>
 
       <div className="flex items-center gap-2">

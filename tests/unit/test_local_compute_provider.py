@@ -1,12 +1,16 @@
 """Unit tests for local compute provider."""
 
 import asyncio
+
 import pytest
 
-from flow_sdk.compute.providers.desktop.provider import LocalComputeProvider
+from flow_sdk.compute.providers.desktop.provider import (
+    LocalComputeProvider,
+    _build_interactive_pty_env,
+)
 
 # Import types from the flow-sdk
-from flow_sdk.flowpad_types import RuntimeEnvironment, ExecutionEnvironmentStatus
+from flow_sdk.flowpad_types import ExecutionEnvironmentStatus, RuntimeEnvironment
 
 
 @pytest.fixture
@@ -82,6 +86,53 @@ async def test_set_env(local_provider):
     await local_provider.set_env(node_id, "FLOWPAD_TEST_VAR", None)
 
     await local_provider.shutdown(node_id)
+
+
+def test_interactive_pty_env_strips_inherited_color_suppression(monkeypatch):
+    """Interactive PTYs should not inherit automation no-color markers."""
+    monkeypatch.setenv("NO_COLOR", "1")
+    monkeypatch.setenv("NODE_DISABLE_COLORS", "1")
+    monkeypatch.setenv("CODEX_CI", "1")
+    monkeypatch.setenv("TERM", "dumb")
+    monkeypatch.setenv("COLORTERM", "")
+    monkeypatch.setenv("CLICOLOR", "0")
+    monkeypatch.setenv("CLICOLOR_FORCE", "false")
+    monkeypatch.setenv("FORCE_COLOR", "off")
+    monkeypatch.setenv("CLAUDECODE_ENTRYPOINT", "1")
+
+    env = _build_interactive_pty_env("test-session")
+
+    assert env["TERM"] == "xterm-256color"
+    assert env["COLORTERM"] == "truecolor"
+    assert env["FLOWPAD_PTY_SESSION_ID"] == "test-session"
+    assert "NO_COLOR" not in env
+    assert "NODE_DISABLE_COLORS" not in env
+    assert "CODEX_CI" not in env
+    assert "CLICOLOR" not in env
+    assert "CLICOLOR_FORCE" not in env
+    assert "FORCE_COLOR" not in env
+    assert "CLAUDECODE_ENTRYPOINT" not in env
+
+
+def test_interactive_pty_env_preserves_explicit_worker_env(monkeypatch):
+    """Per-worker env is explicit intent and overlays the generic PTY defaults."""
+    monkeypatch.setenv("NO_COLOR", "1")
+    monkeypatch.setenv("COLORTERM", "")
+
+    env = _build_interactive_pty_env(
+        "test-session",
+        {
+            "NO_COLOR": "1",
+            "COLORTERM": "24bit",
+            "TERM": "ansi",
+            "WORKER_ONLY": "yes",
+        },
+    )
+
+    assert env["NO_COLOR"] == "1"
+    assert env["COLORTERM"] == "24bit"
+    assert env["TERM"] == "ansi"
+    assert env["WORKER_ONLY"] == "yes"
 
 
 @pytest.mark.asyncio

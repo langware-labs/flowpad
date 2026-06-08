@@ -4,18 +4,19 @@ Endpoints:
   GET    /secrets/is-enabled         → {enabled: bool}
   POST   /secrets/enable             → {enabled: bool}
   POST   /secrets/seed-key           → body {key} → {enabled: bool} (Electron-only)
-  POST   /secrets/migrate-to-flow-rs → {key: str|None, has_legacy: bool} (Electron-only)
-  POST   /secrets/cleanup-legacy     → {ok: bool} (Electron-only; after migration)
+  POST   /secrets/migrate-to-flow-rs → {key: str|None, has_legacy: bool} (legacy/non-desktop only)
+  POST   /secrets/cleanup-legacy     → {ok: bool} (legacy/non-desktop only)
   GET    /secrets                    → [{name, description, created_at}]
   POST   /secrets                    → body {name, value, description?}
   DELETE /secrets/{name}             → {ok: True}
 
 Reading a secret value is intentionally not exposed: the UI must never see
 plaintext values. SDK consumers use ``read_secret`` in-process. The
-``migrate-to-flow-rs`` endpoint is the ONE exception — it returns the
-sod-key value so a signed Electron launcher can re-write it through the
-bundled flow-rs binary, replacing the legacy python3.x-owned ACL trust
-list with flow-rs. Available only to localhost callers.
+``migrate-to-flow-rs`` was the ONE exception — it returned the sod-key value
+so a signed Electron launcher could re-write it through the bundled flow-rs
+binary. Desktop builds now refuse Python-owned keychain reads, so that endpoint
+returns no legacy key under ``FLOWPAD_DESKTOP=1``. Available only to localhost
+callers.
 """
 
 import json

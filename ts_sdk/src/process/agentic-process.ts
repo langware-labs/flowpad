@@ -88,10 +88,14 @@ function _ensureAgenticStaticListeners(): void {
   _agenticListenersRegistered = true;
   void import('../websocket').then(({ ConnectionManager }) => {
     const cm = ConnectionManager.getInstance();
-    cm.on('on_reconnected', () => { void _dispatchRecoverySweep(); });
+    cm.on('on_reconnected', () => {
+      void _dispatchRecoverySweep();
+    });
   });
   if (_pollTimer === null) {
-    _pollTimer = setInterval(() => { void _dispatchRecoverySweep(); }, _POLL_INTERVAL_MS);
+    _pollTimer = setInterval(() => {
+      void _dispatchRecoverySweep();
+    }, _POLL_INTERVAL_MS);
   }
 }
 
@@ -296,6 +300,15 @@ export interface IAgenticProcess extends IEntity {
    */
   restart_required?: boolean;
   /**
+   * Reason the last worker launch failed to start (the worker exited within
+   * the backend's instant-exit window). Non-null LATCHES the process out of
+   * auto-recovery: the os-status sweep skips it and plain `open` calls are
+   * refused server-side, so a worker that dies on arrival isn't relaunched
+   * every 5s forever. Cleared only by an explicit user retry
+   * (`start({ retry: true })`) or a launch that survives the window.
+   */
+  start_failure?: string | null;
+  /**
    * MD5 of the worker-relevant snapshot captured at the last successful start().
    * Compared against the current snapshot on every save() to detect drift.
    */
@@ -404,7 +417,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * (e.g. an editor "discuss this doc" button) that needs to launch a
    * harness tab pre-filled with a user prompt.
    *
-   * @param workerType - `'claude_code'` or `'codex'`
+   * @param workerType - `'claude_code'`, `'codex'`, or `'copilot'`
    * @param prompt - Optional initial user prompt. Placed on the process's
    *   prompt queue (not injected directly): the backend drains the queue head
    *   as the worker's launch instruction when the dock starts it, so the
@@ -417,7 +430,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * @returns The spawned AgenticProcess (already navigated to).
    */
   static async openTab(
-    workerType: 'claude_code' | 'codex',
+    workerType: 'claude_code' | 'codex' | 'copilot',
     prompt?: string,
     project?: { id?: string; fs_storage_mount_path?: string | null } | null,
   ): Promise<AgenticProcess> {
@@ -576,7 +589,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /**
    * Resolve a worker/session/thread id to a ready-to-use AgenticProcess.
    *
-   * Single round-trip: backend auto-discovers worker_type (Claude or Codex),
+   * Single round-trip: backend auto-discovers worker_type,
    * resolves cwd + project from the on-disk session record, upserts the
    * AgenticProcess (heals existing or creates+starts a new one), and returns
    * the full entity dict. We hydrate the dataManager cache directly — no
@@ -648,7 +661,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   get transcriptDockPointer(): DockPointerData {
     if (!this.session_id) return this.terminalDockPointer;
     const wt = (this.worker_type ?? 'claude').toLowerCase();
-    const worker = wt === 'codex' ? 'codex' : 'claude';
+    const worker = wt === 'codex' ? 'codex' : wt === 'copilot' ? 'copilot' : 'claude';
     return new DockPointerData(ViewType.LENS, `${worker}/transcript/${this.session_id}`);
   }
 
@@ -684,13 +697,14 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * React component via the ``pickProcessIcon`` registry. Two axes drive
    * the choice:
    *
-   * - **vendor**: ``worker_type`` ('claude' / 'codex' / fallback)
+   * - **vendor**: ``worker_type`` ('claude' / 'codex' / 'copilot' / fallback)
    * - **state**: fresh-start vs ``wasRestoredFromSession``
    */
   get icon(): ProcessIconKey {
     const wt = (this.worker_type ?? '').toLowerCase();
     const restored = this.wasRestoredFromSession;
     if (wt === 'codex') return restored ? 'codex-restore' : 'codex';
+    if (wt === 'copilot') return restored ? 'copilot-restore' : 'copilot';
     // Default to claude — that's what AgenticProcess.spawn produces today
     // (ClaudeCliOptions hardcoded), so an unset worker_type means claude.
     if (wt === '' || wt === 'claude' || wt.startsWith('claude_') || wt.startsWith('claude-')) {
@@ -758,7 +772,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /** False=direct PTY spawn (default), True=legacy zsh intermediary */
   shell_mode?: boolean;
 
-  /** CLI worker vendor (e.g. 'claude', 'codex'). Drives icon selection. */
+  /** CLI worker vendor (e.g. 'claude', 'codex', 'copilot'). Drives icon selection. */
   worker_type?: string | null;
 
   /** Discriminates how this process is being used (chat vs execution). */
@@ -788,6 +802,13 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * this as the "Restart" affordance on the process toolbar.
    */
   restart_required: boolean = false;
+
+  /**
+   * Reason the last worker launch failed to start (instant-exit latch).
+   * Non-null excludes this process from auto-recovery; clear it via an
+   * explicit user retry — `start({ retry: true })` — never automatically.
+   */
+  start_failure: string | null = null;
 
   /**
    * MD5 of the worker-relevant snapshot captured at the last successful start().
@@ -879,8 +900,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   /** Remove a queued prompt by its id (string) or list index (number). */
   async dequeue(idOrIndex: string | number): Promise<void> {
     const actionInfo = new ActionInfo('dequeue', AgenticProcess.type, this.id, 'POST');
-    actionInfo.bodyParameters =
-      typeof idOrIndex === 'number' ? { index: idOrIndex } : { id: idOrIndex };
+    actionInfo.bodyParameters = typeof idOrIndex === 'number' ? { index: idOrIndex } : { id: idOrIndex };
     await dataManager.callAction(actionInfo);
   }
 
@@ -897,11 +917,41 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     await dataManager.callAction(actionInfo);
   }
 
+  // ── Pin-from-history (docs/prompt-library.md) ───────────────────────────────
+  // Pin = create/reuse a library Prompt from a history item's text; the
+  // backend mutually cross-links the Prompt and this process into each
+  // other's PRIVATE context entities. Unpin = remove link + delete the
+  // prompt from the library. Private context is backend-mutated only.
+
+  /** Pin a history item's text into the prompt library. Idempotent by normalized text. */
+  async pinPrompt(text: string, name?: string): Promise<{ promptId: string }> {
+    const actionInfo = new ActionInfo('pin-prompt', AgenticProcess.type, this.id, 'POST');
+    actionInfo.bodyParameters = { text, ...(name ? { name } : {}) };
+    const result = await dataManager.callAction<
+      { text: string; name?: string },
+      { prompt_id: string; pinned: boolean }
+    >(actionInfo);
+    return { promptId: result.prompt_id };
+  }
+
+  /** Unpin: remove the prompt↔process link and delete the prompt from the library. */
+  async unpinPrompt(promptId: string): Promise<void> {
+    const actionInfo = new ActionInfo('unpin-prompt', AgenticProcess.type, this.id, 'POST');
+    actionInfo.bodyParameters = { prompt_id: promptId };
+    await dataManager.callAction(actionInfo);
+  }
+
+  /** Record that this process executed a library prompt: mutual private
+   *  cross-link + usage bump (conversation Approve & Execute path). */
+  async linkExecutedPrompt(promptId: string): Promise<void> {
+    const actionInfo = new ActionInfo('link-executed-prompt', AgenticProcess.type, this.id, 'POST');
+    actionInfo.bodyParameters = { prompt_id: promptId };
+    await dataManager.callAction(actionInfo);
+  }
+
   async shell(): Promise<Shell | null> {
     if (!this.shell_id) return null;
-    const w = (typeof window !== 'undefined' ? window : undefined) as
-      | { __shellNavT0?: number }
-      | undefined;
+    const w = (typeof window !== 'undefined' ? window : undefined) as { __shellNavT0?: number } | undefined;
     const t0 = w?.__shellNavT0;
     const stamp = (label: string, start: number) => {
       if (t0 === undefined) return;
@@ -981,10 +1031,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    *
    * Returns an unsubscribe function.
    */
-  onPlan<T = string | null>(
-    options: { validate?: boolean },
-    handler: (payload: T) => void,
-  ): () => void {
+  onPlan<T = string | null>(options: { validate?: boolean }, handler: (payload: T) => void): () => void {
     const validate = options.validate ?? false;
 
     const check = async (): Promise<void> => {
@@ -997,7 +1044,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       }
     };
 
-    const unsubStatus = this.on('status', () => { void check(); });
+    const unsubStatus = this.on('status', () => {
+      void check();
+    });
     void check();
 
     return () => unsubStatus();
@@ -1038,10 +1087,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     const { fromJson, UserMessageEntry } = await import('../transcript-analyzer');
     const actionInfo = new ActionInfo('transcript', AgenticProcess.type, this.id, 'POST');
     actionInfo.subpath = 'prompts';
-    const response = await dataManager.callAction<
-      unknown,
-      { prompts?: Record<string, unknown>[] | null }
-    >(actionInfo);
+    const response = await dataManager.callAction<unknown, { prompts?: Record<string, unknown>[] | null }>(actionInfo);
     const raw = response?.prompts ?? [];
     const out: import('../transcript-analyzer').UserMessageEntry[] = [];
     for (const r of raw) {
@@ -1055,12 +1101,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    * Fetch the parsed worker transcript from the process-specific transcript source.
    */
   async getTranscript(): Promise<import('../transcript-analyzer').AgentTranscript> {
-    const {
-      AgentTranscript,
-      TranscriptFormat,
-      TranscriptSource,
-      fromJson,
-    } = await import('../transcript-analyzer');
+    const { AgentTranscript, TranscriptFormat, TranscriptSource, fromJson } = await import('../transcript-analyzer');
     const actionInfo = new ActionInfo('transcript', AgenticProcess.type, this.id, 'POST');
     actionInfo.subpath = 'full';
     const response = await dataManager.callAction<
@@ -1078,10 +1119,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     const rawEntries = response?.entries ?? [];
     const entries = rawEntries.map((entry) => fromJson(entry));
     const format = Object.values(TranscriptFormat).includes(response?.transcript_format as never)
-      ? response?.transcript_format as TranscriptFormatType
+      ? (response?.transcript_format as TranscriptFormatType)
       : null;
     const source = Object.values(TranscriptSource).includes(response?.transcript_source as never)
-      ? response?.transcript_source as TranscriptSourceType
+      ? (response?.transcript_source as TranscriptSourceType)
       : null;
     const path = response?.path ?? response?.transcript_path ?? '';
     return new AgentTranscript(
@@ -1372,8 +1413,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   ): Promise<AgenticProcessReportEventResult> {
     const actionInfo = new ActionInfo('report_event', AgenticProcess.type, this.id, 'GET');
     actionInfo.subpath = name;
-    const requestId =
-      globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const requestId = globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     actionInfo.queryParameters = {
       data: JSON.stringify(data),
       request_id: requestId,
@@ -1622,8 +1662,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       actionInfo.bodyParameters = { entity_ref: ref.toString() };
       await dataManager.callAction(actionInfo);
       const refStr = ref.toString();
-      this.embedded_asset_refs = (this.embedded_asset_refs ?? [])
-        .filter((r) => String(r) !== refStr);
+      this.embedded_asset_refs = (this.embedded_asset_refs ?? []).filter((r) => String(r) !== refStr);
     },
     list: (): TypeId[] => [...(this.embedded_asset_refs ?? [])],
   };
@@ -1935,6 +1974,10 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
      * worker's first paint isn't wrapped at 80 cols on a wide viewport. */
     cols?: number;
     rows?: number;
+    /** Explicit user retry of a failed-to-start process: clears the
+     * server-side `start_failure` latch before launching. Without it the
+     * backend refuses to respawn a latched process. */
+    retry?: boolean;
   }): Promise<boolean> {
     const { Shell } = await import('../entities/shell');
     // No client-side STOPPING guard. The server's ``open`` action runs
@@ -1955,7 +1998,13 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     actionInfo.bodyParameters = options ?? {};
     const result = await dataManager.callAction<
       unknown,
-      { shell_id: string; pty_id: string; session_id: string | null; status?: string; shell: Record<string, unknown> } | null
+      {
+        shell_id: string;
+        pty_id: string;
+        session_id: string | null;
+        status?: string;
+        shell: Record<string, unknown>;
+      } | null
     >(actionInfo);
     if (!result) throw new Error('Process could not be opened (process may be terminated)');
     if (result.status) {
@@ -1973,14 +2022,21 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       if (shell.compute_node_id) shell.ptyConnection.computeNodeId = shell.compute_node_id;
     }
     await shell.attachPty({
-      cols: options?.cols ?? Shell.DEFAULT_COLS,
-      rows: options?.rows ?? Shell.DEFAULT_ROWS,
+      // Real xterm size only — undefined means "keep current size, just repaint".
+      cols: options?.cols,
+      rows: options?.rows,
       timeout: options?.ptyTimeout,
       ptyId: result.pty_id,
     });
     // Successful open clears any prior user-stop intent and registers this
     // process for auto-recovery (poll + on_reconnected dispatcher).
     this._userInitiatedStop = false;
+    // A successful open implies the process is not latched (the backend gate
+    // refuses latched opens; retry clears before launching). Clear locally
+    // too: the entity dump drops None fields, so the server-side clear never
+    // arrives as `start_failure: null` — without this a stale latch would
+    // exclude the process from auto-recovery forever.
+    this.start_failure = null;
     _agenticProcessRegistry.add(this);
     _ensureAgenticStaticListeners();
     return true;
@@ -2019,11 +2075,16 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    *     call finish first.
    *   - ``FAILED``: relaunching would loop because the worker can't start
    *     with the current ``cli_options``.
+   *   - ``start_failure``: failed-to-start latch — the worker exited
+   *     instantly on its last launch. Checked separately from FAILED so a
+   *     latched process stays skipped even if the cached ``status`` field
+   *     lags behind the entity update.
    */
   private _isRecoveryEligible(): boolean {
     if (this._userInitiatedStop) return false;
     if (this.status === ProcessStatus.STARTING || this.status === ProcessStatus.STOPPING) return false;
     if (this.status === ProcessStatus.FAILED) return false;
+    if (this.start_failure) return false;
     return true;
   }
 
@@ -2079,7 +2140,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     const data = await dataManager.callAction<{ visible: boolean }, Record<string, unknown>>(actionInfo);
     if (!data?.id) throw new Error('Fork failed: backend returned no process data');
     dataManager.updateEntityFromJson(data);
-    const newProcess = await dataManager.getByTypeId<AgenticProcess>(new TypeId(AgenticProcess.type, data.id as string));
+    const newProcess = await dataManager.getByTypeId<AgenticProcess>(
+      new TypeId(AgenticProcess.type, data.id as string),
+    );
     if (!newProcess) throw new Error(`Fork failed: new process ${data.id} not found after registration`);
     await newProcess.start();
     return newProcess;

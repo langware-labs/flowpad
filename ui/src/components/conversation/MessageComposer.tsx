@@ -11,7 +11,7 @@ import { MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_LABEL } from './constants';
 import { AssetRefChips } from './AttachMenu';
 import { AttachRepoButton } from './AttachRepoButton';
 import { PromptComposerDialog, type QueuedPrompt } from './PromptComposerDialog';
-import { PromptApprovalRow } from './PromptApprovalRow';
+import { AttachmentActionsRow, PromptAttachmentPreview, useAttachmentActions } from './attachment-actions';
 import { useLocalUser } from './useLocalUser';
 import { discardDraftFlowMessage } from './flow-message-drafts';
 
@@ -110,7 +110,9 @@ export function MessageComposer({
     return () => clearTimeout(handle);
   }, [text, draft]);
 
-  // Synthesise PROMPT-shaped attachments so the preview reuses PromptApprovalRow.
+  // Synthesise PROMPT-shaped attachments so the preview reuses
+  // PromptAttachmentPreview (legacy shape is fine — the send path mints the
+  // real Prompt entity server-side).
   const queuedPromptAttachments: Attachment[] = useMemo(() => {
     if (!activePrompt) return [];
     const list: Attachment[] = [];
@@ -122,6 +124,14 @@ export function MessageComposer({
     }
     return list;
   }, [activePrompt]);
+
+  // Composer-preview actions (Edit only — no FlowMessage exists yet).
+  const { actions: composerActions } = useAttachmentActions({
+    fm: null,
+    isFromOther: false,
+    isComposerPreview: true,
+    handlers: { edit: () => setShowPromptDialog(true) },
+  });
 
   const addFiles = (incoming: FileList | null) => {
     if (!incoming) return;
@@ -149,19 +159,14 @@ export function MessageComposer({
   const removeFile = (index: number) => setFiles((prev) => prev.filter((_, i) => i !== index));
 
   const addAssetRef = (d: AssetDescriptor) =>
-    setAssetRefs((prev) =>
-      prev.some((a) => a.typeid === d.typeid && a.source === d.source) ? prev : [...prev, d],
-    );
+    setAssetRefs((prev) => (prev.some((a) => a.typeid === d.typeid && a.source === d.source) ? prev : [...prev, d]));
 
   const addRepo = (typeId: string, label: string) =>
     setRepoRefs((prev) => (prev.some((r) => r.typeId === typeId) ? prev : [...prev, { typeId, label }]));
 
-  const removeRepo = (typeId: string) =>
-    setRepoRefs((prev) => prev.filter((r) => r.typeId !== typeId));
+  const removeRepo = (typeId: string) => setRepoRefs((prev) => prev.filter((r) => r.typeId !== typeId));
 
-  const buildExtras = (
-    effectivePrompt: QueuedPrompt | null,
-  ): Parameters<typeof sendReply>[3] | undefined => {
+  const buildExtras = (effectivePrompt: QueuedPrompt | null): Parameters<typeof sendReply>[3] | undefined => {
     const extras: NonNullable<Parameters<typeof sendReply>[3]> = {};
     if (effectivePrompt) {
       if (effectivePrompt.text) extras.promptText = effectivePrompt.text;
@@ -176,13 +181,7 @@ export function MessageComposer({
   const send = async (effectivePrompt: QueuedPrompt | null) => {
     if (isBusy) return;
     const trimmed = text.trim();
-    if (
-      !trimmed &&
-      !effectivePrompt &&
-      files.length === 0 &&
-      assetRefs.length === 0 &&
-      repoRefs.length === 0
-    ) {
+    if (!trimmed && !effectivePrompt && files.length === 0 && assetRefs.length === 0 && repoRefs.length === 0) {
       return;
     }
     setSending(true);
@@ -259,12 +258,7 @@ export function MessageComposer({
   };
 
   const canSend =
-    (!!text.trim() ||
-      !!activePrompt ||
-      files.length > 0 ||
-      assetRefs.length > 0 ||
-      repoRefs.length > 0) &&
-    !isDisabled;
+    (!!text.trim() || !!activePrompt || files.length > 0 || assetRefs.length > 0 || repoRefs.length > 0) && !isDisabled;
 
   // ── Shared building blocks (identical in both modes) ────────────────────
 
@@ -404,7 +398,10 @@ export function MessageComposer({
     canAddPrompt && activePrompt ? (
       <div className="flex items-start gap-1">
         <div className="min-w-0 flex-1">
-          <PromptApprovalRow attachments={queuedPromptAttachments} onEdit={() => setShowPromptDialog(true)} />
+          <AttachmentActionsRow
+            actions={composerActions}
+            preview={<PromptAttachmentPreview attachments={queuedPromptAttachments} />}
+          />
         </div>
         <button
           type="button"
@@ -464,7 +461,7 @@ export function MessageComposer({
               placeholder={dragging ? 'Drop files here' : 'Edit your draft…'}
               rows={Math.max(2, Math.min(10, text.split('\n').length + 1))}
               disabled={isDisabled}
-              className="w-full min-h-[2.5rem] resize-none bg-transparent px-1 py-1 text-sm text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
+              className="min-h-[2.5rem] w-full resize-none bg-transparent px-1 py-1 text-sm text-foreground outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed disabled:opacity-50"
             />
             <div className="flex items-center gap-1.5">
               {attachButtons}

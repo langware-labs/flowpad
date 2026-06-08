@@ -24,29 +24,15 @@ export interface ShellResult {
   exitCode: number;
 }
 
-export interface PtySequenceChunkMeta {
-  seq: number;
-  timestamp: number;
-  size: number;
-  data_b64: string;
-  preview_b64: string;
-}
-
-export interface PtySequenceData {
-  chunks: PtySequenceChunkMeta[];
-  total_chunks: number;
-  total_size_bytes: number;
-  next_seq: number;
-  pty_file_b64: string | null;
-}
-
 export interface IShellConnectionOptions {
-  cols: number;
-  rows: number;
+  /** When provided, attach asserts this size on the PTY (real xterm size only —
+   *  loader-time callers omit them so a live PTY isn't shrunk to defaults). */
+  cols?: number;
+  rows?: number;
   isActive?: boolean; // deferred activation gate (default: true)
   workdir?: string;
   ptyId?: string;
-  force?: boolean; // reset seq + replayDone and re-attach (absorbs restart())
+  force?: boolean; // reset attach state and re-attach (absorbs restart())
   timeout?: number; // WS request timeout ms (default: 30 000)
 }
 
@@ -166,9 +152,9 @@ export class Shell extends APIEntity<Shell> implements IShell {
     return this.ptyConnection.isLive;
   }
 
-  /** True once attach() has finished its replay phase (no WS dependency). */
-  get replayDone(): boolean {
-    return this.ptyConnection.replayDone;
+  /** True once attach() has completed (no WS dependency). */
+  get attached(): boolean {
+    return this.ptyConnection.attached;
   }
 
   /** True if the PTY process has been started on the compute node. */
@@ -223,10 +209,10 @@ export class Shell extends APIEntity<Shell> implements IShell {
 
   /**
    * Subscribe to PTY output.
-   * Gated: returns undefined if not yet ready (replay not done).
+   * Gated: returns undefined if the PTY is not yet attached.
    */
   onOutput(fn: import('../services/shell/ptyConnection.js').PtyOutputListener): (() => void) | undefined {
-    if (!this.ptyConnection.replayDone) return undefined;
+    if (!this.ptyConnection.attached) return undefined;
     return this.ptyConnection.onOutput(fn);
   }
 
@@ -290,7 +276,10 @@ export class Shell extends APIEntity<Shell> implements IShell {
     // Sync IDs into PtyConnection (compute_node_id may have been set by backend response).
     if (this.compute_node_id) this.ptyConnection.computeNodeId = this.compute_node_id;
     this.ptyConnection.shellId = this.id;
-    await this.attachPty({ cols, rows, workdir, timeout: opts.timeout, ptyId: this.pty_pid ?? this.id });
+    // No cols/rows: open() already sized a NEW pty; for an existing pty the
+    // defaults here are not the client's real xterm size — attach jiggles at
+    // the current size and the mount-time fit()/resize() asserts the real one.
+    await this.attachPty({ workdir, timeout: opts.timeout, ptyId: this.pty_pid ?? this.id });
     return this.pty_pid ?? this.id;
   }
 
@@ -301,10 +290,10 @@ export class Shell extends APIEntity<Shell> implements IShell {
    *
    * Options:
    *   - isActive: deferred activation gate (default: true)
-   *   - force: reset seq + replayDone before connecting (absorbs old restart())
+   *   - force: reset attach state before connecting (absorbs old restart())
    */
   async attachPty(opts: IShellConnectionOptions): Promise<void> {
-    const { isActive = true, ptyId, force = false, timeout } = opts;
+    const { isActive = true, ptyId, force = false, timeout, cols, rows } = opts;
     const targetPtyId = ptyId ?? this.pty_pid ?? this.id;
 
     if (isActive) this._hasEverBeenActive = true;
@@ -319,7 +308,7 @@ export class Shell extends APIEntity<Shell> implements IShell {
     if (this.compute_node_id) this.ptyConnection.computeNodeId = this.compute_node_id;
     this.ptyConnection.shellId = this.id;
 
-    await this.ptyConnection.attach(targetPtyId, { force, timeout });
+    await this.ptyConnection.attach(targetPtyId, { force, timeout, cols, rows });
   }
 
   // ── I/O delegation wrappers ───────────────────────────────────────────────
@@ -394,12 +383,6 @@ export class Shell extends APIEntity<Shell> implements IShell {
     const action = new ActionInfo('set-env', Shell.type, this.id, 'POST');
     action.bodyParameters = { vars };
     await dataManager.callAction<any, any>(action);
-  }
-
-  async fetchPtySequence(): Promise<PtySequenceData> {
-    const action = new ActionInfo('fetch-pty-sequence', Shell.type, this.id, 'GET');
-    const result = await dataManager.callAction<undefined, PtySequenceData>(action);
-    return result;
   }
 
   // ── Static helpers ────────────────────────────────────────────────────────

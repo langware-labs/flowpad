@@ -135,6 +135,14 @@ def get_database_url(path: str | None = None) -> str:
     return f"sqlite+aiosqlite:///{path}"
 
 
+# Execution-option key marking connections that belong to the WRITE session
+# path. Absent (default) → writer semantics (BEGIN IMMEDIATE). The driver's
+# reader session factory derives its engine via
+# ``engine.execution_options(**{FLOW_WRITER_OPT: False})`` so read-only driver
+# methods skip the writer lock entirely — see ``_on_begin`` below.
+FLOW_WRITER_OPT = "flow_writer"
+
+
 def install_pragmas_and_immediate(engine: AsyncEngine) -> None:
     """Register the SQLite production pragmas + BEGIN IMMEDIATE on an engine.
 
@@ -147,11 +155,21 @@ def install_pragmas_and_immediate(engine: AsyncEngine) -> None:
       - mmap_size=268435456       256 MB memory-mapped I/O for reads
       - foreign_keys=ON           enforce FK constraints
 
-    BEGIN IMMEDIATE on every transaction so SQLite acquires the writer
-    lock up-front instead of upgrading mid-transaction. This eliminates
-    the "SQLITE_BUSY despite busy_timeout" trap that fires when a
-    deferred transaction starts as a reader and then tries to upgrade
-    after another writer has taken the lock.
+    Transaction discipline is split by intent (``FLOW_WRITER_OPT``):
+
+    WRITE path (default): BEGIN IMMEDIATE on every transaction so SQLite
+    acquires the writer lock up-front instead of upgrading mid-transaction.
+    This eliminates the "SQLITE_BUSY despite busy_timeout" trap that fires
+    when a deferred transaction starts as a reader and then tries to
+    upgrade after another writer has taken the lock.
+
+    READ path (``FLOW_WRITER_OPT=False``, set by the driver's reader
+    session factory): emit NO BEGIN at all. Under WAL, readers need no
+    lock — each SELECT runs against a consistent snapshot in DBAPI-level
+    autocommit. Forcing reads through BEGIN IMMEDIATE (the previous
+    behavior) made every SELECT queue on the single writer slot, so a
+    long-running writer (e.g. an indexer batch) froze every read-serving
+    endpoint for the duration of its transaction.
     """
 
     @event.listens_for(engine.sync_engine, "connect")
@@ -175,7 +193,11 @@ def install_pragmas_and_immediate(engine: AsyncEngine) -> None:
 
     @event.listens_for(engine.sync_engine, "begin")
     def _on_begin(conn):
-        conn.exec_driver_sql("BEGIN IMMEDIATE")
+        # Reader connections (FLOW_WRITER_OPT=False) emit no BEGIN: SELECTs
+        # run in DBAPI autocommit against a WAL snapshot, never touching the
+        # writer lock. Everything else keeps the up-front BEGIN IMMEDIATE.
+        if conn.get_execution_options().get(FLOW_WRITER_OPT, True):
+            conn.exec_driver_sql("BEGIN IMMEDIATE")
 
 
 # Sync-side pragmas applied by ``open_sqlite``. Mirror the async engine's

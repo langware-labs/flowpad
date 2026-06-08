@@ -13,6 +13,8 @@ from flow_sdk.fs_store.indexer.functions.prompt import (
 class PromptMeta(BaseMeta):
     icon: Optional[str] = None
     color: Optional[str] = None
+    use_count: Optional[int] = None
+    last_used_at: Optional[str] = None
 
 
 def _prompt_default_body(entity) -> str:
@@ -31,6 +33,14 @@ def _prompt_default_body(entity) -> str:
         value = getattr(entity, key, None)
         if value:
             fields[key] = value
+    # Usage tracking (parsed back by extract_prompt — a reindex must not
+    # reset it). Only written once non-zero so fresh prompts stay minimal.
+    use_count = getattr(entity, "use_count", 0) or 0
+    if use_count:
+        fields["use_count"] = int(use_count)
+    last_used_at = getattr(entity, "last_used_at", None)
+    if last_used_at:
+        fields["last_used_at"] = last_used_at
     text = (getattr(entity, "text", None) or "").strip()
     return _render_frontmatter(fields) + "\n\n" + text + ("\n" if text else "")
 

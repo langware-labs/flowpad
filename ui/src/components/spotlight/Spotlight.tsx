@@ -1,5 +1,6 @@
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { CodexIcon } from '@src/components/icons/CodexIcon';
+import { CopilotIcon } from '@src/components/icons/CopilotIcon';
 import { Command, CommandEmpty, CommandInput, CommandItem, CommandList } from '@src/components/ui/command';
 import { Dialog, DialogContent, DialogTitle } from '@src/components/ui/dialog';
 import { useRecordSearch } from '@src/hooks/use-record-search';
@@ -24,6 +25,7 @@ const EMPTY_INITIAL: SpotlightInitialInfo = { rows: [], isLoading: false };
 function RowIcon({ recordType }: { recordType: string }) {
   if (recordType === 'claude_session') return <ClaudeIcon className="h-3.5 w-3.5 shrink-0 text-orange-500" />;
   if (recordType === 'codex_session') return <CodexIcon className="h-3.5 w-3.5 shrink-0 text-emerald-500" />;
+  if (recordType === 'copilot_session') return <CopilotIcon className="h-3.5 w-3.5 shrink-0 text-sky-500" />;
   const color = TYPE_COLORS[recordType];
   return (
     <span

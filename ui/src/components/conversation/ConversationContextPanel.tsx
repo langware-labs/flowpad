@@ -13,7 +13,7 @@ import {
 } from '@sdk';
 import { ActionInfo } from '@sdk/models/ActionInfo';
 import { ClaudeCliOptions } from '@sdk/cli_workers/claude-cli';
-import { useEntitiesQuery, useEntity } from '@sdk/react/hooks';
+import { useEntitiesQuery, useEntity, useProject } from '@sdk/react/hooks';
 import { attachmentDataString, type Attachment } from '@sdk/entities/flow-message';
 import {
   Download,
@@ -45,6 +45,7 @@ import {
   flowMessageIdSet as buildFlowMessageIdSet,
   orderMessagesByConversation,
   resolveAnchorMessage,
+  resolveAttachmentProjectId,
   resolveProjectTypeId,
   type AttachmentEntry,
   type PrivateProcessAgg,
@@ -85,14 +86,14 @@ function humanType(type: string): string {
 
 /** Canonical dock pointer for an entity TypeId — delegates to the single
  *  EntityChip dispatch (``buildDockPointer``). Asset types navigate by TypeId
- *  (the loader resolves the entity), so the legacy ``assetRef`` arg is
- *  accepted-but-ignored. */
+ *  (the loader resolves the entity). */
 function dockPointerFor(
   typeId: TypeId,
   inside?: { type: string; id: string },
-  _assetRef?: string,
+  projectId?: string | null,
 ): DockPointer | null {
-  return buildDockPointer({ type: typeId.type, id: typeId.id }, inside);
+  const ptr = buildDockPointer({ type: typeId.type, id: typeId.id }, inside);
+  return ptr ? DockPointer.rebaseAssetsOntoProject(ptr, projectId) : null;
 }
 
 /**
@@ -259,6 +260,8 @@ export function ConversationContextPanel({
     () => resolveProjectTypeId(task, conversation),
     [task, conversation],
   );
+  const { project: currentProject } = useProject();
+  const effectiveProjectId = resolveAttachmentProjectId(task, conversation, currentProject?.id);
 
   const privateTypeIds = useMemo(
     () => buildPrivateTypeIds(projectTypeId, privateTasks, privateProcesses),
@@ -353,6 +356,7 @@ export function ConversationContextPanel({
         selectedEntityKey={entityKey}
         onSelectEntity={onSelectEntity}
         onDownloadEntity={handleDownloadEntity}
+        projectId={effectiveProjectId}
       />
 
       <PrivateContextSection
@@ -387,6 +391,7 @@ interface SharedContextSectionProps {
   /** Pull the bundle for the message that contributed an entity (gated on
    *  project selection). Drives the "Download <type>" row action. */
   onDownloadEntity?: (messageId: string) => void;
+  projectId?: string | null;
 }
 
 function SharedContextSection({
@@ -398,6 +403,7 @@ function SharedContextSection({
   selectedEntityKey,
   onSelectEntity,
   onDownloadEntity,
+  projectId,
 }: SharedContextSectionProps) {
   const { navigation } = useDockNavigation();
   const containerInside = useMemo(() => ({ type: Conversation.type, id: conversationId }), [conversationId]);
@@ -443,7 +449,7 @@ function SharedContextSection({
                     : undefined
                 }
                 onOpen={() => {
-                  const ptr = dockPointerFor(entry.typeId, containerInside);
+                  const ptr = dockPointerFor(entry.typeId, containerInside, projectId);
                   if (ptr) navigation.openDock(ptr);
                 }}
               />

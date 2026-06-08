@@ -2,14 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import {
   Conversation,
-  dataManager,
- fetchConversations, FlowMessage,
+  fetchConversations,
+  FlowMessage,
   QueryFilter,
   QueryRequest,
-
   TypeId,
 } from '@sdk';
-import { useAuth, useEntitiesQuery, useEntity } from '@sdk/react/hooks';
+import { useAuth, useEntitiesQuery, useEntity, useProject } from '@sdk/react/hooks';
 import type { ITask } from '@sdk/entities/task';
 import { syncConversationMessages } from '@src/components/inbox-view/inbox-api';
 import { markFlowMessagesReceived } from '@sdk/entities/flow-message';
@@ -20,6 +19,7 @@ import { useImplementPlan } from './useImplementPlan';
 import { useLocalUser } from './useLocalUser';
 import { useMembers } from '@src/hooks/use-members';
 import { buildConversationItems, ConversationItemKind } from './conversation-items';
+import { resolveAttachmentProjectId } from './conversation-context-aggregation';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 
@@ -53,7 +53,6 @@ interface ConversationViewProps {
 export function ConversationView({
   conversationId,
   task,
-  senderName: _senderName,
   ensureMapped,
   selectedMessageIds,
   onSelectMessage,
@@ -86,7 +85,12 @@ export function ConversationView({
     [conversation?.participants, memberRoster],
   );
 
-  const pointers = conversation?.conversationMessageIds ?? [];
+  const pointers = useMemo(
+    () => conversation?.conversationMessageIds ?? [],
+    // conversationMessageIds is a parsed view over the message_ids JSON field.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [conversation?.message_ids],
+  );
 
   // Local-only drafts attached to this conversation. Filtered to the local
   // user so a counterparty's stray draft never renders here. Match is built
@@ -137,10 +141,13 @@ export function ConversationView({
   const { data: conversationMessages = [] } = useEntitiesQuery<FlowMessage>(messagesRequest, {
     enabled: !!conversationId,
   });
-  const messagesById = useMemo(
-    () => new Map(conversationMessages.filter((m) => m.id).map((m) => [m.id as string, m])),
-    [conversationMessages],
-  );
+  const messagesById = useMemo(() => {
+    const entries: Array<[string, FlowMessage]> = [];
+    for (const message of conversationMessages) {
+      if (message.id) entries.push([message.id, message]);
+    }
+    return new Map(entries);
+  }, [conversationMessages]);
 
   // Pull this conversation's hub messages once per open (and whenever the
   // pointer set changes — a new reply landed). The backend syncs only the
@@ -288,6 +295,8 @@ export function ConversationView({
   }, [pointers.map((p) => p.id).join(',')]);
 
   const conversationStatusVisible = conversation?.message_status_visible !== false;
+  const { project: currentProject } = useProject();
+  const attachmentProjectId = resolveAttachmentProjectId(task, conversation, currentProject?.id);
 
   // The conversation owner (created_by == the local cloud user) may delete ANY
   // message; everyone may delete their own. The per-bubble sender check is done
@@ -378,6 +387,7 @@ export function ConversationView({
                   onDeleteMessage={handleDeleteMessage}
                   conversationStatusVisible={conversationStatusVisible}
                   ensureProjectMapped={ensureMapped}
+                  attachmentProjectId={attachmentProjectId}
                 />
               );
             }
@@ -398,6 +408,7 @@ export function ConversationView({
                 isSelected={!!id && (selectedMessageIds ?? []).includes(id)}
                 onSelect={onSelectMessage && id ? () => onSelectMessage(id) : undefined}
                 conversationStatusVisible={conversationStatusVisible}
+                attachmentProjectId={attachmentProjectId}
               />
             );
           })}

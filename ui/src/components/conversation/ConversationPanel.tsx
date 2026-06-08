@@ -97,7 +97,7 @@ export function EditableConversationTitle({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
 
-  if (!conv) return <span className={className}>{fallback}</span>;
+  if (!conv) return <span className={className} title={fallback}>{fallback}</span>;
 
   const display = (conv.title ?? '').trim() || fallback;
 
@@ -121,7 +121,7 @@ export function EditableConversationTitle({
         className={cn('min-w-0 flex-1 border-b border-border bg-transparent text-foreground outline-none', className)}
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
+        onBlur={() => void commit()}
         onKeyDown={(e) => {
           if (e.key === 'Enter') e.currentTarget.blur();
           else if (e.key === 'Escape') setEditing(false);
@@ -134,7 +134,7 @@ export function EditableConversationTitle({
     <span
       data-testid="conversation-title"
       className={cn('cursor-text rounded px-0.5 hover:bg-muted', className)}
-      title="Click to rename"
+      title={display}
       onClick={() => {
         setDraft(conv.title ?? '');
         setEditing(true);
