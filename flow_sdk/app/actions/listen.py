@@ -190,13 +190,10 @@ async def _create_prompt_annotation(content: str, session_id: str) -> None:
     try:
         from flow_sdk.builtin.agentic_process import AgenticProcess
         from flow_sdk.builtin.annotation import Annotation
-        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter
 
         now_iso = datetime.now(timezone.utc).isoformat()
-        processes = await AgenticProcess.get_all(entities_filter=QueryFilter(match=ExpressionNode(session_id=session_id)))
-        process_id = ""
-        if processes:
-            process_id = processes[0].id or ""
+        proc = await AgenticProcess.get_by_session_id(session_id)
+        process_id = (proc.id or "") if proc else ""
 
         annotation = Annotation(
             labels=["prompt:"],
@@ -343,17 +340,12 @@ async def handle_agent_hook(webhook_data: AgentHookData) -> ApiSuccessResponse |
     # trace gutter can render it alongside live completion + history.
     try:
         from flow_sdk.builtin.agentic_process import AgenticProcess
-        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter
 
         target_process = None
         if agentic_process_id:
             target_process = await AgenticProcess.get_by_id(agentic_process_id)
         if target_process is None and hook_session_id:
-            processes = await AgenticProcess.get_all(
-                entities_filter=QueryFilter(match=ExpressionNode(session_id=hook_session_id))
-            )
-            if processes:
-                target_process = processes[0]
+            target_process = await AgenticProcess.get_by_session_id(hook_session_id)
 
         if target_process is not None:
             for fd in converted_fds:

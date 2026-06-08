@@ -552,7 +552,6 @@ class ScanActionsMixin:
         sub-path that already located it) to skip a redundant disk scan.
         """
         from flow_sdk.builtin.agentic_process import AgenticProcess
-        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter
         from flow_sdk.flowpad_types.enums import WorkerType
 
         request_info = get_current_request_info()
@@ -602,11 +601,8 @@ class ScanActionsMixin:
                 )
 
             # Try to find existing process by session_id
-            existing = await AgenticProcess.get_all(
-                entities_filter=QueryFilter(match=ExpressionNode(session_id=session_id))
-            )
-            if existing:
-                process = existing[0]
+            process = await AgenticProcess.get_by_session_id(session_id)
+            if process:
                 changed = False
                 context_data = dict(process.context_data or {})
                 # Track which fields actually moved so we can mirror exactly
@@ -799,13 +795,10 @@ class ScanActionsMixin:
             # turn would otherwise 404. Heal directly from the entity DB so
             # the navigation works.
             from flow_sdk.builtin.agentic_process import AgenticProcess  # noqa: PLC0415
-            from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter  # noqa: PLC0415
 
-            existing = await AgenticProcess.get_all(
-                entities_filter=QueryFilter(match=ExpressionNode(session_id=worker_id))
-            )
+            existing = await AgenticProcess.get_by_session_id(worker_id)
             if existing:
-                return ApiSuccessResponse(data=existing[0].model_dump())
+                return ApiSuccessResponse(data=existing.model_dump())
 
             return ApiFailResponse(
                 message=f"Session {worker_id} not found in Claude, Codex, or Copilot history",
