@@ -38,6 +38,7 @@ export * from './invitation';
 export * from './spec';
 export * from './group';
 export * from './prompt';
+export * from './flowpad-diagnosis';
 export * from './task';
 export * from './cron-event';
 export * from './trigger';

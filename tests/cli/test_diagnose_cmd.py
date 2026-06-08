@@ -1,25 +1,22 @@
-"""CLI tests for `flow diagnose` and `flow diagnose-report`.
+"""CLI tests for `flow diagnose`.
 
-These exercise the CLI plumbing only — the agent run (`_run_diagnose`) and the
-SDK reporter (`create_diagnostic_report`) are mocked, so no worker is spawned and
-no DB is touched. The reporter's real behavior is covered by
-tests/unit/test_diagnostic_report.py.
+These exercise the CLI plumbing only — the agent run (`_run_diagnose`) is mocked,
+so no worker is spawned and no DB is touched. The SDK reporter's real behavior is
+covered by tests/unit/test_diagnostic_report.py.
 """
 import asyncio
-import json
 import logging
 from unittest.mock import AsyncMock, patch
 
 import pytest
 from typer.testing import CliRunner
 
-from flow_sdk.cli.commands.diagnose_cmd import _find_skill_dir, _Renderer
+from flow_sdk.cli.commands.diagnose_cmd import _Renderer
 from flow_sdk.cli.flow_cli import app
 
 runner = CliRunner()
 
 _RUN = "flow_sdk.cli.commands.diagnose_cmd._run_diagnose"
-_REPORT = "flow_sdk.diagnostics.report.create_diagnostic_report"
 
 
 @pytest.fixture(autouse=True)
@@ -93,38 +90,7 @@ def test_diagnose_passes_timeout_through():
 
 
 # --------------------------------------------------------------------------- #
-# flow diagnose-report — thin wrapper over the SDK reporter
-# --------------------------------------------------------------------------- #
-
-def test_diagnose_report_prints_json_ids():
-    fake = {"feed_entry_id": "fe1", "conversation_id": "c1", "flow_message_id": "m1"}
-    with patch(_REPORT, new=AsyncMock(return_value=fake)) as mock_rep:
-        result = runner.invoke(
-            app,
-            ["diagnose-report", "--summary", "freed port", "--status", "fixed",
-             "--platform", "macOS"],
-        )
-    assert result.exit_code == 0, result.output
-    assert json.loads(result.output.strip()) == fake
-    assert mock_rep.call_args.kwargs["summary"] == "freed port"
-    assert mock_rep.call_args.kwargs["status"] == "fixed"
-    assert mock_rep.call_args.kwargs["platform"] == "macOS"
-
-
-def test_diagnose_report_requires_summary():
-    result = runner.invoke(app, ["diagnose-report", "--status", "fixed"])
-    assert result.exit_code != 0  # --summary is required
-
-
-def test_diagnose_report_status_defaults_informational():
-    with patch(_REPORT, new=AsyncMock(return_value={"skipped": "x"})) as mock_rep:
-        result = runner.invoke(app, ["diagnose-report", "--summary", "s"])
-    assert result.exit_code == 0
-    assert mock_rep.call_args.kwargs["status"] == "informational"
-
-
-# --------------------------------------------------------------------------- #
-# _Renderer — compact transcript rendering
+# _Renderer — narration lines + inline tool-progress dots
 # --------------------------------------------------------------------------- #
 
 def _entry(role, blocks):
@@ -153,10 +119,48 @@ def test_renderer_ignores_non_message_entries(capsys):
 
 
 # --------------------------------------------------------------------------- #
-# _find_skill_dir
+# _run_diagnose — must not hang when the transcript stream never self-terminates
 # --------------------------------------------------------------------------- #
 
-def test_find_skill_dir_locates_installed_skill():
-    d = _find_skill_dir()
-    assert d is not None
-    assert (d / "SKILL.md").exists()
+@pytest.mark.asyncio
+async def test_run_diagnose_exits_when_recorded_even_if_stream_never_ends():
+    """Regression for the Windows hang: ``_tail_status`` can fail to report
+    COMPLETE (a long final report pushes the terminal markers out of its 4 KB
+    tail window), so ``stream_transcript`` never returns. The command must still
+    exit once the diagnosis is recorded. The 5 s ``wait_for`` is a hang DETECTOR
+    (it makes a regression fail fast) — not a budget to ride past the symptom.
+    """
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from flow_sdk.cli.commands import diagnose_cmd
+
+    class _FakeAP:
+        def __init__(self, **_kw):
+            self.id = "fake-id"
+            self.session_id = "fakesess"
+
+        def enable_assistant(self):
+            pass
+
+        async def prompt(self, _text):
+            return None
+
+        async def stream_transcript(self, timeout=0):
+            # Emit one narration entry, then never terminate (the hang we fix).
+            yield {"message": {"role": "assistant", "content": [{"type": "text", "text": "working"}]}}
+            await asyncio.sleep(3600)
+
+        @classmethod
+        async def get_by_id(cls, _id):
+            # Recording already landed: a flowpad_diagnosis is cross-linked in.
+            return SimpleNamespace(
+                private_context_entities=[SimpleNamespace(type="flowpad_diagnosis")]
+            )
+
+    with (
+        patch("flow_sdk.builtin.agentic_process.AgenticProcess", _FakeAP),
+        patch("flow_sdk.migrations.runner._bootstrap_local", new=AsyncMock(return_value=None)),
+    ):
+        rc = await asyncio.wait_for(diagnose_cmd._run_diagnose("", 1800.0), timeout=5)
+    assert rc == 0

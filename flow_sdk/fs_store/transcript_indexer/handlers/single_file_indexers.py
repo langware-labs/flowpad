@@ -11,7 +11,7 @@ file is picked up on first call.
 
 The pattern was originally inlined as ``_index_single_plan`` in
 ``plan_handler.py``; this module generalizes it. ``_index_single_plan``
-is re-exported there for back-compat with ``plan_cross_link.py``.
+is re-exported by ``plan_handler.py`` for its ``resolve_plan`` fallback.
 """
 
 from __future__ import annotations

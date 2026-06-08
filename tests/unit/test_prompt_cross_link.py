@@ -1,6 +1,5 @@
-"""``builtin/prompt_cross_link`` — mutual prompt↔process private-context links
-(pin-from-history). Mirrors test_file_cross_link.py: live in-memory AP, real
-DB round-trips, no mocks.
+"""``core.entity.cross_link`` — mutual prompt↔process private-context links
+(pin-from-history). Live in-memory AP, real DB round-trips, no mocks.
 """
 from __future__ import annotations
 
@@ -10,9 +9,9 @@ import pytest
 
 from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.prompt import Prompt
-from flow_sdk.builtin.prompt_cross_link import (
-    cross_link_prompt_to_process,
-    remove_prompt_process_link,
+from flow_sdk.core.entity.cross_link import (
+    cross_link_entities,
+    uncross_link_entities,
 )
 from flow_sdk.flowpad_types.enums import WorkerType
 
@@ -40,7 +39,7 @@ async def test_cross_link_both_directions_persisted(initialize_test_db) -> None:
     prompt = await _save_prompt()
     ap = await _save_ap()
 
-    changed = await cross_link_prompt_to_process(prompt, ap)
+    changed = await cross_link_entities(prompt, ap)
     assert changed is True
 
     # In-memory instances carry the links immediately.
@@ -58,8 +57,8 @@ async def test_cross_link_idempotent(initialize_test_db) -> None:
     prompt = await _save_prompt("Twice.")
     ap = await _save_ap()
 
-    assert await cross_link_prompt_to_process(prompt, ap) is True
-    assert await cross_link_prompt_to_process(prompt, ap) is False  # no change
+    assert await cross_link_entities(prompt, ap) is True
+    assert await cross_link_entities(prompt, ap) is False  # no change
 
     prompt_reloaded = await Prompt.get_by_id(prompt.id)
     ap_reloaded = await AgenticProcess.get_by_id(ap.id)
@@ -71,10 +70,10 @@ async def test_cross_link_idempotent(initialize_test_db) -> None:
 async def test_remove_link_both_directions(initialize_test_db) -> None:
     prompt = await _save_prompt("Gone.")
     ap = await _save_ap()
-    await cross_link_prompt_to_process(prompt, ap)
+    await cross_link_entities(prompt, ap)
 
-    assert await remove_prompt_process_link(prompt, ap) is True
-    assert await remove_prompt_process_link(prompt, ap) is False  # already gone
+    assert await uncross_link_entities(prompt, ap) is True
+    assert await uncross_link_entities(prompt, ap) is False  # already gone
 
     prompt_reloaded = await Prompt.get_by_id(prompt.id)
     ap_reloaded = await AgenticProcess.get_by_id(ap.id)
