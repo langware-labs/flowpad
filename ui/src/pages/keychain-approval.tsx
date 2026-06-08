@@ -5,9 +5,9 @@ import { secretApprovalGate } from '@sdk';
 /**
  * Bridge page for the deep-link auth flow when keychain access has not yet
  * been approved. The Electron-loaded `/auth/login_callback` redirects here
- * (preserving `flowpad-api-key` + `next`) so we can pop the friendly
- * SecretApprovalDialog before the OS keychain prompt fires from
- * `_finalize_login`. On approve, we re-invoke the original callback and let
+ * (preserving `flowpad-api-key` + `next`) so we can provision keychain access
+ * (via secretApprovalGate.request) before the OS keychain prompt fires from
+ * `_finalize_login`. On success, we re-invoke the original callback and let
  * the server finalize the login.
  */
 const KeychainApproval = () => {
