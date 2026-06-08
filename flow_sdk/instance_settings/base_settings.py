@@ -472,7 +472,22 @@ class BaseInstanceSettings:
 
 def _fetch_or_create_sod_key(instance_name: str) -> bytes:
     """Return the per-instance Fernet key from the OS keychain, minting a new
-    random key on first use under ``Flowpad.ai.sod_key`` / ``<instance_name>``.
+    random key on first use under ``Flowpad.ai.sod_key``.
+
+    macOS / Windows (pip-installed): routes through the vendored, separately
+    signed ``flow-rs`` binary at the ``<instance>.flow-rs`` slot — the SAME
+    ``(service, account)`` the signed Electron launcher uses
+    (``electron/flow-rs-keychain.js`` ``sodKeyAccount()``). Going through the
+    signed binary binds the entry's ACL trust list to ``flow-rs`` (Langware
+    Developer ID / Authenticode) instead of the unsigned ``python3.x`` a direct
+    ``keyring`` call would bind, so later reads are prompt-free and the entry is
+    interchangeable with the desktop app's. A one-time migration adopts any
+    pre-existing python-``keyring``-owned key at the legacy bare ``<instance>``
+    slot into the signed slot (re-writing the SAME value) so an existing
+    ``sodot`` stays decryptable.
+
+    Linux, or when no signed binary is vendored / it is disabled, falls back to
+    the direct ``keyring`` path at the legacy bare slot (unchanged behavior).
 
     This is the keychain-touching primitive (it can trigger the OS prompt).
     Callers memoize the result on the InstanceSettings instance (see
@@ -484,8 +499,38 @@ def _fetch_or_create_sod_key(instance_name: str) -> bytes:
             "Electron must provide SOD_ENC_KEY or seed the key via signed flow-rs."
         )
 
-    import keyring
     from cryptography.fernet import Fernet
+
+    from flow_sdk.flow_rs_binary import (
+        FLOW_RS_ACCOUNT_SUFFIX,
+        flow_rs_get_restricted,
+        flow_rs_set_restricted,
+        vendored_flow_rs_enabled,
+    )
+
+    # -- Signed-binary path (macOS / Windows with a vendored flow-rs) --
+    if vendored_flow_rs_enabled():
+        account = f"{instance_name}{FLOW_RS_ACCOUNT_SUFFIX}"
+
+        existing = flow_rs_get_restricted(SOD_KEY_KEYCHAIN_SERVICE, account)
+        if existing:
+            return existing.encode()
+
+        # One-time migration: adopt an existing python-keyring-owned key at the
+        # legacy bare <instance> slot into the signed slot, preserving the value
+        # so the existing sodot stays decryptable. Reading python's OWN prior
+        # entry is ACL-silent on macOS.
+        legacy = _read_legacy_keyring_key(instance_name)
+        if legacy:
+            flow_rs_set_restricted(SOD_KEY_KEYCHAIN_SERVICE, account, legacy)
+            return legacy.encode()
+
+        key_bytes = Fernet.generate_key()
+        flow_rs_set_restricted(SOD_KEY_KEYCHAIN_SERVICE, account, key_bytes.decode())
+        return key_bytes
+
+    # -- Fallback: direct keyring at the legacy bare slot (Linux / disabled) --
+    import keyring
 
     stored = keyring.get_password(SOD_KEY_KEYCHAIN_SERVICE, instance_name)
     if stored:
@@ -493,6 +538,17 @@ def _fetch_or_create_sod_key(instance_name: str) -> bytes:
     key_bytes = Fernet.generate_key()
     keyring.set_password(SOD_KEY_KEYCHAIN_SERVICE, instance_name, key_bytes.decode())
     return key_bytes
+
+
+def _read_legacy_keyring_key(instance_name: str) -> str | None:
+    """Best-effort read of a pre-existing python-``keyring``-owned Fernet key at
+    the legacy bare ``<instance>`` slot. Returns ``None`` if absent or keyring is
+    unavailable. Kept local to avoid a circular import with the secrets layer."""
+    try:
+        import keyring
+        return keyring.get_password(SOD_KEY_KEYCHAIN_SERVICE, instance_name)
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def _reset_sod_key_cache() -> None:
