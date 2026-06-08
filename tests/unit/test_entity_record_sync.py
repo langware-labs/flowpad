@@ -220,3 +220,71 @@ class TestEntityRecordCwdSync:
             and canonical_posix_path(p.fs_storage_mount_path) == canonical
         ]
         assert len(matching) == 1, f"Expected 1 entity, got {len(matching)}"
+
+
+class TestFromRecordRemoteClock:
+    """``from_record`` and the hub LWW clock.
+
+    ``updated_date`` on a ``remote=True`` row mirrors the hub's clock — only
+    the hub may move it. The disk→DB re-index (``from_record``) used to stamp
+    it to "now", running the local clock ahead of the hub: ``Entity.is_stale``
+    pinned False (masking real hub changes) and the home strip rendered
+    phantom "last activity" on every conversation open. Local rows keep the
+    advance-to-now behavior (the transcript indexer's freshness contract).
+    """
+
+    @staticmethod
+    def _mock_record(conv_id: str):
+        from flow_sdk.fs_store.fs_record import FSRecord
+
+        m = MagicMock(spec=FSRecord)
+        m.type = "conversation"
+        m._record_type = "conversation"
+        m.meta_dict.return_value = {"id": conv_id, "name": f"conversation-{conv_id[:8]}"}
+        m._property_types = {}
+        m.scope = None
+        m.project_id = None
+        return m
+
+    async def _seed_conversation(self, remote: bool):
+        """Create a conversation row and pin a known updated_date on it.
+        Returns ``(conv_id, pinned_updated_date_as_stored)``."""
+        from datetime import datetime
+
+        from flow_sdk.builtin.conversation import Conversation
+
+        conv_id = str(uuid.uuid4())
+        conv = Conversation.model_validate({"id": conv_id, "remote": remote, "title": "t"})
+        conv.id = conv_id
+        await conv.save()
+        # Pin the clock (the driver preserves a preset updated_date on update).
+        conv.updated_date = datetime(2026, 6, 1, 19, 36, 2)
+        await conv.save()
+        stored = await Conversation.get_one({"id": conv_id})
+        assert stored is not None and stored.updated_date is not None
+        return conv_id, stored.updated_date
+
+    @pytest.mark.asyncio
+    @pytest.mark.timeout(30)  # do not increase timeout without approval
+    async def test_remote_row_keeps_hub_updated_date(self, sync_db):
+        from flow_sdk.builtin.conversation import Conversation
+
+        conv_id, hub_dt = await self._seed_conversation(remote=True)
+
+        result = await Conversation.from_record(self._mock_record(conv_id))
+
+        assert result.updated_date == hub_dt
+        reloaded = await Conversation.get_one({"id": conv_id})
+        assert reloaded.updated_date == hub_dt
+
+    @pytest.mark.asyncio
+    @pytest.mark.timeout(30)  # do not increase timeout without approval
+    async def test_local_row_still_advances_updated_date(self, sync_db):
+        from flow_sdk.builtin.conversation import Conversation
+
+        conv_id, old_dt = await self._seed_conversation(remote=False)
+
+        await Conversation.from_record(self._mock_record(conv_id))
+
+        reloaded = await Conversation.get_one({"id": conv_id})
+        assert reloaded.updated_date > old_dt

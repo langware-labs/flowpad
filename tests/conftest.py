@@ -23,8 +23,8 @@ os.environ["TESTING"] = "true"
 #
 # Several flow_sdk modules still hard-code `Path.home() / ".claude"` (e.g.
 # transcript_analyzer/resolver.py, fs_records/claude/claude_settings/__init__.py,
-# fs_records/claude/claude_debug_log.py, builtin/faas/claude_code_auth.py,
-# server/routes/bootstrap.py). They bypass InstanceSettings.claude_home — the
+# fs_records/claude/claude_debug_log.py, server/routes/bootstrap.py). They
+# bypass InstanceSettings.claude_home — the
 # contract violation flagged at flow_sdk/core/.../system_profile/utils.py:9.
 #
 # Overriding HOME redirects every Path.home() call (including those direct
@@ -97,6 +97,13 @@ class _InMemoryKeyring(KeyringBackend):
 
 
 keyring.set_keyring(_InMemoryKeyring())
+
+# Force the SOD-key path to use the (in-memory) keyring above rather than
+# shelling out to the vendored, signed flow-rs binary — which, once committed,
+# IS present in the source tree and would otherwise reach the REAL OS keychain
+# (defeating the in-memory backend and risking the catastrophic dialog above).
+# See flow_sdk/flow_rs_binary.py::vendored_flow_rs_enabled.
+os.environ["FLOWPAD_DISABLE_VENDORED_FLOW_RS"] = "1"
 
 from flow_sdk.config import FLOWPAD_TEMP_DIR
 

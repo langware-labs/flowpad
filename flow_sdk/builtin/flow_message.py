@@ -117,13 +117,16 @@ FILE_VFS_PREFIX = "data/"
 PROMPT_FILE_VFS_PREFIX = "prompt/"
 
 # TYPE_ID attachment types that ride in the body bundle but never materialize a
-# standard local record folder — either conversation plumbing
-# (conversation/flow_message/task, the UI's STRUCTURAL_ATTACHMENT_TYPES) or a
-# remote reference resolved on accept (git_repo). They must NOT gate the
-# message-level ``body_downloaded`` signal, or a message carrying one would be
-# stuck behind the Download button forever.
+# standard local record folder (which is what ``_type_id_record_materialized``
+# probes) — either conversation plumbing (conversation/flow_message/task, the
+# UI's STRUCTURAL_ATTACHMENT_TYPES), a remote reference resolved on accept
+# (git_repo), or an indexer-owned type whose bundle unpack creates only an
+# entity ROW, never a records folder (claude_session — the transcript content
+# rides as a FILE attachment). They must NOT gate the message-level
+# ``body_downloaded`` signal, or a message carrying one would be stuck behind
+# the Download button forever.
 _NON_MATERIALIZING_TYPE_IDS = frozenset(
-    {"conversation", "flow_message", "task", "git_repo"}
+    {"conversation", "flow_message", "task", "git_repo", "claude_session"}
 )
 
 
@@ -164,14 +167,27 @@ class Attachment(BaseModel):
     only — never stored in DB). For FILE attachments it holds the absolute filesystem
     path resolved via the entity's embedded storage.
 
-    proposer_id / approved_by apply to PROMPT attachments — proposer_id is the user
-    who suggested the prompt; approved_by is set when the other party approves it.
+    proposer_id / approved_by apply to prompt attachments (legacy PROMPT and
+    prompt-entity TYPE_ID alike) — proposer_id is the user who suggested the
+    prompt; approved_by is set when the other party approves it.
+
+    prompt_preview applies to prompt-entity TYPE_ID attachments: an inline
+    copy of the prompt text that rides the message header so receivers can
+    preview (and execute) the prompt BEFORE pulling the body bundle — the
+    same no-download property legacy inline PROMPT attachments had.
+
+    HUB SCHEMA MIRROR: ``proposer_id`` / ``approved_by`` / ``prompt_preview``
+    must also exist on the hub's Attachment model
+    (FlowPad: ``flowpad/hub/core/network/flow_message.py``) — the hub
+    validates attachments through its own pydantic model and silently DROPS
+    unknown fields on the round-trip, which strips the receiver's preview.
     """
     attachment_type: AttachmentType
     data: str
     local_path: Optional[str] = None
     proposer_id: Optional[str] = None
     approved_by: Optional[str] = None
+    prompt_preview: Optional[str] = None
 
 
 class FlowMessage(Entity):
@@ -282,6 +298,37 @@ class FlowMessage(Entity):
             elif atype == AttachmentType.TYPE_ID.value:
                 if not _type_id_record_materialized(att.get("data") or ""):
                     return False
+        return True
+
+    def is_body_downloaded(self) -> bool:
+        """Disk-probe twin of the serializer's ``body_downloaded`` flag for
+        backend callers that need the signal without paying for a full
+        ``model_dump`` — e.g. the per-message catch-up loop deciding whether
+        to (re-)pull the body bundle. Same semantics as
+        ``_compute_body_downloaded`` (keep the two in sync): True once every
+        body attachment is materialized locally."""
+        if not self.has_body():
+            return False
+        storage = None
+        for att in self.attachment or []:
+            t = att.attachment_type
+            if t == AttachmentType.TYPE_ID:
+                if not _type_id_record_materialized(att.data or ""):
+                    return False
+                continue
+            vfs_subpath: Optional[str] = None
+            if t == AttachmentType.FILE:
+                vfs_subpath = att.data or ""
+            elif t == AttachmentType.PROMPT and (att.data or "").startswith(PROMPT_FILE_VFS_PREFIX):
+                vfs_subpath = att.data
+            if not vfs_subpath:
+                continue
+            if storage is None:
+                from flow_sdk.storage import get_entity_embedded_storage
+                storage = get_entity_embedded_storage(TypeId(type="flow_message", id=self.id))
+            resolved = storage.get_storage_path(vfs_subpath)
+            if not (resolved and Path(resolved).exists()):
+                return False
         return True
 
     async def to_file(self, dest_dir: Path | None = None) -> Path:

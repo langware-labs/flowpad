@@ -13,13 +13,18 @@ The intended workflow is:
 
 from __future__ import annotations
 
-import json
 import os
 from typing import Any, Optional
 
 import requests
 import typer
 from typing_extensions import Annotated
+
+from flow_sdk.cli.commands._common import (
+    discover_port as _discover_port,
+    fail as _fail,
+    ok as _ok,
+)
 
 
 record_app = typer.Typer(
@@ -36,26 +41,6 @@ EXIT_NOT_FOUND = 4
 EXIT_CONNECTION_ERROR = 5
 EXIT_INDEX_FAILED = 6
 EXIT_ACTION_FAILED = 7
-
-
-def _discover_port() -> int:
-    from flow_sdk.discovery.flowpad_discovery import InstanceNotRunningError, resolve_cli_port
-
-    try:
-        return resolve_cli_port()
-    except InstanceNotRunningError as e:
-        _fail(EXIT_CONNECTION_ERROR, "INSTANCE_NOT_RUNNING", str(e))
-        raise  # unreachable — _fail raises typer.Exit
-
-
-def _fail(exit_code: int, error_code: str, message: str) -> None:
-    typer.echo(f"Error: {message}", err=True)
-    typer.echo(json.dumps({"ok": False, "error_code": error_code, "error": message}), err=True)
-    raise typer.Exit(exit_code)
-
-
-def _ok(payload: dict[str, Any]) -> None:
-    typer.echo(json.dumps({"ok": True, **payload}))
 
 
 @record_app.command(

@@ -97,6 +97,16 @@ class Shell(Entity):
     collaboration_room_id: str | None = APIField(
         default=None, description="CollaborationRoom this shell is shared into (null = not shared)"
     )
+    agentic_process_id: str | None = APIField(
+        default=None,
+        description=(
+            "Owning AgenticProcess id — the reverse of AgenticProcess.shell_id. "
+            "A shell is created by exactly one process and never reassigned, so "
+            "this is set once at creation and lives for the shell's lifetime. "
+            "Lets a bare /dock/shell/<id> URL resolve its owner with a plain "
+            "get-by-id (no reverse scan over processes)."
+        ),
+    )
     tab_order: int = APIField(default=0, persist=Persist.FALSE)
     created_at: str | None = APIField(default=None, description="ISO creation timestamp")
     last_active_at: str | None = APIField(default=None, description="ISO last activity timestamp")
@@ -111,6 +121,23 @@ class Shell(Entity):
         ),
     )
     last_launch_cmd: dict | None = APIField(default=None, description="Serialized WorkerCLIOptions from the last launch() call")
+
+    def get_implicit_private_context_entities(self) -> list["TypeId"]:
+        """Project the owning process into private context (the reverse of
+        AgenticProcess projecting its ``shell_id``). Derived from the stored
+        ``agentic_process_id`` field — a cheap getattr, no reverse scan — so the shell
+        and its process carry each other as lineage chips, both directions."""
+        from flow_sdk.api.api_types.identifier import is_valid_entity_id  # noqa: PLC0415
+        from flow_sdk.api.api_types.type_id import TypeId  # noqa: PLC0415
+
+        refs = super().get_implicit_private_context_entities()
+        # Guard the id: this runs inside entity serialization, so a malformed
+        # value (a non-UUID slipping into the field) must skip the chip, never
+        # raise — an exception here 500s the whole /terminals/list response and
+        # white-screens every WS client.
+        if is_valid_entity_id(self.agentic_process_id):
+            refs.append(TypeId(type=BuiltinEntityType.AGENTIC_PROCESS.value, id=self.agentic_process_id))
+        return refs
 
     # ── Internal helpers ──────────────────────────────────────────────────────
 
@@ -474,10 +501,10 @@ class Shell(Entity):
     async def _wait_for_shell_ready(self, timeout: float = 5.0, idle_ms: int = 150) -> None:
         """Wait until the PTY output has been silent for idle_ms milliseconds.
 
-        Polls the replay buffer sequence number. When output stops arriving the
+        Polls the session's output-chunk counter. When output stops arriving the
         shell is at its prompt with readline initialised — safe to inject input.
         """
-        from flow_sdk.compute.providers.desktop.pty_replay_buffer import replay_buffer
+        from flow_sdk.compute.providers.desktop.pty_session_manager import session_manager
 
         # Resolve the real provider_node_id used by the append path
         # (pty_actions.py uses ``compute_node.node_provider_id``). The bare
@@ -493,7 +520,8 @@ class Shell(Entity):
         deadline = asyncio.get_event_loop().time() + timeout
         last_seq = -1
         while asyncio.get_event_loop().time() < deadline:
-            current_seq = replay_buffer.get_latest_seq(pty_key)
+            session = session_manager.sessions.get(pty_key)
+            current_seq = session.seq if session else 0
             if current_seq > 0 and current_seq == last_seq:
                 return  # output has stopped — shell is at prompt
             last_seq = current_seq
@@ -828,51 +856,3 @@ class Shell(Entity):
             return ApiFailResponse(message="vars is required")
         await self.set_env(**vars_dict)
         return ApiSuccessResponse(data={"vars": list(vars_dict.keys())})
-
-    @action.get(action_name="fetch-pty-sequence")
-    async def fetch_pty_sequence(self) -> ApiResponse:
-        """HTTP: Return replay buffer chunk metadata for PTY debugging."""
-        import base64
-
-        if not await self.ensure_live_compute_node_binding():
-            return ApiFailResponse(message=f"Compute node not found for shell session ({self._compute_node_lookup_hint()})")
-
-        pty_handle = self.compute_node.get_pty(self.id)
-        if pty_handle is None:
-            return ApiSuccessResponse(data={"chunks": [], "total_chunks": 0, "total_size_bytes": 0})
-
-        chunks = pty_handle.snapshot(0)
-        if not chunks:
-            return ApiSuccessResponse(data={"chunks": [], "total_chunks": 0, "total_size_bytes": 0})
-
-        preview_bytes = 32
-        chunks_meta = [
-            {
-                "seq": chunk.seq,
-                "timestamp": chunk.timestamp,
-                "size": len(chunk.data),
-                "data_b64": base64.b64encode(chunk.data).decode("ascii"),
-                "preview_b64": base64.b64encode(chunk.data[:preview_bytes]).decode("ascii"),
-            }
-            for chunk in chunks
-        ]
-        total_size_bytes = sum(len(c.data) for c in chunks)
-        next_seq = chunks[-1].seq + 1
-
-        pty_file_b64 = None
-        try:
-            record = await self.get_record()
-            if record and record.pty_stream_ref.exists():
-                pty_file_b64 = base64.b64encode(record.pty_stream_ref.read_bytes()).decode("ascii")
-        except Exception as e:
-            logger.warning(f"[Shell.fetch_pty_sequence] Failed to read PTY file: {e}")
-
-        return ApiSuccessResponse(
-            data={
-                "chunks": chunks_meta,
-                "total_chunks": len(chunks_meta),
-                "total_size_bytes": total_size_bytes,
-                "next_seq": next_seq,
-                "pty_file_b64": pty_file_b64,
-            }
-        )

@@ -85,7 +85,7 @@ test 9: Git panel auto-refreshes — new changes appear within 5 seconds
 - wait up to 7 seconds, validate the file disappears from the panel
 
 test 10: Git panel API endpoint returns correct structure
-- call GET /api/v1/graph/compute_node/{id}/git-status?workdir=/Users/shlom/Documents/dev/flow-cli
+- call GET /api/v1/graph/compute_node/{id}/git-status?workdir={repo-root} (this checkout's absolute path)
   (replace {id} with the compute_node entity ID from GET /api/v1/graph/compute_node)
 - validate response status is 200 with ApiResponse shape: { status: "OK", data: {...} }
 - validate data.branch is a non-empty string

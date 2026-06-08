@@ -38,6 +38,7 @@
         "skipped": { "type": "integer", "minimum": 0 },
         "error": { "type": "integer", "minimum": 0 },
         "test_issues": { "type": "integer", "minimum": 0, "description": "Scenario authoring issues — the test steps are wrong, not the app" },
+        "flagged": { "type": "integer", "minimum": 0, "description": "Tests exposing a significant gap — senior dev review required (see flagged[] and flagged.md)" },
         "pass_rate": {
           "type": "number",
           "minimum": 0,
@@ -64,7 +65,8 @@
           "failed": { "type": "integer", "minimum": 0 },
           "skipped": { "type": "integer", "minimum": 0 },
           "error": { "type": "integer", "minimum": 0 },
-          "test_issues": { "type": "integer", "minimum": 0 }
+          "test_issues": { "type": "integer", "minimum": 0 },
+          "flagged": { "type": "integer", "minimum": 0 }
         }
       }
     },
@@ -83,6 +85,19 @@
           "scenario_path": { "type": "string" },
           "fast_path_script": { "type": "string" },
           "error_message": { "type": "string" }
+        }
+      }
+    },
+    "flagged": {
+      "type": "array",
+      "description": "Tests flagged for senior dev review (quarantine lane — non-blocking but owned and evidence-backed)",
+      "items": {
+        "type": "object",
+        "required": ["scenario_path", "reason"],
+        "properties": {
+          "scenario_path": { "type": "string", "description": "Scenario/test identifier, e.g. phase + path" },
+          "reason": { "type": "string", "description": "Flag criterion + one-line reason" },
+          "evidence_path": { "type": "string", "description": "Path to the flagged.md entry / result JSON with full evidence" }
         }
       }
     }

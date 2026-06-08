@@ -20,19 +20,12 @@ tags: [whiteboard, ui]
 * Click the "Whiteboard" option.
 * Validate the rendered list contains the whiteboard from U1 AND does NOT contain non-whiteboard types (no rows for skills/agents/markdown).
 
-### U3: Save debounce — exactly one PUT after 750ms
-* Open a whiteboard editor. In `browser_evaluate`, instrument fetch:
-  ```js
-  window.__pets = [];
-  const orig = window.fetch;
-  window.fetch = function(...args) {
-    if (String(args[0]).includes('board.json') && args[1]?.method === 'PUT') window.__pets.push(Date.now());
-    return orig.apply(this, args);
-  };
-  ```
-* Inject 5 separate canvas updates in rapid succession (each calls `__whiteboardOnChange`).
-* Wait 1500ms past last update.
-* `window.__pets.length` MUST equal 1 (single debounced PUT). Two or more PUTs is a regression of the debounce.
+### U3: Save debounce — five rapid updates coalesce into one write
+* Open a whiteboard editor.
+* NOTE: the save goes through axios, which in the browser uses XMLHttpRequest (NOT window.fetch). Hook `XMLHttpRequest.prototype.open` BEFORE the page loads to count `board.json` POST requests — this is load-independent (no reliance on file mtime timing). Excalidraw fires a finite burst of mount-phase writes, so snapshot the count AFTER that settles.
+* Inject 5 separate canvas updates in rapid succession (each calls `__whiteboardOnChange`), spacing them well under the 750ms debounce window.
+* Wait past the debounce, then read the write count again.
+* The delta MUST equal 1 (a single debounced write coalescing all 5 updates). Two or more is a regression of the debounce.
 
 ### U4: Pasted image lives in `data.files`
 * Open a whiteboard editor (smoke board).
@@ -42,9 +35,9 @@ tags: [whiteboard, ui]
 * Reload; image element still renders (no error boundary).
 
 ### U5: Read-only thumbnail / view-only mode
-* Find a UI surface that renders a whiteboard in `viewModeEnabled` (asset preview, hover card, or `![[name]]` transclusion if present).
-* Validate the rendered Excalidraw container does NOT show the drawing toolbar (selection-tool buttons absent), only the canvas content.
-* If no such surface exists in v1, mark `skip` with reason `view-only-preview-not-yet-implemented`.
+* Find a UI surface that renders a whiteboard read-only (asset preview, hover card, or `![[name]]` transclusion if present).
+* Validate the rendered preview does NOT show the drawing toolbar (selection-tool buttons absent), only the canvas/thumbnail content.
+* NOTE: a read-only preview component exists — `WhiteboardThumbnail` (renders `thumbnail.svg` as an `<img>`, no Excalidraw toolbar) — but it is NOT wired into any reachable UI surface yet (tree-row preview / `![[name]]` transclusion have no callers). With no live surface to drive, mark `skip` with reason `view-only-preview-not-yet-wired`.
 
 ## Pass criteria
 

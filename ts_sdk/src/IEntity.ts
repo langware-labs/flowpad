@@ -50,6 +50,12 @@ export interface IEntity extends Partial<IResource> {
    */
   parent_type_id?: string | null;
   /**
+   * Folder-like containment (docs/entities-groups.md): id of the Group this
+   * entity lives in; null = ungrouped. Mutate via ``entity.setGroup`` (the
+   * generic backend action) — never write directly.
+   */
+  group_id?: string | null;
+  /**
    * Wire-bound shared context. Each entry is a TypeId-formatted string
    * ("type-id"). Read via the typed ``sharedContextEntities`` getter.
    * Frontend code must NOT push to this array directly — call a backend

@@ -297,3 +297,7 @@ flow_sdk/server/static/
 .flow/skills/dev/feature_plans/
 .flow/skills/dev/instructions.md
 .claude/scheduled_tasks.lock
+
+# internal artifacts — never track
+.flow/skills/agentic-qa/debug_log.md
+/private/

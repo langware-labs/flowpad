@@ -1,7 +1,13 @@
 import { dataContext, Project } from '@sdk';
 import { useProject } from '@sdk/react/hooks';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
-import { NewProjectDialog, ProjectSelectorModal, useEnsureProject } from '@src/components/project-selector';
+import {
+  canonicalPath,
+  NewProjectDialog,
+  projectListToSelectorItems,
+  ProjectSelectorModal,
+  useEnsureProject,
+} from '@src/components/project-selector';
 import { Button } from '@src/components/ui/button';
 import {
   Dialog,
@@ -13,7 +19,6 @@ import {
 } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
 import { useAllProjects } from '@src/hooks/use-all-projects';
-import { getProjectDisplayName } from '@src/hooks/use-claude-projects';
 import { notify } from '@src/notifications';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Loader2 } from 'lucide-react';
@@ -27,10 +32,6 @@ interface QuickCreateDialogProps {
   onOpenChange: (open: boolean) => void;
   /** Descriptor `type` (e.g. 'skill', 'agent'). Ignored when null. */
   type: string | null;
-}
-
-function canonicalPath(path: string): string {
-  return path.trim().replace(/\\/g, '/').replace(/\/+$/, '').replace(/^\/+/, '');
 }
 
 function projectPrefix(project: Project | null): string | null {
@@ -70,10 +71,7 @@ export function QuickCreateDialog({ open, onOpenChange, type }: QuickCreateDialo
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const nameRef = useRef<HTMLInputElement | null>(null);
 
-  const defaultWorkspacePath = useMemo(
-    () => dataContext.bootstrapInfo?.desktop_info?.paths?.workspace || '',
-    [],
-  );
+  const defaultWorkspacePath = useMemo(() => dataContext.bootstrapInfo?.desktop_info?.paths?.workspace || '', []);
 
   // Reset form whenever the dialog opens for a new type
   useEffect(() => {
@@ -123,18 +121,7 @@ export function QuickCreateDialog({ open, onOpenChange, type }: QuickCreateDialo
     [descriptor, scope],
   );
 
-  const projectItems = useMemo(
-    () =>
-      allProjects
-        .filter((p) => !!p.cwd)
-        .map((p) => ({
-          id: canonicalPath(p.cwd),
-          name: getProjectDisplayName(p),
-          path: p.cwd,
-          modifiedAt: p.modified_at ?? null,
-        })),
-    [allProjects],
-  );
+  const projectItems = useMemo(() => projectListToSelectorItems(allProjects), [allProjects]);
 
   const currentProjectKey = useMemo(
     () => canonicalPath(project?.fs_storage_mount_path ?? ''),

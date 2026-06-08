@@ -1,3 +1,7 @@
+---
+id: 73186ed2-b2de-5c39-8d09-514fcdbec7ed
+---
+
 # flow_rs
 
 OS-keychain helper, self-contained Rust crate under `flow_sdk/rust/`. Backed by

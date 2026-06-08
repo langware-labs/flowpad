@@ -99,6 +99,16 @@ async def _index_single_claude_md(md_path: Path) -> None:
     )
 
 
+async def _index_single_claude_session(jsonl_path: Path) -> None:
+    """``~/.claude/projects/<encoded>/<sessionId>.jsonl`` → root = the encoded
+    project dir (the PROJECT node ``claude_sessions_fn`` expands)."""
+    from flow_sdk.fs_store.indexer.functions.claude_sessions import claude_sessions_fn
+    await _index_single_file(
+        jsonl_path.parent, claude_sessions_fn, RecordType.CLAUDE_SESSION,
+        root_record_type=RecordType.PROJECT,
+    )
+
+
 async def _index_single_claude_memory(memory_path: Path) -> None:
     """``~/.claude/projects/<encoded>/memory/<name>.md`` → root = ``~`` (parents[4])."""
     from flow_sdk.fs_store.indexer.functions.claude_memory import claude_memory_fn

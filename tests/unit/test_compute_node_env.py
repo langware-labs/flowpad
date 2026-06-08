@@ -9,7 +9,7 @@ Tests environment variable management on compute nodes including:
 - Cross-platform handling (Windows/Unix)
 
 Original tests from FlowPad:
-/Users/shlom/Documents/dev/test_flowpad/FlowPad/flowpad/hub/tests/unit/test_compute_node_env.py
+<hub checkout>/flowpad/hub/tests/unit/test_compute_node_env.py
 """
 
 import os

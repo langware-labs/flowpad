@@ -7,8 +7,8 @@ normal Python attribute lookup (no dependency injection needed).
 from __future__ import annotations
 
 import asyncio
-import base64
 import logging
+import time
 import uuid
 from typing import TYPE_CHECKING, Callable
 
@@ -48,7 +48,7 @@ class PtyActionsMixin:
 
         Operations:
         - start: Start a new PTY session
-        - attach: Reattach to existing PTY session (with replay)
+        - attach: Reattach to existing PTY session (asserts size + repaint)
         - input: Send input to PTY session
         - resize: Resize PTY terminal
         - close: Close PTY session
@@ -252,7 +252,6 @@ class PtyActionsMixin:
         Returns:
             True if session was created successfully, False otherwise
         """
-        from flow_sdk.compute.providers.desktop.pty_replay_buffer import replay_buffer
         from flow_sdk.compute.providers.desktop.pty_session_manager import session_manager
 
         if not self.node_provider_id:
@@ -287,7 +286,6 @@ class PtyActionsMixin:
                 except Exception:
                     pass
                 await session_manager.close_session(evict_key)
-                replay_buffer.clear(evict_key)
 
         # Create output callback that sends data over WebSocket
         main_loop = asyncio.get_event_loop()
@@ -300,17 +298,15 @@ class PtyActionsMixin:
             logging.debug(f"[PTY] on_pty_output (machine): {len(data)} bytes for session {shell_id}")
             current_pty_key = (self.id, self.node_provider_id, shell_id)
 
-            # Append to replay buffer (returns OutputChunk with seq and timestamp)
-            chunk_record = replay_buffer.append(current_pty_key, data)
-            seq = chunk_record.seq
-            chunk_timestamp = chunk_record.timestamp
-            logging.debug(f"[PTY] on_pty_output (machine): appended to replay buffer, seq={seq}")
+            # Advance the per-session output counter (activity signal; no data stored)
+            seq = session_state_holder[0].next_seq() if session_state_holder else 0
+            chunk_timestamp = time.time()
 
             # Write to PTY stream file for persistence
             if session_state_holder:
                 ss = session_state_holder[0]
                 if ss.pty_stream_file:
-                    ss.pty_stream_file.write(data)
+                    ss.pty_stream_file.write(data, seq)
                 # Feed Pty.output() iterators
                 for _q in ss.output_queues:
                     asyncio.run_coroutine_threadsafe(_q.put(data), main_loop)
@@ -396,9 +392,22 @@ class PtyActionsMixin:
                     existing_record.save_metadata(patch)
                 record = existing_record
 
-            # Create PtyStreamFile at the record's pty stream path
-            pty_stream_file = PtyStreamFile(path=shell_pty_stream_path(record.id, record.__dict__.get("pty_pid")))
+            # Create PtyStreamFile at the record's pty stream path. Initial
+            # winsize goes in the framed header — replay interprets output at
+            # the recorded sizes (resize frames are appended on every change).
+            pty_stream_file = PtyStreamFile(
+                path=shell_pty_stream_path(record.id, record.__dict__.get("pty_pid")),
+                cols=cols,
+                rows=rows,
+            )
             session_state.pty_stream_file = pty_stream_file
+            # Resume the seq counter past any previous server process's epoch
+            # (recovery respawns into the SAME stream file): seqs must stay
+            # monotonic within one file or the frontend's replay-vs-live
+            # dedup drops post-restart output — "PTY looks dead after restart".
+            persisted_max = pty_stream_file.max_seq()
+            if persisted_max > session_state.seq:
+                session_state.seq = persisted_max
 
             # Write-through: create/update the Shell DB entity from the record
             # via the generic base sync, then apply the shell-specific side
@@ -664,7 +673,6 @@ class PtyActionsMixin:
 
         Wipes:
         - session_manager sessions for this node
-        - replay_buffer entries for this node
         - compute_provider._pty_sessions for this node
         - active_pty_sessions list on this entity
 
@@ -712,7 +720,13 @@ class PtyActionsMixin:
         return ApiSuccessResponse(data=data)
 
     async def _attach_pty_session(self, body: dict) -> ApiResponse:
-        """Reattach to existing PTY session with output replay."""
+        """Reattach to an existing PTY session.
+
+        No byte replay: the client mounts a blank terminal, so the server
+        asserts the client's size on the PTY and forces the running TUI to
+        repaint its live frame (real resize when the size changed, winsize
+        jiggle when it didn't). ``since_seq`` from older clients is ignored.
+        """
         logging.info(f"[PTY] _attach_pty_session called with body: {body}")
         request_info = get_current_request_info()
         if not request_info or not request_info.request_message_id:
@@ -720,7 +734,6 @@ class PtyActionsMixin:
 
         request_message_id = request_info.request_message_id
         pty_id = body.get("pty_id") or body.get("shell_id")
-        since_seq = body.get("since_seq")
 
         if not pty_id:
             logging.error("[PTY] Missing required parameters")
@@ -762,17 +775,6 @@ class PtyActionsMixin:
             )
             return ApiSuccessResponse(data=response_msg.model_dump())
 
-        # Snapshot the replay buffer BEFORE attaching the connection.
-        # Once attached, live PTY output starts flowing to this connection via
-        # on_pty_output.  Taking the snapshot first avoids a race where live
-        # output (with high seq) arrives at the client before the replay (low
-        # seq), which would cause the client's dedup to reject the replay.
-        replay_chunks = []
-        if since_seq is not None:
-            logging.info(f"[PTY] Snapshotting replay buffer from seq {since_seq}, shell_id={pty_id}")
-            replay_chunks = pty_handle.snapshot(since_seq)
-            logging.info(f"[PTY] Snapshotted {len(replay_chunks)} chunks for shell_id={pty_id}")
-
         # Attach to session (updates connection_id — live output starts flowing)
         try:
             await pty_handle.attach(request_connection_id)
@@ -788,33 +790,21 @@ class PtyActionsMixin:
             )
             return ApiFailResponse(message=f"Failed to attach to session: {e}", data=response_msg.model_dump())
 
-        # Send replay chunks (snapshot was taken before attach to avoid races)
-        if replay_chunks:
-            handler = get_connection_handler(TypeId(type=Connection.get_type(), id=request_connection_id))
-            if handler:
-                for i, chunk in enumerate(replay_chunks):
-                    pty_msg = PtyOutputMessage(
-                        provider_node_id=self.node_provider_id,
-                        shell_id=pty_id,
-                        data=base64.b64encode(chunk.data).decode("utf-8"),
-                        seq=chunk.seq,
-                        timestamp_ms=int(chunk.timestamp * 1000),
-                    )
-                    # Send replay chunk over WebSocket with UNIQUE message_id
-                    # This prevents collision with the attach request's pending response
-                    replay_msg_id = str(uuid.uuid4())
-                    try:
-                        logging.info(f"[PTY] Sending replay chunk {i + 1}/{len(replay_chunks)}, seq={chunk.seq}")
-                        await handler.send_message(
-                            ResponseMessage(
-                                session_id=pty_id,
-                                message_id=replay_msg_id,
-                                response_message_id=replay_msg_id,  # Use unique ID, not request_message_id
-                                content=pty_msg,
-                            ).model_dump()
-                        )
-                    except Exception as e:
-                        logging.warn(f"[PTY] Failed to send replay chunk {i + 1}: {e}")
+        # Make the running program repaint for this freshly-attached client.
+        # ``repaint`` asserts the client's size (or jiggles the winsize when it
+        # is unchanged/omitted) — the size policy lives on the handle, not here.
+        # 0/missing dims → None (no size override); a real 0 is not a valid size.
+        try:
+            cols = int(body.get("cols") or 0) or None
+            rows = int(body.get("rows") or 0) or None
+        except (TypeError, ValueError):
+            cols = rows = None
+        try:
+            await pty_handle.repaint(cols, rows)
+        except Exception as e:
+            # Repaint is best-effort: the attach itself succeeded and live
+            # output flows regardless.
+            logging.warning(f"[PTY] attach repaint failed for {pty_id}: {e}")
 
         # Send status message
         latest_seq = pty_handle.latest_seq
@@ -848,7 +838,7 @@ class PtyActionsMixin:
             provider_node_id: Provider node ID
             shell_id: PTY shell ID
             data: Raw PTY output bytes
-            seq: Sequence number (already assigned by replay buffer)
+            seq: Sequence number (per-session monotonic counter)
             timestamp: Unix timestamp (seconds) when chunk was captured
         """
         handler = get_connection_handler(TypeId(type=Connection.get_type(), id=request_connection_id))
@@ -865,7 +855,7 @@ class PtyActionsMixin:
                 await handler.send_message(response_msg.model_dump())
             except Exception as e:
                 # A closed socket (tab closed mid-stream) is normal, not a
-                # warning — the PTY keeps running and reattach replays output.
+                # warning — the PTY keeps running and reattach repaints the frame.
                 _m = str(e).lower()
                 if any(s in _m for s in (
                     "close message has been sent", "websocket.close",

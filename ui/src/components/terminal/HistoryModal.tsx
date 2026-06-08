@@ -5,10 +5,8 @@ import { SideDrawer } from '@src/components/ui/side-drawer';
 import { TooltipProvider } from '@src/components/ui/tooltip';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { CodexIcon } from '@src/components/icons/CodexIcon';
-import {
-  PromptIndexPanel,
-  usePromptsForProcess,
-} from '@src/components/terminal/interactive-terminal/side-windows';
+import { CopilotIcon } from '@src/components/icons/CopilotIcon';
+import { PromptIndexPanel, usePromptsForProcess } from '@src/components/terminal/interactive-terminal/side-windows';
 import { cn } from '@src/lib/utils';
 import { useWorkerHistory, type WorkerHistoryEntry } from '@src/hooks/useWorkerHistory';
 import { useProject } from '@src/hooks/useProject';
@@ -66,18 +64,38 @@ function formatFullDate(iso: string | null | undefined): string {
 
 type SortDir = 'desc' | 'asc';
 const SORT_STORAGE_KEY = 'flowpad.historyModal.sortDir';
-function readStoredSortDir(): SortDir {
-  if (typeof window === 'undefined') return 'desc';
-  try {
-    return window.localStorage.getItem(SORT_STORAGE_KEY) === 'asc' ? 'asc' : 'desc';
-  } catch {
-    return 'desc';
-  }
+const ALL_PROJECTS_STORAGE_KEY = 'flowpad.historyModal.allProjects';
+
+// localStorage-backed useState. `parse` maps the raw stored value (null when
+// absent/unavailable) to the typed value, doubling as the default.
+function usePersistedState<T extends string | boolean>(
+  key: string,
+  parse: (raw: string | null) => T,
+): [T, React.Dispatch<React.SetStateAction<T>>] {
+  const [value, setValue] = useState<T>(() => {
+    if (typeof window === 'undefined') return parse(null);
+    try {
+      return parse(window.localStorage.getItem(key));
+    } catch {
+      return parse(null);
+    }
+  });
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(key, String(value));
+    } catch {
+      // localStorage may be unavailable (private mode, quota, etc.) — preference simply doesn't persist.
+    }
+  }, [key, value]);
+  return [value, setValue];
 }
 
 function WorkerIcon({ workerType }: { workerType: WorkerHistoryEntry['worker_type'] }) {
   if (workerType === 'codex') {
     return <CodexIcon className="h-3.5 w-3.5 shrink-0 text-emerald-500" />;
+  }
+  if (workerType === 'copilot') {
+    return <CopilotIcon className="h-3.5 w-3.5 shrink-0 text-sky-500" />;
   }
   return <ClaudeIcon className="h-3.5 w-3.5 shrink-0 text-orange-500" />;
 }
@@ -96,23 +114,18 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
   const { entries, isLoading } = useWorkerHistory(30, { enabled: open });
   const { project: currentProject } = useProject();
 
-  const [allProjects, setAllProjects] = useState(true);
+  const [allProjects, setAllProjects] = usePersistedState(ALL_PROJECTS_STORAGE_KEY, (raw) => raw === 'true');
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(() => new Set());
   const [peekKey, setPeekKey] = useState<string | null>(null);
   const [peekProcess, setPeekProcess] = useState<AgenticProcess | null>(null);
   const [peekResolving, setPeekResolving] = useState(false);
-  const [sortDir, setSortDir] = useState<SortDir>(readStoredSortDir);
+  const [sortDir, setSortDir] = usePersistedState<SortDir>(SORT_STORAGE_KEY, (raw) => (raw === 'asc' ? 'asc' : 'desc'));
   const [searchOpen, setSearchOpen] = useState(false);
   const [query, setQuery] = useState('');
   const searchInputRef = useRef<HTMLInputElement | null>(null);
 
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(SORT_STORAGE_KEY, sortDir);
-    } catch {
-      // localStorage may be unavailable (private mode, quota, etc.) — preference simply doesn't persist.
-    }
-  }, [sortDir]);
+  // No active project → nothing to scope to; behave as "all projects".
+  const effectiveAllProjects = allProjects || !currentProject;
 
   // Reset selection + peek + search when modal closes so a new open starts clean.
   useEffect(() => {
@@ -134,18 +147,11 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
 
   const visible = useMemo(() => {
     const currentProjectId = currentProject?.id ?? null;
-    const projectScoped = allProjects
-      ? entries
-      : entries.filter(
-          (e) => currentProjectId != null && e.project_id === currentProjectId,
-        );
+    const projectScoped = effectiveAllProjects ? entries : entries.filter((e) => e.project_id === currentProjectId);
     const q = query.trim().toLowerCase();
     const filtered = q
       ? projectScoped.filter((e) => {
-          const hay = [e.name, e.last_prompt, e.project_name]
-            .filter(Boolean)
-            .join(' ')
-            .toLowerCase();
+          const hay = [e.name, e.last_prompt, e.project_name].filter(Boolean).join(' ').toLowerCase();
           return hay.includes(q);
         })
       : projectScoped;
@@ -156,7 +162,7 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
       return sortDir === 'desc' ? tb - ta : ta - tb;
     });
     return sorted;
-  }, [entries, allProjects, currentProject?.id, sortDir, query]);
+  }, [entries, effectiveAllProjects, currentProject?.id, sortDir, query]);
 
   // Drop selections that are no longer visible after a filter change.
   useEffect(() => {
@@ -191,7 +197,7 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
   // TabbedTerminal uses for "Open from history" — agentic_process_id wins
   // when present, otherwise the idempotent upsert via fromClaude/CodexSession.
   const peekEntry = useMemo(
-    () => (peekKey ? visible.find((e) => entryKey(e) === peekKey) ?? null : null),
+    () => (peekKey ? (visible.find((e) => entryKey(e) === peekKey) ?? null) : null),
     [peekKey, visible],
   );
   useEffect(() => {
@@ -228,11 +234,12 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
       }
     };
     void resolve();
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [peekEntry]);
 
-  const { promptEntries: peekPromptEntries, isLoading: peekPromptsLoading } =
-    usePromptsForProcess(peekProcess);
+  const { promptEntries: peekPromptEntries, isLoading: peekPromptsLoading } = usePromptsForProcess(peekProcess);
 
   const togglePeek = (key: string) => {
     setPeekKey((prev) => (prev === key ? null : key));
@@ -244,7 +251,7 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className={cn(
-          'flex w-full flex-col overflow-hidden p-4 max-h-[80vh] transition-[max-width] duration-200',
+          'flex max-h-[80vh] w-full flex-col overflow-hidden p-4 transition-[max-width] duration-200',
           peeking ? 'sm:max-w-3xl' : 'sm:max-w-lg',
         )}
         onEscapeKeyDown={(e) => {
@@ -263,13 +270,13 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
             <div className="flex items-center gap-3">
               <DialogTitle className="text-sm font-semibold">Recent Sessions</DialogTitle>
               <label
-                className="flex cursor-pointer items-center gap-1 text-[11px] text-muted-foreground select-none"
+                className="flex cursor-pointer select-none items-center gap-1 text-[11px] text-muted-foreground"
                 title={currentProject ? undefined : 'No active project'}
                 data-testid="history-all-projects"
               >
                 <Checkbox
                   className="h-3 w-3"
-                  checked={allProjects}
+                  checked={effectiveAllProjects}
                   onCheckedChange={(v) => setAllProjects(v === true)}
                   disabled={!currentProject}
                 />
@@ -289,11 +296,7 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
                 data-testid="history-sort-time"
                 aria-label="Sort by time"
               >
-                {sortDir === 'desc' ? (
-                  <ArrowDown className="h-3.5 w-3.5" />
-                ) : (
-                  <ArrowUp className="h-3.5 w-3.5" />
-                )}
+                {sortDir === 'desc' ? <ArrowDown className="h-3.5 w-3.5" /> : <ArrowUp className="h-3.5 w-3.5" />}
               </button>
               <button
                 type="button"
@@ -350,34 +353,34 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
             )}
           </div>
         )}
-        {selectedKeys.size > 0 && (
-          <div
-            className="mt-1 flex items-center justify-between gap-2 rounded bg-muted/40 px-2 py-1"
-            data-testid="history-selection-bar"
-          >
-            <span className="text-[11px] text-muted-foreground">
-              {selectedKeys.size} selected
-            </span>
-            <div className="flex items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => setSelectedKeys(new Set())}
-                className="rounded border border-border px-2 py-0.5 text-[11px] font-medium hover:bg-muted"
-                data-testid="history-clear-selection"
-              >
-                Clear
-              </button>
-              <button
-                type="button"
-                onClick={handleOpenAllSelected}
-                className="rounded bg-primary px-2 py-0.5 text-[11px] font-medium text-primary-foreground hover:bg-primary/90"
-                data-testid="history-open-selected"
-              >
-                Open all
-              </button>
-            </div>
+        {/* Always rendered (invisible when empty) so the first selection doesn't shift the list. */}
+        <div
+          className={cn(
+            'mt-1 flex items-center justify-between gap-2 rounded bg-muted/40 px-2 py-1',
+            selectedKeys.size === 0 && 'invisible',
+          )}
+          data-testid="history-selection-bar"
+        >
+          <span className="text-[11px] text-muted-foreground">{selectedKeys.size} selected</span>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setSelectedKeys(new Set())}
+              className="rounded border border-border px-2 py-0.5 text-[11px] font-medium hover:bg-muted"
+              data-testid="history-clear-selection"
+            >
+              Clear
+            </button>
+            <button
+              type="button"
+              onClick={handleOpenAllSelected}
+              className="rounded bg-primary px-2 py-0.5 text-[11px] font-medium text-primary-foreground hover:bg-primary/90"
+              data-testid="history-open-selected"
+            >
+              Open all
+            </button>
           </div>
-        )}
+        </div>
         <div className="flex min-h-0 flex-1">
           <div className="flex min-w-0 flex-1 flex-col">
             {isLoading && visible.length === 0 ? (
@@ -465,9 +468,7 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
                             data-testid="history-row-time"
                           >
                             <span className="text-xs">{timeAgo(entry.last_active_time)}</span>
-                            <span className="text-[10px] opacity-70">
-                              {formatFullDate(entry.last_active_time)}
-                            </span>
+                            <span className="text-[10px] opacity-70">{formatFullDate(entry.last_active_time)}</span>
                           </span>
                         </button>
                         <button
@@ -497,7 +498,9 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
           {peeking && (
             <SideDrawer
               open
-              onOpenChange={(v) => { if (!v) setPeekKey(null); }}
+              onOpenChange={(v) => {
+                if (!v) setPeekKey(null);
+              }}
               title="Prompts"
               count={peekPromptEntries.length}
               width="w-72"
@@ -509,7 +512,12 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
                 ) : peekPromptEntries.length === 0 ? (
                   <p className="px-3 py-4 text-center text-xs text-muted-foreground">No prompts found</p>
                 ) : (
-                  <PromptIndexPanel prompts={peekPromptEntries} onScrollToLine={() => {}} />
+                  <PromptIndexPanel
+                    prompts={peekPromptEntries}
+                    onScrollToLine={() => {}}
+                    process={peekProcess}
+                    projectId={peekProcess?.project_id ?? null}
+                  />
                 )}
               </div>
             </SideDrawer>

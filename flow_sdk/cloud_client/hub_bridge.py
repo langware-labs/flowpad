@@ -614,7 +614,7 @@ class HubWsBridge:
         _PROJECTED = {"message_count", "message_ids"}
         _LOCAL_FIELDS = {
             "id", "type", "title", "remote_project_id", "remote_project_name",
-            "participants", "message_status_visible",
+            "participants", "message_status_visible", "shared_context_entities",
         }
         clean = {k: v for k, v in data.items() if k in _LOCAL_FIELDS and k not in _PROJECTED}
         clean["id"] = conv_id
@@ -639,7 +639,8 @@ class HubWsBridge:
             await Conversation.delete_by_id(conv_id)
             return
 
-        for field in ("title", "message_status_visible", "participants", "remote_project_id", "remote_project_name"):
+        for field in ("title", "message_status_visible", "participants", "remote_project_id",
+                      "remote_project_name", "shared_context_entities"):
             if field in clean:
                 setattr(existing, field, clean[field])
         await existing.save(someone_typeid, notify=True)

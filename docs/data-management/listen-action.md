@@ -34,7 +34,7 @@ POST /api/v1/webhook/listen
 
 ## Route Registration
 
-The webhook endpoint is registered in `/Users/shlom/Documents/dev/flowpad-oss/flow_sdk/server/routes/webhook.py` as a plain FastAPI route:
+The webhook endpoint is registered in `flow_sdk/server/routes/webhook.py` as a plain FastAPI route:
 
 ```python
 webhook_router = APIRouter(prefix="/api/v1/webhook")
@@ -49,7 +49,7 @@ async def listen_endpoint(request: Request):
 
 ## listen_action Entry Point
 
-**File:** `/Users/shlom/Documents/dev/flowpad-oss/flow_sdk/app/actions/listen.py`
+**File:** `flow_sdk/app/actions/listen.py`
 
 ```python
 async def listen_action(request):
@@ -166,19 +166,13 @@ Parsed model: `AgentHookData`
 
 `handle_agent_hook` resolves the hook fields (`hook_event_name`, `session_id`, `tool_name`, `tool_input`, `execution_scope`) up-front — before loading the `AgentHook` entity — so the side effects below run even when the hook entity itself no longer exists. The originating `AgenticProcess` id is resolved from `execution_scope` via `_extract_agentic_process_id`.
 
-**File-op path tracking**: A module-level `_last_file_op_path_by_session` dict caches the most recent `PostToolUse:Write` **or** `PostToolUse:Edit` file path per session (via `_track_file_op_path`). When a `PostToolUse` event arrives with `tool_name in ("Write", "Edit")`, the `file_path` from `tool_input` is stored keyed by `session_id`. This cached path is the fallback plan-file source consumed by the plan annotation side effect below.
-
 **Worktree auto-close**: On `PostToolUse:ExitWorktree` with a resolved agentic_process id, `_close_worktree_process` closes that process's tab.
 
 **ExitPlanMode auto-approve**: A module-level `_plan_auto_approve_by_agentic_process` set (keyed by agentic_process id, set by `set_plan_auto_approve` / execute-plan) is consumed on `PermissionRequest:ExitPlanMode` to return a synchronous `{"behavior": "allow"}` decision, and is cleared on `UserPromptSubmit`.
 
-**Annotation auto-creation**: `handle_agent_hook` creates `Annotation` entities for two event types:
+**Annotation auto-creation**: On **`UserPromptSubmit`**, `_create_prompt_annotation` creates an annotation with label `"prompt:"`, content truncated to 50 chars, linked to the `AgenticProcess` matching the session's `session_id`. Plan↔process cross-linking is NOT done here — it belongs to the transcript paths (`PlanHandler` in the indexer and the TranscriptStreamer subscriber, both via `cross_link_plan_to_process`).
 
-1. **`UserPromptSubmit`**: `_create_prompt_annotation` creates an annotation with label `"prompt:"`, content truncated to 50 chars, linked to the `AgenticProcess` matching the session's `session_id`.
-
-2. **`PreToolUse:ExitPlanMode`**: `_create_plan_annotation` creates an annotation with label `"plan:"`. The plan file path is resolved from `tool_input["planFilePath"]` (emitted directly by newer Claude Code) first; it falls back to the cached `_last_file_op_path_by_session` Write/Edit path when that path points to a `.claude/plans/*.md` file (the cache entry is popped on consume). Cross-linking the plan to the process is delegated to `cross_link_plan_to_process`.
-
-Both annotation creation paths are non-critical — failures are caught and logged at DEBUG level.
+Annotation creation is non-critical — failures are caught and logged at DEBUG level.
 
 ## handle_hook_op: CRUD Dispatch
 
@@ -293,7 +287,7 @@ Routing priority:
 
 ### Python Definition
 
-**File:** `/Users/shlom/Documents/dev/flowpad-oss/flow_sdk/core/network/resource_tracker.py`
+**File:** `flow_sdk/core/network/resource_tracker.py`
 
 ```python
 class DataOpMessage:
@@ -340,7 +334,7 @@ There is also a Pydantic version defined in `flow_sdk/api/messages.py` (`DataOpM
 
 ### WSMessageType Enum
 
-**File:** `/Users/shlom/Documents/dev/flowpad-oss/flow_sdk/api/messages.py`
+**File:** `flow_sdk/api/messages.py`
 
 | Value | String | Purpose |
 |-------|--------|---------|
@@ -371,7 +365,7 @@ There is also a Pydantic version defined in `flow_sdk/api/messages.py` (`DataOpM
 
 ## resource_tracker: _sync_handle_entity_op
 
-**File:** `/Users/shlom/Documents/dev/flowpad-oss/flow_sdk/core/network/resource_tracker.py`
+**File:** `flow_sdk/core/network/resource_tracker.py`
 
 `_sync_handle_entity_op` is the synchronous function called from the database layer after every `entity.save()` or `entity.delete_by_id()`. It is synchronous because the database layer may not be running inside an async context, but it uses `asyncio.get_running_loop().create_task()` to schedule the actual WebSocket sends on the existing event loop. (If there is no running loop, it logs and returns without sending.)
 
@@ -432,19 +426,19 @@ The "no explicit watchers" fallback for UPDATE is specifically to handle webhook
 
 ### Connection Registry
 
-**File:** `/Users/shlom/Documents/dev/flowpad-oss/flow_sdk/core/network/connections.py`
+**File:** `flow_sdk/core/network/connections.py`
 
 `ConnectionRegistry` is a module-level singleton (`_registry`) holding a `dict[str, WebSocket]`. The websocket route calls `add_connection(connection_id, websocket)` on accept and `remove_connection(connection_id)` on disconnect. `_sync_handle_entity_op` calls `get_all_connections()` to read a snapshot of all active sockets.
 
 ### Watch Registry
 
-**File:** `/Users/shlom/Documents/dev/flowpad-oss/flow_sdk/app/actions/watch_registry.py`
+**File:** `flow_sdk/app/actions/watch_registry.py`
 
 `_watched_entities: Dict[str, Set[str]]` maps each `connection_id` to the set of `"{type}:{id}"` keys it is watching. The TypeScript frontend registers watches by calling `create_watch` via the REST API. `get_watched_by("{type}:{id}")` iterates all connections and returns those whose watch set contains the given key.
 
 ## WebSocket Route
 
-**File:** `/Users/shlom/Documents/dev/flowpad-oss/flow_sdk/server/routes/websocket.py`
+**File:** `flow_sdk/server/routes/websocket.py`
 
 ```
 URL: /api/v1/connect/ws/{connection_id}
@@ -481,7 +475,7 @@ The module also registers an `_minihub_connection_lookup` function with `set_ext
 
 ### ConnectionManager
 
-**File:** `/Users/shlom/Documents/dev/flowpad-oss/ts_sdk/src/websocket.ts`
+**File:** `ts_sdk/src/websocket.ts`
 
 `ConnectionManager` is a singleton `EventEmitter`. It connects to `/api/v1/connect/ws/{uuid}` on initialization and dispatches incoming JSON messages by `message_type`.
 
@@ -507,7 +501,7 @@ Reconnection: on unexpected close, `ConnectionManager` reconnects with exponenti
 
 ### FlowSyncStore.onDataOp
 
-**File:** `/Users/shlom/Documents/dev/flowpad-oss/ts_sdk/src/FlowSync/store.ts`
+**File:** `ts_sdk/src/FlowSync/store.ts`
 
 `DataManager` (the actual class name; the spec previously called this `FlowSyncStore`) registers `this.onDataOp` on the `on_data_op` event in the constructor via `attach_connection_manager()`:
 
@@ -583,7 +577,7 @@ Two update concerns run per event:
 
 ### FsRecordDataOpHandler
 
-**File:** `/Users/shlom/Documents/dev/flowpad-oss/ts_sdk/src/resource_management/fs_records/data-op-handler.ts`
+**File:** `ts_sdk/src/resource_management/fs_records/data-op-handler.ts`
 
 A second, parallel listener handles `data_op_msg` events for FsRecord types (file-system record types registered in `fsRecordTypeRegistry`). It attaches to the `on_data_op` event on `ConnectionManager` (not the store):
 

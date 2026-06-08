@@ -9,7 +9,7 @@ Tests real-time streaming of command output including:
 - Foreground command blocking behavior
 
 Original tests from FlowPad:
-/Users/shlom/Documents/dev/test_flowpad/FlowPad/flowpad/hub/tests/unit/test_compute_streaming.py
+<hub checkout>/flowpad/hub/tests/unit/test_compute_streaming.py
 """
 
 import asyncio

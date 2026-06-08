@@ -232,6 +232,9 @@ class TypeInfo:
     # FSRecord.default_body / upsert_main_ref to materialize the backing file on
     # create. None ⇒ no auto-created body.
     default_body_fn: Any = field(default=None, compare=False, repr=False)
+    # True ⇒ entity saves re-render the backing file from default_body_fn on
+    # EVERY store() (entity is the file's sole editor), not just on create.
+    owns_main_ref: bool = field(default=False, compare=False, repr=False)
     # The declarative TypeMetadata (possibly a per-type subclass) this TypeInfo
     # was built from — home for type-specific extras beyond the flat fields.
     # Runtime-only; the flat fields above remain the serialized surface.
@@ -375,6 +378,8 @@ class SchemaRegistry:
                 existing.asset_hash_fn = info.asset_hash_fn
             if info.default_body_fn is not None:
                 existing.default_body_fn = info.default_body_fn
+            if info.owns_main_ref:
+                existing.owns_main_ref = True
             if info.metadata is not None:
                 existing.metadata = info.metadata
             if info.meta_model is not None:

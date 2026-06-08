@@ -104,12 +104,6 @@ def load_actions():
     except ImportError:
         pass  # OAuth action not available
 
-    # Import LLM config action to register it
-    try:
-        from flow_sdk.app.actions import llm_config_action  # noqa: F401
-    except ImportError:
-        pass  # LLM config action not available
-
     # Import mcp_app action to register it
     from flow_sdk.actions import mcp_app_action  # noqa: F401
 

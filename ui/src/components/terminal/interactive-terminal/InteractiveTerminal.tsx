@@ -15,13 +15,14 @@ import { PtySyncSession } from '@sdk/pty-sync/PtySyncSession.js';
 import { useScrollSync } from '@sdk/pty-sync/ui/useScrollSync.js';
 import { XTermHarness } from '@sdk/pty-sync/ui/XTermHarness.js';
 import { useContext } from '@src/hooks/useContext';
+import { useEntity } from '@src/hooks/entity-hooks';
 import { useInputDir } from '@src/hooks/use-input-dir';
 import { useInstancePreferences } from '@src/hooks/use-instance-preferences';
 import { DockPointer, useDockNavigation } from '@src/navigation';
-import { useAgenticQueue } from '@src/hooks/useAgenticQueue';
 import { useFS } from '@src/hooks/useFS';
 import { useShell } from '@src/hooks/useShell';
 import { FitAddon } from '@xterm/addon-fit';
+import { fetchPtyStream, replayPtyStream } from './pty-replay';
 import { SearchAddon } from '@xterm/addon-search';
 import { WebLinksAddon } from '@xterm/addon-web-links';
 import { Terminal as XTerm } from '@xterm/xterm';
@@ -124,7 +125,7 @@ function saveTraceFilters(f: TraceFilters): void {
 }
 
 import { DARK_THEME, LIGHT_THEME } from './terminalThemes';
-import { FONT_FAMILY, FONT_SIZE_PX } from './terminalConfig';
+import { FONT_FAMILY, FONT_SIZE_PX, openTerminalLink } from './terminalConfig';
 
 // ── Side-window state lives in the URL (?sideWindows=…&activeSideWindow=…) ──
 // Source of truth: `currentDock.options`. Same shape as ?editorMode in
@@ -214,6 +215,22 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   shellRef.current = shell;
   const processIsActive = process?.status === ProcessStatus.RUNNING;
 
+  // Live failed-to-start latch → banner. The loader only classifies a latched
+  // process on navigation; when the worker dies instantly while this tab is
+  // already mounted (first death, or a failed Retry), the only signal is the
+  // entity update flipping `start_failure`. The loader-context `process` is
+  // not reactive, so subscribe via useEntity and surface the banner here.
+  const { data: liveProcess } = useEntity<AgenticProcess>(process?.typeId ?? null);
+  const liveStartFailure = liveProcess?.start_failure ?? null;
+  useEffect(() => {
+    if (!liveStartFailure || !process) return;
+    dataContext.setTerminalRuntimeError({
+      kind: 'failed_to_start',
+      processId: process.id,
+      shellId: process.shell_id ?? null,
+    });
+  }, [liveStartFailure, process]);
+
   // Notify parent when the worker session ID becomes known (or clears)
   useEffect(() => {
     onWorkerSessionId?.(process?.session_id ?? null);
@@ -277,9 +294,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       } else {
         delete nextOptions[ACTIVE_SIDE_WINDOW_PARAM];
       }
-      navigation.openDock(
-        new DockPointer(currentDock.viewType, currentDock.pointer, nextOptions, currentDock.layout),
-      );
+      navigation.openDock(new DockPointer(currentDock.viewType, currentDock.pointer, nextOptions, currentDock.layout));
     },
     [currentDock, navigation],
   );
@@ -320,13 +335,6 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       pushSideTabs({ tabs, active: tab });
     },
     [sideWindowTabs, activeSideTab, pushSideTabs],
-  );
-
-  // Queue hook — idle injection of queued prompts
-  const { queue, addEntry, removeEntry, setEnabled, moveEntry } = useAgenticQueue(
-    process?.id,
-    processIsActive,
-    shellRef,
   );
 
   // Input dir info for file attachment workflow.
@@ -547,7 +555,9 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   // Hold the latest `refreshPrompts` in a ref so the xterm `onData` effect
   // doesn't have to re-subscribe whenever the hook returns a new identity.
   const refreshPromptsRef = useRef<typeof refreshPrompts>(refreshPrompts);
-  useEffect(() => { refreshPromptsRef.current = refreshPrompts; }, [refreshPrompts]);
+  useEffect(() => {
+    refreshPromptsRef.current = refreshPrompts;
+  }, [refreshPrompts]);
 
   // Debounced refetch fired ~1s after the user presses Enter in the terminal.
   // Mashing Enter coalesces into one fetch 1s after the last keystroke.
@@ -559,9 +569,12 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       refreshPromptsRef.current?.();
     }, 1000);
   }, []);
-  useEffect(() => () => {
-    if (enterRefetchTimerRef.current) clearTimeout(enterRefetchTimerRef.current);
-  }, []);
+  useEffect(
+    () => () => {
+      if (enterRefetchTimerRef.current) clearTimeout(enterRefetchTimerRef.current);
+    },
+    [],
+  );
 
   // Build a {timestamp → absRow} index from prompt annotations so we can
   // attach click-to-scroll behavior to transcript prompts whose annotation
@@ -778,7 +791,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
         allowProposedApi: true,
       });
 
-      term.loadAddon(new WebLinksAddon());
+      term.loadAddon(new WebLinksAddon(openTerminalLink));
 
       const fit = new FitAddon();
       term.loadAddon(fit);
@@ -1053,40 +1066,81 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       }
     };
 
+    let connectGen = 0; // cancellation token: a newer connect/disconnect wins
+
     const onConnected = () => {
-      const term = terminalRef.current;
-      if (!term) return;
+      const gen = ++connectGen;
+      void (async () => {
+        const term = terminalRef.current;
+        if (!term) return;
 
-      // Reset xterm to a clean slate for this session.
-      term.reset();
+        // Fetch + replay the recorded framed stream (full history at the
+        // recorded sizes — see pty-replay.ts). Falls back to live-only on
+        // any failure (404 legacy/no stream, replay error).
+        let historySerialized: string | null = null;
+        let historyLastSeq = 0;
+        try {
+          const ptyId = shell.pty_pid ?? shell.id;
+          const stream = await fetchPtyStream(ptyId);
+          if (stream) {
+            const replay = await replayPtyStream(stream);
+            if (replay) {
+              historySerialized = replay.serialized;
+              historyLastSeq = replay.lastSeq;
+            }
+          }
+        } catch (e) {
+          console.warn('[InteractiveTerminal] history replay failed, live-only:', e);
+        }
+        if (gen !== connectGen) return; // superseded while fetching
 
-      // Replay buffered chunks from the SDK into xterm.
-      const chunks = shell.getPtyChunks();
-      for (const chunk of chunks) {
-        ptySyncRef.current.processChunk(chunk);
-        term.write(chunk.data);
-      }
+        // Reset xterm to a clean slate for this session, then restore the
+        // replayed history (scrollback + final screen + cursor).
+        term.reset();
+        if (historySerialized) term.write(historySerialized);
 
-      // Signal buffer ready after xterm processes replay writes.
-      if (chunks.length > 0) {
-        term.write('', () => {
-          anchorsResolvedRef.current = false;
-          ptySyncRef.current.notifyBufferReady();
-          setBufferFlushCount((c) => c + 1);
-        });
-      }
+        // Write live-session chunks accumulated since attach into xterm,
+        // skipping chunks already covered by the replayed stream (frames
+        // carry the same per-session seq as WS chunks). Chunks are decoded
+        // with a STREAMING TextDecoder — xterm's raw-Uint8Array path drops
+        // multi-byte chars split across writes (xtermjs/xterm.js#6003).
+        // Skipped chunks are decoded too so partial-char state stays aligned
+        // across the dedup boundary.
+        const chunks = shell.getPtyChunks();
+        const chunkDecoder = new TextDecoder('utf-8', { fatal: false });
+        let wrote = Boolean(historySerialized);
+        for (const chunk of chunks) {
+          ptySyncRef.current.processChunk(chunk);
+          const text = chunkDecoder.decode(chunk.data, { stream: true });
+          if (chunk.seq <= historyLastSeq) continue;
+          term.write(text);
+          wrote = true;
+        }
 
-      // Send resize so the process redraws for current dimensions.
-      if (shell.connected) void shell.resize(term.cols, term.rows);
+        // Signal buffer ready after xterm processes the buffered writes.
+        if (wrote) {
+          term.write('', () => {
+            anchorsResolvedRef.current = false;
+            ptySyncRef.current.notifyBufferReady();
+            setBufferFlushCount((c) => c + 1);
+          });
+        }
 
-      // Subscribe to live output (unsubscribe any prior subscription first).
-      unsubOutput?.();
-      unsubOutput = shell.onOutput(handlePtyData);
+        // Assert this client's size on the PTY — the resulting SIGWINCH makes
+        // the running TUI repaint at the real xterm dimensions (the attach-time
+        // jiggle only repainted at the PTY's previous size).
+        if (shell.connected) void shell.resize(term.cols, term.rows);
 
-      setShellReady(true);
+        // Subscribe to live output (unsubscribe any prior subscription first).
+        unsubOutput?.();
+        unsubOutput = shell.onOutput(handlePtyData);
+
+        setShellReady(true);
+      })();
     };
 
     const onDisconnected = () => {
+      connectGen++; // cancel any in-flight history replay
       unsubOutput?.();
       unsubOutput = undefined;
       setShellReady(false);
@@ -1112,6 +1166,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     if (shell.connected) onConnected();
 
     return () => {
+      connectGen++; // cancel any in-flight history replay
       unsubStatus();
       unsubOutput?.();
 
@@ -1127,43 +1182,49 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     };
   }, [shell, terminalReady]);
 
-  const reportFirstPromptIfNeeded = useCallback((prompt: string) => {
-    const submittedPrompt = prompt.trim();
-    if (!process || firstPromptReportedRef.current || !submittedPrompt) return;
-    firstPromptReportedRef.current = true;
-    void process
-      .reportEvent(AgenticProcessEventName.FirstPrompt, {
-        prompt: submittedPrompt,
-        sent_at: new Date().toISOString(),
-      })
-      .then((result) => {
-        console.debug('[InteractiveTerminal] first_prompt report_event accepted', result);
-      })
-      .catch((err: unknown) => {
-        firstPromptReportedRef.current = false;
-        console.warn('[InteractiveTerminal] first_prompt report_event failed', err);
-      });
-  }, [process]);
+  const reportFirstPromptIfNeeded = useCallback(
+    (prompt: string) => {
+      const submittedPrompt = prompt.trim();
+      if (!process || firstPromptReportedRef.current || !submittedPrompt) return;
+      firstPromptReportedRef.current = true;
+      void process
+        .reportEvent(AgenticProcessEventName.FirstPrompt, {
+          prompt: submittedPrompt,
+          sent_at: new Date().toISOString(),
+        })
+        .then((result) => {
+          console.debug('[InteractiveTerminal] first_prompt report_event accepted', result);
+        })
+        .catch((err: unknown) => {
+          firstPromptReportedRef.current = false;
+          console.warn('[InteractiveTerminal] first_prompt report_event failed', err);
+        });
+    },
+    [process],
+  );
 
-  const collectFirstPromptInput = useCallback((data: string) => {
-    if (firstPromptReportedRef.current || !data || data.startsWith('\x1b')) return;
-    let buffer = firstPromptBufferRef.current;
-    for (const ch of data) {
-      if (ch === '\r' || ch === '\n') {
-        reportFirstPromptIfNeeded(buffer);
-        buffer = '';
-        continue;
+  const collectFirstPromptInput = useCallback(
+    (data: string) => {
+      if (firstPromptReportedRef.current || !data || data.startsWith('\x1b')) return;
+      let buffer = firstPromptBufferRef.current;
+      for (const ch of data) {
+        if (ch === '\r' || ch === '\n') {
+          reportFirstPromptIfNeeded(buffer);
+          buffer = '';
+          continue;
+        }
+        if (ch === '\u007f' || ch === '\b') {
+          buffer = buffer.slice(0, -1);
+          continue;
+        }
+        if (ch >= ' ' && ch !== '\u007f') {
+          buffer += ch;
+        }
       }
-      if (ch === '\u007f' || ch === '\b') {
-        buffer = buffer.slice(0, -1);
-        continue;
-      }
-      if (ch >= ' ' && ch !== '\u007f') {
-        buffer += ch;
-      }
-    }
-    firstPromptBufferRef.current = buffer;
-  }, [reportFirstPromptIfNeeded]);
+      firstPromptBufferRef.current = buffer;
+    },
+    [reportFirstPromptIfNeeded],
+  );
 
   // Input handler
   useEffect(() => {
@@ -1192,8 +1253,8 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       const fit = fitAddonRef.current;
       ptySyncRef.current.resetSession();
 
-      // connect({ force: true }) resets seq + replayDone, then re-attaches
-      // and re-subscribes the output handler once replayDone flips true again.
+      // attachPty({ force: true }) resets attach state, then re-attaches
+      // and re-subscribes the output handler once the attach completes.
       const shell = shellRef.current;
       void shell?.attachPty({ cols: term?.cols ?? 80, rows: term?.rows ?? 24, force: true });
 
@@ -1485,25 +1546,14 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
                   />
                 )}
                 {activeSideTab === SideTabId.Prompts && (
-                  <PromptIndexPanel prompts={mergedPrompts} onScrollToLine={scrollAnnotationToLine} />
-                )}
-                {activeSideTab === SideTabId.Queue && process && (
-                  <QueuePanel
-                    queue={queue}
-                    onAdd={(e) => {
-                      void addEntry(e);
-                    }}
-                    onRemove={(i) => {
-                      void removeEntry(i);
-                    }}
-                    onMove={(i, d) => {
-                      void moveEntry(i, d);
-                    }}
-                    onSetEnabled={(v) => {
-                      void setEnabled(v);
-                    }}
+                  <PromptIndexPanel
+                    prompts={mergedPrompts}
+                    onScrollToLine={scrollAnnotationToLine}
+                    process={process ?? null}
+                    projectId={process?.project_id ?? null}
                   />
                 )}
+                {activeSideTab === SideTabId.Queue && process && <QueuePanel process={process} />}
                 {activeSideTab === SideTabId.Files && inputDirInfo && (
                   <InputFilesPanel
                     computeNodeTypeId={inputDirInfo.computeNodeTypeId}
@@ -1539,13 +1589,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
           fileCount={fileCount}
           isActive={processIsActive}
           promptCount={mergedPrompts.length}
-          queue={queue}
-          onQueueAdd={(e) => {
-            void addEntry(e);
-          }}
-          onQueueRemove={(i) => {
-            void removeEntry(i);
-          }}
+          process={process}
           openTabs={ribbonOpenTabs}
           activeSideTab={ribbonActiveSideTab}
           onOpenSideTab={(tab) => {

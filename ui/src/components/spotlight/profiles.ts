@@ -6,10 +6,10 @@ const terminalProfile: SpotlightProfile = {
   label: 'Search sessions',
   placeholder: 'Search sessions…',
   // No `defaultEntityType` — the entity chip starts on "All" so the multi-type
-  // fan-out hits both claude_session and codex_session in parallel (matches the
-  // behavior of the deleted SessionQuickSearchModal). claude and codex are two
+  // fan-out hits each worker session type in parallel (matches the
+  // behavior of the deleted SessionQuickSearchModal). Worker records are
   // record-types of the same conceptual "session" entity; both must surface.
-  allowedEntityTypes: ['claude_session', 'codex_session'],
+  allowedEntityTypes: ['claude_session', 'codex_session', 'copilot_session'],
   showTerminalHistory: true,
   routeViaTerminal: true,
 };

@@ -28,6 +28,7 @@ logger = logging.getLogger(__name__)
 
 from flow_sdk.discovery.notify import send_resource_sync
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
+from flow_sdk.schema.types import EntityType
 from flow_sdk.fs_store import SyncOperation
 from flow_sdk.fs_store.type_id import TypeId
 
@@ -150,6 +151,24 @@ async def _pack_spec_attachment(entry_id: str, attachment_dir: Path) -> None:
     (spec_dir / "spec.md").write_text(spec_md, encoding="utf-8")
 
 
+async def _pack_prompt_attachment(entry_id: str, attachment_dir: Path) -> None:
+    """Write ``attachment/prompt-@<id>/prompt.md`` (frontmatter + text body).
+
+    Rendered via ``_prompt_default_body`` so the frontmatter (id/name/icon/
+    color/use_count/last_used_at) round-trips through ``extract_prompt`` —
+    the same write path the entity's own ``owns_main_ref`` save uses.
+    """
+    from flow_sdk.builtin.prompt import Prompt
+    from flow_sdk.schema.type_info.prompt_info import _prompt_default_body
+
+    prompt = await Prompt.get_one({"id": entry_id})
+    if not prompt:
+        return
+    prompt_dir = attachment_dir / f"prompt-@{entry_id}"
+    prompt_dir.mkdir(parents=True, exist_ok=True)
+    (prompt_dir / "prompt.md").write_text(_prompt_default_body(prompt), encoding="utf-8")
+
+
 async def _pack_task_attachment(entry_id: str, attachment_dir: Path) -> None:
     """Write ``attachment/task-@<id>/header.json`` (whitelisted Task fields)."""
     from flow_sdk.builtin.task import Task
@@ -166,6 +185,32 @@ async def _pack_task_attachment(entry_id: str, attachment_dir: Path) -> None:
     )
     (task_dir / "header.json").write_text(
         json.dumps(task_data, default=_json_default, ensure_ascii=False), encoding="utf-8"
+    )
+
+
+async def _pack_claude_session_attachment(entry_id: str, attachment_dir: Path) -> None:
+    """Write ``attachment/claude_session-@<id>/header.json`` (whitelisted
+    ClaudeTranscript fields).
+
+    Sender-local fields are stripped: ``cwd`` is the sender's filesystem path
+    and ``worker_session_id`` is the sender's AgenticProcess worker — both
+    meaningless (and path-leaking) on the receiver. The transcript *content*
+    rides separately as the share's FILE attachment; this header materializes
+    the entity row so the receiver's chip resolves a real name."""
+    from flow_sdk.builtin.claude_session import ClaudeSession
+
+    sess = await ClaudeSession.get_one({"id": entry_id})
+    if not sess:
+        return
+    sess_dir = attachment_dir / f"claude_session-@{entry_id}"
+    sess_dir.mkdir(parents=True, exist_ok=True)
+    sess_data = sess.model_dump(
+        mode="python",
+        include={"id", "type", "name", "slug", "message_count"},
+        context={"skip_api_serializer": True},
+    )
+    (sess_dir / "header.json").write_text(
+        json.dumps(sess_data, default=_json_default, ensure_ascii=False), encoding="utf-8"
     )
 
 
@@ -230,6 +275,11 @@ async def _pack_attachment_entry(
     """Dispatch a single attachment entry to the correct per-type packer.
 
     Repo/URL attachments have no bytes to bundle — silently skipped.
+
+    TODO: at ~10+ branches consider a TypeInfo-driven ``pack_attachment``
+    hook instead of growing this dispatch (currently 8: spec, prompt, task,
+    conversation, flow_message, claude_session, fs-rooted). Each type has a
+    distinct serialization, so the registry hook is the only generic form.
     """
     if entry.attachment_type in (AttachmentType.FILE, AttachmentType.PROMPT):
         _pack_file_attachment(entry, flow_message, attachment_dir)
@@ -242,12 +292,16 @@ async def _pack_attachment_entry(
         return
     if entry_type == BuiltinEntityType.SPEC.value:
         await _pack_spec_attachment(entry_id, attachment_dir)
+    elif entry_type == EntityType.PROMPT.value:
+        await _pack_prompt_attachment(entry_id, attachment_dir)
     elif entry_type == BuiltinEntityType.TASK.value:
         await _pack_task_attachment(entry_id, attachment_dir)
     elif entry_type == BuiltinEntityType.CONVERSATION.value:
         await _pack_conversation_attachment(entry_id, flow_message, attachment_dir)
     elif entry_type == BuiltinEntityType.FLOW_MESSAGE.value:
         await _pack_flow_message_entry(entry_id, attachment_dir)
+    elif entry_type == BuiltinEntityType.CLAUDE_SESSION.value:
+        await _pack_claude_session_attachment(entry_id, attachment_dir)
     elif entry_type in _FS_ROOTED_TYPES:
         _pack_fs_rooted_attachment(entry_type, entry_id, attachment_dir)
 
@@ -450,6 +504,24 @@ def _read_entity_header(entity_dir: Path) -> dict | None:
         return None
 
 
+def _fill_merge_entity(existing, payload: dict, skip_keys: tuple[str, ...]) -> bool:
+    """Re-unpack onto an existing row: FILL-MERGE, never skip.
+
+    The bundle header is authoritative for fields the receiver hasn't
+    populated; receiver-local state (anything in ``skip_keys``, plus any
+    already-set value) is never clobbered. Returns True if anything changed.
+    Shared by the TASK and CLAUDE_SESSION unpack branches — the per-type
+    variance is the skip list, not the loop."""
+    changed = False
+    for k, v in payload.items():
+        if k in skip_keys or v in (None, "", []):
+            continue
+        if getattr(existing, k, None) in (None, "", []):
+            setattr(existing, k, v)
+            changed = True
+    return changed
+
+
 # ---------------------------------------------------------------------------
 # _rewrite_file_attachments
 # ---------------------------------------------------------------------------
@@ -528,6 +600,37 @@ def _merge_conversation_jsonl(bundle_jsonl: Path, dest: Path) -> None:
 # unpack_bundle
 # ---------------------------------------------------------------------------
 
+async def _create_prompt_from_file(prompt_file: Path, prompt_id: str, owner_typeid) -> None:
+    """Materialize a bundled ``prompt.md`` as a local library Prompt entity.
+
+    Parsed with the indexer's own ``extract_prompt`` so frontmatter fidelity
+    matches a normal rescan. The receiver-side Prompt lands at USER scope
+    (``project_id=None`` → ``<user_home>/prompts/``): the conversation's
+    project is unmapped at unpack time, and prompts aren't project-coupled
+    for execution. The ``owns_main_ref`` save writes the backing .md and the
+    record folder — which is what flips ``body_downloaded``.
+    """
+    from flow_sdk.builtin.prompt import Prompt
+    from flow_sdk.fs_store.fs_ref import FSRef
+    from flow_sdk.fs_store.indexer.functions.prompt import extract_prompt
+
+    try:
+        [rec] = extract_prompt(FSRef(prompt_file))
+        prompt = Prompt.model_validate({
+            "id": prompt_id,
+            "name": rec.name or "Shared prompt",
+            "text": rec.text or "",
+            "icon": getattr(rec, "icon", None),
+            "color": getattr(rec, "color", None),
+            "use_count": getattr(rec, "use_count", 0) or 0,
+            "last_used_at": getattr(rec, "last_used_at", None),
+            "project_id": None,
+        })
+        await prompt.save(owner_typeid)
+    except Exception as e:
+        logger.warning("unpack_bundle: could not create Prompt from %s: %s", prompt_file, e)
+
+
 async def unpack_bundle(
     zip_path: Path,
     local_user_id: str,
@@ -586,8 +689,9 @@ async def unpack_bundle(
                 top_fm_already_exists = True
 
         # 4. Materialize attachments
-        # Process in dependency order: spec → task → conversation → flow_message
+        # Process in dependency order: prompt/spec → task → conversation → flow_message
         _TYPE_ORDER = {
+            EntityType.PROMPT.value: 0,
             BuiltinEntityType.SPEC.value: 0,
             BuiltinEntityType.TASK.value: 1,
             BuiltinEntityType.CONVERSATION.value: 2,
@@ -616,10 +720,27 @@ async def unpack_bundle(
                         fs_rooted_restored = True
                     continue
 
-                if entry_type == BuiltinEntityType.SPEC.value:
+                if entry_type == EntityType.PROMPT.value:
+                    prompt_file = entry_dir / "prompt.md"
+                    if prompt_file.exists():
+                        # Create-once, same contract as SPEC below: a re-unpack
+                        # must not clobber receiver-side library edits.
+                        from flow_sdk.builtin.prompt import Prompt  # noqa: PLC0415
+                        if overwrite or await Prompt.get_one({"id": entry_id}) is None:
+                            await _create_prompt_from_file(prompt_file, entry_id, owner_typeid)
+
+                elif entry_type == BuiltinEntityType.SPEC.value:
                     spec_file = entry_dir / "spec.md"
                     if spec_file.exists():
-                        await _create_spec_from_file(spec_file, entry_id, owner_typeid)
+                        # Create-once: ``_create_spec_from_file`` saves
+                        # unconditionally, and re-unpacks are now routine
+                        # (missing body files trigger a re-pull) — without
+                        # this guard a re-unpack would clobber receiver-side
+                        # spec edits with the bundle's original copy. With
+                        # stub minting gone, an existing row can only be a
+                        # real one, so exists == already materialized.
+                        if overwrite or await Spec.get_one({"id": entry_id}) is None:
+                            await _create_spec_from_file(spec_file, entry_id, owner_typeid)
 
                 elif entry_type == BuiltinEntityType.TASK.value:
                     task_data = _read_entity_header(entry_dir)
@@ -638,39 +759,59 @@ async def unpack_bundle(
                         # picks via the mapping dialog; the picker stamps both
                         # task.project_id and conversation.project_id.
                         existing_task = await Task.get_one({"id": task_id})
-                        # Patch sender_email into the existing task if the bundle has it
-                        # and it was missing (e.g. task imported before sender_email was added)
-                        if existing_task and not overwrite:
-                            bundle_sender_email = task_data.get("sender_email") or ""
-                            if bundle_sender_email and not existing_task.sender_email:
-                                existing_task.sender_email = bundle_sender_email
-                                await existing_task.save(owner_typeid)
+                        # Strip sender-local fields that are meaningless on the
+                        # receiver: `project_root` is the sender's filesystem
+                        # path; `project_name` mirrors the sender's local
+                        # Project name; `my_process_id` is the sender's
+                        # AgenticProcess id (defense in depth — the pack side
+                        # also drops it from `_TASK_FIELDS`, but we re-strip
+                        # here so older bundles on the hub and senders running
+                        # stale code can't leak it through). Remote provenance
+                        # now lives on the Conversation (see CONVERSATION
+                        # branch below), not the Task — so we don't propagate
+                        # `project_id` / `project_name` onto the receiver's
+                        # task either.
+                        task_payload = {
+                            k: v for k, v in task_data.items()
+                            if k not in ("project_root", "project_name", "my_process_id")
+                        }
+                        task_payload.update({
+                            "id": task_id,
+                            "title": task_data.get("title", ""),
+                            "status": task_data.get("status", "to_do"),
+                            "spec_type": task_data.get("spec_type") or None,
+                            "project_id": None,
+                        })
                         if existing_task is None or overwrite:
-                            # Strip sender-local fields that are meaningless on the
-                            # receiver: `project_root` is the sender's filesystem
-                            # path; `project_name` mirrors the sender's local
-                            # Project name; `my_process_id` is the sender's
-                            # AgenticProcess id (defense in depth — the pack side
-                            # also drops it from `_TASK_FIELDS`, but we re-strip
-                            # here so older bundles on the hub and senders running
-                            # stale code can't leak it through). Remote provenance
-                            # now lives on the Conversation (see CONVERSATION
-                            # branch below), not the Task — so we don't propagate
-                            # `project_id` / `project_name` onto the receiver's
-                            # task either.
-                            task_payload = {
-                                k: v for k, v in task_data.items()
-                                if k not in ("project_root", "project_name", "my_process_id")
-                            }
-                            task_payload.update({
-                                "id": task_id,
-                                "title": task_data.get("title", ""),
-                                "status": task_data.get("status", "to_do"),
-                                "spec_type": task_data.get("spec_type") or None,
-                                "project_id": None,
-                            })
                             task = Task.model_validate(task_payload)
                             await task.save(owner_typeid)
+                        else:
+                            # The old exists-check skip let any earlier partial
+                            # row permanently block the bundle's real title /
+                            # spec link / process id from ever landing. Skips
+                            # protect receiver-local state (project mapping,
+                            # status progress).
+                            if _fill_merge_entity(
+                                existing_task, task_payload,
+                                ("id", "type", "project_id", "status"),
+                            ):
+                                await existing_task.save(owner_typeid)
+
+                elif entry_type == BuiltinEntityType.CLAUDE_SESSION.value:
+                    # Shared ClaudeTranscript: materialize the entity row from
+                    # the packed header (same create-or-fill-merge contract as
+                    # TASK — a partial row never blocks the real name/slug).
+                    sess_data = _read_entity_header(entry_dir)
+                    if sess_data is not None:
+                        from flow_sdk.builtin.claude_session import ClaudeSession  # noqa: PLC0415
+                        sess_id = sess_data.get("id") or entry_id
+                        sess_payload = {**sess_data, "id": sess_id, "remote": False}
+                        existing_sess = await ClaudeSession.get_one({"id": sess_id})
+                        if existing_sess is None or overwrite:
+                            sess = ClaudeSession.model_validate(sess_payload)
+                            await sess.save(owner_typeid)
+                        elif _fill_merge_entity(existing_sess, sess_payload, ("id", "type")):
+                            await existing_sess.save(owner_typeid)
 
                 elif entry_type == BuiltinEntityType.CONVERSATION.value:
                     jsonl_file = entry_dir / "conversation.jsonl"

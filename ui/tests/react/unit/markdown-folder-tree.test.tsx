@@ -57,8 +57,8 @@ function makeType(vaults: AssetTypeVault[]): AssetTypeInfo {
 
 const VAULT: AssetTypeVault = {
   typeid: 'compute_node-@local',
-  relPath: 'Users/shlom/docs',
-  absPath: '/Users/shlom/docs',
+  relPath: 'Users/alice/docs',
+  absPath: '/Users/alice/docs',
   label: 'User docs',
   scope: 'user',
   project_id: null,
@@ -102,7 +102,7 @@ describe('markdownFolderRoot adapter', () => {
   describe('folder expansion + listChildren', () => {
     it('expanding a vault calls fsStore.listDirectory and renders files/folders', async () => {
       const spy = stageFilesystem({
-        'compute_node-@local:Users/shlom/docs': [
+        'compute_node-@local:Users/alice/docs': [
           item('architecture', true),
           item('readme.md'),
         ],
@@ -115,7 +115,7 @@ describe('markdownFolderRoot adapter', () => {
 
       await user.click(screen.getByTestId(chevronTestId(root)));
       await waitFor(() => expect(screen.getByText('User docs')).toBeInTheDocument());
-      await user.click(screen.getByTestId('browseable-chevron-md-folder:compute_node-@local:/Users/shlom/docs'));
+      await user.click(screen.getByTestId('browseable-chevron-md-folder:compute_node-@local:/Users/alice/docs'));
 
       await waitFor(() => {
         expect(screen.getByText('architecture')).toBeInTheDocument();
@@ -127,7 +127,7 @@ describe('markdownFolderRoot adapter', () => {
 
     it('filters out non-markdown files', async () => {
       stageFilesystem({
-        'compute_node-@local:Users/shlom/docs': [
+        'compute_node-@local:Users/alice/docs': [
           item('README.md'),
           item('image.png'),
           item('subdir', true),
@@ -141,7 +141,7 @@ describe('markdownFolderRoot adapter', () => {
       render(<BrowseableTree roots={[root]} activePointer={null} />);
       await user.click(screen.getByTestId(chevronTestId(root)));
       await waitFor(() => screen.getByText('User docs'));
-      await user.click(screen.getByTestId('browseable-chevron-md-folder:compute_node-@local:/Users/shlom/docs'));
+      await user.click(screen.getByTestId('browseable-chevron-md-folder:compute_node-@local:/Users/alice/docs'));
 
       await waitFor(() => {
         expect(screen.getByText('README.md')).toBeInTheDocument();
@@ -153,7 +153,7 @@ describe('markdownFolderRoot adapter', () => {
 
     it('sorts folders first then files alphabetically', async () => {
       stageFilesystem({
-        'compute_node-@local:Users/shlom/docs': [
+        'compute_node-@local:Users/alice/docs': [
           item('zeta.md'),
           item('alpha', true),
           item('alpha.md'),
@@ -165,7 +165,7 @@ describe('markdownFolderRoot adapter', () => {
       render(<BrowseableTree roots={[root]} activePointer={null} />);
       await user.click(screen.getByTestId(chevronTestId(root)));
       await waitFor(() => screen.getByText('User docs'));
-      await user.click(screen.getByTestId('browseable-chevron-md-folder:compute_node-@local:/Users/shlom/docs'));
+      await user.click(screen.getByTestId('browseable-chevron-md-folder:compute_node-@local:/Users/alice/docs'));
 
       await waitFor(() => screen.getByText('zeta.md'));
 
@@ -189,13 +189,13 @@ describe('markdownFolderRoot adapter', () => {
     });
 
     it('shows empty state when a folder has no matching children', async () => {
-      stageFilesystem({ 'compute_node-@local:Users/shlom/docs': [] });
+      stageFilesystem({ 'compute_node-@local:Users/alice/docs': [] });
       const user = userEvent.setup();
       const root = markdownFolderRoot(makeType([VAULT]), { indexType: vi.fn() });
       render(<BrowseableTree roots={[root]} activePointer={null} />);
       await user.click(screen.getByTestId(chevronTestId(root)));
       await waitFor(() => screen.getByText('User docs'));
-      await user.click(screen.getByTestId('browseable-chevron-md-folder:compute_node-@local:/Users/shlom/docs'));
+      await user.click(screen.getByTestId('browseable-chevron-md-folder:compute_node-@local:/Users/alice/docs'));
       await waitFor(() => expect(screen.getByText('Empty')).toBeInTheDocument());
     });
   });
@@ -203,7 +203,7 @@ describe('markdownFolderRoot adapter', () => {
   describe('click → navigation', () => {
     it('clicking a folder navigates with forAssetFolder pointer', async () => {
       stageFilesystem({
-        'compute_node-@local:Users/shlom/docs': [item('architecture', true)],
+        'compute_node-@local:Users/alice/docs': [item('architecture', true)],
       });
       const user = userEvent.setup();
       const onNavigate = vi.fn();
@@ -214,12 +214,12 @@ describe('markdownFolderRoot adapter', () => {
       // Click the vault row text
       await user.click(screen.getByText('User docs'));
       const calls = onNavigate.mock.calls.map((c) => (c[0] as DockPointer).pointer);
-      expect(calls).toContain('folder/markdown/compute_node-@local/Users/shlom/docs');
+      expect(calls).toContain('folder/markdown/compute_node-@local/Users/alice/docs');
     });
 
     it('clicking a .md file navigates with forAssetEditor pointer', async () => {
       stageFilesystem({
-        'compute_node-@local:Users/shlom/docs': [item('readme.md')],
+        'compute_node-@local:Users/alice/docs': [item('readme.md')],
       });
       const user = userEvent.setup();
       const onNavigate = vi.fn();
@@ -227,27 +227,33 @@ describe('markdownFolderRoot adapter', () => {
       render(<BrowseableTree roots={[root]} activePointer={null} onNavigate={onNavigate} />);
       await user.click(screen.getByTestId(chevronTestId(root)));
       await waitFor(() => screen.getByText('User docs'));
-      await user.click(screen.getByTestId('browseable-chevron-md-folder:compute_node-@local:/Users/shlom/docs'));
+      await user.click(screen.getByTestId('browseable-chevron-md-folder:compute_node-@local:/Users/alice/docs'));
       await waitFor(() => screen.getByText('readme.md'));
 
       await user.click(screen.getByText('readme.md'));
       const editorCall = onNavigate.mock.calls
         .map((c) => (c[0] as DockPointer).pointer)
         .find((p) => p?.startsWith('editor/markdown'));
-      expect(editorCall).toBe('editor/markdown/Users/shlom/docs/readme.md');
+      // Canonical AssetDocPointer grammar: editor/<editor>/vfs/<typeid>/<relPath>.
+      // Build via the same factory the adapter uses so the assertion tracks
+      // the grammar instead of hardcoding it.
+      expect(editorCall).toBe(
+        DockPointer.forAssetEditor('markdown', '/Users/alice/docs/readme.md').pointer,
+      );
     });
   });
 
   describe('deep-link auto-expand', () => {
     it('activePointer = editor/markdown/<abs> auto-expands vault + intermediate folders + leaf', async () => {
       stageFilesystem({
-        'compute_node-@local:Users/shlom/docs': [item('architecture', true)],
-        'compute_node-@local:Users/shlom/docs/architecture': [item('backend.md')],
+        'compute_node-@local:Users/alice/docs': [item('architecture', true)],
+        'compute_node-@local:Users/alice/docs/architecture': [item('backend.md')],
       });
       const root = markdownFolderRoot(makeType([VAULT]), { indexType: vi.fn() });
-      const deepPointer = new DockPointer(
-        ViewType.ASSETS,
-        'editor/markdown/Users/shlom/docs/architecture/backend.md',
+      // Canonical grammar via the factory (editor/<editor>/vfs/<typeid>/<relPath>).
+      const deepPointer = DockPointer.forAssetEditor(
+        'markdown',
+        '/Users/alice/docs/architecture/backend.md',
       );
       render(<BrowseableTree roots={[root]} activePointer={deepPointer} />);
 
@@ -263,12 +269,12 @@ describe('markdownFolderRoot adapter', () => {
 
     it('activePointer = folder/markdown/<typeid>/<rel> auto-expands to that folder', async () => {
       stageFilesystem({
-        'compute_node-@local:Users/shlom/docs': [item('architecture', true)],
+        'compute_node-@local:Users/alice/docs': [item('architecture', true)],
       });
       const root = markdownFolderRoot(makeType([VAULT]), { indexType: vi.fn() });
       const ptr = new DockPointer(
         ViewType.ASSETS,
-        'folder/markdown/compute_node-@local/Users/shlom/docs/architecture',
+        'folder/markdown/compute_node-@local/Users/alice/docs/architecture',
       );
       render(<BrowseableTree roots={[root]} activePointer={ptr} />);
 
@@ -285,7 +291,7 @@ describe('markdownFolderRoot adapter', () => {
       // Expectation: the vault row is marked aria-expanded="true" and its
       // children (subfolders + .md files) render at aria-level=3.
       stageFilesystem({
-        'compute_node-@local:Users/shlom/docs': [
+        'compute_node-@local:Users/alice/docs': [
           item('architecture', true),
           item('readme.md'),
         ],
@@ -293,7 +299,7 @@ describe('markdownFolderRoot adapter', () => {
       const root = markdownFolderRoot(makeType([VAULT]), { indexType: vi.fn() });
       const ptr = new DockPointer(
         ViewType.ASSETS,
-        'folder/markdown/compute_node-@local/Users/shlom/docs',
+        'folder/markdown/compute_node-@local/Users/alice/docs',
       );
       render(<BrowseableTree roots={[root]} activePointer={ptr} />);
 
@@ -317,7 +323,7 @@ describe('markdownFolderRoot adapter', () => {
     it('owns list/markdown, editor/markdown/*, and folder/markdown/*', () => {
       const root = markdownFolderRoot(makeType([VAULT]), { indexType: vi.fn() });
       expect(root.ownsPointer(new DockPointer(ViewType.ASSETS, 'list/markdown'))).toBe(true);
-      expect(root.ownsPointer(new DockPointer(ViewType.ASSETS, 'editor/markdown/foo.md'))).toBe(true);
+      expect(root.ownsPointer(DockPointer.forAssetEditor('markdown', '/foo.md'))).toBe(true);
       expect(
         root.ownsPointer(
           new DockPointer(ViewType.ASSETS, 'folder/markdown/compute_node-@local/anywhere'),

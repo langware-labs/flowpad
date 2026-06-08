@@ -5,7 +5,7 @@ inputs_hash: sha256:flowpad-oss-docs-demo
 template_version: '1'
 prompt_version: '1'
 parent_ref: ''
-vault_root: /Users/shlom/Documents/dev/flowpad-oss/docs
+vault_root: /Users/alice/Documents/dev/flowpad-oss/docs
 generated_at: '2026-05-24T19:22:27.484827'
 latest_process_ref: agentic_process-synthetic
 file_count: '30'

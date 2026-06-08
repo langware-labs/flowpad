@@ -564,6 +564,53 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
+   * Create a DockPointer for the docs knowledge browser at
+   * `/dock/k-browser/<method>/<value>`. Mirrors the editor addressing grammar:
+   * the explicit `<method>` segment (`vfs` | `typeid`) keeps a filesystem path
+   * from ever being parsed as a TypeId. `value` is the docs-root vfs path (vfs)
+   * or a `<type>-<id>` TypeId (typeid).
+   */
+  static forKnowledgeBrowser(
+    value: string,
+    method: 'vfs' | 'typeid' = 'vfs',
+    options?: { selected?: string },
+    layout: Layout = Layout.DOCK,
+  ): DockPointer {
+    // vfs paths are absolute — strip the leading "/" so the method<->path
+    // delimiter isn't an embedded "//" in the URL (react-router normalizes
+    // "//" to "/", silently demoting the path to a relative one). The parser
+    // re-adds it. Same hazard + fix as forPlan above.
+    const cleanValue =
+      method === 'vfs' && value.startsWith('/') ? value.slice(1) : value;
+    const pointer = `${method}/${cleanValue}`;
+    const queryOptions: Record<string, string> = {};
+    if (options?.selected) queryOptions.selected = options.selected;
+    return new DockPointer(
+      ViewType.K_BROWSER,
+      pointer,
+      Object.keys(queryOptions).length ? queryOptions : undefined,
+      layout,
+    );
+  }
+
+  /** Split a K_BROWSER pointer into `{ method, value }` (default method `vfs`).
+   *  vfs values get their leading "/" re-added (forKnowledgeBrowser strips it);
+   *  legacy double-slash URLs (`vfs//Users/…`) parse identically. */
+  static parseKnowledgeBrowserPointer(
+    pointer: string | undefined,
+  ): { method: 'vfs' | 'typeid'; value: string } | null {
+    if (!pointer) return null;
+    const idx = pointer.indexOf('/');
+    if (idx < 0) return { method: 'vfs', value: pointer };
+    const method = pointer.slice(0, idx) === 'typeid' ? 'typeid' : 'vfs';
+    let value = pointer.slice(idx + 1);
+    if (method === 'vfs' && value && !value.startsWith('/') && !/^[A-Za-z]:[/\\]/.test(value)) {
+      value = `/${value}`;
+    }
+    return { method, value };
+  }
+
+  /**
    * Parse a lens pointer into its parts
    * @param pointer - The full pointer string (e.g., "claude/transcript/abc123")
    */
@@ -623,9 +670,43 @@ export class DockPointer implements IDockPointer {
    * Create dock pointer for the dedicated conversation viewer at
    * `/dock/conversation/<conversationId>`. Same UI as the conversation
    * panel embedded in task views — the URL is just a different host for it.
+   *
+   * URL formats:
+   *   /dock/conversation/<conversationId>
+   *   /dock/conversation/<conversationId>/message/<messageId>
+   *
+   * The optional `message` segment deep-links to a specific FlowMessage —
+   * the conversation view derives its selected bubble from it (URL-first)
+   * and scrolls it into view.
    */
-  static forConversation(conversationId: string, layout: Layout = Layout.DOCK): DockPointer {
-    return new DockPointer(ViewType.CONVERSATION, conversationId, undefined, layout);
+  static forConversation(
+    conversationId: string,
+    sub?: { messageId?: string | null },
+    layout: Layout = Layout.DOCK,
+  ): DockPointer {
+    const pointer = sub?.messageId
+      ? `${conversationId}/message/${sub.messageId}`
+      : conversationId;
+    return new DockPointer(ViewType.CONVERSATION, pointer, undefined, layout);
+  }
+
+  /**
+   * Parse a conversation pointer string.
+   *
+   * Accepted shapes:
+   *   <conversationId>
+   *   <conversationId>/message/<messageId>
+   *
+   * Returns nulls for segments that aren't present or the input is malformed.
+   */
+  static parseConversationPointer(
+    pointer: string | undefined | null,
+  ): { conversationId: string | null; messageId: string | null } {
+    if (!pointer) return { conversationId: null, messageId: null };
+    const parts = pointer.split('/').filter(Boolean);
+    const conversationId = parts[0] ?? null;
+    const messageId = parts[1] === 'message' && parts[2] ? parts[2] : null;
+    return { conversationId, messageId };
   }
 
   /**
@@ -677,11 +758,11 @@ export class DockPointer implements IDockPointer {
    * Create a dock pointer for the transcript lens, dispatching by worker.
    *
    * - claude: ref is `<projectEncodedName>/<sessionId>` (legacy claude viewer).
-   * - codex (and other workers): ref is the URL-encoded absolute path to the
+   * - codex/copilot: ref is the URL-encoded absolute path to the
    *   rollout JSONL — the generic viewer fetches it via `useTranscript`.
    */
   static forLensTranscript(
-    workerType: 'claude' | 'codex',
+    workerType: 'claude' | 'codex' | 'copilot',
     ref: string,
     layout: Layout = Layout.DOCK,
     options?: Record<string, string>,
