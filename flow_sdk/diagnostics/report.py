@@ -49,15 +49,20 @@ async def create_diagnostic_report(
     status: str = "informational",
     details: str = "",
     platform: str = "",
+    attachment_type_id: str | None = None,
 ) -> dict:
     """Persist a flow-diagnose report as a hidden Conversation + FlowMessage +
     FeedEntry via the SDK. Returns ``{feed_entry_id, conversation_id,
     flow_message_id}``. Creates the @local user/project if missing, so it always
     records.
+
+    ``attachment_type_id`` — an optional ``"<type>-<id>"`` TypeId (e.g. a
+    ``flowpad_diagnosis-<id>``) attached to the summary message as a ``TYPE_ID``
+    attachment, so the support card can carry the structured diagnosis entity.
     """
     from flow_sdk.builtin.conversation import Conversation
     from flow_sdk.builtin.feed_entry import FeedEntry, FeedKind, FeedStatus, MessageSuggest
-    from flow_sdk.builtin.flow_message import FlowMessage
+    from flow_sdk.builtin.flow_message import Attachment, AttachmentType, FlowMessage
     from flow_sdk.db.database import init_db
     from flow_sdk.fs_store.operations.conversation import (
         append_message_pointer,
@@ -106,6 +111,11 @@ async def create_diagnostic_report(
         conversation_id=conv.id,
         sender_id=user.id,
         sender_name=getattr(user, "name", None) or "Flowpad Diagnostics",
+        attachment=(
+            [Attachment(attachment_type=AttachmentType.TYPE_ID, data=attachment_type_id)]
+            if attachment_type_id
+            else []
+        ),
     )
     msg = await msg.save(owner)
 
