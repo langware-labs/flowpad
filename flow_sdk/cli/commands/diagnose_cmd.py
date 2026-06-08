@@ -76,17 +76,60 @@ async def _run_diagnose(message: str, transcript_timeout: float) -> int:
     )
     ap.enable_assistant()
 
-    await ap.prompt(prompt_text)
-    typer.echo(f"  Diagnosing (session={(ap.session_id or '')[:8]})…")
-    try:
+    # stream_transcript re-reads the transcript from the start on each call, so
+    # track how many entries we've already printed and skip them on the re-stream
+    # after a nudge (avoids duplicating the earlier narration).
+    rendered = 0
+
+    async def _stream() -> None:
+        nonlocal rendered
+        idx = 0
         async for entry in ap.stream_transcript(timeout=transcript_timeout):
-            _print_agent_text(entry)
+            if idx >= rendered:
+                _print_agent_text(entry)
+            idx += 1
+        rendered = idx
+
+    async def _recorded() -> bool:
+        """Per-run completion signal: the worker's Step 7 cross-links a
+        flowpad_diagnosis into THIS process's private context. A fresh DB read
+        (the worker is a separate process writing the same instance DB) tells us
+        whether the recording step actually ran."""
+        fresh = await AgenticProcess.get_by_id(ap.id)
+        if fresh is None:
+            return False
+        return any(t.type == "flowpad_diagnosis" for t in fresh.private_context_entities)
+
+    nudge_text = (
+        "You have NOT recorded the diagnosis yet, so nothing was saved. Complete the "
+        "skill's final recording step now (Step 7): create the flowpad_diagnosis "
+        "record, cross-link it to THIS process, and record it to the Feed via "
+        "create_diagnostic_report. Do not stop until it is recorded."
+    )
+
+    try:
+        await ap.prompt(prompt_text)
+        typer.echo(f"  Diagnosing (session={(ap.session_id or '')[:8]})…")
+        await _stream()
+        # The worker can end its turn early — diagnosing but not recording. Nudge
+        # the SAME session once to finish, then re-check.
+        if not await _recorded():
+            typer.echo("  …agent stopped before recording — nudging it to finish.")
+            await ap.prompt(nudge_text)
+            await _stream()
     except (KeyboardInterrupt, asyncio.CancelledError):
         typer.echo("Diagnose interrupted.", err=True)
         return 130
 
-    typer.echo("  ✓ Diagnostic complete — see the report above and the app's Home Feed.")
-    return 0
+    if await _recorded():
+        typer.echo("  ✓ Diagnostic complete — recorded to the app's Home Feed.")
+        return 0
+    typer.echo(
+        "  ! Diagnostic finished but the result was not recorded — see the report "
+        "above; re-run `flow diagnose` to retry.",
+        err=True,
+    )
+    return 1
 
 
 def diagnose_command(

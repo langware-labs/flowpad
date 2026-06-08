@@ -424,30 +424,52 @@ End-to-end: <headless Playwright check — passed | failed | skipped (reason)>
 To Summarize: <plain-language 1-3 sentence summary of findings and next step>
 ```
 
-### Step 7 — Report to the app Feed (ALWAYS runs; SDK-direct, works offline)
+### Step 7 — Record the result (ALWAYS runs; SDK-direct, works offline)
 
-After printing the report, persist it so it surfaces on the Home landing Feed. Run the command below
-**every time** — it is the SDK helper, **not an HTTP API**. It writes **directly to the local
-instance database and works even when the backend is DOWN** (it opens the DB itself; no running
-server needed). **Never skip this step on the assumption that the backend must be up** — that
-assumption is wrong, and skipping it means the user sees nothing.
+After printing the report, persist it so it surfaces on the Home landing Feed **and** is attached to
+this diagnose process. This is the SDK, **not** an HTTP API — it opens the local instance DB itself,
+so it works even when the backend is DOWN. **Never skip this step on the assumption that the backend
+must be up** — that assumption is wrong, and skipping it means the user sees nothing.
+
+Use the **flowpad-assistance** skill (records action) to:
+
+1. Create a `flowpad_diagnosis` record (`title / symptoms / rca / fix` from your findings) and save it
+   (Step 1 + Step 2 of the "Creating a record from a metadata object" section).
+2. Cross-link the new record to THIS agentic process (Step 3 — link the record to the current
+   process). This is required: the process must end up with the diagnosis in its private context.
+3. Print the saved entity details in human-friendly text and the record id.
+4. Create a `flow_message` record, with the flowpad diagnosis as attachment.
+5. Create a `feed_entry` of message-suggest type.
+
+We expect the user to be able to see the diagnosis and send it to our support in a click from the
+Home Feed.
+
+For steps 4–5 you do **not** hand-build those entities, and you do **not** import anything from
+`flow_sdk`. Run the reporter script that ships **next to this SKILL.md** (`report.py` in this skill
+directory) — it creates the hidden support Conversation, the summary `flow_message` (with the
+diagnosis attached as a `TYPE_ID` attachment), and the `new` `message_suggest` `feed_entry` in one
+call, creating the `@local` user/project if needed and printing a JSON line with the created ids:
 
 ```bash
-flow diagnose-report \
+uv run python "<this skill dir>/report.py" \
   --summary "<one-paragraph plain summary: what was found + whether it was fixed + how>" \
   --status fixed|needs_action|informational|unrecognized \
   --platform "macOS|Windows|Linux" \
-  --details "<the full == Flowpad Diagnostic Report == block from Step 6>"
+  --details "<the full == Flowpad Diagnostic Report == block from Step 6>" \
+  --attachment-type-id "flowpad_diagnosis-<id>"
 ```
 
-This creates a hidden support Conversation + a summary message + a `new` Feed entry directly in the
-local store (creating the `@local` user/project if needed), and prints JSON with the created ids. It
-works on a fresh install too — do not skip it. Do **not** fail the run if this step errors; the
-console report from Step 6 still stands.
+(`<this skill dir>` is the folder this SKILL.md is in — the same path you were given to read it from.
+`--attachment-type-id` is the id of the `flowpad_diagnosis` record you created in steps 1–2.)
+
+Do **all five** steps — none are optional — and do not end your turn before the cross-link and the
+feed entry have been recorded. Do **not** fail the whole run if this step errors; the console report
+from Step 6 still stands.
 
 ## Reference Files
 
 - [Full known-issue catalog with detection commands](references/catalog.md)
+- `report.py` — the SDK-direct reporter this skill runs in Step 7 (Conversation + FlowMessage + FeedEntry).
 
 ## Examples
 
