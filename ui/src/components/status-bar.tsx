@@ -1,3 +1,6 @@
+import { GitStatusProvider } from '@src/components/status-bar/GitStatusContext';
+import { GitPushButton } from '@src/components/status-bar/GitPushButton';
+import { GitStatusPill } from '@src/components/status-bar/GitStatusPill';
 import { OpenProjectComponent } from '@src/components/open-project-component/open-project-component';
 import { useProjects } from '@src/hooks/use-projects';
 import { useContext } from '@src/hooks/useContext';
@@ -127,6 +130,10 @@ export function StatusBar({ className = '' }: StatusBarProps) {
             <ExternalLink className="h-3 w-3 shrink-0" />
           </button>
         )}
+        <GitStatusProvider computeNodeId={computeNode?.id ?? null} workdir={projectPath}>
+          <GitStatusPill />
+          <GitPushButton />
+        </GitStatusProvider>
       </div>
       <OpenProjectComponent
         open={isProjectModalOpen}
