@@ -143,6 +143,12 @@ class Dataset(Entity):
 
     created_at: Optional[datetime] = APIField(None)
 
+    # Absolute path of the dataset folder on disk, stamped by the indexer /
+    # ``Entity.from_fs_ref`` so ``examples()`` can lazily parse rows. A plain
+    # string (not an FSRef) because ``examples()`` does ``str(asset_ref)`` to get
+    # the path. Mirrors WHITEBOARD/COMMAND.
+    asset_ref: str = APIField(default="")
+
     def examples(self, kind: Optional[ExampleKind] = None) -> List[Example]:
         """Lazily parse the dataset's rows from disk, optionally filtered by kind.
 
