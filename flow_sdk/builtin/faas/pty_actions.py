@@ -250,7 +250,10 @@ class PtyActionsMixin:
             on_exit: Optional callback fired when the PTY process exits (receives exit code).
 
         Returns:
-            True if session was created successfully, False otherwise
+            True if session was created successfully, False on pre-flight
+            guard failures (no provider node id). Spawn errors RAISE with the
+            root cause (e.g. ``Command not found: 'codex'``) so callers and
+            the start_failure latch surface a real message.
         """
         from flow_sdk.compute.providers.desktop.pty_session_manager import session_manager
 
@@ -348,8 +351,11 @@ class PtyActionsMixin:
             )
             logging.info(f"[PTY] Machine PTY session created: {pty_key}")
         except Exception as e:
+            # Propagate — the root cause (e.g. "Command not found: 'codex'")
+            # must reach the API error / start_failure latch, not be flattened
+            # into a generic bool-False → "Failed to create PTY session".
             logging.error(f"[PTY] Failed to create machine PTY session: {e}", exc_info=True)
-            return False
+            raise
 
         # Register session in session_manager
         session_state = await session_manager.generate_session(pty_key, self.id, connection_id, cols, rows)

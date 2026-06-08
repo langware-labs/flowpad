@@ -37,6 +37,13 @@ class Capability(Entity):
     reference_kind: str | None = APIField(default=None)
     # Prompt the install agentic process runs with (None → registry default).
     install_prompt: str | None = APIField(default=None)
+    # Discovered typed value (mirror of the discovery dict — see
+    # core/capabilities/discovery.py). None ⇔ capability absent. value_type
+    # is the spec's static RecordType (e.g. "folder" → value is the FSRef
+    # dict of the CLI's bin dir). The capabilities window renders these, so
+    # what the UI shows IS what workers consume.
+    value: dict[str, Any] | None = APIField(default=None)
+    value_type: str | None = APIField(default=None)
     last_check: dict[str, Any] | None = APIField(default=None)
     last_install: dict[str, Any] | None = APIField(default=None)
     last_test: dict[str, Any] | None = APIField(default=None)
@@ -50,6 +57,7 @@ class Capability(Entity):
             description=spec.description,
             icon=spec.icon,
             homepage_url=spec.homepage_url,
+            value_type=spec.value_type,
             dependent_capability_kinds=list(spec.dependent_capability_kinds),
             reference_kind=spec.reference_kind,
             install_prompt=spec.install_prompt,
@@ -79,6 +87,7 @@ class Capability(Entity):
                 "description",
                 "icon",
                 "homepage_url",
+                "value_type",
                 "dependent_capability_kinds",
                 "install_prompt",
                 "uname",
@@ -96,6 +105,11 @@ class Capability(Entity):
     async def get_by_kind(cls, kind: str) -> "Capability | None":
         await cls.ensure_seeded()
         return await cls._db.get_by_id(capability_id_for_kind(kind), cls.get_type())
+
+    @classmethod
+    async def get(cls, kind: str) -> "Capability | None":
+        """Canonical consumer accessor: ``(await Capability.get(kind)).value``."""
+        return await cls.get_by_kind(kind)
 
     @classmethod
     async def get_by_id(cls, eid: str) -> "Capability | None":
@@ -121,8 +135,14 @@ class Capability(Entity):
 
     @action.post(action_name="check")
     async def check_action(self) -> ApiSuccessResponse:
+        # Check = refresh: re-run discovery from scratch for this kind (the
+        # capability window's Check/Refresh button). ``run_discovery`` already
+        # mirrors value + last_check onto the row and broadcasts the update, so
+        # we just read the fresh result for the response — no second save/notify.
+        from flow_sdk.core.capabilities.discovery import run_discovery
+
+        await run_discovery([self.kind])
         result = await get_capability_registry().check(self.kind)
-        await self._record_result("last_check", result.result)
         return ApiSuccessResponse(data=result.model_dump(mode="json"))
 
     @action.post(action_name="install")
