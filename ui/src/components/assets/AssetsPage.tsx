@@ -6,7 +6,6 @@ import { InputDialog } from '@src/components/ui/input-dialog';
 import { Button } from '@src/components/ui/button';
 import { getDescriptor } from '@src/components/quick-create';
 import { RecordSearchBar } from '@src/components/record-search-bar/RecordSearchBar';
-import { SearchScopeToggle } from '@src/components/record-search-bar/SearchScopeToggle';
 import { InlineSearchResults } from '@src/pages/home-landing/InlineSearchResults';
 import type { SearchFilters, SearchResult as RecordSearchResult } from '@src/hooks/use-record-search';
 import { notify } from '@src/notifications';
@@ -33,7 +32,7 @@ import type { ScopeFilter } from '@src/lib/scope-filter';
 import { useSearchScopeToggle } from '@src/hooks/use-global-search-scope';
 import { useIndexStatus } from '@src/hooks/use-index-status';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
-import { ScopeFilterBar } from '@src/components/scope-filter/ScopeFilterBar';
+import { ScopeFilterIconBar } from '@src/components/scope-filter/ScopeFilterIconBar';
 import { ProjectScopeBadge } from './ProjectScopeBadge';
 import { ViewType } from '@src/types/ViewType';
 import { AssetListView } from './AssetListView';
@@ -375,10 +374,6 @@ export function AssetsPage() {
   const {
     scope: searchScope,
     isLoading: searchScopeLoading,
-    mode: searchScopeMode,
-    setMode: setSearchScopeMode,
-    allProjectCount,
-    currentProjectAvailable,
   } = useSearchScopeToggle(currentProjectId);
 
   const handleSearchKeyDown = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -731,13 +726,6 @@ export function AssetsPage() {
         <BookOpen className="h-4 w-4 text-muted-foreground" />
         <span className="ml-1 text-sm font-medium">Assets</span>
         <div className="ml-auto flex items-center gap-2">
-          <SearchScopeToggle
-            value={searchScopeMode}
-            onChange={setSearchScopeMode}
-            allProjectCount={allProjectCount}
-            currentProjectAvailable={currentProjectAvailable}
-            className="shrink-0"
-          />
           <div className="relative w-96 shrink-0">
             <RecordSearchBar
               query={searchQuery}
@@ -808,14 +796,8 @@ export function AssetsPage() {
               </TooltipContent>
             </Tooltip>
           )}
-          {lockedScope && urlProjectId ? (
+          {lockedScope && urlProjectId && (
             <ProjectScopeBadge projectId={urlProjectId} />
-          ) : (
-            <ScopeFilterBar
-              scope={effectiveFilter.scope}
-              currentProjectId={currentProjectId}
-              onScopeChange={handleScopeChange}
-            />
           )}
         </div>
       </div>
@@ -829,13 +811,24 @@ export function AssetsPage() {
           style={{ width: sidebarCollapsed ? 0 : sidebarWidth }}
           aria-hidden={sidebarCollapsed}
         >
-          <div className="h-full overflow-y-auto" style={{ width: sidebarWidth }}>
-            <BrowseableTree
-              roots={wikiRoots}
-              activePointer={treeActivePointer}
-              isLoading={typesLoading && wikiRoots.length === 0}
-              onNavigate={navigateAsset}
-            />
+          <div className="flex h-full flex-col" style={{ width: sidebarWidth }}>
+            {!lockedScope && (
+              <div className="flex flex-shrink-0 items-center gap-1 border-b p-1.5">
+                <ScopeFilterIconBar
+                  scope={effectiveFilter.scope}
+                  currentProjectId={currentProjectId}
+                  onScopeChange={handleScopeChange}
+                />
+              </div>
+            )}
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <BrowseableTree
+                roots={wikiRoots}
+                activePointer={treeActivePointer}
+                isLoading={typesLoading && wikiRoots.length === 0}
+                onNavigate={navigateAsset}
+              />
+            </div>
           </div>
         </div>
         {/* Resize handle for the sidebar — hidden when collapsed */}
