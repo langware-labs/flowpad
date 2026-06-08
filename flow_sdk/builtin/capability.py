@@ -107,11 +107,6 @@ class Capability(Entity):
         return await cls._db.get_by_id(capability_id_for_kind(kind), cls.get_type())
 
     @classmethod
-    async def get(cls, kind: str) -> "Capability | None":
-        """Canonical consumer accessor: ``(await Capability.get(kind)).value``."""
-        return await cls.get_by_kind(kind)
-
-    @classmethod
     async def get_by_id(cls, eid: str) -> "Capability | None":
         await cls.ensure_seeded()
         return await super().get_by_id(eid)
