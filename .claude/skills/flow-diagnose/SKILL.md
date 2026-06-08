@@ -3,13 +3,15 @@ id: a3f7c821-4b2e-5d19-8e6f-1c9a0b3e7d52
 name: flow-diagnose
 description: >
   Diagnoses and auto-repairs Flowpad desktop/backend installation and runtime issues.
-  Use when the user reports: Flowpad won't start, "Startup Error" dialog, "Backend server
-  failed to respond", port 9007 conflict, blank page/404 assets, macOS "app is damaged",
-  Windows SmartScreen warning, Linux AppImage won't launch, auto-update stuck or wrong arch,
-  cloud/hub unreachable, version mismatch between Electron shell and Python backend.
+  Use when the user reports: Flowpad won't start or open, the app is **stuck on "Starting…"**,
+  "Startup Error" dialog, "Backend server failed to respond", port 9007 conflict, blank page/404
+  assets, macOS "app is damaged", Windows SmartScreen warning, Linux AppImage won't launch,
+  auto-update stuck or wrong arch, cloud/hub unreachable, version mismatch between Electron shell
+  and Python backend. Covers Electron desktop-app startup issues (the shell), not just the backend.
   Accepts an optional pasted error string; without one runs a full diagnostic sweep.
-  Keywords: flowpad, flow diagnose, startup error, port 9007, backend unhealthy,
-  damaged app, update failed, instance not running, sodot, server.lock, blank page.
+  Keywords: flowpad, flow diagnose, won't open, stuck on starting, startup error, port 9007,
+  backend unhealthy, electron, desktop app, damaged app, update failed, instance not running,
+  sodot, server.lock, blank page.
 
 recommended_scope: project
 ---
@@ -28,6 +30,12 @@ plain-language "To Summarize:" line.
 - Do the **whole job in one go** and do not end your turn until it's done:
   diagnose → root cause → prove it → fix (when safe) → validate → end-to-end check → record.
 - Apply fixes yourself only when safe **and** capable (Step 4); otherwise advise the user (Step 5).
+- **Read the logs — they are primary evidence.** The **`flowpad_logs`** skill is the authoritative
+  list of every Flowpad log location: the backend instance logs
+  (`~/.flow/instances/<name>/logs/`), the **Electron desktop app** logs
+  (`~/.flow/logs/{main_desktop,monitor,server}/`), and the local hub. Scan the logs it lists when
+  looking for whether there IS an issue **and** when establishing the root cause — never conclude
+  "healthy" from a live health check alone (the shell can be stuck even when the backend is up).
 - Never raise or add any timeout/retry/backoff/poll budget to mask a symptom.
 
 ## Instructions
@@ -77,6 +85,8 @@ curl -fsS http://localhost:$PORT/health/status
 Expected: `{"data":true}`. Anything else or curl error = unhealthy.
 
 **2c. Log tails** (newest file in each directory, last 20 lines)
+Consult the **`flowpad_logs`** skill for the full, authoritative list of log locations and scan
+**all** of them — backend instance logs, the Electron desktop logs, and the hub. At minimum:
 ```bash
 # macOS/Linux — repeat for server, monitor, main_desktop
 LOGDIR=~/.flow/logs/server
@@ -110,6 +120,23 @@ Get-PSDrive C | Select Used,Free
 ```
 Warn if < 500 MB free.
 
+**2g. Electron desktop app startup (ALWAYS check — even if the backend is healthy)**
+The Electron shell waits only **30 s** for the backend; it can be stuck on "Starting…" or have shown
+a "Startup Error" even though the backend is healthy *now*. Read the newest `main_desktop` log and
+reason about the shell↔backend timeline:
+```bash
+# macOS/Linux — newest main_desktop log, last ~40 lines
+LOGDIR=~/.flow/logs/main_desktop
+tail -40 "$(ls -t $LOGDIR/ | head -1 | xargs -I{} echo $LOGDIR/{})"
+# Windows (PowerShell)
+Get-Content (Get-ChildItem $HOME\.flow\logs\main_desktop\*.log | Sort LastWriteTime -Desc | Select -First 1) -Tail 40
+```
+Look for: `Waiting for backend` **without** a following `Backend is ready!`; `Backend failed to
+start within timeout`; `[startup error details]`; `[update] desktop upgraded` / `[uv] Upgrading
+flowpad...` / `[electron-updater] update downloaded`; `flow shim blocked by Windows Device Guard`;
+`[flow stderr]` errors; `Failed to spawn flow start`. These map to **G14–G17** even when the backend
+currently reports healthy.
+
 After collecting results, map each finding to the catalog in Step 3 and proceed to Step 4 or 5.
 
 ### Step 3 — Classify the symptom (semantic, open-ended)
@@ -117,7 +144,7 @@ After collecting results, map each finding to the catalog in Step 3 and proceed 
 Decide which known issue the user's text (or your sweep findings) best matches by **meaning** —
 reason about intent. Do **NOT** string/regex match: wording varies and will change over time, and
 you are an LLM that can understand a paraphrase. The known issues live in `references/catalog.md`
-(entries A1–F13); here they are summarized by meaning so you know the menu:
+(entries A1–G17); here they are summarized by meaning so you know the menu:
 
 - **A1** — backend port 9007 already in use / "address already in use".
 - **A2** — backend unhealthy or "failed to respond" (stale lock, DB corruption, full disk).
@@ -132,9 +159,18 @@ you are an LLM that can understand a paraphrase. The known issues live in `refer
 - **E11** — updates never detected (manifest version mismatch).
 - **E12** — macOS auto-update broken (missing `.zip` / `.blockmap`).
 - **F13** — Electron shell vs Python backend version drift.
+- **G14** — **Electron app stuck on "Starting…"** / backend health-check timed out (shell gives up at
+  30 s even though the backend becomes healthy moments later). Often the answer to "won't open" /
+  "stuck on Starting".
+- **G15** — auto-update mid-session reinstalled the backend; next launch exceeds the 30 s window → G14.
+- **G16** — shell can't install/run `flow` (first-run `uv`/PyPI failure, or Windows Device Guard
+  blocks the shim).
+- **G17** — backend spawned but crashed / port not freed by the shell.
 
-Read `references/catalog.md` for each entry's exact detection + repair. If several apply, handle
-**ALL**.
+Read `references/catalog.md` for each entry's exact detection + repair. The **G-series** is found
+in the `main_desktop` logs (Step 2g) — check it even when the backend is currently healthy, since a
+"won't start / stuck on Starting" is usually an Electron↔backend *timing* problem, not a dead
+backend. If several apply, handle **ALL**.
 
 **The catalog is knowledge, not a fence.** If the symptom matches nothing above, do **not** give up
 — go to **Step 5b (unrecognized issue)** and diagnose it generally.
@@ -146,10 +182,12 @@ the output — never jump straight from symptom to guess:
 
 1. **Root cause.** Identify the actual underlying cause, not the surface symptom — e.g. not
    "backend not responding" but "a stale `server.pid` points to dead PID 17268, so startup aborts".
-2. **Prove it.** Back the root cause with concrete evidence: a command output, a log line, or a
-   small reproduction showing that this cause produces this symptom (e.g. `kill -0 17268` → dead,
-   and `curl …/health/status` → connection refused). If you cannot prove it, say so and treat it as
-   unrecognized (Step 5b) — do not fix on a hunch.
+2. **Prove it.** Back the root cause with concrete evidence — prefer the **on-disk logs** (use the
+   `flowpad_logs` skill to find every log location): a specific log line, a command output, or a
+   small reproduction showing that this cause produces this symptom (e.g. `main_desktop` log shows
+   `Backend failed to start within timeout` while the `server` log shows the backend became healthy
+   10 s later; or `kill -0 17268` → dead and `curl …/health/status` → connection refused). If you
+   cannot prove it from evidence, say so and treat it as unrecognized (Step 5b) — do not fix on a hunch.
 3. **Fix** — but ONLY when safe and you're capable: (a) your diagnosis is confident, and (b) it's a
    safe, reversible fix you can perform on this machine (e.g. delete a stale
    `server.lock`/`server.pid`/`server.json` for a dead PID, free port 9007, install FUSE). Actually
@@ -162,7 +200,7 @@ the output — never jump straight from symptom to guess:
 CRITICAL: Never suggest raising the 30-second health timeout or any other wait/retry/backoff
 budget. The timeout is correct; fix the underlying stall or contention instead.
 
-The per-issue repair details (A1–F13) below are the **"how"** for the Fix sub-step:
+The per-issue repair details (A1–G17) below are the **"how"** for the Fix sub-step:
 
 ---
 

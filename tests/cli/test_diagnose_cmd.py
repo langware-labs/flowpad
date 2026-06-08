@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from typer.testing import CliRunner
 
-from flow_sdk.cli.commands.diagnose_cmd import _find_skill_dir, _Renderer
+from flow_sdk.cli.commands.diagnose_cmd import _find_skill_dir, _Renderer, _report_marker_path
 from flow_sdk.cli.flow_cli import app
 
 runner = CliRunner()
@@ -121,6 +121,20 @@ def test_diagnose_report_status_defaults_informational():
         result = runner.invoke(app, ["diagnose-report", "--summary", "s"])
     assert result.exit_code == 0
     assert mock_rep.call_args.kwargs["status"] == "informational"
+
+
+def test_diagnose_report_writes_completion_marker(tmp_path, monkeypatch):
+    # The marker is how the parent `flow diagnose` reliably learns the agent's
+    # child `flow diagnose-report` ran (cross-process, no DB diff).
+    monkeypatch.setenv("FLOW_HOME", str(tmp_path))
+    fake = {"feed_entry_id": "fe9", "conversation_id": "c", "flow_message_id": "m"}
+    with patch(_REPORT, new=AsyncMock(return_value=fake)):
+        result = runner.invoke(app, ["diagnose-report", "--summary", "s", "--status", "fixed"])
+    assert result.exit_code == 0
+    marker = _report_marker_path()
+    assert marker == tmp_path / "diagnostics" / "last_report.json"
+    assert marker.exists()
+    assert json.loads(marker.read_text())["feed_entry_id"] == "fe9"
 
 
 # --------------------------------------------------------------------------- #
