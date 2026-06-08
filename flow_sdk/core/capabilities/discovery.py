@@ -39,10 +39,31 @@ PROBE_TIMEOUT_SECONDS = 5.0
 # capability checks read THIS; entity rows are a mirror for the UI.
 _VALUES: dict[str, CapabilityValue] = {}
 
+# Set after the first full sweep completes. Callers that need accurate values
+# (e.g. bootstrap's harness state) await ``ensure_discovered`` so they don't
+# read an empty dict during the startup window.
+_DISCOVERED_ONCE = asyncio.Event()
+_DISCOVERY_LOCK = asyncio.Lock()
+
 
 def get_capability_value(kind: str) -> CapabilityValue | None:
     """The last discovered value for ``kind`` (None = never discovered)."""
     return _VALUES.get(kind)
+
+
+async def ensure_discovered() -> bool:
+    """Ensure at least one full discovery sweep has completed.
+
+    No-op once a full sweep has finished. If startup already has a full sweep in
+    flight, this waits for that sweep; otherwise it runs one directly.
+    """
+    if _DISCOVERED_ONCE.is_set():
+        return True
+    async with _DISCOVERY_LOCK:
+        if _DISCOVERED_ONCE.is_set():
+            return True
+        await _run_discovery_inner(None)
+        return _DISCOVERED_ONCE.is_set()
 
 
 def set_capability_value(value: CapabilityValue) -> None:
@@ -97,6 +118,13 @@ async def run_discovery(kinds: list[str] | None = None) -> dict[str, CapabilityV
     reads a stale entry regardless of registry order. Results land in the
     global dict and are mirrored onto the Capability entity rows.
     """
+    if kinds is None:
+        async with _DISCOVERY_LOCK:
+            return await _run_discovery_inner(None)
+    return await _run_discovery_inner(kinds)
+
+
+async def _run_discovery_inner(kinds: list[str] | None) -> dict[str, CapabilityValue]:
     from flow_sdk.core.capabilities.registry import (
         CapabilityReferenceRunner,
         CliCapabilityRunner,
@@ -142,6 +170,8 @@ async def run_discovery(kinds: list[str] | None = None) -> dict[str, CapabilityV
             discovered[value.kind] = value
 
     await _mirror_to_rows(discovered)
+    if kinds is None:
+        _DISCOVERED_ONCE.set()  # unblock ensure_discovered() waiters
     return discovered
 
 
