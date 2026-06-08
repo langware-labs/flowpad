@@ -1,11 +1,11 @@
 """C5: AgenticProcess._process_transcript_entries detects FileRead/Write/Edit
-markdown ops, emits file.read/file.write events, and invokes
-cross_link_file_to_process.
+markdown ops, emits file.read/file.write events, and cross-links the markdown
+entity to the process via the generic primitives (Entity.get_by_asset_ref +
+cross_link_entities).
 
-The helper is what the flush calls under the production status guard; tests
-drive it directly so they don't have to fake the lifecycle ``status`` field
-(``status`` is owned by the start/stop paths, not the test harness).
-Non-markdown paths are skipped. FileEditEntry maps to file.write semantically.
+Tests drive the flush helper directly so they don't have to fake the lifecycle
+``status`` field (``status`` is owned by the start/stop paths, not the test
+harness). Non-markdown paths are skipped. FileEditEntry maps to file.write.
 """
 from __future__ import annotations
 
@@ -42,20 +42,31 @@ def _entry_base(eid: str) -> dict:
 
 
 def _install_capture(ap: AgenticProcess, monkeypatch) -> list:
-    """Capture emit_entity_event + cross_link_file_to_process calls into a
-    shared event log."""
+    """Capture emit_entity_event + cross-link calls into a shared event log.
+
+    Stubs ``Entity.get_by_asset_ref`` (so resolution returns a dummy entity
+    without a DB row) and ``cross_link_entities`` (so the link is recorded
+    rather than executed)."""
+    from flow_sdk.core.entity.entity_model import Entity
+
     events: list[tuple[str, dict]] = []
 
     async def _fake_emit(self, name, payload=None):
         events.append((name, dict(payload or {})))
 
-    async def _fake_cross_link(path, proc):
-        events.append(("cross_link", {"path": path, "proc_id": proc.id if proc else None}))
-        return None
+    _dummy_md = object()
+
+    async def _fake_get_by_asset_ref(path):
+        return _dummy_md
+
+    async def _fake_cross_link(a, b, *, a_data=None, b_data=None, save=True):
+        events.append(("cross_link", {"path": (b_data or {}).get("path"), "proc_id": getattr(b, "id", None)}))
+        return True
 
     monkeypatch.setattr(type(ap), "emit_entity_event", _fake_emit, raising=False)
+    monkeypatch.setattr(Entity, "get_by_asset_ref", staticmethod(_fake_get_by_asset_ref), raising=False)
     monkeypatch.setattr(
-        "flow_sdk.transcript_analyzer.file_cross_link.cross_link_file_to_process",
+        "flow_sdk.core.entity.cross_link.cross_link_entities",
         _fake_cross_link,
     )
     return events

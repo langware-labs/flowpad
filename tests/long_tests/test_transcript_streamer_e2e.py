@@ -2,7 +2,7 @@
 
 Real Claude run in plan mode → FSOp on ~/.claude/projects/ fires →
 TranscriptStreamerRegistry → AgenticProcess subscriber → emits plan.create
-entity event → on_plan_created delegates to cross_link_plan_to_process.
+entity event → on_plan_created resolves the plan + cross_link_entities.
 
 Test body is intentionally tiny:
   1. Make an AgenticProcess in plan mode.

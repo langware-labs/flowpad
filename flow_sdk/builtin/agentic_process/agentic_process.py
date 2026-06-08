@@ -3485,11 +3485,11 @@ class AgenticProcess(Entity):
         the loop without manipulating the AP's lifecycle ``status`` field.
         FileEditEntry maps to ``file.write`` (semantically: contents changed).
         """
+        from flow_sdk.core.entity.cross_link import cross_link_entities
         from flow_sdk.transcript_analyzer.entries.exit_plan_mode import ExitPlanModeEntry
         from flow_sdk.transcript_analyzer.entries.file_edit import FileEditEntry
         from flow_sdk.transcript_analyzer.entries.file_read import FileReadEntry
         from flow_sdk.transcript_analyzer.entries.file_write import FileWriteEntry
-        from flow_sdk.transcript_analyzer.file_cross_link import cross_link_file_to_process
 
         # Dedup cross-link calls per (path) within one flush — Claude/Codex
         # often write+read the same .md file multiple times in a turn, and the
@@ -3516,7 +3516,9 @@ class AgenticProcess(Entity):
                 # are delivered in send order, so a consumer subscribed to both
                 # sees the cross-link applied before acting on file.{op}.
                 if path not in cross_linked:
-                    await cross_link_file_to_process(path, self)
+                    md = await Entity.get_by_asset_ref(path)
+                    if md is not None:
+                        await cross_link_entities(md, self, b_data={"path": path})
                     cross_linked.add(path)
                 await self.emit_entity_event(
                     f"file.{op}",
@@ -3606,22 +3608,36 @@ class AgenticProcess(Entity):
                 self.id, exc_info=True,
             )
 
+    @classmethod
+    async def get_by_session_id(cls, session_id: str) -> "AgenticProcess | None":
+        """Resolve the AgenticProcess that owns ``session_id`` (None if unknown)."""
+        if not session_id:
+            return None
+        from flow_sdk.db.drivers.query import ExpressionNode, QueryFilter
+        procs = await cls.get_all(
+            entities_filter=QueryFilter(match=ExpressionNode(session_id=session_id))
+        )
+        return procs[0] if procs else None
+
     async def on_plan_created(self, entry) -> None:
         """T7: Connect a freshly-detected plan to this AgenticProcess.
 
-        Delegates to the shared
-        :func:`flow_sdk.transcript_analyzer.plan_cross_link.cross_link_plan_to_process`
-        helper — single source of truth shared with PlanHandler (indexer) and
-        ``listen.py:_create_plan_annotation`` (hook). Sets ``plan_path`` if
-        unset and cross-links via ``private_context_entities`` both directions.
+        Resolves the plan entity (indexing it on demand if the indexer hasn't
+        caught up), sets ``plan_path`` if stale, and mutually cross-links the
+        plan and this process via ``private_context_entities``. Shares the plan
+        resolver with PlanHandler (indexer).
         """
-        from flow_sdk.transcript_analyzer.plan_cross_link import cross_link_plan_to_process
+        from flow_sdk.core.entity.cross_link import cross_link_entities
+        from flow_sdk.fs_store.transcript_indexer.handlers.plan_handler import resolve_plan
 
-        await cross_link_plan_to_process(
-            entry.plan_file_path,
-            self.session_id or entry.session_id,
-            proc=self,
-        )
+        plan = await resolve_plan(entry.plan_file_path)
+        if plan is None:
+            return
+        path_str = str(entry.plan_file_path)
+        if self.plan_path != path_str:
+            self.plan_path = path_str
+            await self.save()
+        await cross_link_entities(plan, self, b_data={"path": path_str})
 
     async def _find_resumable_session(self, session_id: str) -> str | None:
         """Walk up the fork chain to find a session ID with a transcript on disk."""

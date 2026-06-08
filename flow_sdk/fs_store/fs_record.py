@@ -318,6 +318,35 @@ class FSRecord(Generic[M]):
             return None
 
     @classmethod
+    def find_by_id(cls, id: str) -> "FSRecord | None":
+        """Find a record by ``id`` alone, scanning every type under records_root.
+
+        Unlike ``load``/``load_or_none`` this needs no ``type``: it checks the
+        deterministic shadow path ``<records_root>/<type>/<type>-@<id>/`` for each
+        type folder. Returns the single match, ``None`` when no type owns ``id``,
+        and raises ``ValueError`` when more than one type has a record with this
+        ``id`` (ids are unique within a type but can collide across types).
+        """
+        root = _get_default_records_root()
+        if not root.is_dir():
+            return None
+        matches: list[Path] = []
+        for type_dir in root.iterdir():
+            if not type_dir.is_dir():
+                continue
+            folder = type_dir / record_stem(type_dir.name, id)
+            if (folder / _METADATA_JSON).exists():
+                matches.append(folder)
+        if not matches:
+            return None
+        if len(matches) > 1:
+            types = ", ".join(sorted(m.parent.name for m in matches))
+            raise ValueError(
+                f"Ambiguous FSRecord id {id!r}: found under multiple types ({types})"
+            )
+        return cls.load_record(matches[0])
+
+    @classmethod
     def load_record(cls, path: str | Path) -> "FSRecord":
         """Load from a shadow folder OR a direct metadata.json path."""
         p = Path(path)
