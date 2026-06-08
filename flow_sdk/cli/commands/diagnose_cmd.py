@@ -28,19 +28,50 @@ def _quiet_logs() -> None:
     logging.disable(logging.WARNING)
 
 
-def _print_agent_text(entry: dict) -> None:
-    """Print the worker's narration (assistant text blocks) as they stream."""
-    msg = entry.get("message")
-    if not isinstance(msg, dict) or msg.get("role") != "assistant":
-        return
-    content = msg.get("content")
-    if not isinstance(content, list):
-        return
-    for block in content:
-        if isinstance(block, dict) and block.get("type") == "text":
-            text = (block.get("text") or "").strip()
-            if text:
-                typer.echo(f"  ▸ {text}")
+class _Renderer:
+    """Compact transcript renderer for `flow diagnose`.
+
+    Shows the agent's narration on its own line (``▸ …`` — the valuable part) and
+    collapses each tool action into a single inline progress dot (``·``), so the
+    user sees liveness while the agent works (Bash/Read calls) without a line per
+    call and without the tool-result noise.
+    """
+
+    def __init__(self) -> None:
+        self._row_open = False  # an unfinished "· · ·" progress row is on screen
+
+    def _close_row(self) -> None:
+        if self._row_open:
+            typer.echo("")  # terminate the inline progress row
+            self._row_open = False
+
+    def feed(self, entry: dict) -> None:
+        msg = entry.get("message")
+        if not isinstance(msg, dict):
+            return
+        role = msg.get("role")
+        content = msg.get("content")
+        if not isinstance(content, list):
+            return
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            btype = block.get("type")
+            if role == "assistant" and btype == "text":
+                text = (block.get("text") or "").strip()
+                if text:
+                    self._close_row()
+                    typer.echo(f"  ▸ {text}")
+            elif role == "assistant" and btype == "tool_use":
+                # One inline dot per tool action — a liveness pulse, no detail.
+                if not self._row_open:
+                    typer.echo("  ", nl=False)
+                    self._row_open = True
+                typer.echo("· ", nl=False)
+            # tool_result blocks are intentionally not rendered.
+
+    def finish(self) -> None:
+        self._close_row()
 
 
 async def _run_diagnose(message: str, transcript_timeout: float) -> int:
@@ -79,6 +110,7 @@ async def _run_diagnose(message: str, transcript_timeout: float) -> int:
     # stream_transcript re-reads the transcript from the start on each call, so
     # track how many entries we've already printed and skip them on the re-stream
     # after a nudge (avoids duplicating the earlier narration).
+    renderer = _Renderer()
     rendered = 0
 
     async def _stream() -> None:
@@ -86,9 +118,10 @@ async def _run_diagnose(message: str, transcript_timeout: float) -> int:
         idx = 0
         async for entry in ap.stream_transcript(timeout=transcript_timeout):
             if idx >= rendered:
-                _print_agent_text(entry)
+                renderer.feed(entry)
             idx += 1
         rendered = idx
+        renderer.finish()  # close any open progress row before the next message
 
     async def _recorded() -> bool:
         """Per-run completion signal: the worker's Step 7 cross-links a
