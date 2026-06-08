@@ -224,6 +224,19 @@ class Shell(Entity):
         pty = self.compute_node.get_pty(self.id)
         return pty is not None and pty.is_alive
 
+    async def evict_pty_handle(self) -> None:
+        """Kill this shell's in-memory PTY handle if present (no-op otherwise).
+
+        Keeps PTY-handle access inside Shell — callers that just need the dead
+        handle evicted (e.g. recovery's soft drop) use this instead of reaching
+        through ``compute_node.get_pty``. Does NOT touch the worker or .pty file.
+        """
+        if not self.compute_node_id:
+            return
+        pty = self.compute_node.get_pty(self.id)
+        if pty is not None:
+            await pty.kill()
+
     async def _cleanup_stale_session(self) -> None:
         """Evict any dead PTY session state so a fresh one can be spawned."""
         await self.ensure_live_compute_node_binding()

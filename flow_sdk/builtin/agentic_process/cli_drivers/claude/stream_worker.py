@@ -26,11 +26,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-import shutil
 from typing import AsyncIterator
 
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgenticContext
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgenticWorker
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_path_env
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli import ClaudeCliOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.event_to_flowdata import (
     convert_line,
@@ -164,7 +164,10 @@ class ClaudeCLIStreamWorker(AgenticWorker):
         context: AgenticContext,
     ) -> tuple[list[str] | None, dict[str, str]]:
         """Build argv + env via the standard ``ClaudeCliOptions`` abstraction."""
-        if not shutil.which("claude"):
+        # Discovered harness capability supplies the CLI's bin folder
+        # (terminal-PATH resolution) — None ⇔ claude is not installed.
+        path_env = worker_path_env("claude")
+        if path_env is None:
             return None, {}
 
         # Resume takes priority — when ``resume_session_id`` is set, attach
@@ -206,6 +209,7 @@ class ClaudeCLIStreamWorker(AgenticWorker):
         # Strip CLAUDECODE* to avoid the CLI thinking it's already inside a
         # Claude run. Overlay context env_vars last so callers win.
         env = {k: v for k, v in os.environ.items() if not k.startswith("CLAUDECODE")}
+        env.update(path_env)  # capability bin-folder PATH prepend
         env.update(env_from_opts)
         return argv, env
 

@@ -29,12 +29,12 @@ import asyncio
 import json
 import logging
 import os
-import shutil
 from pathlib import Path
 from typing import AsyncIterator
 
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgenticContext
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import AgenticWorker
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import worker_path_env
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.cli import CodexCliOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.event_to_flowdata import (
     convert_line,
@@ -195,7 +195,10 @@ class CodexCLIStreamWorker(AgenticWorker):
         self,
         context: AgenticContext,
     ) -> tuple[list[str] | None, dict[str, str]]:
-        if not shutil.which("codex"):
+        # Discovered harness capability supplies the CLI's bin folder
+        # (terminal-PATH resolution) — None ⇔ codex is not installed.
+        path_env = worker_path_env("codex")
+        if path_env is None:
             return None, {}
 
         opts = CodexCliOptions(
@@ -210,9 +213,11 @@ class CodexCLIStreamWorker(AgenticWorker):
         )
         argv, env_from_opts = opts.to_spawn_args()
 
-        # Inherit os.environ so codex can find creds, PATH, ~/.codex, then
-        # overlay caller-provided env_vars last so they win.
+        # Inherit os.environ so codex can find creds, PATH, ~/.codex; overlay
+        # the capability's PATH prepend (argv[0] + `#!/usr/bin/env node`
+        # resolution), then caller-provided env_vars last so they win.
         env = dict(os.environ)
+        env.update(path_env)
         env.update(env_from_opts)
         return argv, env
 

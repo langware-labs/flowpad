@@ -83,6 +83,20 @@ def _build_interactive_pty_env(
         env.update(extra_env)
     return env
 
+
+def find_command(command: str, path: str | None = None) -> str | None:
+    """Cross-platform executable lookup for PTY spawns — ``None`` = not found.
+
+    ``shutil.which`` handles absolute paths, PATH search, and Windows PATHEXT
+    (.exe/.cmd/.bat) uniformly. ``path`` lets callers resolve against the
+    PATH the child will actually see (the spawn env's, not the server's).
+    Every PTY spawn checks its argv[0] through this so a missing binary
+    fails fast with a clear "Command not found: 'x'" instead of a deep
+    ptyprocess/winpty traceback (or an instantly-dead PTY).
+    """
+    return shutil.which(command, path=path)
+
+
 # Cross-platform PTY support
 PTY_AVAILABLE = False
 PtyProcess = None
@@ -711,6 +725,20 @@ class LocalComputeProvider(ComputeProvider):
                         final_spawn_args = [shell_cmd, "--norc", "--noprofile"]
                     else:
                         final_spawn_args = [shell_cmd]
+
+            # Fail fast when the command doesn't exist — generic for every PTY
+            # spawn (worker CLIs and shells alike). Resolve against the PATH
+            # the child will see; ptyprocess/winpty otherwise surface this as
+            # a deep traceback whose message gets swallowed upstream.
+            if final_spawn_args:
+                resolved_cmd = find_command(final_spawn_args[0], env.get("PATH"))
+                if resolved_cmd is None:
+                    raise RuntimeError(f"Command not found: '{final_spawn_args[0]}'")
+                # ptyprocess/winpty resolve argv[0] against the PARENT's
+                # os.environ PATH, not the spawn env's — substitute the
+                # absolute path so the env PATH (e.g. a discovered harness
+                # capability folder) actually takes effect.
+                final_spawn_args = [resolved_cmd, *final_spawn_args[1:]]
 
             # Spawn PTY using ptyprocess/winpty (cross-platform)
             pty_working_dir = working_dir if working_dir else self._node_dirs.get(provider_node_id, self._default_working_dir)

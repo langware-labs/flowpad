@@ -16,6 +16,7 @@ class CapabilityKind(StrEnum):
     HARNESS = "harness"
     CLAUDE_CLI = "harness.claude.cli"
     CODEX_CLI = "harness.codex.cli"
+    COPILOT_CLI = "harness.copilot.cli"
     CHROME_AUTHENTICATED = "browsing.chrome.authenticated"
 
 
@@ -31,6 +32,10 @@ class CapabilitySpec(BaseModel):
     description: str = ""
     icon: str = "BadgeCheck"
     homepage_url: str | None = None
+    # Static type of this capability's discovered ``value`` — a RecordType
+    # value (e.g. "folder" for CLI harnesses, whose value is the bin dir
+    # serialized as an FSRef dict). None → no typed value (pure status).
+    value_type: str | None = None
     dependent_capability_kinds: list[str] = Field(default_factory=list)
     # CapabilityReference: this capability is a pointer — check/install/test
     # resolve the referenced kind in turn. Seed default only; the live value
@@ -57,3 +62,20 @@ class CapabilityCheck(BaseModel):
     kind: str
     result: CapabilityResult
     dependencies: dict[str, CapabilityResult] = Field(default_factory=dict)
+
+
+class CapabilityValue(BaseModel):
+    """A capability's discovered, typed value.
+
+    ``value is None`` ⇔ the capability is absent. ``value_type`` is the
+    spec's static RecordType (e.g. "folder" → ``value`` is an FSRef dict of
+    the CLI's bin directory). Produced by ``discover()`` sweeps, held in the
+    discovery module's global dict, and mirrored onto the Capability entity
+    row so the capabilities window shows exactly what workers consume.
+    """
+
+    kind: str
+    value: Any | None = None
+    value_type: str | None = None
+    message: str = ""
+    discovered_at: str = Field(default_factory=now_iso)

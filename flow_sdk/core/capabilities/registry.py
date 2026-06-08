@@ -11,12 +11,27 @@ from flow_sdk.core.capabilities.models import (
     CapabilityKind,
     CapabilityResult,
     CapabilitySpec,
+    CapabilityValue,
     capability_kind_matches,
 )
 
 
 class CapabilityRunner(ABC):
     spec: CapabilitySpec
+
+    async def discover(self, probe: dict) -> CapabilityValue:
+        """Produce this capability's typed value from a discovery sweep.
+
+        ``probe`` is the shared env-probe result for the sweep (see
+        ``discovery.run_discovery``). Default: no typed value — status-only
+        capabilities report value None with the spec's value_type.
+        """
+        return CapabilityValue(
+            kind=self.spec.kind,
+            value=None,
+            value_type=self.spec.value_type,
+            message="No discoverable value for this capability.",
+        )
 
     @abstractmethod
     async def check(self) -> CapabilityResult:
@@ -50,8 +65,47 @@ class CliCapabilityRunner(CapabilityRunner):
         self.test_args = test_args or ["--version"]
         self.timeout_seconds = timeout_seconds
 
+    async def discover(self, probe: dict) -> CapabilityValue:
+        """Value = the CLI's bin FOLDER (FSRef dict), resolved by the sweep's
+        env probe against the terminal PATH (PATH order = tie-break). The
+        folder — not the binary — is the value: prepended to a spawn PATH it
+        resolves both argv[0] and the ``#!/usr/bin/env node`` shebang."""
+        import os
+
+        from flow_sdk.fs_store.fs_ref import FSRef
+
+        resolved = (probe.get("executables") or {}).get(self.executable)
+        if not resolved:
+            return CapabilityValue(
+                kind=self.spec.kind,
+                value=None,
+                value_type=self.spec.value_type,
+                message=f"{self.executable} CLI was not found on the terminal PATH.",
+            )
+        folder = os.path.dirname(resolved)
+        return CapabilityValue(
+            kind=self.spec.kind,
+            value=FSRef(folder).to_dict(),
+            value_type=self.spec.value_type,
+            message=f"{self.executable} CLI found in {folder}.",
+        )
+
+    def _discovered_folder(self) -> str | None:
+        """The discovered bin folder from the capability value (None = absent)."""
+        from flow_sdk.core.capabilities.discovery import get_capability_value
+
+        value = get_capability_value(self.spec.kind)
+        if value is None or not isinstance(value.value, dict):
+            return None
+        return value.value.get("path") or None
+
     def _resolve(self) -> str | None:
-        return shutil.which(self.executable)
+        """Executable path from the discovered value — trusts the discovery
+        sweep (re-verification happens on refresh/test, not on display)."""
+        import os
+
+        folder = self._discovered_folder()
+        return os.path.join(folder, self.executable) if folder else None
 
     def _not_found_result(self) -> CapabilityResult:
         return CapabilityResult(
@@ -73,7 +127,10 @@ class CliCapabilityRunner(CapabilityRunner):
         )
 
     async def test(self) -> CapabilityResult:
-        path = self._resolve()
+        # Disk-verified resolution (PATHEXT-aware on Windows) — test actually
+        # executes the binary, so a stale discovered folder must surface here.
+        folder = self._discovered_folder()
+        path = shutil.which(self.executable, path=folder) if folder else None
         if not path:
             return self._not_found_result()
         try:
@@ -127,12 +184,47 @@ class CapabilityReferenceRunner(CapabilityRunner):
         # Ontological constraint for valid targets, e.g. "harness" → harness.*
         self.allowed_query = allowed_query
 
-    async def _resolve_reference_kind(self) -> str | None:
+    async def resolve_reference_kind(self) -> str | None:
         from flow_sdk.builtin.capability import Capability
 
         capability = await Capability.get_by_kind(self.spec.kind)
         reference = (capability.reference_kind if capability else None) or self.spec.reference_kind
         return reference.strip().lower() if reference else None
+
+    # Back-compat alias (pre-discovery callers used the private name).
+    _resolve_reference_kind = resolve_reference_kind
+
+    async def discover(self, probe: dict) -> CapabilityValue:
+        """Mirror the referenced capability's freshly-discovered value.
+
+        ``run_discovery`` discovers concrete targets before references, so
+        the dict read here is current within the sweep.
+        """
+        from flow_sdk.core.capabilities.discovery import get_capability_value
+
+        reference = await self.resolve_reference_kind()
+        failure = self._target_failure(reference)
+        if failure is not None:
+            return CapabilityValue(
+                kind=self.spec.kind,
+                value=None,
+                value_type=self.spec.value_type,
+                message=failure.message,
+            )
+        target = get_capability_value(reference)
+        if target is None:
+            return CapabilityValue(
+                kind=self.spec.kind,
+                value=None,
+                value_type=self.spec.value_type,
+                message=f"Referenced capability {reference!r} has no discovered value.",
+            )
+        return CapabilityValue(
+            kind=self.spec.kind,
+            value=target.value,
+            value_type=target.value_type or self.spec.value_type,
+            message=f"Mirrors {reference}: {target.message}",
+        )
 
     def _target_failure(self, reference: str | None) -> CapabilityResult | None:
         """Validate the reference target; return a failure result or None when valid."""
@@ -272,6 +364,11 @@ async def _monitor_capability_install_process(process_id: str, kind: str) -> Non
         if process is None:
             raise RuntimeError(f"Install process {process_id} was not found.")
         await process.wait()
+        # Re-discover before checking: a fresh install may live in a PATH dir
+        # (or new version-manager dir) the previous sweep didn't know about.
+        from flow_sdk.core.capabilities.discovery import run_discovery
+
+        await run_discovery([kind])
         check = await get_capability_registry().check(kind)
         capability.last_check = check.result.model_dump(mode="json")
         started, started_details = _last_install_parts(capability)
@@ -453,12 +550,16 @@ async def run_chrome_authenticated_probe() -> CapabilityResult:
 
 
 def get_default_capability_specs() -> list[CapabilitySpec]:
+    # Harness CLI values are typed as FOLDER (RecordType.FOLDER): the value is
+    # the discovered bin directory (FSRef dict) workers prepend to spawn PATH.
+    _FOLDER = "folder"
     return [
         CapabilitySpec(
             name="Default harness",
             kind=CapabilityKind.HARNESS.value,
             description="The harness used by default. References a concrete harness capability.",
             icon="Link",
+            value_type=_FOLDER,
             reference_kind=CapabilityKind.CLAUDE_CLI.value,
         ),
         CapabilitySpec(
@@ -466,6 +567,7 @@ def get_default_capability_specs() -> list[CapabilitySpec]:
             kind=CapabilityKind.CLAUDE_CLI.value,
             description="Claude Code command-line harness.",
             icon="Bot",
+            value_type=_FOLDER,
             homepage_url="https://docs.anthropic.com/en/docs/claude-code/getting-started",
         ),
         CapabilitySpec(
@@ -473,7 +575,16 @@ def get_default_capability_specs() -> list[CapabilitySpec]:
             kind=CapabilityKind.CODEX_CLI.value,
             description="Codex command-line harness.",
             icon="Terminal",
+            value_type=_FOLDER,
             homepage_url="https://openai.com/codex/",
+        ),
+        CapabilitySpec(
+            name="Copilot CLI",
+            kind=CapabilityKind.COPILOT_CLI.value,
+            description="GitHub Copilot command-line harness.",
+            icon="Terminal",
+            value_type=_FOLDER,
+            homepage_url="https://docs.github.com/en/copilot/concepts/agents/about-copilot-cli",
         ),
         CapabilitySpec(
             name="Chrome Authenticated Browsing",
@@ -497,6 +608,9 @@ class CapabilityRegistry:
             return self._runners[kind]
         except KeyError as exc:
             raise KeyError(f"Unknown capability kind: {kind}") from exc
+
+    def runners(self) -> list[CapabilityRunner]:
+        return list(self._runners.values())
 
     def specs(self) -> list[CapabilitySpec]:
         return [runner.spec for runner in self._runners.values()]
@@ -555,6 +669,12 @@ def _build_default_registry() -> CapabilityRegistry:
         CliCapabilityRunner(
             spec=specs[CapabilityKind.CODEX_CLI.value],
             executable="codex",
+        )
+    )
+    registry.register(
+        CliCapabilityRunner(
+            spec=specs[CapabilityKind.COPILOT_CLI.value],
+            executable="copilot",
         )
     )
     registry.register(ChromeAuthenticatedBrowsingRunner(specs[CapabilityKind.CHROME_AUTHENTICATED.value]))

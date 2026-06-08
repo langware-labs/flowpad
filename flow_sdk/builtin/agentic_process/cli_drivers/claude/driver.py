@@ -301,6 +301,11 @@ class ClaudeDriver:
         """Map the tail of the Claude JSONL to a WorkerStatus."""
         return _tail_status(transcript_path)
 
+    def has_resumable_session(self, process: "AgenticProcess") -> bool:
+        from flow_sdk.fs_store.indexer.functions.claude_sessions import get_claude_session
+
+        return bool(process.session_id) and get_claude_session(process.session_id) is not None
+
     # ── History materialisation ──────────────────────────────────────────────
 
     def load_history(self, process: "AgenticProcess") -> list["FlowData"]:
