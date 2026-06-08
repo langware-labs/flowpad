@@ -7,7 +7,16 @@ physical layout; the example rows live beside it:
     assets/datasets/<slug>/
       dataset.json                 # {id?, title, description, data_layout, field_spec, delimiter}
       data.csv                     # data_layout == "csv"
-      examples/0001/{input,expected}.txt [meta.json]   # data_layout == "io_folder"
+      examples/0001/...            # data_layout == "io_folder" (see below)
+
+For ``io_folder`` each ``examples/<name>/`` dir carries up to three slots —
+``input``, ``output`` (candidate), ``ground_truth`` (gold) — where each slot is
+a file ``«base».«ext»``, a folder ``«base»/``, or numbered occurrences
+``«base»-«N»`` (multiple outputs / consensus annotations). A sibling
+``«base»[-N].json`` is that artifact's metadata sidecar (``.json`` is never slot
+data). Per-example metadata lives in ``example.json`` (alias: ``meta.json``).
+Back-compat: ``input.txt``/``expected.txt`` still populate ``Example.input`` /
+``Example.expected`` (the latter folds onto the ground_truth slot).
 
 ``iter_examples`` is the single parser for BOTH layouts — it normalizes each
 into the shared ``Example`` shape. Modeled on ``functions/whiteboard.py``.
@@ -23,7 +32,14 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from flow_sdk.builtin.dataset import DataLayoutEnum, Example, ExampleKind
+from flow_sdk.builtin.dataset import (
+    ArtifactKind,
+    DataLayoutEnum,
+    Example,
+    ExampleArtifact,
+    ExampleKind,
+    ExampleSlot,
+)
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.identifier import adopt_entity_id, mint_uuid
@@ -33,6 +49,13 @@ from flow_sdk.fs_store.record_types import RecordType
 MANIFEST = "dataset.json"
 CSV_FILE = "data.csv"
 EXAMPLES_DIR = "examples"
+
+# IO_FOLDER per-example layout.
+SLOT_BASES = ("input", "output", "ground_truth")
+EXAMPLE_META = "example.json"          # canonical per-example metadata
+EXAMPLE_META_ALIAS = "meta.json"       # back-compat alias (example.json wins)
+EXPECTED_LEGACY = "expected"           # legacy expected.txt → folded onto ground_truth
+TEXT_EXTS = {".txt", ".md"}            # only these data files are decoded into .text
 
 
 # ── walker ────────────────────────────────────────────────────────────────────
@@ -64,13 +87,18 @@ def dataset_fn(
 
 # ── id helpers ────────────────────────────────────────────────────────────────
 
-def _load_manifest(dataset_dir: Path) -> dict[str, Any]:
-    """Load dataset.json, returning {} when absent or malformed."""
+def _load_json_dict(path: Path) -> dict[str, Any]:
+    """Read a JSON object from ``path``; ``{}`` when absent, malformed, or non-dict."""
     try:
-        data = json.loads((dataset_dir / MANIFEST).read_text(encoding="utf-8"))
+        loaded = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return {}
-    return data if isinstance(data, dict) else {}
+    return loaded if isinstance(loaded, dict) else {}
+
+
+def _load_manifest(dataset_dir: Path) -> dict[str, Any]:
+    """Load dataset.json, returning {} when absent or malformed."""
+    return _load_json_dict(dataset_dir / MANIFEST)
 
 
 def _dataset_id_from_path(path: Path) -> str:
@@ -105,6 +133,160 @@ def _coerce_enum(value: Any, enum_cls: type, default: Any) -> Any:
         return enum_cls(str(value)) if value else default
     except ValueError:
         return default
+
+
+# ── IO_FOLDER slot discovery ──────────────────────────────────────────────────
+
+_NO_MATCH = object()
+
+
+def _slot_id(example_id: str, base: str, index: int | None) -> str:
+    """Deterministic per-artifact uuid5; idempotent across re-index."""
+    suffix = base if index is None else f"{base}-{index}"
+    return mint_uuid(f"{example_id}:{suffix}", namespace=uuid.NAMESPACE_DNS)
+
+
+def _maybe_text(path: Path) -> str | None:
+    """Decode small text artifacts only (.txt/.md). Binary files are never read."""
+    if path.suffix.lower() not in TEXT_EXTS:
+        return None
+    try:
+        return path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
+def _match_base(stem: str, base: str) -> Any:
+    """Classify a dir-entry stem against a slot base.
+
+    ``base`` → bare (``None``); ``f"{base}-{N}"`` (N digits) → ``int(N)``; else
+    ``_NO_MATCH``.
+    """
+    if stem == base:
+        return None
+    prefix = f"{base}-"
+    if stem.startswith(prefix):
+        tail = stem[len(prefix):]
+        if tail.isdigit():
+            return int(tail)
+    return _NO_MATCH
+
+
+def _classify(name: str, is_dir: bool, base: str) -> Any:
+    """Return ``("data"|"sidecar", index)`` if ``name`` belongs to ``base``, else
+    ``_NO_MATCH``. ``«base»[-N].json`` files are sidecars; folders and non-json
+    files are data."""
+    stem = name.split(".", 1)[0]
+    index = _match_base(stem, base)
+    if index is _NO_MATCH:
+        return _NO_MATCH
+    is_json = (not is_dir) and name.lower().endswith(".json")
+    return ("sidecar" if is_json else "data", index)
+
+
+def _build_artifact(ex_dir: Path, target: Path, index: int | None) -> ExampleArtifact:
+    """Wrap one data file/folder as an ExampleArtifact (paths relative, lazy text)."""
+    rel = target.relative_to(ex_dir).as_posix()
+    if target.is_dir():
+        files = sorted(
+            p.relative_to(ex_dir).as_posix() for p in target.rglob("*") if p.is_file()
+        )
+        return ExampleArtifact(kind=ArtifactKind.FOLDER, path=rel, files=files, text=None, index=index)
+    return ExampleArtifact(
+        kind=ArtifactKind.FILE, path=rel, files=[rel], text=_maybe_text(target), index=index,
+    )
+
+
+def _resolve_ambiguity(a: Path, b: Path) -> Path:
+    """Two entries claim one slot+index. File beats folder; ties → lexicographic."""
+    a_file, b_file = a.is_file(), b.is_file()
+    if a_file and not b_file:
+        return a
+    if b_file and not a_file:
+        return b
+    return min(a, b, key=lambda p: p.name)
+
+
+def _assemble_slot(
+    ex_dir: Path,
+    base: str,
+    data: dict[int | None, Path],
+    sidecars: dict[int | None, dict[str, Any]],
+    example_id: str,
+) -> ExampleSlot | None:
+    """Build one ``ExampleSlot`` from its bucketed data artifacts + sidecars.
+
+    Artifacts are ordered (bare first, then numbered ascending); each consumes
+    its matching ``«base»[-N].json`` sidecar into ``.metadata``. A bare sidecar
+    with no data artifact lands in ``slot.metadata``. ``None`` when both empty.
+    """
+    if not data and not sidecars:
+        return None
+    ordered = sorted(data, key=lambda k: (k is not None, k or 0))
+    artifacts: list[ExampleArtifact] = []
+    for index in ordered:
+        art = _build_artifact(ex_dir, data[index], index)
+        art.metadata = sidecars.pop(index, {})  # consume the matching sidecar
+        art.id = _slot_id(example_id, base, index)
+        artifacts.append(art)
+    return ExampleSlot(name=base, artifacts=artifacts, metadata=sidecars.get(None, {}))
+
+
+def _discover_slots(
+    ex_dir: Path, bases: tuple[str, ...], example_id: str
+) -> dict[str, ExampleSlot]:
+    """Classify a single ``iterdir`` pass into one ``ExampleSlot`` per base.
+
+    Each dir entry belongs to at most one base, so one scan covers every slot —
+    far cheaper than re-scanning per base. Returns only bases that have a data
+    artifact or sidecar.
+    """
+    data: dict[str, dict[int | None, Path]] = {b: {} for b in bases}
+    sidecars: dict[str, dict[int | None, dict[str, Any]]] = {b: {} for b in bases}
+    for entry in ex_dir.iterdir():
+        is_dir = entry.is_dir()
+        for base in bases:
+            verdict = _classify(entry.name, is_dir, base)
+            if verdict is _NO_MATCH:
+                continue
+            role, index = verdict
+            if role == "sidecar":
+                sidecars[base][index] = _load_json_dict(entry)
+            else:
+                prev = data[base].get(index)
+                data[base][index] = entry if prev is None else _resolve_ambiguity(prev, entry)
+            break  # an entry belongs to at most one base
+    slots: dict[str, ExampleSlot] = {}
+    for base in bases:
+        slot = _assemble_slot(ex_dir, base, data[base], sidecars[base], example_id)
+        if slot is not None:
+            slots[base] = slot
+    return slots
+
+
+def _promote_to_ground_truth(slot: ExampleSlot | None, example_id: str) -> ExampleSlot | None:
+    """Re-label a legacy ``expected`` slot as ``ground_truth`` (re-stamp artifact ids)."""
+    if slot is None:
+        return None
+    slot.name = "ground_truth"
+    for art in slot.artifacts:
+        art.id = _slot_id(example_id, "ground_truth", art.index)
+    return slot
+
+
+def _primary_text(slot: ExampleSlot | None) -> str | None:
+    """Text of a slot's primary artifact when it is a text FILE, else None."""
+    if slot and slot.primary and slot.primary.kind == ArtifactKind.FILE:
+        return slot.primary.text
+    return None
+
+
+def _load_example_meta(ex_dir: Path) -> dict[str, Any]:
+    """Merge ``meta.json`` (alias) then ``example.json`` (canonical wins)."""
+    merged: dict[str, Any] = {}
+    for fname in (EXAMPLE_META_ALIAS, EXAMPLE_META):
+        merged.update(_load_json_dict(ex_dir / fname))
+    return merged
 
 
 def iter_examples(
@@ -151,25 +333,29 @@ def iter_examples(
     for ex_dir in sorted(examples_dir.iterdir()):
         if not ex_dir.is_dir():
             continue
-        input_path = ex_dir / "input.txt"
-        if not input_path.is_file():
-            continue
-        meta: dict[str, Any] = {}
-        meta_path = ex_dir / "meta.json"
-        if meta_path.is_file():
-            try:
-                loaded = json.loads(meta_path.read_text(encoding="utf-8"))
-                if isinstance(loaded, dict):
-                    meta = loaded
-            except (OSError, json.JSONDecodeError):
-                meta = {}
-        expected_path = ex_dir / "expected.txt"
+        example_id = _example_id(dataset_id, ex_dir.name)
+        meta = _load_example_meta(ex_dir)
+
+        slots = _discover_slots(ex_dir, (*SLOT_BASES, EXPECTED_LEGACY), example_id)
+        input_slot = slots.get("input")
+        if input_slot is None:
+            continue  # no input in any form → not an example (was: no input.txt)
+
+        # Gold = ground_truth; legacy expected.txt folds onto it when absent.
+        gt_slot = slots.get("ground_truth") or _promote_to_ground_truth(
+            slots.get(EXPECTED_LEGACY), example_id
+        )
+
         rows.append(Example(
-            id=_example_id(dataset_id, ex_dir.name),
+            id=example_id,
             kind=_coerce_enum(meta.get("kind"), ExampleKind, ExampleKind.TRAIN),
-            input=input_path.read_text(encoding="utf-8"),
-            expected=expected_path.read_text(encoding="utf-8") if expected_path.is_file() else None,
+            input=_primary_text(input_slot) or "",
+            expected=_primary_text(gt_slot),  # gold = ground_truth only; output never feeds expected
             metadata=meta,
+            input_slot=input_slot,
+            output_slot=slots.get("output"),
+            ground_truth_slot=gt_slot,
+            layout=meta.get("layout"),
         ))
     return rows
 
@@ -190,8 +376,18 @@ def extract_dataset(ref: FSRef) -> list[FSRecord]:
     examples = iter_examples(path, layout, field_spec, delimiter, dataset_id=ds_id)
 
     kind_counts: dict[str, int] = {}
+    num_annotated = num_multi_output = num_binary_inputs = 0
     for ex in examples:
         kind_counts[ex.kind] = kind_counts.get(ex.kind, 0) + 1
+        if ex.ground_truth_slot is not None:
+            num_annotated += 1
+        if ex.output_slot is not None and len(ex.output_slot.artifacts) > 1:
+            num_multi_output += 1
+        primary_input = ex.input_slot.primary if ex.input_slot is not None else None
+        if primary_input is not None and (
+            primary_input.kind == ArtifactKind.FOLDER or primary_input.text is None
+        ):
+            num_binary_inputs += 1
 
     name = manifest.get("title") or path.name
     description = manifest.get("description") if isinstance(manifest.get("description"), str) else ""
@@ -204,6 +400,9 @@ def extract_dataset(ref: FSRef) -> list[FSRecord]:
         "delimiter": delimiter,
         "num_examples": len(examples),
         "kind_counts": kind_counts,
+        "num_annotated": num_annotated,
+        "num_multi_output": num_multi_output,
+        "num_binary_inputs": num_binary_inputs,
     }
 
     rec_kwargs: dict[str, Any] = {

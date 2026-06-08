@@ -56,6 +56,14 @@ def _seed_io_dataset(
     examples: dict[str, dict],
     manifest: dict | None = None,
 ) -> Path:
+    """Seed an io_folder dataset.
+
+    Per-example ``spec`` keys (all optional):
+      - ``input`` / ``expected`` — shorthand → ``input.txt`` / ``expected.txt``
+      - ``meta`` — dict → ``meta.json``
+      - ``files`` — ``{relpath: str | bytes}`` written verbatim (bytes → binary)
+      - ``dirs`` — ``{dirname: {fname: str | bytes}}`` for folder artifacts
+    """
     ds = project / "assets" / "datasets" / slug
     (ds / "examples").mkdir(parents=True)
     (ds / "dataset.json").write_text(
@@ -64,12 +72,24 @@ def _seed_io_dataset(
     for name, spec in examples.items():
         ex = ds / "examples" / name
         ex.mkdir()
-        (ex / "input.txt").write_text(spec["input"], encoding="utf-8")
+        if "input" in spec:
+            (ex / "input.txt").write_text(spec["input"], encoding="utf-8")
         if "expected" in spec:
             (ex / "expected.txt").write_text(spec["expected"], encoding="utf-8")
         if "meta" in spec:
             (ex / "meta.json").write_text(json.dumps(spec["meta"]), encoding="utf-8")
+        for rel, content in spec.get("files", {}).items():
+            _write_file(ex / rel, content)
+        for dname, members in spec.get("dirs", {}).items():
+            for fname, content in members.items():
+                _write_file(ex / dname / fname, content)
     return ds
+
+
+def _write_file(p: Path, content: str | bytes) -> None:
+    """Write text or bytes to ``p``, creating parent dirs."""
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_bytes(content) if isinstance(content, bytes) else p.write_text(content, encoding="utf-8")
 
 
 # ── CSV layout ────────────────────────────────────────────────────────────────
@@ -239,3 +259,401 @@ def test_example_id_is_deterministic(tmp_path: Path) -> None:
     rows2 = iter_examples(ds, DataLayoutEnum.CSV, {}, ",", dataset_id="ds-X")
     assert [r.id for r in rows1] == [r.id for r in rows2]
     assert rows1[0].id == str(uuid.uuid5(uuid.NAMESPACE_DNS, "ds-X:0"))
+
+
+# ══ extended io_folder: slots, multi-output, consensus GT, sidecar metadata ══
+
+from flow_sdk.builtin.dataset import ArtifactKind  # noqa: E402
+
+
+def _one(ds: Path):
+    rows = iter_examples(ds, DataLayoutEnum.IO_FOLDER, {}, ",", dataset_id="ds-x")
+    assert len(rows) == 1
+    return rows[0]
+
+
+# ── back-compat scalars coexist with structured slots ──
+
+def test_io_folder_backcompat_scalars(tmp_path: Path) -> None:
+    ds = _seed_io_dataset(
+        tmp_path, "bc",
+        examples={"0001": {"input": "hello", "expected": "world", "meta": {"kind": "eval"}}},
+    )
+    ex = _one(ds)
+    assert ex.input == "hello"
+    assert ex.expected == "world"
+    assert ex.kind == ExampleKind.EVAL
+    assert ex.metadata.get("kind") == "eval"
+    # structured slot exists alongside the scalar
+    assert ex.input_slot.primary.kind == ArtifactKind.FILE
+    assert ex.input_slot.primary.text == "hello"
+    assert ex.input_slot.primary.path == "input.txt"
+    # legacy expected.txt folded onto the ground_truth slot
+    assert ex.ground_truth_slot.name == "ground_truth"
+    assert ex.ground_truth_slot.primary.text == "world"
+
+
+# ── Rule 1: input file vs folder ──
+
+def test_input_file_with_extension(tmp_path: Path) -> None:
+    ds = _seed_io_dataset(tmp_path, "im", examples={"0001": {"files": {"input.md": "# hi"}}})
+    ex = _one(ds)
+    assert ex.input_slot.primary.kind == ArtifactKind.FILE
+    assert ex.input_slot.primary.path == "input.md"
+    assert ex.input == "# hi"
+
+
+def test_input_folder_lists_files(tmp_path: Path) -> None:
+    ds = _seed_io_dataset(
+        tmp_path, "if", examples={"0001": {"dirs": {"input": {"a.txt": "A", "b.txt": "B"}}}}
+    )
+    ex = _one(ds)
+    assert ex.input_slot.primary.kind == ArtifactKind.FOLDER
+    assert ex.input_slot.primary.files == ["input/a.txt", "input/b.txt"]
+    assert ex.input_slot.primary.text is None
+    assert ex.input == ""  # folder → no scalar text
+
+
+def test_input_binary_not_read(tmp_path: Path) -> None:
+    ds = _seed_io_dataset(
+        tmp_path, "ib", examples={"0001": {"files": {"input.pdf": b"%PDF-1.4\x00\xff"}}}
+    )
+    ex = _one(ds)  # must not raise UnicodeDecodeError
+    assert ex.input_slot.primary.kind == ArtifactKind.FILE
+    assert ex.input_slot.primary.path == "input.pdf"
+    assert ex.input_slot.primary.text is None
+    assert ex.input == ""
+
+
+def test_input_file_beats_folder(tmp_path: Path) -> None:
+    ds = _seed_io_dataset(
+        tmp_path, "ifb",
+        examples={"0001": {"files": {"input.txt": "scalar"}, "dirs": {"input": {"x.txt": "X"}}}},
+    )
+    ex = _one(ds)
+    assert ex.input_slot.primary.kind == ArtifactKind.FILE
+    assert ex.input == "scalar"
+    assert len(ex.input_slot.artifacts) == 1  # folder ignored
+
+
+def test_input_layout_hint(tmp_path: Path) -> None:
+    ds = _seed_io_dataset(
+        tmp_path, "il",
+        examples={"0001": {"input": "x", "files": {"example.json": json.dumps({"layout": "pages"})}}},
+    )
+    assert _one(ds).layout == "pages"
+
+
+def test_missing_input_skips_example(tmp_path: Path) -> None:
+    ds = _seed_io_dataset(tmp_path, "noin", examples={"0001": {"files": {"output.txt": "o"}}})
+    assert iter_examples(ds, DataLayoutEnum.IO_FOLDER, {}, ",", dataset_id="ds-x") == []
+
+
+# ── Rule 2: output file/folder + numbered multiples ──
+
+def test_output_single_file(tmp_path: Path) -> None:
+    ds = _seed_io_dataset(tmp_path, "o1", examples={"0001": {"input": "i", "files": {"output.txt": "out"}}})
+    ex = _one(ds)
+    assert len(ex.output_slot.artifacts) == 1
+    assert ex.output_slot.primary.index is None
+    assert ex.output_slot.primary.text == "out"
+
+
+def test_output_folder(tmp_path: Path) -> None:
+    ds = _seed_io_dataset(
+        tmp_path, "of", examples={"0001": {"input": "i", "dirs": {"output": {"o.json": "{}"}}}}
+    )
+    ex = _one(ds)
+    assert ex.output_slot.primary.kind == ArtifactKind.FOLDER
+    assert ex.output_slot.primary.files == ["output/o.json"]
+
+
+def test_output_numbered_ordered(tmp_path: Path) -> None:
+    ds = _seed_io_dataset(
+        tmp_path, "on",
+        examples={"0001": {"input": "i", "files": {"output-2.txt": "B", "output-1.txt": "A", "output-3.txt": "C"}}},
+    )
+    ex = _one(ds)
+    idxs = [a.index for a in ex.output_slot.artifacts]
+    assert idxs == [1, 2, 3]
+    ids = [a.id for a in ex.output_slot.artifacts]
+    assert len(set(ids)) == 3
+
+
+def test_output_bare_and_numbered_coexist(tmp_path: Path) -> None:
+    ds = _seed_io_dataset(
+        tmp_path, "obn",
+        examples={"0001": {"input": "i", "files": {"output.txt": "bare", "output-1.txt": "one"}}},
+    )
+    ex = _one(ds)
+    assert [a.index for a in ex.output_slot.artifacts] == [None, 1]  # bare first
+
+
+def test_output_numbered_folder_binary(tmp_path: Path) -> None:
+    ds = _seed_io_dataset(
+        tmp_path, "onf",
+        examples={"0001": {"input": "i", "dirs": {"output-1": {"a.bin": b"\x00\x01"}}}},
+    )
+    ex = _one(ds)
+    assert ex.output_slot.primary.kind == ArtifactKind.FOLDER
+    assert ex.output_slot.primary.index == 1
+    assert ex.output_slot.primary.files == ["output-1/a.bin"]
+
+
+def test_output_never_feeds_expected(tmp_path: Path) -> None:
+    ds = _seed_io_dataset(tmp_path, "one", examples={"0001": {"input": "i", "files": {"output.txt": "o"}}})
+    assert _one(ds).expected is None  # output is candidate, not gold
+
+
+# ── Rule 3: ground_truth file/folder + consensus + gold ──
+
+def test_gt_single_file(tmp_path: Path) -> None:
+    ds = _seed_io_dataset(tmp_path, "g1", examples={"0001": {"input": "i", "files": {"ground_truth.txt": "gt"}}})
+    ex = _one(ds)
+    assert ex.ground_truth_slot.primary.text == "gt"
+    assert ex.expected == "gt"
+
+
+def test_gt_folder_structured(tmp_path: Path) -> None:
+    ds = _seed_io_dataset(
+        tmp_path, "gf",
+        examples={"0001": {"input": "i", "dirs": {"ground_truth": {"grade.json": '{"total":24}'}}}},
+    )
+    ex = _one(ds)
+    assert ex.ground_truth_slot.primary.kind == ArtifactKind.FOLDER
+    assert ex.ground_truth_slot.primary.files == ["ground_truth/grade.json"]
+    assert ex.expected is None  # structured folder gold → no scalar
+
+
+def test_gt_multiple_annotations(tmp_path: Path) -> None:
+    ds = _seed_io_dataset(
+        tmp_path, "gm",
+        examples={"0001": {"input": "i", "files": {
+            "ground_truth-1.txt": "a", "ground_truth-2.txt": "b", "ground_truth-3.txt": "c",
+        }}},
+    )
+    ex = _one(ds)
+    assert [a.index for a in ex.ground_truth_slot.artifacts] == [1, 2, 3]
+    assert len({a.id for a in ex.ground_truth_slot.artifacts}) == 3
+
+
+def test_gt_takes_precedence_over_output(tmp_path: Path) -> None:
+    ds = _seed_io_dataset(
+        tmp_path, "gp",
+        examples={"0001": {"input": "i", "files": {"output.txt": "o", "ground_truth.txt": "g"}}},
+    )
+    assert _one(ds).expected == "g"
+
+
+def test_legacy_expected_maps_to_gt(tmp_path: Path) -> None:
+    ds = _seed_io_dataset(tmp_path, "le", examples={"0001": {"input": "i", "expected": "w"}})
+    ex = _one(ds)
+    assert ex.expected == "w"
+    assert ex.ground_truth_slot.name == "ground_truth"
+    # id is re-stamped under the ground_truth base, not "expected"
+    assert ex.ground_truth_slot.primary.id == str(
+        uuid.uuid5(uuid.NAMESPACE_DNS, f"{ex.id}:ground_truth")
+    )
+
+
+def test_native_gt_wins_over_legacy_expected(tmp_path: Path) -> None:
+    ds = _seed_io_dataset(
+        tmp_path, "ng",
+        examples={"0001": {"input": "i", "expected": "w", "files": {"ground_truth.txt": "g"}}},
+    )
+    assert _one(ds).expected == "g"
+
+
+# ── Rule 4: sidecars + metadata files ──
+
+def test_slot_sidecar_attaches_to_artifact(tmp_path: Path) -> None:
+    ds = _seed_io_dataset(
+        tmp_path, "sc",
+        examples={"0001": {"files": {"input.pdf": b"%PDF", "input.json": json.dumps({"pages": 3})}}},
+    )
+    ex = _one(ds)
+    assert ex.input_slot.primary.metadata == {"pages": 3}
+    assert ex.input_slot.primary.kind == ArtifactKind.FILE  # pdf is the data, json is metadata
+
+
+def test_numbered_sidecar_attaches_per_index(tmp_path: Path) -> None:
+    ds = _seed_io_dataset(
+        tmp_path, "nsc",
+        examples={"0001": {"input": "i",
+                           "dirs": {"ground_truth-2": {"grade.json": "{}"}},
+                           "files": {"ground_truth-2.json": json.dumps({"rater": "B"})}}},
+    )
+    ex = _one(ds)
+    gt = ex.ground_truth_slot.primary
+    assert gt.index == 2
+    assert gt.metadata == {"rater": "B"}
+
+
+def test_orphan_bare_sidecar_to_slot_metadata(tmp_path: Path) -> None:
+    ds = _seed_io_dataset(
+        tmp_path, "osc",
+        examples={"0001": {"input": "i", "files": {"output.json": json.dumps({"note": "x"})}}},
+    )
+    ex = _one(ds)
+    assert ex.output_slot.artifacts == []
+    assert ex.output_slot.metadata == {"note": "x"}
+
+
+def test_json_is_metadata_not_data(tmp_path: Path) -> None:
+    ds = _seed_io_dataset(
+        tmp_path, "jmd",
+        examples={"0001": {"input": "i", "files": {"ground_truth.json": json.dumps({"m": 1})}}},
+    )
+    ex = _one(ds)
+    assert ex.expected is None  # a bare .json is metadata, not gold data
+    assert ex.ground_truth_slot.metadata == {"m": 1}
+
+
+def test_example_json_canonical(tmp_path: Path) -> None:
+    ds = _seed_io_dataset(
+        tmp_path, "ejc",
+        examples={"0001": {"input": "i", "files": {"example.json": json.dumps({"kind": "eval", "tag": "x"})}}},
+    )
+    ex = _one(ds)
+    assert ex.kind == ExampleKind.EVAL
+    assert ex.metadata == {"kind": "eval", "tag": "x"}
+
+
+def test_example_json_overrides_meta_alias(tmp_path: Path) -> None:
+    ds = _seed_io_dataset(
+        tmp_path, "ejo",
+        examples={"0001": {"input": "i", "meta": {"kind": "train", "a": 1},
+                           "files": {"example.json": json.dumps({"kind": "test", "b": 2})}}},
+    )
+    ex = _one(ds)
+    assert ex.kind == ExampleKind.TEST            # canonical wins
+    assert ex.metadata == {"kind": "test", "a": 1, "b": 2}
+
+
+def test_meta_json_alias_still_works(tmp_path: Path) -> None:
+    ds = _seed_io_dataset(
+        tmp_path, "mja", examples={"0001": {"input": "i", "meta": {"kind": "test", "k": "v"}}}
+    )
+    ex = _one(ds)
+    assert ex.kind == ExampleKind.TEST
+    assert ex.metadata == {"kind": "test", "k": "v"}
+
+
+def test_reserved_keys_lifted_but_preserved(tmp_path: Path) -> None:
+    ds = _seed_io_dataset(
+        tmp_path, "rk",
+        examples={"0001": {"input": "i",
+                           "files": {"example.json": json.dumps({"kind": "test", "layout": "pages", "foo": 1})}}},
+    )
+    ex = _one(ds)
+    assert ex.kind == ExampleKind.TEST
+    assert ex.layout == "pages"
+    assert ex.metadata == {"kind": "test", "layout": "pages", "foo": 1}  # still present
+
+
+def test_example_id_not_adopted_from_json(tmp_path: Path) -> None:
+    foreign = str(uuid.uuid4())
+    ds = _seed_io_dataset(
+        tmp_path, "eid",
+        examples={"0001": {"input": "i", "files": {"example.json": json.dumps({"id": foreign})}}},
+    )
+    ex = _one(ds)
+    assert ex.id == str(uuid.uuid5(uuid.NAMESPACE_DNS, "ds-x:0001"))
+    assert ex.id != foreign
+
+
+def test_dataset_json_extra_keys_preserved_in_record(tmp_path: Path) -> None:
+    ds = _seed_io_dataset(
+        tmp_path, "dje",
+        examples={"0001": {"input": "i"}},
+        manifest={"data_layout": "io_folder", "owner": "eran"},
+    )
+    rec = extract_dataset(FSRef(ds))[0]
+    assert rec.meta_dict()["metadata"]["owner"] == "eran"
+
+
+# ── determinism / counts / hash ──
+
+def test_slot_ids_deterministic(tmp_path: Path) -> None:
+    ds = _seed_io_dataset(
+        tmp_path, "sid",
+        examples={"0001": {"input": "i", "files": {"output-1.txt": "a", "output-2.txt": "b"}}},
+    )
+    r1 = iter_examples(ds, DataLayoutEnum.IO_FOLDER, {}, ",", dataset_id="ds-x")
+    r2 = iter_examples(ds, DataLayoutEnum.IO_FOLDER, {}, ",", dataset_id="ds-x")
+    ids1 = [a.id for a in r1[0].output_slot.artifacts]
+    ids2 = [a.id for a in r2[0].output_slot.artifacts]
+    assert ids1 == ids2
+    ex_id = r1[0].id
+    assert ids1[0] == str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{ex_id}:output-1"))
+
+
+def test_extract_surfaces_new_counts(tmp_path: Path) -> None:
+    ds = _seed_io_dataset(
+        tmp_path, "cnt",
+        examples={
+            "0001": {"files": {"input.pdf": b"%PDF"}},                        # binary input
+            "0002": {"input": "i", "files": {"output-1.txt": "a", "output-2.txt": "b"}},  # multi-output
+            "0003": {"input": "i", "files": {"ground_truth.txt": "g"}},       # annotated
+        },
+    )
+    meta = extract_dataset(FSRef(ds))[0].meta_dict()["metadata"]
+    assert meta["num_examples"] == 3
+    assert meta["num_binary_inputs"] == 1
+    assert meta["num_multi_output"] == 1
+    assert meta["num_annotated"] == 1
+
+
+def test_asset_hash_tracks_nested_new_forms(tmp_path: Path) -> None:
+    import os
+    ds = _seed_io_dataset(
+        tmp_path, "nh",
+        examples={"0001": {"input": "i", "dirs": {"output-2": {"a.txt": "x"}}}},
+    )
+    before = dataset_asset_hash(FSRef(ds))
+    nested = ds / "examples" / "0001" / "output-2" / "a.txt"
+    os.utime(nested, (before + 100, before + 100))
+    assert dataset_asset_hash(FSRef(ds)) > before
+
+
+# ── integration ──
+
+def test_mixed_dataset_endtoend(tmp_path: Path) -> None:
+    ds = _seed_io_dataset(
+        tmp_path, "mix",
+        examples={
+            "0001": {"input": "legacy-in", "expected": "legacy-gold", "meta": {"kind": "eval"}},
+            "0002": {
+                "dirs": {
+                    "input": {"scan.pdf": b"%PDF"},
+                    "ground_truth": {"grade.json": '{"total":1}'},
+                    "ground_truth-2": {"grade.json": '{"total":2}'},
+                },
+                "files": {
+                    "output-1.txt": "cand-1", "output-2.txt": "cand-2",
+                    "ground_truth.json": json.dumps({"rater": "A"}),
+                    "example.json": json.dumps({"kind": "eval", "layout": "pages"}),
+                },
+            },
+        },
+    )
+    rows = iter_examples(ds, DataLayoutEnum.IO_FOLDER, {}, ",", dataset_id="ds-x")
+    legacy, rich = rows[0], rows[1]
+
+    # legacy example: scalars intact
+    assert legacy.input == "legacy-in"
+    assert legacy.expected == "legacy-gold"
+    assert legacy.kind == ExampleKind.EVAL
+
+    # rich example: structured slots
+    assert rich.input_slot.primary.kind == ArtifactKind.FOLDER
+    assert rich.input == ""
+    assert [a.index for a in rich.output_slot.artifacts] == [1, 2]
+    assert rich.ground_truth_slot.primary.metadata == {"rater": "A"}  # bare sidecar → bare folder artifact
+    assert [a.index for a in rich.ground_truth_slot.artifacts] == [None, 2]
+    assert rich.layout == "pages"
+
+    meta = extract_dataset(FSRef(ds))[0].meta_dict()["metadata"]
+    assert meta["num_examples"] == 2
+    assert meta["num_multi_output"] == 1
+    assert meta["num_annotated"] == 2  # both examples have a ground_truth slot
