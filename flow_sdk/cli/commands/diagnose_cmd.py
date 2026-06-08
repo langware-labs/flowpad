@@ -76,9 +76,13 @@ class _Renderer:
 
 async def _run_diagnose(message: str, transcript_timeout: float) -> int:
     from flow_sdk.builtin.agentic_process import AgenticProcess
+    from flow_sdk.config import flowpad_assistant_project_root
     from flow_sdk.migrations.runner import _bootstrap_local
 
-    skill_dir = Path.cwd() / ".claude" / "skills" / "flow-diagnose"
+    # The skill ships inside the package (flow_sdk/system_projects/...), so it
+    # resolves the same whether `flow diagnose` runs from a dev checkout or an
+    # installed wheel, and from ANY working directory — not just the repo root.
+    skill_dir = flowpad_assistant_project_root() / ".claude" / "skills" / "flow-diagnose"
     if not (skill_dir / "SKILL.md").exists():
         typer.echo(f"ERROR: flow-diagnose skill not found at {skill_dir}.", err=True)
         return 1

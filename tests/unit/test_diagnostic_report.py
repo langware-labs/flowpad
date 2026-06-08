@@ -10,16 +10,18 @@ FeedEntry, and the CLI entrypoint must wire flags through and print the ids.
 """
 import importlib.util
 import json
-from pathlib import Path
 
 import pytest
 
 from flow_sdk.builtin.conversation import Conversation
 from flow_sdk.builtin.feed_entry import FeedEntry, FeedStatus
+from flow_sdk.config import flowpad_assistant_project_root
 
 # Load the co-located reporter script by path (the skill folder is not a package).
+# It ships inside the package under flow_sdk/system_projects/..., so resolve it
+# the same way `flow diagnose` does.
 _REPORT_PATH = (
-    Path(__file__).resolve().parents[2] / ".claude" / "skills" / "flow-diagnose" / "report.py"
+    flowpad_assistant_project_root() / ".claude" / "skills" / "flow-diagnose" / "report.py"
 )
 
 
