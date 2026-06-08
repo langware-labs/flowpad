@@ -103,6 +103,62 @@ platform, repair class, and repair action or workaround.
 
 ---
 
+## G. Electron desktop app — STARTUP / RUNTIME (read `~/.flow/logs/main_desktop/`)
+
+> The Electron shell (`flowpad/electron/`) spawns and waits for the Python backend. **A healthy
+> backend RIGHT NOW does not mean the shell is fine** — the shell can be stuck on "Starting…" or
+> have shown a "Startup Error" because it gave up *earlier* (its health window is only 30 s). Always
+> read the **newest `~/.flow/logs/main_desktop/*.log`** and reason about the Electron↔backend
+> timeline — even when `/health/status` is currently `{"data":true}`.
+
+### G14 App stuck on "Starting…" / backend health timeout
+- **Cause**: The shell polls `http://localhost:$PORT/health/status` for **30 s** (60 × 500 ms,
+  `main.js` `waitForBackend`). If the backend isn't healthy within that window, the loader stays on
+  "Waiting for server" / shows the **"Startup Error"** dialog ("Backend server failed to respond
+  within 30 seconds") — even though the backend may finish booting a few seconds later.
+- **Detection** (`main_desktop` log): `"Waiting for backend"` **not** followed by `"Backend is
+  ready!"`; `"Backend failed to start within timeout"`; `"[startup error details]"`. Cross-check the
+  newest `server` log to see the backend actually became healthy *after* the shell gave up.
+- **Root causes to look for**: a slow/cold backend boot — fresh `uv tool install` (see G15), large
+  first-run FS index, slow disk, or **Windows antivirus scanning python/flow.exe**.
+- **Repair**: usually just **relaunch** — the backend is warm/installed now, so the second launch
+  fits inside the 30 s window. (NEVER raise the 30 s timeout.) If it recurs every launch, the
+  startup path is genuinely too slow → report it.
+
+### G15 Auto-update mid-session reinstall → next-launch hang
+- **Cause**: The shell detected a new version and ran `uv tool install flowpad@latest --force`
+  (`uv-manager.js` `upgrade()`), or a desktop self-update landed. The freshly installed backend
+  (often 100+ packages) then exceeds the 30 s health window on the *next* launch → G14 hang.
+- **Detection** (`main_desktop` log): `"[update] desktop upgraded <old> → <new>"`, `"[uv] Upgrading
+  flowpad..."`, `"[electron-updater] update downloaded"`, followed by a `waitForBackend` timeout.
+  `uv tool list | grep flowpad` shows the new version; the `server` log shows a fresh first-boot.
+- **Repair**: relaunch (install is done; the backend is warm now). If shell/backend versions are
+  mismatched afterwards, see F13.
+
+### G16 Shell can't install or run `flow` (first run / Windows Device Guard)
+- **Cause**: First launch installs `uv` then `uv tool install flowpad`; this can fail (no network,
+  PyPI down, install timeout) or, on **Windows**, the uv-generated `flow` shim is blocked by
+  **Device Guard / WDAC**.
+- **Detection** (`main_desktop` log): `"[uv] uv not found, installing..."` / `"uv install failed"`
+  / `"uv install timed out after 120s"`; `"[uv] PyPI version lookup failed"`; `"flow CLI binary not
+  found"`; **`"[uv] flow shim blocked by Windows Device Guard — falling back to \`uv tool run\`"`**;
+  `"[uv] Failed to spawn flow start"`; `"Failed to start Python backend"`.
+- **Repair**: network/PyPI issues → retry once online. Device Guard → the shell already falls back
+  to `uv tool run --from flowpad flow start`; if that also fails, advise installing `uv tool install
+  flowpad` manually. Don't fake a fix you can't verify.
+
+### G17 Backend spawned but crashes / port not freed
+- **Detection** (`main_desktop` log): `"[flow stderr]"` lines with errors; `"[uv] Port 9007 is in
+  use, cleaning up..."` / `"[uv] Killed PID … on port 9007"` (overlaps **A1**); `"[uv] could not
+  create backend cwd"`.
+- **Repair**: per **A1/A2** (free the port / clear stale lock), then relaunch.
+
+> Build-side desktop issues (unsigned installer, notarization, wrong-arch / broken auto-update
+> manifests) are **D7/D8/E10–E12** — not fixable on the machine; advise + point at the
+> `langware-labs/flowpad-desktop` CI.
+
+---
+
 ## Architecture Quick Reference
 
 | Item | Value |

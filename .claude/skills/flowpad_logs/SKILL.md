@@ -1,17 +1,20 @@
 ---
 id: 597e49f2-4dc3-5aaf-a276-cfbfc09289be
-name: server_logs
-description: Where to find the on-disk logs for the local flowpad app instances (Alice
-  / Bob) and the local hub. Use when you need to read backend server logs to debug
-  the running processes instead of asking the user to copy-paste console output.
+name: flowpad_logs
+description: Where to find the on-disk logs for Flowpad — the local backend instances
+  (Alice / Bob), the Electron desktop app (shell / monitor / server), and the local
+  hub. Use when you need to read backend or desktop logs to debug the running
+  processes instead of asking the user to copy-paste console output.
 tags:
 - logs
 - debugging
 - dev
 - instances
+- electron
+- desktop
 ---
 
-# Server Logs — where to find them
+# Flowpad Logs — where to find them
 
 Each local flowpad backend and the local hub mirror their **full** log output
 to a timestamped file on disk (in addition to the PyCharm / stdout console).
@@ -32,6 +35,38 @@ otherwise (Bob, port 9007) — so the two local instances never share a folder.
 
 The hub is a single shared service, not per-instance, so its logs live in the
 hub repo at `<hub-repo>/logs/`, **not** under `~/.flow/instances`.
+
+## Electron desktop app logs (`~/.flow/logs/...`)
+
+The packaged **desktop app** (the Electron shell) writes a separate set of logs
+under `~/.flow/logs/` — **not** under `~/.flow/instances/<name>/logs/`. These are
+the ones to read when the app "won't start" / is "stuck on Starting…":
+
+| Dir | Written by | What's in it |
+|-----|------------|--------------|
+| `~/.flow/logs/main_desktop/` | Electron main process (`electron/main.js`) | shell startup, `waitForBackend` health polling, `[uv]` / `[electron-updater]` / `[flow stderr]` lines, the "Startup Error" details |
+| `~/.flow/logs/monitor/`      | the backend monitor (`flow start`)        | monitor / restart activity, the tail shown in the shell's Startup-Error dialog |
+| `~/.flow/logs/server/`       | the backend server process                | the Python backend's own log for a desktop-launched run |
+
+Filenames are timestamped (`<day><Mon><Year>_<HH>_<MM>_<SS>.log`); take the newest:
+
+```bash
+# macOS/Linux — newest of each (last 40 lines)
+for d in main_desktop monitor server; do
+  echo "== $d =="; tail -40 "$(ls -t ~/.flow/logs/$d/*.log 2>/dev/null | head -1)"
+done
+```
+```powershell
+# Windows
+foreach ($d in 'main_desktop','monitor','server') {
+  "== $d =="; Get-Content (Get-ChildItem $HOME\.flow\logs\$d\*.log | Sort LastWriteTime -Desc | Select -First 1) -Tail 40
+}
+```
+
+Key signatures to look for in `main_desktop`: `Backend failed to start within
+timeout`, `[startup error details]`, `[update] desktop upgraded`, `[uv] Upgrading
+flowpad...`, `[electron-updater] update downloaded`, `flow shim blocked by Windows
+Device Guard`, `Failed to spawn flow start`.
 
 ## Get the most recent log
 

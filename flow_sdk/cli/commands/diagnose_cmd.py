@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import sys
 from pathlib import Path
 from typing import Optional
@@ -35,15 +36,48 @@ def _quiet_logs() -> None:
     logging.disable(logging.WARNING)
 
 
-async def _feed_entry_ids() -> set[str]:
-    """Current FeedEntry ids (best-effort; empty set on any failure)."""
-    try:
-        from flow_sdk.builtin.feed_entry import FeedEntry
+def _report_marker_path() -> Path:
+    """Cross-process completion marker: `flow diagnose-report` writes it and
+    `flow diagnose` watches its mtime.
 
-        items = await FeedEntry.get_all()
-        return {fe.id for fe in items if getattr(fe, "id", None)}
+    Why a file and not a DB query: the agent runs `flow diagnose-report` as a
+    *child* process, which writes the FeedEntry to the instance DB. The parent
+    `flow diagnose` then has to learn that it happened — and a cross-process DB
+    read is unreliable here (read-cache/visibility, or a FLOW_INSTANCE mismatch
+    between parent and child — both bit Windows). A file mtime under FLOW_HOME is
+    process- and instance-independent, so both sides always agree.
+    """
+    root = os.environ.get("FLOW_HOME") or str(Path.home() / ".flow")
+    return Path(root) / "diagnostics" / "last_report.json"
+
+
+def _marker_mtime() -> float:
+    try:
+        return _report_marker_path().stat().st_mtime
+    except OSError:
+        return 0.0
+
+
+def _announce_recorded() -> None:
+    """Print the result line, reading the ids from the report marker."""
+    data: dict = {}
+    try:
+        data = json.loads(_report_marker_path().read_text())
     except Exception:
-        return set()
+        pass
+    fid = data.get("feed_entry_id")
+    if fid:
+        typer.echo(
+            f"  ✓ Recorded to the Feed (feed_entry {fid[:8]}). "
+            "Open the app's home screen to see it."
+        )
+    elif data.get("skipped"):
+        typer.echo(
+            "  ✓ Diagnostic complete. (No Feed entry — the app hasn't completed a "
+            "first run; the report above still stands.)"
+        )
+    else:
+        typer.echo("  ✓ Diagnostic complete — see the report above.")
 
 
 class _Renderer:
@@ -129,7 +163,7 @@ async def _run_diagnose(message: str, transcript_timeout: float) -> int:
     # Bootstrap @local + a compute node so the headless worker can run (also
     # guarantees @local exists for the reporting phase).
     cn = await _bootstrap_local()
-    feed_before = await _feed_entry_ids()
+    marker_before = _marker_mtime()
 
     prompt_text = (
         "Use the flow-diagnose skill to diagnose the user's Flowpad issue, repair "
@@ -219,12 +253,12 @@ async def _run_diagnose(message: str, transcript_timeout: float) -> int:
                 else "  …agent stopped before recording — nudging it to finish."
             )
             await _stream_new()
-            new_ids = (await _feed_entry_ids()) - feed_before
-            if new_ids:
-                typer.echo(
-                    f"  ✓ Recorded to the Feed (feed_entry {sorted(new_ids)[0][:8]}). "
-                    "Open the app's home screen to see it."
-                )
+            # Completion signal: the agent ran `flow diagnose-report`, which
+            # touches the marker file. A fresh mtime means the report step ran
+            # (whether it created a Feed entry or skipped), so the run is done —
+            # reliable across processes/instances, unlike a DB diff.
+            if _marker_mtime() > marker_before:
+                _announce_recorded()
                 return 0
     except (KeyboardInterrupt, asyncio.CancelledError):
         typer.echo("Diagnose interrupted.", err=True)
@@ -299,4 +333,12 @@ def diagnose_report_command(
             summary=summary, status=status, details=details, platform=platform
         )
     )
+    # Touch the marker so the parent `flow diagnose` reliably detects that
+    # reporting ran (see _report_marker_path). Best-effort; never fail on it.
+    try:
+        marker = _report_marker_path()
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text(json.dumps(res))
+    except Exception:
+        pass
     typer.echo(json.dumps(res))
