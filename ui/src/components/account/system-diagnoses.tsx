@@ -19,6 +19,13 @@ import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { Stethoscope, Trash2 } from 'lucide-react';
 import { systemTools, FlowpadDiagnosis } from '@sdk';
 
+/** Format a record's `created_date` (ISO string or Date) as a local date+time (or em-dash). */
+function formatRecorded(value?: string | Date): string {
+  if (!value) return '—';
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString();
+}
+
 /**
  * Account-settings entry point for the recorded `flowpad_diagnosis` entities.
  * The button opens a dialog with a table of all diagnoses (title / symptoms /
@@ -78,6 +85,7 @@ export function SystemDiagnoses() {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-[160px]">Title</TableHead>
+                    <TableHead className="w-[150px]">Recorded</TableHead>
                     <TableHead>Symptoms</TableHead>
                     <TableHead>Root cause</TableHead>
                     <TableHead>Fix</TableHead>
@@ -88,6 +96,9 @@ export function SystemDiagnoses() {
                   {rows.map((d) => (
                     <TableRow key={d.id}>
                       <TableCell className="align-top font-medium">{d.title || d.name || '—'}</TableCell>
+                      <TableCell className="align-top whitespace-nowrap text-xs text-muted-foreground">
+                        {formatRecorded(d.created_date)}
+                      </TableCell>
                       <TableCell className="align-top whitespace-pre-wrap text-xs">{d.symptoms || '—'}</TableCell>
                       <TableCell className="align-top whitespace-pre-wrap text-xs">{d.rca || '—'}</TableCell>
                       <TableCell className="align-top whitespace-pre-wrap text-xs">{d.fix || '—'}</TableCell>
