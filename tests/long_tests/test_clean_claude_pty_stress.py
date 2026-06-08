@@ -298,6 +298,10 @@ async def test_clean_claude_pty_stress(bootstrapped_client):
 
         try:
             start_resp = await process.start_pty()
+            # start_pty() persists to the DB via a reloaded copy under the open
+            # lock without mutating this object — re-fetch to read shell_id
+            # (mirrors the production HTTP re-fetch).
+            process = await AgenticProcess.get_by_id(process.id)
             shell_id = process.shell_id
             assert shell_id, (
                 f"[iter {i}] process.start() did not set shell_id; "
