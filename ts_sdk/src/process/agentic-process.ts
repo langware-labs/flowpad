@@ -860,9 +860,22 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
    *  naturally and reflects both the flag and `restart_required` back to the
    *  frontend "as is" (no special-casing). */
   async enableAssistant(): Promise<this> {
-    this.load_flowpad_assistant = true;
+    return this.setAssistantEnabled(true);
+  }
+
+  /** Set the per-process Flowpad Assistant mount flag explicitly (true/false)
+   *  and persist. Backs the header toggle chip in the asset manager.
+   *
+   *  Like {@link enableAssistant}, this only flips `load_flowpad_assistant` and
+   *  saves — because the flag changes the resolved `--add-dir` set, the backend
+   *  `save()` hook recomputes `restart_required` on its own and reflects both
+   *  the flag and the restart-required state back to the frontend as-is. */
+  async setAssistantEnabled(enabled: boolean): Promise<this> {
+    this.load_flowpad_assistant = enabled;
     // Optimistic local notify so subscribers can react before the round-trip.
-    this.onEntityEvent('assistant.enabled', { load_flowpad_assistant: true });
+    this.onEntityEvent(enabled ? 'assistant.enabled' : 'assistant.disabled', {
+      load_flowpad_assistant: enabled,
+    });
     await this.save();
     return this;
   }
