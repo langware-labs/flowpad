@@ -951,7 +951,10 @@ class UvManager {
         await this.start();
 
         if (sendStatus) sendStatus('Waiting for server');
-        if (waitForBackend) await waitForBackend();
+        // 120s window — matches the upgrade() subprocess ceiling and gives
+        // the freshly-installed backend room to boot before the user sees
+        // a false "failed to start" error.
+        if (waitForBackend) await waitForBackend({ maxChecks: 240 });
 
         if (mainWindow && !mainWindow.isDestroyed() && backendUrl) {
           mainWindow.loadURL(backendUrl);
