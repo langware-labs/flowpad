@@ -133,16 +133,18 @@ async def _on_server_startup():
     except Exception as _e:  # noqa: BLE001
         print(f"  Capability discovery: failed to start ({_e})")
 
-    # PTY recovery watchdog: respawn visible sessions whose worker died with
-    # the previous backend (restart kills PTY children). Background — startup
-    # never blocks; recovered sessions push a ``recovered`` event on (re)watch.
+    # PTY recovery watchdog: respawn visible sessions whose worker died — both at
+    # startup (restart kills PTY children) AND periodically while running (a
+    # worker that crashes mid-session). Background — startup never blocks;
+    # recovered sessions push a ``recovered`` event on (re)watch. This is the
+    # backend home for what used to be the frontend os-status recovery poll.
     try:
         import asyncio as _asyncio_pty
 
-        from flow_sdk.server.pty_recovery import run_pty_recovery
+        from flow_sdk.server.pty_recovery import start_recovery_task
 
-        _asyncio_pty.create_task(run_pty_recovery(), name="pty-recovery")
-        print("  PTY recovery: started (background)")
+        _asyncio_pty.create_task(start_recovery_task(), name="pty-recovery")
+        print("  PTY recovery: started (background, periodic)")
     except Exception as _e:  # noqa: BLE001
         print(f"  PTY recovery: failed to start ({_e})")
 

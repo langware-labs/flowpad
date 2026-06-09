@@ -517,7 +517,7 @@ class Shell(Entity):
         Polls the session's output-chunk counter. When output stops arriving the
         shell is at its prompt with readline initialised — safe to inject input.
         """
-        from flow_sdk.compute.providers.desktop.pty_session_manager import session_manager
+        from flow_sdk.compute.providers.desktop.pty_session_manager import pty_registry
 
         # Resolve the real provider_node_id used by the append path
         # (pty_actions.py uses ``compute_node.node_provider_id``). The bare
@@ -533,7 +533,7 @@ class Shell(Entity):
         deadline = asyncio.get_event_loop().time() + timeout
         last_seq = -1
         while asyncio.get_event_loop().time() < deadline:
-            session = session_manager.sessions.get(pty_key)
+            session = pty_registry.states.get(pty_key)
             current_seq = session.seq if session else 0
             if current_seq > 0 and current_seq == last_seq:
                 return  # output has stopped — shell is at prompt

@@ -2,7 +2,7 @@
 
 Same measurement as the bare-PTY Python baseline (~642 ms median), but the path
 goes through the full backend stack — Shell entity + Project + ComputeNode +
-PtySessionManager + replay buffer — minus the HTTP/WS layer.
+PtyRegistry + replay buffer — minus the HTTP/WS layer.
 
     L1: ~/tmp/claude_ready_bench.py  → spawn `claude` in PtyProcess directly
     L2: THIS FILE                    → AgenticProcess.start() in-process

@@ -33,84 +33,12 @@ import type {
   TranscriptSource as TranscriptSourceType,
 } from '../transcript-analyzer';
 
-// ---------------------------------------------------------------------------
-// Auto-recovery dispatcher — mirrors Shell's static-listener pattern at
-// ts_sdk/src/entities/shell.ts:81-95. A single ConnectionManager listener and
-// a periodic poll drive a *single batched* os-status round-trip for every
-// registered AgenticProcess; results are fanned back out to each instance's
-// ``reconnectFromOsStatus(...)`` to make the per-process recovery decision.
-//
-// This is the consolidated form of what used to be one ``GET /os-status``
-// per registered process per tick — see ``compute_node/os-status-batch``.
-// ---------------------------------------------------------------------------
-const _agenticProcessRegistry = new Set<AgenticProcess>();
-let _agenticListenersRegistered = false;
-let _pollTimer: ReturnType<typeof setInterval> | null = null;
-const _POLL_INTERVAL_MS = 5000;
-
-interface OsStatusBatchResponse {
-  statuses: Record<string, AgenticProcessOSStatus>;
-  missing: string[];
-}
-
-/** One sweep: batch-fetch os-status for every registered AP and dispatch
- *  recovery decisions. Falls back to per-AP probes only when there is no
- *  compute_node context yet (early bootstrap), which is the same shape as
- *  the legacy fan-out so behavior degrades gracefully. */
-async function _dispatchRecoverySweep(): Promise<void> {
-  if (_agenticProcessRegistry.size === 0) return;
-  const procs = Array.from(_agenticProcessRegistry);
-  const computeNodeId = dataContext.computeNode?.id;
-  if (!computeNodeId) {
-    for (const p of procs) void p.reconnect();
-    return;
-  }
-  const action = new ActionInfo('os-status-batch', 'compute_node', computeNodeId, 'POST');
-  action.bodyParameters = { process_ids: procs.map((p) => p.id) };
-  let result: OsStatusBatchResponse | null = null;
-  try {
-    result = await dataManager.callAction<{ process_ids: string[] }, OsStatusBatchResponse>(action);
-  } catch {
-    // Batch failed (compute_node unreachable, transient HTTP error). Skip
-    // this tick — the next one will retry. Per-AP ``getOsStatus()`` remains
-    // available for on-demand callers.
-    return;
-  }
-  const statuses = result?.statuses ?? {};
-  for (const p of procs) {
-    const s = statuses[p.id];
-    if (s) void p.reconnectFromOsStatus(s);
-  }
-}
-
-function _ensureAgenticStaticListeners(): void {
-  if (_agenticListenersRegistered) return;
-  _agenticListenersRegistered = true;
-  void import('../websocket').then(({ ConnectionManager }) => {
-    const cm = ConnectionManager.getInstance();
-    cm.on('on_reconnected', () => {
-      void _dispatchRecoverySweep();
-    });
-  });
-  if (_pollTimer === null) {
-    _pollTimer = setInterval(() => {
-      void _dispatchRecoverySweep();
-    }, _POLL_INTERVAL_MS);
-  }
-}
-
-/**
- * Predicate consumed by ``Shell._onCmReconnected`` so the bare-shell
- * reconnect handler skips shells that are owned by an AgenticProcess. The
- * process layer drives recovery — it knows the session_id, --resume, env
- * injection. Bare ``Shell.start()`` would just spawn an empty PTY.
- */
-export function _isShellOwnedByAgenticProcess(shellId: string): boolean {
-  for (const proc of _agenticProcessRegistry) {
-    if (proc.shell_id === shellId) return true;
-  }
-  return false;
-}
+// Connection membership and PTY recovery are now fully backend-owned:
+//   - membership: PtyRegistry.on_ws_connect/on_ws_disconnect (park/resume) wired
+//     to the WS lifecycle (server/routes/websocket.py).
+//   - mid-session dead-worker respawn: the periodic backend watchdog
+//     (server/pty_recovery.py start_recovery_task).
+// The frontend no longer probes os-status, polls, or re-attaches on reconnect.
 
 /**
  * Result returned by AgenticProcess.spawn().
@@ -141,32 +69,6 @@ export interface ExecuteOptions {
  */
 export interface ProcessState {
   status: WorkerStatus;
-}
-
-/**
- * OS-level status snapshot returned by the backend ``os-status`` action.
- * Single source of truth for "is this process alive right now?". Combines
- * persisted entity status, in-memory PTY-session state on the compute
- * node, and a real PID liveness check (psutil + cmdline match).
- *
- * ``ready`` is the answer to ``AgenticProcess.isAlive()``: true iff the
- * PTY session is alive AND the worker PID matches the recorded session.
- */
-export interface AgenticProcessOSStatus {
-  process_id: string;
-  process_status: string;
-  shell_id: string | null;
-  shell_status: string | null;
-  session_id: string | null;
-  pty_pid: number | null;
-  worker_pid: number | null;
-  worker_name: string | null;
-  pty_alive: boolean;
-  worker_alive: boolean;
-  has_attachable_pty: boolean;
-  ready: boolean;
-  reason: string | null;
-  checked_at: string;
 }
 
 /**
@@ -1943,10 +1845,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   async close(): Promise<void> {
     if (this.status === ProcessStatus.STOPPING || this.status === ProcessStatus.STOPPED) return;
 
-    // Permanent teardown — deregister so neither the poll nor the
-    // on_reconnected dispatcher tries to relaunch this process.
+    // Permanent teardown — mark user intent so the backend recovery watchdog
+    // (which respawns dead workers) does not relaunch this process.
     this._userInitiatedStop = true;
-    _agenticProcessRegistry.delete(this);
 
     if (this.shell_id) {
       const shell = Shell.getByIdFromCache(this.shell_id);
@@ -2041,99 +1942,14 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
       timeout: options?.ptyTimeout,
       ptyId: result.pty_id,
     });
-    // Successful open clears any prior user-stop intent and registers this
-    // process for auto-recovery (poll + on_reconnected dispatcher).
+    // Successful open clears any prior user-stop intent.
     this._userInitiatedStop = false;
     // A successful open implies the process is not latched (the backend gate
     // refuses latched opens; retry clears before launching). Clear locally
     // too: the entity dump drops None fields, so the server-side clear never
-    // arrives as `start_failure: null` — without this a stale latch would
-    // exclude the process from auto-recovery forever.
+    // arrives as `start_failure: null`.
     this.start_failure = null;
-    _agenticProcessRegistry.add(this);
-    _ensureAgenticStaticListeners();
     return true;
-  }
-
-  /**
-   * Read-only OS-level status snapshot. Calls the backend ``os-status``
-   * action which checks the PTY session liveness on the compute node and
-   * the worker PID via psutil + cmdline match. Use this whenever you need
-   * ground truth about whether the process is actually running — never
-   * infer it from the cached ``status`` field.
-   */
-  async getOsStatus(): Promise<AgenticProcessOSStatus> {
-    const actionInfo = new ActionInfo('os-status', AgenticProcess.type, this.id, 'GET');
-    const result = await dataManager.callAction<unknown, AgenticProcessOSStatus>(actionInfo);
-    if (!result) throw new Error('os-status returned no data');
-    return result;
-  }
-
-  /**
-   * True iff the backend reports both an alive PTY session and a live
-   * worker PID for this process. Sugar over ``getOsStatus().ready``.
-   */
-  async isAlive(): Promise<boolean> {
-    const status = await this.getOsStatus();
-    return status.ready;
-  }
-
-  /** True iff this process is a valid target for an auto-recovery sweep.
-   *  Centralizes the skip predicates so the standalone ``reconnect()`` and
-   *  the batched ``reconnectFromOsStatus(...)`` agree on which states are
-   *  recovery-eligible.
-   *
-   *   - ``_userInitiatedStop``: user explicitly stopped this process.
-   *   - ``STARTING`` / ``STOPPING``: mid-transition — let the in-flight
-   *     call finish first.
-   *   - ``FAILED``: relaunching would loop because the worker can't start
-   *     with the current ``cli_options``.
-   *   - ``start_failure``: failed-to-start latch — the worker exited
-   *     instantly on its last launch. Checked separately from FAILED so a
-   *     latched process stays skipped even if the cached ``status`` field
-   *     lags behind the entity update.
-   */
-  private _isRecoveryEligible(): boolean {
-    if (this._userInitiatedStop) return false;
-    if (this.status === ProcessStatus.STARTING || this.status === ProcessStatus.STOPPING) return false;
-    if (this.status === ProcessStatus.FAILED) return false;
-    if (this.start_failure) return false;
-    return true;
-  }
-
-  /**
-   * Decide and run recovery against a pre-fetched os-status payload. This is
-   * the per-AP half of the batched auto-recovery sweep — the dispatcher
-   * makes one ``compute_node/os-status-batch`` call and fans the results
-   * back out via this method, so no extra GETs are issued.
-   *
-   * Concurrent triggers (poll tick arriving while ``on_reconnected`` is in
-   * flight) converge: the backend's per-process ``_OPEN_LOCKS`` mutex
-   * serializes ``open``, and a redundant ``start()`` is a cheap no-op once
-   * the first recovery has won.
-   *
-   * @returns true iff a recovery ``start()`` was issued.
-   */
-  async reconnectFromOsStatus(status: AgenticProcessOSStatus): Promise<boolean> {
-    if (!this._isRecoveryEligible()) return false;
-    if (status.ready) return false;
-    await this.start({ visible: this.visible });
-    return true;
-  }
-
-  /**
-   * Standalone auto-recovery entry point. Issues its own ``os-status`` GET
-   * and applies the decision. Prefer the batched dispatcher
-   * (``_dispatchRecoverySweep``) for multi-AP sweeps; this method is kept
-   * for the early-bootstrap fallback (no compute_node context yet) and
-   * external callers that want a one-shot reconnect for a single process.
-   *
-   * @returns true iff a recovery ``start()`` was issued.
-   */
-  async reconnect(): Promise<boolean> {
-    if (!this._isRecoveryEligible()) return false;
-    const status = await this.getOsStatus();
-    return this.reconnectFromOsStatus(status);
   }
 
   /**
