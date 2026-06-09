@@ -37,7 +37,7 @@ export function ScopeFilterIconBar({
   } = useScopeFilterChips({ scope, currentProjectId, onScopeChange });
 
   // Per the type-icon rule, the Project scope icon comes from the type registry.
-  const ProjectIcon = iconForType('project');
+  const ProjectIcon = useMemo(() => iconForType('project'), []);
 
   const options: ScopeBarOption<ScopeMode>[] = useMemo(() => [
     { value: 'all', label: 'All', icon: Layers, title: 'All assets (user + every project)' },

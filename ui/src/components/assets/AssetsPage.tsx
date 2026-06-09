@@ -24,7 +24,7 @@ import {
   BreadcrumbSeparator,
 } from '@src/components/ui/breadcrumb';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AssetFilter } from './assetFilter';
 import { DEFAULT_ASSET_FILTER } from './assetFilter';
 import { applyScopeToParams, defaultScopeFilter } from '@src/lib/scope-filter';
@@ -314,12 +314,15 @@ export function AssetsPage() {
     ...DEFAULT_ASSET_FILTER,
     scope: projectSeedScope ?? defaultScopeFilter(currentProjectId),
   }));
-  // Preselect the project's scope whenever the project URL changes (navigating
-  // between project pages). Not a lock — the scope filter stays switchable.
+  // Preselect the project's scope when navigating to a *different* project page.
+  // Not a lock — the filter stays switchable. The initial scope is already
+  // seeded in useState, so the ref guard skips the redundant set on first mount.
+  const seededProjectRef = useRef(urlProjectId);
   useEffect(() => {
-    if (urlProjectId) {
+    if (urlProjectId && urlProjectId !== seededProjectRef.current) {
       setAssetFilter((prev) => ({ ...prev, scope: defaultScopeFilter(urlProjectId) }));
     }
+    seededProjectRef.current = urlProjectId;
   }, [urlProjectId]);
   const effectiveFilter = assetFilter;
   const [searchQuery, setSearchQuery] = useState('');
