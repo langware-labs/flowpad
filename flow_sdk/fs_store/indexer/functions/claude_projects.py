@@ -238,6 +238,26 @@ def _compute_project_session_stats(rec: Record) -> tuple[int, str | None]:
 
     return total, last_ts
 
+async def _refresh_session_stats_and_save(rec: FSRecord) -> FSRecord:
+    """Recompute denormalized session stats onto ``rec`` and persist it.
+
+    A project is an aggregate with no single source file, so its real
+    "last modified" is the most-recent child session activity — stamp that as
+    ``updated_date`` (when any sessions exist) so ``from_record`` preserves it
+    instead of falling back to the index instant. Childless projects keep the
+    now() fallback.
+    """
+    session_count, last_session_at = _compute_project_session_stats(rec)
+    rec.session_count = session_count
+    rec.last_session_at = last_session_at
+    if last_session_at:
+        rec.updated_date = last_session_at
+    try:
+        await rec.save()
+    except Exception:
+        pass
+    return rec
+
 async def _upsert_project_for_cwd(
     cwd: str,
     *,
@@ -260,19 +280,7 @@ async def _upsert_project_for_cwd(
         if not existing.data.get("cwd"):
             object.__setattr__(existing, "cwd", canonical)
         object.__setattr__(existing, "last_indexed_at", _now_iso())
-        session_count, last_session_at = _compute_project_session_stats(existing)
-        existing.session_count = session_count
-        existing.last_session_at = last_session_at
-        # A project is an aggregate with no single source file; its real
-        # "last modified" is the most-recent child session activity. Stamp it as
-        # updated_date so from_record preserves it instead of the index instant.
-        if last_session_at:
-            existing.updated_date = last_session_at
-        try:
-            await existing.save()
-        except Exception:
-            pass
-        return existing
+        return await _refresh_session_stats_and_save(existing)
 
     # Fresh — construct a base Record with a uuid4 id.
     # Project ids are uuid4, NOT uuid5-derived (uuid5 is used only for the
@@ -289,17 +297,7 @@ async def _upsert_project_for_cwd(
     if encoded_path:
         kwargs["encoded_path"] = encoded_path
     rec = FSRecord(**kwargs)
-    session_count, last_session_at = _compute_project_session_stats(rec)
-    rec.session_count = session_count
-    rec.last_session_at = last_session_at
-    # Aggregate "last modified" = most-recent child session activity (see above).
-    if last_session_at:
-        rec.updated_date = last_session_at
-    try:
-        await rec.save()
-    except Exception:
-        pass
-    return rec
+    return await _refresh_session_stats_and_save(rec)
 
 # ── async parser_fn + getId ──────────────────────────────────────────────────
 
