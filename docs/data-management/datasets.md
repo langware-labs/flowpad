@@ -1,3 +1,7 @@
+---
+id: 214b0833-33ad-5a42-b825-688700d6277a
+---
+
 # Dataset Layout (Authoring Guide)
 
 How to lay out a **dataset** on disk so the Flowpad library discovers and parses
