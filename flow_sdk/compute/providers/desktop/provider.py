@@ -83,6 +83,20 @@ def _build_interactive_pty_env(
         env.update(extra_env)
     return env
 
+
+def find_command(command: str, path: str | None = None) -> str | None:
+    """Cross-platform executable lookup for PTY spawns — ``None`` = not found.
+
+    ``shutil.which`` handles absolute paths, PATH search, and Windows PATHEXT
+    (.exe/.cmd/.bat) uniformly. ``path`` lets callers resolve against the
+    PATH the child will actually see (the spawn env's, not the server's).
+    Every PTY spawn checks its argv[0] through this so a missing binary
+    fails fast with a clear "Command not found: 'x'" instead of a deep
+    ptyprocess/winpty traceback (or an instantly-dead PTY).
+    """
+    return shutil.which(command, path=path)
+
+
 # Cross-platform PTY support
 PTY_AVAILABLE = False
 PtyProcess = None
@@ -179,7 +193,7 @@ class LocalComputeProvider(ComputeProvider):
         self._node_dirs: dict[str, str] = {}
         self._commands_tasks: dict[str, list[asyncio.Task]] = {}
         self._stream_tasks: dict[str, list[asyncio.Task]] = {}  # Track stdout/stderr read tasks per node
-        self._pty_sessions: dict[tuple[str, str], dict[str, Any]] = {}  # (provider_node_id, session_id) -> pty info
+        self._pty_processes: dict[tuple[str, str], dict[str, Any]] = {}  # (provider_node_id, session_id) -> pty info
         self._node_status: dict[str, ExecutionEnvironmentStatus] = {}
 
     @property
@@ -237,7 +251,7 @@ class LocalComputeProvider(ComputeProvider):
     async def shutdown(self, provider_node_id: str):
         """Shutdown the local compute node and cancel all associated tasks."""
         # Close PTY sessions
-        keys_to_remove = [key for key in self._pty_sessions.keys() if key[0] == provider_node_id]
+        keys_to_remove = [key for key in self._pty_processes.keys() if key[0] == provider_node_id]
         for key in keys_to_remove:
             await self.close_pty_session(provider_node_id, key[1])
 
@@ -640,7 +654,7 @@ class LocalComputeProvider(ComputeProvider):
 
         pty_key = (provider_node_id, session_id)
 
-        if pty_key not in self._pty_sessions:
+        if pty_key not in self._pty_processes:
             env = _build_interactive_pty_env(session_id, extra_env)
 
             if spawn_args is not None:
@@ -711,6 +725,20 @@ class LocalComputeProvider(ComputeProvider):
                         final_spawn_args = [shell_cmd, "--norc", "--noprofile"]
                     else:
                         final_spawn_args = [shell_cmd]
+
+            # Fail fast when the command doesn't exist — generic for every PTY
+            # spawn (worker CLIs and shells alike). Resolve against the PATH
+            # the child will see; ptyprocess/winpty otherwise surface this as
+            # a deep traceback whose message gets swallowed upstream.
+            if final_spawn_args:
+                resolved_cmd = find_command(final_spawn_args[0], env.get("PATH"))
+                if resolved_cmd is None:
+                    raise RuntimeError(f"Command not found: '{final_spawn_args[0]}'")
+                # ptyprocess/winpty resolve argv[0] against the PARENT's
+                # os.environ PATH, not the spawn env's — substitute the
+                # absolute path so the env PATH (e.g. a discovered harness
+                # capability folder) actually takes effect.
+                final_spawn_args = [resolved_cmd, *final_spawn_args[1:]]
 
             # Spawn PTY using ptyprocess/winpty (cross-platform)
             pty_working_dir = working_dir if working_dir else self._node_dirs.get(provider_node_id, self._default_working_dir)
@@ -785,7 +813,7 @@ class LocalComputeProvider(ComputeProvider):
                 read_thread = threading.Thread(target=read_pty_output, daemon=True)
                 read_thread.start()
 
-                self._pty_sessions[pty_key] = {
+                self._pty_processes[pty_key] = {
                     "pid": pty_process.pid,
                     "process": pty_process,  # Store the PtyProcess object
                     "running": pty_session_running,
@@ -797,11 +825,11 @@ class LocalComputeProvider(ComputeProvider):
                 logger.error(f"Failed to create PTY: {e}")
                 raise RuntimeError(f"Failed to create PTY session: {e}") from e
 
-        return self._pty_sessions[pty_key]
+        return self._pty_processes[pty_key]
 
     def get_pty_shell_pid(self, provider_node_id: str, session_id: str) -> int | None:
         """Return the OS PID of the shell process for this PTY session, or None."""
-        session = self._pty_sessions.get((provider_node_id, session_id))
+        session = self._pty_processes.get((provider_node_id, session_id))
         return session["pid"] if session else None
 
     @staticmethod
@@ -818,9 +846,9 @@ class LocalComputeProvider(ComputeProvider):
 
     async def _cleanup_dead_pty_session(self, pty_key: tuple[str, str], reason: str = "process died") -> None:
         """Clean up a dead PTY session."""
-        if pty_key in self._pty_sessions:
+        if pty_key in self._pty_processes:
             logger.info(f"[LOCAL] Cleaning up dead PTY session: {pty_key}, reason: {reason}")
-            pty_info = self._pty_sessions[pty_key]
+            pty_info = self._pty_processes[pty_key]
             pty_info["running"]["value"] = False
 
             process = pty_info.get("process")  # type: ignore[assignment]
@@ -831,7 +859,7 @@ class LocalComputeProvider(ComputeProvider):
                 except Exception:
                     pass
 
-            del self._pty_sessions[pty_key]
+            del self._pty_processes[pty_key]
 
     async def send_pty_input(
         self, provider_node_id: str, session_id: str, data: bytes, cols: int, rows: int, _retry_count: int = 0
@@ -847,10 +875,10 @@ class LocalComputeProvider(ComputeProvider):
             _retry_count: Internal retry count for handling dead processes
         """
         pty_key = (provider_node_id, session_id)
-        if pty_key not in self._pty_sessions:
+        if pty_key not in self._pty_processes:
             raise RuntimeError(f"PTY session not found for {provider_node_id}:{session_id}")
 
-        pty_info = self._pty_sessions[pty_key]
+        pty_info = self._pty_processes[pty_key]
         process = pty_info["process"]  # type: ignore[assignment]
         on_output = pty_info.get("on_output")
 
@@ -916,10 +944,10 @@ class LocalComputeProvider(ComputeProvider):
             _retry_count: Internal retry counter (max 1 retry)
         """
         pty_key = (provider_node_id, session_id)
-        if pty_key not in self._pty_sessions:
+        if pty_key not in self._pty_processes:
             raise RuntimeError(f"PTY session not found for {provider_node_id}:{session_id}")
 
-        pty_info = self._pty_sessions[pty_key]
+        pty_info = self._pty_processes[pty_key]
         process = pty_info["process"]  # type: ignore[assignment]
         on_output = pty_info.get("on_output")
 
@@ -962,9 +990,9 @@ class LocalComputeProvider(ComputeProvider):
     def is_pty_alive(self, provider_node_id: str, session_id: str) -> bool:
         """Cross-platform check whether a PTY session's process is still running."""
         pty_key = (provider_node_id, session_id)
-        if pty_key not in self._pty_sessions:
+        if pty_key not in self._pty_processes:
             return False
-        pid = self._pty_sessions[pty_key].get("pid")
+        pid = self._pty_processes[pty_key].get("pid")
         return self._is_process_alive(pid) if pid else False
 
     async def pick_folder(self, provider_node_id: str, initial_dir: str | None = None) -> str | None:
@@ -1063,8 +1091,8 @@ class LocalComputeProvider(ComputeProvider):
             session_id: The session ID for the PTY
         """
         pty_key = (provider_node_id, session_id)
-        if pty_key in self._pty_sessions:
-            pty_info = self._pty_sessions[pty_key]
+        if pty_key in self._pty_processes:
+            pty_info = self._pty_processes[pty_key]
             pty_info["running"]["value"] = False
 
             process = pty_info.get("process")  # type: ignore[assignment]
@@ -1073,15 +1101,17 @@ class LocalComputeProvider(ComputeProvider):
                     if process.isalive():
                         process.terminate(force=True)
                 except Exception as e:
-                    logger.warning(f"Error terminating PTY process: {str(e)}")
+                    message = str(e)
+                    if "there was no child process" not in message and "waitpid" not in message:
+                        logger.warning(f"Error terminating PTY process: {message}")
 
-            del self._pty_sessions[pty_key]
+            del self._pty_processes[pty_key]
 
     def list_pty_sessions(self, cn_id: str) -> list[dict]:
         """Return [{shell_id, connection_id, name}] for all active sessions on this node."""
-        from .pty_session_manager import session_manager
+        from .pty_session_manager import pty_registry
         result = []
-        for (compute_node_id, _pn_id, shell_id), state in session_manager.sessions.items():
+        for (compute_node_id, _pn_id, shell_id), state in pty_registry.states.items():
             if compute_node_id == cn_id:
                 result.append({
                     "shell_id": shell_id,
@@ -1093,21 +1123,21 @@ class LocalComputeProvider(ComputeProvider):
 
     def reset_all_sessions(self, cn_id: str, pn_id: str | None = None) -> int:
         """Clear all in-memory PTY state for a node. Returns count of sessions cleared."""
-        from .pty_session_manager import session_manager
-        node_keys = [k for k in session_manager.sessions if k[0] == cn_id]
+        from .pty_session_manager import pty_registry
+        node_keys = [k for k in pty_registry.states if k[0] == cn_id]
         for key in node_keys:
-            del session_manager.sessions[key]
+            del pty_registry.states[key]
         if pn_id:
-            provider_keys = [k for k in self._pty_sessions if k[0] == pn_id]
+            provider_keys = [k for k in self._pty_processes if k[0] == pn_id]
             for key in provider_keys:
-                del self._pty_sessions[key]
+                del self._pty_processes[key]
         return len(node_keys)
 
     def get_pty_session(self, cn_id: str, shell_id: str) -> "PtySession | None":
         """Return a LocalPtySession handle if an active session exists."""
         from .local_pty_session import LocalPtySession
-        from .pty_session_manager import session_manager
-        for key in session_manager.sessions:
+        from .pty_session_manager import pty_registry
+        for key in pty_registry.states:
             if key[0] == cn_id and key[2] == shell_id:
-                return LocalPtySession(key[0], key[1], key[2], self, session_manager)
+                return LocalPtySession(key[0], key[1], key[2], self, pty_registry)
         return None

@@ -727,7 +727,19 @@ class AgenticProcess(Entity):
         reason: str,
         preserve_shell_id: bool = False,
     ) -> None:
-        """Discard a linked shell that can no longer be reattached."""
+        """Discard a linked shell that can no longer be reattached.
+
+        ``preserve_shell_id`` is the recovery case (after-restart respawn into
+        the SAME shell id): we must KEEP the shell record + its ``.pty`` stream
+        file so the relaunch appends to it and the client replays the
+        pre-restart scrollback. ``shell.close()`` is permanent teardown — it
+        deletes the record (and the ``.pty``), wiping that history — so the
+        recovery path takes a SOFT drop instead: terminate the worker (which is
+        the actual reason for dropping — it releases the JSONL session lock so
+        ``--resume`` won't collide) and evict the dead PTY handle, nothing more.
+        The ``.pty`` is keyed by the preserved shell id, so the relaunch's
+        ``PtyStreamFile`` reopens the same file and continues its seq epoch.
+        """
         stale_shell_id = shell.id if shell is not None else self.shell_id
         if shell is not None:
             logger.warning("AgenticProcess %s: discarding stale shell %s (%s)", self.id, shell.id, reason)
@@ -738,10 +750,18 @@ class AgenticProcess(Entity):
                 await shell.terminate_worker()
             except Exception as exc:
                 logger.warning("AgenticProcess %s: failed terminating stale worker for shell %s: %s", self.id, shell.id, exc)
-            try:
-                await shell.close()
-            except Exception as exc:
-                logger.warning("AgenticProcess %s: failed closing stale shell %s: %s", self.id, shell.id, exc)
+            if preserve_shell_id:
+                # Soft drop — keep record + .pty for the same-id relaunch; just
+                # evict the dead in-memory PTY handle so a fresh one can spawn.
+                try:
+                    await shell.evict_pty_handle()
+                except Exception as exc:
+                    logger.warning("AgenticProcess %s: failed evicting stale PTY for shell %s: %s", self.id, shell.id, exc)
+            else:
+                try:
+                    await shell.close()
+                except Exception as exc:
+                    logger.warning("AgenticProcess %s: failed closing stale shell %s: %s", self.id, shell.id, exc)
         self.shell_id = stale_shell_id if preserve_shell_id else None
         self.sidecar_shell_id = None
 
@@ -793,7 +813,8 @@ class AgenticProcess(Entity):
             # not "drift"). Cleared on success after we capture the new snapshot.
             fresh._set_start_lifecycle(True)
             try:
-                return await fresh._perform_open(instruction, visible, retry=retry)
+                result = await fresh._perform_open(instruction, visible, retry=retry)
+                return result
             finally:
                 fresh._set_start_lifecycle(False)
 
@@ -819,6 +840,7 @@ class AgenticProcess(Entity):
         is held. All lifecycle decisions (reattach vs recover vs fresh) live
         here; the caller is responsible for the lock and the start-lifecycle
         flag."""
+        cleared_start_failure = False
         try:
             # If we're stuck in STOPPING with a dead worker (orphan from a
             # crashed close()/exit()), reset to STOPPED before doing anything
@@ -844,8 +866,13 @@ class AgenticProcess(Entity):
                     self.id, self.start_failure,
                 )
                 self.start_failure = None
+                cleared_start_failure = True
             self.session_id = self.session_id or str(uuid4())
             reattach_changed = False
+            # True iff this open is respawning a dead worker (after-restart
+            # recovery), set in the stale-shell-drop branch below. Drives the
+            # ``recovered`` event emission in the success tail.
+            is_recovery = False
             # Set when this fresh spawn consumes a queued prompt as its launch
             # arg (see the pop below). Tracked here so the except handler can
             # re-queue it if the boot fails — the prompt must survive.
@@ -891,6 +918,11 @@ class AgenticProcess(Entity):
                     preserve_shell_id=True,
                 )
                 shell = None
+                # This open is RECOVERING a dead worker (running/starting status
+                # but PTY+worker gone — the after-restart case). Flag it so the
+                # success tail emits the ``recovered`` event, regardless of
+                # whether the watchdog or a client-driven open won the respawn.
+                is_recovery = True
 
             await self.get_project()
 
@@ -968,6 +1000,30 @@ class AgenticProcess(Entity):
             else:
                 # Direct path — Claude IS the PTY process (no zsh intermediary)
                 spawn_argv, spawn_env = cmd.to_spawn_args(instruction=instruction)
+                # Spawn with the discovered harness capability: its value is
+                # the CLI's bin FOLDER (terminal-PATH resolution), prepended
+                # to PATH so argv[0] and `#!/usr/bin/env node` both resolve
+                # regardless of how this backend was launched. On a miss,
+                # re-discover once (covers the boot race and retry-after-
+                # install), then fail fast into the start_failure latch.
+                from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
+                    worker_capability_kind,
+                    worker_path_env,
+                )
+
+                capability_kind = worker_capability_kind(self.driver.name)
+                path_env = worker_path_env(self.driver.name)
+                if path_env is None:
+                    from flow_sdk.core.capabilities.discovery import run_discovery
+
+                    await run_discovery([capability_kind])
+                    path_env = worker_path_env(self.driver.name)
+                if path_env is None:
+                    raise RuntimeError(
+                        f"Command not found: '{spawn_argv[0]}' — no {capability_kind} "
+                        "installation discovered"
+                    )
+                spawn_env = {**path_env, **spawn_env}  # explicit worker env wins
                 spawned = await shell.start_pty(on_exit=on_exit, spawn_args=spawn_argv, extra_env=spawn_env)
                 if not spawned:
                     worker_is_alive = await shell.worker_alive()
@@ -1007,6 +1063,21 @@ class AgenticProcess(Entity):
                 except Exception:
                     pass
 
+            # Respawned a dead worker (after-restart recovery) — emit the
+            # distinct ``recovered`` event so watching clients re-attach. Fires
+            # from the shared open path, so it's emitted whether recovery was
+            # driven by the startup watchdog or a client-driven open (the SDK
+            # auto-recovery sweep), not just one of them.
+            if is_recovery:
+                try:
+                    from flow_sdk.server.pty_recovery import mark_recovered, notify_watchers_recovered
+
+                    worker_pid = shell.worker_pid if shell is not None else None
+                    mark_recovered(self.id)
+                    await notify_watchers_recovered(self.id, self.shell_id, worker_pid)
+                except Exception:
+                    logger.debug("recovered-event emit skipped", exc_info=True)
+
             return ApiSuccessResponse(data=self._build_open_payload(shell, is_resume=is_resume))
 
         except asyncio.CancelledError:
@@ -1019,6 +1090,15 @@ class AgenticProcess(Entity):
             logger.exception(f"AgenticProcess {self.id} start_pty error: {e}")
             self.shell_id = None
             self.status = ProcessStatus.FAILED.value
+            # Latch normal launch failures: the UI surfaces them and
+            # open()/auto-recovery stops retrying a spawn that can't succeed.
+            # For an explicit Retry that fails before launch after clearing an
+            # existing latch, leave the latch cleared so the refused-open gate
+            # does not immediately block subsequent attempts.
+            if retry and cleared_start_failure:
+                self.start_failure = None
+            else:
+                self.start_failure = str(e)
             await self.save()
             self._requeue_failed_launch(launched_head)
             return ApiFailResponse(message=str(e))
@@ -2651,8 +2731,11 @@ class AgenticProcess(Entity):
 
         # Server-restart resume: process had a shell but cli_config didn't
         # encode resume. Effective launch shape; stripped from the hash.
+        # Worker-aware — claude/codex have separate transcript stores, so a
+        # codex restart must check codex sessions (not claude's), else a
+        # recovered codex relaunches fresh and silently drops its context.
         if not getattr(cmd, "resume", False) and self.session_id:
-            cmd.resume = self._is_exist_claude_resume_session(self.session_id)
+            cmd.resume = self._is_exist_resume_session(self.session_id)
 
         return cmd
 
@@ -3424,6 +3507,22 @@ class AgenticProcess(Entity):
             }
         )
     # ── Internals ─────────────────────────────────────────────────────────────
+
+    def _is_exist_resume_session(self, session_id: str | None) -> bool:
+        """Worker-aware resumable-session check.
+
+        Each vendor keeps its own transcript store, so the existence probe must
+        match the worker — using claude's probe for a codex process is why a
+        recovered codex used to relaunch fresh and lose its conversation. The
+        per-vendor lookup lives on the driver (``has_resumable_session``) so
+        this stays a single call with no ``if worker_type ==`` ladder.
+        """
+        if not session_id:
+            return False
+        try:
+            return self.driver.has_resumable_session(self)
+        except Exception:
+            return False
 
     def _is_exist_claude_resume_session(self, session_id: str | None) -> bool:
         """Check if there's a resumable Claude session for this agentic process."""

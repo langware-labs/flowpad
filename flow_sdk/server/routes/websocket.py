@@ -446,6 +446,25 @@ async def handle_json_message(connection_id: str, websocket: WebSocket, message_
         return True
 
 
+def _dispatch_pty_ws_lifecycle(connection_id: str, event: str) -> None:
+    """Drive the backend PTY connection-membership FSM on a WS lifecycle event.
+
+    ``event="connect"`` resumes parked subscriptions (``on_ws_connect``);
+    ``event="disconnect"`` parks them (``on_ws_disconnect``). Imported lazily to
+    avoid a server<-compute import cycle at module load. Membership lives entirely
+    in the backend, driven by these two transport events.
+    """
+    try:
+        import asyncio
+
+        from flow_sdk.compute.providers.desktop.pty_session_manager import pty_registry
+
+        fn = pty_registry.on_ws_connect if event == "connect" else pty_registry.on_ws_disconnect
+        asyncio.ensure_future(fn(connection_id))
+    except Exception as e:
+        logger.warning(f"PTY membership FSM '{event}' failed for {connection_id}: {e}")
+
+
 @websocket_router.websocket("/api/v1/connect/ws/{connection_id}")
 async def websocket_endpoint(websocket: WebSocket, connection_id: str):
     """
@@ -471,6 +490,10 @@ async def websocket_endpoint(websocket: WebSocket, connection_id: str):
     add_registry_connection(connection_id, websocket)
 
     logger.info(f"Client {connection_id} connected. Total connections: {len(_active_connections)}")
+
+    # Resume any PTY subscriptions this connection_id parked on its previous
+    # socket (sleep/wake reconnect); no-op for a fresh connection.
+    _dispatch_pty_ws_lifecycle(connection_id, "connect")
 
     # Send connection confirmation
     confirmation = {
@@ -549,17 +572,9 @@ async def websocket_endpoint(websocket: WebSocket, connection_id: str):
 
         await browser_context_watch.on_disconnect(connection_id)
 
-        # Detach this connection from all PTY sessions so stale connection_ids
-        # don't accumulate.  This only removes the connection reference — it does
-        # NOT close PTY processes (they stay alive for reconnection).
-        try:
-            import asyncio
-
-            from flow_sdk.compute.providers.desktop.pty_session_manager import session_manager as pty_mgr
-
-            asyncio.ensure_future(pty_mgr.detach_all_for_connection(connection_id))
-        except Exception as e:
-            logger.warning(f"Error detaching PTY sessions for {connection_id}: {e}")
+        # Park this connection's PTY subscriptions (kept, not closed) so a
+        # reconnect of the same id auto-restores delivery. PTYs stay alive.
+        _dispatch_pty_ws_lifecycle(connection_id, "disconnect")
 
         logger.info(f"Client {connection_id} removed. Remaining connections: {len(_active_connections)}")
 

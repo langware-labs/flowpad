@@ -30,6 +30,24 @@ _ENV_VAR_TO_TYPE = (
 )
 
 
+def is_home_or_ancestor(path: Path | str, home: Path) -> bool:
+    """True if ``path`` is ``$HOME``, an ancestor of ``$HOME``, or the FS root.
+
+    Such a path must never become a folder-walker root: it would recurse the
+    entire home tree (~900k folders / minutes per scan) and, where outermost
+    dedup applies, subsume every real project. Used by every root-construction
+    flow that feeds ``project_folder_walker_fn`` — the CWD_ROOT guard in
+    ``default_roots`` and the REAL_PROJECT_CWD guard in ``_resolve_scoped_roots``.
+    """
+    try:
+        c = Path(path).resolve()
+        h = home.resolve()
+    except OSError:
+        return False
+    # Direction matters: home relative-to path ⇒ path is home or an ancestor.
+    return h.is_relative_to(c)
+
+
 def lookup_project_id_by_uname(uname: str) -> str | None:
     """Sync sqlite read of a project entity's id by uname.
 
@@ -129,11 +147,7 @@ def default_roots() -> list[FSRef]:
     # media library) — each first access trips a macOS TCC prompt attributed to
     # Flowpad. USER_HOME_FOLDER already covers home via targeted expanders, so a
     # home-rooted CWD_ROOT adds nothing but that recursive walk.
-    try:
-        cwd_is_home = cwd.resolve() == settings.user_home.resolve()
-    except OSError:
-        cwd_is_home = False
-    if not cwd_is_home:
+    if not is_home_or_ancestor(cwd, settings.user_home):
         roots.append(
             FSRef(
                 cwd,

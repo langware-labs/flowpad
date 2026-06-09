@@ -27,7 +27,8 @@ type MessageType =
   | 'auth_expired_msg'
   | 'cloud_login_status_msg'
   | 'cloud_connection_status_msg'
-  | 'ui_command';
+  | 'ui_command'
+  | 'recovered_msg';
 
 
 interface BaseMessage {
@@ -490,6 +491,16 @@ export class ConnectionManager extends EventEmitter {
     if (data.message_type === 'ui_command') {
       return this.onUiCommandMessage(data as UiCommandMessage);
     }
+    if (data.message_type === 'recovered_msg') {
+      return this.onRecoveredMessage(data);
+    }
+  }
+
+  /** Distinct PTY-recovery signal: the backend watchdog respawned a session's
+   *  worker after a restart and this client is watching it. Consumers (the
+   *  terminal) re-attach their PTY stream. See flow_sdk/server/pty_recovery.py. */
+  onRecoveredMessage(data: BaseMessage) {
+    this.emit('on_recovered', data);
   }
 
   onCloudLoginStatusMessage(data: CloudLoginStatusMessage) {

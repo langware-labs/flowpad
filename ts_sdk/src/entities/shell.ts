@@ -64,27 +64,11 @@ export interface IShell extends IEntity {
   env?: Record<string, string> | null;
 }
 
-// ---------------------------------------------------------------------------
-// Static dispatch registry — a single on_close + on_reconnected listener pair
-// on ConnectionManager routes events to all live Shell instances. This keeps
-// the EventEmitter listener count constant regardless of how many shells exist.
-// ---------------------------------------------------------------------------
-const _shellRegistry = new Set<Shell>();
-let _staticListenersRegistered = false;
-
-function _ensureStaticListeners(): void {
-  if (_staticListenersRegistered) return;
-  _staticListenersRegistered = true;
-  void import('../websocket').then(({ ConnectionManager }) => {
-    const cm = ConnectionManager.getInstance();
-    cm.on('on_close', () => {
-      for (const shell of _shellRegistry) shell._onCmClose();
-    });
-    cm.on('on_reconnected', () => {
-      for (const shell of _shellRegistry) shell._onCmReconnected();
-    });
-  });
-}
+// Connection membership is backend-owned (PtyRegistry.on_ws_connect/on_ws_disconnect
+// park & resume on the WS lifecycle). The frontend no longer re-attaches on
+// reconnect or tears down the PTY pipeline on a transient WS drop — the renderer
+// stays armed and resumes when the backend resumes delivery. See
+// InteractiveTerminal's on_reconnected handler for the gap-replay repaint.
 
 @registerEntity
 export class Shell extends APIEntity<Shell> implements IShell {
@@ -299,11 +283,6 @@ export class Shell extends APIEntity<Shell> implements IShell {
     if (isActive) this._hasEverBeenActive = true;
     if (!this._hasEverBeenActive) return; // still deferred
 
-    if (!_shellRegistry.has(this)) {
-      _shellRegistry.add(this);
-      _ensureStaticListeners();
-    }
-
     // Sync computeNodeId in case it was set after construction.
     if (this.compute_node_id) this.ptyConnection.computeNodeId = this.compute_node_id;
     this.ptyConnection.shellId = this.id;
@@ -321,33 +300,9 @@ export class Shell extends APIEntity<Shell> implements IShell {
     return this.ptyConnection.resize(cols, rows);
   }
 
-  // ── WS lifecycle handlers ─────────────────────────────────────────────────
-
-  /** Called by the static on_close dispatcher. */
-  _onCmClose(): void {
-    this.ptyConnection.handleWsClose();
-  }
-
-  /** Called by the static on_reconnected dispatcher. */
-  _onCmReconnected(): void {
-    if (this.status === ShellStatus.ERROR) return;
-    if (!this._hasEverBeenActive) return;
-    const workdir = this.workdir ?? dataContext.project?.fs_storage_mount_path ?? undefined;
-    // Owned-shell guard: shells owned by an AgenticProcess have their
-    // recovery driven at the process layer (it knows session_id, --resume,
-    // env injection). Bare ``Shell.start`` would just spawn an empty PTY
-    // that the agentic-process open then has to drop. Lazy import keeps the
-    // existing module-dependency direction (agentic-process imports Shell).
-    void import('../process/agentic-process').then(({ _isShellOwnedByAgenticProcess }) => {
-      if (_isShellOwnedByAgenticProcess(this.id)) return;
-      void this.start({ cols: 80, rows: 24, workdir });
-    });
-  }
-
   // ── Entity lifecycle ──────────────────────────────────────────────────────
 
   async close(): Promise<void> {
-    _shellRegistry.delete(this);
     const previousStatus = this.status;
     this.status = ShellStatus.CLOSING;
     const action = new ActionInfo('close', Shell.type, this.id, 'POST');

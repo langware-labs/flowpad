@@ -55,14 +55,18 @@ function ConversationSetProjectButton({
       setSaving(true);
       try {
         const project = await ensureProject(picked.path, { select: false });
-        await selectProjectContext(project);
+        const selectedProjectId = project.id ?? null;
+        const existingProjectId = task?.project_id ?? conversation.project_id ?? null;
 
-        if (task?.id) {
-          await applyProjectToTask(task.id, project);
-        } else {
-          await applyProjectToConversation(conversation.id, project);
+        const result = task?.id
+          ? await applyProjectToTask(task.id, project)
+          : await applyProjectToConversation(conversation.id, project);
+        if (!result.saved && (!selectedProjectId || existingProjectId !== selectedProjectId)) {
+          throw new Error('Project selection did not persist');
         }
+
         await persistRemoteToLocalMapping(conversation.remote_project_id, project.id);
+        await selectProjectContext(project);
         notify.success({ title: 'Conversation project set', message: project.displayName });
       } catch (err) {
         console.error('[conversation] set project failed', err);
@@ -71,7 +75,16 @@ function ConversationSetProjectButton({
         setSaving(false);
       }
     },
-    [conversation.id, conversation.remote_project_id, ensureProject, projectItems, saving, task?.id],
+    [
+      conversation.id,
+      conversation.project_id,
+      conversation.remote_project_id,
+      ensureProject,
+      projectItems,
+      saving,
+      task?.id,
+      task?.project_id,
+    ],
   );
 
   return (

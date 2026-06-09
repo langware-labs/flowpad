@@ -72,7 +72,7 @@ async function startPtySession(computeNodeId: string): Promise<string> {
 
 /**
  * Close a shell session by calling terminal-command/close.
- * This sets the disk record state to CLOSED via PtySessionManager.
+ * This sets the disk record state to CLOSED via PtyRegistry.
  */
 async function closePtySession(computeNodeId: string, sessionId: string): Promise<void> {
   const url = `${GRAPH_API_PREFIX}/${ComputeNode.type}/${computeNodeId}/terminal-command/close`;
@@ -117,7 +117,7 @@ describe('shell_tabs', () => {
     const beforeState = before?.state ?? before?.status;
     expect(beforeState).toBe('running');
 
-    // Close via terminal-command/close (triggers PtySessionManager disk write)
+    // Close via terminal-command/close (triggers PtyRegistry disk write)
     await closePtySession(computeNode.id, sessionId);
 
     // Shell.close() deletes the disk record and the DB entity entirely —

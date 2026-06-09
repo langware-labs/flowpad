@@ -10,6 +10,7 @@ import { ViewType } from '@src/types/ViewType';
 import type { AssetTypeInfo } from '@src/hooks/use-asset-types';
 import type { SearchResult } from '@src/hooks/use-asset-search';
 import { DEFAULT_ASSET_FILTER, applyFilterToParams } from '@src/components/assets/assetFilter';
+import { scopeFilterKey } from '@src/lib/scope-filter';
 import type { AssetFilter } from '@src/components/assets/assetFilter';
 import type { Browseable, BrowseableRoot, ToolbarAction } from '@src/components/browseable-tree/types';
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
@@ -256,7 +257,7 @@ export function assetTypeRoot(type: AssetTypeInfo, deps: AssetTypeRootDeps): Bro
   // Filter signature in the id forces the BrowseableTree to refetch
   // children when the user toggles scope/picker (the children are cached
   // by node id; without this they'd stay frozen at the previous filter).
-  const filterSig = `${filter.scope.user ? '1' : '0'}:${[...filter.scope.projects].sort().join(',')}`;
+  const filterSig = scopeFilterKey(filter.scope);
   const rootId = `asset-type:${type.type_name}:${filterSig}`;
 
   // After delete: ask the tree to invalidate this root's children. The deleted

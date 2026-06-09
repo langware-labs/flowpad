@@ -70,6 +70,19 @@ export interface ScanInfo {
   stale: boolean;
 }
 
+export interface HarnessBootstrapItem {
+  kind: string;
+  name: string;
+  installed: boolean;
+  homepage_url?: string | null;
+  is_default: boolean;
+}
+
+export interface HarnessBootstrapState {
+  show_harness_select: boolean;
+  harnesses: HarnessBootstrapItem[];
+}
+
 /**
  * One-time, UI-facing notice produced during bootstrap (e.g. the per-instance
  * secrets file was reset after its keychain encryption key was lost). Surfaced
@@ -107,6 +120,7 @@ export interface BootstrapInfo {
   docker_compute_nodes?: ComputeNode[];
   env?: EnvInfo;
   desktop_info?: LmInfo;
+  harness_state?: HarnessBootstrapState;
   sniffer_hook?: AgentHook;
   scan_info?: ScanInfo;
   records_root?: string;

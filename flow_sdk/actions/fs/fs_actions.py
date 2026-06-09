@@ -277,28 +277,35 @@ async def upload(request_info: RequestInfo, fs_info: EntityFSReqInfo) -> ApiResp
         storage = await _get_storage_for_entity(request_info)
         uploaded_items = []
 
-        for file in files:
-            if not file.filename:
-                return ApiFailResponse(message="Upload error: No filename")
+        try:
+            for file in files:
+                if not file.filename:
+                    return ApiFailResponse(message="Upload error: No filename")
 
-            # Build destination path
-            dest_path = fs_info.vpath.abs_vfspath.rstrip("/") + "/" + file.filename
+                # Build destination path
+                dest_path = fs_info.vpath.abs_vfspath.rstrip("/") + "/" + file.filename
 
-            # Read file content
-            content = await file.read()
+                # Read file content
+                content = await file.read()
 
-            # Upload file
-            await storage.upload(BytesIO(content), dest_path)
+                # Upload file
+                await storage.upload(BytesIO(content), dest_path)
 
-            # Create FSItem for response
-            fs_item = FSItem(
-                vfs_abs_path=dest_path,
-                is_dir=False,
-                size=len(content),
-                display_name=file.filename,
-            )
-            uploaded_items.append(fs_item)
-            logger.debug(f"Uploaded file {file.filename} to {dest_path}")
+                # Create FSItem for response
+                fs_item = FSItem(
+                    vfs_abs_path=dest_path,
+                    is_dir=False,
+                    size=len(content),
+                    display_name=file.filename,
+                )
+                uploaded_items.append(fs_item)
+                logger.debug(f"Uploaded file {file.filename} to {dest_path}")
+        finally:
+            for file in files:
+                try:
+                    await file.close()
+                except Exception as close_error:
+                    logger.debug(f"Failed to close uploaded file {file.filename}: {close_error}")
 
         return ApiSuccessResponse(data=uploaded_items)
 

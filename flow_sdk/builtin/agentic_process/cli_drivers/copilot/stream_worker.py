@@ -6,13 +6,13 @@ import asyncio
 import json
 import logging
 import os
-import shutil
 from pathlib import Path
 from typing import Any, AsyncIterator
 
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
     AgenticContext,
     AgenticWorker,
+    worker_path_env,
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.cli import CopilotCliOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.copilot.event_to_flowdata import (
@@ -176,7 +176,10 @@ class CopilotCLIStreamWorker(AgenticWorker):
         self,
         context: AgenticContext,
     ) -> tuple[list[str] | None, dict[str, str]]:
-        if not shutil.which("copilot"):
+        # Discovered harness capability supplies the CLI's bin folder
+        # (terminal-PATH resolution) — None ⇔ copilot is not installed.
+        path_env = worker_path_env("copilot")
+        if path_env is None:
             return None, {}
 
         opts = CopilotCliOptions(
@@ -194,6 +197,7 @@ class CopilotCLIStreamWorker(AgenticWorker):
         )
         argv, env_from_opts = opts.to_spawn_args()
         env = dict(os.environ)
+        env.update(path_env)  # capability bin-folder PATH prepend
         env.update(env_from_opts)
         return argv, env
 

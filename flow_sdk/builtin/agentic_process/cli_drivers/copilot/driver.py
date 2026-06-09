@@ -215,6 +215,9 @@ class CopilotDriver:
     def tail_status(self, transcript_path: Path) -> WorkerStatus:
         return copilot_tail_status(transcript_path)
 
+    def has_resumable_session(self, process: "AgenticProcess") -> bool:
+        return self._has_session(process)
+
     def load_history(self, process: "AgenticProcess") -> list["FlowData"]:
         descriptor = self.transcript_descriptor(process)
         if descriptor is not None:

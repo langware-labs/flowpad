@@ -1,7 +1,7 @@
 import React, { useMemo } from 'react';
 import { Folder } from 'lucide-react';
 import { useAllProjects } from '@src/hooks/use-all-projects';
-import { projectIdForPath } from './utils';
+import { recordProjectIdForPath } from './utils';
 
 interface ProjectScopeBadgeProps {
   projectId: string;
@@ -18,14 +18,17 @@ function shortName(cwd: string | null | undefined, name: string | null | undefin
 /**
  * Read-only header chip rendered in place of ScopeFilterBar when AssetsPage
  * is hosted under `/dock/project/<id>`. Looks the project up by matching the
- * URL's synthetic project_id against `projectIdForPath(cwd)` — the same join
- * the picker and the indexer use, so a project entry will be found whenever
- * one exists.
+ * URL's Project.id against the project list. Legacy derived ids are accepted
+ * only so older links keep rendering a readable label.
  */
 export function ProjectScopeBadge({ projectId }: ProjectScopeBadgeProps): React.ReactElement {
   const { projects } = useAllProjects();
   const label = useMemo(() => {
-    const hit = projects.find((p) => projectIdForPath(p.cwd || p.name) === projectId);
+    const hit = projects.find((p) =>
+      p.id === projectId ||
+      p.record_project_id === projectId ||
+      recordProjectIdForPath(p.cwd || p.name) === projectId
+    );
     if (hit) return shortName(hit.cwd, hit.name);
     return projectId.slice(0, 8);
   }, [projects, projectId]);

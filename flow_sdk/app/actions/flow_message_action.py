@@ -1144,6 +1144,204 @@ async def conversation_create() -> ApiResponse:
 
 
 # ---------------------------------------------------------------------------
+# Community / support-center actions
+# ---------------------------------------------------------------------------
+
+async def _hub_action(method: str, path: str, body: Optional[dict] = None, timeout: float = 10.0) -> Optional[dict]:
+    """Authenticated HTTP call to a hub action; returns the parsed ApiResponse
+    envelope (``{"status","message","data"}``) or ``None`` on transport failure.
+
+    Community queue/ticket actions are request/response project actions — HTTP is
+    a better fit (and more robust) than the message-fanout WS bridge, which is
+    reserved for the add_message fast-path. Mirrors the authed-httpx pattern in
+    ``notification_action._hub_knows_conversation``."""
+    try:
+        import httpx  # noqa: PLC0415
+        from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
+        from flow_sdk.cloud_client.client import ApiConfig  # noqa: PLC0415
+
+        creds = load_credentials()
+        if not creds or not creds.api_key:
+            return None
+        url = ApiConfig.from_env()._get_full_url(path)
+        headers = {
+            "Authorization": f"Bearer {creds.api_key}",
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
+        async with httpx.AsyncClient(timeout=timeout) as h:
+            r = await h.request(method, url, headers=headers, json=None if method == "GET" else (body or {}))
+            return r.json()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[community] hub %s %s failed: %s", method, path, e)
+        return None
+
+
+_COMMUNITY_PROJECT_ID_CACHE: Optional[str] = None
+
+
+async def _resolve_community_project_id() -> Optional[str]:
+    """The fixed community/support project id, learned from the hub's
+    ``/version`` (``community_project_id``). ``None`` when the hub is
+    unreachable or doesn't advertise one. See CommunityConfig and the hub's
+    ``ensure_community_project``.
+
+    Cached for the process lifetime once resolved — it's a deployment constant,
+    so re-fetching ``/version`` on every ticket open / queue poll is wasted I/O.
+    A miss is not cached, so a transient hub outage retries next call."""
+    global _COMMUNITY_PROJECT_ID_CACHE
+    if _COMMUNITY_PROJECT_ID_CACHE:
+        return _COMMUNITY_PROJECT_ID_CACHE
+    try:
+        from flow_sdk.cloud_client.transport.hub_http import get_info  # noqa: PLC0415
+        info = await get_info() or {}
+        cid = info.get("community_project_id")
+        if isinstance(cid, str) and cid.strip():
+            _COMMUNITY_PROJECT_ID_CACHE = cid
+            return cid
+        return None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+@action.post(action_name="community-start-ticket", types=None)
+async def community_start_ticket() -> ApiResponse:
+    """Open a support ticket — a guest-authored ``community`` conversation under
+    the hub's fixed community project.
+
+    Routes through the hub (``Project.start_guest_conversation``), then
+    materializes the conversation + first message locally as a hub-mirrored
+    ``kind=community`` row so it appears in the guest's UI immediately (the hub
+    fanout skips the sender, so the local backend is this row's source of
+    truth). Returns the new conversation id for navigation.
+    """
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.someone_typeid:
+            return ApiFailResponse(message="No authenticated user in request context")
+        someone_typeid = request_info.someone_typeid
+
+        body = await request_info.get_post_data() or {}
+        text = (body.get("text") or body.get("message") or "").strip()
+        if not text:
+            return ApiFailResponse(message="text is required")
+
+        community_id = await _resolve_community_project_id()
+        if not community_id:
+            return ApiFailResponse(message="Community support is unavailable on this hub")
+
+        resp = await _hub_action(
+            "POST", f"/graph/project/{community_id}/start_guest_conversation", {"text": text}
+        )
+        if not resp or resp.get("status") != "SUCCESS":
+            msg = (resp or {}).get("message") or "hub unreachable"
+            return ApiFailResponse(message=f"Could not open support ticket: {msg}")
+        conv_data = resp.get("data") or {}
+        conv_id = conv_data.get("id")
+        if not conv_id:
+            return ApiFailResponse(message="Hub did not return a conversation")
+
+        from flow_sdk.cloud_client.hub_bridge import hub_ws_bridge  # noqa: PLC0415
+        hub_ws_bridge.remember_hub_conversation(conv_id)
+
+        from flow_sdk.app.actions.materialize_flow_message import ensure_conversation_entity  # noqa: PLC0415
+        from flow_sdk.builtin.conversation import ConversationKind  # noqa: PLC0415
+
+        title = text if len(text) <= 60 else f"{text[:60].rstrip()}…"
+        # Hub-owned conversation: no local project_id (mirrors how received
+        # remote conversations materialize); carry the community project as the
+        # remote project identity for traceability.
+        await ensure_conversation_entity(
+            conv_id,
+            parent_typeid=None,
+            remote_project_id=community_id,
+            title=title,
+            someone_typeid=someone_typeid,
+        )
+
+        # Pull the first (guest) message from the hub into the local store. Do
+        # this BEFORE stamping kind/remote — the message sync re-materializes the
+        # conversation from the hub and would otherwise clobber kind back to the
+        # default. Our stamp must be the LAST write.
+        try:
+            await _fetch_conversation_messages(conv_id, someone_typeid)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[community-start-ticket] message sync failed (non-fatal): %s", e)
+
+        conv = await Conversation.get_one({"id": conv_id})
+        if conv:
+            conv.kind = ConversationKind.COMMUNITY
+            conv.remote = True
+            conv.created_by = conv_data.get("initiated_by") or conv.created_by
+            await conv.save(someone_typeid, notify=False)
+
+        return ApiSuccessResponse(data={"conversation_id": conv_id, "project_id": community_id})
+    except Exception as e:
+        logger.error("[flow_message_action] community-start-ticket error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Failed to start support ticket: {str(e)}")
+
+
+@action.post(action_name="conversation-pickup", types=None)
+async def conversation_pickup() -> ApiResponse:
+    """Staff-side: pick up (join) a community ticket so the caller starts
+    receiving its messages and can reply. Proxies to the hub ``pickup`` action,
+    then syncs the conversation's messages locally. Hub gates on project
+    membership."""
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.someone_typeid:
+            return ApiFailResponse(message="No authenticated user in request context")
+        someone_typeid = request_info.someone_typeid
+
+        body = await request_info.get_post_data() or {}
+        conv_id = (body.get("conversation_id") or "").strip()
+        if not conv_id:
+            return ApiFailResponse(message="conversation_id is required")
+
+        resp = await _hub_action("POST", f"/graph/conversation/{conv_id}/pickup", {})
+        if not resp or resp.get("status") != "SUCCESS":
+            msg = (resp or {}).get("message") or "hub unreachable"
+            return ApiFailResponse(message=f"Could not pick up conversation: {msg}")
+
+        from flow_sdk.cloud_client.hub_bridge import hub_ws_bridge  # noqa: PLC0415
+        hub_ws_bridge.remember_hub_conversation(conv_id)
+        try:
+            await _fetch_conversation_messages(conv_id, someone_typeid)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[conversation-pickup] message sync failed (non-fatal): %s", e)
+        return ApiSuccessResponse(data={"conversation_id": conv_id})
+    except Exception as e:
+        logger.error("[flow_message_action] conversation-pickup error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Failed to pick up conversation: {str(e)}")
+
+
+@action.post(action_name="community-tickets-list", types=None)
+async def community_tickets_list() -> ApiResponse:
+    """Staff triage queue: list the community project's tickets (members-only on
+    the hub). Returns the lightweight rows verbatim so the UI can render an
+    "unpicked" queue — unpicked tickets don't fan out to non-participants, so
+    this is the only way staff discover them. Picking one up materializes it
+    locally (see ``conversation-pickup``)."""
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.someone_typeid:
+            return ApiFailResponse(message="No authenticated user in request context")
+
+        community_id = await _resolve_community_project_id()
+        if not community_id:
+            return ApiFailResponse(message="Community support is unavailable on this hub")
+
+        resp = await _hub_action("GET", f"/graph/project/{community_id}/community_conversations")
+        rows = (resp or {}).get("data") or []
+        if not isinstance(rows, list):
+            rows = []
+        return ApiSuccessResponse(data={"tickets": rows, "project_id": community_id})
+    except Exception as e:
+        logger.error("[flow_message_action] community-tickets-list error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Failed to list community tickets: {str(e)}")
+
+
+# ---------------------------------------------------------------------------
 # Inbox actions
 # ---------------------------------------------------------------------------
 

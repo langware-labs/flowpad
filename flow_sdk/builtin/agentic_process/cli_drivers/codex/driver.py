@@ -256,6 +256,9 @@ class CodexDriver:
     def tail_status(self, transcript_path: Path) -> WorkerStatus:
         return codex_tail_status(transcript_path)
 
+    def has_resumable_session(self, process: "AgenticProcess") -> bool:
+        return bool(process.session_id) and find_codex_session_jsonl(process.session_id) is not None
+
     # ── History materialisation ──────────────────────────────────────────────
 
     def load_history(self, process: "AgenticProcess") -> list["FlowData"]:

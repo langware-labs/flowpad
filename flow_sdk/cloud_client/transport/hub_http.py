@@ -44,9 +44,9 @@ def hub_base_url() -> Optional[str]:
 async def get_info() -> Optional[dict[str, Any]]:
     """Fetch lightweight info about the configured hub.
 
-    Currently returns just the hub's running version::
+    Currently returns the hub's running version and optional build metadata::
 
-        {"version": "0.29.41"}
+        {"version": "0.29.41", "deployed_at": "...", "generated_at": "..."}
 
     Hits the public ``GET /api/v1/health/version`` endpoint (no auth), so it
     works even when the user is signed out. Returns ``None`` when the hub is
@@ -63,10 +63,28 @@ async def get_info() -> Optional[dict[str, Any]]:
             if resp.status_code != 200:
                 logger.warning("[hub] GET %s returned %s", url, resp.status_code)
                 return None
-            # The hub wraps responses in an ApiResponse envelope; the version
-            # string lives in `data` (same shape `hub_get` unwraps).
+            # The hub wraps responses in an ApiResponse envelope. Older hubs
+            # returned the version string directly; newer hubs return an object
+            # with build timestamps.
             data = resp.json().get("data")
-            return {"version": data if isinstance(data, str) else None}
+            if isinstance(data, str):
+                return {"version": data}
+            if isinstance(data, dict):
+                version = data.get("version")
+                deployed_at = data.get("deployed_at")
+                generated_at = data.get("generated_at")
+                # Fixed community/support project id — the app opens support
+                # tickets against this project. Returned by newer hubs only.
+                community_project_id = data.get("community_project_id")
+                return {
+                    "version": version if isinstance(version, str) else None,
+                    "deployed_at": deployed_at if isinstance(deployed_at, str) else None,
+                    "generated_at": generated_at if isinstance(generated_at, str) else None,
+                    "community_project_id": (
+                        community_project_id if isinstance(community_project_id, str) else None
+                    ),
+                }
+            return {"version": None}
     except Exception as e:  # noqa: BLE001
         logger.warning("[hub] get_info error (non-fatal): %s", e)
         return None
