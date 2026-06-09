@@ -96,8 +96,6 @@ describe('Shell entity constructor', () => {
       working_dir: '/tmp',
     });
     expect(attachSpy).toHaveBeenCalledWith({
-      cols: 80,
-      rows: 24,
       workdir: '/tmp',
       timeout: undefined,
       ptyId: 'pty-terminal-1',

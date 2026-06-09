@@ -445,6 +445,12 @@ class Entity(DBEntity):
         """Create or update an Entity from a Record's meta_dict()."""
         record_type = record.type or record._record_type
         entity_cls = SchemaRegistry.get_entity_cls(record_type) or cls
+        if cls is Entity and entity_cls is not cls and "from_record" in entity_cls.__dict__:
+            token = _SUPPRESS_STORE.set(True)
+            try:
+                return await entity_cls.from_record(record, notify=notify)
+            finally:
+                _SUPPRESS_STORE.reset(token)
         data = record.meta_dict()
         entity_uuid = entity_cls.allocate_id(data)
         # Filter by the *record's* type, not entity_cls.get_type(). The latter
@@ -548,6 +554,97 @@ class Entity(DBEntity):
             await entity.save(notify=notify)
         finally:
             _SUPPRESS_STORE.reset(token)
+        return entity
+
+    @classmethod
+    def from_fs_ref(
+        cls,
+        ref: "FSRef",
+        record_type: "str | None" = None,
+    ) -> "Entity | None":
+        """Load an Entity from a folder/file ``FSRef`` WITHOUT touching the DB.
+
+        A pure on-disk load: it dispatches to the type's registered
+        ``TypeInfo.from_disk_fn`` — the SAME cold-path parser the indexer runs
+        (e.g. ``extract_dataset``) — and builds the entity generically from the
+        returned ``FSRecord``. Only that parser (and, for datasets, the
+        ``iter_examples`` it reaches via ``Dataset.examples()``) is type-specific;
+        everything here is generic and registry-driven.
+
+        Distinct from the async ``from_record``: no ``await``, no ``save()``, no
+        DB row. Use it to load a folder-backed entity and call its on-disk
+        accessors (``Dataset.examples()`` etc.). Returns ``None`` when ``ref`` is
+        not a record of the resolved type (the parser yields nothing).
+        """
+        from flow_sdk.schema.type_info import register_all  # noqa: PLC0415
+
+        # ``from_disk_fn`` is only wired by ``register_all`` (importing an entity
+        # module registers its class but not its parser). Idempotent — cheap to
+        # call on every load.
+        register_all()
+
+        rt = cls._resolve_fs_ref_type(ref, record_type)
+        if rt is None:
+            return None
+        info = SchemaRegistry.get(rt)
+        if info is None or info.from_disk_fn is None:
+            return None
+
+        records = info.from_disk_fn(ref)
+        if not records:
+            return None
+        return Entity._build_from_fs_record(records[0], fallback_cls=cls)
+
+    @classmethod
+    def _resolve_fs_ref_type(cls, ref: "FSRef", record_type) -> "str | None":
+        """Resolve the record-type string for an ``FSRef``.
+
+        Precedence: explicit ``record_type`` arg → ``ref.record_type`` → the
+        concrete subclass's own declared ``type`` default (so
+        ``Dataset.from_fs_ref(ref)`` self-identifies as ``"dataset"`` even for a
+        bare folder ref). Base ``Entity`` with no hint yields ``None``.
+        """
+        if record_type is not None:
+            return str(record_type)
+        if ref.record_type is not None:
+            return str(ref.record_type)
+        if cls is not Entity:
+            type_field = cls.model_fields.get("type")
+            default = getattr(type_field, "default", None) if type_field else None
+            if isinstance(default, str) and default:
+                return default
+        return None
+
+    @staticmethod
+    def _build_from_fs_record(record: "FSRecord", fallback_cls: "type | None" = None) -> "Entity":
+        """Build a typed Entity from an ``FSRecord``, DB-free.
+
+        Flattens the record's nested ``metadata`` section onto the entity's typed
+        fields. ``extract_*`` parsers stash the known fields under a single
+        ``metadata`` key, which ``meta_dict()`` keeps nested — the async
+        ``from_record`` does NOT lift it, so this loader must. The ``asset_ref``
+        path string is preserved so on-disk accessors resolve.
+        """
+        rt = record.type or getattr(record, "_record_type", None)
+        entity_cls = SchemaRegistry.get_entity_cls(rt) or fallback_cls or Entity
+
+        data = record.meta_dict()
+        nested = data.pop("metadata", None)
+        if isinstance(nested, dict):
+            # The nested ``metadata`` section is the typed source of truth; let it
+            # win over the duplicated top-level shells (name/status/content).
+            data = {**data, **nested}
+
+        model_fields = getattr(entity_cls, "model_fields", {})
+        fields = {k: v for k, v in data.items() if k in model_fields}
+        try:
+            entity = entity_cls(**fields)
+        except Exception:
+            entity = Entity(**{k: v for k, v in fields.items() if k in Entity.model_fields})
+
+        # Stamp asset_ref even for types that don't declare it as a field.
+        if "asset_ref" in data and "asset_ref" not in fields:
+            object.__setattr__(entity, "asset_ref", data["asset_ref"])
         return entity
 
     async def _fts_upsert(self, type_name: str, content: str) -> None:

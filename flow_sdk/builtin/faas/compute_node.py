@@ -1142,6 +1142,24 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         from flow_sdk.builtin.faas.git_repo import GitRepo
         return await GitRepo(workdir, self).dispatch(segments[0] if segments else "", query_params)
 
+    @action.post(action_name="git-ops")
+    async def git_ops_post_action(self) -> ApiResponse:
+        """Mutating git operations (e.g. ``push``). Delegates to GitRepo.dispatch().
+
+        Routing (via sub_path):
+            POST /git-ops/push   body { workdir } → commit-all + pull --rebase + push
+        """
+        request_info = get_current_request_info()
+        segments = [s for s in (request_info.sub_path or "").strip("/").split("/") if s]
+        body = (await request_info.get_post_data()) or {} if request_info else {}
+        workdir = body.get("workdir") or (request_info.get_param("workdir") if request_info else None)
+        if not workdir:
+            return ApiFailResponse(message="workdir parameter is required")
+
+        query_params = {k: v for k, v in (body or {}).items() if k != "workdir"}
+        from flow_sdk.builtin.faas.git_repo import GitRepo
+        return await GitRepo(workdir, self).dispatch(segments[0] if segments else "", query_params, method="POST")
+
     @asynccontextmanager
     async def ready_session(self):
         current_status = await self.get_node_status()

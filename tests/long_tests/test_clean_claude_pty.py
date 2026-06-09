@@ -42,6 +42,11 @@ async def test_clean_claude_pty(bootstrapped_client, tmp_path):
     try:
         await process.start_pty()
 
+        # start_pty() runs under the per-process open lock against a reloaded
+        # copy (anti-double-spawn) and persists to the DB without mutating this
+        # in-memory object — re-fetch to observe the spawned shell, exactly as
+        # the production HTTP path does.
+        process = await AgenticProcess.get_by_id(process.id)
         shell_id = process.shell_id
         assert shell_id, "process.start() did not set shell_id"
 

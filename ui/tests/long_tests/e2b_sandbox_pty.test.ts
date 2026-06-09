@@ -296,14 +296,15 @@ describe('e2b_sandbox_pty', () => {
       `printf '%s\\n' ${START} && uname -a && printf '%s\\n' ${END}\n`,
     );
 
-    // Wait for END to appear twice — once in the echoed command line, once in
-    // the real command output.
+    // Some PTY providers echo the command line and some only stream command
+    // output through shell.onOutput. Wait for the parsed marker-framed payload
+    // instead of assuming a provider-specific echo count.
     await vi.waitFor(
       () => {
-        let idx = -1;
-        let count = 0;
-        while ((idx = accumulated.indexOf(END, idx + 1)) !== -1) count++;
-        if (count < 2) throw new Error(`waiting for ${END} x2, have ${count}, accumulated=${accumulated.length}b`);
+        const line = extractBetweenMarkers(accumulated, START, END);
+        if (!line.includes('Linux')) {
+          throw new Error(`waiting for Linux between ${START}/${END}, accumulated=${accumulated.length}b`);
+        }
       },
       { timeout: 10_000, interval: 100 },
     );

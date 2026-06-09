@@ -1,15 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { RefreshCw } from 'lucide-react';
+import { LifeBuoy, RefreshCw } from 'lucide-react';
 import {
   Conversation,
   fetchConversations,
   FlowMessage,
+  pickupConversation,
   QueryFilter,
   QueryRequest,
   TypeId,
 } from '@sdk';
 import { useAuth, useEntitiesQuery, useEntity, useProject } from '@sdk/react/hooks';
 import type { ITask } from '@sdk/entities/task';
+import { ConversationKind } from '@sdk/entities/conversation';
 import { syncConversationMessages } from '@src/components/inbox-view/inbox-api';
 import { markFlowMessagesReceived } from '@sdk/entities/flow-message';
 import { FlowMessageBubble } from './FlowMessageBubble';
@@ -295,6 +297,11 @@ export function ConversationView({
   }, [pointers.map((p) => p.id).join(',')]);
 
   const conversationStatusVisible = conversation?.message_status_visible !== false;
+  // Community (support-center) ticket: replies are masked to a single brand
+  // identity, and the real responder's sender_id is intentionally absent from
+  // the guest's (redacted) roster — so the bubble must not flag it as an
+  // unknown sender. See CommunityConfig / the hub sender_name masking.
+  const isCommunityConversation = conversation?.kind === ConversationKind.COMMUNITY;
   const { project: currentProject } = useProject();
   const attachmentProjectId = resolveAttachmentProjectId(task, conversation, currentProject?.id);
 
@@ -344,9 +351,43 @@ export function ConversationView({
     }
   }, [refetch, refreshMembers, conversationId]);
 
+  // Staff "pick up" affordance for a community ticket: shown only on a
+  // community conversation the local cloud user hasn't joined and didn't open
+  // (the guest initiator is the owner). Joining adds them to the roster so they
+  // receive messages and can reply. See pickupConversation / hub Conversation.pickup.
+  const [pickingUp, setPickingUp] = useState(false);
+  const isParticipant =
+    !!cloudUserId && (participants ?? []).some((p) => p.user_id === cloudUserId);
+  const canPickup =
+    isCommunityConversation && !!cloudUserId && !isConversationOwner && !isParticipant;
+  const handlePickup = useCallback(async () => {
+    setPickingUp(true);
+    try {
+      await pickupConversation(conversationId);
+      await handleRefresh();
+    } catch (err) {
+      console.error('[conversation] pickup failed', conversationId, err);
+    } finally {
+      setPickingUp(false);
+    }
+  }, [conversationId, handleRefresh]);
+
   return (
     <div className="space-y-3">
-      <div className="flex justify-end">
+      <div className="flex items-center justify-end gap-1">
+        {canPickup && (
+          <button
+            type="button"
+            onClick={() => void handlePickup()}
+            disabled={pickingUp}
+            title="Join this support ticket so you can reply"
+            data-testid="pickup-conversation-button"
+            className="flex items-center gap-1 rounded border border-violet-500/40 bg-violet-500/15 px-2 py-0.5 text-[11px] font-medium text-violet-600 transition-colors hover:bg-violet-500/25 disabled:opacity-50 dark:text-violet-400"
+          >
+            <LifeBuoy className="h-3 w-3" />
+            {pickingUp ? 'Picking up…' : 'Pick up'}
+          </button>
+        )}
         <button
           type="button"
           onClick={() => void handleRefresh()}
@@ -386,6 +427,7 @@ export function ConversationView({
                   isConversationOwner={isConversationOwner}
                   onDeleteMessage={handleDeleteMessage}
                   conversationStatusVisible={conversationStatusVisible}
+                  isCommunity={isCommunityConversation}
                   ensureProjectMapped={ensureMapped}
                   attachmentProjectId={attachmentProjectId}
                 />

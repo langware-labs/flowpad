@@ -78,7 +78,7 @@ class E2BComputeProvider(ComputeProvider):
             )
         self._sandboxes: dict[str, AsyncSandbox] = {}
         # (provider_node_id, session_id) -> {"sandbox", "pty", "running", "on_output", "rows", "cols"}
-        self._pty_sessions: dict[tuple[str, str], dict[str, Any]] = {}
+        self._pty_processes: dict[tuple[str, str], dict[str, Any]] = {}
         # provider_node_id -> background asyncio.Task that periodically extends
         # the sandbox timeout. Cancelled in shutdown().
         self._keepalive_tasks: dict[str, asyncio.Task] = {}
@@ -86,9 +86,9 @@ class E2BComputeProvider(ComputeProvider):
     # ---------------------------------------------------------------- lifecycle
 
     async def reset(self) -> None:
-        for pty_info in self._pty_sessions.values():
+        for pty_info in self._pty_processes.values():
             pty_info["running"]["value"] = False
-        self._pty_sessions.clear()
+        self._pty_processes.clear()
 
         for task in self._keepalive_tasks.values():
             if not task.done():
@@ -432,7 +432,7 @@ class E2BComputeProvider(ComputeProvider):
             service_log.debug(f"[E2B] Ignoring extra_env for sandbox PTY (use set_env instead)")
 
         pty_key = (provider_node_id, session_id)
-        existing = self._pty_sessions.get(pty_key)
+        existing = self._pty_processes.get(pty_key)
         if existing is not None and existing["running"]["value"]:
             return {
                 "pid": existing["pty"].pid,
@@ -459,7 +459,7 @@ class E2BComputeProvider(ComputeProvider):
             f"[E2B] PTY created pid={pty.pid} session={session_id} sandbox={sandbox.sandbox_id}"
         )
 
-        self._pty_sessions[pty_key] = {
+        self._pty_processes[pty_key] = {
             "sandbox": sandbox,
             "pty": pty,
             "running": running_flag,
@@ -481,7 +481,7 @@ class E2BComputeProvider(ComputeProvider):
         cols: int,
         rows: int,
     ) -> None:
-        pty_info = self._pty_sessions.get((provider_node_id, session_id))
+        pty_info = self._pty_processes.get((provider_node_id, session_id))
         if pty_info is None:
             raise RuntimeError(f"PTY session not found for {provider_node_id}:{session_id}")
         try:
@@ -494,7 +494,7 @@ class E2BComputeProvider(ComputeProvider):
     async def resize_pty(
         self, provider_node_id: str, session_id: str, cols: int, rows: int
     ) -> None:
-        pty_info = self._pty_sessions.get((provider_node_id, session_id))
+        pty_info = self._pty_processes.get((provider_node_id, session_id))
         if pty_info is None:
             raise RuntimeError(f"PTY session not found for {provider_node_id}:{session_id}")
         try:
@@ -509,14 +509,14 @@ class E2BComputeProvider(ComputeProvider):
             raise RuntimeError(f"Failed to resize PTY: {e}") from e
 
     def is_pty_alive(self, provider_node_id: str, session_id: str) -> bool:
-        pty_info = self._pty_sessions.get((provider_node_id, session_id))
+        pty_info = self._pty_processes.get((provider_node_id, session_id))
         return pty_info is not None and pty_info["running"]["value"]
 
     async def close_pty_session(self, provider_node_id: str, session_id: str) -> None:
         await self._cleanup_pty_session(provider_node_id, session_id, reason="close_pty_session")
 
         # Kill the sandbox if no PTYs remain on this node.
-        remaining = [k for k in self._pty_sessions if k[0] == provider_node_id]
+        remaining = [k for k in self._pty_processes if k[0] == provider_node_id]
         if not remaining and provider_node_id in self._sandboxes:
             await self.shutdown(provider_node_id)
 
@@ -524,7 +524,7 @@ class E2BComputeProvider(ComputeProvider):
         self, provider_node_id: str, session_id: str, reason: str
     ) -> None:
         pty_key = (provider_node_id, session_id)
-        pty_info = self._pty_sessions.pop(pty_key, None)
+        pty_info = self._pty_processes.pop(pty_key, None)
         if pty_info is None:
             return
         pty_info["running"]["value"] = False
@@ -538,15 +538,15 @@ class E2BComputeProvider(ComputeProvider):
         """Return an E2BPtySession handle if an active session exists.
 
         Signature mirrors LocalComputeProvider.get_pty_session(cn_id, shell_id):
-        the lookup walks the global session_manager to find any session whose
+        the lookup walks the global pty_registry to find any session whose
         cn_id and shell_id match (regardless of provider_node_id, since we
         look up by ComputeNode id + shell id).
         """
-        from flow_sdk.compute.providers.desktop.pty_session_manager import session_manager
+        from flow_sdk.compute.providers.desktop.pty_session_manager import pty_registry
 
         from .e2b_pty_session import E2BPtySession
 
-        for key in session_manager.sessions:
+        for key in pty_registry.states:
             if key[0] == cn_id and key[2] == shell_id:
-                return E2BPtySession(key[0], key[1], key[2], self, session_manager)
+                return E2BPtySession(key[0], key[1], key[2], self, pty_registry)
         return None

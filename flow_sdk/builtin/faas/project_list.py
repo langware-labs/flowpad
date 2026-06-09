@@ -245,6 +245,7 @@ def _merge_project(
         cwd,
         {
             "id": _project_id_for_cwd(cwd),
+            "record_project_id": _project_id_for_cwd(cwd),
             "type": PROJECT_RESOURCE_TYPE,
             "name": _display_name(cwd),
             "cwd": cwd,
@@ -364,21 +365,12 @@ async def list_projects_from_indexer() -> dict[str, Any]:
                 projects_by_cwd, canonical,
                 modified_at=str(info.modified_at) if info.modified_at else None,
             )
-        # Override id / name with the canonical entity values
+        # Override id / name with the canonical entity values. Keep the legacy
+        # record_project_id separate for rows already stamped with uuid5(cwd).
         row = projects_by_cwd[canonical]
         row["id"] = info.project_id or row["id"]
+        row["record_project_id"] = info.record_project_id or row.get("record_project_id")
         row["name"] = info.name or row["name"]
-
-    for canonical, activity in copilot_activity.items():
-        if canonical in projects_by_cwd:
-            continue
-        _merge_project(
-            projects_by_cwd,
-            canonical,
-            copilot=True,
-            session_count=_int_field(activity.get("session_count")),
-            modified_at=activity.get("modified_at"),
-        )
 
     projects = list(projects_by_cwd.values())
     projects.sort(key=lambda item: item.get("modified_at") or "", reverse=True)

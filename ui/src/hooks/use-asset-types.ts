@@ -7,6 +7,8 @@ export interface AssetTypeVault {
   relPath: string;
   label: string;
   scope: string;
+  project_id?: string | null;
+  record_project_id?: string | null;
 }
 
 export interface AssetTypeInfo {

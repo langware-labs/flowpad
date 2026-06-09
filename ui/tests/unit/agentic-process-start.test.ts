@@ -60,9 +60,21 @@ describe('AgenticProcess.start (open action)', () => {
     await expect(agenticProcess.start()).resolves.toBe(true);
     expect(agenticProcess.session_id).toBe('worker-session-xyz');
     expect(fakeTransport.attachPty).toHaveBeenCalledWith({
-      cols: 80,
-      rows: 24,
+      cols: undefined,
+      rows: undefined,
       timeout: undefined,
+      ptyId: 'pty-00000000-0000-4000-8000-000000000002',
+    });
+  });
+
+  it('forwards explicit PTY dimensions when provided', async () => {
+    const agenticProcess = new AgenticProcess({ id: '00000000-0000-4000-8000-000000000001', status: 'idle' });
+
+    await expect(agenticProcess.start({ cols: 132, rows: 42, ptyTimeout: 12_000 })).resolves.toBe(true);
+    expect(fakeTransport.attachPty).toHaveBeenCalledWith({
+      cols: 132,
+      rows: 42,
+      timeout: 12_000,
       ptyId: 'pty-00000000-0000-4000-8000-000000000002',
     });
   });

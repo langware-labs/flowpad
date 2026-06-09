@@ -4,8 +4,15 @@ A dataset holds many ``Example`` rows in one of two physical layouts (see
 ``DataLayoutEnum``):
 
 - ``CSV``        — a single ``data.csv`` file; each row is an example.
-- ``IO_FOLDER``  — an ``examples/`` folder of per-example ``input``/``expected``
-  pairs.
+- ``IO_FOLDER``  — an ``examples/`` folder where each example dir carries
+  ``input`` / ``output`` / ``ground_truth`` slots (file, folder, or numbered
+  occurrences) plus ``«slot».json`` metadata sidecars and an ``example.json``.
+  Legacy ``input.txt`` / ``expected.txt`` are still accepted.
+
+Every dataset JSON file (``dataset.json``, ``example.json``, ``«slot».json``) is a
+two-section document — ``{"metadata": {...}, "data": {...}}``. ``metadata`` holds
+flowpad-managed known fields (parsed into typed attributes); ``data`` is a free
+object the use case owns. Both are surfaced on the carrier models below.
 
 The container is the entity; an ``Example`` is a plain Pydantic row parsed from
 disk on demand (a 50k-row CSV stays one record, not 50k entities). The
@@ -43,19 +50,75 @@ class ExampleKind(StrEnum):
     TEST = "test"
 
 
+class ArtifactKind(StrEnum):
+    """Whether a slot artifact is a single file or a folder of files."""
+
+    FILE = "file"
+    FOLDER = "folder"
+
+
+class ExampleArtifact(BaseModel):
+    """One occurrence of a slot — a single file, or one folder of files.
+
+    Carries RELATIVE (POSIX) paths under the example dir so binary inputs
+    (PDFs/images) are referenced lazily and never eagerly read. ``text`` is
+    populated ONLY for small text FILE artifacts (``.txt``/``.md``); it stays
+    None for binary files and for folders. ``index`` is the ``N`` in
+    ``output-2`` (None for the bare, unindexed occurrence).
+    """
+
+    kind: ArtifactKind
+    path: str                           # rel POSIX path: "input.pdf", "output-1", ...
+    files: List[str] = []               # FOLDER: contained file rel-paths (sorted); FILE: [path]
+    text: Optional[str] = None          # decoded only for .txt/.md FILE artifacts; else None
+    index: Optional[int] = None         # N in "output-2"; None for the bare artifact
+    metadata: Dict[str, Any] = {}       # «base»[-N].json `metadata` section (flowpad-managed)
+    data: Dict[str, Any] = {}           # «base»[-N].json `data` section (free, use-case-owned)
+    id: str = ""                        # deterministic uuid5
+
+
+class ExampleSlot(BaseModel):
+    """All occurrences of one slot base-name (``input``/``output``/``ground_truth``).
+
+    ``artifacts`` is ordered: the bare occurrence (``index`` None) first, then
+    numbered occurrences ascending. ``metadata`` holds a bare ``«base».json``
+    sidecar that has no matching data artifact (slot-level metadata).
+    """
+
+    name: str                           # "input" | "output" | "ground_truth"
+    artifacts: List["ExampleArtifact"] = []
+    metadata: Dict[str, Any] = {}       # bare «base».json `metadata` section (slot-level)
+    data: Dict[str, Any] = {}           # bare «base».json `data` section (slot-level, free)
+
+    @property
+    def primary(self) -> Optional["ExampleArtifact"]:
+        return self.artifacts[0] if self.artifacts else None
+
+
 class Example(BaseModel):
     """One row of a dataset. Parsed from disk on demand; NOT a tracked Entity.
 
     ``id`` is a deterministic uuid5 of ``f"{dataset_id}:{key}"`` (the row index
     for CSV, the example folder name for IO_FOLDER) so promotion to a real
     entity later is idempotent.
+
+    ``input``/``expected`` are back-compat scalar views (the single-text-file
+    case); the structured ``*_slot`` fields carry the full picture for folder,
+    binary, numbered-multiple, and sidecar-annotated artifacts.
     """
 
     id: str
     kind: ExampleKind = ExampleKind.TRAIN
-    input: str
-    expected: Optional[str] = None      # target / ideal / ground-truth (None ⇒ unlabeled)
-    metadata: Dict[str, Any] = {}
+    input: str = ""                     # back-compat: input.txt/.md text, else "" (folder/binary)
+    expected: Optional[str] = None      # back-compat: ground_truth primary text (None ⇒ unlabeled)
+    metadata: Dict[str, Any] = {}       # example.json `metadata` section (kind/layout lifted from here)
+    data: Dict[str, Any] = {}           # example.json `data` section (free, use-case-owned)
+
+    # Structured slots — empty for CSV and legacy text-only IO_FOLDER examples.
+    input_slot: Optional[ExampleSlot] = None
+    output_slot: Optional[ExampleSlot] = None       # candidate/produced data — never the gold
+    ground_truth_slot: Optional[ExampleSlot] = None  # the gold; multiple artifacts ⇒ consensus
+    layout: Optional[str] = None        # per-example hint from example.json["layout"]
 
 
 class Dataset(Entity):
@@ -74,7 +137,17 @@ class Dataset(Entity):
     num_examples: int = APIField(0)
     kind_counts: Dict[str, int] = APIField({})
 
+    # Free `data` section of dataset.json (use-case-owned passthrough). The
+    # `schema` and other known metadata fields ride in the record metadata.
+    data: Optional[Dict[str, Any]] = APIField(default_factory=dict)
+
     created_at: Optional[datetime] = APIField(None)
+
+    # Absolute path of the dataset folder on disk, stamped by the indexer /
+    # ``Entity.from_fs_ref`` so ``examples()`` can lazily parse rows. A plain
+    # string (not an FSRef) because ``examples()`` does ``str(asset_ref)`` to get
+    # the path. Mirrors WHITEBOARD/COMMAND.
+    asset_ref: str = APIField(default="")
 
     def examples(self, kind: Optional[ExampleKind] = None) -> List[Example]:
         """Lazily parse the dataset's rows from disk, optionally filtered by kind.

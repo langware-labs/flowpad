@@ -5,6 +5,7 @@ and flowpad/hub/app/actions/bootstrap_actions.py (BootstrapInfo).
 """
 
 from typing import Any, Dict, List, Optional
+
 from pydantic import BaseModel
 
 
@@ -76,6 +77,7 @@ class BootstrapInfo(BaseModel):
     docker_compute_nodes: List[Dict[str, Any]] = []
     env: Optional[EnvInfo] = None
     desktop_info: Optional[LmInfo] = None
+    harness_state: Optional[Dict[str, Any]] = None
     sniffer_hook: Optional[Dict[str, Any]] = None
     scan_info: Optional[Dict[str, Any]] = None
     records_root: Optional[str] = None
