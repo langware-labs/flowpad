@@ -1,6 +1,6 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Textarea } from '@src/components/ui/textarea';
-import { sdkConfig } from '@sdk/config/index';
+import { ActionInfo, dataManager } from '@sdk';
 import { CheckCircle2, Loader2, Stethoscope, XCircle } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -76,14 +76,11 @@ export function DiagnoseModal({ open, onClose }: DiagnoseModalProps) {
     abortRef.current = controller;
 
     try {
-      const resp = await fetch(`${sdkConfig.apiUrl}/api/v1/diagnose/stream`, {
-        method: 'POST',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message }),
-        signal: controller.signal,
-      });
-      if (!resp.ok || !resp.body) throw new Error(`${resp.status} ${resp.statusText}`);
+      // Null-entity graph service action → POST /api/v1/graph/diagnose, streamed.
+      const info = new ActionInfo('diagnose', null, null, 'POST', false, true, controller.signal);
+      info.bodyParameters = { message };
+      const resp = await dataManager.callAction<{ message: string }, Response>(info);
+      if (!resp || !resp.body) throw new Error('No streaming response body');
 
       const reader = resp.body.getReader();
       const decoder = new TextDecoder();

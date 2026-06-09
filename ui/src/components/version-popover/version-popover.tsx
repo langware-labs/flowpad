@@ -1,6 +1,7 @@
 import { MarkdownView } from '@src/components/markdown-view';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@src/components/ui/collapsible';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
+import { Button } from '@src/components/ui/button';
 import { DiagnoseModal } from '@src/components/version-popover/diagnose-modal';
 import { sdkConfig } from '@sdk/config/index';
 import {
@@ -405,19 +406,20 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
           )}
 
           {/* Toolbar */}
-          <div className="-mx-3 -mb-3 mt-1 flex items-center gap-1 border-t px-3 pb-1 pt-2">
-            <button
+          <div className="-mx-3 -mb-3 mt-1 border-t px-3 pb-1 pt-2.5">
+            <Button
               type="button"
+              size="sm"
+              className="w-full"
               onClick={() => {
                 setOpen(false);
                 setDiagnoseOpen(true);
               }}
-              className="flex items-center gap-1.5 rounded-sm px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
               title="Diagnose a Flowpad issue"
             >
-              <Stethoscope className="h-3.5 w-3.5" />
+              <Stethoscope />
               <span>Diagnose</span>
-            </button>
+            </Button>
           </div>
         </div>
       </PopoverContent>
