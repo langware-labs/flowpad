@@ -127,8 +127,10 @@ async def test_run_diagnose_exits_when_recorded_even_if_stream_never_ends():
     """Regression for the Windows hang: ``_tail_status`` can fail to report
     COMPLETE (a long final report pushes the terminal markers out of its 4 KB
     tail window), so ``stream_transcript`` never returns. The command must still
-    exit once the diagnosis is recorded. The 5 s ``wait_for`` is a hang DETECTOR
-    (it makes a regression fail fast) — not a budget to ride past the symptom.
+    exit once a new flowpad_diagnosis record appears — the completion signal does
+    NOT depend on the worker cross-linking / self-identifying (which fails on
+    Windows). The 5 s ``wait_for`` is a hang DETECTOR (it makes a regression fail
+    fast) — not a budget to ride past the symptom.
     """
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
@@ -153,13 +155,28 @@ async def test_run_diagnose_exits_when_recorded_even_if_stream_never_ends():
 
         @classmethod
         async def get_by_id(cls, _id):
-            # Recording already landed: a flowpad_diagnosis is cross-linked in.
-            return SimpleNamespace(
-                private_context_entities=[SimpleNamespace(type="flowpad_diagnosis")]
-            )
+            return None
+
+    # Diagnosis snapshot-diff: none before the run, one new after — the
+    # authoritative "recorded" signal (no cross-link / process self-id needed).
+    diag_calls = {"n": 0}
+
+    class _FakeDiag:
+        @classmethod
+        async def get_all(cls):
+            diag_calls["n"] += 1
+            return [] if diag_calls["n"] == 1 else [SimpleNamespace(id="diag-1")]
+
+        @classmethod
+        async def get_by_id(cls, _id):
+            return SimpleNamespace(id="diag-1")
 
     with (
         patch("flow_sdk.builtin.agentic_process.AgenticProcess", _FakeAP),
+        patch(
+            "flow_sdk.fs_store.schema_registry.SchemaRegistry.get_entity_cls",
+            lambda _t: _FakeDiag,
+        ),
         patch("flow_sdk.migrations.runner._bootstrap_local", new=AsyncMock(return_value=None)),
     ):
         rc = await asyncio.wait_for(diagnose_cmd._run_diagnose("", 1800.0), timeout=5)

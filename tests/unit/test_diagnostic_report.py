@@ -133,38 +133,10 @@ async def test_create_diagnostic_report_self_bootstraps_local():
 
 
 # --------------------------------------------------------------------------- #
-# CLI entrypoint — how the skill actually invokes report.py in Step 7
+# record_diagnosis — always records the diagnosis; Feed entry only on an issue
 # --------------------------------------------------------------------------- #
 
-def test_parse_args_maps_flags():
-    args = report._parse_args(
-        [
-            "--summary", "s",
-            "--status", "fixed",
-            "--details", "d",
-            "--platform", "macOS",
-            "--attachment-type-id", "flowpad_diagnosis-abc",
-        ]
-    )
-    assert args.summary == "s"
-    assert args.status == "fixed"
-    assert args.details == "d"
-    assert args.platform == "macOS"
-    assert args.attachment_type_id == "flowpad_diagnosis-abc"
-
-
-def test_parse_args_defaults():
-    args = report._parse_args(["--summary", "only summary"])
-    assert args.status == "informational"
-    assert args.details == ""
-    assert args.platform == ""
-    assert args.attachment_type_id is None
-
-
-@pytest.mark.asyncio
-async def test_amain_prints_ids_and_records(capsys):
-    """The CLI layer wires flags through to create_diagnostic_report, prints the
-    ids as JSON, and the record actually lands in the store."""
+async def _bootstrap_local_user():
     from flow_sdk.server.routes.bootstrap import (
         get_or_create_local_project,
         get_or_create_local_user,
@@ -173,11 +145,98 @@ async def test_amain_prints_ids_and_records(capsys):
     user = await get_or_create_local_user()
     await get_or_create_local_project(desktop_user=user)
 
-    rc = await report._amain(["--summary", "cli entrypoint test", "--status", "fixed"])
+
+@pytest.mark.asyncio
+async def test_record_diagnosis_issue_creates_record_and_feed():
+    await _bootstrap_local_user()
+    res = await report.record_diagnosis(
+        title="Stale lock blocked startup",
+        symptoms="App stuck on Starting; backend not responding.",
+        rca="server.lock left by a dead PID.",
+        fix="Cleared the stale server.lock.",
+        status="fixed",
+    )
+    assert res["diagnosis_id"]
+    assert res["feed_posted"] is True
+    assert res["feed_entry_id"] and res["conversation_id"] and res["flow_message_id"]
+    feed = await FeedEntry.get_one({"id": res["feed_entry_id"]})
+    assert feed is not None and feed.feed_status == FeedStatus.NEW.value
+
+
+@pytest.mark.asyncio
+async def test_record_diagnosis_clean_sweep_records_no_feed():
+    """A clean sweep (--status ok) records the diagnosis for history but posts NO
+    Feed entry — nothing for the user to act on."""
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry
+
+    await _bootstrap_local_user()
+    res = await report.record_diagnosis(title="All healthy — no issue found", status="ok")
+    assert res["diagnosis_id"]
+    assert res["feed_posted"] is False
+    assert res["feed_entry_id"] is None
+    assert res["conversation_id"] is None
+    # The diagnosis record still exists.
+    diag = await SchemaRegistry.get_entity_cls("flowpad_diagnosis").get_by_id(res["diagnosis_id"])
+    assert diag is not None
+
+
+@pytest.mark.asyncio
+async def test_record_diagnosis_informational_posts_no_feed():
+    await _bootstrap_local_user()
+    res = await report.record_diagnosis(title="Local hub down (benign)", status="informational")
+    assert res["diagnosis_id"]
+    assert res["feed_posted"] is False
+    assert res["feed_entry_id"] is None
+
+
+# --------------------------------------------------------------------------- #
+# CLI entrypoint — how the skill actually invokes report.py in Step 7
+# --------------------------------------------------------------------------- #
+
+def test_parse_args_maps_flags():
+    args = report._parse_args(
+        [
+            "--title", "t",
+            "--symptoms", "sy",
+            "--rca", "rc",
+            "--fix", "fx",
+            "--summary", "s",
+            "--status", "fixed",
+            "--details", "d",
+            "--platform", "macOS",
+        ]
+    )
+    assert args.title == "t"
+    assert args.symptoms == "sy"
+    assert args.rca == "rc"
+    assert args.fix == "fx"
+    assert args.summary == "s"
+    assert args.status == "fixed"
+    assert args.details == "d"
+    assert args.platform == "macOS"
+
+
+def test_parse_args_defaults():
+    args = report._parse_args(["--title", "only a title"])
+    assert args.status == "informational"
+    assert args.summary == ""
+    assert args.symptoms == ""
+    assert args.platform == ""
+
+
+@pytest.mark.asyncio
+async def test_amain_prints_ids_and_records(capsys):
+    """The CLI layer wires flags through to record_diagnosis, prints the ids as
+    JSON, and the record actually lands in the store."""
+    await _bootstrap_local_user()
+
+    rc = await report._amain(["--title", "cli entrypoint test", "--status", "fixed"])
     assert rc == 0
 
     line = [ln for ln in capsys.readouterr().out.splitlines() if ln.strip()][-1]
     data = json.loads(line)
-    assert data["feed_entry_id"] and data["conversation_id"] and data["flow_message_id"]
+    assert data["diagnosis_id"]
+    assert data["feed_posted"] is True
+    assert data["feed_entry_id"]
     feed = await FeedEntry.get_one({"id": data["feed_entry_id"]})
     assert feed is not None and feed.feed_status == FeedStatus.NEW.value
