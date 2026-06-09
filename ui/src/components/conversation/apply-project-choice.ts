@@ -1,4 +1,4 @@
-import { Conversation, dataManager, Project, Task, TypeId } from '@sdk';
+import { apiClient, Conversation, dataManager, GRAPH_API_PREFIX, Project, Task, TypeId } from '@sdk';
 import { writeProjectMapping } from './useProjectMapping';
 
 export interface ApplyProjectResult {
@@ -45,33 +45,54 @@ export async function resolveWorkdir(
  */
 export async function applyProjectToTask(taskId: string, project: Project): Promise<ApplyProjectResult> {
   if (!taskId) return { saved: false, wasReplacement: false };
-  try {
-    const task = await dataManager
-      .getByTypeId<Task>(new TypeId(Task.type, taskId))
-      .catch(() => null);
-    if (!task) return { saved: false, wasReplacement: false };
-    const newId = project.id ?? null;
-    let saved = false;
-    if (task.project_id !== newId) { task.project_id = newId; saved = true; }
-    const newName = project.name ?? '';
-    if ((task.project_name ?? '') !== newName) { task.project_name = newName; saved = true; }
-    const newRoot = project.fs_storage_mount_path ?? '';
-    if ((task.project_root ?? '') !== newRoot) { task.project_root = newRoot; saved = true; }
-    if (saved) await task.save();
+  const task = await dataManager
+    .getByTypeId<Task>(new TypeId(Task.type, taskId))
+    .catch(() => null);
+  if (!task) return { saved: false, wasReplacement: false };
 
-    // Mirror onto the bound conversation so the conv-side fields (used by the
-    // page loader and the gate) stay in sync.
-    let wasReplacement = false;
-    const convTypeId = task.firstContextOfType('conversation');
-    if (convTypeId) {
-      const r = await applyProjectToConversation(convTypeId.id, project);
-      saved = saved || r.saved;
-      wasReplacement = r.wasReplacement;
+  const previous = {
+    project_id: task.project_id,
+    project_name: task.project_name,
+    project_root: task.project_root,
+  };
+  const newId = project.id ?? null;
+  let saved = false;
+  if (task.project_id !== newId) { task.project_id = newId; saved = true; }
+  const newName = project.name ?? '';
+  if ((task.project_name ?? '') !== newName) { task.project_name = newName; saved = true; }
+  const newRoot = project.fs_storage_mount_path ?? '';
+  if ((task.project_root ?? '') !== newRoot) { task.project_root = newRoot; saved = true; }
+  if (saved) {
+    try {
+      await task.save();
+    } catch (error) {
+      task.project_id = previous.project_id;
+      task.project_name = previous.project_name;
+      task.project_root = previous.project_root;
+      throw error;
     }
-    return { saved, wasReplacement };
-  } catch {
-    return { saved: false, wasReplacement: false };
   }
+
+  // Mirror onto the bound conversation so the conv-side fields (used by the
+  // page loader and the gate) stay in sync.
+  let wasReplacement = false;
+  const convTypeId = task.firstContextOfType('conversation');
+  if (convTypeId) {
+    const r = await applyProjectToConversation(convTypeId.id, project);
+    saved = saved || r.saved;
+    wasReplacement = r.wasReplacement;
+  }
+  return { saved, wasReplacement };
+}
+
+async function saveConversationProjectLocally(conv: Conversation): Promise<Conversation> {
+  if (!conv.id) throw new Error('Conversation is missing id');
+  const updatedEntityJson = await apiClient.put<unknown>(
+    `${GRAPH_API_PREFIX}/${Conversation.type}/${conv.id}`,
+    conv.toJSON(),
+  );
+  if (!updatedEntityJson) throw new Error('No data returned');
+  return dataManager.updateEntityFromJson<Conversation>(updatedEntityJson);
 }
 
 /**
@@ -86,20 +107,24 @@ export async function applyProjectToConversation(
   project: Project,
 ): Promise<ApplyProjectResult> {
   if (!conversationId) return { saved: false, wasReplacement: false };
+  const conv = await dataManager
+    .getByTypeId<Conversation>(new TypeId(Conversation.type, conversationId))
+    .catch(() => null);
+  if (!conv) return { saved: false, wasReplacement: false };
+  const previous = conv.project_id ?? null;
+  const next = project.id ?? null;
+  if (previous === next) return { saved: false, wasReplacement: false };
+  const wasReplacement = !!previous && !!next;
+  conv.project_id = next;
   try {
-    const conv = await dataManager
-      .getByTypeId<Conversation>(new TypeId(Conversation.type, conversationId))
-      .catch(() => null);
-    if (!conv) return { saved: false, wasReplacement: false };
-    const previous = conv.project_id ?? null;
-    const next = project.id ?? null;
-    if (previous === next) return { saved: false, wasReplacement: false };
-    const wasReplacement = !!previous && !!next;
-    conv.project_id = next;
-    await conv.save();
+    // `project_id` is a receiver-local mapping. Saving it through the generic
+    // remote entity path adds Hub-Reflect and fails when the current user is
+    // only a conversation member; the chip is projected from this field.
+    await saveConversationProjectLocally(conv);
     return { saved: true, wasReplacement };
-  } catch {
-    return { saved: false, wasReplacement: false };
+  } catch (error) {
+    conv.project_id = previous;
+    throw error;
   }
 }
 

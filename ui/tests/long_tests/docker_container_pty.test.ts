@@ -214,9 +214,10 @@ describe('docker_container_pty', () => {
 
     await vi.waitFor(
       () => {
-        let idx = -1; let count = 0;
-        while ((idx = accumulated.indexOf(END, idx + 1)) !== -1) count++;
-        if (count < 2) throw new Error(`waiting ${END} x2, have ${count}`);
+        const line = extractBetweenMarkers(accumulated, START, END);
+        if (!line.includes('Linux')) {
+          throw new Error(`waiting for Linux between ${START}/${END}, accumulated=${accumulated.length}b`);
+        }
       },
       { timeout: 10_000, interval: 100 },
     );

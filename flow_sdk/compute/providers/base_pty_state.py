@@ -1,7 +1,7 @@
 """BasePtySession — shared Pty handle body used by every provider.
 
 LocalPtySession, E2BPtySession, and DockerPtySession all wrap the shared
-PtySessionManager in the exact same way; only the provider type attribute
+PtyRegistry in the exact same way; only the provider type attribute
 differs. This module holds the shared body; the per-provider subclasses are
 trivial type-annotation shells.
 """
@@ -14,7 +14,7 @@ from flow_sdk.builtin.faas.pty_session import Pty
 
 if TYPE_CHECKING:
     from flow_sdk.compute.providers.compute_provider import ComputeProvider
-    from flow_sdk.compute.providers.desktop.pty_session_manager import PtySessionManager
+    from flow_sdk.compute.providers.desktop.pty_session_manager import PtyKey, PtyRegistry
 
 # Gap between the two winsize calls in force_repaint(). The target must OBSERVE
 # the intermediate (rows-1) size before it is restored: SIGWINCH is handled
@@ -35,7 +35,7 @@ class PtySession(Pty):
         pn_id: str,
         shell_id: str,
         provider: "ComputeProvider",
-        mgr: "PtySessionManager",
+        mgr: "PtyRegistry",
     ) -> None:
         self._cn_id = cn_id
         self._pn_id = pn_id
@@ -44,7 +44,7 @@ class PtySession(Pty):
         self._mgr = mgr
 
     @property
-    def _pty_key(self) -> tuple:
+    def _pty_key(self) -> "PtyKey":
         return (self._cn_id, self._pn_id, self._shell_id)
 
     @property
@@ -57,7 +57,7 @@ class PtySession(Pty):
 
     async def write(self, data: bytes) -> None:
         """Write bytes to PTY stdin."""
-        session = self._mgr.sessions.get(self._pty_key)
+        session = self._mgr.states.get(self._pty_key)
         cols = session.cols if session else 80
         rows = session.rows if session else 24
         await self._provider.send_pty_input(self._pn_id, self._shell_id, data, cols, rows)
@@ -65,7 +65,7 @@ class PtySession(Pty):
     async def resize(self, cols: int, rows: int) -> None:
         # Skip if unchanged — avoids unnecessary SIGWINCH which causes zsh to
         # redraw and produce duplicate content / '%' artifacts on reattach.
-        session = self._mgr.sessions.get(self._pty_key)
+        session = self._mgr.states.get(self._pty_key)
         if session and session.cols == cols and session.rows == rows:
             return
         await self._provider.resize_pty(self._pn_id, self._shell_id, cols, rows)
@@ -84,7 +84,7 @@ class PtySession(Pty):
         provider directly, and restores the exact current size so the next
         real resize() still no-ops correctly.
         """
-        session = self._mgr.sessions.get(self._pty_key)
+        session = self._mgr.states.get(self._pty_key)
         if session is None:
             return
         cols, rows = session.cols, session.rows
@@ -130,7 +130,7 @@ class PtySession(Pty):
         ends when a None sentinel is enqueued (on close/kill).
         """
         q: asyncio.Queue = asyncio.Queue()
-        session = self._mgr.sessions.get(self._pty_key)
+        session = self._mgr.states.get(self._pty_key)
         if session is None:
             return
         session.output_queues.append(q)
@@ -147,39 +147,39 @@ class PtySession(Pty):
                 pass
 
     async def attach(self, connection_id: str) -> None:
-        await self._mgr.attach_session(self._pty_key, connection_id)
+        await self._mgr.attach(self._pty_key, connection_id)
 
     async def detach(self, connection_id: str) -> None:
-        await self._mgr.detach_session(self._pty_key, connection_id)
+        await self._mgr.detach(self._pty_key, connection_id)
 
     @property
     def connections(self) -> frozenset:
         """Currently attached WebSocket connection IDs."""
-        session = self._mgr.sessions.get(self._pty_key)
-        return frozenset(session.connection_ids) if session else frozenset()
+        session = self._mgr.states.get(self._pty_key)
+        return frozenset(session.attached_connections) if session else frozenset()
 
     @property
     def name(self) -> str | None:
         """Display label shown in the UI tab strip."""
-        session = self._mgr.sessions.get(self._pty_key)
+        session = self._mgr.states.get(self._pty_key)
         return session.name if session else None
 
     @name.setter
     def name(self, value: str) -> None:
-        session = self._mgr.sessions.get(self._pty_key)
+        session = self._mgr.states.get(self._pty_key)
         if session:
             session.name = value
 
     @property
     def cols(self) -> int:
         """Current terminal width."""
-        session = self._mgr.sessions.get(self._pty_key)
+        session = self._mgr.states.get(self._pty_key)
         return session.cols if session else 80
 
     @property
     def rows(self) -> int:
         """Current terminal height."""
-        session = self._mgr.sessions.get(self._pty_key)
+        session = self._mgr.states.get(self._pty_key)
         return session.rows if session else 24
 
     async def kill(self) -> None:
@@ -189,7 +189,7 @@ class PtySession(Pty):
         happens after a real server SIGKILL.
         """
         self._signal_output_queues()
-        self._mgr.sessions.pop(self._pty_key, None)
+        self._mgr.states.pop(self._pty_key, None)
         await self._provider.close_pty_session(self._pn_id, self._shell_id)
 
     async def close(self) -> None:
@@ -205,12 +205,12 @@ class PtySession(Pty):
     @property
     def latest_seq(self) -> int:
         """Monotonic per-session output counter (0 if no output yet)."""
-        session = self._mgr.sessions.get(self._pty_key)
+        session = self._mgr.states.get(self._pty_key)
         return session.seq if session else 0
 
     def _signal_output_queues(self) -> None:
         """Send None sentinel to all output() iterators to stop them."""
-        session = self._mgr.sessions.get(self._pty_key)
+        session = self._mgr.states.get(self._pty_key)
         if not session or not session.output_queues:
             return
         loop = None

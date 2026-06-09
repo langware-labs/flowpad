@@ -13,26 +13,26 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from flow_sdk.compute.providers.desktop.local_pty_session import LocalPtySession
-from flow_sdk.compute.providers.desktop.pty_session_manager import PtySessionManager, PtySessionState
+from flow_sdk.compute.providers.desktop.pty_session_manager import PtyRegistry, PtyState
 
 PTY_KEY = ("cn-1", "pn-1", "shell-1")
 
 
-def _make_session(cols: int = 80, rows: int = 24, name: str | None = None) -> PtySessionState:
-    state = PtySessionState(pty_key=PTY_KEY, cols=cols, rows=rows, name=name)
+def _make_session(cols: int = 80, rows: int = 24, name: str | None = None) -> PtyState:
+    state = PtyState(pty_key=PTY_KEY, cols=cols, rows=rows, name=name)
     return state
 
 
-def _make_pty(session: PtySessionState | None = None) -> tuple[LocalPtySession, MagicMock, MagicMock, None]:
+def _make_pty(session: PtyState | None = None) -> tuple[LocalPtySession, MagicMock, MagicMock, None]:
     provider = MagicMock()
     provider.is_pty_alive = MagicMock(return_value=True)
     provider.send_pty_input = AsyncMock()
     provider.resize_pty = AsyncMock()
 
     mgr = MagicMock()
-    mgr.sessions = {}
+    mgr.states = {}
     if session is not None:
-        mgr.sessions[PTY_KEY] = session
+        mgr.states[PTY_KEY] = session
 
     pty = LocalPtySession(PTY_KEY[0], PTY_KEY[1], PTY_KEY[2], provider, mgr)
     return pty, provider, mgr, None
@@ -168,7 +168,7 @@ def test_latest_seq_zero_without_session():
 def test_connections_returns_frozenset():
     """connections is a frozenset of connection IDs from session state."""
     session = _make_session()
-    session.connection_ids = {"conn-a", "conn-b"}
+    session.attached_connections = {"conn-a", "conn-b"}
     pty, _, _, _ = _make_pty(session)
 
     result = pty.connections

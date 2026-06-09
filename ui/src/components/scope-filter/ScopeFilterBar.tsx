@@ -1,132 +1,69 @@
-import React, { useMemo, useState } from 'react';
-import { Filter } from 'lucide-react';
+import React, { useMemo } from 'react';
 import type { ScopeFilter } from '@src/lib/scope-filter';
 import { ProjectPickerModal } from '@src/components/assets/ProjectPickerModal';
 import { ScopeBar, type ScopeBarOption } from '@src/components/ui/scope-bar';
+import { useScopeFilterChips, type ScopeMode } from './useScopeFilterChips';
 
 /**
- * Presentational top-bar that lets the user pick a ScopeFilter via three chips
- * (User / Project / Both) plus a project-picker funnel. Everything internally
- * works in terms of the unified ScopeFilter shape — the chips are derived view
- * state, not the source of truth.
- *
- * Chip → ScopeFilter mapping:
- *   "User"    {user: true,  projects: cleared}  (else chipFor() reads as "All")
- *   "Project" {user: false, projects: keep current (or fall through to picker)}
- *   "Both"    {user: true,  projects: keep current}
- *
- * The picker funnel is independent — it edits `projects` directly. So picking
- * "Project" with an empty picker opens the picker for the user.
+ * Pill scope filter — single-select over All / User / Project / Selected.
+ * All behavior lives in `useScopeFilterChips` (shared with ScopeFilterIconBar);
+ * this is the labeled-pill rendering only.
  */
-type ChipKey = 'user' | 'project' | 'both';
-
 interface ScopeFilterBarProps {
   scope: ScopeFilter;
-  /** Defaulted into the picker selection when scope='project' is chosen with
-   *  an empty picker — keeps the "click Project, see current project" UX. */
   currentProjectId: string | null;
+  /** Current project display name — shown in the Project chip's tooltip. */
+  currentProjectName?: string | null;
   onScopeChange: (next: ScopeFilter) => void;
-}
-
-function chipFor(scope: ScopeFilter): ChipKey {
-  if (scope.user && scope.projects.length > 0) return 'both';
-  if (!scope.user && scope.projects.length > 0) return 'project';
-  return 'user';
 }
 
 export function ScopeFilterBar({
   scope,
   currentProjectId,
+  currentProjectName,
   onScopeChange,
 }: ScopeFilterBarProps): React.ReactElement {
-  const [pickerOpen, setPickerOpen] = useState(false);
+  const {
+    activeMode,
+    selectedCount,
+    projectDisabled,
+    handleSelect,
+    pickerOpen,
+    setPickerOpen,
+    onPickerConfirm,
+  } = useScopeFilterChips({ scope, currentProjectId, onScopeChange });
 
-  const activeChip = chipFor(scope);
-  const projectCount = scope.projects.length;
-  const projectChipDisabled = projectCount === 0 && !currentProjectId;
-
-  const options: ScopeBarOption<ChipKey>[] = useMemo(() => [
-    {
-      value: 'both',
-      label: 'All',
-      title: 'User assets plus selected projects',
-    },
-    {
-      value: 'user',
-      label: 'User',
-      title: 'User assets only',
-    },
+  const options: ScopeBarOption<ScopeMode>[] = useMemo(() => [
+    { value: 'all', label: 'All', title: 'All assets (user + every project)' },
+    { value: 'user', label: 'User', title: 'User assets only' },
     {
       value: 'project',
       label: 'Project',
-      count: projectCount,
-      disabled: projectChipDisabled,
-      title: projectChipDisabled
-        ? 'Open the filter to pick projects'
-        : 'Selected projects assets only',
+      disabled: projectDisabled,
+      title: projectDisabled
+        ? 'No current project'
+        : `Current project${currentProjectName ? `: ${currentProjectName}` : ''}`,
     },
-  ], [projectCount, projectChipDisabled]);
-
-  const handleChange = (next: ChipKey) => {
-    if (next === 'user') {
-      // "User" = user assets only (per the chip's label). Clear projects —
-      // keeping them would yield {user:true, projects:[...]} which is the
-      // "All" chip, so the user could never actually land on user-only.
-      onScopeChange({ user: true, projects: [] });
-      return;
-    }
-    if (next === 'project') {
-      // If no projects in the filter yet, seed with current project (if any).
-      const seed = scope.projects.length > 0
-        ? scope.projects
-        : (currentProjectId ? [currentProjectId] : []);
-      onScopeChange({ user: false, projects: seed });
-      return;
-    }
-    // 'both' — turn user on; keep projects (seed if empty so the chip is meaningful)
-    const seed = scope.projects.length > 0
-      ? scope.projects
-      : (currentProjectId ? [currentProjectId] : []);
-    onScopeChange({ user: true, projects: seed });
-  };
-
-  const handleDisabledClick = (next: ChipKey) => {
-    if (next === 'project') setPickerOpen(true);
-  };
+    {
+      value: 'selected',
+      label: 'Selected',
+      count: activeMode === 'selected' ? selectedCount : undefined,
+      title: 'Pick specific projects…',
+    },
+  ], [projectDisabled, currentProjectName, activeMode, selectedCount]);
 
   return (
     <>
       <ScopeBar
-        value={activeChip}
+        value={activeMode}
         options={options}
-        onChange={handleChange}
-        onDisabledClick={handleDisabledClick}
-        trailing={
-          <button
-            type="button"
-            onClick={() => setPickerOpen(true)}
-            className="ml-1 flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent/50 hover:text-foreground"
-            title="Choose projects to filter by"
-            aria-label="Project filter"
-          >
-            <Filter className="h-3.5 w-3.5" />
-          </button>
-        }
+        onChange={handleSelect}
       />
       <ProjectPickerModal
         open={pickerOpen}
         onOpenChange={setPickerOpen}
         selectedIds={scope.projects}
-        onConfirm={(ids) => {
-          // Edit only the `projects` field. `user` stays whatever it was.
-          // If user just cleared the picker AND the active chip is "project",
-          // we'd be in the degenerate {user:false, projects:[]} state — flip
-          // to {user:true, projects:[]} (the "User" chip) to keep something selected.
-          let nextUser = scope.user;
-          if (ids.length === 0 && !scope.user) nextUser = true;
-          onScopeChange({ user: nextUser, projects: ids });
-          setPickerOpen(false);
-        }}
+        onConfirm={onPickerConfirm}
       />
     </>
   );

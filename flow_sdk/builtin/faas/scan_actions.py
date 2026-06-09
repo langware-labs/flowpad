@@ -62,7 +62,7 @@ class ScanActionsMixin:
         """Full-coverage (user + all projects) indexer roots for resource scans."""
         from flow_sdk.fs_store.operations.all_projects import get_all_scope_filter
 
-        return await self._resolve_scoped_roots(await get_all_scope_filter())
+        return await self._resolve_scoped_roots(await get_all_scope_filter(create_missing=False))
 
     async def _scan_resources(self) -> ApiResponse:
         """Scan specific resource type with optional time window filtering.
@@ -654,6 +654,7 @@ class ScanActionsMixin:
                             exc_info=True,
                         )
                 # Reattach shell + flip visible so the tab strip surfaces the row.
+                start_data = None
                 if not process.shell_id or not process.visible:
                     try:
                         start_resp = await process.start_pty(visible=True)
@@ -666,7 +667,18 @@ class ScanActionsMixin:
                         )
                     if isinstance(start_resp, ApiFailResponse):
                         return start_resp
-                return ApiSuccessResponse(data=process.model_dump(mode="json"))
+                    start_data = getattr(start_resp, "data", None)
+                get_by_id = getattr(AgenticProcess, "get_by_id", None)
+                if callable(get_by_id):
+                    refreshed = await get_by_id(process.id)
+                    if refreshed is not None:
+                        process = refreshed
+                data = process.model_dump(mode="json")
+                if isinstance(start_data, dict):
+                    for key in ("shell_id", "pty_id", "session_id"):
+                        if start_data.get(key) and not data.get(key):
+                            data[key] = start_data[key]
+                return ApiSuccessResponse(data=data)
 
             # Create new process directly on this compute node
             owner = request_info.someone_typeid if request_info else None
@@ -682,6 +694,21 @@ class ScanActionsMixin:
                     proj = await Project.get_by_id(project_id)
                     if proj is not None and proj.fs_storage_mount_path:
                         workdir = str(proj.fs_storage_mount_path)
+                except Exception:
+                    pass
+
+            # Backend-internal callers may upsert a synthetic session id before
+            # any worker transcript exists. There is no authoritative cwd to
+            # restore, so bind it to the local project instead of failing the
+            # route before the process can be materialized.
+            if not workdir and session_rec is None:
+                try:
+                    from flow_sdk.builtin.project import Project  # noqa: PLC0415
+
+                    local_project = await Project.get_by_uname("local")
+                    if local_project is not None and local_project.fs_storage_mount_path:
+                        workdir = str(local_project.fs_storage_mount_path)
+                        project_id = project_id or local_project.id
                 except Exception:
                     pass
 
@@ -756,7 +783,18 @@ class ScanActionsMixin:
             if isinstance(start_resp, ApiFailResponse):
                 return start_resp
 
-            return ApiSuccessResponse(data=process.model_dump(mode="json"))
+            get_by_id = getattr(AgenticProcess, "get_by_id", None)
+            if callable(get_by_id):
+                refreshed = await get_by_id(process.id)
+                if refreshed is not None:
+                    process = refreshed
+            data = process.model_dump(mode="json")
+            start_data = getattr(start_resp, "data", None)
+            if isinstance(start_data, dict):
+                for key in ("shell_id", "pty_id", "session_id"):
+                    if start_data.get(key) and not data.get(key):
+                        data[key] = start_data[key]
+            return ApiSuccessResponse(data=data)
 
         except Exception as e:
             logging.exception(f"ComputeNode {self.id} upsertSessionProcess error: {e}")

@@ -17,6 +17,9 @@ class DatasetMeta(BaseMeta):
     delimiter: Optional[str] = None
     num_examples: Optional[int] = None
     kind_counts: Optional[dict] = None
+    num_annotated: Optional[int] = None
+    num_multi_output: Optional[int] = None
+    num_binary_inputs: Optional[int] = None
 
 
 DATASET = TypeMetadata(

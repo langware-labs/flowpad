@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
-import { Download, Link2, Share2 } from 'lucide-react';
+import { Download, Link2 } from 'lucide-react';
 import { TypeId } from '@sdk';
 import { FavoriteStar } from '@src/components/favorites/FavoriteStar';
+import { ShareButton } from '@src/components/entity-actions/ShareButton';
 import { EntityShareDialog } from '@src/components/terminal/interactive-terminal/EntityShareDialog';
 import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
 import {
@@ -78,51 +79,13 @@ export function EntityActionsToolbar({
 
   return (
     <div className={cn('flex items-center gap-0.5', className)}>
-      {variant === 'prominent' ? (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              onClick={() => setShareOpen(true)}
-              disabled={!canShare}
-              className={cn(
-                'inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium transition-colors',
-                'bg-primary/10 text-primary hover:bg-primary/15',
-                'disabled:cursor-not-allowed disabled:opacity-50',
-              )}
-              data-testid="entity-actions-share"
-              aria-label="Share"
-            >
-              <Share2 className="h-3.5 w-3.5" />
-              Share
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom" className="text-xs">
-            {canShare ? 'Share to a conversation' : 'Loading…'}
-          </TooltipContent>
-        </Tooltip>
-      ) : (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              onClick={() => setShareOpen(true)}
-              disabled={!canShare}
-              className={cn(
-                'inline-flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent',
-                'disabled:cursor-not-allowed disabled:opacity-50',
-              )}
-              data-testid="entity-actions-share"
-              aria-label="Share"
-            >
-              <Share2 className="h-3.5 w-3.5" />
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom" className="text-xs">
-            {canShare ? 'Share' : 'Loading…'}
-          </TooltipContent>
-        </Tooltip>
-      )}
+      <ShareButton
+        variant={variant}
+        onClick={() => setShareOpen(true)}
+        disabled={!canShare}
+        tooltip={canShare ? (variant === 'prominent' ? 'Share to a conversation' : 'Share') : 'Loading…'}
+        testId="entity-actions-share"
+      />
 
       <Tooltip>
         <TooltipTrigger asChild>

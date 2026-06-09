@@ -120,6 +120,34 @@ async def _on_server_startup():
     except Exception as _e:  # noqa: BLE001
         print(f"  Capability seed: failed ({_e})")
 
+    # Discover capability values in the background (every restart). The env
+    # probe runs in a separate subprocess with a hard cap — nothing blocks
+    # startup; values land in the discovery dict + entity rows when ready.
+    try:
+        import asyncio as _asyncio_disc
+
+        from flow_sdk.core.capabilities.discovery import run_discovery
+
+        _asyncio_disc.create_task(run_discovery(), name="capability-discovery")
+        print("  Capability discovery: started (background)")
+    except Exception as _e:  # noqa: BLE001
+        print(f"  Capability discovery: failed to start ({_e})")
+
+    # PTY recovery watchdog: respawn visible sessions whose worker died — both at
+    # startup (restart kills PTY children) AND periodically while running (a
+    # worker that crashes mid-session). Background — startup never blocks;
+    # recovered sessions push a ``recovered`` event on (re)watch. This is the
+    # backend home for what used to be the frontend os-status recovery poll.
+    try:
+        import asyncio as _asyncio_pty
+
+        from flow_sdk.server.pty_recovery import start_recovery_task
+
+        _asyncio_pty.create_task(start_recovery_task(), name="pty-recovery")
+        print("  PTY recovery: started (background, periodic)")
+    except Exception as _e:  # noqa: BLE001
+        print(f"  PTY recovery: failed to start ({_e})")
+
     # Search uses FTS5 (built into SQLite) — no external index needed.
     print("  Search index: FTS5 (SQLite built-in)")
 

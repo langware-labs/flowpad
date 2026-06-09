@@ -10,12 +10,10 @@ import asyncio
 import json
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING
 
+from flow_sdk.core.entity.entity_model import DEFAULT_BROWSE_LIMIT
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
-from flow_sdk.core.entity.entity_model import DEFAULT_BROWSE_LIMIT
-
 
 
 class FsRecordsActionsMixin:
@@ -63,11 +61,19 @@ class FsRecordsActionsMixin:
         from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
         from flow_sdk.fs_store.indexer.roots import default_roots  # noqa: PLC0415
         from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
+        from flow_sdk.server.search_filters import resolve_project_scope  # noqa: PLC0415
 
         if sf is None or (not sf.user and not sf.projects):
             return None
+        if sf.projects and not getattr(sf, "record_projects", ()):
+            sf = await resolve_project_scope(sf)
 
         roots: list[FSRef] = []
+        project_root_by_id = {
+            str(pid): str(cwd)
+            for pid, cwd in getattr(sf, "project_roots", ())
+            if pid and cwd
+        }
 
         if sf.user:
             for r in default_roots():
@@ -76,17 +82,23 @@ class FsRecordsActionsMixin:
                     break
 
         if sf.projects:
+            from pathlib import Path as _Path  # noqa: PLC0415
+
             from flow_sdk.builtin.project import Project  # noqa: PLC0415
             from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
-            from pathlib import Path as _Path  # noqa: PLC0415
+            from flow_sdk.fs_store.indexer.roots import is_home_or_ancestor  # noqa: PLC0415
+            from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+            _home = get_instance_settings().user_home
             for pid in sf.projects:
-                proj = await Project.get_one(QueryFilter.parse({"id": pid}))
-                if proj is None:
-                    return ApiFailResponse(
-                        message=f"Project '{pid}' not found",
-                        status_code=404,
-                    )
-                mount = getattr(proj, "fs_storage_mount_path", None)
+                mount = project_root_by_id.get(str(pid))
+                if mount is None:
+                    proj = await Project.get_one(QueryFilter.parse({"id": pid}))
+                    if proj is None:
+                        return ApiFailResponse(
+                            message=f"Project '{pid}' not found",
+                            status_code=404,
+                        )
+                    mount = getattr(proj, "fs_storage_mount_path", None)
                 if not mount:
                     # Stale entity with no mount — skip silently (matches the
                     # legacy ``project_folder_walker_fn`` skip-on-missing
@@ -101,6 +113,16 @@ class FsRecordsActionsMixin:
                 if not mount_path.is_dir():
                     logging.debug(
                         "fs-records/_resolve_scoped_roots: skipping project %s — mount %r is not a directory",
+                        pid,
+                        mount,
+                    )
+                    continue
+                if is_home_or_ancestor(mount_path, _home):
+                    # Walking $HOME (or an ancestor) recurses the whole home
+                    # tree — see is_home_or_ancestor / the CWD_ROOT guard in roots.py.
+                    logging.debug(
+                        "fs-records/_resolve_scoped_roots: skipping project %s — "
+                        "mount %r is $HOME or an ancestor (would walk the whole home tree)",
                         pid,
                         mount,
                     )
@@ -226,7 +248,7 @@ class FsRecordsActionsMixin:
         status = qp.get("status", "") or None
         # Unified ScopeFilter wire format: `?user=true&projects=A,B`. Absent
         # both params means no filter applied (legacy callers).
-        scope_filter = resolve_project_scope(
+        scope_filter = await resolve_project_scope(
             ScopeFilter.from_query_params(qp)
             if (qp.get("user") is not None or qp.get("projects") is not None)
             else None
@@ -342,14 +364,14 @@ class FsRecordsActionsMixin:
 
         import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — trigger auto-registration
         from flow_sdk.core.network.resource_tracker import broadcast_progress  # noqa: PLC0415
-        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
         from flow_sdk.fs_store.indexer import (  # noqa: PLC0415
             INDEXABLE_TYPES,
-            IndexProgressTable,
             IndexerOptions,
+            IndexProgressTable,
             get_shared_indexer,
         )
         from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
         qp = request_info.request.query_params
         filter_type = qp.get("type", "").strip()
@@ -367,21 +389,13 @@ class FsRecordsActionsMixin:
         from flow_sdk.fs_store.operations.all_projects import get_all_scope_filter  # noqa: PLC0415
         from flow_sdk.server.search_filters import ScopeFilter, resolve_project_scope  # noqa: PLC0415
         scope_explicit = qp.get("user") is not None or qp.get("projects") is not None
-        # ``create_missing=True`` matches the legacy behaviour of the silent
-        # ``real_project_cwd_fn`` expander (which also called
-        # ``get_all_projects(create_missing=True)`` on every walk). It also
-        # avoids 404s in ``_resolve_scoped_roots`` for cwds whose Project
-        # entity hasn't been materialised yet: with ``create_missing=False``
-        # ``get_all_projects`` still returns a synthetic UUID5 project_id via
-        # ``Project.derive_id_for_path`` but the entity row doesn't exist, so
-        # ``Project.get_one`` would 404 the whole scan. The materialisation
-        # side-effect is pre-existing; this change only makes it explicit at
-        # the route boundary instead of implicit during the walk.
-        scope_filter = resolve_project_scope(
-            ScopeFilter.from_query_params(qp)
-            if scope_explicit
-            else await get_all_scope_filter()
-        )
+        if scope_explicit:
+            scope_filter = await resolve_project_scope(ScopeFilter.from_query_params(qp))
+        else:
+            # GET scan is read-only: enumerate roots without materialising
+            # missing Project rows, and carry the cwd metadata into
+            # _resolve_scoped_roots so the helper is not scanned twice.
+            scope_filter = await get_all_scope_filter(create_missing=False)
         scoped_roots = await self._resolve_scoped_roots(scope_filter)
         if isinstance(scoped_roots, ApiFailResponse):
             return scoped_roots
@@ -614,10 +628,10 @@ class FsRecordsActionsMixin:
         from dataclasses import asdict  # noqa: PLC0415
 
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
-        from flow_sdk.server.search_filters import ScopeFilter  # noqa: PLC0415
+        from flow_sdk.server.search_filters import ScopeFilter, resolve_project_scope  # noqa: PLC0415
 
         qp = request_info.request.query_params
-        scope_filter = (
+        scope_filter = await resolve_project_scope(
             ScopeFilter.from_query_params(qp)
             if (qp.get("user") is not None or qp.get("projects") is not None)
             else None
@@ -649,10 +663,14 @@ class FsRecordsActionsMixin:
 
         from flow_sdk.core.network.resource_tracker import broadcast_progress  # noqa: PLC0415
         from flow_sdk.db import get_db_driver  # noqa: PLC0415
-        from flow_sdk.fs_store.operations.record_error import clear_all as _clear_all_errors, clear_for_type as _clear_errors_for_type  # noqa: PLC0415
-        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
         from flow_sdk.fs_store.indexer import IndexProgressTable, TypeProgressRow  # noqa: PLC0415
-        from flow_sdk.fs_store.schema_registry import SchemaRegistry, _sanitize_type_name, _schema_dir  # noqa: PLC0415
+        from flow_sdk.fs_store.operations.record_error import clear_all as _clear_all_errors  # noqa: PLC0415
+        from flow_sdk.fs_store.operations.record_error import clear_for_type as _clear_errors_for_type
+        from flow_sdk.fs_store.schema_registry import (  # noqa: PLC0415
+            SchemaRegistry,  # noqa: PLC0415
+            _sanitize_type_name,
+            _schema_dir,
+        )
 
         qp = request_info.request.query_params
         filter_type = qp.get("type", "").strip()
@@ -661,8 +679,8 @@ class FsRecordsActionsMixin:
         # Optional ScopeFilter narrows the delete to a subset of rows per type
         # (e.g. only one project's markdown). Without these params the clear
         # is full per type, matching legacy behaviour.
-        from flow_sdk.server.search_filters import ScopeFilter  # noqa: PLC0415
-        scope_filter = (
+        from flow_sdk.server.search_filters import ScopeFilter, resolve_project_scope  # noqa: PLC0415
+        scope_filter = await resolve_project_scope(
             ScopeFilter.from_query_params(qp)
             if (qp.get("user") is not None or qp.get("projects") is not None)
             else None
@@ -787,16 +805,15 @@ class FsRecordsActionsMixin:
         import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — trigger auto-registration
         from flow_sdk.core.network.resource_tracker import broadcast_progress  # noqa: PLC0415
         from flow_sdk.db import get_db_driver  # noqa: PLC0415
-        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
         from flow_sdk.fs_store.indexer import (  # noqa: PLC0415
             INDEXABLE_TYPES,
-            IndexProgressTable,
             IndexerOptions,
+            IndexProgressTable,
             OrphanAction,
             get_shared_indexer,
         )
-        from flow_sdk.fs_store.fs_ref import FSRef  # noqa: PLC0415
         from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
 
         qp = request_info.request.query_params
         filter_type = qp.get("type", "").strip()
@@ -808,7 +825,7 @@ class FsRecordsActionsMixin:
         limit_per_type_raw = qp.get("limit_per_type", "").strip()
         limit_per_type = int(limit_per_type_raw) if limit_per_type_raw.isdigit() else None
         # Unified ScopeFilter from canonical wire format `?user=…&projects=A,B`.
-        from flow_sdk.server.search_filters import ScopeFilter  # noqa: PLC0415
+        from flow_sdk.server.search_filters import ScopeFilter, resolve_project_scope  # noqa: PLC0415
         # Surface stale callers still using the legacy `?project_id=<id>` shim
         # — it now silently triggers a full-tree walk (scope_filter=None).
         # Logging the hit lets us debug runaway scans without re-introducing
@@ -822,9 +839,9 @@ class FsRecordsActionsMixin:
             )
         from flow_sdk.fs_store.operations.all_projects import get_all_scope_filter  # noqa: PLC0415
         scope_filter = (
-            ScopeFilter.from_query_params(qp)
+            await resolve_project_scope(ScopeFilter.from_query_params(qp), create_missing=True)
             if (qp.get("user") is not None or qp.get("projects") is not None)
-            else await get_all_scope_filter()
+            else await get_all_scope_filter(create_missing=True)
         )
         # Single-project narrowing — derived from the ScopeFilter, used below
         # to short-circuit non-project indexer work paths.
@@ -1008,8 +1025,8 @@ class FsRecordsActionsMixin:
         requested type's discovery rules.
         """
         import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — trigger auto-registration
-        from flow_sdk.fs_store.schema_registry import SchemaRegistry as _SR  # noqa: PLC0415
         from flow_sdk.fs_store.record_list import RecordList  # noqa: PLC0415
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry as _SR  # noqa: PLC0415
 
         qp = request_info.request.query_params
         raw_path = (qp.get("path") or "").strip()
@@ -1035,7 +1052,7 @@ class FsRecordsActionsMixin:
         # missing on disk: the caller now reads ``entity.orphan`` to
         # distinguish stale-but-known-rows from never-existed paths.
         # 404 is reserved for "no record at all"; orphans are SUCCESS.
-        def _find_in(record_list: "RecordList") -> "Record | None":  # type: ignore[name-defined]
+        def _find_in(record_list: "RecordList") -> object | None:
             for rec in record_list:
                 ref = getattr(rec, "asset_ref", None) or getattr(rec, "_asset_ref", None)
                 ref_path = getattr(ref, "path", None) if ref is not None else None
@@ -1071,11 +1088,11 @@ class FsRecordsActionsMixin:
         # from this recovery path.
         if found is None:
             try:
-                from flow_sdk.fs_store.operations.all_projects import get_all_scope_filter  # noqa: PLC0415
                 from flow_sdk.fs_store.indexer import (  # noqa: PLC0415
                     IndexerOptions,
                     get_shared_indexer,
                 )
+                from flow_sdk.fs_store.operations.all_projects import get_all_scope_filter  # noqa: PLC0415
                 from flow_sdk.fs_store.record_types import RecordType as _RT  # noqa: PLC0415
                 rt = _RT(record_type)
                 indexer = get_shared_indexer()
@@ -1447,14 +1464,14 @@ class FsRecordsActionsMixin:
         ``json_path``, ``source_file``, plus the JSON fragment's own fields.
         """
         from flow_sdk.fs_store.source_file_records import (  # noqa: PLC0415
-            extract_records,
+            _delete_pointer,
+            _set_pointer,
             extract_from_data,
+            extract_records,
             is_allowed_source_path,
             known_filename,
             load_raw,
             write_raw,
-            _delete_pointer,
-            _set_pointer,
         )
 
         qp = request_info.request.query_params
@@ -1609,6 +1626,3 @@ def _normalize_asset_path(p: str) -> str:
     if p.startswith("/"):
         p = p[1:]
     return p
-
-
-

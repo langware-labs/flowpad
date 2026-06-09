@@ -64,6 +64,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { allowRename } from './rename-rules';
 import { HistoryModal } from './HistoryModal';
 import InteractiveTerminal from './interactive-terminal';
+import { TerminalRuntimeErrorBanner } from './interactive-terminal/TerminalRuntimeErrorBanner';
 import { ProjectsCounterChip, type ProjectWorkerType } from './ProjectsCounterChip';
 import { AskInstallOneOfDialog } from './openers/AskInstallOneOfDialog';
 import { TerminalOpenerToolbar } from './openers/TerminalOpenerToolbar';
@@ -1369,23 +1370,30 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
                   className="absolute inset-0 min-h-0 overflow-hidden"
                   style={isActive ? { zIndex: 1 } : { visibility: 'hidden', zIndex: 0 }}
                 >
-                  {isMounted && transportShellId && (
-                    <InteractiveTerminal
-                      sessionId={transportShellId}
-                      flow={flow}
-                      className="h-full"
-                      active={isActive}
-                      process={sessionProcess}
-                      onTitleChange={
-                        autoSavePtyTitle
-                          ? (title) => {
-                              if (session.isDisabled) return;
-                              onTabRename(session, title, true, sessionProcess);
-                            }
-                          : undefined
-                      }
-                    />
-                  )}
+                  {isMounted &&
+                    (transportShellId ? (
+                      <InteractiveTerminal
+                        sessionId={transportShellId}
+                        flow={flow}
+                        className="h-full"
+                        active={isActive}
+                        process={sessionProcess}
+                        onTitleChange={
+                          autoSavePtyTitle
+                            ? (title) => {
+                                if (session.isDisabled) return;
+                                onTabRename(session, title, true, sessionProcess);
+                              }
+                            : undefined
+                        }
+                      />
+                    ) : (
+                      // No shell behind this tab (e.g. worker binary missing →
+                      // start_failure latched, shell_id cleared). InteractiveTerminal
+                      // can't mount, so render the runtime-error banner standalone —
+                      // a clear error + Retry instead of a silent blank panel.
+                      <TerminalRuntimeErrorBanner />
+                    ))}
                 </div>
               );
             })

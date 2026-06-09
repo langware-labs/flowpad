@@ -1,14 +1,14 @@
 """Canonical project list: worker scans ∪ Project.get_all(), deduped
 by canonical posix cwd. When ``create_missing=True``, materializes a Project for
-any FS-discovered cwd not yet in the entity table (id via ``Project.derive_id_for_path``).
+any FS-discovered cwd not yet in the entity table and keeps the path-derived
+record id as a compatibility alias for existing fs-record rows.
 """
 
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterator
+from typing import TYPE_CHECKING, Iterator
 
 from flow_sdk.fs_store.indexer.functions._claude_projects import iter_claude_project_paths
 from flow_sdk.fs_store.indexer.functions.codex_projects import (
@@ -19,6 +19,9 @@ from flow_sdk.fs_store.path_utils import canonical_posix_path
 from flow_sdk.instance_settings import get_instance_settings
 from flow_sdk.utils.file_system import is_temp_path
 
+if TYPE_CHECKING:
+    from flow_sdk.server.search_filters import ScopeFilter
+
 
 @dataclass
 class ProjectInfo:
@@ -26,7 +29,8 @@ class ProjectInfo:
 
     cwd: str                                              # canonical posix path
     name: str                                             # display name (basename, or entity override)
-    project_id: str                                       # Project entity id (uuid5-of-cwd)
+    project_id: str                                       # Project entity id
+    record_project_id: str = ""                           # legacy uuid5(project:<cwd>) id
     worker_types: list[str] = field(default_factory=list) # worker provenance keys
     is_new: bool = False                                  # entity was created by THIS call
     modified_at: str | None = None                        # entity updated_date, when known
@@ -86,6 +90,49 @@ def iter_workspace_project_paths(include_temp: bool = False) -> Iterator[Path]:
         yield child
 
 
+def _read_copilot_workspace_cwd(path: Path) -> str | None:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped.startswith("cwd:"):
+            continue
+        value = stripped.split(":", 1)[1].strip()
+        if (value.startswith('"') and value.endswith('"')) or (
+            value.startswith("'") and value.endswith("'")
+        ):
+            value = value[1:-1]
+        return value or None
+    return None
+
+
+def iter_copilot_project_paths(include_temp: bool = False) -> Iterator[Path]:
+    """Yield canonical Copilot workspace cwds from ``~/.copilot/session-state``."""
+    root = get_instance_settings().user_home / ".copilot" / "session-state"
+    if not root.is_dir():
+        return
+    seen: set[str] = set()
+    for workspace in root.glob("*/workspace.yaml"):
+        cwd = _read_copilot_workspace_cwd(workspace)
+        if not cwd or not cwd.startswith("/") or cwd == "/":
+            continue
+        canonical = canonical_posix_path(cwd)
+        if not canonical or canonical in seen:
+            continue
+        if not include_temp and is_temp_path(canonical):
+            continue
+        path = Path(canonical)
+        try:
+            if not path.is_dir():
+                continue
+        except OSError:
+            continue
+        seen.add(canonical)
+        yield path
+
+
 async def get_all_projects(
     *,
     include_temp: bool = False,
@@ -109,6 +156,7 @@ async def get_all_projects(
                     cwd=canonical,
                     name=Path(canonical).name or canonical,
                     project_id="",
+                    record_project_id=Project.derive_id_for_path(canonical) or "",
                 )
                 fs_by_cwd[canonical] = info
             # Workspace folders (worker=None) register as projects without a
@@ -119,6 +167,7 @@ async def get_all_projects(
 
     _scan(iter_claude_project_paths(include_temp=include_temp), "claude")
     _scan(iter_codex_project_paths(include_temp=include_temp), "codex")
+    _scan(iter_copilot_project_paths(include_temp=include_temp), "copilot")
     _scan(iter_workspace_project_paths(include_temp=include_temp), None)
 
     existing = await Project.get_all()
@@ -132,12 +181,14 @@ async def get_all_projects(
         if cwd in by_cwd:
             proj = by_cwd[cwd]
             info.project_id = proj.id
+            info.record_project_id = Project.derive_id_for_path(cwd) or info.record_project_id
             info.modified_at = getattr(proj, "updated_date", None)
             # Prefer entity name when set (user may have renamed)
             if getattr(proj, "name", None):
                 info.name = proj.name  # type: ignore[assignment]
         else:
             info.project_id = Project.derive_id_for_path(cwd) or ""
+            info.record_project_id = info.project_id
             info.is_new = True
             to_create.append(info)
 
@@ -164,6 +215,7 @@ async def get_all_projects(
             cwd=cwd,
             name=proj.name or cwd,
             project_id=proj.id,
+            record_project_id=Project.derive_id_for_path(cwd) or "",
             worker_types=[],
             modified_at=getattr(proj, "updated_date", None),
         )
@@ -199,6 +251,8 @@ async def get_all_scope_filter(
     return ScopeFilter(
         user=True,
         projects=tuple(p.project_id for p in projects if p.project_id),
+        record_projects=tuple(p.record_project_id for p in projects if p.record_project_id),
+        project_roots=tuple((p.project_id, p.cwd) for p in projects if p.project_id and p.cwd),
     )
 
 

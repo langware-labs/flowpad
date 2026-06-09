@@ -92,10 +92,10 @@ def is_ignored(
       2. If basename in ``_WALK_IGNORED`` → ignored (fast-path).
       3. Walk the gitignore stack outermost→innermost, last-match-wins.
     """
-    if _is_force_include(path, root):
-        return False
     if path.name in _WALK_IGNORED:
         return True
+    if _is_force_include(path, root):
+        return False
 
     ignored = False
     for base_dir, spec in stack:

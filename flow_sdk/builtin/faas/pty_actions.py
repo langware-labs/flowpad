@@ -236,7 +236,7 @@ class PtyActionsMixin:
 
         Unlike directly calling compute_provider.get_or_create_pty_session(), this method:
         1. Sets up proper output routing to WebSocket clients
-        2. Registers the session in session_manager
+        2. Registers the session in pty_registry
         3. Adds the session to active_pty_sessions
         4. Sends DataOp notifications to all watchers (clients should watch the compute node)
 
@@ -250,9 +250,12 @@ class PtyActionsMixin:
             on_exit: Optional callback fired when the PTY process exits (receives exit code).
 
         Returns:
-            True if session was created successfully, False otherwise
+            True if session was created successfully, False on pre-flight
+            guard failures (no provider node id). Spawn errors RAISE with the
+            root cause (e.g. ``Command not found: 'codex'``) so callers and
+            the start_failure latch surface a real message.
         """
-        from flow_sdk.compute.providers.desktop.pty_session_manager import session_manager
+        from flow_sdk.compute.providers.desktop.pty_session_manager import pty_registry
 
         if not self.node_provider_id:
             logging.error("[PTY] No node_provider_id set for machine PTY session")
@@ -263,14 +266,14 @@ class PtyActionsMixin:
         pty_key = (self.id, self.node_provider_id, shell_id)
 
         # Check if session already exists
-        existing_session = await session_manager.get_session(pty_key)
+        existing_session = await pty_registry.get_session(pty_key)
         if existing_session:
             logging.info(f"[PTY] Machine session already exists: {pty_key}, attaching connection")
-            await session_manager.attach_session(pty_key, connection_id)
+            await pty_registry.attach(pty_key, connection_id)
             return True
 
         # Evict oldest sessions when the cap is reached, to prevent PTY device exhaustion.
-        node_sessions = [k for k in session_manager.sessions if k[0] == self.id]
+        node_sessions = [k for k in pty_registry.states if k[0] == self.id]
         if len(node_sessions) >= _PTY_CAP:
             evict_keys = node_sessions[:_PTY_EVICT_COUNT]
             logging.warning(f"[PTY] Cap ({_PTY_CAP}) reached — evicting {len(evict_keys)} oldest sessions")
@@ -285,7 +288,7 @@ class PtyActionsMixin:
                         await entity.save()
                 except Exception:
                     pass
-                await session_manager.close_session(evict_key)
+                await pty_registry.close_session(evict_key)
 
         # Create output callback that sends data over WebSocket
         main_loop = asyncio.get_event_loop()
@@ -312,9 +315,9 @@ class PtyActionsMixin:
                     asyncio.run_coroutine_threadsafe(_q.put(data), main_loop)
 
             async def get_and_send():
-                current_session = await session_manager.get_session(current_pty_key)
-                if current_session and current_session.connection_ids:
-                    for current_connection_id in current_session.connection_ids:
+                current_session = await pty_registry.get_session(current_pty_key)
+                if current_session and current_session.attached_connections:
+                    for current_connection_id in current_session.attached_connections:
                         await self._send_pty_output_to_client(
                             request_message_id,
                             current_connection_id,
@@ -325,7 +328,7 @@ class PtyActionsMixin:
                             chunk_timestamp,
                         )
                     logging.debug(
-                        f"[PTY] on_pty_output (machine): sent to {len(current_session.connection_ids)} client(s)"
+                        f"[PTY] on_pty_output (machine): sent to {len(current_session.attached_connections)} client(s)"
                     )
                 elif not current_session:
                     logging.debug(f"[PTY] on_pty_output (machine): session {current_pty_key} not found in manager")
@@ -348,11 +351,14 @@ class PtyActionsMixin:
             )
             logging.info(f"[PTY] Machine PTY session created: {pty_key}")
         except Exception as e:
+            # Propagate — the root cause (e.g. "Command not found: 'codex'")
+            # must reach the API error / start_failure latch, not be flattened
+            # into a generic bool-False → "Failed to create PTY session".
             logging.error(f"[PTY] Failed to create machine PTY session: {e}", exc_info=True)
-            return False
+            raise
 
-        # Register session in session_manager
-        session_state = await session_manager.generate_session(pty_key, self.id, connection_id, cols, rows)
+        # Register session in pty_registry
+        session_state = await pty_registry.generate_session(pty_key, self.id, connection_id, cols, rows)
         session_state.provider_session_data = provider_session_data
         if name:
             session_state.name = name
@@ -672,8 +678,8 @@ class PtyActionsMixin:
         """Clear all in-memory PTY state for this compute node (mimics server restart).
 
         Wipes:
-        - session_manager sessions for this node
-        - compute_provider._pty_sessions for this node
+        - pty_registry sessions for this node
+        - compute_provider._pty_processes for this node
         - active_pty_sessions list on this entity
 
         Shell entities in the DB retain their status; _open_shell will detect
