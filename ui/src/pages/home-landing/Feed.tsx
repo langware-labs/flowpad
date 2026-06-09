@@ -2,9 +2,8 @@ import { FeedEntry, QueryRequest } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { useFeedMutations } from '@src/hooks/use-feed-mutations';
+import { ChevronDown, ChevronRight, EyeOff } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
-
-const TRIM = 220;
 
 /** Format a feed entry's `created_date` (ISO string or Date) as a local date+time (empty if absent). */
 function formatRecorded(value?: string | Date): string {
@@ -25,40 +24,84 @@ function FeedEntryCard({ entry, busy, onDismiss, onSend }: FeedEntryCardProps) {
   const suggest = entry.messageSuggest;
   const header = suggest?.text ?? 'Flowpad diagnostics';
   const body = suggest?.message_text ?? '';
-  const isLong = body.length > TRIM;
-  const shown = expanded || !isLong ? body : `${body.slice(0, TRIM).trimEnd()}…`;
+  const expandable = body.length > 80 || body.includes('\n');
   const recorded = formatRecorded(entry.created_date);
 
   return (
     <div className="rounded-lg border bg-muted/40 px-3 py-2 text-left">
-      <p className="text-sm font-medium">{header}</p>
-      {recorded && (
-        <p className="mt-0.5 text-[11px] text-muted-foreground">{recorded}</p>
-      )}
+      {/* Header row: title left, date/time top-right */}
+      <div className="flex items-start justify-between gap-2">
+        <p className="min-w-0 text-sm font-medium">{header}</p>
+        {recorded && (
+          <p className="shrink-0 text-[11px] text-muted-foreground">{recorded}</p>
+        )}
+      </div>
+
       {body && (
-        <p className="mt-1 whitespace-pre-wrap text-xs text-muted-foreground">{shown}</p>
+        <div className="mt-1 flex items-start gap-1">
+          {expandable && (
+            <button
+              type="button"
+              aria-label={expanded ? 'Collapse' : 'Expand'}
+              className="mt-0.5 shrink-0 text-muted-foreground hover:text-foreground"
+              onClick={() => setExpanded((v) => !v)}
+            >
+              {expanded ? (
+                <ChevronDown className="h-3.5 w-3.5" />
+              ) : (
+                <ChevronRight className="h-3.5 w-3.5" />
+              )}
+            </button>
+          )}
+          {expanded ? (
+            <p
+              className="min-w-0 flex-1 cursor-pointer whitespace-pre-wrap text-xs text-muted-foreground"
+              onClick={() => expandable && setExpanded(false)}
+            >
+              {body}
+            </p>
+          ) : (
+            <div className="flex min-w-0 flex-1 items-center gap-1 text-xs text-muted-foreground">
+              <span
+                className={`truncate ${expandable ? 'cursor-pointer' : ''}`}
+                title={body}
+                onClick={() => expandable && setExpanded(true)}
+              >
+                {body}
+              </span>
+              {expandable && (
+                <button
+                  type="button"
+                  className="shrink-0 text-primary hover:underline"
+                  onClick={() => setExpanded(true)}
+                >
+                  show more
+                </button>
+              )}
+            </div>
+          )}
+        </div>
       )}
-      {isLong && (
+
+      <div className="mt-2 flex items-center gap-2">
         <button
           type="button"
-          className="mt-1 text-xs text-primary hover:underline"
-          onClick={() => setExpanded((v) => !v)}
-        >
-          {expanded ? 'Show less' : 'Show more'}
-        </button>
-      )}
-      <div className="mt-2 flex gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
+          aria-label="Dismiss"
+          title="Dismiss"
           disabled={busy}
           onClick={() => onDismiss(entry)}
+          className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
         >
-          Dismiss
-        </Button>
-        <Button type="button" size="sm" disabled={busy} onClick={() => onSend(entry)}>
-          Send to Support
+          <EyeOff className="h-3.5 w-3.5" />
+        </button>
+        <Button
+          type="button"
+          size="sm"
+          disabled={busy}
+          onClick={() => onSend(entry)}
+          className="h-6 px-2 text-xs"
+        >
+          Report issue
         </Button>
       </div>
     </div>
