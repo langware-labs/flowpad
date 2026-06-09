@@ -1,6 +1,7 @@
 import { MarkdownView } from '@src/components/markdown-view';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@src/components/ui/collapsible';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
+import { DiagnoseModal } from '@src/components/version-popover/diagnose-modal';
 import { sdkConfig } from '@sdk/config/index';
 import {
   Check,
@@ -10,6 +11,7 @@ import {
   ExternalLink,
   Loader2,
   RefreshCw,
+  Stethoscope,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
@@ -149,6 +151,7 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
   const [error, setError] = useState<string | null>(null);
   const [electronVersion, setElectronVersion] = useState<string | null>(null);
   const [upgrading, setUpgrading] = useState(false);
+  const [diagnoseOpen, setDiagnoseOpen] = useState(false);
 
   const electronApi = getElectronApi();
   const mode: 'Desktop' | 'Browser' = electronApi ? 'Desktop' : 'Browser';
@@ -400,8 +403,25 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
               </section>
             </>
           )}
+
+          {/* Toolbar */}
+          <div className="-mx-3 -mb-3 mt-1 flex items-center gap-1 border-t px-3 pb-1 pt-2">
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                setDiagnoseOpen(true);
+              }}
+              className="flex items-center gap-1.5 rounded-sm px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              title="Diagnose a Flowpad issue"
+            >
+              <Stethoscope className="h-3.5 w-3.5" />
+              <span>Diagnose</span>
+            </button>
+          </div>
         </div>
       </PopoverContent>
+      <DiagnoseModal open={diagnoseOpen} onClose={() => setDiagnoseOpen(false)} />
     </Popover>
   );
 }

@@ -65,6 +65,7 @@ def _format_message(*, summary: str, status: str, details: str, platform: str) -
 async def _create_diagnosis_record(*, title: str, symptoms: str, rca: str, fix: str) -> str:
     """Create + persist a ``flowpad_diagnosis`` record; return its id."""
     import flow_sdk.models.entities  # noqa: F401 — registers entity classes
+    from flow_sdk.api.api_types.identifier import mint_uuid
     from flow_sdk.fs_store.fs_record import FSRecord
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
     from flow_sdk.schema.type_info import register_all
@@ -74,7 +75,7 @@ async def _create_diagnosis_record(*, title: str, symptoms: str, rca: str, fix: 
     info = SchemaRegistry.get(EntityType.FLOWPAD_DIAGNOSIS)
     assert info and info.meta_model, f"{EntityType.FLOWPAD_DIAGNOSIS} type is not registered"
     meta = info.meta_model(name=title, title=title, symptoms=symptoms, rca=rca, fix=fix)
-    rec = FSRecord(EntityType.FLOWPAD_DIAGNOSIS, id=None, **meta.model_dump(exclude_none=True))
+    rec = FSRecord(EntityType.FLOWPAD_DIAGNOSIS, id=mint_uuid(), **meta.model_dump(exclude_none=True))
     rec.save()
     await rec.sync_to_db()
     return rec.id
@@ -272,6 +273,10 @@ async def _amain(argv: list[str] | None = None) -> int:
         details=args.details,
         platform=args.platform,
     )
+    # The JSON line IS the completion signal: it flows through the agent's
+    # transcript, and the `flow diagnose` runner detects the run is done (and reads
+    # the ids) by parsing it from the stream it is already consuming — no
+    # cross-process DB poll or marker file needed.
     print(json.dumps(res))
     return 0
 
