@@ -14,6 +14,7 @@ import { ScopeFilterBar } from '@src/components/scope-filter/ScopeFilterBar';
 import { useDefaultScopeFilter } from '@src/hooks/use-default-scope-filter';
 import { useAllProjects } from '@src/hooks/use-all-projects';
 import { Boxes, Lock, Search, type LucideIcon } from 'lucide-react';
+import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
 
 interface AssetPickerPopoverProps {
   /** Popover trigger (typically a Run button); passed to PopoverTrigger asChild. */
@@ -264,6 +265,9 @@ function PickRow({
   const readOnly = isReadOnlySource(descriptor.source);
   const label = displayLabelForTypeid(descriptor.typeid);
 
+  const revealInFinder = () =>
+    void openExternalFromComputeNode('@local', descriptor.posix_path!, { select: true });
+
   return (
     <button
       type="button"
@@ -273,12 +277,36 @@ function PickRow({
     >
       <Icon className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
       <span className="min-w-0 flex-1 truncate">{label}</span>
-      {readOnly && (
-        <Lock
-          className="h-3 w-3 flex-shrink-0 text-muted-foreground"
-          aria-label="Read-only source"
-        />
-      )}
+      {readOnly &&
+        (descriptor.posix_path ? (
+          // Read-only assets live on local disk — clicking the lock reveals
+          // the backing file in Finder/Explorer rather than picking the row.
+          <span
+            role="button"
+            tabIndex={0}
+            className="flex-shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground"
+            aria-label="Reveal in Finder/Explorer"
+            title={`Reveal in Finder/Explorer\n${descriptor.posix_path}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              revealInFinder();
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                e.stopPropagation();
+                revealInFinder();
+              }
+            }}
+          >
+            <Lock className="h-3 w-3" />
+          </span>
+        ) : (
+          <Lock
+            className="h-3 w-3 flex-shrink-0 text-muted-foreground"
+            aria-label="Read-only source"
+          />
+        ))}
       <span
         className="flex-shrink-0 rounded border border-border bg-muted/40 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-muted-foreground"
         title={descriptor.source}
