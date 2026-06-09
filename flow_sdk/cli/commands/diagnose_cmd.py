@@ -78,7 +78,10 @@ class _Renderer:
 async def _run_diagnose(message: str, transcript_timeout: float) -> int:
     from flow_sdk.builtin.agentic_process import AgenticProcess
     from flow_sdk.config import flowpad_assistant_project_root
+    from flow_sdk.core.entity.cross_link import cross_link_entities
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry
     from flow_sdk.migrations.runner import _bootstrap_local
+    from flow_sdk.schema.types import EntityType
 
     # The skill ships inside the package (flow_sdk/system_projects/...), so it
     # resolves the same whether `flow diagnose` runs from a dev checkout or an
@@ -118,15 +121,26 @@ async def _run_diagnose(message: str, transcript_timeout: float) -> int:
     renderer = _Renderer()
     rendered = 0
 
-    async def _recorded() -> bool:
-        """Per-run completion signal: the worker's Step 7 cross-links a
-        flowpad_diagnosis into THIS process's private context. A fresh DB read
-        (the worker is a separate process writing the same instance DB) tells us
-        whether the recording step actually ran."""
-        fresh = await AgenticProcess.get_by_id(ap.id)
-        if fresh is None:
-            return False
-        return any(t.type == "flowpad_diagnosis" for t in fresh.private_context_entities)
+    _diag_cls = SchemaRegistry.get_entity_cls(EntityType.FLOWPAD_DIAGNOSIS)
+
+    async def _entity_ids(cls) -> set[str]:
+        if cls is None:
+            return set()
+        try:
+            rows = await cls.get_all()
+        except Exception:
+            return set()
+        return {r.id for r in rows if getattr(r, "id", None)}
+
+    async def _completed() -> bool:
+        """Per-run completion signal: the worker created a NEW flowpad_diagnosis
+        record. report.py creates it atomically (and the Feed entry, when an issue
+        was found), so the diagnosis appearing means the recording step finished —
+        even for a clean sweep that posts no Feed entry. Snapshot-diff, so it does
+        NOT depend on the worker cross-linking or knowing its own process id (which
+        it can't do in its `uv run python` subprocess on Windows — that's why the
+        old cross-link signal produced false 'not recorded' failures)."""
+        return bool(await _entity_ids(_diag_cls) - diag_before)
 
     async def _consume() -> None:
         nonlocal rendered
@@ -139,21 +153,21 @@ async def _run_diagnose(message: str, transcript_timeout: float) -> int:
 
     async def _stream() -> None:
         """Render the worker's transcript, stopping when the turn ends OR — more
-        reliably — when the diagnosis is recorded (Step 7 done).
+        reliably — when a new Feed entry is recorded (Step 7 done).
 
         We can't depend solely on the transcript's own end-of-turn detection:
         ``_tail_status`` derives COMPLETE from only the last 4 KB of the JSONL, and
         a long final report (one big assistant line) can push the terminal markers
         out of that window, so the stream never sees COMPLETE and polls to its
         deadline — the command hangs long after the work is done (seen on Windows).
-        ``_recorded()`` is authoritative: once the cross-link exists the run is
+        ``_completed()`` is authoritative: once the Feed entry exists the run is
         finished, so we stop then. This is a definitive completion check, not a
         wait budget — we exit the instant either the stream ends or recording lands.
         """
         consumer = asyncio.create_task(_consume())
         try:
             while not consumer.done():
-                if await _recorded():
+                if await _completed():
                     break
                 # Re-check cadence only — there is no give-up timeout; we leave
                 # the loop as soon as the stream finishes or recording is detected.
@@ -166,11 +180,15 @@ async def _run_diagnose(message: str, transcript_timeout: float) -> int:
             renderer.finish()  # close any open progress row before the next message
 
     nudge_text = (
-        "You have NOT recorded the diagnosis yet, so nothing was saved. Complete the "
-        "skill's final recording step now (Step 7): create the flowpad_diagnosis "
-        "record, cross-link it to THIS process, and record it to the Feed via "
-        "create_diagnostic_report. Do not stop until it is recorded."
+        "You have NOT posted the diagnosis to the Feed yet, so nothing was saved. "
+        "Complete the skill's final recording step now (Step 7): create the "
+        "flowpad_diagnosis record and post it to the Feed via the report.py reporter "
+        "script. Do not stop until the Feed entry exists."
     )
+
+    # Snapshot existing diagnoses, so "completed" means THIS run produced a new
+    # one — independent of the worker self-identifying as an agentic process.
+    diag_before = await _entity_ids(_diag_cls)
 
     try:
         await ap.prompt(prompt_text)
@@ -178,7 +196,7 @@ async def _run_diagnose(message: str, transcript_timeout: float) -> int:
         await _stream()
         # The worker can end its turn early — diagnosing but not recording. Nudge
         # the SAME session once to finish, then re-check.
-        if not await _recorded():
+        if not await _completed():
             typer.echo("  …agent stopped before recording — nudging it to finish.")
             await ap.prompt(nudge_text)
             await _stream()
@@ -186,8 +204,23 @@ async def _run_diagnose(message: str, transcript_timeout: float) -> int:
         typer.echo("Diagnose interrupted.", err=True)
         return 130
 
-    if await _recorded():
-        typer.echo("  ✓ Diagnostic complete — recorded to the app's Home Feed.")
+    if await _completed():
+        # Cross-link any diagnosis produced this run into THIS process's context.
+        # The CLI owns the process id, so this works on every platform — the worker
+        # can't always self-identify to do it itself (notably on Windows, where its
+        # uv-run subprocess doesn't inherit FLOWPAD_EXECUTION_SCOPE).
+        try:
+            new_diag = await _entity_ids(_diag_cls) - diag_before
+            if new_diag and _diag_cls is not None:
+                fresh = await AgenticProcess.get_by_id(ap.id)
+                if fresh is not None:
+                    for did in new_diag:
+                        diag = await _diag_cls.get_by_id(did)
+                        if diag is not None:
+                            await cross_link_entities(fresh, diag)
+        except Exception:
+            pass
+        typer.echo("  ✓ Diagnostic complete — diagnosis recorded.")
         return 0
     typer.echo(
         "  ! Diagnostic finished but the result was not recorded — see the report "
