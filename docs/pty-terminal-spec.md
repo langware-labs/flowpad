@@ -96,7 +96,7 @@ Transitions (all backend; `connection_id` is stable across an in-page reconnect)
 | client closes tab | `* → NONE` (+ destroy if last) | `close_for_connection` |
 | orphan TTL / parked grace | close / drop | `cleanup_expired_sessions` |
 
-So a transient drop+reconnect of the same `connection_id` auto-restores output with **no client action**. (A worker that *dies* mid-session is a separate concern, respawned by the periodic backend watchdog in `flow_sdk/server/pty_recovery.py`.)
+So a transient drop+reconnect of the same `connection_id` auto-restores output with **no client action**. (A *dead PTY* — an agentic worker that exits mid-session, or any shell whose process is gone after a full backend restart — is a separate concern, respawned by the periodic backend watchdog in `flow_sdk/server/pty_recovery.py`: `run_pty_recovery` re-`start_pty`s dead agentic workers (`--resume`), and `_recover_bare_shells` respawns recently-active bare terminals — liveness keyed on `has_attachable_pty`, not `worker_alive`, since a bare shell has no worker. The client then re-`attach`es to the rebuilt PTY.)
 
 ---
 

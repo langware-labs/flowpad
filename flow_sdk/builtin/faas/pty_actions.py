@@ -735,10 +735,12 @@ class PtyActionsMixin:
         """
         logging.info(f"[PTY] _attach_pty_session called with body: {body}")
         request_info = get_current_request_info()
-        if not request_info or not request_info.request_message_id:
+        if not request_info:
             return ApiFailResponse(message="Invalid request context")
 
-        request_message_id = request_info.request_message_id
+        # request_message_id rides the WS message; REST callers don't carry one,
+        # so fall back to the body or a fresh id (shared helper).
+        request_message_id = self._request_message_id(body)
         pty_id = body.get("pty_id") or body.get("shell_id")
 
         if not pty_id:
@@ -751,8 +753,11 @@ class PtyActionsMixin:
             )
             return ApiFailResponse(message="Missing required parameters", data=response_msg.model_dump())
 
-        # Get connection_id from request context
-        if not request_info.request_connection_id:
+        # Get connection_id from request context (WS) or body (REST callers) —
+        # mirrors _start_pty_session, so a headless REST client can re-attach the
+        # same connection it started with.
+        request_connection_id = request_info.request_connection_id or body.get("connection_id")
+        if not request_connection_id:
             logging.error("[PTY] No WebSocket connection available")
             response_msg = ResponseMessage(
                 session_id=pty_id,
@@ -762,7 +767,6 @@ class PtyActionsMixin:
             )
             return ApiFailResponse(message="No WebSocket connection available", data=response_msg.model_dump())
 
-        request_connection_id = request_info.request_connection_id
         logging.info(f"[PTY] Attaching with connection_id: {request_connection_id}")
 
         pty_handle = self.get_pty(pty_id)

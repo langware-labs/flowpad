@@ -118,13 +118,18 @@ async def maybe_emit_recovered_on_watch(connection_id: str, entity_type: str, en
 
 
 async def run_pty_recovery() -> None:
-    """Reconcile + respawn every visible session with a dead worker."""
+    """Reconcile + respawn dead PTYs: agentic workers (with ``--resume``) and bare
+    terminals (a fresh shell). Both kinds are ``Shell``-backed; the only divergence
+    is the liveness signal and the respawn entry, handled per-pass below."""
     from flow_sdk.builtin.agentic_process import AgenticProcess
     from flow_sdk.builtin.process_lifecycle import ProcessStatus
 
     try:
         procs = await AgenticProcess.get_all()
     except Exception:
+        # Can't tell which shells are agentic-owned this tick — skip both passes
+        # rather than risk bare-recovering a worker's shell (which would drop its
+        # --resume session).
         logger.exception("pty-recovery: failed to enumerate processes")
         return
 
@@ -163,6 +168,58 @@ async def run_pty_recovery() -> None:
                 logger.info("pty-recovery: recovered %s", proc.id)
         except Exception:
             logger.exception("pty-recovery: failed to recover %s", getattr(proc, "id", "?"))
+
+    await _recover_bare_shells({p.shell_id for p in procs if p.shell_id})
+
+
+# A bare terminal (no agentic worker) is just a Shell with worker_pid=None, so
+# the agentic pass above (keyed on worker_alive) never touches it. Liveness for a
+# bare shell is solely "is the PTY process attachable"; respawn is a fresh
+# Shell.start_pty(). Bound to recently-active shells so a long-dead "running"
+# record (an abandoned tab whose disk row was never closed) isn't resurrected on
+# every restart — only a terminal the user plausibly still has open.
+_BARE_SHELL_RECOVERY_WINDOW_SECONDS = 3600
+
+
+async def _recover_bare_shells(agentic_shell_ids: set[str]) -> None:
+    from datetime import datetime, timezone
+
+    from flow_sdk.builtin.shell import Shell, ShellStatus
+
+    try:
+        shells = await Shell.get_all()
+    except Exception:
+        logger.exception("pty-recovery: failed to enumerate shells")
+        return
+
+    now = datetime.now(timezone.utc)
+    for shell in shells:
+        try:
+            if shell.status != ShellStatus.RUNNING.value:
+                continue
+            # Agentic-owned shells are handled by the pass above (with --resume).
+            if shell.id in agentic_shell_ids:
+                continue
+            # Recency gate — skip a long-dead "running" record; only revive a
+            # terminal the user plausibly still has open. A missing/unparseable
+            # last_active_at (ts is None) falls through and is treated as recent.
+            ts = Shell._as_datetime(getattr(shell, "last_active_at", None))
+            if ts and (now - ts).total_seconds() > _BARE_SHELL_RECOVERY_WINDOW_SECONDS:
+                continue
+            try:
+                attachable = await shell.has_attachable_pty()
+            except Exception:
+                attachable = False
+            if attachable:
+                continue  # PTY survived in-process (rare) — nothing to do
+
+            logger.info("pty-recovery: recovering bare shell %s (PTY dead after restart)", shell.id)
+            await shell.start_pty()
+            logger.info("pty-recovery: recovered bare shell %s", shell.id)
+        except Exception:
+            logger.exception(
+                "pty-recovery: failed to recover bare shell %s", getattr(shell, "id", "?")
+            )
 
 
 # Background periodic watchdog (mid-session dead-worker respawn). Mirrors
