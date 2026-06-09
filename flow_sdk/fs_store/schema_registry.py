@@ -248,6 +248,12 @@ class TypeInfo:
     # on save.
     main_subdir: str | None = None
     main_layout: str = "file"
+    # For ``main_layout == "folder"`` owned types: the fixed inner filename of
+    # the primary asset (e.g. ``spec.md`` under ``specs/<name>/``). When set,
+    # ``compute_asset_ref`` targets ``<subdir>/<name>/<main_file>`` instead of
+    # the bare folder, so ``owns_main_ref`` folder types can write/round-trip
+    # the body file. Runtime-only; not part of the schema hash.
+    main_file: str | None = None
 
     @property
     def schema_hash(self) -> str:
@@ -396,6 +402,8 @@ class SchemaRegistry:
                 existing.main_subdir = info.main_subdir
             if info.main_layout != "file":
                 existing.main_layout = info.main_layout
+            if info.main_file is not None:
+                existing.main_file = info.main_file
             if info.post_sync_fn is not None:
                 existing.post_sync_fn = info.post_sync_fn
             if info.from_disk_fn is not None:

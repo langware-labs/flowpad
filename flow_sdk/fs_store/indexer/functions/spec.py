@@ -106,7 +106,15 @@ def spec_gen_id(ref: FSRef) -> str:
 
 
 def extract_spec(ref: FSRef) -> list[FSRecord]:
-    """Parse a spec.md into a Record. Replaces ``SpecRecord._from_fsref_sync``."""
+    """Parse a spec.md into a Record. Replaces ``SpecRecord._from_fsref_sync``.
+
+    ``content`` is the body ONLY (frontmatter stripped) so the entity↔record
+    round-trip is stable: ``Spec`` owns its main_ref, so ``_spec_default_body``
+    re-renders ``frontmatter(id/title/spec_type) + content`` on every save — if
+    ``content`` still carried the frontmatter, each save would accumulate a
+    duplicate block. Title populates both ``name`` (generic folder/FTS) and
+    ``title`` (the Spec entity's display field).
+    """
     path = ref._path
     spec_uname = path.parent.name
     name = spec_uname
@@ -114,16 +122,18 @@ def extract_spec(ref: FSRef) -> list[FSRecord]:
     content = ""
     try:
         text = path.read_text(encoding="utf-8")
-        content = text
-        if text.startswith("---"):
-            end = text.find("---", 3)
-            if end != -1:
-                fm_text = text[3:end].strip()
-                for line in fm_text.splitlines():
-                    if line.startswith("title:"):
-                        name = line.split(":", 1)[1].strip().strip('"')
-                    elif line.startswith("spec_type:"):
-                        spec_type = line.split(":", 1)[1].strip()
+        content = _extract_body(text)  # body only — frontmatter stripped
+        # Parse frontmatter with the YAML loader (not line-splitting) so quoted
+        # values — e.g. a title containing a colon, which the renderer quotes —
+        # round-trip cleanly.
+        fm = _extract_frontmatter(text)
+        if fm:
+            fields = _yaml_load(fm) or {}
+            if isinstance(fields, dict):
+                if fields.get("title"):
+                    name = str(fields["title"])
+                if fields.get("spec_type"):
+                    spec_type = str(fields["spec_type"])
     except OSError:
         pass
     rec_id = _read_spec_frontmatter_id(path) or _spec_id_from_path(path)
@@ -131,6 +141,7 @@ def extract_spec(ref: FSRef) -> list[FSRecord]:
         type=RecordType.SPEC,
         id=rec_id,
         name=name,
+        title=name,
         spec_type=spec_type,
         content=content,
     )

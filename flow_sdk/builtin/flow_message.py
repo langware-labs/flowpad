@@ -129,6 +129,13 @@ _NON_MATERIALIZING_TYPE_IDS = frozenset(
     {"conversation", "flow_message", "task", "git_repo", "claude_session"}
 )
 
+# Body-bearing indexed types whose VALUE is a markdown body: a record folder
+# that has only ``metadata.json`` and no backing source file is a content-less
+# STUB (e.g. a spec row minted from a body-less hub reflect ahead of its
+# bundle). Such a stub must NOT count as "downloaded" — otherwise the bundle
+# carrying the real body is never (re-)pulled and the entity renders blank.
+_BODY_BEARING_TYPE_IDS = frozenset({"spec", "markdown", "plan"})
+
 
 def _type_id_record_materialized(data: str) -> bool:
     """Sync disk probe: does the entity referenced by a TYPE_ID attachment have
@@ -139,7 +146,11 @@ def _type_id_record_materialized(data: str) -> bool:
     ``metadata.json``. The body-bundle unpack reindexes assets *before* it fans
     the entity UPDATE, so by the time a re-serialize observes this the folder
     exists. Structural plumbing types are treated as always-present (they don't
-    render and may not have a standard folder)."""
+    render and may not have a standard folder).
+
+    Body-bearing types (spec/markdown/plan) additionally require their
+    ``asset_ref`` source file to exist — a metadata-only stub does not count, so
+    a body-less spec re-pulls its bundle instead of being stranded blank."""
     if "-" not in data:
         return True
     etype, eid = data.split("-", 1)
@@ -148,7 +159,18 @@ def _type_id_record_materialized(data: str) -> bool:
     try:
         from flow_sdk.fs_store.record_paths import get_default_records_root, record_stem
         folder = get_default_records_root() / etype / record_stem(etype, eid)
-        return (folder / "metadata.json").exists()
+        meta = folder / "metadata.json"
+        if not meta.exists():
+            return False
+        if etype in _BODY_BEARING_TYPE_IDS:
+            import json  # noqa: PLC0415
+            # A metadata-only stub has no resolvable asset_ref → not "downloaded"
+            # (so the bundle re-pulls). Malformed metadata falls through to the
+            # outer except → False, same effect.
+            asset_ref = (json.loads(meta.read_text(encoding="utf-8")) or {}).get("asset_ref")
+            if not asset_ref or not Path(asset_ref).exists():
+                return False
+        return True
     except Exception:
         return False
 
