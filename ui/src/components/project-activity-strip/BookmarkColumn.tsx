@@ -197,7 +197,7 @@ export function BookmarkColumn({
   }, [dialogSessionId, snifferEvents]);
 
   return (
-    <div className="flex h-full flex-col rounded-lg border border-border bg-card">
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-card">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-border p-3">
         <div className="flex items-center gap-2">

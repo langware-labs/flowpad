@@ -168,7 +168,8 @@ const BACKEND_PORT = 9007;
 const BACKEND_URL = `http://localhost:${BACKEND_PORT}`;
 const FLOWPAD_CLOUD_URL = process.env.FLOWPAD_CLOUD_URL || 'https://app.flowpad.ai';
 const HEALTH_CHECK_INTERVAL = 500; // ms
-const MAX_HEALTH_CHECKS = 60; // 30 seconds max wait
+const MAX_HEALTH_CHECKS = 60; // 30 seconds — used for cold-start
+const POST_UPGRADE_HEALTH_CHECKS = 240; // 120 seconds — matches uv upgrade() ceiling
 
 let mainWindow = null;
 let uvManager = null;
@@ -305,10 +306,11 @@ function createWindow() {
   return mainWindow;
 }
 
-async function waitForBackend() {
-  log.info(`Waiting for backend at ${BACKEND_URL}...`);
+async function waitForBackend({ maxChecks = MAX_HEALTH_CHECKS } = {}) {
+  const timeoutSec = Math.round((maxChecks * HEALTH_CHECK_INTERVAL) / 1000);
+  log.info(`Waiting for backend at ${BACKEND_URL} (up to ${timeoutSec}s)...`);
 
-  for (let i = 0; i < MAX_HEALTH_CHECKS; i++) {
+  for (let i = 0; i < maxChecks; i++) {
     try {
       const response = await fetch(`${BACKEND_URL}/health/status`);
       if (response.ok) {
@@ -321,7 +323,7 @@ async function waitForBackend() {
     await new Promise(resolve => setTimeout(resolve, HEALTH_CHECK_INTERVAL));
   }
 
-  log.error('Backend failed to start within timeout');
+  log.error(`Backend failed to start within ${timeoutSec}s timeout`);
   return false;
 }
 
@@ -345,6 +347,8 @@ async function startApp() {
 
   // In development mode, assume backend is running externally
   const isDev = process.env.MINIHUB_DEV === 'true';
+
+  let backendJustUpgraded = false;
 
   if (isDev) {
     log.info('Development mode: expecting backend to be running externally');
@@ -380,6 +384,7 @@ async function startApp() {
             sendStatus('Updating Flowpad to latest');
             await uvManager.upgrade();
             activeBin = uvManager.getInstalledFlowBin() || flowBin;
+            backendJustUpgraded = true;
           }
         }
 
@@ -397,6 +402,7 @@ async function startApp() {
 
         sendStatus('Installing Flowpad');
         await uvManager.installLatest();
+        backendJustUpgraded = true;
 
         const version = uvManager.getInstalledVersionSync();
         const versionSuffix = version ? ` v${version}` : '';
@@ -429,13 +435,21 @@ async function startApp() {
     }
   }
 
-  // Wait for backend to be ready
+  // Wait for backend to be ready. After an install/upgrade the freshly
+  // unpacked Python env takes substantially longer to import on first boot
+  // (PyPI fetch + bytecode warm-up + AV scan on Windows), so widen the
+  // window when we know we just ran uv install/upgrade.
   sendStatus('Waiting for server');
-  const backendReady = await waitForBackend();
+  const waitOpts = backendJustUpgraded ? { maxChecks: POST_UPGRADE_HEALTH_CHECKS } : undefined;
+  const backendReady = await waitForBackend(waitOpts);
 
   if (!backendReady) {
     // Try to gather diagnostics for the error dialog
-    let detail = 'Backend server failed to respond within 30 seconds.';
+    const timeoutSec = Math.round(
+      ((backendJustUpgraded ? POST_UPGRADE_HEALTH_CHECKS : MAX_HEALTH_CHECKS) *
+        HEALTH_CHECK_INTERVAL) / 1000,
+    );
+    let detail = `Backend server failed to respond within ${timeoutSec} seconds.`;
     try {
       const newest = getNewestLogFile(path.join(LOGS_BASE, 'monitor'));
       if (newest) {
@@ -697,7 +711,7 @@ ipcMain.handle('upgrade-flowpad', async () => {
     await uvManager.start();
 
     sendStatus('Waiting for server');
-    const ready = await waitForBackend();
+    const ready = await waitForBackend({ maxChecks: POST_UPGRADE_HEALTH_CHECKS });
 
     if (ready && mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.loadURL(BACKEND_URL);

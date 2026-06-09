@@ -11,7 +11,11 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from typer.testing import CliRunner
 
-from flow_sdk.cli.commands.diagnose_cmd import _Renderer
+from flow_sdk.cli.commands.diagnose_cmd import (
+    _Renderer,
+    _TerminalSink,
+    _extract_report_result,
+)
 from flow_sdk.cli.flow_cli import app
 
 runner = CliRunner()
@@ -98,7 +102,8 @@ def _entry(role, blocks):
 
 
 def test_renderer_shows_narration_and_pulse_not_tool_noise(capsys):
-    r = _Renderer()
+    # _Renderer emits semantic events; _TerminalSink renders them to the terminal.
+    r = _Renderer(_TerminalSink())
     r.feed(_entry("assistant", [{"type": "text", "text": "Checking port"}]))
     r.feed(_entry("assistant", [{"type": "tool_use", "name": "Bash"}]))
     r.feed(_entry("assistant", [{"type": "tool_use", "name": "Bash"}]))
@@ -112,10 +117,24 @@ def test_renderer_shows_narration_and_pulse_not_tool_noise(capsys):
 
 
 def test_renderer_ignores_non_message_entries(capsys):
-    r = _Renderer()
+    r = _Renderer(_TerminalSink())
     r.feed({"type": "system", "subtype": "init"})  # no "message" key
     r.finish()
     assert capsys.readouterr().out == ""
+
+
+# --------------------------------------------------------------------------- #
+# _extract_report_result — completion JSON scraped from report.py's stdout
+# --------------------------------------------------------------------------- #
+
+def test_extract_report_result_parses_json_from_text():
+    text = 'log line\n```json\n{"diagnosis_id": "abc", "feed_posted": false}\n```\n'
+    assert _extract_report_result(text) == {"diagnosis_id": "abc", "feed_posted": False}
+
+
+def test_extract_report_result_none_when_absent_or_no_id():
+    assert _extract_report_result("nothing to see") is None
+    assert _extract_report_result('{"feed_posted": false}') is None  # no diagnosis_id
 
 
 # --------------------------------------------------------------------------- #
@@ -127,10 +146,11 @@ async def test_run_diagnose_exits_when_recorded_even_if_stream_never_ends():
     """Regression for the Windows hang: ``_tail_status`` can fail to report
     COMPLETE (a long final report pushes the terminal markers out of its 4 KB
     tail window), so ``stream_transcript`` never returns. The command must still
-    exit once the diagnosis is recorded. The 5 s ``wait_for`` is a hang DETECTOR
-    (it makes a regression fail fast) — not a budget to ride past the symptom.
+    exit once report.py's result JSON appears in the stream — completion is read
+    from the transcript itself, NOT a cross-process DB query or marker. The 5 s
+    ``wait_for`` is a hang DETECTOR (it makes a regression fail fast) — not a
+    budget to ride past the symptom.
     """
-    from types import SimpleNamespace
     from unittest.mock import AsyncMock
 
     from flow_sdk.cli.commands import diagnose_cmd
@@ -147,19 +167,32 @@ async def test_run_diagnose_exits_when_recorded_even_if_stream_never_ends():
             return None
 
         async def stream_transcript(self, timeout=0):
-            # Emit one narration entry, then never terminate (the hang we fix).
+            # Narration, then report.py's result JSON via a tool_result, then never
+            # terminate (the hang we fix). The JSON is the completion signal.
             yield {"message": {"role": "assistant", "content": [{"type": "text", "text": "working"}]}}
+            yield {
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "content": '{"diagnosis_id": "d1", "feed_entry_id": null, "feed_posted": false}',
+                        }
+                    ],
+                }
+            }
             await asyncio.sleep(3600)
 
         @classmethod
         async def get_by_id(cls, _id):
-            # Recording already landed: a flowpad_diagnosis is cross-linked in.
-            return SimpleNamespace(
-                private_context_entities=[SimpleNamespace(type="flowpad_diagnosis")]
-            )
+            return None
 
     with (
         patch("flow_sdk.builtin.agentic_process.AgenticProcess", _FakeAP),
+        patch(
+            "flow_sdk.fs_store.schema_registry.SchemaRegistry.get_entity_cls",
+            lambda _t: None,
+        ),
         patch("flow_sdk.migrations.runner._bootstrap_local", new=AsyncMock(return_value=None)),
     ):
         rc = await asyncio.wait_for(diagnose_cmd._run_diagnose("", 1800.0), timeout=5)

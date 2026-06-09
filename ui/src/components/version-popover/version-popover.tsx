@@ -1,8 +1,19 @@
 import { MarkdownView } from '@src/components/markdown-view';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@src/components/ui/collapsible';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
+import { Button } from '@src/components/ui/button';
+import { DiagnoseModal } from '@src/components/version-popover/diagnose-modal';
 import { sdkConfig } from '@sdk/config/index';
-import { Check, ChevronDown, ChevronRight, Copy, ExternalLink, Loader2, RefreshCw } from 'lucide-react';
+import {
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Copy,
+  ExternalLink,
+  Loader2,
+  RefreshCw,
+  Stethoscope,
+} from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 interface PypiInfo {
@@ -208,6 +219,7 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
   const [error, setError] = useState<string | null>(null);
   const [electronVersion, setElectronVersion] = useState<string | null>(null);
   const [upgrading, setUpgrading] = useState(false);
+  const [diagnoseOpen, setDiagnoseOpen] = useState(false);
 
   const electronApi = getElectronApi();
   const mode: 'Desktop' | 'Browser' = electronApi ? 'Desktop' : 'Browser';
@@ -453,8 +465,26 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
               </section>
             </>
           )}
+
+          {/* Toolbar */}
+          <div className="-mx-3 -mb-3 mt-1 border-t px-3 pb-1 pt-2.5">
+            <Button
+              type="button"
+              size="sm"
+              className="w-full"
+              onClick={() => {
+                setOpen(false);
+                setDiagnoseOpen(true);
+              }}
+              title="Diagnose a Flowpad issue"
+            >
+              <Stethoscope />
+              <span>Diagnose</span>
+            </Button>
+          </div>
         </div>
       </PopoverContent>
+      <DiagnoseModal open={diagnoseOpen} onClose={() => setDiagnoseOpen(false)} />
     </Popover>
   );
 }
