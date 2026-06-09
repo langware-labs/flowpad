@@ -181,7 +181,7 @@ let pendingDeepLink = null;
 function isStartupOnlyDeepLink(url) {
   try {
     const parsed = new URL(url);
-    return parsed.protocol === 'flowpad:' && ['__probe', '__launch'].includes(parsed.hostname);
+    return parsed.protocol === 'flowpad:' && ['__probe', '__launch'].includes((parsed.hostname || '').toLowerCase());
   } catch {
     return false;
   }
@@ -391,7 +391,24 @@ async function startApp() {
         const version = uvManager.getInstalledVersionSync(activeBin);
         const versionSuffix = version ? ` v${version}` : '';
         sendStatus(`Starting flowpad${versionSuffix}`);
-        await uvManager.startWithBin(activeBin);
+        try {
+          await uvManager.startWithBin(activeBin);
+        } catch (startErr) {
+          // A shim exists on disk (so we took the fast path), but its env can't
+          // import flow_sdk — a corrupt/half-finished install. Without this the
+          // app would crash on the same broken shim every launch and never
+          // self-heal (a --force reinstall only runs in the first-time branch).
+          // Repair once and retry; if it still fails, fall through to the dialog.
+          if (!uvManager.isBrokenInstallError(startErr)) throw startErr;
+          log.warn('Detected broken flow install (cannot import flow_sdk); reinstalling…');
+          sendStatus('Repairing Flowpad installation');
+          await uvManager.ensureUv();
+          await uvManager.reinstall();
+          backendJustUpgraded = true;
+          const repairedVersion = uvManager.getInstalledVersionSync();
+          sendStatus(`Starting flowpad${repairedVersion ? ` v${repairedVersion}` : ''}`);
+          await uvManager.start();
+        }
       } else {
         // FIRST-TIME SETUP: uv tool install flowpad (latest)
         log.info('First-time setup: flow binary not found, installing latest from PyPI');
