@@ -203,6 +203,18 @@ export function DiagnoseModal({ open, onClose }: DiagnoseModalProps) {
               </button>
             </div>
           )}
+
+          {done && (
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={handleClose}
+                className="flex items-center justify-center gap-2 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+              >
+                Close
+              </button>
+            </div>
+          )}
         </div>
       </DialogContent>
     </Dialog>
