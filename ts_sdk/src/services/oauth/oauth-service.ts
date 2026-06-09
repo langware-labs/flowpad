@@ -343,15 +343,15 @@ export class OAuthService {
    * Ensure secret-keychain access is enabled. Returns false if the user cancels
    * or the OS denies — caller must NOT proceed to OAuth popup in that case.
    * Mirrors the gate inside navigationService.navigateToLogin so that any
-   * cloud-login entry point (oauthService.connect) also goes through the
-   * SecretApprovalDialog before the OAuth popup opens.
+   * cloud-login entry point (oauthService.connect) also provisions keychain
+   * access before the OAuth popup opens.
    */
   private async ensureSecretsEnabled(): Promise<boolean> {
     try {
       const initial = await secretsService.isEnabled();
       if (initial?.enabled) return true;
     } catch {
-      // probe failed (offline/server down) — fall through to the dialog
+      // probe failed (offline/server down) — fall through to provisioning
     }
     const approved = await secretApprovalGate.request();
     if (!approved) return false;

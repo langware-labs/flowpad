@@ -44,6 +44,7 @@ import type React from 'react';
 import { SearchFilters, SearchResult } from '@src/hooks/use-record-search';
 import { navigateToResult } from '@src/navigation/record-type-nav';
 import { InlineSearchResults } from './InlineSearchResults';
+import { Feed } from './Feed';
 import { PackageSearch, X, CheckCircle2, Hammer, Inbox, RefreshCw, Users } from 'lucide-react';
 import { useInboxStore } from '@src/store/use-inbox-store';
 import { listInboxMessages } from '@src/components/inbox-view/inbox-api';
@@ -652,6 +653,8 @@ export function HomeLanding() {
                 </button>
               </div>
             </div>
+
+            <Feed />
 
             <div className="w-full max-w-3xl">
               <MiniDesktop />

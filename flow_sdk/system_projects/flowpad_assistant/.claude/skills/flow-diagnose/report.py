@@ -1,0 +1,209 @@
+"""flow-diagnose reporter — SDK-direct, no HTTP, no hub.
+
+This script lives **next to the flow-diagnose SKILL.md** and is what the skill's
+final step (Step 7) runs to record a diagnosis. Run it as a script, e.g.:
+
+    uv run python <skill_dir>/report.py \
+        --summary "Cleared a stale lock; backend starts now." \
+        --status fixed \
+        --details "<the full == Flowpad Diagnostic Report == block>" \
+        --platform macOS \
+        --attachment-type-id flowpad_diagnosis-<id>
+
+It prints a JSON line ``{"feed_entry_id", "conversation_id", "flow_message_id"}``.
+
+It writes the report straight to the local instance store (the same SQLite DB / FS
+records the backend reads), so it works **whether or not the backend is running** —
+which is the point, since ``flow diagnose`` runs precisely when the backend may be
+down. Because it runs in a fresh process, it opens the DB itself (``init_db()`` —
+idempotent; a no-op if already open).
+
+It creates, all locally:
+  1. a hidden support ``Conversation`` (``dismissed_at`` stamped so it stays out
+     of the Recent strip until the user clicks "Send to Support"),
+  2. a summary ``FlowMessage`` appended to that conversation (optionally carrying
+     the diagnosis as a ``TYPE_ID`` attachment), and
+  3. a ``FeedEntry`` (kind ``message_suggest``) that the Home-landing Feed renders.
+
+The @local user/project are CREATED if they don't exist yet (idempotent) — a
+fresh checkout that never completed a first run still records the report, so it
+shows the moment the app launches.
+"""
+from __future__ import annotations
+
+import logging
+from datetime import datetime
+
+from flow_sdk._compat import UTC
+
+logger = logging.getLogger(__name__)
+
+
+def _format_message(*, summary: str, status: str, details: str, platform: str) -> str:
+    """Compose the FlowMessage body from the report fields."""
+    lines: list[str] = [(summary or "").strip()]
+    meta: list[str] = []
+    if status:
+        meta.append(f"Status: {status}")
+    if platform:
+        meta.append(f"Platform: {platform}")
+    if meta:
+        lines.append("")
+        lines.append(" · ".join(meta))
+    if details:
+        lines.append("")
+        lines.append(details.strip())
+    return "\n".join(lines)
+
+
+async def create_diagnostic_report(
+    *,
+    summary: str,
+    status: str = "informational",
+    details: str = "",
+    platform: str = "",
+    attachment_type_id: str | None = None,
+) -> dict:
+    """Persist a flow-diagnose report as a hidden Conversation + FlowMessage +
+    FeedEntry via the SDK. Returns ``{feed_entry_id, conversation_id,
+    flow_message_id}``. Creates the @local user/project if missing, so it always
+    records.
+
+    ``attachment_type_id`` — an optional ``"<type>-<id>"`` TypeId (e.g. a
+    ``flowpad_diagnosis-<id>``) attached to the summary message as a ``TYPE_ID``
+    attachment, so the support card can carry the structured diagnosis entity.
+    """
+    from flow_sdk.builtin.conversation import Conversation
+    from flow_sdk.builtin.feed_entry import FeedEntry, FeedKind, FeedStatus, MessageSuggest
+    from flow_sdk.builtin.flow_message import Attachment, AttachmentType, FlowMessage
+    from flow_sdk.db.database import init_db
+    from flow_sdk.fs_store.operations.conversation import (
+        append_message_pointer,
+        default_jsonl_path,
+        from_jsonl,
+        project_pointers_to_entity,
+    )
+    from flow_sdk.fs_store.record_types import RecordType
+    from flow_sdk.server.routes.bootstrap import (
+        get_or_create_local_project,
+        get_or_create_local_user,
+    )
+
+    # Open the instance DB in-process (idempotent; creates tables if missing).
+    await init_db()
+
+    # Ensure the @local user/project exist — CREATE them if missing (idempotent)
+    # rather than skipping. On a fresh checkout the app may not have completed a
+    # first run, but the report must still be recorded so it shows once the app
+    # launches. (Skipping here was the cause of "no result recorded" on a clean
+    # Windows install.)
+    user = await get_or_create_local_user()
+    project = await get_or_create_local_project(desktop_user=user)
+    owner = user.typeid
+
+    # 1) Conversation — created normally, hidden at the end (step 3) so the
+    #    message it carries can't auto-revive it in the Recent strip.
+    title = f"Flowpad diagnostics — {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')}"
+    conv = Conversation.model_validate(
+        {"project_id": project.id, "participants": [], "title": title, "name": title}
+    )
+    conv.id = Conversation.allocate_id(conv.model_dump())
+    conv = await conv.save(owner)
+    await project.attach_child(conv)
+
+    rec = from_jsonl(
+        default_jsonl_path(conv.id), project.id, conv.id, parent_type=RecordType.PROJECT
+    )
+    rec.save()
+
+    # 2) Summary FlowMessage, appended to the conversation (local pointer path —
+    #    NOT the hub add_message, which needs cloud login).
+    body = _format_message(summary=summary, status=status, details=details, platform=platform)
+    msg = FlowMessage(
+        text=body,
+        conversation_id=conv.id,
+        sender_id=user.id,
+        sender_name=getattr(user, "name", None) or "Flowpad Diagnostics",
+        attachment=(
+            [Attachment(attachment_type=AttachmentType.TYPE_ID, data=attachment_type_id)]
+            if attachment_type_id
+            else []
+        ),
+    )
+    msg = await msg.save(owner)
+
+    append_message_pointer(rec, msg.id, datetime.now(UTC).isoformat())
+    await project_pointers_to_entity(rec, notify=False)
+
+    # 3) Hide from the strip until "Send to Support". Stamp dismissed_at AFTER the
+    #    message so it is newer than the latest message ts (no auto-revive).
+    conv = await Conversation.get_one({"id": conv.id})
+    conv.dismissed_at = datetime.now(UTC)
+    await conv.save(owner)
+
+    # 4) FeedEntry (message_suggest) — what the Home-landing Feed renders.
+    suggest = MessageSuggest(
+        text="An error came up while using Flowpad — here's what the diagnostic found:",
+        conversation_id=conv.id,
+        flow_message_id=msg.id,
+        message_text=(summary or "").strip(),
+    )
+    feed = FeedEntry(
+        kind=FeedKind.MESSAGE_SUGGEST.value,
+        feed_status=FeedStatus.NEW.value,
+        feed_data=suggest.model_dump(),
+    )
+    feed = await feed.save(owner)
+
+    logger.info(
+        "[diagnose-report] created feed_entry=%s conversation=%s flow_message=%s",
+        feed.id, conv.id, msg.id,
+    )
+    return {
+        "feed_entry_id": feed.id,
+        "conversation_id": conv.id,
+        "flow_message_id": msg.id,
+    }
+
+
+def _parse_args(argv: list[str] | None = None):
+    import argparse
+
+    p = argparse.ArgumentParser(description="Record a flow-diagnose report to the local store.")
+    p.add_argument("--summary", required=True, help="One-paragraph human summary.")
+    p.add_argument(
+        "--status",
+        default="informational",
+        help="fixed | needs_action | informational | unrecognized",
+    )
+    p.add_argument("--details", default="", help="Full diagnostic report block.")
+    p.add_argument("--platform", default="", help="macOS | Windows | Linux.")
+    p.add_argument(
+        "--attachment-type-id",
+        dest="attachment_type_id",
+        default=None,
+        help="Optional '<type>-<id>' (e.g. flowpad_diagnosis-<id>) attached to the message.",
+    )
+    return p.parse_args(argv)
+
+
+async def _amain(argv: list[str] | None = None) -> int:
+    import json
+
+    args = _parse_args(argv)
+    res = await create_diagnostic_report(
+        summary=args.summary,
+        status=args.status,
+        details=args.details,
+        platform=args.platform,
+        attachment_type_id=args.attachment_type_id,
+    )
+    print(json.dumps(res))
+    return 0
+
+
+if __name__ == "__main__":
+    import asyncio
+    import sys
+
+    sys.exit(asyncio.run(_amain()))

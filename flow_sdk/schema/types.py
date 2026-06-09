@@ -109,6 +109,7 @@ class EntityType(StrEnum):
     CONVERSATION = "conversation"
     WHITEBOARD = "whiteboard"
     DATASET = "dataset"
+    FLOWPAD_DIAGNOSIS = "flowpad_diagnosis"
     COLLABORATION_ROOM = "collaboration_room"
     # Transient indexer waypoints — fan-out scaffolding, never persisted.
     USER_HOME_FOLDER = "user_home_folder"
