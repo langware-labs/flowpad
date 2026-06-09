@@ -10,7 +10,6 @@ import {
   HubClientErrorInfo,
   UserWarning,
 } from '../..';
-import { useQuery } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useContext } from './useContext';
 
@@ -28,26 +27,6 @@ export function useWarnings() {
     snifferEnabled,
     cloudConnectionStatus,
   } = context;
-
-  const { data: secretsEnabledData } = useQuery({
-    queryKey: ['secrets-is-enabled'],
-    queryFn: async (): Promise<{ enabled: boolean }> => {
-      try {
-        const result = await secretsService.isEnabled();
-        return { enabled: Boolean(result?.enabled) };
-      } catch (error) {
-        console.error('[useWarnings] Error probing secrets enablement:', error);
-        // Treat probe failure as "not enabled" so the warning prompts the user to act.
-        return { enabled: false };
-      }
-    },
-    enabled: isDesktop,
-    staleTime: Infinity,
-    refetchInterval: false,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-  });
-  const isSecretsEnabled = secretsEnabledData?.enabled ?? false;
 
   // Track the most recent hub HTTP error (4xx/5xx) reported by the local
   // backend's httpx hook. Shown as a soft warning so the user can see the
