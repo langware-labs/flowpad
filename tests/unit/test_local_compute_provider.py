@@ -247,6 +247,6 @@ async def test_pty_close(local_provider):
     await local_provider.close_pty_session(node_id, "test-session")
 
     # Session should be closed
-    assert (node_id, "test-session") not in local_provider._pty_sessions
+    assert (node_id, "test-session") not in local_provider._pty_processes
 
     await local_provider.shutdown(node_id)

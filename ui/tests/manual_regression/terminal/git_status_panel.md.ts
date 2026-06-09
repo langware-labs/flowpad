@@ -27,12 +27,16 @@
  * Test 9 (auto-refresh) is automatable but requires filesystem write access.
  */
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { test, expect } from '@playwright/test';
 import { dismissSetupModal, startClaudeSession } from './helpers';
 
 const APP_URL = process.env.APP_URL ?? 'http://localhost:4098';
 const API_URL = process.env.API_URL ?? 'http://localhost:9008';
-// repo root of this checkout (ui/tests/manual_regression/terminal → 4 levels up)
+// repo root of this checkout (ui/tests/manual_regression/terminal → 4 levels up).
+// These .md.ts run as ESM ("type":"module"), so __dirname is undefined —
+// derive it from import.meta.url.
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
 
 /**
