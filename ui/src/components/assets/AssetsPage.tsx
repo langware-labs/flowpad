@@ -33,7 +33,6 @@ import { useSearchScopeToggle } from '@src/hooks/use-global-search-scope';
 import { useIndexStatus } from '@src/hooks/use-index-status';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
 import { ScopeFilterIconBar } from '@src/components/scope-filter/ScopeFilterIconBar';
-import { ProjectScopeBadge } from './ProjectScopeBadge';
 import { ViewType } from '@src/types/ViewType';
 import { AssetListView } from './AssetListView';
 import { MarkdownIndexPanel } from './MarkdownIndexPanel';
@@ -287,36 +286,42 @@ export function AssetsPage() {
   const [newFolderTarget, setNewFolderTarget] = useState<MarkdownFolderTarget | null>(null);
   const [newFolderDialogOpen, setNewFolderDialogOpen] = useState(false);
   const currentProjectId = dataContext.project?.id ?? null;
-  // When hosted under `/dock/project/<id>`, the project is locked from the URL.
+  const currentProjectName = dataContext.project?.getDisplayName() ?? dataContext.project?.name ?? null;
+  // When hosted under `/dock/project/<id>`, the project id comes from the URL.
   // The first segment of the pointer is the projectId; the rest is the same
   // sub-pointer shape AssetsPage already uses under `/dock/assets/<sub>`.
   const isProjectView = currentDock?.viewType === ViewType.PROJECT;
   const { projectId: urlProjectId, assetSubPointer } = isProjectView
     ? DockPointer.splitProjectPointer(currentDock?.pointer)
     : { projectId: null, assetSubPointer: currentDock?.pointer ?? '' };
-  // Memoized so downstream `useMemo`/`useCallback` deps stay stable across
-  // renders — without this, every render rebuilt `wikiRoots`, `listFilter`,
-  // and `handleMoveMarkdownItem` because the spread produced a fresh object.
-  const lockedScope = useMemo(
+  // The project the scope filter points at: the URL project on a project page,
+  // else the context project. Drives the Project mode + its tooltip name.
+  const scopeProjectId = urlProjectId ?? currentProjectId;
+  const scopeProjectName = scopeProjectId === currentProjectId ? currentProjectName : null;
+  // On a project page, scope is *preselected* to that project (not locked) — the
+  // user can still switch to All/User/Selected. `projectSeedScope` is that
+  // preselection: it seeds the initial scope, scopes the project index status,
+  // and re-applies when navigating between projects.
+  const projectSeedScope = useMemo(
     () => (urlProjectId ? defaultScopeFilter(urlProjectId) : null),
     [urlProjectId],
   );
   const effectivePointer = isProjectView ? assetSubPointer : (currentDock?.pointer ?? '');
-  // Initial scope seeded from the current project so the Project chip's count
+  // Initial scope seeded from the current project so the Project mode's count
   // is accurate from the first render. Seeding lives in `defaultScopeFilter`
-  // (lib/scope-filter.ts) so every surface gets the same context-aware default
-  // instead of each consumer reinventing it.
+  // (lib/scope-filter.ts) so every surface gets the same context-aware default.
   const [assetFilter, setAssetFilter] = useState<AssetFilter>(() => ({
     ...DEFAULT_ASSET_FILTER,
-    scope: lockedScope ?? defaultScopeFilter(currentProjectId),
+    scope: projectSeedScope ?? defaultScopeFilter(currentProjectId),
   }));
-  // When locked, force the scope from the URL every render. Without this,
-  // useState would hold the seed from the first mount and the asset list
-  // would not refilter if the user navigates to a different project URL.
-  const effectiveFilter = useMemo<AssetFilter>(
-    () => (lockedScope ? { ...assetFilter, scope: lockedScope } : assetFilter),
-    [lockedScope, assetFilter],
-  );
+  // Preselect the project's scope whenever the project URL changes (navigating
+  // between project pages). Not a lock — the scope filter stays switchable.
+  useEffect(() => {
+    if (urlProjectId) {
+      setAssetFilter((prev) => ({ ...prev, scope: defaultScopeFilter(urlProjectId) }));
+    }
+  }, [urlProjectId]);
+  const effectiveFilter = assetFilter;
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFilters, setSearchFilters] = useState<SearchFilters>({});
   const [selectedResultIndex, setSelectedResultIndex] = useState(-1);
@@ -338,7 +343,7 @@ export function AssetsPage() {
   // Only meaningful under a locked project scope; global assets keep the plain
   // "refresh search data" rebuild.
   const { state: idxState, refresh: refreshIdxStatus } = useIndexStatus(
-    lockedScope ?? undefined,
+    projectSeedScope ?? undefined,
   );
   const projIdx = isProjectView && idxState.phase === 'ready' ? idxState.status : null;
   const neverIndexed = projIdx?.never_indexed ?? false;
@@ -356,7 +361,8 @@ export function AssetsPage() {
     // own index sentinel). Global view → legacy full reset+rescan.
     if (isProjectView) {
       const params = new URLSearchParams();
-      applyScopeToParams(params, effectiveFilter.scope);
+      // Always re-index the project itself, regardless of the visible scope.
+      applyScopeToParams(params, projectSeedScope ?? effectiveFilter.scope);
       try {
         await apiClient.post(`/graph/compute_node/@local/fs-records/index?${params.toString()}`);
       } finally {
@@ -365,7 +371,7 @@ export function AssetsPage() {
       return;
     }
     void resetAndRescan();
-  }, [isProjectView, effectiveFilter.scope, refreshIdxStatus, resetAndRescan]);
+  }, [isProjectView, projectSeedScope, effectiveFilter.scope, refreshIdxStatus, resetAndRescan]);
 
   const handleSearchSubmit = useCallback(() => {
     const q = searchQuery.trim();
@@ -425,9 +431,8 @@ export function AssetsPage() {
   }, [sidebarWidth]);
 
   const handleScopeChange = useCallback((scope: ScopeFilter) => {
-    if (lockedScope) return;
     setAssetFilter(prev => ({ ...prev, scope }));
-  }, [lockedScope]);
+  }, []);
 
   // Asset-shaped pointers (`forAssetEditor`, `forAssetFolder`, `forAssetList`)
   // open at `/dock/assets/<sub>`. Under `/dock/project/<id>` we must rebase
@@ -690,7 +695,6 @@ export function AssetsPage() {
   }, [navigateAsset, navigation]);
 
   const handleProjectFilter = useCallback(async (label: string) => {
-    if (lockedScope) return;
     try {
       const data = await apiClient.get('/search?record_type=project&limit=200') as { results?: { record_id: string; name: string }[] } | null;
       const projects = data?.results ?? [];
@@ -704,7 +708,7 @@ export function AssetsPage() {
     } catch {
       // ignore
     }
-  }, [lockedScope]);
+  }, []);
 
   return (
     <div className="flex h-full flex-col">
@@ -796,9 +800,6 @@ export function AssetsPage() {
               </TooltipContent>
             </Tooltip>
           )}
-          {lockedScope && urlProjectId && (
-            <ProjectScopeBadge projectId={urlProjectId} />
-          )}
         </div>
       </div>
 
@@ -812,15 +813,14 @@ export function AssetsPage() {
           aria-hidden={sidebarCollapsed}
         >
           <div className="flex h-full flex-col" style={{ width: sidebarWidth }}>
-            {!lockedScope && (
-              <div className="flex flex-shrink-0 items-center gap-1 border-b p-1.5">
-                <ScopeFilterIconBar
-                  scope={effectiveFilter.scope}
-                  currentProjectId={currentProjectId}
-                  onScopeChange={handleScopeChange}
-                />
-              </div>
-            )}
+            <div className="flex flex-shrink-0 items-center gap-1 border-b p-1.5">
+              <ScopeFilterIconBar
+                scope={effectiveFilter.scope}
+                currentProjectId={scopeProjectId}
+                currentProjectName={scopeProjectName}
+                onScopeChange={handleScopeChange}
+              />
+            </div>
             <div className="min-h-0 flex-1 overflow-y-auto">
               <BrowseableTree
                 roots={wikiRoots}
