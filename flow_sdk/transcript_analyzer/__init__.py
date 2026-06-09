@@ -31,6 +31,7 @@ from .entries import (
 from .entry import EntryKind, TranscriptEntry
 from .formats import TranscriptDescriptor, TranscriptFormat, TranscriptSource
 from .process_entry import ObservationKind, ProcessEntry
+from .summary import worker_summary_log
 from .transcript import AgentTranscriptFile
 
 __all__ = [
@@ -61,4 +62,5 @@ __all__ = [
     "UsageEntry",
     "UserMessageEntry",
     "WebFetchEntry",
+    "worker_summary_log",
 ]
