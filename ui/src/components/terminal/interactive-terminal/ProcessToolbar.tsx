@@ -568,6 +568,20 @@ function useTimeDisplay(iso: string | null | undefined): string {
   return `${hh}:${mm}:${ss} (${ago})`;
 }
 
+// Live "now" for the debug card: full local date-time + seconds, refreshed every
+// second so a screenshot of the popover always captures the exact moment. The
+// trailing ISO/UTC makes the timestamp unambiguous when cross-referencing logs.
+function useCurrentTime(): string {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const local = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+  return `${local} (${now.toISOString()})`;
+}
+
 function workerLabel(workerType: string | null | undefined): string {
   const wt = (workerType ?? '').toLowerCase();
   if (wt === 'codex') return 'Codex';
@@ -587,6 +601,7 @@ function SessionInfoPopover({ process, sessionStartTime, lastMessageTime }: { pr
 
   const startDisplay = useTimeDisplay(sessionStartTime);
   const lastDisplay = useTimeDisplay(lastMessageTime);
+  const currentTime = useCurrentTime();
 
   const [sessionName, setSessionName] = useState<string | null>(null);
   useEffect(() => {
@@ -653,11 +668,12 @@ function SessionInfoPopover({ process, sessionStartTime, lastMessageTime }: { pr
     ['Shell ID', process.shell_id || 'none'],
     ['Status', process.status || 'unknown'],
     ['CLI worker status', process.workerStatus || 'idle'],
+    ['Current Time', currentTime],
     ['Started', startDisplay],
     ['Last message', lastDisplay],
     ['Working Dir', workdir],
-    [`${worker} Session Name`, sessionName || (process.session_id ? '(loading…)' : 'none')],
-    [`${worker} Session ID`, process.session_id || 'none'],
+    ['Harness worker Session Name', sessionName || (process.session_id ? '(loading…)' : 'none')],
+    ['Harness worker Session ID', process.session_id || 'none'],
     ['PTY ID', process.pty_pid || 'none (detached)'],
     ['Permission', permMode],
     ['Chrome', chrome ? 'enabled' : 'disabled'],
