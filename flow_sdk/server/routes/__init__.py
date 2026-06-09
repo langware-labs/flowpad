@@ -30,6 +30,7 @@ from .favorites import router as favorites_router
 from .markdown_index import router as markdown_index_router
 from .docs_graph import router as docs_graph_router
 from .pty_stream import router as pty_stream_router
+from .diagnose import router as diagnose_router
 
 __all__ = [
     "bootstrap_router",
@@ -62,4 +63,5 @@ __all__ = [
     "markdown_index_router",
     "docs_graph_router",
     "pty_stream_router",
+    "diagnose_router",
 ]

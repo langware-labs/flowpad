@@ -226,8 +226,9 @@ def test_parse_args_defaults():
 
 @pytest.mark.asyncio
 async def test_amain_prints_ids_and_records(capsys):
-    """The CLI layer wires flags through to record_diagnosis, prints the ids as
-    JSON, and the record actually lands in the store."""
+    """The CLI layer wires flags through to record_diagnosis, prints the ids as a
+    JSON line (which the `flow diagnose` parent scrapes from the transcript to
+    detect completion), and the record actually lands in the store."""
     await _bootstrap_local_user()
 
     rc = await report._amain(["--title", "cli entrypoint test", "--status", "fixed"])

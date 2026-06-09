@@ -424,23 +424,28 @@ End-to-end: <headless Playwright check — passed | failed | skipped (reason)>
 To Summarize: <plain-language 1-3 sentence summary of findings and next step>
 ```
 
-### Step 7 — Record the result (ALWAYS runs; SDK-direct, works offline)
+### Step 7 — Record the result (ALWAYS runs — even when everything is healthy)
 
-After printing the report, persist it by running the reporter script **once**. It is the SDK, **not**
-an HTTP API — it opens the local instance DB itself, so it works even when the backend is DOWN.
-**Never skip this step on the assumption that the backend must be up** — skipping it means nothing is
-recorded.
+**You MUST run the reporter script every single time, no matter the outcome — including a fully
+healthy, no-issue, no-action-needed result.** "Everything is fine" is NOT a reason to skip this step:
+a `flowpad_diagnosis` record is created for every diagnostic run (that is how the run is considered
+complete). Do **not** end your turn until the script has printed its JSON. Skipping this step makes
+the whole run count as failed.
 
-Run the reporter script that ships **next to this SKILL.md** (`report.py` in this skill directory) —
-do **not** hand-build any entities and do **not** import from `flow_sdk`. In one call it:
+The script is the SDK, **not** an HTTP API — it opens the local instance DB itself, so it works even
+when the backend is DOWN. Run the reporter that ships **next to this SKILL.md** (`report.py` in this
+skill directory); do **not** hand-build any entities and do **not** import from `flow_sdk`.
 
-1. **Always** creates a `flowpad_diagnosis` record from your `title / symptoms / rca / fix`.
-2. **Only when you found an issue** (`--status` is `fixed`, `needs_action`, or `unrecognized`) it also
-   posts the diagnosis to the Home Feed (hidden support Conversation + summary `flow_message` with the
-   diagnosis attached + a `message_suggest` `feed_entry`), so the user can review it and send it to
-   support in one click.
-3. When the sweep was clean (`--status ok`) or the only findings are benign (`--status informational`),
-   it records the diagnosis for history but creates **no** Feed entry.
+You do not decide whether to post a Feed entry — **`report.py` decides that from `--status`**. You
+just always run it with the right status:
+
+1. It **always** creates a `flowpad_diagnosis` record from your `title / symptoms / rca / fix`.
+2. If you found an issue (`--status` is `fixed`, `needs_action`, or `unrecognized`) it also posts the
+   diagnosis to the Home Feed (hidden support Conversation + summary `flow_message` with the diagnosis
+   attached + a `message_suggest` `feed_entry`) so the user can send it to support in one click.
+3. If the sweep was clean (`--status ok`) or the only findings are benign (`--status informational`),
+   it records the diagnosis for history but creates **no** Feed entry. **Use `--status ok` for a
+   healthy result — and still run the script.**
 
 (The `flow diagnose` runner cross-links the diagnosis to this process for you afterwards — do **not**
 attempt the cross-link yourself.)
