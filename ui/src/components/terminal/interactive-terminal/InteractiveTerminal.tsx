@@ -1175,6 +1175,16 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
     };
     connectionManager.on('on_recovered', onRecovered);
 
+    // WS reconnect (e.g. sleep/wake): connection membership is restored by the
+    // backend (PtyRegistry.on_ws_connect re-attaches this connection_id), so live
+    // output resumes on its own. Re-run the attach handshake to repaint the gap —
+    // fetch + replay the framed stream (seq-deduped against what we already have)
+    // and re-subscribe — so the terminal catches up instead of staying on its
+    // pre-sleep frame. No backend attach call is issued from here. connectGen
+    // makes re-invocation safe (a newer attach supersedes an in-flight one).
+    const onReconnected = () => onConnected();
+    connectionManager.on('on_reconnected', onReconnected);
+
     // Fire immediately if already connected on mount (e.g. navigation to existing terminal).
     if (shell.connected) onConnected();
 
@@ -1182,6 +1192,7 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       connectGen++; // cancel any in-flight history replay
       unsubStatus();
       connectionManager.off('on_recovered', onRecovered);
+      connectionManager.off('on_reconnected', onReconnected);
       unsubOutput?.();
 
       if (syncTimer) clearTimeout(syncTimer);

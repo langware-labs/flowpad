@@ -88,6 +88,17 @@ pyproject.toml                      # Python package config (published to PyPI a
 4. App exits
 ```
 
+### Sleep / wake (known follow-up)
+
+There is currently **no `powerMonitor` (`suspend`/`resume`) hook** wiring system
+sleep/wake to the renderer. It isn't needed for the common case: on wake the app
+WebSocket reconnects and the backend's connection-membership FSM resumes PTY
+delivery on its own (`PtyRegistry.on_ws_connect`; see
+`docs/agent-management/pty-websocket.md`). The one remaining edge — a socket that
+goes *half-open* on wake and never fires a reconnect — is deferred; closing it
+needs an app-level heartbeat or a `powerMonitor 'resume'` → renderer hook that
+forces a socket reconnect.
+
 ## Core Files
 
 ### main.js — Electron Main Process

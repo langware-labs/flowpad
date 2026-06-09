@@ -3,10 +3,17 @@
 A PTY worker is a child of the backend; on restart the previous process's
 children die (SIGHUP) and the new process starts with an empty in-memory PTY
 registry, leaving entities in a split-brain (``status=running`` + dead
-``worker_pid``). This watchdog runs once at startup, reconciles every visible
-session whose worker PID is dead, and respawns it through the existing
-``AgenticProcess._perform_open`` path (drops the stale shell, relaunches with
-scrollback replay + resume — see agentic_process.py).
+``worker_pid``). This watchdog reconciles every visible session whose worker PID
+is dead and respawns it through the existing ``AgenticProcess._perform_open``
+path (drops the stale shell, relaunches with scrollback replay + resume — see
+agentic_process.py).
+
+It runs once at startup AND periodically (``start_recovery_task``) so a worker
+that dies *mid-session* (e.g. a claude crash while the backend stays up) is also
+respawned — this is the backend home for what used to be the frontend's
+``os-status`` recovery poll. Connection membership (attach/detach on WS
+connect/disconnect) is a separate, fully backend-owned FSM in
+``pty_session_manager.PtyRegistry``; this module only handles a dead *worker*.
 
 Recovered process ids are recorded for this backend lifetime. The watchdog
 runs before any client has reconnected, so the distinct ``recovered`` event is
@@ -156,3 +163,49 @@ async def run_pty_recovery() -> None:
                 logger.info("pty-recovery: recovered %s", proc.id)
         except Exception:
             logger.exception("pty-recovery: failed to recover %s", getattr(proc, "id", "?"))
+
+
+# Background periodic watchdog (mid-session dead-worker respawn). Mirrors
+# PtyRegistry.start_cleanup_task: a single cancellable loop. ``run_pty_recovery``
+# is idempotent and re-entrant-safe (start_pty holds the per-process _OPEN_LOCKS),
+# so a periodic sweep never double-spawns.
+_recovery_task = None
+
+
+async def start_recovery_task(interval_seconds: int = 5) -> None:
+    """Run ``run_pty_recovery`` once now, then every ``interval_seconds``."""
+    import asyncio
+
+    global _recovery_task
+    if _recovery_task is not None and not _recovery_task.done():
+        logger.warning("pty-recovery: watchdog already running")
+        return
+
+    async def _loop() -> None:
+        logger.info("pty-recovery: watchdog started (interval %ss)", interval_seconds)
+        while True:
+            try:
+                await run_pty_recovery()
+                await asyncio.sleep(interval_seconds)
+            except asyncio.CancelledError:
+                logger.info("pty-recovery: watchdog cancelled")
+                break
+            except Exception:
+                logger.exception("pty-recovery: watchdog tick failed")
+                await asyncio.sleep(interval_seconds)
+
+    _recovery_task = asyncio.create_task(_loop(), name="pty-recovery")
+
+
+async def stop_recovery_task() -> None:
+    """Stop the periodic watchdog (best-effort)."""
+    import asyncio
+
+    global _recovery_task
+    if _recovery_task is not None and not _recovery_task.done():
+        _recovery_task.cancel()
+        try:
+            await _recovery_task
+        except asyncio.CancelledError:
+            pass
+    _recovery_task = None

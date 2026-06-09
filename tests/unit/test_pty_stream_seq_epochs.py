@@ -5,7 +5,7 @@ The frontend dedups buffered live WS chunks against the replayed stream by
 seq (``chunk.seq <= replay.lastSeq`` → skip). That contract requires output
 seqs to be MONOTONIC within one stream file. On server restart, shell
 recovery respawns the PTY into the SAME ``<pty_pid>.pty`` file, but
-``PtySessionState`` (in-memory) restarts its counter at 1 — so post-restart
+``PtyState`` (in-memory) restarts its counter at 1 — so post-restart
 chunks carry seqs below the file's max and get wrongly skipped: the attach
 repaint never lands and the terminal looks dead ("PTY disconnect" after
 server restart).
