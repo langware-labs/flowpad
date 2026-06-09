@@ -48,6 +48,9 @@ class HubInfo(BaseModel):
     version: Optional[str] = None
     deployed_at: Optional[str] = None
     generated_at: Optional[str] = None
+    # Fixed community/support project id (the app opens support tickets against
+    # it). Null on older hubs that don't advertise it.
+    community_project_id: Optional[str] = None
 
 
 class VersionCheckResponse(BaseModel):
@@ -70,6 +73,7 @@ def _hub_info_from_raw(hub_raw: dict[str, Any] | None) -> Optional[HubInfo]:
     if not hub_raw:
         return None
     return HubInfo(
+        community_project_id=_optional_str(hub_raw.get("community_project_id")),
         version=_optional_str(hub_raw.get("version")),
         deployed_at=_optional_str(hub_raw.get("deployed_at")),
         generated_at=_optional_str(hub_raw.get("generated_at")),

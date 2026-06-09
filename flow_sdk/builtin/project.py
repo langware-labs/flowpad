@@ -4,10 +4,12 @@ import random
 import string
 import sys
 from datetime import datetime, timezone
-from typing import Any, ClassVar, List
+from typing import Any, ClassVar, List, Optional
+
+from flow_sdk._compat import StrEnum  # 3.10-safe StrEnum (project pins py3.10)
 
 from fastapi import HTTPException
-from pydantic import ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 
 from flow_sdk.config import AGENT_MOUNT_FOLDER, PLATFORM_WIN32, StorageProvider
@@ -48,12 +50,50 @@ class ProjectInitializeOptions(ComputeSourceControlInitializeOptions):
     mcp_connector_init: bool = Field(default=True)
 
 
+class CommunityMode(StrEnum):
+    """Who answers community (support-center) conversations on this project.
+
+    Only ``HUMAN`` is wired in v1: staff pick tickets up from a shared pool and
+    reply under the masked ``display_name``. ``AI`` / ``HYBRID`` are reserved
+    for an automated responder and are intentionally not yet implemented.
+    """
+
+    HUMAN = "human"
+    AI = "ai"
+    HYBRID = "hybrid"
+
+
+class CommunityConfig(BaseModel):
+    """Per-project "support center" configuration.
+
+    When ``enabled``, the project accepts guest-opened community conversations
+    (support tickets). All staff replies in those conversations are displayed
+    under the single ``display_name`` identity regardless of which member
+    actually replied — the responder's real ``sender_id`` is preserved on the
+    wire, only the displayed ``sender_name`` is masked to ``display_name``.
+    """
+
+    enabled: bool = False
+    display_name: Optional[str] = None
+    avatar_url: Optional[str] = None
+    welcome_message: Optional[str] = None
+    mode: CommunityMode = CommunityMode.HUMAN
+
+
 class Project(Entity):
     type: str = APIField(default=BuiltinEntityType.PROJECT.value)
     name: str | None = APIField(default=None, description="Display name of the project")
     artifacts: List[str] = APIField(
         default_factory=list,
         description="List of artifact IDs belonging to this project",
+    )
+    # Support-center / community config. None on ordinary projects. Persisted
+    # (persist=TRUE) so it round-trips FS<->DB and is readable on the hub at
+    # message-write time to mask responder identity. See ``CommunityConfig``.
+    community: Optional[CommunityConfig] = APIField(
+        default=None,
+        persist=Persist.TRUE,
+        description="Support-center configuration; set on the canonical community project.",
     )
     fs_storage_provider: StorageProvider | None = StorageProvider.SANDBOX
     fs_storage_mount_path: str | None = APIField(
