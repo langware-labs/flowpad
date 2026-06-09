@@ -1,21 +1,35 @@
 import { useState } from 'react';
-import type { ScopeFilter } from '@src/lib/scope-filter';
+import { ALL_SCOPE_FILTER, type ScopeFilter } from '@src/lib/scope-filter';
 
 /**
- * Single source of truth for the scope-filter chip semantics, shared by the
- * pill ScopeFilterBar and the icon ScopeFilterIconBar. Everything works in
- * terms of the unified ScopeFilter shape — the chips are derived view state.
+ * Single source of truth for the scope-filter behavior, shared by the pill
+ * ScopeFilterBar and the icon ScopeFilterIconBar. Strict single-select over
+ * four mutually-exclusive modes — whatever is marked is active, no cross
+ * logic between modes:
  *
- * Chip → ScopeFilter mapping:
- *   "User"    {user: true,  projects: cleared}  (else chipFor() reads as "All")
- *   "Project" {user: false, projects: keep current (or seed/picker)}
- *   "All"/both{user: true,  projects: keep current}
+ *   "all"      → everything ({all:true})
+ *   "user"     → user assets only ({user:true, projects:[]})
+ *   "project"  → the current project only ({user:false, projects:[currentId]})
+ *   "selected" → explicitly-picked projects ({user:false, projects:[...]})
+ *
+ * `project` always means the current project (never the picker selection);
+ * `selected` is driven by the project picker.
  */
-export type ChipKey = 'user' | 'project' | 'both';
+export type ScopeMode = 'all' | 'user' | 'project' | 'selected';
 
-function chipFor(scope: ScopeFilter): ChipKey {
-  if (scope.user && scope.projects.length > 0) return 'both';
-  if (!scope.user && scope.projects.length > 0) return 'project';
+function modeFor(scope: ScopeFilter, currentProjectId: string | null): ScopeMode {
+  if (scope.all) return 'all';
+  if (!scope.user && scope.projects.length > 0) {
+    if (
+      currentProjectId &&
+      scope.projects.length === 1 &&
+      scope.projects[0] === currentProjectId
+    ) {
+      return 'project';
+    }
+    return 'selected';
+  }
+  // {user:true, projects:[]} and any non-canonical state read as "user".
   return 'user';
 }
 
@@ -26,11 +40,13 @@ export interface UseScopeFilterChipsArgs {
 }
 
 export interface UseScopeFilterChips {
-  activeChip: ChipKey;
-  projectCount: number;
-  projectChipDisabled: boolean;
-  handleChange: (next: ChipKey) => void;
-  handleDisabledClick: (next: ChipKey) => void;
+  activeMode: ScopeMode;
+  /** Count of explicitly-selected projects (for the "Selected" badge). */
+  selectedCount: number;
+  /** "Project" mode needs a current project to point at. */
+  projectDisabled: boolean;
+  /** Single-select handler. `selected` opens the picker instead of applying. */
+  handleSelect: (mode: ScopeMode) => void;
   pickerOpen: boolean;
   setPickerOpen: (open: boolean) => void;
   onPickerConfirm: (ids: string[]) => void;
@@ -43,54 +59,39 @@ export function useScopeFilterChips({
 }: UseScopeFilterChipsArgs): UseScopeFilterChips {
   const [pickerOpen, setPickerOpen] = useState(false);
 
-  const activeChip = chipFor(scope);
-  const projectCount = scope.projects.length;
-  const projectChipDisabled = projectCount === 0 && !currentProjectId;
+  const activeMode = modeFor(scope, currentProjectId);
+  const selectedCount = scope.all ? 0 : scope.projects.length;
+  const projectDisabled = !currentProjectId;
 
-  const handleChange = (next: ChipKey) => {
-    if (next === 'user') {
-      // "User" = user assets only (per the chip's label). Clear projects —
-      // keeping them would yield {user:true, projects:[...]} which is the
-      // "All" chip, so the user could never actually land on user-only.
-      onScopeChange({ user: true, projects: [] });
-      return;
+  const handleSelect = (mode: ScopeMode) => {
+    switch (mode) {
+      case 'all':
+        onScopeChange({ ...ALL_SCOPE_FILTER });
+        return;
+      case 'user':
+        onScopeChange({ user: true, projects: [] });
+        return;
+      case 'project':
+        if (currentProjectId) onScopeChange({ user: false, projects: [currentProjectId] });
+        return;
+      case 'selected':
+        // Pick which projects first; scope applies on confirm.
+        setPickerOpen(true);
+        return;
     }
-    if (next === 'project') {
-      // If no projects in the filter yet, seed with current project (if any).
-      const seed = scope.projects.length > 0
-        ? scope.projects
-        : (currentProjectId ? [currentProjectId] : []);
-      onScopeChange({ user: false, projects: seed });
-      return;
-    }
-    // 'both' — turn user on; keep projects (seed if empty so the chip is meaningful)
-    const seed = scope.projects.length > 0
-      ? scope.projects
-      : (currentProjectId ? [currentProjectId] : []);
-    onScopeChange({ user: true, projects: seed });
-  };
-
-  const handleDisabledClick = (next: ChipKey) => {
-    if (next === 'project') setPickerOpen(true);
   };
 
   const onPickerConfirm = (ids: string[]) => {
-    // Edit only the `projects` field. `user` stays whatever it was.
-    // If the user just cleared the picker AND the active chip is "project",
-    // we'd be in the degenerate {user:false, projects:[]} state — flip to
-    // {user:true, projects:[]} (the "User" chip) to keep something selected.
-    let nextUser = scope.user;
-    if (ids.length === 0 && !scope.user) nextUser = true;
-    onScopeChange({ user: nextUser, projects: ids });
+    // Empty selection falls back to "All" so the view is never left empty.
+    onScopeChange(ids.length === 0 ? { ...ALL_SCOPE_FILTER } : { user: false, projects: ids });
     setPickerOpen(false);
   };
 
   return {
-    activeChip,
-    projectCount,
-    projectChipDisabled,
-    handleChange,
-    handleDisabledClick,
+    activeMode,
+    selectedCount,
+    projectDisabled,
+    handleSelect,
     pickerOpen,
     setPickerOpen,
     onPickerConfirm,

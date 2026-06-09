@@ -1,36 +1,36 @@
 import React, { useMemo } from 'react';
-import { Layers, User } from 'lucide-react';
+import { Filter, Layers, User } from 'lucide-react';
 import type { ScopeFilter } from '@src/lib/scope-filter';
 import { ProjectPickerModal } from '@src/components/assets/ProjectPickerModal';
 import { ScopeBar, type ScopeBarOption } from '@src/components/ui/scope-bar';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
-import { ScopeFilterFunnelButton } from './ScopeFilterFunnelButton';
-import { useScopeFilterChips, type ChipKey } from './useScopeFilterChips';
+import { useScopeFilterChips, type ScopeMode } from './useScopeFilterChips';
 
 /**
- * Icon-only scope filter — same hooks/model/data/context as ScopeFilterBar
- * (all chip↔scope semantics live in `useScopeFilterChips`), just a compact
- * square-icon presentation for the Assets sidebar. Four icons:
- * All (Layers) · User · Project (type-registry icon) · Filter (funnel → picker).
+ * Icon-only scope filter — same hook/model/data/context as ScopeFilterBar
+ * (all behavior lives in `useScopeFilterChips`), compact square-icon
+ * presentation for the Assets sidebar. Single-select, four icons:
+ * All (Layers) · User · Project (type-registry icon) · Selected (funnel → picker).
  */
 interface ScopeFilterIconBarProps {
   scope: ScopeFilter;
-  /** Seeded into the picker when "Project" is chosen with an empty picker. */
   currentProjectId: string | null;
+  /** Current project display name — shown in the Project icon's tooltip. */
+  currentProjectName?: string | null;
   onScopeChange: (next: ScopeFilter) => void;
 }
 
 export function ScopeFilterIconBar({
   scope,
   currentProjectId,
+  currentProjectName,
   onScopeChange,
 }: ScopeFilterIconBarProps): React.ReactElement {
   const {
-    activeChip,
-    projectCount,
-    projectChipDisabled,
-    handleChange,
-    handleDisabledClick,
+    activeMode,
+    selectedCount,
+    projectDisabled,
+    handleSelect,
     pickerOpen,
     setPickerOpen,
     onPickerConfirm,
@@ -39,40 +39,34 @@ export function ScopeFilterIconBar({
   // Per the type-icon rule, the Project scope icon comes from the type registry.
   const ProjectIcon = iconForType('project');
 
-  const options: ScopeBarOption<ChipKey>[] = useMemo(() => [
-    {
-      value: 'both',
-      label: 'All',
-      icon: Layers,
-      title: 'All — user assets plus selected projects',
-    },
-    {
-      value: 'user',
-      label: 'User',
-      icon: User,
-      title: 'User assets only',
-    },
+  const options: ScopeBarOption<ScopeMode>[] = useMemo(() => [
+    { value: 'all', label: 'All', icon: Layers, title: 'All assets (user + every project)' },
+    { value: 'user', label: 'User', icon: User, title: 'User assets only' },
     {
       value: 'project',
       label: 'Project',
       icon: ProjectIcon,
-      count: projectCount,
-      disabled: projectChipDisabled,
-      title: projectChipDisabled
-        ? 'Open the filter to pick projects'
-        : 'Selected projects only',
+      disabled: projectDisabled,
+      title: projectDisabled
+        ? 'No current project'
+        : `Current project${currentProjectName ? `: ${currentProjectName}` : ''}`,
     },
-  ], [ProjectIcon, projectCount, projectChipDisabled]);
+    {
+      value: 'selected',
+      label: 'Selected',
+      icon: Filter,
+      count: activeMode === 'selected' ? selectedCount : undefined,
+      title: 'Pick specific projects…',
+    },
+  ], [ProjectIcon, projectDisabled, currentProjectName, activeMode, selectedCount]);
 
   return (
     <>
       <ScopeBar
         variant="icon"
-        value={activeChip}
+        value={activeMode}
         options={options}
-        onChange={handleChange}
-        onDisabledClick={handleDisabledClick}
-        trailing={<ScopeFilterFunnelButton onClick={() => setPickerOpen(true)} />}
+        onChange={handleSelect}
       />
       <ProjectPickerModal
         open={pickerOpen}

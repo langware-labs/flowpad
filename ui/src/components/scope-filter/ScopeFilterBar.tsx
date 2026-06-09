@@ -2,75 +2,62 @@ import React, { useMemo } from 'react';
 import type { ScopeFilter } from '@src/lib/scope-filter';
 import { ProjectPickerModal } from '@src/components/assets/ProjectPickerModal';
 import { ScopeBar, type ScopeBarOption } from '@src/components/ui/scope-bar';
-import { ScopeFilterFunnelButton } from './ScopeFilterFunnelButton';
-import { useScopeFilterChips, type ChipKey } from './useScopeFilterChips';
+import { useScopeFilterChips, type ScopeMode } from './useScopeFilterChips';
 
 /**
- * Presentational top-bar that lets the user pick a ScopeFilter via three chips
- * (All / User / Project) plus a project-picker funnel. All chip↔scope semantics
- * live in `useScopeFilterChips` (shared with ScopeFilterIconBar) — this is the
- * pill rendering only.
+ * Pill scope filter — single-select over All / User / Project / Selected.
+ * All behavior lives in `useScopeFilterChips` (shared with ScopeFilterIconBar);
+ * this is the labeled-pill rendering only.
  */
 interface ScopeFilterBarProps {
   scope: ScopeFilter;
-  /** Defaulted into the picker selection when scope='project' is chosen with
-   *  an empty picker — keeps the "click Project, see current project" UX. */
   currentProjectId: string | null;
+  /** Current project display name — shown in the Project chip's tooltip. */
+  currentProjectName?: string | null;
   onScopeChange: (next: ScopeFilter) => void;
 }
 
 export function ScopeFilterBar({
   scope,
   currentProjectId,
+  currentProjectName,
   onScopeChange,
 }: ScopeFilterBarProps): React.ReactElement {
   const {
-    activeChip,
-    projectCount,
-    projectChipDisabled,
-    handleChange,
-    handleDisabledClick,
+    activeMode,
+    selectedCount,
+    projectDisabled,
+    handleSelect,
     pickerOpen,
     setPickerOpen,
     onPickerConfirm,
   } = useScopeFilterChips({ scope, currentProjectId, onScopeChange });
 
-  const options: ScopeBarOption<ChipKey>[] = useMemo(() => [
-    {
-      value: 'both',
-      label: 'All',
-      title: 'User assets plus selected projects',
-    },
-    {
-      value: 'user',
-      label: 'User',
-      title: 'User assets only',
-    },
+  const options: ScopeBarOption<ScopeMode>[] = useMemo(() => [
+    { value: 'all', label: 'All', title: 'All assets (user + every project)' },
+    { value: 'user', label: 'User', title: 'User assets only' },
     {
       value: 'project',
       label: 'Project',
-      count: projectCount,
-      disabled: projectChipDisabled,
-      title: projectChipDisabled
-        ? 'Open the filter to pick projects'
-        : 'Selected projects assets only',
+      disabled: projectDisabled,
+      title: projectDisabled
+        ? 'No current project'
+        : `Current project${currentProjectName ? `: ${currentProjectName}` : ''}`,
     },
-  ], [projectCount, projectChipDisabled]);
+    {
+      value: 'selected',
+      label: 'Selected',
+      count: activeMode === 'selected' ? selectedCount : undefined,
+      title: 'Pick specific projects…',
+    },
+  ], [projectDisabled, currentProjectName, activeMode, selectedCount]);
 
   return (
     <>
       <ScopeBar
-        value={activeChip}
+        value={activeMode}
         options={options}
-        onChange={handleChange}
-        onDisabledClick={handleDisabledClick}
-        trailing={
-          <ScopeFilterFunnelButton
-            onClick={() => setPickerOpen(true)}
-            className="ml-1"
-            iconClassName="h-3.5 w-3.5"
-          />
-        }
+        onChange={handleSelect}
       />
       <ProjectPickerModal
         open={pickerOpen}
