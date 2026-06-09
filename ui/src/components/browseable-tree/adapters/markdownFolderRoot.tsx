@@ -13,6 +13,7 @@ import type {
   ToolbarAction,
 } from '@src/components/browseable-tree/types';
 import { parseAssetPointer } from './assetTypeRoot';
+import { scopeFilterKey } from '@src/lib/scope-filter';
 import {
   DEFAULT_ASSET_FILTER,
   applyFilterToParams,
@@ -416,7 +417,7 @@ export function markdownFolderRoot(
   // response arrives AFTER the initial render — otherwise the root keeps
   // serving the empty ``listChildren`` closure that was captured before
   // the API populated ``type.vaults``.
-  const filterSig = `${filter.scope.user ? '1' : '0'}:${[...filter.scope.projects].sort().join(',')}:v${vaults.length}`;
+  const filterSig = `${scopeFilterKey(filter.scope)}:v${vaults.length}`;
 
   const root: BrowseableRoot = {
     id: `asset-type:${type.type_name}:${filterSig}`,

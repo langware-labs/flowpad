@@ -1,5 +1,10 @@
 import { useState } from 'react';
-import { ALL_SCOPE_FILTER, type ScopeFilter } from '@src/lib/scope-filter';
+import {
+  ALL_SCOPE_FILTER,
+  defaultScopeFilter,
+  scopeFilterEqual,
+  type ScopeFilter,
+} from '@src/lib/scope-filter';
 
 /**
  * Single source of truth for the scope-filter behavior, shared by the pill
@@ -20,14 +25,11 @@ export type ScopeMode = 'all' | 'user' | 'project' | 'selected';
 function modeFor(scope: ScopeFilter, currentProjectId: string | null): ScopeMode {
   if (scope.all) return 'all';
   if (!scope.user && scope.projects.length > 0) {
-    if (
-      currentProjectId &&
-      scope.projects.length === 1 &&
-      scope.projects[0] === currentProjectId
-    ) {
-      return 'project';
-    }
-    return 'selected';
+    // "Project" = exactly the current project; anything else is "Selected".
+    // Reuse scopeFilterEqual so the comparison stays canonical.
+    return currentProjectId && scopeFilterEqual(scope, defaultScopeFilter(currentProjectId))
+      ? 'project'
+      : 'selected';
   }
   // {user:true, projects:[]} and any non-canonical state read as "user".
   return 'user';
