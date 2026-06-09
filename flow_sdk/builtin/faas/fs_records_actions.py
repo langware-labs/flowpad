@@ -86,6 +86,9 @@ class FsRecordsActionsMixin:
 
             from flow_sdk.builtin.project import Project  # noqa: PLC0415
             from flow_sdk.db.drivers.query import QueryFilter  # noqa: PLC0415
+            from flow_sdk.fs_store.indexer.roots import is_home_or_ancestor  # noqa: PLC0415
+            from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+            _home = get_instance_settings().user_home
             for pid in sf.projects:
                 mount = project_root_by_id.get(str(pid))
                 if mount is None:
@@ -110,6 +113,16 @@ class FsRecordsActionsMixin:
                 if not mount_path.is_dir():
                     logging.debug(
                         "fs-records/_resolve_scoped_roots: skipping project %s — mount %r is not a directory",
+                        pid,
+                        mount,
+                    )
+                    continue
+                if is_home_or_ancestor(mount_path, _home):
+                    # Walking $HOME (or an ancestor) recurses the whole home
+                    # tree — see is_home_or_ancestor / the CWD_ROOT guard in roots.py.
+                    logging.debug(
+                        "fs-records/_resolve_scoped_roots: skipping project %s — "
+                        "mount %r is $HOME or an ancestor (would walk the whole home tree)",
                         pid,
                         mount,
                     )
