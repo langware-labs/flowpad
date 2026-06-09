@@ -19,9 +19,9 @@ from typing import Annotated, Optional
 
 import typer
 
+from flow_sdk.agentic_run_consts import DEFAULT_TRANSCRIPT_TIMEOUT_S
 from flow_sdk.migrations import runner as migration_runner
 from flow_sdk.migrations import status as migration_status
-
 
 migrate_app = typer.Typer(
     name="migrate",
@@ -46,7 +46,7 @@ def run(
             "--timeout",
             help="Max seconds to wait for the migration agent's transcript to settle.",
         ),
-    ] = 1800.0,
+    ] = DEFAULT_TRANSCRIPT_TIMEOUT_S,
 ) -> None:
     """Run the migration recipe for ``--version`` (or the current version).
 

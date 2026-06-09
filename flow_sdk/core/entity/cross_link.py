@@ -1,0 +1,70 @@
+"""Generic two-entity private-context cross-link.
+
+The single primitive behind every "link entity A and entity B into each
+other's context" flow (markdown↔process, plan↔process, prompt↔process, …).
+Replaces the former per-type helpers (``file_cross_link`` / ``plan_cross_link``
+/ ``prompt_cross_link``): a caller resolves its two entities, then calls this.
+
+Both arguments must be the LIVE in-memory instances the caller keeps using —
+``private_context_entities`` is last-writer-wins, so a later ``save()`` of a
+stale copy of either side would overwrite the link.
+"""
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from flow_sdk.core.entity.entity_model import Entity
+
+
+async def cross_link_entities(
+    a: "Entity",
+    b: "Entity",
+    *,
+    a_data: dict | None = None,
+    b_data: dict | None = None,
+    save: bool = True,
+) -> bool:
+    """Mutually link ``a`` and ``b`` via their private context entities.
+
+    Adds ``b`` to ``a``'s private context (with optional per-entry ``a_data``)
+    and ``a`` to ``b``'s (with optional ``b_data``). Both adds dedup by
+    ``(type, id)``, so repeat calls are no-ops. When ``save`` (the default),
+    each side is persisted only if it actually changed. Returns ``True`` when
+    either side changed.
+
+    ``a``/``b`` data sidecars carry hints like ``{"path": ...}`` so a chip
+    click that 404s (entity not yet indexed) can self-heal via single-file
+    index — same convention the former per-type helpers used.
+    """
+    if a is None or b is None:
+        return False
+    changed_a = a.add_private_context_entities(b.typeid, data=a_data)
+    changed_b = b.add_private_context_entities(a.typeid, data=b_data)
+    if save:
+        if changed_a:
+            await a.save()
+        if changed_b:
+            await b.save()
+    return changed_a or changed_b
+
+
+async def uncross_link_entities(
+    a: "Entity",
+    b: "Entity",
+    *,
+    save: bool = True,
+) -> bool:
+    """Remove the mutual private-context link between ``a`` and ``b``.
+
+    Returns ``True`` when either side changed (and was saved when ``save``)."""
+    if a is None or b is None:
+        return False
+    changed_a = a.remove_private_context_entities(b.typeid)
+    changed_b = b.remove_private_context_entities(a.typeid)
+    if save:
+        if changed_a:
+            await a.save()
+        if changed_b:
+            await b.save()
+    return changed_a or changed_b

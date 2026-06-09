@@ -117,3 +117,101 @@ flow navigate entity "task-$TASK_ID"
 ```
 
 Do not write a long-form summary at the end — a one-line confirmation ("Created task `task-…` and navigated") is enough.
+
+## Creating a record from a metadata object
+
+For types that carry a Pydantic **metadata model** (`TypeInfo.meta_model` — most CRUD entities: `prompt`, `dataset`, `group`, `shell`, `flowpad_diagnosis`, …), create the record directly in Python: discover the fields, build the metadata object, hand it to `FSRecord`, save. Two `uv run` scripts, below — copy them as-is and only change `TYPE` and the field values. Do **not** route this through `flow schema list` / `flow record index` / the running server.
+
+> **Discover the schema locally, never via the running server.** `flow schema list`/`info` reflects the server that is *already running*, which will NOT know about types added in the current branch until it restarts — and the diagnosis was that the agent burned its whole budget guessing because of this. Always resolve the model with `register_all()` + `SchemaRegistry` as in Step 1.
+
+### Step 1 — identify the type & dump its schema (always run first, every type)
+
+```bash
+uv run python - <<'PY'
+import json
+from flow_sdk.schema.type_info import register_all
+from flow_sdk.fs_store.schema_registry import SchemaRegistry
+register_all()
+TYPE = "flowpad_diagnosis"     # <-- your record type
+info = SchemaRegistry.get(TYPE)
+assert info, f"{TYPE} is not a registered type"
+Model = info.meta_model
+assert Model, f"{TYPE} has no meta_model — use the file-index pipeline above instead"
+# JSON-dump the full schema: every field's type, description, and the `required` list.
+print(json.dumps(Model.model_json_schema(), indent=2))
+PY
+```
+
+This prints the type's **JSON schema** — `properties` (each field's `type`, `description`, default) and the top-level `required` array — so the exact, current fields are unambiguous. The body fields are type-specific (`flowpad_diagnosis` → `title/symptoms/rca/fix`; `shell` → `status/workdir/...`; etc.). You fill `name` (the label — present on *every* type) plus whichever schema fields you have data for. **Match each field's schema `type` exactly** — a `"type": "string"` field needs a quoted value even if it looks numeric (`pty_pid="4123"`, not `4123`); a wrong type raises a clear `ValidationError`, so iterating is safe.
+
+### Step 2 — create + save + validate
+
+Take the field list from Step 1 and fill the `Model(...)` call. The fields shown here are `flowpad_diagnosis`'s example values — **replace them with your TYPE's fields.**
+
+```bash
+uv run python - <<'PY'
+import asyncio
+from flow_sdk.schema.type_info import register_all
+from flow_sdk.fs_store.schema_registry import SchemaRegistry
+from flow_sdk.fs_store.fs_record import FSRecord
+register_all()
+TYPE = "flowpad_diagnosis"     # <-- same type as Step 1
+
+async def main():
+    Model = SchemaRegistry.get(TYPE).meta_model
+    # name is universal; the rest are this type's fields from Step 1 — SWAP for yours.
+    meta = Model(
+        name="Backend stuck on Starting",
+        title="Backend stuck on Starting",
+        symptoms="App shows 'Starting…' forever; console: failed to respond on :9007.",
+        rca="Stale server.lock blocked the singleton bind.",
+        fix="Clear the stale server.lock when the recorded PID is dead.",
+    )
+    rec = FSRecord(TYPE, id=None, **meta.model_dump(exclude_none=True))  # id=None ⇒ UUID minted
+    rec.save()                 # metadata.json on disk
+    await rec.sync_to_db()     # DB + search index (drop this line if you only want the file)
+
+    back = FSRecord.find_by_id(rec.id)          # validate by id
+    assert back is not None and back.type == TYPE, "record not found after save"
+    print(f"OK created+verified {rec.type}-{rec.id}")
+
+asyncio.run(main())
+PY
+```
+
+Fixed rules — do not deviate:
+
+- **Run Step 1 first, always.** The `Model(...)` body in Step 2 is a `flowpad_diagnosis` example; for any other type, replace those kwargs with the fields Step 1 printed. Only `name` is universal — do **not** assume `title` (or any other field) exists on every type.
+- **Discover locally, never via the server** (`SchemaRegistry.get(TYPE).meta_model` after `register_all()`). If it's `None`, the type has no metadata model — use the file-materialize → `flow record index` pipeline above instead.
+- **Never pass your own `id`.** Leave `id=None`; `save()` mints a policy-valid UUID. It is **deterministic (v5)** when derivable from the fields, so re-running with identical values upserts the **same** record (same TypeId) rather than creating a new one — change a field if you want a distinct record.
+- **Set only fields the model declares.** Unknown kwargs are silently dropped, never persisted — so a typo'd or wrong-type-for-this-type field won't error, it just won't save.
+- **`save()` writes the file; `await sync_to_db()` writes the DB.** Run both so the app's lists/search see it; run only `save()` if you just need `metadata.json`.
+- **Done = the Step-2 assert printed `OK created+verified …`.** The TypeId is `<TYPE>-<rec.id>`; pass it to `flow navigate entity` per [`navigate.md`](navigate.md) only if the user asked to open it.
+- **Ignore the benign `VIRTUAL_ENV … does not match … will be ignored` uv warning** — `uv run` uses the project's `.venv` regardless; it is not an error.
+
+### Step 3 — link the record to the current process (optional)
+
+When you are an agentic process and the record you just made belongs to *this*
+run (e.g. a diagnosis you produced), mutually cross-link them so the record
+shows up in the process's context and vice-versa. Same single primitive used
+everywhere: `cross_link_entities(a, b)`. Self-identify with
+`resolve_process_id(None)` (reads `FLOWPAD_EXECUTION_SCOPE`). Fold this into the
+Step 2 `main()` right after `await rec.sync_to_db()`:
+
+```python
+    import flow_sdk.models.entities  # noqa: F401 — registers entity classes so get_entity_cls works
+    from flow_sdk.builtin.agentic_process import AgenticProcess
+    from flow_sdk.cli.commands._common import resolve_process_id
+    from flow_sdk.core.entity.cross_link import cross_link_entities
+
+    proc = await AgenticProcess.get_by_id(resolve_process_id(None))   # this process
+    diag = await SchemaRegistry.get_entity_cls(TYPE).get_by_id(rec.id)  # the record's entity
+    await cross_link_entities(proc, diag)                              # mutual private-context link
+    print(f"OK cross-linked {proc.typeid} <-> {diag.typeid}")
+```
+
+Notes: `cross_link_entities` is idempotent (re-runs are no-ops) and saves both
+sides. `import flow_sdk.models.entities` is required — entity classes register on
+import, and without it `get_entity_cls(TYPE)` returns `None` in a fresh worker
+process (`register_all()` only loads the FS metadata schema, not the entity
+classes).

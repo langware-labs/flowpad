@@ -1,6 +1,6 @@
-"""C4: ``cross_link_file_to_process`` — markdown-only cross-link against the
-live in-memory AP. No DB lookup of the AP (avoids the stale-instance overwrite
-that would otherwise let subsequent AP saves clobber the link).
+"""Markdown file → process cross-link via the generic primitives:
+``Entity.get_by_asset_ref`` (resolution) + ``cross_link_entities`` (linking).
+Live in-memory AP, real DB round-trips, no mocks.
 """
 from __future__ import annotations
 
@@ -11,8 +11,9 @@ import pytest
 
 from flow_sdk.builtin.agentic_process import AgenticProcess
 from flow_sdk.builtin.claude_memory_entities import Docs
+from flow_sdk.core.entity.cross_link import cross_link_entities
+from flow_sdk.core.entity.entity_model import Entity
 from flow_sdk.flowpad_types.enums import WorkerType
-from flow_sdk.transcript_analyzer.file_cross_link import cross_link_file_to_process
 
 
 pytestmark = pytest.mark.timeout(30)
@@ -35,23 +36,24 @@ def _has_link(entries, type_, id_) -> bool:
 
 
 @pytest.mark.asyncio
-async def test_cross_link_returns_none_when_no_markdown_entity(initialize_test_db) -> None:
-    """No on-demand reindex per locked decision 3."""
-    ap = await _save_ap()
-    assert await cross_link_file_to_process("/some/missing/file.md", ap) is None
+async def test_resolve_returns_none_when_no_markdown_entity(initialize_test_db) -> None:
+    assert await Entity.get_by_asset_ref("/some/missing/file.md") is None
 
 
 @pytest.mark.asyncio
-async def test_cross_link_succeeds_when_both_sides_exist(initialize_test_db) -> None:
-    """Pre-existing Docs + live AP → bidirectional cross-link, both sides persisted."""
+async def test_resolve_then_cross_link_succeeds(initialize_test_db) -> None:
+    """Pre-existing Docs + live AP → resolve by asset_ref, bidirectional link."""
     asset = "/tmp/cross_link_test_2.md"
     docs = await _save_docs(asset)
     ap = await _save_ap()
 
-    md_out = await cross_link_file_to_process(asset, ap)
-    assert md_out is not None and md_out.id == docs.id
+    md = await Entity.get_by_asset_ref(asset)
+    assert md is not None and md.id == docs.id
 
-    # In-memory AP carries the link immediately (the production bug we fixed).
+    changed = await cross_link_entities(md, ap, b_data={"path": asset})
+    assert changed is True
+
+    # In-memory AP carries the link immediately.
     assert _has_link(ap.private_context_entities_, Docs.get_type(), docs.id)
 
     docs_reloaded = await Docs.get_by_id(docs.id)
@@ -67,8 +69,9 @@ async def test_cross_link_idempotent(initialize_test_db) -> None:
     docs = await _save_docs(asset)
     ap = await _save_ap()
 
-    await cross_link_file_to_process(asset, ap)
-    await cross_link_file_to_process(asset, ap)
+    md = await Entity.get_by_asset_ref(asset)
+    assert await cross_link_entities(md, ap, b_data={"path": asset}) is True
+    assert await cross_link_entities(md, ap, b_data={"path": asset}) is False
 
     docs_reloaded = await Docs.get_by_id(docs.id)
     ap_reloaded = await AgenticProcess.get_by_id(ap.id)
@@ -77,11 +80,6 @@ async def test_cross_link_idempotent(initialize_test_db) -> None:
 
 
 @pytest.mark.asyncio
-async def test_cross_link_skips_non_markdown_path(initialize_test_db) -> None:
-    ap = await _save_ap()
-    assert await cross_link_file_to_process("/tmp/foo.py", ap) is None
-
-
-@pytest.mark.asyncio
-async def test_cross_link_returns_none_when_ap_missing(initialize_test_db) -> None:
-    assert await cross_link_file_to_process("/tmp/anything.md", None) is None
+async def test_resolve_skips_unknown_path(initialize_test_db) -> None:
+    """A path with no entity (e.g. a non-indexed source file) resolves to None."""
+    assert await Entity.get_by_asset_ref("/tmp/foo.py") is None

@@ -12,10 +12,8 @@ Each log file keeps at most _MAX_LOG_ENTRIES entries (oldest trimmed on append).
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import json
-import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -331,9 +329,39 @@ class SchemaRegistry:
     _types: ClassVar[dict[str, TypeInfo]] = {}
     _subtypes: ClassVar[dict[str, list[str]]] = {}
     _default_index_types: ClassVar[list[str]] = []
+    # Whether the declarative type-info registrations have run in this process.
+    _loaded: ClassVar[bool] = False
 
     # Backward compat: direct class attribute access for default_index_types
     default_index_types: ClassVar[list[str]] = _BUILTIN_DEFAULT_TYPES
+
+    # ---------------------------------------------------------------------------
+    # Lazy initialization
+    # ---------------------------------------------------------------------------
+
+    @classmethod
+    def _ensure_loaded(cls) -> None:
+        """Populate the registry on first read.
+
+        Entity types self-register on import (``__init_subclass__``), but the
+        declarative *metadata* types only register when ``register_all()`` runs.
+        Rather than require every process (CLI, SDK script, indexer, backend) to
+        remember to call it, run it lazily the first time the registry is read —
+        once per process. ``register_all()`` is idempotent, so a later explicit
+        call (e.g. at server startup) is harmless.
+        """
+        if cls._loaded:
+            return
+        # Set the flag BEFORE running register_all: it calls register() many
+        # times, which must not re-enter this loader.
+        cls._loaded = True
+        try:
+            from flow_sdk.schema.type_info import register_all  # lazy: avoid import cycle
+
+            register_all()
+        except Exception:
+            cls._loaded = False  # let the next access retry rather than wedge
+            raise
 
     # ---------------------------------------------------------------------------
     # Registration
@@ -424,17 +452,20 @@ class SchemaRegistry:
 
     @classmethod
     def get(cls, type_name: "str | TypeId") -> TypeInfo | None:
+        cls._ensure_loaded()
         if not isinstance(type_name, str):
             type_name = type_name.type  # TypeId duck-type: .type is the type string
         return cls._types.get(type_name)
 
     @classmethod
     def get_subtypes(cls, type_name: str) -> list[TypeInfo]:
+        cls._ensure_loaded()
         names = cls._subtypes.get(type_name, [])
         return [cls._types[n] for n in names if n in cls._types]
 
     @classmethod
     def get_all_types(cls) -> list[str]:
+        cls._ensure_loaded()
         return list(cls._types.keys())
 
     @classmethod
@@ -458,14 +489,17 @@ class SchemaRegistry:
 
     @classmethod
     def get_all_entity_types(cls) -> list[str]:
+        cls._ensure_loaded()
         return [k for k, v in cls._types.items() if v.entity_cls is not None]
 
     @classmethod
     def get_all_entity_classes(cls) -> list[type]:
+        cls._ensure_loaded()
         return [v.entity_cls for v in cls._types.values() if v.entity_cls is not None]
 
     @classmethod
     def get_public_entity_types(cls) -> list[str]:
+        cls._ensure_loaded()
         return [k for k, v in cls._types.items() if v.entity_cls is not None and v.api_visible]
 
     # --- Presentation read-through getters (registry is the single source) ---
@@ -497,11 +531,13 @@ class SchemaRegistry:
 
     @classmethod
     def get_all_record_types(cls) -> list[str]:
+        cls._ensure_loaded()
         return [k for k, v in cls._types.items() if v.entity_cls is not None]
 
     @classmethod
     def get_default_index_types(cls) -> list[str]:
         """Return authoritative list of default-indexed type names."""
+        cls._ensure_loaded()
         if cls._default_index_types:
             return list(cls._default_index_types)
         return list(_BUILTIN_DEFAULT_TYPES)

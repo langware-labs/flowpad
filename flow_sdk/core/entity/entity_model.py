@@ -387,6 +387,35 @@ class Entity(DBEntity):
         return results[opts.offset:end]
 
     @classmethod
+    async def get_by_asset_ref(cls, path: "str | Path") -> "Entity | None":
+        """Resolve the single entity whose ``asset_ref`` equals ``path``.
+
+        ``asset_ref`` is globally unique (one entity per file path across all
+        types), so the first hit is THE entity. Queries every file-backed type
+        (those declaring an ``asset_ref`` field) in parallel — the generic
+        replacement for the per-type resolution loops the cross-link helpers
+        used to carry. Returns ``None`` when no entity owns the path.
+        """
+        import asyncio  # noqa: PLC0415
+
+        path_str = str(path)
+        candidates = [
+            ecls for ecls in SchemaRegistry.get_all_entity_classes()
+            if "asset_ref" in getattr(ecls, "model_fields", {})
+        ]
+
+        async def _try(ecls: type) -> "Entity | None":
+            try:
+                return await ecls.get_one({"asset_ref": path_str})
+            except Exception:
+                return None
+
+        for result in await asyncio.gather(*[_try(c) for c in candidates]):
+            if result is not None:
+                return result
+        return None
+
+    @classmethod
     def allocate_id(cls, data: dict) -> str:
         """Return a stable UUID for this entity type given creation data.
 
