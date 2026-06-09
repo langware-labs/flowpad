@@ -72,6 +72,7 @@ EXPECTED = {
     "ARTIFACT_RELATION": "artifact_relation", "FS_ITEM": "fs_item",
     "KNOWLEDGE_BASE": "knowledge_base",
     "SKILLIT_SESSION": "skillit_session", "SKILLIT_CONFIG": "skillit_config",
+    "FLOWPAD_DIAGNOSIS": "flowpad_diagnosis",
 }
 
 
