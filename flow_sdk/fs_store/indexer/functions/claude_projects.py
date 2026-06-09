@@ -263,6 +263,11 @@ async def _upsert_project_for_cwd(
         session_count, last_session_at = _compute_project_session_stats(existing)
         existing.session_count = session_count
         existing.last_session_at = last_session_at
+        # A project is an aggregate with no single source file; its real
+        # "last modified" is the most-recent child session activity. Stamp it as
+        # updated_date so from_record preserves it instead of the index instant.
+        if last_session_at:
+            existing.updated_date = last_session_at
         try:
             await existing.save()
         except Exception:
@@ -287,6 +292,9 @@ async def _upsert_project_for_cwd(
     session_count, last_session_at = _compute_project_session_stats(rec)
     rec.session_count = session_count
     rec.last_session_at = last_session_at
+    # Aggregate "last modified" = most-recent child session activity (see above).
+    if last_session_at:
+        rec.updated_date = last_session_at
     try:
         await rec.save()
     except Exception:
