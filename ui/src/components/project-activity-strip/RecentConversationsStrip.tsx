@@ -1,5 +1,6 @@
 import {
   Conversation,
+  ConversationKind,
   FlowMessage,
   FlowMessageKind,
   Invitation,
@@ -22,7 +23,7 @@ import { NewConversationDialog } from '@src/components/new-conversation-dialog/N
 import { deriveConversationTitle } from '@src/components/conversation/conversation-title';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { Archive, EyeOff, MailPlus, MessageSquare, Plus, RefreshCw, Upload } from 'lucide-react';
+import { Archive, EyeOff, LifeBuoy, MailPlus, MessageSquare, Plus, RefreshCw, Upload } from 'lucide-react';
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { bulkUpdateMessages } from '@src/components/inbox-view/inbox-api';
 import { formatTimeAgo } from './project-activity-utils';
@@ -450,6 +451,10 @@ function ConversationRow({
     !invitation?.accepted &&
     isRecipient;
 
+  // Community/support ticket — tagged with a chip so it reads as a support
+  // thread (not a normal DM) in the strip. ``kind`` is hub-set.
+  const isCommunity = conv.kind === ConversationKind.COMMUNITY;
+
   // Both timestamps use the same auto-revive-on-new-message pattern:
   // compare the stamp against the latest pointer's ``ts`` (available
   // synchronously off ``message_ids``) so we don't flicker during the
@@ -530,6 +535,17 @@ function ConversationRow({
             <span className="truncate">{fromName ?? title}</span>
           </span>
           <div className="flex shrink-0 items-center gap-1">
+            {isCommunity && (
+              <span
+                className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-violet-500/40 bg-violet-500/15 px-1.5 py-0.5 text-[10px] font-medium text-violet-600 dark:text-violet-400"
+                data-testid="community-chip"
+                data-chip-type="community"
+                title="Community support ticket"
+              >
+                <LifeBuoy className="h-2.5 w-2.5" />
+                Support
+              </span>
+            )}
             {projectLabel && (
               <span
                 className="inline-flex shrink-0 items-center rounded-md border border-primary/30 bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary"

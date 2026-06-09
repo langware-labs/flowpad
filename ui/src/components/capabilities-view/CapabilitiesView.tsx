@@ -1,6 +1,6 @@
 import { useCapability } from '@sdk/react/hooks';
-import { capabilityManager } from '@sdk';
-import type { Capability, CapabilityResult } from '@sdk';
+import { capabilityManager, isWorkerTerminal, ProcessStatus } from '@sdk';
+import type { AgenticProcess, Capability, CapabilityResult, WorkerStatus } from '@sdk';
 import {
   Select,
   SelectContent,
@@ -8,8 +8,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@src/components/ui/select';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ProcessStatusLine } from '@src/components/agentic-progress/shared/process-status-line';
+import { processStatusConfig, workerStatusConfig } from '@src/components/agentic-progress/shared/status-indicator';
+import { getOneLiner } from '@src/components/hooks/event-utils';
 import { Badge } from '@src/components/ui/badge';
 import { Button } from '@src/components/ui/button';
 import { ScrollArea } from '@src/components/ui/scroll-area';
@@ -23,7 +25,9 @@ import {
 } from '@src/components/ui/table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { cn } from '@src/lib/utils';
+import { useFlowDataTrace } from '@src/hooks/use-flow-data-trace';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import type { TraceEvent } from '@src/types/trace-event';
 import {
   BadgeCheck,
   CircleHelp,
@@ -86,6 +90,30 @@ function resultLabel(result: CapabilityResult | null): string {
   return 'Unavailable';
 }
 
+/**
+ * The capability's discovered typed value — the exact value workers spawn
+ * with (e.g. the harness CLI's bin folder), so the window always shows what
+ * the system actually uses. Em-dash when the capability has a typed slot
+ * (value_type set) but discovery found nothing; hidden for untyped rows.
+ */
+function CapabilityValueLine({ capability }: { capability: Capability | null }) {
+  if (!capability?.value_type) return null;
+  const path =
+    capability.value && typeof capability.value === 'object'
+      ? (capability.value as { path?: unknown }).path
+      : null;
+  const text = typeof path === 'string' && path ? path : null;
+  return (
+    <div
+      className="mt-1 truncate font-mono text-[11px] text-muted-foreground"
+      data-testid="capability-value"
+      title={text ?? 'No value discovered'}
+    >
+      {text ?? '—'}
+    </div>
+  );
+}
+
 function ResultBadge({ result, loading }: { result: CapabilityResult | null; loading: boolean }) {
   if (loading) {
     return (
@@ -122,6 +150,50 @@ function ResultBadge({ result, loading }: { result: CapabilityResult | null; loa
   );
 }
 
+function capabilityProcessStatusLabel(process: AgenticProcess): string {
+  const status = (process.status as ProcessStatus | undefined) ?? ProcessStatus.NEW;
+  const procConfig = processStatusConfig[status] ?? processStatusConfig[ProcessStatus.NEW];
+  const worker = (process.workerStatus ?? process.worker_status) as WorkerStatus | undefined;
+  const workerConfig = worker ? workerStatusConfig[worker] : undefined;
+  return worker && workerConfig && isWorkerTerminal(worker) ? workerConfig.label : procConfig.label;
+}
+
+function capabilityProcessOneLiner(process: AgenticProcess, events: TraceEvent[]): string {
+  for (let i = events.length - 1; i >= 0; i -= 1) {
+    const line = getOneLiner(events[i]).trim();
+    if (line) return line;
+  }
+
+  const installPrompt = process.context_data?.install_prompt;
+  if (typeof installPrompt === 'string' && installPrompt.trim()) {
+    return installPrompt.trim();
+  }
+
+  return process.name || 'Process started';
+}
+
+function CapabilityProcessRun({
+  process,
+  onOpenInTerminal,
+}: {
+  process: AgenticProcess;
+  onOpenInTerminal: () => void;
+}) {
+  const { events } = useFlowDataTrace(process);
+  const statusLabel = capabilityProcessStatusLabel(process);
+  const oneLiner = useMemo(() => capabilityProcessOneLiner(process, events), [events, process]);
+
+  return (
+    <div className="min-w-0 space-y-0.5">
+      <ProcessStatusLine process={process} size="sm" onOpenInTerminal={onOpenInTerminal} className="min-w-0" />
+      <div className="min-w-0 truncate text-[11px] leading-4 text-muted-foreground" data-testid="capability-process-one-liner">
+        <span className="font-medium text-foreground/80">{statusLabel}:</span>{' '}
+        <span>{oneLiner}</span>
+      </div>
+    </div>
+  );
+}
+
 function CapabilityRow({ kind }: { kind: string }) {
   const {
     capability,
@@ -155,6 +227,7 @@ function CapabilityRow({ kind }: { kind: string }) {
             <div className="truncate text-sm font-medium">{title}</div>
             <div className="truncate text-xs text-muted-foreground">{kind}</div>
             {description && <div className="mt-1 line-clamp-2 text-xs text-muted-foreground">{description}</div>}
+            <CapabilityValueLine capability={capability} />
           </div>
         </div>
       </TableCell>
@@ -189,10 +262,8 @@ function CapabilityRow({ kind }: { kind: string }) {
 
       <TableCell className="w-[20%]">
         {activeProcess ? (
-          <ProcessStatusLine
+          <CapabilityProcessRun
             process={activeProcess}
-            size="sm"
-            secondary={activeProcess.name}
             onOpenInTerminal={() => navigation.openDock(activeProcess.terminalDockPointer)}
           />
         ) : (

@@ -1,9 +1,11 @@
 import { ActionInfo, dataManager, Shell } from '@sdk';
+import { useGitPush } from '@src/hooks/use-git-push';
 import { GitBranch, RefreshCw, X } from 'lucide-react';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '@src/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
+import { GitPushIcon } from '@src/components/status-bar/GitPushIcon';
 import { GitFileDiffModal } from './GitFileDiffModal';
 
 interface GitFile {
@@ -25,6 +27,8 @@ interface GitPanelProps {
   computeNodeId: string;
   workdir: string;
   sidecarShellId?: string | null;
+  /** Called after a push so an outer owner (e.g. the footer) can refresh too. */
+  onPushed?: () => void;
 }
 
 function statusColor(status: string): string {
@@ -258,7 +262,7 @@ const FileDiffModal: React.FC<FileDiffModalProps> = ({ file, computeNodeId, work
 // GitPanel
 // ---------------------------------------------------------------------------
 
-export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, sidecarShellId }) => {
+export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, sidecarShellId, onPushed }) => {
   const [data, setData] = useState<GitStatusData | null>(null);
   const [loading, setLoading] = useState(true);
   const [initing, setIniting] = useState(false);
@@ -281,6 +285,8 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, side
       if (mountedRef.current) setLoading(false);
     }
   }, [computeNodeId, workdir]);
+
+  const { push, busy: pushing } = useGitPush(computeNodeId, workdir, () => { void fetchStatus(); onPushed?.(); });
 
   useEffect(() => {
     mountedRef.current = true;
@@ -369,14 +375,30 @@ export const GitPanel: React.FC<GitPanelProps> = ({ computeNodeId, workdir, side
             </span>
           )}
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => { setLoading(true); void fetchStatus(); }}
-          className="h-6 w-6 p-0"
-        >
-          <RefreshCw className="h-3.5 w-3.5" />
-        </Button>
+        <div className="flex items-center gap-1">
+          {!data?.error && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => void push()}
+              disabled={pushing}
+              className="h-6 gap-1 px-1.5 text-[10px]"
+              title="git push"
+              data-testid="git-panel-push"
+            >
+              <GitPushIcon busy={pushing} />
+              Push
+            </Button>
+          )}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => { setLoading(true); void fetchStatus(); }}
+            className="h-6 w-6 p-0"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+          </Button>
+        </div>
       </div>
 
       {/* Body */}

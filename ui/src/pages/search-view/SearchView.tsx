@@ -1,6 +1,6 @@
 import { RecordSearchBar } from '@src/components/record-search-bar/RecordSearchBar';
 import { SearchResultCard } from '@src/components/record-search-bar/SearchResultCard';
-import { ScopeFilterBar } from '@src/components/scope-filter/ScopeFilterBar';
+import { SearchScopeToggle } from '@src/components/record-search-bar/SearchScopeToggle';
 import { SearchCalibrationPanel } from '@src/components/search-calibration/SearchCalibrationPanel';
 import { ActivityIndicator } from '@src/components/search-index/ActivityIndicator';
 import { IndexNowModal } from '@src/components/search-index/IndexNowModal';
@@ -13,7 +13,7 @@ import { dataContext, dataManager, systemTools } from '@sdk';
 import { SearchCalibration, SearchFilters, loadStoredCalibration, saveCalibration, useRecordSearch } from '@src/hooks/use-record-search';
 import { useIndexStatus } from '@src/hooks/use-index-status';
 import { useSystemTools } from '@src/hooks/use-system-tools';
-import { useDefaultScopeFilter } from '@src/hooks/use-default-scope-filter';
+import { useSearchScopeToggle } from '@src/hooks/use-global-search-scope';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { AlertCircle, FileSearch, Menu, PackageSearch, SlidersHorizontal } from 'lucide-react';
@@ -81,7 +81,15 @@ export function SearchView() {
 
   const { busy, resetAndRescan } = useSystemTools();
 
-  const [scope, setScope, currentProjectId] = useDefaultScopeFilter();
+  const currentProjectId = dataContext.project?.id ?? null;
+  const {
+    scope,
+    isLoading: searchScopeLoading,
+    mode: searchScopeMode,
+    setMode: setSearchScopeMode,
+    allProjectCount,
+    currentProjectAvailable,
+  } = useSearchScopeToggle(currentProjectId);
 
   // Re-seed progress state from backend after page refresh so the footer
   // indicator reappears mid-job. The modal stays closed until the user opens
@@ -138,7 +146,16 @@ export function SearchView() {
     currentDock?.options?.time_end,
   ]);
 
-  const { results, isLoading, error, indexerReady, latencyMs } = useRecordSearch(query, filters, calibration, scope);
+  const searchQueryForRequest = searchScopeLoading ? '' : query;
+  const searchFiltersForRequest = searchScopeLoading ? {} : filters;
+  const {
+    results,
+    isLoading: searchLoading,
+    error,
+    indexerReady,
+    latencyMs,
+  } = useRecordSearch(searchQueryForRequest, searchFiltersForRequest, calibration, scope);
+  const isLoading = searchScopeLoading || searchLoading;
 
   // Push query/filter changes to URL so browser history and sharing work
   const handleQueryChange = useCallback(
@@ -221,7 +238,12 @@ export function SearchView() {
       </div>
 
       <div className="shrink-0">
-        <ScopeFilterBar scope={scope} currentProjectId={currentProjectId} onScopeChange={setScope} />
+        <SearchScopeToggle
+          value={searchScopeMode}
+          onChange={setSearchScopeMode}
+          allProjectCount={allProjectCount}
+          currentProjectAvailable={currentProjectAvailable}
+        />
       </div>
 
       {/* Search bar row — with refresh button */}

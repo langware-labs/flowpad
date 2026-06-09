@@ -116,6 +116,11 @@ interface FlowMessageBubbleProps {
    *  to the soft cushions (sender_name, creator, 'unknown') so legitimate
    *  load windows don't flash the alert glyph. */
   rosterReady?: boolean;
+  /** True when the parent conversation is a community (support-center) ticket.
+   *  Staff replies are masked to a single brand identity and the real
+   *  responder's `sender_id` is intentionally absent from the guest's roster,
+   *  so we suppress the unresolved-sender alert and its telemetry. */
+  isCommunity?: boolean;
   /** Parent conversation's `message_status_visible` flag — passed straight
    *  through to the receipt indicator. Defaults to true. */
   conversationStatusVisible?: boolean;
@@ -146,6 +151,7 @@ export function FlowMessageBubble({
   onDeleteMessage,
   participants,
   rosterReady = false,
+  isCommunity = false,
   conversationStatusVisible = true,
   ensureProjectMapped,
   attachmentProjectId,
@@ -196,6 +202,7 @@ export function FlowMessageBubble({
   const unresolvedSenderId =
     fm &&
     !isDraft &&
+    !isCommunity &&
     fm.sender_id &&
     rosterReady &&
     !participantLabelByUserId(participants, fm.sender_id) &&
@@ -267,7 +274,7 @@ export function FlowMessageBubble({
     displayName = wireSenderName;
   } else if (creatorLabel) {
     displayName = creatorLabel;
-  } else if (fm.sender_id && rosterReady) {
+  } else if (fm.sender_id && rosterReady && !isCommunity) {
     displayName = UNRESOLVED_SENDER_LABEL;
   } else {
     displayName = 'unknown';
