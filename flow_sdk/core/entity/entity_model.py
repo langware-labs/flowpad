@@ -494,14 +494,15 @@ class Entity(DBEntity):
             stamp["project_id"] = str(rec_pid)
 
         # Real last-modified: when the record carries no explicit updated_date,
-        # derive it from the source file's mtime (asset_ref) so search/listing
-        # reflect actual activity rather than the index/sync instant. Falls back
-        # to now() only when there's no resolvable source file. One generic hook
-        # for every file-backed indexed type (sessions, markdown, plans, …) —
+        # derive it from the source file's mtime so search/listing reflect actual
+        # activity rather than the index/sync instant. Resolves the source path
+        # from whichever field the extractor set (asset_ref / source_file / path),
+        # falling back to now() only when none resolves. One generic hook for
+        # every file-backed indexed type (sessions, markdown, plans, tasks, …) —
         # no per-extractor stamping.
         _asset_mtime = None
         if data.get("updated_date") is None:
-            src = data.get("asset_ref")
+            src = data.get("asset_ref") or data.get("source_file") or data.get("path")
             if src:
                 try:
                     _asset_mtime = datetime.fromtimestamp(os.path.getmtime(src), tz=timezone.utc)
