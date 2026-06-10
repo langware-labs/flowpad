@@ -15,12 +15,18 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+# The one terminal marker. Matched by string in three coupled places — the
+# indexer's terminal emits, index()'s scan-event filter, and
+# InProcessActivity.is_complete (plus `text === 'complete'` checks in the TS
+# consumers) — so it lives here as the single shared constant.
+PROGRESS_TEXT_COMPLETE: str = "complete"
+
 
 @dataclass(frozen=True, slots=True)
 class TypeProgressRow:
     type_name: str
     done: int          # records processed (parsed + skipped-fresh)
-    total: int         # pre-flight count; equals done when total is unknown
+    total: int         # pre-flight count; 0 when unknown (scan/discovery phase)
     errors: int = 0
     skipped: int = 0   # subset of done that was skipped-fresh
 
@@ -32,5 +38,5 @@ class IndexProgressTable:
     current: str | None                        # type_name of the row in flight
     done: int                                  # sum(row.done)
     total: int                                 # sum(row.total); 0 = unknown
-    text: str | None = None                    # "complete" on terminal event
+    text: str | None = None                    # PROGRESS_TEXT_COMPLETE on terminal event
     ts: str = ""                               # ISO-8601 UTC at emit time

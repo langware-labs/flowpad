@@ -663,7 +663,7 @@ class FsRecordsActionsMixin:
 
         from flow_sdk.core.network.resource_tracker import broadcast_progress  # noqa: PLC0415
         from flow_sdk.db import get_db_driver  # noqa: PLC0415
-        from flow_sdk.fs_store.indexer import IndexProgressTable, TypeProgressRow  # noqa: PLC0415
+        from flow_sdk.fs_store.indexer import PROGRESS_TEXT_COMPLETE, IndexProgressTable, TypeProgressRow  # noqa: PLC0415
         from flow_sdk.fs_store.operations.record_error import clear_all as _clear_all_errors  # noqa: PLC0415
         from flow_sdk.fs_store.operations.record_error import clear_for_type as _clear_errors_for_type
         from flow_sdk.fs_store.schema_registry import (  # noqa: PLC0415
@@ -776,7 +776,7 @@ class FsRecordsActionsMixin:
                     _prec.clear_hash()
 
             current_type = None
-            await emit(text="complete")
+            await emit(text=PROGRESS_TEXT_COMPLETE)
         finally:
             self._complete_activity("clear")
 
