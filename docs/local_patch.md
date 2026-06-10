@@ -185,8 +185,17 @@ behaviour (window/IPC/menu, deep-link, mouse back-forward, updater, secrets) and
 it run inside the real desktop shell — not just `MINIHUB_DEV=true electron .`.
 
 The user-stated workflow is: **kill the app naturally → patch the app → start the app**, and
-it must behave **"as if it were truly production"** (same `/Applications` bundle, same
-hardened-runtime launch, same `flow`-spawned backend on **9007**).
+it must behave **"as if it were truly production"** (same hardened-runtime launch, same
+`flow`-spawned backend on **9007**).
+
+> **Which app is "the patched version"? (resolving the ambiguity.)** macOS TCC
+> **App-Management** blocks editing `/Applications/Flowpad.app` from the terminal, so the
+> canonical, unambiguous patched app is the **`~/Flowpad-patched.app` clone** produced below —
+> **that is the build to launch and test**, not `/Applications/Flowpad.app` (which stays the
+> pristine original). If you specifically need the patch to live in `/Applications` (so you can
+> launch it the normal way), grant your terminal **App Management** once in System Settings →
+> Privacy & Security → App Management, then point the steps below at `/Applications/Flowpad.app`
+> instead of the clone. Default = the clone.
 
 ## What actually needs patching (and what doesn't)
 
