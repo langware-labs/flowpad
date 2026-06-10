@@ -17,6 +17,33 @@ class BuiltInRelationshipTypes(StrEnum):
     DependsOn = "dependson"
 
 
+class DependsOnKind(StrEnum):
+    """SemanticLock check semantics of a DependsOn edge (flow_sdk/semantic_lock).
+
+    COPY: the target must equal a deterministic copier transform of the lock
+    content — adjudicated with no LLM. REFLECTION: the target must reflect the
+    lock's principles — adjudicated by a reflector subagent (phase 2)."""
+
+    COPY = "copy"
+    REFLECTION = "reflection"
+
+
+class SemanticStatus(StrEnum):
+    """Checker verdict persisted on a DependsOn relationship."""
+
+    OK = "ok"
+    DRIFT = "drift"             # hash mismatch, not yet adjudicated
+    BREAK = "break"             # adjudicated violation
+    UNRESOLVABLE = "unresolvable"  # target bytes could not be resolved
+
+
+class ValidatedBy(StrEnum):
+    """Who last aligned the validated hashes on a DependsOn relationship."""
+
+    CHECKER = "checker"
+    USER = "user"
+
+
 class ExpansionType(StrEnum):
     Permissions = "permissions"
     IsPrivate = "is_private"

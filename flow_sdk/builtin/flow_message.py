@@ -126,7 +126,10 @@ PROMPT_FILE_VFS_PREFIX = "prompt/"
 # ``body_downloaded`` signal, or a message carrying one would be stuck behind
 # the Download button forever.
 _NON_MATERIALIZING_TYPE_IDS = frozenset(
-    {"conversation", "flow_message", "task", "git_repo", "claude_session"}
+    {"conversation", "flow_message", "task", "git_repo", "claude_session",
+     # git identity split: bundle unpack creates entity ROWS only (git_branch
+     # header + re-minted git_remote), never a records folder.
+     "git_branch", "git_remote"}
 )
 
 # Body-bearing indexed types whose VALUE is a markdown body: a record folder
