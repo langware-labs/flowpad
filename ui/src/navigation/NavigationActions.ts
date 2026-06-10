@@ -569,10 +569,12 @@ export class NavigationActions {
   // ========== History Navigation ==========
 
   goBack(): void {
+    console.log(`[nav-debug] NavigationActions.goBack → navigate(-1) from ${window.location.href}`);
     void this.navigate(-1);
   }
 
   goForward(): void {
+    console.log(`[nav-debug] NavigationActions.goForward → navigate(1) from ${window.location.href}`);
     void this.navigate(1);
   }
 

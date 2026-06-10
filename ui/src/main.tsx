@@ -25,12 +25,24 @@ function defineGlobals() {
 // windows never get it — wire it up ourselves, Electron only, to avoid
 // double-navigation in the browser.
 function bindMouseNavButtons() {
-  if (!(window as any).electronAPI) return;
+  const isElectron = !!(window as any).electronAPI;
+  // Catch-all: every back/forward — no matter the source (renderer mouse,
+  // Electron main webContents.goBack, react-router navigate(-1), keyboard) —
+  // surfaces here as a popstate. Logged with [nav-debug] so the Electron main
+  // process forwards it into the desktop log file.
+  window.addEventListener('popstate', e => {
+    console.log(
+      `[nav-debug] renderer.popstate href=${window.location.href} state=${JSON.stringify(e.state)} electron=${isElectron}`,
+    );
+  });
+  if (!isElectron) return;
   window.addEventListener('mouseup', e => {
     if (e.button === 3) {
+      console.log('[nav-debug] renderer.mouseup button=3 (back) → window.history.back()');
       e.preventDefault();
       window.history.back();
     } else if (e.button === 4) {
+      console.log('[nav-debug] renderer.mouseup button=4 (forward) → window.history.forward()');
       e.preventDefault();
       window.history.forward();
     }
