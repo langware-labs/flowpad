@@ -47,6 +47,9 @@ SPEC = TypeMetadata(
     main_subdir="specs",
     main_layout="folder",
     main_file="spec.md",
+    # asset_ref IS specs/<name>/spec.md (the indexer emits the inner file), so
+    # both create and rescan agree on the inner-file path.
+    main_file_is_asset_ref=True,
     default_body_fn=_spec_default_body,
     # WRITE-ONCE (owns_main_ref stays False): a DB-only spec materializes its
     # ``specs/<name>/spec.md`` body file the first time it's saved without one,

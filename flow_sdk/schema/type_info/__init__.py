@@ -37,9 +37,17 @@ class TypeMetadata:
     index_fields: list[str] = field(default_factory=list)
     main_subdir: str | None = None
     main_layout: str = "file"
-    # Folder-layout owned types: inner filename of the primary asset
-    # (e.g. "spec.md" under specs/<name>/). See TypeInfo.main_file.
+    # Folder-layout types: inner filename of the primary asset (e.g. "spec.md"
+    # under specs/<name>/, "SKILL.md" under .claude/skills/<name>/). See
+    # TypeInfo.main_file.
     main_file: str | None = None
+    # Folder-layout types only: does ``asset_ref`` point at the inner ``main_file``
+    # (True — e.g. spec, whose indexer emits ``spec.md``) or at the containing
+    # folder (False — e.g. skill, whose indexer emits the folder and whose
+    # frontend resolves ``<folder>/SKILL.md`` itself)? When False, the default
+    # body is materialized into ``<folder>/main_file`` while asset_ref stays the
+    # folder. Ignored for ``main_layout == "file"``.
+    main_file_is_asset_ref: bool = False
     parent_type: str | None = None
     # True ⇒ sharing an entity of this type automatically includes its parent
     # (``parent_type_id``) in the outgoing ``shared_context_entities``, and the
@@ -80,6 +88,7 @@ class TypeMetadata:
             main_subdir=self.main_subdir,
             main_layout=self.main_layout,
             main_file=self.main_file,
+            main_file_is_asset_ref=self.main_file_is_asset_ref,
             parent_type=self.parent_type,
             parent_share_on_default=self.parent_share_on_default,
             from_disk_fn=self.from_disk_fn,

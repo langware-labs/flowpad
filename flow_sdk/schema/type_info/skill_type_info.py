@@ -10,10 +10,11 @@ from flow_sdk.fs_store.indexer.functions.skill import (
 def _skill_default_body(entity) -> str:
     """SKILL.md written to the skill's main_ref on create.
 
-    Mirrors Spec/Workflow: without a default-body writer (and a ``main_file``
-    pointing the asset_ref at the inner SKILL.md), create persists the entity +
-    folder asset_ref but never materializes SKILL.md, leaving a dangling pointer
-    the editor reports as "file not found".
+    Skill's asset_ref is the folder (.claude/skills/<name>/) — the indexer emits
+    the folder and the frontend resolves <folder>/SKILL.md itself. ``main_file``
+    names that inner doc so ``upsert_main_ref`` materializes it on create;
+    without it, create leaves a dangling folder pointer the editor reports as
+    "file not found".
     """
     from flow_sdk.fs_store.indexer._frontmatter import _render_frontmatter  # noqa: PLC0415
 
