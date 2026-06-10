@@ -273,6 +273,28 @@ function createWindow() {
     backgroundColor: '#1e1e1e',
   });
 
+  // Mouse back/forward (X1/X2) buttons. A normal browser maps these to history
+  // navigation automatically; Electron does not, so we wire them up here. The press
+  // reaches the main process differently per platform — on macOS only via input-event
+  // (it never reaches the renderer), on Windows/Linux as an app-command — so we listen
+  // for one per platform to avoid double-navigating where both could fire.
+  const nav = () => mainWindow.webContents.navigationHistory;
+  const goBack = () => { if (nav().canGoBack()) nav().goBack(); };
+  const goForward = () => { if (nav().canGoForward()) nav().goForward(); };
+
+  if (process.platform === 'darwin') {
+    mainWindow.webContents.on('input-event', (_e, input) => {
+      if (input.type !== 'mouseDown') return;
+      if (input.button === 'back') goBack();
+      else if (input.button === 'forward') goForward();
+    });
+  } else {
+    mainWindow.webContents.on('app-command', (_e, command) => {
+      if (command === 'browser-backward') goBack();
+      else if (command === 'browser-forward') goForward();
+    });
+  }
+
   // Show loading screen first
   mainWindow.loadFile(path.join(__dirname, 'loading.html'));
   mainWindow.once('ready-to-show', () => {
