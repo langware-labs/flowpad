@@ -2542,6 +2542,19 @@ def _should_fetch_messages(local_conv: Optional[Conversation], hub_conv: dict) -
     return int(raw_hub_count) != local_count
 
 
+async def _local_only_conversation_list(*, auth_required: bool) -> ApiSuccessResponse:
+    """Local-only conversation-list response: render whatever's in SQLite and
+    flag the hub unreachable. Used when the hub isn't configured
+    (``auth_required=False``) or there's no cloud session (``auth_required=True``)."""
+    local = await Conversation.get_all({})
+    return ApiSuccessResponse(data={
+        "conversations": [c.model_dump(mode="json") for c in local],
+        "bg_fetch_dispatched": [],
+        "hub_reachable": False,
+        "auth_required": auth_required,
+    })
+
+
 async def handle_conversation_list(someone_typeid: str) -> ApiResponse:
     """Unified conversation list: local SQLite + hub catch-up + background message fetch.
 
@@ -2561,27 +2574,18 @@ async def handle_conversation_list(someone_typeid: str) -> ApiResponse:
     """
     if not hub_base_url():
         # Local-only mode: still return whatever's in SQLite so the UI renders.
-        local = await Conversation.get_all({})
-        return ApiSuccessResponse(data={
-            "conversations": [c.model_dump(mode="json") for c in local],
-            "bg_fetch_dispatched": [],
-            "hub_reachable": False,
-            "auth_required": False,
-        })
+        return await _local_only_conversation_list(auth_required=False)
+
+    # Logged out → every hub conversation/invitation call would 401 and surface
+    # a "Cloud Request Failed" warning (and feed the hub-error suppression
+    # window). Return local-only with auth_required, exactly like
+    # _start_inbox_catchup skips the same calls at startup.
+    from flow_sdk.cli.auth.hub_login import hub_auth_available  # noqa: PLC0415
+    if not hub_auth_available():
+        return await _local_only_conversation_list(auth_required=True)
 
     local_list = await Conversation.get_all({})
     local_index = {c.id: c for c in local_list if c.id}
-
-    # Peek at credential state up front so we can flag ``auth_required`` even
-    # when the underlying hub_get swallows the 401 (it returns None on any
-    # non-200). Missing credentials is the most common reason the hub call
-    # comes back empty; assume that case and refine if the hub IS reachable
-    # for some calls but rejects others.
-    try:
-        from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
-        creds_present = bool(load_credentials() and load_credentials().api_key)
-    except Exception:  # noqa: BLE001
-        creds_present = False
 
     hub_convs_result, hub_invs_result = await asyncio.gather(
         hub_get(BuiltinEntityType.CONVERSATION),
@@ -2606,12 +2610,6 @@ async def handle_conversation_list(someone_typeid: str) -> ApiResponse:
 
     hub_convs = _coerce_list(hub_convs_result) or []
     hub_invs = _coerce_list(hub_invs_result) or []
-
-    # If both hub calls came back empty AND we never had credentials, the
-    # hub returned 401 (or we never authenticated) — flag auth_required so
-    # the UI routes to LoginDialog instead of showing a generic error.
-    if not hub_reachable and not creds_present:
-        auth_required = True
 
     # (c) upsert hub conversation metadata; dispatch per-conv message fetch
     # when the hub has more messages than we do locally.
