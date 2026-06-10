@@ -264,6 +264,17 @@ class TypeInfo:
     # materialized into ``<folder>/<main_file>`` (skill). Runtime-only.
     main_file_is_asset_ref: bool = False
 
+    def body_path_for(self, asset_path: Path) -> Path:
+        """Map an asset_ref path to the writable main-body file.
+
+        Folder-layout types whose asset_ref is the bare folder (skill-style,
+        ``main_file_is_asset_ref=False``) keep the body at ``<folder>/<main_file>``;
+        every other shape's asset_ref already IS the body target.
+        """
+        if self.main_layout == "folder" and self.main_file and not self.main_file_is_asset_ref:
+            return asset_path / self.main_file
+        return asset_path
+
     @property
     def schema_hash(self) -> str:
         """MD5 of structural fields as canonical JSON. Stable across runs."""

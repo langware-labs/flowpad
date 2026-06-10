@@ -641,21 +641,17 @@ class FSRecord(Generic[M]):
             return
         info = SchemaRegistry.get(self.type)
         # For folder types whose asset_ref is the folder (skill/whiteboard), the
-        # body lives at <folder>/<main_file>; for file/spec-style types asset_ref
-        # already points at the target. Resolve the real file before the
+        # body lives at <folder>/<main_file>. Resolve the real file before the
         # existence check — the folder itself always exists, which would
         # otherwise short-circuit the first-create write.
-        path = ar._path
-        if info and info.main_layout == "folder" and info.main_file and not info.main_file_is_asset_ref:
-            path = path / info.main_file
+        path = info.body_path_for(ar._path) if info else ar._path
         owns = bool(info and info.owns_main_ref)
         if path.exists() and not owns:
             return
         body = self.default_body(entity)
         if body is None:
             return
-        path.parent.mkdir(parents=True, exist_ok=True)
-        write_text_if_changed(path, body)  # unchanged → don't touch mtime/index hash
+        write_text_if_changed(path, body)  # mkdirs; unchanged → don't touch mtime/index hash
 
     # ── DB integration ────────────────────────────────────────────────────
 

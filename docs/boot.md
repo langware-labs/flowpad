@@ -1,3 +1,7 @@
+---
+id: b770917a-16b3-5ecc-a8e3-b4a0804915fc
+---
+
 # Server Boot & Bootstrap Flows
 
 How the backend goes from process start to serving requests, what runs where
