@@ -531,9 +531,35 @@ class UvManager {
     this.log.info(`[uv] Installing latest ${PYPI_PACKAGE} from PyPI...`);
     await this._killStaleToolProcesses();
     await this._uv(['tool', 'install', PYPI_PACKAGE, '--force'], { timeout: 120000 });
+    await this._ensureShimOnPath();
 
     this._flowBin = await this._resolveFlowBin();
     this.log.info(`[uv] ${PYPI_PACKAGE} installed, binary at ${this._flowBin}`);
+  }
+
+  /**
+   * Ensure uv's tool-bin dir (~/.local/bin) is on the user's *shell* PATH, so
+   * `flow` resolves in a fresh terminal — not just inside this app (which finds
+   * it via _enrichedPath()). Without this, a clean install leaves `flow` working
+   * in-app but "not recognized" when the user types it in a terminal.
+   *
+   * `uv tool update-shell` is uv's own cross-platform PATH-fixer: it edits the
+   * User PATH (registry) on Windows and the shell profile (.zshrc/.bashrc/
+   * .profile) on macOS/Linux, and is idempotent (won't double-append). Best
+   * effort — never block install/upgrade if it fails; we log and move on.
+   *
+   * NOTE: like any PATH edit, it only takes effect in terminals opened *after*
+   * this runs — an already-open shell won't see `flow` until restarted.
+   */
+  async _ensureShimOnPath() {
+    try {
+      await this._uv(['tool', 'update-shell'], { timeout: 30000 });
+      this.log.info('[uv] Ensured uv tool-bin dir is on user PATH');
+    } catch (err) {
+      this.log.warn(
+        `[uv] update-shell failed; flow may not be on terminal PATH: ${err.message}`
+      );
+    }
   }
 
   /**
@@ -1040,6 +1066,7 @@ class UvManager {
     this.log.info('[uv] Upgrading flowpad...');
     await this._killStaleToolProcesses();
     await this._uv(['tool', 'install', `${PYPI_PACKAGE}@latest`, '--force'], { timeout: 120000 });
+    await this._ensureShimOnPath();
     this._flowBin = await this._resolveFlowBin();
     this.log.info('[uv] Upgrade complete');
   }
@@ -1055,6 +1082,7 @@ class UvManager {
     this.log.info(`[uv] Repairing ${PYPI_PACKAGE} install (--reinstall --force)...`);
     await this._killStaleToolProcesses();
     await this._uv(['tool', 'install', PYPI_PACKAGE, '--reinstall', '--force'], { timeout: 120000 });
+    await this._ensureShimOnPath();
     this._flowBin = await this._resolveFlowBin();
     this.log.info(`[uv] Repair complete, binary at ${this._flowBin}`);
   }

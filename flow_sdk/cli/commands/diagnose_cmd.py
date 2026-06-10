@@ -283,6 +283,16 @@ async def _run_diagnose(message: str, transcript_timeout: float, *, emit=None) -
         "stop until it has printed its JSON."
     )
 
+    async def _terminate_worker() -> None:
+        # Don't leak the worker: it is spawned detached (via the backend), so an
+        # interrupted OR finished run would otherwise leave an orphaned claude
+        # process behind — and a pile-up of those starves new runs (they spawn but
+        # never produce output → hang). Kill it on EVERY exit.
+        with contextlib.suppress(Exception):
+            shell = await ap.shell()
+            if shell is not None:
+                await shell.terminate_worker()
+
     async def _await_warmup() -> bool:
         """Wait briefly for the worker to write its first transcript line.
 
@@ -302,60 +312,63 @@ async def _run_diagnose(message: str, transcript_timeout: float, *, emit=None) -
         return bool(tp and tp.exists() and tp.stat().st_size > 0)
 
     try:
-        await ap.prompt(prompt_text)
-        emit({"type": "status", "text": f"  Diagnosing (session={(ap.session_id or '')[:8]})…"})
-        if not await _await_warmup():
-            emit({"type": "error", "text": (
-                "  ! The diagnostic agent failed to start — it produced no transcript. "
-                "Check that the `claude` CLI is installed and on your PATH, then re-run "
-                "`flow diagnose`."
-            )})
-            emit({"type": "done", "ok": False, "diagnosis_id": None, "feed_posted": False, "feed_entry_id": None})
-            return 1
-        await _stream()
-        # The worker can end its turn early — diagnosing but not recording. Nudge
-        # the SAME session once to finish, then re-check.
-        if not await _completed():
-            emit({"type": "status", "text": "  …agent stopped before recording — nudging it to finish."})
-            await ap.prompt(nudge_text)
-            await _stream()
-    except (KeyboardInterrupt, asyncio.CancelledError):
-        emit({"type": "error", "text": "Diagnose interrupted."})
-        return 130
-
-    if recorded is not None:
-        # Cross-link the diagnosis this run produced into THIS process's context.
-        # The CLI owns the process id, so this works on every platform — the worker
-        # can't always self-identify to do it itself (notably on Windows, where its
-        # uv-run subprocess doesn't inherit FLOWPAD_EXECUTION_SCOPE). The diagnosis
-        # id came from report.py's own output (recorded); load it by id.
-        did = recorded.get("diagnosis_id")
         try:
-            if did and _diag_cls is not None:
-                fresh = await AgenticProcess.get_by_id(ap.id)
-                diag = await _diag_cls.get_by_id(did)
-                if fresh is not None and diag is not None:
-                    await cross_link_entities(fresh, diag)
-        except Exception:
-            pass
-        emit({"type": "status", "text": "  ✓ Diagnostic complete — diagnosis recorded."})
+            await ap.prompt(prompt_text)
+            emit({"type": "status", "text": f"  Diagnosing (session={(ap.session_id or '')[:8]})…"})
+            if not await _await_warmup():
+                emit({"type": "error", "text": (
+                    "  ! The diagnostic agent failed to start — it produced no transcript. "
+                    "Check that the `claude` CLI is installed and on your PATH, then re-run "
+                    "`flow diagnose`."
+                )})
+                emit({"type": "done", "ok": False, "diagnosis_id": None, "feed_posted": False, "feed_entry_id": None})
+                return 1
+            await _stream()
+            # The worker can end its turn early — diagnosing but not recording. Nudge
+            # the SAME session once to finish, then re-check.
+            if not await _completed():
+                emit({"type": "status", "text": "  …agent stopped before recording — nudging it to finish."})
+                await ap.prompt(nudge_text)
+                await _stream()
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            emit({"type": "error", "text": "Diagnose interrupted."})
+            return 130
+
+        if recorded is not None:
+            # Cross-link the diagnosis this run produced into THIS process's context.
+            # The CLI owns the process id, so this works on every platform — the worker
+            # can't always self-identify to do it itself (notably on Windows, where its
+            # uv-run subprocess doesn't inherit FLOWPAD_EXECUTION_SCOPE). The diagnosis
+            # id came from report.py's own output (recorded); load it by id.
+            did = recorded.get("diagnosis_id")
+            try:
+                if did and _diag_cls is not None:
+                    fresh = await AgenticProcess.get_by_id(ap.id)
+                    diag = await _diag_cls.get_by_id(did)
+                    if fresh is not None and diag is not None:
+                        await cross_link_entities(fresh, diag)
+            except Exception:
+                pass
+            emit({"type": "status", "text": "  ✓ Diagnostic complete — diagnosis recorded."})
+            emit({
+                "type": "done",
+                "ok": True,
+                "diagnosis_id": did,
+                "feed_posted": bool(recorded.get("feed_posted")),
+                "feed_entry_id": recorded.get("feed_entry_id"),
+            })
+            return 0
         emit({
-            "type": "done",
-            "ok": True,
-            "diagnosis_id": did,
-            "feed_posted": bool(recorded.get("feed_posted")),
-            "feed_entry_id": recorded.get("feed_entry_id"),
+            "type": "error",
+            "text": (
+                "  ! Diagnostic finished but the result was not recorded — see the report "
+                "above; re-run `flow diagnose` to retry."
+            ),
         })
-        return 0
-    emit({
-        "type": "error",
-        "text": (
-            "  ! Diagnostic finished but the result was not recorded — see the report "
-            "above; re-run `flow diagnose` to retry."
-        ),
-    })
-    emit({"type": "done", "ok": False, "diagnosis_id": None, "feed_posted": False, "feed_entry_id": None})
-    return 1
+        emit({"type": "done", "ok": False, "diagnosis_id": None, "feed_posted": False, "feed_entry_id": None})
+        return 1
+    finally:
+        await _terminate_worker()
 
 
 def diagnose_command(
