@@ -41,6 +41,13 @@ class TypeMetadata:
     # (e.g. "spec.md" under specs/<name>/). See TypeInfo.main_file.
     main_file: str | None = None
     parent_type: str | None = None
+    # True ⇒ sharing an entity of this type automatically includes its parent
+    # (``parent_type_id``) in the outgoing ``shared_context_entities``, and the
+    # receive path materializes the parent first (see
+    # ``Entity.materialize_share_parent``). Only safe when the parent type is
+    # deterministic/field-frozen (e.g. ``git_remote``) — a mutable parent would
+    # reintroduce cross-sender ownership conflicts.
+    parent_share_on_default: bool = False
     # Indexer dispatch callables (walked types only).
     from_disk_fn: Any = None
     gen_id_fn: Any = None
@@ -74,6 +81,7 @@ class TypeMetadata:
             main_layout=self.main_layout,
             main_file=self.main_file,
             parent_type=self.parent_type,
+            parent_share_on_default=self.parent_share_on_default,
             from_disk_fn=self.from_disk_fn,
             gen_id_fn=self.gen_id_fn,
             asset_hash_fn=self.asset_hash_fn,

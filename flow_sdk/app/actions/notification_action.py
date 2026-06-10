@@ -32,6 +32,7 @@ from flow_sdk.builtin.user import User
 if TYPE_CHECKING:
     from flow_sdk.builtin.flow_message import FlowMessage
 from flow_sdk.cli.auth.hub_login import is_logged_in
+from flow_sdk.core.entity.parent_share import collect_parent_share_typeids
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.discovery.notify import send_resource_sync
 from flow_sdk.fs_store import SyncOperation
@@ -667,6 +668,15 @@ async def handle_add_message(body: dict, someone_typeid: str) -> ApiResponse:
     # in an optimistic FE write. Skip the conversation's own typeid and the
     # transport types (conversation/flow_message) that ride every message.
     context_typeids = _parse_context_typeids(conv, asset_references, shared_context_entities)
+    # parent_share_on_default expansion: flagged types (e.g. git_branch)
+    # advertise their parent typeid on the rail so receivers re-materialize it.
+    parent_typeids = await collect_parent_share_typeids(context_typeids)
+    if parent_typeids:
+        context_typeids = [*context_typeids, *parent_typeids]
+        shared_context_entities = [
+            *(shared_context_entities or []),
+            *(str(t) for t in parent_typeids),
+        ]
     # Shared ClaudeTranscripts may not be indexed yet — materialize their rows
     # first so the merge/backlink below (and the chip's name lookup) resolve.
     await _ensure_claude_session_rows(context_typeids)
@@ -838,6 +848,12 @@ async def handle_forward_message(body: dict, someone_typeid: str) -> ApiResponse
         if att.attachment_type == AttachmentType.TYPE_ID
     ]
     context_typeids = _parse_context_typeids(conv, content_refs, [])
+    # parent_share_on_default expansion — same rule as handle_add_message, so
+    # forwarding a chip advertises its parent exactly like a fresh share.
+    parent_typeids = await collect_parent_share_typeids(context_typeids)
+    if parent_typeids:
+        context_typeids = [*context_typeids, *parent_typeids]
+        clone_fm.add_shared_context_entities(*parent_typeids)
     await _ensure_claude_session_rows(context_typeids)
     await _merge_shared_context_into_conversation(conv, context_typeids, someone_typeid)
 

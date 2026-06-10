@@ -85,6 +85,14 @@ class Entity(DBEntity):
     tags: List[str] = APIField(default_factory=list)
     system: bool = APIField(default=False, description="True when this entity belongs to an SDK-shipped system project")
     remote: bool = APIField(default=False, description="True when this entity has a hub counterpart at the same id; refreshable from the hub")
+    semantic_lock: bool = APIField(
+        default=False,
+        description=(
+            "True when this entity's content is ground truth for its DependsOn "
+            "targets: any target content-hash drift raises a semantic conflict "
+            "(see flow_sdk/semantic_lock). Marker only — never write-protection."
+        ),
+    )
     fetched_at: datetime | None = APIField(
         default=None,
         description=(
@@ -1299,6 +1307,14 @@ class Entity(DBEntity):
         # All of the above were producing ``None API field !!!`` errors on the
         # hub at create because the hub schema doesn't declare them. They
         # have no hub semantics; the SDK simply shouldn't be sending them.
+        # parent_share_on_default: a flagged type advertises its parent typeid
+        # on the shared-context rail so receivers re-materialize it (same
+        # kernel the message paths apply via collect_parent_share_typeids).
+        from flow_sdk.core.entity.parent_share import parent_share_typeid  # noqa: PLC0415
+
+        parent_tid = parent_share_typeid(self)
+        if parent_tid is not None:
+            self.add_shared_context_entities(parent_tid)
         body = self._hub_body()
 
         path = build_hub_url(self.get_type())
@@ -1471,11 +1487,29 @@ class Entity(DBEntity):
             sanitized["id"] = data["id"]
         if effective_parent and "parent_type_id" in cls.model_fields:
             sanitized["parent_type_id"] = effective_parent
+        # parent_share_on_default types materialize their (deterministic)
+        # parent FIRST — upsert-by-id, re-minted from the payload's plain
+        # fields, never trusted from the wire (see GitBranch).
+        info = SchemaRegistry.get(cls.get_type())
+        if info is not None and getattr(info, "parent_share_on_default", False):
+            pid = await cls.materialize_share_parent(sanitized, someone_typeid)
+            if pid and "parent_type_id" in cls.model_fields:
+                sanitized["parent_type_id"] = pid
         ent = cls.model_validate(sanitized)
         if "remote" in cls.model_fields:
             ent.remote = True
         await ent.save(someone_typeid, notify=notify)
         return ent
+
+    @classmethod
+    async def materialize_share_parent(
+        cls, payload: dict, someone_typeid: Optional[str] = None
+    ) -> Optional[str]:
+        """Hook for ``parent_share_on_default`` types: ensure the entity's
+        parent exists locally (upsert-by-deterministic-id) and return its
+        typeid, or None. No-op on the base class — flagged types override
+        (see ``GitBranch.materialize_share_parent``)."""
+        return None
 
     @staticmethod
     def _as_datetime(value: Any) -> Optional[datetime]:
@@ -1809,8 +1843,10 @@ class Entity(DBEntity):
     # ── context_entities surface ─────────────────────────────────────────
     #
     # Mirrors the TS APIEntity API. Two buckets:
-    #   * ``shared_context_entities``  — wire-bound, no auto-injection.
-    #     The read accessor is the field itself.
+    #   * ``shared_context_entities``  — wire-bound. The read accessor is the
+    #     field itself. One sanctioned auto-injection exists: at SHARE time a
+    #     ``parent_share_on_default`` type appends its parent typeid via
+    #     ``add_shared_context_entities`` (see ``share()`` / parent_share.py).
     #   * ``private_context_entities_``  — raw explicit storage (what the
     #     user/backend has actively attached). The computed property
     #     ``private_context_entities`` returns this *plus* implicit
@@ -2269,6 +2305,51 @@ _action_registry.register(
     action_name="set-group",
     function_name="set_group",
     handler=_http_set_group,
+    methods="post",
+    types="all",
+)
+
+
+async def _http_semantic_status(self: Entity):
+    """This entity's dependson rows, both directions (as lock / as target),
+    with their SemanticLock verdict fields. Minimal v1 relationship surface."""
+    from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
+    from flow_sdk.semantic_lock.runner import semantic_status  # noqa: PLC0415
+
+    return ApiSuccessResponse(data=await semantic_status(self))
+
+
+async def _http_semantic_waive(self: Entity):
+    """User waive ("it's ok"): align the relationship's validated hashes to
+    the CURRENT content, stamp validated_by=user / status=ok, and resolve the
+    open lock_break annotations. Body: ``{"relationship_id": ...}`` — must
+    reference a dependson row touching this entity."""
+    from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+    from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+    from flow_sdk.semantic_lock.runner import waive_relationship  # noqa: PLC0415
+
+    request_info = get_current_request_info()
+    body = await request_info.get_post_data() if request_info is not None else {}
+    relationship_id = body.get("relationship_id") if isinstance(body, dict) else None
+    if not relationship_id:
+        return ApiFailResponse(message="relationship_id is required")
+    updated = await waive_relationship(self, str(relationship_id))
+    if updated is None:
+        return ApiFailResponse(message=f"No dependson relationship {relationship_id} on {self.typeid}")
+    return ApiSuccessResponse(data=updated)
+
+
+_action_registry.register(
+    action_name="semantic-status",
+    function_name="semantic_status",
+    handler=_http_semantic_status,
+    methods="get",
+    types="all",
+)
+_action_registry.register(
+    action_name="semantic-waive",
+    function_name="semantic_waive",
+    handler=_http_semantic_waive,
     methods="post",
     types="all",
 )

@@ -32,6 +32,9 @@ logger = logging.getLogger(__name__)
 # media-only FMs (FILE attachments stay manual).
 _ASSET_TYPEID_TYPES: frozenset[str] = frozenset({
     "skill", "agent", "markdown", "spec", "workflow", "whiteboard",
+    # Not file-backed, but the chip resolves a real name only after the bundle's
+    # git_branch header materializes the row (+ its re-minted git_remote parent).
+    "git_branch",
 })
 
 
@@ -640,6 +643,13 @@ class HubWsBridge:
         if existing is None:
             if op == "delete":
                 return
+            # Identity mirror — a remote row is a pure reflection of the hub
+            # row. The hub's owner field (``initiated_by``) is the only
+            # legitimate creator; when the hub doesn't carry one, fall back to
+            # the neutral 'system' sentinel — NEVER the local user (the driver
+            # would otherwise stamp the request-context user, surfacing
+            # received conversations as created by the recipient).
+            clean["created_by"] = data.get("initiated_by") or data.get("created_by") or "system"
             try:
                 new_conv = Conversation.model_validate(clean)
             except Exception:
@@ -658,6 +668,12 @@ class HubWsBridge:
                       "remote_project_name", "shared_context_entities"):
             if field in clean:
                 setattr(existing, field, clean[field])
+        # Adopt the hub's owner when it carries one — keeps the local mirror
+        # converged with the hub row (same rule as the HTTP sync path in
+        # ``_upsert_hub_conversation_metadata``).
+        hub_owner = data.get("initiated_by")
+        if hub_owner and existing.created_by != hub_owner:
+            existing.created_by = hub_owner
         await existing.save(someone_typeid, notify=True)
 
     async def _handle_invitation_op(self, op: str, inv_id: str, data: dict) -> None:

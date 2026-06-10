@@ -217,6 +217,33 @@ async def _pack_claude_session_attachment(entry_id: str, attachment_dir: Path) -
     )
 
 
+async def _pack_git_branch_attachment(entry_id: str, attachment_dir: Path) -> None:
+    """Write ``attachment/git_branch-@<id>/header.json`` (whitelisted GitBranch
+    fields). The snapshot is self-sufficient: provider/owner/name ride as plain
+    fields so the receiver re-mints its local deterministic GitRemote parent —
+    the GitRemote row itself is deliberately never packed."""
+    from flow_sdk.builtin.git_branch import GitBranch
+
+    branch = await GitBranch.get_one({"id": entry_id})
+    if not branch:
+        return
+    branch_dir = attachment_dir / f"{EntityType.GIT_BRANCH.value}-@{entry_id}"
+    branch_dir.mkdir(parents=True, exist_ok=True)
+    # parent_type_id is deliberately NOT packed — the receiver re-mints it
+    # from provider/owner/name and never trusts a wire parent anyway.
+    branch_data = branch.model_dump(
+        mode="python",
+        include={
+            "id", "type", "name", "branch", "head_commit", "taken_at",
+            "provider", "owner",
+        },
+        context={"skip_api_serializer": True},
+    )
+    (branch_dir / "header.json").write_text(
+        json.dumps(branch_data, default=_json_default, ensure_ascii=False), encoding="utf-8"
+    )
+
+
 async def _pack_conversation_attachment(
     entry_id: str, flow_message: "FlowMessage", attachment_dir: Path,
 ) -> None:
@@ -280,9 +307,10 @@ async def _pack_attachment_entry(
     Repo/URL attachments have no bytes to bundle — silently skipped.
 
     TODO: at ~10+ branches consider a TypeInfo-driven ``pack_attachment``
-    hook instead of growing this dispatch (currently 8: spec, prompt, task,
-    conversation, flow_message, claude_session, fs-rooted). Each type has a
-    distinct serialization, so the registry hook is the only generic form.
+    hook instead of growing this dispatch (currently 9: spec, prompt, task,
+    conversation, flow_message, claude_session, git_branch, fs-rooted). Each
+    type has a distinct serialization, so the registry hook is the only
+    generic form.
     """
     if entry.attachment_type in (AttachmentType.FILE, AttachmentType.PROMPT):
         _pack_file_attachment(entry, flow_message, attachment_dir)
@@ -305,6 +333,8 @@ async def _pack_attachment_entry(
         await _pack_flow_message_entry(entry_id, attachment_dir)
     elif entry_type == BuiltinEntityType.CLAUDE_SESSION.value:
         await _pack_claude_session_attachment(entry_id, attachment_dir)
+    elif entry_type == EntityType.GIT_BRANCH.value:
+        await _pack_git_branch_attachment(entry_id, attachment_dir)
     elif entry_type in _FS_ROOTED_TYPES:
         await _pack_fs_rooted_attachment(entry_type, entry_id, attachment_dir)
 
@@ -817,6 +847,7 @@ async def unpack_bundle(
             EntityType.PROMPT.value: 0,
             BuiltinEntityType.SPEC.value: 0,
             BuiltinEntityType.TASK.value: 1,
+            EntityType.GIT_BRANCH.value: 1,
             BuiltinEntityType.CONVERSATION.value: 2,
             BuiltinEntityType.FLOW_MESSAGE.value: 3,
         }
@@ -951,6 +982,26 @@ async def unpack_bundle(
                             await sess.save(owner_typeid)
                         elif _fill_merge_entity(existing_sess, sess_payload, ("id", "type")):
                             await existing_sess.save(owner_typeid)
+
+                elif entry_type == EntityType.GIT_BRANCH.value:
+                    # Shared git location snapshot: materialize the deterministic
+                    # GitRemote parent FIRST (re-minted from the header's plain
+                    # provider/owner/name — the parent never rides as a blob),
+                    # then create-or-fill-merge the GitBranch row itself.
+                    branch_data = _read_entity_header(entry_dir)
+                    if branch_data is not None:
+                        from flow_sdk.builtin.git_branch import GitBranch  # noqa: PLC0415
+                        branch_id = branch_data.get("id") or entry_id
+                        pid = await GitBranch.materialize_share_parent(branch_data, owner_typeid)
+                        branch_payload = {**branch_data, "id": branch_id, "remote": False}
+                        if pid:
+                            branch_payload["parent_type_id"] = pid
+                        existing_branch = await GitBranch.get_one({"id": branch_id})
+                        if existing_branch is None or overwrite:
+                            branch = GitBranch.model_validate(branch_payload)
+                            await branch.save(owner_typeid)
+                        elif _fill_merge_entity(existing_branch, branch_payload, ("id", "type")):
+                            await existing_branch.save(owner_typeid)
 
                 elif entry_type == BuiltinEntityType.CONVERSATION.value:
                     jsonl_file = entry_dir / "conversation.jsonl"
