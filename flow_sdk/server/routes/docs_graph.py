@@ -21,7 +21,7 @@ from fastapi import APIRouter, HTTPException, Query
 
 from flow_sdk.builtin.faas.in_process_activity import InProcessActivity
 from flow_sdk.core.network.resource_tracker import broadcast_progress
-from flow_sdk.fs_store.indexer import IndexProgressTable, TypeProgressRow
+from flow_sdk.fs_store.indexer import PROGRESS_TEXT_COMPLETE, IndexProgressTable, TypeProgressRow
 from flow_sdk.fs_store.operations.markdown_index import entity_data_dir, file_summaries_dir
 from flow_sdk.llm_index import LLMIndexer, typeid_for
 from flow_sdk.llm_index.diff import MAX_DIFF_BYTES, git_unified_diff, is_binary_bytes
@@ -83,7 +83,7 @@ async def _emit(
         current=None if complete else current,
         done=files,
         total=0,
-        text="complete" if complete else None,
+        text=PROGRESS_TEXT_COMPLETE if complete else None,
         ts=datetime.now(timezone.utc).isoformat(),
     )
     await broadcast_progress(to_entity=activity.entity_id, flow_data=activity.make_flow_data())

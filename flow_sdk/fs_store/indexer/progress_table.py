@@ -15,10 +15,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-# The one terminal marker. Matched by string in three coupled places — the
-# indexer's terminal emits, index()'s scan-event filter, and
-# InProcessActivity.is_complete (plus `text === 'complete'` checks in the TS
-# consumers) — so it lives here as the single shared constant.
+# The one terminal marker. Matched by string at every emit/consume site —
+# the indexer's terminal emits, index()'s scan-event filter,
+# InProcessActivity.is_complete, the semantic-checker/docs-graph routes —
+# so it lives here as the single shared constant. Mirrored on the TS side as
+# PROGRESS_TEXT_COMPLETE in ts_sdk/src/services/system-tools-service.ts.
 PROGRESS_TEXT_COMPLETE: str = "complete"
 
 

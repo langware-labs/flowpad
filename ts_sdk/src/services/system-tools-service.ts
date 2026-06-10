@@ -128,6 +128,13 @@ export interface IndexProgressTable {
 }
 
 /**
+ * Terminal marker on ``IndexProgressTable.text`` — mirrors the backend's
+ * ``PROGRESS_TEXT_COMPLETE`` (flow_sdk/fs_store/indexer/progress_table.py).
+ * Other text values are informational phase labels (e.g. "sweeping").
+ */
+export const PROGRESS_TEXT_COMPLETE = 'complete';
+
+/**
  * SDK service for system-level data management.
  *
  * Extends EventEmitter and maintains reactive state:
@@ -190,12 +197,12 @@ export class SystemToolsService extends EventEmitter {
       this.currentActivity = attrs.job_name;
       this.progressTable = attrs;
 
-      // Terminal event: text="complete" is the authoritative signal that the
-      // job is done. The delay must be long enough that an in-flight phase
-      // HTTP (e.g. clear-index can run >500 ms past its complete-event)
+      // Terminal event: PROGRESS_TEXT_COMPLETE is the authoritative signal
+      // that the job is done. The delay must be long enough that an in-flight
+      // phase HTTP (e.g. clear-index can run >500 ms past its complete-event)
       // returns and calls _setActivity('next-phase') before this timer fires.
       // If the next phase arrives in time, `_setActivity` cancels the timer.
-      if (attrs.text === 'complete') {
+      if (attrs.text === PROGRESS_TEXT_COMPLETE) {
         const finishedJob = attrs.job_name;
         if (this._completionTimer != null) clearTimeout(this._completionTimer);
         this._completionTimer = setTimeout(() => {
