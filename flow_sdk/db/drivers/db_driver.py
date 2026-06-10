@@ -106,8 +106,13 @@ class DBDriver(Generic[RecordType]):
             creator_id = request_info.user.id
         elif request_info and request_info.visitor_typeid:
             creator_id = request_info.visitor_typeid.id
-        created_by = creator_id or BuiltInConstant.SystemUserId.value
-        record.created_by = created_by
+        # A preset ``created_by`` is authoritative (same rule as the preset
+        # ``created_date`` below): hub-materialized rows carry the REMOTE
+        # creator and must stay a pure reflection — never re-stamped with the
+        # local request user (that's how received conversations surfaced as
+        # "from <local git user.name>").
+        if record.created_by is None:
+            record.created_by = creator_id or BuiltInConstant.SystemUserId.value
         if record.created_date is None:
             record.created_date = current_time
         record.updated_by = record.created_by

@@ -1894,6 +1894,9 @@ async def _materialize_invitation(
             "kind": FlowMessageKind.INVITATION.value,
             "shared_context_entities": [invitation_typeid],
             "remote": False,
+            # Machine-synthesized placeholder — attribute to 'system', never
+            # the local request user (the recipient didn't author the invite).
+            "created_by": "system",
         }
         try:
             inv_fm = await materialize_flow_message(
@@ -2325,8 +2328,12 @@ async def _upsert_hub_conversation_metadata(
             if hub_conv.get(k) is not None:
                 payload[k] = hub_conv[k]
         # Hub owner field ``initiated_by`` mirrors locally as ``created_by``.
-        if hub_conv.get("initiated_by"):
-            payload["created_by"] = hub_conv["initiated_by"]
+        # When the hub carries no owner (share-created conversations), fall
+        # back to the neutral 'system' sentinel — NEVER the local user. A
+        # remote row is a pure reflection of the hub row; without this the
+        # driver stamps the request-context user, and received conversations
+        # surface as created by the recipient ("from <local git user.name>").
+        payload["created_by"] = hub_conv.get("initiated_by") or "system"
         if hub_conv.get("message_status_visible") is not None:
             payload["message_status_visible"] = bool(hub_conv["message_status_visible"])
         # Carry the hub's updated_date so the local row records the hub

@@ -45,6 +45,7 @@ async def ensure_conversation_entity(
     participants: Optional[list] = None,
     title: Optional[str] = None,
     someone_typeid: Optional[str] = None,
+    created_by: Optional[str] = None,
 ) -> Conversation:
     """Idempotent: return the local Conversation entity, creating it if missing.
 
@@ -61,11 +62,19 @@ async def ensure_conversation_entity(
     remote→local mapping table can route future messages from the same remote
     project to the same local Project without re-prompting. Null on
     local-origin conversations.
+
+    ``created_by`` — explicit creator attribution for REMOTE materialization
+    (the wire sender or 'system'). When set, the driver preserves it instead
+    of stamping the local request-context user; receiver-materialized rows
+    must never claim the local user as their creator. Sender-side callers
+    omit it (a locally-born conversation IS created by the local user).
     """
     conv = await Conversation.get_one({"id": conversation_id})
     title_clean = (title or "").strip() or None
     if conv is None:
         payload: dict = {"id": conversation_id}
+        if created_by:
+            payload["created_by"] = created_by
         if project_id:
             payload["project_id"] = project_id
         if remote_project_id:
@@ -192,6 +201,12 @@ async def materialize_flow_message(
     else:
         if remote:
             payload = {**payload, "remote": True}
+            # Pure reflection: the hub stamps ``created_by`` from the sender's
+            # auth token, so when the payload doesn't carry it, reconstruct it
+            # from the wire sender — NEVER let the driver stamp the local
+            # request-context user onto a hub-origin row.
+            if not payload.get("created_by"):
+                payload["created_by"] = payload.get("sender_id") or "system"
         fm = FlowMessage.model_validate(payload)
         if not payload.get("id"):
             fm.id = FlowMessage.allocate_id(payload)
@@ -220,9 +235,12 @@ async def materialize_flow_message(
     # Resolve parent (Task preferred, else Project) for the record's parent_ref.
     conv = await Conversation.get_one({"id": conversation_id})
     if conv is None:
-        # Caller didn't pre-create the conversation — build a bare one.
+        # Caller didn't pre-create the conversation — build a bare one. For a
+        # hub-origin message the bare row is a remote reflection too: attribute
+        # it to the wire sender (or 'system'), never the local request user.
         conv = await ensure_conversation_entity(
-            conversation_id, parent_typeid=None, someone_typeid=someone_typeid
+            conversation_id, parent_typeid=None, someone_typeid=someone_typeid,
+            created_by=(payload.get("sender_id") or "system") if remote else None,
         )
 
     parent_typeid = conv.first_context_of_type(BuiltinEntityType.TASK.value)

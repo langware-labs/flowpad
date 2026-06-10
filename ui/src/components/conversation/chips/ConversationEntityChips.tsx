@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { Conversation, type TypeId } from '@sdk';
 import { ContextEntityChip } from '../EntityChip';
+import { useReconcileContext } from '../useReconcileContext';
 import { useChipsExclude } from './ChipsExcludeContext';
 import { ChipKey, mergeContextBuckets } from './keys';
 
@@ -24,6 +25,9 @@ interface ConversationEntityChipsProps {
  */
 export function ConversationEntityChips({ conversation }: ConversationEntityChipsProps) {
   const exclude = useChipsExclude();
+  // Prune context refs whose target is gone both locally and on the hub
+  // (backend-gated to local-origin holders). Fires once per conversation.
+  useReconcileContext(conversation);
   const inside = useMemo(
     () => ({ type: Conversation.type, id: conversation.id ?? '' }),
     [conversation.id],

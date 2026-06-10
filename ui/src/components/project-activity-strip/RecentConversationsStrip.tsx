@@ -8,7 +8,6 @@ import {
   QueryRequest,
   Task,
   TypeId,
-  User,
   acceptInvitation,
   dismissConversation,
   fetchConversations,
@@ -22,6 +21,7 @@ import LoginDialog, { ActionType } from '@src/components/login-required-dialog';
 import { NewConversationDialog } from '@src/components/new-conversation-dialog/NewConversationDialog';
 import { deriveConversationTitle } from '@src/components/conversation/conversation-title';
 import { ConversationParticipants } from '@src/components/conversation/ConversationParticipants';
+import { participantIsUser, participantName } from '@src/components/conversation/participant-display';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { CheckCheck, EyeOff, LifeBuoy, MailPlus, MessageSquare, Plus, RefreshCw, Upload } from 'lucide-react';
@@ -32,30 +32,13 @@ import { formatTimeAgo } from './project-activity-utils';
 const VISIBLE_COUNT = 5;
 
 /**
- * Build the "from <name> <email>" label for a conversation row from a resolved
- * User entity, falling back to a denormalized name string (e.g. a message's
- * ``sender_name``) when the User isn't available. Returns null when neither a
- * name nor an email can be determined.
- */
-function formatSenderLabel(
-  user: User | null | undefined,
-  fallbackName?: string | null,
-): string | null {
-  const name = user?.name?.trim() || fallbackName?.trim() || '';
-  const email = user?.email?.trim() || '';
-  if (!name && !email) return null;
-  if (name && email) return `from ${name} <${email}>`;
-  return `from ${name || email}`;
-}
-
-/**
  * Extract the sender's display name from an auto-generated conversation title.
  * NewConversationDialog builds titles as "<sender>, <recipient>[, …] - <date>",
  * so the leading segment before the first comma is the conversation
  * originator. This is the only place the sender's display name is reliably
  * stored — the conversation row and its messages carry only the recipient.
  * Returns null for custom titles (no "<comma> … - <date>" shape) so callers
- * can fall back to a resolved User.
+ * can fall back to other sender signals (wire sender_name, roster).
  */
 function parseSenderFromTitle(title: string | null | undefined): string | null {
   if (!title) return null;
@@ -432,17 +415,6 @@ function ConversationRow({
   const invitationId = invitationTypeId?.id ?? null;
   const { data: invitation } = useEntity<Invitation>(invitationTypeId);
 
-  // Resolve the conversation creator (the sender) to a User so the row can
-  // render "from <name> <email>" rather than a raw id. ``created_by`` may be
-  // "system" for machine-generated conversations — skip the lookup then.
-  const creatorTypeId = useMemo(
-    () => (conv.created_by && conv.created_by !== 'system'
-      ? new TypeId(User.type, conv.created_by)
-      : null),
-    [conv.created_by],
-  );
-  const { data: creatorUser } = useEntity<User>(creatorTypeId);
-
   // The current user's identity — cloud email when logged in, else local.
   const myEmail = (cloudUser?.email || currentUser?.email || '').trim().toLowerCase();
   // The recipient is named directly on the Invitation entity. Matching against
@@ -516,10 +488,20 @@ function ConversationRow({
   // sees who invited them. An accepted / ongoing conversation instead lists
   // the participants ("Alice, bob@local.test"). Both are carried by the
   // auto-generated title "<sender>, <recipient>[, …] - <date>"; custom titles
-  // fall through to the conversation title itself.
+  // fall back to SENDER signals only: the invitation message's wire-stamped
+  // ``sender_name``, then the non-self roster entry. NEVER ``created_by`` —
+  // on receiver-materialized rows that's whoever ran the local sync (the
+  // recipient), not the inviter (the "from <my git user.name>" bug).
   const titleSender = parseSenderFromTitle(conv.title);
+  const wireSender = firstMessage?.sender_name?.trim() || null;
+  const rosterSender = (() => {
+    const me = { id: cloudUser?.id ?? currentUser?.id ?? null, email: myEmail || null };
+    const other = (conv.participants ?? []).find((p) => p && !participantIsUser(p, me));
+    return other ? participantName(other) : null;
+  })();
+  const inviterName = titleSender || wireSender || rosterSender;
   const fromName = isInvitationRow
-    ? (titleSender ? `from ${titleSender}` : formatSenderLabel(creatorUser, null))
+    ? (inviterName ? `from ${inviterName}` : null)
     : parseParticipantsFromTitle(conv.title);
 
   const handleClick = () => {
