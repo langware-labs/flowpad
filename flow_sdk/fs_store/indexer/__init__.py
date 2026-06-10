@@ -16,6 +16,7 @@ from flow_sdk.fs_store.indexer.index_function import (
     ProgressCallback,
 )
 from flow_sdk.fs_store.indexer.progress_table import (
+    PROGRESS_TEXT_COMPLETE,
     IndexProgressTable,
     TypeProgressRow,
 )
@@ -28,6 +29,7 @@ __all__ = [
     "IndexResult",
     "IndexProgressTable",
     "OrphanAction",
+    "PROGRESS_TEXT_COMPLETE",
     "PerTypeIndexResult",
     "ProgressCallback",
     "TypeProgressRow",

@@ -20,6 +20,7 @@ from typing import Any, Awaitable, Callable, Protocol
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.indexer.progress_table import (
+    PROGRESS_TEXT_COMPLETE,
     IndexProgressTable,
     TypeProgressRow,
 )
@@ -367,10 +368,12 @@ class FSIndexer:
         Always runs a full scan; when `opts.types` is set, only FSRefs of
         those types get parsed via `Record.from_fsref` and written to DB.
 
-        Progress is reported as ``IndexProgressTable`` snapshots: an initial
-        snapshot with totals known and ``done=0``, throttled updates at
-        ~5/s as records are processed, and a terminal snapshot with
-        ``text="complete"`` and ``current=None``.
+        Progress is reported as ``IndexProgressTable`` snapshots: first the
+        inner scan's discovery snapshots forwarded as-is (``job_name="scan"``,
+        totals unknown), then an initial index snapshot with totals known and
+        ``done=0``, throttled updates at ~5/s as records are processed, and a
+        terminal snapshot with ``text=PROGRESS_TEXT_COMPLETE`` and
+        ``current=None`` — the run's only completion signal.
         """
         opts = opts if opts is not None else IndexerOptions()
         t0 = time.perf_counter()
@@ -385,7 +388,7 @@ class FSIndexer:
         # text="complete" and the run would look finished before it indexed a
         # single record.
         async def _forward_scan(table: IndexProgressTable) -> None:
-            if on_progress is None or table.text == "complete":
+            if table.text == PROGRESS_TEXT_COMPLETE:
                 return
             await on_progress(table)
 
@@ -395,7 +398,8 @@ class FSIndexer:
             limit_per_type=opts.limit_per_type,
             include_temp=opts.include_temp,
             types=opts.types,
-            on_progress=_forward_scan,
+            # None when nobody listens — lets scan skip building tables at all.
+            on_progress=_forward_scan if on_progress is not None else None,
             roots=opts.roots,
             gitignore=opts.gitignore,
             project_id=opts.project_id,
@@ -653,6 +657,13 @@ class FSIndexer:
             # bounded-batch commit), still inside the shared session.
             await _flush_fts()
 
+            # Phase marker before the (potentially long) orphan sweep: without
+            # it the last loop snapshot (done==total, no text) is what watchers
+            # and refresh-time activity-status replay see for the whole sweep —
+            # a stalled-looking 100% bar. Any non-complete text works; the
+            # activity stays alive until the terminal emit below.
+            await emit(text="sweeping", force=True)
+
             # ----- Orphan handling -----
             # DEFINITION: a record is orphan iff its source (Layer 1, e.g.
             # ~/.claude/skills/<name>/SKILL.md) does not exist. The orphan
@@ -785,11 +796,12 @@ class FSIndexer:
 
         duration = (time.perf_counter() - t0) * 1000
 
-        # Terminal snapshot — current=None, text="complete". Authoritative
-        # signal; consumers can clear UI state on this.
+        # Terminal snapshot — current=None, text=PROGRESS_TEXT_COMPLETE. The
+        # authoritative (and only) completion signal; consumers clear UI state
+        # and InProcessActivity.is_complete latches on it.
         current_rt = None
         if on_progress is not None:
-            await on_progress(make_table(text="complete"))
+            await on_progress(make_table(text=PROGRESS_TEXT_COMPLETE))
 
         return IndexResult(
             per_type=per_type,
@@ -988,7 +1000,8 @@ class FSIndexer:
         Progress is reported as ``IndexProgressTable`` snapshots with
         ``total=0`` (unknown — discovery IS the count). Each visited
         node increments its type's row; the table is re-broadcast at most
-        every 200 ms. Final snapshot has ``current=None, text="complete"``.
+        every 200 ms. Final snapshot has ``current=None`` and
+        ``text=PROGRESS_TEXT_COMPLETE``.
         """
         opts = opts if opts is not None else IndexerOptions()
         on_progress = opts.on_progress
@@ -1122,7 +1135,7 @@ class FSIndexer:
 
         current_rt = None
         if on_progress is not None:
-            await on_progress(make_table(text="complete"))
+            await on_progress(make_table(text=PROGRESS_TEXT_COMPLETE))
 
         return visited
 
