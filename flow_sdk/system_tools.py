@@ -355,6 +355,15 @@ async def clear_all_data() -> ClearAllResult:
     entity_cache.clear()
     uname_cache.clear()
 
+    # Capability system rows are wiped along with the DB below, but the
+    # once-per-process seed guard is an in-memory cache of "DB has been
+    # seeded". Reset it so the capability specs are re-seeded on next access
+    # — otherwise a factory reset silently loses all capabilities until the
+    # process restarts.
+    from flow_sdk.builtin.capability import Capability  # noqa: PLC0415
+
+    Capability._seeded_once = False
+
     # 4. Close DB, delete file, reinitialize
     from flow_sdk.db.database import close_db, init_db  # noqa: PLC0415
     from flow_sdk.db.drivers.db_driver import (  # noqa: PLC0415

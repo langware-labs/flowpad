@@ -151,14 +151,29 @@ async def test_run_diagnose_exits_when_recorded_even_if_stream_never_ends():
     ``wait_for`` is a hang DETECTOR (it makes a regression fail fast) — not a
     budget to ride past the symptom.
     """
+    import tempfile
+    from pathlib import Path
     from unittest.mock import AsyncMock
 
     from flow_sdk.cli.commands import diagnose_cmd
+
+    # _await_warmup() requires a non-empty transcript file to consider the worker
+    # "started"; give the fake worker a real one so warmup passes.
+    _tf = tempfile.NamedTemporaryFile(prefix="diag_warmup_", suffix=".jsonl", delete=False)
+    _tf.write(b'{"type":"system"}\n')
+    _tf.flush()
+    _tf.close()
+    _tpath = Path(_tf.name)
+
+    class _FakeDriver:
+        def transcript_path(self, _ap):
+            return _tpath
 
     class _FakeAP:
         def __init__(self, **_kw):
             self.id = "fake-id"
             self.session_id = "fakesess"
+            self.driver = _FakeDriver()
 
         def enable_assistant(self):
             pass
@@ -190,10 +205,15 @@ async def test_run_diagnose_exits_when_recorded_even_if_stream_never_ends():
     with (
         patch("flow_sdk.builtin.agentic_process.AgenticProcess", _FakeAP),
         patch(
+            "flow_sdk.core.capabilities.discovery.ensure_discovered",
+            new=AsyncMock(return_value=None),
+        ),
+        patch(
             "flow_sdk.fs_store.schema_registry.SchemaRegistry.get_entity_cls",
             lambda _t: None,
         ),
         patch("flow_sdk.migrations.runner._bootstrap_local", new=AsyncMock(return_value=None)),
     ):
         rc = await asyncio.wait_for(diagnose_cmd._run_diagnose("", 1800.0), timeout=5)
+    _tpath.unlink(missing_ok=True)
     assert rc == 0

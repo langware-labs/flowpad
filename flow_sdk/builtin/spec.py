@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import ClassVar, List, Optional, Dict, Any
 
+from pydantic import model_validator
+
 from flow_sdk._compat import StrEnum
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.core import Entity
@@ -22,6 +24,29 @@ class Spec(Entity):
     author_id: Optional[str] = APIField(None)
     asset_ref: Optional[str] = APIField(None)
     metadata: Optional[Dict[str, Any]] = APIField(None)
+
+    @model_validator(mode="after")
+    def _hydrate_content_from_asset_ref(self) -> "Spec":
+        """The spec body lives in its ``asset_ref`` file (``specs/<name>/spec.md``)
+        — the source of truth the indexer reads and the share bundle carries.
+        ``content`` is a blob field that the entity GET does not expand, so a
+        spec loaded from the DB row arrives with ``content=None`` and the editor
+        renders blank. Hydrate it from the file (frontmatter stripped) whenever
+        the row carries no inline content and the source file exists. No-op when
+        content is already set (create / index paths) — so we never re-read or
+        clobber a freshly-authored body.
+        """
+        if not (self.content or "").strip() and self.asset_ref:
+            try:
+                from pathlib import Path  # noqa: PLC0415
+                from flow_sdk.fs_store.indexer._frontmatter import _extract_body  # noqa: PLC0415
+
+                p = Path(self.asset_ref)
+                if p.is_file():
+                    object.__setattr__(self, "content", _extract_body(p.read_text(encoding="utf-8")))
+            except OSError:
+                pass
+        return self
     # NOTE: plan_id moved into ``context_entities``. Use
     # ``spec.first_context_of_type('plan')`` to read it back.
 

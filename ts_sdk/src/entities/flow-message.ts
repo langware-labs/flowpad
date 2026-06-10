@@ -162,6 +162,11 @@ export interface IFlowMessage extends IEntity {
    *  message between a single Download button and rendered chips off this one
    *  flag, so the transcript and the context panel share download state. */
   body_downloaded?: boolean;
+  /** Forward provenance: id of the source FlowMessage this one was forwarded
+   *  from (set only on forwarded clones — see forwardMessage). */
+  cloned_from_id?: string | null;
+  /** Original sender of the source message (for the "forwarded" chip). */
+  cloned_from_sender_id?: string | null;
 }
 
 @registerEntity
@@ -184,6 +189,8 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
   kind?: FlowMessageKind;
   body_status?: BodyStatus;
   body_downloaded?: boolean;
+  cloned_from_id?: string | null;
+  cloned_from_sender_id?: string | null;
   static type: string = 'flow_message';
 
   constructor(entity: Partial<IFlowMessage> = {}) {
@@ -206,6 +213,8 @@ export class FlowMessage extends APIEntity<FlowMessage> implements IFlowMessage 
     this.kind = entity.kind ?? FlowMessageKind.USER;
     this.body_status = entity.body_status ?? BodyStatus.NA;
     this.body_downloaded = entity.body_downloaded ?? false;
+    this.cloned_from_id = entity.cloned_from_id ?? null;
+    this.cloned_from_sender_id = entity.cloned_from_sender_id ?? null;
   }
 
   /** Promote a draft message to a real reply: flips is_draft=false, appends to conversation.jsonl, pushes to hub. */
@@ -422,6 +431,30 @@ export async function createTaskBundle(params: CreateTaskBundleParams): Promise<
 export interface MarkResult {
   updated?: string[];
   skipped?: Array<{ id: string; reason: string; current?: string }>;
+}
+
+export interface ForwardMessageResult {
+  conversation_id: string;
+  message_count?: number;
+  flow_message_id: string;
+  cloned_from_id?: string | null;
+}
+
+/**
+ * Forward an existing message into another conversation. The backend clones
+ * it (new id, the caller as sender, fresh timestamps, `cloned_from_id`
+ * provenance, copied attachment bytes) and dispatches the clone through the
+ * same pipeline as a fresh send — hub header + body upload included.
+ * POSTs /api/v1/graph/flow_message/<id>/forward.
+ */
+export async function forwardMessage(
+  flowMessageId: string,
+  conversationId: string,
+): Promise<ForwardMessageResult> {
+  const action = new ActionInfo('forward', FlowMessage.type, flowMessageId, 'POST');
+  action.bodyParameters = { conversation_id: conversationId };
+  const res = await dataManager.callAction<{ conversation_id: string }, ForwardMessageResult>(action);
+  return res!;
 }
 
 /**

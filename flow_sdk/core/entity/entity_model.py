@@ -493,6 +493,22 @@ class Entity(DBEntity):
         if rec_pid not in (None, ""):
             stamp["project_id"] = str(rec_pid)
 
+        # Real last-modified: when the record carries no explicit updated_date,
+        # derive it from the source file's mtime so search/listing reflect actual
+        # activity rather than the index/sync instant. Resolves the source path
+        # from whichever field the extractor set (asset_ref / source_file / path),
+        # falling back to now() only when none resolves. One generic hook for
+        # every file-backed indexed type (sessions, markdown, plans, tasks, …) —
+        # no per-extractor stamping.
+        _asset_mtime = None
+        if data.get("updated_date") is None:
+            src = data.get("asset_ref") or data.get("source_file") or data.get("path")
+            if src:
+                try:
+                    _asset_mtime = datetime.fromtimestamp(os.path.getmtime(src), tz=timezone.utc)
+                except OSError:
+                    pass
+
         if entity is None:
             create_kwargs = {"id": entity_uuid, "type": record_type}
             create_kwargs.update({k: v for k, v in data.items() if k not in ("id", "type")})
@@ -502,6 +518,8 @@ class Entity(DBEntity):
                 entity = entity_cls(**create_kwargs)
             except Exception:
                 entity = Entity(**create_kwargs)
+            if _asset_mtime is not None:
+                entity.updated_date = _asset_mtime
         else:
             entity.type = record_type
             # Hub-owned fields (the LWW clock), captured before the setattr loop
@@ -528,12 +546,18 @@ class Entity(DBEntity):
                 # non-None updated_date on save.
                 for f, v in hub_owned.items():
                     setattr(entity, f, v)
-            else:
-                # from_record is the disk→DB sync path; updated_date must advance
-                # to "now" so the transcript indexer's freshness check
-                # (file_mtime ≤ updated_date) can detect the next change. Reset
-                # so apply_update_fields stamps it.
+            elif _asset_mtime is not None:
+                # Stamp the source file's real last-modified, not now(). Freshness
+                # still holds: updated_date equals the file mtime right after
+                # indexing, and a later edit pushes file_mtime past it.
+                entity.updated_date = _asset_mtime
+            elif data.get("updated_date") is None:
+                # No record-supplied date and no source file — advance to now()
+                # so the freshness check (file_mtime ≤ updated_date) can still
+                # detect the next change. Reset so apply_update_fields stamps it.
                 entity._db.reset_update_fields(entity)
+            # else: the record supplied an explicit updated_date — kept as applied
+            # by the setattr loop above.
 
         # Propagate PropertyRecord values to matching entity fields
         already_set = set(data.keys()) | set(record_domain.keys())

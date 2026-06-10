@@ -21,10 +21,11 @@ export const ATTACHMENT_ACTION_DESCRIPTORS: AttachmentActionDescriptor[] = [
     visible: approveVisible,
     build: (ctx) => ({
       id: 'prompt.approve-execute',
-      label: 'Approve & Execute',
+      label: 'Execute',
       icon: Play,
       variant: 'primary',
       title: 'Approve this prompt and run it in the shared session',
+      testId: 'message-bubble-execute-prompt',
       run: () => ctx.handlers.approveAndExecute?.(firstUnapprovedPromptIdx(ctx.fm)),
     }),
   },

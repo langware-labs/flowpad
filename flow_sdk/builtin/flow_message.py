@@ -129,6 +129,13 @@ _NON_MATERIALIZING_TYPE_IDS = frozenset(
     {"conversation", "flow_message", "task", "git_repo", "claude_session"}
 )
 
+# Body-bearing indexed types whose VALUE is a markdown body: a record folder
+# that has only ``metadata.json`` and no backing source file is a content-less
+# STUB (e.g. a spec row minted from a body-less hub reflect ahead of its
+# bundle). Such a stub must NOT count as "downloaded" — otherwise the bundle
+# carrying the real body is never (re-)pulled and the entity renders blank.
+_BODY_BEARING_TYPE_IDS = frozenset({"spec", "markdown", "plan"})
+
 
 def _type_id_record_materialized(data: str) -> bool:
     """Sync disk probe: does the entity referenced by a TYPE_ID attachment have
@@ -139,7 +146,11 @@ def _type_id_record_materialized(data: str) -> bool:
     ``metadata.json``. The body-bundle unpack reindexes assets *before* it fans
     the entity UPDATE, so by the time a re-serialize observes this the folder
     exists. Structural plumbing types are treated as always-present (they don't
-    render and may not have a standard folder)."""
+    render and may not have a standard folder).
+
+    Body-bearing types (spec/markdown/plan) additionally require their
+    ``asset_ref`` source file to exist — a metadata-only stub does not count, so
+    a body-less spec re-pulls its bundle instead of being stranded blank."""
     if "-" not in data:
         return True
     etype, eid = data.split("-", 1)
@@ -148,7 +159,18 @@ def _type_id_record_materialized(data: str) -> bool:
     try:
         from flow_sdk.fs_store.record_paths import get_default_records_root, record_stem
         folder = get_default_records_root() / etype / record_stem(etype, eid)
-        return (folder / "metadata.json").exists()
+        meta = folder / "metadata.json"
+        if not meta.exists():
+            return False
+        if etype in _BODY_BEARING_TYPE_IDS:
+            import json  # noqa: PLC0415
+            # A metadata-only stub has no resolvable asset_ref → not "downloaded"
+            # (so the bundle re-pulls). Malformed metadata falls through to the
+            # outer except → False, same effect.
+            asset_ref = (json.loads(meta.read_text(encoding="utf-8")) or {}).get("asset_ref")
+            if not asset_ref or not Path(asset_ref).exists():
+                return False
+        return True
     except Exception:
         return False
 
@@ -198,8 +220,14 @@ class FlowMessage(Entity):
     #   * is_read / is_archived — local inbox state, not the hub's to dictate.
     #   * received_at  — when THIS device received it.
     #   * is_draft     — a local draft has no hub twin; never let a refresh flip it.
+    #   * prompt_auto_handled — the receiver's "I already auto-ran this prompt"
+    #     marker. A LOCAL decision the hub never learns of, so it must survive
+    #     every hub refresh; it's the auto-run idempotency guard (a re-delivered
+    #     op finds it True and skips) and is sync-proof, unlike the attachment's
+    #     ``approved_by`` which a refresh can revert.
     LOCAL_ONLY_FIELDS: ClassVar[frozenset[str]] = Entity.LOCAL_ONLY_FIELDS | frozenset({
         "body_status", "is_read", "is_archived", "received_at", "is_draft",
+        "prompt_auto_handled",
     })
 
     type: str = APIField(default="flow_message")
@@ -212,6 +240,12 @@ class FlowMessage(Entity):
     receiver_address_type: Optional[str] = APIField(None)  # "email"|"id"|"slack"|...
     attachment_filename: Optional[str] = APIField(None)  # original .flowmsg filename stored on hub
     conversation_id: Optional[str] = APIField(None, description="ID of the parent Conversation, or None for legacy messages")
+    # Forward provenance. Set only on a forwarded clone (see clone_for_forward):
+    # the id of the source FlowMessage and its original sender. Metadata-only —
+    # rides the bundle (model_dump) and the hub header (mirrored on the hub
+    # schema; the hub drops unknown fields, so keep the two models in sync).
+    cloned_from_id: Optional[str] = APIField(None, description="Id of the source FlowMessage this one was forwarded from")
+    cloned_from_sender_id: Optional[str] = APIField(None, description="Original sender of the source message")
     is_read: bool = APIField(default=False)
     is_archived: bool = APIField(default=False)
     # Receipt state — mirrors the hub-side schema. Monotonic:
@@ -242,7 +276,37 @@ class FlowMessage(Entity):
     # require a packed body; the sender flips it to READY after the body is
     # uploaded. Receivers gate on this before issuing a download.
     body_status: BodyStatus = APIField(default=BodyStatus.NA)
+    # Local-only: set once the receiver has auto-run this message's prompt (see
+    # process_inbound_message). Sync-proof idempotency guard.
+    prompt_auto_handled: bool = APIField(default=False)
     _api_visible: ClassVar[bool] = True
+
+    @classmethod
+    def merge_hub_payload(cls, local: "Entity", hub_payload: dict[str, Any]) -> dict[str, Any]:
+        """Preserve the receiver's local prompt-approval across a hub refresh.
+
+        ``attachment[].approved_by`` is set locally when the receiver approves /
+        auto-runs a PROMPT — the hub never learns of it (the sender's copy stays
+        ``None``), so a plain hub→local refresh would revert it and the prompt
+        would re-run on every sync. We can't mark it ``LOCAL_ONLY`` (it's nested
+        in ``attachment``), so re-apply each locally-approved attachment's
+        ``approved_by`` onto the matching incoming attachment (keyed by ``data``)
+        when the hub copy hasn't got one.
+        """
+        merged = super().merge_hub_payload(local, hub_payload)
+        local_approved = {
+            a.data: a.approved_by
+            for a in (getattr(local, "attachment", None) or [])
+            if getattr(a, "data", None) and getattr(a, "approved_by", None)
+        }
+        atts = merged.get("attachment")
+        if local_approved and isinstance(atts, list):
+            for att in atts:
+                if isinstance(att, dict):
+                    data = att.get("data")
+                    if data in local_approved and not att.get("approved_by"):
+                        att["approved_by"] = local_approved[data]
+        return merged
 
     @model_serializer(mode="wrap")
     def _serialize_with_local_paths(
@@ -370,6 +434,62 @@ class FlowMessage(Entity):
         local_path hydration) without changing the call sites.
         """
         return self.attachment
+
+    def clone_for_forward(
+        self,
+        *,
+        conversation_id: str,
+        sender_id: Optional[str],
+        sender_name: str,
+    ) -> "FlowMessage":
+        """Clone this message for forwarding into another conversation.
+
+        The clone is a NEW entity: fresh id (``allocate_id`` → ``mint_uuid``),
+        fresh timestamps and delivery/read/body state (model defaults), the
+        forwarder as sender, and ``cloned_from_id`` pointing back at this
+        message. Content (text, instruction, content attachments) is
+        deep-copied; the per-message transport attachments and shared context
+        (``conversation-<id>`` / ``flow_message-<id>``) are rewritten to the
+        target conversation and the clone's id. FILE / PROMPT-file bytes are
+        NOT copied here — embedded storage is keyed by entity id, so the
+        caller copies those subpaths into the clone's storage.
+        """
+        drop = {
+            f"conversation-{self.conversation_id}",
+            f"flow_message-{self.id}",
+        }
+        content_atts = [
+            att.model_copy(deep=True)
+            for att in (self.attachment or [])
+            if not (att.attachment_type == AttachmentType.TYPE_ID and att.data in drop)
+        ]
+        carried_ctx = [
+            str(c) for c in (self.shared_context_entities or []) if str(c) not in drop
+        ]
+        clone = FlowMessage.model_validate({
+            "text": self.text,
+            "instruction": self.instruction,
+            "shared_context_entities": [f"conversation-{conversation_id}", *carried_ctx],
+            "attachment": [],
+            "sender_id": sender_id,
+            "sender_name": sender_name,
+            "conversation_id": conversation_id,
+            "cloned_from_id": self.id,
+            "cloned_from_sender_id": self.sender_id,
+        })
+        clone.id = FlowMessage.allocate_id(clone.model_dump())
+        clone.attachment = [
+            Attachment(
+                attachment_type=AttachmentType.TYPE_ID,
+                data=f"conversation-{conversation_id}",
+            ),
+            Attachment(
+                attachment_type=AttachmentType.TYPE_ID,
+                data=f"flow_message-{clone.id}",
+            ),
+            *content_atts,
+        ]
+        return clone
 
     async def upload_body(
         self, *, on_progress: Optional[ProgressCallback] = None,

@@ -13,6 +13,9 @@ import {
 } from '@src/components/ui/dialog';
 import { downloadFile, FSRef, type Whiteboard } from '@sdk';
 import { AssetEditorHeader } from '@src/components/assets/editor/AssetEditorHeader';
+import { ShareButton } from '@src/components/entity-actions/ShareButton';
+import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
+import { genericEntityShareSource } from '@src/hooks/share-sources';
 import { excalidrawToMermaid } from './excalidrawToMermaid';
 
 type LoadedExcalidrawLib = {
@@ -116,7 +119,7 @@ function spliceMermaidBlock(currentDoc: string, mermaid: string): string {
   return `${trimmed}\n${wrapped}\n`;
 }
 
-export function WhiteboardAssetEditor({ fsRef }: WhiteboardAssetEditorProps) {
+export function WhiteboardAssetEditor({ fsRef, whiteboard }: WhiteboardAssetEditorProps) {
   const boardRef = useMemo(() => fsRef.child('board.json'), [fsRef]);
   const docRef = useMemo(() => fsRef.child('WHITE_BOARD.md'), [fsRef]);
   const thumbRef = useMemo(() => fsRef.child('thumbnail.svg'), [fsRef]);
@@ -157,6 +160,18 @@ export function WhiteboardAssetEditor({ fsRef }: WhiteboardAssetEditorProps) {
   const [importOpen, setImportOpen] = useState(false);
   const [importText, setImportText] = useState('');
   const [importBusy, setImportBusy] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  // Whiteboard rides as a TYPE_ID attachment, identical to every MarkdownEditor
+  // surface — keeps asset-page share "same same" across all asset types. Keyed
+  // on shareOpen so each open gets a fresh resolve-once source.
+  const shareSource = useMemo(
+    () =>
+      whiteboard
+        ? genericEntityShareSource(whiteboard.typeId, { label: folderName })
+        : null,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [whiteboard, folderName, shareOpen],
+  );
   const apiRef = useRef<ExcalidrawAPI | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -355,6 +370,14 @@ export function WhiteboardAssetEditor({ fsRef }: WhiteboardAssetEditorProps) {
         onRevealInFinder={handleRevealInFinder}
         actions={
           <>
+            {shareSource && (
+              <ShareButton
+                variant="compact"
+                onClick={() => setShareOpen(true)}
+                tooltip="Share to a conversation"
+                testId="whiteboard-editor-share"
+              />
+            )}
             <Button
               size="sm"
               variant="outline"
@@ -400,6 +423,13 @@ export function WhiteboardAssetEditor({ fsRef }: WhiteboardAssetEditorProps) {
           </div>
         </Suspense>
       </div>
+      {shareSource && shareOpen && (
+        <ShareToConversationDialog
+          open={shareOpen}
+          onClose={() => setShareOpen(false)}
+          source={shareSource}
+        />
+      )}
       <Dialog open={importOpen} onOpenChange={setImportOpen}>
         <DialogContent>
           <DialogHeader>

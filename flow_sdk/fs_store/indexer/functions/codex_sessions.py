@@ -126,10 +126,16 @@ def extract_codex_session(ref: FSRef) -> list[FSRecord]:
 
 
 def extract_codex_session_from_path(path: str | Path) -> FSRecord:
-    """Build a Record from a rollout JSONL path. Reads first few lines only.
+    """Build a Record from a rollout JSONL path.
 
-    Replaces ``CodexSessionRecord.from_jsonl``. Stats are not populated here —
-    call ``ensure_codex_session_stats(rec)`` to lazy-load them.
+    Envelope fields (session_id / cwd / version / originator) are read from the
+    first few lines only. The searchable ``content`` (extractive transcript
+    text for FTS) requires a full-transcript parse via ``worker_summary_log`` —
+    gated by the indexer's skip-fresh check, so it only runs when the rollout
+    has changed. Stats are not populated here — call
+    ``ensure_codex_session_stats(rec)`` to lazy-load them.
+
+    Replaces ``CodexSessionRecord.from_jsonl``.
     """
     p = Path(path)
     session_id = _extract_thread_id(p.name) or p.stem
@@ -155,6 +161,10 @@ def extract_codex_session_from_path(path: str | Path) -> FSRecord:
     except OSError:
         pass
 
+    # Extractive transcript text for full-text search (worker-generic).
+    from flow_sdk.transcript_analyzer import worker_summary_log  # noqa: PLC0415
+    content = worker_summary_log(p, "codex")
+
     rec = FSRecord(
         type=RecordType.CODEX_SESSION,
         id=session_id,
@@ -167,6 +177,7 @@ def extract_codex_session_from_path(path: str | Path) -> FSRecord:
         worker_type="codex",
         source_file=str(p),
         path=str(p),
+        content=content,
     )
     # Read-only marker — rollouts are owned by Codex.
     object.__setattr__(rec, "_asset_ref", FSRef(p, read_only=True))

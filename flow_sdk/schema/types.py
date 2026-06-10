@@ -93,6 +93,7 @@ class EntityType(StrEnum):
     # DEPRECATED 2026-05-09: codex projects now stored as PROJECT with a
     # codex_project=True provenance flag. Kept for backward compatibility.
     CODEX_PROJECT = "codex_project"
+    COPILOT_SESSION = "copilot_session"
     CLI_LOG = "cli_log"
     CLI_LOG_SETTINGS = "cli_log_settings"
     TRIGGER_LOG = "trigger_log"
