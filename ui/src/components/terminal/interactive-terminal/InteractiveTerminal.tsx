@@ -36,6 +36,8 @@ import { PaneBar } from './PaneBar';
 import { PaneSelectorBar } from './PaneSelectorBar';
 import { PaneView } from './PaneView';
 import { ProcessToolbar } from './ProcessToolbar';
+import { SimpleChatPane } from './SimpleChatPane';
+import { useIsAdvanced } from '@src/components/view-mode';
 import { PtySyncProvider, usePtySyncSession } from './PtySyncContext';
 import { TerminalRuntimeErrorBanner } from './TerminalRuntimeErrorBanner';
 import {
@@ -180,6 +182,11 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const process = propProcess ?? contextProcess ?? undefined;
   const { navigation, currentDock } = useDockNavigation();
   const { resolvedTheme } = useTheme();
+  // View-mode skin: Standard overlays the xterm area with the simple chat
+  // pane (same session, same PTY — see SimpleChatPane). Embedded terminals
+  // keep the full layout, mirroring the ProcessToolbar decision.
+  const isAdvanced = useIsAdvanced();
+  const showSimpleChat = !isAdvanced && !embedded && !!process;
   const [searchParams] = useSearchParams();
   const targetTimestamp = searchParams.get('t') ?? undefined;
 
@@ -1438,8 +1445,9 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       <TerminalRuntimeErrorBanner />
 
       <PtySyncProvider session={ptySyncRef.current}>
-        {/* Column header — only for Claude pane */}
-        {process && activePane === 'claude' ? (
+        {/* Column header — only for Claude pane; terminal chrome, hidden in
+            Standard view where the simple chat replaces the xterm. */}
+        {process && activePane === 'claude' && !showSimpleChat ? (
           <ColumnHeaderBar
             showTrace={showGutter}
             traceWidth={48}
@@ -1551,6 +1559,15 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
                     onHoverRow={onAnnotationHoverRow}
                     hideCounter
                   />
+                </div>
+              )}
+              {/* Standard-view simple chat — opaque overlay above xterm +
+                  gutters. The xterm stays mounted (and fitted) underneath so
+                  toggling Advanced⇄Standard is instant and never resets the
+                  terminal. Same session, same PTY (see SimpleChatPane). */}
+              {showSimpleChat && process && (
+                <div className="absolute inset-0 z-[60]">
+                  <SimpleChatPane process={process} />
                 </div>
               )}
             </div>

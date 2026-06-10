@@ -564,6 +564,24 @@ class Shell(Entity):
             raise RuntimeError("No PTY session — call start_pty() first")
         await pty_handle.write(data)
 
+    async def write_then_submit(self, text: str, submit_delay: float = 0.4) -> None:
+        """Type *text* into the PTY, settle, then send Enter as a SEPARATE write.
+
+        Unlike :meth:`write` (text and ``\\r`` in one write), this splits the
+        keystrokes the way a human pastes-then-presses-Enter. Required by
+        rich TUI agents (GitHub Copilot CLI, Codex) whose input box treats a
+        paste with a trailing ``\\r`` as literal text and never submits — the
+        text silently accumulates and later turns get concatenated into one
+        message. A discrete Enter after the input settles submits reliably.
+        """
+        pty_handle = self.compute_node.get_pty(self.id)
+        if not pty_handle:
+            raise RuntimeError("No PTY session — call start_pty() first")
+        await self._wait_for_shell_ready()
+        await pty_handle.write(text.encode())
+        await asyncio.sleep(submit_delay)
+        await pty_handle.write(b"\r")
+
     async def read(self) -> bytes:
         """Return all accumulated PTY output so far (from disk stream file).
 

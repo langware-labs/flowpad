@@ -55,6 +55,7 @@ class ClaudeDriver:
 
     name = "claude"
     preassign_interactive_session_id = True
+    pty_submits_on_paste = True
 
     # ── CLI shape ────────────────────────────────────────────────────────────
 

@@ -94,17 +94,23 @@ def load_session_history(session_id: str) -> list[FlowData]:
     except Exception:
         logger.exception("load_session_history: parse failed for %s", path)
         return []
-    return [_wrap_replay(e) for e in transcript.entries]
+    return [entry_to_flowdata(e) for e in transcript.entries]
 
 
-def _wrap_replay(entry) -> FlowData:
-    pe = ProcessEntry(transcript_entry=entry, observation_kind="replay")
+def entry_to_flowdata(entry, observation_kind: str = "replay") -> FlowData:
+    """Convert one parsed ``TranscriptEntry`` to a UI-renderable FlowData.
+
+    ``observation_kind='replay'`` is the history path; the experimental
+    PTY-transcript live stream passes ``'live'`` so consumers can tell the
+    two apart while reusing the exact same shape.
+    """
+    pe = ProcessEntry(transcript_entry=entry, observation_kind=observation_kind)
     kind = entry.kind.value
     attributes = {
         "element-type": _element_type_for_kind(kind),
         "data-type": FlowDataType.OBJECT,
         "subtype": kind,
-        "observation-kind": "replay",
+        "observation-kind": observation_kind,
     }
     flow_value: Any = {}
     text = getattr(entry, "text", None)
