@@ -531,12 +531,19 @@ class FSRecord(Generic[M]):
             return None
         safe = self._safe_name(entity)
         base = Path(scope_root) / info.main_subdir
-        target = base / safe if info.main_layout == "folder" else base / f"{safe}.md"
+        if info.main_layout == "folder":
+            # Owned folder types (e.g. Spec → specs/<name>/spec.md) point the
+            # asset_ref at the inner body file; bare-folder types keep the dir.
+            target = base / safe / info.main_file if info.main_file else base / safe
+        else:
+            target = base / f"{safe}.md"
         return FSRef(target)
 
     @staticmethod
     def _safe_name(entity) -> str:
-        raw = (getattr(entity, "name", None) or "").strip().lower()
+        # Fall back to ``title`` for types that display via title rather than
+        # name (e.g. Spec) so their owned main_ref folder isn't "untitled".
+        raw = (getattr(entity, "name", None) or getattr(entity, "title", None) or "").strip().lower()
         out = "".join(c if (c.isalnum() or c in "_-") else "_" for c in raw)
         return out or "untitled"
 

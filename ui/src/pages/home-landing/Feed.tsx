@@ -1,5 +1,8 @@
-import { FeedEntry, QueryRequest } from '@sdk';
+import { Conversation, FeedEntry, QueryRequest, type ConversationParticipant } from '@sdk';
+import { useAuth } from '@sdk/react/hooks';
 import { Button } from '@src/components/ui/button';
+import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
+import { feedEntryShareSource } from '@src/hooks/share-sources';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { useFeedMutations } from '@src/hooks/use-feed-mutations';
 import { ChevronDown, ChevronRight, EyeOff } from 'lucide-react';
@@ -111,11 +114,14 @@ function FeedEntryCard({ entry, busy, onDismiss, onSend }: FeedEntryCardProps) {
 /**
  * Home-landing Feed: lists `new` FeedEntry items under the Join/Start buttons.
  * Each entry summarizes a `flow diagnose` run; Dismiss hides it, Send to Support
- * also reveals the linked support conversation in the Recent strip.
+ * opens the unified share dialog with the report text pre-filled as the note
+ * and the suggested support conversation pre-selected (via its participants).
+ * The entry is dismissed only after the share actually goes out.
  */
 export function Feed() {
   const request = useMemo(() => new QueryRequest({ type: FeedEntry.type }), []);
   const { data: entries = [], refetch } = useEntitiesQuery<FeedEntry>(request);
+  const { cloudUser } = useAuth();
   const newEntries = useMemo(
     () =>
       entries
@@ -129,22 +135,57 @@ export function Feed() {
   const refetchVoid = useCallback(async () => {
     await refetch();
   }, [refetch]);
-  const { dismiss, sendToSupport } = useFeedMutations({ refetch: refetchVoid });
+  const { dismiss, markSentToSupport } = useFeedMutations({ refetch: refetchVoid });
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [shareEntry, setShareEntry] = useState<FeedEntry | null>(null);
+  const [shareParticipants, setShareParticipants] = useState<ConversationParticipant[]>([]);
 
-  const run = useCallback(
-    (fn: (entry: FeedEntry) => Promise<void>) => async (entry: FeedEntry) => {
+  const handleDismiss = useCallback(
+    async (entry: FeedEntry) => {
       setBusyId(entry.id ?? null);
       try {
-        await fn(entry);
+        await dismiss(entry);
       } finally {
         setBusyId(null);
       }
     },
-    [],
+    [dismiss],
   );
 
-  if (!newEntries.length) return null;
+  const handleSend = useCallback(
+    async (entry: FeedEntry) => {
+      setBusyId(entry.id ?? null);
+      try {
+        // Seed the dialog's contact picker from the suggested support
+        // conversation's roster so that conversation is pre-selected.
+        let participants: ConversationParticipant[] = [];
+        const convId = entry.messageSuggest?.conversation_id;
+        if (convId) {
+          const conv = await Conversation.getById<Conversation>(convId).catch(() => null);
+          participants = (conv?.participants ?? []).filter(
+            (p) => !cloudUser?.id || p.user_id !== cloudUser.id,
+          );
+        }
+        setShareParticipants(participants);
+        setShareEntry(entry);
+      } finally {
+        setBusyId(null);
+      }
+    },
+    [cloudUser?.id],
+  );
+
+  const shareSource = useMemo(
+    () =>
+      shareEntry
+        ? feedEntryShareSource({
+            label: shareEntry.messageSuggest?.text ?? 'Flowpad diagnostics',
+          })
+        : null,
+    [shareEntry],
+  );
+
+  if (!newEntries.length && !shareEntry) return null;
 
   return (
     <div className="w-full max-w-3xl flex flex-col gap-2">
@@ -153,10 +194,20 @@ export function Feed() {
           key={entry.id}
           entry={entry}
           busy={busyId === entry.id}
-          onDismiss={run(dismiss)}
-          onSend={run(sendToSupport)}
+          onDismiss={(e) => void handleDismiss(e)}
+          onSend={(e) => void handleSend(e)}
         />
       ))}
+      {shareEntry && shareSource && (
+        <ShareToConversationDialog
+          open
+          onClose={() => setShareEntry(null)}
+          source={shareSource}
+          defaultNote={shareEntry.messageSuggest?.message_text ?? ''}
+          initialParticipants={shareParticipants}
+          onShared={(convId) => void markSentToSupport(shareEntry, convId)}
+        />
+      )}
     </div>
   );
 }

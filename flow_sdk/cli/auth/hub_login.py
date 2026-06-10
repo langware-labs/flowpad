@@ -48,6 +48,22 @@ def is_logged_in() -> bool:
     return bool(get_user())
 
 
+def hub_auth_available() -> bool:
+    """True when a hub request would carry credentials — via the cloud_api_key
+    instance setting (CI/headless) OR a file-based login.
+
+    Mirrors the auth decision in ``cloud_client.client_hooks._on_request`` so
+    callers can skip hub calls that would otherwise 401 while logged out. Both
+    checks are cheap and keychain-safe (the api_key is a plain setting read and
+    ``is_logged_in`` reads the file-based user record), so this is safe to call
+    per request.
+    """
+    from flow_sdk.instance_settings import get_instance_settings
+    if get_instance_settings().cloud_api_key:
+        return True
+    return is_logged_in()
+
+
 async def validate_api_key_async(api_key: str) -> dict:
     """
     Async implementation of API key validation.

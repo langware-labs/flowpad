@@ -266,6 +266,8 @@ class Conversation(Entity):
         flow_message_id: Optional[str] = None,
         attachments: Optional[list] = None,
         shared_context_entities: Optional[list] = None,
+        cloned_from_id: Optional[str] = None,
+        cloned_from_sender_id: Optional[str] = None,
     ) -> dict:
         """Append a FlowMessage to this conversation on the hub.
 
@@ -311,6 +313,12 @@ class Conversation(Entity):
             ]
         if shared_context_entities:
             body["shared_context_entities"] = shared_context_entities
+        # Forward provenance — mirrored on the hub FlowMessage schema so it
+        # survives validation and fans out to receivers.
+        if cloned_from_id:
+            body["cloned_from_id"] = cloned_from_id
+        if cloned_from_sender_id:
+            body["cloned_from_sender_id"] = cloned_from_sender_id
         body["conversation_id"] = self.id
         path = build_hub_url(self, action="add_message")
         async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
