@@ -18,14 +18,14 @@ const VIEW_MODE_KEY = 'viewMode';
 // View mode is a *user* toggle persisted in localStorage, mirroring the
 // dev-mode flag. It is NOT inherited from any build-time constant. Like the
 // theme, it is also reflected as a `data-view` attribute on the document root
-// so CSS / other surfaces can react to it app-wide. Default is Advanced so
-// existing users keep the full surface until they opt down. Toggle with
+// so CSS / other surfaces can react to it app-wide. Default is Standard so new
+// users start on the calm/minimal surface and opt up to Advanced. Toggle with
 // window.setView() or the footer pill.
 function readInitial(): ViewMode {
   const stored = localStorage.getItem(VIEW_MODE_KEY);
   return stored === ViewMode.Standard || stored === ViewMode.Advanced
     ? (stored as ViewMode)
-    : ViewMode.Advanced;
+    : ViewMode.Standard;
 }
 
 let _mode: ViewMode = readInitial();

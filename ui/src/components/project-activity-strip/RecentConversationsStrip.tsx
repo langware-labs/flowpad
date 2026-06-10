@@ -21,11 +21,12 @@ import { useLoginRequired } from '@src/hooks/use-login-required';
 import LoginDialog, { ActionType } from '@src/components/login-required-dialog';
 import { NewConversationDialog } from '@src/components/new-conversation-dialog/NewConversationDialog';
 import { deriveConversationTitle } from '@src/components/conversation/conversation-title';
+import { ConversationParticipants } from '@src/components/conversation/ConversationParticipants';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { Archive, EyeOff, LifeBuoy, MailPlus, MessageSquare, Plus, RefreshCw, Upload } from 'lucide-react';
+import { CheckCheck, EyeOff, LifeBuoy, MailPlus, MessageSquare, Plus, RefreshCw, Upload } from 'lucide-react';
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { bulkUpdateMessages } from '@src/components/inbox-view/inbox-api';
+import { useIsAdvanced } from '@src/components/view-mode';
 import { formatTimeAgo } from './project-activity-utils';
 
 const VISIBLE_COUNT = 5;
@@ -88,6 +89,7 @@ interface RecentConversationsStripProps {
 export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: RecentConversationsStripProps) {
   const { navigation } = useDockNavigation();
   const { checkLoginAndProceed, showLoginDialog, closeLoginDialog } = useLoginRequired();
+  const isAdvanced = useIsAdvanced();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadConflicts, setUploadConflicts] = useState<UploadConflict[] | null>(null);
@@ -115,7 +117,7 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
   const [hubSyncing, setHubSyncing] = useState(false);
   const [acceptingId, setAcceptingId] = useState<string | null>(null);
   const [dismissingId, setDismissingId] = useState<string | null>(null);
-  const [archivingAll, setArchivingAll] = useState(false);
+  const [dismissingAll, setDismissingAll] = useState(false);
   // Conv ids hidden because dismissed_at is fresh relative to their latest
   // message. Children report via onHiddenChange so the parent can drive the
   // header count + "No conversations" empty state.
@@ -160,13 +162,17 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
     }
   };
 
-  const handleArchiveAll = async () => {
-    setArchivingAll(true);
+  const handleDismissAll = async () => {
+    setDismissingAll(true);
     try {
-      await bulkUpdateMessages({ is_archived: true });
+      // Dismiss every live (non-hidden) conversation. Dismiss — not archive —
+      // hides it from this list but keeps it in the full Inbox and lets it
+      // reappear when a new message arrives, matching the per-row EyeOff action.
+      const targets = sorted.filter((c) => c.id && !hiddenIds.has(c.id));
+      await Promise.all(targets.map((c) => dismissConversation({ conversation_id: c.id! })));
       void refetch();
     } finally {
-      setArchivingAll(false);
+      setDismissingAll(false);
     }
   };
 
@@ -244,7 +250,7 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
       <div className="flex items-center justify-between px-3 py-2">
         <div className="flex items-center gap-1.5">
           <MessageSquare className="h-3.5 w-3.5 text-muted-foreground" />
-          <span className="text-xs font-medium">Recent conversations</span>
+          <span className="text-xs font-medium">Inbox</span>
           {visibleCountActual > 0 && (
             <span className="rounded-full bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
               {visibleCountActual}
@@ -259,34 +265,40 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
             className="hidden"
             onChange={(e) => void handleFileChange(e)}
           />
-          <button
-            type="button"
-            className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            onClick={() => setNewConvOpen(true)}
-            title="New conversation"
-            data-testid="new-conversation-button"
-          >
-            <Plus className="h-3.5 w-3.5" />
-          </button>
-          <button
-            type="button"
-            className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            onClick={() => fileInputRef.current?.click()}
-            title="Upload message"
-            data-testid="upload-message-button"
-          >
-            <Upload className="h-3.5 w-3.5" />
-          </button>
-          <button
-            type="button"
-            className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
-            onClick={() => void handleArchiveAll()}
-            disabled={archivingAll || visibleCountActual === 0}
-            title="Archive all conversations"
-            data-testid="archive-all-conversations-button"
-          >
-            <Archive className="h-3.5 w-3.5" />
-          </button>
+          {/* New conversation / Upload / Dismiss-all are Advanced-view only;
+              Refresh stays in Standard view. */}
+          {isAdvanced && (
+            <>
+              <button
+                type="button"
+                className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                onClick={() => setNewConvOpen(true)}
+                title="New conversation"
+                data-testid="new-conversation-button"
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                onClick={() => fileInputRef.current?.click()}
+                title="Upload message"
+                data-testid="upload-message-button"
+              >
+                <Upload className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
+                onClick={() => void handleDismissAll()}
+                disabled={dismissingAll || visibleCountActual === 0}
+                title="Dismiss all notifications"
+                data-testid="dismiss-all-notifications-button"
+              >
+                <CheckCheck className="h-3.5 w-3.5" />
+              </button>
+            </>
+          )}
           <button
             type="button"
             className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
@@ -580,6 +592,12 @@ function ConversationRow({
           <span>{formatTimeAgo(conv.updated_date)}</span>
           {!isInvitationRow && messageCount > 0 && (
             <span>· {messageCount} msg{messageCount === 1 ? '' : 's'}</span>
+          )}
+          {!isInvitationRow && (conv.participants?.length ?? 0) > 0 && (
+            <>
+              <span>·</span>
+              <ConversationParticipants participants={conv.participants!} kind={conv.kind} />
+            </>
           )}
         </div>
       </div>
