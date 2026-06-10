@@ -1,7 +1,6 @@
 """HTTP actions for FlowMessage file transport.
 
   POST /api/v1/graph/flow-message-upload      — upload .flowmsg (multipart, global action)
-  POST /api/v1/graph/flow-message-create      — create task+spec+conv+FlowMessage locally, no email/git
   GET  /api/v1/graph/flow_message/{id}/create-and-download-local-flowmsg  — download .flowmsg (entity-scoped)
   GET  /api/v1/graph/flow_message/{id}/open   — deep-link: fetch from hub and open IncomingTaskDialog
 """
@@ -18,8 +17,7 @@ from typing import Optional
 from flow_sdk._compat import UTC
 from flow_sdk.actions.action_registry import action
 from flow_sdk.builtin.conversation import Conversation
-from flow_sdk.builtin.flow_message import Attachment, AttachmentType, DeliveryStatus, FlowMessage, FlowMessageKind
-from flow_sdk.builtin.spec import Spec
+from flow_sdk.builtin.flow_message import AttachmentType, DeliveryStatus, FlowMessage, FlowMessageKind
 from flow_sdk.builtin.task import Task
 from flow_sdk.builtin.user import User
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
@@ -99,91 +97,6 @@ async def handle_upload_flow_message(file, overwrite: bool) -> ApiResponse:
     })
 
 
-async def handle_create_task_bundle(
-    spec_title: str,
-    spec_content: str,
-    task_title: str,
-    someone_typeid: str,
-    message: Optional[str] = None,
-    team_space_id: Optional[str] = None,
-    project_id: Optional[str] = None,
-) -> ApiResponse:
-    """Create Task + Spec + Conversation + FlowMessage locally (no git push, no email).
-
-    Returns flow_message_id so the caller can immediately trigger a .flowmsg download.
-    """
-    sender_id, sender_name = await User.local_sender_identity()
-
-    # 1. Create Spec
-    spec = Spec.model_validate({
-        "title": spec_title,
-        "content": spec_content,
-        "spec_type": "plan",
-        "author_id": sender_id,
-    })
-    spec.id = Spec.allocate_id(spec.model_dump())
-    spec = await spec.save(someone_typeid)
-
-    # 2. Create Task
-    task = Task.model_validate({
-        "title": task_title,
-        "shared_by_id": sender_id,
-        "team_space_id": team_space_id or None,
-        # spec_id consolidated into ``shared_context_entities`` — published
-        # with the task wherever it travels.
-        "shared_context_entities": [f"spec-{spec.id}"],
-    })
-    task.id = Task.allocate_id(task.model_dump())
-    task = await task.save(someone_typeid)
-
-    # 3. Create Conversation entity + canonical jsonl + parent linkage.
-    from flow_sdk.app.actions.materialize_flow_message import (
-        ensure_conversation_entity,
-        materialize_flow_message,
-    )
-
-    conv_id = Conversation.allocate_id({
-        "project_id": project_id,
-        "shared_context_entities": [f"task-{task.id}"],
-    })
-    task_typeid = TypeId(type=BuiltinEntityType.TASK.value, id=task.id)
-    conv = await ensure_conversation_entity(
-        conv_id, parent_typeid=task_typeid,
-        project_id=project_id, someone_typeid=someone_typeid,
-    )
-    await task.attach_child(conv)
-    task.add_shared_context_entities(TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv.id))
-    task = await task.save(someone_typeid)
-
-    # 4. Materialize the first FlowMessage through the unified write path.
-    fm_id = FlowMessage.allocate_id({"text": message or f"Task: {task_title}"})
-    attachments = [
-        Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.SPEC.value, id=spec.id))),
-        Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.TASK.value, id=task.id))),
-        Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv.id))),
-        Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.FLOW_MESSAGE.value, id=fm_id))),
-    ]
-    fm = await materialize_flow_message(
-        {
-            "id": fm_id,
-            "text": message or f"Task: {task_title}",
-            "shared_context_entities": [task_typeid, TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv.id)],
-            "attachment": attachments,
-            "sender_id": sender_id,
-            "sender_name": sender_name,
-        },
-        conversation_id=conv.id,
-        someone_typeid=someone_typeid,
-    )
-
-    return ApiSuccessResponse(data={
-        "flow_message_id": fm.id,
-        "task_id": task.id,
-        "conversation_id": conv.id,
-        "spec_id": spec.id,
-    })
-
-
 async def handle_download_flow_message(fm_id: str) -> ApiResponse:
     """Stream a .flowmsg zip for a FlowMessage entity."""
     from fastapi.responses import FileResponse
@@ -227,34 +140,6 @@ async def upload_flow_message() -> ApiResponse:
     except Exception as e:
         logger.error(f"[flow_message_action] upload error: {e}", exc_info=True)
         return ApiFailResponse(message=f"Upload failed: {str(e)}")
-
-
-@action.post(action_name="flow-message-create", types=None)
-async def create_task_bundle() -> ApiResponse:
-    try:
-        request_info = get_current_request_info()
-        if not request_info:
-            return ApiFailResponse(message="No request info found")
-        if not request_info.someone_typeid:
-            return ApiFailResponse(message="No authenticated user in request context")
-
-        body = await request_info.get_post_data() or {}
-        spec_title = (body.get("spec_title") or "").strip()
-        if not spec_title:
-            return ApiFailResponse(message="spec_title is required")
-
-        return await handle_create_task_bundle(
-            spec_title=spec_title,
-            spec_content=(body.get("spec_content") or "").strip(),
-            task_title=(body.get("task_title") or spec_title).strip(),
-            someone_typeid=request_info.someone_typeid,
-            message=(body.get("message") or "").strip() or None,
-            team_space_id=(body.get("team_space_id") or "").strip() or None,
-            project_id=(body.get("project_id") or "").strip() or None,
-        )
-    except Exception as e:
-        logger.error(f"[flow_message_action] create-task-bundle error: {e}", exc_info=True)
-        return ApiFailResponse(message=f"Failed to create task bundle: {str(e)}")
 
 
 async def handle_open_flow_message(fm_id: str) -> ApiResponse:
@@ -3065,20 +2950,12 @@ async def invitation_accept() -> ApiResponse:
 # ---------------------------------------------------------------------------
 # Per-message Private Context actions
 #
-#   - `derive-task`: pre-creates a Task entity (placeholder title from FM text,
-#     `context_entities = [FM, AgenticProcess]`) and a Run row, then spawns an
-#     invisible Claude session whose only job is to **update** the Task's
-#     title/description via the flow MCP. Pre-creating in Python guarantees a
-#     real Task in the DB regardless of whether Claude succeeds at the MCP
-#     round-trip; the row appears immediately and the Run lifecycle drives the
-#     Open-button enable in the conversation drawer.
-#
 #   - `start-cc-from-transcript`: when the message has a `conversation.jsonl`
 #     FILE attachment, spawn a Claude session pre-loaded with that transcript
 #     path and ask for a brief analysis. The new AgenticProcess pins
 #     `target_typeid_str = <fm typeid>` so the frontend query picks it up.
 #
-# Both actions return immediately with `process_id`; the entity-query channel
+# The action returns immediately with `process_id`; the entity-query channel
 # delivers updates to the UI as the run progresses.
 # ---------------------------------------------------------------------------
 
@@ -3103,112 +2980,6 @@ async def _resolve_workdir_and_project_async(fm: FlowMessage) -> tuple[str, Opti
         if project:
             workdir = (project.fs_storage_mount_path or "").strip() or workdir
     return workdir, project_id
-
-
-async def handle_derive_task(fm_id: str, someone_typeid: str) -> ApiResponse:
-    """Pre-create a Task linked to this FM, then run a headless Claude turn to refine it.
-
-    The Task is allocated up front with placeholder content so the row appears
-    immediately regardless of whether the run succeeds. Claude's job is only
-    to **update** the placeholder's title/description via the flow MCP — never
-    to create the Task from scratch.
-    """
-    from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
-    from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli import ClaudeCliOptions
-
-    fm = await FlowMessage.get_one({"id": fm_id})
-    if not fm:
-        return ApiFailResponse(message=f"FlowMessage not found: {fm_id}")
-
-    workdir, project_id = await _resolve_workdir_and_project_async(fm)
-    if not workdir:
-        workdir = os.path.expanduser("~")
-
-    fm_typeid = TypeId(type=BuiltinEntityType.FLOW_MESSAGE.value, id=fm.id)
-    fm_typeid_str = str(fm_typeid)
-
-    # 1. Spawn the invisible AgenticProcess pinned to this FM. ``target_typeid_str``
-    #    surfaces it in Private Context / Runs queries.
-    cli_opts = ClaudeCliOptions(
-        print_mode=True,
-        output_format="stream-json",
-        verbose=True,
-        permission_mode="bypassPermissions",
-    )
-    process = AgenticProcess(
-        cli_config=cli_opts.to_json(),
-        workdir=workdir,
-        visible=False,
-        project_id=project_id,
-        target_typeid_str=fm_typeid_str,
-        shared_context_entities=[fm_typeid],
-    )
-    await process.save(someone_typeid)
-    process_typeid = TypeId(type=BuiltinEntityType.AGENTIC_PROCESS.value, id=process.id)
-
-    fm_text = (fm.text or "").strip()
-    placeholder_title = (fm_text[:80] + "…") if len(fm_text) > 80 else (fm_text or "Deriving task…")
-    task = Task.model_validate({
-        "title": placeholder_title,
-        "description": fm_text or None,
-        "project_id": project_id,
-        "shared_context_entities": [fm_typeid, process_typeid],
-    })
-    task.id = Task.allocate_id(task.model_dump())
-    task = await task.save(someone_typeid)
-    task_typeid = TypeId(type=BuiltinEntityType.TASK.value, id=task.id)
-    task_typeid_str = str(task_typeid)
-
-    # Push the new spawn-children back onto the source FlowMessage's shared
-    # bucket so the Private Context panel can render them via a synchronous
-    # read of ``fm.shared_context_entities`` — no candidate-pull-and-filter
-    # over every Task/AgenticProcess in the project.
-    if fm.add_shared_context_entities(process_typeid, task_typeid):
-        await fm.save(someone_typeid)
-
-    instruction = (
-        "A Task entity has been pre-created with id `" + task.id + "` "
-        "(typeid `" + task_typeid_str + "`). Its current title and description "
-        "are placeholder values sliced from the source FlowMessage text.\n\n"
-        "Your job: refine the Task by **updating** its `title` (concise one-line "
-        "summary) and `description` (the relevant details). Do NOT create a new "
-        "Task — update the existing one.\n\n"
-        "Steps:\n"
-        "1. Read the source FlowMessage with TypeId `" + fm_typeid_str + "` for "
-        "context. You can call the flow MCP:\n"
-        "   `mcp__plugin_skillit_flow_sdk__flow_entity_crud` with arguments\n"
-        "   `crud=\"read\"`, "
-        "`entity_json='{\"type\":\"flow_message\",\"id\":\"" + fm.id + "\"}'`.\n"
-        "2. Update the Task with the same MCP tool:\n"
-        "   `crud=\"update\"`, "
-        "`entity_json='{\"type\":\"task\",\"id\":\"" + task.id + "\",\"title\":\"<new title>\",\"description\":\"<new description>\"}'`.\n"
-        "3. Exit when done."
-    )
-
-    await process.prompt(instruction)
-
-    return ApiSuccessResponse(data={
-        "process_id": process.id,
-        "task_id": task.id,
-    })
-
-
-@action.post(action_name="derive-task", types=[BuiltinEntityType.FLOW_MESSAGE.value])
-async def derive_task() -> ApiResponse:
-    """Headless: derive a Task from this FlowMessage; result links via context_entities."""
-    try:
-        request_info = get_current_request_info()
-        if not request_info or not request_info.target_entity_typeid:
-            return ApiFailResponse(message="No request info found")
-        if not request_info.someone_typeid:
-            return ApiFailResponse(message="Authentication required")
-        return await handle_derive_task(
-            fm_id=str(request_info.target_entity_typeid.id),
-            someone_typeid=request_info.someone_typeid,
-        )
-    except Exception as e:
-        logger.error("[flow_message_action] derive-task error: %s", e, exc_info=True)
-        return ApiFailResponse(message=f"Derive task failed: {str(e)}")
 
 
 async def handle_start_cc_from_transcript(fm_id: str, someone_typeid: str) -> ApiResponse:

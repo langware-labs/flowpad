@@ -76,12 +76,14 @@ def run():
         _b_uid, b_tok = hub_login(c, B_EMAIL, B_PW)
 
         print("· step 2: dev-1 creates a PLAN (Spec, spec_type=plan) with a body")
-        created = post(c, A_BE, "graph/flow-message-create", {
-            "spec_title": f"Plan: Hello World {stamp}",
-            "spec_content": f"# Plan\n\n## Step 1\n\n{sentinel}\n\n## Step 2\n\nDone.\n",
-            "task_title": f"Plan: Hello World {stamp}",
+        # A plan is just a Spec entity — created the generic way, then shared as
+        # a plain TYPE_ID attachment in step 5 (no Task minted on share).
+        created = post(c, A_BE, "graph/spec", {
+            "title": f"Plan: Hello World {stamp}",
+            "content": f"# Plan\n\n## Step 1\n\n{sentinel}\n\n## Step 2\n\nDone.\n",
+            "spec_type": "plan",
         })
-        spec_id = created["spec_id"]
+        spec_id = created["id"]
         # sender's spec must carry the body. ``content`` is a blob (not in the
         # GET) — verify via the real asset_ref file the editor renders.
         a_spec = get(c, A_BE, f"graph/spec/{spec_id}")
