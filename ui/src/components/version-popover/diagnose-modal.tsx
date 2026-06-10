@@ -136,7 +136,7 @@ export function DiagnoseModal({ open, onClose }: DiagnoseModalProps) {
           <p className="text-xs text-muted-foreground">
             Describe the issue or paste the error, then run the diagnosis. Leave it empty for a full
             diagnostic sweep. The assistant inspects Flowpad, repairs what's safe, and records the
-            result to your Feed.
+            result.
           </p>
 
           <Textarea
@@ -182,7 +182,7 @@ export function DiagnoseModal({ open, onClose }: DiagnoseModalProps) {
                   <span>
                     {done.ok
                       ? done.feed_posted
-                        ? 'Diagnosis recorded — see the Feed for details.'
+                        ? 'Diagnosis recorded.'
                         : 'Diagnostic complete — no issue found.'
                       : 'Diagnosis was not recorded — try again.'}
                   </span>

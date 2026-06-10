@@ -79,4 +79,21 @@ ok(!mgr.isBrokenInstallError({ message: "ModuleNotFoundError: No module named 'r
 ok(!mgr.isBrokenInstallError({}), 'empty error object → not broken');
 ok(!mgr.isBrokenInstallError(null), 'null error → not broken (no throw)');
 
-console.log(`uv-manager.test.js: ${passed} assertions passed`);
+// ── _ensureShimOnPath (puts ~/.local/bin on the user's terminal PATH) ───────
+// Best-effort: it must call `uv tool update-shell`, and must NEVER throw even
+// when uv fails — otherwise a transient PATH-fixer error would abort an
+// otherwise-successful install/upgrade.
+(async () => {
+  const m1 = new UvManager(silentLog);
+  let calledWith = null;
+  m1._uv = async (args) => { calledWith = args; return { stdout: '', stderr: '' }; };
+  await m1._ensureShimOnPath();
+  eq(calledWith, ['tool', 'update-shell'], '_ensureShimOnPath runs `uv tool update-shell`');
+
+  const m2 = new UvManager(silentLog);
+  m2._uv = async () => { throw new Error('boom'); };
+  await m2._ensureShimOnPath(); // must resolve, not reject
+  ok(true, '_ensureShimOnPath swallows uv failures (never aborts the install)');
+
+  console.log(`uv-manager.test.js: ${passed} assertions passed`);
+})().catch((err) => { console.error(err); process.exit(1); });
