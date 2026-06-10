@@ -595,14 +595,10 @@ class FSRecord(Generic[M]):
         safe = self._safe_name(entity)
         base = Path(scope_root) / info.main_subdir
         if info.main_layout == "folder":
-            # Spec-style folder types (main_file_is_asset_ref) point asset_ref at
-            # the inner body file (specs/<name>/spec.md); skill/whiteboard-style
-            # folder types keep asset_ref on the folder and resolve the inner
-            # main_file themselves (the indexer emits the folder, not the file).
-            if info.main_file and info.main_file_is_asset_ref:
-                target = base / safe / info.main_file
-            else:
-                target = base / safe
+            # asset_ref_for owns the folder-vs-inner-file rule (its inverse,
+            # body_path_for, recovers the body on write) so the convention lives
+            # in one place rather than mirrored here.
+            target = info.asset_ref_for(base / safe)
         else:
             target = base / f"{safe}.md"
         return FSRef(target)
