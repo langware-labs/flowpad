@@ -1571,6 +1571,21 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
         compute_node = await get_or_create_local_compute_node(local_project=project, desktop_user=user)
         _t.time("get_or_create_local_compute_node")
 
+        # Background, hash-gated index of the SDK-shipped Flowpad Assistant
+        # assets (docs/skills/agents/whiteboards) at the live install location.
+        # Detached so it never blocks the bootstrap response; near-instant after
+        # the first run (skip-fresh) and re-anchors any asset_ref left stale by
+        # an install relocation. Runs once per cold bootstrap (process start).
+        try:
+            import asyncio as _asyncio  # noqa: PLC0415
+            _asyncio.create_task(
+                compute_node._index_system_assets(),
+                name="system-assets-index",
+            )
+        except Exception as e:
+            logging.warning(f"[bootstrap] Failed to spawn system-assets index (non-fatal): {e}")
+        _t.time("spawn_system_assets_index")
+
         sandbox_available = is_sandbox_available()
         sandbox_compute_node: Optional[ComputeNode] = None
         if sandbox_available:

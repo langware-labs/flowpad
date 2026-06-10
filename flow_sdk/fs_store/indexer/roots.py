@@ -79,6 +79,39 @@ def lookup_project_id_by_uname(uname: str) -> str | None:
         conn.close()
 
 
+def flowpad_assistant_scoped_roots() -> tuple[FSRef, ...]:
+    """The SYSTEM_ROOT FSRef(s) for the SDK-shipped Flowpad Assistant project,
+    anchored at the **live install location** (``flowpad_assistant_project_root``
+    resolves via ``importlib.resources`` → wherever flow_sdk is installed).
+
+    Shared by ``default_roots()`` and the startup system-asset index so both
+    scope the assistant subtree identically (and re-anchor to the current
+    install on every run). Empty tuple when the project tree isn't present.
+    """
+    try:
+        from flow_sdk.config import (  # noqa: PLC0415
+            FLOWPAD_ASSISTANT_PROJECT_UNAME,
+            flowpad_assistant_project_root,
+        )
+        system_root = flowpad_assistant_project_root()
+        if not system_root.is_dir():
+            return ()
+        # Use the project's stored id (may be uuid5 or legacy uuid4) so children
+        # stamped via FSRef parent-chain inheritance match the entity rows the
+        # DocsCategory / asset list query against.
+        system_pid = lookup_project_id_by_uname(FLOWPAD_ASSISTANT_PROJECT_UNAME)
+        return (
+            FSRef(
+                system_root,
+                record_type=RecordType.SYSTEM_ROOT,
+                scope="system",
+                project_id=system_pid,
+            ),
+        )
+    except Exception:
+        return ()
+
+
 def classify_path(path: str | Path) -> str | None:
     """Classify a filesystem path into a scope tag matching ``default_roots()``.
 
@@ -157,27 +190,7 @@ def default_roots() -> list[FSRef]:
             )
         )
 
-    try:
-        from flow_sdk.config import (
-            FLOWPAD_ASSISTANT_PROJECT_UNAME,
-            flowpad_assistant_project_root,
-        )
-        system_root = flowpad_assistant_project_root()
-        if system_root.is_dir():
-            # Use the project's stored id (may be uuid5 or legacy uuid4) so
-            # children stamped via FSRef parent-chain inheritance match the
-            # entity DocsCategory queries against.
-            system_pid = lookup_project_id_by_uname(FLOWPAD_ASSISTANT_PROJECT_UNAME)
-            roots.append(
-                FSRef(
-                    system_root,
-                    record_type=RecordType.SYSTEM_ROOT,
-                    scope="system",
-                    project_id=system_pid,
-                )
-            )
-    except Exception:
-        pass
+    roots.extend(flowpad_assistant_scoped_roots())
 
     seen: set[str] = {str(r._path) for r in roots}
     for env_var in _ENV_VAR_TO_TYPE:
