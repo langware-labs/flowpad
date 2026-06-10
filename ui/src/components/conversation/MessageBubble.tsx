@@ -1,5 +1,5 @@
 import { useState, type MouseEvent, type ReactNode } from 'react';
-import { Pencil, Check, CheckCheck, Clock, Trash2 } from 'lucide-react';
+import { Pencil, Check, CheckCheck, Clock, Forward, Trash2 } from 'lucide-react';
 import type { FlowMessage } from '@sdk';
 import type { ConversationMessage } from '@sdk/entities/conversation';
 import type { DeliveryStatus } from '@sdk/entities/flow-message';
@@ -23,6 +23,10 @@ interface MessageBubbleProps {
    *  this for messages the local user is allowed to remove. Clicking it opens
    *  a destructive confirm dialog; on confirm this fires. */
   onDeleteMessage?: () => void;
+  /** When set, renders a forward control on the bubble. Clicking it opens the
+   *  parent's share dialog to pick the target conversation; the backend then
+   *  clones the message (cloned_from_id provenance) into it. */
+  onForwardMessage?: () => void;
   onApproveAndExecute?: (attachmentIndex: number) => void;
   /** Spawn a Claude Code session pre-loaded with the receiver-context prompt
    *  (spec + transcript + conversation + attachments). Renders an emerald CTA
@@ -144,6 +148,7 @@ export function MessageBubble({
   senderName,
   onEditName,
   onDeleteMessage,
+  onForwardMessage,
   onApproveAndExecute,
   onImplementPlan,
   onOpenPlanSession,
@@ -260,6 +265,27 @@ export function MessageBubble({
             >
               <Trash2 className="h-2.5 w-2.5" />
             </button>
+          )}
+          {onForwardMessage && !editing && (
+            <button
+              onClick={onForwardMessage}
+              className="text-muted-foreground/50 transition-colors hover:text-foreground"
+              title="Forward to another conversation"
+              aria-label="Forward message"
+              data-testid="message-forward"
+            >
+              <Forward className="h-2.5 w-2.5" />
+            </button>
+          )}
+          {flowMessage?.cloned_from_id && (
+            <span
+              className="inline-flex items-center gap-0.5 text-[10px] italic text-muted-foreground"
+              title="Forwarded from another conversation"
+              data-testid="message-forwarded-marker"
+            >
+              <Forward className="h-2.5 w-2.5" />
+              forwarded
+            </span>
           )}
           {time && (
             <span className="text-[10px] text-muted-foreground">
