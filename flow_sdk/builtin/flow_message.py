@@ -234,6 +234,12 @@ class FlowMessage(Entity):
     receiver_address_type: Optional[str] = APIField(None)  # "email"|"id"|"slack"|...
     attachment_filename: Optional[str] = APIField(None)  # original .flowmsg filename stored on hub
     conversation_id: Optional[str] = APIField(None, description="ID of the parent Conversation, or None for legacy messages")
+    # Forward provenance. Set only on a forwarded clone (see clone_for_forward):
+    # the id of the source FlowMessage and its original sender. Metadata-only —
+    # rides the bundle (model_dump) and the hub header (mirrored on the hub
+    # schema; the hub drops unknown fields, so keep the two models in sync).
+    cloned_from_id: Optional[str] = APIField(None, description="Id of the source FlowMessage this one was forwarded from")
+    cloned_from_sender_id: Optional[str] = APIField(None, description="Original sender of the source message")
     is_read: bool = APIField(default=False)
     is_archived: bool = APIField(default=False)
     # Receipt state — mirrors the hub-side schema. Monotonic:
@@ -392,6 +398,62 @@ class FlowMessage(Entity):
         local_path hydration) without changing the call sites.
         """
         return self.attachment
+
+    def clone_for_forward(
+        self,
+        *,
+        conversation_id: str,
+        sender_id: Optional[str],
+        sender_name: str,
+    ) -> "FlowMessage":
+        """Clone this message for forwarding into another conversation.
+
+        The clone is a NEW entity: fresh id (``allocate_id`` → ``mint_uuid``),
+        fresh timestamps and delivery/read/body state (model defaults), the
+        forwarder as sender, and ``cloned_from_id`` pointing back at this
+        message. Content (text, instruction, content attachments) is
+        deep-copied; the per-message transport attachments and shared context
+        (``conversation-<id>`` / ``flow_message-<id>``) are rewritten to the
+        target conversation and the clone's id. FILE / PROMPT-file bytes are
+        NOT copied here — embedded storage is keyed by entity id, so the
+        caller copies those subpaths into the clone's storage.
+        """
+        drop = {
+            f"conversation-{self.conversation_id}",
+            f"flow_message-{self.id}",
+        }
+        content_atts = [
+            att.model_copy(deep=True)
+            for att in (self.attachment or [])
+            if not (att.attachment_type == AttachmentType.TYPE_ID and att.data in drop)
+        ]
+        carried_ctx = [
+            str(c) for c in (self.shared_context_entities or []) if str(c) not in drop
+        ]
+        clone = FlowMessage.model_validate({
+            "text": self.text,
+            "instruction": self.instruction,
+            "shared_context_entities": [f"conversation-{conversation_id}", *carried_ctx],
+            "attachment": [],
+            "sender_id": sender_id,
+            "sender_name": sender_name,
+            "conversation_id": conversation_id,
+            "cloned_from_id": self.id,
+            "cloned_from_sender_id": self.sender_id,
+        })
+        clone.id = FlowMessage.allocate_id(clone.model_dump())
+        clone.attachment = [
+            Attachment(
+                attachment_type=AttachmentType.TYPE_ID,
+                data=f"conversation-{conversation_id}",
+            ),
+            Attachment(
+                attachment_type=AttachmentType.TYPE_ID,
+                data=f"flow_message-{clone.id}",
+            ),
+            *content_atts,
+        ]
+        return clone
 
     async def upload_body(
         self, *, on_progress: Optional[ProgressCallback] = None,

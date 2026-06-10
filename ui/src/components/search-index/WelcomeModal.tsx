@@ -38,7 +38,7 @@ export function WelcomeModal({ open, onStart, onSkip }: WelcomeModalProps) {
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <Button variant="ghost" onClick={handleSkip}>
+          <Button variant="ghost" onClick={handleSkip} data-testid="welcome-skip-button">
             Skip for now
           </Button>
           <Button className="bg-green-600 hover:bg-green-700 text-white" onClick={onStart}>

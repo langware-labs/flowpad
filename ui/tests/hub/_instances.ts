@@ -23,9 +23,10 @@ import { parseDotEnv } from './_hub';
 export type SdkRealm = typeof import('@sdk');
 
 // ui/tests/hub → worktree root (where instance_ctl writes .env.<name>.local).
-const WORKTREE_ROOT = path.resolve(__dirname, '../../..');
+export const WORKTREE_ROOT = path.resolve(__dirname, '../../..');
 
-async function readEnvFile(name: string): Promise<Record<string, string>> {
+/** Read an instance's `.env.<name>.local` into a key→value map ({} if absent). */
+export async function readEnvFile(name: string): Promise<Record<string, string>> {
   try {
     return parseDotEnv(await fs.readFile(path.join(WORKTREE_ROOT, `.env.${name}.local`), 'utf-8'));
   } catch {
