@@ -1,11 +1,11 @@
-import { Conversation, FeedEntry, QueryRequest, type ConversationParticipant } from '@sdk';
-import { useAuth } from '@sdk/react/hooks';
+import { FeedEntry, QueryRequest } from '@sdk';
 import { Button } from '@src/components/ui/button';
-import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
-import { feedEntryShareSource } from '@src/hooks/share-sources';
+import { deriveConversationTitle } from '@src/components/conversation/conversation-title';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { useFeedMutations } from '@src/hooks/use-feed-mutations';
-import { ChevronDown, ChevronRight, EyeOff } from 'lucide-react';
+import { useRecentConversations } from '@src/hooks/use-recent-conversations';
+import { formatTimeAgo } from '@src/utils/format-time-ago';
+import { ChevronDown, ChevronRight, EyeOff, Forward } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 
 /** Format a feed entry's `created_date` (ISO string or Date) as a local date+time (empty if absent). */
@@ -18,17 +18,26 @@ function formatRecorded(value?: string | Date): string {
 interface FeedEntryCardProps {
   entry: FeedEntry;
   busy: boolean;
+  error?: string;
   onDismiss: (entry: FeedEntry) => void;
-  onSend: (entry: FeedEntry) => void;
+  onReport: (entry: FeedEntry, conversationId: string) => void;
 }
 
-function FeedEntryCard({ entry, busy, onDismiss, onSend }: FeedEntryCardProps) {
+function FeedEntryCard({ entry, busy, error, onDismiss, onReport }: FeedEntryCardProps) {
   const [expanded, setExpanded] = useState(false);
+  const [forwardOpen, setForwardOpen] = useState(false);
   const suggest = entry.messageSuggest;
   const header = suggest?.text ?? 'Flowpad diagnostics';
   const body = suggest?.message_text ?? '';
   const expandable = body.length > 80 || body.includes('\n');
   const recorded = formatRecorded(entry.created_date);
+
+  // Forward target list: most recent conversations, fetched only while the
+  // list is open. The suggested support conversation is excluded — that one
+  // is what "Report issue" already sends to.
+  const conversations = useRecentConversations(forwardOpen, {
+    excludeId: suggest?.conversation_id,
+  });
 
   return (
     <div className="rounded-lg border bg-muted/40 px-3 py-2 text-left">
@@ -100,28 +109,73 @@ function FeedEntryCard({ entry, busy, onDismiss, onSend }: FeedEntryCardProps) {
         <Button
           type="button"
           size="sm"
-          disabled={busy}
-          onClick={() => onSend(entry)}
+          disabled={busy || !suggest?.conversation_id}
+          onClick={() => suggest?.conversation_id && onReport(entry, suggest.conversation_id)}
           className="h-6 px-2 text-xs"
         >
           Report issue
         </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={busy}
+          aria-expanded={forwardOpen}
+          onClick={() => setForwardOpen((v) => !v)}
+          className="h-6 gap-1 px-2 text-xs"
+          data-testid="feed-forward-toggle"
+        >
+          <Forward className="h-3.5 w-3.5" />
+          Forward
+        </Button>
       </div>
+
+      {forwardOpen && (
+        <ul className="mt-2 flex flex-col gap-1" data-testid="feed-forward-conversations">
+          {conversations.length === 0 ? (
+            <li className="px-2 py-1 text-xs text-muted-foreground">No conversations yet.</li>
+          ) : (
+            conversations.map((conv) => (
+              <li key={conv.id}>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => onReport(entry, conv.id)}
+                  className="flex w-full items-center gap-2 rounded-md border border-input bg-background px-2 py-1.5 text-left text-xs text-foreground hover:bg-muted/50 disabled:pointer-events-none disabled:opacity-50"
+                  data-testid={`feed-forward-conv-${conv.id}`}
+                >
+                  <span className="flex-1 truncate text-foreground">
+                    {deriveConversationTitle(conv)}
+                  </span>
+                  <span className="shrink-0 text-[10px] text-muted-foreground">
+                    {formatTimeAgo(
+                      conv.updated_date ? new Date(conv.updated_date).toISOString() : null,
+                    ) ?? ''}
+                  </span>
+                </button>
+              </li>
+            ))
+          )}
+        </ul>
+      )}
+
+      {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
     </div>
   );
 }
 
 /**
  * Home-landing Feed: lists `new` FeedEntry items under the Join/Start buttons.
- * Each entry summarizes a `flow diagnose` run; Dismiss hides it, Send to Support
- * opens the unified share dialog with the report text pre-filled as the note
- * and the suggested support conversation pre-selected (via its participants).
- * The entry is dismissed only after the share actually goes out.
+ * Each entry summarizes a `flow diagnose` run. Dismiss hides it; "Report issue"
+ * sends the generated report into the suggested support conversation; "Forward"
+ * opens a recent-conversation list (share-dialog-style rows) and clicking one
+ * sends the same report there instead. Both paths are the single
+ * `reportIssue(entry, conversationId)` mutation — the entry is dismissed only
+ * after the message actually goes out.
  */
 export function Feed() {
   const request = useMemo(() => new QueryRequest({ type: FeedEntry.type }), []);
   const { data: entries = [], refetch } = useEntitiesQuery<FeedEntry>(request);
-  const { cloudUser } = useAuth();
   const newEntries = useMemo(
     () =>
       entries
@@ -135,10 +189,9 @@ export function Feed() {
   const refetchVoid = useCallback(async () => {
     await refetch();
   }, [refetch]);
-  const { dismiss, markSentToSupport } = useFeedMutations({ refetch: refetchVoid });
+  const { dismiss, reportIssue } = useFeedMutations({ refetch: refetchVoid });
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [shareEntry, setShareEntry] = useState<FeedEntry | null>(null);
-  const [shareParticipants, setShareParticipants] = useState<ConversationParticipant[]>([]);
+  const [sendError, setSendError] = useState<{ entryId: string; message: string } | null>(null);
 
   const handleDismiss = useCallback(
     async (entry: FeedEntry) => {
@@ -152,40 +205,25 @@ export function Feed() {
     [dismiss],
   );
 
-  const handleSend = useCallback(
-    async (entry: FeedEntry) => {
+  const handleReport = useCallback(
+    async (entry: FeedEntry, conversationId: string) => {
       setBusyId(entry.id ?? null);
+      setSendError(null);
       try {
-        // Seed the dialog's contact picker from the suggested support
-        // conversation's roster so that conversation is pre-selected.
-        let participants: ConversationParticipant[] = [];
-        const convId = entry.messageSuggest?.conversation_id;
-        if (convId) {
-          const conv = await Conversation.getById<Conversation>(convId).catch(() => null);
-          participants = (conv?.participants ?? []).filter(
-            (p) => !cloudUser?.id || p.user_id !== cloudUser.id,
-          );
-        }
-        setShareParticipants(participants);
-        setShareEntry(entry);
+        await reportIssue(entry, conversationId);
+      } catch (err: unknown) {
+        setSendError({
+          entryId: entry.id ?? '',
+          message: err instanceof Error ? err.message : 'Failed to send report',
+        });
       } finally {
         setBusyId(null);
       }
     },
-    [cloudUser?.id],
+    [reportIssue],
   );
 
-  const shareSource = useMemo(
-    () =>
-      shareEntry
-        ? feedEntryShareSource({
-            label: shareEntry.messageSuggest?.text ?? 'Flowpad diagnostics',
-          })
-        : null,
-    [shareEntry],
-  );
-
-  if (!newEntries.length && !shareEntry) return null;
+  if (!newEntries.length) return null;
 
   return (
     <div className="w-full max-w-3xl flex flex-col gap-2">
@@ -194,20 +232,11 @@ export function Feed() {
           key={entry.id}
           entry={entry}
           busy={busyId === entry.id}
+          error={sendError?.entryId === entry.id ? sendError.message : undefined}
           onDismiss={(e) => void handleDismiss(e)}
-          onSend={(e) => void handleSend(e)}
+          onReport={(e, convId) => void handleReport(e, convId)}
         />
       ))}
-      {shareEntry && shareSource && (
-        <ShareToConversationDialog
-          open
-          onClose={() => setShareEntry(null)}
-          source={shareSource}
-          defaultNote={shareEntry.messageSuggest?.message_text ?? ''}
-          initialParticipants={shareParticipants}
-          onShared={(convId) => void markSentToSupport(shareEntry, convId)}
-        />
-      )}
     </div>
   );
 }
