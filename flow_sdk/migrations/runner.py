@@ -249,8 +249,17 @@ async def _drive_migration(
     writes its transcript, then to ``completed``/``error``.
     """
     from flow_sdk.builtin.agentic_process import AgenticProcess
+    from flow_sdk.core.capabilities.discovery import ensure_discovered
 
     cn = await _bootstrap_local()
+
+    # Run capability discovery so the headless worker can resolve its CLI binary.
+    # `flow migrate run` can execute standalone (no server), where the background
+    # discovery sweep never runs — without this `worker_path_env(...)` is None and
+    # the worker dies before writing a transcript, tripping the warmup guard below
+    # with a misleading "never wrote a transcript" message. Idempotent; no-op once
+    # a sweep has completed (e.g. when invoked during `flow start`).
+    await ensure_discovered()
 
     skill_md = (recipe_dir / "SKILL.md").read_text(encoding="utf-8")
     prompt_text = (
