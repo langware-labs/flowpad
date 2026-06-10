@@ -124,10 +124,7 @@ export function CollapsedSidebar() {
             <SidebarMenuItem className="flex flex-row">
               <SidebarMenuButton
                 tooltip="Back"
-                onClick={() => {
-                  console.log(`[nav-debug] sidebar.backButton.click canGoBack=${canGoBack}`);
-                  goBack();
-                }}
+                onClick={goBack}
                 disabled={!canGoBack}
                 className="h-6 w-1/2 justify-center px-0"
               >

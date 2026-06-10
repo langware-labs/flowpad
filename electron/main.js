@@ -274,69 +274,35 @@ function createWindow() {
     backgroundColor: '#1e1e1e',
   });
 
-  // Mouse back/forward (X1/X2) buttons are navigated HERE, in the main process —
-  // this is the only path that reliably fires on real hardware: on macOS the press
-  // arrives via `input-event` and is NOT delivered to the renderer as a DOM mouseup
-  // (so a renderer-side handler silently does nothing on hardware); on Windows/Linux
-  // it arrives as an `app-command`. The renderer (`ui/src/main.tsx`) only
-  // `preventDefault()`s these buttons to stop Chromium's own native back/forward —
-  // it must NOT also call `window.history.back/forward()` or you get a double-step
-  // (that was the "sometimes double back" bug). One owner = one navigation per press.
+  // Mouse back/forward (X1/X2) buttons. Electron does not map these to history
+  // navigation, so we wire them up — and the OS surfaces them differently per
+  // platform, so we listen per platform (one source each, no double-navigation).
   const nav = () => mainWindow.webContents.navigationHistory;
-  const goBack = (source) => {
-    const can = nav().canGoBack();
-    log.info(`[nav-debug] main.goBack source=${source} canGoBack=${can} url=${mainWindow.webContents.getURL()}`);
-    if (can) nav().goBack();
-  };
-  const goForward = (source) => {
-    const can = nav().canGoForward();
-    log.info(`[nav-debug] main.goForward source=${source} canGoForward=${can} url=${mainWindow.webContents.getURL()}`);
-    if (can) nav().goForward();
-  };
+  const goBack = () => { if (nav().canGoBack()) nav().goBack(); };
+  const goForward = () => { if (nav().canGoForward()) nav().goForward(); };
 
   if (process.platform === 'darwin') {
+    // macOS surfaces the buttons two ways and never reaches the renderer:
+    //  - a raw mouse `input-event` (button 'back'/'forward'); and
+    //  - with drivers like Logitech Options / Options+ (or the trackpad), a
+    //    `swipe` GESTURE — left = back, right = forward — and ONLY a swipe, no
+    //    mouse button / app-command (confirmed by event capture). Handle both.
     mainWindow.webContents.on('input-event', (_e, input) => {
       if (input.type !== 'mouseDown') return;
-      if (input.button === 'back' || input.button === 'forward') {
-        log.info(`[nav-debug] main.input-event mouseDown button=${input.button}`);
-      }
-      if (input.button === 'back') goBack('mac-mouse-input-event');
-      else if (input.button === 'forward') goForward('mac-mouse-input-event');
+      if (input.button === 'back') goBack();
+      else if (input.button === 'forward') goForward();
+    });
+    mainWindow.on('swipe', (_e, direction) => {
+      if (direction === 'left') goBack();
+      else if (direction === 'right') goForward();
     });
   } else {
+    // Windows/Linux: the buttons arrive as an app-command.
     mainWindow.webContents.on('app-command', (_e, command) => {
-      if (command === 'browser-backward' || command === 'browser-forward') {
-        log.info(`[nav-debug] main.app-command command=${command}`);
-      }
-      if (command === 'browser-backward') goBack('app-command');
-      else if (command === 'browser-forward') goForward('app-command');
+      if (command === 'browser-backward') goBack();
+      else if (command === 'browser-forward') goForward();
     });
   }
-
-  // Catch-all: log EVERY navigation that actually lands at the webContents
-  // level, regardless of which source triggered it (mouse, renderer
-  // window.history, react-router, deep-link). This is the single point all
-  // back/forward eventually flows through.
-  mainWindow.webContents.on('did-navigate-in-page', (_e, url, isMainFrame) => {
-    if (!isMainFrame) return;
-    log.info(`[nav-debug] main.did-navigate-in-page url=${url} canGoBack=${nav().canGoBack()} canGoForward=${nav().canGoForward()}`);
-  });
-  mainWindow.webContents.on('did-navigate', (_e, url) => {
-    log.info(`[nav-debug] main.did-navigate url=${url} canGoBack=${nav().canGoBack()} canGoForward=${nav().canGoForward()}`);
-  });
-
-  // Forward renderer-side [nav-debug] console logs into the electron-log file
-  // so the whole back/forward story (mouse → renderer → router → main) lands
-  // in one place: ~/.flow/logs/main_desktop/<ts>.log
-  mainWindow.webContents.on('console-message', (...args) => {
-    // Signature differs by Electron version:
-    //   older: (event, level, message, line, sourceId)
-    //   newer (Electron 36+): (event) where event.message holds the text
-    let message = '';
-    if (typeof args[2] === 'string') message = args[2];
-    else if (args[0] && typeof args[0].message === 'string') message = args[0].message;
-    if (message.includes('[nav-debug]')) log.info(`[renderer] ${message}`);
-  });
 
   // Show loading screen first
   mainWindow.loadFile(path.join(__dirname, 'loading.html'));
@@ -560,20 +526,6 @@ async function startApp() {
   pendingDeepLink = null;
   log.info(`Loading UI from ${startUrl}`);
   mainWindow.loadURL(startUrl);
-
-  // The window shows loading.html first, then loads the app URL — which otherwise
-  // leaves loading.html as the first back-history entry, so the app's very first
-  // "Back" (button or gesture) would navigate INTO the loading screen. Once the app
-  // URL commits, prune the history so the first real screen has a clean, empty
-  // back-stack. One-shot: subsequent in-app navigation builds history normally on top.
-  mainWindow.webContents.once('did-navigate', () => {
-    try {
-      mainWindow.webContents.navigationHistory.clear();
-      log.info(`[nav-debug] main.clearedLoadingHistory canGoBack=${mainWindow.webContents.navigationHistory.canGoBack()}`);
-    } catch (e) {
-      log.warn(`[nav-debug] navigationHistory.clear() failed: ${e.message}`);
-    }
-  });
 
   // Open DevTools in development
   if (isDev) {

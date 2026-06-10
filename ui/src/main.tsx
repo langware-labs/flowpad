@@ -20,30 +20,19 @@ function defineGlobals() {
   });
 }
 
-// Mouse back/forward buttons (X1/X2). The actual history navigation is done by
-// the Electron MAIN process (electron/main.js → input-event on macOS /
-// app-command on Windows/Linux), because Chromium does NOT reliably deliver
-// these buttons to the renderer as a DOM `mouseup` on macOS hardware. Here we
-// ONLY `preventDefault()` so Chromium's own native back/forward doesn't ALSO
-// fire — we must NOT call window.history.back/forward() here, or the press
-// navigates twice (the "sometimes double back" bug). One owner: the main process.
+// Mouse back/forward buttons (X1/X2) → history navigation. Real browsers map
+// these natively in their own UI layer (not the web platform), so Electron
+// windows never get it — wire it up ourselves, Electron only, to avoid
+// double-navigation in the browser.
 function bindMouseNavButtons() {
-  const isElectron = !!(window as any).electronAPI;
-  // Catch-all: every back/forward — no matter the source (Electron main
-  // webContents.goBack, react-router navigate(-1), keyboard) — surfaces here as a
-  // popstate. Logged with [nav-debug] so the Electron main process forwards it
-  // into the desktop log file.
-  window.addEventListener('popstate', e => {
-    console.log(
-      `[nav-debug] renderer.popstate href=${window.location.href} state=${JSON.stringify(e.state)} electron=${isElectron}`,
-    );
-  });
-  if (!isElectron) return;
+  if (!(window as any).electronAPI) return;
   window.addEventListener('mouseup', e => {
-    // preventDefault ONLY (suppress Chromium's native nav). Main process navigates.
-    if (e.button === 3 || e.button === 4) {
-      console.log(`[nav-debug] renderer.mouseup button=${e.button} (preventDefault only; main owns nav)`);
+    if (e.button === 3) {
       e.preventDefault();
+      window.history.back();
+    } else if (e.button === 4) {
+      e.preventDefault();
+      window.history.forward();
     }
   });
 }
