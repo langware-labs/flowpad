@@ -814,9 +814,17 @@ export function FsRecordsScannerViewer() {
         </div>
       </div>
 
-      <ActivityIndicator variant="list" className="shrink-0 border-b px-5 py-2 flex flex-col gap-1 max-h-44 overflow-auto" />
-
-
+      {/* While any index activity (scan / index / clear) is running, the body is
+          ONLY the live per-type progress. The search bar, totals, filter, and
+          type table would otherwise pile up alongside it into an unreadable mix —
+          they all return the moment the run goes idle (currentActivity → null). */}
+      {currentActivity ? (
+        <ActivityIndicator
+          variant="list"
+          className="min-h-0 flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-1.5"
+        />
+      ) : (
+      <>
       {/* Semantic search bar */}
       <div className="shrink-0 border-b px-5 py-2">
         <RecordSearchBar
@@ -995,6 +1003,8 @@ export function FsRecordsScannerViewer() {
             )}
           </div>
         </>
+      )}
+      </>
       )}
 
       {/* Sweep Orphans dialog — explainer + per-type breakdown + sweep action.
