@@ -264,6 +264,18 @@ class TypeInfo:
     # materialized into ``<folder>/<main_file>`` (skill). Runtime-only.
     main_file_is_asset_ref: bool = False
 
+    def asset_ref_for(self, folder: Path) -> Path:
+        """Where a folder-layout type's asset_ref points, given its folder.
+
+        Spec-style (``main_file_is_asset_ref``) anchors asset_ref on the inner
+        ``<folder>/<main_file>``; skill-style keeps it on the bare folder. The
+        inverse of ``body_path_for`` — both live here so the folder↔body
+        convention is stated once. Callers gate on ``main_layout == "folder"``.
+        """
+        if self.main_file and self.main_file_is_asset_ref:
+            return folder / self.main_file
+        return folder
+
     def body_path_for(self, asset_path: Path) -> Path:
         """Map an asset_ref path to the writable main-body file.
 
@@ -425,7 +437,7 @@ class SchemaRegistry:
             if info.main_file is not None:
                 existing.main_file = info.main_file
             if info.main_file_is_asset_ref:
-                existing.main_file_is_asset_ref = info.main_file_is_asset_ref
+                existing.main_file_is_asset_ref = True
             if info.post_sync_fn is not None:
                 existing.post_sync_fn = info.post_sync_fn
             if info.from_disk_fn is not None:
