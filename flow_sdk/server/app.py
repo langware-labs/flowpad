@@ -280,12 +280,12 @@ async def _start_inbox_catchup() -> None:
         try:
             from flow_sdk.app.actions.flow_message_action import handle_conversation_list
             from flow_sdk.builtin.user import User as _User
-            from flow_sdk.cli.auth.hub_login import is_logged_in
+            from flow_sdk.cli.auth.hub_login import hub_auth_available
 
             # No cloud session → the hub would 401 every conversation/invitation
             # call. Skip the catch-up entirely instead of logging 401 warnings
             # on every offline startup.
-            if not is_logged_in():
+            if not hub_auth_available():
                 return
             local_user = await _User.get_one({"uname": "local"})
             if not local_user:

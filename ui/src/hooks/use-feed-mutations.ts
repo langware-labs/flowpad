@@ -11,8 +11,10 @@ interface UseFeedMutationsOptions {
  * down-backend concern — the report was written SDK-direct by `flow diagnose`).
  *
  * - dismiss: flip feed_status → 'dismissed' so the entry stops rendering.
- * - sendToSupport: same flip, plus un-hide the linked support Conversation
- *   (clear dismissed_at + bump updated_date) so it appears in the Recent strip.
+ * - markSentToSupport: post-share bookkeeping after the unified share dialog
+ *   has sent the report — same status flip, plus un-hide the conversation the
+ *   share landed in (clear dismissed_at + bump updated_date) so it appears in
+ *   the Recent strip. The send itself is owned by ShareToConversationDialog.
  */
 export function useFeedMutations({ refetch }: UseFeedMutationsOptions) {
   const dismiss = useCallback(
@@ -24,23 +26,20 @@ export function useFeedMutations({ refetch }: UseFeedMutationsOptions) {
     [refetch],
   );
 
-  const sendToSupport = useCallback(
-    async (entry: FeedEntry) => {
+  const markSentToSupport = useCallback(
+    async (entry: FeedEntry, conversationId: string) => {
       entry.feed_status = 'dismissed';
       await entry.save([]);
-      const convId = entry.messageSuggest?.conversation_id;
-      if (convId) {
-        const conv = await Conversation.getById<Conversation>(convId);
-        if (conv) {
-          conv.dismissed_at = null;
-          conv.updated_date = new Date().toISOString();
-          await conv.save([]);
-        }
+      const conv = await Conversation.getById<Conversation>(conversationId);
+      if (conv) {
+        conv.dismissed_at = null;
+        conv.updated_date = new Date().toISOString();
+        await conv.save([]);
       }
       await refetch();
     },
     [refetch],
   );
 
-  return { dismiss, sendToSupport };
+  return { dismiss, markSentToSupport };
 }

@@ -119,6 +119,36 @@ def is_terminal(status: WorkerStatus) -> bool:
 _TAIL_BYTES = 4096
 _ACTIVE_SECONDS = 300  # JSONL mtime within 5 min → session still being written
 
+# Upper bound for the expanding tail read. A transcript can accumulate a long
+# trailing run of content-free session-envelope lines (ai-title / agent-name /
+# mode / bridge-session …) that buries the last real chat entry well beyond the
+# initial 4 KB window. When the first window holds nothing but ignored types we
+# read progressively larger tails — up to this cap — so the true WorkerStatus is
+# still recoverable instead of collapsing to UNKNOWN. Bounded so the per-serialize
+# cost stays trivial for healthy sessions (which resolve in the first 4 KB).
+_TAIL_MAX_BYTES = 2 * 1024 * 1024
+
+# Content-free Claude/Flowpad transcript line types — they carry no worker-state
+# signal and MUST be skipped when scanning the tail for the last meaningful entry.
+# Kept in sync with ``transcript_analyzer/parsers/claude.py`` ``_META_TYPES``
+# (minus ``last-prompt``, which ``_tail_status`` classifies explicitly). The
+# contract test ``test_ignored_types_match_meta_types`` enforces that parity, so a
+# future Claude format-drift — which is exactly how ``mode`` / ``agent-name`` /
+# ``bridge-session`` slipped in and regressed this set to masking real status as
+# UNKNOWN — can't silently happen again.
+_IGNORED_TYPES: frozenset[str] = frozenset({
+    "file-history-snapshot",
+    "queue-operation",
+    "custom-title",
+    "ai-title",
+    "pr-link",
+    "attachment",
+    "permission-mode",
+    "mode",
+    "agent-name",
+    "bridge-session",
+})
+
 
 def _has_pending_tool_use(chunk: str) -> bool:
     """True when the latest assistant ``tool_use`` has no completion evidence.
@@ -264,47 +294,19 @@ class ApiErrorTimeoutError(TimeoutError):
     """
 
 
-def _tail_status(path: "str | _Path") -> WorkerStatus:
-    """Derive WorkerStatus from the last 4 KB of a JSONL transcript.
+def _scan_reversed(
+    chunk: str,
+) -> tuple[str | None, str | None, str | None, float | None]:
+    """Walk a JSONL chunk newest→oldest and return the classification inputs for
+    the last *meaningful* entry: ``(last_type, last_subtype, last_stop_reason,
+    last_user_ts)``.
 
-    Algorithm:
-      1. mtime check — is the file still being actively written (≤5 min)?
-      2. Tail parse — what was the last meaningful entry type and stop_reason?
-      3. Classify: terminal signals take priority; granular busy states only
-         when the file is still active. Fallback is UNKNOWN (not RUNNING) so
-         that new / malformed event types are visible.
-
-    Returns one of: INITIALIZING, COMPLETE, ERROR, INTERRUPTED, INACTIVE,
-                    WAITING, THINKING, TOOL_CALL, TOOL_RUNNING, API_ERROR,
-                    API_TIMEOUT, UNKNOWN.
-    (IDLE is a workflow state set externally, not transcript-derivable.)
+    Content-free session-envelope lines (``_IGNORED_TYPES``) are skipped so the
+    trailing ai-title / agent-name / mode / bridge-session run that Claude Code
+    writes as a session prologue/epilogue doesn't mask the real terminal/active
+    signal. ``last_type`` is None when the chunk holds no non-ignored, parseable
+    entry — the caller uses that to decide whether to widen the tail read.
     """
-    p = _Path(path)
-    try:
-        stat = p.stat()
-    except OSError:
-        # Transcript file doesn't exist yet — worker initialising.
-        return WorkerStatus.INITIALIZING
-
-    is_active = (_time.time() - stat.st_mtime) <= _ACTIVE_SECONDS
-
-    try:
-        sz = stat.st_size
-        with open(p, "rb") as f:
-            if sz > _TAIL_BYTES:
-                f.seek(sz - _TAIL_BYTES)
-            chunk = f.read().decode("utf-8", errors="replace")
-    except OSError:
-        return WorkerStatus.INITIALIZING
-
-    # Entry types that carry no session-state signal and must not influence last_type.
-    # e.g. permission-mode is written as both a session prologue and epilogue (after
-    # last-prompt) by Claude Code; treating it as last_type would mask terminal signals.
-    _IGNORED_TYPES: frozenset[str] = frozenset({
-        "permission-mode",
-        "file-history-snapshot",
-    })
-
     last_type: str | None = None
     last_subtype: str | None = None
     last_stop_reason: str | None = None
@@ -337,6 +339,60 @@ def _tail_status(path: "str | _Path") -> WorkerStatus:
             last_stop_reason = entry.get("message", {}).get("stop_reason")
         if last_type and last_stop_reason is not None:
             break
+    return last_type, last_subtype, last_stop_reason, last_user_ts
+
+
+def _tail_status(path: "str | _Path") -> WorkerStatus:
+    """Derive WorkerStatus from the tail of a JSONL transcript.
+
+    Algorithm:
+      1. mtime check — is the file still being actively written (≤5 min)?
+      2. Tail parse — scan the last 4 KB (widening up to ``_TAIL_MAX_BYTES`` if
+         that window is all content-free envelope lines) for the last meaningful
+         entry type and stop_reason.
+      3. Classify: terminal signals take priority; granular busy states only
+         when the file is still active. Fallback is UNKNOWN (not RUNNING) so
+         that new / malformed event types are visible.
+
+    Returns one of: INITIALIZING, COMPLETE, ERROR, INTERRUPTED, INACTIVE,
+                    WAITING, THINKING, TOOL_CALL, TOOL_RUNNING, API_ERROR,
+                    API_TIMEOUT, UNKNOWN.
+    (IDLE is a workflow state set externally, not transcript-derivable.)
+    """
+    p = _Path(path)
+    try:
+        stat = p.stat()
+    except OSError:
+        # Transcript file doesn't exist yet — worker initialising.
+        return WorkerStatus.INITIALIZING
+
+    is_active = (_time.time() - stat.st_mtime) <= _ACTIVE_SECONDS
+    sz = stat.st_size
+
+    # Expanding tail read: start at 4 KB and widen (×16, clamped to
+    # ``_TAIL_MAX_BYTES``) only while the window holds nothing but ignored
+    # session-envelope lines (``last_type is None``), so a long trailing meta run
+    # can't bury the real last chat entry and force a spurious UNKNOWN. Healthy
+    # sessions find a meaningful entry in the first 4 KB and never expand; the
+    # read never exceeds ``_TAIL_MAX_BYTES``.
+    last_type: str | None = None
+    last_subtype: str | None = None
+    last_stop_reason: str | None = None
+    last_user_ts: float | None = None
+    read_bytes = _TAIL_BYTES
+    while True:
+        window = min(read_bytes, sz)
+        try:
+            with open(p, "rb") as f:
+                if sz > window:
+                    f.seek(sz - window)
+                chunk = f.read().decode("utf-8", errors="replace")
+        except OSError:
+            return WorkerStatus.INITIALIZING
+        last_type, last_subtype, last_stop_reason, last_user_ts = _scan_reversed(chunk)
+        if last_type is not None or window >= sz or read_bytes >= _TAIL_MAX_BYTES:
+            break
+        read_bytes = min(read_bytes * 16, _TAIL_MAX_BYTES)
 
     # Claude 2.x writes ``last-prompt`` as an idle marker — but in PTY mode it
     # can appear *between* an assistant ``stop_reason=tool_use`` and the actual

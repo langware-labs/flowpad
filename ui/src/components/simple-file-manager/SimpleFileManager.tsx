@@ -30,6 +30,8 @@ import {
   Upload,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
+import { fileShareSource } from '@src/hooks/share-sources';
 import { DirectoryTree, ItemHandler } from '../directory-tree';
 import { FilterName } from './filters';
 import { FileItem, SimpleFileManagerProps, SortDirection, SortField } from './types';
@@ -268,10 +270,16 @@ export function SimpleFileManager({
   const [clipboard, setClipboard] = useState<{ items: FileItem[]; operation: 'copy' | 'cut' } | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(true);
   const [rootFolders, setRootFolders] = useState<FSItem[]>([]);
+  // Absolute node path of the file being shared; non-null opens the dialog.
+  const [sharePath, setSharePath] = useState<string | null>(null);
   const effectiveHomePath = homePath || workspacePath || null;
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const typeidObj = useMemo(() => new TypeId(typeId.type, typeId.id), [typeId.type, typeId.id]);
+  const shareSource = useMemo(
+    () => (sharePath ? fileShareSource({ computeNodeTypeId: typeidObj, absPath: sharePath }) : null),
+    [sharePath, typeidObj],
+  );
 
   // Use shared browse cache from fsStore
   const fs = useFS(typeidObj);
@@ -1122,7 +1130,12 @@ export function SimpleFileManager({
                       <ContextMenuItem onClick={handleCopy}>Copy</ContextMenuItem>
                       <ContextMenuItem onClick={handleCut}>Cut</ContextMenuItem>
                       {item.type === 'file' && (
-                        <ContextMenuItem onClick={() => void handleDownload()}>Download</ContextMenuItem>
+                        <>
+                          <ContextMenuItem onClick={() => void handleDownload()}>Download</ContextMenuItem>
+                          <ContextMenuItem onClick={() => setSharePath(item.path)}>
+                            Share to conversation
+                          </ContextMenuItem>
+                        </>
                       )}
                       <ContextMenuSeparator />
                       <ContextMenuItem className="text-destructive" onClick={() => setShowDeleteDialog(true)}>
@@ -1148,6 +1161,14 @@ export function SimpleFileManager({
           </span>
         )}
       </div>
+
+      {shareSource && (
+        <ShareToConversationDialog
+          open
+          onClose={() => setSharePath(null)}
+          source={shareSource}
+        />
+      )}
 
       {/* New Folder Dialog */}
       {showNewFolderDialog && (

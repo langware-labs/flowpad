@@ -17,6 +17,7 @@
 import {
   AgenticProcess,
   dataManager,
+  fsManager,
   Spec,
   Task,
   TypeId,
@@ -223,6 +224,70 @@ export function planSpecShareSource(args: {
       };
     }),
   };
+}
+
+/**
+ * Raw file on a compute node (file browser / interactive-tab side menu): the
+ * bytes ride as a FILE attachment in the body bundle — the same mechanism as
+ * pasted screenshots. No entity is minted; the receiver gets the file itself.
+ */
+export function fileShareSource(args: {
+  computeNodeTypeId: TypeId;
+  absPath: string;
+}): ShareSource {
+  const fileName = args.absPath.split('/').pop() || args.absPath;
+  return {
+    label: fileName,
+    typeLabel: 'FILE',
+    defaultTitle: fileName,
+    supportsFiles: true,
+    prepare: resolveOnce(async (o) => {
+      const blob = await fsManager.download(args.computeNodeTypeId, args.absPath, {
+        asBlob: true,
+      });
+      const file = new File([blob as Blob], fileName);
+      return {
+        assetReferences: [],
+        sharedContextEntities: [],
+        files: [file, ...(o.files ?? [])],
+      };
+    }),
+  };
+}
+
+/**
+ * A source that attaches nothing — the meaning rides elsewhere (the dialog's
+ * pre-filled note for a feed report, or the backend `forward` action for a
+ * message clone). It only labels the share; recipients/conversation are chosen
+ * in the dialog.
+ */
+function noAssetShareSource(label: string, typeLabel: string): ShareSource {
+  return {
+    label,
+    typeLabel,
+    defaultTitle: label,
+    prepare: resolveOnce(() =>
+      Promise.resolve({ assetReferences: [], sharedContextEntities: [] }),
+    ),
+  };
+}
+
+/**
+ * Feed entry (a `flow diagnose` message-suggest): the suggested report text
+ * rides as the dialog's pre-filled note; the suggested support conversation is
+ * pre-selected by seeding the contacts.
+ */
+export function feedEntryShareSource(args: { label: string }): ShareSource {
+  return noAssetShareSource(args.label, 'REPORT');
+}
+
+/**
+ * Forward-a-message: the backend's `forward` action owns the packaging (it
+ * clones the source FlowMessage, attachments and all). The dialog's `commit`
+ * override does the POST; this source just labels the share.
+ */
+export function messageForwardShareSource(args: { label: string }): ShareSource {
+  return noAssetShareSource(args.label, 'MESSAGE');
 }
 
 /**

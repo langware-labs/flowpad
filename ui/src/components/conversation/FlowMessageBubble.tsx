@@ -1,10 +1,10 @@
-import { FlowMessage, GitRepo, Prompt, TypeId, User } from '@sdk';
+import { createConversationForShare, FlowMessage, GitRepo, Prompt, TypeId, User } from '@sdk';
 import { isValidIdentifier } from '@sdk/models/TypeId';
 import { useEntity } from '@sdk/react/hooks';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ITask } from '@sdk/entities/task';
 import type { ConversationMessage, ConversationParticipant } from '@sdk/entities/conversation';
-import { BodyStatus } from '@sdk/entities/flow-message';
+import { BodyStatus, FlowMessageKind, forwardMessage } from '@sdk/entities/flow-message';
 import { AlertCircle, Download, FileText, Loader2, X } from 'lucide-react';
 import { MessageBubble } from './MessageBubble';
 import { PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT } from './constants';
@@ -17,6 +17,10 @@ import { MessageComposer } from './MessageComposer';
 import { participantLabelByUserId, UNRESOLVED_SENDER_LABEL, warnUnresolvedSender } from './participant-display';
 import { useAttachments } from './useAttachments';
 import { editorPathForLocalFile } from './attachment-url';
+import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
+import { messageForwardShareSource } from '@src/hooks/share-sources';
+import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
+import type { SendTarget } from '@src/hooks/use-send-to-conversation';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
 import { cn } from '@src/lib/utils';
@@ -49,6 +53,7 @@ function DownloadAttachmentsButton({
       type="button"
       disabled={disabled}
       onClick={disabled ? undefined : onDownload}
+      data-testid="download-attachments-button"
       title={labels.length ? labels.join('\n') : 'Download attachments'}
       className={cn(
         'flex w-full max-w-[360px] items-center gap-3 rounded-lg border border-dashed px-3 py-2.5 text-left transition-colors',
@@ -190,6 +195,29 @@ export function FlowMessageBubble({
     downloading,
     download: handleDownloadBody,
   } = useAttachments(fm, messageId);
+
+  // Forward-to-another-conversation. Hoisted above the early returns (hook
+  // count). The dialog's `commit` override POSTs the backend forward action —
+  // the backend clones the message (cloned_from_id provenance, copied
+  // attachment bytes) — instead of the default add_message send.
+  const ensureCloudLogin = useCloudLoginGate();
+  const [forwardOpen, setForwardOpen] = useState(false);
+  const forwardSource = useMemo(() => {
+    if (!forwardOpen || !fm) return null;
+    const firstLine = (fm.text ?? '').trim().split('\n')[0]?.slice(0, 60);
+    return messageForwardShareSource({ label: firstLine || 'Message' });
+  }, [forwardOpen, fm]);
+  const commitForward = useCallback(
+    async (target: SendTarget) => {
+      const convId =
+        target.kind === 'existing'
+          ? target.conversationId
+          : (await createConversationForShare(target.params, { ensureCloudLogin })).conversation_id;
+      await forwardMessage(messageId, convId);
+      return convId;
+    },
+    [messageId, ensureCloudLogin],
+  );
 
   // Unresolved-sender telemetry. Hoisted ABOVE the early returns so the hook
   // count is identical on every render (a useEffect after ``if (!fm) return``
@@ -447,32 +475,45 @@ export function FlowMessageBubble({
       </div>
     ) : null;
 
+  const canForward = !fm.is_draft && fm.kind !== FlowMessageKind.INVITATION && !!fm.conversation_id;
+
   return (
-    <MessageBubble
-      message={message}
-      flowMessageId={messageId}
-      flowMessage={fm}
-      task={task ?? undefined}
-      senderName={displayName}
-      onEditName={
-        isCurrentUser
-          ? (newName) => {
-              setOverrideName(newName);
-              void updateName(newName);
-            }
-          : undefined
-      }
-      onDeleteMessage={
-        onDeleteMessage && (isCurrentUser || isConversationOwner) ? () => onDeleteMessage(messageId) : undefined
-      }
-      onApproveAndExecute={onApproveAndExecute ? (idx) => onApproveAndExecute(messageId, idx) : undefined}
-      onImplementPlan={onImplementPlan ? () => onImplementPlan(messageId) : undefined}
-      onOpenPlanSession={onOpenPlanSession}
-      onViewPlan={onViewPlan}
-      footer={footer}
-      isSelected={isSelected}
-      onSelect={onSelect}
-      conversationStatusVisible={conversationStatusVisible}
-    />
+    <>
+      <MessageBubble
+        message={message}
+        flowMessageId={messageId}
+        flowMessage={fm}
+        task={task ?? undefined}
+        senderName={displayName}
+        onEditName={
+          isCurrentUser
+            ? (newName) => {
+                setOverrideName(newName);
+                void updateName(newName);
+              }
+            : undefined
+        }
+        onDeleteMessage={
+          onDeleteMessage && (isCurrentUser || isConversationOwner) ? () => onDeleteMessage(messageId) : undefined
+        }
+        onForwardMessage={canForward ? () => setForwardOpen(true) : undefined}
+        onApproveAndExecute={onApproveAndExecute ? (idx) => onApproveAndExecute(messageId, idx) : undefined}
+        onImplementPlan={onImplementPlan ? () => onImplementPlan(messageId) : undefined}
+        onOpenPlanSession={onOpenPlanSession}
+        onViewPlan={onViewPlan}
+        footer={footer}
+        isSelected={isSelected}
+        onSelect={onSelect}
+        conversationStatusVisible={conversationStatusVisible}
+      />
+      {forwardOpen && forwardSource && (
+        <ShareToConversationDialog
+          open={forwardOpen}
+          onClose={() => setForwardOpen(false)}
+          source={forwardSource}
+          commit={commitForward}
+        />
+      )}
+    </>
   );
 }

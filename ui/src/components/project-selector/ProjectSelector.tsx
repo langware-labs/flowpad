@@ -110,6 +110,7 @@ export function ProjectSelector({
                   key={p.id}
                   type="button"
                   onClick={() => onSelect(isSelected ? null : p.id)}
+                  data-testid={`project-selector-row-${p.id}`}
                   className={`flex w-full flex-col items-stretch gap-0.5 rounded px-2 py-1.5 text-left transition-colors ${
                     isSelected ? 'bg-primary/10 text-primary' : 'hover:bg-muted'
                   }`}

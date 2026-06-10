@@ -164,6 +164,7 @@ export function EntityChip({ entity, inside, onClick, projectId, title, size = '
       type="button"
       onClick={handleClick}
       title={tooltip}
+      data-testid={`entity-chip-${entity.type}-${entity.id}`}
       className={`${baseLayout} ${typeStyle}`}
     >
       <Icon className="h-3 w-3" />

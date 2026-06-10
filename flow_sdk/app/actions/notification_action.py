@@ -403,6 +403,8 @@ async def _send_conversation_message_header(conv: "Conversation", reply_fm: "Flo
             flow_message_id=reply_fm.id,
             attachments=attachments or None,
             shared_context_entities=shared_context_entities or None,
+            cloned_from_id=reply_fm.cloned_from_id or None,
+            cloned_from_sender_id=reply_fm.cloned_from_sender_id or None,
         )
         return True
     except Exception as e:  # noqa: BLE001
@@ -434,6 +436,39 @@ async def _upload_body_and_finalize(reply_fm: "FlowMessage", conv_id: str) -> No
         logger.warning(
             "[append_conversation] background body upload failed (non-fatal): %s", e, exc_info=True
         )
+
+
+async def _finalize_message_dispatch(
+    conv: "Conversation",
+    fm: "FlowMessage",
+    context_typeids: list,
+    someone_typeid: str,
+    *,
+    is_remote_send: bool,
+) -> "Conversation":
+    """Shared post-save dispatch tail for an already-saved FlowMessage (a reply
+    OR a forwarded clone): backlink the shared-context entities, append the
+    conversation.jsonl pointer, refresh the sender's UI, and — for hub-mirrored
+    conversations — create the hub header and schedule the body-bundle upload.
+    The two send handlers differ only in how the FM is built; this is the part
+    that must stay in lock-step. Returns the refreshed conversation."""
+    # Mutual context: link each just-shared entity back to this message.
+    await _link_message_into_context_entities(fm, context_typeids, someone_typeid)
+    # Append pointer + project message_ids before the hub header so the
+    # conversation.jsonl is consistent when the body bundle packs.
+    conv = await _append_message_to_conversation(
+        conv=conv, fm_id=fm.id, someone_typeid=someone_typeid,
+    )
+    # Refresh the sender's UI immediately, then create the hub-side header
+    # (graph-linked to the parent Conversation so delivery receipts work). The
+    # body bundle uploads in a background task.
+    _notify_ui_conversation_updated(conv.id, "", fm.id)
+    if is_remote_send:
+        await _send_conversation_message_header(conv, fm)
+        from flow_sdk.builtin.flow_message import BodyStatus  # noqa: PLC0415
+        if fm.body_status == BodyStatus.UPLOADING:
+            asyncio.create_task(_upload_body_and_finalize(fm, conv.id))
+    return conv
 
 
 async def _hub_knows_conversation(conv_id: str) -> bool:
@@ -709,33 +744,119 @@ async def handle_add_message(body: dict, someone_typeid: str) -> ApiResponse:
             "is_draft": True,
         })
 
-    # Mutual context: link each just-shared entity back to this message (the
-    # message → entity direction already rides on the FM's own
-    # shared_context_entities, stamped at build time above).
-    await _link_message_into_context_entities(reply_fm, context_typeids, someone_typeid)
-
-    # Append pointer + project message_ids before the hub header so the
-    # conversation.jsonl is consistent when the body bundle packs.
-    conv = await _append_message_to_conversation(
-        conv=conv,
-        fm_id=reply_fm.id,
-        someone_typeid=someone_typeid,
+    conv = await _finalize_message_dispatch(
+        conv, reply_fm, context_typeids, someone_typeid, is_remote_send=is_remote_send,
     )
-
-    # Refresh the sender's UI immediately, then create the hub-side header via
-    # add_message (graph-linked to the parent Conversation so delivery receipts
-    # work). The body bundle uploads in a background task.
-    _notify_ui_conversation_updated(conv.id, "", reply_fm.id)
-    if is_remote_send:
-        await _send_conversation_message_header(conv, reply_fm)
-        from flow_sdk.builtin.flow_message import BodyStatus  # noqa: PLC0415
-        if reply_fm.body_status == BodyStatus.UPLOADING:
-            asyncio.create_task(_upload_body_and_finalize(reply_fm, conv.id))
 
     return ApiSuccessResponse(data={
         "conversation_id": conv.id,
         "message_count": conv.message_count,
         "flow_message_id": reply_fm.id,
+    })
+
+
+def _copy_clone_storage(src_fm: "FlowMessage", clone_fm: "FlowMessage") -> None:
+    """Copy FILE / PROMPT-file bytes from the source message's embedded storage
+    into the clone's. Embedded storage is keyed by entity id, so the cloned
+    attachments' VFS subpaths resolve only once the bytes exist under the new
+    id. Missing source files are skipped (an un-downloaded remote body) — the
+    clone still references them and the bundle re-pulls from the hub."""
+    import shutil  # noqa: PLC0415
+
+    from flow_sdk.builtin.flow_message import (  # noqa: PLC0415
+        PROMPT_FILE_VFS_PREFIX,
+        AttachmentType,
+    )
+    from flow_sdk.storage import get_entity_embedded_storage  # noqa: PLC0415
+
+    src_storage = get_entity_embedded_storage(src_fm.typeid)
+    clone_storage = get_entity_embedded_storage(clone_fm.typeid)
+    for att in clone_fm.attachment or []:
+        vfs_subpath: Optional[str] = None
+        if att.attachment_type == AttachmentType.FILE:
+            vfs_subpath = att.data or ""
+        elif att.attachment_type == AttachmentType.PROMPT and (att.data or "").startswith(
+            PROMPT_FILE_VFS_PREFIX
+        ):
+            vfs_subpath = att.data
+        if not vfs_subpath:
+            continue
+        src_path = Path(src_storage.get_storage_path(vfs_subpath))
+        if not src_path.exists():
+            continue
+        dest_path = Path(clone_storage.get_storage_path(vfs_subpath))
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src_path, dest_path)
+
+
+async def handle_forward_message(body: dict, someone_typeid: str) -> ApiResponse:
+    """Forward an existing FlowMessage into another conversation.
+
+    Exposed as the ``flow_message/<id>/forward`` action. Clones the source
+    message (new id, the forwarder as sender, fresh timestamps,
+    ``cloned_from_id`` provenance, deep-copied attachments + bytes) and then
+    dispatches the clone exactly like ``handle_add_message`` dispatches a new
+    reply: save → context links → conversation.jsonl append → hub header →
+    background body upload.
+    """
+    from flow_sdk.builtin.flow_message import FlowMessage  # noqa: PLC0415
+
+    flow_message_id = (body.get("flow_message_id") or "").strip()
+    conversation_id = (body.get("conversation_id") or "").strip()
+    if not flow_message_id:
+        return ApiFailResponse(message="flow_message_id is required")
+    if not conversation_id:
+        return ApiFailResponse(message="conversation_id is required")
+
+    src_fm = await FlowMessage.get_one({"id": flow_message_id})
+    if not src_fm:
+        return ApiFailResponse(message=f"FlowMessage not found: {flow_message_id}")
+    conv = await Conversation.get_one({"id": conversation_id})
+    if not conv:
+        return ApiFailResponse(message=f"Conversation not found: {conversation_id}")
+    if src_fm.conversation_id == conversation_id:
+        return ApiFailResponse(message="Cannot forward a message into its own conversation")
+
+    sender_participant = await User.current_sender_participant(body.get("sender_name"))
+    sender_id = sender_participant.get("user_id") or None
+    sender_name = sender_participant.get("name") or ""
+
+    clone_fm = src_fm.clone_for_forward(
+        conversation_id=conv.id,
+        sender_id=sender_id,
+        sender_name=sender_name,
+    )
+    _copy_clone_storage(src_fm, clone_fm)
+
+    # The forwarded content becomes shared context of the TARGET conversation,
+    # same as a fresh share of those assets would.
+    from flow_sdk.builtin.flow_message import AttachmentType  # noqa: PLC0415
+
+    content_refs = [
+        att.data
+        for att in (clone_fm.attachment or [])
+        if att.attachment_type == AttachmentType.TYPE_ID
+    ]
+    context_typeids = _parse_context_typeids(conv, content_refs, [])
+    await _ensure_claude_session_rows(context_typeids)
+    await _merge_shared_context_into_conversation(conv, context_typeids, someone_typeid)
+
+    is_remote_send = is_logged_in() and bool(getattr(conv, "remote", False))
+    if is_remote_send and clone_fm.has_body():
+        from flow_sdk.builtin.flow_message import BodyStatus  # noqa: PLC0415
+        clone_fm.body_status = BodyStatus.UPLOADING
+
+    clone_fm = await clone_fm.save(someone_typeid)
+
+    conv = await _finalize_message_dispatch(
+        conv, clone_fm, context_typeids, someone_typeid, is_remote_send=is_remote_send,
+    )
+
+    return ApiSuccessResponse(data={
+        "conversation_id": conv.id,
+        "message_count": conv.message_count,
+        "flow_message_id": clone_fm.id,
+        "cloned_from_id": clone_fm.cloned_from_id,
     })
 
 
@@ -877,6 +998,47 @@ def _is_prompt_attachment(a: Any) -> bool:
     return False
 
 
+async def _approve_prompt_attachments(
+    fm: "FlowMessage",
+    approver_id: Optional[str],
+    someone_typeid: str,
+    *,
+    attachment_index: Optional[int] = None,
+    approve_all: bool = True,
+) -> list[int]:
+    """Flip unapproved PROMPT attachments to ``approved_by=approver_id`` and save.
+
+    Returns the approved indices ([] when there was nothing to approve). Shared
+    by the ``approve-prompt`` action (FE manual path) and the backend execute
+    entrypoint (auto-run) so both stamp approval identically — and approval
+    doubles as the receive-hook's idempotency marker.
+    """
+    new_atts = list(fm.attachment or [])
+    approved: list[int] = []
+    if approve_all:
+        for i, a in enumerate(new_atts):
+            if _is_prompt_attachment(a) and not a.approved_by:
+                new_atts[i] = a.model_copy(update={"approved_by": approver_id})
+                approved.append(i)
+    else:
+        target_idx: Optional[int] = None
+        if isinstance(attachment_index, int) and 0 <= attachment_index < len(new_atts):
+            if _is_prompt_attachment(new_atts[attachment_index]):
+                target_idx = attachment_index
+        if target_idx is None:
+            for i, a in enumerate(new_atts):
+                if _is_prompt_attachment(a) and not a.approved_by:
+                    target_idx = i
+                    break
+        if target_idx is not None:
+            new_atts[target_idx] = new_atts[target_idx].model_copy(update={"approved_by": approver_id})
+            approved.append(target_idx)
+    if approved:
+        fm.attachment = new_atts
+        await fm.save(someone_typeid or "")
+    return approved
+
+
 @action.post(action_name="approve-prompt", types=["flow_message"])
 async def approve_prompt() -> ApiResponse:
     """Mark prompt attachments on a FlowMessage as approved by the current user.
@@ -907,36 +1069,16 @@ async def approve_prompt() -> ApiResponse:
     local_user = await User.get_one({"uname": "local"})
     approver_id = local_user.id if local_user else None
 
-    new_atts = list(fm.attachment or [])
-
-    if approve_all:
-        approved_indices: list[int] = []
-        for i, a in enumerate(new_atts):
-            if _is_prompt_attachment(a) and not a.approved_by:
-                new_atts[i] = a.model_copy(update={"approved_by": approver_id})
-                approved_indices.append(i)
-        if not approved_indices:
-            return ApiFailResponse(message="No unapproved PROMPT attachment found on this message")
-        fm.attachment = new_atts
-        await fm.save(request_info.someone_typeid or "")
-        return ApiSuccessResponse(data={"attachment_indices": approved_indices, "approved_by": approver_id})
-
-    target_idx: Optional[int] = None
-    if isinstance(idx, int) and 0 <= idx < len(new_atts):
-        if _is_prompt_attachment(new_atts[idx]):
-            target_idx = idx
-    if target_idx is None:
-        for i, a in enumerate(new_atts):
-            if _is_prompt_attachment(a) and not a.approved_by:
-                target_idx = i
-                break
-    if target_idx is None:
+    approved = await _approve_prompt_attachments(
+        fm, approver_id, request_info.someone_typeid or "",
+        attachment_index=idx if isinstance(idx, int) else None,
+        approve_all=approve_all,
+    )
+    if not approved:
         return ApiFailResponse(message="No unapproved PROMPT attachment found on this message")
-
-    new_atts[target_idx] = new_atts[target_idx].model_copy(update={"approved_by": approver_id})
-    fm.attachment = new_atts
-    await fm.save(request_info.someone_typeid or "")
-    return ApiSuccessResponse(data={"attachment_index": target_idx, "approved_by": approver_id})
+    if approve_all:
+        return ApiSuccessResponse(data={"attachment_indices": approved, "approved_by": approver_id})
+    return ApiSuccessResponse(data={"attachment_index": approved[0], "approved_by": approver_id})
 
 
 @action.get(action_name="open", types=["notification"])

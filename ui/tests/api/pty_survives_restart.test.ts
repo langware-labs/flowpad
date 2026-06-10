@@ -1,17 +1,25 @@
 /**
- * Characterization test: does a PTY shell survive a full backend restart?
+ * Recovery test: does a BARE /bin/sh PTY come back after a full backend restart,
+ * recovered by the backend watchdog (no client re-create)?
  *
- * 1. Start a real /bin/sh PTY and confirm input echoes (baseline).
- * 2. Restart the backend (kills the PTY worker children).
- * 3. Send input to the SAME shell and wait for the echo.
+ * 1. Start a real /bin/sh PTY and confirm input echoes (baseline — proves the
+ *    output path works on the live WS before we perturb anything).
+ * 2. Restart the backend (kills the PTY children; the in-memory PtyState is gone).
+ * 3. The backend dead-PTY watchdog (`run_pty_recovery` → `_recover_bare_shells`)
+ *    respawns the shell. The client only *re-attaches*: `terminal-command/attach`
+ *    never creates a PTY (`get_pty` → handle or "not_found"), so polling it until
+ *    it reports `reattached` proves the watchdog rebuilt the PTY server-side.
+ *    This is the bare-shell analog of the agentic test's `os-status worker_alive`
+ *    — a deterministic, HTTP-only recovery proof, independent of WS reconnection.
  *
  * Runs against the disposable `dev-1` instance so it never touches the main
  * :9007 backend. Skips unless dev-1 is launched
  * (`scripts/instance_ctl.sh launch dev-1`) and restarts it via instance_ctl.
  *
- * NOTE on timeout: this genuinely restarts a server (instance_ctl relaunch +
- * WS reconnect), which is ~tens of seconds — the long timeout is inherent to the
- * scenario, not masking a slow path.
+ * NOTE on timeout: this genuinely restarts a server (instance_ctl relaunch + a
+ * ~5s-interval watchdog respawn), which is ~tens of seconds — the long test
+ * timeout and the bounded poll budget are inherent to the scenario, not masking
+ * a slow path.
  */
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
@@ -57,15 +65,19 @@ function waitForEcho(manager: any, shellId: string, keyword: string, timeoutMs: 
 
 const suite = PORT ? describe : describe.skip;
 
-suite('PTY survives server restart (dev-1)', () => {
+suite('Bare PTY recovered by backend watchdog after server restart (dev-1)', () => {
   let sdk: any;
   let manager: any;
   let cn: any;
   let cnId: string;
   let shellId: string;
 
-  const inputUrl = () => `${sdk.GRAPH_API_PREFIX}/${sdk.ComputeNode.type}/${cnId}/terminal-command/input`;
-  const sendInput = (data: string) => sdk.apiClient.post(inputUrl(), { shell_id: shellId, data });
+  const termUrl = (op: string) => `${sdk.GRAPH_API_PREFIX}/${sdk.ComputeNode.type}/${cnId}/terminal-command/${op}`;
+  const sendInput = (data: string) => sdk.apiClient.post(termUrl('input'), { shell_id: shellId, data });
+  // `attach` never creates a PTY — it returns `reattached` only when the handle
+  // exists, so it's our read-only probe that the watchdog rebuilt the shell.
+  const attach = () =>
+    sdk.apiClient.post(termUrl('attach'), { shell_id: shellId, pty_id: shellId, connection_id: manager.id, rows: 24, cols: 80 });
 
   beforeAll(async () => {
     // Realm: point the SDK graph at dev-1's backend before importing it.
@@ -90,32 +102,44 @@ suite('PTY survives server restart (dev-1)', () => {
     cnId = cn.id;
   }, 60_000);
 
-  it('echoes input again after a backend restart', async () => {
+  it('watchdog respawns the bare shell (attach → reattached) after a restart', async () => {
     // 1. Start a real /bin/sh PTY. shell_id must be a UUID — the SDK validates it
     //    as a type-id when dispatching pty_output_msg, else the echo is dropped.
+    //    connection_id in the body routes live output to our (live) WS.
     shellId = uuidv4();
-    const startUrl = `${sdk.GRAPH_API_PREFIX}/${sdk.ComputeNode.type}/${cnId}/terminal-command/start`;
-    await sdk.apiClient.post(startUrl, { shell_id: shellId, connection_id: manager.id, rows: 24, cols: 80 }, 60_000);
+    await sdk.apiClient.post(
+      termUrl('start'),
+      { shell_id: shellId, connection_id: manager.id, rows: 24, cols: 80 },
+      60_000,
+    );
 
-    // 2. Baseline: input echoes back over the WS.
+    // 2. Baseline: input echoes back over the WS (output path is healthy).
     await sendInput("printf 'MARK_BEFORE_OK\\n'\n");
     await waitForEcho(manager, shellId, 'MARK_BEFORE_OK', 15_000);
 
-    // 3. Restart the backend (synchronous; kills the PTY worker children).
+    // 3. Restart the backend (synchronous; kills the PTY children + clears the
+    //    in-memory PtyState). The fresh backend boots the recovery watchdog.
     execFileSync('scripts/instance_ctl.sh', ['launch', 'dev-1'], { cwd: REPO_ROOT, stdio: 'ignore' });
 
-    // 4. Wait for the SDK's connection to auto-reconnect to the fresh backend,
-    //    then re-init the compute node provider so input can route at all.
-    await vi.waitFor(
-      () => {
-        if (!manager.connected) throw new Error('ws not reconnected');
-      },
-      { timeout: 40_000, interval: 1_000 },
-    );
+    // 4. Re-init the compute node provider so the PTY can rebind on the node.
     await cn.setup();
 
-    // 5. Same shell — does input still echo? (The assertion under test.)
-    await sendInput("printf 'MARK_AFTER_OK\\n'\n");
-    await waitForEcho(manager, shellId, 'MARK_AFTER_OK', 20_000);
+    // 5. Poll attach (HTTP — no live WS required) until the watchdog has
+    //    respawned the shell. `attach` returns `reattached` only when the PTY
+    //    handle exists; after a restart it exists ONLY if `_recover_bare_shells`
+    //    rebuilt it (the client never re-`start`s here). That is the proof.
+    await vi.waitFor(
+      async () => {
+        const res: any = await attach();
+        const status = res?.content?.status;
+        if (status !== 'reattached') {
+          throw new Error(`PTY not recovered yet (status=${status ?? 'none'})`);
+        }
+      },
+      { timeout: 45_000, interval: 2_000 },
+    );
+
+    const final: any = await attach();
+    expect(final?.content?.status).toBe('reattached');
   }, 120_000);
 });
