@@ -19,7 +19,7 @@ from fastapi import APIRouter, HTTPException
 
 from flow_sdk.builtin.faas.in_process_activity import InProcessActivity
 from flow_sdk.core.network.resource_tracker import broadcast_progress
-from flow_sdk.fs_store.indexer import IndexProgressTable, TypeProgressRow
+from flow_sdk.fs_store.indexer import PROGRESS_TEXT_COMPLETE, IndexProgressTable, TypeProgressRow
 from flow_sdk.semantic_lock.runner import run_semantic_checker
 
 logger = logging.getLogger(__name__)
@@ -37,7 +37,7 @@ async def _emit(activity: InProcessActivity, *, done: int, total: int, complete:
         current=None if complete else "semantic check",
         done=done,
         total=total,
-        text="complete" if complete else None,
+        text=PROGRESS_TEXT_COMPLETE if complete else None,
         ts=datetime.now(timezone.utc).isoformat(),
     )
     await broadcast_progress(to_entity=activity.entity_id, flow_data=activity.make_flow_data())
