@@ -46,6 +46,11 @@ const ICONS = {
 /** File statuses that count as "changed since last stamp". */
 const CHANGED_FILE = new Set(['modified', 'added', 'removed']);
 
+/** Floor for fit-to-view zoom. Doc titles are 16px at scale 1; below ~0.6 they
+ *  are illegible, and a whole-repo vault would otherwise fit at ~0.01. When the
+ *  graph can't fit above this floor, fit anchors on the root card instead. */
+const MIN_FIT_SCALE = 0.65;
+
 /* ---- markdown-lite → design prose blocks ---------------------------------- */
 type ProseBlock =
   | { t: 'lead' | 'p' | 'h2'; v: string }
@@ -311,9 +316,24 @@ export function KnowledgeAtlas({ root }: { root: string }) {
     const b = layout.bounds, padX = 90, padY = 70;
     const cw = Math.max(1, b.maxX - b.minX), ch = Math.max(1, b.maxY - b.minY);
     const s = Math.min((W - padX * 2) / cw, (H - padY * 2) / ch, 1.15);
-    const tx = padX + (W - padX * 2 - cw * s) / 2 - b.minX * s;
-    const ty = padY + (H - padY * 2 - ch * s) / 2 - b.minY * s;
-    setAnimate(true); setView({ s, tx, ty });
+    let next: { s: number; tx: number; ty: number };
+    if (s >= MIN_FIT_SCALE) {
+      next = {
+        s,
+        tx: padX + (W - padX * 2 - cw * s) / 2 - b.minX * s,
+        ty: padY + (H - padY * 2 - ch * s) / 2 - b.minY * s,
+      };
+    } else {
+      // Too large to fit readably — open at the floor, root card at the left
+      // edge and vertically centered, so the view starts where the tree does.
+      const rootNode = layout.nodes.find((n) => n.type === 'root');
+      next = {
+        s: MIN_FIT_SCALE,
+        tx: padX - b.minX * MIN_FIT_SCALE,
+        ty: H / 2 - (rootNode?.cy ?? b.minY + ch / 2) * MIN_FIT_SCALE,
+      };
+    }
+    setAnimate(true); setView(next);
     setTimeout(() => setAnimate(false), 480);
   }, [layout, drawerW]);
 

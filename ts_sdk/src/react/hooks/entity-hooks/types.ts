@@ -16,6 +16,14 @@ export interface UseEntityResult<T> {
   isError: boolean;
   error: ApiError | null;
   isSuccess: boolean;
+  /**
+   * True when the backend 404'd this typeId — the entity has no local row.
+   * Distinct from a transient error (``isError``): a not-found result is
+   * terminal and won't re-fetch, so consumers can render an "unavailable"
+   * state instead of looping. A later materialization (WS / cache invalidate)
+   * clears it and re-renders with real data.
+   */
+  notFound: boolean;
   refetch: () => Promise<void>;
 }
 

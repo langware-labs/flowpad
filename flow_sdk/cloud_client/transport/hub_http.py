@@ -218,6 +218,55 @@ async def hub_get(
         return None
 
 
+# Result of a status-aware hub existence probe (see ``hub_resolve_by_typeid``):
+#   "present"       — the hub returned 200; the entity exists there.
+#   "absent"        — the hub returned a definitive 404; the entity is gone.
+#   "indeterminate" — hub not configured / unreachable / 5xx / non-hub type.
+#                     We do NOT know, so callers must treat this as "not gone"
+#                     (never destructively clean on an indeterminate result).
+HubResolveState = str  # Literal["present", "absent", "indeterminate"]
+
+
+async def hub_resolve_by_typeid(typeid: Any) -> tuple[HubResolveState, Optional[dict[str, Any]]]:
+    """Status-aware existence probe for an entity by TypeId against the hub.
+
+    Unlike ``hub_get`` (which collapses every non-200 — including a definitive
+    404 and a transient network failure — to ``None``), this distinguishes the
+    three cases callers need to make a *safe* cleanup decision:
+
+      * ``("present", data)``   — hub has it (200).
+      * ``("absent", None)``    — hub definitively does not (404).
+      * ``("indeterminate", None)`` — unknown: hub unset, unreachable, 5xx, or
+        a type the hub doesn't serve. Callers MUST treat this as "not gone".
+
+    The id-resolution / reconcile paths depend on this: "hub is down" must never
+    be mistaken for "the entity was deleted".
+    """
+    # Map the typeid's type string → BuiltinEntityType (StrEnum, keyed by value).
+    # A type the hub registry doesn't know is not hub-resolvable → indeterminate.
+    try:
+        entity_type = BuiltinEntityType(typeid.type)
+    except ValueError:
+        return ("indeterminate", None)
+
+    url = hub_graph_url(entity_type, typeid.id)
+    if not url:
+        # FLOWPAD_HUB_URL not configured — we genuinely don't know.
+        return ("indeterminate", None)
+    try:
+        async with FlowpadClient(ApiConfig.from_env()) as client:
+            resp = await client.request("GET", url, params={}, timeout=httpx.Timeout(10))
+            if resp.status_code == 200:
+                return ("present", resp.json().get("data") or {})
+            if resp.status_code == 404:
+                return ("absent", None)
+            logger.warning("[hub] resolve %s returned %s — indeterminate", url, resp.status_code)
+            return ("indeterminate", None)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[hub] resolve %s error (non-fatal, indeterminate): %s", url, e)
+        return ("indeterminate", None)
+
+
 async def hub_post(
     entity_type: BuiltinEntityType,
     payload: dict[str, Any],

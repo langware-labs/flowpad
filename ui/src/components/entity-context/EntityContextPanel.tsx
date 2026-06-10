@@ -17,6 +17,7 @@ import { DockPointer } from '@src/navigation/DockPointer';
 import { useChipPrewarm } from '@src/navigation/useChipPrewarm';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { ICON_BY_TYPE } from '../conversation/EntityChip';
+import { useReconcileContext } from '../conversation/useReconcileContext';
 
 /**
  * Single-entity context panel. Renders the entity's merged shared+private
@@ -74,6 +75,10 @@ function dockPointerFor(typeId: TypeId, assetRef?: string | null): DockPointer |
 }
 
 export function EntityContextPanel({ entity }: EntityContextPanelProps) {
+  // Prune context refs gone both locally and on the hub (backend-gated to
+  // local-origin holders). Fires once per entity.
+  useReconcileContext(entity);
+
   // Two buckets, two sections — matches the conversation panel's Shared /
   // Private split exactly.
   const sharedRows = useMemo(

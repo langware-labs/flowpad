@@ -176,6 +176,15 @@ export function FlowMessageBubble({
     fm?.created_by && isValidIdentifier(fm.created_by) ? new TypeId(User.type, fm.created_by) : null,
   );
   const { localUser, updateName } = useLocalUser();
+  // `created_by` on receiver-materialized rows is whoever ran the local sync
+  // (the recipient), not the author. A creator that resolves to the LOCAL
+  // user on a message the local user didn't send is exactly that artifact —
+  // never a sender signal, so the creator cushion must not surface it (it
+  // rendered received messages as authored by the recipient's own profile
+  // name, e.g. the local git user.name).
+  const creatorIsLocalArtifact = !!(
+    creator?.id && localUser?.id && creator.id === localUser.id && fm?.sender_id !== localUser.id
+  );
   const { navigation } = useDockNavigation();
   const [overrideName, setOverrideName] = useState<string | null>(null);
   // The single attachment surface: per-file chip state + url, the live progress
@@ -236,7 +245,7 @@ export function FlowMessageBubble({
     !participantLabelByUserId(participants, fm.sender_id) &&
     !(localUser?.id && fm.sender_id === localUser.id) &&
     !fm.sender_name?.trim() &&
-    !(creator?.name?.trim() || creator?.email?.trim())
+    (creatorIsLocalArtifact || !(creator?.name?.trim() || creator?.email?.trim()))
       ? fm.sender_id
       : null;
   useEffect(() => {
@@ -271,7 +280,9 @@ export function FlowMessageBubble({
   }
 
   const isCurrentUser = !!(fm.sender_id && localUser?.id && fm.sender_id === localUser.id);
-  const creatorLabel = creator?.name?.trim() || creator?.email?.trim() || null;
+  const creatorLabel = creatorIsLocalArtifact
+    ? null
+    : creator?.name?.trim() || creator?.email?.trim() || null;
   // Identity is hub-authoritative — but the bubble must NOT flash the alert
   // glyph on legitimate gaps (cold-load before roster fetch returns,
   // departed members, cross-instance bundle imports). Tiered chain:
