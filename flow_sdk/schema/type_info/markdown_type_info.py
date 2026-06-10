@@ -7,6 +7,20 @@ from flow_sdk.fs_store.indexer.functions.markdown import (
 )
 from flow_sdk.fs_store.operations.markdown import reconcile_folder_doc_edges
 
+
+def _markdown_default_body(entity) -> str:
+    """Markdown written to docs/<name>.md on create.
+
+    Mirrors Skill/Agent/Workflow: without a default-body writer, create persists
+    the entity + asset_ref but never materializes the .md, so opening the brand-new
+    doc hits a missing file. ``owns_main_ref`` is False, so this only writes when
+    the file is absent (``upsert_main_ref``) — it never clobbers hand edits. Title
+    is carried by the filename stem, so a bare heading round-trips cleanly.
+    """
+    name = (getattr(entity, "title", None) or getattr(entity, "name", None) or "Untitled").strip()
+    return f"# {name}\n"
+
+
 MARKDOWN = TypeMetadata(
     type=EntityType.MARKDOWN,
     icon="BookOpen",
@@ -19,4 +33,5 @@ MARKDOWN = TypeMetadata(
     from_disk_fn=extract_markdown,
     gen_id_fn=markdown_gen_id,
     post_sync_fn=reconcile_folder_doc_edges,
+    default_body_fn=_markdown_default_body,
 )

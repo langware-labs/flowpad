@@ -6,6 +6,24 @@ from flow_sdk.fs_store.indexer.functions.agent import (
     extract_agent,
 )
 
+
+def _agent_default_body(entity) -> str:
+    """Agent .md written to the agent's main_ref on create.
+
+    Mirrors Skill/Workflow/Spec: without a default-body writer, create persists
+    the entity + asset_ref but never materializes the backing .md, leaving a
+    dangling pointer the editor reports as "file not found". Frontmatter shape
+    (name/description) is what ``parse_agent_markdown`` reads back; the body is
+    the agent's system prompt.
+    """
+    from flow_sdk.fs_store.indexer._frontmatter import _render_frontmatter  # noqa: PLC0415
+
+    name = (getattr(entity, "name", None) or "Untitled Agent").strip()
+    desc = (getattr(entity, "description", None) or "").strip()
+    prompt = (getattr(entity, "prompt", None) or "").strip()
+    return _render_frontmatter({"name": name, "description": desc}) + f"\n\n{prompt}\n"
+
+
 AGENT = TypeMetadata(
     type=EntityType.AGENT,
     from_disk_fn=extract_agent,
@@ -17,4 +35,5 @@ AGENT = TypeMetadata(
     icon="Bot",
     index_fields=["description"],
     main_subdir=".claude/agents",
+    default_body_fn=_agent_default_body,
 )
