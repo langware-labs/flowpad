@@ -30,7 +30,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import './milkdown.css';
 import { planNotePlugins } from './plan-note-plugin';
 import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
-import { extractPlanTitle, planSpecShareSource } from '@src/hooks/share-sources';
+import { fileShareSource, genericEntityShareSource } from '@src/hooks/share-sources';
 
 function parseFrontmatter(raw: string): { executed: boolean; body: string } {
   const m = raw.match(/^---\n([\s\S]*?)\n---\n?([\s\S]*)$/);
@@ -76,16 +76,15 @@ const PlanFileEditor: React.FC = () => {
   // State
   const [isExecuting, setIsExecuting] = useState(false);
   const [showShareDialog, setShowShareDialog] = useState(false);
-  // Stable source while the dialog is open so a retry reuses the same Spec/Task.
+  // Share the plan like any other entity: the .md file rides as a FILE
+  // attachment. No Spec/Task is minted. Stable while the dialog is open.
   const shareSource = useMemo(
     () =>
-      planSpecShareSource({
-        title: extractPlanTitle(fileContent, filePath),
-        content: fileContent,
-        processId: agenticProcess?.id ?? null,
-      }),
+      computeNodeTypeId && filePath
+        ? fileShareSource({ computeNodeTypeId, absPath: filePath })
+        : null,
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [showShareDialog, filePath],
+    [showShareDialog, filePath, computeNodeTypeId?.id],
   );
 
   // Bookmark state for this plan file
@@ -249,16 +248,16 @@ const PlanFileEditor: React.FC = () => {
             Update Plan
           </Button>
 
-          {/* Share as Task */}
+          {/* Share — the plan file rides as a plain file attachment */}
           <Button
             size="sm"
             variant="outline"
-            disabled={isExecuting}
+            disabled={isExecuting || !computeNodeTypeId || !filePath}
             onClick={() => setShowShareDialog(true)}
-            title="Package this plan as a spec and share it as a task with someone"
+            title="Share this plan with someone"
           >
             <Send className="mr-2 h-4 w-4" />
-            Share as Task
+            Share
           </Button>
 
           {/* Cancel */}
@@ -286,11 +285,13 @@ const PlanFileEditor: React.FC = () => {
         </div>
       </div>
 
-      <ShareToConversationDialog
-        open={showShareDialog}
-        onClose={() => setShowShareDialog(false)}
-        source={shareSource}
-      />
+      {shareSource && (
+        <ShareToConversationDialog
+          open={showShareDialog}
+          onClose={() => setShowShareDialog(false)}
+          source={shareSource}
+        />
+      )}
 
       {/* Editor body */}
       <div className="min-h-0 flex-1 overflow-auto">
@@ -348,6 +349,14 @@ const SpecEntityEditor: React.FC = () => {
   const [showShareDialog, setShowShareDialog] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
+  // Share the spec like any other entity — it rides as a TYPE_ID attachment.
+  // No Task is minted. Stable while the dialog is open (resolve-once reset).
+  const shareSource = useMemo(
+    () => (specTypeId ? genericEntityShareSource(specTypeId, { typeLabel: 'PLAN' }) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [showShareDialog, specTypeId?.id],
+  );
+
   const isDirty = !!spec && localContent != null && localContent !== spec.content;
 
   const handleSave = useCallback(async () => {
@@ -379,10 +388,6 @@ const SpecEntityEditor: React.FC = () => {
   }
 
   const chatTarget = specTypeId?.toString() ?? null;
-  // SendPlanNotificationDialog keys off the file path for the title fallback
-  // and the .flowmsg filename. A spec entity has no file, so we synthesise
-  // one from its title — title-derived names are still meaningful to humans.
-  const syntheticPath = `${(spec.title ?? 'spec').replace(/[^a-zA-Z0-9-_ ]/g, '').trim() || 'spec'}.md`;
 
   return (
     <div className="relative flex h-full flex-col">
@@ -406,10 +411,10 @@ const SpecEntityEditor: React.FC = () => {
             size="sm"
             variant="outline"
             onClick={() => setShowShareDialog(true)}
-            title="Package this spec as a task and share it with someone"
+            title="Share this plan with someone"
           >
             <Send className="mr-2 h-4 w-4" />
-            Share as Task
+            Share
           </Button>
 
           <Button
@@ -424,15 +429,13 @@ const SpecEntityEditor: React.FC = () => {
         </div>
       </div>
 
-      <ShareToConversationDialog
-        open={showShareDialog}
-        onClose={() => setShowShareDialog(false)}
-        source={planSpecShareSource({
-          title: extractPlanTitle(localContent ?? spec.content ?? '', syntheticPath),
-          content: localContent ?? spec.content ?? '',
-          processId: null,
-        })}
-      />
+      {shareSource && (
+        <ShareToConversationDialog
+          open={showShareDialog}
+          onClose={() => setShowShareDialog(false)}
+          source={shareSource}
+        />
+      )}
 
       <div className="min-h-0 flex-1">
         <EditorWithSidePanel chatTarget={chatTarget}>
