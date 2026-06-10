@@ -18,6 +18,7 @@ import { useTaskMutations } from '@src/hooks/use-task-mutations';
 import { useProjectList } from '@src/hooks/use-claude-projects';
 import { useGlobalSearchScope } from '@src/hooks/use-global-search-scope';
 import { useSnifferContext } from '@src/contexts/SnifferContext';
+import { AdvancedOnly } from '@src/components/view-toggle/AdvancedOnly';
 import { useCollaborationRooms } from '@src/hooks/useCollaborationRooms';
 import { useProjects } from '@src/hooks/use-projects';
 import { useActAccordingToClassification } from '@src/hooks/use-act-according-to-classification';
@@ -508,9 +509,9 @@ export function HomeLanding() {
     <div className="flex h-full flex-col overflow-hidden">
       {/* Top row: UsageBar + Search */}
       <div className="flex shrink-0 items-center gap-2 p-4">
-        <div className="w-72 shrink-0">
+        <AdvancedOnly className="w-72 shrink-0">
           <UsageBar />
-        </div>
+        </AdvancedOnly>
         <div className="flex-1" />
         <div className="relative w-72 shrink-0">
           <RecordSearchBar
@@ -692,10 +693,11 @@ export function HomeLanding() {
             <NotificationFeed />
           </div>
 
-          {/* Event Sniffer chip - aligned to bottom of side columns */}
-          <div className="mt-auto w-full max-w-3xl shrink-0 self-center">
+          {/* Event Sniffer chip (trace heartbeat), aligned to bottom of side
+              columns — Advanced-only, hidden in Standard to tune down UI. */}
+          <AdvancedOnly className="mt-auto w-full max-w-3xl shrink-0 self-center">
             <EventSnifferChip />
-          </div>
+          </AdvancedOnly>
         </div>
 
         {/* Right column: Recent conversations */}
