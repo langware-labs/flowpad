@@ -45,12 +45,12 @@ const mainNavItems = [
   { title: 'Shell', icon: Terminal, viewType: ViewType.SHELL },
   // { title: 'Execute Flow', icon: PlaySquare, viewType: ViewType.EXECUTE_FLOW },
   { title: 'Assets', icon: BookOpen, viewType: ViewType.ASSETS },
-  { title: 'Triggers', icon: Zap, viewType: ViewType.TRIGGERS },
-  { title: 'Capabilities', icon: BadgeCheck, viewType: ViewType.CAPABILITIES },
 ] as const;
 
 const secondaryNavItems = [
   // { title: 'Editor', icon: Code, viewType: ViewType.EDITOR },
+  { title: 'Triggers', icon: Zap, viewType: ViewType.TRIGGERS },
+  { title: 'Capabilities', icon: BadgeCheck, viewType: ViewType.CAPABILITIES },
   { title: 'Hooks', icon: Webhook, viewType: ViewType.HOOKS },
   // { title: 'Environment', icon: Variable, viewType: ViewType.ENVIRONMENT },
   { title: 'Files', icon: FolderOpen, viewType: ViewType.EXPLORER },
