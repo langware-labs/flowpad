@@ -18,7 +18,7 @@ import { useTaskMutations } from '@src/hooks/use-task-mutations';
 import { useProjectList } from '@src/hooks/use-claude-projects';
 import { useGlobalSearchScope } from '@src/hooks/use-global-search-scope';
 import { useSnifferContext } from '@src/contexts/SnifferContext';
-import { AdvancedOnly } from '@src/components/view-toggle/AdvancedOnly';
+import { AdvancedOnly } from '@src/components/view-mode';
 import { useCollaborationRooms } from '@src/hooks/useCollaborationRooms';
 import { useProjects } from '@src/hooks/use-projects';
 import { useActAccordingToClassification } from '@src/hooks/use-act-according-to-classification';

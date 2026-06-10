@@ -13,7 +13,10 @@ import { hasWorkerStarted, ProcessStatus, WorkerStatus } from '@sdk/process/agen
 import { ClaudeSessionRecord } from '@sdk/resource_management/fs_records/claude/claude-session.js';
 import { CommitMergeButton, OpenInWorktreeButton } from './WorktreeButtons';
 import { EntityActionsToolbar } from '@src/components/entity-actions/EntityActionsToolbar';
+import { ExportEntityButton } from '@src/components/entity-actions/ExportEntityButton';
 import { AssetManagerButton } from '@src/components/asset-manager';
+import { ViewSwap } from '@src/components/view-mode';
+import { AdvancedInteractiveTabHeader, StandardInteractiveTabHeader } from './InteractiveTabHeader';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import {
@@ -165,11 +168,9 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
   const setTrace = (key: keyof TraceFilters) => (val: boolean) =>
     onTraceFiltersChange({ ...traceFilters, [key]: val });
 
-  return (
-    <TooltipProvider delayDuration={300}>
-      <div data-testid="process-toolbar" className="flex items-center gap-0.5 border-b bg-muted/30 px-2 py-1">
-
-        {/* CLI Options dropdown */}
+  const debugSlot = (
+    <>
+      {/* CLI Options dropdown */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
@@ -305,8 +306,11 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+    </>
+  );
 
-        {/* Restart — top-left, glows when backend signals process.restart_required */}
+  // Restart — top-left, glows when backend signals process.restart_required
+  const restartSlot = (
         <Tooltip>
           <TooltipTrigger asChild>
             <span className="inline-flex" style={(!started || isRestarting) ? { pointerEvents: 'auto' } : undefined}>
@@ -335,23 +339,25 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
               : 'Restart session'}
           </TooltipContent>
         </Tooltip>
+  );
 
-        {/* Spacer (left) */}
-        <div className="flex-1" />
+  // Primary CTAs — Share + Bookmark (favorite). Download lives in the right
+  // toolbar (downloadSlot), not here.
+  const centerSlot = !embedded && (
+    <EntityActionsToolbar
+      typeId={process.typeId}
+      favoriteTitle={processDisplayName}
+      favoriteIcon="agentic_process"
+      variant="prominent"
+    />
+  );
 
-        {/* Primary CTAs — Share + Favorite, centered as the strongest CTA. */}
-        {!embedded && (
-          <EntityActionsToolbar
-            typeId={process.typeId}
-            favoriteTitle={processDisplayName}
-            favoriteIcon="agentic_process"
-            variant="prominent"
-          />
-        )}
+  const downloadSlot = !embedded && (
+    <ExportEntityButton typeId={process.typeId} defaultTitle={processDisplayName} />
+  );
 
-        {/* Spacer (right) */}
-        <div className="flex-1" />
-
+  const rightSlot = (
+    <>
         {/* Reusable asset manager — same component the chat side panel uses. */}
         <AssetManagerButton process={process} />
 
@@ -421,8 +427,29 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
             onClick={onClose}
           />
         )}
+    </>
+  );
 
-      </div>
+  const advancedHeader = (
+    <AdvancedInteractiveTabHeader
+      debug={debugSlot}
+      restart={restartSlot}
+      center={centerSlot}
+      download={downloadSlot}
+      right={rightSlot}
+    />
+  );
+
+  return (
+    <TooltipProvider delayDuration={300}>
+      {/* Embedded keeps the full layout; non-embedded swaps Standard/Advanced by
+          the global View mode. Skin layer: same slots, different arrangement. */}
+      {embedded ? advancedHeader : (
+        <ViewSwap
+          advanced={advancedHeader}
+          standard={<StandardInteractiveTabHeader center={centerSlot} />}
+        />
+      )}
 
       <PTYViewer open={showPtyViewer} onClose={() => setShowPtyViewer(false)} shell={shell ?? null} />
       <PTYEventsViewer open={showPtyEventsViewer} onClose={() => setShowPtyEventsViewer(false)} shell={shell ?? null} />
