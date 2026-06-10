@@ -215,7 +215,12 @@ export class QueryFilter extends ExpansionRequest {
         return this.isValid(data, operands, greaterThanOperator, true);
       }
       case '$LIKE': {
-        const greaterThanOperator = (a: any, b: any) => new RegExp(a, 'i').test(b);
+        // Mirror the SQL driver's ``field LIKE %value%``: case-insensitive
+        // substring of the FIELD value. (Was a regex built from the field and
+        // tested against the query — backwards, and regex metachars in either
+        // side could throw or mismatch live data_op re-validation vs SQL.)
+        const greaterThanOperator = (a: any, b: any) =>
+          String(a ?? '').toLowerCase().includes(String(b ?? '').toLowerCase());
         return this.isValid(data, operands, greaterThanOperator);
       }
       // Loose null-check on purpose: an unset field is `undefined` on the
