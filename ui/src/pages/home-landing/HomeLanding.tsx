@@ -44,11 +44,9 @@ import { SearchFilters, SearchResult } from '@src/hooks/use-record-search';
 import { navigateToResult } from '@src/navigation/record-type-nav';
 import { InlineSearchResults } from './InlineSearchResults';
 import { Feed } from './Feed';
-import { PackageSearch, X, CheckCircle2, Hammer, Inbox, RefreshCw, Users } from 'lucide-react';
+import { PackageSearch, X, CheckCircle2, Hammer, Users } from 'lucide-react';
 import { useInboxStore } from '@src/store/use-inbox-store';
 import { listInboxMessages } from '@src/components/inbox-view/inbox-api';
-import { fetchConversations } from '@sdk';
-import { ViewType } from '@src/types/ViewType';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDevMode } from '@src/contexts/dev-mode-context';
 import type { LastScanResult } from '@sdk';
@@ -223,23 +221,14 @@ export function HomeLanding() {
     clearPending();
   }, [clearPending, isPostLogin, pendingAction?.action]);
 
-  // Inbox state
-  const { unreadCount, setUnreadCount } = useInboxStore();
-  const [inboxRefreshing, setInboxRefreshing] = useState(false);
+  // Inbox unread count — populates the shared store consumed by the sidebar
+  // Inbox badge. The home Inbox row was removed; the Recent conversations strip
+  // (now labelled "Inbox") is the home inbox surface and has its own refresh.
+  const { setUnreadCount } = useInboxStore();
   useEffect(() => {
     void listInboxMessages().then((msgs) => setUnreadCount(msgs.filter((m) => !m.is_read).length));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const handleInboxRefresh = useCallback(async () => {
-    setInboxRefreshing(true);
-    try {
-      await fetchConversations();
-      const msgs = await listInboxMessages();
-      setUnreadCount(msgs.filter((m) => !m.is_read).length);
-    } finally {
-      setInboxRefreshing(false);
-    }
-  }, [setUnreadCount]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFilters, setSearchFilters] = useState<SearchFilters>({});
@@ -535,37 +524,11 @@ export function HomeLanding() {
 
       {/* Main row: Sidebar + Content */}
       <div className="flex min-h-0 flex-1 gap-6 px-4 pb-4">
-        {/* Left column: Inbox header + Bookmarks */}
+        {/* Left column: Bookmarks / Todos */}
         <div className="w-72 shrink-0 flex flex-col gap-2">
-          {/* Inbox icon row — same box model as the Recent conversations strip header so both columns share an invisible top line */}
-          <div className="flex h-9 items-center justify-between rounded-lg border border-transparent px-3">
-            <button
-              className="flex items-center gap-1.5 rounded-md py-1 text-xs font-medium hover:bg-accent transition-colors"
-              onClick={() => navigation.openTab(ViewType.INBOX)}
-            >
-              <div className="relative">
-                <Inbox className="h-3.5 w-3.5 text-muted-foreground" />
-                {unreadCount > 0 && (
-                  <span className="absolute -right-1.5 -top-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-destructive px-0.5 text-[8px] font-bold leading-none text-destructive-foreground">
-                    {unreadCount > 99 ? '99+' : unreadCount}
-                  </span>
-                )}
-              </div>
-              <span className="text-muted-foreground hover:text-foreground transition-colors">Inbox</span>
-              {unreadCount > 0 && (
-                <span className="text-muted-foreground">({unreadCount})</span>
-              )}
-            </button>
-            <button
-              type="button"
-              className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
-              onClick={() => void handleInboxRefresh()}
-              disabled={inboxRefreshing}
-              title="Fetch new messages from hub"
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${inboxRefreshing ? 'animate-spin' : ''}`} />
-            </button>
-          </div>
+          {/* Top spacer — mirrors the Inbox strip header height (h-9) so
+              Bookmarks/Todos stay aligned with the Inbox column on the right. */}
+          <div aria-hidden className="h-9 shrink-0" />
 
           <BookmarkColumn
             learningTasks={learningTasks}
