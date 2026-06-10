@@ -376,15 +376,26 @@ class FSIndexer:
         t0 = time.perf_counter()
         on_progress = opts.on_progress
 
-        # Inner scan suppresses its own progress emission — we drive the
-        # whole index activity from this method's snapshot loop.
+        # Discovery drives the SAME activity: forward the scan's per-type
+        # snapshots (counts ticking up, totals unknown) so the UI renders the
+        # by-type table immediately instead of staring at a frozen pill for the
+        # whole walk. Drop scan's terminal "complete" event — the activity is
+        # only done after the per-record index loop below, not after discovery —
+        # otherwise InProcessActivity.is_complete would latch on scan's
+        # text="complete" and the run would look finished before it indexed a
+        # single record.
+        async def _forward_scan(table: IndexProgressTable) -> None:
+            if on_progress is None or table.text == "complete":
+                return
+            await on_progress(table)
+
         scan_opts = IndexerOptions(
             verbose=opts.verbose,
             limit=opts.limit,
             limit_per_type=opts.limit_per_type,
             include_temp=opts.include_temp,
             types=opts.types,
-            on_progress=None,
+            on_progress=_forward_scan,
             roots=opts.roots,
             gitignore=opts.gitignore,
             project_id=opts.project_id,
@@ -992,7 +1003,12 @@ class FSIndexer:
 
         def make_table(text: str | None = None) -> IndexProgressTable:
             rows = [
-                TypeProgressRow(type_name=str(rt), done=count, total=count)
+                # total=0: during discovery the per-type total is unknown — the
+                # running count IS the total-so-far — so the UI shows a growing
+                # count with no percentage, consistent with the table-level
+                # total=0 below. Locked-in totals (done/total + %) arrive once
+                # index() enters its per-record loop.
+                TypeProgressRow(type_name=str(rt), done=count, total=0)
                 for rt, count in per_type_counts.items()
                 if rt not in _PROGRESS_HIDDEN_TYPES
             ]
