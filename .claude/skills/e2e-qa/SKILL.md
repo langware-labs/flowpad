@@ -290,7 +290,45 @@ cd ui && npm run test:vitest:long
 - Backend must be running (you own it — restart if needed).
 - **Gate**: all tests pass → proceed to Phase 8
 
-### Phase 8 — Playwright `.md.ts` sweep
+### Phase 8 — pytest hub tests (hub + instances required)
+
+1. **Hub preflight**: `set -a; source .env.local; set +a` then check `curl -sf ${FLOWPAD_HUB_URL:-http://localhost:8093}/api/v1/health/status`.
+   - If down: start the hub autonomously from the FlowPad checkout at the sibling checkout `../test_flowpad/FlowPad/` (run via `flowpad/run.py`, detached, output to a log file), then seed test users via `ops/scripts/setup_test_users.sh` in that checkout, then re-check health.
+   - Still down (e.g., its Neo4j Desktop DB isn't running) → mark Phases 8 **and** 9 `flagged` (reason: hub infra unavailable, evidence: startup log excerpt) and continue to Phase 10.
+2. **Instances**: check `scripts/instance_ctl.sh status` first — **reuse any instance that is already UP** (do not relaunch it; `launch` kills an existing instance before starting, so re-launching a healthy one is a needless restart). Launch only what's missing via `scripts/instance_ctl.sh launch <name>`; if an instance goes unhealthy mid-phase, restart it with `kill <name>` + `launch <name>`.
+3. **Run**:
+   ```bash
+   FLOWPAD_HUB_URL=${FLOWPAD_HUB_URL:-http://localhost:8093} python -m pytest tests/hub_tests -v
+   ```
+4. **Auto-skips count as failures.** `tests/hub_tests/conftest.py` silently skips when the hub is unreachable or credentials are invalid. A skipped-for-infra test is NOT a pass — remediate (restart hub, re-seed users via `setup_test_users.sh`) and re-run. Zero hub-infra skips allowed in a clear pass.
+5. **On failure**: existing [Debug Mode](#debug-mode) flow; unresolvable → `flagged`.
+6. **Cleanup (always, even when flagging)**: `scripts/instance_ctl.sh kill <name>` for every instance THIS phase launched. Do not kill instances you didn't launch; leave the hub running for Phase 9.
+- **Gate**: all tests pass (or flagged) → proceed to Phase 9.
+
+### Phase 9 — vitest hub tests (hub + dev-1/dev-2 required)
+
+1. **Hub preflight**: same as Phase 8 (reuse its result if the hub is already up and healthy).
+2. **Instances**: the suite expects the fixed names **dev-1** and **dev-2** (`ui/tests/hub/_instances.ts`). Check first, reuse if already UP — launch only what's missing (`launch` restarts an existing instance, so don't run it against a healthy one):
+   ```bash
+   scripts/instance_ctl.sh status            # see what's already UP
+   scripts/instance_ctl.sh launch dev-1      # only if dev-1 is not UP
+   scripts/instance_ctl.sh launch dev-2      # only if dev-2 is not UP
+   scripts/instance_ctl.sh status            # wait until both report UP
+   ```
+3. **Run**:
+   ```bash
+   cd ui && npm run test:vitest:hub
+   ```
+4. **On failure**: [Debug Mode](#debug-mode) flow. Restart instances between re-runs as needed (`kill` + `launch`). The suite's 30s test timeouts are a hard cap — never raise them. Unresolvable → `flagged`.
+5. **Cleanup (always, even when flagging)**: kill only the instances THIS phase launched:
+   ```bash
+   scripts/instance_ctl.sh kill dev-1   # only if Phase 9 launched it
+   scripts/instance_ctl.sh kill dev-2   # only if Phase 9 launched it
+   ```
+   Instances that were already running before the phase started belong to the user's setup — leave them up, and leave the hub running.
+- **Gate**: all tests pass (or flagged) → proceed to Phase 10.
+
+### Phase 10 — Playwright `.md.ts` sweep
 
 A fast, deterministic pass/fail sweep of every `.md.ts` Playwright test. **No team, no debugging, no fixes** — the manager runs it directly and records results. That's it.
 
@@ -300,28 +338,28 @@ A fast, deterministic pass/fail sweep of every `.md.ts` Playwright test. **No te
    curl -s -X POST http://localhost:${LOCAL_SERVER_PORT}/api/v1/graph/compute_node/@local/desktop-db/clear
 
    cd ui && VITE_PORT=${VITE_PORT} \
-     PLAYWRIGHT_JSON_OUTPUT_NAME=<abs-results-dir>/<timestamp>/phase8--<category>.json \
+     PLAYWRIGHT_JSON_OUTPUT_NAME=<abs-results-dir>/<timestamp>/phase10--<category>.json \
      npx playwright test --config tests/manual_regression/<category>/playwright.config.ts --reporter=json
    ```
-3. Parse each `phase8--<category>.json` and aggregate into `<output-dir>/<timestamp>/phase8-summary.json`:
+3. Parse each `phase10--<category>.json` and aggregate into `<output-dir>/<timestamp>/phase10-summary.json`:
    - one entry per test: `{ category, file, test_title, status, duration_ms, error_excerpt }`
 4. Print the per-test pass/fail table:
    ```
-   Phase 8 — Playwright sweep
-   ──────────────────────────
+   Phase 10 — Playwright sweep
+   ───────────────────────────
    <category>/<file> :: <test title>   PASS|FAIL  (Xs)
    ...
    Total: N tests — N passed, N failed
    ```
-- **Do not debug or fix anything in this phase.** Failures are recorded and become Phase 9's work list.
-- **Gate**: Phase 8 never blocks — it always proceeds to Phase 9 with its failure list. (If Phase 8 has zero failures AND the test index shows no `.md`-only scenarios, Phase 9 is a no-op.)
+- **Do not debug or fix anything in this phase.** Failures are recorded and become Phase 11's work list.
+- **Gate**: Phase 10 never blocks — it always proceeds to Phase 11 with its failure list. (If Phase 10 has zero failures AND the test index shows no `.md`-only scenarios, Phase 11 is a no-op.)
 
-### Phase 9 — agentic remediation (full `.md` scenarios)
+### Phase 11 — agentic remediation (full `.md` scenarios)
 
 Team-based agentic phase using the full methodology — [Run Mode](#run-mode) steps 1–12, [Debug Mode](#debug-mode) lifecycle, up to 3 qa-testers with the per-test tab protocol.
 
-**Scope** (from `phase8-summary.json` + the test index):
-- (a) every scenario with a **failing `.md.ts`** in Phase 8
+**Scope** (from `phase10-summary.json` + the test index):
+- (a) every scenario with a **failing `.md.ts`** in Phase 10
 - (b) every `.md` scenario that has **no `.md.ts`** at all
 
 **Per scenario, three sub-goals — in order, all required:**
@@ -340,45 +378,7 @@ Team-based agentic phase using the full methodology — [Run Mode](#run-mode) st
   This backs up and wipes the DB + FTS index so each scenario starts from a clean bootstrap state.
 - A scenario's task is complete only when all three sub-goals hold (`.md` ✓ AND `.md.ts` ✓ stable).
 - Max 2 fix→re-validate retries per scenario (existing Run Mode rule), then `flagged`.
-- **Gate**: every in-scope scenario is `resolved` or `flagged` → proceed to Phase 10.
-
-### Phase 10 — pytest hub tests (hub + instances required)
-
-1. **Hub preflight**: `set -a; source .env.local; set +a` then check `curl -sf ${FLOWPAD_HUB_URL:-http://localhost:8093}/api/v1/health/status`.
-   - If down: start the hub autonomously from the FlowPad checkout at the sibling checkout `../test_flowpad/FlowPad/` (run via `flowpad/run.py`, detached, output to a log file), then seed test users via `ops/scripts/setup_test_users.sh` in that checkout, then re-check health.
-   - Still down (e.g., its Neo4j Desktop DB isn't running) → mark Phases 10 **and** 11 `flagged` (reason: hub infra unavailable, evidence: startup log excerpt) and continue to the summary.
-2. **Instances**: check `scripts/instance_ctl.sh status` first — **reuse any instance that is already UP** (do not relaunch it; `launch` kills an existing instance before starting, so re-launching a healthy one is a needless restart). Launch only what's missing via `scripts/instance_ctl.sh launch <name>`; if an instance goes unhealthy mid-phase, restart it with `kill <name>` + `launch <name>`.
-3. **Run**:
-   ```bash
-   FLOWPAD_HUB_URL=${FLOWPAD_HUB_URL:-http://localhost:8093} python -m pytest tests/hub_tests -v
-   ```
-4. **Auto-skips count as failures.** `tests/hub_tests/conftest.py` silently skips when the hub is unreachable or credentials are invalid. A skipped-for-infra test is NOT a pass — remediate (restart hub, re-seed users via `setup_test_users.sh`) and re-run. Zero hub-infra skips allowed in a clear pass.
-5. **On failure**: existing [Debug Mode](#debug-mode) flow; unresolvable → `flagged`.
-6. **Cleanup (always, even when flagging)**: `scripts/instance_ctl.sh kill <name>` for every instance THIS phase launched. Do not kill instances you didn't launch; leave the hub running for Phase 11.
-- **Gate**: all tests pass (or flagged) → proceed to Phase 11.
-
-### Phase 11 — vitest hub tests (hub + dev-1/dev-2 required)
-
-1. **Hub preflight**: same as Phase 10 (reuse its result if the hub is already up and healthy).
-2. **Instances**: the suite expects the fixed names **dev-1** and **dev-2** (`ui/tests/hub/_instances.ts`). Check first, reuse if already UP — launch only what's missing (`launch` restarts an existing instance, so don't run it against a healthy one):
-   ```bash
-   scripts/instance_ctl.sh status            # see what's already UP
-   scripts/instance_ctl.sh launch dev-1      # only if dev-1 is not UP
-   scripts/instance_ctl.sh launch dev-2      # only if dev-2 is not UP
-   scripts/instance_ctl.sh status            # wait until both report UP
-   ```
-3. **Run**:
-   ```bash
-   cd ui && npm run test:vitest:hub
-   ```
-4. **On failure**: [Debug Mode](#debug-mode) flow. Restart instances between re-runs as needed (`kill` + `launch`). The suite's 30s test timeouts are a hard cap — never raise them. Unresolvable → `flagged`.
-5. **Cleanup (always, even when flagging)**: kill only the instances THIS phase launched:
-   ```bash
-   scripts/instance_ctl.sh kill dev-1   # only if Phase 11 launched it
-   scripts/instance_ctl.sh kill dev-2   # only if Phase 11 launched it
-   ```
-   Instances that were already running before the phase started belong to the user's setup — leave them up, and leave the hub running.
-- **Gate**: all tests pass (or flagged) → print the QA Cycle Summary.
+- **Gate**: every in-scope scenario is `resolved` or `flagged` → print the QA Cycle Summary.
 
 ---
 
@@ -396,10 +396,10 @@ Phase 4  (vitest unit):       PASS — N tests
 Phase 5  (vitest api):        PASS — N tests
 Phase 6  (vitest react):      PASS — N tests
 Phase 7  (vitest long):       PASS — N tests
-Phase 8  (playwright md.ts):  N passed / N failed → Phase 9
-Phase 9  (agentic md+md.ts):  PASS — N scenarios (N flagged)
-Phase 10 (pytest hub):        PASS — N tests (N flagged)
-Phase 11 (vitest hub):        PASS — N tests (N flagged)
+Phase 8  (pytest hub):        PASS — N tests (N flagged)
+Phase 9  (vitest hub):        PASS — N tests (N flagged)
+Phase 10 (playwright md.ts):  N passed / N failed → Phase 11
+Phase 11 (agentic md+md.ts):  PASS — N scenarios (N flagged)
 
 Total fixes applied: N
 New .md.ts authored: N
@@ -713,8 +713,8 @@ Inject at `<!-- REPORT_DATA -->`:
 _results/
   2026-03-04T10-30-00/
     cycle-state.md                 ← durable orchestration ledger (phase, dispositions, owners, locks)
-    phase8--chat.json              ← raw Playwright JSON reporter output, per category
-    phase8-summary.json            ← aggregated per-test pass/fail list (Phase 9's work list)
+    phase10--chat.json             ← raw Playwright JSON reporter output, per category
+    phase10-summary.json           ← aggregated per-test pass/fail list (Phase 11's work list)
     chat--chat_input_controls.json
     terminal--run_basic_command.json
     flagged.md                     ← senior-dev-review queue (Autonomous Run Policy)
