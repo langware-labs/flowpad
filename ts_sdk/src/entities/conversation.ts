@@ -443,6 +443,19 @@ export async function archiveConversation(
   return res!;
 }
 
+/** Conversation-level unarchive: clears ``archived_at`` (back to null). The
+ *  manual inverse of archive — the same effect the auto-revive achieves when a
+ *  newer FlowMessage arrives. Local-only, like archive (the hub never sees
+ *  ``archived_at``). */
+export async function unarchiveConversation(
+  params: ArchiveConversationParams,
+): Promise<ArchiveConversationResult> {
+  const action = new ActionInfo('conversation-unarchive', null, null, 'POST');
+  action.bodyParameters = params;
+  const res = await dataManager.callAction<ArchiveConversationParams, ArchiveConversationResult>(action);
+  return res!;
+}
+
 /** Archive every conversation that isn't already archived. Skips already-
  *  archived rows server-side, so it stays cheap on repeat clicks. */
 export async function archiveAllConversations(): Promise<ArchiveAllConversationsResult> {

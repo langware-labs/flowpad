@@ -501,6 +501,30 @@ async def handle_conversation_archive(
     })
 
 
+async def handle_conversation_unarchive(
+    conversation_id: str, someone_typeid: str
+) -> ApiResponse:
+    """Clear ``Conversation.archived_at`` (back to ``None``).
+
+    The manual inverse of :func:`handle_conversation_archive` — the same effect
+    the auto-revive achieves when a newer FlowMessage arrives. Local-only (the
+    hub never sees ``archived_at``). Idempotent: unarchiving a non-archived row
+    re-stamps ``None``, which is harmless.
+    """
+    conversation_id = (conversation_id or "").strip()
+    if not conversation_id:
+        return ApiFailResponse(message="conversation_id required")
+    conv = await Conversation.get_one({"id": conversation_id})
+    if conv is None:
+        return ApiFailResponse(message="Conversation not found")
+    conv.archived_at = None
+    await conv.save(someone_typeid)
+    return ApiSuccessResponse(data={
+        "conversation_id": conversation_id,
+        "archived_at": None,
+    })
+
+
 async def handle_conversation_archive_all(someone_typeid: str) -> ApiResponse:
     """Stamp ``archived_at = now()`` on every Conversation that isn't
     already archived.
@@ -537,6 +561,20 @@ async def conversation_archive() -> ApiResponse:
         return await handle_conversation_archive(conv_id, request_info.someone_typeid)
     except Exception as e:
         logger.error("[flow_message_action] conversation-archive error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Failed: {e}")
+
+
+@action.post(action_name="conversation-unarchive", types=None)
+async def conversation_unarchive() -> ApiResponse:
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.someone_typeid:
+            return ApiFailResponse(message="Authentication required")
+        body = await request_info.get_post_data() or {}
+        conv_id = (body.get("conversation_id") or "").strip()
+        return await handle_conversation_unarchive(conv_id, request_info.someone_typeid)
+    except Exception as e:
+        logger.error("[flow_message_action] conversation-unarchive error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Failed: {e}")
 
 

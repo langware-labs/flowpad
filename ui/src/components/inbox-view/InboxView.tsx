@@ -1,12 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Archive, CheckSquare, Inbox as InboxIcon, LifeBuoy, MailPlus, RefreshCw, Search, SquarePen, Trash2, X } from 'lucide-react';
+import { Archive, Inbox as InboxIcon, LifeBuoy, MailPlus, RefreshCw, Search, SquarePen, Trash2, X } from 'lucide-react';
 import { notify } from '@src/notifications';
 import { NewConversationDialog } from '@src/components/new-conversation-dialog/NewConversationDialog';
 import {
   Conversation,
-  ConversationKind,
   FlowMessage,
-  FlowMessageKind,
   Invitation,
   QueryRequest,
   Task,
@@ -22,12 +20,12 @@ import {
   leaveConversation,
   listCommunityTickets,
   pickupConversation,
+  unarchiveConversation,
   type CommunityTicket,
 } from '@sdk';
 import { useAuth, useCloudStatus } from '@sdk/react/hooks';
 import { useEntitiesQuery, useEntity } from '@src/hooks/entity-hooks';
 import { Button } from '@src/components/ui/button';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { BulkConfirmDialog } from '@src/components/ui/bulk-confirm-dialog';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -39,6 +37,9 @@ import {
   updateMessage,
   bulkUpdateMessages,
 } from './inbox-api';
+import { conversationFacets, actionsFor } from '@src/components/conversation/conversation-category';
+import { CategoryChips } from '@src/components/conversation/CategoryChips';
+import { RowActions } from '@src/components/conversation/RowActions';
 
 type RowDeleteAction =
   | { kind: 'invitation'; invitationId: string; conversationId: string }
@@ -84,6 +85,9 @@ interface ConversationListRowProps {
    *  server-side; row auto-revives when a FlowMessage newer than the stamp
    *  arrives. */
   onArchive: (convId: string) => void;
+  /** Conversation-level unarchive — clears ``archived_at`` so the row returns
+   *  to the Inbox. */
+  onUnarchive: (convId: string) => void;
   onToggleRead: (messageId: string, isRead: boolean) => void;
   /** Caller resolves the appropriate dialog/action mode based on the row's
    *  role + the current cloud user id. */
@@ -97,7 +101,7 @@ interface ConversationListRowProps {
   refSetter: (el: HTMLDivElement | null) => void;
 }
 
-function ConversationListRow({ conv, isFocused, viewMode, searchActive, onArchive, onToggleRead, onRequestDelete, cloudUserId, onVisibilityChange, refSetter }: ConversationListRowProps) {
+function ConversationListRow({ conv, isFocused, viewMode, searchActive, onArchive, onUnarchive, onToggleRead, onRequestDelete, cloudUserId, onVisibilityChange, refSetter }: ConversationListRowProps) {
   const { navigation } = useDockNavigation();
   const taskTypeId = useMemo(
     () => conv.firstContextOfType?.('task') ?? null,
@@ -135,15 +139,23 @@ function ConversationListRow({ conv, isFocused, viewMode, searchActive, onArchiv
   // on its own: the sender (and everyone post-accept) must see a normal row.
   const { cloudUser, currentUser } = useAuth();
   const myEmail = (cloudUser?.email || currentUser?.email || '').trim().toLowerCase();
-  const recipientEmail = invitation?.recipient_email?.trim().toLowerCase() || '';
-  const isInvitationRow =
-    firstMessage?.kind === FlowMessageKind.INVITATION &&
-    !invitation?.accepted &&
-    !!myEmail &&
-    myEmail === recipientEmail;
-  // Community/support ticket — chip-tagged so it reads as a support thread.
-  const isCommunity = conv.kind === ConversationKind.COMMUNITY;
   const [accepting, setAccepting] = useState(false);
+
+  // Single source of truth for the row's category (invitation / community /
+  // archived / unread / active). Replaces the previously-scattered booleans and
+  // is shared with RecentConversationsStrip. Viewer-relative facts (invitation,
+  // unread) are resolved against the local user here. ``archived`` compares the
+  // pointer ts (not the FlowMessage) so it doesn't race the async FM fetch.
+  const facets = conversationFacets({
+    conv,
+    firstMessage,
+    latestMessage,
+    latestPtrTs: lastPtr?.ts ?? null,
+    invitation,
+    viewer: { email: myEmail, cloudUserId },
+  });
+  // Alias kept so the existing invitation-row rendering reads cleanly below.
+  const isInvitationRow = facets.isInvitation;
 
   // Trash does different things depending on ownership — say which one
   // up-front so the tooltip distinguishes it from the (reversible) Archive.
@@ -153,31 +165,23 @@ function ConversationListRow({ conv, isFocused, viewMode, searchActive, onArchiv
       ? 'Delete for everyone — permanent'
       : 'Leave conversation';
 
-  // Hide rule depends on view mode:
-  //   - 'inbox'     → hide archived rows (default; archived_at && stamp ≥ latest ts)
-  //   - 'archived'  → show ONLY archived rows; hide everything else
-  // ``archived_at`` uses the pointer's ts so we don't race the async
-  // FlowMessage fetch (the latestMessage entity arrives later than the
-  // conversation entity that carries the pointer).
-  const archivedAt = conv.archived_at ? new Date(conv.archived_at).getTime() : null;
-  const latestPtrTime = lastPtr?.ts ? new Date(lastPtr.ts).getTime() : 0;
-  const archivedActive =
-    archivedAt !== null && !Number.isNaN(archivedAt) && latestPtrTime <= archivedAt;
+  // The facets are intrinsic to the conversation; the *hide* rule combines them
+  // with the active view + search (view-state, not category):
+  //   - 'inbox'     → hide archived rows (default)
+  //   - 'archived'  → show ONLY archived rows
+  //   - 'unread'    → only non-archived unread rows
+  //   - search      → span everything; only half-materialized rows stay hidden
+  // ``inLoadingState`` keeps a row whose FlowMessage hasn't landed from rendering blank.
   const inLoadingState = !!lastPtr && !latestMessage;
-  // unread = latest message is_read=false (invitation rows count as unread
-  // since they always carry an actionable CTA).
-  const isUnreadRow = isInvitationRow ? true : (latestMessage ? !latestMessage.is_read : false);
   let isHidden: boolean;
   if (searchActive) {
-    // Search spans everything (archived, read) — only half-materialized rows
-    // stay hidden so they don't render blank.
     isHidden = inLoadingState;
   } else if (viewMode === 'archived') {
-    isHidden = !archivedActive || inLoadingState;
+    isHidden = !facets.isArchived || inLoadingState;
   } else if (viewMode === 'unread') {
-    isHidden = archivedActive || !isUnreadRow || inLoadingState;
+    isHidden = facets.isArchived || !facets.isUnread || inLoadingState;
   } else {
-    isHidden = archivedActive || inLoadingState;
+    isHidden = facets.isArchived || inLoadingState;
   }
 
   const convId = conv.id ?? '';
@@ -235,7 +239,7 @@ function ConversationListRow({ conv, isFocused, viewMode, searchActive, onArchiv
   const snippet = String(rawText ?? '').replace(/\s+/g, ' ').trim();
   const time = formatGmailTime(conv.updated_date);
   const ago = formatTimeAgo(conv.updated_date);
-  const isUnread = isUnreadRow;
+  const isUnread = facets.isUnread;
 
   const handleClick = () => {
     if (isInvitationRow) return; // primary action is Accept
@@ -297,16 +301,7 @@ function ConversationListRow({ conv, isFocused, viewMode, searchActive, onArchiv
         )}
       </span>
       <span className="min-w-0 flex-1 truncate" data-testid="inbox-row-subject-line">
-        {isCommunity && (
-          <span
-            className="mr-1 inline-flex items-center gap-0.5 rounded border border-violet-500/40 bg-violet-500/15 px-1 py-0.5 align-middle text-[9px] font-medium text-violet-600 dark:text-violet-400"
-            data-chip-type="community"
-            title="Community support ticket"
-          >
-            <LifeBuoy className="h-2.5 w-2.5" />
-            Support
-          </span>
-        )}
+        <CategoryChips facets={facets} className="mr-1" />
         <span className={isUnread ? 'font-semibold text-foreground' : 'text-foreground/80'}>{subject}</span>
         {snippet && (
           <>
@@ -319,93 +314,32 @@ function ConversationListRow({ conv, isFocused, viewMode, searchActive, onArchiv
         {time}
         {ago && <span className="ml-1.5 text-muted-foreground/70">· {ago}</span>}
       </span>
-      <div
-        className="absolute right-2 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {isInvitationRow ? (
-          <button
-            type="button"
-            onClick={() => void handleAccept()}
-            disabled={accepting || !invitationId}
-            className="rounded bg-primary px-2 py-0.5 text-[11px] font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-            data-testid="inbox-accept-invitation-button"
-          >
-            {accepting ? 'Accepting…' : 'Accept'}
-          </button>
-        ) : (
-          <>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  className="rounded p-1 hover:bg-muted"
-                  aria-label={isUnread ? 'Mark read' : 'Mark unread'}
-                  onClick={() => latestMessage?.id && onToggleRead(latestMessage.id, isUnread)}
-                >
-                  <CheckSquare className="h-3.5 w-3.5 text-muted-foreground" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="top">{isUnread ? 'Mark read' : 'Mark unread'}</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  className="rounded p-1 hover:bg-destructive/10"
-                  aria-label="Archive conversation"
-                  onClick={() => conv.id && onArchive(conv.id)}
-                >
-                  <Archive className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="top">Archive — moves to Archived, kept</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  className="rounded p-1 hover:bg-destructive/10"
-                  aria-label={deleteLabel}
-                  onClick={() => {
-                    if (!conv.id) return;
-                    if (!conv.remote) {
-                      onRequestDelete({ kind: 'local', conversationId: conv.id });
-                    } else if (cloudUserId && conv.created_by === cloudUserId) {
-                      onRequestDelete({ kind: 'owner', conversationId: conv.id });
-                    } else {
-                      onRequestDelete({ kind: 'leave', conversationId: conv.id });
-                    }
-                  }}
-                  data-testid="inbox-row-delete-button"
-                >
-                  <Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="top">{deleteLabel}</TooltipContent>
-            </Tooltip>
-          </>
-        )}
-        {isInvitationRow && conv.id && invitationId && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                className="rounded p-1 hover:bg-destructive/10"
-                aria-label="Decline (delete) invitation"
-                onClick={() =>
-                  onRequestDelete({
-                    kind: 'invitation',
-                    invitationId,
-                    conversationId: conv.id!,
-                  })
-                }
-                data-testid="inbox-invitation-delete-button"
-              >
-                <Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="top">Decline (delete) invitation</TooltipContent>
-          </Tooltip>
-        )}
-      </div>
+      <RowActions
+        specs={actionsFor(facets, {
+          invitationId,
+          accepting,
+          deleteLabel,
+          onAccept: () => void handleAccept(),
+          onDecline: () => {
+            if (conv.id && invitationId) {
+              onRequestDelete({ kind: 'invitation', invitationId, conversationId: conv.id });
+            }
+          },
+          onToggleRead: () => latestMessage?.id && onToggleRead(latestMessage.id, isUnread),
+          onArchive: () => conv.id && onArchive(conv.id),
+          onUnarchive: () => conv.id && onUnarchive(conv.id),
+          onDelete: () => {
+            if (!conv.id) return;
+            if (!conv.remote) {
+              onRequestDelete({ kind: 'local', conversationId: conv.id });
+            } else if (cloudUserId && conv.created_by === cloudUserId) {
+              onRequestDelete({ kind: 'owner', conversationId: conv.id });
+            } else {
+              onRequestDelete({ kind: 'leave', conversationId: conv.id });
+            }
+          },
+        })}
+      />
     </div>
   );
 }
@@ -540,6 +474,11 @@ export function InboxView() {
 
   const handleArchive = useCallback(async (convId: string) => {
     await archiveConversation({ conversation_id: convId });
+    void refetch();
+  }, [refetch]);
+
+  const handleUnarchive = useCallback(async (convId: string) => {
+    await unarchiveConversation({ conversation_id: convId });
     void refetch();
   }, [refetch]);
 
@@ -999,6 +938,7 @@ export function InboxView() {
               viewMode={viewMode}
               searchActive={searchActive}
               onArchive={handleArchive}
+              onUnarchive={handleUnarchive}
               onToggleRead={handleToggleRead}
               onRequestDelete={handleRowDelete}
               cloudUserId={cloudUserId}
