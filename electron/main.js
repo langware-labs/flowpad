@@ -274,27 +274,40 @@ function createWindow() {
     backgroundColor: '#1e1e1e',
   });
 
-  // Mouse back/forward (X1/X2) buttons. A normal browser maps these to history
-  // navigation automatically; Electron does not, so we wire them up here. The press
-  // reaches the main process differently per platform — on macOS only via input-event
-  // (it never reaches the renderer), on Windows/Linux as an app-command — so we listen
-  // for one per platform to avoid double-navigating where both could fire.
+  // Mouse back/forward (X1/X2) buttons are handled SOLELY in the renderer
+  // (`ui/src/main.tsx` → `mouseup` button 3/4 → `window.history.back/forward()`),
+  // which also `preventDefault()`s so Chromium's own native back/forward doesn't
+  // double-fire. Do NOT also wire them here in the main process: an earlier
+  // `input-event`/`app-command` → `webContents.navigationHistory.goBack()` handler
+  // raced the renderer one and produced a double-step back/forward (proven via the
+  // [nav-debug] logs — one X1 press logged both `main.input-event` and
+  // `renderer.mouseup`, each navigating once). One owner = one navigation per press.
   const nav = () => mainWindow.webContents.navigationHistory;
-  const goBack = () => { if (nav().canGoBack()) nav().goBack(); };
-  const goForward = () => { if (nav().canGoForward()) nav().goForward(); };
 
-  if (process.platform === 'darwin') {
-    mainWindow.webContents.on('input-event', (_e, input) => {
-      if (input.type !== 'mouseDown') return;
-      if (input.button === 'back') goBack();
-      else if (input.button === 'forward') goForward();
-    });
-  } else {
-    mainWindow.webContents.on('app-command', (_e, command) => {
-      if (command === 'browser-backward') goBack();
-      else if (command === 'browser-forward') goForward();
-    });
-  }
+  // Catch-all: log EVERY navigation that actually lands at the webContents
+  // level, regardless of which source triggered it (mouse, renderer
+  // window.history, react-router, deep-link). This is the single point all
+  // back/forward eventually flows through.
+  mainWindow.webContents.on('did-navigate-in-page', (_e, url, isMainFrame) => {
+    if (!isMainFrame) return;
+    log.info(`[nav-debug] main.did-navigate-in-page url=${url} canGoBack=${nav().canGoBack()} canGoForward=${nav().canGoForward()}`);
+  });
+  mainWindow.webContents.on('did-navigate', (_e, url) => {
+    log.info(`[nav-debug] main.did-navigate url=${url} canGoBack=${nav().canGoBack()} canGoForward=${nav().canGoForward()}`);
+  });
+
+  // Forward renderer-side [nav-debug] console logs into the electron-log file
+  // so the whole back/forward story (mouse → renderer → router → main) lands
+  // in one place: ~/.flow/logs/main_desktop/<ts>.log
+  mainWindow.webContents.on('console-message', (...args) => {
+    // Signature differs by Electron version:
+    //   older: (event, level, message, line, sourceId)
+    //   newer (Electron 36+): (event) where event.message holds the text
+    let message = '';
+    if (typeof args[2] === 'string') message = args[2];
+    else if (args[0] && typeof args[0].message === 'string') message = args[0].message;
+    if (message.includes('[nav-debug]')) log.info(`[renderer] ${message}`);
+  });
 
   // Show loading screen first
   mainWindow.loadFile(path.join(__dirname, 'loading.html'));
@@ -518,6 +531,20 @@ async function startApp() {
   pendingDeepLink = null;
   log.info(`Loading UI from ${startUrl}`);
   mainWindow.loadURL(startUrl);
+
+  // The window shows loading.html first, then loads the app URL — which otherwise
+  // leaves loading.html as the first back-history entry, so the app's very first
+  // "Back" (button or gesture) would navigate INTO the loading screen. Once the app
+  // URL commits, prune the history so the first real screen has a clean, empty
+  // back-stack. One-shot: subsequent in-app navigation builds history normally on top.
+  mainWindow.webContents.once('did-navigate', () => {
+    try {
+      mainWindow.webContents.navigationHistory.clear();
+      log.info(`[nav-debug] main.clearedLoadingHistory canGoBack=${mainWindow.webContents.navigationHistory.canGoBack()}`);
+    } catch (e) {
+      log.warn(`[nav-debug] navigationHistory.clear() failed: ${e.message}`);
+    }
+  });
 
   // Open DevTools in development
   if (isDev) {
