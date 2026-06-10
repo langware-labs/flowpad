@@ -172,10 +172,9 @@ export function fileShareSource(args: {
 }
 
 /**
- * A source that attaches nothing — the meaning rides elsewhere (the dialog's
- * pre-filled note for a feed report, or the backend `forward` action for a
- * message clone). It only labels the share; recipients/conversation are chosen
- * in the dialog.
+ * A source that attaches nothing — the meaning rides elsewhere (the backend
+ * `forward` action for a message clone). It only labels the share;
+ * recipients/conversation are chosen in the dialog.
  */
 function noAssetShareSource(label: string, typeLabel: string): ShareSource {
   return {
@@ -186,15 +185,6 @@ function noAssetShareSource(label: string, typeLabel: string): ShareSource {
       Promise.resolve({ assetReferences: [], sharedContextEntities: [] }),
     ),
   };
-}
-
-/**
- * Feed entry (a `flow diagnose` message-suggest): the suggested report text
- * rides as the dialog's pre-filled note; the suggested support conversation is
- * pre-selected by seeding the contacts.
- */
-export function feedEntryShareSource(args: { label: string }): ShareSource {
-  return noAssetShareSource(args.label, 'REPORT');
 }
 
 /**
