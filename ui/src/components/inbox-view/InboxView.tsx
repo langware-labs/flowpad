@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Archive, CheckSquare, Inbox as InboxIcon, LifeBuoy, MailPlus, RefreshCw, SquarePen, Trash2 } from 'lucide-react';
+import { Archive, CheckSquare, Inbox as InboxIcon, LifeBuoy, MailPlus, RefreshCw, Search, SquarePen, Trash2, X } from 'lucide-react';
 import { notify } from '@src/notifications';
 import { NewConversationDialog } from '@src/components/new-conversation-dialog/NewConversationDialog';
 import {
@@ -39,6 +39,7 @@ import {
   updateMessage,
   bulkUpdateMessages,
 } from './inbox-api';
+import { matchingConversationIds } from './inbox-search';
 
 type RowDeleteAction =
   | { kind: 'invitation'; invitationId: string; conversationId: string }
@@ -76,6 +77,10 @@ interface ConversationListRowProps {
    *  - 'unread'   → show only non-archived rows whose latest FlowMessage is unread
    *  - 'archived' → show ONLY archived rows */
   viewMode: InboxViewMode;
+  /** Text search is engaged — the parent already narrowed the list to
+   *  matching conversations, so the row must NOT apply the per-mode hide
+   *  rule (search spans archived/read rows regardless of the active pill). */
+  searchActive: boolean;
   /** Conversation-level archive. Stamps ``Conversation.archived_at = now()``
    *  server-side; row auto-revives when a FlowMessage newer than the stamp
    *  arrives. */
@@ -93,7 +98,7 @@ interface ConversationListRowProps {
   refSetter: (el: HTMLDivElement | null) => void;
 }
 
-function ConversationListRow({ conv, isFocused, viewMode, onArchive, onToggleRead, onRequestDelete, cloudUserId, onVisibilityChange, refSetter }: ConversationListRowProps) {
+function ConversationListRow({ conv, isFocused, viewMode, searchActive, onArchive, onToggleRead, onRequestDelete, cloudUserId, onVisibilityChange, refSetter }: ConversationListRowProps) {
   const { navigation } = useDockNavigation();
   const taskTypeId = useMemo(
     () => conv.firstContextOfType?.('task') ?? null,
@@ -164,7 +169,11 @@ function ConversationListRow({ conv, isFocused, viewMode, onArchive, onToggleRea
   // since they always carry an actionable CTA).
   const isUnreadRow = isInvitationRow ? true : (latestMessage ? !latestMessage.is_read : false);
   let isHidden: boolean;
-  if (viewMode === 'archived') {
+  if (searchActive) {
+    // Search spans everything (archived, read) — only half-materialized rows
+    // stay hidden so they don't render blank.
+    isHidden = inLoadingState;
+  } else if (viewMode === 'archived') {
     isHidden = !archivedActive || inLoadingState;
   } else if (viewMode === 'unread') {
     isHidden = archivedActive || !isUnreadRow || inLoadingState;
@@ -433,15 +442,30 @@ export function InboxView() {
   const request = useMemo(() => new QueryRequest({ type: Conversation.type }), []);
   const { data: conversations = [], refetch, isLoading } = useEntitiesQuery<Conversation>(request);
 
+  // Text search over message bodies. The FlowMessage watch is only enabled
+  // while a query is typed — it spans ALL local messages (read, archived,
+  // any thread position), so a hit anywhere in a thread surfaces its
+  // conversation. Pure client-side substring filter, live via watchQuery.
+  const [searchQuery, setSearchQuery] = useState('');
+  const searchActive = searchQuery.trim() !== '';
+  const msgRequest = useMemo(() => new QueryRequest({ type: FlowMessage.type }), []);
+  const { data: allMessages = [] } = useEntitiesQuery<FlowMessage>(msgRequest, { enabled: searchActive });
+  const matchIds = useMemo(
+    () => matchingConversationIds(allMessages, searchQuery),
+    [allMessages, searchQuery],
+  );
+
   const sorted = useMemo(() => {
-    const list = [...conversations];
+    const list = searchActive
+      ? conversations.filter((c) => c.id && matchIds.has(c.id))
+      : [...conversations];
     list.sort((a, b) => {
       const ta = a.updated_date ? new Date(a.updated_date).getTime() : 0;
       const tb = b.updated_date ? new Date(b.updated_date).getTime() : 0;
       return tb - ta;
     });
     return list;
-  }, [conversations]);
+  }, [conversations, searchActive, matchIds]);
 
   const handleRowVisibility = useCallback((convId: string, visible: boolean) => {
     setVisibleIds((prev) => {
@@ -764,6 +788,34 @@ export function InboxView() {
             {renderViewPill('archived', 'Archived', Archive)}
             {renderViewPill('community', 'Community', LifeBuoy)}
           </div>
+          {/* Text search — filters the list below to conversations whose
+              messages contain the query, spanning archived rows. Hidden in
+              the Community view (hub-sourced tickets, not local messages). */}
+          {!inCommunityView && (
+            <div className="relative ml-2 flex items-center">
+              <Search className="pointer-events-none absolute left-2 h-3.5 w-3.5 text-muted-foreground" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search messages"
+                className="h-7 w-44 rounded-md border border-border/60 bg-background pl-7 pr-6 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                data-testid="inbox-search-input"
+                aria-label="Search messages"
+              />
+              {searchActive && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-1.5 rounded p-0.5 text-muted-foreground hover:text-foreground"
+                  aria-label="Clear search"
+                  data-testid="inbox-search-clear"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </div>
+          )}
         </div>
         {/* CENTER — new conversation */}
         <div className="flex shrink-0 items-center">
@@ -906,11 +958,12 @@ export function InboxView() {
         {!inCommunityView && !isLoading && visibleCount === 0 && (
           <div className="flex h-48 flex-col items-center justify-center gap-3 text-muted-foreground">
             <span className="text-sm">
-              {inArchivedView ? 'No archived conversations'
+              {searchActive ? 'No matching conversations'
+                : inArchivedView ? 'No archived conversations'
                 : inUnreadView ? 'No unread conversations'
                 : 'No conversations'}
             </span>
-            {!inArchivedView && (
+            {!inArchivedView && !searchActive && (
               <Button variant="outline" size="sm" onClick={() => void handleRefresh()} disabled={fetching}>
                 <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${fetching ? 'animate-spin' : ''}`} />
                 Check for new messages
@@ -926,6 +979,7 @@ export function InboxView() {
               conv={conv}
               isFocused={false}
               viewMode={viewMode}
+              searchActive={searchActive}
               onArchive={handleArchive}
               onToggleRead={handleToggleRead}
               onRequestDelete={handleRowDelete}
