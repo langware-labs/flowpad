@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any, Awaitable, Callable
 
 from flow_sdk.transcript_analyzer.entry import TranscriptEntry
+from flow_sdk.transcript_streamer.cursors import TranscriptCursorStore
 from flow_sdk.transcript_streamer.streamer import TranscriptStreamer
 
 _log = logging.getLogger(__name__)
@@ -64,6 +65,36 @@ class TranscriptStreamerRegistry:
         self._by_path: dict[Path, TranscriptStreamer] = {}
         self._subscribers: dict[str, SubscriberCb] = {}
         self._idle_sweeper: asyncio.Task[Any] | None = None
+        # Persisted consumption state (path → size/mtime at last full consume).
+        # Optional — attached by the server via configure_cursors(); bare
+        # registries (tests, ad-hoc tooling) run without persistence.
+        self._cursors: TranscriptCursorStore | None = None
+
+    # ── persisted cursors ────────────────────────────────────────────────────
+
+    def configure_cursors(self, path: Path) -> None:
+        """Attach the persisted cursor store. Loads synchronously — call via
+        ``asyncio.to_thread`` from async code."""
+        self._cursors = TranscriptCursorStore(path)
+
+    def needs_catch_up(self, jsonl_path: Path) -> bool:
+        """True when the file may hold content not yet consumed (per the
+        persisted cursors). Pure sync (one ``stat``) — bulk callers run it
+        off-loop. Without a cursor store everything needs catch-up."""
+        if self._cursors is None:
+            return True
+        try:
+            st = Path(jsonl_path).stat()
+        except OSError:
+            return False
+        return not self._cursors.is_consumed(
+            Path(jsonl_path), size=st.st_size, mtime_ns=st.st_mtime_ns
+        )
+
+    async def flush_cursors(self) -> None:
+        """Persist dirty cursor state. No-op without a store."""
+        if self._cursors is not None:
+            await asyncio.to_thread(self._cursors.flush)
 
     # ── subscribers ──────────────────────────────────────────────────────────
 
@@ -111,20 +142,35 @@ class TranscriptStreamerRegistry:
             _log.warning("transcript_streamer: unknown worker for path %s", path)
             return
 
+        # Stat BEFORE parsing: if the file grows mid-parse, the cursor records
+        # the older state and the next notification re-parses the tail —
+        # over-delivery is safe (idempotent subscribers), under-delivery isn't.
+        try:
+            pre_stat = path.stat()
+        except OSError:
+            pre_stat = None
+
         streamer = self._by_path.get(path)
         if streamer is None:
             try:
-                streamer = TranscriptStreamer(path, worker_type)
+                # Construction eagerly parses the whole file
+                # (AgentTranscriptFile.__init__) — keep that CPU work off-loop.
+                streamer = await asyncio.to_thread(TranscriptStreamer, path, worker_type)
             except Exception:
                 _log.exception("transcript_streamer: failed to construct streamer for %s", path)
                 return
-            self._by_path[path] = streamer
+            # Another notification may have raced the construction; keep the
+            # registered instance so delta state stays single-homed.
+            streamer = self._by_path.setdefault(path, streamer)
 
         try:
             new_entries = await streamer.notify_change()
         except Exception:
             _log.exception("transcript_streamer: notify_change failed for %s", path)
             return
+
+        if self._cursors is not None and pre_stat is not None:
+            self._cursors.update(path, size=pre_stat.st_size, mtime_ns=pre_stat.st_mtime_ns)
 
         if not new_entries:
             return
@@ -153,7 +199,7 @@ class TranscriptStreamerRegistry:
 
     async def force_reparse(self, session_id: str) -> None:
         """Reset the session's streamer offset and re-emit history. Debug knob."""
-        streamer = self._by_session.get(session_id)
+        streamer = self.get_streamer(session_id)
         if streamer is None:
             return
         new_entries = await streamer.force_reparse()
@@ -188,6 +234,7 @@ class TranscriptStreamerRegistry:
             while True:
                 await asyncio.sleep(SWEEPER_INTERVAL_SECONDS)
                 self._evict_idle()
+                await self.flush_cursors()
         except asyncio.CancelledError:
             raise
 
