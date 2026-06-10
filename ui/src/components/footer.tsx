@@ -5,6 +5,7 @@ import { PoweredBy } from '@src/components/powered-by';
 import { IndexerStatusPill } from '@src/components/search-index/IndexerStatusPill';
 import { StatusBar } from '@src/components/status-bar';
 import { VersionPopover } from '@src/components/version-popover';
+import { AdvancedOnly } from '@src/components/view-mode';
 import { WarningsPopover } from '@src/components/warnings-popover';
 import { Agent, ArtifactType, FLOWPAD_ASSISTANT_PROJECT_UNAME, TypeId } from '@sdk';
 import { useCurrentArtifacts, useEntity } from '@sdk/react/hooks';
@@ -99,7 +100,9 @@ export function Footer({ className = '' }: FooterProps) {
         {/* Version + Powered by on the right */}
         <div className="ml-auto flex items-center gap-2">
           <PendingActionsChip />
-          <IndexerStatusPill />
+          <AdvancedOnly reserve={false}>
+            <IndexerStatusPill />
+          </AdvancedOnly>
           <button
             type="button"
             onClick={() => navigation.openDock(DockPointer.forProject(`@${FLOWPAD_ASSISTANT_PROJECT_UNAME}`))}
@@ -110,7 +113,11 @@ export function Footer({ className = '' }: FooterProps) {
             <BookOpen className="h-3.5 w-3.5" />
             <span>Flowpad docs</span>
           </button>
-          {version && <VersionPopover currentVersion={version} />}
+          {version && (
+            <AdvancedOnly reserve={false}>
+              <VersionPopover currentVersion={version} />
+            </AdvancedOnly>
+          )}
           <PoweredBy />
         </div>
       </div>
