@@ -1,16 +1,13 @@
 import { useMemo, useState } from 'react';
-import { Download, Link2 } from 'lucide-react';
 import { TypeId } from '@sdk';
 import { FavoriteStar } from '@src/components/favorites/FavoriteStar';
 import { ShareButton } from '@src/components/entity-actions/ShareButton';
-import { EntityShareDialog } from '@src/components/terminal/interactive-terminal/EntityShareDialog';
 import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
 import {
   agenticProcessShareSource,
   genericEntityShareSource,
 } from '@src/hooks/share-sources';
 import { useEntityShare } from '@src/hooks/use-entity-share';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { cn } from '@src/lib/utils';
 
 type Variant = 'prominent' | 'compact';
@@ -26,10 +23,8 @@ export interface EntityActionsToolbarProps {
    * 'compact' renders Share as an icon-only button.
    */
   variant?: Variant;
-  /** Slot for caller-supplied extra trailing actions. */
+  /** Slot for caller-supplied extra trailing actions (e.g. <ExportEntityButton>). */
   trailing?: React.ReactNode;
-  /** Surface-level opt-in for the "Copy link" share mode. Defaults to false. */
-  allowCopyLink?: boolean;
   onShared?: () => void;
   className?: string;
 }
@@ -39,9 +34,9 @@ export interface EntityActionsToolbarProps {
  *
  *   <EntityActionsToolbar typeId={process.typeId} favoriteTitle="My session" variant="prominent" />
  *
- * Share opens the EntityShareDialog (send / copy link / download bundle).
- * Favorite is the existing FavoriteStar — persists a Bookmark(bookmark_type=favorite)
- * that the homepage MiniDesktop renders.
+ * Share opens the ShareToConversationDialog. Favorite is the existing FavoriteStar
+ * — persists a Bookmark(bookmark_type=favorite) that the homepage MiniDesktop
+ * renders. For export/download, compose <ExportEntityButton> (e.g. via `trailing`).
  */
 export function EntityActionsToolbar({
   typeId,
@@ -49,12 +44,10 @@ export function EntityActionsToolbar({
   favoriteIcon,
   variant = 'compact',
   trailing,
-  allowCopyLink = false,
   onShared,
   className,
 }: EntityActionsToolbarProps) {
   const [shareOpen, setShareOpen] = useState(false);
-  const [exportOpen, setExportOpen] = useState(false);
   const { canShare, isAgenticProcess } = useEntityShare(typeId);
 
   // The conversation share's prep: AgenticProcess shares its ClaudeTranscript
@@ -75,8 +68,6 @@ export function EntityActionsToolbar({
     onShared?.();
   };
 
-  const exportLabel = allowCopyLink ? 'Copy link or download bundle' : 'Download bundle';
-
   return (
     <div className={cn('flex items-center gap-0.5', className)}>
       <ShareButton
@@ -86,31 +77,6 @@ export function EntityActionsToolbar({
         tooltip={canShare ? (variant === 'prominent' ? 'Share to a conversation' : 'Share') : 'Loading…'}
         testId="entity-actions-share"
       />
-
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            type="button"
-            onClick={() => setExportOpen(true)}
-            disabled={!canShare}
-            className={cn(
-              'inline-flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent',
-              'disabled:cursor-not-allowed disabled:opacity-50',
-            )}
-            data-testid="entity-actions-export"
-            aria-label={exportLabel}
-          >
-            {allowCopyLink ? (
-              <Link2 className="h-3.5 w-3.5" />
-            ) : (
-              <Download className="h-3.5 w-3.5" />
-            )}
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="bottom" className="text-xs">
-          {exportLabel}
-        </TooltipContent>
-      </Tooltip>
 
       <FavoriteStar
         entityType={typeId.type}
@@ -127,16 +93,6 @@ export function EntityActionsToolbar({
           open={shareOpen}
           onClose={handleClose}
           source={shareSource}
-        />
-      )}
-
-      {exportOpen && (
-        <EntityShareDialog
-          open={exportOpen}
-          onClose={() => setExportOpen(false)}
-          typeId={typeId}
-          defaultTitle={favoriteTitle}
-          allowCopyLink={allowCopyLink}
         />
       )}
     </div>

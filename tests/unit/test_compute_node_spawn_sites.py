@@ -148,8 +148,9 @@ async def test_scan_upsert_session_process_creates_fresh_when_no_existing():
     class FakeProc:
         # get_all returns [] (no existing), so fall through to construct branch
         @classmethod
-        async def get_all(cls, entities_filter=None):
-            return []
+        async def get_by_session_id(cls, session_id):
+            # No existing process for this session → construct branch.
+            return None
 
         def __init__(self, **kwargs):
             captured.update(kwargs)
@@ -229,8 +230,8 @@ async def test_scan_upsert_session_process_returns_existing_on_resume():
         constructed = False
 
         @classmethod
-        async def get_all(cls, entities_filter=None):
-            return [existing]
+        async def get_by_session_id(cls, session_id):
+            return existing
 
         def __init__(self, **kwargs):
             FakeProc.constructed = True

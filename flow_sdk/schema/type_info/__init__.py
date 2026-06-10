@@ -37,6 +37,9 @@ class TypeMetadata:
     index_fields: list[str] = field(default_factory=list)
     main_subdir: str | None = None
     main_layout: str = "file"
+    # Folder-layout owned types: inner filename of the primary asset
+    # (e.g. "spec.md" under specs/<name>/). See TypeInfo.main_file.
+    main_file: str | None = None
     parent_type: str | None = None
     # Indexer dispatch callables (walked types only).
     from_disk_fn: Any = None
@@ -69,6 +72,7 @@ class TypeMetadata:
             index_fields=list(self.index_fields),
             main_subdir=self.main_subdir,
             main_layout=self.main_layout,
+            main_file=self.main_file,
             parent_type=self.parent_type,
             from_disk_fn=self.from_disk_fn,
             gen_id_fn=self.gen_id_fn,

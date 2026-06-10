@@ -1,3 +1,4 @@
+import { ViewToggle } from '@src/components/view-toggle/view-toggle';
 import { PendingActionsChip } from '@src/components/footer/PendingActionsChip';
 import { usePendingCompletionSound } from '@src/components/footer/usePendingCompletionSound';
 import { PoweredBy } from '@src/components/powered-by';
@@ -70,8 +71,9 @@ export function Footer({ className = '' }: FooterProps) {
       className={`relative z-10 w-full border-t bg-background/95 px-6 py-1 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/60 ${className}`}
     >
       <div className="flex items-center justify-between">
-        {/* Settings + Warnings icons on the left */}
+        {/* View toggle + Settings + Warnings icons on the left */}
         <div className="flex items-center gap-1">
+          <ViewToggle />
           <button
             onClick={() => navigation.openSettings()}
             className="flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"

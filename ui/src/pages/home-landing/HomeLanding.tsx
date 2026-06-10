@@ -2,7 +2,6 @@ import { IncomingTaskDialog } from '@src/components/task-receive/IncomingTaskDia
 import { useIncomingTaskStore } from '@src/store/use-incoming-task-store';
 import { UsageBar } from '@src/components/cost-dashboard';
 import { RecordSearchBar } from '@src/components/record-search-bar/RecordSearchBar';
-import { SearchScopeToggle } from '@src/components/record-search-bar/SearchScopeToggle';
 import { NotificationFeed, notify } from '@src/notifications';
 import { type ProjectResourceListItem } from '@src/components/project-resource-list';
 import { ProjectActivityStrip, RecentConversationsStrip, BookmarkColumn } from '@src/components/project-activity-strip';
@@ -17,8 +16,9 @@ import { useProjectBookmarks } from '@src/hooks/use-project-bookmarks';
 import { useProjectTasks } from '@src/hooks/use-project-tasks';
 import { useTaskMutations } from '@src/hooks/use-task-mutations';
 import { useProjectList } from '@src/hooks/use-claude-projects';
-import { useSearchScopeToggle } from '@src/hooks/use-global-search-scope';
+import { useGlobalSearchScope } from '@src/hooks/use-global-search-scope';
 import { useSnifferContext } from '@src/contexts/SnifferContext';
+import { AdvancedOnly } from '@src/components/view-mode';
 import { useCollaborationRooms } from '@src/hooks/useCollaborationRooms';
 import { useProjects } from '@src/hooks/use-projects';
 import { useActAccordingToClassification } from '@src/hooks/use-act-according-to-classification';
@@ -32,7 +32,6 @@ import { useSystemTools } from '@src/hooks/use-system-tools';
 import { ActivityIndicator } from '@src/components/search-index/ActivityIndicator';
 import { WelcomeModal } from '@src/components/search-index/WelcomeModal';
 import { NewConversationDialog } from '@src/components/new-conversation-dialog/NewConversationDialog';
-import { JoinConversationDialog } from '@src/components/join-room-dialog/JoinConversationDialog';
 import { CommunityAssistanceDialog } from '@src/components/community-assistance-dialog/CommunityAssistanceDialog';
 import { useLoginRequired } from '@src/hooks/use-login-required';
 import LoginDialog, { ActionType } from '@src/components/login-required-dialog';
@@ -205,7 +204,6 @@ export function HomeLanding() {
 
   const {
     checkLoginAndProceed,
-    requiresLogin,
     showLoginDialog,
     closeLoginDialog,
     pendingAction,
@@ -213,16 +211,11 @@ export function HomeLanding() {
     isPostLogin,
   } = useLoginRequired();
   const [showNewConversation, setShowNewConversation] = useState(false);
-  const [showJoinConversation, setShowJoinConversation] = useState(false);
   const [showCommunityAssistance, setShowCommunityAssistance] = useState(false);
   const [draftPrompt, setDraftPrompt] = useState('');
   const handleStartConversation = () => {
     if (!checkLoginAndProceed(ActionType.START_CONVERSATION, undefined, undefined, { forceLogin: true })) return;
     setShowNewConversation(true);
-  };
-  const handleJoinConversation = () => {
-    if (requiresLogin && !checkLoginAndProceed(ActionType.SEND)) return;
-    setShowJoinConversation(true);
   };
   useEffect(() => {
     if (!isPostLogin || pendingAction?.action !== ActionType.START_CONVERSATION) return;
@@ -251,15 +244,7 @@ export function HomeLanding() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFilters, setSearchFilters] = useState<SearchFilters>({});
   const [selectedResultIndex, setSelectedResultIndex] = useState(-1);
-  const currentProjectId = currentProject?.id ?? dataContext.project?.id ?? null;
-  const {
-    scope: searchScope,
-    isLoading: searchScopeLoading,
-    mode: searchScopeMode,
-    setMode: setSearchScopeMode,
-    allProjectCount,
-    currentProjectAvailable,
-  } = useSearchScopeToggle(currentProjectId);
+  const { scope: searchScope, isLoading: searchScopeLoading } = useGlobalSearchScope();
 
   useEffect(() => { setSelectedResultIndex(-1); }, [searchQuery]);
   // Clear post-scan panel when user starts a real search
@@ -517,17 +502,10 @@ export function HomeLanding() {
     <div className="flex h-full flex-col overflow-hidden">
       {/* Top row: UsageBar + Search */}
       <div className="flex shrink-0 items-center gap-2 p-4">
-        <div className="w-72 shrink-0">
+        <AdvancedOnly className="w-72 shrink-0">
           <UsageBar />
-        </div>
+        </AdvancedOnly>
         <div className="flex-1" />
-        <SearchScopeToggle
-          value={searchScopeMode}
-          onChange={setSearchScopeMode}
-          allProjectCount={allProjectCount}
-          currentProjectAvailable={currentProjectAvailable}
-          className="shrink-0"
-        />
         <div className="relative w-72 shrink-0">
           <RecordSearchBar
             query={searchQuery}
@@ -626,23 +604,13 @@ export function HomeLanding() {
                 onSubmit={(msg) => void handleSessionSubmit(msg)}
               />
               <div className="flex w-full flex-wrap items-center gap-2">
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="border-green-600 text-green-600 hover:bg-green-600 hover:text-white transition-colors shadow-sm"
-                    onClick={handleJoinConversation}
-                  >
-                    Join conversation
-                  </Button>
-                  <Button
-                    type="button"
-                    className="bg-green-600 text-white hover:bg-green-700 transition-colors shadow-sm"
-                    onClick={handleStartConversation}
-                  >
-                    Start conversation
-                  </Button>
-                </div>
+                <Button
+                  type="button"
+                  className="bg-green-600 text-white hover:bg-green-700 transition-colors shadow-sm"
+                  onClick={handleStartConversation}
+                >
+                  Start conversation
+                </Button>
                 <button
                   type="button"
                   className="ml-auto inline-flex h-6 shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-violet-600/60 bg-transparent px-2.5 text-xs font-medium text-violet-600 transition-colors hover:bg-violet-50 dark:border-violet-400/60 dark:text-violet-400 dark:hover:bg-violet-950/40"
@@ -708,10 +676,11 @@ export function HomeLanding() {
             <NotificationFeed />
           </div>
 
-          {/* Event Sniffer chip - aligned to bottom of side columns */}
-          <div className="mt-auto w-full max-w-3xl shrink-0 self-center">
+          {/* Event Sniffer chip (trace heartbeat), aligned to bottom of side
+              columns — Advanced-only, hidden in Standard to tune down UI. */}
+          <AdvancedOnly className="mt-auto w-full max-w-3xl shrink-0 self-center">
             <EventSnifferChip />
-          </div>
+          </AdvancedOnly>
         </div>
 
         {/* Right column: Recent conversations */}
@@ -740,11 +709,6 @@ export function HomeLanding() {
       <NewConversationDialog
         open={showNewConversation}
         onClose={() => setShowNewConversation(false)}
-      />
-      <JoinConversationDialog
-        open={showJoinConversation}
-        onClose={() => setShowJoinConversation(false)}
-        defaultName={user?.name ?? undefined}
       />
       <CommunityAssistanceDialog
         open={showCommunityAssistance}

@@ -28,7 +28,9 @@ from flow_sdk.builtin.agentic_process.status_predicates import (
     WorkerMode,
 )
 from flow_sdk.builtin.worker_status import (
+    _IGNORED_TYPES,
     _RUNNING_STATUSES,
+    _TAIL_BYTES,
     _TERMINAL_STATUSES,
     _tail_status,
 )
@@ -227,6 +229,72 @@ def test_tail_status_unknown_fallback(tmp_path: Path):
     ])
     os.utime(f, None)
     assert _tail_status(f) == WorkerStatus.UNKNOWN
+
+
+# ── ignored session-envelope types (regression: the UNKNOWN-flicker bug) ──────
+#
+# Claude Code writes content-free envelope lines (ai-title / agent-name / mode /
+# bridge-session / permission-mode …) as a session prologue/epilogue. Before the
+# fix, ``_IGNORED_TYPES`` skipped only ``permission-mode`` + ``file-history-snapshot``,
+# so a real ``end_turn`` (COMPLETE) or ``tool_use`` (TOOL_CALL) followed by an
+# envelope block was masked as UNKNOWN — yanking a still-active agent off the
+# footer "active agents" chip and back on, i.e. the flicker.
+
+
+def test_ignored_types_match_meta_types():
+    """``_IGNORED_TYPES`` must equal the transcript parser's ``_META_TYPES`` minus
+    ``last-prompt`` (which ``_tail_status`` classifies explicitly). This contract
+    is the anti-drift guard: when Claude's format adds a new envelope type, the
+    parser's set and this one must move together or this test fails."""
+    from flow_sdk.transcript_analyzer.parsers.claude import _META_TYPES
+
+    assert _IGNORED_TYPES == (_META_TYPES - {"last-prompt"})
+
+
+# Envelope epilogues that previously masked the real signal as UNKNOWN. Each is
+# a real assistant stop_reason followed by the content-free envelope block Claude
+# Code appends — the worker is still in the stop_reason's state, not UNKNOWN.
+@pytest.mark.parametrize("stop_reason,expected,envelope", [
+    ("end_turn", WorkerStatus.COMPLETE, [
+        {"type": "ai-title", "aiTitle": "some title"},
+        {"type": "agent-name", "name": "some-agent"},
+        {"type": "mode", "mode": "default"},
+        {"type": "bridge-session", "sessionId": "abc"},
+        {"type": "permission-mode", "permissionMode": "bypassPermissions"},
+    ]),
+    ("tool_use", WorkerStatus.TOOL_CALL, [
+        {"type": "bridge-session", "sessionId": "abc"},
+        {"type": "agent-name", "name": "some-agent"},
+    ]),
+])
+def test_tail_status_signal_survives_envelope_epilogue(tmp_path, stop_reason, expected, envelope):
+    """A real stop_reason followed by an envelope block keeps its status (the
+    'agent flickers off the active-agents chip' scenario), not UNKNOWN."""
+    f = tmp_path / "session.jsonl"
+    _write_jsonl(f, [
+        {"type": "user", "message": {"role": "user"}},
+        {"type": "assistant", "message": {"role": "assistant", "stop_reason": stop_reason, "content": []}},
+        *envelope,
+    ])
+    os.utime(f, None)
+    assert _tail_status(f) == expected
+
+
+def test_tail_status_expands_past_envelope_run_beyond_4kb(tmp_path: Path):
+    """A trailing envelope run larger than the initial 4 KB window must not bury
+    the real terminal signal — the expanding tail read recovers COMPLETE."""
+    f = tmp_path / "session.jsonl"
+    pad = "x" * 400  # ~430 bytes/line → well over 4 KB across the envelope run
+    entries = [
+        {"type": "user", "message": {"role": "user"}},
+        {"type": "assistant", "message": {"role": "assistant", "stop_reason": "end_turn", "content": []}},
+    ]
+    entries += [{"type": "bridge-session", "sessionId": "abc", "pad": pad} for _ in range(40)]
+    _write_jsonl(f, entries)
+    # Sanity: the envelope run genuinely exceeds the first read window.
+    assert f.stat().st_size > _TAIL_BYTES
+    os.utime(f, None)
+    assert _tail_status(f) == WorkerStatus.COMPLETE
 
 
 # ── is_ready_for_input truth table ───────────────────────────────────────────

@@ -65,13 +65,14 @@ export const hasRemoteParticipant = (ps: ConversationParticipant[]): boolean =>
   ps.some((p) => !!p.user_id || (!!p.email && p.email.includes('@')));
 
 /**
- * Create-or-resume a conversation and send the first message.
+ * Create-or-resume a conversation WITHOUT sending anything into it — the
+ * create+share half of ``createAndSendConversation``, exposed for commits
+ * that put their content in by another means (e.g. ``forwardMessage``).
  * ``draftRef`` (when provided) preserves the same Conversation id across
  * retries so a transient share() failure doesn't orphan a hub conversation.
  */
-export async function createAndSendConversation(
+export async function createConversationForShare(
   params: CreateAndSendParams,
-  payload: ConversationSendPayload,
   opts?: {
     ensureCloudLogin?: () => Promise<{ ok: true } | { ok: false; error: string }>;
     draftRef?: { current: Conversation | null };
@@ -120,6 +121,24 @@ export async function createAndSendConversation(
     });
     conversationId = r.conversation_id;
   }
+
+  return { conversation_id: conversationId };
+}
+
+/**
+ * Create-or-resume a conversation and send the first message.
+ * ``draftRef`` (when provided) preserves the same Conversation id across
+ * retries so a transient share() failure doesn't orphan a hub conversation.
+ */
+export async function createAndSendConversation(
+  params: CreateAndSendParams,
+  payload: ConversationSendPayload,
+  opts?: {
+    ensureCloudLogin?: () => Promise<{ ok: true } | { ok: false; error: string }>;
+    draftRef?: { current: Conversation | null };
+  },
+): Promise<CreateAndSendResult> {
+  const { conversation_id: conversationId } = await createConversationForShare(params, opts);
 
   await sendToExistingConversation(conversationId, payload);
 
