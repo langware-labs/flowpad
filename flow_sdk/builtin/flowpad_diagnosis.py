@@ -13,10 +13,11 @@ from typing import Optional
 
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.core import Entity
+from flow_sdk.schema.types import EntityType
 
 
 class FlowpadDiagnosis(Entity):
-    type: str = APIField(default="flowpad_diagnosis")
+    type: str = APIField(default=EntityType.FLOWPAD_DIAGNOSIS.value)
     name: str = APIField("")
     title: Optional[str] = APIField(None, description="Title of the diagnosis.")
     symptoms: Optional[str] = APIField(

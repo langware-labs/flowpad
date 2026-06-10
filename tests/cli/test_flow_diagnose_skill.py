@@ -24,9 +24,10 @@ def test_skill_and_reporter_exist():
 def test_step7_runs_the_colocated_report_script():
     text = _SKILL_MD.read_text(encoding="utf-8")
     assert "### Step 7" in text, "Step 7 (record the result) must exist"
-    # Step 7 must invoke the co-located script...
+    # Step 7 must invoke the co-located script with the diagnosis fields...
     assert "report.py" in text, "Step 7 must point at the co-located report.py"
-    assert "--attachment-type-id" in text, "Step 7 must pass the diagnosis as an attachment"
+    assert "--title" in text, "Step 7 must pass the diagnosis fields to report.py"
+    assert "--status" in text, "Step 7 must pass a status to report.py"
     # ...and must NOT resurrect the removed import / CLI paths.
     assert "flow_sdk.diagnostics" not in text
     assert "flow diagnose-report" not in text
@@ -36,13 +37,14 @@ def test_reporter_exposes_function_and_cli():
     spec = importlib.util.spec_from_file_location("flow_diagnose_report_struct", _REPORT)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
+    assert hasattr(mod, "record_diagnosis")
     assert hasattr(mod, "create_diagnostic_report")
     assert hasattr(mod, "_parse_args")
     assert hasattr(mod, "_amain")
-    # The CLI contract Step 7 relies on.
-    args = mod._parse_args(["--summary", "x"])
-    assert args.summary == "x"
-    assert hasattr(args, "attachment_type_id")
+    # The CLI contract Step 7 relies on: --title is the required diagnosis field.
+    args = mod._parse_args(["--title", "x", "--status", "ok"])
+    assert args.title == "x"
+    assert args.status == "ok"
 
 
 def test_diagnose_command_targets_this_skill_dir():

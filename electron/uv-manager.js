@@ -39,6 +39,33 @@ function quoteWinCmd(cmd) {
   return /\s/.test(cmd) ? `"${cmd}"` : cmd;
 }
 
+/**
+ * Parse `netstat -ano` output into the PIDs LISTENING on exactly `port`.
+ *
+ * Pure (no I/O) so it can be unit-tested. Matches the port off the LOCAL
+ * address column with an anchored `:<port>$`, NOT a substring scan — a naive
+ * `line.includes(':9007')` also matches `:90071`, `:9007x` and the foreign
+ * address column, which would taskkill an unrelated listener. Only TCP rows
+ * in the LISTENING state are considered; ESTABLISHED/TIME_WAIT/UDP are ignored
+ * so we never kill a mere client of the port.
+ */
+function parseNetstatPids(stdout, port) {
+  const pids = new Set();
+  for (const raw of String(stdout).split('\n')) {
+    const line = raw.trim();
+    if (!/^TCP\b/i.test(line)) continue;       // TCP rows only
+    if (!/\bLISTENING\b/i.test(line)) continue; // listeners only
+    // netstat -ano columns: Proto  LocalAddr  ForeignAddr  State  PID
+    const parts = line.split(/\s+/);
+    const local = parts[1] || '';
+    const m = local.match(/:(\d+)$/);           // port = digits after final ':'
+    if (!m || parseInt(m[1], 10) !== port) continue;
+    const pid = parseInt(parts[parts.length - 1], 10);
+    if (pid > 0) pids.add(pid);
+  }
+  return [...pids];
+}
+
 // PyPI package name — `uv tool install flowpad`
 const PYPI_PACKAGE = 'flowpad';
 
@@ -753,14 +780,7 @@ class UvManager {
     try {
       if (IS_WIN) {
         const { stdout } = await execFileAsync('netstat', ['-ano'], { timeout: 5000 });
-        const pids = new Set();
-        for (const line of stdout.split('\n')) {
-          if (line.includes(`:${port}`) && line.includes('LISTENING')) {
-            const parts = line.trim().split(/\s+/);
-            const pid = parseInt(parts[parts.length - 1], 10);
-            if (pid > 0) pids.add(pid);
-          }
-        }
+        const pids = parseNetstatPids(stdout, port);
         for (const pid of pids) {
           try {
             await execFileAsync('taskkill', ['/PID', String(pid), '/F'], { timeout: 5000 });
@@ -769,7 +789,10 @@ class UvManager {
         }
       } else {
         try {
-          const { stdout } = await execFileAsync('lsof', ['-ti', `tcp:${port}`], { timeout: 5000 });
+          // -sTCP:LISTEN restricts to the listening socket so we don't also
+          // SIGKILL processes that merely hold a client connection to the port
+          // (mirrors the LISTENING-only filter in the Windows branch above).
+          const { stdout } = await execFileAsync('lsof', ['-ti', `tcp:${port}`, '-sTCP:LISTEN'], { timeout: 5000 });
           const pids = stdout.trim().split('\n').map(p => parseInt(p, 10)).filter(p => p > 0);
           for (const pid of pids) {
             try {
@@ -951,7 +974,10 @@ class UvManager {
         await this.start();
 
         if (sendStatus) sendStatus('Waiting for server');
-        if (waitForBackend) await waitForBackend();
+        // 120s window — matches the upgrade() subprocess ceiling and gives
+        // the freshly-installed backend room to boot before the user sees
+        // a false "failed to start" error.
+        if (waitForBackend) await waitForBackend({ maxChecks: 240 });
 
         if (mainWindow && !mainWindow.isDestroyed() && backendUrl) {
           mainWindow.loadURL(backendUrl);
@@ -970,6 +996,40 @@ class UvManager {
     await this._uv(['tool', 'install', `${PYPI_PACKAGE}@latest`, '--force'], { timeout: 120000 });
     this._flowBin = await this._resolveFlowBin();
     this.log.info('[uv] Upgrade complete');
+  }
+
+  /**
+   * Repair a corrupt install: a `flow.exe`/`flow` shim exists on disk (so the
+   * fast path tries it) but its env can't `import flow_sdk` — the package
+   * never finished installing into site-packages, or was quarantined/removed.
+   * `--reinstall` recreates the tool venv and reinstalls every package (not
+   * just a metadata refresh), then we re-resolve the freshly written shim.
+   */
+  async reinstall() {
+    this.log.info(`[uv] Repairing ${PYPI_PACKAGE} install (--reinstall --force)...`);
+    await this._uv(['tool', 'install', PYPI_PACKAGE, '--reinstall', '--force'], { timeout: 120000 });
+    this._flowBin = await this._resolveFlowBin();
+    this.log.info(`[uv] Repair complete, binary at ${this._flowBin}`);
+  }
+
+  /**
+   * True when an error from `flow start` indicates the install itself is
+   * broken — the interpreter runs but can't import the package. The canonical
+   * symptom is `ModuleNotFoundError: No module named 'flow_sdk'` (the wheel's
+   * own top-level module is missing), which means a `--reinstall` will fix it.
+   * Deliberately narrow: a generic crash or a runtime error in working code
+   * must NOT trigger a reinstall loop.
+   */
+  isBrokenInstallError(error) {
+    const text = `${error?.message || ''}\n${error?.stderr || ''}\n${error?.stdout || ''}`;
+    // Order-independent: a Python traceback prints the flow_sdk file frames
+    // FIRST and the `ModuleNotFoundError/ImportError:` line LAST, so we can't
+    // assume the keyword precedes "flow_sdk". Trigger when the package's own
+    // top-level module is missing, OR any import error occurs in flowpad's own
+    // code (its traceback mentions flow_sdk — e.g. a missing transitive dep).
+    const importFailure = /\b(ModuleNotFoundError|ImportError)\b/.test(text);
+    return /No module named ['"]flow_sdk/.test(text)
+      || (importFailure && /flow_sdk/.test(text));
   }
 
   /**
@@ -1016,3 +1076,7 @@ const SOD_KEY_KEYCHAIN_SERVICE = 'Flowpad.ai.sod_key';
 
 module.exports = UvManager;
 module.exports.SOD_KEY_KEYCHAIN_SERVICE = SOD_KEY_KEYCHAIN_SERVICE;
+// Pure helpers exported for unit testing (electron/uv-manager.test.js).
+module.exports.needsShellOnWin = needsShellOnWin;
+module.exports.quoteWinCmd = quoteWinCmd;
+module.exports.parseNetstatPids = parseNetstatPids;

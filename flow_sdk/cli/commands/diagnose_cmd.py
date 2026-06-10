@@ -11,13 +11,34 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import logging
+import re
 import sys
 from pathlib import Path
 
 import typer
 
 from flow_sdk.agentic_run_consts import DEFAULT_TRANSCRIPT_TIMEOUT_S
+
+
+def _extract_report_result(text: str) -> dict | None:
+    """Pull ``report.py``'s result JSON (a dict with ``diagnosis_id``) out of a
+    chunk of transcript text. report.py prints it to stdout, which rides through
+    the agent's ``tool_result`` (and the agent usually echoes it in text too), so
+    the parent can detect completion + read the ids from the stream it is already
+    consuming — no cross-process DB read or marker file. Returns the parsed dict,
+    or None if not present."""
+    if not text or "diagnosis_id" not in text:
+        return None
+    for m in re.finditer(r'\{[^{}]*"diagnosis_id"[^{}]*\}', text):
+        try:
+            d = json.loads(m.group(0))
+        except ValueError:
+            continue
+        if isinstance(d, dict) and d.get("diagnosis_id"):
+            return d
+    return None
 
 
 def _quiet_logs() -> None:
@@ -29,13 +50,15 @@ def _quiet_logs() -> None:
     logging.disable(logging.WARNING)
 
 
-class _Renderer:
-    """Compact transcript renderer for `flow diagnose`.
+class _TerminalSink:
+    """Default ``emit`` target: renders diagnose events to the terminal exactly as
+    `flow diagnose` always has — narration on its own line (``▸ …`` — the valuable
+    part) and each tool action collapsed into a single inline progress dot (``·``),
+    so the user sees liveness while the agent works without a line per call.
 
-    Shows the agent's narration on its own line (``▸ …`` — the valuable part) and
-    collapses each tool action into a single inline progress dot (``·``), so the
-    user sees liveness while the agent works (Bash/Read calls) without a line per
-    call and without the tool-result noise.
+    ``_run_diagnose`` is output-agnostic: it pushes structured events through an
+    ``emit`` callback. The CLI uses this sink (identical terminal output); the UI's
+    HTTP endpoint passes its own ``emit`` that forwards the same events as SSE.
     """
 
     def __init__(self) -> None:
@@ -45,6 +68,38 @@ class _Renderer:
         if self._row_open:
             typer.echo("")  # terminate the inline progress row
             self._row_open = False
+
+    def __call__(self, event: dict) -> None:
+        etype = event.get("type")
+        if etype == "narration":
+            self._close_row()
+            typer.echo(f"  ▸ {event.get('text', '')}")
+        elif etype == "progress":
+            # One inline dot per tool action — a liveness pulse, no detail.
+            if not self._row_open:
+                typer.echo("  ", nl=False)
+                self._row_open = True
+            typer.echo("· ", nl=False)
+        elif etype == "status":
+            self._close_row()
+            typer.echo(event.get("text", ""))
+        elif etype == "error":
+            self._close_row()
+            typer.echo(event.get("text", ""), err=True)
+        elif etype == "flush":
+            self._close_row()
+        # "done" carries structured fields for the UI; the terminal already printed
+        # the ✓/! status line, so there is nothing more to render here.
+
+
+class _Renderer:
+    """Translates raw transcript entries into diagnose events (narration / progress
+    dots) and pushes them through ``emit``. Tool-result blocks are intentionally
+    dropped — only the agent's narration and a liveness pulse per tool call surface.
+    """
+
+    def __init__(self, emit) -> None:
+        self._emit = emit
 
     def feed(self, entry: dict) -> None:
         msg = entry.get("message")
@@ -61,24 +116,33 @@ class _Renderer:
             if role == "assistant" and btype == "text":
                 text = (block.get("text") or "").strip()
                 if text:
-                    self._close_row()
-                    typer.echo(f"  ▸ {text}")
+                    self._emit({"type": "narration", "text": text})
             elif role == "assistant" and btype == "tool_use":
-                # One inline dot per tool action — a liveness pulse, no detail.
-                if not self._row_open:
-                    typer.echo("  ", nl=False)
-                    self._row_open = True
-                typer.echo("· ", nl=False)
+                self._emit({"type": "progress"})
             # tool_result blocks are intentionally not rendered.
 
     def finish(self) -> None:
-        self._close_row()
+        self._emit({"type": "flush"})
 
 
-async def _run_diagnose(message: str, transcript_timeout: float) -> int:
+async def _run_diagnose(message: str, transcript_timeout: float, *, emit=None) -> int:
+    """Run the flow-diagnose skill headless and stream the worker's narration.
+
+    ``emit`` is a callable invoked with structured event dicts (``narration`` /
+    ``progress`` / ``status`` / ``error`` / ``done``). When omitted it defaults to
+    ``_TerminalSink`` so the CLI renders exactly as before; the UI's HTTP endpoint
+    passes its own ``emit`` to forward the same events as SSE. Behavior is otherwise
+    identical between the two callers — same skill, same recording, same completion.
+    """
+    if emit is None:
+        emit = _TerminalSink()
+
     from flow_sdk.builtin.agentic_process import AgenticProcess
     from flow_sdk.config import flowpad_assistant_project_root
+    from flow_sdk.core.entity.cross_link import cross_link_entities
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry
     from flow_sdk.migrations.runner import _bootstrap_local
+    from flow_sdk.schema.types import EntityType
 
     # The skill ships inside the package (flow_sdk/system_projects/...), so it
     # resolves the same whether `flow diagnose` runs from a dev checkout or an
@@ -99,8 +163,9 @@ async def _run_diagnose(message: str, transcript_timeout: float) -> int:
         "record the outcome — all in THIS turn. You may read sibling files the skill "
         "references (e.g. references/catalog.md). Apply a fix only when you are "
         "confident AND it is safe and reversible on this machine; otherwise tell the "
-        "user what to do. The skill's final step records the result to the app Feed — "
-        "do NOT end your turn before it has run.\n\n"
+        "user what to do. You MUST run the skill's final recording step (report.py) "
+        "EVERY time — even if everything is healthy and no action is needed (use "
+        "--status ok). Do NOT end your turn before it has printed its JSON.\n\n"
         "User-reported text — free text or a pasted error; empty means run a full "
         f'sweep:\n"{message}"'
     )
@@ -115,23 +180,52 @@ async def _run_diagnose(message: str, transcript_timeout: float) -> int:
     # stream_transcript re-reads the transcript from the start on each call, so
     # track how many entries we've already printed and skip them on the re-stream
     # after a nudge (avoids duplicating the earlier narration).
-    renderer = _Renderer()
+    renderer = _Renderer(emit)
     rendered = 0
+    recorded: dict | None = None  # report.py's result JSON, scraped from the stream
 
-    async def _recorded() -> bool:
-        """Per-run completion signal: the worker's Step 7 cross-links a
-        flowpad_diagnosis into THIS process's private context. A fresh DB read
-        (the worker is a separate process writing the same instance DB) tells us
-        whether the recording step actually ran."""
-        fresh = await AgenticProcess.get_by_id(ap.id)
-        if fresh is None:
-            return False
-        return any(t.type == "flowpad_diagnosis" for t in fresh.private_context_entities)
+    _diag_cls = SchemaRegistry.get_entity_cls(EntityType.FLOWPAD_DIAGNOSIS)
+
+    def _scan(entry: dict) -> None:
+        """Detect report.py's completion JSON in a transcript entry — its stdout
+        rides the tool_result, and the agent usually echoes it in text too."""
+        nonlocal recorded
+        if recorded is not None:
+            return
+        msg = entry.get("message")
+        if not isinstance(msg, dict):
+            return
+        content = msg.get("content")
+        if not isinstance(content, list):
+            return
+        for block in content:
+            if not isinstance(block, dict):
+                continue
+            raw = block.get("content") if block.get("type") == "tool_result" else block.get("text")
+            if isinstance(raw, list):  # tool_result content can be a list of parts
+                raw = " ".join(
+                    p.get("text", "") for p in raw if isinstance(p, dict) and p.get("type") == "text"
+                )
+            if not isinstance(raw, str):
+                continue
+            res = _extract_report_result(raw)
+            if res is not None:
+                recorded = res
+                return
+
+    async def _completed() -> bool:
+        """Authoritative completion signal: report.py printed its result JSON, which
+        we scraped from the transcript stream we are already consuming. No
+        cross-process DB read and no marker file — the agent's own output tells us
+        it recorded (and gives us the diagnosis id), so this is correct for a clean
+        sweep that posts no Feed entry too."""
+        return recorded is not None
 
     async def _consume() -> None:
         nonlocal rendered
         idx = 0
         async for entry in ap.stream_transcript(timeout=transcript_timeout):
+            _scan(entry)
             if idx >= rendered:
                 renderer.feed(entry)
             idx += 1
@@ -139,21 +233,21 @@ async def _run_diagnose(message: str, transcript_timeout: float) -> int:
 
     async def _stream() -> None:
         """Render the worker's transcript, stopping when the turn ends OR — more
-        reliably — when the diagnosis is recorded (Step 7 done).
+        reliably — when a new Feed entry is recorded (Step 7 done).
 
         We can't depend solely on the transcript's own end-of-turn detection:
         ``_tail_status`` derives COMPLETE from only the last 4 KB of the JSONL, and
         a long final report (one big assistant line) can push the terminal markers
         out of that window, so the stream never sees COMPLETE and polls to its
         deadline — the command hangs long after the work is done (seen on Windows).
-        ``_recorded()`` is authoritative: once the cross-link exists the run is
+        ``_completed()`` is authoritative: once the Feed entry exists the run is
         finished, so we stop then. This is a definitive completion check, not a
         wait budget — we exit the instant either the stream ends or recording lands.
         """
         consumer = asyncio.create_task(_consume())
         try:
             while not consumer.done():
-                if await _recorded():
+                if await _completed():
                     break
                 # Re-check cadence only — there is no give-up timeout; we leave
                 # the loop as soon as the stream finishes or recording is detected.
@@ -166,34 +260,60 @@ async def _run_diagnose(message: str, transcript_timeout: float) -> int:
             renderer.finish()  # close any open progress row before the next message
 
     nudge_text = (
-        "You have NOT recorded the diagnosis yet, so nothing was saved. Complete the "
-        "skill's final recording step now (Step 7): create the flowpad_diagnosis "
-        "record, cross-link it to THIS process, and record it to the Feed via "
-        "create_diagnostic_report. Do not stop until it is recorded."
+        "You have NOT recorded the diagnosis yet, so nothing was saved. Run the skill's "
+        "final recording step now (Step 7): the report.py reporter script with the "
+        "diagnosis fields (--title/--symptoms/--rca/--fix) and --status. You MUST run it "
+        "even if everything was healthy — use --status ok. It always creates the "
+        "flowpad_diagnosis record (and posts a Feed entry only for real issues). Do not "
+        "stop until it has printed its JSON."
     )
 
     try:
         await ap.prompt(prompt_text)
-        typer.echo(f"  Diagnosing (session={(ap.session_id or '')[:8]})…")
+        emit({"type": "status", "text": f"  Diagnosing (session={(ap.session_id or '')[:8]})…"})
         await _stream()
         # The worker can end its turn early — diagnosing but not recording. Nudge
         # the SAME session once to finish, then re-check.
-        if not await _recorded():
-            typer.echo("  …agent stopped before recording — nudging it to finish.")
+        if not await _completed():
+            emit({"type": "status", "text": "  …agent stopped before recording — nudging it to finish."})
             await ap.prompt(nudge_text)
             await _stream()
     except (KeyboardInterrupt, asyncio.CancelledError):
-        typer.echo("Diagnose interrupted.", err=True)
+        emit({"type": "error", "text": "Diagnose interrupted."})
         return 130
 
-    if await _recorded():
-        typer.echo("  ✓ Diagnostic complete — recorded to the app's Home Feed.")
+    if recorded is not None:
+        # Cross-link the diagnosis this run produced into THIS process's context.
+        # The CLI owns the process id, so this works on every platform — the worker
+        # can't always self-identify to do it itself (notably on Windows, where its
+        # uv-run subprocess doesn't inherit FLOWPAD_EXECUTION_SCOPE). The diagnosis
+        # id came from report.py's own output (recorded); load it by id.
+        did = recorded.get("diagnosis_id")
+        try:
+            if did and _diag_cls is not None:
+                fresh = await AgenticProcess.get_by_id(ap.id)
+                diag = await _diag_cls.get_by_id(did)
+                if fresh is not None and diag is not None:
+                    await cross_link_entities(fresh, diag)
+        except Exception:
+            pass
+        emit({"type": "status", "text": "  ✓ Diagnostic complete — diagnosis recorded."})
+        emit({
+            "type": "done",
+            "ok": True,
+            "diagnosis_id": did,
+            "feed_posted": bool(recorded.get("feed_posted")),
+            "feed_entry_id": recorded.get("feed_entry_id"),
+        })
         return 0
-    typer.echo(
-        "  ! Diagnostic finished but the result was not recorded — see the report "
-        "above; re-run `flow diagnose` to retry.",
-        err=True,
-    )
+    emit({
+        "type": "error",
+        "text": (
+            "  ! Diagnostic finished but the result was not recorded — see the report "
+            "above; re-run `flow diagnose` to retry."
+        ),
+    })
+    emit({"type": "done", "ok": False, "diagnosis_id": None, "feed_posted": False, "feed_entry_id": None})
     return 1
 
 

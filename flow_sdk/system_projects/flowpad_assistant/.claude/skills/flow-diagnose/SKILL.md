@@ -424,47 +424,50 @@ End-to-end: <headless Playwright check — passed | failed | skipped (reason)>
 To Summarize: <plain-language 1-3 sentence summary of findings and next step>
 ```
 
-### Step 7 — Record the result (ALWAYS runs; SDK-direct, works offline)
+### Step 7 — Record the result (ALWAYS runs — even when everything is healthy)
 
-After printing the report, persist it so it surfaces on the Home landing Feed **and** is attached to
-this diagnose process. This is the SDK, **not** an HTTP API — it opens the local instance DB itself,
-so it works even when the backend is DOWN. **Never skip this step on the assumption that the backend
-must be up** — that assumption is wrong, and skipping it means the user sees nothing.
+**You MUST run the reporter script every single time, no matter the outcome — including a fully
+healthy, no-issue, no-action-needed result.** "Everything is fine" is NOT a reason to skip this step:
+a `flowpad_diagnosis` record is created for every diagnostic run (that is how the run is considered
+complete). Do **not** end your turn until the script has printed its JSON. Skipping this step makes
+the whole run count as failed.
 
-Use the **flowpad-assistance** skill (records action) to:
+The script is the SDK, **not** an HTTP API — it opens the local instance DB itself, so it works even
+when the backend is DOWN. Run the reporter that ships **next to this SKILL.md** (`report.py` in this
+skill directory); do **not** hand-build any entities and do **not** import from `flow_sdk`.
 
-1. Create a `flowpad_diagnosis` record (`title / symptoms / rca / fix` from your findings) and save it
-   (Step 1 + Step 2 of the "Creating a record from a metadata object" section).
-2. Cross-link the new record to THIS agentic process (Step 3 — link the record to the current
-   process). This is required: the process must end up with the diagnosis in its private context.
-3. Print the saved entity details in human-friendly text and the record id.
-4. Create a `flow_message` record, with the flowpad diagnosis as attachment.
-5. Create a `feed_entry` of message-suggest type.
+You do not decide whether to post a Feed entry — **`report.py` decides that from `--status`**. You
+just always run it with the right status:
 
-We expect the user to be able to see the diagnosis and send it to our support in a click from the
-Home Feed.
+1. It **always** creates a `flowpad_diagnosis` record from your `title / symptoms / rca / fix`.
+2. If you found an issue (`--status` is `fixed`, `needs_action`, or `unrecognized`) it also posts the
+   diagnosis to the Home Feed (hidden support Conversation + summary `flow_message` with the diagnosis
+   attached + a `message_suggest` `feed_entry`) so the user can send it to support in one click.
+3. If the sweep was clean (`--status ok`) or the only findings are benign (`--status informational`),
+   it records the diagnosis for history but creates **no** Feed entry. **Use `--status ok` for a
+   healthy result — and still run the script.**
 
-For steps 4–5 you do **not** hand-build those entities, and you do **not** import anything from
-`flow_sdk`. Run the reporter script that ships **next to this SKILL.md** (`report.py` in this skill
-directory) — it creates the hidden support Conversation, the summary `flow_message` (with the
-diagnosis attached as a `TYPE_ID` attachment), and the `new` `message_suggest` `feed_entry` in one
-call, creating the `@local` user/project if needed and printing a JSON line with the created ids:
+(The `flow diagnose` runner cross-links the diagnosis to this process for you afterwards — do **not**
+attempt the cross-link yourself.)
 
 ```bash
 uv run python "<this skill dir>/report.py" \
-  --summary "<one-paragraph plain summary: what was found + whether it was fixed + how>" \
-  --status fixed|needs_action|informational|unrecognized \
+  --title "<short diagnosis title>" \
+  --symptoms "<what was observed>" \
+  --rca "<root cause, or 'none — healthy' if no issue>" \
+  --fix "<what you did / what the user should do, or 'none needed'>" \
+  --summary "<one-paragraph plain summary>" \
+  --status fixed|needs_action|unrecognized|informational|ok \
   --platform "macOS|Windows|Linux" \
-  --details "<the full == Flowpad Diagnostic Report == block from Step 6>" \
-  --attachment-type-id "flowpad_diagnosis-<id>"
+  --details "<the full == Flowpad Diagnostic Report == block from Step 6>"
 ```
 
-(`<this skill dir>` is the folder this SKILL.md is in — the same path you were given to read it from.
-`--attachment-type-id` is the id of the `flowpad_diagnosis` record you created in steps 1–2.)
+`<this skill dir>` is the folder this SKILL.md is in — the same path you were given to read it from.
+Use `--status ok` when everything is healthy and no issue was found. It prints a JSON line including
+`diagnosis_id` (and the Feed ids when a Feed entry was posted).
 
-Do **all five** steps — none are optional — and do not end your turn before the cross-link and the
-feed entry have been recorded. Do **not** fail the whole run if this step errors; the console report
-from Step 6 still stands.
+Do not end your turn before the reporter script has printed its JSON. Do **not** fail the whole run if
+this step errors; the console report from Step 6 still stands.
 
 ## Reference Files
 
