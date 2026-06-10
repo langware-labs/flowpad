@@ -39,7 +39,6 @@ import {
   updateMessage,
   bulkUpdateMessages,
 } from './inbox-api';
-import { matchingConversationIds } from './inbox-search';
 
 type RowDeleteAction =
   | { kind: 'invitation'; invitationId: string; conversationId: string }
@@ -442,18 +441,37 @@ export function InboxView() {
   const request = useMemo(() => new QueryRequest({ type: Conversation.type }), []);
   const { data: conversations = [], refetch, isLoading } = useEntitiesQuery<Conversation>(request);
 
-  // Text search over message bodies. The FlowMessage watch is only enabled
-  // while a query is typed — it spans ALL local messages (read, archived,
-  // any thread position), so a hit anywhere in a thread surfaces its
-  // conversation. Pure client-side substring filter, live via watchQuery.
+  // Text search over message bodies. The substring match runs in the DB —
+  // a ``$LIKE`` filter on FlowMessage.text (SQL ``LIKE %needle%``, spans ALL
+  // messages: read, archived, any thread position) — so only the matching
+  // messages reach the client; we just collect their conversation ids. The
+  // watch is only enabled while a query is typed, and stays live via the
+  // entity-update channel.
   const [searchQuery, setSearchQuery] = useState('');
-  const searchActive = searchQuery.trim() !== '';
-  const msgRequest = useMemo(() => new QueryRequest({ type: FlowMessage.type }), []);
-  const { data: allMessages = [] } = useEntitiesQuery<FlowMessage>(msgRequest, { enabled: searchActive });
-  const matchIds = useMemo(
-    () => matchingConversationIds(allMessages, searchQuery),
-    [allMessages, searchQuery],
+  const needle = searchQuery.trim();
+  const searchActive = needle !== '';
+  const msgRequest = useMemo(
+    () =>
+      new QueryRequest({
+        type: FlowMessage.type,
+        query: { match: { op: '$LIKE', operands: ['text', needle] } },
+        name: 'inbox message search',
+      }),
+    [needle],
   );
+  const { data: matchedMessages } = useEntitiesQuery<FlowMessage>(msgRequest, { enabled: searchActive });
+  // Hold the last result while the next keystroke's query is in flight so the
+  // list doesn't blank between keystrokes (useEntitiesQuery resets data to
+  // undefined on every request change).
+  const lastMatchIdsRef = useRef<Set<string>>(new Set());
+  const matchIds = useMemo(() => {
+    if (matchedMessages) {
+      lastMatchIdsRef.current = new Set(
+        matchedMessages.map((m) => m.conversation_id).filter((id): id is string => !!id),
+      );
+    }
+    return lastMatchIdsRef.current;
+  }, [matchedMessages]);
 
   const sorted = useMemo(() => {
     const list = searchActive
