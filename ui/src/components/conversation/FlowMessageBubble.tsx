@@ -374,6 +374,20 @@ export function FlowMessageBubble({
   const triggerDownload = () =>
     ensureProjectMapped ? ensureProjectMapped(() => handleDownloadBody()) : void handleDownloadBody();
 
+  // `body_downloaded` only means "the bytes are on local disk" — and a FILE
+  // attachment's bytes live in the message's own (project-independent) embedded
+  // storage, so the flag flips true even on a conversation that was never
+  // assigned a project (e.g. a received bundle whose body got unpacked). But
+  // the live chips expose download / open-in-editor / reveal-in-folder, all of
+  // which resolve through a raw local path with no project context — exactly
+  // the gate `triggerDownload` already enforces. So treat the message as
+  // "downloaded" (render live chips) only once a project is actually resolved;
+  // until then fall through to the gated DownloadAttachmentsButton, whose first
+  // click routes through the project picker and resumes after a pick (the bytes
+  // are already present, so nothing re-downloads). Drafts never reach here —
+  // they return early via MessageComposer above.
+  const showLiveChips = downloaded && attachmentProjectId != null;
+
   const progressPct = progress && progress.bytesTotal > 0 ? Math.round(progress.fraction * 100) : null;
 
   const footer =
@@ -431,7 +445,7 @@ export function FlowMessageBubble({
             ))}
           </div>
         )}
-        {downloaded ? (
+        {showLiveChips ? (
           <>
             {otherEntities.length > 0 && (
               <div className="flex flex-wrap gap-1">
