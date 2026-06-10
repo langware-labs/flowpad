@@ -56,6 +56,9 @@ class CodexDriver:
     """Vendor glue for OpenAI Codex. Implements the ``WorkerDriver`` Protocol."""
 
     name = WorkerType.CODEX.value
+    # Codex's TUI needs a discrete Enter after the paste settles, not a
+    # trailing \r in the pasted text (Shell.write_then_submit).
+    pty_submits_on_paste = False
 
     # ── CLI shape ────────────────────────────────────────────────────────────
 

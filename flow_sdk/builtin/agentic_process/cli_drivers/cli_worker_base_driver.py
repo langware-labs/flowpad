@@ -380,6 +380,11 @@ class WorkerDriver(Protocol):
 
     name: str  # wire id: "claude" | "codex" | "copilot"
     preassign_interactive_session_id: bool
+    # True iff this vendor's interactive TUI submits a pasted prompt that ends
+    # in ``\r`` (claude). False for TUIs that treat the trailing ``\r`` as
+    # literal text and need a discrete Enter after the paste settles (copilot,
+    # codex) — see ``Shell.write_then_submit`` and the ``prompt-pty`` action.
+    pty_submits_on_paste: bool
 
     # ── CLI shape ────────────────────────────────────────────────────────────
 

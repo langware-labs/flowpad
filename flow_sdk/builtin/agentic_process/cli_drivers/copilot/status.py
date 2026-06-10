@@ -85,7 +85,13 @@ def _classify(raw: dict[str, Any]) -> tuple[WorkerStatus | None, bool]:
     }:
         return WorkerStatus.THINKING, False
     if event_type == "assistant.turn_end":
-        return WorkerStatus.THINKING, False
+        # The assistant finished its turn (all tool calls for the turn happen
+        # BEFORE this marker). The PTY worker stays alive at its prompt, ready
+        # for the next user message — so this is IDLE, not THINKING. Mapping it
+        # to THINKING pinned a completed copilot session as perpetually busy
+        # (status pill stuck, queue drain blocked, chat composer disabled).
+        # Non-terminal so an aged session still downgrades to INACTIVE.
+        return WorkerStatus.IDLE, False
     if event_type == "user.message":
         return WorkerStatus.WAITING, False
     if event_type.startswith("session.") or event_type == "system.message":

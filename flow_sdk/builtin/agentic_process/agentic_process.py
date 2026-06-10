@@ -1803,18 +1803,6 @@ class AgenticProcess(Entity):
         if not message:
             return ApiFailResponse(message="message is required")
 
-        # Admission gate — print mode only.
-        # PTY processes are rejected (visible=true means the interactive terminal
-        # owns the session). For print-mode we don't use ``is_ready_for_input``:
-        # it requires ProcessStatus.RUNNING + an IDLE worker, which makes sense
-        # for PTY but not here — print-mode processes have no persistent worker
-        # between turns, so the only contention is whether a turn is already in
-        # flight (enforced by the per-process lock below).
-        if self.visible:
-            return ApiFailResponse(
-                message="process is PTY-interactive; prompt action requires visible=false (print mode)",
-                status_code=409,
-            )
         if self.status in (ProcessStatus.STOPPING.value, ProcessStatus.FAILED.value):
             return ApiFailResponse(
                 message=f"process not sendable (status={self.status})",
@@ -1827,6 +1815,19 @@ class AgenticProcess(Entity):
                 message="another prompt turn is already in flight for this process",
                 status_code=409,
             )
+
+        # Two transports behind one action — the frontend always calls the same
+        # ``prompt()``; the process's ``visible`` flag picks the path:
+        #   visible=True  → PTY-interactive worker; FlowData derived by polling
+        #                   the session transcript (``_run_pty_prompt``).
+        #   visible=False → print-mode worker; FlowData from its stream-json
+        #                   stdout (the body below).
+        # For print mode we don't use ``is_ready_for_input``: it requires
+        # ProcessStatus.RUNNING + an IDLE worker, which makes sense for PTY but
+        # not here — print-mode processes have no persistent worker between
+        # turns, so the only contention is the per-process lock above.
+        if self.visible:
+            return self._run_pty_prompt(message)
 
         had_session = bool(self.session_id)
         if not self.session_id and bool(getattr(self.driver, "preassign_interactive_session_id", False)):
@@ -1948,6 +1949,254 @@ class AgenticProcess(Entity):
             return ApiFailResponse(message="no in-flight prompt turn")
         await worker.close_session()
         return ApiSuccessResponse(data={"cancelled": True})
+
+    # ── EXPERIMENT: PTY-transcript streaming prompt ─────────────────────────
+    #
+    # The PTY-interactive (visible=true) branch of the ``prompt`` action. The
+    # FlowData is NOT produced by a print-mode stream worker — it is derived by
+    # polling the session's JSONL transcript for new entries
+    # (``AgentTranscriptFile``) and converting each one through the same
+    # transcript-entry→FlowData mapper the history replay uses. The message is
+    # routed into the live PTY (stdin, or worker relaunch); the stream closes
+    # once the transcript shows no new entries for ``inactivity_timeout``
+    # seconds. Admission (message non-empty, not STOPPING/FAILED, lock free) is
+    # already enforced by ``_http_prompt`` before this is called.
+
+    def _run_pty_prompt(self, message: str, inactivity_timeout: float = 15.0) -> Any:
+        from starlette.responses import StreamingResponse  # local import — starlette is an app-layer dep
+
+        from flow_sdk.builtin.agentic_process.cli_drivers.claude.session_history import (
+            entry_to_flowdata,
+        )
+        from flow_sdk.transcript_analyzer import AgentTranscriptFile
+        from flow_sdk.transcript_analyzer.entry import EntryKind
+
+        poll_interval = 0.3
+        lock = _get_prompt_lock(self.id)
+        worker_type = self.driver.name
+
+        # ── Transcript resolution + parsing strategy ────────────────────────
+        # Resolve (path, format) via the driver's descriptor so the right
+        # vendor parser is used (claude=jsonl, codex=rollout/stream,
+        # copilot=events/stream — a missing format hint silently picks the
+        # wrong parser for the dual-format vendors).
+        def _resolve_transcript() -> "tuple[Path | None, Any]":
+            try:
+                desc = self.driver.transcript_descriptor(self)
+            except Exception:
+                desc = None
+            if desc is not None:
+                return desc.path, desc.format
+            try:
+                return self.driver.transcript_path(self), None
+            except Exception:
+                return None, None
+
+        # Read the FULL transcript and return its folded entries. We do NOT use
+        # the incremental ``parse_delta`` byte-offset path here: copilot (and
+        # any vendor that rewrites its session file rather than pure-appending)
+        # invalidates a cached byte offset, silently dropping the turn. Full
+        # reparse keyed off entry COUNT is immune to rewrites; we gate it on a
+        # (size, mtime) change so idle polls stay cheap.
+        def _read_entries(path: "Path", fmt: "Any") -> list:
+            try:
+                tf = AgentTranscriptFile(
+                    worker_type, path, session_id=self.session_id or "",
+                    transcript_format=fmt,
+                )
+                return list(tf.entries)
+            except Exception:
+                logger.exception("prompt-pty: transcript parse failed for %s", path)
+                return []
+
+        # Session bookkeeping that is not part of the conversation. Skipped from
+        # the live stream so the chat + dense chips show only "what the agent
+        # did", not the system prompt / session-start markers (which otherwise
+        # render as noise chips like "system · system").
+        _NOISE_KINDS = {
+            EntryKind.META,
+            EntryKind.SYSTEM,
+            EntryKind.SUMMARY,
+            EntryKind.TOKEN_USAGE,
+        }
+
+        # Watermark BEFORE routing the message: a resumed/booted session already
+        # has entries on disk (history, session.start). Count them now so the
+        # loop streams only entries appended for THIS turn.
+        emitted = 0
+        wm_path, wm_fmt = _resolve_transcript()
+        if wm_path is not None and wm_path.exists():
+            emitted = len(_read_entries(wm_path, wm_fmt))
+
+        handler = StreamingResponseHandler()
+
+        async def _run_turn() -> None:
+            nonlocal emitted
+            # Set when the turn's user message shows up in the transcript —
+            # the submission signal the cold-boot nudge loop waits for.
+            user_turn_landed = asyncio.Event()
+            nudge_task: asyncio.Task | None = None
+            resolved_path: "Path | None" = wm_path if (wm_path and wm_path.exists()) else None
+            resolved_fmt = wm_fmt
+            last_sig: "tuple[int, int] | None" = None
+            try:
+                async with lock:
+                    # Route the message into the PTY worker. claude submits a
+                    # paste with a trailing \r fine; copilot / codex TUIs treat
+                    # it as literal text and need the discrete paste-settle-Enter
+                    # path — a per-vendor trait owned by the driver.
+                    submits_on_paste = self.driver.pty_submits_on_paste
+                    cold_started = False
+                    if await self.is_running():
+                        if submits_on_paste:
+                            await self.send(message)
+                        else:
+                            shell = await self.shell()
+                            if shell is None:
+                                raise RuntimeError("No shell linked for PTY submit")
+                            await shell.write_then_submit(message)
+                    else:
+                        res = await self.start_pty(instruction=message)
+                        if isinstance(res, ApiFailResponse):
+                            raise RuntimeError(f"start_pty failed: {res.message}")
+                        cold_started = True
+
+                    if cold_started:
+                        # Cold-boot delivery is vendor-specific:
+                        # - claude: `claude <prompt>` as a launch arg PRE-FILLS
+                        #   the interactive input without submitting it (see
+                        #   project_pty_first_prompt_no_autosubmit) → press
+                        #   Enter until the transcript shows the user turn.
+                        #   An extra \r on an empty input box is a no-op.
+                        # - copilot/codex: ``to_spawn_args`` ignores the
+                        #   instruction entirely (their CLIs take prompts from
+                        #   stdin only) → type the message ONCE the input is
+                        #   live, then submit with a discrete Enter. Re-pasting
+                        #   the text on every retry would concatenate into one
+                        #   giant message, so retries only re-send Enter.
+                        launch_prefills = submits_on_paste
+
+                        async def _nudge_submit() -> None:
+                            if not launch_prefills:
+                                # Give the copilot/codex TUI a moment to draw its
+                                # input, type the message once, then fall through
+                                # to the Enter-retry loop below.
+                                await asyncio.sleep(2.0)
+                                if not user_turn_landed.is_set():
+                                    shell = await self.shell()
+                                    if shell is not None:
+                                        try:
+                                            await shell.write_then_submit(message)
+                                        except Exception:
+                                            pass
+                            delay = 1.5 if launch_prefills else 3.0
+                            for _ in range(8):
+                                await asyncio.sleep(delay)
+                                if user_turn_landed.is_set():
+                                    return
+                                try:
+                                    # Retry: only a discrete Enter — never
+                                    # re-paste (would concatenate). A \r on an
+                                    # empty input box is a harmless no-op.
+                                    await self.send(b"\r")
+                                except Exception:
+                                    return
+                        nudge_task = asyncio.create_task(_nudge_submit())
+
+                    last_activity = time.monotonic()
+                    while True:
+                        # Resolve the transcript lazily — it may not exist until
+                        # the worker writes its first line of this turn.
+                        if resolved_path is None or not resolved_path.exists():
+                            p, f = _resolve_transcript()
+                            if p is not None and p.exists():
+                                resolved_path, resolved_fmt = p, f
+                                last_sig = None  # force a read
+
+                        if resolved_path is not None and resolved_path.exists():
+                            try:
+                                st = resolved_path.stat()
+                                sig = (st.st_size, st.st_mtime_ns)
+                            except OSError:
+                                sig = None
+                            # Only reparse when the file actually changed.
+                            if sig is not None and sig != last_sig:
+                                last_sig = sig
+                                entries = _read_entries(resolved_path, resolved_fmt)
+                                if len(entries) > emitted:
+                                    last_activity = time.monotonic()
+                                    for entry in entries[emitted:]:
+                                        # The client echoes the user turn
+                                        # optimistically; skip the transcript's
+                                        # copy. Its arrival also confirms
+                                        # submission to the nudge loop.
+                                        if entry.kind is EntryKind.USER_MESSAGE:
+                                            user_turn_landed.set()
+                                            continue
+                                        if entry.kind in _NOISE_KINDS:
+                                            continue
+                                        await handler.on_flow_data(
+                                            entry_to_flowdata(entry, observation_kind="live")
+                                        )
+                                    emitted = len(entries)
+
+                        if time.monotonic() - last_activity >= inactivity_timeout:
+                            logger.info(
+                                "prompt-pty: closing stream after %.1fs of transcript inactivity (process %s)",
+                                inactivity_timeout, self.id,
+                            )
+                            # Synthetic end-of-turn marker — wire-format parity
+                            # with print mode, whose stream worker emits a real
+                            # `result` event at turn end. The PTY transcript has
+                            # no such event; inactivity is this transport's
+                            # turn-end signal, so surface it as the same frame.
+                            from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
+                                FlowData as _FD,
+                                FlowDataType as _FDT,
+                                FlowElementType as _FET,
+                            )
+                            await handler.on_flow_data(_FD(
+                                flow_value={"subtype": "success", "reason": "transcript-inactivity"},
+                                attributes={
+                                    "element-type": _FET.RESULT,
+                                    "data-type": _FDT.OBJECT,
+                                    "outcome": "success",
+                                    "subtype": "success",
+                                    "observation-kind": "live",
+                                },
+                            ))
+                            return
+                        await asyncio.sleep(poll_interval)
+            except Exception as e:
+                logger.exception("prompt-pty: turn error")
+                await handler.add_str_to_queue(Exception(f"prompt-pty error: {e}"))
+            finally:
+                if nudge_task is not None and not nudge_task.done():
+                    nudge_task.cancel()
+                # Signal end-of-stream to downstream consumers.
+                await handler.on_flow_data(None)
+
+        turn_task = asyncio.create_task(_run_turn())
+
+        async def _stream_body():
+            try:
+                async for xml_chunk in handler:
+                    yield xml_chunk
+            finally:
+                if not turn_task.done():
+                    # Client disconnected — the PTY worker keeps running on its
+                    # own; just stop the poller.
+                    turn_task.cancel()
+
+        return StreamingResponse(
+            _stream_body(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
 
     # ── Plan mode ─────────────────────────────────────────────────────────────
 

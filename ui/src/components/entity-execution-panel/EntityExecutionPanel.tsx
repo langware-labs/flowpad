@@ -3,10 +3,12 @@ import {
   ComputeNode,
   FlowElementTypes,
   isBusy,
+  isWorkerRunning,
   ProcessType,
   type StatusBearingProcess,
   TypeId,
   type FlowData,
+  WorkerStatus,
 } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { AutoScrollContainer, AutoScrollContainerHandle } from '@src/components/AutoScrollContainer';
@@ -28,7 +30,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ExecutionSettingsPopover } from './ExecutionSettingsPopover';
 import { CompactExecutionInput } from './CompactExecutionInput';
 import { groupTurnEvents } from '@src/components/floating-chat/groupTurnEvents';
-import { ToolEntryRow } from '@src/components/floating-chat/ToolEntryRow';
+import { TurnGroupsList } from './TurnGroupsList';
 import {
   buildHistorySubline,
   pickHistoryTitle,
@@ -103,6 +105,17 @@ interface EntityExecutionPanelProps {
    */
   defaultProjectId?: string | null;
   defaultWorkdir?: string | null;
+  /**
+   * EXPERIMENT: chat transport. Selects how the process is created; both call
+   * the same `prompt()`, which the backend routes by the process's `visible`
+   * flag.
+   * - 'print' (default): headless print-mode process (visible=false); FlowData
+   *   streamed from the worker's stream-json stdout.
+   * - 'pty-poll': PTY-interactive worker (visible=true); FlowData derived
+   *   server-side by polling the session transcript for new entries; the
+   *   stream closes on transcript inactivity.
+   */
+  transport?: 'print' | 'pty-poll';
 }
 
 /**
@@ -136,6 +149,7 @@ export function EntityExecutionPanel({
   dense = false,
   defaultProjectId,
   defaultWorkdir,
+  transport = 'print',
 }: EntityExecutionPanelProps) {
   const targetStr = target ?? '';
 
@@ -292,6 +306,7 @@ export function EntityExecutionPanel({
     setSending(true);
     try {
       let proc = activeProcess;
+      const isPtyPoll = transport === 'pty-poll';
 
       // Lazy-create on first send.
       if (!proc) {
@@ -300,13 +315,19 @@ export function EntityExecutionPanel({
         try {
           const computeNode = await ComputeNode.getById('@local');
           if (!computeNode) throw new Error('No local compute node');
-          const newProcess = await computeNode.createProcess({
-            workdir: effectiveWorkdir ?? undefined,
-            projectId: pendingProjectId ?? effectiveProjectId ?? undefined,
-            targetVfsPath: targetStr,
-            processType,
-            outputFormat: 'stream-json',
-          });
+          const newProcess = await computeNode.createProcess(
+            {
+              workdir: effectiveWorkdir ?? undefined,
+              projectId: pendingProjectId ?? effectiveProjectId ?? undefined,
+              targetVfsPath: targetStr,
+              processType,
+              // pty-poll: interactive PTY worker, no stream-json print mode.
+              ...(isPtyPoll ? {} : { outputFormat: 'stream-json' }),
+            },
+            // pty-poll: spawn the interactive PTY right away (visible=true
+            // auto-start) so the first prompt() lands on a live worker.
+            isPtyPoll ? { visible: true } : undefined,
+          );
           if (onProcessCreated) await onProcessCreated(newProcess);
           for (const ref of pendingAttachedRefs) {
             try { await newProcess.embeddedAssets.attach(ref); }
@@ -321,13 +342,15 @@ export function EntityExecutionPanel({
 
       if (!proc) throw new Error('process creation failed');
 
+      // One method, both transports: the backend's prompt action routes by the
+      // process's `visible` flag (PTY-transcript poll vs print-mode stream).
       await proc.prompt(text);
     } catch (err) {
       console.error('[EntityExecutionPanel] prompt failed', err);
     } finally {
       setSending(false);
     }
-  }, [activeProcess, sending, targetStr, effectiveProjectId, effectiveWorkdir, onProcessCreated, pendingProjectId, pendingAttachedRefs, processType]);
+  }, [activeProcess, sending, targetStr, effectiveProjectId, effectiveWorkdir, onProcessCreated, pendingProjectId, pendingAttachedRefs, processType, transport]);
 
   const scrollRef = useRef<AutoScrollContainerHandle>(null);
   useEffect(() => {
@@ -394,7 +417,17 @@ export function EntityExecutionPanel({
       }
     : null;
 
-  const busy = !!indicatorProcess && isBusy(indicatorProcess);
+  // EXPERIMENT(pty-poll): a PTY chat session must stay sendable when its
+  // worker is dead (backend restart, worker exit) — the prompt turn relaunches
+  // it with --resume. `isBusy` would lock the composer forever (it requires
+  // status=RUNNING), so the pty arm skips the status gate and blocks only on
+  // the gold mid-turn predicate — mirroring the backend prompt action's own
+  // admission, which rejects only STOPPING/FAILED.
+  const busy = !!indicatorProcess && (
+    transport === 'pty-poll'
+      ? isWorkerRunning(indicatorProcess.workerStatus as WorkerStatus)
+      : isBusy(indicatorProcess)
+  );
   const sendDisabled = !targetStr || sending || busy;
 
   const statusSlot = indicatorProcess ? (
@@ -466,20 +499,7 @@ export function EntityExecutionPanel({
           </div>
         )}
         {dense
-          ? turnGroups.map((g) =>
-              g.kind === 'message' ? (
-                <ExecutionMessage
-                  key={`msg-${g.flowData.id ?? g.flowData.timestamp ?? g.index}`}
-                  flowData={g.flowData}
-                  isUser={
-                    g.flowData.elementType === FlowElementTypes.USER_MESSAGE ||
-                    (g.flowData.attributes && g.flowData.attributes.role === 'user')
-                  }
-                />
-              ) : (
-                <ToolEntryRow key={`dense-${g.index}`} events={g.events} />
-              ),
-            )
+          ? <TurnGroupsList groups={turnGroups} />
           : messages.map((m) => (
               <ExecutionMessage
                 key={m.id ?? m.timestamp}
