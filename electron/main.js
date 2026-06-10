@@ -274,15 +274,44 @@ function createWindow() {
     backgroundColor: '#1e1e1e',
   });
 
-  // Mouse back/forward (X1/X2) buttons are handled SOLELY in the renderer
-  // (`ui/src/main.tsx` → `mouseup` button 3/4 → `window.history.back/forward()`),
-  // which also `preventDefault()`s so Chromium's own native back/forward doesn't
-  // double-fire. Do NOT also wire them here in the main process: an earlier
-  // `input-event`/`app-command` → `webContents.navigationHistory.goBack()` handler
-  // raced the renderer one and produced a double-step back/forward (proven via the
-  // [nav-debug] logs — one X1 press logged both `main.input-event` and
-  // `renderer.mouseup`, each navigating once). One owner = one navigation per press.
+  // Mouse back/forward (X1/X2) buttons are navigated HERE, in the main process —
+  // this is the only path that reliably fires on real hardware: on macOS the press
+  // arrives via `input-event` and is NOT delivered to the renderer as a DOM mouseup
+  // (so a renderer-side handler silently does nothing on hardware); on Windows/Linux
+  // it arrives as an `app-command`. The renderer (`ui/src/main.tsx`) only
+  // `preventDefault()`s these buttons to stop Chromium's own native back/forward —
+  // it must NOT also call `window.history.back/forward()` or you get a double-step
+  // (that was the "sometimes double back" bug). One owner = one navigation per press.
   const nav = () => mainWindow.webContents.navigationHistory;
+  const goBack = (source) => {
+    const can = nav().canGoBack();
+    log.info(`[nav-debug] main.goBack source=${source} canGoBack=${can} url=${mainWindow.webContents.getURL()}`);
+    if (can) nav().goBack();
+  };
+  const goForward = (source) => {
+    const can = nav().canGoForward();
+    log.info(`[nav-debug] main.goForward source=${source} canGoForward=${can} url=${mainWindow.webContents.getURL()}`);
+    if (can) nav().goForward();
+  };
+
+  if (process.platform === 'darwin') {
+    mainWindow.webContents.on('input-event', (_e, input) => {
+      if (input.type !== 'mouseDown') return;
+      if (input.button === 'back' || input.button === 'forward') {
+        log.info(`[nav-debug] main.input-event mouseDown button=${input.button}`);
+      }
+      if (input.button === 'back') goBack('mac-mouse-input-event');
+      else if (input.button === 'forward') goForward('mac-mouse-input-event');
+    });
+  } else {
+    mainWindow.webContents.on('app-command', (_e, command) => {
+      if (command === 'browser-backward' || command === 'browser-forward') {
+        log.info(`[nav-debug] main.app-command command=${command}`);
+      }
+      if (command === 'browser-backward') goBack('app-command');
+      else if (command === 'browser-forward') goForward('app-command');
+    });
+  }
 
   // Catch-all: log EVERY navigation that actually lands at the webContents
   // level, regardless of which source triggered it (mouse, renderer
