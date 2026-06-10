@@ -220,8 +220,14 @@ class FlowMessage(Entity):
     #   * is_read / is_archived — local inbox state, not the hub's to dictate.
     #   * received_at  — when THIS device received it.
     #   * is_draft     — a local draft has no hub twin; never let a refresh flip it.
+    #   * prompt_auto_handled — the receiver's "I already auto-ran this prompt"
+    #     marker. A LOCAL decision the hub never learns of, so it must survive
+    #     every hub refresh; it's the auto-run idempotency guard (a re-delivered
+    #     op finds it True and skips) and is sync-proof, unlike the attachment's
+    #     ``approved_by`` which a refresh can revert.
     LOCAL_ONLY_FIELDS: ClassVar[frozenset[str]] = Entity.LOCAL_ONLY_FIELDS | frozenset({
         "body_status", "is_read", "is_archived", "received_at", "is_draft",
+        "prompt_auto_handled",
     })
 
     type: str = APIField(default="flow_message")
@@ -270,7 +276,37 @@ class FlowMessage(Entity):
     # require a packed body; the sender flips it to READY after the body is
     # uploaded. Receivers gate on this before issuing a download.
     body_status: BodyStatus = APIField(default=BodyStatus.NA)
+    # Local-only: set once the receiver has auto-run this message's prompt (see
+    # process_inbound_message). Sync-proof idempotency guard.
+    prompt_auto_handled: bool = APIField(default=False)
     _api_visible: ClassVar[bool] = True
+
+    @classmethod
+    def merge_hub_payload(cls, local: "Entity", hub_payload: dict[str, Any]) -> dict[str, Any]:
+        """Preserve the receiver's local prompt-approval across a hub refresh.
+
+        ``attachment[].approved_by`` is set locally when the receiver approves /
+        auto-runs a PROMPT — the hub never learns of it (the sender's copy stays
+        ``None``), so a plain hub→local refresh would revert it and the prompt
+        would re-run on every sync. We can't mark it ``LOCAL_ONLY`` (it's nested
+        in ``attachment``), so re-apply each locally-approved attachment's
+        ``approved_by`` onto the matching incoming attachment (keyed by ``data``)
+        when the hub copy hasn't got one.
+        """
+        merged = super().merge_hub_payload(local, hub_payload)
+        local_approved = {
+            a.data: a.approved_by
+            for a in (getattr(local, "attachment", None) or [])
+            if getattr(a, "data", None) and getattr(a, "approved_by", None)
+        }
+        atts = merged.get("attachment")
+        if local_approved and isinstance(atts, list):
+            for att in atts:
+                if isinstance(att, dict):
+                    data = att.get("data")
+                    if data in local_approved and not att.get("approved_by"):
+                        att["approved_by"] = local_approved[data]
+        return merged
 
     @model_serializer(mode="wrap")
     def _serialize_with_local_paths(

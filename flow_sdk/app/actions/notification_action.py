@@ -998,6 +998,47 @@ def _is_prompt_attachment(a: Any) -> bool:
     return False
 
 
+async def _approve_prompt_attachments(
+    fm: "FlowMessage",
+    approver_id: Optional[str],
+    someone_typeid: str,
+    *,
+    attachment_index: Optional[int] = None,
+    approve_all: bool = True,
+) -> list[int]:
+    """Flip unapproved PROMPT attachments to ``approved_by=approver_id`` and save.
+
+    Returns the approved indices ([] when there was nothing to approve). Shared
+    by the ``approve-prompt`` action (FE manual path) and the backend execute
+    entrypoint (auto-run) so both stamp approval identically — and approval
+    doubles as the receive-hook's idempotency marker.
+    """
+    new_atts = list(fm.attachment or [])
+    approved: list[int] = []
+    if approve_all:
+        for i, a in enumerate(new_atts):
+            if _is_prompt_attachment(a) and not a.approved_by:
+                new_atts[i] = a.model_copy(update={"approved_by": approver_id})
+                approved.append(i)
+    else:
+        target_idx: Optional[int] = None
+        if isinstance(attachment_index, int) and 0 <= attachment_index < len(new_atts):
+            if _is_prompt_attachment(new_atts[attachment_index]):
+                target_idx = attachment_index
+        if target_idx is None:
+            for i, a in enumerate(new_atts):
+                if _is_prompt_attachment(a) and not a.approved_by:
+                    target_idx = i
+                    break
+        if target_idx is not None:
+            new_atts[target_idx] = new_atts[target_idx].model_copy(update={"approved_by": approver_id})
+            approved.append(target_idx)
+    if approved:
+        fm.attachment = new_atts
+        await fm.save(someone_typeid or "")
+    return approved
+
+
 @action.post(action_name="approve-prompt", types=["flow_message"])
 async def approve_prompt() -> ApiResponse:
     """Mark prompt attachments on a FlowMessage as approved by the current user.
@@ -1028,36 +1069,16 @@ async def approve_prompt() -> ApiResponse:
     local_user = await User.get_one({"uname": "local"})
     approver_id = local_user.id if local_user else None
 
-    new_atts = list(fm.attachment or [])
-
-    if approve_all:
-        approved_indices: list[int] = []
-        for i, a in enumerate(new_atts):
-            if _is_prompt_attachment(a) and not a.approved_by:
-                new_atts[i] = a.model_copy(update={"approved_by": approver_id})
-                approved_indices.append(i)
-        if not approved_indices:
-            return ApiFailResponse(message="No unapproved PROMPT attachment found on this message")
-        fm.attachment = new_atts
-        await fm.save(request_info.someone_typeid or "")
-        return ApiSuccessResponse(data={"attachment_indices": approved_indices, "approved_by": approver_id})
-
-    target_idx: Optional[int] = None
-    if isinstance(idx, int) and 0 <= idx < len(new_atts):
-        if _is_prompt_attachment(new_atts[idx]):
-            target_idx = idx
-    if target_idx is None:
-        for i, a in enumerate(new_atts):
-            if _is_prompt_attachment(a) and not a.approved_by:
-                target_idx = i
-                break
-    if target_idx is None:
+    approved = await _approve_prompt_attachments(
+        fm, approver_id, request_info.someone_typeid or "",
+        attachment_index=idx if isinstance(idx, int) else None,
+        approve_all=approve_all,
+    )
+    if not approved:
         return ApiFailResponse(message="No unapproved PROMPT attachment found on this message")
-
-    new_atts[target_idx] = new_atts[target_idx].model_copy(update={"approved_by": approver_id})
-    fm.attachment = new_atts
-    await fm.save(request_info.someone_typeid or "")
-    return ApiSuccessResponse(data={"attachment_index": target_idx, "approved_by": approver_id})
+    if approve_all:
+        return ApiSuccessResponse(data={"attachment_indices": approved, "approved_by": approver_id})
+    return ApiSuccessResponse(data={"attachment_index": approved[0], "approved_by": approver_id})
 
 
 @action.get(action_name="open", types=["notification"])

@@ -469,6 +469,21 @@ class HubWsBridge:
                     logger.info(
                         "[bridge] inbound persisted fm=%s conv=%s", fm_id, conversation_id,
                     )
+                    # Auto-run a permitted contact's prompt (the receiver's local
+                    # ContactPermission policy decides). Cheap pre-check on the raw
+                    # payload so a plain text message never spawns the task (and its
+                    # DB fetch). Detached so a slow/failed run never blocks persist
+                    # or the auto-ack below; failure-isolated inside the hook.
+                    if any(
+                        isinstance(a, dict) and (
+                            a.get("attachment_type") == "prompt"
+                            or (a.get("attachment_type") == "type_id"
+                                and str(a.get("data") or "").split("-", 1)[0] == "prompt")
+                        )
+                        for a in (payload.get("attachment") or [])
+                    ):
+                        from flow_sdk.app.actions.execute_prompt import process_inbound_message
+                        asyncio.create_task(process_inbound_message(fm_id, conversation_id))
                 except Exception as _err:
                     logger.warning(
                         "[bridge] inbound persist failed fm=%s (non-fatal): %s", fm_id, _err,

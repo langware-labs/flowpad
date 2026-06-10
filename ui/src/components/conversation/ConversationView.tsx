@@ -17,6 +17,7 @@ import { markFlowMessagesReceived } from '@sdk/entities/flow-message';
 import { FlowMessageBubble } from './FlowMessageBubble';
 import { MessageComposer } from './MessageComposer';
 import { useApproveAndExecute } from './useApproveAndExecute';
+import { ExecutePromptDialog } from './ExecutePromptDialog';
 import { useImplementPlan } from './useImplementPlan';
 import { useLocalUser } from './useLocalUser';
 import { useMembers } from '@src/hooks/use-members';
@@ -166,33 +167,51 @@ export function ConversationView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId, pointers.map((p) => p.id).join(',')]);
 
-  // Approve & Execute is task-bound. Pass an inert task to the hook when no
-  // task is present so we can keep the call unconditional, then suppress the
-  // approve action below.
-  const inertTask = useMemo(() => ({ id: '', metadata: {} }) as ITask, []);
-  const { approveAndExecute } = useApproveAndExecute({
-    task: task ?? inertTask,
-    conversationId,
-  });
+  // Execute is backend-owned now; the hook is just the trigger.
+  const { executePrompt } = useApproveAndExecute();
 
   const canApproveAndExecute = !!task || !!conversationId;
 
+  // The Execute CTA opens a confirm dialog (run now + persist per-contact
+  // permissions); this holds the message + sender + project it targets.
+  const [executeTarget, setExecuteTarget] = useState<{
+    messageId: string;
+    contact: { userId?: string | null; email?: string | null; name?: string | null };
+    projectId: string | null;
+  } | null>(null);
+
   const runApprove = useCallback(
-    (messageId: string, idx: number) => {
+    (messageId: string) => {
       if (!canApproveAndExecute) return;
-      // Surface the spawned run right away — `approveAndExecute` is async (the
-      // spawn + capture-turn round-trip takes hundreds of ms), so calling the
-      // reveal-runs callback at click time, not after the await, gives the
-      // user immediate feedback that the drawer flipped to the Runs tab.
+      const fm = messagesById.get(messageId);
+      const senderId = fm?.sender_id ?? null;
+      const sender = senderId ? participants.find((p) => p.user_id === senderId) : undefined;
+      setExecuteTarget({
+        messageId,
+        contact: {
+          userId: senderId,
+          email: sender?.email ?? null,
+          name: sender?.name ?? null,
+        },
+        projectId: conversation?.project_id ?? null,
+      });
+    },
+    [canApproveAndExecute, messagesById, participants, conversation?.project_id],
+  );
+
+  const runExecute = useCallback(
+    (messageId: string, autoReply: boolean) => {
+      // Surface the spawned run right away — execution is async (the headless
+      // run round-trips), so flip the drawer to Runs at confirm time.
       onApproveAndExecuteFired?.();
       const action = async () => {
-        await approveAndExecute(messageId, idx);
+        await executePrompt(messageId, { autoReply });
         void refetch();
       };
       if (ensureMapped) ensureMapped(action);
       else void action();
     },
-    [approveAndExecute, refetch, ensureMapped, canApproveAndExecute, onApproveAndExecuteFired],
+    [executePrompt, refetch, ensureMapped, onApproveAndExecuteFired],
   );
 
   // Implement Plan lifecycle — spawn + watch + open. See `useImplementPlan.ts`
@@ -461,6 +480,16 @@ export function ConversationView({
         <MessageComposer
           conversationId={conversationId}
           onSent={() => void refetch()}
+        />
+      )}
+
+      {executeTarget && (
+        <ExecutePromptDialog
+          open
+          onClose={() => setExecuteTarget(null)}
+          contact={executeTarget.contact}
+          projectId={executeTarget.projectId}
+          onExecute={(autoReply) => runExecute(executeTarget.messageId, autoReply)}
         />
       )}
     </div>
