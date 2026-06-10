@@ -481,10 +481,55 @@ class UvManager {
   }
 
   /**
+   * Windows-only: kill any process whose executable lives inside the flowpad
+   * uv tool venv, so a `--force`/`--reinstall` install can replace it.
+   *
+   * `uv tool install … --force` must delete and recreate
+   * `…\uv\tools\flowpad\Scripts\`, but Windows refuses to remove a directory
+   * that contains a running .exe — "failed to remove directory … Scripts:
+   * Access is denied. (os error 5)". The usual culprit is an orphaned backend
+   * from a previous session (`python.exe -m flow_sdk.server.launch`) still
+   * holding `Scripts\python.exe` open. It may NOT be listening on 9007
+   * (crashed/hung mid-boot), so `ensurePortFree`/`_killPort` — which only target
+   * the port listener — can't reach it. Match by image path instead and kill the
+   * whole tree (`/T`) so spawned workers under the same venv go too.
+   *
+   * No-op on Unix: unlinking a running executable's file is allowed there, so
+   * the tool dir can be replaced while the old backend keeps running.
+   */
+  async _killStaleToolProcesses() {
+    if (!IS_WIN) return;
+    const toolDir = path.join(
+      os.homedir(), 'AppData', 'Roaming', 'uv', 'tools', PYPI_PACKAGE
+    );
+    try {
+      const escaped = toolDir.replace(/'/g, "''");
+      const { stdout } = await execFileAsync('powershell.exe', [
+        '-NoProfile', '-Command',
+        `Get-CimInstance Win32_Process | ` +
+        `Where-Object { $_.ExecutablePath -like '${escaped}\\*' } | ` +
+        `Select-Object -ExpandProperty ProcessId`,
+      ], { timeout: 8000, windowsHide: true });
+      const pids = stdout.split(/\r?\n/)
+        .map((s) => parseInt(s.trim(), 10))
+        .filter((p) => p > 0);
+      for (const pid of pids) {
+        try {
+          await execFileAsync('taskkill', ['/PID', String(pid), '/T', '/F'], { timeout: 5000 });
+          this.log.info(`[uv] Killed stale tool process PID ${pid} (held ${toolDir})`);
+        } catch { /* already gone / not killable — ignore */ }
+      }
+    } catch (e) {
+      this.log.warn(`[uv] _killStaleToolProcesses failed: ${e.message}`);
+    }
+  }
+
+  /**
    * First-time install: `uv tool install flowpad` (latest from PyPI).
    */
   async installLatest() {
     this.log.info(`[uv] Installing latest ${PYPI_PACKAGE} from PyPI...`);
+    await this._killStaleToolProcesses();
     await this._uv(['tool', 'install', PYPI_PACKAGE, '--force'], { timeout: 120000 });
 
     this._flowBin = await this._resolveFlowBin();
@@ -993,6 +1038,7 @@ class UvManager {
    */
   async upgrade() {
     this.log.info('[uv] Upgrading flowpad...');
+    await this._killStaleToolProcesses();
     await this._uv(['tool', 'install', `${PYPI_PACKAGE}@latest`, '--force'], { timeout: 120000 });
     this._flowBin = await this._resolveFlowBin();
     this.log.info('[uv] Upgrade complete');
@@ -1007,6 +1053,7 @@ class UvManager {
    */
   async reinstall() {
     this.log.info(`[uv] Repairing ${PYPI_PACKAGE} install (--reinstall --force)...`);
+    await this._killStaleToolProcesses();
     await this._uv(['tool', 'install', PYPI_PACKAGE, '--reinstall', '--force'], { timeout: 120000 });
     this._flowBin = await this._resolveFlowBin();
     this.log.info(`[uv] Repair complete, binary at ${this._flowBin}`);
