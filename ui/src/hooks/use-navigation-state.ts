@@ -180,18 +180,12 @@ export function useNavigationState(config?: DeepLinkConfig) {
     // Navigation
     navigateWithState,
     goBack: () => {
-      console.log(
-        `[nav-debug] useNavigationState.goBack canGoBack=${store.canGoBack()} currentIndex=${store.currentIndex} historyLen=${store.history.length}`,
-      );
       if (store.canGoBack()) {
         store.goBack();
         void navigate(-1);
       }
     },
     goForward: () => {
-      console.log(
-        `[nav-debug] useNavigationState.goForward canGoForward=${store.canGoForward()} currentIndex=${store.currentIndex} historyLen=${store.history.length}`,
-      );
       if (store.canGoForward()) {
         store.goForward();
         void navigate(1);
