@@ -42,7 +42,11 @@ M = TypeVar("M")  # meta model — dict view by default; Pydantic models opt-in 
 # Canonical naming. <type>-@<uid> as folder name under records_root/<type>/.
 _NAME_SEP = "-@"
 _METADATA_JSON = "metadata.json"
-# The single per-record index sentinel: ``<int_epoch>_<hexdigest>.hash``.
+# The single per-record index sentinel. Two on-disk shapes:
+#   legacy  ``<int_epoch>_<contenthash>.hash``
+#   current ``<int_epoch>_<contenthash>_<pathdigest>.hash``
+# The trailing ``<pathdigest>`` makes freshness location-aware so a relocated
+# source (same bytes, new path) re-indexes and re-anchors its ``asset_ref``.
 _HASH_GLOB = "*.hash"
 
 # Instance attribute names that don't belong in serialized meta (system state).
@@ -428,15 +432,29 @@ class FSRecord(Generic[M]):
         except OSError:
             return None
 
+    def _indexed_parts(self) -> list[str] | None:
+        """Underscore-split stem of the ``.hash`` sentinel — ``[epoch,
+        contenthash, pathdigest?]`` — or None if never indexed. One glob,
+        shared by the index-state properties and the hot-path
+        ``index_required`` so a single probe never globs the shadow dir twice.
+        The digests are underscore-free blake2b hex, so the split is unambiguous
+        across the legacy 2-part and current 3-part sentinel shapes."""
+        f = self._hash_file()
+        return f.stem.split("_") if f is not None else None
+
     @property
     def indexed_hash(self) -> str | None:
-        """Source hash captured at the last index (from the sentinel filename),
-        or None if never indexed."""
-        f = self._hash_file()
-        if f is None:
-            return None
-        parts = f.stem.split("_", 1)
-        return parts[1] if len(parts) == 2 else None
+        """Source content hash captured at the last index, or None if never
+        indexed."""
+        parts = self._indexed_parts()
+        return parts[1] if parts and len(parts) >= 2 else None
+
+    @property
+    def indexed_path_digest(self) -> str | None:
+        """Digest of the asset path captured at the last index (3rd sentinel
+        segment), or None for a legacy 2-part sentinel (path not recorded)."""
+        parts = self._indexed_parts()
+        return parts[2] if parts and len(parts) >= 3 else None
 
     @property
     def indexed_at(self) -> str | None:
@@ -453,10 +471,53 @@ class FSRecord(Generic[M]):
             return None
         return _dt.fromtimestamp(ts, tz=_tz.utc).isoformat()
 
+    def _path_digest(self) -> str:
+        """Digest of the current asset path (the 3rd sentinel segment). Empty
+        when the record has no asset."""
+        ar = self._asset_ref
+        return _digest(ar.path) if ar is not None else ""
+
+    def _persisted_asset_path(self) -> str | None:
+        """The asset path recorded in this record's on-disk metadata.json, or
+        None when absent/unreadable. Used only to reconcile legacy (2-part)
+        sentinels that predate path-aware freshness — a one-time read per
+        relocated record, not on the steady-state hot path."""
+        try:
+            meta_path = self.shadow_dir / _METADATA_JSON
+            if not meta_path.exists():
+                return None
+            ar = json.loads(meta_path.read_text(encoding="utf-8")).get("asset_ref")
+            return ar if isinstance(ar, str) and ar else None
+        except (OSError, ValueError):
+            return None
+
     @property
     def index_required(self) -> bool:
-        """True when the source changed since the last index (or never indexed)."""
-        return self.record_hash != (self.indexed_hash or "")
+        """True when the source changed since the last index (or never indexed),
+        OR when the source relocated (same bytes, different path).
+
+        The freshness token (``record_hash``) is mtime+size — deliberately
+        path-blind. Many relocations (wheel install, ``cp -p``, archive extract)
+        preserve mtime+size, so location drift must be caught separately or a
+        moved record keeps a stale ``asset_ref`` forever. The non-fresh path
+        re-parses → ``sync_to_db`` → ``Entity.from_record`` re-anchors it."""
+        # One glob, both fields — skip-fresh runs this per record.
+        parts = self._indexed_parts()
+        indexed_hash = parts[1] if parts and len(parts) >= 2 else ""
+        if self.record_hash != indexed_hash:
+            return True  # content changed, or never indexed
+        # Content is fresh — also re-anchor on location drift.
+        idx_pd = parts[2] if parts and len(parts) >= 3 else None
+        if idx_pd is not None:
+            return self._path_digest() != idx_pd  # cheap 3-part compare
+        # Legacy 2-part sentinel: no recorded path. Reconcile against the
+        # persisted metadata.json so ONLY genuinely-moved records re-index
+        # (no mass reindex of unmoved records on first upgrade). The next
+        # write_hash upgrades this record's sentinel to the 3-part form.
+        persisted = self._persisted_asset_path()
+        if persisted is None:
+            return False  # can't tell — treat as fresh, no spurious reindex
+        return persisted != (self._asset_ref.path if self._asset_ref else "")
 
     @property
     def orphan(self) -> bool:
@@ -474,7 +535,9 @@ class FSRecord(Generic[M]):
         folder = self.shadow_dir
         folder.mkdir(parents=True, exist_ok=True)
         self.clear_hash()
-        (folder / f"{int(time.time())}_{self.record_hash}.hash").touch()
+        # 3-part sentinel: ``<epoch>_<contenthash>_<pathdigest>`` so freshness
+        # is location-aware (see ``index_required``).
+        (folder / f"{int(time.time())}_{self.record_hash}_{self._path_digest()}.hash").touch()
 
     def clear_hash(self) -> None:
         """Remove the index sentinel so the record reads as never-indexed."""

@@ -1007,6 +1007,61 @@ class FsRecordsActionsMixin:
             "duration_ms": result.duration_ms,
         })
 
+    async def _index_system_assets(self) -> None:
+        """Startup pass: index the SDK-shipped Flowpad Assistant system project
+        (docs/markdown, skills, agents, whiteboards) at the **live install
+        location**, emitting progress to the footer like any index.
+
+        Hash-gated, so it's near-instant after the first run; combined with
+        path-aware freshness (``FSRecord.index_required``) it re-anchors any
+        ``asset_ref`` left stale by an install relocation (editable ↔ wheel).
+        Scoped to the system project only — never the user's workspace.
+        Best-effort: never raises into the caller (spawned detached).
+        """
+        import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — trigger auto-registration
+        try:
+            from flow_sdk.core.network.resource_tracker import broadcast_progress  # noqa: PLC0415
+            from flow_sdk.fs_store.indexer import (  # noqa: PLC0415
+                IndexerOptions,
+                IndexProgressTable,
+                get_shared_indexer,
+            )
+            from flow_sdk.fs_store.indexer.roots import flowpad_assistant_scoped_roots  # noqa: PLC0415
+
+            scoped_roots = flowpad_assistant_scoped_roots()
+            if not scoped_roots:
+                return
+
+            try:
+                activity = self._start_activity("index", timeout_seconds=600)
+            except RuntimeError:
+                # Another index is already running (e.g. user-triggered); it will
+                # cover the system assets too — skip the duplicate pass.
+                return
+
+            async def emit(table: "IndexProgressTable") -> None:
+                activity.latest_table = table
+                await broadcast_progress(
+                    to_entity=str(self.typeid),
+                    flow_data=activity.make_flow_data(),
+                )
+
+            try:
+                result = await get_shared_indexer().index(IndexerOptions(
+                    roots=scoped_roots,
+                    on_progress=emit,
+                    verbose=False,
+                    force=False,
+                ))
+                logging.info(
+                    "[fs-records] system-assets index complete: "
+                    f"{result.total_indexed} new, {result.total_errors} errors"
+                )
+            finally:
+                self._complete_activity("index")
+        except Exception:
+            logging.exception("[fs-records] system-assets index failed (non-fatal)")
+
     async def _handle_fs_records_discover_by_path(
         self,
         record_type: str,
@@ -1072,20 +1127,50 @@ class FsRecordsActionsMixin:
                 status_code=500,
             )
 
-        # Pass 2: on miss, force a fresh FSIndexer scan of the user's
-        # workflow / agent / skill / plan directories. The base
-        # ``Record.discover()`` walks ``records_root / <type> /`` (the
-        # **shadow** tree), so a brand-new file on disk is invisible
-        # until the indexer materialises it. This is the recovery path
-        # for ``useEntityByPath``: file exists on disk, isn't yet in
-        # the index → re-index this single type, then look again.
+        # Pass 2a (fast recovery): the bulk index missed this path. Parse JUST
+        # this one file via the type's own ``from_disk_fn`` and sync it, instead
+        # of walking the whole project tree. This is the interactive hot path
+        # (``useEntityByPath`` fires it on a bulk miss); a full FSIndexer scan
+        # here can take tens of seconds. ``_find_in`` only needs the record's
+        # shadow row materialised at the right asset_ref, which a single-file
+        # parse + ``sync_to_db`` provides.
+        if found is None and Path(expanded).exists():
+            try:
+                import asyncio as _asyncio  # noqa: PLC0415
+
+                from flow_sdk.fs_store.fs_ref import FSRef as _FSRef  # noqa: PLC0415
+                from flow_sdk.fs_store.indexer.roots import classify_path  # noqa: PLC0415
+                from flow_sdk.fs_store.record_types import RecordType as _RT  # noqa: PLC0415
+
+                _from_disk = getattr(_SR.get(record_type), "from_disk_fn", None)
+                if _from_disk is not None:
+                    one_ref = _FSRef(
+                        expanded,
+                        record_type=_RT(record_type),
+                        scope=classify_path(expanded),
+                    )
+                    recs = _from_disk(one_ref)
+                    if _asyncio.iscoroutine(recs):
+                        recs = await recs
+                    for rec in (recs or []):
+                        try:
+                            await rec.sync_to_db(notify=False)
+                        except Exception as _se:
+                            logging.debug(f"[fs-records] targeted sync skipped for {record_type}: {_se}")
+                    record_list = RecordList(type_name=record_type)
+                    found = _find_in(record_list)
+            except Exception as e:
+                logging.debug(f"[fs-records] targeted parse failed for {record_type} @ {expanded}: {e}")
+
+        # Pass 2b (fallback): targeted parse didn't surface the record (e.g. a
+        # project-rooted type that needs the parent-chain scope, or a file the
+        # bulk discover already removed). Fall back to the scoped re-index.
         #
         # default_roots() no longer auto-expands USER_HOME → REAL_PROJECT_CWD
-        # (the silent ``real_project_cwd_fn`` fanout was removed). We
-        # therefore have to enumerate project roots explicitly via the new
-        # scope filter so project-rooted record types (TASK, SPEC, project-
-        # root SKILL/AGENT/WORKFLOW/CLAUDE_MD/CLAUDE_RULES) are reachable
-        # from this recovery path.
+        # (the silent ``real_project_cwd_fn`` fanout was removed). We therefore
+        # enumerate project roots explicitly via the scope filter so project-
+        # rooted record types (TASK, SPEC, project-root SKILL/AGENT/WORKFLOW/
+        # CLAUDE_MD/CLAUDE_RULES) are reachable from this recovery path.
         if found is None:
             try:
                 from flow_sdk.fs_store.indexer import (  # noqa: PLC0415
