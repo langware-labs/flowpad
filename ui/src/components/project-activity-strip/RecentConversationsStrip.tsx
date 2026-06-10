@@ -1,8 +1,6 @@
 import {
   Conversation,
-  ConversationKind,
   FlowMessage,
-  FlowMessageKind,
   Invitation,
   Project,
   QueryRequest,
@@ -22,9 +20,11 @@ import { NewConversationDialog } from '@src/components/new-conversation-dialog/N
 import { deriveConversationTitle } from '@src/components/conversation/conversation-title';
 import { ConversationParticipants } from '@src/components/conversation/ConversationParticipants';
 import { participantIsUser, participantName } from '@src/components/conversation/participant-display';
+import { conversationFacets } from '@src/components/conversation/conversation-category';
+import { CategoryChips } from '@src/components/conversation/CategoryChips';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { CheckCheck, EyeOff, LifeBuoy, MailPlus, MessageSquare, Plus, RefreshCw, Upload } from 'lucide-react';
+import { CheckCheck, EyeOff, MailPlus, MessageSquare, Plus, RefreshCw, Upload } from 'lucide-react';
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useIsAdvanced } from '@src/components/view-mode';
 import { formatTimeAgo } from './project-activity-utils';
@@ -417,43 +417,31 @@ function ConversationRow({
 
   // The current user's identity — cloud email when logged in, else local.
   const myEmail = (cloudUser?.email || currentUser?.email || '').trim().toLowerCase();
-  // The recipient is named directly on the Invitation entity. Matching against
-  // ``recipient_email`` — rather than the conversation participant list, which
-  // can also include the sender — is what cleanly separates "I was invited to
-  // this" from "I sent this".
-  const recipientEmail = invitation?.recipient_email?.trim().toLowerCase() || '';
-  const isRecipient = !!myEmail && myEmail === recipientEmail;
 
-  // An invitation row (Accept CTA, no navigation) is shown ONLY to the
-  // *recipient* of a still-pending invitation. The sender always sees a
-  // normal conversation row; once the recipient accepts, ``invitation.accepted``
-  // flips true via the WS entity update and the row collapses to the normal
-  // conversation for them too. The first message stays ``kind === 'invitation'``
-  // forever, so it can't drive this on its own.
-  const isInvitationRow =
-    firstMessage?.kind === FlowMessageKind.INVITATION &&
-    !invitation?.accepted &&
-    isRecipient;
+  // Shared category classifier — single source of truth for invitation /
+  // community / archived (replacing the per-strip copies). Invitation is
+  // viewer-relative: matched on the Invitation's ``recipient_email`` so "I was
+  // invited" stays distinct from "I sent this". Archived compares the latest
+  // pointer ``ts`` so it auto-revives without racing the async FlowMessage fetch.
+  const facets = conversationFacets({
+    conv,
+    firstMessage,
+    latestMessage,
+    latestPtrTs: lastPtr?.ts ?? null,
+    invitation,
+    viewer: { email: myEmail, cloudUserId: cloudUser?.id ?? currentUser?.id ?? null },
+  });
+  const isInvitationRow = facets.isInvitation;
 
-  // Community/support ticket — tagged with a chip so it reads as a support
-  // thread (not a normal DM) in the strip. ``kind`` is hub-set.
-  const isCommunity = conv.kind === ConversationKind.COMMUNITY;
-
-  // Both timestamps use the same auto-revive-on-new-message pattern:
-  // compare the stamp against the latest pointer's ``ts`` (available
-  // synchronously off ``message_ids``) so we don't flicker during the
-  // async FlowMessage fetch.
-  //   * dismissed_at — strip-only "Hide from Recent" (EyeOff button)
-  //   * archived_at  — conversation-level archive (Inbox + strip honor it)
+  // ``dismissed_at`` is a strip-only "Hide from Recent" (EyeOff) flag — NOT part
+  // of the shared category, so it stays local. Same auto-revive pattern: compare
+  // the stamp against the latest pointer ``ts`` to avoid flicker during the fetch.
   const latestMessageTime = lastPtr?.ts ? new Date(lastPtr.ts).getTime() : 0;
   const dismissedAt = conv.dismissed_at ? new Date(conv.dismissed_at).getTime() : null;
   const dismissedHidden =
     dismissedAt !== null && !Number.isNaN(dismissedAt) && latestMessageTime <= dismissedAt;
-  const archivedAt = conv.archived_at ? new Date(conv.archived_at).getTime() : null;
-  const archivedHidden =
-    archivedAt !== null && !Number.isNaN(archivedAt) && latestMessageTime <= archivedAt;
 
-  const hidden = dismissedHidden || archivedHidden;
+  const hidden = dismissedHidden || facets.isArchived;
   const convIdStr = conv.id ?? '';
   // Report hidden state up so the parent can drive the header count + empty
   // state. No cleanup callback: cleanup that calls setState during unmount /
@@ -529,17 +517,7 @@ function ConversationRow({
             <span className="truncate">{fromName ?? title}</span>
           </span>
           <div className="flex shrink-0 items-center gap-1">
-            {isCommunity && (
-              <span
-                className="inline-flex shrink-0 items-center gap-0.5 rounded-md border border-violet-500/40 bg-violet-500/15 px-1.5 py-0.5 text-[10px] font-medium text-violet-600 dark:text-violet-400"
-                data-testid="community-chip"
-                data-chip-type="community"
-                title="Community support ticket"
-              >
-                <LifeBuoy className="h-2.5 w-2.5" />
-                Support
-              </span>
-            )}
+            <CategoryChips facets={facets} />
             {projectLabel && (
               <span
                 className="inline-flex shrink-0 items-center rounded-md border border-primary/30 bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary"
