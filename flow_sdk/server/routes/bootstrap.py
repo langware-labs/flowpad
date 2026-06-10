@@ -1241,6 +1241,42 @@ async def _index_system_project_markdowns(projects: list[Project]) -> None:
                     logging.debug(f"[bootstrap] failed to index system markdown {md_path}: {e}")
 
 
+async def index_system_content() -> None:
+    """Once-per-process system content indexing: system projects, their
+    markdown docs, and the SDK-shipped assistant assets (hash-gated).
+
+    Spawned as a detached task from server startup
+    (``app._on_server_startup``) — NEVER inline in the bootstrap request
+    path. The markdown walk's per-file DB upserts and the asset index are
+    exactly the work that used to push cold bootstraps past the slowness
+    threshold. Every step is idempotent; each is best-effort so one failure
+    doesn't abort the rest.
+    """
+    try:
+        await init_db()
+        user = await get_or_create_local_user()
+        project = await get_or_create_local_project(desktop_user=user)
+    except Exception:
+        logging.exception("[startup-index] base entities unavailable; skipping system content index")
+        return
+    system_projects: list[Project] = []
+    try:
+        system_projects = await _ensure_system_projects(desktop_user=user)
+    except Exception as e:
+        logging.warning(f"[startup-index] Failed to ensure system projects (non-fatal): {e}")
+    try:
+        await _index_system_project_markdowns(system_projects)
+    except Exception as e:
+        logging.warning(f"[startup-index] Failed to index system markdowns (non-fatal): {e}")
+    try:
+        compute_node = await get_or_create_local_compute_node(
+            local_project=project, desktop_user=user
+        )
+        await compute_node._index_system_assets()
+    except Exception as e:
+        logging.warning(f"[startup-index] Failed to index system assets (non-fatal): {e}")
+
+
 async def _ensure_welcome_favorite(user: User) -> None:
     """One-shot onboarding: drop a favorite bookmark to the Welcome markdown
     onto the user's home view the first time the server boots.
@@ -1550,17 +1586,11 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
         _t.time("get_or_create_local_user")
         project = await get_or_create_local_project(desktop_user=user)
         _t.time("get_or_create_local_project")
-        system_projects: list[Project] = []
-        try:
-            system_projects = await _ensure_system_projects(desktop_user=user)
-        except Exception as e:
-            logging.warning(f"[bootstrap] Failed to ensure system projects (non-fatal): {e}")
-        _t.time("ensure_system_projects")
-        try:
-            await _index_system_project_markdowns(system_projects)
-        except Exception as e:
-            logging.warning(f"[bootstrap] Failed to index system markdowns (non-fatal): {e}")
-        _t.time("index_system_markdowns")
+        # System projects + markdown/asset indexing run as a detached
+        # once-per-process task at server startup (``index_system_content``,
+        # spawned from app._on_server_startup) — keep them out of the request
+        # path. The Welcome-favorite seed stays here: it's onboarding-gated
+        # (one-shot per user) and self-skips until the markdown index lands.
         try:
             await _ensure_welcome_favorite(user)
         except Exception as e:
@@ -1570,21 +1600,6 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
         _t.time("get_or_create_local_workspace")
         compute_node = await get_or_create_local_compute_node(local_project=project, desktop_user=user)
         _t.time("get_or_create_local_compute_node")
-
-        # Background, hash-gated index of the SDK-shipped Flowpad Assistant
-        # assets (docs/skills/agents/whiteboards) at the live install location.
-        # Detached so it never blocks the bootstrap response; near-instant after
-        # the first run (skip-fresh) and re-anchors any asset_ref left stale by
-        # an install relocation. Runs once per cold bootstrap (process start).
-        try:
-            import asyncio as _asyncio  # noqa: PLC0415
-            _asyncio.create_task(
-                compute_node._index_system_assets(),
-                name="system-assets-index",
-            )
-        except Exception as e:
-            logging.warning(f"[bootstrap] Failed to spawn system-assets index (non-fatal): {e}")
-        _t.time("spawn_system_assets_index")
 
         sandbox_available = is_sandbox_available()
         sandbox_compute_node: Optional[ComputeNode] = None

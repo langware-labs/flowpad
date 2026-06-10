@@ -103,6 +103,7 @@ class BaseInstanceSettings:
     monitor_log_path: Path
     inbox_last_fetch_path: Path
     conversation_last_sync_path: Path
+    transcript_cursors_path: Path
 
     # ---- Toplog filter file (watched by the builtin FSOp toplog trigger) ----
     toplog_config_path: Path
@@ -232,6 +233,7 @@ class BaseInstanceSettings:
             monitor_log_path=instance_dir / "logs" / "monitor.log",
             inbox_last_fetch_path=instance_dir / "inbox.json",
             conversation_last_sync_path=instance_dir / "conversation_sync.json",
+            transcript_cursors_path=instance_dir / "transcript_cursors.json",
             toplog_config_path=instance_dir / "toplog.json",
             db_driver=os.environ.get(ENV_DESKTOP_DB, DEFAULT_DB_DRIVER).lower(),
             user_home=Path.home(),
