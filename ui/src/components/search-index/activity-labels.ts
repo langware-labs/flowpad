@@ -32,11 +32,22 @@ export function progressCountsLabel(table: IndexProgressTable | null): string | 
   return table.done.toLocaleString();
 }
 
+// The index activity runs discovery (job_name "scan") then the per-record
+// loop (job_name "index") under one SystemActivity ("index"). Prefer the live
+// table's job_name for the phase word so the label tracks the real sub-phase
+// ("Scanning" → "Indexing") instead of freezing on the activity name.
+function phaseSource(
+  activity: SystemActivity,
+  table: IndexProgressTable | null,
+): SystemActivity {
+  return (table?.job_name as SystemActivity) ?? activity;
+}
+
 export function activityHeaderTitle(
   activity: SystemActivity,
   table: IndexProgressTable | null,
 ): string {
-  const { trailing, showCounts } = labelFor(activity);
+  const { trailing, showCounts } = labelFor(phaseSource(activity, table));
   if (!showCounts) return trailing;
   const counts = progressCountsLabel(table);
   return counts ? `${trailing}… ${counts}` : `${trailing}…`;
@@ -46,7 +57,7 @@ export function activityFooterLabel(
   activity: SystemActivity,
   table: IndexProgressTable | null,
 ): string {
-  const phase = labelFor(activity).bare;
+  const phase = labelFor(phaseSource(activity, table)).bare;
   if (!table) return phase;
   const current = table.current ?? '…';
   if (table.total > 0) {
