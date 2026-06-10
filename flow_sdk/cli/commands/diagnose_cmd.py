@@ -19,7 +19,11 @@ from pathlib import Path
 
 import typer
 
-from flow_sdk.agentic_run_consts import DEFAULT_TRANSCRIPT_TIMEOUT_S
+from flow_sdk.agentic_run_consts import (
+    AGENT_WARMUP_INTERVAL_S,
+    AGENT_WARMUP_TICKS,
+    DEFAULT_TRANSCRIPT_TIMEOUT_S,
+)
 
 
 def _extract_report_result(text: str) -> dict | None:
@@ -139,6 +143,7 @@ async def _run_diagnose(message: str, transcript_timeout: float, *, emit=None) -
 
     from flow_sdk.builtin.agentic_process import AgenticProcess
     from flow_sdk.config import flowpad_assistant_project_root
+    from flow_sdk.core.capabilities.discovery import ensure_discovered
     from flow_sdk.core.entity.cross_link import cross_link_entities
     from flow_sdk.fs_store.schema_registry import SchemaRegistry
     from flow_sdk.migrations.runner import _bootstrap_local
@@ -155,6 +160,16 @@ async def _run_diagnose(message: str, transcript_timeout: float, *, emit=None) -
     # Bootstrap @local + a compute node so the headless worker can run (also
     # guarantees @local exists for the skill's reporting step).
     await _bootstrap_local()
+
+    # Run capability discovery so the headless worker can resolve the `claude`
+    # CLI. `flow diagnose` is a short-lived standalone process — it never starts
+    # the server, so the background discovery sweep never runs on its own. Without
+    # this, `worker_path_env("claude")` returns None, the worker fails with
+    # "claude binary not found in PATH" BEFORE writing any transcript, and the
+    # stream below polls to its full deadline and dies with an opaque
+    # "transcript file did not appear within timeout". ensure_discovered() is
+    # idempotent and caps its env-probe child at 5s.
+    await ensure_discovered()
 
     prompt_text = (
         f"Read the flow-diagnose skill at {skill_dir}/SKILL.md and follow it to "
@@ -268,9 +283,35 @@ async def _run_diagnose(message: str, transcript_timeout: float, *, emit=None) -
         "stop until it has printed its JSON."
     )
 
+    async def _await_warmup() -> bool:
+        """Wait briefly for the worker to write its first transcript line.
+
+        The driver pre-assigns ``ap.session_id`` eagerly, so a non-empty
+        session id is NOT proof the worker started — transcript-file-with-content
+        is the canonical "started" signal (same check the migration runner uses).
+        If it never appears, the worker failed to launch (e.g. the ``claude`` CLI
+        couldn't be resolved), so surface that fast instead of polling
+        ``stream_transcript`` to its full deadline with an opaque TimeoutError.
+        """
+        for _ in range(AGENT_WARMUP_TICKS):
+            tp = ap.driver.transcript_path(ap)
+            if tp and tp.exists() and tp.stat().st_size > 0:
+                return True
+            await asyncio.sleep(AGENT_WARMUP_INTERVAL_S)
+        tp = ap.driver.transcript_path(ap)
+        return bool(tp and tp.exists() and tp.stat().st_size > 0)
+
     try:
         await ap.prompt(prompt_text)
         emit({"type": "status", "text": f"  Diagnosing (session={(ap.session_id or '')[:8]})…"})
+        if not await _await_warmup():
+            emit({"type": "error", "text": (
+                "  ! The diagnostic agent failed to start — it produced no transcript. "
+                "Check that the `claude` CLI is installed and on your PATH, then re-run "
+                "`flow diagnose`."
+            )})
+            emit({"type": "done", "ok": False, "diagnosis_id": None, "feed_posted": False, "feed_entry_id": None})
+            return 1
         await _stream()
         # The worker can end its turn early — diagnosing but not recording. Nudge
         # the SAME session once to finish, then re-check.
