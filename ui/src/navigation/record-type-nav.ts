@@ -3,7 +3,7 @@ import type { SearchResult } from '@src/hooks/use-record-search';
 import { DockPointer } from './DockPointer';
 import { ViewType } from '@src/types/ViewType';
 import { CheckSquare, Search, GitBranch, FileText } from 'lucide-react';
-import { Agent, AgenticProcess, dataContext, isTypeId, Project, RecordType, Skill, Task, TypeId } from '@sdk';
+import { AgenticProcess, dataContext, dataManager, isTypeId, RecordType, TypeId } from '@sdk';
 import { ClaudeSessionRecord } from '@sdk/resource_management/fs_records/claude/claude-session.js';
 import type { NavigationActions } from './NavigationActions';
 import { notify } from '@src/notifications';
@@ -88,7 +88,7 @@ function assetEditorPointer(assetType: string, r: SearchResult): DockPointer | n
 
 export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
   skill: {
-    dockPointer: (r) => new Skill({ id: r.record_id, asset_ref: r.asset_ref || undefined }).searchDockPointer,
+    dockPointer: (r) => assetEditorPointer('skill', r),
     actions: [
       { icon: Search, name: 'All skills', dockPointer: () => DockPointer.forSearch(undefined, { record_type: 'skill' }) },
     ],
@@ -102,10 +102,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
     ],
   },
   agent: {
-    dockPointer: (r) => {
-      const agent = new Agent({ id: r.record_id, name: r.name || undefined, asset_ref: r.asset_ref || undefined });
-      return agent.searchDockPointer;
-    },
+    dockPointer: (r) => assetEditorPointer('agent', r),
   },
   annotation: {
     primaryAction: async (r, navigation) => {
@@ -166,19 +163,39 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
     dockPointer: () => DockPointer.forSettings(),
   },
   task: {
-    dockPointer: (r) => new Task({ id: r.record_id }).searchDockPointer,
+    dockPointer: (r) => {
+      const tid = resultTypeId(r);
+      return tid ? DockPointer.forTasks(tid.id) : null;
+    },
     actions: [
       { icon: CheckSquare, name: 'All tasks', dockPointer: () => DockPointer.forTasks() },
     ],
   },
   agentic_process: {
-    dockPointer: (r) => new AgenticProcess({
-      id: r.record_id,
-      session_id: (r as any).session_id ?? undefined,
-    }).searchDockPointer,
+    dockPointer: (r) => {
+      const tid = resultTypeId(r);
+      if (!tid) return null;
+      // Prefer the live cached process — its searchDockPointer carries the real
+      // worker_type. Never construct a throwaway `new AgenticProcess` here: the
+      // APIEntity constructor registers itself into the FlowSync store and would
+      // overwrite the cached process with a near-empty stub (store.ts warning
+      // "already registered with different entity"). Fall back to a
+      // construction-free pointer when the process isn't cached.
+      const cached = dataManager.getByTypeIdFromCache<AgenticProcess>(tid);
+      if (cached) return cached.searchDockPointer;
+      const sessionId = (r as any).session_id ?? undefined;
+      return sessionId
+        ? DockPointer.forLensTranscript('claude', sessionId)
+        : new DockPointer(ViewType.SHELL, `${AgenticProcess.type}${TypeId.DELIMITER}${tid.id}`);
+    },
   },
   project: {
-    dockPointer: (r) => new Project({ id: r.record_id }).searchDockPointer,
+    dockPointer: (r) => {
+      const tid = resultTypeId(r);
+      return tid
+        ? new DockPointer(ViewType.ASSETS, 'list/all', { scope: 'project', project_ids: tid.id })
+        : null;
+    },
   },
   codex_session: {
     primaryAction: async (r, navigation) => {
