@@ -259,6 +259,10 @@ class TypeInfo:
     # the bare folder, so ``owns_main_ref`` folder types can write/round-trip
     # the body file. Runtime-only; not part of the schema hash.
     main_file: str | None = None
+    # Folder-layout types: True ⇒ asset_ref IS ``<subdir>/<name>/<main_file>``
+    # (spec); False ⇒ asset_ref is the bare folder and the default body is
+    # materialized into ``<folder>/<main_file>`` (skill). Runtime-only.
+    main_file_is_asset_ref: bool = False
 
     @property
     def schema_hash(self) -> str:
@@ -409,6 +413,8 @@ class SchemaRegistry:
                 existing.main_layout = info.main_layout
             if info.main_file is not None:
                 existing.main_file = info.main_file
+            if info.main_file_is_asset_ref:
+                existing.main_file_is_asset_ref = info.main_file_is_asset_ref
             if info.post_sync_fn is not None:
                 existing.post_sync_fn = info.post_sync_fn
             if info.from_disk_fn is not None:

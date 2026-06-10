@@ -595,9 +595,14 @@ class FSRecord(Generic[M]):
         safe = self._safe_name(entity)
         base = Path(scope_root) / info.main_subdir
         if info.main_layout == "folder":
-            # Owned folder types (e.g. Spec → specs/<name>/spec.md) point the
-            # asset_ref at the inner body file; bare-folder types keep the dir.
-            target = base / safe / info.main_file if info.main_file else base / safe
+            # Spec-style folder types (main_file_is_asset_ref) point asset_ref at
+            # the inner body file (specs/<name>/spec.md); skill/whiteboard-style
+            # folder types keep asset_ref on the folder and resolve the inner
+            # main_file themselves (the indexer emits the folder, not the file).
+            if info.main_file and info.main_file_is_asset_ref:
+                target = base / safe / info.main_file
+            else:
+                target = base / safe
         else:
             target = base / f"{safe}.md"
         return FSRef(target)
@@ -634,14 +639,22 @@ class FSRecord(Generic[M]):
         ar = self._asset_ref
         if ar is None:
             return
-        path = ar._path
         info = SchemaRegistry.get(self.type)
+        # For folder types whose asset_ref is the folder (skill/whiteboard), the
+        # body lives at <folder>/<main_file>; for file/spec-style types asset_ref
+        # already points at the target. Resolve the real file before the
+        # existence check — the folder itself always exists, which would
+        # otherwise short-circuit the first-create write.
+        path = ar._path
+        if info and info.main_layout == "folder" and info.main_file and not info.main_file_is_asset_ref:
+            path = path / info.main_file
         owns = bool(info and info.owns_main_ref)
         if path.exists() and not owns:
             return
         body = self.default_body(entity)
         if body is None:
             return
+        path.parent.mkdir(parents=True, exist_ok=True)
         write_text_if_changed(path, body)  # unchanged → don't touch mtime/index hash
 
     # ── DB integration ────────────────────────────────────────────────────
