@@ -819,10 +819,12 @@ export function FsRecordsScannerViewer() {
           type table would otherwise pile up alongside it into an unreadable mix —
           they all return the moment the run goes idle (currentActivity → null). */}
       {currentActivity ? (
-        <ActivityIndicator
-          variant="list"
-          className="min-h-0 flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-1.5"
-        />
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-3">
+          {/* Global progress bar on top — count-only while scanning (totals
+              unknown), filling to a percentage once the index loop starts. */}
+          <ActivityIndicator variant="bar" />
+          <ActivityIndicator variant="list" className="flex flex-col gap-1.5" />
+        </div>
       ) : (
       <>
       {/* Semantic search bar */}

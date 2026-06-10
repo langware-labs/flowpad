@@ -7,7 +7,7 @@ import {
   progressCountsLabel,
   rowState,
 } from './activity-labels';
-import { ActivityProgressBar } from './ActivityProgressModal';
+import { ActivityProgressBar, MiniProgressBar } from './ActivityProgressModal';
 
 type StripProps = { variant: 'strip'; className?: string };
 type PillProps = { variant: 'pill'; className?: string; 'data-testid'?: string };
@@ -59,6 +59,9 @@ export function ActivityIndicator(props: ActivityIndicatorProps) {
           const state = row ? rowState(row, table.current) : 'pending';
           const style = LIST_ROW_STYLE[state];
           const Icon = style.Icon;
+          // Per-type % + bar only once the total is known (index loop);
+          // null during discovery (total=0) → count-only.
+          const pct = row && row.total > 0 ? (row.done / row.total) * 100 : null;
           return (
             <div key={t} className="flex items-center gap-2 text-sm">
               <Icon className={style.iconClass} />
@@ -74,6 +77,12 @@ export function ActivityIndicator(props: ActivityIndicatorProps) {
                   <span className="text-muted-foreground">
                     {row.total > 0 ? `${row.done}/${row.total}` : row.done}
                   </span>
+                  {pct !== null && (
+                    <>
+                      <span className="text-muted-foreground">({Math.round(pct)}%)</span>
+                      <MiniProgressBar pct={pct} done={state === 'done'} />
+                    </>
+                  )}
                 </span>
               )}
             </div>
