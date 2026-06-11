@@ -584,7 +584,7 @@ URL grammar is unit-locked.
 | 9 | Footer-chip cross-project pick (Bug-2 / pending-intent) | AP | x | — | not run (cross-project chip needed; pre-existing chip-surfacing caveat, Part 1 §8) |
 | 10 | Popout → win attaches → origin navigates away → chip re-opens locally | shell, claude AP, doc | x | x | ✅ web (full handoff: win opened, ready signal, origin detached, chip stayed, re-click re-opened) |
 | 11 | win deep-link (no opener): renders, signal no-op | shell, doc, settings | x | x | ✅ web (chrome-less, live xterm) |
-| 12 | win morph stays chrome-less | any → any | x | x | ◐ chrome-less verified live; morph rule unit-locked (no in-view nav control in the plain shell view to exercise live) |
+| 12 | win morph stays chrome-less | any → any | x | x | ✅ web (live: closing a win window's shell made its loader fall back to the next process and STAY in /win/ — redirect preserves layout) |
 | 13 | Cross-client: open/close on client A → client B converges (`tabbed=false` propagates) | shell, doc | x (2 clients) | — | ✅ web (two clients, one backend — `tabbed` is LOCAL-instance state on the instance WS, never hub-synced, so two clients of one backend is the correct contract; both directions converge live after the payload-first crossing fix, see findings) |
 | 14 | Global section: always visible after the divider (checkbox removed 2026-06-11) | global skill/doc | x | — | ✅ web (revalidated after checkbox removal) |
 | 15 | Multi-attach: same PTY in dock + win simultaneously | shell | x | x | ✅ web (both live, no blank) |
@@ -611,6 +611,18 @@ URL grammar is unit-locked.
    cached reads as non-member → no crossing → no refetch. Fixed: read the
    op PAYLOAD's `tabbed` first (membership changes always carry it non-null
    — the wire rule), cache as fallback.
+
+**Second live run (2026-06-11 PM, the production oss instance, post-backend
+restart):** rows 1–8, 10–15 revalidated end-to-end on real data (scratch
+tabs only; user tabs untouched). Two more fixes landed from this run, both
+locked by tests: (5) a pre-tabs backend's `tabs/list` reply crashed every
+route loader — now degrades to an empty strip + one warning; (6) the
+**always-a-tab invariant**: a member tab of a NON-active project is
+project-filtered out of the strip, but transient suppression counted ALL
+members, so its URL showed no chip at all — suppression now counts only
+VISIBLE members, so the transient chip represents the view. The global
+section was also revalidated checkbox-less (always visible after the
+divider).
 
 Pre-existing observation (not tab-work): bulk markdown queries re-instantiate
 cached entities → ~196 "already registered with different entity" console
