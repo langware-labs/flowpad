@@ -87,7 +87,10 @@ export class NavigationActions {
 
     if (pointer === null) {
       if (this.currentDock === null) return; // already not on a dock URL
-      const baseUrl = stripDockPortion(currentPath);
+      // Root-level dock URLs strip to '' — and navigate('') is a react-router
+      // relative no-op, so close-dock silently did nothing outside the
+      // /agent|/flow prefixed namespaces. Normalize to the app root.
+      const baseUrl = stripDockPortion(currentPath) || '/';
       if (currentUrl === baseUrl || pendingDockNavigationUrl === baseUrl) return;
       this.markPendingNavigation(baseUrl);
       void this.navigate(baseUrl);
