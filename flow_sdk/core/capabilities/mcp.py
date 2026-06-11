@@ -27,6 +27,7 @@ import re
 
 from flow_sdk.core.capabilities.models import (
     MCP_CAPABILITY_INFIX,
+    CapabilityKind,
     CapabilityResult,
     CapabilitySpec,
     CapabilityValue,
@@ -39,6 +40,28 @@ _VENDOR_PREFIXES = ("claude.ai ", "claude_ai_", "claude ")
 _NON_ALNUM = re.compile(r"[^a-z0-9]+")
 
 _RECONCILE_LOCK = asyncio.Lock()
+
+# An MCP server only matters if the harness that loads it can run. The
+# worker_type segment of the kind names that harness; executor worker types map
+# to their harness capability, while config-owning-only agents FlowPad never
+# spawns (cursor/windsurf/vscode/claude_desktop) map to None — those MCP
+# capabilities get no dependency and are flagged non-runnable (see _spec_for).
+_WORKER_TYPE_TO_HARNESS: dict[str, str] = {
+    "claude_code": CapabilityKind.CLAUDE_CLI.value,
+    "claude_code_cli": CapabilityKind.CLAUDE_CLI.value,
+    "unsecured_claude": CapabilityKind.CLAUDE_CLI.value,
+    "codex": CapabilityKind.CODEX_CLI.value,
+    "copilot": CapabilityKind.COPILOT_CLI.value,
+}
+
+
+def harness_kind_for_worker_type(worker_type: str) -> str | None:
+    """The harness capability an MCP server's worker_type depends on.
+
+    None for config-owning agents FlowPad doesn't spawn (cursor/windsurf/
+    vscode/claude_desktop) — there is no FlowPad harness that can run them.
+    """
+    return _WORKER_TYPE_TO_HARNESS.get((worker_type or "").strip().lower())
 
 
 def normalize_service(name: str) -> str:
@@ -153,11 +176,29 @@ def discover_mcp_capability_specs() -> dict[str, dict]:
 
 def _spec_for(kind: str, entry: dict) -> CapabilitySpec:
     label = ", ".join(entry["names"][:3]) or entry["service"]
+    worker_type = entry["worker_type"]
+    harness = harness_kind_for_worker_type(worker_type)
+    if harness is not None:
+        # Executor worker — the MCP is usable only when its harness can run.
+        deps = [harness]
+        runnable = True
+        description = f"{entry['service']} MCP server configured for {worker_type}."
+    else:
+        # Config-owning agent FlowPad doesn't spawn — no harness dependency, and
+        # honestly flagged non-runnable so the summary never claims we can use it.
+        deps = []
+        runnable = False
+        description = (
+            f"{entry['service']} MCP server configured for {worker_type} — "
+            f"FlowPad can't launch {worker_type}, so this connector isn't runnable here."
+        )
     return CapabilitySpec(
-        name=f"{label} (MCP / {entry['worker_type']})",
+        name=f"{label} (MCP / {worker_type})",
         kind=kind,
-        description=f"{entry['service']} MCP server configured for {entry['worker_type']}.",
+        description=description,
         icon="Plug",
+        dependent_capability_kinds=deps,
+        runnable=runnable,
     )
 
 
@@ -193,9 +234,16 @@ async def reconcile_mcp_capabilities() -> dict:
             existing = await Capability.get_by_kind(kind)
             if existing is None:
                 await Capability.from_spec(spec).save(notify=False)
-            elif existing.name != spec.name or existing.description != spec.description:
+            elif (
+                existing.name != spec.name
+                or existing.description != spec.description
+                or existing.dependent_capability_kinds != list(spec.dependent_capability_kinds)
+                or existing.runnable != spec.runnable
+            ):
                 existing.name = spec.name
                 existing.description = spec.description
+                existing.dependent_capability_kinds = list(spec.dependent_capability_kinds)
+                existing.runnable = spec.runnable
                 await existing.save(notify=False)
 
         # Prune MCP kinds whose backing config disappeared.

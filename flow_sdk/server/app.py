@@ -57,6 +57,7 @@ from .routes import (
     favorites_router,
     hooks_router,
     markdown_index_router,
+    capabilities_router,
     navigate_router,
     project_router,
     pty_stream_router,
@@ -442,6 +443,7 @@ server.add_router(markdown_index_router, prefix="/api/v1")
 server.add_router(pty_stream_router, prefix="/api/v1")
 server.add_router(docs_graph_router)
 server.add_router(semantic_checker_router)
+server.add_router(capabilities_router)
 
 server.on_startup(_on_server_startup)
 server.on_shutdown(_shutdown_extras)
