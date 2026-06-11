@@ -9,7 +9,9 @@ import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import { describe, expect, it } from 'vitest';
 
-const src = readFileSync(resolve(__dirname, '../../src/hooks/useActiveTerminals.ts'), 'utf-8');
+// The store moved to src/tabs/useTabs.ts (useActiveTerminals.ts is a pure
+// re-export shim); the contract assertions read the real source.
+const src = readFileSync(resolve(__dirname, '../../src/tabs/useTabs.ts'), 'utf-8');
 
 describe('useProjectTerminals — strict project filter', () => {
   it('filters by exact projectId equality', () => {

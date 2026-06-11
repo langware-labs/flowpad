@@ -128,6 +128,40 @@ async def test_last_active_at_iso_tolerant_epoch_ms():
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval
 @pytest.mark.asyncio
+async def test_tabs_list_includes_onboarded_entity_kinds():
+    """`tabs/list` fans out over ONBOARDED_TAB_TYPES: a `tabbed=True` entity
+    of an onboarded type appears with its own kind; `tabbed=False` does not.
+
+    pytest does not run the server's startup registrations, so trigger
+    `register_all()` explicitly (same convention as
+    tests/unit/test_git_branch_share_parent.py) — `flow_sdk.models.entities`
+    binds the entity classes, `register_all()` merges them into the registry.
+    """
+    import flow_sdk.models.entities  # noqa: F401 — side-effect: bind entity classes
+    from flow_sdk.builtin.claude_memory_entities import Docs
+    from flow_sdk.builtin.faas.compute_node import ONBOARDED_TAB_TYPES
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry
+    from flow_sdk.schema.type_info import register_all
+
+    register_all()
+    assert "markdown" in ONBOARDED_TAB_TYPES
+    assert SchemaRegistry.get_entity_cls("markdown") is Docs
+
+    member = Docs(id=str(uuid.uuid4()), name="member-doc", tabbed=True)
+    non_member = Docs(id=str(uuid.uuid4()), name="closed-doc", tabbed=False)
+    for d in (member, non_member):
+        await d.save()
+
+    with _no_reap():
+        unified = (await ComputeNode()._tabs_list()).data
+
+    by_id = {t["entity"]["id"]: t["kind"] for t in unified["tabs"]}
+    assert by_id.get(member.id) == "markdown"
+    assert non_member.id not in by_id
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+@pytest.mark.asyncio
 async def test_agentic_process_owns_tab_order_across_reload():
     ap = AgenticProcess(id=str(uuid.uuid4()), visible=True, tab_order=5)
     await ap.save()
