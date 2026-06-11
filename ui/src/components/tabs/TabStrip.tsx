@@ -85,13 +85,9 @@ export interface TabStripProps {
   /** Hide the aggregated close-all badge button. */
   hideCloseAllButton?: boolean;
   /** Global-section items (entity tabs with projectId == null) rendered AFTER
-   *  a visual divider with a "Global" checkbox (Part 3 §6). Pass `undefined`
-   *  to omit the section entirely (the default for embedded strips). */
+   *  a visual divider (Part 3 §6 — always visible; the toggle checkbox was
+   *  removed as confusing). Pass `undefined`/empty to omit the section. */
   globalItems?: TabStripItem[];
-  /** Whether the global section is expanded (state lifted to the owner,
-   *  persisted in localStorage by the owner). */
-  showGlobalSection?: boolean;
-  onToggleShowGlobalSection?: (show: boolean) => void;
   testId?: string;
 }
 
@@ -109,14 +105,12 @@ export const TabStrip: React.FC<TabStripProps> = ({
   trailing,
   hideCloseAllButton,
   globalItems,
-  showGlobalSection,
-  onToggleShowGlobalSection,
   testId = 'terminal-tab-bar',
 }) => {
-  // Visible chip universe: main items + (expanded) global-section items.
+  // Visible chip universe: main items + global-section items.
   // Scroll-into-view, the close-all badge and "Close All" operate over it;
   // close-others / close-right stay scoped to the section a chip lives in.
-  const visibleGlobalItems = globalItems !== undefined && showGlobalSection ? globalItems : [];
+  const visibleGlobalItems = globalItems ?? [];
   const allVisibleItems = visibleGlobalItems.length > 0 ? items.concat(visibleGlobalItems) : items;
   const tabContainerRef = useRef<HTMLDivElement>(null);
   const tabRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -450,25 +444,16 @@ export const TabStrip: React.FC<TabStripProps> = ({
       >
         {items.map((item, index) => renderChip(item, index, items))}
 
-        {/* Global section (Part 3 §6): divider + "Global" checkbox, then the
-            projectless entity tabs when expanded. Only rendered when the
-            owner opts in via `globalItems`. */}
-        {globalItems !== undefined && (
+        {/* Global section (Part 3 §6): a quiet divider, then the projectless
+            entity tabs. Always visible — the toggle checkbox was removed as
+            confusing (2026-06-11). Divider only renders when there is
+            something global to show. */}
+        {visibleGlobalItems.length > 0 && (
           <div
-            className="ml-1 flex shrink-0 items-center gap-1.5 self-stretch border-l border-border pl-2 pr-1"
+            className="ml-1 flex shrink-0 items-center self-stretch border-l border-border pl-1"
             data-testid="tab-strip-global-divider"
-          >
-            <label className="flex cursor-pointer select-none items-center gap-1 text-[11px] text-muted-foreground">
-              <input
-                type="checkbox"
-                className="h-3 w-3 accent-primary"
-                checked={!!showGlobalSection}
-                onChange={(e) => onToggleShowGlobalSection?.(e.target.checked)}
-                data-testid="tab-strip-global-toggle"
-              />
-              Global
-            </label>
-          </div>
+            aria-label="Global tabs"
+          />
         )}
         {visibleGlobalItems.map((item, index) => renderChip(item, index, visibleGlobalItems))}
 

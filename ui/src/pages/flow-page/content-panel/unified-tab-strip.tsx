@@ -7,8 +7,8 @@
  *   2. entity member tabs for the current project (useEntityTabs)
  *   3. ONE transient preview chip for the current dock when it matches no
  *      member (Part 3 §5; "Keep as tab" is the only promotion path)
- *   4. the global section (projectId == null) behind a divider + checkbox,
- *      default ON, persisted in localStorage
+ *   4. the global section (projectId == null) after a quiet divider —
+ *      always visible (the toggle checkbox was removed as confusing)
  *
  * URL-first (non-negotiable): clicks only call navigation.*; the active chip
  * derives from currentDock; loaders remain the only context writers.
@@ -29,13 +29,11 @@ import {
 import {
   dockTargetTypeIdKey,
   partitionEntityRows,
-  readShowGlobalSection,
   transientForDock,
-  writeShowGlobalSection,
 } from '@src/tabs/unified-strip-model';
 import { useTerminalStripController } from '@src/tabs/useTerminalStripController';
 import { FileText } from 'lucide-react';
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo } from 'react';
 
 export interface UnifiedTabStripProps {
   /** Standard terminal navigation handlers (useStandardTabNav). */
@@ -210,12 +208,6 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ onTabClick, on
     [terminalKeySet, controller, transientItem, currentDock, navigation, entityRowByKey],
   );
 
-  const [showGlobal, setShowGlobal] = useState<boolean>(() => readShowGlobalSection());
-  const handleToggleGlobal = useCallback((show: boolean) => {
-    setShowGlobal(show);
-    writeShowGlobalSection(show);
-  }, []);
-
   return (
     <>
       <TabStrip
@@ -231,8 +223,6 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ onTabClick, on
         leading={controller.leading}
         trailing={controller.trailing}
         globalItems={globalItems}
-        showGlobalSection={showGlobal}
-        onToggleShowGlobalSection={handleToggleGlobal}
       />
       {controller.modals}
     </>

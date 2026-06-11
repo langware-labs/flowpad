@@ -12,21 +12,8 @@ import { VIEWER_REGISTRY } from '@src/types/ViewType';
 import type { EntityTabRow } from './useTabs';
 
 // ─── Global section (Part 3 §6) ─────────────────────────────────────────────
-
-/** Presentation preference → localStorage (Part 3 decision 3), default ON. */
-export const SHOW_GLOBAL_SECTION_STORAGE_KEY = 'flowpad.tabs.showGlobalSection';
-
-export function readShowGlobalSection(storage: Pick<Storage, 'getItem'> = localStorage): boolean {
-  // Default ON: only an explicit 'false' collapses the section.
-  return storage.getItem(SHOW_GLOBAL_SECTION_STORAGE_KEY) !== 'false';
-}
-
-export function writeShowGlobalSection(
-  show: boolean,
-  storage: Pick<Storage, 'setItem'> = localStorage,
-): void {
-  storage.setItem(SHOW_GLOBAL_SECTION_STORAGE_KEY, String(show));
-}
+// Always visible — the localStorage show/hide checkbox was removed as
+// confusing (2026-06-11).
 
 /**
  * Split entity rows into the current-project section and the global section.
