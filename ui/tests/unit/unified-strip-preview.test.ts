@@ -17,10 +17,7 @@ import { openTabTargets } from '@src/tabs/useTabs';
 import {
   dockTargetTypeIdKey,
   partitionEntityRows,
-  readShowGlobalSection,
-  SHOW_GLOBAL_SECTION_STORAGE_KEY,
   transientForDock,
-  writeShowGlobalSection,
 } from '@src/tabs/unified-strip-model';
 import { uid } from '../utils/terminal-tab-fixtures';
 
@@ -162,17 +159,11 @@ describe('global section (§6)', () => {
     expect(noProject.globalRows.map((r) => r.name)).toEqual(['g']);
   });
 
-  it('localStorage gate defaults ON and round-trips', () => {
-    const store = new Map<string, string>();
-    const storage = {
-      getItem: (k: string) => store.get(k) ?? null,
-      setItem: (k: string, v: string) => void store.set(k, v),
-    };
-    expect(readShowGlobalSection(storage)).toBe(true); // default ON
-    writeShowGlobalSection(false, storage);
-    expect(store.get(SHOW_GLOBAL_SECTION_STORAGE_KEY)).toBe('false');
-    expect(readShowGlobalSection(storage)).toBe(false);
-    writeShowGlobalSection(true, storage);
-    expect(readShowGlobalSection(storage)).toBe(true);
+  it('global section is always visible — no show/hide preference remains', () => {
+    // The localStorage checkbox was removed as confusing (2026-06-11): the
+    // model must not export any global-section visibility preference.
+    const modelSource = readFileSync(resolve(__dirname, '../../src/tabs/unified-strip-model.ts'), 'utf-8');
+    expect(modelSource).not.toContain('showGlobalSection');
+    expect(modelSource).not.toContain('SHOW_GLOBAL_SECTION_STORAGE_KEY');
   });
 });

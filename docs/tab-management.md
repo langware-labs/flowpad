@@ -465,8 +465,9 @@ only write. This guard exists so loaders never become tab-creators.
   `iconForType(entity.type)` from the backend TypeInfo registry. Never a
   hardcoded per-call-site glyph (CLAUDE.md type-icons rule).
 - **Global section**: tabs with `projectId == null` render in a global
-  section of the strip, gated by a checkbox — **default on**, persisted in
-  localStorage. Project tabs keep today's strict project filter.
+  section of the strip after a quiet divider — **always visible** (the
+  show/hide checkbox shipped first, then was removed 2026-06-11 as
+  confusing). Project tabs keep today's strict project filter.
 - **URL-first (non-negotiable)**: a tab click calls `navigation.openDock`
   and nothing else; active highlight derives from `currentDock`; explicit
   picks pin `pending-intent`; loaders remain the only context writers;
@@ -524,8 +525,9 @@ origin: on matching key → navigate away via resolveActive
    that consumes it.
 2. (20a) `targetEntity` is optional; entity-less surfaces are transient-only.
    Bucket B dissolved; no minted path-entities; rename-orphan problem gone.
-3. One unified row; per-entity icons; global section behind a checkbox,
-   default on, localStorage (presentation → localStorage, not backend).
+3. One unified row; per-entity icons; global section always visible after
+   a divider (a default-on checkbox shipped first; removed 2026-06-11 —
+   user: confusing).
 4. `openDockInWindow` abstraction: Electron in-app window / web browser tab.
 5. `win/` morphs on internal navigation (stays `win/`).
 6. (21) Popout leaves the origin chip untouched; clicking it re-opens
@@ -584,7 +586,7 @@ URL grammar is unit-locked.
 | 11 | win deep-link (no opener): renders, signal no-op | shell, doc, settings | x | x | ✅ web (chrome-less, live xterm) |
 | 12 | win morph stays chrome-less | any → any | x | x | ◐ chrome-less verified live; morph rule unit-locked (no in-view nav control in the plain shell view to exercise live) |
 | 13 | Cross-client: open/close on client A → client B converges (`tabbed=false` propagates) | shell, doc | x (2 clients) | — | ✅ web (two clients, one backend — `tabbed` is LOCAL-instance state on the instance WS, never hub-synced, so two clients of one backend is the correct contract; both directions converge live after the payload-first crossing fix, see findings) |
-| 14 | Global section: toggle, persistence, default ON | global skill/doc | x | — | ✅ web (localStorage round-trip, default on) |
+| 14 | Global section: always visible after the divider (checkbox removed 2026-06-11) | global skill/doc | x | — | ✅ web (revalidated after checkbox removal) |
 | 15 | Multi-attach: same PTY in dock + win simultaneously | shell | x | x | ✅ web (both live, no blank) |
 | 16 | Electron: `/win/` popout = in-app window; http links still external | shell | — | x | not run (requires desktop build) |
 
