@@ -75,6 +75,9 @@ async def setup_rest_context(connection_id: str, message_json: dict) -> Executio
         # WS-REST has no HTTP header; carry the per-call reflection opt-in from the
         # message itself (the HTTP path parses the ``Hub-Reflect`` header instead).
         req_info.hub_reflect = bool(getattr(api_message, "hub_reflect", False))
+        # WS-REST has no HTTP header; carry the renderer-minted trace id from the
+        # message so backend log lines for this request join back to the UI action.
+        req_info.trace_id = getattr(api_message, "trace_id", None)
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
         from flow_sdk.server.middleware.request_transaction_middleware import _get_local_user_cached
 

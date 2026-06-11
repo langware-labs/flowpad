@@ -51,6 +51,11 @@ class RequestInfo:
         self.close_transaction: Optional[Callable] = None
         self.action: str | None = None
         self.sub_path: str | None = None
+        # Cross-process correlation id (from the ``X-Trace-Id`` HTTP header or the
+        # WS ``rest_api_msg.trace_id`` field). Read lazily by the logging
+        # CorrelationFilter so every backend line for this request joins back to
+        # the originating UI action. ``None`` when the caller didn't send one.
+        self.trace_id: str | None = None
         # Per-call hub-reflection opt-in. Default False (do NOT reflect). Set from
         # the ``Hub-Reflect`` HTTP header, or from the ``hub_reflect`` field of a
         # ``rest_api_msg`` on the WS-REST path (see server/routes/ws_rest.py).
@@ -206,6 +211,7 @@ class RequestInfo:
         # Per-call hub-reflection opt-in (default False). The header is a local
         # routing directive only — CloudProxy strips it before forwarding to the hub.
         self.hub_reflect = request.headers.get("Hub-Reflect", "").strip().lower() in ("true", "1", "yes")
+        self.trace_id = (request.headers.get("X-Trace-Id") or "").strip() or None
         visitor_id = request.cookies.get(default_service_config.visitor_cookie_name) or request.cookies.get(
             default_service_config.visitor_session_cookie_name
         )
