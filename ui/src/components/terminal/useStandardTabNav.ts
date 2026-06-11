@@ -1,5 +1,5 @@
 import { useCallback, useRef } from 'react';
-import { Shell, ViewType } from '@sdk';
+import { ViewType } from '@sdk';
 import { terminalTargetKey, type TerminalTab } from '@src/tabs/useTabs';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -42,11 +42,7 @@ export function useStandardTabNav() {
       // fallback predates that and only ran inside the shell view.)
       const urlKey =
         currentDock?.viewType === ViewType.SHELL && currentDock.pointer
-          ? DockPointer.isAgenticProcessPointer(currentDock.pointer)
-            ? `agentic_process-${DockPointer.extractAgenticProcessId(currentDock.pointer)}`
-            : currentDock.pointer.startsWith(Shell.type + '-')
-              ? currentDock.pointer
-              : `${Shell.type}-${currentDock.pointer}`
+          ? DockPointer.terminalTargetTypeIdForShellPointer(currentDock.pointer).toString()
           : null;
       if (!urlKey || !closed.has(urlKey)) return;
       // Active tab closed: re-enter the shell route pointer-less; the loader

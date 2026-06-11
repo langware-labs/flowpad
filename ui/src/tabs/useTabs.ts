@@ -37,6 +37,11 @@ export type TerminalTabType = 'plain' | 'claude';
  * server `tab_order` for deterministic multi-add ordering). The server's
  * `tab_order` is only consulted on the FIRST fetch (when there is no local
  * order to preserve) and for ordering brand-new additions.
+ *
+ * Generalization direction (tab-management.md Part 3 §2): a tab is a
+ * pointer-keyed descriptor; terminal tabs are the first kind. Entity-backed
+ * kinds (markdown, skill, workflow, …) and transient kinds compose at the
+ * strip-controller level on top of this store.
  */
 export interface TerminalTab {
   /** Canonical tab identity. Shell tabs use shell-<id>; process tabs use agentic_process-<id>. */
@@ -60,15 +65,6 @@ export interface TerminalTab {
   /** Present when this row's process is in cache. */
   agenticProcess?: AgenticProcess;
 }
-
-/**
- * Generalization direction (tab-management.md Part 3 §2): a tab is a
- * pointer-keyed descriptor; terminal tabs are the first kind. Entity-backed
- * kinds (markdown, skill, workflow, …) and transient kinds compose at the
- * strip-controller level on top of this store — today the descriptor IS the
- * terminal tab shape, so the alias is exact.
- */
-export type TabDescriptor = TerminalTab;
 
 interface WireShell {
   id: string;
@@ -129,10 +125,11 @@ export interface EntityTabRow {
 /** Wire → row mapping for entity-backed tabs (exported for unit tests). */
 export function toEntityTabRow(kind: string, e: WireEntityRow): EntityTabRow {
   const lastActive = e.last_active_at;
+  const typeId = new TypeId(kind, e.id);
   return {
     kind,
-    typeId: new TypeId(kind, e.id),
-    key: new TypeId(kind, e.id).toString(),
+    typeId,
+    key: typeId.toString(),
     name: e.name ?? null,
     projectId: e.project_id ?? null,
     tabOrder: e.tab_order ?? 0,
@@ -340,8 +337,20 @@ function ensureWsSubscription(): void {
   subscribeToEntityOps(
     [...ENTITY_TAB_KINDS],
     (typeId, op, data) => {
-      if (op === 'create' || op === 'delete') {
-        scheduleTerminalsRefetch();
+      // Unlike the terminal kinds above, create/delete is NOT unconditional
+      // here: these kinds churn in bulk during indexer walks (every scanned
+      // markdown/skill/workflow emits an op), and an unconditional refetch
+      // per op would storm the strip with full tabs/list round-trips. Only
+      // ops that can actually change membership refetch: a create that is
+      // born `tabbed`, a delete of a current member, or an update crossing
+      // the membership boundary.
+      if (op === 'create') {
+        const payload = data as { tabbed?: boolean } | null;
+        if (payload?.tabbed) scheduleTerminalsRefetch();
+        return;
+      }
+      if (op === 'delete') {
+        if (isEntityTabMember(typeId.toString())) scheduleTerminalsRefetch();
         return;
       }
       const payload = data as { tabbed?: boolean } | null;
@@ -589,6 +598,20 @@ export interface UseTerminalsResult {
   updateTerminal: (target: TerminalTab | TypeId | string, patch: Partial<TerminalTab>) => void;
 }
 
+/** Shared `useSyncExternalStore` subscribe for every tabs-store hook: register
+ *  the listener, ensure the module-scoped WS subscription, and kick off the
+ *  first fetch exactly once. Module-level (stable identity) so each hook can
+ *  pass it straight to `useSyncExternalStore`. */
+function subscribeTabsStore(onChange: () => void): () => void {
+  listeners.add(onChange);
+  ensureWsSubscription();
+  if (!initialFetchStarted) {
+    initialFetchStarted = true;
+    void fetchActiveTerminals();
+  }
+  return () => { listeners.delete(onChange); };
+}
+
 /**
  * Global tab list. One source, mutated by:
  *   - initial REST fetch (on first subscribe)
@@ -599,17 +622,8 @@ export interface UseTerminalsResult {
  * use ``useProjectTerminals`` or filter ``data`` themselves.
  */
 export function useAllTerminals(): UseTerminalsResult {
-  const subscribe = useCallback((onChange: () => void) => {
-    listeners.add(onChange);
-    ensureWsSubscription();
-    if (!initialFetchStarted) {
-      initialFetchStarted = true;
-      void fetchActiveTerminals();
-    }
-    return () => { listeners.delete(onChange); };
-  }, []);
   const getSnapshot = useCallback(() => terminalState, []);
-  const data = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  const data = useSyncExternalStore(subscribeTabsStore, getSnapshot, getSnapshot);
   return {
     data,
     refresh: async () => { await fetchActiveTerminals(); },
@@ -626,17 +640,8 @@ export function useAllTerminals(): UseTerminalsResult {
  * (null = the global section, Part 3 §6).
  */
 export function useEntityTabs(): EntityTabRow[] {
-  const subscribe = useCallback((onChange: () => void) => {
-    listeners.add(onChange);
-    ensureWsSubscription();
-    if (!initialFetchStarted) {
-      initialFetchStarted = true;
-      void fetchActiveTerminals();
-    }
-    return () => { listeners.delete(onChange); };
-  }, []);
   const getSnapshot = useCallback(() => entityTabState, []);
-  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  return useSyncExternalStore(subscribeTabsStore, getSnapshot, getSnapshot);
 }
 
 /**

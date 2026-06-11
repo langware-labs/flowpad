@@ -85,6 +85,24 @@ function isCopilotProcess(process?: AgenticProcess | null): boolean {
   return process?.worker_type?.trim().toLowerCase() === 'copilot';
 }
 
+/** Vendor metadata per terminal provider kind — the single source for the
+ *  strip chips' icon resolution (the terminal strategy's icon override,
+ *  Part 3 §6) and the vendor openers' glyph/color. */
+const PROVIDER_META: Record<
+  'claude' | 'codex' | 'copilot' | 'shell',
+  { Icon: React.ComponentType<{ className?: string }>; iconClassName: string; label: string }
+> = {
+  claude: { Icon: ClaudeIcon, iconClassName: 'text-orange-500', label: 'Claude Code tab' },
+  codex: { Icon: CodexIcon, iconClassName: 'text-emerald-500', label: 'Codex tab' },
+  copilot: { Icon: CopilotIcon, iconClassName: 'text-sky-500', label: 'Copilot tab' },
+  shell: { Icon: SquareTerminal, iconClassName: 'text-muted-foreground', label: 'Shell tab' },
+};
+
+/** Display name for a session chip — entity name, falling back to the target key. */
+function getDisplayName(session: TerminalTab): string {
+  return typeof session.name === 'string' && session.name ? session.name : terminalTargetKey(session);
+}
+
 /** Opener warning for a harness: set when its backend capability check ran and failed. */
 function harnessWarning(capability: UseCapabilityResult): string | null {
   if (!capability.checked || capability.available) return null;
@@ -267,7 +285,7 @@ export function useTerminalStripController({
   // hook defaults to ``dataContext.project?.id``.
   const tabsProjectId = spawnProjectId ?? contextProject?.id ?? null;
   const { data: projectTabs, pushTerminal, updateTerminal, refresh: refreshTabs } = useProjectTerminals(spawnProjectId);
-  const sessions = useMemo(() => {
+  const visibleSessions = useMemo(() => {
     if (collaborationRoomId == null) return projectTabs;
     return projectTabs.filter((t) => t.shell?.collaboration_room_id === collaborationRoomId);
   }, [projectTabs, collaborationRoomId]);
@@ -277,7 +295,7 @@ export function useTerminalStripController({
     const t0 = (window as Record<string, unknown>).__shellNavT0 as number | undefined;
     if (t0 !== undefined)
       console.log(
-        `[PERF] +${(performance.now() - t0).toFixed(0)}ms TabbedTerminal first render (${sessions.length} sessions)`,
+        `[PERF] +${(performance.now() - t0).toFixed(0)}ms TabbedTerminal first render (${visibleSessions.length} sessions)`,
       );
   }
 
@@ -301,7 +319,6 @@ export function useTerminalStripController({
   const { resumeInTerminal } = useResumeInTerminal();
 
   const { navigation, currentDock } = useDockNavigation();
-  const visibleSessions = sessions;
 
   // Active tab is URL-derived. The URL is the single source of truth:
   // click → navigate(url) → loader → context → render. We parse currentDock
@@ -309,14 +326,8 @@ export function useTerminalStripController({
   // that were set optimistically on the click path — those would re-introduce
   // the "tab highlights before URL changes" inversion called out in CLAUDE.md.
   const urlActiveTargetTypeId = useMemo<TypeId | null>(() => {
-    if (currentDock?.viewType !== ViewType.SHELL) return null;
-    const pointer = currentDock.pointer;
-    if (!pointer) return null;
-    if (DockPointer.isAgenticProcessPointer(pointer)) {
-      return new TypeId(AgenticProcess.type, DockPointer.extractAgenticProcessId(pointer));
-    }
-    const shellId = pointer.startsWith(Shell.type + '-') ? pointer.slice(Shell.type.length + 1) : pointer;
-    return new TypeId(Shell.type, shellId);
+    if (currentDock?.viewType !== ViewType.SHELL || !currentDock.pointer) return null;
+    return DockPointer.terminalTargetTypeIdForShellPointer(currentDock.pointer);
   }, [currentDock?.viewType, currentDock?.pointer]);
 
   // Fallback for views that don't drive the strip via /dock/shell (overview
@@ -553,8 +564,8 @@ export function useTerminalStripController({
   // into navigation.openDock(pointer); the loader then writes context; the
   // strip re-renders because activeTargetTypeId is URL-derived. No optimistic
   // dataContext writes here — see CLAUDE.md "URL-first navigation".
-  const sessionsRef = useRef(sessions);
-  sessionsRef.current = sessions;
+  const sessionsRef = useRef(visibleSessions);
+  sessionsRef.current = visibleSessions;
   const navigateToSession = useCallback(
     (targetKey: string) => {
       const session = sessionsRef.current.find((s) => terminalTargetKey(s) === targetKey);
@@ -707,11 +718,6 @@ export function useTerminalStripController({
     }
   };
 
-  // Get display name for a session
-  const getDisplayName = (session: TerminalTab): string => {
-    return typeof session.name === 'string' && session.name ? session.name : terminalTargetKey(session);
-  };
-
   // Use Ctrl key on Mac, Win key on Windows, Alt key on Linux
   const osPlatform: string =
     (navigator as Navigator & { userAgentData?: { platform: string } }).userAgentData?.platform ?? navigator.userAgent;
@@ -763,8 +769,8 @@ export function useTerminalStripController({
       {
         id: 'claude',
         label: `Start Claude (${modLabel}+C)`,
-        Icon: ClaudeIcon,
-        iconClassName: 'text-orange-500',
+        Icon: PROVIDER_META.claude.Icon,
+        iconClassName: PROVIDER_META.claude.iconClassName,
         onActivate: () => {
           void handleStartClaude();
         },
@@ -778,8 +784,8 @@ export function useTerminalStripController({
       {
         id: 'codex',
         label: 'Start Codex',
-        Icon: CodexIcon,
-        iconClassName: 'text-emerald-500',
+        Icon: PROVIDER_META.codex.Icon,
+        iconClassName: PROVIDER_META.codex.iconClassName,
         onActivate: () => {
           void handleStartCodex();
         },
@@ -791,8 +797,8 @@ export function useTerminalStripController({
       {
         id: 'copilot',
         label: 'Start Copilot',
-        Icon: CopilotIcon,
-        iconClassName: 'text-sky-500',
+        Icon: PROVIDER_META.copilot.Icon,
+        iconClassName: PROVIDER_META.copilot.iconClassName,
         onActivate: () => {
           void handleStartCopilot();
         },
@@ -874,9 +880,13 @@ export function useTerminalStripController({
     isTabCreationPending,
   ]);
 
-  const tabEndToolbar = addTabButton ? (
-    <TerminalOpenerToolbar openers={openers} isTabCreationPending={isTabCreationPending} />
-  ) : null;
+  const tabEndToolbar = useMemo(
+    () =>
+      addTabButton ? (
+        <TerminalOpenerToolbar openers={openers} isTabCreationPending={isTabCreationPending} />
+      ) : null,
+    [addTabButton, openers, isTabCreationPending],
+  );
 
   // PendingAction set: process ids that recently became ready-for-input.
   // Global scope here — the strip's own filtering already pins which tabs render,
@@ -902,15 +912,15 @@ export function useTerminalStripController({
 
   // Strip items: the kind-agnostic chip descriptors TabStrip renders. The
   // vendor icon override (claude/codex/copilot/terminal) is the terminal
-  // strategy's icon resolution (Part 3 §6).
-  const stripItems: TabStripItem[] = visibleSessions.map((session) => {
+  // strategy's icon resolution (Part 3 §6), via the PROVIDER_META table.
+  const stripItems: TabStripItem[] = useMemo(() => visibleSessions.map((session) => {
     const targetKey = terminalTargetKey(session);
     const sessionProcess =
       terminalProcessId(session) && contextAgenticProcess?.id === terminalProcessId(session)
         ? contextAgenticProcess
         : session.agenticProcess;
     const workerType = sessionProcess?.worker_type?.toLowerCase() ?? '';
-    const providerKind =
+    const providerKind: keyof typeof PROVIDER_META =
       session.targetTypeId.type === Shell.type
         ? 'shell'
         : workerType === 'codex'
@@ -918,30 +928,8 @@ export function useTerminalStripController({
           : workerType === 'copilot'
             ? 'copilot'
             : 'claude';
-    const ProviderIcon =
-      providerKind === 'codex'
-        ? CodexIcon
-        : providerKind === 'copilot'
-          ? CopilotIcon
-          : providerKind === 'claude'
-            ? ClaudeIcon
-            : SquareTerminal;
-    const providerIconClassName =
-      providerKind === 'codex'
-        ? 'text-emerald-500'
-        : providerKind === 'copilot'
-          ? 'text-sky-500'
-          : providerKind === 'claude'
-            ? 'text-orange-500'
-            : 'text-muted-foreground';
-    const providerLabel =
-      providerKind === 'codex'
-        ? 'Codex tab'
-        : providerKind === 'copilot'
-          ? 'Copilot tab'
-          : providerKind === 'claude'
-            ? 'Claude Code tab'
-            : 'Shell tab';
+    const { Icon: ProviderIcon, iconClassName: providerIconClassName, label: providerLabel } =
+      PROVIDER_META[providerKind];
     const tabTestId =
       session.targetTypeId.type === Shell.type ? `tab-shell-${session.targetTypeId.id}` : `tab-shell-${targetKey}`;
     const indicatorKey = session.targetTypeId.type === Shell.type ? session.targetTypeId.id : targetKey;
@@ -973,7 +961,7 @@ export function useTerminalStripController({
       testId: tabTestId,
       dataAttributes: { 'data-indicator-key': indicatorKey },
     };
-  });
+  }), [visibleSessions, pendingProcessIds, contextAgenticProcess]);
 
   const handleSelect = useCallback(
     (key: string) => {
@@ -992,12 +980,15 @@ export function useTerminalStripController({
     [modLabel, handleStartClaude, handleStartTerminal],
   );
 
-  const leading = (
-    <ProjectsCounterChip
-      currentProjectId={tabsProjectId}
-      onLaunchProjectPath={handleLaunchProjectPath}
-      onOpenHistory={() => setHistoryModalOpen(true)}
-    />
+  const leading = useMemo(
+    () => (
+      <ProjectsCounterChip
+        currentProjectId={tabsProjectId}
+        onLaunchProjectPath={handleLaunchProjectPath}
+        onOpenHistory={() => setHistoryModalOpen(true)}
+      />
+    ),
+    [tabsProjectId, handleLaunchProjectPath],
   );
 
   const modals = (
