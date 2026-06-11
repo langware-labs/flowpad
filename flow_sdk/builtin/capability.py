@@ -135,7 +135,15 @@ class Capability(Entity):
         # mirrors value + last_check onto the row and broadcasts the update, so
         # we just read the fresh result for the response — no second save/notify.
         from flow_sdk.core.capabilities.discovery import run_discovery
+        from flow_sdk.core.capabilities.models import is_mcp_capability_kind
 
+        # MCP capabilities are dynamic — re-derive from indexed records first so
+        # a newly-configured server appears (and a removed one is pruned) on
+        # manual refresh, before discovery mirrors the result.
+        if is_mcp_capability_kind(self.kind):
+            from flow_sdk.core.capabilities.mcp import reconcile_mcp_capabilities
+
+            await reconcile_mcp_capabilities()
         await run_discovery([self.kind])
         result = await get_capability_registry().check(self.kind)
         return ApiSuccessResponse(data=result.model_dump(mode="json"))

@@ -257,6 +257,122 @@ def test_extract_vanished_entry_returns_empty(tmp_path: Path) -> None:
     assert extract_mcp_server(ref) == []
 
 
+# ── All-systems coverage: worker_type / connector_type / cloud connectors ────
+
+
+def test_resolve_source_maps_each_system(tmp_path: Path) -> None:
+    from flow_sdk.flowpad_types.enums.worker_enums import WorkerType
+    from flow_sdk.fs_store.indexer.functions.mcp_server import _resolve_source
+
+    cases = [
+        (tmp_path / ".vscode" / "mcp.json", "servers", WorkerType.VSCODE),
+        (tmp_path / ".cursor" / "mcp.json", "mcpServers", WorkerType.CURSOR),
+        (tmp_path / ".codeium" / "windsurf" / "mcp_config.json", "mcpServers", WorkerType.WINDSURF),
+        (tmp_path / ".copilot" / "mcp-config.json", "mcpServers", WorkerType.COPILOT),
+        (tmp_path / ".codex" / "config.toml", "mcp_servers", WorkerType.CODEX),
+        (tmp_path / ".claude.json", "mcpServers", WorkerType.CLAUDE_CODE),
+        (
+            tmp_path / "Library" / "Application Support" / "Claude" / "claude_desktop_config.json",
+            "mcpServers",
+            WorkerType.CLAUDE_DESKTOP,
+        ),
+    ]
+    for path, key, worker in cases:
+        assert _resolve_source(path) == (key, worker)
+
+
+def test_vscode_servers_key_parsed(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    (home / ".vscode").mkdir(parents=True)
+    # VS Code uses the `servers` key; a stray `mcpServers` here must be ignored.
+    (home / ".vscode" / "mcp.json").write_text(
+        json.dumps(
+            {
+                "servers": {"foo": {"command": "node", "args": ["s.js"]}},
+                "mcpServers": {"ignored": {"command": "nope"}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    refs = _scan(_home_root(home))
+    assert {r.json_path for r in refs} == {"/servers/foo"}
+    (rec,) = extract_mcp_server(refs[0])
+    d = rec.to_dict()
+    assert d["name"] == "foo"
+    assert d["worker_type"] == "vscode"
+    assert d["connector_type"] == "local"
+
+
+def test_worker_type_and_connector_type_stamped(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    (home / ".cursor").mkdir(parents=True)
+    (home / ".cursor" / "mcp.json").write_text(
+        json.dumps(
+            {
+                "mcpServers": {
+                    "local-tool": {"command": "uvx", "args": ["tool"]},
+                    "remote-tool": {"type": "http", "url": "https://example.com/mcp"},
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    by_name = {
+        extract_mcp_server(r)[0].to_dict()["name"]: extract_mcp_server(r)[0].to_dict()
+        for r in _scan(_home_root(home))
+    }
+    assert by_name["local-tool"]["worker_type"] == "cursor"
+    assert by_name["local-tool"]["connector_type"] == "local"
+    assert by_name["remote-tool"]["worker_type"] == "cursor"
+    assert by_name["remote-tool"]["connector_type"] == "remote"
+
+
+def test_cloud_connector_stubs(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / ".claude.json").write_text(
+        json.dumps(
+            {
+                "claudeAiMcpEverConnected": ["claude.ai Gmail", "Linear"],
+                # A real top-level server sharing the cloud name "Linear".
+                "mcpServers": {"Linear": {"command": "npx", "args": ["linear-mcp"]}},
+            }
+        ),
+        encoding="utf-8",
+    )
+    refs = _scan(_home_root(home))
+    recs = {r.json_path: extract_mcp_server(r)[0].to_dict() for r in refs}
+
+    gmail = recs["/claudeAiMcpEverConnected/claude.ai Gmail"]
+    assert gmail["name"] == "claude.ai Gmail"
+    assert gmail["scope"] == "user"
+    assert gmail["connector_type"] == "remote"
+    assert gmail["worker_type"] == "claude_code"
+    assert gmail["command"] == "" and gmail["url"] == ""
+    assert gmail["description"]  # non-empty so it stays FTS-searchable
+
+    # The cloud "Linear" stub and the real top-level "Linear" get distinct ids.
+    cloud_linear = recs["/claudeAiMcpEverConnected/Linear"]
+    real_linear = recs["/mcpServers/Linear"]
+    assert cloud_linear["id"] != real_linear["id"]
+    assert cloud_linear["connector_type"] == "remote"
+    assert real_linear["connector_type"] == "local"
+
+
+def test_cloud_connector_vanished_returns_empty(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    (home / ".claude.json").write_text(
+        json.dumps({"claudeAiMcpEverConnected": ["Sentry"]}), encoding="utf-8"
+    )
+    (ref,) = _scan(_home_root(home))
+    # Connector removed between scan and parse — extractor must fail soft.
+    (home / ".claude.json").write_text(
+        json.dumps({"claudeAiMcpEverConnected": []}), encoding="utf-8"
+    )
+    assert extract_mcp_server(ref) == []
+
+
 # ── Regression — settings-API per-server fragment type ───────────────────────
 
 
