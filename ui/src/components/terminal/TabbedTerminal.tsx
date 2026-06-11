@@ -1,6 +1,7 @@
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { Button } from '@src/components/ui/button';
+import { shouldAutoSavePtyTitle } from './rename-rules';
 import { TabStrip } from '@src/components/tabs/TabStrip';
 import {
   terminalProcessId,
@@ -9,7 +10,6 @@ import {
   type TerminalTab,
 } from '@src/tabs/useTabs';
 import {
-  shouldAutoSavePtyTitle,
   useTerminalStripController,
 } from '@src/tabs/useTerminalStripController';
 import { Loader2, SquareTerminal } from 'lucide-react';
@@ -53,18 +53,6 @@ interface TabbedTerminalProps {
    * strip owner registers them.
    */
   showStrip?: boolean;
-}
-
-/** Find the first available "Tab N" name, filling gaps from closed tabs. */
-export function nextTerminalName(sessions: { name: string }[]): string {
-  const usedNumbers = new Set<number>();
-  sessions.forEach((s) => {
-    const match = s.name.match(/^Tab (\d+)$/);
-    if (match) usedNumbers.add(parseInt(match[1], 10));
-  });
-  let n = 1;
-  while (usedNumbers.has(n)) n++;
-  return `Tab ${n}`;
 }
 
 /**

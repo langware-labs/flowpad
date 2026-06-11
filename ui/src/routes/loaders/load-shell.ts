@@ -173,7 +173,7 @@ async function routeNewTerminal(shellUrl: ShellUrlBuilder): Promise<never> {
     throw replace(shellUrl());
   }
   const shells = await Shell.query<Shell>(new QueryRequest({ type: Shell.type, scope: [] }));
-  const { nextTerminalName } = await import('@src/components/terminal/TabbedTerminal');
+  const { nextTerminalName } = await import('@src/components/terminal/rename-rules');
   const name = nextTerminalName(shells.map((s) => ({ name: s.name ?? '' })));
   const cwd = dataContext.project?.fs_storage_mount_path ?? undefined;
   const newShell = Shell.create(cn, { name, workdir: cwd });

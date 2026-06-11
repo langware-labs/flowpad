@@ -2,7 +2,7 @@ import { AgenticProcess, TypeId } from '@sdk';
 import { render, fireEvent } from '@testing-library/react';
 import React from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { nextTerminalName } from '@src/components/terminal/TabbedTerminal';
+import { nextTerminalName } from '@src/components/terminal/rename-rules';
 import type { TraceFilters, ColVisibility } from '@src/components/terminal/interactive-terminal/InteractiveTerminal';
 import { ProcessToolbar } from '@src/components/terminal/interactive-terminal/ProcessToolbar';
 
