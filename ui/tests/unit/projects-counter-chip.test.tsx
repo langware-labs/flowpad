@@ -1,11 +1,11 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ProjectsCounterChip } from '@src/components/terminal/ProjectsCounterChip';
-import { useTerminalProjectBuckets, type TerminalProjectBucket } from '@src/hooks/useActiveTerminals';
+import { useTerminalProjectBuckets, type TerminalProjectBucket } from '@src/tabs/useTabs';
 import { useAllProjects } from '@src/hooks/use-all-projects';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('@src/hooks/useActiveTerminals', () => ({
+vi.mock('@src/tabs/useTabs', () => ({
   useTerminalProjectBuckets: vi.fn(),
 }));
 

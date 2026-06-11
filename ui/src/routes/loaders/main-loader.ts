@@ -21,15 +21,15 @@ import { ViewType } from '@src/types/ViewType';
 import { TimeIt } from '@src/utils/timeit';
 import { redirect, type LoaderFunctionArgs as LoaderArgs } from 'react-router';
 import { getBrokenViewUrl, loadFlowFromParams } from './loaders';
-import { loadShellRoute, resolveDefaultTab } from './load-shell';
+import { loadShellRoute } from './load-shell';
 import { loadProject, loadProjectRoute } from './load-project';
 import { loadConversationRoute } from './load-conversation';
 import { loadAssetRoute } from './load-asset';
 import { loadTasksRoute } from './load-tasks';
 import { describeProcessStartError } from './load-process';
 
-// Re-exports kept for existing consumers (unit tests import from here).
-export { resolveDefaultTab, describeProcessStartError };
+// Re-export kept for existing consumers (unit tests import from here).
+export { describeProcessStartError };
 
 const ALLOWED_VIEWS = new Set(Object.values(ViewType));
 

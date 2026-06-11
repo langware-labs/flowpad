@@ -3,7 +3,8 @@
  *
  * Loop:
  *   1. Pull visible shells + processes, build the tab list.
- *   2. Pick the best candidate via `resolveDefaultTab`.
+ *   2. Pick the best candidate via `resolveNextTab` (the single
+ *      `resolveActive` resolver over the pre-filtered candidates).
  *   3. Try to load it (`loadProcess` for agentic-process tabs, `loadShell`
  *      otherwise).
  *   4. On a typed `ProcessLoadError` / `ShellLoadError`, dispatch the per-kind
@@ -25,9 +26,10 @@ import {
   fetchActiveTerminals,
   terminalProcessId,
   terminalTransportShellId,
-} from '@src/hooks/useActiveTerminals';
+} from '@src/tabs/useTabs';
+import { resolveNextTab } from '@src/tabs/tab-candidates';
 import { describeProcessStartError, loadProcess, ProcessLoadError } from './load-process';
-import { loadShell, resolveDefaultTab, ShellLoadError } from './load-shell';
+import { loadShell, ShellLoadError } from './load-shell';
 
 // ── public types ────────────────────────────────────────────────────────────
 
@@ -169,7 +171,7 @@ export async function loadNextProcess(
     : allTabs.filter((t) => t.projectId === projectId);
 
   while (true) {
-    const tab = resolveDefaultTab(tabs, tried);
+    const tab = resolveNextTab(tabs, tried);
     if (!tab) {
       return { loaded: null, cleaned };
     }

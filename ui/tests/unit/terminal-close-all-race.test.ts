@@ -2,8 +2,8 @@ import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import { describe, expect, it } from 'vitest';
 
-// The store moved to src/tabs/useTabs.ts (useActiveTerminals.ts is a pure
-// re-export shim); the contract assertions read the real source.
+// The store lives in src/tabs/useTabs.ts (the useActiveTerminals.ts shim
+// was deleted at cutover end); the contract assertions read the real source.
 const activeTerminalsSource = readFileSync(
   resolve(__dirname, '../../src/tabs/useTabs.ts'),
   'utf-8',

@@ -1,7 +1,7 @@
 import { toast as sonnerToast } from 'sonner';
 import { oauthService, OAUTH_PROVIDERS, copyToClipboard, AgenticProcess } from '@sdk';
 import { gitResolvePrompt } from '@src/components/status-bar/gitResolvePrompt';
-import { closeTerminalTargets } from '@src/hooks/useActiveTerminals';
+import { closeTerminalTargets } from '@src/tabs/useTabs';
 import { useBadgeStore } from './store';
 import { notify } from './notify';
 import type { NotificationAction } from './types';

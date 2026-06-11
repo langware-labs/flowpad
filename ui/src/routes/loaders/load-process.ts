@@ -16,7 +16,7 @@ import {
   TypeId,
 } from '@sdk';
 import { estimateCols, estimateRows } from '@src/components/terminal/interactive-terminal/terminalConfig';
-import { ensureTerminalsFetched } from '@src/hooks/useActiveTerminals';
+import { ensureTerminalsFetched } from '@src/tabs/useTabs';
 import { bumpLastActive } from '@src/tabs/last-active';
 import { perfLog, perfTime } from './_perf';
 import { loadProject } from './load-project';
