@@ -233,6 +233,11 @@ class TypeInfo:
     # True ⇒ entity saves re-render the backing file from default_body_fn on
     # EVERY store() (entity is the file's sole editor), not just on create.
     owns_main_ref: bool = field(default=False, compare=False, repr=False)
+    # True ⇒ sharing an entity of this type also shares its parent
+    # (``parent_type_id``); the receive path materializes the parent first via
+    # ``Entity.materialize_share_parent``. Runtime-only; not part of the
+    # schema hash. Only safe when the parent type is deterministic/field-frozen.
+    parent_share_on_default: bool = field(default=False, compare=False, repr=False)
     # The declarative TypeMetadata (possibly a per-type subclass) this TypeInfo
     # was built from — home for type-specific extras beyond the flat fields.
     # Runtime-only; the flat fields above remain the serialized surface.
@@ -248,6 +253,39 @@ class TypeInfo:
     # on save.
     main_subdir: str | None = None
     main_layout: str = "file"
+    # For ``main_layout == "folder"`` owned types: the fixed inner filename of
+    # the primary asset (e.g. ``spec.md`` under ``specs/<name>/``). When set,
+    # ``compute_asset_ref`` targets ``<subdir>/<name>/<main_file>`` instead of
+    # the bare folder, so ``owns_main_ref`` folder types can write/round-trip
+    # the body file. Runtime-only; not part of the schema hash.
+    main_file: str | None = None
+    # Folder-layout types: True ⇒ asset_ref IS ``<subdir>/<name>/<main_file>``
+    # (spec); False ⇒ asset_ref is the bare folder and the default body is
+    # materialized into ``<folder>/<main_file>`` (skill). Runtime-only.
+    main_file_is_asset_ref: bool = False
+
+    def asset_ref_for(self, folder: Path) -> Path:
+        """Where a folder-layout type's asset_ref points, given its folder.
+
+        Spec-style (``main_file_is_asset_ref``) anchors asset_ref on the inner
+        ``<folder>/<main_file>``; skill-style keeps it on the bare folder. The
+        inverse of ``body_path_for`` — both live here so the folder↔body
+        convention is stated once. Callers gate on ``main_layout == "folder"``.
+        """
+        if self.main_file and self.main_file_is_asset_ref:
+            return folder / self.main_file
+        return folder
+
+    def body_path_for(self, asset_path: Path) -> Path:
+        """Map an asset_ref path to the writable main-body file.
+
+        Folder-layout types whose asset_ref is the bare folder (skill-style,
+        ``main_file_is_asset_ref=False``) keep the body at ``<folder>/<main_file>``;
+        every other shape's asset_ref already IS the body target.
+        """
+        if self.main_layout == "folder" and self.main_file and not self.main_file_is_asset_ref:
+            return asset_path / self.main_file
+        return asset_path
 
     @property
     def schema_hash(self) -> str:
@@ -396,6 +434,10 @@ class SchemaRegistry:
                 existing.main_subdir = info.main_subdir
             if info.main_layout != "file":
                 existing.main_layout = info.main_layout
+            if info.main_file is not None:
+                existing.main_file = info.main_file
+            if info.main_file_is_asset_ref:
+                existing.main_file_is_asset_ref = True
             if info.post_sync_fn is not None:
                 existing.post_sync_fn = info.post_sync_fn
             if info.from_disk_fn is not None:
@@ -408,6 +450,8 @@ class SchemaRegistry:
                 existing.default_body_fn = info.default_body_fn
             if info.owns_main_ref:
                 existing.owns_main_ref = True
+            if info.parent_share_on_default:
+                existing.parent_share_on_default = True
             if info.metadata is not None:
                 existing.metadata = info.metadata
             if info.meta_model is not None:

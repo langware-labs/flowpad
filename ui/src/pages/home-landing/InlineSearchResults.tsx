@@ -3,6 +3,7 @@ import { cn } from '@src/lib/utils';
 import { dataManager } from '@sdk';
 import { getActionsForResult } from '@src/navigation/record-type-nav';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import type { ScopeFilter } from '@src/lib/scope-filter';
 import { ArrowUpRight } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
@@ -34,6 +35,8 @@ function timeAgo(iso?: string): string {
 interface InlineSearchResultsProps {
   query: string;
   filters: SearchFilters;
+  scope: ScopeFilter;
+  scopeLoading?: boolean;
   selectedIndex: number;
   onSelectedIndexChange: (i: number) => void;
   onOpenFullSearch: () => void;
@@ -43,6 +46,8 @@ interface InlineSearchResultsProps {
 export function InlineSearchResults({
   query,
   filters,
+  scope,
+  scopeLoading = false,
   selectedIndex,
   onSelectedIndexChange,
   onOpenFullSearch,
@@ -60,21 +65,27 @@ export function InlineSearchResults({
   // Track when a search begins
   const prevQuery = useRef(query);
   const prevFilters = useRef(filters);
+  const prevScopeLoading = useRef(scopeLoading);
   useEffect(() => {
     const filtersChanged =
       filters.record_type !== prevFilters.current.record_type ||
       filters.status !== prevFilters.current.status ||
       filters.scope !== prevFilters.current.scope ||
       filters.time_preset !== prevFilters.current.time_preset;
-    if (query !== prevQuery.current || filtersChanged) {
+    const scopeReadyChanged = prevScopeLoading.current && !scopeLoading;
+    if (query !== prevQuery.current || filtersChanged || scopeReadyChanged) {
       setSearchStartMs(Date.now());
       setElapsedMs(null);
-      prevQuery.current = query;
-      prevFilters.current = filters;
     }
-  }, [query, filters]);
+    prevQuery.current = query;
+    prevFilters.current = filters;
+    prevScopeLoading.current = scopeLoading;
+  }, [query, filters, scopeLoading]);
 
-  const { results, isLoading } = useRecordSearch(query, filters);
+  const requestQuery = scopeLoading ? '' : query;
+  const requestFilters = scopeLoading ? {} : filters;
+  const { results, isLoading: searchLoading } = useRecordSearch(requestQuery, requestFilters, {}, scope);
+  const isLoading = scopeLoading || searchLoading;
 
   // Record elapsed time when results arrive
   useEffect(() => {

@@ -208,6 +208,22 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
+   * Create dock pointer for an entity-backed asset by its stable TypeId — the
+   * preferred, relocation-proof form. The loader resolves it by id (no path
+   * discovery), so navigation commits instantly.
+   * Pointer format: "editor/<editor>/typeid/<type>-<uuid>"
+   */
+  static forAssetEditorByTypeId(
+    assetType: string,
+    typeId: TypeId,
+    layout: Layout = Layout.DOCK,
+    options?: Record<string, string>,
+  ): DockPointer {
+    const editor = editorForType(assetType) ?? AssetEditor.MARKDOWN;
+    return AssetDocPointer.forTypeId(editor, typeId, options).toDockPointer(layout);
+  }
+
+  /**
    * Create dock pointer for a wiki link by name. Resolves to a markdown record
    * at view time; the URL stays at the name form (rename-resilient).
    * Pointer format: "wiki/<encoded name>"

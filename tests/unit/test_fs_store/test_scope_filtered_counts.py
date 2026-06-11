@@ -8,6 +8,7 @@ same row set the assets page sees.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -71,6 +72,31 @@ async def test_count_entities_one_project_returns_one_row(tmp_path: Path) -> Non
     driver = get_db_driver()
     sf = ScopeFilter(user=False, projects=(pid_a,))
     assert await driver.count_entities_by_type("markdown", scope=sf) == 1
+
+
+@pytest.mark.asyncio
+async def test_count_entities_matches_record_project_alias(tmp_path: Path) -> None:
+    pid_a, _ = await _seed_scoped_markdowns(tmp_path)
+    driver = get_db_driver()
+    sf = ScopeFilter(user=False, projects=("entity-proj-A",), record_projects=(pid_a,))
+    assert await driver.count_entities_by_type("markdown", scope=sf) == 1
+
+
+@pytest.mark.asyncio
+async def test_count_entities_drops_empty_scope_for_scoped_record_types(tmp_path: Path) -> None:
+    await _seed_scoped_markdowns(tmp_path)
+    driver = get_db_driver()
+    async with driver._session_ctx() as session:
+        await session.execute(
+            text("INSERT INTO entities (id, type, data) VALUES (:id, :type, :data)"),
+            {
+                "id": "broken-empty-scope-markdown",
+                "type": "markdown",
+                "data": json.dumps({"id": "broken-empty-scope-markdown", "type": "markdown"}),
+            },
+        )
+    sf = ScopeFilter(user=True, projects=())
+    assert await driver.count_entities_by_type("markdown", scope=sf) == 2
 
 
 @pytest.mark.asyncio

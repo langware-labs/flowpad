@@ -10,9 +10,9 @@
  * resting URL. Best-effort: a miss/parse-failure is non-fatal (the view renders
  * its own missing/error state); never throws into the parent dock loader.
  */
-import { TypeId, VFSPath, apiClient, dataContext, dataManager, systemTools } from '@sdk';
+import { TypeId, apiClient, dataContext, dataManager } from '@sdk';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
-import { AssetEditor, AssetMode, AssetRoutingMethod, EDITOR_TYPES } from '@src/navigation/asset-doc-types';
+import { AssetEditor, AssetMode, AssetRoutingMethod } from '@src/navigation/asset-doc-types';
 
 interface WikiResolveResult {
   type: string;
@@ -32,21 +32,6 @@ async function wikiResolve(name: string, space: string): Promise<WikiResolveResu
   } catch {
     return null;
   }
-}
-
-/** Discover a vfs-addressed asset, trying each record type the editor can edit.
- *  Candidates run concurrently (one round-trip latency, not N) — for the markdown
- *  family that's 6 types; a 404 on a wrong-type candidate is expected. */
-async function discoverByEditor(editor: AssetEditor, absPath: string): Promise<TypeId | null> {
-  const results = await Promise.allSettled(
-    EDITOR_TYPES[editor].map((type) => systemTools.discoverByPath(type, absPath)),
-  );
-  for (const r of results) {
-    if (r.status === 'fulfilled' && r.value?.type && r.value?.id) {
-      return new TypeId(r.value.type, r.value.id);
-    }
-  }
-  return null;
 }
 
 /** Put a resolved entity into context: warm the cache + mark it active. */
@@ -82,11 +67,14 @@ export async function loadAssetRoute(pointer: string | undefined): Promise<void>
       return;
     }
 
-    // VFS: discover the entity for the file, then warm context.
-    const vfs = VFSPath.parse(ptr.value);
-    const absPath = '/' + vfs.entitySubPath;
-    const typeId = await discoverByEditor(ptr.editor!, absPath);
-    if (typeId) await ensureInContext(typeId);
+    // VFS: do NOT resolve here. Discovery by path can trigger a slow backend
+    // recovery scan, and a route loader blocks the URL commit until it returns
+    // (URL-first rule #4: "loaders must be fast"). The editor view self-resolves
+    // the entity on mount — `AssetEditorRouter` → `EntityResolutionGate` →
+    // `useEntityByPath` (cached bulk list + lazy single-type discover, with its
+    // own "Discovering…" state). Returning immediately lets navigation commit
+    // instantly; rendering is identical. Prefer the typeid form upstream
+    // (record-type-nav) so most clicks never hit this path at all.
   } catch (e) {
     console.warn('[load-asset] resolve failed (view will handle):', pointer, e);
   }

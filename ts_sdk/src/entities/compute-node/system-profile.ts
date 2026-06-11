@@ -841,7 +841,10 @@ export async function openResourceExternal(
  * Project summary returned by list-projects API.
  */
 export interface ProjectListItem {
+  /** Real Project entity id. Use this for ScopeFilter.projects and project routes. */
   id: string;
+  /** Legacy fs-record project_id value, derived from uuid5(project:<cwd>). */
+  record_project_id?: string;
   name: string;
   /**
    * Claude project directory name observed at ~/.claude/projects/<name>/.

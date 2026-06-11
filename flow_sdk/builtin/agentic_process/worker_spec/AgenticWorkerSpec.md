@@ -645,7 +645,7 @@ integration cost.
 
 ### Ignored-types list (no false last_type)
 - **Need:** Session-prologue/epilogue entries that carry no state must be skipped so they don't mask terminal signals.
-- **Claude:** `_IGNORED_TYPES = {"permission-mode", "file-history-snapshot"}` (fs_records/agent_status.py:294-297, 312-313)
+- **Claude:** `_IGNORED_TYPES` (worker_status.py) mirrors the transcript parser's `_META_TYPES` minus `last-prompt` — `file-history-snapshot`, `permission-mode`, `mode`, `agent-name`, `bridge-session`, `ai-title`, `custom-title`, `queue-operation`, `pr-link`, `attachment`. Kept in parity by `test_ignored_types_match_meta_types`. A stale 2-element set (`permission-mode`/`file-history-snapshot`) previously let the `mode`/`agent-name`/`bridge-session` envelope epilogue mask real status as UNKNOWN; the tail read also now widens past an envelope run longer than 4 KB.
 - **Codex:** `token_count` / `compacted` return `(None, False)` (codex/status.py:196-197)
 - **Required:** Yes
 - **Vendor must expose:** Classifier can declare entries as state-neutral

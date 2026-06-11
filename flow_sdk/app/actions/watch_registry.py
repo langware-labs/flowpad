@@ -87,6 +87,17 @@ async def create_watch(connection_id: str, target_typeid):
     add_watch(connection_id, entity_key)
 
     logger.info(f"Watch created: {entity_key} <- {connection_id}")
+
+    # If this entity was PTY-recovered during this backend lifetime, deliver the
+    # distinct ``recovered`` event to the connecting client now — the watchdog
+    # runs before clients reconnect, so the watch is the delivery trigger.
+    try:
+        from flow_sdk.server.pty_recovery import maybe_emit_recovered_on_watch
+
+        await maybe_emit_recovered_on_watch(connection_id, target_typeid.type, entity_id)
+    except Exception:
+        logger.debug("recovered-on-watch emit skipped", exc_info=True)
+
     return ApiSuccessResponse[bool](data=True)
 
 

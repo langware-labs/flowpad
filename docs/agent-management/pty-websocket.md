@@ -103,7 +103,7 @@ Key backend fields:
 
 `ShellRecord` remains the disk record for shell metadata and PTY stream bytes.
 `start_machine_pty_session()` creates or updates the record and wires a
-`PtyStreamFile` into `PtySessionState.pty_stream_file`. `Shell.read()` reads the
+`PtyStreamFile` into `PtyState.pty_stream_file`. `Shell.read()` reads the
 accumulated stream file; this is separate from the in-memory replay buffer.
 
 ---
@@ -116,10 +116,10 @@ the `terminal-command/<op>` action family.
 `start_machine_pty_session()` does the backend PTY setup:
 
 1. Builds `pty_key = (compute_node.id, compute_node.node_provider_id, shell_id)`.
-2. Reuses an existing `PtySessionState` if present and attaches the connection.
+2. Reuses an existing `PtyState` if present and attaches the connection.
 3. Enforces a node-local session cap of 70 by evicting 10 oldest sessions.
 4. Creates the provider PTY via `compute_provider.get_or_create_pty_session(...)`.
-5. Registers a `PtySessionState` in `pty_session_manager`.
+5. Registers a `PtyState` in `pty_session_manager`.
 6. Creates or updates `ShellRecord`, then creates/updates the `Shell` entity.
 7. Appends `shell_id` to `ComputeNode.active_pty_sessions`.
 8. Broadcasts a `data_op_msg` update with the full compute-node model dump.
@@ -191,8 +191,10 @@ Example confirmation:
 ```
 
 On disconnect, the server removes the connection, removes watch registrations,
-and calls `PtySessionManager.detach_all_for_connection(connection_id)`. That
-only detaches the WebSocket id; it does not close the PTY process.
+and calls `PtyRegistry.on_ws_disconnect(connection_id)`. That **parks** the
+connection on every `PtyState` it was attached to — moving it from
+`attached_connections` to `detached_connections` (kept, not discarded) — so a
+reconnect of the same id auto-restores delivery. It does not close the PTY.
 
 ### Message Dispatch
 
@@ -225,11 +227,14 @@ delay = min(500ms * 2^(attempt - 1), 10000ms) + random(0, 1000ms)
 There is no hard retry cap in the current `ConnectionManager`. On successful
 reconnect it emits `on_reconnected`.
 
-`DataManager` re-registers watched entities on `on_open`. `Shell` registers a
-single static listener pair for all live Shell instances:
-
-- `on_close` -> `shell.ptyConnection.handleWsClose()`
-- `on_reconnected` -> `shell.start(...)` for shells whose tab has been active
+`DataManager` re-registers watched entities on `on_open`. **PTY connection
+membership is no longer driven from the frontend** — there is no per-Shell
+static listener and no re-attach on reconnect. The backend's
+`PtyRegistry.on_ws_connect` (WS accept hook) resumes membership automatically
+(DETACHED → ATTACHED), so live output resumes server-side. The only frontend
+reaction is in `InteractiveTerminal`: on `on_reconnected` it re-runs its attach
+handshake to **repaint the gap** (re-fetch + replay the framed stream, seq-deduped)
+and re-subscribe its renderer — it issues no backend attach call.
 
 ---
 
@@ -519,26 +524,24 @@ session and retries once with the stored output callback.
 
 ### Close, Detach, And Disconnect
 
-There are three distinct cases:
+**Disconnect (transport) and close (intent) are different** — that distinction is the core of the membership FSM:
 
-| Case | Current behavior |
-|------|------------------|
-| WebSocket disconnect | Server removes only that `connection_id` from every session. PTY stays alive. |
-| `Shell.close()` | Deletes the `ShellRecord`, closes the PTY handle if present, deletes the `Shell` entity. |
-| `terminal-command/close` | Marks Shell/ShellRecord closed, calls `Shell.close()` when possible, then falls back to `pty.close_for_connection(...)` if a PTY handle remains. |
+| Case | Behavior |
+|------|----------|
+| **WebSocket disconnect** | `on_ws_disconnect` **parks** the id on every `PtyState`: `attached_connections → detached_connections` (kept). A reconnect of the same id resumes it via `on_ws_connect`. The PTY stays alive. |
+| **WebSocket reconnect** | `on_ws_connect` **resumes** the id: `detached_connections → attached_connections`. Output delivery restarts with no client action. |
+| `Shell.close()` (explicit) | Deletes the `ShellRecord`, closes the PTY handle if present, deletes the `Shell` entity. |
+| `terminal-command/close` (explicit) | Marks Shell/ShellRecord closed, calls `Shell.close()` when possible, else `pty.close_for_connection(...)`. |
 
-Low-level `PtySession.close_for_connection(connection_id)` removes one
-connection from the session and only destroys the PTY when no connections
-remain. When the session is destroyed, the replay buffer is cleared.
+Low-level `PtyState.close_for_connection(connection_id)` (explicit close) removes
+one connection and destroys the PTY only when none remain — this is intent, not a
+transport drop, so it is **not** the same as `on_ws_disconnect`.
 
-`PtySessionManager` also implements TTL cleanup:
-
-- default interval: 120 seconds
-- default detached TTL: 900 seconds
-
-The manager exposes `start_cleanup_task(...)`, but the inspected code paths do
-not start that task automatically. WebSocket disconnect cleanup is immediate
-detachment only.
+`PtyRegistry` runs `start_cleanup_task(...)` (started at backend startup) with two
+bounded reapers: orphan TTL (default interval 120 s, TTL 900 s) closes a `PtyState`
+with no ATTACHED connections; a parked-grace drops a `DETACHED` id that never
+reconnects. So nothing leaks — parked subscriptions can't outlive their `PtyState`
+or the grace.
 
 ---
 
@@ -641,22 +644,21 @@ Input takes the reverse path for browser keystrokes:
 | `onOutput(fn)` | `PtyConnection.onOutput(fn)`, only after replay is done |
 | `getPtyChunks()` | Sorted chunks from `PtyConnection.chunks` |
 
-`Shell.attachPty(...)` is deferred until the tab is active at least once. Once a
-shell has ever been active, it is registered in a static shell registry so one
-global `ConnectionManager` listener pair can fan out `on_close` and
-`on_reconnected` to all live shells.
+`Shell.attachPty(...)` is deferred until the tab is active at least once, and is
+the **one-time intent** declaration ("this connection wants to view this PTY").
+The frontend no longer maintains a shell registry or reacts to `on_close` /
+`on_reconnected` for membership — connection membership is fully backend-owned.
 
-Current reconnect behavior is intentionally simple:
+Reconnect behavior (backend-driven):
 
-1. WebSocket closes.
-2. `PtyConnection.handleWsClose()` sets `replayDone=false` and emits disconnect.
-3. `ConnectionManager` reconnects indefinitely.
-4. `Shell._onCmReconnected()` calls `Shell.start(...)` again for active shells.
-5. `Shell.start(...)` reuses a live backend PTY or recreates a missing one.
-6. `PtyConnection.attach(...)` requests retained replay and reopens listeners.
+1. WebSocket closes. The frontend PTY pipeline **stays armed** (no teardown).
+2. Backend `PtyRegistry.on_ws_disconnect` parks this `connection_id` (ATTACHED → DETACHED).
+3. `ConnectionManager` reconnects indefinitely with backoff.
+4. On WS accept, backend `PtyRegistry.on_ws_connect` resumes the same id (DETACHED → ATTACHED); live output flows again — **no client re-attach**.
+5. The renderer (`InteractiveTerminal`) reacts to `on_reconnected` only to repaint the gap: re-fetch + replay the framed stream (seq-deduped) and re-subscribe.
 
-There is no current localStorage-backed `lastSeqReceived` persistence in the
-inspected `Shell` / `PtyConnection` implementation.
+There is no localStorage-backed `lastSeqReceived` persistence; gap recovery is the
+framed-stream replay keyed on the per-session `seq`.
 
 ---
 

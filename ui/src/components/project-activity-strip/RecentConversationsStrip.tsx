@@ -1,13 +1,11 @@
 import {
   Conversation,
   FlowMessage,
-  FlowMessageKind,
   Invitation,
   Project,
   QueryRequest,
   Task,
   TypeId,
-  User,
   acceptInvitation,
   dismissConversation,
   fetchConversations,
@@ -20,31 +18,18 @@ import { useLoginRequired } from '@src/hooks/use-login-required';
 import LoginDialog, { ActionType } from '@src/components/login-required-dialog';
 import { NewConversationDialog } from '@src/components/new-conversation-dialog/NewConversationDialog';
 import { deriveConversationTitle } from '@src/components/conversation/conversation-title';
+import { ConversationParticipants } from '@src/components/conversation/ConversationParticipants';
+import { participantIsUser, participantName } from '@src/components/conversation/participant-display';
+import { conversationFacets } from '@src/components/conversation/conversation-category';
+import { CategoryChips } from '@src/components/conversation/CategoryChips';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { Archive, EyeOff, MailPlus, MessageSquare, Plus, RefreshCw, Upload } from 'lucide-react';
+import { CheckCheck, EyeOff, MailPlus, MessageSquare, Plus, RefreshCw, Upload } from 'lucide-react';
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { bulkUpdateMessages } from '@src/components/inbox-view/inbox-api';
+import { useIsAdvanced } from '@src/components/view-mode';
 import { formatTimeAgo } from './project-activity-utils';
 
 const VISIBLE_COUNT = 5;
-
-/**
- * Build the "from <name> <email>" label for a conversation row from a resolved
- * User entity, falling back to a denormalized name string (e.g. a message's
- * ``sender_name``) when the User isn't available. Returns null when neither a
- * name nor an email can be determined.
- */
-function formatSenderLabel(
-  user: User | null | undefined,
-  fallbackName?: string | null,
-): string | null {
-  const name = user?.name?.trim() || fallbackName?.trim() || '';
-  const email = user?.email?.trim() || '';
-  if (!name && !email) return null;
-  if (name && email) return `from ${name} <${email}>`;
-  return `from ${name || email}`;
-}
 
 /**
  * Extract the sender's display name from an auto-generated conversation title.
@@ -53,7 +38,7 @@ function formatSenderLabel(
  * originator. This is the only place the sender's display name is reliably
  * stored — the conversation row and its messages carry only the recipient.
  * Returns null for custom titles (no "<comma> … - <date>" shape) so callers
- * can fall back to a resolved User.
+ * can fall back to other sender signals (wire sender_name, roster).
  */
 function parseSenderFromTitle(title: string | null | undefined): string | null {
   if (!title) return null;
@@ -87,6 +72,7 @@ interface RecentConversationsStripProps {
 export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: RecentConversationsStripProps) {
   const { navigation } = useDockNavigation();
   const { checkLoginAndProceed, showLoginDialog, closeLoginDialog } = useLoginRequired();
+  const isAdvanced = useIsAdvanced();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [uploadConflicts, setUploadConflicts] = useState<UploadConflict[] | null>(null);
@@ -114,7 +100,7 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
   const [hubSyncing, setHubSyncing] = useState(false);
   const [acceptingId, setAcceptingId] = useState<string | null>(null);
   const [dismissingId, setDismissingId] = useState<string | null>(null);
-  const [archivingAll, setArchivingAll] = useState(false);
+  const [dismissingAll, setDismissingAll] = useState(false);
   // Conv ids hidden because dismissed_at is fresh relative to their latest
   // message. Children report via onHiddenChange so the parent can drive the
   // header count + "No conversations" empty state.
@@ -159,13 +145,17 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
     }
   };
 
-  const handleArchiveAll = async () => {
-    setArchivingAll(true);
+  const handleDismissAll = async () => {
+    setDismissingAll(true);
     try {
-      await bulkUpdateMessages({ is_archived: true });
+      // Dismiss every live (non-hidden) conversation. Dismiss — not archive —
+      // hides it from this list but keeps it in the full Inbox and lets it
+      // reappear when a new message arrives, matching the per-row EyeOff action.
+      const targets = sorted.filter((c) => c.id && !hiddenIds.has(c.id));
+      await Promise.all(targets.map((c) => dismissConversation({ conversation_id: c.id! })));
       void refetch();
     } finally {
-      setArchivingAll(false);
+      setDismissingAll(false);
     }
   };
 
@@ -243,7 +233,7 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
       <div className="flex items-center justify-between px-3 py-2">
         <div className="flex items-center gap-1.5">
           <MessageSquare className="h-3.5 w-3.5 text-muted-foreground" />
-          <span className="text-xs font-medium">Recent conversations</span>
+          <span className="text-xs font-medium">Inbox</span>
           {visibleCountActual > 0 && (
             <span className="rounded-full bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
               {visibleCountActual}
@@ -258,34 +248,40 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
             className="hidden"
             onChange={(e) => void handleFileChange(e)}
           />
-          <button
-            type="button"
-            className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            onClick={() => setNewConvOpen(true)}
-            title="New conversation"
-            data-testid="new-conversation-button"
-          >
-            <Plus className="h-3.5 w-3.5" />
-          </button>
-          <button
-            type="button"
-            className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            onClick={() => fileInputRef.current?.click()}
-            title="Upload message"
-            data-testid="upload-message-button"
-          >
-            <Upload className="h-3.5 w-3.5" />
-          </button>
-          <button
-            type="button"
-            className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
-            onClick={() => void handleArchiveAll()}
-            disabled={archivingAll || visibleCountActual === 0}
-            title="Archive all conversations"
-            data-testid="archive-all-conversations-button"
-          >
-            <Archive className="h-3.5 w-3.5" />
-          </button>
+          {/* New conversation / Upload / Dismiss-all are Advanced-view only;
+              Refresh stays in Standard view. */}
+          {isAdvanced && (
+            <>
+              <button
+                type="button"
+                className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                onClick={() => setNewConvOpen(true)}
+                title="New conversation"
+                data-testid="new-conversation-button"
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                onClick={() => fileInputRef.current?.click()}
+                title="Upload message"
+                data-testid="upload-message-button"
+              >
+                <Upload className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
+                onClick={() => void handleDismissAll()}
+                disabled={dismissingAll || visibleCountActual === 0}
+                title="Dismiss all notifications"
+                data-testid="dismiss-all-notifications-button"
+              >
+                <CheckCheck className="h-3.5 w-3.5" />
+              </button>
+            </>
+          )}
           <button
             type="button"
             className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
@@ -419,52 +415,33 @@ function ConversationRow({
   const invitationId = invitationTypeId?.id ?? null;
   const { data: invitation } = useEntity<Invitation>(invitationTypeId);
 
-  // Resolve the conversation creator (the sender) to a User so the row can
-  // render "from <name> <email>" rather than a raw id. ``created_by`` may be
-  // "system" for machine-generated conversations — skip the lookup then.
-  const creatorTypeId = useMemo(
-    () => (conv.created_by && conv.created_by !== 'system'
-      ? new TypeId(User.type, conv.created_by)
-      : null),
-    [conv.created_by],
-  );
-  const { data: creatorUser } = useEntity<User>(creatorTypeId);
-
   // The current user's identity — cloud email when logged in, else local.
   const myEmail = (cloudUser?.email || currentUser?.email || '').trim().toLowerCase();
-  // The recipient is named directly on the Invitation entity. Matching against
-  // ``recipient_email`` — rather than the conversation participant list, which
-  // can also include the sender — is what cleanly separates "I was invited to
-  // this" from "I sent this".
-  const recipientEmail = invitation?.recipient_email?.trim().toLowerCase() || '';
-  const isRecipient = !!myEmail && myEmail === recipientEmail;
 
-  // An invitation row (Accept CTA, no navigation) is shown ONLY to the
-  // *recipient* of a still-pending invitation. The sender always sees a
-  // normal conversation row; once the recipient accepts, ``invitation.accepted``
-  // flips true via the WS entity update and the row collapses to the normal
-  // conversation for them too. The first message stays ``kind === 'invitation'``
-  // forever, so it can't drive this on its own.
-  const isInvitationRow =
-    firstMessage?.kind === FlowMessageKind.INVITATION &&
-    !invitation?.accepted &&
-    isRecipient;
+  // Shared category classifier — single source of truth for invitation /
+  // community / archived (replacing the per-strip copies). Invitation is
+  // viewer-relative: matched on the Invitation's ``recipient_email`` so "I was
+  // invited" stays distinct from "I sent this". Archived compares the latest
+  // pointer ``ts`` so it auto-revives without racing the async FlowMessage fetch.
+  const facets = conversationFacets({
+    conv,
+    firstMessage,
+    latestMessage,
+    latestPtrTs: lastPtr?.ts ?? null,
+    invitation,
+    viewer: { email: myEmail, cloudUserId: cloudUser?.id ?? currentUser?.id ?? null },
+  });
+  const isInvitationRow = facets.isInvitation;
 
-  // Both timestamps use the same auto-revive-on-new-message pattern:
-  // compare the stamp against the latest pointer's ``ts`` (available
-  // synchronously off ``message_ids``) so we don't flicker during the
-  // async FlowMessage fetch.
-  //   * dismissed_at — strip-only "Hide from Recent" (EyeOff button)
-  //   * archived_at  — conversation-level archive (Inbox + strip honor it)
+  // ``dismissed_at`` is a strip-only "Hide from Recent" (EyeOff) flag — NOT part
+  // of the shared category, so it stays local. Same auto-revive pattern: compare
+  // the stamp against the latest pointer ``ts`` to avoid flicker during the fetch.
   const latestMessageTime = lastPtr?.ts ? new Date(lastPtr.ts).getTime() : 0;
   const dismissedAt = conv.dismissed_at ? new Date(conv.dismissed_at).getTime() : null;
   const dismissedHidden =
     dismissedAt !== null && !Number.isNaN(dismissedAt) && latestMessageTime <= dismissedAt;
-  const archivedAt = conv.archived_at ? new Date(conv.archived_at).getTime() : null;
-  const archivedHidden =
-    archivedAt !== null && !Number.isNaN(archivedAt) && latestMessageTime <= archivedAt;
 
-  const hidden = dismissedHidden || archivedHidden;
+  const hidden = dismissedHidden || facets.isArchived;
   const convIdStr = conv.id ?? '';
   // Report hidden state up so the parent can drive the header count + empty
   // state. No cleanup callback: cleanup that calls setState during unmount /
@@ -499,10 +476,20 @@ function ConversationRow({
   // sees who invited them. An accepted / ongoing conversation instead lists
   // the participants ("Alice, bob@local.test"). Both are carried by the
   // auto-generated title "<sender>, <recipient>[, …] - <date>"; custom titles
-  // fall through to the conversation title itself.
+  // fall back to SENDER signals only: the invitation message's wire-stamped
+  // ``sender_name``, then the non-self roster entry. NEVER ``created_by`` —
+  // on receiver-materialized rows that's whoever ran the local sync (the
+  // recipient), not the inviter (the "from <my git user.name>" bug).
   const titleSender = parseSenderFromTitle(conv.title);
+  const wireSender = firstMessage?.sender_name?.trim() || null;
+  const rosterSender = (() => {
+    const me = { id: cloudUser?.id ?? currentUser?.id ?? null, email: myEmail || null };
+    const other = (conv.participants ?? []).find((p) => p && !participantIsUser(p, me));
+    return other ? participantName(other) : null;
+  })();
+  const inviterName = titleSender || wireSender || rosterSender;
   const fromName = isInvitationRow
-    ? (titleSender ? `from ${titleSender}` : formatSenderLabel(creatorUser, null))
+    ? (inviterName ? `from ${inviterName}` : null)
     : parseParticipantsFromTitle(conv.title);
 
   const handleClick = () => {
@@ -530,6 +517,7 @@ function ConversationRow({
             <span className="truncate">{fromName ?? title}</span>
           </span>
           <div className="flex shrink-0 items-center gap-1">
+            <CategoryChips facets={facets} />
             {projectLabel && (
               <span
                 className="inline-flex shrink-0 items-center rounded-md border border-primary/30 bg-primary/15 px-1.5 py-0.5 text-[10px] font-medium text-primary"
@@ -564,6 +552,12 @@ function ConversationRow({
           <span>{formatTimeAgo(conv.updated_date)}</span>
           {!isInvitationRow && messageCount > 0 && (
             <span>· {messageCount} msg{messageCount === 1 ? '' : 's'}</span>
+          )}
+          {!isInvitationRow && (conv.participants?.length ?? 0) > 0 && (
+            <>
+              <span>·</span>
+              <ConversationParticipants participants={conv.participants!} kind={conv.kind} />
+            </>
           )}
         </div>
       </div>

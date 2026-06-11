@@ -15,9 +15,12 @@ import {
   FolderSearch,
   Image,
   RefreshCw,
+  Share2,
 } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Button } from '@src/components/ui/button';
+import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
+import { fileShareSource } from '@src/hooks/share-sources';
 import { useFS } from '@src/hooks/useFS';
 
 interface SimpleDirTreeProps {
@@ -138,6 +141,15 @@ export const SimpleDirTree: React.FC<SimpleDirTreeProps> = ({
   const [assetRefreshKey, setAssetRefreshKey] = useState(0);
   const [pathAssets, setPathAssets] = useState<PathAsset[]>([]);
   const [filterQuery, setFilterQuery] = useState('');
+  // Absolute node path of the file being shared; non-null opens the dialog.
+  const [sharePath, setSharePath] = useState<string | null>(null);
+  const shareSource = useMemo(
+    () =>
+      sharePath
+        ? fileShareSource({ computeNodeTypeId, absPath: sharePath })
+        : null,
+    [computeNodeTypeId, sharePath],
+  );
 
   // Reset filter when navigating between directories — a query that fit the
   // old listing rarely fits the next one, and a stale filter that hides
@@ -364,6 +376,18 @@ export const SimpleDirTree: React.FC<SimpleDirTreeProps> = ({
                 >
                   <span className="block truncate">{item.name}</span>
                 </button>
+                {!item.is_dir && (
+                  <button
+                    type="button"
+                    onClick={() => setSharePath(childPath)}
+                    className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:text-foreground"
+                    aria-label={`Share to a conversation: ${childPath}`}
+                    title={`Share to a conversation\n${childPath}`}
+                    data-testid={`dir-tree-share-${item.name}`}
+                  >
+                    <Share2 className="h-3.5 w-3.5" />
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => void handleRevealInFinder(childPath)}
@@ -393,6 +417,14 @@ export const SimpleDirTree: React.FC<SimpleDirTreeProps> = ({
           )}
         </div>
       </div>
+
+      {shareSource && (
+        <ShareToConversationDialog
+          open
+          onClose={() => setSharePath(null)}
+          source={shareSource}
+        />
+      )}
     </div>
   );
 };

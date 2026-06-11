@@ -727,7 +727,19 @@ class AgenticProcess(Entity):
         reason: str,
         preserve_shell_id: bool = False,
     ) -> None:
-        """Discard a linked shell that can no longer be reattached."""
+        """Discard a linked shell that can no longer be reattached.
+
+        ``preserve_shell_id`` is the recovery case (after-restart respawn into
+        the SAME shell id): we must KEEP the shell record + its ``.pty`` stream
+        file so the relaunch appends to it and the client replays the
+        pre-restart scrollback. ``shell.close()`` is permanent teardown — it
+        deletes the record (and the ``.pty``), wiping that history — so the
+        recovery path takes a SOFT drop instead: terminate the worker (which is
+        the actual reason for dropping — it releases the JSONL session lock so
+        ``--resume`` won't collide) and evict the dead PTY handle, nothing more.
+        The ``.pty`` is keyed by the preserved shell id, so the relaunch's
+        ``PtyStreamFile`` reopens the same file and continues its seq epoch.
+        """
         stale_shell_id = shell.id if shell is not None else self.shell_id
         if shell is not None:
             logger.warning("AgenticProcess %s: discarding stale shell %s (%s)", self.id, shell.id, reason)
@@ -738,10 +750,18 @@ class AgenticProcess(Entity):
                 await shell.terminate_worker()
             except Exception as exc:
                 logger.warning("AgenticProcess %s: failed terminating stale worker for shell %s: %s", self.id, shell.id, exc)
-            try:
-                await shell.close()
-            except Exception as exc:
-                logger.warning("AgenticProcess %s: failed closing stale shell %s: %s", self.id, shell.id, exc)
+            if preserve_shell_id:
+                # Soft drop — keep record + .pty for the same-id relaunch; just
+                # evict the dead in-memory PTY handle so a fresh one can spawn.
+                try:
+                    await shell.evict_pty_handle()
+                except Exception as exc:
+                    logger.warning("AgenticProcess %s: failed evicting stale PTY for shell %s: %s", self.id, shell.id, exc)
+            else:
+                try:
+                    await shell.close()
+                except Exception as exc:
+                    logger.warning("AgenticProcess %s: failed closing stale shell %s: %s", self.id, shell.id, exc)
         self.shell_id = stale_shell_id if preserve_shell_id else None
         self.sidecar_shell_id = None
 
@@ -793,7 +813,8 @@ class AgenticProcess(Entity):
             # not "drift"). Cleared on success after we capture the new snapshot.
             fresh._set_start_lifecycle(True)
             try:
-                return await fresh._perform_open(instruction, visible, retry=retry)
+                result = await fresh._perform_open(instruction, visible, retry=retry)
+                return result
             finally:
                 fresh._set_start_lifecycle(False)
 
@@ -819,6 +840,7 @@ class AgenticProcess(Entity):
         is held. All lifecycle decisions (reattach vs recover vs fresh) live
         here; the caller is responsible for the lock and the start-lifecycle
         flag."""
+        cleared_start_failure = False
         try:
             # If we're stuck in STOPPING with a dead worker (orphan from a
             # crashed close()/exit()), reset to STOPPED before doing anything
@@ -844,8 +866,13 @@ class AgenticProcess(Entity):
                     self.id, self.start_failure,
                 )
                 self.start_failure = None
+                cleared_start_failure = True
             self.session_id = self.session_id or str(uuid4())
             reattach_changed = False
+            # True iff this open is respawning a dead worker (after-restart
+            # recovery), set in the stale-shell-drop branch below. Drives the
+            # ``recovered`` event emission in the success tail.
+            is_recovery = False
             # Set when this fresh spawn consumes a queued prompt as its launch
             # arg (see the pop below). Tracked here so the except handler can
             # re-queue it if the boot fails — the prompt must survive.
@@ -891,6 +918,11 @@ class AgenticProcess(Entity):
                     preserve_shell_id=True,
                 )
                 shell = None
+                # This open is RECOVERING a dead worker (running/starting status
+                # but PTY+worker gone — the after-restart case). Flag it so the
+                # success tail emits the ``recovered`` event, regardless of
+                # whether the watchdog or a client-driven open won the respawn.
+                is_recovery = True
 
             await self.get_project()
 
@@ -968,6 +1000,30 @@ class AgenticProcess(Entity):
             else:
                 # Direct path — Claude IS the PTY process (no zsh intermediary)
                 spawn_argv, spawn_env = cmd.to_spawn_args(instruction=instruction)
+                # Spawn with the discovered harness capability: its value is
+                # the CLI's bin FOLDER (terminal-PATH resolution), prepended
+                # to PATH so argv[0] and `#!/usr/bin/env node` both resolve
+                # regardless of how this backend was launched. On a miss,
+                # re-discover once (covers the boot race and retry-after-
+                # install), then fail fast into the start_failure latch.
+                from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
+                    worker_capability_kind,
+                    worker_path_env,
+                )
+
+                capability_kind = worker_capability_kind(self.driver.name)
+                path_env = worker_path_env(self.driver.name)
+                if path_env is None:
+                    from flow_sdk.core.capabilities.discovery import run_discovery
+
+                    await run_discovery([capability_kind])
+                    path_env = worker_path_env(self.driver.name)
+                if path_env is None:
+                    raise RuntimeError(
+                        f"Command not found: '{spawn_argv[0]}' — no {capability_kind} "
+                        "installation discovered"
+                    )
+                spawn_env = {**path_env, **spawn_env}  # explicit worker env wins
                 spawned = await shell.start_pty(on_exit=on_exit, spawn_args=spawn_argv, extra_env=spawn_env)
                 if not spawned:
                     worker_is_alive = await shell.worker_alive()
@@ -1007,6 +1063,21 @@ class AgenticProcess(Entity):
                 except Exception:
                     pass
 
+            # Respawned a dead worker (after-restart recovery) — emit the
+            # distinct ``recovered`` event so watching clients re-attach. Fires
+            # from the shared open path, so it's emitted whether recovery was
+            # driven by the startup watchdog or a client-driven open (the SDK
+            # auto-recovery sweep), not just one of them.
+            if is_recovery:
+                try:
+                    from flow_sdk.server.pty_recovery import mark_recovered, notify_watchers_recovered
+
+                    worker_pid = shell.worker_pid if shell is not None else None
+                    mark_recovered(self.id)
+                    await notify_watchers_recovered(self.id, self.shell_id, worker_pid)
+                except Exception:
+                    logger.debug("recovered-event emit skipped", exc_info=True)
+
             return ApiSuccessResponse(data=self._build_open_payload(shell, is_resume=is_resume))
 
         except asyncio.CancelledError:
@@ -1019,6 +1090,15 @@ class AgenticProcess(Entity):
             logger.exception(f"AgenticProcess {self.id} start_pty error: {e}")
             self.shell_id = None
             self.status = ProcessStatus.FAILED.value
+            # Latch normal launch failures: the UI surfaces them and
+            # open()/auto-recovery stops retrying a spawn that can't succeed.
+            # For an explicit Retry that fails before launch after clearing an
+            # existing latch, leave the latch cleared so the refused-open gate
+            # does not immediately block subsequent attempts.
+            if retry and cleared_start_failure:
+                self.start_failure = None
+            else:
+                self.start_failure = str(e)
             await self.save()
             self._requeue_failed_launch(launched_head)
             return ApiFailResponse(message=str(e))
@@ -1723,18 +1803,6 @@ class AgenticProcess(Entity):
         if not message:
             return ApiFailResponse(message="message is required")
 
-        # Admission gate — print mode only.
-        # PTY processes are rejected (visible=true means the interactive terminal
-        # owns the session). For print-mode we don't use ``is_ready_for_input``:
-        # it requires ProcessStatus.RUNNING + an IDLE worker, which makes sense
-        # for PTY but not here — print-mode processes have no persistent worker
-        # between turns, so the only contention is whether a turn is already in
-        # flight (enforced by the per-process lock below).
-        if self.visible:
-            return ApiFailResponse(
-                message="process is PTY-interactive; prompt action requires visible=false (print mode)",
-                status_code=409,
-            )
         if self.status in (ProcessStatus.STOPPING.value, ProcessStatus.FAILED.value):
             return ApiFailResponse(
                 message=f"process not sendable (status={self.status})",
@@ -1747,6 +1815,19 @@ class AgenticProcess(Entity):
                 message="another prompt turn is already in flight for this process",
                 status_code=409,
             )
+
+        # Two transports behind one action — the frontend always calls the same
+        # ``prompt()``; the process's ``visible`` flag picks the path:
+        #   visible=True  → PTY-interactive worker; FlowData derived by polling
+        #                   the session transcript (``_run_pty_prompt``).
+        #   visible=False → print-mode worker; FlowData from its stream-json
+        #                   stdout (the body below).
+        # For print mode we don't use ``is_ready_for_input``: it requires
+        # ProcessStatus.RUNNING + an IDLE worker, which makes sense for PTY but
+        # not here — print-mode processes have no persistent worker between
+        # turns, so the only contention is the per-process lock above.
+        if self.visible:
+            return self._run_pty_prompt(message)
 
         had_session = bool(self.session_id)
         if not self.session_id and bool(getattr(self.driver, "preassign_interactive_session_id", False)):
@@ -1868,6 +1949,254 @@ class AgenticProcess(Entity):
             return ApiFailResponse(message="no in-flight prompt turn")
         await worker.close_session()
         return ApiSuccessResponse(data={"cancelled": True})
+
+    # ── EXPERIMENT: PTY-transcript streaming prompt ─────────────────────────
+    #
+    # The PTY-interactive (visible=true) branch of the ``prompt`` action. The
+    # FlowData is NOT produced by a print-mode stream worker — it is derived by
+    # polling the session's JSONL transcript for new entries
+    # (``AgentTranscriptFile``) and converting each one through the same
+    # transcript-entry→FlowData mapper the history replay uses. The message is
+    # routed into the live PTY (stdin, or worker relaunch); the stream closes
+    # once the transcript shows no new entries for ``inactivity_timeout``
+    # seconds. Admission (message non-empty, not STOPPING/FAILED, lock free) is
+    # already enforced by ``_http_prompt`` before this is called.
+
+    def _run_pty_prompt(self, message: str, inactivity_timeout: float = 15.0) -> Any:
+        from starlette.responses import StreamingResponse  # local import — starlette is an app-layer dep
+
+        from flow_sdk.builtin.agentic_process.cli_drivers.claude.session_history import (
+            entry_to_flowdata,
+        )
+        from flow_sdk.transcript_analyzer import AgentTranscriptFile
+        from flow_sdk.transcript_analyzer.entry import EntryKind
+
+        poll_interval = 0.3
+        lock = _get_prompt_lock(self.id)
+        worker_type = self.driver.name
+
+        # ── Transcript resolution + parsing strategy ────────────────────────
+        # Resolve (path, format) via the driver's descriptor so the right
+        # vendor parser is used (claude=jsonl, codex=rollout/stream,
+        # copilot=events/stream — a missing format hint silently picks the
+        # wrong parser for the dual-format vendors).
+        def _resolve_transcript() -> "tuple[Path | None, Any]":
+            try:
+                desc = self.driver.transcript_descriptor(self)
+            except Exception:
+                desc = None
+            if desc is not None:
+                return desc.path, desc.format
+            try:
+                return self.driver.transcript_path(self), None
+            except Exception:
+                return None, None
+
+        # Read the FULL transcript and return its folded entries. We do NOT use
+        # the incremental ``parse_delta`` byte-offset path here: copilot (and
+        # any vendor that rewrites its session file rather than pure-appending)
+        # invalidates a cached byte offset, silently dropping the turn. Full
+        # reparse keyed off entry COUNT is immune to rewrites; we gate it on a
+        # (size, mtime) change so idle polls stay cheap.
+        def _read_entries(path: "Path", fmt: "Any") -> list:
+            try:
+                tf = AgentTranscriptFile(
+                    worker_type, path, session_id=self.session_id or "",
+                    transcript_format=fmt,
+                )
+                return list(tf.entries)
+            except Exception:
+                logger.exception("prompt-pty: transcript parse failed for %s", path)
+                return []
+
+        # Session bookkeeping that is not part of the conversation. Skipped from
+        # the live stream so the chat + dense chips show only "what the agent
+        # did", not the system prompt / session-start markers (which otherwise
+        # render as noise chips like "system · system").
+        _NOISE_KINDS = {
+            EntryKind.META,
+            EntryKind.SYSTEM,
+            EntryKind.SUMMARY,
+            EntryKind.TOKEN_USAGE,
+        }
+
+        # Watermark BEFORE routing the message: a resumed/booted session already
+        # has entries on disk (history, session.start). Count them now so the
+        # loop streams only entries appended for THIS turn.
+        emitted = 0
+        wm_path, wm_fmt = _resolve_transcript()
+        if wm_path is not None and wm_path.exists():
+            emitted = len(_read_entries(wm_path, wm_fmt))
+
+        handler = StreamingResponseHandler()
+
+        async def _run_turn() -> None:
+            nonlocal emitted
+            # Set when the turn's user message shows up in the transcript —
+            # the submission signal the cold-boot nudge loop waits for.
+            user_turn_landed = asyncio.Event()
+            nudge_task: asyncio.Task | None = None
+            resolved_path: "Path | None" = wm_path if (wm_path and wm_path.exists()) else None
+            resolved_fmt = wm_fmt
+            last_sig: "tuple[int, int] | None" = None
+            try:
+                async with lock:
+                    # Route the message into the PTY worker. claude submits a
+                    # paste with a trailing \r fine; copilot / codex TUIs treat
+                    # it as literal text and need the discrete paste-settle-Enter
+                    # path — a per-vendor trait owned by the driver.
+                    submits_on_paste = self.driver.pty_submits_on_paste
+                    cold_started = False
+                    if await self.is_running():
+                        if submits_on_paste:
+                            await self.send(message)
+                        else:
+                            shell = await self.shell()
+                            if shell is None:
+                                raise RuntimeError("No shell linked for PTY submit")
+                            await shell.write_then_submit(message)
+                    else:
+                        res = await self.start_pty(instruction=message)
+                        if isinstance(res, ApiFailResponse):
+                            raise RuntimeError(f"start_pty failed: {res.message}")
+                        cold_started = True
+
+                    if cold_started:
+                        # Cold-boot delivery is vendor-specific:
+                        # - claude: `claude <prompt>` as a launch arg PRE-FILLS
+                        #   the interactive input without submitting it (see
+                        #   project_pty_first_prompt_no_autosubmit) → press
+                        #   Enter until the transcript shows the user turn.
+                        #   An extra \r on an empty input box is a no-op.
+                        # - copilot/codex: ``to_spawn_args`` ignores the
+                        #   instruction entirely (their CLIs take prompts from
+                        #   stdin only) → type the message ONCE the input is
+                        #   live, then submit with a discrete Enter. Re-pasting
+                        #   the text on every retry would concatenate into one
+                        #   giant message, so retries only re-send Enter.
+                        launch_prefills = submits_on_paste
+
+                        async def _nudge_submit() -> None:
+                            if not launch_prefills:
+                                # Give the copilot/codex TUI a moment to draw its
+                                # input, type the message once, then fall through
+                                # to the Enter-retry loop below.
+                                await asyncio.sleep(2.0)
+                                if not user_turn_landed.is_set():
+                                    shell = await self.shell()
+                                    if shell is not None:
+                                        try:
+                                            await shell.write_then_submit(message)
+                                        except Exception:
+                                            pass
+                            delay = 1.5 if launch_prefills else 3.0
+                            for _ in range(8):
+                                await asyncio.sleep(delay)
+                                if user_turn_landed.is_set():
+                                    return
+                                try:
+                                    # Retry: only a discrete Enter — never
+                                    # re-paste (would concatenate). A \r on an
+                                    # empty input box is a harmless no-op.
+                                    await self.send(b"\r")
+                                except Exception:
+                                    return
+                        nudge_task = asyncio.create_task(_nudge_submit())
+
+                    last_activity = time.monotonic()
+                    while True:
+                        # Resolve the transcript lazily — it may not exist until
+                        # the worker writes its first line of this turn.
+                        if resolved_path is None or not resolved_path.exists():
+                            p, f = _resolve_transcript()
+                            if p is not None and p.exists():
+                                resolved_path, resolved_fmt = p, f
+                                last_sig = None  # force a read
+
+                        if resolved_path is not None and resolved_path.exists():
+                            try:
+                                st = resolved_path.stat()
+                                sig = (st.st_size, st.st_mtime_ns)
+                            except OSError:
+                                sig = None
+                            # Only reparse when the file actually changed.
+                            if sig is not None and sig != last_sig:
+                                last_sig = sig
+                                entries = _read_entries(resolved_path, resolved_fmt)
+                                if len(entries) > emitted:
+                                    last_activity = time.monotonic()
+                                    for entry in entries[emitted:]:
+                                        # The client echoes the user turn
+                                        # optimistically; skip the transcript's
+                                        # copy. Its arrival also confirms
+                                        # submission to the nudge loop.
+                                        if entry.kind is EntryKind.USER_MESSAGE:
+                                            user_turn_landed.set()
+                                            continue
+                                        if entry.kind in _NOISE_KINDS:
+                                            continue
+                                        await handler.on_flow_data(
+                                            entry_to_flowdata(entry, observation_kind="live")
+                                        )
+                                    emitted = len(entries)
+
+                        if time.monotonic() - last_activity >= inactivity_timeout:
+                            logger.info(
+                                "prompt-pty: closing stream after %.1fs of transcript inactivity (process %s)",
+                                inactivity_timeout, self.id,
+                            )
+                            # Synthetic end-of-turn marker — wire-format parity
+                            # with print mode, whose stream worker emits a real
+                            # `result` event at turn end. The PTY transcript has
+                            # no such event; inactivity is this transport's
+                            # turn-end signal, so surface it as the same frame.
+                            from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
+                                FlowData as _FD,
+                                FlowDataType as _FDT,
+                                FlowElementType as _FET,
+                            )
+                            await handler.on_flow_data(_FD(
+                                flow_value={"subtype": "success", "reason": "transcript-inactivity"},
+                                attributes={
+                                    "element-type": _FET.RESULT,
+                                    "data-type": _FDT.OBJECT,
+                                    "outcome": "success",
+                                    "subtype": "success",
+                                    "observation-kind": "live",
+                                },
+                            ))
+                            return
+                        await asyncio.sleep(poll_interval)
+            except Exception as e:
+                logger.exception("prompt-pty: turn error")
+                await handler.add_str_to_queue(Exception(f"prompt-pty error: {e}"))
+            finally:
+                if nudge_task is not None and not nudge_task.done():
+                    nudge_task.cancel()
+                # Signal end-of-stream to downstream consumers.
+                await handler.on_flow_data(None)
+
+        turn_task = asyncio.create_task(_run_turn())
+
+        async def _stream_body():
+            try:
+                async for xml_chunk in handler:
+                    yield xml_chunk
+            finally:
+                if not turn_task.done():
+                    # Client disconnected — the PTY worker keeps running on its
+                    # own; just stop the poller.
+                    turn_task.cancel()
+
+        return StreamingResponse(
+            _stream_body(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
 
     # ── Plan mode ─────────────────────────────────────────────────────────────
 
@@ -2651,8 +2980,11 @@ class AgenticProcess(Entity):
 
         # Server-restart resume: process had a shell but cli_config didn't
         # encode resume. Effective launch shape; stripped from the hash.
+        # Worker-aware — claude/codex have separate transcript stores, so a
+        # codex restart must check codex sessions (not claude's), else a
+        # recovered codex relaunches fresh and silently drops its context.
         if not getattr(cmd, "resume", False) and self.session_id:
-            cmd.resume = self._is_exist_claude_resume_session(self.session_id)
+            cmd.resume = self._is_exist_resume_session(self.session_id)
 
         return cmd
 
@@ -3424,6 +3756,22 @@ class AgenticProcess(Entity):
             }
         )
     # ── Internals ─────────────────────────────────────────────────────────────
+
+    def _is_exist_resume_session(self, session_id: str | None) -> bool:
+        """Worker-aware resumable-session check.
+
+        Each vendor keeps its own transcript store, so the existence probe must
+        match the worker — using claude's probe for a codex process is why a
+        recovered codex used to relaunch fresh and lose its conversation. The
+        per-vendor lookup lives on the driver (``has_resumable_session``) so
+        this stays a single call with no ``if worker_type ==`` ladder.
+        """
+        if not session_id:
+            return False
+        try:
+            return self.driver.has_resumable_session(self)
+        except Exception:
+            return False
 
     def _is_exist_claude_resume_session(self, session_id: str | None) -> bool:
         """Check if there's a resumable Claude session for this agentic process."""

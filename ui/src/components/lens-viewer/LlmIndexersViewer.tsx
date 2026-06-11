@@ -19,7 +19,6 @@ import {
   dataContext,
 } from '@sdk';
 import { ClaudeCliOptions } from '@sdk/cli_workers/claude-cli';
-import { projectIdForPath } from '@src/components/assets/utils';
 import { ScopeFilterBar } from '@src/components/scope-filter/ScopeFilterBar';
 import { useAllProjects } from '@src/hooks/use-all-projects';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
@@ -71,9 +70,7 @@ export function LlmIndexersViewer() {
   // Project mount paths drive the in-scope check: an index whose vault_root
   // lives under a selected project is in-scope; an index whose vault_root
   // is outside every project's mount path is "user-area" and follows scope.user.
-  // Project IDs in `scope.projects` are the records form (uuid5(DNS,
-  // "project:<mount>")) — useAllProjects gives us the mount via `cwd`, so we
-  // re-derive that form to compare apples to apples.
+  // Project IDs in `scope.projects` are real Project entity ids.
   const { projects: allProjects } = useAllProjects();
   const indexes = useMemo(() => {
     return allIndexes.filter((idx) => {
@@ -81,7 +78,7 @@ export function LlmIndexersViewer() {
       // Configuration rows with no vault_root: treat as user-area.
       if (!vr) return scope.user;
       const matching = allProjects.find((p) => p.cwd && isInsidePath(vr, p.cwd));
-      if (matching) return scope.projects.includes(projectIdForPath(matching.cwd) ?? '');
+      if (matching) return scope.projects.includes(matching.id);
       return scope.user;
     });
   }, [allIndexes, allProjects, scope]);

@@ -44,9 +44,9 @@ def hub_base_url() -> Optional[str]:
 async def get_info() -> Optional[dict[str, Any]]:
     """Fetch lightweight info about the configured hub.
 
-    Currently returns just the hub's running version::
+    Currently returns the hub's running version and optional build metadata::
 
-        {"version": "0.29.41"}
+        {"version": "0.29.41", "deployed_at": "...", "generated_at": "..."}
 
     Hits the public ``GET /api/v1/health/version`` endpoint (no auth), so it
     works even when the user is signed out. Returns ``None`` when the hub is
@@ -63,10 +63,28 @@ async def get_info() -> Optional[dict[str, Any]]:
             if resp.status_code != 200:
                 logger.warning("[hub] GET %s returned %s", url, resp.status_code)
                 return None
-            # The hub wraps responses in an ApiResponse envelope; the version
-            # string lives in `data` (same shape `hub_get` unwraps).
+            # The hub wraps responses in an ApiResponse envelope. Older hubs
+            # returned the version string directly; newer hubs return an object
+            # with build timestamps.
             data = resp.json().get("data")
-            return {"version": data if isinstance(data, str) else None}
+            if isinstance(data, str):
+                return {"version": data}
+            if isinstance(data, dict):
+                version = data.get("version")
+                deployed_at = data.get("deployed_at")
+                generated_at = data.get("generated_at")
+                # Fixed community/support project id — the app opens support
+                # tickets against this project. Returned by newer hubs only.
+                community_project_id = data.get("community_project_id")
+                return {
+                    "version": version if isinstance(version, str) else None,
+                    "deployed_at": deployed_at if isinstance(deployed_at, str) else None,
+                    "generated_at": generated_at if isinstance(generated_at, str) else None,
+                    "community_project_id": (
+                        community_project_id if isinstance(community_project_id, str) else None
+                    ),
+                }
+            return {"version": None}
     except Exception as e:  # noqa: BLE001
         logger.warning("[hub] get_info error (non-fatal): %s", e)
         return None
@@ -198,6 +216,55 @@ async def hub_get(
     except Exception as e:
         logger.warning("[hub] GET %s error (non-fatal): %s", url, e)
         return None
+
+
+# Result of a status-aware hub existence probe (see ``hub_resolve_by_typeid``):
+#   "present"       — the hub returned 200; the entity exists there.
+#   "absent"        — the hub returned a definitive 404; the entity is gone.
+#   "indeterminate" — hub not configured / unreachable / 5xx / non-hub type.
+#                     We do NOT know, so callers must treat this as "not gone"
+#                     (never destructively clean on an indeterminate result).
+HubResolveState = str  # Literal["present", "absent", "indeterminate"]
+
+
+async def hub_resolve_by_typeid(typeid: Any) -> tuple[HubResolveState, Optional[dict[str, Any]]]:
+    """Status-aware existence probe for an entity by TypeId against the hub.
+
+    Unlike ``hub_get`` (which collapses every non-200 — including a definitive
+    404 and a transient network failure — to ``None``), this distinguishes the
+    three cases callers need to make a *safe* cleanup decision:
+
+      * ``("present", data)``   — hub has it (200).
+      * ``("absent", None)``    — hub definitively does not (404).
+      * ``("indeterminate", None)`` — unknown: hub unset, unreachable, 5xx, or
+        a type the hub doesn't serve. Callers MUST treat this as "not gone".
+
+    The id-resolution / reconcile paths depend on this: "hub is down" must never
+    be mistaken for "the entity was deleted".
+    """
+    # Map the typeid's type string → BuiltinEntityType (StrEnum, keyed by value).
+    # A type the hub registry doesn't know is not hub-resolvable → indeterminate.
+    try:
+        entity_type = BuiltinEntityType(typeid.type)
+    except ValueError:
+        return ("indeterminate", None)
+
+    url = hub_graph_url(entity_type, typeid.id)
+    if not url:
+        # FLOWPAD_HUB_URL not configured — we genuinely don't know.
+        return ("indeterminate", None)
+    try:
+        async with FlowpadClient(ApiConfig.from_env()) as client:
+            resp = await client.request("GET", url, params={}, timeout=httpx.Timeout(10))
+            if resp.status_code == 200:
+                return ("present", resp.json().get("data") or {})
+            if resp.status_code == 404:
+                return ("absent", None)
+            logger.warning("[hub] resolve %s returned %s — indeterminate", url, resp.status_code)
+            return ("indeterminate", None)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[hub] resolve %s error (non-fatal, indeterminate): %s", url, e)
+        return ("indeterminate", None)
 
 
 async def hub_post(

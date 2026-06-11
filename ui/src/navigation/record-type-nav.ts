@@ -3,7 +3,7 @@ import type { SearchResult } from '@src/hooks/use-record-search';
 import { DockPointer } from './DockPointer';
 import { ViewType } from '@src/types/ViewType';
 import { CheckSquare, Search, GitBranch, FileText } from 'lucide-react';
-import { Agent, AgenticProcess, dataContext, Project, RecordType, Skill, Task } from '@sdk';
+import { AgenticProcess, dataContext, dataManager, isTypeId, RecordType, TypeId } from '@sdk';
 import { ClaudeSessionRecord } from '@sdk/resource_management/fs_records/claude/claude-session.js';
 import type { NavigationActions } from './NavigationActions';
 import { notify } from '@src/notifications';
@@ -57,9 +57,38 @@ function codexThreadIdFromResult(result: SearchResult): string {
 
 
 
+/**
+ * The stable TypeId for a search result, or null when no usable id is present.
+ * ``record_id`` may be a full ``<type>-<uuid>`` typeid (favorites store the full
+ * form) or a bare uuid (search rows) — handle both.
+ */
+function resultTypeId(r: SearchResult): TypeId | null {
+  const raw = (r.record_id ?? '').trim();
+  if (!raw) return null;
+  try {
+    if (isTypeId(raw)) return new TypeId(raw);
+    if (r.record_type) return new TypeId(r.record_type, raw);
+  } catch {
+    /* fall through to null */
+  }
+  return null;
+}
+
+/**
+ * Pointer for an entity-backed asset, preferring the stable TypeId over the
+ * absolute ``asset_ref`` path. TypeId routing (``editor/<editor>/typeid/<id>``)
+ * resolves by id with no path discovery — relocation-proof and instant. Falls
+ * back to the vfs/path form only when no usable id is present.
+ */
+function assetEditorPointer(assetType: string, r: SearchResult): DockPointer | null {
+  const tid = resultTypeId(r);
+  if (tid) return DockPointer.forAssetEditorByTypeId(assetType, tid);
+  return r.asset_ref ? DockPointer.forAssetEditor(assetType, r.asset_ref) : null;
+}
+
 export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
   skill: {
-    dockPointer: (r) => new Skill({ id: r.record_id, asset_ref: r.asset_ref || undefined }).searchDockPointer,
+    dockPointer: (r) => assetEditorPointer('skill', r),
     actions: [
       { icon: Search, name: 'All skills', dockPointer: () => DockPointer.forSearch(undefined, { record_type: 'skill' }) },
     ],
@@ -73,10 +102,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
     ],
   },
   agent: {
-    dockPointer: (r) => {
-      const agent = new Agent({ id: r.record_id, name: r.name || undefined, asset_ref: r.asset_ref || undefined });
-      return agent.searchDockPointer;
-    },
+    dockPointer: (r) => assetEditorPointer('agent', r),
   },
   annotation: {
     primaryAction: async (r, navigation) => {
@@ -101,7 +127,7 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
     },
   },
   command: {
-    dockPointer: (r) => (r.asset_ref ? DockPointer.forAssetEditor('command', r.asset_ref) : null),
+    dockPointer: (r) => assetEditorPointer('command', r),
   },
   comment: {
     primaryAction: async (r, navigation) => {
@@ -113,22 +139,22 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
     },
   },
   [RecordType.MARKDOWN]: {
-    dockPointer: (r) => (r.asset_ref ? DockPointer.forAssetEditor(RecordType.MARKDOWN, r.asset_ref) : null),
+    dockPointer: (r) => assetEditorPointer(RecordType.MARKDOWN, r),
   },
   plan: {
-    dockPointer: (r) => (r.asset_ref ? DockPointer.forAssetEditor('plan', r.asset_ref) : null),
+    dockPointer: (r) => assetEditorPointer('plan', r),
   },
   workflow: {
-    dockPointer: (r) => (r.asset_ref ? DockPointer.forAssetEditor('workflow', r.asset_ref) : null),
+    dockPointer: (r) => assetEditorPointer('workflow', r),
   },
   claude_md: {
-    dockPointer: (r) => (r.asset_ref ? DockPointer.forAssetEditor('claude_md', r.asset_ref) : null),
+    dockPointer: (r) => assetEditorPointer('claude_md', r),
   },
   claude_memory: {
-    dockPointer: (r) => (r.asset_ref ? DockPointer.forAssetEditor('claude_memory', r.asset_ref) : null),
+    dockPointer: (r) => assetEditorPointer('claude_memory', r),
   },
   claude_rules: {
-    dockPointer: (r) => (r.asset_ref ? DockPointer.forAssetEditor('claude_rules', r.asset_ref) : null),
+    dockPointer: (r) => assetEditorPointer('claude_rules', r),
   },
   claude_settings: {
     dockPointer: () => DockPointer.forSettings(),
@@ -137,19 +163,39 @@ export const RECORD_TYPE_NAV: Partial<Record<string, RecordTypeNav>> = {
     dockPointer: () => DockPointer.forSettings(),
   },
   task: {
-    dockPointer: (r) => new Task({ id: r.record_id }).searchDockPointer,
+    dockPointer: (r) => {
+      const tid = resultTypeId(r);
+      return tid ? DockPointer.forTasks(tid.id) : null;
+    },
     actions: [
       { icon: CheckSquare, name: 'All tasks', dockPointer: () => DockPointer.forTasks() },
     ],
   },
   agentic_process: {
-    dockPointer: (r) => new AgenticProcess({
-      id: r.record_id,
-      session_id: (r as any).session_id ?? undefined,
-    }).searchDockPointer,
+    dockPointer: (r) => {
+      const tid = resultTypeId(r);
+      if (!tid) return null;
+      // Prefer the live cached process — its searchDockPointer carries the real
+      // worker_type. Never construct a throwaway `new AgenticProcess` here: the
+      // APIEntity constructor registers itself into the FlowSync store and would
+      // overwrite the cached process with a near-empty stub (store.ts warning
+      // "already registered with different entity"). Fall back to a
+      // construction-free pointer when the process isn't cached.
+      const cached = dataManager.getByTypeIdFromCache<AgenticProcess>(tid);
+      if (cached) return cached.searchDockPointer;
+      const sessionId = (r as any).session_id ?? undefined;
+      return sessionId
+        ? DockPointer.forLensTranscript('claude', sessionId)
+        : new DockPointer(ViewType.SHELL, `${AgenticProcess.type}${TypeId.DELIMITER}${tid.id}`);
+    },
   },
   project: {
-    dockPointer: (r) => new Project({ id: r.record_id }).searchDockPointer,
+    dockPointer: (r) => {
+      const tid = resultTypeId(r);
+      return tid
+        ? new DockPointer(ViewType.ASSETS, 'list/all', { scope: 'project', project_ids: tid.id })
+        : null;
+    },
   },
   codex_session: {
     primaryAction: async (r, navigation) => {
@@ -237,10 +283,16 @@ export function getDockPointerForResult(result: SearchResult): DockPointer | nul
   return RECORD_TYPE_NAV[result.record_type]?.dockPointer?.(result) ?? null;
 }
 
-/** Returns true if the result type has any primary navigation (sync or async) */
+/** Returns true if the result actually has a reachable target — not merely that
+ * its type declares a navigation handler. A `dockPointer` that would resolve to
+ * `null` (e.g. an asset with neither a typeid nor an asset_ref) is NOT navigable;
+ * treating it as navigable is what made tiles look clickable yet do nothing. */
 export function isResultNavigable(result: SearchResult): boolean {
   const nav = RECORD_TYPE_NAV[result.record_type];
-  return !!(nav?.dockPointer || nav?.primaryAction);
+  if (!nav) return false;
+  if (nav.primaryAction) return true;
+  if (nav.dockPointer) return nav.dockPointer(result) != null;
+  return false;
 }
 
 /** Navigate to a result — handles both sync dockPointer and async primaryAction */

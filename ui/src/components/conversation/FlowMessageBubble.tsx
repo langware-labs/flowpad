@@ -1,10 +1,10 @@
-import { FlowMessage, GitRepo, Prompt, TypeId, User } from '@sdk';
+import { createConversationForShare, FlowMessage, GitRepo, Prompt, TypeId, User } from '@sdk';
 import { isValidIdentifier } from '@sdk/models/TypeId';
 import { useEntity } from '@sdk/react/hooks';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ITask } from '@sdk/entities/task';
 import type { ConversationMessage, ConversationParticipant } from '@sdk/entities/conversation';
-import { BodyStatus } from '@sdk/entities/flow-message';
+import { BodyStatus, FlowMessageKind, forwardMessage } from '@sdk/entities/flow-message';
 import { AlertCircle, Download, FileText, Loader2, X } from 'lucide-react';
 import { MessageBubble } from './MessageBubble';
 import { PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT } from './constants';
@@ -17,6 +17,10 @@ import { MessageComposer } from './MessageComposer';
 import { participantLabelByUserId, UNRESOLVED_SENDER_LABEL, warnUnresolvedSender } from './participant-display';
 import { useAttachments } from './useAttachments';
 import { editorPathForLocalFile } from './attachment-url';
+import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
+import { messageForwardShareSource } from '@src/hooks/share-sources';
+import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
+import type { SendTarget } from '@src/hooks/use-send-to-conversation';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
 import { cn } from '@src/lib/utils';
@@ -49,6 +53,7 @@ function DownloadAttachmentsButton({
       type="button"
       disabled={disabled}
       onClick={disabled ? undefined : onDownload}
+      data-testid="download-attachments-button"
       title={labels.length ? labels.join('\n') : 'Download attachments'}
       className={cn(
         'flex w-full max-w-[360px] items-center gap-3 rounded-lg border border-dashed px-3 py-2.5 text-left transition-colors',
@@ -116,6 +121,11 @@ interface FlowMessageBubbleProps {
    *  to the soft cushions (sender_name, creator, 'unknown') so legitimate
    *  load windows don't flash the alert glyph. */
   rosterReady?: boolean;
+  /** True when the parent conversation is a community (support-center) ticket.
+   *  Staff replies are masked to a single brand identity and the real
+   *  responder's `sender_id` is intentionally absent from the guest's roster,
+   *  so we suppress the unresolved-sender alert and its telemetry. */
+  isCommunity?: boolean;
   /** Parent conversation's `message_status_visible` flag — passed straight
    *  through to the receipt indicator. Defaults to true. */
   conversationStatusVisible?: boolean;
@@ -146,6 +156,7 @@ export function FlowMessageBubble({
   onDeleteMessage,
   participants,
   rosterReady = false,
+  isCommunity = false,
   conversationStatusVisible = true,
   ensureProjectMapped,
   attachmentProjectId,
@@ -165,6 +176,15 @@ export function FlowMessageBubble({
     fm?.created_by && isValidIdentifier(fm.created_by) ? new TypeId(User.type, fm.created_by) : null,
   );
   const { localUser, updateName } = useLocalUser();
+  // `created_by` on receiver-materialized rows is whoever ran the local sync
+  // (the recipient), not the author. A creator that resolves to the LOCAL
+  // user on a message the local user didn't send is exactly that artifact —
+  // never a sender signal, so the creator cushion must not surface it (it
+  // rendered received messages as authored by the recipient's own profile
+  // name, e.g. the local git user.name).
+  const creatorIsLocalArtifact = !!(
+    creator?.id && localUser?.id && creator.id === localUser.id && fm?.sender_id !== localUser.id
+  );
   const { navigation } = useDockNavigation();
   const [overrideName, setOverrideName] = useState<string | null>(null);
   // The single attachment surface: per-file chip state + url, the live progress
@@ -185,6 +205,29 @@ export function FlowMessageBubble({
     download: handleDownloadBody,
   } = useAttachments(fm, messageId);
 
+  // Forward-to-another-conversation. Hoisted above the early returns (hook
+  // count). The dialog's `commit` override POSTs the backend forward action —
+  // the backend clones the message (cloned_from_id provenance, copied
+  // attachment bytes) — instead of the default add_message send.
+  const ensureCloudLogin = useCloudLoginGate();
+  const [forwardOpen, setForwardOpen] = useState(false);
+  const forwardSource = useMemo(() => {
+    if (!forwardOpen || !fm) return null;
+    const firstLine = (fm.text ?? '').trim().split('\n')[0]?.slice(0, 60);
+    return messageForwardShareSource({ label: firstLine || 'Message' });
+  }, [forwardOpen, fm]);
+  const commitForward = useCallback(
+    async (target: SendTarget) => {
+      const convId =
+        target.kind === 'existing'
+          ? target.conversationId
+          : (await createConversationForShare(target.params, { ensureCloudLogin })).conversation_id;
+      await forwardMessage(messageId, convId);
+      return convId;
+    },
+    [messageId, ensureCloudLogin],
+  );
+
   // Unresolved-sender telemetry. Hoisted ABOVE the early returns so the hook
   // count is identical on every render (a useEffect after ``if (!fm) return``
   // / ``if (isDraft) return`` would run only on some renders → React's
@@ -196,12 +239,13 @@ export function FlowMessageBubble({
   const unresolvedSenderId =
     fm &&
     !isDraft &&
+    !isCommunity &&
     fm.sender_id &&
     rosterReady &&
     !participantLabelByUserId(participants, fm.sender_id) &&
     !(localUser?.id && fm.sender_id === localUser.id) &&
     !fm.sender_name?.trim() &&
-    !(creator?.name?.trim() || creator?.email?.trim())
+    (creatorIsLocalArtifact || !(creator?.name?.trim() || creator?.email?.trim()))
       ? fm.sender_id
       : null;
   useEffect(() => {
@@ -236,7 +280,9 @@ export function FlowMessageBubble({
   }
 
   const isCurrentUser = !!(fm.sender_id && localUser?.id && fm.sender_id === localUser.id);
-  const creatorLabel = creator?.name?.trim() || creator?.email?.trim() || null;
+  const creatorLabel = creatorIsLocalArtifact
+    ? null
+    : creator?.name?.trim() || creator?.email?.trim() || null;
   // Identity is hub-authoritative — but the bubble must NOT flash the alert
   // glyph on legitimate gaps (cold-load before roster fetch returns,
   // departed members, cross-instance bundle imports). Tiered chain:
@@ -267,7 +313,7 @@ export function FlowMessageBubble({
     displayName = wireSenderName;
   } else if (creatorLabel) {
     displayName = creatorLabel;
-  } else if (fm.sender_id && rosterReady) {
+  } else if (fm.sender_id && rosterReady && !isCommunity) {
     displayName = UNRESOLVED_SENDER_LABEL;
   } else {
     displayName = 'unknown';
@@ -328,6 +374,20 @@ export function FlowMessageBubble({
   const triggerDownload = () =>
     ensureProjectMapped ? ensureProjectMapped(() => handleDownloadBody()) : void handleDownloadBody();
 
+  // `body_downloaded` only means "the bytes are on local disk" — and a FILE
+  // attachment's bytes live in the message's own (project-independent) embedded
+  // storage, so the flag flips true even on a conversation that was never
+  // assigned a project (e.g. a received bundle whose body got unpacked). But
+  // the live chips expose download / open-in-editor / reveal-in-folder, all of
+  // which resolve through a raw local path with no project context — exactly
+  // the gate `triggerDownload` already enforces. So treat the message as
+  // "downloaded" (render live chips) only once a project is actually resolved;
+  // until then fall through to the gated DownloadAttachmentsButton, whose first
+  // click routes through the project picker and resumes after a pick (the bytes
+  // are already present, so nothing re-downloads). Drafts never reach here —
+  // they return early via MessageComposer above.
+  const showLiveChips = downloaded && attachmentProjectId != null;
+
   const progressPct = progress && progress.bytesTotal > 0 ? Math.round(progress.fraction * 100) : null;
 
   const footer =
@@ -385,7 +445,7 @@ export function FlowMessageBubble({
             ))}
           </div>
         )}
-        {downloaded ? (
+        {showLiveChips ? (
           <>
             {otherEntities.length > 0 && (
               <div className="flex flex-wrap gap-1">
@@ -440,32 +500,45 @@ export function FlowMessageBubble({
       </div>
     ) : null;
 
+  const canForward = !fm.is_draft && fm.kind !== FlowMessageKind.INVITATION && !!fm.conversation_id;
+
   return (
-    <MessageBubble
-      message={message}
-      flowMessageId={messageId}
-      flowMessage={fm}
-      task={task ?? undefined}
-      senderName={displayName}
-      onEditName={
-        isCurrentUser
-          ? (newName) => {
-              setOverrideName(newName);
-              void updateName(newName);
-            }
-          : undefined
-      }
-      onDeleteMessage={
-        onDeleteMessage && (isCurrentUser || isConversationOwner) ? () => onDeleteMessage(messageId) : undefined
-      }
-      onApproveAndExecute={onApproveAndExecute ? (idx) => onApproveAndExecute(messageId, idx) : undefined}
-      onImplementPlan={onImplementPlan ? () => onImplementPlan(messageId) : undefined}
-      onOpenPlanSession={onOpenPlanSession}
-      onViewPlan={onViewPlan}
-      footer={footer}
-      isSelected={isSelected}
-      onSelect={onSelect}
-      conversationStatusVisible={conversationStatusVisible}
-    />
+    <>
+      <MessageBubble
+        message={message}
+        flowMessageId={messageId}
+        flowMessage={fm}
+        task={task ?? undefined}
+        senderName={displayName}
+        onEditName={
+          isCurrentUser
+            ? (newName) => {
+                setOverrideName(newName);
+                void updateName(newName);
+              }
+            : undefined
+        }
+        onDeleteMessage={
+          onDeleteMessage && (isCurrentUser || isConversationOwner) ? () => onDeleteMessage(messageId) : undefined
+        }
+        onForwardMessage={canForward ? () => setForwardOpen(true) : undefined}
+        onApproveAndExecute={onApproveAndExecute ? (idx) => onApproveAndExecute(messageId, idx) : undefined}
+        onImplementPlan={onImplementPlan ? () => onImplementPlan(messageId) : undefined}
+        onOpenPlanSession={onOpenPlanSession}
+        onViewPlan={onViewPlan}
+        footer={footer}
+        isSelected={isSelected}
+        onSelect={onSelect}
+        conversationStatusVisible={conversationStatusVisible}
+      />
+      {forwardOpen && forwardSource && (
+        <ShareToConversationDialog
+          open={forwardOpen}
+          onClose={() => setForwardOpen(false)}
+          source={forwardSource}
+          commit={commitForward}
+        />
+      )}
+    </>
   );
 }

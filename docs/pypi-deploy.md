@@ -121,6 +121,12 @@ Bare `flow` and the `version` field of `flow upgrade --info` must both read
 When done rehearsing, `git checkout flow_sdk/_version.py` to discard the `+local`
 marker.
 
+> **Patching the Electron desktop shell (not the backend):** the steps above deploy the
+> **backend wheel**. To hot-patch `electron/main.js` (bundled in the installed `Flowpad.app`'s
+> `app.asar`) — incl. the `-patchN` version tag, the macOS App-Management / asar-integrity /
+> ad-hoc-resign gotchas — see
+> [`local_patch.md` → Patching the desktop app (Electron shell)](./local_patch.md#patching-the-desktop-app-electron-shell).
+
 ## Known Pitfalls
 
 ### Server module paths must use `flow_sdk.server.*`

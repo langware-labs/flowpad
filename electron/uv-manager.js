@@ -39,6 +39,33 @@ function quoteWinCmd(cmd) {
   return /\s/.test(cmd) ? `"${cmd}"` : cmd;
 }
 
+/**
+ * Parse `netstat -ano` output into the PIDs LISTENING on exactly `port`.
+ *
+ * Pure (no I/O) so it can be unit-tested. Matches the port off the LOCAL
+ * address column with an anchored `:<port>$`, NOT a substring scan — a naive
+ * `line.includes(':9007')` also matches `:90071`, `:9007x` and the foreign
+ * address column, which would taskkill an unrelated listener. Only TCP rows
+ * in the LISTENING state are considered; ESTABLISHED/TIME_WAIT/UDP are ignored
+ * so we never kill a mere client of the port.
+ */
+function parseNetstatPids(stdout, port) {
+  const pids = new Set();
+  for (const raw of String(stdout).split('\n')) {
+    const line = raw.trim();
+    if (!/^TCP\b/i.test(line)) continue;       // TCP rows only
+    if (!/\bLISTENING\b/i.test(line)) continue; // listeners only
+    // netstat -ano columns: Proto  LocalAddr  ForeignAddr  State  PID
+    const parts = line.split(/\s+/);
+    const local = parts[1] || '';
+    const m = local.match(/:(\d+)$/);           // port = digits after final ':'
+    if (!m || parseInt(m[1], 10) !== port) continue;
+    const pid = parseInt(parts[parts.length - 1], 10);
+    if (pid > 0) pids.add(pid);
+  }
+  return [...pids];
+}
+
 // PyPI package name — `uv tool install flowpad`
 const PYPI_PACKAGE = 'flowpad';
 
@@ -454,14 +481,85 @@ class UvManager {
   }
 
   /**
+   * Windows-only: kill any process whose executable lives inside the flowpad
+   * uv tool venv, so a `--force`/`--reinstall` install can replace it.
+   *
+   * `uv tool install … --force` must delete and recreate
+   * `…\uv\tools\flowpad\Scripts\`, but Windows refuses to remove a directory
+   * that contains a running .exe — "failed to remove directory … Scripts:
+   * Access is denied. (os error 5)". The usual culprit is an orphaned backend
+   * from a previous session (`python.exe -m flow_sdk.server.launch`) still
+   * holding `Scripts\python.exe` open. It may NOT be listening on 9007
+   * (crashed/hung mid-boot), so `ensurePortFree`/`_killPort` — which only target
+   * the port listener — can't reach it. Match by image path instead and kill the
+   * whole tree (`/T`) so spawned workers under the same venv go too.
+   *
+   * No-op on Unix: unlinking a running executable's file is allowed there, so
+   * the tool dir can be replaced while the old backend keeps running.
+   */
+  async _killStaleToolProcesses() {
+    if (!IS_WIN) return;
+    const toolDir = path.join(
+      os.homedir(), 'AppData', 'Roaming', 'uv', 'tools', PYPI_PACKAGE
+    );
+    try {
+      const escaped = toolDir.replace(/'/g, "''");
+      const { stdout } = await execFileAsync('powershell.exe', [
+        '-NoProfile', '-Command',
+        `Get-CimInstance Win32_Process | ` +
+        `Where-Object { $_.ExecutablePath -like '${escaped}\\*' } | ` +
+        `Select-Object -ExpandProperty ProcessId`,
+      ], { timeout: 8000, windowsHide: true });
+      const pids = stdout.split(/\r?\n/)
+        .map((s) => parseInt(s.trim(), 10))
+        .filter((p) => p > 0);
+      for (const pid of pids) {
+        try {
+          await execFileAsync('taskkill', ['/PID', String(pid), '/T', '/F'], { timeout: 5000 });
+          this.log.info(`[uv] Killed stale tool process PID ${pid} (held ${toolDir})`);
+        } catch { /* already gone / not killable — ignore */ }
+      }
+    } catch (e) {
+      this.log.warn(`[uv] _killStaleToolProcesses failed: ${e.message}`);
+    }
+  }
+
+  /**
    * First-time install: `uv tool install flowpad` (latest from PyPI).
    */
   async installLatest() {
     this.log.info(`[uv] Installing latest ${PYPI_PACKAGE} from PyPI...`);
+    await this._killStaleToolProcesses();
     await this._uv(['tool', 'install', PYPI_PACKAGE, '--force'], { timeout: 120000 });
+    await this._ensureShimOnPath();
 
     this._flowBin = await this._resolveFlowBin();
     this.log.info(`[uv] ${PYPI_PACKAGE} installed, binary at ${this._flowBin}`);
+  }
+
+  /**
+   * Ensure uv's tool-bin dir (~/.local/bin) is on the user's *shell* PATH, so
+   * `flow` resolves in a fresh terminal — not just inside this app (which finds
+   * it via _enrichedPath()). Without this, a clean install leaves `flow` working
+   * in-app but "not recognized" when the user types it in a terminal.
+   *
+   * `uv tool update-shell` is uv's own cross-platform PATH-fixer: it edits the
+   * User PATH (registry) on Windows and the shell profile (.zshrc/.bashrc/
+   * .profile) on macOS/Linux, and is idempotent (won't double-append). Best
+   * effort — never block install/upgrade if it fails; we log and move on.
+   *
+   * NOTE: like any PATH edit, it only takes effect in terminals opened *after*
+   * this runs — an already-open shell won't see `flow` until restarted.
+   */
+  async _ensureShimOnPath() {
+    try {
+      await this._uv(['tool', 'update-shell'], { timeout: 30000 });
+      this.log.info('[uv] Ensured uv tool-bin dir is on user PATH');
+    } catch (err) {
+      this.log.warn(
+        `[uv] update-shell failed; flow may not be on terminal PATH: ${err.message}`
+      );
+    }
   }
 
   /**
@@ -761,14 +859,7 @@ class UvManager {
     try {
       if (IS_WIN) {
         const { stdout } = await execFileAsync('netstat', ['-ano'], { timeout: 5000 });
-        const pids = new Set();
-        for (const line of stdout.split('\n')) {
-          if (line.includes(`:${port}`) && line.includes('LISTENING')) {
-            const parts = line.trim().split(/\s+/);
-            const pid = parseInt(parts[parts.length - 1], 10);
-            if (pid > 0) pids.add(pid);
-          }
-        }
+        const pids = parseNetstatPids(stdout, port);
         for (const pid of pids) {
           try {
             await execFileAsync('taskkill', ['/PID', String(pid), '/F'], { timeout: 5000 });
@@ -777,7 +868,10 @@ class UvManager {
         }
       } else {
         try {
-          const { stdout } = await execFileAsync('lsof', ['-ti', `tcp:${port}`], { timeout: 5000 });
+          // -sTCP:LISTEN restricts to the listening socket so we don't also
+          // SIGKILL processes that merely hold a client connection to the port
+          // (mirrors the LISTENING-only filter in the Windows branch above).
+          const { stdout } = await execFileAsync('lsof', ['-ti', `tcp:${port}`, '-sTCP:LISTEN'], { timeout: 5000 });
           const pids = stdout.trim().split('\n').map(p => parseInt(p, 10)).filter(p => p > 0);
           for (const pid of pids) {
             try {
@@ -959,7 +1053,10 @@ class UvManager {
         await this.start();
 
         if (sendStatus) sendStatus('Waiting for server');
-        if (waitForBackend) await waitForBackend();
+        // 120s window — matches the upgrade() subprocess ceiling and gives
+        // the freshly-installed backend room to boot before the user sees
+        // a false "failed to start" error.
+        if (waitForBackend) await waitForBackend({ maxChecks: 240 });
 
         if (mainWindow && !mainWindow.isDestroyed() && backendUrl) {
           mainWindow.loadURL(backendUrl);
@@ -975,9 +1072,47 @@ class UvManager {
    */
   async upgrade() {
     this.log.info('[uv] Upgrading flowpad...');
+    await this._killStaleToolProcesses();
     await this._uv(['tool', 'install', `${PYPI_PACKAGE}@latest`, '--force'], { timeout: 120000 });
+    await this._ensureShimOnPath();
     this._flowBin = await this._resolveFlowBin();
     this.log.info('[uv] Upgrade complete');
+  }
+
+  /**
+   * Repair a corrupt install: a `flow.exe`/`flow` shim exists on disk (so the
+   * fast path tries it) but its env can't `import flow_sdk` — the package
+   * never finished installing into site-packages, or was quarantined/removed.
+   * `--reinstall` recreates the tool venv and reinstalls every package (not
+   * just a metadata refresh), then we re-resolve the freshly written shim.
+   */
+  async reinstall() {
+    this.log.info(`[uv] Repairing ${PYPI_PACKAGE} install (--reinstall --force)...`);
+    await this._killStaleToolProcesses();
+    await this._uv(['tool', 'install', PYPI_PACKAGE, '--reinstall', '--force'], { timeout: 120000 });
+    await this._ensureShimOnPath();
+    this._flowBin = await this._resolveFlowBin();
+    this.log.info(`[uv] Repair complete, binary at ${this._flowBin}`);
+  }
+
+  /**
+   * True when an error from `flow start` indicates the install itself is
+   * broken — the interpreter runs but can't import the package. The canonical
+   * symptom is `ModuleNotFoundError: No module named 'flow_sdk'` (the wheel's
+   * own top-level module is missing), which means a `--reinstall` will fix it.
+   * Deliberately narrow: a generic crash or a runtime error in working code
+   * must NOT trigger a reinstall loop.
+   */
+  isBrokenInstallError(error) {
+    const text = `${error?.message || ''}\n${error?.stderr || ''}\n${error?.stdout || ''}`;
+    // Order-independent: a Python traceback prints the flow_sdk file frames
+    // FIRST and the `ModuleNotFoundError/ImportError:` line LAST, so we can't
+    // assume the keyword precedes "flow_sdk". Trigger when the package's own
+    // top-level module is missing, OR any import error occurs in flowpad's own
+    // code (its traceback mentions flow_sdk — e.g. a missing transitive dep).
+    const importFailure = /\b(ModuleNotFoundError|ImportError)\b/.test(text);
+    return /No module named ['"]flow_sdk/.test(text)
+      || (importFailure && /flow_sdk/.test(text));
   }
 
   /**
@@ -1024,3 +1159,7 @@ const SOD_KEY_KEYCHAIN_SERVICE = 'Flowpad.ai.sod_key';
 
 module.exports = UvManager;
 module.exports.SOD_KEY_KEYCHAIN_SERVICE = SOD_KEY_KEYCHAIN_SERVICE;
+// Pure helpers exported for unit testing (electron/uv-manager.test.js).
+module.exports.needsShellOnWin = needsShellOnWin;
+module.exports.quoteWinCmd = quoteWinCmd;
+module.exports.parseNetstatPids = parseNetstatPids;

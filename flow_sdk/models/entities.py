@@ -66,6 +66,11 @@ except ImportError as e:
     print(f"[WARN] Failed to import Bookmark: {e}")
 
 try:
+    from flow_sdk.builtin.contact_permission import ContactPermission  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import ContactPermission: {e}")
+
+try:
     from flow_sdk.builtin.annotation import Annotation  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import Annotation: {e}")
@@ -147,5 +152,20 @@ try:
     from flow_sdk.builtin.git_repo import GitRepo  # noqa: F401
 except ImportError as e:
     print(f"[WARN] Failed to import GitRepo: {e}")
+
+try:
+    from flow_sdk.builtin.git_remote import GitRemote  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import GitRemote: {e}")
+
+try:
+    from flow_sdk.builtin.git_branch import GitBranch  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import GitBranch: {e}")
+
+try:
+    from flow_sdk.builtin.file import File  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import File: {e}")
 
 __all__ = []

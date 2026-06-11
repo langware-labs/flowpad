@@ -1,9 +1,11 @@
+import { ViewToggle } from '@src/components/view-toggle/view-toggle';
 import { PendingActionsChip } from '@src/components/footer/PendingActionsChip';
 import { usePendingCompletionSound } from '@src/components/footer/usePendingCompletionSound';
 import { PoweredBy } from '@src/components/powered-by';
 import { IndexerStatusPill } from '@src/components/search-index/IndexerStatusPill';
 import { StatusBar } from '@src/components/status-bar';
 import { VersionPopover } from '@src/components/version-popover';
+import { AdvancedOnly } from '@src/components/view-mode';
 import { WarningsPopover } from '@src/components/warnings-popover';
 import { Agent, ArtifactType, FLOWPAD_ASSISTANT_PROJECT_UNAME, TypeId } from '@sdk';
 import { useCurrentArtifacts, useEntity } from '@sdk/react/hooks';
@@ -70,8 +72,9 @@ export function Footer({ className = '' }: FooterProps) {
       className={`relative z-10 w-full border-t bg-background/95 px-6 py-1 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/60 ${className}`}
     >
       <div className="flex items-center justify-between">
-        {/* Settings + Warnings icons on the left */}
+        {/* View toggle + Settings + Warnings icons on the left */}
         <div className="flex items-center gap-1">
+          <ViewToggle />
           <button
             onClick={() => navigation.openSettings()}
             className="flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
@@ -97,7 +100,9 @@ export function Footer({ className = '' }: FooterProps) {
         {/* Version + Powered by on the right */}
         <div className="ml-auto flex items-center gap-2">
           <PendingActionsChip />
-          <IndexerStatusPill />
+          <AdvancedOnly reserve={false}>
+            <IndexerStatusPill />
+          </AdvancedOnly>
           <button
             type="button"
             onClick={() => navigation.openDock(DockPointer.forProject(`@${FLOWPAD_ASSISTANT_PROJECT_UNAME}`))}
@@ -108,7 +113,11 @@ export function Footer({ className = '' }: FooterProps) {
             <BookOpen className="h-3.5 w-3.5" />
             <span>Flowpad docs</span>
           </button>
-          {version && <VersionPopover currentVersion={version} />}
+          {version && (
+            <AdvancedOnly reserve={false}>
+              <VersionPopover currentVersion={version} />
+            </AdvancedOnly>
+          )}
           <PoweredBy />
         </div>
       </div>

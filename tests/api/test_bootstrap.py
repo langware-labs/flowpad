@@ -62,6 +62,12 @@ async def test_bootstrap_returns_local_user_and_schemas(client):
     assert isinstance(desktop_info["paths"], dict)
     assert "workspace" in desktop_info["paths"]
 
+    harness_state = data["harness_state"]
+    assert isinstance(harness_state, dict)
+    assert isinstance(harness_state["show_harness_select"], bool)
+    assert isinstance(harness_state["harnesses"], list)
+    assert any(h["kind"] == "harness.claude.cli" for h in harness_state["harnesses"])
+
 
 async def test_bootstrap_is_idempotent_for_local_entities(client):
     first = (await client.get("/api/v1/graph/bootstrap")).json()["data"]

@@ -3,6 +3,7 @@ import {
   AgenticProcess,
   ASSET_SOURCE_LABEL,
   dataManager,
+  FLOWPAD_ASSISTANT_PROJECT_NAME,
   isReadOnlySource,
   isTypeId,
   Project,
@@ -35,7 +36,7 @@ import {
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
 import { editorForType } from '@src/navigation/asset-doc-types';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { ArrowLeft, ArrowDownAZ, Boxes, Folder, FolderOpen, FolderPlus, Lock, Plus, Search, X, type LucideIcon } from 'lucide-react';
+import { ArrowLeft, ArrowDownAZ, Boxes, Folder, FolderOpen, FolderPlus, Lock, Plus, Search, Sparkles, X, type LucideIcon } from 'lucide-react';
 
 const READONLY_TOOLTIP_BY_SOURCE: Partial<Record<AssetSource, string>> = {
   project_dir: 'Defined in the project — edits propagate to every process under this project. Attach to get a private editable copy.',
@@ -84,18 +85,36 @@ export function AssetManagerPopover({
 
   const dataCtx = useDataContext();
 
-  // Subscribe to entity-field changes (additional_dirs, restart_required, …) so
-  // the popover re-renders when the backend mutates them in place.
+  // Subscribe to entity-field changes (additional_dirs, restart_required,
+  // load_flowpad_assistant, …) so the popover re-renders when the backend
+  // mutates them in place. The snapshot folds in `load_flowpad_assistant` so
+  // the header toggle + location marker re-render even when the process isn't
+  // RUNNING (i.e. `restart_required` doesn't move).
   useSyncExternalStore(
     useCallback(
       (cb) => (process ? dataManager.subscribe(process.typeId, cb, false) : () => {}),
       [process],
     ),
-    () => (process ? process.restart_required : false),
-    () => (process ? process.restart_required : false),
+    () => (process ? `${process.restart_required}|${process.load_flowpad_assistant}` : ''),
+    () => (process ? `${process.restart_required}|${process.load_flowpad_assistant}` : ''),
   );
 
   const additionalDirs = process?.additional_dirs ?? [];
+
+  // Resolved Flowpad Assistant mount status for this process. `null`/`undefined`
+  // inherits the global default (currently ON), so only an explicit `false`
+  // reads as disabled. Toggling writes an explicit boolean.
+  const assistantEnabled = !!process && process.load_flowpad_assistant !== false;
+
+  const handleToggleAssistant = useCallback(async () => {
+    if (!process) return;
+    try {
+      await process.setAssistantEnabled(!assistantEnabled);
+      await refresh();
+    } catch (err) {
+      console.error('[AssetManagerPopover] toggle Flowpad Assistant failed', err);
+    }
+  }, [process, assistantEnabled, refresh]);
 
   // When restart_required transitions from true → false (a successful restart
   // just completed) re-fetch descriptors so the list reflects the new worker
@@ -299,7 +318,31 @@ export function AssetManagerPopover({
               : 'Assets'}
           </span>
           {mode === 'list' && (
-            <div className="ml-auto flex items-center">
+            <div className="ml-auto flex items-center gap-1">
+              {process && (
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={assistantEnabled}
+                  onClick={() => void handleToggleAssistant()}
+                  title={
+                    assistantEnabled
+                      ? 'Flowpad Assistant is mounted (its skills & agents are passed to the worker via --add-dir). Click to unmount — a restart will be required.'
+                      : 'Mount the Flowpad Assistant so its skills & agents become discoverable. Click to enable — a restart will be required.'
+                  }
+                  data-testid="asset-manager-assistant-toggle"
+                  data-enabled={assistantEnabled ? 'true' : 'false'}
+                  className={
+                    'flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-medium transition-colors ' +
+                    (assistantEnabled
+                      ? 'border-primary/50 bg-primary/10 text-primary hover:bg-primary/20'
+                      : 'border-border text-muted-foreground hover:bg-muted hover:text-foreground')
+                  }
+                >
+                  <Sparkles className="h-3 w-3" />
+                  Assistant
+                </button>
+              )}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button
@@ -366,6 +409,25 @@ export function AssetManagerPopover({
               <ArrowDownAZ className="h-3 w-3 flex-shrink-0 text-muted-foreground" aria-hidden />
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto" data-testid="asset-manager-list">
+              {/* Flowpad Assistant location marker — its assets live inside the
+                  installed package and are mounted via --add-dir, so they don't
+                  show as individual rows. A light-bordered location row marks
+                  where the flowpad assets come from when the toggle is on. */}
+              {assistantEnabled && !listFilter.trim() && (
+                <div
+                  className="m-1 flex items-center gap-2 rounded border border-primary/40 bg-primary/5 px-2.5 py-1.5"
+                  data-testid="asset-manager-flowpad-location"
+                  title="Flowpad Assistant — its skills & agents are mounted into this process via --add-dir."
+                >
+                  <Sparkles className="h-3.5 w-3.5 flex-shrink-0 text-primary" />
+                  <span className="min-w-0 flex-1 truncate text-xs text-foreground">
+                    {FLOWPAD_ASSISTANT_PROJECT_NAME}
+                  </span>
+                  <span className="flex-shrink-0 rounded border border-primary/40 bg-primary/10 px-1.5 py-0.5 text-[10px] uppercase tracking-wider text-primary">
+                    mounted
+                  </span>
+                </div>
+              )}
               {filteredDirs.map((path) => (
                 <DirRow
                   key={`dir|${path}`}

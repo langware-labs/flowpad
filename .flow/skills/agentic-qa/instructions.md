@@ -11,10 +11,21 @@
 - Backend start command: `cd <repo root> && LOCAL_SERVER_PORT=9008 uv run -m flow_sdk.server.run`
 - Backend reindex endpoint: `POST http://localhost:9008/api/v1/graph/<type>/<id>/wiki/reindex` (per-entity). The path `/api/v1/search/reindex/<type>` does NOT exist (returns 405) — older docs reference it; the actual route was renamed and only the per-entity form remains as of 2026-05-19.
 - Platform: darwin (macOS) — Python 3.10.17, uv 0.10.9
+- Current cycle (2026-06-07): Python 3.10.17, uv 0.10.9, Node v22.15.0, npm 10.9.2. Main backend/frontend were `http://localhost:9008` and `http://localhost:4098`; local hub was `http://localhost:8093`; Phase 11 temporary instances used `dev-1` on backend 6001 and `dev-2` on backend 6002.
 - Browser: chromium via MCP debugMcp (shared with user's interactive session — can cause tab contention when multiple testers run in parallel)
 - Last cycle (2026-05-30, record-removal branch): backend 9008 + frontend 4098 both reachable (HTTP 200) throughout. Phases 1-4 green (1522 / 441 / 51 / 907). 1 real fix (bootstrap `types` shape, 4 tests). No port conflicts this run.
 
 ## Learnings
+
+### 2026-06-07 — e2e-qa cycle notes
+
+**Phase 8 environment export is load-bearing.** The first Playwright `.md.ts` sweep was invalid because only `VITE_PORT=4098` was exported; several shipped tests read `API_URL` and/or `QA_API_URL` and otherwise fall back to stale ports such as 6002/6003. Correct command shape for this environment: `VITE_PORT=4098 API_URL=http://localhost:9008 QA_API_URL=http://localhost:9008 APP_URL=http://localhost:4098 npx playwright test ...`. Preserve the bad run for evidence, but summarize only the corrected run.
+
+**Hub test setup on the local hub requires seeded users and a test-mode decision.** `tests/hub_tests/` initially skipped/failed because `alice@local.test` and `bob@local.test` were absent. Seeding via `../test_flowpad/FlowPad/ops/scripts/setup_test_users.sh` fixed login. Short-lived-token tests still skip unless the hub is launched with `TESTING=true` because the hub rejects `expires_in_seconds` otherwise.
+
+**Hub WS/fanout is currently the shared blocker for Phase 10 and Phase 11.** After seeding users, Phase 10 still failed WS verification and conversation fanout with hub closes like `No relationship created between connection ... and flowpad_service 40b0`; alice/bob share tests connected but did not receive fanout. Phase 11, with manually kept-alive `dev-1`/`dev-2` backends, reduced to `tests/hub/conversation_messages.test.ts` timing out on the alice/bob ping-pong loop. Debug hub-side `flowpad_service` relationship creation before requalifying either phase.
+
+**`instance_ctl` launch results need immediate post-launch verification.** In Phase 11, `scripts/instance_ctl.sh launch dev-1/dev-2` reported success, but detached backends became unreachable before Vitest collection. A manual foreground backend run kept 6001/6002 stable and exposed the real hub failure. Also watch for frontend-port collisions when relaunching instances quickly; backend bootstrap, env-file contents, and distinct ports should be checked before running hub UI tests.
 
 ### 2026-05-30 — Full QA cycle (record-removal branch)
 

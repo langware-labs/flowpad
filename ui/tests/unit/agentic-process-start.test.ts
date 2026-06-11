@@ -60,9 +60,21 @@ describe('AgenticProcess.start (open action)', () => {
     await expect(agenticProcess.start()).resolves.toBe(true);
     expect(agenticProcess.session_id).toBe('worker-session-xyz');
     expect(fakeTransport.attachPty).toHaveBeenCalledWith({
-      cols: 80,
-      rows: 24,
+      cols: undefined,
+      rows: undefined,
       timeout: undefined,
+      ptyId: 'pty-00000000-0000-4000-8000-000000000002',
+    });
+  });
+
+  it('forwards explicit PTY dimensions when provided', async () => {
+    const agenticProcess = new AgenticProcess({ id: '00000000-0000-4000-8000-000000000001', status: 'idle' });
+
+    await expect(agenticProcess.start({ cols: 132, rows: 42, ptyTimeout: 12_000 })).resolves.toBe(true);
+    expect(fakeTransport.attachPty).toHaveBeenCalledWith({
+      cols: 132,
+      rows: 42,
+      timeout: 12_000,
       ptyId: 'pty-00000000-0000-4000-8000-000000000002',
     });
   });
@@ -96,17 +108,7 @@ describe('AgenticProcess.start (open action)', () => {
     expect(agenticProcess.start_failure).toBeNull();
   });
 
-  it('reconnectFromOsStatus skips a process latched with start_failure', async () => {
-    // The 5s auto-recovery sweep must not relaunch a worker that exited
-    // instantly on its last launch (the spawn→die→respawn loop). The latch
-    // is checked independently of status so a lagging cached status can't
-    // re-arm the sweep.
-    const agenticProcess = new AgenticProcess({ id: '00000000-0000-4000-8000-000000000001', status: 'stopped' });
-    (agenticProcess as any).start_failure = 'Worker exited 0.9s after launch (exit code 1).';
-    const startSpy = vi.spyOn(agenticProcess, 'start');
-    await expect(
-      agenticProcess.reconnectFromOsStatus({ ready: false } as any),
-    ).resolves.toBe(false);
-    expect(startSpy).not.toHaveBeenCalled();
-  });
+  // NOTE: `reconnectFromOsStatus` test removed — os-status reconnect/recovery
+  // moved to the backend watchdog (853235f6). Latch coverage remains in
+  // "successful start() clears a stale local start_failure" above.
 });

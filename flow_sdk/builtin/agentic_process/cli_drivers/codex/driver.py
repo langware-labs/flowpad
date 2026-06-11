@@ -56,6 +56,9 @@ class CodexDriver:
     """Vendor glue for OpenAI Codex. Implements the ``WorkerDriver`` Protocol."""
 
     name = WorkerType.CODEX.value
+    # Codex's TUI needs a discrete Enter after the paste settles, not a
+    # trailing \r in the pasted text (Shell.write_then_submit).
+    pty_submits_on_paste = False
 
     # ── CLI shape ────────────────────────────────────────────────────────────
 
@@ -255,6 +258,9 @@ class CodexDriver:
 
     def tail_status(self, transcript_path: Path) -> WorkerStatus:
         return codex_tail_status(transcript_path)
+
+    def has_resumable_session(self, process: "AgenticProcess") -> bool:
+        return bool(process.session_id) and find_codex_session_jsonl(process.session_id) is not None
 
     # ── History materialisation ──────────────────────────────────────────────
 

@@ -30,6 +30,18 @@ plain-language "To Summarize:" line.
 - Do the **whole job in one go** and do not end your turn until it's done:
   diagnose → root cause → prove it → fix (when safe) → validate → end-to-end check → record.
 - Apply fixes yourself only when safe **and** capable (Step 4); otherwise advise the user (Step 5).
+- **You diagnose ANY issue the user raises — the catalog is not a closed list.** The known-issue
+  catalog (A1–G17) is an internal cheat-sheet that gives you fast, proven fixes for *some* common
+  problems. It is **not** the set of problems you handle. If the user's issue isn't in it, that
+  changes **nothing** about your job: investigate, find the root cause, fix or advise — exactly as
+  you would for a catalogued issue.
+- **Never expose the internal scaffolding to the user.** Do not mention the catalog, entry codes
+  (A1–G17), step numbers, "Step 5b", or words like "unrecognized" / "not in my catalog" / "not a
+  known issue" in anything the user sees (your narration, the report, the summary). The user does
+  not care how you organize your knowledge. Never say "that wasn't on my list but I'll debug
+  anyway" — there is no "anyway." Just diagnose the issue as if it were always in scope, because it
+  is. (The `--status unrecognized` value in Step 7 is an internal record field only; it never
+  appears in your prose to the user.)
 - **Read the logs — they are primary evidence.** The **`flowpad_logs`** skill is the authoritative
   list of every Flowpad log location: the backend instance logs
   (`~/.flow/instances/<name>/logs/`), the **Electron desktop app** logs
@@ -139,12 +151,14 @@ currently reports healthy.
 
 After collecting results, map each finding to the catalog in Step 3 and proceed to Step 4 or 5.
 
-### Step 3 — Classify the symptom (semantic, open-ended)
+### Step 3 — Match against the known-issue cheat-sheet (silent, internal)
 
-Decide which known issue the user's text (or your sweep findings) best matches by **meaning** —
-reason about intent. Do **NOT** string/regex match: wording varies and will change over time, and
-you are an LLM that can understand a paraphrase. The known issues live in `references/catalog.md`
-(entries A1–G17); here they are summarized by meaning so you know the menu:
+Check whether the user's text (or your sweep findings) matches a **known** issue — purely to give
+yourself a fast, proven fix when one exists. This is an internal lookup; **say nothing to the user
+about it either way.** Match by **meaning** — reason about intent. Do **NOT** string/regex match:
+wording varies and will change over time, and you are an LLM that can understand a paraphrase. The
+known issues live in `references/catalog.md` (entries A1–G17); here they are summarized by meaning
+so you know what shortcuts you have:
 
 - **A1** — backend port 9007 already in use / "address already in use".
 - **A2** — backend unhealthy or "failed to respond" (stale lock, DB corruption, full disk).
@@ -172,8 +186,10 @@ in the `main_desktop` logs (Step 2g) — check it even when the backend is curre
 "won't start / stuck on Starting" is usually an Electron↔backend *timing* problem, not a dead
 backend. If several apply, handle **ALL**.
 
-**The catalog is knowledge, not a fence.** If the symptom matches nothing above, do **not** give up
-— go to **Step 5b (unrecognized issue)** and diagnose it generally.
+**The catalog is knowledge, not a fence.** A match just hands you a ready-made fix. **No match is a
+non-event** — it does not mean the issue is out of scope, special, or harder. Drop into the general
+diagnosis in **Step 5b** and proceed exactly as confidently as for a catalogued issue, without ever
+flagging to the user that it wasn't catalogued.
 
 ### Step 4 — Repair: root cause → prove → fix → validate
 
@@ -358,18 +374,28 @@ Safe workaround: download and reinstall from the `.dmg` on the GitHub Releases p
 
 ---
 
-### Step 5b — Unrecognized issue (not in the catalog)
+### Step 5b — General diagnosis (any issue without a ready-made catalog fix)
 
-When the symptom matches no catalog entry, still diagnose it generally — don't bail:
+This is the normal path for everything the cheat-sheet didn't already hand you a fix for — most
+real reports land here. Diagnose it with the same rigor and confidence as a catalogued issue;
+**do not signal to the user that it was "unrecognized" or "not in the catalog."** Just investigate
+and report what you found.
 
-1. **Gather evidence**: `curl -fsS http://localhost:$PORT/health/status`; the newest files under
-   `~/.flow/logs/{server,monitor,main_desktop}`; instance state in `~/.flow/instances/<name>/`
-   (`flowpad.db`, `server.lock`, `server.pid`, `server.json`); disk space.
-2. **Reason** about the most likely root cause from that evidence.
+1. **Gather evidence** broadly — fit the investigation to the actual symptom, don't stop at a
+   generic sweep. Start with: `curl -fsS http://localhost:$PORT/health/status`; the newest files
+   under `~/.flow/logs/{server,monitor,main_desktop}`; instance state in `~/.flow/instances/<name>/`
+   (`flowpad.db`, `server.lock`, `server.pid`, `server.json`); disk space. Then go where the symptom
+   points — if the user describes unexpected data, wrong UI state, a feature misbehaving, etc., probe
+   that directly (query the DB, inspect the relevant entities/records, reproduce the behavior) rather
+   than only checking startup health.
+2. **Reason** about the most likely root cause from that evidence, and **prove it** (Step 4) before
+   acting.
 3. **Attempt only a conservative, reversible repair** — never destructive (no DB deletes, no
    `xattr` on unrelated apps, no disabling Gatekeeper/SmartScreen system-wide). If unsure, do
    nothing and advise the user.
-4. Mark the report **`status: unrecognized`** and recommend the user report it.
+4. Record it with **`--status unrecognized`** in Step 7 (an internal field so the team sees it's a
+   not-yet-catalogued case) — but keep that label out of your user-facing prose; the report just
+   states the root cause, fix, and validation like any other.
 
 Never raise or add any timeout/retry/backoff to mask a symptom — fix the root cause or report it.
 
@@ -411,7 +437,7 @@ Always use this structure:
 Platform: <macOS / Windows / Linux>
 Date:     <timestamp>
 
-[FOUND] <issue title> — <FIXED | NEEDS USER ACTION | INFORMATIONAL | UNRECOGNIZED>
+[FOUND] <issue title> — <FIXED | NEEDS USER ACTION | INFORMATIONAL>
   Root cause: <the underlying cause, not the symptom>
   Proof:      <evidence this is the cause (command output / log line / repro)>
   Action:     <what you did (if fixed), or exactly what the user must do>
@@ -424,47 +450,50 @@ End-to-end: <headless Playwright check — passed | failed | skipped (reason)>
 To Summarize: <plain-language 1-3 sentence summary of findings and next step>
 ```
 
-### Step 7 — Record the result (ALWAYS runs; SDK-direct, works offline)
+### Step 7 — Record the result (ALWAYS runs — even when everything is healthy)
 
-After printing the report, persist it so it surfaces on the Home landing Feed **and** is attached to
-this diagnose process. This is the SDK, **not** an HTTP API — it opens the local instance DB itself,
-so it works even when the backend is DOWN. **Never skip this step on the assumption that the backend
-must be up** — that assumption is wrong, and skipping it means the user sees nothing.
+**You MUST run the reporter script every single time, no matter the outcome — including a fully
+healthy, no-issue, no-action-needed result.** "Everything is fine" is NOT a reason to skip this step:
+a `flowpad_diagnosis` record is created for every diagnostic run (that is how the run is considered
+complete). Do **not** end your turn until the script has printed its JSON. Skipping this step makes
+the whole run count as failed.
 
-Use the **flowpad-assistance** skill (records action) to:
+The script is the SDK, **not** an HTTP API — it opens the local instance DB itself, so it works even
+when the backend is DOWN. Run the reporter that ships **next to this SKILL.md** (`report.py` in this
+skill directory); do **not** hand-build any entities and do **not** import from `flow_sdk`.
 
-1. Create a `flowpad_diagnosis` record (`title / symptoms / rca / fix` from your findings) and save it
-   (Step 1 + Step 2 of the "Creating a record from a metadata object" section).
-2. Cross-link the new record to THIS agentic process (Step 3 — link the record to the current
-   process). This is required: the process must end up with the diagnosis in its private context.
-3. Print the saved entity details in human-friendly text and the record id.
-4. Create a `flow_message` record, with the flowpad diagnosis as attachment.
-5. Create a `feed_entry` of message-suggest type.
+You do not decide whether to post a Feed entry — **`report.py` decides that from `--status`**. You
+just always run it with the right status:
 
-We expect the user to be able to see the diagnosis and send it to our support in a click from the
-Home Feed.
+1. It **always** creates a `flowpad_diagnosis` record from your `title / symptoms / rca / fix`.
+2. If you found an issue (`--status` is `fixed`, `needs_action`, or `unrecognized`) it also posts the
+   diagnosis to the Home Feed (hidden support Conversation + summary `flow_message` with the diagnosis
+   attached + a `message_suggest` `feed_entry`) so the user can send it to support in one click.
+3. If the sweep was clean (`--status ok`) or the only findings are benign (`--status informational`),
+   it records the diagnosis for history but creates **no** Feed entry. **Use `--status ok` for a
+   healthy result — and still run the script.**
 
-For steps 4–5 you do **not** hand-build those entities, and you do **not** import anything from
-`flow_sdk`. Run the reporter script that ships **next to this SKILL.md** (`report.py` in this skill
-directory) — it creates the hidden support Conversation, the summary `flow_message` (with the
-diagnosis attached as a `TYPE_ID` attachment), and the `new` `message_suggest` `feed_entry` in one
-call, creating the `@local` user/project if needed and printing a JSON line with the created ids:
+(The `flow diagnose` runner cross-links the diagnosis to this process for you afterwards — do **not**
+attempt the cross-link yourself.)
 
 ```bash
 uv run python "<this skill dir>/report.py" \
-  --summary "<one-paragraph plain summary: what was found + whether it was fixed + how>" \
-  --status fixed|needs_action|informational|unrecognized \
+  --title "<short diagnosis title>" \
+  --symptoms "<what was observed>" \
+  --rca "<root cause, or 'none — healthy' if no issue>" \
+  --fix "<what you did / what the user should do, or 'none needed'>" \
+  --summary "<one-paragraph plain summary>" \
+  --status fixed|needs_action|unrecognized|informational|ok \
   --platform "macOS|Windows|Linux" \
-  --details "<the full == Flowpad Diagnostic Report == block from Step 6>" \
-  --attachment-type-id "flowpad_diagnosis-<id>"
+  --details "<the full == Flowpad Diagnostic Report == block from Step 6>"
 ```
 
-(`<this skill dir>` is the folder this SKILL.md is in — the same path you were given to read it from.
-`--attachment-type-id` is the id of the `flowpad_diagnosis` record you created in steps 1–2.)
+`<this skill dir>` is the folder this SKILL.md is in — the same path you were given to read it from.
+Use `--status ok` when everything is healthy and no issue was found. It prints a JSON line including
+`diagnosis_id` (and the Feed ids when a Feed entry was posted).
 
-Do **all five** steps — none are optional — and do not end your turn before the cross-link and the
-feed entry have been recorded. Do **not** fail the whole run if this step errors; the console report
-from Step 6 still stands.
+Do not end your turn before the reporter script has printed its JSON. Do **not** fail the whole run if
+this step errors; the console report from Step 6 still stands.
 
 ## Reference Files
 
@@ -546,4 +575,44 @@ Date: 2026-06-04 09:25:00
              Port 9007 is now free. Please relaunch Flowpad.
 
 To Summarize: A stale Flowpad backend process was still holding port 9007. It has been stopped cleanly. Relaunch Flowpad and it should come up normally.
+```
+
+### Example 4: An issue with no ready-made fix — diagnosed normally
+
+This is the case from a real report: the symptom isn't a startup/crash problem and isn't in the
+cheat-sheet. Note what the output does **not** say — no "this wasn't in my catalog", no "Step 5b",
+no "unrecognized issue". It just diagnoses the actual question the user asked.
+
+**Input:**
+```
+flow diagnose "Why do I see so many projects in my Flowpad workspace I didn't open?"
+```
+
+**Output:**
+```
+== Flowpad Diagnostic Report ==
+Platform: macOS (Darwin)
+Date: 2026-06-10 20:16:00
+
+[FOUND] Workspace shows thousands of duplicate project records — NEEDS USER ACTION
+  Root cause: Each filesystem scan re-mints project ids instead of reusing stable ones,
+              so every scan cycle inserts thousands of new `project` rows for folders
+              you never opened — they accumulate in the workspace list.
+  Proof:      `SELECT count(*) FROM entities WHERE type='project'` → 41,802, growing by
+              ~3k between two consecutive scans 5 min apart; sample rows point at the same
+              on-disk folder under different ids.
+  Action:     This is a data/indexing bug, not a safe local repair (mass-deleting rows
+              risks losing real projects). Reported with the counts above so the team can
+              ship the dedup/id-stability fix; meanwhile the extra entries are cosmetic and
+              don't affect the projects you actually use.
+  Validation: Re-counted after a scan — count still climbing, confirming the growth is
+              ongoing (not a one-off import).
+
+[OK] Backend health — {"data":true}
+[OK] Port 9007 — free
+
+End-to-end: passed — headless Playwright loaded http://localhost:9007; the workspace
+            rendered (the duplicates are visible but the app is fully functional).
+
+To Summarize: The extra projects are duplicate records the app creates every time it scans your files — a known indexing bug, not something you did. Your real projects are fine; I've recorded the details so the team can ship the fix.
 ```

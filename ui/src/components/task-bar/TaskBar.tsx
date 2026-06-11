@@ -6,7 +6,7 @@
  * Supports bulk selection mode for acting on multiple tasks at once.
  */
 
-import { Archive, CheckSquare, HelpCircle, Plus, RotateCcw, Search, Sparkles, Trash2, X, Zap } from 'lucide-react';
+import { Archive, CheckSquare, Plus, RotateCcw, Search, Sparkles, Trash2, X, Zap } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { SkillItem, Task, Trigger } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -21,8 +21,6 @@ import { TaskCard } from './TaskCard';
 import { TaskDetailPanel } from './TaskDetailPanel';
 import { SharedTaskView } from './SharedTaskView';
 import { BulkReminderButton } from './BulkReminderButton';
-import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
-import { taskRequestShareSource } from '@src/hooks/share-sources';
 import { BULK_SELECT_MIN_TASKS, isTaskActive, isTaskArchived, isTaskPending, type TaskTab } from './constants';
 import './TaskBar.css';
 
@@ -40,13 +38,6 @@ export function TaskBar() {
   // Bulk confirmation dialogs
   const [confirmBulkRemove, setConfirmBulkRemove] = useState(false);
   const [confirmBulkReminder, setConfirmBulkReminder] = useState<Date | null>(null);
-
-  // Scenario B: ask-for-help dialog
-  const [askHelpOpen, setAskHelpOpen] = useState(false);
-  // Recreate the source each time the dialog opens so its resolve-once cache
-  // resets (a fresh ask-help mints a fresh Task).
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  const askHelpSource = useMemo(() => taskRequestShareSource(), [askHelpOpen]);
 
   const isOnArchivedTab = selectedTab === 'archived';
 
@@ -221,13 +212,6 @@ export function TaskBar() {
         </div>
         <div className="flex items-center gap-0.5">
           <button
-            onClick={() => setAskHelpOpen(true)}
-            className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            title="Ask someone for help"
-          >
-            <HelpCircle className="h-3.5 w-3.5" />
-          </button>
-          <button
             onClick={handleCreate}
             className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             title="New task"
@@ -346,12 +330,6 @@ export function TaskBar() {
         onConfirm={() => {
           if (confirmBulkReminder) void executeBulkReminder(confirmBulkReminder);
         }}
-      />
-
-      <ShareToConversationDialog
-        open={askHelpOpen}
-        onClose={() => setAskHelpOpen(false)}
-        source={askHelpSource}
       />
     </div>
   );

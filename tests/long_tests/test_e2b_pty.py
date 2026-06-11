@@ -202,7 +202,7 @@ async def test_two_sandbox_shells_share_one_e2b_sandbox(sandbox_compute_node):
     sandbox. Proven via provider_session_data exposed on the shared
     session_manager state.
     """
-    from flow_sdk.compute.providers.desktop.pty_session_manager import session_manager
+    from flow_sdk.compute.providers.desktop.pty_session_manager import pty_registry
 
     s1 = await _make_shell(sandbox_compute_node, "share-a")
     s2 = await _make_shell(sandbox_compute_node, "share-b")
@@ -212,10 +212,10 @@ async def test_two_sandbox_shells_share_one_e2b_sandbox(sandbox_compute_node):
 
         key1 = (sandbox_compute_node.id, sandbox_compute_node.node_provider_id, s1.id)
         key2 = (sandbox_compute_node.id, sandbox_compute_node.node_provider_id, s2.id)
-        sess1 = session_manager.sessions.get(key1)
-        sess2 = session_manager.sessions.get(key2)
-        assert sess1 is not None, f"No session_manager entry for shell {s1.id}"
-        assert sess2 is not None, f"No session_manager entry for shell {s2.id}"
+        sess1 = pty_registry.states.get(key1)
+        sess2 = pty_registry.states.get(key2)
+        assert sess1 is not None, f"No pty_registry entry for shell {s1.id}"
+        assert sess2 is not None, f"No pty_registry entry for shell {s2.id}"
 
         sid1 = (sess1.provider_session_data or {}).get("sandbox_id")
         sid2 = (sess2.provider_session_data or {}).get("sandbox_id")
@@ -238,12 +238,12 @@ async def test_shell_close_kills_sandbox_when_last_pty_leaves(sandbox_compute_no
     """Closing the only sandbox Shell must reap the underlying E2B sandbox."""
     from e2b import AsyncSandbox
     from e2b.exceptions import SandboxException
-    from flow_sdk.compute.providers.desktop.pty_session_manager import session_manager
+    from flow_sdk.compute.providers.desktop.pty_session_manager import pty_registry
 
     shell = await _make_shell(sandbox_compute_node, "close")
     await shell.start(rows=24, cols=80)
     key = (sandbox_compute_node.id, sandbox_compute_node.node_provider_id, shell.id)
-    sess = session_manager.sessions.get(key)
+    sess = pty_registry.states.get(key)
     assert sess is not None
     sandbox_id = (sess.provider_session_data or {}).get("sandbox_id")
     assert sandbox_id, f"provider_session_data missing sandbox_id: {sess.provider_session_data}"

@@ -20,6 +20,7 @@ from typing import Any, Awaitable, Callable, Protocol
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.indexer.progress_table import (
+    PROGRESS_TEXT_COMPLETE,
     IndexProgressTable,
     TypeProgressRow,
 )
@@ -231,7 +232,8 @@ def _scope_filter_keeps(
     if scope == "user":
         return sf.user
     if scope == "project":
-        return pid in set(sf.projects)
+        record_projects = tuple(getattr(sf, "record_projects", ()) or ())
+        return pid in set((*sf.projects, *record_projects))
     return True
 
 
@@ -272,7 +274,7 @@ def _scope_filtered_orphans(
     ``asyncio.to_thread``); DB-only orphans resolve it from the row itself
     (no shadow metadata.json exists for them) with the same predicate shape.
     """
-    sf_projects = set(sf.projects)
+    sf_projects = set((*sf.projects, *(getattr(sf, "record_projects", ()) or ())))
 
     def _db_row_keeps(eid: str) -> bool:
         _aref, scope, pid = db_rows[eid]
@@ -366,24 +368,38 @@ class FSIndexer:
         Always runs a full scan; when `opts.types` is set, only FSRefs of
         those types get parsed via `Record.from_fsref` and written to DB.
 
-        Progress is reported as ``IndexProgressTable`` snapshots: an initial
-        snapshot with totals known and ``done=0``, throttled updates at
-        ~5/s as records are processed, and a terminal snapshot with
-        ``text="complete"`` and ``current=None``.
+        Progress is reported as ``IndexProgressTable`` snapshots: first the
+        inner scan's discovery snapshots forwarded as-is (``job_name="scan"``,
+        totals unknown), then an initial index snapshot with totals known and
+        ``done=0``, throttled updates at ~5/s as records are processed, and a
+        terminal snapshot with ``text=PROGRESS_TEXT_COMPLETE`` and
+        ``current=None`` — the run's only completion signal.
         """
         opts = opts if opts is not None else IndexerOptions()
         t0 = time.perf_counter()
         on_progress = opts.on_progress
 
-        # Inner scan suppresses its own progress emission — we drive the
-        # whole index activity from this method's snapshot loop.
+        # Discovery drives the SAME activity: forward the scan's per-type
+        # snapshots (counts ticking up, totals unknown) so the UI renders the
+        # by-type table immediately instead of staring at a frozen pill for the
+        # whole walk. Drop scan's terminal "complete" event — the activity is
+        # only done after the per-record index loop below, not after discovery —
+        # otherwise InProcessActivity.is_complete would latch on scan's
+        # text="complete" and the run would look finished before it indexed a
+        # single record.
+        async def _forward_scan(table: IndexProgressTable) -> None:
+            if table.text == PROGRESS_TEXT_COMPLETE:
+                return
+            await on_progress(table)
+
         scan_opts = IndexerOptions(
             verbose=opts.verbose,
             limit=opts.limit,
             limit_per_type=opts.limit_per_type,
             include_temp=opts.include_temp,
             types=opts.types,
-            on_progress=None,
+            # None when nobody listens — lets scan skip building tables at all.
+            on_progress=_forward_scan if on_progress is not None else None,
             roots=opts.roots,
             gitignore=opts.gitignore,
             project_id=opts.project_id,
@@ -641,6 +657,13 @@ class FSIndexer:
             # bounded-batch commit), still inside the shared session.
             await _flush_fts()
 
+            # Phase marker before the (potentially long) orphan sweep: without
+            # it the last loop snapshot (done==total, no text) is what watchers
+            # and refresh-time activity-status replay see for the whole sweep —
+            # a stalled-looking 100% bar. Any non-complete text works; the
+            # activity stays alive until the terminal emit below.
+            await emit(text="sweeping", force=True)
+
             # ----- Orphan handling -----
             # DEFINITION: a record is orphan iff its source (Layer 1, e.g.
             # ~/.claude/skills/<name>/SKILL.md) does not exist. The orphan
@@ -773,11 +796,12 @@ class FSIndexer:
 
         duration = (time.perf_counter() - t0) * 1000
 
-        # Terminal snapshot — current=None, text="complete". Authoritative
-        # signal; consumers can clear UI state on this.
+        # Terminal snapshot — current=None, text=PROGRESS_TEXT_COMPLETE. The
+        # authoritative (and only) completion signal; consumers clear UI state
+        # and InProcessActivity.is_complete latches on it.
         current_rt = None
         if on_progress is not None:
-            await on_progress(make_table(text="complete"))
+            await on_progress(make_table(text=PROGRESS_TEXT_COMPLETE))
 
         return IndexResult(
             per_type=per_type,
@@ -976,7 +1000,8 @@ class FSIndexer:
         Progress is reported as ``IndexProgressTable`` snapshots with
         ``total=0`` (unknown — discovery IS the count). Each visited
         node increments its type's row; the table is re-broadcast at most
-        every 200 ms. Final snapshot has ``current=None, text="complete"``.
+        every 200 ms. Final snapshot has ``current=None`` and
+        ``text=PROGRESS_TEXT_COMPLETE``.
         """
         opts = opts if opts is not None else IndexerOptions()
         on_progress = opts.on_progress
@@ -991,7 +1016,12 @@ class FSIndexer:
 
         def make_table(text: str | None = None) -> IndexProgressTable:
             rows = [
-                TypeProgressRow(type_name=str(rt), done=count, total=count)
+                # total=0: during discovery the per-type total is unknown — the
+                # running count IS the total-so-far — so the UI shows a growing
+                # count with no percentage, consistent with the table-level
+                # total=0 below. Locked-in totals (done/total + %) arrive once
+                # index() enters its per-record loop.
+                TypeProgressRow(type_name=str(rt), done=count, total=0)
                 for rt, count in per_type_counts.items()
                 if rt not in _PROGRESS_HIDDEN_TYPES
             ]
@@ -1105,7 +1135,7 @@ class FSIndexer:
 
         current_rt = None
         if on_progress is not None:
-            await on_progress(make_table(text="complete"))
+            await on_progress(make_table(text=PROGRESS_TEXT_COMPLETE))
 
         return visited
 

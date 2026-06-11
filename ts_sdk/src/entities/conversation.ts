@@ -41,7 +41,19 @@ export interface ConversationParticipant {
   role?: string | null;
 }
 
+/** Mirrors ``flow_sdk.builtin.conversation.ConversationKind`` exactly.
+ *  ``community`` marks a support-center ticket whose responder identity is
+ *  masked behind the project's ``community.display_name``. Hub-authoritative —
+ *  never set client-side. */
+export enum ConversationKind {
+  DIRECT = 'direct',
+  COMMUNITY = 'community',
+}
+
 export interface IConversation extends IEntity {
+  /** How this conversation is interpreted. Defaults to ``direct``; the hub sets
+   *  ``community`` for guest-opened support tickets. */
+  kind?: ConversationKind;
   /** Local Project FK — receiver picks via the mapping dialog; sender's own
    *  project at send time. Null until the receiver maps. */
   project_id?: string | null;
@@ -74,6 +86,7 @@ export interface IConversation extends IEntity {
 
 @registerEntity
 export class Conversation extends APIEntity<Conversation> implements IConversation {
+  kind?: ConversationKind;
   project_id?: string | null;
   remote_project_id?: string | null;
   remote_project_name?: string | null;
@@ -88,6 +101,7 @@ export class Conversation extends APIEntity<Conversation> implements IConversati
 
   constructor(entity: Partial<IConversation> = {}) {
     super(entity);
+    this.kind = entity.kind ?? ConversationKind.DIRECT;
     this.project_id = entity.project_id;
     this.remote_project_id = entity.remote_project_id;
     this.remote_project_name = entity.remote_project_name;
@@ -268,6 +282,64 @@ export async function createProjectConversation(
   return res!;
 }
 
+export interface StartCommunityTicketResult {
+  conversation_id: string;
+  project_id: string;
+}
+
+/** Open a support ticket: a guest-authored ``community`` conversation under the
+ *  hub's fixed community project (resolved server-side from ``/version``). The
+ *  backend routes through the hub and materializes the conversation locally,
+ *  then returns its id for navigation. Requires cloud login. */
+export async function startCommunityTicket(text: string): Promise<StartCommunityTicketResult> {
+  const action = new ActionInfo('community-start-ticket', null, null, 'POST');
+  action.bodyParameters = { text };
+  const res = await dataManager.callAction<{ text: string }, StartCommunityTicketResult>(action);
+  return res!;
+}
+
+/** Staff-side: pick up (join) a community ticket so the caller receives its
+ *  messages and can reply. Proxies to the hub ``pickup`` action and syncs the
+ *  conversation locally. */
+export async function pickupConversation(conversationId: string): Promise<{ conversation_id: string }> {
+  const action = new ActionInfo('conversation-pickup', null, null, 'POST');
+  action.bodyParameters = { conversation_id: conversationId };
+  const res = await dataManager.callAction<{ conversation_id: string }, { conversation_id: string }>(action);
+  return res!;
+}
+
+/** One row in the staff community-ticket triage queue (lightweight; not a full
+ *  Conversation entity). Sourced from the hub via the community project. */
+export interface CommunityTicket {
+  conversation_id: string;
+  title?: string | null;
+  /** First-message text, truncated. */
+  preview: string;
+  /** Guest (ticket opener) hub user id. */
+  initiated_by?: string | null;
+  message_count: number;
+  participant_count: number;
+  /** True when the calling staff user is already on the roster. */
+  picked_up: boolean;
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
+export interface ListCommunityTicketsResult {
+  tickets: CommunityTicket[];
+  project_id: string;
+}
+
+/** Staff triage queue: list the community project's tickets, including ones the
+ *  caller hasn't picked up (which don't otherwise appear in their inbox).
+ *  Members-only on the hub. */
+export async function listCommunityTickets(): Promise<ListCommunityTicketsResult> {
+  const action = new ActionInfo('community-tickets-list', null, null, 'POST');
+  action.bodyParameters = {};
+  const res = await dataManager.callAction<Record<string, never>, ListCommunityTicketsResult>(action);
+  return res ?? { tickets: [], project_id: '' };
+}
+
 export interface SyncFromHubResult {
   invitations: number;
   flow_messages: number;
@@ -366,6 +438,19 @@ export async function archiveConversation(
   params: ArchiveConversationParams,
 ): Promise<ArchiveConversationResult> {
   const action = new ActionInfo('conversation-archive', null, null, 'POST');
+  action.bodyParameters = params;
+  const res = await dataManager.callAction<ArchiveConversationParams, ArchiveConversationResult>(action);
+  return res!;
+}
+
+/** Conversation-level unarchive: clears ``archived_at`` (back to null). The
+ *  manual inverse of archive — the same effect the auto-revive achieves when a
+ *  newer FlowMessage arrives. Local-only, like archive (the hub never sees
+ *  ``archived_at``). */
+export async function unarchiveConversation(
+  params: ArchiveConversationParams,
+): Promise<ArchiveConversationResult> {
+  const action = new ActionInfo('conversation-unarchive', null, null, 'POST');
   action.bodyParameters = params;
   const res = await dataManager.callAction<ArchiveConversationParams, ArchiveConversationResult>(action);
   return res!;

@@ -420,7 +420,12 @@ export function HistoryModal({ open, onOpenChange, onSelect }: HistoryModalProps
                         <button
                           className="flex min-w-0 flex-1 items-center gap-2 overflow-hidden rounded px-1.5 py-1.5 text-left text-sm"
                           onClick={() => {
-                            if (peeking) {
+                            if (selectedKeys.size > 0) {
+                              // Selection mode: a click adds/removes this row from the
+                              // selection instead of opening it (avoids clearing the
+                              // selection by accident).
+                              toggleSelected(key);
+                            } else if (peeking) {
                               // Detailed mode: click only changes the previewed row.
                               setPeekKey(key);
                             } else {

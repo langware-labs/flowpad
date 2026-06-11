@@ -160,3 +160,49 @@ async def test_notify_dispatches_fm_create_then_conversation_update(monkeypatch,
     assert len(sync_calls) == 2
     assert sync_calls[0]["type"] == "flow_message"
     assert sync_calls[1]["type"] == "conversation"
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_remote_payload_attributes_created_by_to_sender(monkeypatch, tmp_path):
+    """A hub-origin row is a pure reflection: when the wire payload carries no
+    ``created_by``, it is reconstructed from the SENDER — never left for the
+    driver to stamp with the local request user (the leak that surfaced
+    received messages as authored by the recipient)."""
+    monkeypatch.setattr(
+        "flow_sdk.fs_store.record_paths.get_default_records_data_root",
+        lambda: tmp_path,
+    )
+
+    canonical = default_jsonl_path(_CONV_ID)
+    canonical.parent.mkdir(parents=True, exist_ok=True)
+    canonical.write_text("")
+
+    conv = Conversation(context_entities=[f"task-{_TASK_ID}"])
+    conv.id = _CONV_ID
+
+    captured = {}
+
+    async def _capture_save(self, *args, **kwargs):
+        captured["created_by"] = self.created_by
+        return self
+
+    with (
+        patch.object(FlowMessage, "get_one", new=AsyncMock(return_value=None)),
+        patch.object(FlowMessage, "save", new=_capture_save),
+        patch.object(Conversation, "get_one", new=AsyncMock(return_value=conv)),
+        patch(
+            "flow_sdk.app.actions.materialize_flow_message.project_pointers_to_entity",
+            new=AsyncMock(return_value=None),
+        ),
+        patch("flow_sdk.app.actions.materialize_flow_message.send_resource_sync"),
+    ):
+        await materialize_flow_message(
+            {"id": _FM_ID, "text": "hi", "sender_id": "remote-sender-id"},
+            conversation_id=_CONV_ID,
+            someone_typeid=None,
+            notify=False,
+            remote=True,
+        )
+
+    assert captured["created_by"] == "remote-sender-id"

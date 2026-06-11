@@ -101,6 +101,101 @@ def test_legacy_raw_file_detected(tmp_path: Path):
     assert f.read_all() == b"\x1b[31mlegacy raw bytes\x1b[0m"
 
 
+def _make_chimera(p: Path, raw: bytes, frames: list) -> None:
+    """Simulate a pre-upgrade-path build: framed lines appended headerless
+    onto a legacy raw file (the chimera that used to taint replay as v0)."""
+    p.write_bytes(raw)
+    with open(p, "ab") as fh:
+        for frame in frames:
+            fh.write(json.dumps(frame).encode() + b"\n")
+
+
+def test_chimera_read_salvages_framed_tail(tmp_path: Path):
+    """Raw legacy prefix + framed tail: read_frames surfaces the tail as v1
+    from its first resize frame (where size becomes known), not v0."""
+    p = tmp_path / "chimera.pty"
+    b64 = base64.b64encode(b"post-upgrade output").decode()
+    _make_chimera(
+        p,
+        b"\x1b7\x1b[r\x1b[?25h raw legacy bytes \x1b[H\nmore raw\n",
+        [["o", b64, 7], ["r", [120, 40]], ["o", b64, 8], ["o", b64, 9]],
+    )
+    f = PtyStreamFile(p)
+    frames = f.read_frames()
+    assert frames["v"] == 1
+    assert (frames["cols"], frames["rows"]) == (120, 40)
+    # retained from the first resize frame onward — the sizeless "o" dropped
+    assert frames["events"] == [["r", [120, 40]], ["o", b64, 8], ["o", b64, 9]]
+    assert f.max_seq() == 9  # seq epoch continues across the salvage
+
+
+def test_chimera_write_upgrades_in_place(tmp_path: Path):
+    """First append to a chimera rewrites it as a proper v1 file: header +
+    salvaged tail + the new frame; the raw legacy prefix is dropped.
+
+    The old writer glued its FIRST appended line onto the raw bytes (no
+    leading newline) — that frame is unparseable and sacrificed; salvage
+    starts at the first clean resize frame.
+    """
+    p = tmp_path / "chimera.pty"
+    b64 = base64.b64encode(b"tail").decode()
+    _make_chimera(
+        p,
+        b"raw legacy \x1b[31mbytes\x1b[0m",  # no trailing newline — glues next line
+        [["o", b64, 2], ["r", [90, 25]], ["o", b64, 3]],
+    )
+    f = PtyStreamFile(p, cols=100, rows=30)
+    f.write(b"fresh", seq=4)
+    assert p.read_bytes().startswith(b'{"v": 1')
+    frames = f.read_frames()
+    assert frames["v"] == 1
+    assert (frames["cols"], frames["rows"]) == (90, 25)
+    assert frames["events"] == [
+        ["r", [90, 25]],
+        ["o", b64, 3],
+        ["o", base64.b64encode(b"fresh").decode(), 4],
+    ]
+    assert f.read_all() == b"tailfresh"
+
+
+def test_pure_legacy_write_upgrade_starts_fresh(tmp_path: Path):
+    """First append to a pure pre-framing file (no salvageable tail) starts a
+    fresh v1 file at the constructor size; the raw bytes are dropped."""
+    p = tmp_path / "legacy.pty"
+    p.write_bytes(b"\x1b[31mold raw output\x1b[0m")
+    f = PtyStreamFile(p, cols=100, rows=30)
+    f.write(b"fresh", seq=1)
+    frames = f.read_frames()
+    assert frames["v"] == 1
+    assert (frames["cols"], frames["rows"]) == (100, 30)
+    assert frames["events"] == [["o", base64.b64encode(b"fresh").decode(), 1]]
+
+
+def test_chimera_without_resize_frame_stays_v0(tmp_path: Path):
+    """A framed tail with no resize frame has no known size — replaying it at
+    a guessed width garbles, so the whole file stays legacy v0."""
+    p = tmp_path / "chimera.pty"
+    b64 = base64.b64encode(b"tail").decode()
+    _make_chimera(p, b"raw legacy bytes", [["o", b64, 1], ["o", b64, 2]])
+    frames = PtyStreamFile(p).read_frames()
+    assert frames["v"] == 0
+    assert frames["cols"] is None and frames["rows"] is None
+    assert len(frames["events"]) == 1  # whole blob as one legacy frame
+
+
+def test_chimera_torn_tail_still_salvaged(tmp_path: Path):
+    """A torn final line (crash mid-append) doesn't forfeit the salvage."""
+    p = tmp_path / "chimera.pty"
+    b64 = base64.b64encode(b"tail").decode()
+    _make_chimera(p, b"raw legacy bytes\n", [["r", [80, 24]], ["o", b64, 5]])
+    with open(p, "ab") as fh:
+        fh.write(b'["o", "TORN')  # no newline, invalid json
+    frames = PtyStreamFile(p).read_frames()
+    assert frames["v"] == 1
+    assert (frames["cols"], frames["rows"]) == (80, 24)
+    assert frames["events"] == [["r", [80, 24]], ["o", b64, 5]]
+
+
 def test_torn_tail_line_dropped(tmp_path: Path):
     """A crash mid-write leaves a torn last line — reader drops it silently."""
     f = PtyStreamFile(tmp_path / "session.pty", cols=100, rows=30)

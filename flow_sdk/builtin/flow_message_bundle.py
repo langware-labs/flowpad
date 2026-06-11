@@ -146,7 +146,10 @@ async def _pack_spec_attachment(entry_id: str, attachment_dir: Path) -> None:
         return
     spec_dir = attachment_dir / f"spec-@{entry_id}"
     spec_dir.mkdir(parents=True, exist_ok=True)
-    fm_lines = ["---\n", f'title: "{spec.title}"\n', f'spec_type: "{spec.spec_type}"\n', "---\n"]
+    # ``id`` in the frontmatter so the receiver's reindex materializes the SAME
+    # entity row (``spec_gen_id`` prefers the frontmatter id over uuid5(path)).
+    # Structure unchanged — this is the spec.md content, not the bundle layout.
+    fm_lines = ["---\n", f"id: {entry_id}\n", f'title: "{spec.title}"\n', f'spec_type: "{spec.spec_type}"\n', "---\n"]
     spec_md = "".join(fm_lines) + (spec.content or "")
     (spec_dir / "spec.md").write_text(spec_md, encoding="utf-8")
 
@@ -214,6 +217,33 @@ async def _pack_claude_session_attachment(entry_id: str, attachment_dir: Path) -
     )
 
 
+async def _pack_git_branch_attachment(entry_id: str, attachment_dir: Path) -> None:
+    """Write ``attachment/git_branch-@<id>/header.json`` (whitelisted GitBranch
+    fields). The snapshot is self-sufficient: provider/owner/name ride as plain
+    fields so the receiver re-mints its local deterministic GitRemote parent —
+    the GitRemote row itself is deliberately never packed."""
+    from flow_sdk.builtin.git_branch import GitBranch
+
+    branch = await GitBranch.get_one({"id": entry_id})
+    if not branch:
+        return
+    branch_dir = attachment_dir / f"{EntityType.GIT_BRANCH.value}-@{entry_id}"
+    branch_dir.mkdir(parents=True, exist_ok=True)
+    # parent_type_id is deliberately NOT packed — the receiver re-mints it
+    # from provider/owner/name and never trusts a wire parent anyway.
+    branch_data = branch.model_dump(
+        mode="python",
+        include={
+            "id", "type", "name", "branch", "head_commit", "taken_at",
+            "provider", "owner",
+        },
+        context={"skip_api_serializer": True},
+    )
+    (branch_dir / "header.json").write_text(
+        json.dumps(branch_data, default=_json_default, ensure_ascii=False), encoding="utf-8"
+    )
+
+
 async def _pack_conversation_attachment(
     entry_id: str, flow_message: "FlowMessage", attachment_dir: Path,
 ) -> None:
@@ -277,9 +307,10 @@ async def _pack_attachment_entry(
     Repo/URL attachments have no bytes to bundle — silently skipped.
 
     TODO: at ~10+ branches consider a TypeInfo-driven ``pack_attachment``
-    hook instead of growing this dispatch (currently 8: spec, prompt, task,
-    conversation, flow_message, claude_session, fs-rooted). Each type has a
-    distinct serialization, so the registry hook is the only generic form.
+    hook instead of growing this dispatch (currently 9: spec, prompt, task,
+    conversation, flow_message, claude_session, git_branch, fs-rooted). Each
+    type has a distinct serialization, so the registry hook is the only
+    generic form.
     """
     if entry.attachment_type in (AttachmentType.FILE, AttachmentType.PROMPT):
         _pack_file_attachment(entry, flow_message, attachment_dir)
@@ -302,8 +333,10 @@ async def _pack_attachment_entry(
         await _pack_flow_message_entry(entry_id, attachment_dir)
     elif entry_type == BuiltinEntityType.CLAUDE_SESSION.value:
         await _pack_claude_session_attachment(entry_id, attachment_dir)
+    elif entry_type == EntityType.GIT_BRANCH.value:
+        await _pack_git_branch_attachment(entry_id, attachment_dir)
     elif entry_type in _FS_ROOTED_TYPES:
-        _pack_fs_rooted_attachment(entry_type, entry_id, attachment_dir)
+        await _pack_fs_rooted_attachment(entry_type, entry_id, attachment_dir)
 
 
 # ---------------------------------------------------------------------------
@@ -319,20 +352,48 @@ async def _pack_attachment_entry(
 _FS_ROOTED_TYPES = frozenset({
     BuiltinEntityType.SKILL.value,
     BuiltinEntityType.AGENT.value,
+    EntityType.WORKFLOW.value,
+    EntityType.WHITEBOARD.value,
 })
 
 _CLAUDE_ANCHOR = ".claude"
 
 
-def _fs_rooted_record_for(entry_type: str, entry_id: str):
-    """Resolve a Skill/Agent FSRecord by id. Returns the record or None."""
-    if entry_type == BuiltinEntityType.SKILL.value:
+async def _fs_rooted_asset_path(entry_type: str, entry_id: str) -> "Path | None":
+    """Resolve the live ``.claude/…`` on-disk path for an FS-rooted asset.
+
+    Skill/Agent take the O(1) FSRecord shadow lookup (a perf shortcut, not a
+    capability difference — their entities also expose ``asset_ref``). Every
+    other FS-rooted type (workflow ``.claude/workflows/<name>.md``, whiteboard
+    ``.claude/whiteboards/<name>/``) resolves through the entity's ``asset_ref``
+    (the live path string), so the dispatch stays generic. Returns None when
+    the asset can't be located.
+    """
+    def _get_skill(eid: str):
         from flow_sdk.fs_store.operations.skill import get_skill
-        return get_skill(entry_id)
-    if entry_type == BuiltinEntityType.AGENT.value:
+        return get_skill(eid)
+
+    def _get_agent(eid: str):
         from flow_sdk.fs_store.operations.agent import get_agent
-        return get_agent(entry_id)
-    return None
+        return get_agent(eid)
+
+    shadow_getter = {
+        BuiltinEntityType.SKILL.value: _get_skill,
+        BuiltinEntityType.AGENT.value: _get_agent,
+    }.get(entry_type)
+    if shadow_getter is not None:
+        rec = shadow_getter(entry_id)
+        ref = getattr(rec, "asset_ref", None) if rec else None
+        return Path(ref._path) if ref is not None else None  # FSRecord.asset_ref is an FSRef
+
+    # Generic: resolve the entity row and read its (string) live asset_ref.
+    from flow_sdk.fs_store.schema_registry import SchemaRegistry
+    cls = SchemaRegistry.get_entity_cls(entry_type)
+    if cls is None:
+        return None
+    ent = await cls.get_one({"id": entry_id})
+    ref = getattr(ent, "asset_ref", None) if ent else None
+    return Path(ref) if isinstance(ref, str) and ref else None
 
 
 def _claude_relative_path(asset_path: Path) -> Path:
@@ -396,28 +457,72 @@ def _restore_fs_rooted_entry(
     return copied_any
 
 
-async def _reindex_asset_dest_root(asset_dest_root: Path) -> None:
-    """Drive ``FSIndexer.index()`` against the restored ``.claude/`` subtree.
+async def _reindex_root(root: Path, record_type, *, types=None) -> None:
+    """Drive ``FSIndexer.index(force=True)`` over a single restored ``root``.
 
-    Uses ``build_default_indexer()`` for the full function registry and overrides
-    the roots per-call so we don't accidentally walk the user's real home dir.
+    ``build_default_indexer()`` for the full function registry; the root is
+    overridden per-call so we never walk the user's real home dir. ``record_type``
+    selects which walkers fire: ``USER_HOME_FOLDER`` for FS-rooted assets
+    (``.claude/…``), ``REAL_PROJECT_CWD`` for project-scoped types (``specs/…``).
+    ``types`` optionally scopes the materialized set.
     """
     from flow_sdk.fs_store.fs_ref import FSRef
     from flow_sdk.fs_store.indexer import IndexerOptions
     from flow_sdk.fs_store.indexer.builtin import build_default_indexer
-    from flow_sdk.fs_store.record_types import RecordType
 
     indexer = build_default_indexer()
     await indexer.index(
         IndexerOptions(
-            roots=(FSRef(asset_dest_root, record_type=RecordType.USER_HOME_FOLDER, scope="user"),),
+            roots=(FSRef(root, record_type=record_type, scope="user"),),
+            types=types,
             force=True,
             verbose=False,
         )
     )
 
 
-def _pack_fs_rooted_attachment(
+async def _reindex_asset_dest_root(asset_dest_root: Path) -> None:
+    """Reindex a restored ``.claude/`` subtree (skill/agent FS-rooted assets)."""
+    from flow_sdk.fs_store.record_types import RecordType
+
+    await _reindex_root(asset_dest_root, RecordType.USER_HOME_FOLDER)
+
+
+async def _reindex_project_root(root: Path) -> None:
+    """Index ``root`` as a project-cwd container so a restored shared spec
+    materializes (``extract_spec → Entity.from_record``, idempotent + body-aware
+    — heals a content-less stub). Scoped to SPEC so the generic project walk
+    doesn't also index the ``spec.md`` as a plain markdown duplicate. No
+    synthetic ``user_home/specs`` path is fabricated.
+    """
+    from flow_sdk.fs_store.record_types import RecordType
+
+    await _reindex_root(root, RecordType.REAL_PROJECT_CWD, types=(RecordType.SPEC,))
+
+
+def _restore_spec_source(spec_file: Path, entry_id: str, staging_root: Path) -> None:
+    """Restore a bundle ``spec.md`` into the staging folder's ``specs/`` dir.
+
+    Destination: ``<staging>/specs/spec-@<id>/spec.md`` — the folder name is the
+    bundle's own ``spec-@<id>`` (deterministic, never a derived/creative slug).
+    The post-loop reindex (project-cwd) materializes the row from this real
+    file. Entity identity comes from the frontmatter ``id``: copied verbatim
+    when the bundle already carries it, otherwise the shared ``entry_id`` is
+    injected (legacy bundles predating the id-in-frontmatter pack) so the SAME
+    row materializes rather than a uuid5(path) duplicate.
+    """
+    dest = staging_root / "specs" / f"spec-@{entry_id}" / "spec.md"
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    rewritten = _inject_id_into_frontmatter_text(spec_file.read_text(encoding="utf-8"), entry_id)
+    if rewritten is None:
+        shutil.copy2(spec_file, dest)  # bundle already carries the id → verbatim
+    else:
+        dest.write_text(rewritten, encoding="utf-8")
+
+
+
+
+async def _pack_fs_rooted_attachment(
     entry_type: str, entry_id: str, attachment_dir: Path,
 ) -> None:
     """Copy the asset's on-disk subtree (file or folder) into the bundle.
@@ -426,11 +531,8 @@ def _pack_fs_rooted_attachment(
     is unchanged from the source — the indexer reads exactly the same shape
     on disk in production, so unpack just needs to restore + reindex.
     """
-    record = _fs_rooted_record_for(entry_type, entry_id)
-    if record is None or record.asset_ref is None:
-        return
-    src = Path(record.asset_ref._path)
-    if not src.exists():
+    src = await _fs_rooted_asset_path(entry_type, entry_id)
+    if src is None or not src.exists():
         return
     rel = _claude_relative_path(src)
     dest_root = attachment_dir / f"{entry_type}-@{entry_id}"
@@ -438,8 +540,61 @@ def _pack_fs_rooted_attachment(
     dest.parent.mkdir(parents=True, exist_ok=True)
     if src.is_dir():
         shutil.copytree(src, dest, dirs_exist_ok=True)
+        # Folder assets (whiteboard, skill) key their id off the main doc's
+        # frontmatter id, falling back to a name/path-derived value that won't
+        # match the sender's entity id. Pin the sender's id into the main doc so
+        # the receiver's gen_id materializes the SAME entity. (The doc filename
+        # is hardcoded rather than read from TypeInfo.main_file because the
+        # server's runtime schema registry doesn't reliably carry main_file for
+        # these types — the literal list is the proven path.)
+        for main_doc in ("WHITE_BOARD.md", "SKILL.md"):
+            doc = dest / main_doc
+            if doc.exists():
+                _ensure_id_in_md_frontmatter(doc, entry_id)
     else:
         shutil.copy2(src, dest)
+        # A single-file asset (workflow) keys its id off the file PATH, which
+        # differs on the receiver. Pin the sender's id into the packed doc's
+        # frontmatter so the receiver's gen_id (which preserves an existing
+        # frontmatter id) materializes the SAME entity instead of a uuid5(path)
+        # duplicate — mirrors the spec id-in-frontmatter contract.
+        _ensure_id_in_md_frontmatter(dest, entry_id)
+
+
+def _inject_id_into_frontmatter_text(text: str, entry_id: str) -> "str | None":
+    """Return ``text`` with ``id: <entry_id>`` ensured in its YAML frontmatter
+    (other fields + body preserved), or None when the id already matches — so a
+    caller can keep the original bytes verbatim. Single source of truth for the
+    "carry the sender's id into a shared markdown asset" contract, shared by the
+    spec restore and the FS-rooted packer."""
+    from flow_sdk.fs_store.indexer._frontmatter import (  # noqa: PLC0415
+        _extract_body,
+        _extract_frontmatter,
+        _render_frontmatter,
+        _yaml_load,
+    )
+    fm = _extract_frontmatter(text)
+    fields = (_yaml_load(fm) or {}) if fm else {}
+    if not isinstance(fields, dict):
+        fields = {}
+    if fields.get("id") == entry_id:
+        return None
+    body = _extract_body(text) if fm else text
+    merged = {"id": entry_id, **{k: v for k, v in fields.items() if k != "id"}}
+    return _render_frontmatter(merged) + "\n\n" + body.lstrip("\n")
+
+
+def _ensure_id_in_md_frontmatter(md_path: Path, entry_id: str) -> None:
+    """Idempotently ensure a markdown file's YAML frontmatter carries
+    ``id: <entry_id>``. No-op when the id already matches; rewrites the file
+    with the id injected (preserving other fields + body) otherwise."""
+    try:
+        text = md_path.read_text(encoding="utf-8")
+    except OSError:
+        return
+    rewritten = _inject_id_into_frontmatter_text(text, entry_id)
+    if rewritten is not None:
+        md_path.write_text(rewritten, encoding="utf-8")
 
 
 def _zip_bundle(tmp_root: Path, dest_dir: Path | None, fm_id: str | None) -> Path:
@@ -652,12 +807,10 @@ async def unpack_bundle(
     from flow_sdk._compat import UTC
     from flow_sdk.builtin.conversation import Conversation
     from flow_sdk.builtin.flow_message import FlowMessage
-    from flow_sdk.builtin.spec import Spec
     from flow_sdk.builtin.task import Task
     from flow_sdk.builtin.user import User
     from flow_sdk.app.actions.notification_scanner import (
         _create_conversation_from_disk,
-        _create_spec_from_file,
     )
 
     tmp_root = Path(tempfile.mkdtemp(prefix="flowmsg_unpack_"))
@@ -694,6 +847,7 @@ async def unpack_bundle(
             EntityType.PROMPT.value: 0,
             BuiltinEntityType.SPEC.value: 0,
             BuiltinEntityType.TASK.value: 1,
+            EntityType.GIT_BRANCH.value: 1,
             BuiltinEntityType.CONVERSATION.value: 2,
             BuiltinEntityType.FLOW_MESSAGE.value: 3,
         }
@@ -705,6 +859,22 @@ async def unpack_bundle(
         conversation_id: str | None = None
         task_id: str = ""
         fs_rooted_restored = False
+        indexable_restored = False
+        # Staging destination for source-backed shared entities (spec, …): the
+        # conversation's OWN data folder. Sources are restored there verbatim,
+        # then indexed as a project-cwd root (`spec_project_fn` scans
+        # `<root>/specs/…`). The message folder IS the home — no synthetic
+        # `user_home/specs` path is fabricated.
+        staging_conv_id = (msg_data.get("conversation_id") or "").strip() or next(
+            (TypeId(c).id for c in (msg_data.get("shared_context_entities") or [])
+             if TypeId(c).type == BuiltinEntityType.CONVERSATION.value),
+            None,
+        )
+        staging_root: Path | None = None
+        if staging_conv_id:
+            from flow_sdk.fs_store.operations.conversation import default_jsonl_path  # noqa: PLC0415
+            staging_root = default_jsonl_path(staging_conv_id).parent
+            staging_root.mkdir(parents=True, exist_ok=True)
         if attachment_dir.exists():
             for entry_dir in sorted(attachment_dir.iterdir(), key=_entry_sort_key):
                 if not entry_dir.is_dir():
@@ -731,16 +901,16 @@ async def unpack_bundle(
 
                 elif entry_type == BuiltinEntityType.SPEC.value:
                     spec_file = entry_dir / "spec.md"
-                    if spec_file.exists():
-                        # Create-once: ``_create_spec_from_file`` saves
-                        # unconditionally, and re-unpacks are now routine
-                        # (missing body files trigger a re-pull) — without
-                        # this guard a re-unpack would clobber receiver-side
-                        # spec edits with the bundle's original copy. With
-                        # stub minting gone, an existing row can only be a
-                        # real one, so exists == already materialized.
-                        if overwrite or await Spec.get_one({"id": entry_id}) is None:
-                            await _create_spec_from_file(spec_file, entry_id, owner_typeid)
+                    if spec_file.exists() and staging_root is not None:
+                        # Restore the spec source into the conversation folder's
+                        # ``specs/`` dir, then let the post-loop reindex
+                        # materialize the row (``extract_spec`` → ``from_record``)
+                        # — idempotent + body-aware, no create-once skip. A
+                        # pre-existing content-less stub is HEALED (its body
+                        # lands), never blocked. User data is preserved verbatim
+                        # when the bundle carries the id.
+                        _restore_spec_source(spec_file, entry_id, staging_root)
+                        indexable_restored = True
 
                 elif entry_type == BuiltinEntityType.TASK.value:
                     task_data = _read_entity_header(entry_dir)
@@ -813,6 +983,26 @@ async def unpack_bundle(
                         elif _fill_merge_entity(existing_sess, sess_payload, ("id", "type")):
                             await existing_sess.save(owner_typeid)
 
+                elif entry_type == EntityType.GIT_BRANCH.value:
+                    # Shared git location snapshot: materialize the deterministic
+                    # GitRemote parent FIRST (re-minted from the header's plain
+                    # provider/owner/name — the parent never rides as a blob),
+                    # then create-or-fill-merge the GitBranch row itself.
+                    branch_data = _read_entity_header(entry_dir)
+                    if branch_data is not None:
+                        from flow_sdk.builtin.git_branch import GitBranch  # noqa: PLC0415
+                        branch_id = branch_data.get("id") or entry_id
+                        pid = await GitBranch.materialize_share_parent(branch_data, owner_typeid)
+                        branch_payload = {**branch_data, "id": branch_id, "remote": False}
+                        if pid:
+                            branch_payload["parent_type_id"] = pid
+                        existing_branch = await GitBranch.get_one({"id": branch_id})
+                        if existing_branch is None or overwrite:
+                            branch = GitBranch.model_validate(branch_payload)
+                            await branch.save(owner_typeid)
+                        elif _fill_merge_entity(existing_branch, branch_payload, ("id", "type")):
+                            await existing_branch.save(owner_typeid)
+
                 elif entry_type == BuiltinEntityType.CONVERSATION.value:
                     jsonl_file = entry_dir / "conversation.jsonl"
                     if jsonl_file.exists():
@@ -881,6 +1071,13 @@ async def unpack_bundle(
         # present in the bundle (zero-cost for vanilla spec/task bundles).
         if fs_rooted_restored and asset_dest_root is not None:
             await _reindex_asset_dest_root(asset_dest_root)
+
+        # 4c. Re-index source-backed shared entities (spec, …) restored into the
+        # conversation's data folder. One project-cwd reindex materializes every
+        # row from its real file — idempotent + body-aware, healing any
+        # content-less stub. Skipped (zero-cost) when nothing was restored.
+        if indexable_restored and staging_root is not None:
+            await _reindex_project_root(staging_root)
 
         # 5. Resolve FILE attachment paths and materialize the top-level FlowMessage
         # via the unified write path. ``materialize_flow_message`` saves the

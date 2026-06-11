@@ -7,6 +7,22 @@ from flow_sdk.fs_store.indexer.functions.skill import (
     skill_gen_id,
 )
 
+def _skill_default_body(entity) -> str:
+    """SKILL.md written to the skill's main_ref on create.
+
+    Skill's asset_ref is the folder (.claude/skills/<name>/) — the indexer emits
+    the folder and the frontend resolves <folder>/SKILL.md itself. ``main_file``
+    names that inner doc so ``upsert_main_ref`` materializes it on create;
+    without it, create leaves a dangling folder pointer the editor reports as
+    "file not found".
+    """
+    from flow_sdk.fs_store.indexer._frontmatter import _render_frontmatter  # noqa: PLC0415
+
+    name = (getattr(entity, "name", None) or "Untitled Skill").strip()
+    desc = (getattr(entity, "description", None) or "").strip()
+    return _render_frontmatter({"name": name, "description": desc}) + f"\n\n# {name}\n\n{desc}\n"
+
+
 SKILL = TypeMetadata(
     type=EntityType.SKILL,
     icon="Sparkles",
@@ -17,7 +33,9 @@ SKILL = TypeMetadata(
     index_fields=["description"],
     main_subdir=".claude/skills",
     main_layout="folder",
+    main_file="SKILL.md",
     from_disk_fn=extract_skill,
     gen_id_fn=skill_gen_id,
     asset_hash_fn=skill_asset_hash,
+    default_body_fn=_skill_default_body,
 )

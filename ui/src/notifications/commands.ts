@@ -1,5 +1,6 @@
 import { toast as sonnerToast } from 'sonner';
-import { oauthService, OAUTH_PROVIDERS, copyToClipboard } from '@sdk';
+import { oauthService, OAUTH_PROVIDERS, copyToClipboard, AgenticProcess } from '@sdk';
+import { gitResolvePrompt } from '@src/components/status-bar/gitResolvePrompt';
 import { closeTerminalTargets } from '@src/hooks/useActiveTerminals';
 import { useBadgeStore } from './store';
 import { notify } from './notify';
@@ -51,6 +52,16 @@ registerCommand('cloud.signin', () => {
 
 registerCommand('terminal.terminate', (args) => {
   if (args.typeId) void closeTerminalTargets([String(args.typeId)]);
+});
+
+// `Resolve` on a failed-push toast: launch an agentic process in the current
+// project, seeded with a conflict-resolution prompt for the given branch. Uses
+// dataContext.project/computeNode (AgenticProcess.openTab default).
+registerCommand('git.resolve-conflict', (args) => {
+  const branch = String(args.branch ?? '');
+  void AgenticProcess.openTab('claude_code', gitResolvePrompt(branch)).catch((e: unknown) => {
+    notify.error({ title: 'Could not start resolver', message: String(e) });
+  });
 });
 
 registerCommand('notification.dismiss', (_args, ctx) => {

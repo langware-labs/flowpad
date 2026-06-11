@@ -1,20 +1,23 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { RefreshCw } from 'lucide-react';
+import { LifeBuoy, RefreshCw } from 'lucide-react';
 import {
   Conversation,
   fetchConversations,
   FlowMessage,
+  pickupConversation,
   QueryFilter,
   QueryRequest,
   TypeId,
 } from '@sdk';
 import { useAuth, useEntitiesQuery, useEntity, useProject } from '@sdk/react/hooks';
 import type { ITask } from '@sdk/entities/task';
+import { ConversationKind } from '@sdk/entities/conversation';
 import { syncConversationMessages } from '@src/components/inbox-view/inbox-api';
 import { markFlowMessagesReceived } from '@sdk/entities/flow-message';
 import { FlowMessageBubble } from './FlowMessageBubble';
 import { MessageComposer } from './MessageComposer';
 import { useApproveAndExecute } from './useApproveAndExecute';
+import { ExecutePromptDialog } from './ExecutePromptDialog';
 import { useImplementPlan } from './useImplementPlan';
 import { useLocalUser } from './useLocalUser';
 import { useMembers } from '@src/hooks/use-members';
@@ -164,33 +167,51 @@ export function ConversationView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [conversationId, pointers.map((p) => p.id).join(',')]);
 
-  // Approve & Execute is task-bound. Pass an inert task to the hook when no
-  // task is present so we can keep the call unconditional, then suppress the
-  // approve action below.
-  const inertTask = useMemo(() => ({ id: '', metadata: {} }) as ITask, []);
-  const { approveAndExecute } = useApproveAndExecute({
-    task: task ?? inertTask,
-    conversationId,
-  });
+  // Execute is backend-owned now; the hook is just the trigger.
+  const { executePrompt } = useApproveAndExecute();
 
   const canApproveAndExecute = !!task || !!conversationId;
 
+  // The Execute CTA opens a confirm dialog (run now + persist per-contact
+  // permissions); this holds the message + sender + project it targets.
+  const [executeTarget, setExecuteTarget] = useState<{
+    messageId: string;
+    contact: { userId?: string | null; email?: string | null; name?: string | null };
+    projectId: string | null;
+  } | null>(null);
+
   const runApprove = useCallback(
-    (messageId: string, idx: number) => {
+    (messageId: string) => {
       if (!canApproveAndExecute) return;
-      // Surface the spawned run right away — `approveAndExecute` is async (the
-      // spawn + capture-turn round-trip takes hundreds of ms), so calling the
-      // reveal-runs callback at click time, not after the await, gives the
-      // user immediate feedback that the drawer flipped to the Runs tab.
+      const fm = messagesById.get(messageId);
+      const senderId = fm?.sender_id ?? null;
+      const sender = senderId ? participants.find((p) => p.user_id === senderId) : undefined;
+      setExecuteTarget({
+        messageId,
+        contact: {
+          userId: senderId,
+          email: sender?.email ?? null,
+          name: sender?.name ?? null,
+        },
+        projectId: conversation?.project_id ?? null,
+      });
+    },
+    [canApproveAndExecute, messagesById, participants, conversation?.project_id],
+  );
+
+  const runExecute = useCallback(
+    (messageId: string, autoReply: boolean) => {
+      // Surface the spawned run right away — execution is async (the headless
+      // run round-trips), so flip the drawer to Runs at confirm time.
       onApproveAndExecuteFired?.();
       const action = async () => {
-        await approveAndExecute(messageId, idx);
+        await executePrompt(messageId, { autoReply });
         void refetch();
       };
       if (ensureMapped) ensureMapped(action);
       else void action();
     },
-    [approveAndExecute, refetch, ensureMapped, canApproveAndExecute, onApproveAndExecuteFired],
+    [executePrompt, refetch, ensureMapped, onApproveAndExecuteFired],
   );
 
   // Implement Plan lifecycle — spawn + watch + open. See `useImplementPlan.ts`
@@ -295,6 +316,11 @@ export function ConversationView({
   }, [pointers.map((p) => p.id).join(',')]);
 
   const conversationStatusVisible = conversation?.message_status_visible !== false;
+  // Community (support-center) ticket: replies are masked to a single brand
+  // identity, and the real responder's sender_id is intentionally absent from
+  // the guest's (redacted) roster — so the bubble must not flag it as an
+  // unknown sender. See CommunityConfig / the hub sender_name masking.
+  const isCommunityConversation = conversation?.kind === ConversationKind.COMMUNITY;
   const { project: currentProject } = useProject();
   const attachmentProjectId = resolveAttachmentProjectId(task, conversation, currentProject?.id);
 
@@ -344,9 +370,43 @@ export function ConversationView({
     }
   }, [refetch, refreshMembers, conversationId]);
 
+  // Staff "pick up" affordance for a community ticket: shown only on a
+  // community conversation the local cloud user hasn't joined and didn't open
+  // (the guest initiator is the owner). Joining adds them to the roster so they
+  // receive messages and can reply. See pickupConversation / hub Conversation.pickup.
+  const [pickingUp, setPickingUp] = useState(false);
+  const isParticipant =
+    !!cloudUserId && (participants ?? []).some((p) => p.user_id === cloudUserId);
+  const canPickup =
+    isCommunityConversation && !!cloudUserId && !isConversationOwner && !isParticipant;
+  const handlePickup = useCallback(async () => {
+    setPickingUp(true);
+    try {
+      await pickupConversation(conversationId);
+      await handleRefresh();
+    } catch (err) {
+      console.error('[conversation] pickup failed', conversationId, err);
+    } finally {
+      setPickingUp(false);
+    }
+  }, [conversationId, handleRefresh]);
+
   return (
     <div className="space-y-3">
-      <div className="flex justify-end">
+      <div className="flex items-center justify-end gap-1">
+        {canPickup && (
+          <button
+            type="button"
+            onClick={() => void handlePickup()}
+            disabled={pickingUp}
+            title="Join this support ticket so you can reply"
+            data-testid="pickup-conversation-button"
+            className="flex items-center gap-1 rounded border border-violet-500/40 bg-violet-500/15 px-2 py-0.5 text-[11px] font-medium text-violet-600 transition-colors hover:bg-violet-500/25 disabled:opacity-50 dark:text-violet-400"
+          >
+            <LifeBuoy className="h-3 w-3" />
+            {pickingUp ? 'Picking up…' : 'Pick up'}
+          </button>
+        )}
         <button
           type="button"
           onClick={() => void handleRefresh()}
@@ -386,6 +446,7 @@ export function ConversationView({
                   isConversationOwner={isConversationOwner}
                   onDeleteMessage={handleDeleteMessage}
                   conversationStatusVisible={conversationStatusVisible}
+                  isCommunity={isCommunityConversation}
                   ensureProjectMapped={ensureMapped}
                   attachmentProjectId={attachmentProjectId}
                 />
@@ -419,6 +480,16 @@ export function ConversationView({
         <MessageComposer
           conversationId={conversationId}
           onSent={() => void refetch()}
+        />
+      )}
+
+      {executeTarget && (
+        <ExecutePromptDialog
+          open
+          onClose={() => setExecuteTarget(null)}
+          contact={executeTarget.contact}
+          projectId={executeTarget.projectId}
+          onExecute={(autoReply) => runExecute(executeTarget.messageId, autoReply)}
         />
       )}
     </div>
