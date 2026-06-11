@@ -509,22 +509,10 @@ export class PtyConnection {
     return this._attachPromise;
   }
 
-  /** Re-attach with force=true, using the currently attached PTY ID. */
-  forceReconnect(): Promise<void> {
-    const ptyId = this._attachedPtyId ?? this.shellId;
-    return this.attach(ptyId, { force: true });
-  }
-
-  /**
-   * Called by Shell when the WebSocket connection closes.
-   * Signals disconnect without destroying chunk state (pty-sync keeps using it).
-   */
-  handleWsClose(): void {
-    if (this._attached || this.started) {
-      this._attached = false;
-      this._emitDisconnect();
-    }
-  }
+  // Note: there is deliberately no WS-close handler here. Connection membership
+  // is backend-owned (PtyRegistry parks/resumes on the WS lifecycle), so the PTY
+  // pipeline stays armed across a transient drop and resumed output renders
+  // without a client re-attach.
 
   // ── Fast cross-platform PTY ping ──────────────────────────────────────────
 

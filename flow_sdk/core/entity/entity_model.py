@@ -85,6 +85,14 @@ class Entity(DBEntity):
     tags: List[str] = APIField(default_factory=list)
     system: bool = APIField(default=False, description="True when this entity belongs to an SDK-shipped system project")
     remote: bool = APIField(default=False, description="True when this entity has a hub counterpart at the same id; refreshable from the hub")
+    semantic_lock: bool = APIField(
+        default=False,
+        description=(
+            "True when this entity's content is ground truth for its DependsOn "
+            "targets: any target content-hash drift raises a semantic conflict "
+            "(see flow_sdk/semantic_lock). Marker only — never write-protection."
+        ),
+    )
     fetched_at: datetime | None = APIField(
         default=None,
         description=(
@@ -445,6 +453,12 @@ class Entity(DBEntity):
         """Create or update an Entity from a Record's meta_dict()."""
         record_type = record.type or record._record_type
         entity_cls = SchemaRegistry.get_entity_cls(record_type) or cls
+        if cls is Entity and entity_cls is not cls and "from_record" in entity_cls.__dict__:
+            token = _SUPPRESS_STORE.set(True)
+            try:
+                return await entity_cls.from_record(record, notify=notify)
+            finally:
+                _SUPPRESS_STORE.reset(token)
         data = record.meta_dict()
         entity_uuid = entity_cls.allocate_id(data)
         # Filter by the *record's* type, not entity_cls.get_type(). The latter
@@ -487,6 +501,22 @@ class Entity(DBEntity):
         if rec_pid not in (None, ""):
             stamp["project_id"] = str(rec_pid)
 
+        # Real last-modified: when the record carries no explicit updated_date,
+        # derive it from the source file's mtime so search/listing reflect actual
+        # activity rather than the index/sync instant. Resolves the source path
+        # from whichever field the extractor set (asset_ref / source_file / path),
+        # falling back to now() only when none resolves. One generic hook for
+        # every file-backed indexed type (sessions, markdown, plans, tasks, …) —
+        # no per-extractor stamping.
+        _asset_mtime = None
+        if data.get("updated_date") is None:
+            src = data.get("asset_ref") or data.get("source_file") or data.get("path")
+            if src:
+                try:
+                    _asset_mtime = datetime.fromtimestamp(os.path.getmtime(src), tz=timezone.utc)
+                except OSError:
+                    pass
+
         if entity is None:
             create_kwargs = {"id": entity_uuid, "type": record_type}
             create_kwargs.update({k: v for k, v in data.items() if k not in ("id", "type")})
@@ -496,6 +526,8 @@ class Entity(DBEntity):
                 entity = entity_cls(**create_kwargs)
             except Exception:
                 entity = Entity(**create_kwargs)
+            if _asset_mtime is not None:
+                entity.updated_date = _asset_mtime
         else:
             entity.type = record_type
             # Hub-owned fields (the LWW clock), captured before the setattr loop
@@ -522,12 +554,18 @@ class Entity(DBEntity):
                 # non-None updated_date on save.
                 for f, v in hub_owned.items():
                     setattr(entity, f, v)
-            else:
-                # from_record is the disk→DB sync path; updated_date must advance
-                # to "now" so the transcript indexer's freshness check
-                # (file_mtime ≤ updated_date) can detect the next change. Reset
-                # so apply_update_fields stamps it.
+            elif _asset_mtime is not None:
+                # Stamp the source file's real last-modified, not now(). Freshness
+                # still holds: updated_date equals the file mtime right after
+                # indexing, and a later edit pushes file_mtime past it.
+                entity.updated_date = _asset_mtime
+            elif data.get("updated_date") is None:
+                # No record-supplied date and no source file — advance to now()
+                # so the freshness check (file_mtime ≤ updated_date) can still
+                # detect the next change. Reset so apply_update_fields stamps it.
                 entity._db.reset_update_fields(entity)
+            # else: the record supplied an explicit updated_date — kept as applied
+            # by the setattr loop above.
 
         # Propagate PropertyRecord values to matching entity fields
         already_set = set(data.keys()) | set(record_domain.keys())
@@ -548,6 +586,97 @@ class Entity(DBEntity):
             await entity.save(notify=notify)
         finally:
             _SUPPRESS_STORE.reset(token)
+        return entity
+
+    @classmethod
+    def from_fs_ref(
+        cls,
+        ref: "FSRef",
+        record_type: "str | None" = None,
+    ) -> "Entity | None":
+        """Load an Entity from a folder/file ``FSRef`` WITHOUT touching the DB.
+
+        A pure on-disk load: it dispatches to the type's registered
+        ``TypeInfo.from_disk_fn`` — the SAME cold-path parser the indexer runs
+        (e.g. ``extract_dataset``) — and builds the entity generically from the
+        returned ``FSRecord``. Only that parser (and, for datasets, the
+        ``iter_examples`` it reaches via ``Dataset.examples()``) is type-specific;
+        everything here is generic and registry-driven.
+
+        Distinct from the async ``from_record``: no ``await``, no ``save()``, no
+        DB row. Use it to load a folder-backed entity and call its on-disk
+        accessors (``Dataset.examples()`` etc.). Returns ``None`` when ``ref`` is
+        not a record of the resolved type (the parser yields nothing).
+        """
+        from flow_sdk.schema.type_info import register_all  # noqa: PLC0415
+
+        # ``from_disk_fn`` is only wired by ``register_all`` (importing an entity
+        # module registers its class but not its parser). Idempotent — cheap to
+        # call on every load.
+        register_all()
+
+        rt = cls._resolve_fs_ref_type(ref, record_type)
+        if rt is None:
+            return None
+        info = SchemaRegistry.get(rt)
+        if info is None or info.from_disk_fn is None:
+            return None
+
+        records = info.from_disk_fn(ref)
+        if not records:
+            return None
+        return Entity._build_from_fs_record(records[0], fallback_cls=cls)
+
+    @classmethod
+    def _resolve_fs_ref_type(cls, ref: "FSRef", record_type) -> "str | None":
+        """Resolve the record-type string for an ``FSRef``.
+
+        Precedence: explicit ``record_type`` arg → ``ref.record_type`` → the
+        concrete subclass's own declared ``type`` default (so
+        ``Dataset.from_fs_ref(ref)`` self-identifies as ``"dataset"`` even for a
+        bare folder ref). Base ``Entity`` with no hint yields ``None``.
+        """
+        if record_type is not None:
+            return str(record_type)
+        if ref.record_type is not None:
+            return str(ref.record_type)
+        if cls is not Entity:
+            type_field = cls.model_fields.get("type")
+            default = getattr(type_field, "default", None) if type_field else None
+            if isinstance(default, str) and default:
+                return default
+        return None
+
+    @staticmethod
+    def _build_from_fs_record(record: "FSRecord", fallback_cls: "type | None" = None) -> "Entity":
+        """Build a typed Entity from an ``FSRecord``, DB-free.
+
+        Flattens the record's nested ``metadata`` section onto the entity's typed
+        fields. ``extract_*`` parsers stash the known fields under a single
+        ``metadata`` key, which ``meta_dict()`` keeps nested — the async
+        ``from_record`` does NOT lift it, so this loader must. The ``asset_ref``
+        path string is preserved so on-disk accessors resolve.
+        """
+        rt = record.type or getattr(record, "_record_type", None)
+        entity_cls = SchemaRegistry.get_entity_cls(rt) or fallback_cls or Entity
+
+        data = record.meta_dict()
+        nested = data.pop("metadata", None)
+        if isinstance(nested, dict):
+            # The nested ``metadata`` section is the typed source of truth; let it
+            # win over the duplicated top-level shells (name/status/content).
+            data = {**data, **nested}
+
+        model_fields = getattr(entity_cls, "model_fields", {})
+        fields = {k: v for k, v in data.items() if k in model_fields}
+        try:
+            entity = entity_cls(**fields)
+        except Exception:
+            entity = Entity(**{k: v for k, v in fields.items() if k in Entity.model_fields})
+
+        # Stamp asset_ref even for types that don't declare it as a field.
+        if "asset_ref" in data and "asset_ref" not in fields:
+            object.__setattr__(entity, "asset_ref", data["asset_ref"])
         return entity
 
     async def _fts_upsert(self, type_name: str, content: str) -> None:
@@ -1178,6 +1307,14 @@ class Entity(DBEntity):
         # All of the above were producing ``None API field !!!`` errors on the
         # hub at create because the hub schema doesn't declare them. They
         # have no hub semantics; the SDK simply shouldn't be sending them.
+        # parent_share_on_default: a flagged type advertises its parent typeid
+        # on the shared-context rail so receivers re-materialize it (same
+        # kernel the message paths apply via collect_parent_share_typeids).
+        from flow_sdk.core.entity.parent_share import parent_share_typeid  # noqa: PLC0415
+
+        parent_tid = parent_share_typeid(self)
+        if parent_tid is not None:
+            self.add_shared_context_entities(parent_tid)
         body = self._hub_body()
 
         path = build_hub_url(self.get_type())
@@ -1350,11 +1487,29 @@ class Entity(DBEntity):
             sanitized["id"] = data["id"]
         if effective_parent and "parent_type_id" in cls.model_fields:
             sanitized["parent_type_id"] = effective_parent
+        # parent_share_on_default types materialize their (deterministic)
+        # parent FIRST — upsert-by-id, re-minted from the payload's plain
+        # fields, never trusted from the wire (see GitBranch).
+        info = SchemaRegistry.get(cls.get_type())
+        if info is not None and getattr(info, "parent_share_on_default", False):
+            pid = await cls.materialize_share_parent(sanitized, someone_typeid)
+            if pid and "parent_type_id" in cls.model_fields:
+                sanitized["parent_type_id"] = pid
         ent = cls.model_validate(sanitized)
         if "remote" in cls.model_fields:
             ent.remote = True
         await ent.save(someone_typeid, notify=notify)
         return ent
+
+    @classmethod
+    async def materialize_share_parent(
+        cls, payload: dict, someone_typeid: Optional[str] = None
+    ) -> Optional[str]:
+        """Hook for ``parent_share_on_default`` types: ensure the entity's
+        parent exists locally (upsert-by-deterministic-id) and return its
+        typeid, or None. No-op on the base class — flagged types override
+        (see ``GitBranch.materialize_share_parent``)."""
+        return None
 
     @staticmethod
     def _as_datetime(value: Any) -> Optional[datetime]:
@@ -1688,8 +1843,10 @@ class Entity(DBEntity):
     # ── context_entities surface ─────────────────────────────────────────
     #
     # Mirrors the TS APIEntity API. Two buckets:
-    #   * ``shared_context_entities``  — wire-bound, no auto-injection.
-    #     The read accessor is the field itself.
+    #   * ``shared_context_entities``  — wire-bound. The read accessor is the
+    #     field itself. One sanctioned auto-injection exists: at SHARE time a
+    #     ``parent_share_on_default`` type appends its parent typeid via
+    #     ``add_shared_context_entities`` (see ``share()`` / parent_share.py).
     #   * ``private_context_entities_``  — raw explicit storage (what the
     #     user/backend has actively attached). The computed property
     #     ``private_context_entities`` returns this *plus* implicit
@@ -2148,6 +2305,51 @@ _action_registry.register(
     action_name="set-group",
     function_name="set_group",
     handler=_http_set_group,
+    methods="post",
+    types="all",
+)
+
+
+async def _http_semantic_status(self: Entity):
+    """This entity's dependson rows, both directions (as lock / as target),
+    with their SemanticLock verdict fields. Minimal v1 relationship surface."""
+    from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
+    from flow_sdk.semantic_lock.runner import semantic_status  # noqa: PLC0415
+
+    return ApiSuccessResponse(data=await semantic_status(self))
+
+
+async def _http_semantic_waive(self: Entity):
+    """User waive ("it's ok"): align the relationship's validated hashes to
+    the CURRENT content, stamp validated_by=user / status=ok, and resolve the
+    open lock_break annotations. Body: ``{"relationship_id": ...}`` — must
+    reference a dependson row touching this entity."""
+    from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse  # noqa: PLC0415
+    from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+    from flow_sdk.semantic_lock.runner import waive_relationship  # noqa: PLC0415
+
+    request_info = get_current_request_info()
+    body = await request_info.get_post_data() if request_info is not None else {}
+    relationship_id = body.get("relationship_id") if isinstance(body, dict) else None
+    if not relationship_id:
+        return ApiFailResponse(message="relationship_id is required")
+    updated = await waive_relationship(self, str(relationship_id))
+    if updated is None:
+        return ApiFailResponse(message=f"No dependson relationship {relationship_id} on {self.typeid}")
+    return ApiSuccessResponse(data=updated)
+
+
+_action_registry.register(
+    action_name="semantic-status",
+    function_name="semantic_status",
+    handler=_http_semantic_status,
+    methods="get",
+    types="all",
+)
+_action_registry.register(
+    action_name="semantic-waive",
+    function_name="semantic_waive",
+    handler=_http_semantic_waive,
     methods="post",
     types="all",
 )

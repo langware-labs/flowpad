@@ -11,7 +11,6 @@ import {
   Task,
   TypeId,
 } from '@sdk';
-import { ActionInfo } from '@sdk/models/ActionInfo';
 import { ClaudeCliOptions } from '@sdk/cli_workers/claude-cli';
 import { useEntitiesQuery, useEntity, useProject } from '@sdk/react/hooks';
 import { attachmentDataString, type Attachment } from '@sdk/entities/flow-message';
@@ -700,8 +699,8 @@ function AttachmentRow({
 // ─────────────────────────────────────────────────────────────────────────
 
 interface PrivateContextSectionProps {
-  /** FlowMessage id used as the anchor for the `derive-task` action and the
-   *  start-session lifecycle. Falls back to the most-recent message when no
+  /** FlowMessage id used as the anchor for the add-spec / add-skill links and
+   *  the start-session lifecycle. Falls back to the most-recent message when no
    *  message is explicitly selected. `null` when the conversation is empty. */
   anchorMessageId: string | null;
   conversationId: string;
@@ -740,29 +739,6 @@ function PrivateContextSection({
   const containerInside = useMemo(() => ({ type: Conversation.type, id: conversationId }), [conversationId]);
   const [adding, setAdding] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-
-  // Derive a fresh Task headlessly from the anchor FlowMessage. Server side
-  // spawns an AgenticProcess that creates the Task and links both back via
-  // context_entities, so the new rows appear in Private Context automatically.
-  const handleAddTask = async () => {
-    if (!anchorMessageId || adding) return;
-    setMenuOpen(false);
-    setAdding(true);
-    try {
-      const action = new ActionInfo('derive-task', 'flow_message', anchorMessageId, 'POST');
-      const res = await dataManager.callAction<unknown, { process_id?: string; task_id?: string }>(action);
-      if (res?.task_id || res?.process_id) {
-        notify.success({ title: 'Deriving task with Claude…' });
-      } else {
-        notify.error({ title: 'Failed to start task derivation' });
-      }
-    } catch (err) {
-      console.error('[PrivateContext] derive-task failed', err);
-      notify.error({ title: 'Failed to derive task' });
-    } finally {
-      setAdding(false);
-    }
-  };
 
   const handleStartSessionFromMenu = () => {
     if (!onStartAssistance) return;
@@ -891,9 +867,9 @@ function PrivateContextSection({
     transcriptProcesses.length === 0;
 
   // The + menu is the only entry point for adding to Private Context. It
-  // surfaces Task (server-side `derive-task`) and Session (the assistance
-  // session lifecycle lifted to the panel). Session is hidden when no task is
-  // mapped or a PTY session already exists.
+  // surfaces Session (the assistance session lifecycle lifted to the panel),
+  // Spec and Skill. Session is hidden when no task is mapped or a PTY session
+  // already exists.
   const canAdd = !!onStartAssistance || (!!anchorMessageId && !adding);
 
   // Same selection-mode gate as SharedContextSection.
@@ -1010,20 +986,6 @@ function PrivateContextSection({
           </button>
           {menuOpen && (
             <div className="absolute top-full left-0 right-0 z-10 mt-1 rounded-md border border-border bg-popover p-1 text-xs shadow-md">
-              <button
-                type="button"
-                onClick={() => void handleAddTask()}
-                disabled={adding}
-                className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground transition-colors hover:bg-muted disabled:opacity-50"
-                data-testid="private-context-add-task"
-              >
-                {ICON_BY_TYPE.task &&
-                  (() => {
-                    const Icon = ICON_BY_TYPE.task;
-                    return <Icon className="h-3 w-3 text-muted-foreground" />;
-                  })()}
-                Task
-              </button>
               {onStartAssistance && (
                 <button
                   type="button"

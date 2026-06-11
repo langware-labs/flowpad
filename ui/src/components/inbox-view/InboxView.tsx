@@ -1,11 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Archive, CheckSquare, Inbox as InboxIcon, MailPlus, RefreshCw, SquarePen, Trash2 } from 'lucide-react';
+import { Archive, Inbox as InboxIcon, LifeBuoy, MailPlus, RefreshCw, Search, SquarePen, Trash2, X } from 'lucide-react';
 import { notify } from '@src/notifications';
 import { NewConversationDialog } from '@src/components/new-conversation-dialog/NewConversationDialog';
 import {
   Conversation,
   FlowMessage,
-  FlowMessageKind,
   Invitation,
   QueryRequest,
   Task,
@@ -19,11 +18,14 @@ import {
   dismissConversation,
   fetchConversations,
   leaveConversation,
+  listCommunityTickets,
+  pickupConversation,
+  unarchiveConversation,
+  type CommunityTicket,
 } from '@sdk';
 import { useAuth, useCloudStatus } from '@sdk/react/hooks';
 import { useEntitiesQuery, useEntity } from '@src/hooks/entity-hooks';
 import { Button } from '@src/components/ui/button';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { BulkConfirmDialog } from '@src/components/ui/bulk-confirm-dialog';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -35,6 +37,9 @@ import {
   updateMessage,
   bulkUpdateMessages,
 } from './inbox-api';
+import { conversationFacets, actionsFor } from '@src/components/conversation/conversation-category';
+import { CategoryChips } from '@src/components/conversation/CategoryChips';
+import { RowActions } from '@src/components/conversation/RowActions';
 
 type RowDeleteAction =
   | { kind: 'invitation'; invitationId: string; conversationId: string }
@@ -62,7 +67,7 @@ function formatGmailTime(iso?: string | null): string {
 // Single line: [sender(s)] [subject — snippet…] [time]
 // Click anywhere on the row opens the conversation via its dockPointer.
 
-type InboxViewMode = 'inbox' | 'unread' | 'archived';
+type InboxViewMode = 'inbox' | 'unread' | 'archived' | 'community';
 
 interface ConversationListRowProps {
   conv: Conversation;
@@ -72,10 +77,17 @@ interface ConversationListRowProps {
    *  - 'unread'   → show only non-archived rows whose latest FlowMessage is unread
    *  - 'archived' → show ONLY archived rows */
   viewMode: InboxViewMode;
+  /** Text search is engaged — the parent already narrowed the list to
+   *  matching conversations, so the row must NOT apply the per-mode hide
+   *  rule (search spans archived/read rows regardless of the active pill). */
+  searchActive: boolean;
   /** Conversation-level archive. Stamps ``Conversation.archived_at = now()``
    *  server-side; row auto-revives when a FlowMessage newer than the stamp
    *  arrives. */
   onArchive: (convId: string) => void;
+  /** Conversation-level unarchive — clears ``archived_at`` so the row returns
+   *  to the Inbox. */
+  onUnarchive: (convId: string) => void;
   onToggleRead: (messageId: string, isRead: boolean) => void;
   /** Caller resolves the appropriate dialog/action mode based on the row's
    *  role + the current cloud user id. */
@@ -89,7 +101,7 @@ interface ConversationListRowProps {
   refSetter: (el: HTMLDivElement | null) => void;
 }
 
-function ConversationListRow({ conv, isFocused, viewMode, onArchive, onToggleRead, onRequestDelete, cloudUserId, onVisibilityChange, refSetter }: ConversationListRowProps) {
+function ConversationListRow({ conv, isFocused, viewMode, searchActive, onArchive, onUnarchive, onToggleRead, onRequestDelete, cloudUserId, onVisibilityChange, refSetter }: ConversationListRowProps) {
   const { navigation } = useDockNavigation();
   const taskTypeId = useMemo(
     () => conv.firstContextOfType?.('task') ?? null,
@@ -127,13 +139,23 @@ function ConversationListRow({ conv, isFocused, viewMode, onArchive, onToggleRea
   // on its own: the sender (and everyone post-accept) must see a normal row.
   const { cloudUser, currentUser } = useAuth();
   const myEmail = (cloudUser?.email || currentUser?.email || '').trim().toLowerCase();
-  const recipientEmail = invitation?.recipient_email?.trim().toLowerCase() || '';
-  const isInvitationRow =
-    firstMessage?.kind === FlowMessageKind.INVITATION &&
-    !invitation?.accepted &&
-    !!myEmail &&
-    myEmail === recipientEmail;
   const [accepting, setAccepting] = useState(false);
+
+  // Single source of truth for the row's category (invitation / community /
+  // archived / unread / active). Replaces the previously-scattered booleans and
+  // is shared with RecentConversationsStrip. Viewer-relative facts (invitation,
+  // unread) are resolved against the local user here. ``archived`` compares the
+  // pointer ts (not the FlowMessage) so it doesn't race the async FM fetch.
+  const facets = conversationFacets({
+    conv,
+    firstMessage,
+    latestMessage,
+    latestPtrTs: lastPtr?.ts ?? null,
+    invitation,
+    viewer: { email: myEmail, cloudUserId },
+  });
+  // Alias kept so the existing invitation-row rendering reads cleanly below.
+  const isInvitationRow = facets.isInvitation;
 
   // Trash does different things depending on ownership — say which one
   // up-front so the tooltip distinguishes it from the (reversible) Archive.
@@ -143,27 +165,23 @@ function ConversationListRow({ conv, isFocused, viewMode, onArchive, onToggleRea
       ? 'Delete for everyone — permanent'
       : 'Leave conversation';
 
-  // Hide rule depends on view mode:
-  //   - 'inbox'     → hide archived rows (default; archived_at && stamp ≥ latest ts)
-  //   - 'archived'  → show ONLY archived rows; hide everything else
-  // ``archived_at`` uses the pointer's ts so we don't race the async
-  // FlowMessage fetch (the latestMessage entity arrives later than the
-  // conversation entity that carries the pointer).
-  const archivedAt = conv.archived_at ? new Date(conv.archived_at).getTime() : null;
-  const latestPtrTime = lastPtr?.ts ? new Date(lastPtr.ts).getTime() : 0;
-  const archivedActive =
-    archivedAt !== null && !Number.isNaN(archivedAt) && latestPtrTime <= archivedAt;
+  // The facets are intrinsic to the conversation; the *hide* rule combines them
+  // with the active view + search (view-state, not category):
+  //   - 'inbox'     → hide archived rows (default)
+  //   - 'archived'  → show ONLY archived rows
+  //   - 'unread'    → only non-archived unread rows
+  //   - search      → span everything; only half-materialized rows stay hidden
+  // ``inLoadingState`` keeps a row whose FlowMessage hasn't landed from rendering blank.
   const inLoadingState = !!lastPtr && !latestMessage;
-  // unread = latest message is_read=false (invitation rows count as unread
-  // since they always carry an actionable CTA).
-  const isUnreadRow = isInvitationRow ? true : (latestMessage ? !latestMessage.is_read : false);
   let isHidden: boolean;
-  if (viewMode === 'archived') {
-    isHidden = !archivedActive || inLoadingState;
+  if (searchActive) {
+    isHidden = inLoadingState;
+  } else if (viewMode === 'archived') {
+    isHidden = !facets.isArchived || inLoadingState;
   } else if (viewMode === 'unread') {
-    isHidden = archivedActive || !isUnreadRow || inLoadingState;
+    isHidden = facets.isArchived || !facets.isUnread || inLoadingState;
   } else {
-    isHidden = archivedActive || inLoadingState;
+    isHidden = facets.isArchived || inLoadingState;
   }
 
   const convId = conv.id ?? '';
@@ -221,7 +239,7 @@ function ConversationListRow({ conv, isFocused, viewMode, onArchive, onToggleRea
   const snippet = String(rawText ?? '').replace(/\s+/g, ' ').trim();
   const time = formatGmailTime(conv.updated_date);
   const ago = formatTimeAgo(conv.updated_date);
-  const isUnread = isUnreadRow;
+  const isUnread = facets.isUnread;
 
   const handleClick = () => {
     if (isInvitationRow) return; // primary action is Accept
@@ -283,6 +301,7 @@ function ConversationListRow({ conv, isFocused, viewMode, onArchive, onToggleRea
         )}
       </span>
       <span className="min-w-0 flex-1 truncate" data-testid="inbox-row-subject-line">
+        <CategoryChips facets={facets} className="mr-1" />
         <span className={isUnread ? 'font-semibold text-foreground' : 'text-foreground/80'}>{subject}</span>
         {snippet && (
           <>
@@ -295,93 +314,32 @@ function ConversationListRow({ conv, isFocused, viewMode, onArchive, onToggleRea
         {time}
         {ago && <span className="ml-1.5 text-muted-foreground/70">· {ago}</span>}
       </span>
-      <div
-        className="absolute right-2 flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {isInvitationRow ? (
-          <button
-            type="button"
-            onClick={() => void handleAccept()}
-            disabled={accepting || !invitationId}
-            className="rounded bg-primary px-2 py-0.5 text-[11px] font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-            data-testid="inbox-accept-invitation-button"
-          >
-            {accepting ? 'Accepting…' : 'Accept'}
-          </button>
-        ) : (
-          <>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  className="rounded p-1 hover:bg-muted"
-                  aria-label={isUnread ? 'Mark read' : 'Mark unread'}
-                  onClick={() => latestMessage?.id && onToggleRead(latestMessage.id, isUnread)}
-                >
-                  <CheckSquare className="h-3.5 w-3.5 text-muted-foreground" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="top">{isUnread ? 'Mark read' : 'Mark unread'}</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  className="rounded p-1 hover:bg-destructive/10"
-                  aria-label="Archive conversation"
-                  onClick={() => conv.id && onArchive(conv.id)}
-                >
-                  <Archive className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="top">Archive — moves to Archived, kept</TooltipContent>
-            </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  className="rounded p-1 hover:bg-destructive/10"
-                  aria-label={deleteLabel}
-                  onClick={() => {
-                    if (!conv.id) return;
-                    if (!conv.remote) {
-                      onRequestDelete({ kind: 'local', conversationId: conv.id });
-                    } else if (cloudUserId && conv.created_by === cloudUserId) {
-                      onRequestDelete({ kind: 'owner', conversationId: conv.id });
-                    } else {
-                      onRequestDelete({ kind: 'leave', conversationId: conv.id });
-                    }
-                  }}
-                  data-testid="inbox-row-delete-button"
-                >
-                  <Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="top">{deleteLabel}</TooltipContent>
-            </Tooltip>
-          </>
-        )}
-        {isInvitationRow && conv.id && invitationId && (
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <button
-                type="button"
-                className="rounded p-1 hover:bg-destructive/10"
-                aria-label="Decline (delete) invitation"
-                onClick={() =>
-                  onRequestDelete({
-                    kind: 'invitation',
-                    invitationId,
-                    conversationId: conv.id!,
-                  })
-                }
-                data-testid="inbox-invitation-delete-button"
-              >
-                <Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
-              </button>
-            </TooltipTrigger>
-            <TooltipContent side="top">Decline (delete) invitation</TooltipContent>
-          </Tooltip>
-        )}
-      </div>
+      <RowActions
+        specs={actionsFor(facets, {
+          invitationId,
+          accepting,
+          deleteLabel,
+          onAccept: () => void handleAccept(),
+          onDecline: () => {
+            if (conv.id && invitationId) {
+              onRequestDelete({ kind: 'invitation', invitationId, conversationId: conv.id });
+            }
+          },
+          onToggleRead: () => latestMessage?.id && onToggleRead(latestMessage.id, isUnread),
+          onArchive: () => conv.id && onArchive(conv.id),
+          onUnarchive: () => conv.id && onUnarchive(conv.id),
+          onDelete: () => {
+            if (!conv.id) return;
+            if (!conv.remote) {
+              onRequestDelete({ kind: 'local', conversationId: conv.id });
+            } else if (cloudUserId && conv.created_by === cloudUserId) {
+              onRequestDelete({ kind: 'owner', conversationId: conv.id });
+            } else {
+              onRequestDelete({ kind: 'leave', conversationId: conv.id });
+            }
+          },
+        })}
+      />
     </div>
   );
 }
@@ -417,15 +375,49 @@ export function InboxView() {
   const request = useMemo(() => new QueryRequest({ type: Conversation.type }), []);
   const { data: conversations = [], refetch, isLoading } = useEntitiesQuery<Conversation>(request);
 
+  // Text search over message bodies. The substring match runs in the DB —
+  // a ``$LIKE`` filter on FlowMessage.text (SQL ``LIKE %needle%``, spans ALL
+  // messages: read, archived, any thread position) — so only the matching
+  // messages reach the client; we just collect their conversation ids. The
+  // watch is only enabled while a query is typed, and stays live via the
+  // entity-update channel.
+  const [searchQuery, setSearchQuery] = useState('');
+  const needle = searchQuery.trim();
+  const searchActive = needle !== '';
+  const msgRequest = useMemo(
+    () =>
+      new QueryRequest({
+        type: FlowMessage.type,
+        query: { match: { op: '$LIKE', operands: ['text', needle] } },
+        name: 'inbox message search',
+      }),
+    [needle],
+  );
+  const { data: matchedMessages } = useEntitiesQuery<FlowMessage>(msgRequest, { enabled: searchActive });
+  // Hold the last result while the next keystroke's query is in flight so the
+  // list doesn't blank between keystrokes (useEntitiesQuery resets data to
+  // undefined on every request change).
+  const lastMatchIdsRef = useRef<Set<string>>(new Set());
+  const matchIds = useMemo(() => {
+    if (matchedMessages) {
+      lastMatchIdsRef.current = new Set(
+        matchedMessages.map((m) => m.conversation_id).filter((id): id is string => !!id),
+      );
+    }
+    return lastMatchIdsRef.current;
+  }, [matchedMessages]);
+
   const sorted = useMemo(() => {
-    const list = [...conversations];
+    const list = searchActive
+      ? conversations.filter((c) => c.id && matchIds.has(c.id))
+      : [...conversations];
     list.sort((a, b) => {
       const ta = a.updated_date ? new Date(a.updated_date).getTime() : 0;
       const tb = b.updated_date ? new Date(b.updated_date).getTime() : 0;
       return tb - ta;
     });
     return list;
-  }, [conversations]);
+  }, [conversations, searchActive, matchIds]);
 
   const handleRowVisibility = useCallback((convId: string, visible: boolean) => {
     setVisibleIds((prev) => {
@@ -482,6 +474,11 @@ export function InboxView() {
 
   const handleArchive = useCallback(async (convId: string) => {
     await archiveConversation({ conversation_id: convId });
+    void refetch();
+  }, [refetch]);
+
+  const handleUnarchive = useCallback(async (convId: string) => {
+    await unarchiveConversation({ conversation_id: convId });
     void refetch();
   }, [refetch]);
 
@@ -656,6 +653,49 @@ export function InboxView() {
 
   const inArchivedView = viewMode === 'archived';
   const inUnreadView = viewMode === 'unread';
+  const inCommunityView = viewMode === 'community';
+
+  // Staff community-ticket queue. Sourced from the hub (not local entities)
+  // because unpicked tickets don't fan out to non-participants — see
+  // listCommunityTickets / hub Project.community_conversations.
+  const [communityTickets, setCommunityTickets] = useState<CommunityTicket[]>([]);
+  const [communityLoading, setCommunityLoading] = useState(false);
+  const [pickingUpId, setPickingUpId] = useState<string | null>(null);
+  const loadCommunityTickets = useCallback(async () => {
+    setCommunityLoading(true);
+    try {
+      const res = await listCommunityTickets();
+      setCommunityTickets(res.tickets ?? []);
+    } catch (err) {
+      console.error('[inbox] failed to load community tickets', err);
+      setCommunityTickets([]);
+    } finally {
+      setCommunityLoading(false);
+    }
+  }, []);
+  useEffect(() => {
+    if (inCommunityView) void loadCommunityTickets();
+  }, [inCommunityView, loadCommunityTickets]);
+
+  // Open a queued ticket: pick it up first (joins the roster so the caller can
+  // read + reply) unless already joined, then navigate to it.
+  const handleOpenTicket = useCallback(
+    async (ticket: CommunityTicket) => {
+      if (!ticket.picked_up) {
+        setPickingUpId(ticket.conversation_id);
+        try {
+          await pickupConversation(ticket.conversation_id);
+        } catch (err) {
+          console.error('[inbox] pickup failed', ticket.conversation_id, err);
+          setPickingUpId(null);
+          return;
+        }
+        setPickingUpId(null);
+      }
+      navigation.openDock(DockPointer.forConversation(ticket.conversation_id));
+    },
+    [navigation],
+  );
 
   // Segmented view pill — Inbox | Unread | Archived. Active mode is filled,
   // inactive is ghost. Count badge sits inside the active pill so it
@@ -703,7 +743,36 @@ export function InboxView() {
             {renderViewPill('inbox', 'Inbox', InboxIcon)}
             {renderViewPill('unread', 'Unread', MailPlus)}
             {renderViewPill('archived', 'Archived', Archive)}
+            {renderViewPill('community', 'Community', LifeBuoy)}
           </div>
+          {/* Text search — filters the list below to conversations whose
+              messages contain the query, spanning archived rows. Hidden in
+              the Community view (hub-sourced tickets, not local messages). */}
+          {!inCommunityView && (
+            <div className="relative ml-2 flex items-center">
+              <Search className="pointer-events-none absolute left-2 h-3.5 w-3.5 text-muted-foreground" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search messages"
+                className="h-7 w-44 rounded-md border border-border/60 bg-background pl-7 pr-6 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                data-testid="inbox-search-input"
+                aria-label="Search messages"
+              />
+              {searchActive && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-1.5 rounded p-0.5 text-muted-foreground hover:text-foreground"
+                  aria-label="Clear search"
+                  data-testid="inbox-search-clear"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              )}
+            </div>
+          )}
         </div>
         {/* CENTER — new conversation */}
         <div className="flex shrink-0 items-center">
@@ -721,7 +790,20 @@ export function InboxView() {
         </div>
         {/* RIGHT — actions for the current view */}
         <div className="flex flex-1 items-center justify-end gap-1" data-testid="inbox-action-bar">
-          {!inArchivedView && (
+          {inCommunityView && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={() => void loadCommunityTickets()}
+              disabled={communityLoading}
+              title="Refresh community tickets"
+              data-testid="inbox-community-refresh-button"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${communityLoading ? 'animate-spin' : ''}`} />
+            </Button>
+          )}
+          {!inArchivedView && !inCommunityView && (
             <Button
               variant="ghost"
               size="sm"
@@ -734,7 +816,7 @@ export function InboxView() {
           )}
           {/* Archive all archives every conversation regardless of read state;
               hide it in the Archived view where it makes no sense. */}
-          {!inArchivedView && !inUnreadView && (
+          {!inArchivedView && !inUnreadView && !inCommunityView && (
             <Button
               variant="ghost"
               size="sm"
@@ -759,32 +841,86 @@ export function InboxView() {
               Delete all
             </Button>
           )}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={() => void handleRefresh()}
-            disabled={fetching}
-            title="Fetch new messages from hub"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${fetching ? 'animate-spin' : ''}`} />
-          </Button>
+          {!inCommunityView && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={() => void handleRefresh()}
+              disabled={fetching}
+              title="Fetch new messages from hub"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${fetching ? 'animate-spin' : ''}`} />
+            </Button>
+          )}
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto">
-        {isLoading && (
+        {/* Community staff queue — hub-sourced tickets, including unpicked ones
+            that don't appear in the local conversation list. */}
+        {inCommunityView && communityLoading && communityTickets.length === 0 && (
+          <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">Loading…</div>
+        )}
+        {inCommunityView && !communityLoading && communityTickets.length === 0 && (
+          <div className="flex h-48 flex-col items-center justify-center gap-3 text-muted-foreground">
+            <span className="text-sm">No community tickets</span>
+            <Button variant="outline" size="sm" onClick={() => void loadCommunityTickets()} disabled={communityLoading}>
+              <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${communityLoading ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+          </div>
+        )}
+        {inCommunityView &&
+          communityTickets.map((ticket) => (
+            <div
+              key={ticket.conversation_id}
+              className="group flex items-center gap-2 border-b px-3 py-2 hover:bg-muted/40"
+              data-testid="community-ticket-row"
+              data-conversation-id={ticket.conversation_id}
+            >
+              <LifeBuoy className="h-3.5 w-3.5 shrink-0 text-violet-500" />
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm text-foreground">
+                  {ticket.title || ticket.preview || 'Support ticket'}
+                </div>
+                {ticket.preview && ticket.title && (
+                  <div className="truncate text-xs text-muted-foreground">{ticket.preview}</div>
+                )}
+              </div>
+              <span className="shrink-0 text-[11px] text-muted-foreground">{ticket.message_count} msg</span>
+              {ticket.picked_up && (
+                <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                  Joined
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={() => void handleOpenTicket(ticket)}
+                disabled={pickingUpId === ticket.conversation_id}
+                className="shrink-0 rounded bg-violet-600 px-2 py-0.5 text-[11px] font-medium text-white hover:bg-violet-700 disabled:opacity-50"
+                data-testid="community-ticket-pickup-button"
+              >
+                {pickingUpId === ticket.conversation_id
+                  ? 'Picking up…'
+                  : ticket.picked_up ? 'Open' : 'Pick up'}
+              </button>
+            </div>
+          ))}
+
+        {!inCommunityView && isLoading && (
           <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">Loading…</div>
         )}
 
-        {!isLoading && visibleCount === 0 && (
+        {!inCommunityView && !isLoading && visibleCount === 0 && (
           <div className="flex h-48 flex-col items-center justify-center gap-3 text-muted-foreground">
             <span className="text-sm">
-              {inArchivedView ? 'No archived conversations'
+              {searchActive ? 'No matching conversations'
+                : inArchivedView ? 'No archived conversations'
                 : inUnreadView ? 'No unread conversations'
                 : 'No conversations'}
             </span>
-            {!inArchivedView && (
+            {!inArchivedView && !searchActive && (
               <Button variant="outline" size="sm" onClick={() => void handleRefresh()} disabled={fetching}>
                 <RefreshCw className={`mr-1.5 h-3.5 w-3.5 ${fetching ? 'animate-spin' : ''}`} />
                 Check for new messages
@@ -793,14 +929,16 @@ export function InboxView() {
           </div>
         )}
 
-        {!isLoading &&
+        {!inCommunityView && !isLoading &&
           sorted.map((conv) => (
             <ConversationListRow
               key={conv.id ?? ''}
               conv={conv}
               isFocused={false}
               viewMode={viewMode}
+              searchActive={searchActive}
               onArchive={handleArchive}
+              onUnarchive={handleUnarchive}
               onToggleRead={handleToggleRead}
               onRequestDelete={handleRowDelete}
               cloudUserId={cloudUserId}

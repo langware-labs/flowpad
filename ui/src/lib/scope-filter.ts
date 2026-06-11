@@ -3,24 +3,32 @@
  * Every UI surface (assets browser, records scanner, search bar) and every
  * API call ships this exact shape.
  *
+ *  - `all`      — show everything (user + every project + unscoped types).
+ *                 When set, `user`/`projects` are ignored and NO scope params
+ *                 are sent, so the backend applies no scope filter at all.
  *  - `user`     — include user-scope records (~/.claude/...).
  *  - `projects` — entity-IDs of projects to include; empty array = no projects.
  *
- * No sentinels, no string unions. The four legal states:
+ * The single-select scope UI (All / User / Project / Selected) is a
+ * presentational view over this shape — see useScopeFilterChips for the
+ * mode→ScopeFilter mapping. The legal states:
+ *   {all: true}                                — everything (no scope filter)
  *   {user: true,  projects: []}                — user only
- *   {user: true,  projects: [...]}             — user + listed projects
- *   {user: false, projects: [...]}             — listed projects only
+ *   {user: false, projects: [currentId]}       — current project only
+ *   {user: false, projects: [...]}             — selected projects only
  *   {user: false, projects: []}                — nothing (degenerate; UI guards)
- *
- * The 3-chip UI (User / Project / Both) is a presentational view over this
- * shape — see ScopeFilterBar for the chip→ScopeFilter mapping.
  */
 export interface ScopeFilter {
   user: boolean;
   projects: string[];
+  /** Everything — no scope filter applied. Overrides user/projects. */
+  all?: boolean;
 }
 
 export const EMPTY_SCOPE_FILTER: ScopeFilter = { user: true, projects: [] };
+
+/** Show everything — the backend receives no scope params. */
+export const ALL_SCOPE_FILTER: ScopeFilter = { user: true, projects: [], all: true };
 
 /**
  * The default a user-facing surface should land on. When a current project
@@ -38,6 +46,8 @@ export function defaultScopeFilter(currentProjectId?: string | null): ScopeFilte
 
 /** Equality on ScopeFilter (order-insensitive on `projects`). */
 export function scopeFilterEqual(a: ScopeFilter, b: ScopeFilter): boolean {
+  if (!!a.all !== !!b.all) return false;
+  if (a.all) return true; // user/projects are ignored when `all`
   if (a.user !== b.user) return false;
   if (a.projects.length !== b.projects.length) return false;
   const ap = [...a.projects].sort();
@@ -47,6 +57,7 @@ export function scopeFilterEqual(a: ScopeFilter, b: ScopeFilter): boolean {
 
 /** Stable key for React-Query and cache invalidation. */
 export function scopeFilterKey(sf: ScopeFilter): string {
+  if (sf.all) return 'all';
   return `${sf.user ? '1' : '0'}:${[...sf.projects].sort().join(',')}`;
 }
 
@@ -60,6 +71,8 @@ export function scopeFilterKey(sf: ScopeFilter): string {
  * "filter present but empty" from "no filter".
  */
 export function applyScopeToParams(params: URLSearchParams, scope: ScopeFilter): void {
+  // "All" = everything: send no scope params so the backend applies no filter.
+  if (scope.all) return;
   params.set('user', scope.user ? 'true' : 'false');
   params.set('projects', scope.projects.join(','));
 }

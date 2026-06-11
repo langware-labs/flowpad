@@ -302,6 +302,40 @@ def restart_payload_from_cli_options(options: WorkerCLIOptions) -> dict[str, Any
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# capability consumption — workers spawn with the discovered harness folder
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def worker_capability_kind(worker_type: str) -> str:
+    """The capability kind whose discovered value provides this worker's CLI."""
+    return f"harness.{worker_type}.cli"
+
+
+def worker_path_env(worker_type: str) -> dict[str, str] | None:
+    """PATH override for spawning this worker, from the discovered capability.
+
+    The harness capability's value (RecordType.FOLDER, an FSRef dict) is the
+    CLI's bin directory as a standard terminal would resolve it. Prepending it
+    to the spawn PATH makes both argv[0] and the CLI's ``#!/usr/bin/env node``
+    shebang resolve regardless of how the backend process was launched.
+
+    Returns ``{"PATH": "<folder>:<current>"}`` when the capability has a
+    value; ``None`` ⇔ no value discovered (CLI not installed) — callers fail
+    fast with a clear error instead of spawning into FileNotFoundError.
+    """
+    from flow_sdk.core.capabilities.discovery import get_capability_value
+
+    discovered = get_capability_value(worker_capability_kind(worker_type))
+    if discovered is None or not isinstance(discovered.value, dict):
+        return None
+    folder = discovered.value.get("path")
+    if not folder:
+        return None
+    current = os.environ.get("PATH", "")
+    return {"PATH": f"{folder}{os.pathsep}{current}" if current else str(folder)}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # factory — string-keyed dispatch to vendor CLI option classes
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -346,6 +380,11 @@ class WorkerDriver(Protocol):
 
     name: str  # wire id: "claude" | "codex" | "copilot"
     preassign_interactive_session_id: bool
+    # True iff this vendor's interactive TUI submits a pasted prompt that ends
+    # in ``\r`` (claude). False for TUIs that treat the trailing ``\r`` as
+    # literal text and need a discrete Enter after the paste settles (copilot,
+    # codex) — see ``Shell.write_then_submit`` and the ``prompt-pty`` action.
+    pty_submits_on_paste: bool
 
     # ── CLI shape ────────────────────────────────────────────────────────────
 
@@ -410,6 +449,12 @@ class WorkerDriver(Protocol):
 
     def tail_status(self, transcript_path: Path) -> "WorkerStatus":
         """Map the tail of the transcript to a WorkerStatus."""
+        ...
+
+    def has_resumable_session(self, process: "AgenticProcess") -> bool:
+        """True iff this vendor has a transcript to ``--resume`` for the
+        process's ``session_id``. Probes the vendor's own session store —
+        used by restart recovery to decide whether to relaunch with resume."""
         ...
 
     # ── History materialisation ──────────────────────────────────────────────

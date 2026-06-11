@@ -198,10 +198,10 @@ async def test_close_session_terminates_running_subprocess(tmp_path: Path):
 @pytest.mark.asyncio
 async def test_no_claude_binary_yields_error_flowdata(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     worker = ClaudeCLIStreamWorker()
-    # Force shutil.which to return None so _build_spawn decides no binary.
+    # No discovered harness capability value → _build_spawn decides no binary.
     monkeypatch.setattr(
-        "flow_sdk.builtin.agentic_process.cli_drivers.claude.stream_worker.shutil.which",
-        lambda _name: None,
+        "flow_sdk.builtin.agentic_process.cli_drivers.claude.stream_worker.worker_path_env",
+        lambda _worker_type: None,
     )
     ctx = AgenticContext(workdir=str(tmp_path))
 

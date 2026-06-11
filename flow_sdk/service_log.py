@@ -215,8 +215,11 @@ def _log_with_timer(level: int, msg: str, style: str) -> None:
         if console and log_to_folder and _log_file:
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S,%f")[:-3]
             level_name = logging.getLevelName(level)
-            with open(_log_file, "a") as f:
-                f.write(f"{timestamp} [{level_name}]{corr} {msg}{timer_info}\n")
+            try:
+                with open(_log_file, "a") as f:
+                    f.write(f"{timestamp} [{level_name}]{corr} {msg}{timer_info}\n")
+            except OSError as exc:
+                __logger.warning("Dev log mirror write skipped: %s", exc)
 
 
 def error(err: str) -> None:

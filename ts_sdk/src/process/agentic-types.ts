@@ -83,6 +83,17 @@ export enum WorkerStatus {
   INTERRUPTED  = 'interrupted',
   /** Terminal — stale file >5 min with no terminal signal. */
   INACTIVE     = 'inactive',
+  /**
+   * Projection — the turn ended cleanly (COMPLETE/ERROR/INTERRUPTED) within
+   * the last ~5 minutes and the worker sits at its prompt waiting for the
+   * next user message; ages out to INACTIVE. Mirrors the Python
+   * ``WorkerStatus.PENDING_USER`` (``flow_sdk/builtin/worker_status.py``).
+   * Deliberately in NO helper set: not mid-turn (``isWorkerRunning`` false),
+   * not terminal (``isWorkerTerminal`` false), and not in the ready baseline
+   * (Python's gold ``is_ready_for_input`` excludes it too — only the
+   * queue-drain superset admits it).
+   */
+  PENDING_USER = 'pending_user',
   /** Active — user message received; Claude hasn't responded yet. */
   WAITING      = 'waiting',
   /** Active — assistant generating. */

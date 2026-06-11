@@ -31,6 +31,11 @@ export interface ICapability extends IEntity {
   reference_kind?: string | null;
   /** Prompt the install agentic process runs with (null → backend default). */
   install_prompt?: string | null;
+  /** Discovered typed value (null ⇔ capability absent). For harness CLIs an
+   *  FSRef dict of the bin folder — the same value workers spawn with. */
+  value?: Record<string, unknown> | null;
+  /** Static RecordType of `value` (e.g. "folder"); from the backend spec. */
+  value_type?: string | null;
   last_check?: CapabilityResult | null;
   last_install?: CapabilityResult | null;
   last_test?: CapabilityResult | null;
@@ -48,6 +53,8 @@ export class Capability extends APIEntity<Capability> implements ICapability {
   dependent_capability_kinds: string[] = [];
   reference_kind: string | null = null;
   install_prompt: string | null = null;
+  value: Record<string, unknown> | null = null;
+  value_type: string | null = null;
   last_check: CapabilityResult | null = null;
   last_install: CapabilityResult | null = null;
   last_test: CapabilityResult | null = null;
@@ -86,6 +93,8 @@ export class Capability extends APIEntity<Capability> implements ICapability {
     this.dependent_capability_kinds = entity.dependent_capability_kinds ?? this.dependent_capability_kinds;
     this.reference_kind = entity.reference_kind ?? this.reference_kind;
     this.install_prompt = entity.install_prompt ?? this.install_prompt;
+    this.value = entity.value ?? this.value;
+    this.value_type = entity.value_type ?? this.value_type;
     this.last_check = entity.last_check ?? this.last_check;
     this.last_install = entity.last_install ?? this.last_install;
     this.last_test = entity.last_test ?? this.last_test;

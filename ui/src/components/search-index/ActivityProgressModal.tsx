@@ -1,9 +1,25 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { CheckCircle2, Circle, Loader2 } from 'lucide-react';
-import type { IndexProgressTable, TypeProgressRow } from '@sdk';
+import { PROGRESS_TEXT_COMPLETE, type IndexProgressTable, type TypeProgressRow } from '@sdk';
 import { rowState } from './activity-labels';
 
 export type { IndexProgressTable, TypeProgressRow };
+
+/**
+ * The 16px per-row progress bar shared by the type list (ActivityIndicator)
+ * and this modal. Caller guards on a known total; `pct` is `done/total*100`.
+ * `done` paints the emerald "finished" fill instead of the in-flight primary.
+ */
+export function MiniProgressBar({ pct, done = false }: { pct: number; done?: boolean }) {
+  return (
+    <div className="h-1 w-16 shrink-0 overflow-hidden rounded-full bg-muted">
+      <div
+        className={`h-full rounded-full transition-all ${done ? 'bg-emerald-500' : 'bg-primary'}`}
+        style={{ width: `${pct}%` }}
+      />
+    </div>
+  );
+}
 
 export function ActivityProgressBar({
   table,
@@ -13,7 +29,7 @@ export function ActivityProgressBar({
   onClick: () => void;
 }) {
   const pct = table.total > 0 ? (table.done / table.total) * 100 : 0;
-  const isDone = table.text === 'complete';
+  const isDone = table.text === PROGRESS_TEXT_COMPLETE;
   const label = table.total > 0
     ? `${table.done.toLocaleString()}/${table.total.toLocaleString()}`
     : `${table.done.toLocaleString()}`;
@@ -102,14 +118,7 @@ export function ActivityProgressModal({
                 <span className="text-xs tabular-nums text-muted-foreground shrink-0">
                   {countLabel}
                 </span>
-                {row.total > 0 && (
-                  <div className="h-1 w-16 rounded-full bg-muted overflow-hidden shrink-0">
-                    <div
-                      className={`h-full ${state === 'done' ? 'bg-emerald-500' : 'bg-primary'}`}
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                )}
+                {row.total > 0 && <MiniProgressBar pct={pct} done={state === 'done'} />}
               </div>
             );
           })}

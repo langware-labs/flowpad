@@ -26,7 +26,7 @@ class ProjectMeta(BaseMeta):
 
 PROJECT = TypeMetadata(
     type=EntityType.PROJECT,
-    icon="FolderOpen",
+    icon="Briefcase",
     indexed_by_default=True,
     api_visible=True,
     from_disk_fn=extract_claude_project,

@@ -140,6 +140,13 @@ On-disk directory structure for both FlowPad records (`~/.flow/records/`) and Cl
 
 ---
 
+### [Dataset Layout (Authoring Guide)](data-management/datasets.md)
+User-facing contract for laying out a **dataset** on disk: a folder under `assets/datasets/<slug>/` marked by a `dataset.json` manifest, in either the `csv` layout (`data.csv`, one row per example) or the `io_folder` layout (`examples/<name>/` with `input`/`output`/`ground_truth` slots). Covers slot forms (single file, folder, numbered `<slot>-N` for multiple outputs / consensus annotations), `<slot>.json` metadata sidecars, `example.json`/`meta.json` per-example metadata, the gold = `ground_truth` rule, file-beats-folder, binary-safe reads, and id-pinning for portability.
+
+**Key source files:** `flow_sdk/builtin/dataset.py` (`Dataset`, `Example`, `ExampleSlot`, `ExampleArtifact`), `flow_sdk/fs_store/indexer/functions/dataset.py` (walker + `iter_examples` parser), `flow_sdk/schema/type_info/dataset_type_info.py`
+
+---
+
 ### [Scan and Discovery](data-management/scan-and-discovery.md)
 The filesystem scan layer: `FSRecord.discover(type)` (O(N) directory scan over `<records_root>/<type>/`) plus the indexer walkers in `flow_sdk/fs_store/indexer/` that orchestrate scan/index across types with JSONL logging (the older `SchemaRegistry.discover()`/`Record.discover_one()` no longer exist). Covers the `RecordQuery` filter/sort/paginate pipeline and the error/claude_error parallel discovery path. (Note: scan API endpoints are driven through the index orchestration / system-tools layer, not a `POST /api/v1/search/reindex` route, which no longer exists.)
 
@@ -202,6 +209,7 @@ The webhook listener (`POST /api/v1/webhook/listen`) that drives real-time entit
 |---|---|
 | What fields does a Record have? | [Record Model](data-management/record-model.md) |
 | Where are files stored on disk? | [Folder Layout](data-management/folder-layout.md) |
+| How do I lay out a dataset (examples, gold, multiple annotations)? | [Dataset Layout (Authoring Guide)](data-management/datasets.md) |
 | How do I list all Claude sessions? | [Scan and Discovery](data-management/scan-and-discovery.md) |
 | How do I search records by text? | [Record Search](data-management/record-search.md) |
 | How do I find all entities under a filesystem folder? | `Entity.assets_by_path(PathQueryOptions)` / `GET /api/v1/assets/by-path`. See [Record Model](data-management/record-model.md#asset_ref-and-folder-queries). |

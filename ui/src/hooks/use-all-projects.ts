@@ -1,5 +1,5 @@
 import { type ProjectListItem } from '@sdk';
-import { useClaudeProjectList } from './use-claude-projects';
+import { useProjectList } from './use-claude-projects';
 
 interface UseAllProjectsOptions {
   /** When false, the underlying scan is skipped. */
@@ -16,7 +16,8 @@ interface UseAllProjectsOptions {
  *
  *   1. Claude scan   (~/.claude/projects/<encoded>/)
  *   2. Codex scan    (~/.codex/config.toml + rollout JSONLs)
- *   3. Project entity table (flowpad-registered projects)
+ *   3. Copilot scan  (~/.copilot/session-state workspace files)
+ *   4. Project entity table (flowpad-registered projects)
  *
  * deduped by canonical posix cwd. No client-side merge needed anymore —
  * previous versions of this hook unioned three separate sources because the
@@ -26,7 +27,7 @@ export function useAllProjects({
   enabled = true,
   includeSystem = false,
 }: UseAllProjectsOptions = {}) {
-  const { projects, isLoading } = useClaudeProjectList({ enabled });
+  const { projects, isLoading } = useProjectList({ enabled });
   const filtered: ProjectListItem[] = includeSystem
     ? projects
     : projects.filter((p) => !(p as ProjectListItem & { system?: boolean }).system);

@@ -4,9 +4,26 @@ import logging
 from datetime import datetime
 from typing import ClassVar, List, Optional, TYPE_CHECKING
 
+from flow_sdk._compat import StrEnum  # 3.10-safe StrEnum (project pins py3.10)
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.core import Entity
 from flow_sdk.db.drivers.db_base_record import TypeId
+
+
+class ConversationKind(StrEnum):
+    """How a conversation should be interpreted across the UI/hub.
+
+    ``DIRECT`` is the default 1:1 / group conversation. ``COMMUNITY`` marks a
+    support-center "ticket": a guest opens it against the canonical community
+    project, staff pick it up from a shared pool, and replies are displayed
+    under the project's single ``community.display_name`` identity rather than
+    the individual responder (see ``Project.community``). This field is
+    **hub-authoritative** — it is stamped by ``Project.start_guest_conversation``
+    and must never be honored from a client-supplied payload (anti-spoof).
+    """
+
+    DIRECT = "direct"
+    COMMUNITY = "community"
 
 if TYPE_CHECKING:  # pragma: no cover
     from flow_sdk.cloud_client.client import FlowpadClient
@@ -62,6 +79,12 @@ class Conversation(Entity):
 
     type: str = APIField(default="conversation")
     title: Optional[str] = APIField(default=None)
+    # Conversation interpretation. ``direct`` (default) is a normal 1:1/group
+    # conversation; ``community`` marks a support-center ticket whose responder
+    # identity is masked behind ``Project.community.display_name``. Stamped by
+    # the hub's ``Project.start_guest_conversation`` — never trusted from a
+    # client payload. See ``ConversationKind``.
+    kind: ConversationKind = APIField(default=ConversationKind.DIRECT)
     # Hub-side owner of the conversation (mirrors ``Conversation.initiated_by``
     # on the hub). Populated by ``_upsert_hub_conversation_metadata`` and used
     # by ``handle_conversation_delete_archived`` to classify each archived
@@ -243,6 +266,8 @@ class Conversation(Entity):
         flow_message_id: Optional[str] = None,
         attachments: Optional[list] = None,
         shared_context_entities: Optional[list] = None,
+        cloned_from_id: Optional[str] = None,
+        cloned_from_sender_id: Optional[str] = None,
     ) -> dict:
         """Append a FlowMessage to this conversation on the hub.
 
@@ -288,6 +313,12 @@ class Conversation(Entity):
             ]
         if shared_context_entities:
             body["shared_context_entities"] = shared_context_entities
+        # Forward provenance — mirrored on the hub FlowMessage schema so it
+        # survives validation and fans out to receivers.
+        if cloned_from_id:
+            body["cloned_from_id"] = cloned_from_id
+        if cloned_from_sender_id:
+            body["cloned_from_sender_id"] = cloned_from_sender_id
         body["conversation_id"] = self.id
         path = build_hub_url(self, action="add_message")
         async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:

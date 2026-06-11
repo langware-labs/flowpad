@@ -23,6 +23,14 @@ File format (JSONL, one JSON value per line):
 
 Legacy files (raw bytes, pre-framing) are detected by a non-``{`` first byte
 and surfaced as a single output frame with an unknown (``None``) size.
+Pre-upgrade-path builds appended framed lines onto such legacy files without
+a header ("chimera" files: raw prefix + framed tail), which the first-byte
+sniff tainted as v0 forever — permanently disabling replay for that shell.
+Both sides now recover: ``read_frames`` salvages the contiguous framed tail
+(from its first resize frame, where size becomes known), and the writer
+upgrades a legacy file in place before its first append so new frames land
+in a proper v1 file. The raw legacy prefix is dropped on upgrade — it has no
+recorded size, so it was never replayable (the frontend skips v0 streams).
 
 Output frames are written from the PTY read thread; resize frames from the
 event loop. A small lock keeps concurrent appends from tearing lines.
@@ -93,6 +101,8 @@ class PtyStreamFile:
             if self._size is None:
                 self._path.parent.mkdir(parents=True, exist_ok=True)
                 self._size = self._path.stat().st_size if self._path.exists() else 0
+                if self._size:
+                    self._upgrade_legacy_in_place()
             payload = (line + "\n").encode()
             if self._size == 0:
                 payload = (
@@ -104,6 +114,72 @@ class PtyStreamFile:
 
             if self._size > self._max_size_bytes:
                 self._truncate_front()
+
+    def _upgrade_legacy_in_place(self) -> None:
+        """One-time rewrite of a pre-framing (or chimera) file to framed v1.
+
+        Runs before the first append of this instance, so framed frames never
+        land headerless on a legacy file (the chimera that taints the whole
+        file as v0 and disables replay). A salvageable framed tail (appended
+        by a pre-upgrade-path build) is retained; the raw legacy prefix is
+        dropped — without a recorded size it was never replayable anyway.
+        Called under ``self._lock`` with ``self._size`` freshly stat'ed.
+        """
+        with open(self._path, "rb") as f:
+            if f.read(1) == b"{":
+                return  # already framed
+        raw = self._path.read_bytes()
+        salvaged = self._salvage_framed_tail(raw)
+        if salvaged is not None:
+            events, (cols, rows) = salvaged
+            body = b"".join(json.dumps(e).encode() + b"\n" for e in events)
+        else:
+            events, (cols, rows), body = [], (self._cols, self._rows), b""
+        new_raw = json.dumps({"v": 1, "cols": cols, "rows": rows}).encode() + b"\n" + body
+        self._path.write_bytes(new_raw)
+        self._size = len(new_raw)
+
+    @staticmethod
+    def _salvage_framed_tail(raw: bytes) -> tuple[list, tuple[int, int]] | None:
+        """Recover the contiguous framed suffix of a legacy-prefixed file.
+
+        Pre-upgrade-path builds appended framed JSONL lines onto raw legacy
+        files. Walk lines from the END while they parse as frames (the framed
+        tail is a contiguous suffix; raw bytes at the boundary fail to parse),
+        then retain from the first resize frame onward — output before it has
+        no known winsize, and replaying at a guessed width garbles. Returns
+        ``(events, (cols, rows) at the first retained frame)`` or ``None``
+        when nothing faithfully replayable is recoverable.
+        """
+        lines = raw.split(b"\n")
+        frames: list = []
+        skipped_torn = False
+        for line in reversed(lines):
+            if not line:
+                if frames:
+                    break  # blank line inside raw region — stop
+                continue  # trailing split artifact
+            try:
+                frame = json.loads(line)
+            except ValueError:
+                # Tolerate one torn final line (crash mid-append), same as
+                # the framed reader; any earlier parse failure is raw bytes.
+                if frames or skipped_torn:
+                    break
+                skipped_torn = True
+                continue
+            if not (isinstance(frame, list) and len(frame) in (2, 3) and frame[0] in ("o", "r")):
+                break
+            frames.append(frame)
+        frames.reverse()
+        for i, frame in enumerate(frames):
+            if frame[0] == "r":
+                try:
+                    cols, rows = int(frame[1][0]), int(frame[1][1])
+                except (TypeError, ValueError, IndexError):
+                    continue
+                return frames[i:], (cols, rows)
+        return None  # no resize frame — size unknown for the whole tail
 
     def _truncate_front(self) -> None:
         """Drop whole frames from the front until under the compaction target.
@@ -143,7 +219,9 @@ class PtyStreamFile:
 
         ``events`` is a list of ``["o", b64]`` / ``["r", [cols, rows]]`` frames.
         Legacy raw files are surfaced as v0 with a single output frame and
-        ``cols``/``rows`` of None (size unknown — recorded before framing).
+        ``cols``/``rows`` of None (size unknown — recorded before framing) —
+        unless a framed tail appended by a pre-upgrade-path build can be
+        salvaged, in which case that tail is surfaced as v1 (replayable).
         A torn final line (crash mid-write) is dropped silently.
         """
         if not self._path.exists():
@@ -152,7 +230,12 @@ class PtyStreamFile:
         if not raw:
             return None
         if raw[:1] != b"{":
-            # Legacy raw-bytes file from before the framed format.
+            # Legacy raw-bytes file from before the framed format. Chimera
+            # files (raw prefix + headerless framed tail) yield their tail.
+            salvaged = self._salvage_framed_tail(raw)
+            if salvaged is not None:
+                events, (cols, rows) = salvaged
+                return {"v": 1, "cols": cols, "rows": rows, "events": events}
             return {
                 "v": 0,
                 "cols": None,

@@ -36,7 +36,6 @@ from .base_settings import (
 from .dev_settings import DevInstanceSettings
 from .test_settings import TestInstanceSettings
 
-
 ENV_FLOW_INSTANCE = "FLOW_INSTANCE"
 ENV_FLOWPAD_DEV = "FLOWPAD_DEV"
 ENV_FLOWPAD_TEST = "FLOWPAD_TEST"

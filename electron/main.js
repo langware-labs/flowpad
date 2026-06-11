@@ -184,7 +184,8 @@ const BACKEND_PORT = 9007;
 const BACKEND_URL = `http://localhost:${BACKEND_PORT}`;
 const FLOWPAD_CLOUD_URL = process.env.FLOWPAD_CLOUD_URL || 'https://app.flowpad.ai';
 const HEALTH_CHECK_INTERVAL = 500; // ms
-const MAX_HEALTH_CHECKS = 60; // 30 seconds max wait
+const MAX_HEALTH_CHECKS = 180; // 90 seconds — cold-start window
+const POST_UPGRADE_HEALTH_CHECKS = 240; // 120 seconds — matches uv upgrade() ceiling
 
 let mainWindow = null;
 let uvManager = null;
@@ -196,7 +197,7 @@ let pendingDeepLink = null;
 function isStartupOnlyDeepLink(url) {
   try {
     const parsed = new URL(url);
-    return parsed.protocol === 'flowpad:' && ['__probe', '__launch'].includes(parsed.hostname);
+    return parsed.protocol === 'flowpad:' && ['__probe', '__launch'].includes((parsed.hostname || '').toLowerCase());
   } catch {
     return false;
   }
@@ -289,6 +290,36 @@ function createWindow() {
     backgroundColor: '#1e1e1e',
   });
 
+  // Mouse back/forward (X1/X2) buttons. Electron does not map these to history
+  // navigation, so we wire them up — and the OS surfaces them differently per
+  // platform, so we listen per platform (one source each, no double-navigation).
+  const nav = () => mainWindow.webContents.navigationHistory;
+  const goBack = () => { if (nav().canGoBack()) nav().goBack(); };
+  const goForward = () => { if (nav().canGoForward()) nav().goForward(); };
+
+  if (process.platform === 'darwin') {
+    // macOS surfaces the buttons two ways and never reaches the renderer:
+    //  - a raw mouse `input-event` (button 'back'/'forward'); and
+    //  - with drivers like Logitech Options / Options+ (or the trackpad), a
+    //    `swipe` GESTURE — left = back, right = forward — and ONLY a swipe, no
+    //    mouse button / app-command (confirmed by event capture). Handle both.
+    mainWindow.webContents.on('input-event', (_e, input) => {
+      if (input.type !== 'mouseDown') return;
+      if (input.button === 'back') goBack();
+      else if (input.button === 'forward') goForward();
+    });
+    mainWindow.on('swipe', (_e, direction) => {
+      if (direction === 'left') goBack();
+      else if (direction === 'right') goForward();
+    });
+  } else {
+    // Windows/Linux: the buttons arrive as an app-command.
+    mainWindow.webContents.on('app-command', (_e, command) => {
+      if (command === 'browser-backward') goBack();
+      else if (command === 'browser-forward') goForward();
+    });
+  }
+
   // Show loading screen first
   mainWindow.loadFile(path.join(__dirname, 'loading.html'));
   mainWindow.once('ready-to-show', () => {
@@ -321,10 +352,11 @@ function createWindow() {
   return mainWindow;
 }
 
-async function waitForBackend() {
-  log.info(`Waiting for backend at ${BACKEND_URL}...`);
+async function waitForBackend({ maxChecks = MAX_HEALTH_CHECKS } = {}) {
+  const timeoutSec = Math.round((maxChecks * HEALTH_CHECK_INTERVAL) / 1000);
+  log.info(`Waiting for backend at ${BACKEND_URL} (up to ${timeoutSec}s)...`);
 
-  for (let i = 0; i < MAX_HEALTH_CHECKS; i++) {
+  for (let i = 0; i < maxChecks; i++) {
     try {
       const response = await fetch(`${BACKEND_URL}/health/status`);
       if (response.ok) {
@@ -337,7 +369,7 @@ async function waitForBackend() {
     await new Promise(resolve => setTimeout(resolve, HEALTH_CHECK_INTERVAL));
   }
 
-  log.error('Backend failed to start within timeout');
+  log.error(`Backend failed to start within ${timeoutSec}s timeout`);
   return false;
 }
 
@@ -361,6 +393,8 @@ async function startApp() {
 
   // In development mode, assume backend is running externally
   const isDev = process.env.MINIHUB_DEV === 'true';
+
+  let backendJustUpgraded = false;
 
   if (isDev) {
     log.info('Development mode: expecting backend to be running externally');
@@ -396,13 +430,31 @@ async function startApp() {
             sendStatus('Updating Flowpad to latest');
             await uvManager.upgrade();
             activeBin = uvManager.getInstalledFlowBin() || flowBin;
+            backendJustUpgraded = true;
           }
         }
 
         const version = uvManager.getInstalledVersionSync(activeBin);
         const versionSuffix = version ? ` v${version}` : '';
         sendStatus(`Starting flowpad${versionSuffix}`);
-        await uvManager.startWithBin(activeBin);
+        try {
+          await uvManager.startWithBin(activeBin);
+        } catch (startErr) {
+          // A shim exists on disk (so we took the fast path), but its env can't
+          // import flow_sdk — a corrupt/half-finished install. Without this the
+          // app would crash on the same broken shim every launch and never
+          // self-heal (a --force reinstall only runs in the first-time branch).
+          // Repair once and retry; if it still fails, fall through to the dialog.
+          if (!uvManager.isBrokenInstallError(startErr)) throw startErr;
+          log.warn('Detected broken flow install (cannot import flow_sdk); reinstalling…');
+          sendStatus('Repairing Flowpad installation');
+          await uvManager.ensureUv();
+          await uvManager.reinstall();
+          backendJustUpgraded = true;
+          const repairedVersion = uvManager.getInstalledVersionSync();
+          sendStatus(`Starting flowpad${repairedVersion ? ` v${repairedVersion}` : ''}`);
+          await uvManager.start();
+        }
       } else {
         // FIRST-TIME SETUP: uv tool install flowpad (latest)
         log.info('First-time setup: flow binary not found, installing latest from PyPI');
@@ -413,6 +465,7 @@ async function startApp() {
 
         sendStatus('Installing Flowpad');
         await uvManager.installLatest();
+        backendJustUpgraded = true;
 
         const version = uvManager.getInstalledVersionSync();
         const versionSuffix = version ? ` v${version}` : '';
@@ -445,13 +498,21 @@ async function startApp() {
     }
   }
 
-  // Wait for backend to be ready
+  // Wait for backend to be ready. After an install/upgrade the freshly
+  // unpacked Python env takes substantially longer to import on first boot
+  // (PyPI fetch + bytecode warm-up + AV scan on Windows), so widen the
+  // window when we know we just ran uv install/upgrade.
   sendStatus('Waiting for server');
-  const backendReady = await waitForBackend();
+  const waitOpts = backendJustUpgraded ? { maxChecks: POST_UPGRADE_HEALTH_CHECKS } : undefined;
+  const backendReady = await waitForBackend(waitOpts);
 
   if (!backendReady) {
     // Try to gather diagnostics for the error dialog
-    let detail = 'Backend server failed to respond within 30 seconds.';
+    const timeoutSec = Math.round(
+      ((backendJustUpgraded ? POST_UPGRADE_HEALTH_CHECKS : MAX_HEALTH_CHECKS) *
+        HEALTH_CHECK_INTERVAL) / 1000,
+    );
+    let detail = `Backend server failed to respond within ${timeoutSec} seconds.`;
     try {
       const newest = getNewestLogFile(path.join(INSTANCE_LOGS_BASE, 'monitor'));
       if (newest) {
@@ -714,7 +775,7 @@ ipcMain.handle('upgrade-flowpad', async () => {
     await uvManager.start();
 
     sendStatus('Waiting for server');
-    const ready = await waitForBackend();
+    const ready = await waitForBackend({ maxChecks: POST_UPGRADE_HEALTH_CHECKS });
 
     if (ready && mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.loadURL(BACKEND_URL);

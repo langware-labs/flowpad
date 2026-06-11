@@ -37,7 +37,25 @@ class TypeMetadata:
     index_fields: list[str] = field(default_factory=list)
     main_subdir: str | None = None
     main_layout: str = "file"
+    # Folder-layout types: inner filename of the primary asset (e.g. "spec.md"
+    # under specs/<name>/, "SKILL.md" under .claude/skills/<name>/). See
+    # TypeInfo.main_file.
+    main_file: str | None = None
+    # Folder-layout types only: does ``asset_ref`` point at the inner ``main_file``
+    # (True — e.g. spec, whose indexer emits ``spec.md``) or at the containing
+    # folder (False — e.g. skill, whose indexer emits the folder and whose
+    # frontend resolves ``<folder>/SKILL.md`` itself)? When False, the default
+    # body is materialized into ``<folder>/main_file`` while asset_ref stays the
+    # folder. Ignored for ``main_layout == "file"``.
+    main_file_is_asset_ref: bool = False
     parent_type: str | None = None
+    # True ⇒ sharing an entity of this type automatically includes its parent
+    # (``parent_type_id``) in the outgoing ``shared_context_entities``, and the
+    # receive path materializes the parent first (see
+    # ``Entity.materialize_share_parent``). Only safe when the parent type is
+    # deterministic/field-frozen (e.g. ``git_remote``) — a mutable parent would
+    # reintroduce cross-sender ownership conflicts.
+    parent_share_on_default: bool = False
     # Indexer dispatch callables (walked types only).
     from_disk_fn: Any = None
     gen_id_fn: Any = None
@@ -69,7 +87,10 @@ class TypeMetadata:
             index_fields=list(self.index_fields),
             main_subdir=self.main_subdir,
             main_layout=self.main_layout,
+            main_file=self.main_file,
+            main_file_is_asset_ref=self.main_file_is_asset_ref,
             parent_type=self.parent_type,
+            parent_share_on_default=self.parent_share_on_default,
             from_disk_fn=self.from_disk_fn,
             gen_id_fn=self.gen_id_fn,
             asset_hash_fn=self.asset_hash_fn,

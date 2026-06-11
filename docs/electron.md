@@ -88,6 +88,17 @@ pyproject.toml                      # Python package config (published to PyPI a
 4. App exits
 ```
 
+### Sleep / wake (known follow-up)
+
+There is currently **no `powerMonitor` (`suspend`/`resume`) hook** wiring system
+sleep/wake to the renderer. It isn't needed for the common case: on wake the app
+WebSocket reconnects and the backend's connection-membership FSM resumes PTY
+delivery on its own (`PtyRegistry.on_ws_connect`; see
+`docs/agent-management/pty-websocket.md`). The one remaining edge — a socket that
+goes *half-open* on wake and never fires a reconnect — is deferred; closing it
+needs an app-level heartbeat or a `powerMonitor 'resume'` → renderer hook that
+forces a socket reconnect.
+
 ## Core Files
 
 ### main.js — Electron Main Process
@@ -119,6 +130,17 @@ MAX_HEALTH_CHECKS = 60        // 30 seconds max wait
 | `open-external` | `void`                    | Open URL in system browser |
 
 **Dev mode:** Set `MINIHUB_DEV=true` to skip backend installation/spawning and assume it runs externally (e.g., `python -m server.run`).
+
+**Mouse back/forward (X1/X2) buttons** — Electron does not map these to history navigation, and the OS surfaces them **differently per platform**, so `createWindow()` listens per-platform and funnels into shared `goBack()`/`goForward()` (which call `webContents.navigationHistory`):
+
+| Platform | Event(s) that fire | Notes |
+|----------|--------------------|-------|
+| **Windows / Linux** | `webContents` `app-command` → `browser-backward` / `browser-forward` | The standard path. `app-command` does **not** fire on macOS. |
+| **macOS** | `webContents` `input-event` (`button: 'back'/'forward'`) **and** the `BrowserWindow` `swipe` event (`'left'` = back, `'right'` = forward) | The press never reaches the renderer as a DOM `mouseup`. |
+
+> **macOS gotcha (hard-won):** with mouse-driver software — notably **Logitech Options / Options+** — and with the trackpad, the back/forward buttons are delivered **only** as a macOS `swipe` gesture. They do **not** arrive as a mouse button, `app-command`, DOM `mouseup` button 3/4, or keystroke. So a handler that only listens for mouse buttons silently does nothing for a large fraction of macOS users. Always also handle `mainWindow.on('swipe', …)`. (Verified by capturing every event layer with a standalone Electron tester — `Input.dispatchMouseEvent` over CDP is **not** a faithful repro: it injects a Chromium web-layer event that real macOS hardware never triggers.)
+
+The renderer (`ui/src/main.tsx`) additionally binds `mouseup` button 3/4 → `window.history.back/forward()` for mice that *do* deliver standard buttons; this is dormant for the swipe path.
 
 ### preload.js — IPC Security Bridge
 

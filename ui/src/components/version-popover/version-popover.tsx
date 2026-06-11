@@ -1,6 +1,8 @@
 import { MarkdownView } from '@src/components/markdown-view';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@src/components/ui/collapsible';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
+import { Button } from '@src/components/ui/button';
+import { DiagnoseModal } from '@src/components/version-popover/diagnose-modal';
 import { sdkConfig } from '@sdk/config/index';
 import {
   Check,
@@ -10,6 +12,7 @@ import {
   ExternalLink,
   Loader2,
   RefreshCw,
+  Stethoscope,
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
@@ -30,6 +33,8 @@ interface ReleaseInfo {
 
 interface HubInfo {
   version: string | null;
+  deployed_at?: string | null;
+  generated_at?: string | null;
 }
 
 interface VersionCheckResponse {
@@ -61,6 +66,49 @@ function formatDate(iso: string | null | undefined): string | null {
   }
 }
 
+function parseDate(iso: string | null | undefined): Date | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+function formatDateTime(iso: string | null | undefined): string | null {
+  const d = parseDate(iso);
+  if (!d) return null;
+  return d.toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+function formatAge(iso: string | null | undefined): string | null {
+  const d = parseDate(iso);
+  if (!d) return null;
+  const ms = Date.now() - d.getTime();
+  if (ms <= 0) return 'just now';
+  const seconds = Math.floor(ms / 1000);
+  if (seconds < 60) return 'just now';
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months}mo ago`;
+  return `${Math.floor(months / 12)}y ago`;
+}
+
+function formatDateWithAge(iso: string | null | undefined, includeTime = false): string | null {
+  const exact = includeTime ? formatDateTime(iso) : formatDate(iso);
+  const age = formatAge(iso);
+  if (exact && age) return `${exact} (${age})`;
+  return exact ?? age;
+}
+
 function findReleaseByTag(releases: ReleaseInfo[], tag: string | null | undefined): ReleaseInfo | null {
   if (!tag) return null;
   const norm = tag.replace(/^v/i, '');
@@ -79,14 +127,36 @@ function VersionRow({ label, version, date, badge, muted }: VersionRowProps) {
   return (
     <div className="flex items-baseline justify-between gap-2 text-xs">
       <span className="text-muted-foreground">{label}</span>
-      <span className={`flex items-center gap-2 font-mono ${muted ? 'text-muted-foreground' : ''}`}>
-        <span>{version ? `v${version}` : '—'}</span>
+      <span
+        className={`flex min-w-0 flex-wrap items-baseline justify-end gap-x-2 gap-y-0.5 text-right font-mono ${muted ? 'text-muted-foreground' : ''}`}
+      >
+        <span className="shrink-0">{version ? `v${version}` : '—'}</span>
         {date && <span className="text-[10px] text-muted-foreground">{date}</span>}
         {badge && (
           <span className="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
             {badge}
           </span>
         )}
+      </span>
+    </div>
+  );
+}
+
+interface TimestampRowProps {
+  label: string;
+  timestamp?: string | null;
+}
+
+function TimestampRow({ label, timestamp }: TimestampRowProps) {
+  const value = formatDateWithAge(timestamp, true) ?? '—';
+  return (
+    <div className="flex items-baseline justify-between gap-2 text-xs">
+      <span className="text-muted-foreground">{label}</span>
+      <span
+        className="max-w-[270px] text-right font-mono text-[10px] text-muted-foreground"
+        title={timestamp ?? undefined}
+      >
+        {value}
       </span>
     </div>
   );
@@ -107,7 +177,7 @@ function ReleaseNotes({ title, release, defaultOpen = false }: ReleaseNotesProps
         {open ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
         <span>{title}</span>
       </CollapsibleTrigger>
-      <CollapsibleContent className="mt-1 max-h-48 overflow-y-auto rounded-sm border bg-muted/30 px-2 py-1.5 text-[11px] leading-relaxed [&_h1]:!my-1 [&_h1]:!text-[12px] [&_h1]:!font-semibold [&_h1]:!border-0 [&_h1]:!pb-0 [&_h2]:!my-1 [&_h2]:!text-[12px] [&_h2]:!font-semibold [&_h2]:!border-0 [&_h2]:!pb-0 [&_h3]:!my-1 [&_h3]:!text-[11px] [&_h3]:!font-semibold [&_p]:!my-1 [&_p]:!text-[11px] [&_p]:!leading-snug [&_ul]:!my-1 [&_ul]:!pl-4 [&_ol]:!my-1 [&_ol]:!pl-4 [&_li]:!text-[11px] [&_li]:!leading-snug [&_table]:!text-[10px] [&_pre]:!text-[10px] [&_code]:!text-[10px]">
+      <CollapsibleContent className="mt-1 max-h-48 overflow-y-auto rounded-sm border bg-muted/30 px-2 py-1.5 text-[11px] leading-relaxed [&_code]:!text-[10px] [&_h1]:!my-1 [&_h1]:!border-0 [&_h1]:!pb-0 [&_h1]:!text-[12px] [&_h1]:!font-semibold [&_h2]:!my-1 [&_h2]:!border-0 [&_h2]:!pb-0 [&_h2]:!text-[12px] [&_h2]:!font-semibold [&_h3]:!my-1 [&_h3]:!text-[11px] [&_h3]:!font-semibold [&_li]:!text-[11px] [&_li]:!leading-snug [&_ol]:!my-1 [&_ol]:!pl-4 [&_p]:!my-1 [&_p]:!text-[11px] [&_p]:!leading-snug [&_pre]:!text-[10px] [&_table]:!text-[10px] [&_ul]:!my-1 [&_ul]:!pl-4">
         <MarkdownView value={release.body} compact />
       </CollapsibleContent>
     </Collapsible>
@@ -128,7 +198,7 @@ function CopyableCommand({ command }: { command: string }) {
   return (
     <button
       type="button"
-      onClick={handleCopy}
+      onClick={() => void handleCopy()}
       className="flex w-full items-center justify-between gap-2 rounded-md border bg-muted/30 px-2 py-1.5 font-mono text-[11px] transition-colors hover:bg-muted"
       title="Copy to clipboard"
     >
@@ -149,6 +219,7 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
   const [error, setError] = useState<string | null>(null);
   const [electronVersion, setElectronVersion] = useState<string | null>(null);
   const [upgrading, setUpgrading] = useState(false);
+  const [diagnoseOpen, setDiagnoseOpen] = useState(false);
 
   const electronApi = getElectronApi();
   const mode: 'Desktop' | 'Browser' = electronApi ? 'Desktop' : 'Browser';
@@ -211,17 +282,19 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
   );
 
   const pypi = data?.pypi;
-  const releases = data?.releases ?? [];
   const githubLatest = data?.latest_release ?? null;
 
-  const { pypiCurrentRelease, pypiLatestRelease, electronCurrentRelease, githubUpdateAvailable } = useMemo(() => ({
-    pypiCurrentRelease: findReleaseByTag(releases, currentVersion),
-    pypiLatestRelease: pypi?.latest ? findReleaseByTag(releases, pypi.latest) : null,
-    electronCurrentRelease: findReleaseByTag(releases, electronVersion),
-    githubUpdateAvailable: Boolean(
-      electronVersion && githubLatest && electronVersion.replace(/^v/i, '') !== githubLatest.tag,
-    ),
-  }), [releases, currentVersion, pypi?.latest, electronVersion, githubLatest]);
+  const { pypiCurrentRelease, pypiLatestRelease, electronCurrentRelease, githubUpdateAvailable } = useMemo(() => {
+    const releases = data?.releases ?? [];
+    return {
+      pypiCurrentRelease: findReleaseByTag(releases, currentVersion),
+      pypiLatestRelease: pypi?.latest ? findReleaseByTag(releases, pypi.latest) : null,
+      electronCurrentRelease: findReleaseByTag(releases, electronVersion),
+      githubUpdateAvailable: Boolean(
+        electronVersion && githubLatest && electronVersion.replace(/^v/i, '') !== githubLatest.tag,
+      ),
+    };
+  }, [data?.releases, currentVersion, pypi?.latest, electronVersion, githubLatest]);
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -270,9 +343,7 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
           {/* Python / PyPI section */}
           <section className="space-y-1.5">
             <div className="flex items-center justify-between">
-              <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Python (flow SDK)
-              </h4>
+              <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Python (flow SDK)</h4>
               {pypi?.error && (
                 <span className="text-[10px] text-muted-foreground" title={pypi.error}>
                   PyPI unavailable
@@ -282,12 +353,12 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
             <VersionRow
               label="Installed"
               version={currentVersion}
-              date={formatDate(pypiCurrentRelease?.published_at)}
+              date={formatDateWithAge(pypiCurrentRelease?.published_at)}
             />
             <VersionRow
               label="Latest on PyPI"
               version={pypi?.latest ?? null}
-              date={formatDate(pypiLatestRelease?.published_at)}
+              date={formatDateWithAge(pypiLatestRelease?.published_at)}
               badge={pypi?.update_available ? 'Update available' : null}
               muted={!pypi?.update_available}
             />
@@ -297,18 +368,14 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
               defaultOpen={!pypi?.update_available}
             />
             {pypi?.update_available && pypiLatestRelease && (
-              <ReleaseNotes
-                title={`Notes for v${pypi.latest}`}
-                release={pypiLatestRelease}
-                defaultOpen={true}
-              />
+              <ReleaseNotes title={`Notes for v${pypi.latest}`} release={pypiLatestRelease} defaultOpen={true} />
             )}
             {pypi?.update_available && (
               <div className="pt-1">
                 {electronApi?.upgradeFlowpad ? (
                   <button
                     type="button"
-                    onClick={handleUpgrade}
+                    onClick={() => void handleUpgrade()}
                     disabled={upgrading}
                     className="flex w-full items-center justify-center gap-2 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-60"
                   >
@@ -338,9 +405,7 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
           {/* Desktop / GitHub section */}
           <section className="space-y-1.5">
             <div className="flex items-center justify-between">
-              <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Desktop version
-              </h4>
+              <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Desktop version</h4>
               {data?.github_error && (
                 <span className="text-[10px] text-muted-foreground" title={data.github_error}>
                   GitHub unavailable
@@ -350,13 +415,13 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
             <VersionRow
               label="Installed"
               version={electronVersion}
-              date={formatDate(electronCurrentRelease?.published_at)}
+              date={formatDateWithAge(electronCurrentRelease?.published_at)}
               muted={!electronVersion}
             />
             <VersionRow
               label="Latest on GitHub"
               version={githubLatest?.tag ?? null}
-              date={formatDate(githubLatest?.published_at)}
+              date={formatDateWithAge(githubLatest?.published_at)}
               badge={githubUpdateAvailable ? 'Update available' : null}
               muted={!githubUpdateAvailable}
             />
@@ -389,19 +454,37 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
             )}
           </section>
 
-          {data?.hub?.version && (
+          {data?.hub && (
             <>
               <div className="border-t" />
               <section className="space-y-1.5">
-                <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  Cloud hub
-                </h4>
+                <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Cloud hub</h4>
                 <VersionRow label="Hub" version={data.hub.version} />
+                <TimestampRow label="Deployed" timestamp={data.hub.deployed_at} />
+                <TimestampRow label="Generated" timestamp={data.hub.generated_at} />
               </section>
             </>
           )}
+
+          {/* Toolbar */}
+          <div className="-mx-3 -mb-3 mt-1 border-t px-3 pb-1 pt-2.5">
+            <Button
+              type="button"
+              size="sm"
+              className="w-full"
+              onClick={() => {
+                setOpen(false);
+                setDiagnoseOpen(true);
+              }}
+              title="Diagnose a Flowpad issue"
+            >
+              <Stethoscope />
+              <span>Diagnose</span>
+            </Button>
+          </div>
         </div>
       </PopoverContent>
+      <DiagnoseModal open={diagnoseOpen} onClose={() => setDiagnoseOpen(false)} />
     </Popover>
   );
 }

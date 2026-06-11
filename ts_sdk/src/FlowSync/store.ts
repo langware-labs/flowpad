@@ -52,6 +52,15 @@ class EntityRef<T> {
   status: EntityStatus = EntityStatus.NA;
   error: ApiError | null = null;
   entity: T | null = null;
+  /**
+   * Terminal "the backend 404'd this id" marker. Set when a by-typeid GET
+   * returns 404 so the read path can short-circuit subsequent fetches instead
+   * of re-hitting the network on every re-subscribe (the dangling
+   * context-entity-chip 404 loop). Cleared whenever the ref is dropped via
+   * ``invalidateCacheByTypeId`` / ``removeEntityFromCache`` (a later WS arrival
+   * or an explicit re-resolve), so a since-materialized entity self-heals.
+   */
+  notFound: boolean = false;
   entityPendingPromises: PendingPromise<T>[] = [];
   pendingUpdate: any = null;
 
@@ -684,6 +693,16 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     return null;
   }
 
+  /**
+   * True when a prior by-typeid GET proved this id is a 404 (the entity has no
+   * local row). Lets the react hooks render a terminal "unavailable" state and
+   * stop re-fetching, rather than looping on the dangling reference. Reset when
+   * the ref is dropped via invalidate/remove.
+   */
+  public isNotFound(typeId: TypeId): boolean {
+    return this.entities.get(typeId)?.notFound === true;
+  }
+
   public invalidateCacheByTypeId(typeId: TypeId): void {
     this._deleteWithAliases(typeId);
   }
@@ -803,6 +822,13 @@ export class DataManager<T extends Manageable> extends EventEmitter {
         return cachedEntity;
       }
     }
+    // A prior fetch already proved this id is a 404. Don't re-hit the network on
+    // every re-subscribe — return the cached "gone" result. The ref is dropped
+    // (and this flag cleared) by invalidate/remove when the entity may exist
+    // again, so this self-heals.
+    if (ref.notFound) {
+      return null;
+    }
     if (ref?.status === EntityStatus.FETCHING) {
       const entity = await this.waitForTypeId(typeId);
       if (entity && entity.isExpanded(requiredExpansions)) {
@@ -826,8 +852,18 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       // failure: return null quietly (the signature already allows it) instead
       // of logging a console error and throwing. Mirrors the 404→null pattern
       // used by compute-node/agentic-process/shell entity loaders.
-      if (isApiError(error) && error.response?.status === 404) {
+      //
+      // Detect the 404 by HTTP status DIRECTLY — not via ``isApiError``, which
+      // additionally requires the body to carry the ``{status:'FAIL'}`` envelope.
+      // The graph endpoint's 404 is a plain FastAPI ``HTTPException`` with no
+      // such envelope, so gating on ``isApiError`` let real 404s fall through to
+      // the throw below, spamming the console and defeating the negative cache.
+      const httpStatus =
+        (error as { response?: { status?: number }; status?: number })?.response?.status ??
+        (error as { status?: number })?.status;
+      if (httpStatus === 404) {
         ref.status = EntityStatus.ERROR;
+        ref.notFound = true;
         return null;
       }
       console.error(`store.ts:Error fetching entity by type ID: ${typeId.toString()}`, error);

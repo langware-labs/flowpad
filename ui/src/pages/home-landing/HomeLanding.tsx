@@ -15,8 +15,10 @@ import { useAnnotations } from '@src/hooks/use-annotations';
 import { useProjectBookmarks } from '@src/hooks/use-project-bookmarks';
 import { useProjectTasks } from '@src/hooks/use-project-tasks';
 import { useTaskMutations } from '@src/hooks/use-task-mutations';
-import { useClaudeProjectList } from '@src/hooks/use-claude-projects';
+import { useProjectList } from '@src/hooks/use-claude-projects';
+import { useGlobalSearchScope } from '@src/hooks/use-global-search-scope';
 import { useSnifferContext } from '@src/contexts/SnifferContext';
+import { AdvancedOnly } from '@src/components/view-mode';
 import { useCollaborationRooms } from '@src/hooks/useCollaborationRooms';
 import { useProjects } from '@src/hooks/use-projects';
 import { useActAccordingToClassification } from '@src/hooks/use-act-according-to-classification';
@@ -30,7 +32,6 @@ import { useSystemTools } from '@src/hooks/use-system-tools';
 import { ActivityIndicator } from '@src/components/search-index/ActivityIndicator';
 import { WelcomeModal } from '@src/components/search-index/WelcomeModal';
 import { NewConversationDialog } from '@src/components/new-conversation-dialog/NewConversationDialog';
-import { JoinConversationDialog } from '@src/components/join-room-dialog/JoinConversationDialog';
 import { CommunityAssistanceDialog } from '@src/components/community-assistance-dialog/CommunityAssistanceDialog';
 import { useLoginRequired } from '@src/hooks/use-login-required';
 import LoginDialog, { ActionType } from '@src/components/login-required-dialog';
@@ -43,11 +44,9 @@ import { SearchFilters, SearchResult } from '@src/hooks/use-record-search';
 import { navigateToResult } from '@src/navigation/record-type-nav';
 import { InlineSearchResults } from './InlineSearchResults';
 import { Feed } from './Feed';
-import { PackageSearch, X, CheckCircle2, Hammer, Inbox, RefreshCw, Users } from 'lucide-react';
+import { PackageSearch, X, CheckCircle2, Hammer, Users } from 'lucide-react';
 import { useInboxStore } from '@src/store/use-inbox-store';
 import { listInboxMessages } from '@src/components/inbox-view/inbox-api';
-import { fetchConversations } from '@sdk';
-import { ViewType } from '@src/types/ViewType';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDevMode } from '@src/contexts/dev-mode-context';
 import type { LastScanResult } from '@sdk';
@@ -130,7 +129,7 @@ export function HomeLanding() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const { projects: claudeProjects, isLoading: isLoadingClaudeProjects } = useClaudeProjectList();
+  const { projects: claudeProjects, isLoading: isLoadingClaudeProjects } = useProjectList();
   const { project: currentProject } = useProject();
   const { events: snifferEvents } = useSnifferContext();
 
@@ -203,7 +202,6 @@ export function HomeLanding() {
 
   const {
     checkLoginAndProceed,
-    requiresLogin,
     showLoginDialog,
     closeLoginDialog,
     pendingAction,
@@ -211,16 +209,11 @@ export function HomeLanding() {
     isPostLogin,
   } = useLoginRequired();
   const [showNewConversation, setShowNewConversation] = useState(false);
-  const [showJoinConversation, setShowJoinConversation] = useState(false);
   const [showCommunityAssistance, setShowCommunityAssistance] = useState(false);
   const [draftPrompt, setDraftPrompt] = useState('');
   const handleStartConversation = () => {
     if (!checkLoginAndProceed(ActionType.START_CONVERSATION, undefined, undefined, { forceLogin: true })) return;
     setShowNewConversation(true);
-  };
-  const handleJoinConversation = () => {
-    if (requiresLogin && !checkLoginAndProceed(ActionType.SEND)) return;
-    setShowJoinConversation(true);
   };
   useEffect(() => {
     if (!isPostLogin || pendingAction?.action !== ActionType.START_CONVERSATION) return;
@@ -228,27 +221,19 @@ export function HomeLanding() {
     clearPending();
   }, [clearPending, isPostLogin, pendingAction?.action]);
 
-  // Inbox state
-  const { unreadCount, setUnreadCount } = useInboxStore();
-  const [inboxRefreshing, setInboxRefreshing] = useState(false);
+  // Inbox unread count — populates the shared store consumed by the sidebar
+  // Inbox badge. The home Inbox row was removed; the Recent conversations strip
+  // (now labelled "Inbox") is the home inbox surface and has its own refresh.
+  const { setUnreadCount } = useInboxStore();
   useEffect(() => {
     void listInboxMessages().then((msgs) => setUnreadCount(msgs.filter((m) => !m.is_read).length));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const handleInboxRefresh = useCallback(async () => {
-    setInboxRefreshing(true);
-    try {
-      await fetchConversations();
-      const msgs = await listInboxMessages();
-      setUnreadCount(msgs.filter((m) => !m.is_read).length);
-    } finally {
-      setInboxRefreshing(false);
-    }
-  }, [setUnreadCount]);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFilters, setSearchFilters] = useState<SearchFilters>({});
   const [selectedResultIndex, setSelectedResultIndex] = useState(-1);
+  const { scope: searchScope, isLoading: searchScopeLoading } = useGlobalSearchScope();
 
   useEffect(() => { setSelectedResultIndex(-1); }, [searchQuery]);
   // Clear post-scan panel when user starts a real search
@@ -506,9 +491,9 @@ export function HomeLanding() {
     <div className="flex h-full flex-col overflow-hidden">
       {/* Top row: UsageBar + Search */}
       <div className="flex shrink-0 items-center gap-2 p-4">
-        <div className="w-72 shrink-0">
+        <AdvancedOnly className="w-72 shrink-0">
           <UsageBar />
-        </div>
+        </AdvancedOnly>
         <div className="flex-1" />
         <div className="relative w-72 shrink-0">
           <RecordSearchBar
@@ -525,6 +510,8 @@ export function HomeLanding() {
               <InlineSearchResults
                 query={searchQuery}
                 filters={searchFilters}
+                scope={searchScope}
+                scopeLoading={searchScopeLoading}
                 selectedIndex={selectedResultIndex}
                 onSelectedIndexChange={setSelectedResultIndex}
                 onOpenFullSearch={handleSearchSubmit}
@@ -537,37 +524,11 @@ export function HomeLanding() {
 
       {/* Main row: Sidebar + Content */}
       <div className="flex min-h-0 flex-1 gap-6 px-4 pb-4">
-        {/* Left column: Inbox header + Bookmarks */}
+        {/* Left column: Bookmarks / Todos */}
         <div className="w-72 shrink-0 flex flex-col gap-2">
-          {/* Inbox icon row — same box model as the Recent conversations strip header so both columns share an invisible top line */}
-          <div className="flex h-9 items-center justify-between rounded-lg border border-transparent px-3">
-            <button
-              className="flex items-center gap-1.5 rounded-md py-1 text-xs font-medium hover:bg-accent transition-colors"
-              onClick={() => navigation.openTab(ViewType.INBOX)}
-            >
-              <div className="relative">
-                <Inbox className="h-3.5 w-3.5 text-muted-foreground" />
-                {unreadCount > 0 && (
-                  <span className="absolute -right-1.5 -top-1.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-destructive px-0.5 text-[8px] font-bold leading-none text-destructive-foreground">
-                    {unreadCount > 99 ? '99+' : unreadCount}
-                  </span>
-                )}
-              </div>
-              <span className="text-muted-foreground hover:text-foreground transition-colors">Inbox</span>
-              {unreadCount > 0 && (
-                <span className="text-muted-foreground">({unreadCount})</span>
-              )}
-            </button>
-            <button
-              type="button"
-              className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
-              onClick={() => void handleInboxRefresh()}
-              disabled={inboxRefreshing}
-              title="Fetch new messages from hub"
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${inboxRefreshing ? 'animate-spin' : ''}`} />
-            </button>
-          </div>
+          {/* Top spacer — mirrors the Inbox strip header height (h-9) so
+              Bookmarks/Todos stay aligned with the Inbox column on the right. */}
+          <div aria-hidden className="h-9 shrink-0" />
 
           <BookmarkColumn
             learningTasks={learningTasks}
@@ -606,23 +567,13 @@ export function HomeLanding() {
                 onSubmit={(msg) => void handleSessionSubmit(msg)}
               />
               <div className="flex w-full flex-wrap items-center gap-2">
-                <div className="flex flex-wrap gap-2">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="border-green-600 text-green-600 hover:bg-green-600 hover:text-white transition-colors shadow-sm"
-                    onClick={handleJoinConversation}
-                  >
-                    Join conversation
-                  </Button>
-                  <Button
-                    type="button"
-                    className="bg-green-600 text-white hover:bg-green-700 transition-colors shadow-sm"
-                    onClick={handleStartConversation}
-                  >
-                    Start conversation
-                  </Button>
-                </div>
+                <Button
+                  type="button"
+                  className="bg-green-600 text-white hover:bg-green-700 transition-colors shadow-sm"
+                  onClick={handleStartConversation}
+                >
+                  Start conversation
+                </Button>
                 <button
                   type="button"
                   className="ml-auto inline-flex h-6 shrink-0 items-center gap-1 whitespace-nowrap rounded-full border border-violet-600/60 bg-transparent px-2.5 text-xs font-medium text-violet-600 transition-colors hover:bg-violet-50 dark:border-violet-400/60 dark:text-violet-400 dark:hover:bg-violet-950/40"
@@ -688,10 +639,11 @@ export function HomeLanding() {
             <NotificationFeed />
           </div>
 
-          {/* Event Sniffer chip - aligned to bottom of side columns */}
-          <div className="mt-auto w-full max-w-3xl shrink-0 self-center">
+          {/* Event Sniffer chip (trace heartbeat), aligned to bottom of side
+              columns — Advanced-only, hidden in Standard to tune down UI. */}
+          <AdvancedOnly className="mt-auto w-full max-w-3xl shrink-0 self-center">
             <EventSnifferChip />
-          </div>
+          </AdvancedOnly>
         </div>
 
         {/* Right column: Recent conversations */}
@@ -720,11 +672,6 @@ export function HomeLanding() {
       <NewConversationDialog
         open={showNewConversation}
         onClose={() => setShowNewConversation(false)}
-      />
-      <JoinConversationDialog
-        open={showJoinConversation}
-        onClose={() => setShowJoinConversation(false)}
-        defaultName={user?.name ?? undefined}
       />
       <CommunityAssistanceDialog
         open={showCommunityAssistance}

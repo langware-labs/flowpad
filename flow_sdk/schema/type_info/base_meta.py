@@ -38,3 +38,6 @@ class BaseMeta(BaseModel):
     # for EVERY type — disk is the source of truth, grouping survives a full
     # index rebuild.
     group_id: Optional[str] = None
+    # SemanticLock marker (flow_sdk/semantic_lock): persisted to metadata.json
+    # for every type so the ground-truth flag survives a full index rebuild.
+    semantic_lock: Optional[bool] = None

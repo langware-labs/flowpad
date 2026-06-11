@@ -140,10 +140,13 @@ def extract_claude_session(ref: FSRef) -> list[FSRecord]:
 def extract_claude_session_from_path(path: str | Path) -> FSRecord:
     """Build a Record from a JSONL transcript path.
 
-    Bounded read cost regardless of transcript size: first ``_HEAD_LINES``
-    lines for envelope fields (session_id / slug / cwd), tail ``_TAIL_BYTES``
-    for the most-recent ai-title or custom-title. Stats are NOT populated
-    here — call ``ensure_claude_session_stats(rec)`` to lazy-load them.
+    Envelope fields are read cheaply: first ``_HEAD_LINES`` lines for
+    session_id / slug / cwd, tail ``_TAIL_BYTES`` for the most-recent ai-title
+    or custom-title. The searchable ``content`` (extractive transcript text for
+    FTS) requires a full-transcript parse via ``worker_summary_log`` — this is
+    gated by the indexer's skip-fresh check, so it only runs when the JSONL has
+    changed. Stats are NOT populated here — call
+    ``ensure_claude_session_stats(rec)`` to lazy-load them.
 
     Replaces ``ClaudeSessionRecord.from_jsonl``.
     """
@@ -200,6 +203,10 @@ def extract_claude_session_from_path(path: str | Path) -> FSRecord:
 
     name = custom_title or slug or session_id
 
+    # Extractive transcript text for full-text search (worker-generic).
+    from flow_sdk.transcript_analyzer import worker_summary_log  # noqa: PLC0415
+    content = worker_summary_log(path, "claude")
+
     rec = FSRecord(
         type=RecordType.CLAUDE_SESSION,
         id=session_id,
@@ -211,6 +218,7 @@ def extract_claude_session_from_path(path: str | Path) -> FSRecord:
         jsonl_path=str(path),
         source_file=str(path),
         path=str(path),
+        content=content,
     )
     # Read-only — Claude Code owns the JSONL.
     object.__setattr__(rec, "_asset_ref", FSRef(path, read_only=True))
@@ -306,13 +314,6 @@ def claude_session_filtered_entries(rec: Record) -> list:
         e for e in claude_session_transcript_entries(rec)
         if getattr(e, "entry_type", None) not in _EXCLUDED_ENTRY_TYPES
     ]
-
-def claude_session_summary_log(rec: Record) -> str:
-    """Newline-joined one-line summaries of filtered transcript entries."""
-    return "\n".join(
-        f"[{i:4d}]  {e.summary}"
-        for i, e in enumerate(claude_session_filtered_entries(rec), 1)
-    )
 
 def claude_session_to_transcript_dicts(rec: Record, include_raw_json: bool = False) -> list[dict]:
     """Return filtered transcript entries as serializable dicts."""

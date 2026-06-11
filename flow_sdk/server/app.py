@@ -44,35 +44,35 @@ load_actions()
 # Entities self-register via their metaclass on import; this import's side
 # effect is what lands the declarative metadata (icons, etc.).
 import flow_sdk.fs_store.indexer.registrations  # noqa: E402, F401
-
 from flow_sdk.server import FlowServer
 
 from .routes import (
+    agent_records_router,
     assets_router,
     auth_router,
-    cloud_router,
     chat_router,
+    cloud_router,
+    compute_register_router,
     debug_router,
+    dep_graph_router,
     detection_router,
-    navigate_router,
-    agent_records_router,
-    transcripts_router,
     directory_router,
+    docs_graph_router,
+    favorites_router,
     hooks_router,
-    search_router,
+    markdown_index_router,
+    navigate_router,
     project_router,
+    pty_stream_router,
+    search_router,
+    semantic_checker_router,
     testing_router,
+    transcripts_router,
     ui_router,
+    version_router,
     watch_router,
     webhook_api_router,
     websocket_router,
-    compute_register_router,
-    dep_graph_router,
-    version_router,
-    favorites_router,
-    markdown_index_router,
-    docs_graph_router,
-    pty_stream_router,
 )
 
 
@@ -124,6 +124,34 @@ async def _on_server_startup():
     except Exception as _e:  # noqa: BLE001
         print(f"  Capability seed: failed ({_e})")
 
+    # Discover capability values in the background (every restart). The env
+    # probe runs in a separate subprocess with a hard cap — nothing blocks
+    # startup; values land in the discovery dict + entity rows when ready.
+    try:
+        import asyncio as _asyncio_disc
+
+        from flow_sdk.core.capabilities.discovery import run_discovery
+
+        _asyncio_disc.create_task(run_discovery(), name="capability-discovery")
+        print("  Capability discovery: started (background)")
+    except Exception as _e:  # noqa: BLE001
+        print(f"  Capability discovery: failed to start ({_e})")
+
+    # PTY recovery watchdog: respawn visible sessions whose worker died — both at
+    # startup (restart kills PTY children) AND periodically while running (a
+    # worker that crashes mid-session). Background — startup never blocks;
+    # recovered sessions push a ``recovered`` event on (re)watch. This is the
+    # backend home for what used to be the frontend os-status recovery poll.
+    try:
+        import asyncio as _asyncio_pty
+
+        from flow_sdk.server.pty_recovery import start_recovery_task
+
+        _asyncio_pty.create_task(start_recovery_task(), name="pty-recovery")
+        print("  PTY recovery: started (background, periodic)")
+    except Exception as _e:  # noqa: BLE001
+        print(f"  PTY recovery: failed to start ({_e})")
+
     # Search uses FTS5 (built into SQLite) — no external index needed.
     print("  Search index: FTS5 (SQLite built-in)")
 
@@ -149,6 +177,23 @@ async def _on_server_startup():
     await _seed_service_triggers()
     await _start_fsop_watcher()
     await _start_transcript_streamer()
+    await _start_system_content_index()
+
+
+async def _start_system_content_index() -> None:
+    """Spawn the once-per-process system content index (system projects,
+    markdown docs, assistant assets) as a detached background task. This
+    used to run inline in the bootstrap request path — see
+    ``bootstrap.index_system_content`` for why it must not."""
+    try:
+        import asyncio as _asyncio
+
+        from flow_sdk.server.routes.bootstrap import index_system_content
+
+        _asyncio.create_task(index_system_content(), name="system-content-index")
+        print("  System content index: scheduled (background)")
+    except Exception:
+        logging.getLogger(__name__).exception("System content index: failed to start")
 
 
 async def _seed_service_triggers() -> None:
@@ -193,8 +238,15 @@ async def _start_transcript_streamer() -> None:
     try:
         import asyncio as _asyncio
 
+        from flow_sdk.instance_settings import get_instance_settings
         from flow_sdk.transcript_streamer import transcript_streamer_registry
 
+        # Persisted cursors: lets the catch-up walk skip every file already
+        # consumed in a prior run instead of re-parsing the full history.
+        await _asyncio.to_thread(
+            transcript_streamer_registry.configure_cursors,
+            get_instance_settings().transcript_cursors_path,
+        )
         await transcript_streamer_registry.start_idle_sweeper()
         _asyncio.create_task(_transcript_catch_up_walk(), name="transcript-catch-up")
         print("  Transcript streamer: started (catch-up scheduled in background)")
@@ -203,27 +255,48 @@ async def _start_transcript_streamer() -> None:
 
 
 async def _transcript_catch_up_walk() -> None:
-    """Background catch-up walk over every JSONL under the watched dirs."""
+    """Background catch-up walk over the JSONLs under the watched dirs.
+
+    Discovery (rglob + stat) runs in a worker thread, and the persisted
+    cursor store filters out every file whose size/mtime is unchanged since
+    it was last consumed — so a routine restart parses only what actually
+    changed while the server was down, not the full history.
+    """
     try:
+        import asyncio as _asyncio
+
         from flow_sdk.instance_settings import get_instance_settings
         from flow_sdk.transcript_streamer import transcript_streamer_registry
 
         settings = get_instance_settings()
         roots = [settings.claude_projects_dir, settings.codex_sessions_dir]
+
+        def _discover() -> tuple[list, int]:
+            pending = []
+            total = 0
+            for root in roots:
+                if not root.exists():
+                    continue
+                for jsonl in root.rglob("*.jsonl"):
+                    total += 1
+                    if transcript_streamer_registry.needs_catch_up(jsonl):
+                        pending.append(jsonl)
+            return pending, total
+
+        pending, total = await _asyncio.to_thread(_discover)
         scanned = 0
-        for root in roots:
-            if not root.exists():
-                continue
-            for jsonl in root.rglob("*.jsonl"):
-                try:
-                    await transcript_streamer_registry.notify_change(jsonl)
-                    scanned += 1
-                except Exception:
-                    logging.getLogger(__name__).exception(
-                        "Transcript streamer catch-up failed for %s", jsonl
-                    )
+        for jsonl in pending:
+            try:
+                await transcript_streamer_registry.notify_change(jsonl)
+                scanned += 1
+            except Exception:
+                logging.getLogger(__name__).exception(
+                    "Transcript streamer catch-up failed for %s", jsonl
+                )
+        await transcript_streamer_registry.flush_cursors()
         logging.getLogger(__name__).info(
-            "Transcript streamer catch-up: scanned %d JSONL(s)", scanned
+            "Transcript streamer catch-up: parsed %d of %d JSONL(s) (%d fresh, skipped)",
+            scanned, total, total - len(pending),
         )
     except Exception:
         logging.getLogger(__name__).exception("Transcript streamer catch-up failed")
@@ -232,9 +305,10 @@ async def _transcript_catch_up_walk() -> None:
 async def _start_notification_scanner() -> None:
     """Scan for incoming notifications on startup."""
     try:
+        import asyncio as _asyncio
+
         from flow_sdk.app.actions.notification_scanner import scan_incoming_notifications
         from flow_sdk.builtin.user import User as _User
-        import asyncio as _asyncio
         local_user = await _User.get_one({"uname": "local"})
         if local_user:
             _asyncio.create_task(scan_incoming_notifications(local_user.id))
@@ -256,12 +330,12 @@ async def _start_inbox_catchup() -> None:
         try:
             from flow_sdk.app.actions.flow_message_action import handle_conversation_list
             from flow_sdk.builtin.user import User as _User
-            from flow_sdk.cli.auth.hub_login import is_logged_in
+            from flow_sdk.cli.auth.hub_login import hub_auth_available
 
             # No cloud session → the hub would 401 every conversation/invitation
             # call. Skip the catch-up entirely instead of logging 401 warnings
             # on every offline startup.
-            if not is_logged_in():
+            if not hub_auth_available():
                 return
             local_user = await _User.get_one({"uname": "local"})
             if not local_user:
@@ -365,6 +439,7 @@ server.add_router(favorites_router)
 server.add_router(markdown_index_router, prefix="/api/v1")
 server.add_router(pty_stream_router, prefix="/api/v1")
 server.add_router(docs_graph_router)
+server.add_router(semantic_checker_router)
 
 server.on_startup(_on_server_startup)
 server.on_shutdown(_shutdown_extras)

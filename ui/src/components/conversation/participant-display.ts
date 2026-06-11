@@ -4,6 +4,32 @@ export function participantLabel(participant: ConversationParticipant | null | u
   return participant?.name?.trim() || participant?.email?.trim() || 'unknown';
 }
 
+/** Name-only display — never the full email. Falls back to the email's local
+ *  part (before @) so compact surfaces show a name-ish token, not an address. */
+export function participantName(participant: ConversationParticipant | null | undefined): string {
+  const name = participant?.name?.trim();
+  if (name) return name;
+  const email = participant?.email?.trim();
+  if (email) return email.split('@')[0] || email;
+  return 'unknown';
+}
+
+/** True when a participant row is the given user — matched by hub ``user_id``
+ *  or (case-insensitive) email. Either identifier may be absent on one side; an
+ *  empty value never matches. Pass the auth user (cloud when logged in, else
+ *  local). */
+export function participantIsUser(
+  participant: ConversationParticipant | null | undefined,
+  user: { id?: string | null; email?: string | null } | null | undefined,
+): boolean {
+  if (!participant || !user) return false;
+  const id = (user.id ?? '').trim();
+  if (id && participant.user_id === id) return true;
+  const email = (user.email ?? '').trim().toLowerCase();
+  if (email && (participant.email ?? '').trim().toLowerCase() === email) return true;
+  return false;
+}
+
 export function participantLabelByUserId(
   participants: ConversationParticipant[] | null | undefined,
   userId: string | null | undefined,

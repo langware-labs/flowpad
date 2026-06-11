@@ -9,6 +9,7 @@ import { useEntity } from '@sdk/react/hooks';
 import { ExpansionRequest } from '@sdk/FlowSync/query';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { EntityActionsToolbar } from '@src/components/entity-actions/EntityActionsToolbar';
 import { getPriorityColor, PRIORITY_CONFIG } from './constants';
 import { getAnalysisPath, getTaskTypeLabel, openAnalysisReport } from './task-utils';
 import { ConversationPanel } from '@src/components/conversation/ConversationPanel';
@@ -57,6 +58,13 @@ export function TaskDetailPanel({ task, onClose }: TaskDetailPanelProps) {
           <ArrowLeft className="h-3.5 w-3.5" />
         </button>
         <span className="min-w-0 flex-1 truncate text-sm font-semibold">{task.displayName}</span>
+        {task.id && (
+          <EntityActionsToolbar
+            typeId={new TypeId(Task.type, task.id)}
+            favoriteTitle={task.displayName}
+            variant="compact"
+          />
+        )}
       </div>
 
       {/* Fields */}

@@ -28,6 +28,23 @@ from filelock import FileLock, Timeout
 _lock: FileLock | None = None  # kept alive for the process lifetime
 
 
+def _raise_nofile_soft_limit(min_soft: int = 4096) -> None:
+    """Raise the process file-descriptor soft limit when the OS permits it."""
+    try:
+        import resource
+    except ImportError:
+        return
+
+    try:
+        soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+        target = min(max(soft, min_soft), hard)
+        if target > soft:
+            resource.setrlimit(resource.RLIMIT_NOFILE, (target, hard))
+            logging.info("[startup] Raised RLIMIT_NOFILE soft limit from %s to %s", soft, target)
+    except (OSError, ValueError) as exc:
+        logging.warning("[startup] Could not raise RLIMIT_NOFILE: %s", exc)
+
+
 def _pid_alive(pid: int) -> bool:
     """Return True if the process with the given PID is still running."""
     try:
@@ -142,6 +159,7 @@ get_instance_settings()
 def main():
     """Start the minihub server."""
     startup_start = time.time()
+    _raise_nofile_soft_limit()
 
     if not _acquire_singleton_lock():
         print(f"[pid={os.getpid()}] Another server instance is already running. Exiting.")

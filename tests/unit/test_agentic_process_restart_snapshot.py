@@ -122,6 +122,34 @@ def test_codex_snapshot_tracks_codex_worker_fields():
     assert base._restart_snapshot() != changed._restart_snapshot()
 
 
+@pytest.mark.parametrize("worker_type", ["claude_code", "codex"])
+def test_toggling_flowpad_assistant_changes_restart_snapshot(worker_type):
+    """Flipping ``load_flowpad_assistant`` must change the restart snapshot so
+    the save-hook flips ``restart_required`` — the toggle's whole point.
+
+    The Flowpad Assistant root is only reflected in ``resolved_add_dirs`` (not
+    raw ``additional_dirs``), and the generic snapshot payload hashes the raw
+    list. The signal therefore rides on the *worker* payload: both drivers set
+    ``cmd.add_dirs = process.resolved_add_dirs`` in ``cli_options`` and include
+    ``add_dirs`` in ``to_json``. This test pins that propagation so a future
+    refactor can't silently sever the toggle → restart link (the "dir change
+    doesn't propagate" failure mode).
+    """
+    on = AgenticProcess(worker_type=worker_type)
+    off = AgenticProcess(worker_type=worker_type)
+    on.load_flowpad_assistant = True
+    off.load_flowpad_assistant = False
+
+    assert on.assistant_enabled is True
+    assert off.assistant_enabled is False
+    # The assistant root lands in resolved_add_dirs only when enabled.
+    assert on.resolved_add_dirs and not off.resolved_add_dirs
+    # Generic payload alone is blind to it (hashes raw additional_dirs)…
+    assert on._generic_restart_snapshot_payload(None) == off._generic_restart_snapshot_payload(None)
+    # …but the full snapshot (incl. worker add_dirs) is not.
+    assert on._restart_snapshot() != off._restart_snapshot()
+
+
 def test_visible_changes_codex_launch_shape_but_not_claude_launch_shape():
     codex_hidden = AgenticProcess(worker_type="codex", visible=False)
     codex_visible = AgenticProcess(worker_type="codex", visible=True)

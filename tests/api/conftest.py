@@ -176,19 +176,19 @@ async def drain_background_tasks():
         from flow_sdk.compute.providers import _providers
         provider = _providers.get("local_machine")
         if provider:
-            for pty_key, pty_info in list(provider._pty_sessions.items()):
+            for pty_key, pty_info in list(provider._pty_processes.items()):
                 try:
                     process = pty_info.get("process")
                     if process and hasattr(process, "terminate"):
                         process.terminate()
                 except Exception:
                     pass
-            provider._pty_sessions.clear()
+            provider._pty_processes.clear()
     except Exception:
         pass
     try:
-        from flow_sdk.compute.providers.desktop.pty_session_manager import session_manager
-        session_manager.sessions.clear()
+        from flow_sdk.compute.providers.desktop.pty_session_manager import pty_registry
+        pty_registry.states.clear()
     except Exception:
         pass
     # Invalidate bootstrap cache so next test gets fresh state.

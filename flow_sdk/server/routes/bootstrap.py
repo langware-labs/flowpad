@@ -31,11 +31,13 @@ import socket
 import subprocess
 import time
 import uuid
-from flow_sdk._compat import StrEnum
 from pathlib import Path
 from typing import List, Optional
 
 from fastapi import APIRouter
+
+from flow_sdk._compat import StrEnum
+from flow_sdk._version import __version__
 from flow_sdk.builtin.faas.compute_node import ComputeNode
 from flow_sdk.builtin.project import Project
 from flow_sdk.builtin.user import User
@@ -56,7 +58,6 @@ from flow_sdk.core.schema import build_all_type_payloads
 from flow_sdk.db.database import init_db
 from flow_sdk.external_apis.llm.llm_drivers.definitions import LLMProvider
 from flow_sdk.flowpad_types.runtime_environment import OSType, RuntimeEnvironment
-from flow_sdk._version import __version__
 from flow_sdk.models import AppPaths, BootstrapInfo, EnvInfo, LmInfo
 from flow_sdk.models.responses import ApiSuccessResponse
 
@@ -545,7 +546,7 @@ async def is_cloud_login_available() -> bool:
     """
     api_key = None
     try:
-        from flow_sdk.cli.auth.hub_login import validate_api_key_async, get_api_key
+        from flow_sdk.cli.auth.hub_login import get_api_key, validate_api_key_async
         from flow_sdk.cli.auth.secrets import is_secrets_enabled
 
         # Non-prompting probe in normal cases, but macOS Keychain can still
@@ -1209,9 +1210,10 @@ async def _index_system_project_markdowns(projects: list[Project]) -> None:
     Idempotent: ``Entity.save()`` deduplicates by uuid5-derived id.
     """
     from pathlib import Path  # noqa: PLC0415
+
+    from flow_sdk.core.entity import Entity  # noqa: PLC0415
     from flow_sdk.fs_store.fs_ref import FSRef as _FSRef  # noqa: PLC0415
     from flow_sdk.fs_store.indexer.functions.markdown import extract_markdown  # noqa: PLC0415
-    from flow_sdk.core.entity import Entity  # noqa: PLC0415
 
     for proj in projects:
         mount = proj.fs_storage_mount_path
@@ -1237,6 +1239,42 @@ async def _index_system_project_markdowns(projects: list[Project]) -> None:
                     await Entity.from_record(rec, notify=False)
                 except Exception as e:
                     logging.debug(f"[bootstrap] failed to index system markdown {md_path}: {e}")
+
+
+async def index_system_content() -> None:
+    """Once-per-process system content indexing: system projects, their
+    markdown docs, and the SDK-shipped assistant assets (hash-gated).
+
+    Spawned as a detached task from server startup
+    (``app._on_server_startup``) — NEVER inline in the bootstrap request
+    path. The markdown walk's per-file DB upserts and the asset index are
+    exactly the work that used to push cold bootstraps past the slowness
+    threshold. Every step is idempotent; each is best-effort so one failure
+    doesn't abort the rest.
+    """
+    try:
+        await init_db()
+        user = await get_or_create_local_user()
+        project = await get_or_create_local_project(desktop_user=user)
+    except Exception:
+        logging.exception("[startup-index] base entities unavailable; skipping system content index")
+        return
+    system_projects: list[Project] = []
+    try:
+        system_projects = await _ensure_system_projects(desktop_user=user)
+    except Exception as e:
+        logging.warning(f"[startup-index] Failed to ensure system projects (non-fatal): {e}")
+    try:
+        await _index_system_project_markdowns(system_projects)
+    except Exception as e:
+        logging.warning(f"[startup-index] Failed to index system markdowns (non-fatal): {e}")
+    try:
+        compute_node = await get_or_create_local_compute_node(
+            local_project=project, desktop_user=user
+        )
+        await compute_node._index_system_assets()
+    except Exception as e:
+        logging.warning(f"[startup-index] Failed to index system assets (non-fatal): {e}")
 
 
 async def _ensure_welcome_favorite(user: User) -> None:
@@ -1550,17 +1588,11 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
         _t.time("get_or_create_local_user")
         project = await get_or_create_local_project(desktop_user=user)
         _t.time("get_or_create_local_project")
-        system_projects: list[Project] = []
-        try:
-            system_projects = await _ensure_system_projects(desktop_user=user)
-        except Exception as e:
-            logging.warning(f"[bootstrap] Failed to ensure system projects (non-fatal): {e}")
-        _t.time("ensure_system_projects")
-        try:
-            await _index_system_project_markdowns(system_projects)
-        except Exception as e:
-            logging.warning(f"[bootstrap] Failed to index system markdowns (non-fatal): {e}")
-        _t.time("index_system_markdowns")
+        # System projects + markdown/asset indexing run as a detached
+        # once-per-process task at server startup (``index_system_content``,
+        # spawned from app._on_server_startup) — keep them out of the request
+        # path. The Welcome-favorite seed stays here: it's onboarding-gated
+        # (one-shot per user) and self-skips until the markdown index lands.
         try:
             await _ensure_welcome_favorite(user)
         except Exception as e:
@@ -1593,21 +1625,27 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
         docker_available = len(docker_cns) > 0
         _t.time("get_docker_compute_nodes")
 
-        # desktop info (LLM providers, installed agents, cloud-login, paths) and
-        # scan info (DB index-status) are independent — fetch them concurrently.
+        # Desktop info (LLM providers, installed agents, cloud-login, paths),
+        # scan info (DB index-status), and harness state are independent —
+        # fetch them concurrently.
+        from flow_sdk.core.capabilities.harness_state import compute_harness_state  # noqa: PLC0415
         from flow_sdk.system_tools import get_scan_info  # noqa: PLC0415
-        desktop_info, scan_info = await asyncio.gather(
+        desktop_info, scan_info, harness_state = await asyncio.gather(
             get_desktop_info(),
             get_scan_info(),
+            compute_harness_state(),
         )
-        _t.time("get_desktop_info+get_scan_info")
+        _t.time("get_desktop_info+get_scan_info+compute_harness_state")
 
         # Sniffer hook is opt-in via InstanceSettings.sniffer_enabled
         # (default off). When disabled, bootstrap reports whatever is in the
         # DB (None if it was never enabled, the existing entity if the user
         # toggled it on via the hooks-sniffer action) but never auto-installs
         # hooks into ~/.claude/settings.json on its own.
-        from flow_sdk.app.actions.hooks_sniffer import _create_or_update_sniffer_hook, _get_sniffer_hook  # noqa: PLC0415
+        from flow_sdk.app.actions.hooks_sniffer import (  # noqa: PLC0415
+            _create_or_update_sniffer_hook,
+            _get_sniffer_hook,
+        )
         from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
         sniffer_hook = None
         try:
@@ -1641,6 +1679,7 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
             docker_compute_nodes=[entity_to_dict(cn) for cn in docker_cns],
             env=EnvInfo(env_name="desktop", cloud_api_url=get_instance_settings().cloud_api_url, version=__version__),
             desktop_info=desktop_info,
+            harness_state=harness_state,
             scan_info=scan_info,
             sniffer_hook=entity_to_dict(sniffer_hook) if sniffer_hook else None,
             records_root=str(get_instance_settings().records_root),

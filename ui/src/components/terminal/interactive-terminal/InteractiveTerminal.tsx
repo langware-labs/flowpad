@@ -4,6 +4,7 @@ import '@xterm/xterm/css/xterm.css';
 
 import {
   AgenticProcessEventName,
+  connectionManager,
   dataContext,
   FlowDataSource,
   fsStore,
@@ -35,6 +36,8 @@ import { PaneBar } from './PaneBar';
 import { PaneSelectorBar } from './PaneSelectorBar';
 import { PaneView } from './PaneView';
 import { ProcessToolbar } from './ProcessToolbar';
+import { SimpleChatPane } from './SimpleChatPane';
+import { useIsAdvanced } from '@src/components/view-mode';
 import { PtySyncProvider, usePtySyncSession } from './PtySyncContext';
 import { TerminalRuntimeErrorBanner } from './TerminalRuntimeErrorBanner';
 import {
@@ -179,6 +182,11 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const process = propProcess ?? contextProcess ?? undefined;
   const { navigation, currentDock } = useDockNavigation();
   const { resolvedTheme } = useTheme();
+  // View-mode skin: Standard overlays the xterm area with the simple chat
+  // pane (same session, same PTY — see SimpleChatPane). Embedded terminals
+  // keep the full layout, mirroring the ProcessToolbar decision.
+  const isAdvanced = useIsAdvanced();
+  const showSimpleChat = !isAdvanced && !embedded && !!process;
   const [searchParams] = useSearchParams();
   const targetTimestamp = searchParams.get('t') ?? undefined;
 
@@ -1162,12 +1170,36 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       if (s === 'disconnected') onDisconnected();
     });
 
+    // Distinct `recovered` event: the backend's PTY-recovery watchdog respawned
+    // this session's worker after a server restart (see flow_sdk/server/
+    // pty_recovery.py). Re-run the attach handshake — fetch + replay the fresh
+    // scrollback and re-subscribe — so an already-open tab self-heals without a
+    // reopen. connectGen makes re-invocation safe (a newer attach supersedes).
+    const onRecovered = (msg: { shell_id?: string; process_id?: string }) => {
+      if (msg?.shell_id === sessionId || (process && msg?.process_id === process.id)) {
+        onConnected();
+      }
+    };
+    connectionManager.on('on_recovered', onRecovered);
+
+    // WS reconnect (e.g. sleep/wake): connection membership is restored by the
+    // backend (PtyRegistry.on_ws_connect re-attaches this connection_id), so live
+    // output resumes on its own. Re-run the attach handshake to repaint the gap —
+    // fetch + replay the framed stream (seq-deduped against what we already have)
+    // and re-subscribe — so the terminal catches up instead of staying on its
+    // pre-sleep frame. No backend attach call is issued from here. connectGen
+    // makes re-invocation safe (a newer attach supersedes an in-flight one).
+    const onReconnected = () => onConnected();
+    connectionManager.on('on_reconnected', onReconnected);
+
     // Fire immediately if already connected on mount (e.g. navigation to existing terminal).
     if (shell.connected) onConnected();
 
     return () => {
       connectGen++; // cancel any in-flight history replay
       unsubStatus();
+      connectionManager.off('on_recovered', onRecovered);
+      connectionManager.off('on_reconnected', onReconnected);
       unsubOutput?.();
 
       if (syncTimer) clearTimeout(syncTimer);
@@ -1413,8 +1445,9 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       <TerminalRuntimeErrorBanner />
 
       <PtySyncProvider session={ptySyncRef.current}>
-        {/* Column header — only for Claude pane */}
-        {process && activePane === 'claude' ? (
+        {/* Column header — only for Claude pane; terminal chrome, hidden in
+            Standard view where the simple chat replaces the xterm. */}
+        {process && activePane === 'claude' && !showSimpleChat ? (
           <ColumnHeaderBar
             showTrace={showGutter}
             traceWidth={48}
@@ -1526,6 +1559,15 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
                     onHoverRow={onAnnotationHoverRow}
                     hideCounter
                   />
+                </div>
+              )}
+              {/* Standard-view simple chat — opaque overlay above xterm +
+                  gutters. The xterm stays mounted (and fitted) underneath so
+                  toggling Advanced⇄Standard is instant and never resets the
+                  terminal. Same session, same PTY (see SimpleChatPane). */}
+              {showSimpleChat && process && (
+                <div className="absolute inset-0 z-[60]">
+                  <SimpleChatPane process={process} />
                 </div>
               )}
             </div>

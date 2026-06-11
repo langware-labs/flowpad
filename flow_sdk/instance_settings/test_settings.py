@@ -22,7 +22,6 @@ from pathlib import Path
 
 from .base_settings import (
     DEFAULT_DB_DRIVER,
-    DEFAULT_MINIHUB_HOST,
     ENV_CODEX_HOME,
     ENV_DESKTOP_DB,
     ENV_FLOWPAD_CLAUDE_HOME,
@@ -31,7 +30,6 @@ from .base_settings import (
     ENV_FLOWPAD_DOCKER_PUBLIC_URL,
     ENV_FLOWPAD_HUB_URL,
     ENV_FS_RECORD_PATH,
-    ENV_MINIHUB_HOST,
     ENV_MINIHUB_RELOAD,
     ENV_SQLITE_DATABASE_PATH,
     BaseInstanceSettings,
@@ -95,6 +93,7 @@ class TestInstanceSettings(BaseInstanceSettings):
             monitor_log_path=flow_home / "monitor.log",
             inbox_last_fetch_path=flow_home / ".inbox_last_fetch.json",
             conversation_last_sync_path=flow_home / ".conversation_last_sync.json",
+            transcript_cursors_path=flow_home / "transcript_cursors.json",
             toplog_config_path=flow_home / "toplog.json",
             db_driver=os.environ.get(ENV_DESKTOP_DB, DEFAULT_DB_DRIVER).lower(),
             user_home=sandbox,

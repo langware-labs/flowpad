@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Check, MessageSquarePlus, Send } from 'lucide-react';
 import {
   hasRemoteParticipant,
@@ -38,6 +38,21 @@ interface ShareToConversationDialogProps {
   source: ShareSource;
   /** Scope existing-conversation results to a single project. Defaults to the active project. */
   projectId?: string | null;
+  /** Pre-fill the "Note" textarea (e.g. a feed entry's suggested message text).
+   *  Read once when the dialog opens; the user can edit or clear it. */
+  defaultNote?: string;
+  /** Seed the contact picker so an existing conversation is pre-selected
+   *  (e.g. the feed's suggested support conversation). Read once on open. */
+  initialParticipants?: ConversationParticipant[];
+  /** Fires with the conversation id once a share succeeds (before the user
+   *  closes the success screen) — lets callers dismiss the source surface. */
+  onShared?: (conversationId: string) => void;
+  /** Replace the default send (sendReply / createAndSendConversation) with a
+   *  custom commit — e.g. message forward, which POSTs the forward action
+   *  instead of add_message. Receives the chosen target + the prepared
+   *  payload; must return the conversation id (or null on failure). The
+   *  dialog still owns prep, busy/error state, and the success screen. */
+  commit?: (target: SendTarget, payload: ConversationSendPayload) => Promise<string | null>;
 }
 
 const MAX_CONVERSATIONS = 5;
@@ -67,13 +82,20 @@ export function ShareToConversationDialog({
   onClose,
   source,
   projectId,
+  defaultNote,
+  initialParticipants,
+  onShared,
+  commit,
 }: ShareToConversationDialogProps) {
   const { navigation } = useDockNavigation();
   const ctx = useDataContext();
   const { cloudUser } = useAuth();
   const { localUser } = useLocalUser();
   const ensureCloudLogin = useCloudLoginGate();
-  const { send, busy, error, resetDraft } = useSendToConversation();
+  const { send, busy: sendBusy, error, resetDraft } = useSendToConversation();
+  // Busy state for custom commits — useSendToConversation only tracks its own.
+  const [commitBusy, setCommitBusy] = useState(false);
+  const busy = sendBusy || commitBusy;
 
   const [participants, setParticipants] = useState<ConversationParticipant[]>([]);
   const [titleInput, setTitleInput] = useState('');
@@ -104,11 +126,18 @@ export function ShareToConversationDialog({
   }, [latestConvId]);
   const newConvTitle = useAutoTitle(open, participants);
 
+  // Seed values are read once at open (via refs) so a caller passing a fresh
+  // array/string each render can't re-run the reset effect and clobber edits.
+  const defaultNoteRef = useRef(defaultNote);
+  defaultNoteRef.current = defaultNote;
+  const initialParticipantsRef = useRef(initialParticipants);
+  initialParticipantsRef.current = initialParticipants;
+
   useEffect(() => {
     if (!open) return;
-    setParticipants([]);
+    setParticipants(initialParticipantsRef.current ?? []);
     setTitleInput('');
-    setNote('');
+    setNote(defaultNoteRef.current ?? '');
     setFiles([]);
     setAttachTranscript(true);
     setSharedConversationId(null);
@@ -175,9 +204,20 @@ export function ShareToConversationDialog({
               shared_context_entities: prepared.sharedContextEntities,
             },
           };
-      const convId = await send(target, payload);
+      let convId: string | null;
+      if (commit) {
+        setCommitBusy(true);
+        try {
+          convId = await commit(target, payload);
+        } finally {
+          setCommitBusy(false);
+        }
+      } else {
+        convId = await send(target, payload);
+      }
       if (convId) {
         setSharedConversationId(convId);
+        onShared?.(convId);
       }
     } catch (err: unknown) {
       setLocalError(err instanceof Error ? err.message : 'Failed to share');

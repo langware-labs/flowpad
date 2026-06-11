@@ -3,7 +3,7 @@ import { ProjectSelector } from '@src/components/project-selector';
 import { SummaryDashboard } from '@src/components/summary-dashboard';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
 import { SessionStatusDot } from '@src/components/ui/session-status-dot';
-import { useClaudeProjectList, useClaudeProjectResources, getProjectDisplayName } from '@src/hooks/use-claude-projects';
+import { useProjectList, useClaudeProjectResources, getProjectDisplayName } from '@src/hooks/use-claude-projects';
 import { useClaudeHistory, type HistoryEntryResponse } from '@src/hooks/useClaudeHistory';
 import { useSystemProfile } from '@src/hooks/use-system-profile';
 import { type NavigationActions } from '@src/navigation/NavigationActions';
@@ -1153,14 +1153,14 @@ function SessionsSection({
  * - Right: Summary dashboard showing project-specific stats when selected (lazy ~100ms)
  *
  * Uses new lazy loading hooks:
- * - useClaudeProjectList: Fast project enumeration (~50ms)
+ * - useProjectList: Fast project enumeration (~50ms)
  * - useClaudeProjectResources: Per-project scan when selected (~100ms)
  */
 function ProjectsSection() {
   const { currentDock, navigation } = useDockNavigation();
 
   // Fast project list (just enumeration, ~50ms)
-  const { projects, isLoading: isLoadingProjects, error: projectsError } = useClaudeProjectList();
+  const { projects, isLoading: isLoadingProjects, error: projectsError } = useProjectList();
 
   // Get selected project from URL
   const selectedProjectEncoded = currentDock?.options?.project || null;

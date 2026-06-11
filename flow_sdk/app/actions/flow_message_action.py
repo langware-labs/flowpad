@@ -1,7 +1,6 @@
 """HTTP actions for FlowMessage file transport.
 
   POST /api/v1/graph/flow-message-upload      — upload .flowmsg (multipart, global action)
-  POST /api/v1/graph/flow-message-create      — create task+spec+conv+FlowMessage locally, no email/git
   GET  /api/v1/graph/flow_message/{id}/create-and-download-local-flowmsg  — download .flowmsg (entity-scoped)
   GET  /api/v1/graph/flow_message/{id}/open   — deep-link: fetch from hub and open IncomingTaskDialog
 """
@@ -18,8 +17,7 @@ from typing import Optional
 from flow_sdk._compat import UTC
 from flow_sdk.actions.action_registry import action
 from flow_sdk.builtin.conversation import Conversation
-from flow_sdk.builtin.flow_message import Attachment, AttachmentType, DeliveryStatus, FlowMessage, FlowMessageKind
-from flow_sdk.builtin.spec import Spec
+from flow_sdk.builtin.flow_message import AttachmentType, DeliveryStatus, FlowMessage, FlowMessageKind
 from flow_sdk.builtin.task import Task
 from flow_sdk.builtin.user import User
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
@@ -99,91 +97,6 @@ async def handle_upload_flow_message(file, overwrite: bool) -> ApiResponse:
     })
 
 
-async def handle_create_task_bundle(
-    spec_title: str,
-    spec_content: str,
-    task_title: str,
-    someone_typeid: str,
-    message: Optional[str] = None,
-    team_space_id: Optional[str] = None,
-    project_id: Optional[str] = None,
-) -> ApiResponse:
-    """Create Task + Spec + Conversation + FlowMessage locally (no git push, no email).
-
-    Returns flow_message_id so the caller can immediately trigger a .flowmsg download.
-    """
-    sender_id, sender_name = await User.local_sender_identity()
-
-    # 1. Create Spec
-    spec = Spec.model_validate({
-        "title": spec_title,
-        "content": spec_content,
-        "spec_type": "plan",
-        "author_id": sender_id,
-    })
-    spec.id = Spec.allocate_id(spec.model_dump())
-    spec = await spec.save(someone_typeid)
-
-    # 2. Create Task
-    task = Task.model_validate({
-        "title": task_title,
-        "shared_by_id": sender_id,
-        "team_space_id": team_space_id or None,
-        # spec_id consolidated into ``shared_context_entities`` — published
-        # with the task wherever it travels.
-        "shared_context_entities": [f"spec-{spec.id}"],
-    })
-    task.id = Task.allocate_id(task.model_dump())
-    task = await task.save(someone_typeid)
-
-    # 3. Create Conversation entity + canonical jsonl + parent linkage.
-    from flow_sdk.app.actions.materialize_flow_message import (
-        ensure_conversation_entity,
-        materialize_flow_message,
-    )
-
-    conv_id = Conversation.allocate_id({
-        "project_id": project_id,
-        "shared_context_entities": [f"task-{task.id}"],
-    })
-    task_typeid = TypeId(type=BuiltinEntityType.TASK.value, id=task.id)
-    conv = await ensure_conversation_entity(
-        conv_id, parent_typeid=task_typeid,
-        project_id=project_id, someone_typeid=someone_typeid,
-    )
-    await task.attach_child(conv)
-    task.add_shared_context_entities(TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv.id))
-    task = await task.save(someone_typeid)
-
-    # 4. Materialize the first FlowMessage through the unified write path.
-    fm_id = FlowMessage.allocate_id({"text": message or f"Task: {task_title}"})
-    attachments = [
-        Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.SPEC.value, id=spec.id))),
-        Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.TASK.value, id=task.id))),
-        Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv.id))),
-        Attachment(attachment_type=AttachmentType.TYPE_ID, data=str(TypeId(type=BuiltinEntityType.FLOW_MESSAGE.value, id=fm_id))),
-    ]
-    fm = await materialize_flow_message(
-        {
-            "id": fm_id,
-            "text": message or f"Task: {task_title}",
-            "shared_context_entities": [task_typeid, TypeId(type=BuiltinEntityType.CONVERSATION.value, id=conv.id)],
-            "attachment": attachments,
-            "sender_id": sender_id,
-            "sender_name": sender_name,
-        },
-        conversation_id=conv.id,
-        someone_typeid=someone_typeid,
-    )
-
-    return ApiSuccessResponse(data={
-        "flow_message_id": fm.id,
-        "task_id": task.id,
-        "conversation_id": conv.id,
-        "spec_id": spec.id,
-    })
-
-
 async def handle_download_flow_message(fm_id: str) -> ApiResponse:
     """Stream a .flowmsg zip for a FlowMessage entity."""
     from fastapi.responses import FileResponse
@@ -227,34 +140,6 @@ async def upload_flow_message() -> ApiResponse:
     except Exception as e:
         logger.error(f"[flow_message_action] upload error: {e}", exc_info=True)
         return ApiFailResponse(message=f"Upload failed: {str(e)}")
-
-
-@action.post(action_name="flow-message-create", types=None)
-async def create_task_bundle() -> ApiResponse:
-    try:
-        request_info = get_current_request_info()
-        if not request_info:
-            return ApiFailResponse(message="No request info found")
-        if not request_info.someone_typeid:
-            return ApiFailResponse(message="No authenticated user in request context")
-
-        body = await request_info.get_post_data() or {}
-        spec_title = (body.get("spec_title") or "").strip()
-        if not spec_title:
-            return ApiFailResponse(message="spec_title is required")
-
-        return await handle_create_task_bundle(
-            spec_title=spec_title,
-            spec_content=(body.get("spec_content") or "").strip(),
-            task_title=(body.get("task_title") or spec_title).strip(),
-            someone_typeid=request_info.someone_typeid,
-            message=(body.get("message") or "").strip() or None,
-            team_space_id=(body.get("team_space_id") or "").strip() or None,
-            project_id=(body.get("project_id") or "").strip() or None,
-        )
-    except Exception as e:
-        logger.error(f"[flow_message_action] create-task-bundle error: {e}", exc_info=True)
-        return ApiFailResponse(message=f"Failed to create task bundle: {str(e)}")
 
 
 async def handle_open_flow_message(fm_id: str) -> ApiResponse:
@@ -616,6 +501,30 @@ async def handle_conversation_archive(
     })
 
 
+async def handle_conversation_unarchive(
+    conversation_id: str, someone_typeid: str
+) -> ApiResponse:
+    """Clear ``Conversation.archived_at`` (back to ``None``).
+
+    The manual inverse of :func:`handle_conversation_archive` — the same effect
+    the auto-revive achieves when a newer FlowMessage arrives. Local-only (the
+    hub never sees ``archived_at``). Idempotent: unarchiving a non-archived row
+    re-stamps ``None``, which is harmless.
+    """
+    conversation_id = (conversation_id or "").strip()
+    if not conversation_id:
+        return ApiFailResponse(message="conversation_id required")
+    conv = await Conversation.get_one({"id": conversation_id})
+    if conv is None:
+        return ApiFailResponse(message="Conversation not found")
+    conv.archived_at = None
+    await conv.save(someone_typeid)
+    return ApiSuccessResponse(data={
+        "conversation_id": conversation_id,
+        "archived_at": None,
+    })
+
+
 async def handle_conversation_archive_all(someone_typeid: str) -> ApiResponse:
     """Stamp ``archived_at = now()`` on every Conversation that isn't
     already archived.
@@ -652,6 +561,20 @@ async def conversation_archive() -> ApiResponse:
         return await handle_conversation_archive(conv_id, request_info.someone_typeid)
     except Exception as e:
         logger.error("[flow_message_action] conversation-archive error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Failed: {e}")
+
+
+@action.post(action_name="conversation-unarchive", types=None)
+async def conversation_unarchive() -> ApiResponse:
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.someone_typeid:
+            return ApiFailResponse(message="Authentication required")
+        body = await request_info.get_post_data() or {}
+        conv_id = (body.get("conversation_id") or "").strip()
+        return await handle_conversation_unarchive(conv_id, request_info.someone_typeid)
+    except Exception as e:
+        logger.error("[flow_message_action] conversation-unarchive error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Failed: {e}")
 
 
@@ -1141,6 +1064,204 @@ async def conversation_create() -> ApiResponse:
     except Exception as e:
         logger.error("[flow_message_action] conversation-create error: %s", e, exc_info=True)
         return ApiFailResponse(message=f"Failed to create conversation: {str(e)}")
+
+
+# ---------------------------------------------------------------------------
+# Community / support-center actions
+# ---------------------------------------------------------------------------
+
+async def _hub_action(method: str, path: str, body: Optional[dict] = None, timeout: float = 10.0) -> Optional[dict]:
+    """Authenticated HTTP call to a hub action; returns the parsed ApiResponse
+    envelope (``{"status","message","data"}``) or ``None`` on transport failure.
+
+    Community queue/ticket actions are request/response project actions — HTTP is
+    a better fit (and more robust) than the message-fanout WS bridge, which is
+    reserved for the add_message fast-path. Mirrors the authed-httpx pattern in
+    ``notification_action._hub_knows_conversation``."""
+    try:
+        import httpx  # noqa: PLC0415
+        from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
+        from flow_sdk.cloud_client.client import ApiConfig  # noqa: PLC0415
+
+        creds = load_credentials()
+        if not creds or not creds.api_key:
+            return None
+        url = ApiConfig.from_env()._get_full_url(path)
+        headers = {
+            "Authorization": f"Bearer {creds.api_key}",
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
+        async with httpx.AsyncClient(timeout=timeout) as h:
+            r = await h.request(method, url, headers=headers, json=None if method == "GET" else (body or {}))
+            return r.json()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[community] hub %s %s failed: %s", method, path, e)
+        return None
+
+
+_COMMUNITY_PROJECT_ID_CACHE: Optional[str] = None
+
+
+async def _resolve_community_project_id() -> Optional[str]:
+    """The fixed community/support project id, learned from the hub's
+    ``/version`` (``community_project_id``). ``None`` when the hub is
+    unreachable or doesn't advertise one. See CommunityConfig and the hub's
+    ``ensure_community_project``.
+
+    Cached for the process lifetime once resolved — it's a deployment constant,
+    so re-fetching ``/version`` on every ticket open / queue poll is wasted I/O.
+    A miss is not cached, so a transient hub outage retries next call."""
+    global _COMMUNITY_PROJECT_ID_CACHE
+    if _COMMUNITY_PROJECT_ID_CACHE:
+        return _COMMUNITY_PROJECT_ID_CACHE
+    try:
+        from flow_sdk.cloud_client.transport.hub_http import get_info  # noqa: PLC0415
+        info = await get_info() or {}
+        cid = info.get("community_project_id")
+        if isinstance(cid, str) and cid.strip():
+            _COMMUNITY_PROJECT_ID_CACHE = cid
+            return cid
+        return None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+@action.post(action_name="community-start-ticket", types=None)
+async def community_start_ticket() -> ApiResponse:
+    """Open a support ticket — a guest-authored ``community`` conversation under
+    the hub's fixed community project.
+
+    Routes through the hub (``Project.start_guest_conversation``), then
+    materializes the conversation + first message locally as a hub-mirrored
+    ``kind=community`` row so it appears in the guest's UI immediately (the hub
+    fanout skips the sender, so the local backend is this row's source of
+    truth). Returns the new conversation id for navigation.
+    """
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.someone_typeid:
+            return ApiFailResponse(message="No authenticated user in request context")
+        someone_typeid = request_info.someone_typeid
+
+        body = await request_info.get_post_data() or {}
+        text = (body.get("text") or body.get("message") or "").strip()
+        if not text:
+            return ApiFailResponse(message="text is required")
+
+        community_id = await _resolve_community_project_id()
+        if not community_id:
+            return ApiFailResponse(message="Community support is unavailable on this hub")
+
+        resp = await _hub_action(
+            "POST", f"/graph/project/{community_id}/start_guest_conversation", {"text": text}
+        )
+        if not resp or resp.get("status") != "SUCCESS":
+            msg = (resp or {}).get("message") or "hub unreachable"
+            return ApiFailResponse(message=f"Could not open support ticket: {msg}")
+        conv_data = resp.get("data") or {}
+        conv_id = conv_data.get("id")
+        if not conv_id:
+            return ApiFailResponse(message="Hub did not return a conversation")
+
+        from flow_sdk.cloud_client.hub_bridge import hub_ws_bridge  # noqa: PLC0415
+        hub_ws_bridge.remember_hub_conversation(conv_id)
+
+        from flow_sdk.app.actions.materialize_flow_message import ensure_conversation_entity  # noqa: PLC0415
+        from flow_sdk.builtin.conversation import ConversationKind  # noqa: PLC0415
+
+        title = text if len(text) <= 60 else f"{text[:60].rstrip()}…"
+        # Hub-owned conversation: no local project_id (mirrors how received
+        # remote conversations materialize); carry the community project as the
+        # remote project identity for traceability.
+        await ensure_conversation_entity(
+            conv_id,
+            parent_typeid=None,
+            remote_project_id=community_id,
+            title=title,
+            someone_typeid=someone_typeid,
+        )
+
+        # Pull the first (guest) message from the hub into the local store. Do
+        # this BEFORE stamping kind/remote — the message sync re-materializes the
+        # conversation from the hub and would otherwise clobber kind back to the
+        # default. Our stamp must be the LAST write.
+        try:
+            await _fetch_conversation_messages(conv_id, someone_typeid)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[community-start-ticket] message sync failed (non-fatal): %s", e)
+
+        conv = await Conversation.get_one({"id": conv_id})
+        if conv:
+            conv.kind = ConversationKind.COMMUNITY
+            conv.remote = True
+            conv.created_by = conv_data.get("initiated_by") or conv.created_by
+            await conv.save(someone_typeid, notify=False)
+
+        return ApiSuccessResponse(data={"conversation_id": conv_id, "project_id": community_id})
+    except Exception as e:
+        logger.error("[flow_message_action] community-start-ticket error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Failed to start support ticket: {str(e)}")
+
+
+@action.post(action_name="conversation-pickup", types=None)
+async def conversation_pickup() -> ApiResponse:
+    """Staff-side: pick up (join) a community ticket so the caller starts
+    receiving its messages and can reply. Proxies to the hub ``pickup`` action,
+    then syncs the conversation's messages locally. Hub gates on project
+    membership."""
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.someone_typeid:
+            return ApiFailResponse(message="No authenticated user in request context")
+        someone_typeid = request_info.someone_typeid
+
+        body = await request_info.get_post_data() or {}
+        conv_id = (body.get("conversation_id") or "").strip()
+        if not conv_id:
+            return ApiFailResponse(message="conversation_id is required")
+
+        resp = await _hub_action("POST", f"/graph/conversation/{conv_id}/pickup", {})
+        if not resp or resp.get("status") != "SUCCESS":
+            msg = (resp or {}).get("message") or "hub unreachable"
+            return ApiFailResponse(message=f"Could not pick up conversation: {msg}")
+
+        from flow_sdk.cloud_client.hub_bridge import hub_ws_bridge  # noqa: PLC0415
+        hub_ws_bridge.remember_hub_conversation(conv_id)
+        try:
+            await _fetch_conversation_messages(conv_id, someone_typeid)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[conversation-pickup] message sync failed (non-fatal): %s", e)
+        return ApiSuccessResponse(data={"conversation_id": conv_id})
+    except Exception as e:
+        logger.error("[flow_message_action] conversation-pickup error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Failed to pick up conversation: {str(e)}")
+
+
+@action.post(action_name="community-tickets-list", types=None)
+async def community_tickets_list() -> ApiResponse:
+    """Staff triage queue: list the community project's tickets (members-only on
+    the hub). Returns the lightweight rows verbatim so the UI can render an
+    "unpicked" queue — unpicked tickets don't fan out to non-participants, so
+    this is the only way staff discover them. Picking one up materializes it
+    locally (see ``conversation-pickup``)."""
+    try:
+        request_info = get_current_request_info()
+        if not request_info or not request_info.someone_typeid:
+            return ApiFailResponse(message="No authenticated user in request context")
+
+        community_id = await _resolve_community_project_id()
+        if not community_id:
+            return ApiFailResponse(message="Community support is unavailable on this hub")
+
+        resp = await _hub_action("GET", f"/graph/project/{community_id}/community_conversations")
+        rows = (resp or {}).get("data") or []
+        if not isinstance(rows, list):
+            rows = []
+        return ApiSuccessResponse(data={"tickets": rows, "project_id": community_id})
+    except Exception as e:
+        logger.error("[flow_message_action] community-tickets-list error: %s", e, exc_info=True)
+        return ApiFailResponse(message=f"Failed to list community tickets: {str(e)}")
 
 
 # ---------------------------------------------------------------------------
@@ -1811,6 +1932,9 @@ async def _materialize_invitation(
             "kind": FlowMessageKind.INVITATION.value,
             "shared_context_entities": [invitation_typeid],
             "remote": False,
+            # Machine-synthesized placeholder — attribute to 'system', never
+            # the local request user (the recipient didn't author the invite).
+            "created_by": "system",
         }
         try:
             inv_fm = await materialize_flow_message(
@@ -2242,8 +2366,12 @@ async def _upsert_hub_conversation_metadata(
             if hub_conv.get(k) is not None:
                 payload[k] = hub_conv[k]
         # Hub owner field ``initiated_by`` mirrors locally as ``created_by``.
-        if hub_conv.get("initiated_by"):
-            payload["created_by"] = hub_conv["initiated_by"]
+        # When the hub carries no owner (share-created conversations), fall
+        # back to the neutral 'system' sentinel — NEVER the local user. A
+        # remote row is a pure reflection of the hub row; without this the
+        # driver stamps the request-context user, and received conversations
+        # surface as created by the recipient ("from <local git user.name>").
+        payload["created_by"] = hub_conv.get("initiated_by") or "system"
         if hub_conv.get("message_status_visible") is not None:
             payload["message_status_visible"] = bool(hub_conv["message_status_visible"])
         # Carry the hub's updated_date so the local row records the hub
@@ -2344,6 +2472,19 @@ def _should_fetch_messages(local_conv: Optional[Conversation], hub_conv: dict) -
     return int(raw_hub_count) != local_count
 
 
+async def _local_only_conversation_list(*, auth_required: bool) -> ApiSuccessResponse:
+    """Local-only conversation-list response: render whatever's in SQLite and
+    flag the hub unreachable. Used when the hub isn't configured
+    (``auth_required=False``) or there's no cloud session (``auth_required=True``)."""
+    local = await Conversation.get_all({})
+    return ApiSuccessResponse(data={
+        "conversations": [c.model_dump(mode="json") for c in local],
+        "bg_fetch_dispatched": [],
+        "hub_reachable": False,
+        "auth_required": auth_required,
+    })
+
+
 async def handle_conversation_list(someone_typeid: str) -> ApiResponse:
     """Unified conversation list: local SQLite + hub catch-up + background message fetch.
 
@@ -2363,27 +2504,18 @@ async def handle_conversation_list(someone_typeid: str) -> ApiResponse:
     """
     if not hub_base_url():
         # Local-only mode: still return whatever's in SQLite so the UI renders.
-        local = await Conversation.get_all({})
-        return ApiSuccessResponse(data={
-            "conversations": [c.model_dump(mode="json") for c in local],
-            "bg_fetch_dispatched": [],
-            "hub_reachable": False,
-            "auth_required": False,
-        })
+        return await _local_only_conversation_list(auth_required=False)
+
+    # Logged out → every hub conversation/invitation call would 401 and surface
+    # a "Cloud Request Failed" warning (and feed the hub-error suppression
+    # window). Return local-only with auth_required, exactly like
+    # _start_inbox_catchup skips the same calls at startup.
+    from flow_sdk.cli.auth.hub_login import hub_auth_available  # noqa: PLC0415
+    if not hub_auth_available():
+        return await _local_only_conversation_list(auth_required=True)
 
     local_list = await Conversation.get_all({})
     local_index = {c.id: c for c in local_list if c.id}
-
-    # Peek at credential state up front so we can flag ``auth_required`` even
-    # when the underlying hub_get swallows the 401 (it returns None on any
-    # non-200). Missing credentials is the most common reason the hub call
-    # comes back empty; assume that case and refine if the hub IS reachable
-    # for some calls but rejects others.
-    try:
-        from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
-        creds_present = bool(load_credentials() and load_credentials().api_key)
-    except Exception:  # noqa: BLE001
-        creds_present = False
 
     hub_convs_result, hub_invs_result = await asyncio.gather(
         hub_get(BuiltinEntityType.CONVERSATION),
@@ -2408,12 +2540,6 @@ async def handle_conversation_list(someone_typeid: str) -> ApiResponse:
 
     hub_convs = _coerce_list(hub_convs_result) or []
     hub_invs = _coerce_list(hub_invs_result) or []
-
-    # If both hub calls came back empty AND we never had credentials, the
-    # hub returned 401 (or we never authenticated) — flag auth_required so
-    # the UI routes to LoginDialog instead of showing a generic error.
-    if not hub_reachable and not creds_present:
-        auth_required = True
 
     # (c) upsert hub conversation metadata; dispatch per-conv message fetch
     # when the hub has more messages than we do locally.
@@ -2869,20 +2995,12 @@ async def invitation_accept() -> ApiResponse:
 # ---------------------------------------------------------------------------
 # Per-message Private Context actions
 #
-#   - `derive-task`: pre-creates a Task entity (placeholder title from FM text,
-#     `context_entities = [FM, AgenticProcess]`) and a Run row, then spawns an
-#     invisible Claude session whose only job is to **update** the Task's
-#     title/description via the flow MCP. Pre-creating in Python guarantees a
-#     real Task in the DB regardless of whether Claude succeeds at the MCP
-#     round-trip; the row appears immediately and the Run lifecycle drives the
-#     Open-button enable in the conversation drawer.
-#
 #   - `start-cc-from-transcript`: when the message has a `conversation.jsonl`
 #     FILE attachment, spawn a Claude session pre-loaded with that transcript
 #     path and ask for a brief analysis. The new AgenticProcess pins
 #     `target_typeid_str = <fm typeid>` so the frontend query picks it up.
 #
-# Both actions return immediately with `process_id`; the entity-query channel
+# The action returns immediately with `process_id`; the entity-query channel
 # delivers updates to the UI as the run progresses.
 # ---------------------------------------------------------------------------
 
@@ -2907,112 +3025,6 @@ async def _resolve_workdir_and_project_async(fm: FlowMessage) -> tuple[str, Opti
         if project:
             workdir = (project.fs_storage_mount_path or "").strip() or workdir
     return workdir, project_id
-
-
-async def handle_derive_task(fm_id: str, someone_typeid: str) -> ApiResponse:
-    """Pre-create a Task linked to this FM, then run a headless Claude turn to refine it.
-
-    The Task is allocated up front with placeholder content so the row appears
-    immediately regardless of whether the run succeeds. Claude's job is only
-    to **update** the placeholder's title/description via the flow MCP — never
-    to create the Task from scratch.
-    """
-    from flow_sdk.builtin.agentic_process.agentic_process import AgenticProcess
-    from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli import ClaudeCliOptions
-
-    fm = await FlowMessage.get_one({"id": fm_id})
-    if not fm:
-        return ApiFailResponse(message=f"FlowMessage not found: {fm_id}")
-
-    workdir, project_id = await _resolve_workdir_and_project_async(fm)
-    if not workdir:
-        workdir = os.path.expanduser("~")
-
-    fm_typeid = TypeId(type=BuiltinEntityType.FLOW_MESSAGE.value, id=fm.id)
-    fm_typeid_str = str(fm_typeid)
-
-    # 1. Spawn the invisible AgenticProcess pinned to this FM. ``target_typeid_str``
-    #    surfaces it in Private Context / Runs queries.
-    cli_opts = ClaudeCliOptions(
-        print_mode=True,
-        output_format="stream-json",
-        verbose=True,
-        permission_mode="bypassPermissions",
-    )
-    process = AgenticProcess(
-        cli_config=cli_opts.to_json(),
-        workdir=workdir,
-        visible=False,
-        project_id=project_id,
-        target_typeid_str=fm_typeid_str,
-        shared_context_entities=[fm_typeid],
-    )
-    await process.save(someone_typeid)
-    process_typeid = TypeId(type=BuiltinEntityType.AGENTIC_PROCESS.value, id=process.id)
-
-    fm_text = (fm.text or "").strip()
-    placeholder_title = (fm_text[:80] + "…") if len(fm_text) > 80 else (fm_text or "Deriving task…")
-    task = Task.model_validate({
-        "title": placeholder_title,
-        "description": fm_text or None,
-        "project_id": project_id,
-        "shared_context_entities": [fm_typeid, process_typeid],
-    })
-    task.id = Task.allocate_id(task.model_dump())
-    task = await task.save(someone_typeid)
-    task_typeid = TypeId(type=BuiltinEntityType.TASK.value, id=task.id)
-    task_typeid_str = str(task_typeid)
-
-    # Push the new spawn-children back onto the source FlowMessage's shared
-    # bucket so the Private Context panel can render them via a synchronous
-    # read of ``fm.shared_context_entities`` — no candidate-pull-and-filter
-    # over every Task/AgenticProcess in the project.
-    if fm.add_shared_context_entities(process_typeid, task_typeid):
-        await fm.save(someone_typeid)
-
-    instruction = (
-        "A Task entity has been pre-created with id `" + task.id + "` "
-        "(typeid `" + task_typeid_str + "`). Its current title and description "
-        "are placeholder values sliced from the source FlowMessage text.\n\n"
-        "Your job: refine the Task by **updating** its `title` (concise one-line "
-        "summary) and `description` (the relevant details). Do NOT create a new "
-        "Task — update the existing one.\n\n"
-        "Steps:\n"
-        "1. Read the source FlowMessage with TypeId `" + fm_typeid_str + "` for "
-        "context. You can call the flow MCP:\n"
-        "   `mcp__plugin_skillit_flow_sdk__flow_entity_crud` with arguments\n"
-        "   `crud=\"read\"`, "
-        "`entity_json='{\"type\":\"flow_message\",\"id\":\"" + fm.id + "\"}'`.\n"
-        "2. Update the Task with the same MCP tool:\n"
-        "   `crud=\"update\"`, "
-        "`entity_json='{\"type\":\"task\",\"id\":\"" + task.id + "\",\"title\":\"<new title>\",\"description\":\"<new description>\"}'`.\n"
-        "3. Exit when done."
-    )
-
-    await process.prompt(instruction)
-
-    return ApiSuccessResponse(data={
-        "process_id": process.id,
-        "task_id": task.id,
-    })
-
-
-@action.post(action_name="derive-task", types=[BuiltinEntityType.FLOW_MESSAGE.value])
-async def derive_task() -> ApiResponse:
-    """Headless: derive a Task from this FlowMessage; result links via context_entities."""
-    try:
-        request_info = get_current_request_info()
-        if not request_info or not request_info.target_entity_typeid:
-            return ApiFailResponse(message="No request info found")
-        if not request_info.someone_typeid:
-            return ApiFailResponse(message="Authentication required")
-        return await handle_derive_task(
-            fm_id=str(request_info.target_entity_typeid.id),
-            someone_typeid=request_info.someone_typeid,
-        )
-    except Exception as e:
-        logger.error("[flow_message_action] derive-task error: %s", e, exc_info=True)
-        return ApiFailResponse(message=f"Derive task failed: {str(e)}")
 
 
 async def handle_start_cc_from_transcript(fm_id: str, someone_typeid: str) -> ApiResponse:

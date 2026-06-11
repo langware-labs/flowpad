@@ -47,14 +47,23 @@ class TranscriptStreamer:
         """Read whatever the file has appended since the previous call and
         return the new entries (typed, folded). Caller (registry) fans out
         to subscribers. Concurrent callers serialize via ``_lock``.
+
+        The parse is synchronous CPU+file I/O (can be a full-history read for
+        a fresh streamer) — it runs in a worker thread so a large transcript
+        never stalls the event loop. The lock is held across the thread hop,
+        keeping the AgentTranscriptFile's delta state single-threaded.
         """
         async with self._lock:
             self.last_activity = time.monotonic()
-            return self.transcript.parse_delta()
+            return await asyncio.to_thread(self.transcript.parse_delta)
 
     async def force_reparse(self) -> list[TranscriptEntry]:
         """Reset offset to 0 and re-emit the full file as one delta. Debug knob."""
-        async with self._lock:
-            self.last_activity = time.monotonic()
+
+        def _reparse() -> list[TranscriptEntry]:
             self.transcript.force_reparse()
             return self.transcript.parse_delta()
+
+        async with self._lock:
+            self.last_activity = time.monotonic()
+            return await asyncio.to_thread(_reparse)

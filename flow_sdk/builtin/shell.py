@@ -224,6 +224,19 @@ class Shell(Entity):
         pty = self.compute_node.get_pty(self.id)
         return pty is not None and pty.is_alive
 
+    async def evict_pty_handle(self) -> None:
+        """Kill this shell's in-memory PTY handle if present (no-op otherwise).
+
+        Keeps PTY-handle access inside Shell — callers that just need the dead
+        handle evicted (e.g. recovery's soft drop) use this instead of reaching
+        through ``compute_node.get_pty``. Does NOT touch the worker or .pty file.
+        """
+        if not self.compute_node_id:
+            return
+        pty = self.compute_node.get_pty(self.id)
+        if pty is not None:
+            await pty.kill()
+
     async def _cleanup_stale_session(self) -> None:
         """Evict any dead PTY session state so a fresh one can be spawned."""
         await self.ensure_live_compute_node_binding()
@@ -504,7 +517,7 @@ class Shell(Entity):
         Polls the session's output-chunk counter. When output stops arriving the
         shell is at its prompt with readline initialised — safe to inject input.
         """
-        from flow_sdk.compute.providers.desktop.pty_session_manager import session_manager
+        from flow_sdk.compute.providers.desktop.pty_session_manager import pty_registry
 
         # Resolve the real provider_node_id used by the append path
         # (pty_actions.py uses ``compute_node.node_provider_id``). The bare
@@ -520,7 +533,7 @@ class Shell(Entity):
         deadline = asyncio.get_event_loop().time() + timeout
         last_seq = -1
         while asyncio.get_event_loop().time() < deadline:
-            session = session_manager.sessions.get(pty_key)
+            session = pty_registry.states.get(pty_key)
             current_seq = session.seq if session else 0
             if current_seq > 0 and current_seq == last_seq:
                 return  # output has stopped — shell is at prompt
@@ -551,6 +564,24 @@ class Shell(Entity):
             raise RuntimeError("No PTY session — call start_pty() first")
         await pty_handle.write(data)
 
+    async def write_then_submit(self, text: str, submit_delay: float = 0.4) -> None:
+        """Type *text* into the PTY, settle, then send Enter as a SEPARATE write.
+
+        Unlike :meth:`write` (text and ``\\r`` in one write), this splits the
+        keystrokes the way a human pastes-then-presses-Enter. Required by
+        rich TUI agents (GitHub Copilot CLI, Codex) whose input box treats a
+        paste with a trailing ``\\r`` as literal text and never submits — the
+        text silently accumulates and later turns get concatenated into one
+        message. A discrete Enter after the input settles submits reliably.
+        """
+        pty_handle = self.compute_node.get_pty(self.id)
+        if not pty_handle:
+            raise RuntimeError("No PTY session — call start_pty() first")
+        await self._wait_for_shell_ready()
+        await pty_handle.write(text.encode())
+        await asyncio.sleep(submit_delay)
+        await pty_handle.write(b"\r")
+
     async def read(self) -> bytes:
         """Return all accumulated PTY output so far (from disk stream file).
 
@@ -563,7 +594,11 @@ class Shell(Entity):
             p = shell_pty_stream_path(record.id, record.__dict__.get("pty_pid"))
         except ValueError:
             return b""
-        return p.read_bytes() if p.exists() else b""
+        if not p.exists():
+            return b""
+        from flow_sdk.compute.providers.desktop.pty_stream_file import PtyStreamFile
+
+        return PtyStreamFile(p).read_all()
 
     def output(self):
         """Stream live PTY output as it arrives. Delegates to self.pty.output()."""

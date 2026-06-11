@@ -1,5 +1,4 @@
-import { apiClient, createProjectConversation } from '@sdk';
-import { sendReply } from '@sdk/entities/notifications';
+import { startCommunityTicket } from '@sdk';
 import { Button } from '@src/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { useCloudLoginGate } from '@src/hooks/use-cloud-login-gate';
@@ -13,8 +12,6 @@ interface CommunityAssistanceDialogProps {
   open: boolean;
   onClose: () => void;
 }
-
-const FLOWPAD_ASSISTANT_UNAME = 'flowpad_assistant';
 
 const EXAMPLES: string[] = [
   'Triage my inbox and draft replies',
@@ -33,18 +30,6 @@ const EXAMPLES: string[] = [
 const PLACEHOLDER =
   "Describe what you want done — what should the agent automate, " +
   'research, summarize, or fix? The more context the better.';
-
-async function findFlowpadAssistantProjectId(): Promise<string | null> {
-  try {
-    const rows = await apiClient.get<Array<{ id?: string; uname?: string | null }>>(
-      '/graph/project?include_system=true',
-    );
-    const match = (rows ?? []).find((p) => p.uname === FLOWPAD_ASSISTANT_UNAME);
-    return match?.id ?? null;
-  } catch {
-    return null;
-  }
-}
 
 export function CommunityAssistanceDialog({ open, onClose }: CommunityAssistanceDialogProps) {
   const { navigation } = useDockNavigation();
@@ -68,48 +53,34 @@ export function CommunityAssistanceDialog({ open, onClose }: CommunityAssistance
     if (!canSend) return;
     setBusy(true);
     try {
-      // Posting the first message routes through the hub-backed
-      // append-conversation action, which the backend gates on cloud login.
-      // Run the OAuth flow first so a logged-out user is taken through
-      // sign-in and the send resumes on the same click.
+      // Opening a support ticket routes through the hub (the backend resolves
+      // the fixed community project from /version and calls
+      // start_guest_conversation), which requires cloud login. Run the OAuth
+      // flow first so a logged-out user is taken through sign-in and the send
+      // resumes on the same click.
       const gate = await ensureCloudLogin();
       if (!gate.ok) {
         notify.info({ title: 'Sign in required', message: gate.error });
         return;
       }
-      const projectId = await findFlowpadAssistantProjectId();
-      if (!projectId) {
+
+      let conversationId: string;
+      try {
+        const res = await startCommunityTicket(message.trim());
+        conversationId = res.conversation_id;
+      } catch (err) {
+        console.error('[CommunityAssistanceDialog] failed to open support ticket', err);
         notify.error({
-          title: 'Flowpad Assistant unavailable',
-          message: 'The Flowpad Assistant project is not registered on this instance.',
+          title: 'Could not reach support',
+          message:
+            err instanceof Error
+              ? err.message
+              : 'Community support is unavailable right now. Please try again.',
         });
         return;
       }
 
-      // Use a short slice of the question as the conversation title so the
-      // tab and sidebar list show something descriptive.
-      const trimmed = message.trim();
-      const title = trimmed.length > 60 ? `${trimmed.slice(0, 60).trimEnd()}…` : trimmed;
-
-      const conv = await createProjectConversation({
-        project_id: projectId,
-        participants: [],
-        title,
-      });
-
-      try {
-        await sendReply({ conversationId: conv.conversation_id }, message.trim());
-      } catch (err) {
-        // Non-fatal: still navigate to the conversation so the user can see
-        // their context and retry sending. Surface the error.
-        console.error('[CommunityAssistanceDialog] failed to post first message', err);
-        notify.info({
-          title: 'Could not post your message',
-          message: err instanceof Error ? err.message : 'Please try again from the conversation view.',
-        });
-      }
-
-      navigation.openDock(DockPointer.forConversation(conv.conversation_id));
+      navigation.openDock(DockPointer.forConversation(conversationId));
       onClose();
     } finally {
       setBusy(false);

@@ -14,6 +14,7 @@ const STATUS_LABEL: Record<WorkerStatus, string> = {
   [WorkerStatus.ERROR]: 'Error',
   [WorkerStatus.INTERRUPTED]: 'Interrupted',
   [WorkerStatus.INACTIVE]: 'Inactive',
+  [WorkerStatus.PENDING_USER]: 'Waiting for you',
   [WorkerStatus.WAITING]: 'Waiting for response',
   [WorkerStatus.THINKING]: 'Thinking',
   [WorkerStatus.TOOL_CALL]: 'Calling tool',

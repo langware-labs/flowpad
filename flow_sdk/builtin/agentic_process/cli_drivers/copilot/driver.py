@@ -50,6 +50,9 @@ class CopilotDriver:
 
     name = WorkerType.COPILOT.value
     preassign_interactive_session_id = True
+    # Copilot's TUI treats a pasted prompt ending in \r as literal text — needs
+    # a discrete Enter after the paste settles (Shell.write_then_submit).
+    pty_submits_on_paste = False
 
     def cli_options(self, process: "AgenticProcess") -> CopilotCliOptions:
         cmd = CopilotCliOptions.from_json(process.cli_config)
@@ -214,6 +217,9 @@ class CopilotDriver:
 
     def tail_status(self, transcript_path: Path) -> WorkerStatus:
         return copilot_tail_status(transcript_path)
+
+    def has_resumable_session(self, process: "AgenticProcess") -> bool:
+        return self._has_session(process)
 
     def load_history(self, process: "AgenticProcess") -> list["FlowData"]:
         descriptor = self.transcript_descriptor(process)

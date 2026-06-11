@@ -8,6 +8,13 @@ How to apply a **single-commit hot-patch** to the locally-installed `flowpad` (t
 uv-tool deployment from [`pypi-deploy.md`](./pypi-deploy.md) → _Local Deployment_) **in
 place, without rebuilding the wheel and without running tests.**
 
+> **Two surfaces, two patch paths.** This runbook (sections below) patches the **backend**
+> (`flow_sdk` Python in `site-packages`). To patch the **Electron desktop shell** itself —
+> `electron/main.js` bundled inside the installed `Flowpad.app`'s `app.asar` — jump to
+> [Patching the desktop app (Electron shell)](#patching-the-desktop-app-electron-shell). The
+> two are independent: a backend patch never touches the `.app`, and a shell patch never
+> touches `site-packages`.
+
 This is the **local mirror** of the hub's [`cloud_patch.md`](../../test_flowpad/FlowPad/docs/cloud_patch.md).
 Same principle — `git archive` a commit, overlay it straight onto the running
 deployment, restart the service:
@@ -166,3 +173,184 @@ it only in the overlaid `site-packages`.
 baseline (up on 9007) → capture (1 file) → overlay → **sha-verified in place** → `flow stop`
 → `flow start` → healthy on 9007 in **~1s**. `--dry-run`, bad-ref, and dep-manifest-warning
 paths all behaved.
+
+---
+
+# Patching the desktop app (Electron shell)
+
+The sections above patch the **backend**. This one patches the **Electron shell** — the code
+in `electron/` (`main.js`, `preload.js`, …) that ships **bundled inside the installed
+`Flowpad.app`** as `Contents/Resources/app.asar`. Reach for this when you change main-process
+behaviour (window/IPC/menu, deep-link, mouse back-forward, updater, secrets) and need to see
+it run inside the real desktop shell — not just `MINIHUB_DEV=true electron .`.
+
+The user-stated workflow is: **kill the app naturally → patch the app → start the app**, and
+it must behave **"as if it were truly production"** (same hardened-runtime launch, same
+`flow`-spawned backend on **9007**).
+
+> **Which app is "the patched version"? (resolving the ambiguity.)** macOS TCC
+> **App-Management** blocks editing `/Applications/Flowpad.app` from the terminal, so the
+> canonical, unambiguous patched app is the **`~/Flowpad-patched.app` clone** produced below —
+> **that is the build to launch and test**, not `/Applications/Flowpad.app` (which stays the
+> pristine original). If you specifically need the patch to live in `/Applications` (so you can
+> launch it the normal way), grant your terminal **App Management** once in System Settings →
+> Privacy & Security → App Management, then point the steps below at `/Applications/Flowpad.app`
+> instead of the clone. Default = the clone.
+
+## What actually needs patching (and what doesn't)
+
+The desktop backend is the **uv-tool install** on 9007 — the same plain *copy* of `flow_sdk`
+under `~/.local/share/uv/tools/flowpad/.../site-packages` that the top of this runbook patches
+(**not** an editable link to the repo; importing `flow_sdk` from the repo cwd shadows it and
+*looks* editable — it isn't). So:
+
+| Change | How it reaches the running app | Need to touch `app.asar`? |
+| --- | --- | --- |
+| **Backend `.py`** | overlay the file into the install + restart — `scripts/local_patch.sh` | no |
+| **Frontend (`ui/**` / `ts_sdk/**`)** | `scripts/local_patch.sh <ref> --ui` — runs `build_ui.py` then overlays the rebuilt `static/` **into the install**; reload the window | no |
+| **Electron `main.js` / `preload.js`** | **bundled in `app.asar` at build time** — stale until you repack | **yes** |
+
+So a UI-only change needs the `--ui` overlay + a reload — **not** an asar repack. Only
+main-process (`electron/`) changes require the steps below.
+
+> ⚠️ **Most common miss.** Shell and renderer are independent surfaces, and a bare `build_ui.py`
+> writes the **repo**'s `static/` while 9007 serves the **install** copy — so a UI change can be
+> built and still not appear (the asar repack below ships `main.js`, never `ui/**`). Use
+> `--ui` (it overlays into the install), then prove the renderer landed — swap in a string your
+> change adds:
+> ```bash
+> curl -s http://localhost:9007/ | grep -oE '/assets/index[^"]+\.js' | head -1 \
+>   | xargs -I{} curl -s http://localhost:9007{} | grep -c "inbox-search-input"   # >0 = live
+> ```
+> Validated 2026-06-10: an inbox text-search (`ui/` + `ts_sdk/` only) stayed invisible after a
+> `main.js` asar patch — `build_ui.py` had run but the rebuilt bundle was never overlaid into the
+> install. Overlay + reload fixed it; no asar repack needed.
+
+## Version tag — `X.Y.Z-patchN` (answer: yes, this works)
+
+`electron/semver.js` (mirrored 1:1 in `flow_sdk/utils/semver.py`) treats any trailing "extra"
+tag as **newer** than the bare triple — `0.2.28-patch1 > 0.2.28`, the *opposite* of the
+SemVer pre-release rule, and intentional here. So stamping `…-patch1`, `…-patch2`, … :
+
+- survives the auto-updater (it never looks "older" → won't be auto-replaced), and
+- is unmistakable in the log — boot prints `[update] desktop upgraded 0.2.28 → 0.2.28-patch1`.
+
+Stamp it in **two** places: the packed `app.asar/package.json` `version` (authoritative for
+`app.getVersion()`) **and** `Info.plist:CFBundleShortVersionString` (Finder/About display).
+Use the next `patchN` each iteration so you never confuse two patched builds.
+
+## The four blockers (lessons — all hit on macOS 2026-06-10)
+
+1. **`/Applications/Flowpad.app` is TCC App-Management protected.** Writing into a signed
+   bundle there fails with `Operation not permitted` — and worse, `asar pack` **silently
+   no-ops** (the file size/integrity hash stay identical, so it *looks* like it worked).
+   Either grant your terminal **App Management** (System Settings → Privacy & Security), or —
+   simpler and non-destructive — **clone the bundle out** (`ditto … ~/Flowpad-patched.app`)
+   and patch the copy. The copy spawns the same `flow` backend on 9007, so it is functionally
+   "production".
+2. **`app.asar` has an integrity hash in `Info.plist`** (`ElectronAsarIntegrity:Resources/app.asar:hash`).
+   After any repack you **must** rewrite it or the app refuses to load. The hash is **not**
+   `sha256` of the file — it is `sha256` of the asar **header string**:
+   `sha256( require('@electron/asar').getRawHeader(asarPath).headerString )`. (Verify your
+   method first by reproducing the *unmodified* hash — it must match byte-for-byte.)
+3. **The app is Developer-ID signed with hardened runtime** — any edit to the bundle breaks
+   the signature and the OS kills it on launch. **Ad-hoc re-sign** with the checkout's
+   entitlements (they grant `allow-jit` / `disable-library-validation`, which Electron's
+   helpers need): result flags should read `adhoc,runtime`.
+4. **Transplant only the file you changed.** The packed `main.js` is **byte-identical to git
+   `HEAD`** of `electron/main.js`, so copying your edited checkout `main.js` over the
+   extracted one is clean. Leave every other extracted file as the production build — don't
+   wholesale-replace from the checkout (its `electron/package.json` version may have drifted).
+
+> **Keychain note:** an **ad-hoc** copy has a different code signature than the Developer-ID
+> original, so the OS may prompt once for keychain access to the existing `sod_key` item
+> (created under `ai.flowpad.desktop`). Click **Allow** — it's not a failure.
+
+## The flow
+
+```bash
+cd <repo-root>                              # this checkout
+SRC=/Applications/Flowpad.app
+DST="$HOME/Flowpad-patched.app"
+ASAR="$DST/Contents/Resources/app.asar"
+PLIST="$DST/Contents/Info.plist"
+ASARBIN="$PWD/electron/node_modules/.bin/asar"
+BASEVER=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$SRC/Contents/Info.plist")
+PATCHVER="${BASEVER}-patch1"                # bump to -patch2/-patch3 on each iteration
+
+# 0. UI changes only: rebuild + reload — NO asar repack needed.
+#    uv run python build_ui.py            # writes flow_sdk/server/static/ (served on 9007)
+
+# 1. Kill the app naturally (quits the shell AND its child backend on 9007)
+osascript -e 'tell application "Flowpad" to quit'
+until ! pgrep -f "Flowpad.app/Contents/MacOS/Flowpad" >/dev/null; do sleep 0.5; done
+
+# 2. Back up the originals (trivial rollback)
+mkdir -p "$HOME/flowpad-patch-backup"
+cp -p "$SRC/Contents/Resources/app.asar" "$HOME/flowpad-patch-backup/app.asar.orig"
+cp -p "$SRC/Contents/Info.plist"         "$HOME/flowpad-patch-backup/Info.plist.orig"
+
+# 3. Clone the bundle out of TCC-protected /Applications, then patch the copy
+rm -rf "$DST"; ditto "$SRC" "$DST"
+TREE=$(mktemp -d)/app
+"$ASARBIN" extract "$ASAR" "$TREE"
+cp electron/main.js "$TREE/main.js"                                   # transplant ONLY the changed file
+python3 -c 'import json,sys; p,v=sys.argv[1:3]; d=json.load(open(p)); d["version"]=v; json.dump(d,open(p,"w"),indent=2)' \
+        "$TREE/package.json" "$PATCHVER"                             # stamp app.getVersion()
+rm -f "$ASAR"; "$ASARBIN" pack "$TREE" "$ASAR"                        # repack (no --unpack: this build has 0 unpacked entries)
+
+# 4. Recompute the asar integrity hash and write it + the version into Info.plist
+NEWHASH=$(node -e 'const c=require("crypto"),a=require("'"$PWD"'/electron/node_modules/@electron/asar");process.stdout.write(c.createHash("sha256").update(a.getRawHeader(process.argv[1]).headerString).digest("hex"))' "$ASAR")
+/usr/libexec/PlistBuddy -c "Set :ElectronAsarIntegrity:Resources/app.asar:hash $NEWHASH" "$PLIST"
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $PATCHVER" "$PLIST"
+
+# 5. Ad-hoc re-sign (hardened runtime + checkout entitlements) and verify
+codesign --force --deep --options runtime --entitlements electron/entitlements.mac.plist --sign - "$DST"
+codesign --verify --deep --strict "$DST" && echo "codesign OK"        # flags should show: adhoc,runtime
+
+# 6. Start the patched app
+open "$DST"
+```
+
+## Verify
+
+```bash
+LOG="$HOME/.flow/logs/main_desktop/$(ls -t "$HOME/.flow/logs/main_desktop" | head -1)"
+grep -E "desktop upgraded|nav-debug|Backend is ready|Loading UI" "$LOG"   # log path from electron/main.js
+curl -fsS http://localhost:9007/health/status && echo " 9007 OK"
+```
+
+Expect `[update] desktop upgraded <base> → <base>-patch1`, then your main-process log lines,
+then `Backend is ready!` / `Loading UI from http://localhost:9007`. **All Electron main-process
+logs land in `~/.flow/logs/main_desktop/<ts>.log`** (electron-log); renderer `console.*` only
+reaches that file if `main.js` forwards it (e.g. a `console-message` listener).
+
+## Rollback
+
+```bash
+osascript -e 'tell application "Flowpad-patched" to quit' 2>/dev/null
+rm -rf "$HOME/Flowpad-patched.app"            # the copy — the /Applications original was never touched
+```
+
+The pristine `/Applications/Flowpad.app` keeps running production. (Originals are also in
+`~/flowpad-patch-backup/` if you patched in place after granting App Management.)
+
+## Lifetime
+
+- ✅ Survives relaunch/reboot — the patched copy is a normal `.app`.
+- ❌ Wiped/superseded by the next desktop **release install or auto-update**, which replaces
+  `/Applications/Flowpad.app` (the copy is independent and just goes stale vs. the new base).
+- If a `main.js` fix matters beyond local debugging, **commit it to `electron/`** and ship a
+  real desktop build — don't leave it only in the patched copy's `app.asar`.
+
+## Validated end-to-end (2026-06-10)
+
+Installed `Flowpad.app` `0.2.28` (hardened-runtime, Developer-ID "Langware Labs", asar
+integrity present, 0 unpacked entries; packed `main.js` byte-identical to `HEAD`). Added
+`[nav-debug]` logging to `electron/main.js`, `build_ui.py` for the renderer side, then:
+in-place `/Applications` patch **blocked** by TCC App-Management (asar repack silently no-op'd)
+→ pivoted to `ditto` clone → transplanted `main.js` + stamped `0.2.28-patch1` → repack →
+integrity hash recomputed via `getRawHeader` (reproduced the original exactly, then the new
+one) → ad-hoc re-sign (`adhoc,runtime`, verify OK) → launched. Log confirmed
+`[update] desktop upgraded 0.2.28 → 0.2.28-patch1` and live `[nav-debug] main.did-navigate …`,
+backend healthy on 9007.

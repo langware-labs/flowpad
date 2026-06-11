@@ -19,6 +19,7 @@ INDEXABLE_TYPES: list[RecordType] = [
     RecordType.PROJECT,
     RecordType.CODEX_SESSION,
     RecordType.CODEX_PROJECT,
+    RecordType.COPILOT_SESSION,
     RecordType.PLAN,
     RecordType.CLAUDE_MD,
     RecordType.CLAUDE_RULES,
@@ -52,6 +53,7 @@ def build_default_indexer() -> FSIndexer:
     from flow_sdk.fs_store.indexer.functions.claude_sessions import claude_sessions_fn
     from flow_sdk.fs_store.indexer.functions.codex_projects import codex_projects_fn
     from flow_sdk.fs_store.indexer.functions.codex_sessions import codex_sessions_fn
+    from flow_sdk.fs_store.indexer.functions.copilot_sessions import copilot_sessions_fn
     from flow_sdk.fs_store.indexer.functions.claude_plan import claude_plan_fn
     from flow_sdk.fs_store.indexer.functions.claude_md import (
         claude_md_in_claude_subdir_fn, claude_md_in_project_root_fn,
@@ -130,6 +132,7 @@ def build_default_indexer() -> FSIndexer:
     # and silently drop every Codex-discovered project.
     idx.add_function(RecordType.USER_HOME_FOLDER, codex_projects_fn, RecordType.PROJECT)
     idx.add_function(RecordType.USER_HOME_FOLDER, codex_sessions_fn, RecordType.CODEX_SESSION)
+    idx.add_function(RecordType.USER_HOME_FOLDER, copilot_sessions_fn, RecordType.COPILOT_SESSION)
 
     # PROJECT (encoded ~/.claude/projects/<dir>) expanders
     idx.add_function(RecordType.PROJECT, claude_sessions_fn, RecordType.CLAUDE_SESSION)

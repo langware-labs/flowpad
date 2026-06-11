@@ -45,6 +45,12 @@ interface EntityChipProps {
   title?: string;
   /** Visual size — "chip" matches the conversation-toolbar buttons. Default "chip". */
   size?: 'chip' | 'inline';
+  /**
+   * Render greyed-out and non-navigable. Used when the referenced entity has no
+   * local row (a 404'd context reference) — the chip shows the type/id as
+   * "unavailable" instead of looking clickable or re-fetching.
+   */
+  muted?: boolean;
 }
 
 /**
@@ -103,6 +109,9 @@ const STYLE_BY_TYPE: Record<string, string> = {
 };
 const DEFAULT_STYLE =
   'border border-border bg-muted/30 text-muted-foreground hover:bg-muted hover:text-foreground';
+/** Greyed, non-interactive style for a context ref whose entity 404'd. */
+const MUTED_STYLE =
+  'border border-dashed border-border bg-transparent text-muted-foreground line-through';
 
 function resolveTypeAndId(entity: EntityChipEntity): { type: string; id: string } | null {
   if (entity.typeId) {
@@ -131,19 +140,22 @@ function resolveTypeAndId(entity: EntityChipEntity): { type: string; id: string 
  * entity has no id (decorative use, e.g. an "Approve & Execute" prompt
  * chip) the chip looks the same but only fires `onClick`.
  */
-export function EntityChip({ entity, inside, onClick, projectId, title, size = 'chip' }: EntityChipProps) {
+export function EntityChip({ entity, inside, onClick, projectId, title, size = 'chip', muted = false }: EntityChipProps) {
   const { navigation } = useDockNavigation();
   const resolved = resolveTypeAndId(entity);
   const Icon = entity.icon ?? (resolved ? ICON_BY_TYPE[resolved.type] : undefined) ?? ExternalLink;
   const label = entity.name ?? (resolved?.id || '(unnamed)');
-  const typeStyle = (resolved && STYLE_BY_TYPE[resolved.type]) ?? DEFAULT_STYLE;
   const typeWord = resolved
     ? resolved.type.charAt(0).toUpperCase() + resolved.type.slice(1).replace(/_/g, ' ')
     : '';
-  const tooltip = title ?? (resolved ? `Open ${typeWord}: ${label}` : `Open ${label}`);
+  const typeStyle = muted ? MUTED_STYLE : (resolved && STYLE_BY_TYPE[resolved.type]) ?? DEFAULT_STYLE;
+  const tooltip = muted
+    ? `${typeWord || 'Entity'} unavailable (not found locally)`
+    : title ?? (resolved ? `Open ${typeWord}: ${label}` : `Open ${label}`);
 
   const handleClick = useMemo(() => {
     return () => {
+      if (muted) return;
       if (onClick) {
         onClick();
         return;
@@ -152,7 +164,7 @@ export function EntityChip({ entity, inside, onClick, projectId, title, size = '
       const pointer = buildDockPointer(resolved as { type: string; id: string }, inside);
       if (pointer) navigation.openDock(DockPointer.rebaseAssetsOntoProject(pointer, projectId));
     };
-  }, [onClick, resolved, inside, navigation, projectId]);
+  }, [muted, onClick, resolved, inside, navigation, projectId]);
 
   const baseLayout =
     size === 'chip'
@@ -164,7 +176,10 @@ export function EntityChip({ entity, inside, onClick, projectId, title, size = '
       type="button"
       onClick={handleClick}
       title={tooltip}
-      className={`${baseLayout} ${typeStyle}`}
+      disabled={muted}
+      aria-disabled={muted}
+      data-testid={`entity-chip-${entity.type}-${entity.id}`}
+      className={`${baseLayout} ${typeStyle}${muted ? ' cursor-default opacity-60' : ''}`}
     >
       <Icon className="h-3 w-3" />
       <span className="truncate">{label}</span>
@@ -247,8 +262,11 @@ export function ContextEntityChip({ typeId, inside, onClick, projectId, title, s
   // Generic context chips can point at any entity type; the SDK hook's recursive
   // entity generic has no concrete type here.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const { data } = useEntity<APIEntity<any>>(typeId);
-  const resolvedName = data?.displayName ?? typeId.toString();
+  const { data, notFound } = useEntity<APIEntity<any>>(typeId);
+  // ``notFound`` is a terminal 404 — the target has no local row (e.g. a
+  // dangling/unmaterialized context reference). Render a muted, non-navigable
+  // chip; the SDK's negative cache keeps us from re-fetching every render.
+  const resolvedName = data?.displayName ?? (notFound ? `${typeId.type} (unavailable)` : typeId.toString());
 
   return (
     <EntityChip
@@ -258,6 +276,7 @@ export function ContextEntityChip({ typeId, inside, onClick, projectId, title, s
       projectId={projectId}
       title={title}
       size={size}
+      muted={notFound}
     />
   );
 }

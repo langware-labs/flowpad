@@ -93,6 +93,7 @@ class EntityType(StrEnum):
     # DEPRECATED 2026-05-09: codex projects now stored as PROJECT with a
     # codex_project=True provenance flag. Kept for backward compatibility.
     CODEX_PROJECT = "codex_project"
+    COPILOT_SESSION = "copilot_session"
     CLI_LOG = "cli_log"
     CLI_LOG_SETTINGS = "cli_log_settings"
     TRIGGER_LOG = "trigger_log"
@@ -154,6 +155,11 @@ class EntityType(StrEnum):
     NOTIFICATION = "notification"
     RUN = "run"
     GIT_REPO = "git_repo"
+    # Git identity split (git_repo is the legacy share-chip; see builtin/git_remote.py).
+    GIT_REMOTE = "git_remote"
+    GIT_BRANCH = "git_branch"
+    # A file on disk outside the record store (DB-only; SemanticLock targets).
+    FILE = "file"
     # Entity types that previously had no enum member (string-literal `type`).
     ARTIFACT_RELATION = "artifact_relation"
     FS_ITEM = "fs_item"

@@ -1,36 +1,25 @@
 /**
  * ShareSource — entity-specific share PREP, factored out of the per-entity
- * dialogs (EntityShareDialog / AskHelpDialog / SendPlanNotificationDialog).
+ * dialogs (EntityShareDialog / SendPlanNotificationDialog).
  *
  * A ShareSource knows how to turn "the thing being shared" into a send payload
- * (asset references + shared context + files). Plan/ask-help sources mint
- * their Spec/Task rows here, but a ShareSource does NOT create a Conversation
- * — conversation selection/creation is owned by the share screen via
- * `useSendToConversation`. This is what kills the duplicate-conversation bug:
- * prep runs once, the Conversation is chosen (existing) or created (once)
- * separately.
+ * (asset references + shared context + files). Every entity rides as an
+ * existing TYPE_ID attachment — a ShareSource NEVER mints a new entity, and it
+ * does NOT create a Conversation (conversation selection/creation is owned by
+ * the share screen via `useSendToConversation`). This is what kills the
+ * duplicate-conversation bug: prep runs once, the Conversation is chosen
+ * (existing) or created (once) separately.
  *
- * `prepare()` is resolve-once: the result (including any minted Task/Spec ids)
- * is cached, so a click → error → retry reuses the same rows instead of
- * minting again — replacing the old `draftTaskRef` / `draftSpecRef` guards.
+ * `prepare()` is resolve-once: its result is cached, so a click → error → retry
+ * reuses the same payload instead of re-resolving.
  */
 import {
   AgenticProcess,
   dataManager,
-  Spec,
-  Task,
+  fsManager,
   TypeId,
 } from '@sdk';
 import { loadOptionalTranscript } from '@src/components/conversation/transcript-attachment';
-
-/** Extract the first markdown heading, falling back to the filename stem. */
-export function extractPlanTitle(markdown: string, filePath: string): string {
-  for (const line of markdown.split('\n')) {
-    const stripped = line.replace(/^#+\s*/, '').trim();
-    if (stripped) return stripped;
-  }
-  return filePath.split('/').pop()?.replace(/\.md$/, '') ?? 'Untitled Plan';
-}
 
 export interface SharePrepPayload {
   /** Serialized TypeIds → TYPE_ID attachments on the FlowMessage. */
@@ -71,20 +60,6 @@ export interface ShareSource {
   /** Offer the transcript-attach toggle (AgenticProcess only). */
   isProcess?: boolean;
   prepare(opts: SharePrepOptions): Promise<SharePrepPayload>;
-}
-
-/** The Task fields every share-Task factory sets identically (title + the
- *  sender/recipient/project provenance). Spread it, then add the per-source
- *  bits (spec_type, my_process_id, shared_process_id, shared_context_entities). */
-function baseTaskFields(o: SharePrepOptions, title: string): Partial<Task> {
-  return {
-    title: title.trim(),
-    status: 'to_do',
-    sender_name: o.senderName?.trim() || undefined,
-    shared_by_id: o.senderId ?? undefined,
-    recipient_email: o.recipientEmails[0],
-    project_id: o.projectId ?? null,
-  } as Partial<Task>;
 }
 
 /** Wrap a factory's prep fn with resolve-once caching. */
@@ -168,81 +143,56 @@ export function agenticProcessShareSource(
 }
 
 /**
- * Plan/spec share: optional fork, mint a Spec (the plan body) + a Task that
- * references it. Both ride as asset refs; the Task is the conversation's
- * shared context.
+ * Raw file on a compute node (file browser / interactive-tab side menu): the
+ * bytes ride as a FILE attachment in the body bundle — the same mechanism as
+ * pasted screenshots. No entity is minted; the receiver gets the file itself.
  */
-export function planSpecShareSource(args: {
-  title: string;
-  content: string;
-  processId?: string | null;
+export function fileShareSource(args: {
+  computeNodeTypeId: TypeId;
+  absPath: string;
 }): ShareSource {
+  const fileName = args.absPath.split('/').pop() || args.absPath;
   return {
-    label: args.title,
-    typeLabel: 'PLAN',
-    defaultTitle: args.title,
+    label: fileName,
+    typeLabel: 'FILE',
+    defaultTitle: fileName,
     supportsFiles: true,
     prepare: resolveOnce(async (o) => {
-      let forkedProcessId: string | null = null;
-      if (args.processId) {
-        const proc = await dataManager
-          .getByTypeId<AgenticProcess>(new TypeId(AgenticProcess.type, args.processId))
-          .catch(() => null);
-        if (proc) {
-          try {
-            const forked = await proc.fork(false);
-            forkedProcessId = forked.id ?? null;
-          } catch (err) {
-            console.warn('[shareSource:plan] pre-fork failed (non-fatal):', err);
-          }
-        }
-      }
-
-      const effectiveTitle = (o.title || args.title).trim();
-      const spec = new Spec({
-        title: effectiveTitle,
-        content: args.content.trim(),
-        spec_type: 'plan',
+      const blob = await fsManager.download(args.computeNodeTypeId, args.absPath, {
+        asBlob: true,
       });
-      await spec.save();
-
-      const task = new Task({
-        ...baseTaskFields(o, effectiveTitle),
-        spec_type: 'plan',
-        my_process_id: args.processId ?? null,
-        shared_context_entities: [`${Spec.type}-${spec.id}`],
-      } as Partial<Task>);
-      task.shared_process_id = forkedProcessId;
-      await task.save();
-
-      const taskRef = `${Task.type}-${task.id}`;
+      const file = new File([blob as Blob], fileName);
       return {
-        assetReferences: [taskRef, `${Spec.type}-${spec.id}`],
-        sharedContextEntities: [taskRef],
-        files: o.files && o.files.length > 0 ? o.files : undefined,
+        assetReferences: [],
+        sharedContextEntities: [],
+        files: [file, ...(o.files ?? [])],
       };
     }),
   };
 }
 
 /**
- * Ask-for-help: no underlying entity. Mint a `request` Task from a typed title;
- * the recipient drives it forward by replying with a PROMPT.
+ * A source that attaches nothing — the meaning rides elsewhere (the backend
+ * `forward` action for a message clone). It only labels the share;
+ * recipients/conversation are chosen in the dialog.
  */
-export function taskRequestShareSource(): ShareSource {
+function noAssetShareSource(label: string, typeLabel: string): ShareSource {
   return {
-    label: 'Ask for help',
-    typeLabel: 'REQUEST',
-    requiresTitle: true,
-    prepare: resolveOnce(async (o) => {
-      const task = new Task({
-        ...baseTaskFields(o, o.title || 'Help request'),
-        spec_type: 'request',
-      } as Partial<Task>);
-      await task.save();
-
-      const ref = `${Task.type}-${task.id}`;
-      return { assetReferences: [ref], sharedContextEntities: [ref] };
-    }),
+    label,
+    typeLabel,
+    defaultTitle: label,
+    prepare: resolveOnce(() =>
+      Promise.resolve({ assetReferences: [], sharedContextEntities: [] }),
+    ),
   };
 }
+
+/**
+ * Forward-a-message: the backend's `forward` action owns the packaging (it
+ * clones the source FlowMessage, attachments and all). The dialog's `commit`
+ * override does the POST; this source just labels the share.
+ */
+export function messageForwardShareSource(args: { label: string }): ShareSource {
+  return noAssetShareSource(args.label, 'MESSAGE');
+}
+

@@ -20,8 +20,7 @@ import { SearchFilters, useRecordSearch } from '@src/hooks/use-record-search';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
 import { ScopeFilterBar } from '@src/components/scope-filter/ScopeFilterBar';
 import { applyScopeToParams, scopeFilterEqual, scopeFilterKey, type ScopeFilter } from '@src/lib/scope-filter';
-import { projectIdForPath } from '@src/components/assets/utils';
-import { useClaudeProjectList } from '@src/hooks/use-claude-projects';
+import { useProjectList } from '@src/hooks/use-claude-projects';
 
 const BASE = '/graph/compute_node/@local/fs-records';
 const SCAN_PATH = `${BASE}/scan`;
@@ -290,9 +289,9 @@ export function FsRecordsScannerViewer() {
   // assets page. Drives every action and every count on this page so the
   // user sees one consistent view of "what scope am I operating on".
   const { navigation } = useDockNavigation();
-  const currentProjectId = projectIdForPath(dataContext.project?.fs_storage_mount_path);
+  const currentProjectId = dataContext.project?.id ?? null;
   // Default scope is "All" with every project selected. Project ids arrive
-  // async (useClaudeProjectList), so seed user+current-project immediately and
+  // async (useProjectList), so seed user+current-project immediately and
   // widen to the full project set once the list loads — unless the user has
   // already touched the scope chips.
   const [scope, setScope] = useState<ScopeFilter>(() => ({
@@ -305,11 +304,11 @@ export function FsRecordsScannerViewer() {
     setScope(next);
   }, []);
 
-  const { projects: projectList } = useClaudeProjectList();
+  const { projects: projectList } = useProjectList();
   const allProjectIds = useMemo(() => {
     const ids = new Set<string>();
     for (const p of projectList) {
-      const pid = projectIdForPath(p.cwd || p.name);
+      const pid = p.id;
       if (pid) ids.add(pid);
     }
     return [...ids];
@@ -609,6 +608,10 @@ export function FsRecordsScannerViewer() {
   const lastIndexedAt = indexStatus.phase === 'ready' ? indexStatus.status.last_indexed_at : null;
   const lastIndexedLabel = formatTimeAgo(lastIndexedAt);
   const currentActiveType = currentActivity ? (progressTable?.current ?? null) : null;
+  const scanStatsProgress =
+    scanStatsLoading && currentActivity === 'scan' && progressTable?.job_name === 'scan'
+      ? progressTable
+      : null;
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -811,9 +814,19 @@ export function FsRecordsScannerViewer() {
         </div>
       </div>
 
-      <ActivityIndicator variant="list" className="shrink-0 border-b px-5 py-2 flex flex-col gap-1 max-h-44 overflow-auto" />
-
-
+      {/* While any index activity (scan / index / clear) is running, the body is
+          ONLY the live per-type progress. The search bar, totals, filter, and
+          type table would otherwise pile up alongside it into an unreadable mix —
+          they all return the moment the run goes idle (currentActivity → null). */}
+      {currentActivity ? (
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-3">
+          {/* Global progress bar on top — count-only while scanning (totals
+              unknown), filling to a percentage once the index loop starts. */}
+          <ActivityIndicator variant="bar" />
+          <ActivityIndicator variant="list" className="flex flex-col gap-1.5" />
+        </div>
+      ) : (
+      <>
       {/* Semantic search bar */}
       <div className="shrink-0 border-b px-5 py-2">
         <RecordSearchBar
@@ -993,6 +1006,8 @@ export function FsRecordsScannerViewer() {
           </div>
         </>
       )}
+      </>
+      )}
 
       {/* Sweep Orphans dialog — explainer + per-type breakdown + sweep action.
           Driven by the toolbar Scan Orphans button OR a row-cell click on a
@@ -1029,8 +1044,18 @@ export function FsRecordsScannerViewer() {
             </DialogDescription>
           </DialogHeader>
           {scanStatsLoading ? (
-            <div className="flex items-center gap-2 py-6 text-sm text-muted-foreground">
-              <RefreshCw className="h-4 w-4 animate-spin" /> Scanning…
+            <div className="flex items-center gap-3 py-6 text-sm">
+              <RefreshCw className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
+              <div className="flex min-w-0 flex-col gap-0.5">
+                <span className="text-foreground">Scanning filesystem…</span>
+                <span className="text-xs text-muted-foreground">
+                  {scanStatsProgress
+                    ? `${scanStatsProgress.done.toLocaleString()} found so far${
+                        scanStatsProgress.current ? ` · ${scanStatsProgress.current}` : ''
+                      }`
+                    : 'Starting scan…'}
+                </span>
+              </div>
             </div>
           ) : scanStats ? (
             <div className="flex flex-col gap-2">

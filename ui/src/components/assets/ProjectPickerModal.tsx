@@ -9,9 +9,8 @@ import {
   DialogDescription,
 } from '@src/components/ui/dialog';
 import { Input } from '@src/components/ui/input';
-import { useClaudeProjectList, getProjectDisplayName } from '@src/hooks/use-claude-projects';
+import { useProjectList, getProjectDisplayName } from '@src/hooks/use-claude-projects';
 import type { ProjectListItem } from '@sdk';
-import { projectIdForPath } from './utils';
 
 interface ProjectPickerModalProps {
   open: boolean;
@@ -51,7 +50,7 @@ export function ProjectPickerModal({
   selectedIds,
   onConfirm,
 }: ProjectPickerModalProps): React.ReactElement {
-  const { projects, isLoading } = useClaudeProjectList({ enabled: open });
+  const { projects, isLoading } = useProjectList({ enabled: open });
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set(selectedIds));
   const [search, setSearch] = useState('');
 
@@ -64,7 +63,7 @@ export function ProjectPickerModal({
   const rows = useMemo<RowItem[]>(() => {
     const out: RowItem[] = [];
     for (const p of projects) {
-      const pid = projectIdForPath(p.cwd || p.name);
+      const pid = p.id;
       if (!pid) continue;
       out.push({
         pid,

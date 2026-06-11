@@ -75,9 +75,24 @@ function clampToViewport(b: Bounds): Bounds {
  * back into the button. The transform-origin / starting transform are derived
  * from the `triggerRect` captured at click time.
  */
+// EXPERIMENT: PTY-transcript chat transport. Set
+// `localStorage.setItem('flowpad.experiment.ptyChat', '1')` (and reload) to
+// drive the assistant through a PTY worker whose FlowData is derived by
+// polling the session transcript, with the stream closing on inactivity.
+const PTY_CHAT_EXPERIMENT_KEY = 'flowpad.experiment.ptyChat';
+
+function loadPtyChatExperiment(): boolean {
+  try {
+    return localStorage.getItem(PTY_CHAT_EXPERIMENT_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
 export function FloatingChatWindow() {
   const { open, closeChat, triggerRect, restoredFromStorage } = useFloatingChat();
   const { project: flowpadAssistantProject, target, isLoading } = useFlowpadAssistantProject();
+  const [ptyExperiment] = useState<boolean>(() => loadPtyChatExperiment());
 
   const [bounds, setBounds] = useState<Bounds>(() =>
     clampToViewport(loadBounds() ?? defaultBounds()),
@@ -272,7 +287,17 @@ export function FloatingChatWindow() {
           alt=""
           className="h-5 w-5 flex-shrink-0 object-contain"
         />
-        <span className="flex-1 truncate text-xs font-medium">Flowpad Assistant</span>
+        <span className="flex-1 truncate text-xs font-medium">
+          Flowpad Assistant
+          {ptyExperiment && (
+            <span
+              className="ml-1.5 rounded bg-amber-500/15 px-1 py-px text-[9px] font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400"
+              data-testid="floating-chat-pty-experiment-badge"
+            >
+              pty experiment
+            </span>
+          )}
+        </span>
         <Button
           type="button"
           variant="ghost"
@@ -306,6 +331,7 @@ export function FloatingChatWindow() {
             // have active in the dock (e.g. flowpad-oss).
             defaultProjectId={flowpadAssistantProject?.id ?? null}
             defaultWorkdir={flowpadAssistantProject?.fs_storage_mount_path ?? null}
+            transport={ptyExperiment ? 'pty-poll' : 'print'}
           />
         ) : (
           <div className="flex flex-1 items-center justify-center px-4 text-center text-xs text-muted-foreground">

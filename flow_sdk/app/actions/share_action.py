@@ -133,3 +133,40 @@ async def conversation_add_message() -> ApiResponse:
         return ApiFailResponse(message="Cloud login required to send messages")
 
     return await handle_add_message(body, request_info.someone_typeid)
+
+
+@action.post(action_name="forward", types=["flow_message"])
+async def flow_message_forward() -> ApiResponse:
+    """``POST /graph/flow_message/<id>/forward`` — clone a message into
+    another conversation.
+
+    Body: ``{conversation_id}`` (the target). The source message id comes
+    from the URL. Delegates to ``handle_forward_message``, which clones the
+    FlowMessage (new id, the caller as sender, fresh timestamps,
+    ``cloned_from_id`` provenance, copied attachment bytes) and dispatches it
+    into the target conversation through the same pipeline as a fresh send.
+    """
+    from flow_sdk.app.actions.notification_action import handle_forward_message  # noqa: PLC0415
+    from flow_sdk.cli.auth.hub_login import is_logged_in  # noqa: PLC0415
+
+    request_info = get_current_request_info()
+    if not request_info or not request_info.target_entity_typeid:
+        raise HTTPException(status_code=400, detail="forward: target flow_message typeid required")
+    if request_info.target_entity_typeid.type != "flow_message":
+        raise HTTPException(status_code=400, detail="forward: target must be a flow_message")
+    if not request_info.someone_typeid:
+        return ApiFailResponse(message="No authenticated user in request context")
+
+    try:
+        body = await request_info.get_post_data() or {}
+    except JSONDecodeError:
+        body = {}
+
+    # The URL is the source of truth for which message is being forwarded.
+    body["flow_message_id"] = request_info.target_entity_typeid.id
+
+    # Same gate as add_message — sends require login.
+    if not is_logged_in():
+        return ApiFailResponse(message="Cloud login required to send messages")
+
+    return await handle_forward_message(body, request_info.someone_typeid)

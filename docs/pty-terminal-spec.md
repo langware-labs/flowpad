@@ -18,10 +18,10 @@ The terminal system provides interactive PTY (pseudo-terminal) sessions in the b
 OS PTY fd (raw bytes)
   → daemon read_thread (1024-byte reads)
   → on_output callback
-  → PtySessionState.next_seq() assigns monotonic seq number
+  → PtyState.next_seq() assigns monotonic seq number
   → PtyStreamFile.write(data, seq) appends a framed output line to disk (§10)
   → PtyOutputMessage.from_bytes() base64-encodes data
-  → WebSocket send to all attached connection_ids
+  → WebSocket send to all attached attached_connections
   → ConnectionManager dispatches 'pty_output_msg'
   → ShellManager.handlePtyOutputMsg()
       - atob() → Uint8Array → TextDecoder({ stream: true }) → string
@@ -74,7 +74,29 @@ WebSocket /api/v1/connect/ws/{connection_id}
   └── session_id: "shell-1709..." → Terminal Tab 3
 ```
 
-Multiple browser tabs/windows can attach to the same PTY session simultaneously — each gets its own `connection_id` in the session's `connection_ids` set.
+Multiple browser tabs/windows can attach to the same PTY session simultaneously — each gets its own `connection_id` in the session's `attached_connections` set.
+
+#### Connection-membership FSM (backend-owned)
+
+Which connections receive a PTY's output is a **backend** state machine on `PtyState`, driven entirely by the WebSocket lifecycle — the frontend never re-attaches on reconnect. A connection is in exactly one state per `PtyState`:
+
+| State | Where | Receives output? |
+|-------|-------|------------------|
+| `ATTACHED` | `attached_connections: set[str]` | yes |
+| `DETACHED` | `detached_connections: dict[str, float]` (id → detached_at) | no — parked, kept for reconnect |
+| `NONE` | in neither | — |
+
+Transitions (all backend; `connection_id` is stable across an in-page reconnect):
+
+| Event | Transition | Hook |
+|-------|-----------|------|
+| client opens terminal | `NONE → ATTACHED` | `generate_session` / `attach` |
+| **WS disconnect** | `ATTACHED → DETACHED` (park) | `PtyRegistry.on_ws_disconnect` (websocket.py finally) |
+| **WS connect/reconnect** | `DETACHED → ATTACHED` (resume) | `PtyRegistry.on_ws_connect` (websocket.py accept) |
+| client closes tab | `* → NONE` (+ destroy if last) | `close_for_connection` |
+| orphan TTL / parked grace | close / drop | `cleanup_expired_sessions` |
+
+So a transient drop+reconnect of the same `connection_id` auto-restores output with **no client action**. (A *dead PTY* — an agentic worker that exits mid-session, or any shell whose process is gone after a full backend restart — is a separate concern, respawned by the periodic backend watchdog in `flow_sdk/server/pty_recovery.py`: `run_pty_recovery` re-`start_pty`s dead agentic workers (`--resume`), and `_recover_bare_shells` respawns recently-active bare terminals — liveness keyed on `has_attachable_pty`, not `worker_alive`, since a bare shell has no worker. The client then re-`attach`es to the rebuilt PTY.)
 
 ---
 
@@ -206,12 +228,13 @@ pty_key = (compute_node_id, provider_node_id, session_id)
 # Example: ("compute-node-abc", "local-machine", "shell-1709...")
 ```
 
-#### PtySessionState (in-memory, `pty_session_manager.py`)
+#### PtyState (in-memory, `pty_session_manager.py`)
 
 ```python
-class PtySessionState:
-    pty_key: tuple                    # (compute_node_id, provider_node_id, session_id)
-    connection_ids: set[str]          # All attached WebSocket connections
+class PtyState:
+    pty_key: PtyKey                   # (compute_node_id, provider_node_id, session_id)
+    attached_connections: set[str]          # ATTACHED — receive live output
+    detached_connections: dict[str, float]  # DETACHED — parked (WS dropped), id -> detached_at
     cols: int                         # Current terminal width
     rows: int                         # Current terminal height
     name: str | None                  # Display name
@@ -225,7 +248,7 @@ class PtySessionState:
 
 #### History persistence (on-disk, `pty_stream_file.py`)
 
-The in-memory `PtyReplayBuffer` was **removed** (commit `4466d9bc`): replaying raw recorded bytes into a terminal at a different width garbles cursor-relative repaints (ink/Claude TUIs erase-and-repaint N lines calibrated to the width at emission time). It was replaced by the framed on-disk stream (§10) plus client-side replay at the recorded sizes (§13). The per-session `seq` counter now lives on `PtySessionState`.
+The in-memory `PtyReplayBuffer` was **removed** (commit `4466d9bc`): replaying raw recorded bytes into a terminal at a different width garbles cursor-relative repaints (ink/Claude TUIs erase-and-repaint N lines calibrated to the width at emission time). It was replaced by the framed on-disk stream (§10) plus client-side replay at the recorded sizes (§13). The per-session `seq` counter now lives on `PtyState`.
 
 #### Database-Persisted State
 
@@ -305,15 +328,18 @@ Created (frontend only)
     └─ removeSession() ──→ Removed
 ```
 
-### 4.5 TTL Cleanup (Backend)
+### 4.5 TTL Cleanup (Backend) — two bounded reapers, no leaks
 
-Background task runs every **120 seconds**, closing sessions detached for > **900 seconds** (15 min):
+Background task runs every **120 seconds** (`cleanup_expired_sessions`):
 
 ```python
-session_manager.start_cleanup_task(interval_seconds=120, ttl_seconds=900)
+pty_registry.start_cleanup_task(interval_seconds=120, ttl_seconds=900)
 ```
 
-A session is "detached" when its `connection_ids` set is empty (all WebSocket clients disconnected).
+1. **Orphan TTL** — a `PtyState` with an empty `attached_connections` set for > **900 s** (15 min) is closed (PTY killed). `last_detached_at` is stamped when the last connection parks or detaches, arming the timer; a reconnect clears it.
+2. **Parked grace** — a `DETACHED` connection that does not reconnect within `detach_grace_seconds` is dropped from `detached_connections`, so a long-lived `PtyState` can't accumulate stale parked ids.
+
+A `PtyState` is "orphaned" when **no connection is ATTACHED** (all parked or gone) — parked subscriptions still alive count as detached, so they don't keep the PTY alive on their own.
 
 ---
 
@@ -363,7 +389,7 @@ chunk buffer.
 
 Both backend and frontend track sequence numbers:
 
-- **Backend**: `last_seq_received` on `PtySessionState`
+- **Backend**: `last_seq_received` on `PtyState`
 - **Frontend**: `lastSeqReceived` on `ShellSession`
 - **ShellManager**: 200-entry recent chunk key cache for dedup
 
@@ -513,7 +539,7 @@ The following refs were in `InteractiveTerminal.tsx` and moved into the SDK:
 ```
 AgenticProcess
   ├── pty_pid ────→ ShellSession (frontend)
-  │                         └── maps to PtySessionState (backend)
+  │                         └── maps to PtyState (backend)
   ├── worker_session_id ──→ Claude CLI session (survives PTY restarts)
   └── compute_node_id ───→ ComputeNode
                              └── active_pty_sessions: [session_id, ...]
@@ -758,7 +784,7 @@ On server restart, sessions that were running before the shutdown need to be rec
 start_machine_pty_session()
   → Create ShellSessionRecord(state=RUNNING)
   → Create PtyStreamFile at record's pty_stream_path
-  → Store PtyStreamFile on PtySessionState.pty_stream_file
+  → Store PtyStreamFile on PtyState.pty_stream_file
 
 on_pty_output()
   → PtyStreamFile.write(data)  (if pty_stream_file is set)
@@ -766,7 +792,7 @@ on_pty_output()
 close_session()
   → Record state → CLOSED
   → PtyStreamFile.delete()
-  → Remove PtySessionState from session_manager
+  → Remove PtyState from pty_registry
 
 ```
 
