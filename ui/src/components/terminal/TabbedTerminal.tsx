@@ -21,15 +21,8 @@ import { CodexIcon } from '@src/components/icons/CodexIcon';
 import { CopilotIcon } from '@src/components/icons/CopilotIcon';
 import { useEnsureProject } from '@src/components/project-selector';
 import { Button } from '@src/components/ui/button';
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuSeparator,
-  ContextMenuTrigger,
-} from '@src/components/ui/context-menu';
 import { InputDialog } from '@src/components/ui/input-dialog';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
+import { TabStrip, type TabStripItem } from '@src/components/tabs/TabStrip';
 import { useResumeInTerminal } from '@src/hooks/use-resume-in-terminal';
 import { notify } from '@src/notifications';
 import {
@@ -48,18 +41,7 @@ import {
 } from '@src/hooks/useActiveTerminals';
 import { useContext } from '@src/hooks/useContext';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import {
-  ChevronLeft,
-  ChevronRight,
-  Cloud,
-  Container,
-  ExternalLink,
-  FolderGit2,
-  History,
-  Loader2,
-  SquareTerminal,
-  X,
-} from 'lucide-react';
+import { Cloud, Container, FolderGit2, History, Loader2, SquareTerminal } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { allowRename } from './rename-rules';
 import { HistoryModal } from './HistoryModal';
@@ -259,10 +241,6 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
   }
 
   const tabCreationLockRef = useRef(false);
-  const [editingTargetKey, setEditingTargetKey] = useState<string | null>(null);
-  const [editingName, setEditingName] = useState('');
-  const renameInputRef = useRef<HTMLInputElement>(null);
-  const shouldSelectRenameInputRef = useRef(false);
   const [pendingTabCreation, setPendingTabCreation] = useState<{
     kind: 'claude' | 'codex' | 'copilot' | 'terminal';
     targetKey: string | null;
@@ -270,9 +248,6 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
     targetProcessId: string | null;
   } | null>(null);
 
-  // Scroll state
-  const tabContainerRef = useRef<HTMLDivElement>(null);
-  const tabRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [historyModalOpen, setHistoryModalOpen] = useState(false);
   const [resumeByIdOpen, setResumeByIdOpen] = useState(false);
   // Harness capability state (cache warmed at app startup). Drives the "!"
@@ -283,9 +258,6 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
   // askInstallOneOf — open the harness-required popup for the given capability kinds.
   const askInstallOneOf = useCallback((kinds: string[]) => setInstallChoiceKinds(kinds), []);
   const { resumeInTerminal } = useResumeInTerminal();
-  const [hasTabOverflow, setHasTabOverflow] = useState(false);
-  const [canScrollLeft, setCanScrollLeft] = useState(false);
-  const [canScrollRight, setCanScrollRight] = useState(false);
 
   const { navigation, currentDock } = useDockNavigation();
   const visibleSessions = sessions;
@@ -555,42 +527,14 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
     [onTabClick],
   );
 
-  const scrollSelectedTabIntoView = useCallback((targetKey: string, behavior: ScrollBehavior = 'smooth') => {
-    const container = tabContainerRef.current;
-    const tab = tabRefs.current[targetKey];
-    if (!container || !tab) return;
-
-    const tabLeft = tab.offsetLeft;
-    const tabRight = tabLeft + tab.offsetWidth;
-    const visibleLeft = container.scrollLeft;
-    const visibleRight = visibleLeft + container.clientWidth;
-
-    if (tabLeft < visibleLeft) {
-      container.scrollTo({ left: tabLeft, behavior });
-      return;
-    }
-
-    if (tabRight > visibleRight) {
-      container.scrollTo({ left: tabRight - container.clientWidth, behavior });
-    }
-  }, []);
-
+  // Scroll-into-view on active change is owned by TabStrip; selecting a tab
+  // is just the URL-first navigation emit.
   const selectTab = useCallback(
-    (targetKey: string, options?: { navigate?: boolean; behavior?: ScrollBehavior }) => {
+    (targetKey: string) => {
       if (!targetKey) return;
-
-      if (options?.navigate !== false) {
-        navigateToSession(targetKey);
-      }
-
-      const behavior = options?.behavior ?? 'smooth';
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          scrollSelectedTabIntoView(targetKey, behavior);
-        });
-      });
+      navigateToSession(targetKey);
     },
-    [navigateToSession, scrollSelectedTabIntoView],
+    [navigateToSession],
   );
 
   useEffect(() => {
@@ -603,45 +547,12 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
       return false;
     });
     if (session) {
-      const key = terminalTargetKey(session);
       // Don't write dataContext here — the consumer's onTabOpen already called
       // navigation.openDock(pointer) and the loader owns the context writes.
+      // TabStrip scroll-into-view follows the resulting active-key change.
       clearPendingTabCreation();
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          scrollSelectedTabIntoView(key);
-        });
-      });
     }
-  }, [visibleSessions, pendingTabCreation, clearPendingTabCreation, scrollSelectedTabIntoView]);
-
-  // Mount + late-arriving-sessions + layout-shift: on initial mount the active
-  // tab may be in-view because only some sessions have rendered (so the
-  // strip is short). When the rest of the sessions land, the active tab gets
-  // pushed off-screen. When we then scroll right, `canScrollLeft` flips true
-  // and a left-arrow button mounts to our LEFT, shrinking our clientWidth and
-  // clipping the active tab on the right. ResizeObserver fires on either
-  // layout shift, so we re-evaluate scroll-into-view until the tab is
-  // genuinely visible — the function is a no-op once the tab fits.
-  // hasTabOverflow/canScrollLeft are intentionally NOT in the useEffect deps
-  // (they flip from the scroll itself → would infinite-loop).
-  const lastScrolledKeyRef = useRef<string | null>(null);
-  useEffect(() => {
-    if (!activeTargetKey || !hasActiveTab) return;
-    const isFirstScrollForKey = lastScrolledKeyRef.current !== activeTargetKey;
-    lastScrolledKeyRef.current = activeTargetKey;
-    selectTab(activeTargetKey, { navigate: false, behavior: isFirstScrollForKey ? 'auto' : 'smooth' });
-  }, [activeTargetKey, hasActiveTab, selectTab, visibleSessions.length]);
-
-  useEffect(() => {
-    const container = tabContainerRef.current;
-    if (!container || !activeTargetKey || !hasActiveTab) return;
-    const observer = new ResizeObserver(() => {
-      scrollSelectedTabIntoView(activeTargetKey, 'auto');
-    });
-    observer.observe(container);
-    return () => observer.disconnect();
-  }, [activeTargetKey, hasActiveTab, scrollSelectedTabIntoView]);
+  }, [visibleSessions, pendingTabCreation, clearPendingTabCreation]);
 
   const closeTabs = useCallback(
     async (tabs: TerminalTab[]): Promise<void> => {
@@ -717,43 +628,11 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
     [visibleSessions, closeTabs],
   );
 
-  const handleTabDoubleClick = (targetKey: string, currentName: string) => {
-    shouldSelectRenameInputRef.current = true;
-    setEditingTargetKey(targetKey);
-    setEditingName(currentName);
-  };
-
-  useEffect(() => {
-    if (!editingTargetKey || !shouldSelectRenameInputRef.current) return;
-    const input = renameInputRef.current;
-    if (!input) return;
-    input.focus();
-    input.setSelectionRange(0, input.value.length);
-  });
-
-  const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    shouldSelectRenameInputRef.current = false;
-    setEditingName(e.target.value);
-  };
-
-  const handleNameBlur = () => {
-    shouldSelectRenameInputRef.current = false;
-    if (editingTargetKey && editingName.trim()) {
-      const session = visibleSessions.find((s) => terminalTargetKey(s) === editingTargetKey);
-      if (session?.shell) onTabRename(session, editingName.trim());
-    }
-    setEditingTargetKey(null);
-  };
-
-  const handleNameKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      handleNameBlur();
-    } else if (e.key === 'Escape') {
-      shouldSelectRenameInputRef.current = false;
-      setEditingTargetKey(null);
-    } else {
-      shouldSelectRenameInputRef.current = false;
-    }
+  // Rename commit from TabStrip (input UI lives in the strip; validation and
+  // the entity/PTY save — the terminal rename strategy — live here).
+  const handleRenameCommit = (targetKey: string, newName: string) => {
+    const session = visibleSessions.find((s) => terminalTargetKey(s) === targetKey);
+    if (session?.shell) onTabRename(session, newName);
   };
 
   const onTabRename = (
@@ -798,49 +677,6 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
   const getDisplayName = (session: TerminalTab): string => {
     return typeof session.name === 'string' && session.name ? session.name : terminalTargetKey(session);
   };
-
-  // Check if tabs overflow and update scroll button state
-  const updateScrollState = () => {
-    const container = tabContainerRef.current;
-    if (!container) return;
-
-    const { scrollLeft, scrollWidth, clientWidth } = container;
-    const hasOverflow = scrollWidth > clientWidth + 1;
-    setHasTabOverflow(hasOverflow);
-    // 1px epsilon matches the right-side check: sub-pixel scrollLeft values
-    // (macOS trackpad inertia, fractional zoom) would otherwise keep the
-    // left chevron lit when visually at the start.
-    setCanScrollLeft(hasOverflow && scrollLeft > 1);
-    setCanScrollRight(hasOverflow && scrollLeft + clientWidth < scrollWidth - 1);
-  };
-
-  // Scroll tabs left or right
-  const scrollTabs = (direction: 'left' | 'right') => {
-    const container = tabContainerRef.current;
-    if (!container) return;
-
-    const scrollAmount = 200; // pixels to scroll
-    container.scrollBy({
-      left: direction === 'left' ? -scrollAmount : scrollAmount,
-      behavior: 'smooth',
-    });
-  };
-
-  // Update scroll state on mount, session changes, and scroll events
-  useEffect(() => {
-    updateScrollState();
-    const container = tabContainerRef.current;
-    if (!container) return;
-
-    const handleScroll = () => updateScrollState();
-    container.addEventListener('scroll', handleScroll);
-    window.addEventListener('resize', updateScrollState);
-
-    return () => {
-      container.removeEventListener('scroll', handleScroll);
-      window.removeEventListener('resize', updateScrollState);
-    };
-  }, [visibleSessions]);
 
   // Use Ctrl key on Mac, Win key on Windows, Alt key on Linux
   const osPlatform: string =
@@ -1024,285 +860,119 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
     }
   }, [activeIsPending, activePendingProcessId]);
 
+
+  // Strip items: the kind-agnostic chip descriptors TabStrip renders. The
+  // vendor icon override (claude/codex/copilot/terminal) is the terminal
+  // strategy's icon resolution (Part 3 §6).
+  const stripItems: TabStripItem[] = visibleSessions.map((session) => {
+    const targetKey = terminalTargetKey(session);
+    const sessionProcess =
+      terminalProcessId(session) && contextAgenticProcess?.id === terminalProcessId(session)
+        ? contextAgenticProcess
+        : session.agenticProcess;
+    const workerType = sessionProcess?.worker_type?.toLowerCase() ?? '';
+    const providerKind =
+      session.targetTypeId.type === Shell.type
+        ? 'shell'
+        : workerType === 'codex'
+          ? 'codex'
+          : workerType === 'copilot'
+            ? 'copilot'
+            : 'claude';
+    const ProviderIcon =
+      providerKind === 'codex'
+        ? CodexIcon
+        : providerKind === 'copilot'
+          ? CopilotIcon
+          : providerKind === 'claude'
+            ? ClaudeIcon
+            : SquareTerminal;
+    const providerIconClassName =
+      providerKind === 'codex'
+        ? 'text-emerald-500'
+        : providerKind === 'copilot'
+          ? 'text-sky-500'
+          : providerKind === 'claude'
+            ? 'text-orange-500'
+            : 'text-muted-foreground';
+    const providerLabel =
+      providerKind === 'codex'
+        ? 'Codex tab'
+        : providerKind === 'copilot'
+          ? 'Copilot tab'
+          : providerKind === 'claude'
+            ? 'Claude Code tab'
+            : 'Shell tab';
+    const tabTestId =
+      session.targetTypeId.type === Shell.type ? `tab-shell-${session.targetTypeId.id}` : `tab-shell-${targetKey}`;
+    const indicatorKey = session.targetTypeId.type === Shell.type ? session.targetTypeId.id : targetKey;
+    const sessionProcessId = terminalProcessId(session);
+    return {
+      key: targetKey,
+      title: getDisplayName(session),
+      icon: (
+        <ProviderIcon
+          className={`h-3.5 w-3.5 shrink-0 ${providerIconClassName}`}
+          data-testid={`tab-provider-icon-${indicatorKey}`}
+          data-provider={providerKind}
+          aria-label={providerLabel}
+        />
+      ),
+      badge: sessionProcess?.cliOptions?.worktree ? (
+        <FolderGit2 className="h-3 w-3 shrink-0 text-amber-500" />
+      ) : undefined,
+      isDisabled: session.isDisabled,
+      statusReason: session.statusReason,
+      isPending: sessionProcessId ? pendingProcessIds.has(sessionProcessId) : false,
+      renameable: true,
+      tooltip: sessionProcess ? (
+        <ProcessInfoTooltip
+          process={sessionProcess}
+          statusReason={session.isDisabled ? session.statusReason : undefined}
+        />
+      ) : undefined,
+      testId: tabTestId,
+      dataAttributes: { 'data-indicator-key': indicatorKey },
+    };
+  });
+
   return (
     <div className={`flex h-full ${className}`}>
       {/* Main terminal area */}
       <div className="flex h-full w-full flex-col">
-        {/* Tab Bar */}
-        <div className="flex items-center border-b bg-muted" data-testid="terminal-tab-bar">
-          <ProjectsCounterChip
-            currentProjectId={tabsProjectId}
-            onLaunchProjectPath={handleLaunchProjectPath}
-            onOpenHistory={() => setHistoryModalOpen(true)}
-          />
-          {/* Left Scroll Button — always reserves layout space when tabs
-              overflow, so toggling `canScrollLeft` doesn't shift the
-              tab row horizontally. Mirrors the right-button pattern. */}
-          {hasTabOverflow && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className={`h-7 w-7 shrink-0 rounded-none ${canScrollLeft ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
-              onClick={() => scrollTabs('left')}
-              aria-label="Scroll tabs left"
-              tabIndex={canScrollLeft ? 0 : -1}
-            >
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-          )}
-
-          {/* Scrollable Tab Container */}
-          <div
-            ref={tabContainerRef}
-            data-testid="terminal-tabs-scroll-container"
-            className="scrollbar-hide flex min-w-0 flex-1 items-center gap-1 overflow-x-auto py-1 pl-2 pr-0"
-            style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
-          >
-            {visibleSessions.map((session, index) => {
-              const targetKey = terminalTargetKey(session);
-              const sessionProcess =
-                terminalProcessId(session) && contextAgenticProcess?.id === terminalProcessId(session)
-                  ? contextAgenticProcess
-                  : session.agenticProcess;
-              const displayName = getDisplayName(session);
-              const isDisabled = session.isDisabled;
-              const workerType = sessionProcess?.worker_type?.toLowerCase() ?? '';
-              const providerKind =
-                session.targetTypeId.type === Shell.type
-                  ? 'shell'
-                  : workerType === 'codex'
-                    ? 'codex'
-                    : workerType === 'copilot'
-                      ? 'copilot'
-                      : 'claude';
-              const ProviderIcon =
-                providerKind === 'codex'
-                  ? CodexIcon
-                  : providerKind === 'copilot'
-                    ? CopilotIcon
-                    : providerKind === 'claude'
-                      ? ClaudeIcon
-                      : SquareTerminal;
-              const providerIconClassName =
-                providerKind === 'codex'
-                  ? 'text-emerald-500'
-                  : providerKind === 'copilot'
-                    ? 'text-sky-500'
-                  : providerKind === 'claude'
-                    ? 'text-orange-500'
-                    : 'text-muted-foreground';
-              const providerLabel =
-                providerKind === 'codex'
-                  ? 'Codex tab'
-                  : providerKind === 'copilot'
-                    ? 'Copilot tab'
-                    : providerKind === 'claude'
-                      ? 'Claude Code tab'
-                      : 'Shell tab';
-              const tabTestId =
-                session.targetTypeId.type === Shell.type
-                  ? `tab-shell-${session.targetTypeId.id}`
-                  : `tab-shell-${targetKey}`;
-              const indicatorKey = session.targetTypeId.type === Shell.type ? session.targetTypeId.id : targetKey;
-              const sessionProcessId = terminalProcessId(session);
-              const isActive = activeTargetKey === targetKey;
-              // Active tab never glows: the user is already looking at it,
-              // so highlighting it as "needs attention" is wrong. The
-              // useEffect above also acks it, but suppressing the class
-              // here avoids a one-frame flash on the render before the
-              // effect commits.
-              const isPending = sessionProcessId && !isActive ? pendingProcessIds.has(sessionProcessId) : false;
-
-              const tabContent = (
-                <div
-                  ref={(node) => {
-                    tabRefs.current[targetKey] = node;
-                  }}
-                  className={`group flex shrink-0 select-none items-center gap-2 rounded-t border-b-2 px-3 py-1.5 transition-colors ${
-                    isDisabled
-                      ? 'cursor-not-allowed border-transparent bg-muted/30 text-muted-foreground/50'
-                      : activeTargetKey === targetKey
-                        ? 'cursor-pointer border-primary bg-background text-foreground'
-                        : 'cursor-pointer border-transparent bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground'
-                  } ${isPending ? 'animate-pending-glow rounded-md' : ''}`}
-                  onClick={() => {
-                    if (isDisabled) return;
-                    selectTab(targetKey);
-                    acknowledgePending(sessionProcessId);
-                  }}
-                  data-testid={tabTestId}
-                  data-terminal-target={targetKey}
-                >
-                  <ProviderIcon
-                    className={`h-3.5 w-3.5 shrink-0 ${providerIconClassName}`}
-                    data-testid={`tab-provider-icon-${indicatorKey}`}
-                    data-provider={providerKind}
-                    aria-label={providerLabel}
-                  />
-                  {Boolean(sessionProcess?.cliOptions?.worktree) && (
-                    <FolderGit2 className="h-3 w-3 shrink-0 text-amber-500" />
-                  )}
-                  {editingTargetKey === targetKey ? (
-                    <input
-                      ref={renameInputRef}
-                      type="text"
-                      value={editingName}
-                      onChange={handleNameChange}
-                      onBlur={handleNameBlur}
-                      onKeyDown={handleNameKeyDown}
-                      className="min-w-[80px] rounded border border-border bg-background px-1 py-0 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
-                      autoFocus
-                      onFocus={(e) => {
-                        if (shouldSelectRenameInputRef.current) {
-                          e.currentTarget.setSelectionRange(0, e.currentTarget.value.length);
-                        }
-                      }}
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                  ) : (
-                    <span
-                      className="text-sm font-medium"
-                      onDoubleClick={(e) => {
-                        e.stopPropagation();
-                        handleTabDoubleClick(targetKey, displayName);
-                      }}
-                    >
-                      {displayName}
-                    </span>
-                  )}
-
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleOpenExternalTab(targetKey);
-                    }}
-                    disabled={isDisabled}
-                    className="rounded p-0.5 opacity-0 transition-opacity hover:bg-muted-foreground/20 group-hover:opacity-100"
-                    aria-label="Open in external browser"
-                    title="Open in external browser"
-                    data-testid={`tab-open-external-${indicatorKey}`}
-                  >
-                    <ExternalLink className="h-3 w-3" />
-                  </button>
-
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleCloseTab(targetKey);
-                    }}
-                    disabled={isDisabled}
-                    className="rounded p-0.5 opacity-0 transition-opacity hover:bg-destructive/20 group-hover:opacity-100"
-                    aria-label="Close tab"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </div>
-              );
-
-              return (
-                <ContextMenu key={targetKey}>
-                  <TooltipProvider delayDuration={600}>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <ContextMenuTrigger asChild>{tabContent}</ContextMenuTrigger>
-                      </TooltipTrigger>
-                      {sessionProcess ? (
-                        <TooltipContent
-                          side="bottom"
-                          className="border bg-popover p-2.5 text-popover-foreground shadow-md"
-                        >
-                          <ProcessInfoTooltip
-                            process={sessionProcess}
-                            statusReason={isDisabled ? session.statusReason : undefined}
-                          />
-                        </TooltipContent>
-                      ) : isDisabled ? (
-                        <TooltipContent side="bottom">{session.statusReason}</TooltipContent>
-                      ) : null}
-                    </Tooltip>
-                  </TooltipProvider>
-                  <ContextMenuContent>
-                    <ContextMenuItem onSelect={() => handleTabDoubleClick(targetKey, displayName)}>
-                      Rename
-                    </ContextMenuItem>
-                    <ContextMenuSeparator />
-                    <ContextMenuItem onSelect={() => void handleStartClaude()}>
-                      New Claude Session{' '}
-                      <span className="ml-auto pl-4 text-xs text-muted-foreground">{modLabel}+C</span>
-                    </ContextMenuItem>
-                    <ContextMenuItem onSelect={() => void handleStartTerminal()}>
-                      New Terminal <span className="ml-auto pl-4 text-xs text-muted-foreground">{modLabel}+T</span>
-                    </ContextMenuItem>
-                    <ContextMenuSeparator />
-                    <ContextMenuItem onSelect={() => handleCloseTab(targetKey)}>
-                      Close <span className="ml-auto pl-4 text-xs text-muted-foreground">{modLabel}+W</span>
-                    </ContextMenuItem>
-                    <ContextMenuItem onSelect={handleCloseAll}>Close All</ContextMenuItem>
-                    <ContextMenuItem
-                      onSelect={() => handleCloseAllButThis(targetKey)}
-                      disabled={visibleSessions.length <= 1}
-                    >
-                      Close All But This
-                    </ContextMenuItem>
-                    <ContextMenuItem
-                      onSelect={() => handleCloseToTheRight(targetKey)}
-                      disabled={index >= visibleSessions.length - 1}
-                    >
-                      Close to the Right
-                    </ContextMenuItem>
-                  </ContextMenuContent>
-                </ContextMenu>
-              );
-            })}
-
-            {/* Toolbar flows after the last tab but sticks to the right edge
-                when tabs overflow. Placement is unconditional, so it does not
-                oscillate with hasTabOverflow. */}
-            {tabEndToolbar && (
-              <div className="sticky right-0 z-10 flex items-center self-stretch bg-muted">{tabEndToolbar}</div>
-            )}
-          </div>
-
-          {/* Right Scroll Button */}
-          {hasTabOverflow && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className={`h-7 w-7 shrink-0 rounded-none ${canScrollRight ? 'opacity-100' : 'pointer-events-none opacity-0'}`}
-              onClick={() => scrollTabs('right')}
-              aria-label="Scroll tabs right"
-              data-testid="scroll-tabs-right-button"
-              tabIndex={canScrollRight ? 0 : -1}
-            >
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          )}
-
-          {/* Close All button — shown when 2+ tabs are open. Tab count badge
-              hints at the destructive scope before clicking. */}
-          {visibleSessions.length >= 2 && (
-            <TooltipProvider delayDuration={600}>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="mx-1.5 h-6 shrink-0 gap-1.5 rounded-md border-border bg-background px-2 text-foreground shadow-sm hover:border-destructive/60 hover:bg-destructive/10 hover:text-destructive"
-                    onClick={handleCloseAll}
-                    aria-label={`Close all ${visibleSessions.length} tabs`}
-                    data-testid="close-all-tabs-button"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                    <span className="inline-flex h-4 min-w-[1.125rem] items-center justify-center rounded-full bg-foreground/10 px-1 text-[10px] font-semibold tabular-nums leading-none text-foreground">
-                      {visibleSessions.length}
-                    </span>
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">Close all {visibleSessions.length} tabs</TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          )}
-        </div>
+        {/* Tab Bar — the generic TabStrip; the handlers below are the
+            terminal kind strategies: close = backend teardown (batched),
+            rename = entity save + PTY /rename, popout = external browser +
+            resolver detach (Part 3 §3/§6). */}
+        <TabStrip
+          items={stripItems}
+          activeKey={activeTargetKey}
+          onSelect={(key) => {
+            const session = visibleSessions.find((s) => terminalTargetKey(s) === key);
+            selectTab(key);
+            if (session) acknowledgePending(terminalProcessId(session));
+          }}
+          onClose={handleCloseTab}
+          onCloseMany={(keys) => {
+            const keySet = new Set(keys);
+            void closeTabs(visibleSessions.filter((s) => keySet.has(terminalTargetKey(s))));
+          }}
+          onRename={handleRenameCommit}
+          onPopout={handleOpenExternalTab}
+          newTabMenuItems={[
+            { label: 'New Claude Session', shortcut: `${modLabel}+C`, onSelect: () => void handleStartClaude() },
+            { label: 'New Terminal', shortcut: `${modLabel}+T`, onSelect: () => void handleStartTerminal() },
+          ]}
+          closeShortcutLabel={`${modLabel}+W`}
+          leading={
+            <ProjectsCounterChip
+              currentProjectId={tabsProjectId}
+              onLaunchProjectPath={handleLaunchProjectPath}
+              onOpenHistory={() => setHistoryModalOpen(true)}
+            />
+          }
+          trailing={tabEndToolbar}
+        />
 
         {/* Terminal Content - Lazy-mount: only render InteractiveTerminal for
              sessions that have been active at least once (mountedTargetKeys).
