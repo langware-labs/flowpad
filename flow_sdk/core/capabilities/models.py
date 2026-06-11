@@ -26,6 +26,18 @@ def capability_kind_matches(query_kind: str, capability_kind: str) -> bool:
     return candidate == query or candidate.startswith(f"{query}.")
 
 
+# Infix segment for MCP-server capabilities: ``<service>.mcp.<worker_type>``
+# (e.g. ``gmail.mcp.claude_code``). Service-first so a prefix query on the
+# service (``gmail`` / ``gmail.mcp``) resolves via ``capability_kind_matches``.
+MCP_CAPABILITY_INFIX = "mcp"
+
+
+def is_mcp_capability_kind(kind: str) -> bool:
+    """True for ``<service>.mcp.<worker_type>`` kinds (second segment == ``mcp``)."""
+    parts = kind.strip().lower().split(".")
+    return len(parts) >= 3 and parts[1] == MCP_CAPABILITY_INFIX
+
+
 class CapabilitySpec(BaseModel):
     name: str
     kind: str

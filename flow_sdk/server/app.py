@@ -127,8 +127,14 @@ async def _on_server_startup():
         import asyncio as _asyncio_disc
 
         from flow_sdk.core.capabilities.discovery import run_discovery
+        from flow_sdk.core.capabilities.mcp import reconcile_mcp_capabilities
 
         _asyncio_disc.create_task(run_discovery(), name="capability-discovery")
+        # Mint MCP-server capabilities (<service>.mcp.<worker_type>) from the
+        # indexed records so they exist after boot.
+        _asyncio_disc.create_task(
+            reconcile_mcp_capabilities(), name="mcp-capability-reconcile"
+        )
         print("  Capability discovery: started (background)")
     except Exception as _e:  # noqa: BLE001
         print(f"  Capability discovery: failed to start ({_e})")

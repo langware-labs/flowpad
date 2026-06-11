@@ -603,6 +603,13 @@ class CapabilityRegistry:
     def register(self, runner: CapabilityRunner) -> None:
         self._runners[runner.spec.kind] = runner
 
+    def unregister(self, kind: str) -> None:
+        """Drop a runner (no-op if absent). Used to prune stale dynamic kinds."""
+        self._runners.pop(kind, None)
+
+    def kinds(self) -> list[str]:
+        return list(self._runners.keys())
+
     def get(self, kind: str) -> CapabilityRunner:
         try:
             return self._runners[kind]
