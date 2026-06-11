@@ -1,5 +1,5 @@
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 
 import dpath
 from fastapi.encoders import jsonable_encoder
@@ -21,6 +21,11 @@ def iso_to_datetime(iso: datetime | str) -> datetime:
     if isinstance(iso, str) and iso.endswith("Z"):
         iso = iso[:-1] + "+00:00"
     return datetime.fromisoformat(iso)
+
+
+def now_epoch_ms() -> int:
+    """Current UTC time in epoch-milliseconds (the ``last_active_at`` wire format)."""
+    return int(datetime.now(timezone.utc).timestamp() * 1000)
 
 
 def starlett_query_brackets_to_dict(bracket_dict):

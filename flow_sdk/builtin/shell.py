@@ -26,6 +26,7 @@ from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
+from flow_sdk.utils.serialization import now_epoch_ms
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerCLIOptions, WorkerExecutionInfo
@@ -444,7 +445,7 @@ class Shell(Entity):
 
         self.status = "running"
         self.pty_pid = self.id
-        self.last_active_at = int(datetime.now(timezone.utc).timestamp() * 1000)
+        self.last_active_at = now_epoch_ms()
         self.worker_pid = None
         self.worker_name = None
         await self.save()

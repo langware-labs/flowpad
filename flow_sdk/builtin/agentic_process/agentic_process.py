@@ -747,6 +747,13 @@ class AgenticProcess(Entity):
             cn = await ComputeNode.get_by_uname("local")
         return cn
 
+    def _adopt_shell_tab_order(self, shell: "Shell | None") -> None:
+        """One-time adoption: the AP owns its tab_order (base Entity) across
+        shell-transport swaps / worker restarts — no context_data carry-over.
+        No-op once the AP holds a slot or when the shell has none."""
+        if shell is not None and not self.tab_order and shell.tab_order:
+            self.tab_order = shell.tab_order
+
     async def _drop_stale_shell(
         self,
         shell: "Shell | None",
@@ -770,10 +777,7 @@ class AgenticProcess(Entity):
         stale_shell_id = shell.id if shell is not None else self.shell_id
         if shell is not None:
             logger.warning("AgenticProcess %s: discarding stale shell %s (%s)", self.id, shell.id, reason)
-            if not self.tab_order and shell.tab_order:
-                # One-time adoption: the AP owns its tab_order (base Entity)
-                # across shell-transport swaps — no context_data carry-over.
-                self.tab_order = shell.tab_order
+            self._adopt_shell_tab_order(shell)
             try:
                 await shell.terminate_worker()
             except Exception as exc:
@@ -1141,10 +1145,7 @@ class AgenticProcess(Entity):
             from flow_sdk.builtin.shell import Shell
 
             shell = await Shell.get_by_id(self.shell_id)
-            if shell and not self.tab_order and shell.tab_order:
-                # One-time adoption: the AP owns its tab_order (base Entity)
-                # across worker restarts — no context_data carry-over.
-                self.tab_order = shell.tab_order
+            self._adopt_shell_tab_order(shell)
 
             # Set flag so the PTY exit callback knows to preserve shell_id.
             # Clear sidecar but NOT shell_id — shell entity stays alive for restart.
