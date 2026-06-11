@@ -68,6 +68,7 @@ import type { OpenerDescriptor } from '@src/components/terminal/openers/tab_open
 import { resolveActive } from '@src/tabs/tab-model';
 import { buildTabCandidates } from '@src/tabs/tab-candidates';
 import { consumePendingIntent, peekPendingIntent } from '@src/tabs/pending-intent';
+import { waitForWinReady } from '@src/tabs/popout-handoff';
 
 const ClaudeResumeIcon: React.FC<{ className?: string }> = ({ className }) => (
   <span className={`relative inline-flex items-center justify-center ${className ?? ''}`}>
@@ -623,35 +624,40 @@ export function useTerminalStripController({
   );
 
   /**
-   * Pop a tab out to an external browser: open its dock URL via the same
-   * `window.open(url, '_blank')` path the footer uses for "current url"
-   * (Electron's setWindowOpenHandler routes it to the system browser), then
-   * navigate this window away so only the external browser is viewing the
-   * session. The backend session must stay alive — closing it would kill
-   * the PTY for the popped-out browser too (it is one shared session), so
-   * this deliberately does NOT go through the close path.
+   * Pop a tab out to a chrome-less `win/` focus window (tab-management.md
+   * Part 3 §§7-8): `openDockInWindow` builds the win/ URL — web → new browser
+   * tab, Electron → in-app BrowserWindow via the setWindowOpenHandler
+   * carve-out. The origin then detaches only after the win window announced
+   * ready on the handoff channel (or its 10s UX fallback elapsed). The strip
+   * chip itself is untouched — `tabbed` is membership, not placement (§8).
+   * The backend session must stay alive — closing it would kill the PTY for
+   * the popped-out window too (it is one shared session), so this
+   * deliberately does NOT go through the close path.
    */
   const handleOpenExternalTab = useCallback(
     (targetKey: string) => {
       const session = visibleSessions.find((s) => terminalTargetKey(s) === targetKey);
       const pointer = session && terminalDockPointer(session);
       if (!pointer) return;
-      navigation.openInNewBrowserTab(pointer);
+      navigation.openDockInWindow(pointer);
       // Detach this window only if it is currently viewing the popped-out
-      // tab: hand the remaining alive tabs to the shared resolver (same
-      // MRU/order precedence as the strip's self-heal), or close the dock
-      // when none remain.
+      // tab — and only once the win window signalled ready (true) or the
+      // fallback elapsed (false): hand the remaining alive tabs to the
+      // shared resolver (same MRU/order precedence as the strip's
+      // self-heal), or close the dock when none remain.
       if (activeTargetKey !== targetKey) return;
-      const remaining = visibleSessions.filter((s) => terminalTargetKey(s) !== targetKey && !s.isDisabled);
-      const { activeKey } = resolveActive({
-        candidates: buildTabCandidates(remaining),
-        urlActiveKey: null,
-        pendingIntentKey: null,
+      void waitForWinReady(targetKey).then(() => {
+        const remaining = visibleSessions.filter((s) => terminalTargetKey(s) !== targetKey && !s.isDisabled);
+        const { activeKey } = resolveActive({
+          candidates: buildTabCandidates(remaining),
+          urlActiveKey: null,
+          pendingIntentKey: null,
+        });
+        const next = remaining.find((s) => terminalTargetKey(s) === activeKey);
+        const nextPointer = next && terminalDockPointer(next);
+        if (nextPointer) navigation.openDockPointer(nextPointer);
+        else navigation.closeDock();
       });
-      const next = remaining.find((s) => terminalTargetKey(s) === activeKey);
-      const nextPointer = next && terminalDockPointer(next);
-      if (nextPointer) navigation.openDockPointer(nextPointer);
-      else navigation.closeDock();
     },
     [visibleSessions, navigation, activeTargetKey],
   );

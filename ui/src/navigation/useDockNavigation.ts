@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router';
 import { DockPointer } from './DockPointer';
 import { NavigationActions } from './NavigationActions';
+import { detectLayout } from './url-builder';
 
 export interface UseDockNavigationReturn {
   /** Navigation actions instance */
@@ -14,6 +15,14 @@ export interface UseDockNavigationReturn {
 
   /** Current dock pointer parsed from URL (null if not a dock URL) */
   currentDock: DockPointer | null;
+
+  /**
+   * True when the current URL is a `win/` focus-window URL
+   * (docs/tab-management.md Part 3 §7). Derived read-only from the URL —
+   * exactly like the `/dev/` detection above it. Nothing ever SETS window
+   * mode; you navigate into it (deep-link and refresh work for free).
+   */
+  windowMode: boolean;
 }
 
 /**
@@ -47,9 +56,8 @@ export function useDockNavigation(): UseDockNavigationReturn {
   const currentDock = useMemo(() => {
     if (params.viewType) {
       try {
-        // Detect layout from URL path
-        const pathname = location.pathname;
-        const layout = pathname.includes('/dev/') ? Layout.DEV : Layout.DOCK;
+        // Detect layout from URL path (keyword→Layout table in url-builder)
+        const layout = detectLayout(location.pathname);
 
         // Use pointer from URL params - check both :pointer param and * wildcard
         // For routes like /:viewType/:pointer, params.pointer is used
@@ -74,9 +82,14 @@ export function useDockNavigation(): UseDockNavigationReturn {
 
   const isDockUrl = currentDock !== null;
 
+  // URL-derived, read-only (Part 3 §7): the focus-window layout is a property
+  // of the URL, never of component state.
+  const windowMode = detectLayout(location.pathname) === Layout.WIN;
+
   return {
     navigation,
     isDockUrl,
     currentDock,
+    windowMode,
   };
 }

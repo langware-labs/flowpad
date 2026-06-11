@@ -197,12 +197,15 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ onTabClick, on
         controller.handleOpenExternalTab(key);
         return;
       }
+      // Non-terminal popouts also open the chrome-less win/ focus window
+      // (Part 3 §7); no origin detach — only the terminal popout hands its
+      // active view off (§8), entity/transient chips stay where they are.
       if (transientItem && key === transientItem.key) {
-        if (currentDock) navigation.openInNewBrowserTab(currentDock);
+        if (currentDock) navigation.openDockInWindow(currentDock);
         return;
       }
       const row = entityRowByKey(key);
-      if (row) navigation.openInNewBrowserTab(DockPointer.forAssetEditorByTypeId(row.kind, row.typeId));
+      if (row) navigation.openDockInWindow(DockPointer.forAssetEditorByTypeId(row.kind, row.typeId));
     },
     [terminalKeySet, controller, transientItem, currentDock, navigation, entityRowByKey],
   );
