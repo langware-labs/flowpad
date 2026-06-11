@@ -10,6 +10,9 @@ import { type TabCandidate } from './tab-model';
  *  Prefers the AgenticProcess (the tab's identity entity) over its transport shell. */
 export function sessionLastActiveMs(session: TerminalTab): number | null {
   const raw = session.agenticProcess?.last_active_at ?? session.shell?.last_active_at;
+  // Wire is epoch-ms (base-Entity field, Part 3 §4); legacy rows may still
+  // deliver an ISO string during the transition window. Tolerate both.
+  if (typeof raw === 'number') return Number.isFinite(raw) ? raw : null;
   if (typeof raw !== 'string') return null;
   const t = Date.parse(raw);
   return Number.isNaN(t) ? null : t;

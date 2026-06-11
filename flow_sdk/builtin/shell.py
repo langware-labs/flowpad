@@ -107,9 +107,15 @@ class Shell(Entity):
             "get-by-id (no reverse scan over processes)."
         ),
     )
-    tab_order: int = APIField(default=0, persist=Persist.FALSE)
+    # tab_order / last_active_at moved to base Entity (tab-management.md Part 3).
+    tabbed: bool = APIField(
+        default=True,
+        description=(
+            "Default-True override of the base-Entity membership flag: every "
+            "live pure shell is a strip tab without any call-site write."
+        ),
+    )
     created_at: str | None = APIField(default=None, description="ISO creation timestamp")
-    last_active_at: str | None = APIField(default=None, description="ISO last activity timestamp")
     error_message: str | None = APIField(default=None, description="Error message when status=error")
     worker_pid: int | None = APIField(default=None, description="OS PID of the running worker process")
     worker_name: str | None = APIField(default=None, description="Worker executable name, e.g. 'claude'")
@@ -438,7 +444,7 @@ class Shell(Entity):
 
         self.status = "running"
         self.pty_pid = self.id
-        self.last_active_at = datetime.now(timezone.utc).isoformat()
+        self.last_active_at = int(datetime.now(timezone.utc).timestamp() * 1000)
         self.worker_pid = None
         self.worker_name = None
         await self.save()
@@ -786,10 +792,12 @@ class Shell(Entity):
 
     @classmethod
     async def next_tab_order(cls) -> int:
-        """Return a tab_order value that places a new shell after all existing ones."""
+        """Return a tab_order value that places a new shell after all existing
+        ones. Never returns 0 — 0 means "unassigned" on the base-Entity field
+        (lets AgenticProcess lazily claim its own order in ``_make_shell``)."""
         all_shells = await cls.get_all()
         if not all_shells:
-            return 0
+            return 1
         return max(getattr(s, "tab_order", 0) for s in all_shells) + 1
 
     # ── Record sync ───────────────────────────────────────────────────────────

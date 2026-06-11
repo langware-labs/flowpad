@@ -821,6 +821,18 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     await dataManager.callAction<unknown, unknown>(info);
   }
 
+  /**
+   * Stamp this tab's ``last_active_at`` (server clock, epoch-ms) via the
+   * generic ``activate`` action — the tab resolver's recency seed
+   * (docs/tab-management.md Part 3 §4). Loaders call this FIRE-AND-FORGET on
+   * activation (alongside the synchronous in-cache ``bumpLastActive``); it
+   * never touches ``tabbed`` — membership promotion is ``tabs/open`` only.
+   */
+  public async activate(): Promise<void> {
+    const info = new ActionInfo('activate', this.typeId.type, this.typeId.id, 'POST');
+    await dataManager.callAction<unknown, unknown>(info);
+  }
+
   /** POST /entity-event {event, payload}. Unknown events are a server-side no-op. */
   public async entityEvent(event: string, payload: Record<string, unknown> = {}): Promise<unknown> {
     return APIEntity.entityEvent(this.typeId, event, payload);

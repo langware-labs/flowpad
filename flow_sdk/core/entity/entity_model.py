@@ -34,11 +34,11 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-from pydantic import Field, SerializationInfo, SerializeAsAny, TypeAdapter, ValidationError, computed_field, model_serializer
+from pydantic import Field, SerializationInfo, SerializeAsAny, TypeAdapter, ValidationError, computed_field, field_validator, model_serializer
 
 from flow_sdk.config import StorageProvider
 from flow_sdk.flowpad_types.enums import AuthRole, ExpansionType
-from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.api_field import APIField, Persist
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType, TypeId
 from flow_sdk.db.drivers.query import ExpressionNode, OrderType, QueryFilter, QueryOp
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
@@ -126,6 +126,47 @@ class Entity(DBEntity):
             "grouping survives an index rebuild."
         ),
     )
+    tabbed: bool = APIField(
+        default=False,
+        description=(
+            "Tab-strip membership (docs/tab-management.md Part 3 §4). True "
+            "while this entity is a member tab. Non-null by design: removal "
+            "must broadcast as ``tabbed=false`` — the wire encoder strips "
+            "nulled fields (exclude_none) and the receiver merge never clears "
+            "absent keys, so a null signal cannot propagate cross-client."
+        ),
+    )
+    tab_order: int = APIField(
+        default=0,
+        persist=Persist.FALSE,
+        description=(
+            "Strip ordering among member tabs (0 = unassigned). DB-only "
+            "(Persist.FALSE) — intentionally does not survive a "
+            "rebuild-from-disk (tab-management.md Part 1, decision 3)."
+        ),
+    )
+    last_active_at: int | None = APIField(
+        default=None,
+        description=(
+            "Epoch-ms of this tab's last activation, stamped SERVER-SIDE by "
+            "the generic ``activate`` action (authoritative clock). Resolver "
+            "recency seed only (resolveActive case 3) — never read to "
+            "highlight the active tab; the URL is active truth. ISO-string "
+            "values from legacy rows are parsed tolerantly on load."
+        ),
+    )
+
+    @field_validator("last_active_at", mode="before")
+    @classmethod
+    def _last_active_at_epoch_ms(cls, value):
+        """Legacy rows stored ISO strings; the field is epoch-ms. Parse
+        tolerantly so no data migration is needed."""
+        if isinstance(value, str):
+            try:
+                return int(datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp() * 1000)
+            except ValueError:
+                return None
+        return value
 
     # Locally-authoritative fields a hub refresh must NEVER overwrite. The hub
     # is the source of truth for *content*; these describe the local copy's own
@@ -1514,9 +1555,16 @@ class Entity(DBEntity):
     @staticmethod
     def _as_datetime(value: Any) -> Optional[datetime]:
         """Coerce a stored/serialized timestamp to a ``datetime`` for compare.
-        Returns ``None`` when the value is absent or unparseable."""
+        Accepts datetimes, ISO strings, and epoch-ms numbers (the
+        ``last_active_at`` wire format). Returns ``None`` when the value is
+        absent or unparseable."""
         if value is None or isinstance(value, datetime):
             return value
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            try:
+                return datetime.fromtimestamp(value / 1000, tz=timezone.utc)
+            except (ValueError, OSError, OverflowError):
+                return None
         try:
             return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
         except (ValueError, TypeError):
@@ -2350,6 +2398,27 @@ _action_registry.register(
     action_name="semantic-waive",
     function_name="semantic_waive",
     handler=_http_semantic_waive,
+    methods="post",
+    types="all",
+)
+
+
+async def _http_activate(self: Entity):
+    """Stamp ``last_active_at = now`` (server clock, epoch-ms) — the tab
+    resolver's recency seed (docs/tab-management.md Part 3 §4). Loaders call
+    this fire-and-forget on tab activation. Never touches ``tabbed``:
+    membership promotion is explicit-only (``tabs/open``)."""
+    from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
+
+    self.last_active_at = int(datetime.now(timezone.utc).timestamp() * 1000)
+    await self.save()
+    return ApiSuccessResponse(data={"last_active_at": self.last_active_at})
+
+
+_action_registry.register(
+    action_name="activate",
+    function_name="activate",
+    handler=_http_activate,
     methods="post",
     types="all",
 )
