@@ -426,7 +426,10 @@ export const TabStrip: React.FC<TabStripProps> = ({
   };
 
   return (
-    <div className="flex items-center border-b bg-muted" data-testid={testId}>
+    // min-w-0/max-w-full: the strip must never size its host to content —
+    // hosts are flex children and would otherwise blow out to the sum of all
+    // chip widths (the off-screen right-arrow/close-all/toolbar bug).
+    <div className="flex min-w-0 max-w-full items-center border-b bg-muted" data-testid={testId}>
       {leading}
       {/* Left Scroll Button — always reserves layout space when tabs
           overflow, so toggling `canScrollLeft` doesn't shift the
