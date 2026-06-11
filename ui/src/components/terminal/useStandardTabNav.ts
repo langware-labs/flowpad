@@ -1,4 +1,5 @@
 import { useCallback, useRef } from 'react';
+import { Shell, ViewType } from '@sdk';
 import { terminalTargetKey, type TerminalTab } from '@src/tabs/useTabs';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
@@ -14,7 +15,7 @@ import { DockPointer } from '@src/navigation/DockPointer';
  * Pass the returned `{ onTabClick, onTabClose, onTabOpen }` to `<TabbedTerminal />`.
  */
 export function useStandardTabNav() {
-  const { navigation } = useDockNavigation();
+  const { navigation, currentDock } = useDockNavigation();
   // MRU stack of terminal target TypeId strings, most-recent first. Updated on tab clicks only.
   const mruRef = useRef<string[]>([]);
 
@@ -35,16 +36,24 @@ export function useStandardTabNav() {
     (targetKeyOrKeys: string | string[]) => {
       const closed = new Set(Array.isArray(targetKeyOrKeys) ? targetKeyOrKeys : [targetKeyOrKeys]);
       mruRef.current = mruRef.current.filter((id) => !closed.has(id));
-      const nextId = mruRef.current[0];
-      if (!nextId) {
-        navigation.openDock(DockPointer.forShell());
-      }
-      // When there is a next-in-MRU, we don't need to navigate: the loader will
-      // pick a default target once the closed terminal drops off the entity
-      // list. The MRU only matters once the consumer wants to force a specific
-      // tab — clicks do that already.
+      // Navigate ONLY when the closed tab is the one the URL is showing —
+      // closing a background tab must not yank the user off the current view.
+      // (The strip renders app-globally now; the old unconditional shell-view
+      // fallback predates that and only ran inside the shell view.)
+      const urlKey =
+        currentDock?.viewType === ViewType.SHELL && currentDock.pointer
+          ? DockPointer.isAgenticProcessPointer(currentDock.pointer)
+            ? `agentic_process-${DockPointer.extractAgenticProcessId(currentDock.pointer)}`
+            : currentDock.pointer.startsWith(Shell.type + '-')
+              ? currentDock.pointer
+              : `${Shell.type}-${currentDock.pointer}`
+          : null;
+      if (!urlKey || !closed.has(urlKey)) return;
+      // Active tab closed: re-enter the shell route pointer-less; the loader
+      // resolves the next tab via resolveNextTab (recency → order).
+      navigation.openDock(DockPointer.forShell());
     },
-    [navigation],
+    [navigation, currentDock],
   );
 
   const onTabOpen = useCallback(

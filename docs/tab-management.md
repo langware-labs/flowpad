@@ -564,23 +564,40 @@ origin: on matching key → navigate away via resolveActive
 
 Surfaces: plain shell, claude AP, codex AP, markdown/doc, skill, workflow,
 transient (settings / search / diff / explorer / code file), global entity.
-Status column updated during P3.4.
+Status column: live web run 2026-06-11 against a fresh `instance_ctl` dev
+instance (fe :5002 / be :6001) via Chrome CDP. Electron column not run this
+cycle (no desktop build produced); the carve-out is code-reviewed + the win
+URL grammar is unit-locked.
 
 | # | Scenario | Surfaces | Web | Electron | Status |
 |---|---|---|---|---|---|
-| 1 | Strip click is URL-first (URL changes → highlight derives) | all | x | x | — |
-| 2 | Close: destroy-entity (shell/AP teardown) | shell, APs | x | x | — |
-| 3 | Close: clear-membership (entity survives) | doc/skill/workflow | x | — | — |
-| 4 | Close: transient dismiss | transients | x | — | — |
-| 5 | Rename (entity tabs only; PTY `/rename` for shell) | shell, AP, doc | x | — | — |
-| 6 | Preview: browse 5 docs → 1 slot; promote on pin/edit | doc, code file | x | — | — |
-| 7 | Refresh: membership + recency survive reload | mixed strip | x | x | — |
-| 8 | Project switch round-trip restores last tab (Bug-1 regression) | mixed | x | — | — |
-| 9 | Footer-chip cross-project pick (Bug-2 / pending-intent) | AP | x | — | — |
-| 10 | Popout → win attaches → origin navigates away → chip re-opens locally | shell, claude AP, doc | x | x | — |
-| 11 | win deep-link (no opener): renders, signal no-op | shell, doc, settings | x | x | — |
-| 12 | win morph stays chrome-less | any → any | x | x | — |
-| 13 | Cross-client: open/close on Alice → Bob converges (`tabbed=false` propagates) | shell, doc | x (2 instances) | — | — |
-| 14 | Global section: toggle, persistence, default ON | global skill/doc | x | — | — |
-| 15 | Multi-attach: same PTY in dock + win simultaneously | shell | x | x | — |
-| 16 | Electron: `/win/` popout = in-app window; http links still external | shell | — | x | — |
+| 1 | Strip click is URL-first (URL changes → highlight derives) | all | x | x | ✅ web |
+| 2 | Close: destroy-entity (shell/AP teardown) | shell, APs | x | x | ✅ web (shell torn down server-side) |
+| 3 | Close: clear-membership (entity survives) | doc/skill/workflow | x | — | ✅ web (markdown: `tabbed=false` non-null, entity survives) |
+| 4 | Close: transient dismiss | transients | x | — | ✅ web (after closeDock root fix, see findings) |
+| 5 | Rename (entity tabs only; PTY `/rename` for shell) | shell, AP, doc | x | — | ✅ web (name persisted, `auto_rename` pinned) |
+| 6 | Preview: browse 5 docs → 1 slot; promote on pin/edit | doc, code file | x | — | ✅ web (one slot, 0 member writes; "Keep as tab" → `tabbed=true` + slot) |
+| 7 | Refresh: membership + recency survive reload | mixed strip | x | x | ✅ web (pointer-less `/dock/shell` restores MRU tab from persisted epoch-ms recency) |
+| 8 | Project switch round-trip restores last tab (Bug-1 regression) | mixed | x | — | not runnable (single-project instance); resolver precedence unit-locked |
+| 9 | Footer-chip cross-project pick (Bug-2 / pending-intent) | AP | x | — | not run (cross-project chip needed; pre-existing chip-surfacing caveat, Part 1 §8) |
+| 10 | Popout → win attaches → origin navigates away → chip re-opens locally | shell, claude AP, doc | x | x | ✅ web (full handoff: win opened, ready signal, origin detached, chip stayed, re-click re-opened) |
+| 11 | win deep-link (no opener): renders, signal no-op | shell, doc, settings | x | x | ✅ web (chrome-less, live xterm) |
+| 12 | win morph stays chrome-less | any → any | x | x | ◐ chrome-less verified live; morph rule unit-locked (no in-view nav control in the plain shell view to exercise live) |
+| 13 | Cross-client: open/close on Alice → Bob converges (`tabbed=false` propagates) | shell, doc | x (2 instances) | — | not run this cycle (needs two hub-connected instances); wire rule unit-locked |
+| 14 | Global section: toggle, persistence, default ON | global skill/doc | x | — | ✅ web (localStorage round-trip, default on) |
+| 15 | Multi-attach: same PTY in dock + win simultaneously | shell | x | x | ✅ web (both live, no blank) |
+| 16 | Electron: `/win/` popout = in-app window; http links still external | shell | — | x | not run (requires desktop build) |
+
+**Findings from the live run (both fixed in-cycle, locked by
+`tab-close-navigation.test.ts`):**
+1. `closeDock` was a silent no-op at root-level dock URLs —
+   `stripDockPortion` yields `''` there and `navigate('')` is a react-router
+   relative no-op (pre-existing; surfaced by the transient chip's X).
+   Fixed: empty base normalizes to `/`.
+2. Closing a background tab yanked the URL to the shell view —
+   `useStandardTabNav`'s empty-MRU fallback predates the app-global strip.
+   Fixed: navigate only when the closed set includes the URL-active tab.
+
+Pre-existing observation (not tab-work): bulk markdown queries re-instantiate
+cached entities → ~196 "already registered with different entity" console
+warnings on asset-editor views (`queryFn → EntityFactory.createEntity`).
