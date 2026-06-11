@@ -1,5 +1,5 @@
 import { useCallback, useRef } from 'react';
-import { terminalTargetKey, type TerminalTab } from '@src/hooks/useActiveTerminals';
+import { terminalTargetKey, type TerminalTab } from '@src/tabs/useTabs';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 

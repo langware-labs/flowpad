@@ -30,12 +30,7 @@ import {
   systemTools,
   TypeId,
 } from '@sdk';
-import {
-  closeTerminalTargets,
-  terminalProcessId,
-  terminalTransportShellId,
-  type TerminalTab,
-} from '@src/hooks/useActiveTerminals';
+import { closeTerminalTargets } from '@src/tabs/useTabs';
 import { showCleanupModal } from '@src/components/recovery/cleanup-modal';
 import { notify } from '@src/notifications';
 import { DockPointer } from '@src/navigation';
@@ -71,7 +66,7 @@ export class ShellLoadError extends Error {
 
 // Synchronously iterate the DataManager entity cache, returning all live
 // entities of a given type. Used to skip redundant backend queries on tab
-// switches — the cache is kept warm by `useActiveTerminals`'s live subscription.
+// switches — the cache is kept warm by the tabs store's (`useTabs`) live subscription.
 function cachedEntitiesByType<U>(type: string): U[] {
   const out: U[] = [];
   for (const [typeId, ref] of dataManager.entities.entries()) {
@@ -135,46 +130,9 @@ export async function loadShell(shellId: string): Promise<Shell> {
   return shell;
 }
 
-// ── default-tab resolution (exported for unit tests + loadNextProcess) ─────
-
-/**
- * Pick a default tab from a pre-filtered list. Prefers the previously-active
- * target, then falls back to the first non-disabled tab. Skips any tab whose
- * target TypeId, target id, transport shell id, or owning-process id is in
- * `excludeIds`. Returns null when nothing is pickable.
- *
- * `excludeIds` is a single set because process ids and shell ids are both
- * UUIDs and don't collide.
- */
-export function resolveDefaultTab(
-  tabs: TerminalTab[],
-  excludeIds: Set<string> = new Set(),
-): TerminalTab | null {
-  const isPickable = (tab: TerminalTab) => {
-    if (tab.isDisabled) return false;
-    if (excludeIds.has(tab.targetTypeId.toString())) return false;
-    if (excludeIds.has(tab.targetTypeId.id)) return false;
-    const shellId = terminalTransportShellId(tab);
-    if (shellId && excludeIds.has(shellId)) return false;
-    const processId = terminalProcessId(tab);
-    if (processId && excludeIds.has(processId)) return false;
-    return true;
-  };
-
-  const previousTargetTypeId = dataContext.activeTerminalTargetTypeId;
-  if (previousTargetTypeId) {
-    const previous = tabs.find((t) => t.targetTypeId.equals(previousTargetTypeId) && isPickable(t));
-    if (previous) return previous;
-  }
-  const previousShellId = dataContext.activeShellId;
-  if (previousShellId) {
-    const previous = tabs.find(
-      (t) => t.targetTypeId.type === Shell.type && t.targetTypeId.id === previousShellId && isPickable(t),
-    );
-    if (previous) return previous;
-  }
-  return tabs.find(isPickable) ?? null;
-}
+// Default-tab resolution moved to `resolveNextTab` (src/tabs/tab-candidates.ts):
+// the single `resolveActive` resolver applied to the pre-filtered tab list,
+// retiring `resolveDefaultTab` (tab-management.md Part 1 §5, Phase 3).
 
 // ── cleanup UI dispatch ─────────────────────────────────────────────────────
 
@@ -317,7 +275,7 @@ async function routePlainShellPointer(pointer: string): Promise<void> {
   }
 
   // Cache miss — cold navigation (hard refresh / deep link / page.goto): the
-  // loader runs before useActiveTerminals warms the cache. The shell carries
+  // loader runs before the tabs store (`useTabs`) warms the cache. The shell carries
   // its owner directly (Shell.agentic_process_id, the reverse of
   // AgenticProcess.shell_id), so a plain get-by-id resolves ownership — no
   // reverse scan over processes.

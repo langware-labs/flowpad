@@ -8,7 +8,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popo
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { notify } from '@src/notifications';
 import { useAllProjects } from '@src/hooks/use-all-projects';
-import { useTerminalProjectBuckets, type TerminalProjectBucket } from '@src/hooks/useActiveTerminals';
+import { useTerminalProjectBuckets, type TerminalProjectBucket } from '@src/tabs/useTabs';
 import { ChevronLeft, History, Layers, Loader2, RotateCcw } from 'lucide-react';
 import React, { useMemo, useState } from 'react';
 

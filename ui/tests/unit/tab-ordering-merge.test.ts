@@ -1,6 +1,6 @@
 /**
  * Phase-0 characterization: locks the current tab ORDERING + MERGE invariant of
- * `useActiveTerminals` before the TabManager refactor. See the plan
+ * the tabs store (now `useTabs`) before the TabManager refactor. See the plan
  * (`mergePreservingOrder`, `byTabOrder`). Pure functions — no module state.
  *
  * The most important case here is the "index-0 trap" regression: on the FIRST
@@ -11,7 +11,7 @@
  * so each readable label maps to a fixed valid UUID via `uid`.
  */
 import { describe, expect, it } from 'vitest';
-import { byTabOrder, mergePreservingOrder } from '@src/hooks/useActiveTerminals';
+import { byTabOrder, mergePreservingOrder } from '@src/tabs/useTabs';
 import { procTab, shellTab } from '../utils/terminal-tab-fixtures';
 
 describe('byTabOrder', () => {

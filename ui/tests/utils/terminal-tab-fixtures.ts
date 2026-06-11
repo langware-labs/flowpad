@@ -6,7 +6,7 @@
  * the label itself stays on `name` for assertions.
  */
 import { AgenticProcess, Shell, TypeId } from '@sdk';
-import { type TerminalTab } from '@src/hooks/useActiveTerminals';
+import { type TerminalTab } from '@src/tabs/useTabs';
 
 /** Deterministic valid-v4-shaped UUID from a readable label (test-only). */
 export function uid(label: string): string {

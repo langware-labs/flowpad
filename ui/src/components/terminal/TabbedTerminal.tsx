@@ -7,7 +7,7 @@ import {
   terminalTargetKey,
   terminalTransportShellId,
   type TerminalTab,
-} from '@src/hooks/useActiveTerminals';
+} from '@src/tabs/useTabs';
 import {
   shouldAutoSavePtyTitle,
   useTerminalStripController,

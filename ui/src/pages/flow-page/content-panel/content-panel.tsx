@@ -46,7 +46,7 @@ import {
   terminalTargetKey,
   terminalTransportShellId,
   useAllTerminals,
-} from '@src/hooks/useActiveTerminals';
+} from '@src/tabs/useTabs';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { SpecRoute } from '@src/pages/spec/SpecRoute';
