@@ -69,7 +69,15 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ onTabClick, on
   const entityRows = useEntityTabs();
   const { projectRows, globalRows } = partitionEntityRows(entityRows, controller.tabsProjectId);
 
-  const memberKeySet = useMemo(() => new Set(entityRows.map((r) => r.key)), [entityRows]);
+  // VISIBLE members only (project section + global section). The strip's
+  // invariant is "the current view always has a chip": a member tab filtered
+  // out by the project scope must still get the transient preview chip when
+  // its URL is open — counting ALL members here left cross-project member
+  // docs with no chip at all (found live, 2026-06-11).
+  const memberKeySet = useMemo(
+    () => new Set([...projectRows, ...globalRows].map((r) => r.key)),
+    [projectRows, globalRows],
+  );
   const terminalKeySet = useMemo(
     () => new Set(controller.stripItems.map((i) => i.key)),
     [controller.stripItems],
