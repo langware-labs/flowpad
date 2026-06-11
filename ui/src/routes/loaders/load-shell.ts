@@ -127,6 +127,9 @@ export async function loadShell(shellId: string): Promise<Shell> {
   dataContext.setActiveShellId(shell.id);
   dataContext.setActiveTerminalTargetTypeId(shell.typeId);
   bumpLastActive(shell); // recency seed for resolveActive (Bug 1)
+  // Fire-and-forget server stamp (Part 3 §4 D-A): never awaited — loaders
+  // must stay fast; the in-cache bump above is the synchronous seed.
+  void shell.activate().catch(() => {});
   dataContext.setWorkdir(shell.workdir ?? dataContext.project?.fs_storage_mount_path ?? null);
   await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProcessTypeId, null);
   return shell;

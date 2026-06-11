@@ -41,6 +41,11 @@ from flow_sdk.builtin.faas.analytics import AnalyticsActionsMixin
 # Prevents duplicate concurrent scan/index jobs on the same compute node.
 _COMPUTE_ACTIVITIES: dict[str, "Any"] = {}
 
+# Entity kinds onboarded into the unified ``tabs/list`` (tab-management.md
+# Part 3 §4) beyond the two terminal kinds. Membership is the base-Entity
+# ``tabbed`` flag; close on these is clear-membership (the entity survives).
+ONBOARDED_TAB_TYPES = ("markdown", "skill", "workflow")
+
 
 class ComputeNode(PtyActionsMixin, FsRecordsActionsMixin, OpsActionsMixin, ScanActionsMixin, AnalyticsActionsMixin, DesktopActionsMixin, Entity):
     _api_visible = True
@@ -616,6 +621,22 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             [{"kind": "shell", "entity": s.model_dump(mode="json")} for s in pure_shells]
             + [{"kind": "agentic_process", "entity": p.model_dump(mode="json")} for p in member_processes]
         )
+        # Onboarded entity kinds: membership is the base-Entity ``tabbed``
+        # flag — no terminal plumbing. v1 mirrors the existing get_all pattern
+        # above; a cross-type SQL ``tabbed`` predicate is explicitly out of
+        # scope (Part 3 §1, U4). Types missing from the SchemaRegistry (e.g.
+        # pytest envs without register_all) are skipped.
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry
+        for tab_type in ONBOARDED_TAB_TYPES:
+            entity_cls = SchemaRegistry.get_entity_cls(tab_type)
+            if entity_cls is None:
+                continue
+            entities = await entity_cls.get_all()
+            tabs.extend(
+                {"kind": tab_type, "entity": e.model_dump(mode="json")}
+                for e in entities
+                if getattr(e, "tabbed", False)
+            )
         from datetime import datetime as _dt, timezone as _tz
         return ApiSuccessResponse(data={
             "tabs": tabs,

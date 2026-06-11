@@ -218,6 +218,9 @@ export async function loadProcess(
     dataContext.setActiveShellId(shell!.id);
     dataContext.setActiveTerminalTargetTypeId(new TypeId(AgenticProcess.type, processId));
     bumpLastActive(process); // recency seed on the process (tab identity) — Bug 1
+    // Fire-and-forget server stamp (Part 3 §4 D-A): never awaited — loaders
+    // must stay fast; the in-cache bump above is the synchronous seed.
+    void process.activate().catch(() => {});
     dataContext.setWorkdir(
       process!.workdir ?? shell!.workdir ?? dataContext.project?.fs_storage_mount_path ?? null,
     );
