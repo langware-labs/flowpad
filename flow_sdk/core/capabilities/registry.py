@@ -307,8 +307,16 @@ class ChromeAuthenticatedBrowsingRunner(CapabilityRunner):
         return await run_chrome_authenticated_probe()
 
 
-# Placeholder install prompt — proves the install→agentic-process wiring.
-DEFAULT_INSTALL_PROMPT = "count till 10"
+# Generic setup prompt for a capability with no curated instructions of its
+# own. Connector-specific prompts (e.g. "set up email access") come from the
+# connector catalog (core/capabilities/connectors.py) via spec.install_prompt;
+# this is the fallback when none is provided.
+DEFAULT_INSTALL_PROMPT = (
+    "Set up and verify this capability on the local machine. Inspect what is "
+    "already installed/configured, perform any installation or configuration "
+    "needed to make it available, and confirm it works. Be concise and do not "
+    "ask for confirmation — proceed autonomously."
+)
 _INSTALL_MONITOR_TASKS: set[asyncio.Task] = set()
 
 
@@ -333,6 +341,11 @@ def build_install_worker_config(harness_kind: str) -> tuple[str, dict[str, Any]]
         from flow_sdk.flowpad_types.enums import WorkerType
 
         return WorkerType.CODEX.value, CodexCliOptions(permission_mode="bypassPermissions").to_json()
+    if harness_kind == CapabilityKind.COPILOT_CLI.value:
+        from flow_sdk.builtin.agentic_process.cli_drivers.copilot.cli import CopilotCliOptions
+        from flow_sdk.flowpad_types.enums import WorkerType
+
+        return WorkerType.COPILOT.value, CopilotCliOptions(permission_mode="bypassPermissions").to_json()
     raise RuntimeError(f"Unsupported install harness kind: {harness_kind}")
 
 

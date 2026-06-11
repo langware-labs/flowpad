@@ -313,6 +313,7 @@ export function useTerminalStripController({
   // sub-icon on the claude/codex openers and the harness-required popup.
   const claudeCapability = useCapability(CapabilityKinds.ClaudeCode);
   const codexCapability = useCapability(CapabilityKinds.Codex);
+  const copilotCapability = useCapability(CapabilityKinds.Copilot);
   const [installChoiceKinds, setInstallChoiceKinds] = useState<string[] | null>(null);
   // askInstallOneOf — open the harness-required popup for the given capability kinds.
   const askInstallOneOf = useCallback((kinds: string[]) => setInstallChoiceKinds(kinds), []);
@@ -764,6 +765,7 @@ export function useTerminalStripController({
   const dockerNodes = dataContext.dockerComputeNodes;
   const claudeWarning = harnessWarning(claudeCapability);
   const codexWarning = harnessWarning(codexCapability);
+  const copilotWarning = harnessWarning(copilotCapability);
   const openers = useMemo<OpenerDescriptor[]>(() => {
     const list: OpenerDescriptor[] = [
       {
@@ -803,6 +805,7 @@ export function useTerminalStripController({
           void handleStartCopilot();
         },
         available: true,
+        warning: copilotWarning,
         pendingInline: isCopilotCreationPending,
         disabled: isTabCreationPending,
       },
@@ -874,8 +877,10 @@ export function useTerminalStripController({
     dockerNodes,
     claudeWarning,
     codexWarning,
+    copilotWarning,
     isClaudeCreationPending,
     isCodexCreationPending,
+    isCopilotCreationPending,
     isTerminalCreationPending,
     isTabCreationPending,
   ]);

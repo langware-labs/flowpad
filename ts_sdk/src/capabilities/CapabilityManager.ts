@@ -23,6 +23,50 @@ export interface CapabilitySnapshot {
   resolvedKind: string | null;
 }
 
+/** One dependency edge in a CapabilityAccess (mirror of backend summary.py). */
+export interface CapabilityDependency {
+  kind: string;
+  available: boolean;
+}
+
+/**
+ * One capability + everything the UI needs to show/use it. 1:1 with the
+ * backend `CapabilityAccess` pydantic model (core/capabilities/summary.py).
+ */
+export interface CapabilityAccess {
+  kind: string;
+  intent: string;
+  name: string;
+  description: string;
+  icon: string;
+  available: boolean;
+  checked: boolean;
+  runnable: boolean;
+  installable: boolean;
+  worker_type: string | null;
+  homepage_url: string | null;
+  reference_kind: string | null;
+  dependencies: CapabilityDependency[];
+  value: unknown | null;
+  value_type: string | null;
+  last_process_id: string | null;
+  message: string;
+}
+
+/** All capabilities answering one intent (segment-1 handle). */
+export interface CapabilityIntent {
+  intent: string;
+  label: string;
+  available: boolean;
+  capabilities: CapabilityAccess[];
+}
+
+export interface CapabilitiesSummary {
+  intents: CapabilityIntent[];
+  capabilities: CapabilityAccess[];
+  generated_at: string;
+}
+
 /**
  * Frontend singleton for capability state.
  *
@@ -34,6 +78,8 @@ export class CapabilityManager extends EventEmitter {
   private static instance: CapabilityManager;
 
   private capabilities: Capability[] = [];
+  private summary: CapabilitiesSummary | null = null;
+  private summaryPromise: Promise<CapabilitiesSummary> | null = null;
   private loadPromise: Promise<Capability[]> | null = null;
   private actionPromises = new Map<string, Promise<CapabilityCheck>>();
   private ensureCheckPromises = new Map<string, Promise<CapabilitySnapshot>>();
@@ -82,6 +128,57 @@ export class CapabilityManager extends EventEmitter {
 
   getAll(): Capability[] {
     return [...this.capabilities];
+  }
+
+  /** Last known capabilities summary (bootstrap-seeded or fetched); null until loaded. */
+  getCachedSummary(): CapabilitiesSummary | null {
+    return this.summary;
+  }
+
+  /** Seed the summary from the bootstrap payload (avoids a first round-trip). */
+  setSummary(summary: CapabilitiesSummary | null | undefined): void {
+    if (!summary) return;
+    this.summary = summary;
+    this.emit('change');
+  }
+
+  /**
+   * The "all capabilities + how to access each" summary, grouped by intent.
+   * Cached after first fetch; pass `invalidate` to force a refresh (e.g. after
+   * an install completes).
+   */
+  async getSummary(invalidate: boolean = false): Promise<CapabilitiesSummary> {
+    if (this.summary && !invalidate && !this.summaryPromise) {
+      return this.summary;
+    }
+    if (this.summaryPromise && !invalidate) {
+      return this.summaryPromise;
+    }
+    this.summaryPromise = (async () => {
+      const data = await apiClient.get<CapabilitiesSummary>('/graph/capabilities/summary');
+      this.summary = data ?? { intents: [], capabilities: [], generated_at: '' };
+      this.emit('change');
+      return this.summary;
+    })();
+    try {
+      return await this.summaryPromise;
+    } finally {
+      this.summaryPromise = null;
+    }
+  }
+
+  /**
+   * Launch a setup agent for a plain-language capability request ("I want
+   * email"). Returns the spawned process id; refreshes the summary so the
+   * row's running state surfaces.
+   */
+  async installIntent(text: string): Promise<{ process_id?: string | null; message?: string }> {
+    const result = await apiClient.post<{ process_id?: string | null; message?: string }>(
+      '/graph/capabilities/install-intent',
+      { text },
+    );
+    void this.getSummary(true);
+    return result ?? {};
   }
 
   getMatching(queryKind: string): Capability[] {

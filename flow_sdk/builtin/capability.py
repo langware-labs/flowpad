@@ -30,6 +30,10 @@ class Capability(Entity):
     icon: str = APIField(default="BadgeCheck")
     homepage_url: str | None = APIField(default=None)
     dependent_capability_kinds: list[str] = APIField(default_factory=list)
+    # Whether FlowPad can actually use this capability once available (mirror of
+    # CapabilitySpec.runnable). False for MCP servers configured for agents
+    # FlowPad never spawns (cursor/windsurf/vscode/claude_desktop).
+    runnable: bool = APIField(default=True)
     # CapabilityReference pointer: kind of the capability this row delegates
     # to (e.g. the Default harness row referencing harness.claude.cli).
     # User-switchable — seeded from the spec on creation only, never
@@ -59,6 +63,7 @@ class Capability(Entity):
             homepage_url=spec.homepage_url,
             value_type=spec.value_type,
             dependent_capability_kinds=list(spec.dependent_capability_kinds),
+            runnable=spec.runnable,
             reference_kind=spec.reference_kind,
             install_prompt=spec.install_prompt,
             system=True,
@@ -89,6 +94,7 @@ class Capability(Entity):
                 "homepage_url",
                 "value_type",
                 "dependent_capability_kinds",
+                "runnable",
                 "install_prompt",
                 "uname",
                 "system",

@@ -1627,13 +1627,15 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
         # scan info (DB index-status), and harness state are independent —
         # fetch them concurrently.
         from flow_sdk.core.capabilities.harness_state import compute_harness_state  # noqa: PLC0415
+        from flow_sdk.core.capabilities.summary import compute_capabilities_summary  # noqa: PLC0415
         from flow_sdk.system_tools import get_scan_info  # noqa: PLC0415
-        desktop_info, scan_info, harness_state = await asyncio.gather(
+        desktop_info, scan_info, harness_state, capabilities_summary = await asyncio.gather(
             get_desktop_info(),
             get_scan_info(),
             compute_harness_state(),
+            compute_capabilities_summary(),
         )
-        _t.time("get_desktop_info+get_scan_info+compute_harness_state")
+        _t.time("get_desktop_info+get_scan_info+compute_harness_state+capabilities_summary")
 
         # Sniffer hook is opt-in via InstanceSettings.sniffer_enabled
         # (default off). When disabled, bootstrap reports whatever is in the
@@ -1678,6 +1680,7 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
             env=EnvInfo(env_name="desktop", cloud_api_url=get_instance_settings().cloud_api_url, version=__version__),
             desktop_info=desktop_info,
             harness_state=harness_state,
+            capabilities_summary=capabilities_summary.model_dump(mode="json"),
             scan_info=scan_info,
             sniffer_hook=entity_to_dict(sniffer_hook) if sniffer_hook else None,
             records_root=str(get_instance_settings().records_root),
