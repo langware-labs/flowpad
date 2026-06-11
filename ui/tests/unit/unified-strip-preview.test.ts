@@ -167,3 +167,17 @@ describe('global section (§6)', () => {
     expect(modelSource).not.toContain('SHOW_GLOBAL_SECTION_STORAGE_KEY');
   });
 });
+
+describe('always-a-tab invariant (live-QA regression, 2026-06-11)', () => {
+  // A member tab filtered out by the project scope must still get the
+  // transient chip when its URL is open. Counting ALL members for transient
+  // suppression left cross-project member docs with NO chip at all.
+  it('transient suppression uses VISIBLE members (project + global sections)', () => {
+    const src = readFileSync(
+      resolve(__dirname, '../../src/pages/flow-page/content-panel/unified-tab-strip.tsx'),
+      'utf-8',
+    );
+    expect(src).toContain('[...projectRows, ...globalRows].map((r) => r.key)');
+    expect(src).not.toContain('new Set(entityRows.map((r) => r.key))');
+  });
+});
