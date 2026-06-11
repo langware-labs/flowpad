@@ -70,7 +70,18 @@ const DocsGraphView = lazy(() =>
 import { UserDropdown } from './user-dropdown/user-dropdown';
 import { UnifiedTabStrip } from './unified-tab-strip';
 
-export function ContentPanel() {
+export interface ContentPanelProps {
+  /**
+   * Chrome-less mode for the `win/` focus-window layout (tab-management.md
+   * Part 3 §7): hides the unified tab strip header (and the logged-out user
+   * header) so the routed view content is the entire window. The TabsContent
+   * panel rendering below is shared verbatim — FocusLayout reuses this
+   * component instead of duplicating the panel switch.
+   */
+  hideChrome?: boolean;
+}
+
+export function ContentPanel({ hideChrome = false }: ContentPanelProps = {}) {
   // Get navigation instance for URL-first architecture
   const { navigation, currentDock, isDockUrl } = useDockNavigation();
 
@@ -216,7 +227,7 @@ export function ContentPanel() {
         className="flex h-full w-full flex-col"
       >
         {/* Simple header - show UserDropdown only for non-logged-in users */}
-        {!user && (
+        {!user && !hideChrome && (
           <div className="flex items-center justify-end border-b bg-muted/30 px-3 py-1.5">
             <UserDropdown />
           </div>
@@ -225,8 +236,11 @@ export function ContentPanel() {
         {/* Unified tab strip (tab-management.md Part 3 §6): terminal tabs +
             entity member tabs + the transient preview slot + the global
             section, replacing the viewer tab header. The TabsContent panels
-            below keep rendering keyed by the URL-derived current ViewType. */}
-        <UnifiedTabStrip onTabClick={onTabClick} onTabClose={onTabClose} onTabOpen={onTabOpen} />
+            below keep rendering keyed by the URL-derived current ViewType.
+            Hidden in the win/ focus-window layout (§7): no strip, no chrome. */}
+        {!hideChrome && (
+          <UnifiedTabStrip onTabClick={onTabClick} onTabClose={onTabClose} onTabOpen={onTabOpen} />
+        )}
 
         <div className="relative min-h-0 flex-1 overflow-hidden">
           <TabsContent

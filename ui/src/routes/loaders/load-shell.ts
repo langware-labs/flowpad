@@ -33,7 +33,7 @@ import {
 import { closeTerminalTargets } from '@src/tabs/useTabs';
 import { showCleanupModal } from '@src/components/recovery/cleanup-modal';
 import { notify } from '@src/notifications';
-import { DockPointer } from '@src/navigation';
+import { buildShellRedirectUrl, DockPointer } from '@src/navigation';
 import { bumpLastActive } from '@src/tabs/last-active';
 import { replace } from 'react-router';
 import { perfLog, perfTime } from './_perf';
@@ -158,11 +158,19 @@ function loadedToPointer(loaded: LoadedNext): string {
 
 // ── ROUTE: internal branches ────────────────────────────────────────────────
 
-async function routeNewTerminal(): Promise<never> {
+/**
+ * Layout-preserving shell URL builder (Part 3 §7): redirects issued while
+ * loading a `/win/shell` focus window must stay in the win/ layout — a
+ * fallback redirect must not dump the window back into full-app chrome.
+ * `loadShellRoute` builds one from the request path and threads it down.
+ */
+type ShellUrlBuilder = (pointer?: string) => string;
+
+async function routeNewTerminal(shellUrl: ShellUrlBuilder): Promise<never> {
   const cn = dataContext.computeNode;
   if (!cn) {
     // eslint-disable-next-line @typescript-eslint/only-throw-error
-    throw replace('/dock/shell');
+    throw replace(shellUrl());
   }
   const shells = await Shell.query<Shell>(new QueryRequest({ type: Shell.type, scope: [] }));
   const { nextTerminalName } = await import('@src/components/terminal/TabbedTerminal');
@@ -173,10 +181,10 @@ async function routeNewTerminal(): Promise<never> {
   // Use replace so going BACK doesn't re-trigger this loader and create
   // another terminal.
   // eslint-disable-next-line @typescript-eslint/only-throw-error
-  throw replace(`/dock/shell/${newShell.dockPointer.pointer}`);
+  throw replace(shellUrl(newShell.dockPointer.pointer));
 }
 
-async function routeDefaultShell(): Promise<void> {
+async function routeDefaultShell(shellUrl: ShellUrlBuilder): Promise<void> {
   const result = await loadNextProcess({ projectId: dataContext.project?.id ?? null });
   handleCleanups(result.cleaned);
   if (!result.loaded) {
@@ -188,7 +196,7 @@ async function routeDefaultShell(): Promise<void> {
     await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProcessTypeId, null);
     return;
   }
-  perfLog(`routeDefaultShell redirect → /dock/shell/${loadedToPointer(result.loaded)}`);
+  perfLog(`routeDefaultShell redirect → ${shellUrl(loadedToPointer(result.loaded))}`);
   // Replace (not push): bare /dock/shell is a transient placeholder the user
   // never sees — the loader resolves it to a concrete shell URL synchronously.
   // Using redirect() (PUSH) leaves bare /dock/shell as a no-op history entry,
@@ -196,10 +204,10 @@ async function routeDefaultShell(): Promise<void> {
   // dropped silently on hard-refresh. Home → BACK still returns to home
   // because the resolved /dock/shell/<id> entry replaces the bare one.
   // eslint-disable-next-line @typescript-eslint/only-throw-error
-  throw replace(`/dock/shell/${loadedToPointer(result.loaded)}`);
+  throw replace(shellUrl(loadedToPointer(result.loaded)));
 }
 
-async function routeProcessPointer(processId: string): Promise<void> {
+async function routeProcessPointer(processId: string, shellUrl: ShellUrlBuilder): Promise<void> {
   try {
     await loadProcess(processId);
     // Successful load — clear any prior runtime-error banner.
@@ -239,7 +247,7 @@ async function routeProcessPointer(processId: string): Promise<void> {
     handleCleanups([directCleanup, ...next.cleaned]);
     if (!next.loaded) {
       // eslint-disable-next-line @typescript-eslint/only-throw-error
-      throw replace('/dock/shell');
+      throw replace(shellUrl());
     }
     const fallbackPointer = loadedToPointer(next.loaded);
     const requestedProc = AgenticProcess.getByIdFromCache<AgenticProcess>(processId);
@@ -253,11 +261,11 @@ async function routeProcessPointer(processId: string): Promise<void> {
       message: `${directCleanup.title} — opened "${fallbackName}" instead.`,
     });
     // eslint-disable-next-line @typescript-eslint/only-throw-error
-    throw replace(`/dock/shell/${fallbackPointer}`);
+    throw replace(shellUrl(fallbackPointer));
   }
 }
 
-async function routePlainShellPointer(pointer: string): Promise<void> {
+async function routePlainShellPointer(pointer: string, shellUrl: ShellUrlBuilder): Promise<void> {
   const shellId = pointer.startsWith(Shell.type + '-')
     ? pointer.slice(Shell.type.length + 1)
     : pointer;
@@ -271,7 +279,7 @@ async function routePlainShellPointer(pointer: string): Promise<void> {
     // Use replace so BACK from the process URL doesn't pop back to the bare
     // shell URL (which would just re-bounce here → flicker).
     // eslint-disable-next-line @typescript-eslint/only-throw-error
-    throw replace(`/dock/shell/${linkedProcess.terminalDockPointer.pointer}`);
+    throw replace(shellUrl(linkedProcess.terminalDockPointer.pointer));
   }
 
   // Cache miss — cold navigation (hard refresh / deep link / page.goto): the
@@ -282,7 +290,7 @@ async function routePlainShellPointer(pointer: string): Promise<void> {
   const shell = await Shell.getById<Shell>(shellId).catch(() => null);
   if (shell?.agentic_process_id) {
     // eslint-disable-next-line @typescript-eslint/only-throw-error
-    throw replace(`/dock/shell/${new TypeId(AgenticProcess.type, shell.agentic_process_id).toString()}`);
+    throw replace(shellUrl(new TypeId(AgenticProcess.type, shell.agentic_process_id).toString()));
   }
 
   try {
@@ -298,7 +306,7 @@ async function routePlainShellPointer(pointer: string): Promise<void> {
       const recovered = await AgenticProcess.getByWorkerId(shellId).catch(() => null);
       if (recovered) {
         // eslint-disable-next-line @typescript-eslint/only-throw-error
-        throw replace(`/dock/shell/${recovered.terminalDockPointer.pointer}`);
+        throw replace(shellUrl(recovered.terminalDockPointer.pointer));
       }
     }
 
@@ -311,7 +319,7 @@ async function routePlainShellPointer(pointer: string): Promise<void> {
     handleCleanups([directCleanup, ...next.cleaned]);
     if (!next.loaded) {
       // eslint-disable-next-line @typescript-eslint/only-throw-error
-      throw replace('/dock/shell');
+      throw replace(shellUrl());
     }
     const fallbackPointer = loadedToPointer(next.loaded);
     notify.error({
@@ -319,7 +327,7 @@ async function routePlainShellPointer(pointer: string): Promise<void> {
       message: `Couldn't load ${shellId.slice(0, 8)}… (${directCleanup.title}) — opened ${fallbackPointer} instead.`,
     });
     // eslint-disable-next-line @typescript-eslint/only-throw-error
-    throw replace(`/dock/shell/${fallbackPointer}`);
+    throw replace(shellUrl(fallbackPointer));
   }
 }
 
@@ -368,8 +376,15 @@ async function buildShellCleanupForRoute(e: ShellLoadError): Promise<CleanupReco
  * pure `loadShell` / `loadProcess` primitives, with `loadNextProcess` as the
  * single recovery / fallback primitive.
  */
-export async function loadShellRoute(pointer: string | undefined): Promise<void> {
+export async function loadShellRoute(
+  pointer: string | undefined,
+  requestPath: string = '/dock/shell',
+): Promise<void> {
   perfLog(`loadShellRoute(${pointer || 'no-pointer'}) start`);
+
+  // All redirects below preserve the request's layout keyword (dock/dev/win)
+  // so a /win/shell focus window never falls back into full-app chrome (§7).
+  const shellUrl: ShellUrlBuilder = (p?: string) => buildShellRedirectUrl(requestPath, p);
 
   // Gate on the FlowSync WS being OPEN. The dispatch chain below
   // (loadProcess → process.start → shell.attachPty → _reattach → callActionOverWS)
@@ -389,21 +404,21 @@ export async function loadShellRoute(pointer: string | undefined): Promise<void>
   }
 
   if (pointer === 'new_terminal') {
-    await routeNewTerminal();
+    await routeNewTerminal(shellUrl);
   }
 
   if (!pointer) {
-    await routeDefaultShell();
+    await routeDefaultShell(shellUrl);
     return;
   }
 
   if (DockPointer.isAgenticProcessPointer(pointer)) {
     const processId = DockPointer.extractAgenticProcessId(pointer);
-    await routeProcessPointer(processId);
+    await routeProcessPointer(processId, shellUrl);
     perfLog('loadShellRoute done (agentic process path)');
     return;
   }
 
-  await routePlainShellPointer(pointer);
+  await routePlainShellPointer(pointer, shellUrl);
   perfLog('loadShellRoute done (shell path)');
 }

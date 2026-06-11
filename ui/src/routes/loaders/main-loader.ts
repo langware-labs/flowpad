@@ -143,7 +143,9 @@ export async function loadAgentApp(args: LoaderArgs) {
     t.time('ensureComputeNode');
 
     if (viewType === ViewType.SHELL) {
-      await loadShellRoute(pointer || undefined);
+      // Pass the request path so shell-loader redirects preserve the layout
+      // keyword — /win/shell fallbacks stay chrome-less (Part 3 §7).
+      await loadShellRoute(pointer || undefined, requestUrl.pathname);
       t.time('loadShellRoute');
     }
 
