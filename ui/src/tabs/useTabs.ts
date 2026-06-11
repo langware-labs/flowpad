@@ -315,32 +315,38 @@ function ensureWsSubscription(): void {
   wsSubscribed = true;
   subscribeToEntityOps(
     [Shell.type, AgenticProcess.type],
-    (typeId, op) => {
+    (typeId, op, data) => {
       if (op === 'create' || op === 'delete') {
         scheduleTerminalsRefetch();
         return;
       }
       // op === 'update': only AP membership crossings change membership.
       if (typeId.type !== AgenticProcess.type) return;
+      const payload = data as { tabbed?: boolean; visible?: boolean } | null;
       const p = processFromCache(typeId.id);
-      const isMember = !!(p?.tabbed ?? p?.visible);
+      const isMember = !!(payload?.tabbed ?? payload?.visible ?? p?.tabbed ?? p?.visible);
       if (isMember !== isApInStrip(typeId.id)) {
         scheduleTerminalsRefetch();
       }
     },
   );
-  // Entity-backed kinds: same crossing pattern as APs — refetch membership only
-  // when a cached entity's `tabbed` state disagrees with the current strip
-  // membership, or on create/delete (a row may appear/disappear).
+  // Entity-backed kinds: same crossing pattern as APs — refetch membership
+  // only when `tabbed` disagrees with the current strip membership, or on
+  // create/delete. The OP PAYLOAD is read before the cache: membership
+  // changes always ride a non-null `tabbed` on the wire (the exclude_none
+  // rule), and a cross-client open of an entity this window has never cached
+  // would otherwise be invisible (cache miss reads as non-member → no
+  // crossing → the new tab never appears until reload).
   subscribeToEntityOps(
     [...ENTITY_TAB_KINDS],
-    (typeId, op) => {
+    (typeId, op, data) => {
       if (op === 'create' || op === 'delete') {
         scheduleTerminalsRefetch();
         return;
       }
+      const payload = data as { tabbed?: boolean } | null;
       const cached = dataManager.getByTypeIdFromCache(typeId) as { tabbed?: boolean } | null;
-      const isMember = !!cached?.tabbed;
+      const isMember = !!(payload?.tabbed ?? cached?.tabbed);
       if (isMember !== isEntityTabMember(typeId.toString())) {
         scheduleTerminalsRefetch();
       }

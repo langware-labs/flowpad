@@ -578,17 +578,17 @@ URL grammar is unit-locked.
 | 5 | Rename (entity tabs only; PTY `/rename` for shell) | shell, AP, doc | x | — | ✅ web (name persisted, `auto_rename` pinned) |
 | 6 | Preview: browse 5 docs → 1 slot; promote on pin/edit | doc, code file | x | — | ✅ web (one slot, 0 member writes; "Keep as tab" → `tabbed=true` + slot) |
 | 7 | Refresh: membership + recency survive reload | mixed strip | x | x | ✅ web (pointer-less `/dock/shell` restores MRU tab from persisted epoch-ms recency) |
-| 8 | Project switch round-trip restores last tab (Bug-1 regression) | mixed | x | — | not runnable (single-project instance); resolver precedence unit-locked |
+| 8 | Project switch round-trip restores last tab (Bug-1 regression) | mixed | x | — | ✅ web (A→B→A restored the LAST-VIEWED tab, not tab 0 — recency tier live) |
 | 9 | Footer-chip cross-project pick (Bug-2 / pending-intent) | AP | x | — | not run (cross-project chip needed; pre-existing chip-surfacing caveat, Part 1 §8) |
 | 10 | Popout → win attaches → origin navigates away → chip re-opens locally | shell, claude AP, doc | x | x | ✅ web (full handoff: win opened, ready signal, origin detached, chip stayed, re-click re-opened) |
 | 11 | win deep-link (no opener): renders, signal no-op | shell, doc, settings | x | x | ✅ web (chrome-less, live xterm) |
 | 12 | win morph stays chrome-less | any → any | x | x | ◐ chrome-less verified live; morph rule unit-locked (no in-view nav control in the plain shell view to exercise live) |
-| 13 | Cross-client: open/close on Alice → Bob converges (`tabbed=false` propagates) | shell, doc | x (2 instances) | — | not run this cycle (needs two hub-connected instances); wire rule unit-locked |
+| 13 | Cross-client: open/close on client A → client B converges (`tabbed=false` propagates) | shell, doc | x (2 clients) | — | ✅ web (two clients, one backend — `tabbed` is LOCAL-instance state on the instance WS, never hub-synced, so two clients of one backend is the correct contract; both directions converge live after the payload-first crossing fix, see findings) |
 | 14 | Global section: toggle, persistence, default ON | global skill/doc | x | — | ✅ web (localStorage round-trip, default on) |
 | 15 | Multi-attach: same PTY in dock + win simultaneously | shell | x | x | ✅ web (both live, no blank) |
 | 16 | Electron: `/win/` popout = in-app window; http links still external | shell | — | x | not run (requires desktop build) |
 
-**Findings from the live run (both fixed in-cycle, locked by
+**Findings from the live runs (all fixed in-cycle; 1–2 + 3 locked by
 `tab-close-navigation.test.ts`):**
 1. `closeDock` was a silent no-op at root-level dock URLs —
    `stripDockPortion` yields `''` there and `navigate('')` is a react-router
@@ -597,6 +597,18 @@ URL grammar is unit-locked.
 2. Closing a background tab yanked the URL to the shell view —
    `useStandardTabNav`'s empty-MRU fallback predates the app-global strip.
    Fixed: navigate only when the closed set includes the URL-active tab.
+3. **Strip width blow-out** (user-reported: "left arrow, navigation, close
+   all, opener toolbar destroyed"): at its ContentPanel mount the strip sat
+   in a flex chain without `min-w-0`, so the bar sized to the sum of all
+   chip widths (~14k px in a 1.4k viewport) — right arrow / close-all /
+   opener toolbar off-screen, active chip scrolled outside the window.
+   Fixed: `min-w-0` on the flow-page main column + `min-w-0 max-w-full` on
+   the TabStrip root (mount-point-proof). One root cause, four symptoms.
+4. Cross-client entity-tab opens were invisible until reload: the WS
+   crossing check read only the CACHE, and an entity this client never
+   cached reads as non-member → no crossing → no refetch. Fixed: read the
+   op PAYLOAD's `tabbed` first (membership changes always carry it non-null
+   — the wire rule), cache as fallback.
 
 Pre-existing observation (not tab-work): bulk markdown queries re-instantiate
 cached entities → ~196 "already registered with different entity" console

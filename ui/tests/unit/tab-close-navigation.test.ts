@@ -28,6 +28,28 @@ const standardTabNavSource = readFileSync(
   'utf-8',
 );
 
+describe('strip width containment (live-QA regression, 2026-06-11)', () => {
+  // The unified strip blew its flex ancestors out to the sum of all chip
+  // widths (~14k px), pushing the right arrow / close-all / opener toolbar
+  // off-screen and making tab navigation look dead. Both the strip root and
+  // the flow-page main column must stay width-constrained.
+  it('TabStrip root is min-w-0/max-w-full', () => {
+    const tabStripSource = readFileSync(
+      resolve(__dirname, '../../src/components/tabs/TabStrip.tsx'),
+      'utf-8',
+    );
+    expect(tabStripSource).toContain('flex min-w-0 max-w-full items-center');
+  });
+
+  it('flow-page main column carries min-w-0', () => {
+    const flowPageSource = readFileSync(
+      resolve(__dirname, '../../src/pages/flow-page/flow-page.tsx'),
+      'utf-8',
+    );
+    expect(flowPageSource).toContain('flex min-w-0 flex-1 flex-col');
+  });
+});
+
 describe('closeDock from root-level dock URLs', () => {
   it('normalizes the stripped base to the app root', () => {
     expect(navigationActionsSource).toContain("stripDockPortion(currentPath) || '/'");
