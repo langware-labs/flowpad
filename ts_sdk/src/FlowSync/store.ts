@@ -1,6 +1,7 @@
 import { decode, encode } from '@msgpack/msgpack';
 import { EventEmitter } from 'events';
 import { v4 as uuidv4 } from 'uuid';
+import { getTraceId } from '../trace';
 import { ApiError, isApiError } from '../ApiResponse';
 import apiClient, { apiStats, clearStats, GRAPH_API_PREFIX } from '../client';
 import config from '../config';
@@ -1067,6 +1068,7 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       query_params: actionInfo.queryParameters as Record<string, unknown> | null,
       body: actionInfo.bodyParameters as Record<string, unknown> | null,
       hub_reflect: actionInfo.hubReflect,
+      trace_id: getTraceId(),
     };
 
     const response = await connectionManager.sendRestApiMessage<Res>(message, options);

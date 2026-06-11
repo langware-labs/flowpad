@@ -561,10 +561,18 @@ class UvManager {
       // /secrets/seed-key.
       const sodKey = await this._loadSodKey();
 
+      // Which instance the backend runs as: honor FLOW_INSTANCE from the
+      // environment, else default to 'prod'. This is the canonical var the
+      // backend resolves (flow_sdk/instance_settings) — it selects the
+      // per-instance data/records/sod/logs dir under ~/.flow/instances/<name>/.
+      const flowInstance = process.env.FLOW_INSTANCE || 'prod';
+      this.log.info(`[uv] FLOW_INSTANCE=${flowInstance}`);
+
       const env = {
         ...process.env,
         PATH: this._enrichedPath(),
         DEPLOY_ENV: 'desktop',
+        FLOW_INSTANCE: flowInstance,
         MINIHUB_HOST: '127.0.0.1',
         LOCAL_SERVER_PORT: '9007',
         MINIHUB_RELOAD: 'false',

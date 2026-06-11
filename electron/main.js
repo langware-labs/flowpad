@@ -16,12 +16,17 @@ if (!app.requestSingleInstanceLock()) {
   app.quit();
 }
 
-// Configure logging — store all logs under ~/.flow/logs/
+// Configure logging — store all logs per-instance under ~/.flow/instances/<inst>/logs/
 const fs = require('fs');
 const os = require('os');
 const FLOW_HOME = path.join(os.homedir(), '.flow');
-const LOGS_BASE = path.join(FLOW_HOME, 'logs');
-const MAIN_DESKTOP_LOG_DIR = path.join(LOGS_BASE, 'main_desktop');
+// All logs are per-instance, under ~/.flow/instances/<FLOW_INSTANCE>/logs/.
+// Resolve the same instance name uv-manager uses to spawn the backend, so the
+// shell's own log (main_desktop/) sits beside the backend's monitor/ + server/.
+// FLOW_INSTANCE is known from the env at shell startup, and we mkdir the tree
+// below, so this works even when the backend never starts.
+const INSTANCE_LOGS_BASE = path.join(FLOW_HOME, 'instances', process.env.FLOW_INSTANCE || 'prod', 'logs');
+const MAIN_DESKTOP_LOG_DIR = path.join(INSTANCE_LOGS_BASE, 'main_desktop');
 
 function generateTimestampedFilename() {
   const now = new Date();
@@ -66,6 +71,17 @@ log.transports.file.resolvePathFn = () => MAIN_LOG_PATH;
 log.transports.file.level = 'info';
 log.transports.console.level = 'debug';
 log.info('Flowpad starting...');
+
+// Persist the RENDERER console to the same Electron log file. The renderer's
+// SDK logger captures console.* and forwards each line over the 'renderer-log'
+// IPC channel (preload: window.electronAPI.logToFile). Lines are written under
+// a 'renderer' scope and carry the trace id, so frontend logs survive DevTools
+// and join the backend log lines for the same action.
+const rendererLog = log.scope('renderer');
+ipcMain.on('renderer-log', (_event, level, message) => {
+  const fn = typeof rendererLog[level] === 'function' ? rendererLog[level] : rendererLog.info;
+  fn.call(rendererLog, message);
+});
 
 // ----------------------------------------------------------------------------
 // Electron desktop wrapper auto-update.
@@ -437,7 +453,7 @@ async function startApp() {
     // Try to gather diagnostics for the error dialog
     let detail = 'Backend server failed to respond within 30 seconds.';
     try {
-      const newest = getNewestLogFile(path.join(LOGS_BASE, 'monitor'));
+      const newest = getNewestLogFile(path.join(INSTANCE_LOGS_BASE, 'monitor'));
       if (newest) {
         const logContent = fs.readFileSync(newest.path, 'utf8');
         const lastLines = logContent.split('\n').slice(-15).join('\n');
@@ -539,7 +555,7 @@ ipcMain.handle('get-startup-logs', () => {
 
   // Electron log (newest in main_desktop/)
   try {
-    const newest = getNewestLogFile(path.join(LOGS_BASE, 'main_desktop'));
+    const newest = getNewestLogFile(path.join(INSTANCE_LOGS_BASE, 'main_desktop'));
     if (newest) {
       const content = fs.readFileSync(newest.path, 'utf8');
       logs.push({ name: 'Electron', path: newest.path, content });
@@ -548,7 +564,7 @@ ipcMain.handle('get-startup-logs', () => {
 
   // Monitor log (newest in monitor/)
   try {
-    const newest = getNewestLogFile(path.join(LOGS_BASE, 'monitor'));
+    const newest = getNewestLogFile(path.join(INSTANCE_LOGS_BASE, 'monitor'));
     if (newest) {
       const content = fs.readFileSync(newest.path, 'utf8');
       logs.push({ name: 'Monitor', path: newest.path, content });
@@ -557,7 +573,7 @@ ipcMain.handle('get-startup-logs', () => {
 
   // Server log (newest in server/)
   try {
-    const newest = getNewestLogFile(path.join(LOGS_BASE, 'server'));
+    const newest = getNewestLogFile(path.join(INSTANCE_LOGS_BASE, 'server'));
     if (newest) {
       const content = fs.readFileSync(newest.path, 'utf8');
       logs.push({ name: 'Server', path: newest.path, content });
@@ -576,15 +592,16 @@ const _logFileOffsets = {};  // { filePath: bytesReadSoFar }
 function _getLogFiles() {
   const files = [];
 
-  // Re-discover newest file in each subdirectory on every tick
+  // Re-discover newest file in each subdirectory on every tick. main_desktop
+  // is the global shell log; monitor/server are per-instance (backend writes).
   const subdirs = [
-    { name: 'Electron', dir: 'main_desktop' },
-    { name: 'Monitor', dir: 'monitor' },
-    { name: 'Server', dir: 'server' },
+    { name: 'Electron', base: INSTANCE_LOGS_BASE, dir: 'main_desktop' },
+    { name: 'Monitor', base: INSTANCE_LOGS_BASE, dir: 'monitor' },
+    { name: 'Server', base: INSTANCE_LOGS_BASE, dir: 'server' },
   ];
 
-  for (const { name, dir } of subdirs) {
-    const newest = getNewestLogFile(path.join(LOGS_BASE, dir));
+  for (const { name, base, dir } of subdirs) {
+    const newest = getNewestLogFile(path.join(base, dir));
     if (newest) {
       files.push({ name, path: newest.path });
     }

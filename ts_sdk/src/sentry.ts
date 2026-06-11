@@ -1,5 +1,6 @@
 import * as Sentry from '@sentry/browser';
 import { config } from './config';
+import { getTraceId } from './trace';
 
 const version = '0.1.0'; // SDK version
 
@@ -28,6 +29,9 @@ export const initSentry = () => {
         Sentry.replayCanvasIntegration(),
       ],
     });
+    // Share the renderer trace id so a Sentry event joins the same backend /
+    // Electron log lines (filter by trace_id in the Sentry UI).
+    Sentry.setTag('trace_id', getTraceId());
     console.debug('Sentry initialized successfully');
   } else {
     console.debug('SENTRY_DSN is not set');
