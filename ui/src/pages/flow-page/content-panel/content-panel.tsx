@@ -40,7 +40,6 @@ import { WebappViewer } from '@src/components/webapp-viewer';
 import { WorkflowsPage } from '@src/components/workflows-view/WorkflowsPage';
 import { useActiveViewer } from '@src/hooks/flow-hooks';
 import { useViewerStore } from '@src/hooks/flow-hooks/useViewerStore';
-import { useContentPanelStore } from '@src/hooks/use-content-panel-store';
 import { useEnvVarsStore } from '@src/hooks/use-env-vars-store';
 import { notify } from '@src/notifications';
 import {
@@ -69,6 +68,7 @@ const DocsGraphView = lazy(() =>
   import('@src/components/graph-view/DocsGraphView').then((m) => ({ default: m.DocsGraphView })),
 );
 import { UserDropdown } from './user-dropdown/user-dropdown';
+import { UnifiedTabStrip } from './unified-tab-strip';
 
 export function ContentPanel() {
   // Get navigation instance for URL-first architecture
@@ -95,8 +95,9 @@ export function ContentPanel() {
     [navigation],
   );
 
-  // State from viewer store (centralized tab and view management)
-  const { currentOverviewTab, currentContext, addTab } = useViewerStore();
+  // State from viewer store (overview-axis only — the header tab membership
+  // moved to the unified TabStrip, tab-management.md Part 3 U1)
+  const { currentOverviewTab, currentContext } = useViewerStore();
 
   // Survey state (shared with chat-panel)
   const { activeSurveyData, onSurveyComplete } = useSurveyStore();
@@ -118,7 +119,6 @@ export function ContentPanel() {
   }, []);
 
   const { setOpenEnvironmentTab } = useEnvVarsStore();
-  const { setAddTab } = useContentPanelStore();
 
   const { sendMessage } = useSendMessageStore();
 
@@ -151,10 +151,6 @@ export function ContentPanel() {
   useEffect(() => {
     setOpenEnvironmentTab(() => navigation.openTab(ViewType.ENVIRONMENT));
   }, [navigation, setOpenEnvironmentTab]);
-
-  useEffect(() => {
-    setAddTab(addTab);
-  }, [addTab, setAddTab]);
 
   // Handle shell routing based on URL pointer
   useEffect(() => {
@@ -226,6 +222,12 @@ export function ContentPanel() {
           </div>
         )}
 
+        {/* Unified tab strip (tab-management.md Part 3 §6): terminal tabs +
+            entity member tabs + the transient preview slot + the global
+            section, replacing the viewer tab header. The TabsContent panels
+            below keep rendering keyed by the URL-derived current ViewType. */}
+        <UnifiedTabStrip onTabClick={onTabClick} onTabClose={onTabClose} onTabOpen={onTabOpen} />
+
         <div className="relative min-h-0 flex-1 overflow-hidden">
           <TabsContent
             value="overview"
@@ -236,6 +238,7 @@ export function ContentPanel() {
                 <TabbedTerminal
                   className="h-full"
                   addTabButton
+                  showStrip={false}
                   onTabClick={onTabClick}
                   onTabClose={onTabClose}
                   onTabOpen={onTabOpen}
@@ -275,6 +278,7 @@ export function ContentPanel() {
             <TabbedTerminal
               className="h-full"
               addTabButton
+              showStrip={false}
               onTabClick={onTabClick}
               onTabClose={onTabClose}
               onTabOpen={onTabOpen}

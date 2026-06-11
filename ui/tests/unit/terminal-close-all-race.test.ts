@@ -8,8 +8,11 @@ const activeTerminalsSource = readFileSync(
   resolve(__dirname, '../../src/tabs/useTabs.ts'),
   'utf-8',
 );
-const tabbedTerminalSource = readFileSync(
-  resolve(__dirname, '../../src/components/terminal/TabbedTerminal.tsx'),
+// The strip-controller logic (close dispatch included) moved from
+// TabbedTerminal into the reusable useTerminalStripController hook
+// (tab-management.md Part 3 §6); the contract assertions read the real source.
+const stripControllerSource = readFileSync(
+  resolve(__dirname, '../../src/tabs/useTerminalStripController.tsx'),
   'utf-8',
 );
 const standardTabNavSource = readFileSync(
@@ -29,8 +32,8 @@ describe('terminal close-all backend contract', () => {
     expect(activeTerminalsSource).toContain("new ActionInfo('tabs', 'compute_node', computeNodeId, 'POST')");
     expect(activeTerminalsSource).toContain("action.subpath = 'close'");
     expect(activeTerminalsSource).toContain('action.bodyParameters = { targets: keys }');
-    expect(tabbedTerminalSource).toContain('closeTerminalTargets(keys)');
-    expect(tabbedTerminalSource).not.toContain('target.close()');
+    expect(stripControllerSource).toContain('closeTerminalTargets(keys)');
+    expect(stripControllerSource).not.toContain('target.close()');
     expect(standardTabNavSource).toContain('string | string[]');
   });
 });

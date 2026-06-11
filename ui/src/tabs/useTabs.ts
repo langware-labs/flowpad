@@ -92,6 +92,60 @@ interface TabsListResponse {
   checked_at: string;
 }
 
+// ─── Entity-backed (non-terminal) tab rows ──────────────────────────────────
+
+/**
+ * Non-terminal kinds the store renders as entity member tabs (tab-management.md
+ * Part 3 §3 "entity" column). Membership semantics differ from terminals:
+ * close clears `tabbed` (the entity survives) instead of tearing anything down.
+ */
+export const ENTITY_TAB_KINDS = ['markdown', 'skill', 'workflow'] as const;
+
+const ENTITY_TAB_KIND_SET = new Set<string>(ENTITY_TAB_KINDS);
+
+/** Wire shape shared by all entity-backed tab rows (base-Entity fields). */
+interface WireEntityRow {
+  id: string;
+  name?: string | null;
+  project_id?: string | null;
+  tab_order?: number | null;
+  last_active_at?: number | null;
+}
+
+/** One entity-backed (non-terminal) tab row. */
+export interface EntityTabRow {
+  /** The wire `kind` — equals the entity type name (markdown/skill/workflow). */
+  kind: string;
+  typeId: TypeId;
+  /** Canonical tab key: `typeId.toString()`. */
+  key: string;
+  name: string | null;
+  projectId: string | null;
+  tabOrder: number;
+  /** epoch-ms recency stamp (server-side `activate`), null when never stamped. */
+  lastActiveAt: number | null;
+}
+
+/** Wire → row mapping for entity-backed tabs (exported for unit tests). */
+export function toEntityTabRow(kind: string, e: WireEntityRow): EntityTabRow {
+  const lastActive = e.last_active_at;
+  return {
+    kind,
+    typeId: new TypeId(kind, e.id),
+    key: new TypeId(kind, e.id).toString(),
+    name: e.name ?? null,
+    projectId: e.project_id ?? null,
+    tabOrder: e.tab_order ?? 0,
+    lastActiveAt: typeof lastActive === 'number' ? lastActive : null,
+  };
+}
+
+export function byEntityTabOrder(a: EntityTabRow, b: EntityTabRow): number {
+  if (a.tabOrder !== b.tabOrder) return a.tabOrder - b.tabOrder;
+  // Stable secondary: key, for deterministic multi-add ordering.
+  return a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
+}
+
 function shellFromCache(id: string): Shell | undefined {
   return (
     (Shell as unknown as { getByIdFromCache: (id: string) => Shell | null }).getByIdFromCache(id) ??
@@ -186,6 +240,7 @@ export function terminalDockPointer(tab: TerminalTab): DockPointerData | null {
 // ─── Module-level shared state ──────────────────────────────────────────────
 
 let terminalState: TerminalTab[] = [];
+let entityTabState: EntityTabRow[] = [];
 let initialFetchStarted = false;
 let firstFetchCompleted = false;
 let inFlightFirstFetch: Promise<TerminalTab[]> | null = null;
@@ -201,6 +256,12 @@ function notifyListeners(): void {
 function setTerminalState(next: TerminalTab[]): void {
   if (next === terminalState) return;
   terminalState = next;
+  notifyListeners();
+}
+
+function setEntityTabState(next: EntityTabRow[]): void {
+  if (next === entityTabState) return;
+  entityTabState = next;
   notifyListeners();
 }
 
@@ -242,6 +303,13 @@ function isApInStrip(apId: string): boolean {
   return false;
 }
 
+function isEntityTabMember(key: string): boolean {
+  for (const r of entityTabState) {
+    if (r.key === key) return true;
+  }
+  return false;
+}
+
 function ensureWsSubscription(): void {
   if (wsSubscribed) return;
   wsSubscribed = true;
@@ -257,6 +325,23 @@ function ensureWsSubscription(): void {
       const p = processFromCache(typeId.id);
       const isMember = !!(p?.tabbed ?? p?.visible);
       if (isMember !== isApInStrip(typeId.id)) {
+        scheduleTerminalsRefetch();
+      }
+    },
+  );
+  // Entity-backed kinds: same crossing pattern as APs — refetch membership only
+  // when a cached entity's `tabbed` state disagrees with the current strip
+  // membership, or on create/delete (a row may appear/disappear).
+  subscribeToEntityOps(
+    [...ENTITY_TAB_KINDS],
+    (typeId, op) => {
+      if (op === 'create' || op === 'delete') {
+        scheduleTerminalsRefetch();
+        return;
+      }
+      const cached = dataManager.getByTypeIdFromCache(typeId) as { tabbed?: boolean } | null;
+      const isMember = !!cached?.tabbed;
+      if (isMember !== isEntityTabMember(typeId.toString())) {
         scheduleTerminalsRefetch();
       }
     },
@@ -284,29 +369,33 @@ function ensureWsSubscription(): void {
  * indices of existing tabs, which is the exact "tabs moving around" problem
  * this function exists to prevent.
  */
-export function mergePreservingOrder(
-  prev: TerminalTab[],
-  fetched: TerminalTab[],
+export function mergePreservingOrder<T = TerminalTab>(
+  prev: T[],
+  fetched: T[],
   firstFetchCompleted: boolean,
-): TerminalTab[] {
-  if (!firstFetchCompleted) return fetched.slice().sort(byTabOrder);
-  const fetchedByKey = new Map<string, TerminalTab>();
-  for (const t of fetched) fetchedByKey.set(terminalTargetKey(t), t);
-  const kept: TerminalTab[] = [];
+  // Generic over the row shape so entity-tab rows share the exact invariant;
+  // the defaults keep every historical terminal call site unchanged.
+  keyOf: (t: T) => string = terminalTargetKey as unknown as (t: T) => string,
+  compare: (a: T, b: T) => number = byTabOrder as unknown as (a: T, b: T) => number,
+): T[] {
+  if (!firstFetchCompleted) return fetched.slice().sort(compare);
+  const fetchedByKey = new Map<string, T>();
+  for (const t of fetched) fetchedByKey.set(keyOf(t), t);
+  const kept: T[] = [];
   const keptKeys = new Set<string>();
   for (const t of prev) {
-    const key = terminalTargetKey(t);
+    const key = keyOf(t);
     const refreshed = fetchedByKey.get(key);
     if (refreshed) {
       kept.push(refreshed);
       keptKeys.add(key);
     }
   }
-  const additions: TerminalTab[] = [];
+  const additions: T[] = [];
   for (const t of fetched) {
-    if (!keptKeys.has(terminalTargetKey(t))) additions.push(t);
+    if (!keptKeys.has(keyOf(t))) additions.push(t);
   }
-  if (additions.length > 1) additions.sort(byTabOrder);
+  if (additions.length > 1) additions.sort(compare);
   return kept.concat(additions);
 }
 
@@ -336,18 +425,22 @@ export async function fetchActiveTerminals(): Promise<TerminalTab[]> {
   for (const row of result.tabs) {
     try { dataManager.castAndDeepAssign(row.entity); } catch { /* skip malformed */ }
   }
-  // 2. Build the row list directly from the unified wire rows — no join, no
+  // 2. Build the row lists directly from the unified wire rows — no join, no
   //    merge. `shell` rows become plain tabs; `agentic_process` rows become
-  //    AI-worker tabs. Unknown kinds (future entity onboarding,
+  //    AI-worker tabs; entity kinds (markdown/skill/workflow) become
+  //    `entityTabState` member rows. Unknown kinds (future entity onboarding,
   //    tab-management.md Part 3 §4) are skipped gracefully until the strip
   //    controller learns to render them.
   const unknownKinds = new Set<string>();
   const fetched: TerminalTab[] = [];
+  const fetchedEntityRows: EntityTabRow[] = [];
   for (const row of result.tabs) {
     if (row.kind === 'shell') {
       fetched.push(toShellTab(row.entity as unknown as WireShell));
     } else if (row.kind === 'agentic_process') {
       fetched.push(toProcessTab(row.entity as unknown as WireProcess));
+    } else if (ENTITY_TAB_KIND_SET.has(row.kind)) {
+      fetchedEntityRows.push(toEntityTabRow(row.kind, row.entity as unknown as WireEntityRow));
     } else {
       unknownKinds.add(row.kind);
     }
@@ -359,6 +452,11 @@ export async function fetchActiveTerminals(): Promise<TerminalTab[]> {
     );
   }
   const next = mergePreservingOrder(terminalState, fetched, firstFetchCompleted);
+  // Entity rows share the same non-destructive order invariant (keyed by the
+  // TypeId string, ordered by tab_order on first fetch / among additions).
+  setEntityTabState(
+    mergePreservingOrder(entityTabState, fetchedEntityRows, firstFetchCompleted, (r) => r.key, byEntityTabOrder),
+  );
   setTerminalState(next);
   firstFetchCompleted = true;
   return next;
@@ -386,7 +484,14 @@ export interface TerminalCloseResponse {
   invalid: string[];
 }
 
-export async function closeTerminalTargets(
+/**
+ * Batched `tabs/close` over any tab kind (terminal or entity member). ONE POST
+ * per call — multi-close must never fan out (locked by
+ * `terminal-close-all-race.test.ts`). The backend dispatches per-kind close
+ * semantics (terminal teardown vs clear-membership); accepted targets are
+ * optimistically removed from BOTH local lists.
+ */
+export async function closeTabTargets(
   targets: Array<TerminalTab | TypeId | string>,
 ): Promise<TerminalCloseResponse> {
   const keys = targets.map(terminalTargetKey);
@@ -402,9 +507,44 @@ export async function closeTerminalTargets(
   if (accepted.length > 0) {
     const closed = new Set(accepted);
     setTerminalState(terminalState.filter((tab) => !closed.has(terminalTargetKey(tab))));
+    setEntityTabState(entityTabState.filter((row) => !closed.has(row.key)));
   }
   return {
     accepted,
+    missing: result?.missing ?? [],
+    invalid: result?.invalid ?? [],
+  };
+}
+
+/** Historical name — terminal call sites close through the same batched POST. */
+export const closeTerminalTargets = closeTabTargets;
+
+export interface TabsOpenResponse {
+  accepted: string[];
+  missing: string[];
+  invalid: string[];
+}
+
+/**
+ * Batched `tabs/open` (`tabbed=true`) — the ONLY promotion path from a
+ * transient preview tab to a member tab (tab-management.md Part 3 §5).
+ * Schedules a membership refetch so the new member row lands in the strip.
+ */
+export async function openTabTargets(
+  targets: Array<TypeId | string>,
+): Promise<TabsOpenResponse> {
+  const keys = targets.map(terminalTargetKey);
+  const computeNodeId = dataContext.computeNode?.id;
+  if (!computeNodeId || keys.length === 0) {
+    return { accepted: [], missing: keys, invalid: [] };
+  }
+  const action = new ActionInfo('tabs', 'compute_node', computeNodeId, 'POST');
+  action.subpath = 'open';
+  action.bodyParameters = { targets: keys };
+  const result = await dataManager.callAction<{ targets: string[] }, TabsOpenResponse>(action);
+  if ((result?.accepted?.length ?? 0) > 0) scheduleTerminalsRefetch();
+  return {
+    accepted: result?.accepted ?? [],
     missing: result?.missing ?? [],
     invalid: result?.invalid ?? [],
   };
@@ -471,6 +611,26 @@ export function useAllTerminals(): UseTerminalsResult {
     removeTerminal: removeTerminalShared,
     updateTerminal: updateTerminalShared,
   };
+}
+
+/**
+ * Entity-backed (non-terminal) member tabs — markdown/skill/workflow rows from
+ * the same `tabs/list` fetch, on the same module store + WS subscription as
+ * the terminal rows. Returns the full list; consumers scope by `projectId`
+ * (null = the global section, Part 3 §6).
+ */
+export function useEntityTabs(): EntityTabRow[] {
+  const subscribe = useCallback((onChange: () => void) => {
+    listeners.add(onChange);
+    ensureWsSubscription();
+    if (!initialFetchStarted) {
+      initialFetchStarted = true;
+      void fetchActiveTerminals();
+    }
+    return () => { listeners.delete(onChange); };
+  }, []);
+  const getSnapshot = useCallback(() => entityTabState, []);
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
 /**
