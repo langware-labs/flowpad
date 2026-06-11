@@ -244,6 +244,7 @@ let inFlightFirstFetch: Promise<TerminalTab[]> | null = null;
 let wsSubscribed = false;
 let wsRefetchTimer: ReturnType<typeof setTimeout> | null = null;
 let warnedUnknownKinds = false;
+let warnedMalformedTabsList = false;
 const listeners = new Set<() => void>();
 
 function notifyListeners(): void {
@@ -434,7 +435,19 @@ export async function fetchActiveTerminals(): Promise<TerminalTab[]> {
   const action = new ActionInfo('tabs', 'compute_node', computeNodeId, 'GET');
   action.subpath = 'list';
   const result = await dataManager.callAction<unknown, TabsListResponse>(action);
-  if (!result) return [];
+  // Malformed / legacy response guard: a pre-tabs backend answers `tabs/list`
+  // as a generic entity GET (SUCCESS, but no `tabs` array). Treat it like a
+  // failed fetch — don't crash the route loader, don't flip
+  // firstFetchCompleted — and say why once.
+  if (!result || !Array.isArray(result.tabs)) {
+    if (result && !warnedMalformedTabsList) {
+      warnedMalformedTabsList = true;
+      console.warn(
+        'tabs/list returned no tabs array — the backend predates the unified tabs API (restart it on current code); strip stays empty.',
+      );
+    }
+    return [];
+  }
   // 1. Hydrate the entity cache so per-row reads (`shell.status`, `process.workerStatus`)
   //    stay live independently of this hook.
   for (const row of result.tabs) {

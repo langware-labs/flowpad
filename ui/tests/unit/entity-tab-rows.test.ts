@@ -6,6 +6,8 @@
  * Entity ids must be valid v4/v5 UUIDs (TypeId enforces the entity-id policy),
  * so readable labels map to fixed valid UUIDs via `uid`.
  */
+import { readFileSync } from 'fs';
+import { resolve } from 'path';
 import { describe, expect, it } from 'vitest';
 import {
   byEntityTabOrder,
@@ -71,5 +73,16 @@ describe('mergePreservingOrder over entity rows (shared invariant)', () => {
     // a/b keep their local indices (refreshed), 'gone' drops, 'new' appends.
     expect(merged.map((r) => r.key)).toEqual([row('a').key, row('b').key, row('new').key]);
     expect(merged[1].name).toBe('b-renamed');
+  });
+});
+
+describe('legacy backend resilience (live-QA regression, 2026-06-11)', () => {
+  // A pre-tabs backend answers `tabs/list` as a generic entity GET (SUCCESS,
+  // no `tabs` array). The fetch must degrade to an empty strip with a single
+  // console.warn — `result.tabs is not iterable` crashed every route loader.
+  it('fetchActiveTerminals guards non-array result.tabs', () => {
+    const src = readFileSync(resolve(__dirname, '../../src/tabs/useTabs.ts'), 'utf-8');
+    expect(src).toContain('!Array.isArray(result.tabs)');
+    expect(src).toContain('warnedMalformedTabsList');
   });
 });
