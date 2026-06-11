@@ -389,7 +389,7 @@ export class NavigationActions {
         if (!options?.skipNavigate) this.openShellView();
         return null;
       }
-      const { nextTerminalName } = await import('@src/components/terminal/TabbedTerminal');
+      const { nextTerminalName } = await import('@src/components/terminal/rename-rules');
       const shells = await Shell.list(cn.id);
       const name = nextTerminalName(shells.map((s) => ({ name: s.name ?? '' })));
       // For sandbox compute nodes the project's host path is meaningless;

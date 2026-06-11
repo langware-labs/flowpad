@@ -59,7 +59,7 @@ import { useContext } from '@src/hooks/useContext';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Cloud, Container, FolderGit2, History, SquareTerminal } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { allowRename } from '@src/components/terminal/rename-rules';
+import { allowRename, shouldAutoSavePtyTitle } from '@src/components/terminal/rename-rules';
 import { HistoryModal } from '@src/components/terminal/HistoryModal';
 import { ProjectsCounterChip, type ProjectWorkerType } from '@src/components/terminal/ProjectsCounterChip';
 import { AskInstallOneOfDialog } from '@src/components/terminal/openers/AskInstallOneOfDialog';
@@ -76,14 +76,6 @@ const ClaudeResumeIcon: React.FC<{ className?: string }> = ({ className }) => (
     <History className="absolute -bottom-0.5 -right-0.5 !h-2.5 !w-2.5 text-foreground/80" strokeWidth={3} />
   </span>
 );
-
-function isCodexProcess(process?: AgenticProcess | null): boolean {
-  return process?.worker_type?.trim().toLowerCase() === 'codex';
-}
-
-function isCopilotProcess(process?: AgenticProcess | null): boolean {
-  return process?.worker_type?.trim().toLowerCase() === 'copilot';
-}
 
 /** Vendor metadata per terminal provider kind — the single source for the
  *  strip chips' icon resolution (the terminal strategy's icon override,
@@ -107,12 +99,6 @@ function getDisplayName(session: TerminalTab): string {
 function harnessWarning(capability: UseCapabilityResult): string | null {
   if (!capability.checked || capability.available) return null;
   return capability.result?.message ?? 'This harness is not available on this machine.';
-}
-
-export function shouldAutoSavePtyTitle(session: TerminalTab, process?: AgenticProcess | null): boolean {
-  const resolvedProcess = process ?? session.agenticProcess ?? null;
-  if (!resolvedProcess) return session.targetTypeId.type === Shell.type;
-  return !isCodexProcess(resolvedProcess) && !isCopilotProcess(resolvedProcess);
 }
 
 function timeAgo(date: Date | string | undefined | null): string {
