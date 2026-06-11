@@ -188,6 +188,26 @@ The user-stated workflow is: **kill the app naturally → patch the app → star
 it must behave **"as if it were truly production"** (same hardened-runtime launch, same
 `flow`-spawned backend on **9007**).
 
+## What "patch desktop" means (canonical definition)
+
+"Patch desktop" is **prod parity from the published release**, never a dev-checkout build:
+
+1. **Source = the latest release branch published on PyPI.** Fetch `origin/release/v0.2` and
+   verify its tip's `_version.py` equals the live PyPI latest
+   (`curl -fsS https://pypi.org/pypi/flowpad/json` → `info.version`). Both halves come from
+   that tip: the **backend wheel** (Local Deployment in [`pypi-deploy.md`](./pypi-deploy.md),
+   built in a worktree of the tip) and the **shell's `main.js`**
+   (`git show origin/release/v0.2:electron/main.js` — NOT the working tree; a checkout
+   `main.js` can carry unreleased features the served release UI has no counterpart for).
+2. **Versions prove the build.** The backend installs as `<latest>+local<count>` (next free
+   count — never reuse a deployed label). The patched app is stamped `<latest>-patch<count>`
+   (e.g. `0.2.52-patch1`) — the **release** version plus a patch counter, not the Electron
+   bundle's own base version, so About/logs tell you at a glance which release the machine
+   runs. The patch counter restarts at 1 when `<latest>` moves; never reuse a deployed number.
+
+Deviating from either rule (building from the dev branch, shipping the working-tree
+`main.js`) is a different operation — say so explicitly and stamp accordingly.
+
 > **Which app is "the patched version"? (resolving the ambiguity.)** macOS TCC
 > **App-Management** blocks editing `/Applications/Flowpad.app` from the terminal, so the
 > canonical, unambiguous patched app is the **`~/Flowpad-patched.app` clone** produced below —
@@ -226,18 +246,22 @@ main-process (`electron/`) changes require the steps below.
 > `main.js` asar patch — `build_ui.py` had run but the rebuilt bundle was never overlaid into the
 > install. Overlay + reload fixed it; no asar repack needed.
 
-## Version tag — `X.Y.Z-patchN` (answer: yes, this works)
+## Version tag — `<pypi-latest>-patchN` (answer: yes, this works)
 
 `electron/semver.js` (mirrored 1:1 in `flow_sdk/utils/semver.py`) treats any trailing "extra"
-tag as **newer** than the bare triple — `0.2.28-patch1 > 0.2.28`, the *opposite* of the
-SemVer pre-release rule, and intentional here. So stamping `…-patch1`, `…-patch2`, … :
+tag as **newer** than the bare triple — `0.2.52-patch1 > 0.2.52`, the *opposite* of the
+SemVer pre-release rule, and intentional here. The triple is the **PyPI-latest release
+version** (canonical definition above), not the Electron bundle's own base — early
+iterations stamped the bundle base (`0.2.28-patchN`) and it made the About box useless for
+telling which release the machine ran. Stamping `<latest>-patch1`, `-patch2`, … :
 
 - survives the auto-updater (it never looks "older" → won't be auto-replaced), and
-- is unmistakable in the log — boot prints `[update] desktop upgraded 0.2.28 → 0.2.28-patch1`.
+- is unmistakable in the log — boot prints `[update] desktop upgraded <prev> → 0.2.52-patch1`.
 
 Stamp it in **two** places: the packed `app.asar/package.json` `version` (authoritative for
 `app.getVersion()`) **and** `Info.plist:CFBundleShortVersionString` (Finder/About display).
-Use the next `patchN` each iteration so you never confuse two patched builds.
+Use the next `patchN` each iteration so you never confuse two patched builds; the counter
+restarts at 1 when the release version moves.
 
 ## The four blockers (lessons — all hit on macOS 2026-06-10)
 
@@ -257,10 +281,12 @@ Use the next `patchN` each iteration so you never confuse two patched builds.
    the signature and the OS kills it on launch. **Ad-hoc re-sign** with the checkout's
    entitlements (they grant `allow-jit` / `disable-library-validation`, which Electron's
    helpers need): result flags should read `adhoc,runtime`.
-4. **Transplant only the file you changed.** The packed `main.js` is **byte-identical to git
-   `HEAD`** of `electron/main.js`, so copying your edited checkout `main.js` over the
-   extracted one is clean. Leave every other extracted file as the production build — don't
-   wholesale-replace from the checkout (its `electron/package.json` version may have drifted).
+4. **Transplant only `main.js`, and take it from the release tip.** Ship
+   `git show origin/release/v0.2:electron/main.js`, not the working tree — a checkout copy
+   can smuggle unreleased shell features (validated 2026-06-11: a working-tree transplant
+   shipped the unreleased `win/` focus-windows handler ahead of its frontend). Leave every
+   other extracted file as the production build — don't wholesale-replace from the checkout
+   (its `electron/package.json` version may have drifted).
 
 > **Keychain note:** an **ad-hoc** copy has a different code signature than the Developer-ID
 > original, so the OS may prompt once for keychain access to the existing `sod_key` item
@@ -275,11 +301,18 @@ DST="$HOME/Flowpad-patched.app"
 ASAR="$DST/Contents/Resources/app.asar"
 PLIST="$DST/Contents/Info.plist"
 ASARBIN="$PWD/electron/node_modules/.bin/asar"
-BASEVER=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$SRC/Contents/Info.plist")
-PATCHVER="${BASEVER}-patch1"                # bump to -patch2/-patch3 on each iteration
 
-# 0. UI changes only: rebuild + reload — NO asar repack needed.
-#    uv run python build_ui.py            # writes flow_sdk/server/static/ (served on 9007)
+# 0a. Resolve the release: PyPI latest must equal the release tip's version
+git fetch origin release/v0.2
+LATEST=$(curl -fsS https://pypi.org/pypi/flowpad/json | python3 -c 'import json,sys;print(json.load(sys.stdin)["info"]["version"])')
+git show origin/release/v0.2:flow_sdk/_version.py | grep -q "\"$LATEST\"" || echo "MISMATCH — release tip != PyPI $LATEST, stop and reconcile"
+PATCHVER="${LATEST}-patch1"                 # next free patchN; counter restarts when LATEST moves
+
+# 0b. Backend prerequisite: the wheel from that SAME tip, installed as <latest>+local<count>
+#     (Local Deployment in pypi-deploy.md, built in a worktree of origin/release/v0.2).
+#     Skip only if `flow` already prints that exact version.
+
+# 0c. UI changes only: rebuild + overlay into the install — NO asar repack needed (see --ui above).
 
 # 1. Kill the app naturally (quits the shell AND its child backend on 9007)
 osascript -e 'tell application "Flowpad" to quit'
@@ -294,7 +327,7 @@ cp -p "$SRC/Contents/Info.plist"         "$HOME/flowpad-patch-backup/Info.plist.
 rm -rf "$DST"; ditto "$SRC" "$DST"
 TREE=$(mktemp -d)/app
 "$ASARBIN" extract "$ASAR" "$TREE"
-cp electron/main.js "$TREE/main.js"                                   # transplant ONLY the changed file
+git show origin/release/v0.2:electron/main.js > "$TREE/main.js"       # transplant ONLY main.js, FROM THE RELEASE TIP
 python3 -c 'import json,sys; p,v=sys.argv[1:3]; d=json.load(open(p)); d["version"]=v; json.dump(d,open(p,"w"),indent=2)' \
         "$TREE/package.json" "$PATCHVER"                             # stamp app.getVersion()
 rm -f "$ASAR"; "$ASARBIN" pack "$TREE" "$ASAR"                        # repack (no --unpack: this build has 0 unpacked entries)
