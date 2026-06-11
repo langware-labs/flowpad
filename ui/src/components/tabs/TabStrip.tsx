@@ -262,6 +262,24 @@ export const TabStrip: React.FC<TabStripProps> = ({
     else keys.forEach((k) => onClose(k));
   };
 
+  // One context-menu group: the entries followed by a separator. Shared by the
+  // per-chip extra entries (item.contextMenuItems) and the owner's "new tab"
+  // entries (newTabMenuItems) — identical rendering, different source.
+  const renderMenuGroup = (entries: TabStripContextMenuItem[] | undefined) => {
+    if (!entries || entries.length === 0) return null;
+    return (
+      <>
+        {entries.map((entry) => (
+          <ContextMenuItem key={entry.label} onSelect={entry.onSelect}>
+            {entry.label}
+            {entry.shortcut && <span className="ml-auto pl-4 text-xs text-muted-foreground">{entry.shortcut}</span>}
+          </ContextMenuItem>
+        ))}
+        <ContextMenuSeparator />
+      </>
+    );
+  };
+
   // One chip — shared by the main row and the global section. `list` scopes
   // the close-others / close-right context-menu actions to the chip's section.
   const renderChip = (item: TabStripItem, index: number, list: TabStripItem[]) => {
@@ -375,32 +393,8 @@ export const TabStrip: React.FC<TabStripProps> = ({
               <ContextMenuSeparator />
             </>
           )}
-          {item.contextMenuItems && item.contextMenuItems.length > 0 && (
-            <>
-              {item.contextMenuItems.map((entry) => (
-                <ContextMenuItem key={entry.label} onSelect={entry.onSelect}>
-                  {entry.label}
-                  {entry.shortcut && (
-                    <span className="ml-auto pl-4 text-xs text-muted-foreground">{entry.shortcut}</span>
-                  )}
-                </ContextMenuItem>
-              ))}
-              <ContextMenuSeparator />
-            </>
-          )}
-          {newTabMenuItems && newTabMenuItems.length > 0 && (
-            <>
-              {newTabMenuItems.map((entry) => (
-                <ContextMenuItem key={entry.label} onSelect={entry.onSelect}>
-                  {entry.label}
-                  {entry.shortcut && (
-                    <span className="ml-auto pl-4 text-xs text-muted-foreground">{entry.shortcut}</span>
-                  )}
-                </ContextMenuItem>
-              ))}
-              <ContextMenuSeparator />
-            </>
-          )}
+          {renderMenuGroup(item.contextMenuItems)}
+          {renderMenuGroup(newTabMenuItems)}
           <ContextMenuItem onSelect={() => onClose(key)}>
             Close{' '}
             {closeShortcutLabel && (

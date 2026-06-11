@@ -70,20 +70,15 @@ const DocsGraphView = lazy(() =>
 import { UserDropdown } from './user-dropdown/user-dropdown';
 import { UnifiedTabStrip } from './unified-tab-strip';
 
-export interface ContentPanelProps {
-  /**
-   * Chrome-less mode for the `win/` focus-window layout (tab-management.md
-   * Part 3 §7): hides the unified tab strip header (and the logged-out user
-   * header) so the routed view content is the entire window. The TabsContent
-   * panel rendering below is shared verbatim — FocusLayout reuses this
-   * component instead of duplicating the panel switch.
-   */
-  hideChrome?: boolean;
-}
-
-export function ContentPanel({ hideChrome = false }: ContentPanelProps = {}) {
+export function ContentPanel() {
   // Get navigation instance for URL-first architecture
-  const { navigation, currentDock, isDockUrl } = useDockNavigation();
+  const { navigation, currentDock, isDockUrl, windowMode } = useDockNavigation();
+
+  // Chrome-less mode for the `win/` focus-window layout (tab-management.md
+  // Part 3 §7): hides the unified tab strip header (and the logged-out user
+  // header) so the routed view content is the entire window. URL-derived —
+  // FocusLayout reuses this component instead of duplicating the panel switch.
+  const hideChrome = windowMode;
 
   const { user } = useAuth();
 

@@ -1,4 +1,4 @@
-import { AgenticProcess, Layout, TypeId, type IDockPointer } from '@sdk';
+import { AgenticProcess, Layout, Shell, TypeId, type IDockPointer } from '@sdk';
 import { VIEW_SLOTS, ViewSlot, ViewType } from '../types/ViewType';
 import { NavigationError, NavigationErrorType } from './NavigationError';
 import { parseQueryParams } from './url-builder';
@@ -31,6 +31,23 @@ export class DockPointer implements IDockPointer {
   /** Extract the entity ID from an agentic_process pointer */
   static extractAgenticProcessId(pointer: string): string {
     return pointer.slice(AgenticProcess.type.length + TypeId.DELIMITER.length);
+  }
+
+  /**
+   * Canonical terminal tab identity (`TerminalTab.targetTypeId`) for a
+   * `/dock/shell` (or `/win/shell`) URL pointer — the single owner of the
+   * shell-pointer → tab-key grammar:
+   *   - `agentic_process-<id>` → TypeId(agentic_process, id)
+   *   - `shell-<id>`           → TypeId(shell, id)
+   *   - bare `<id>` (legacy)   → TypeId(shell, id)
+   */
+  static terminalTargetTypeIdForShellPointer(pointer: string): TypeId {
+    if (DockPointer.isAgenticProcessPointer(pointer)) {
+      return new TypeId(AgenticProcess.type, DockPointer.extractAgenticProcessId(pointer));
+    }
+    const shellPrefix = Shell.type + TypeId.DELIMITER;
+    const shellId = pointer.startsWith(shellPrefix) ? pointer.slice(shellPrefix.length) : pointer;
+    return new TypeId(Shell.type, shellId);
   }
 
   public readonly viewType?: ViewType | undefined;

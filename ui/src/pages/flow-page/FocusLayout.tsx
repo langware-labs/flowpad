@@ -5,8 +5,9 @@
  * component, but the tab content is the entire window — no sidebars, no
  * footer, no unified tab strip, no app chrome.
  *
- * Panel rendering is reused from ContentPanel (`hideChrome`) — this file
- * deliberately duplicates nothing.
+ * Panel rendering is reused from ContentPanel, which derives its chrome-less
+ * mode from the URL (`windowMode`) itself — this file deliberately
+ * duplicates nothing.
  *
  * On mount (i.e. after the route loader completed) it announces readiness on
  * the popout-handoff channel (§8) so the origin window can detach. Deep-linked
@@ -16,7 +17,6 @@
  * disconnect-driven PTY detach. Never add a beforeunload shell-kill here —
  * it would tear down a shell the main window still shows.
  */
-import { Shell } from '@sdk';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { announceWinReady } from '@src/tabs/popout-handoff';
@@ -37,8 +37,7 @@ export function winReadyKeyForDock(
   if (!dock?.viewType) return null;
   const { viewType, pointer } = dock;
   if (viewType === ViewType.SHELL && pointer) {
-    if (DockPointer.isAgenticProcessPointer(pointer)) return pointer;
-    return pointer.startsWith(`${Shell.type}-`) ? pointer : `${Shell.type}-${pointer}`;
+    return DockPointer.terminalTargetTypeIdForShellPointer(pointer).toString();
   }
   return pointer ? `${viewType}/${pointer}` : viewType;
 }
@@ -59,7 +58,7 @@ export default function FocusLayout() {
 
   return (
     <div data-testid="focus-layout" className="h-full w-full overflow-hidden bg-background">
-      <ContentPanel hideChrome />
+      <ContentPanel />
     </div>
   );
 }

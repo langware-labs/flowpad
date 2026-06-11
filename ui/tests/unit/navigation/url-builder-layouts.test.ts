@@ -13,6 +13,7 @@ import {
   preserveWindowLayout,
   stripDockPortion,
 } from '@src/navigation/url-builder';
+import { DockPointer } from '@src/navigation/DockPointer';
 import { Layout, ViewType } from '@sdk';
 
 const LAYOUTS: Array<{ layout: Layout; keyword: string }> = [
@@ -131,5 +132,30 @@ describe('buildShellRedirectUrl (loader redirects preserve layout)', () => {
 
   it('preserves the agent/flow base path', () => {
     expect(buildShellRedirectUrl('/agent/a/flow/f/win/shell', 'shell-1')).toBe('/agent/a/flow/f/win/shell/shell-1');
+  });
+});
+
+describe('DockPointer.terminalTargetTypeIdForShellPointer (shell-pointer → tab-key grammar)', () => {
+  const AP_ID = '6f8b7a4e-1d2c-4e5f-9a0b-3c4d5e6f7a8b';
+  const SHELL_ID = '0b1c2d3e-4f5a-4b6c-8d9e-0f1a2b3c4d5e';
+
+  it('maps an agentic_process pointer to its TypeId', () => {
+    const tid = DockPointer.terminalTargetTypeIdForShellPointer(`agentic_process-${AP_ID}`);
+    expect(tid.type).toBe('agentic_process');
+    expect(tid.id).toBe(AP_ID);
+    expect(tid.toString()).toBe(`agentic_process-${AP_ID}`);
+  });
+
+  it('passes an already-prefixed shell pointer through', () => {
+    const tid = DockPointer.terminalTargetTypeIdForShellPointer(`shell-${SHELL_ID}`);
+    expect(tid.type).toBe('shell');
+    expect(tid.toString()).toBe(`shell-${SHELL_ID}`);
+  });
+
+  it('prefixes a bare legacy shell id', () => {
+    const tid = DockPointer.terminalTargetTypeIdForShellPointer(SHELL_ID);
+    expect(tid.type).toBe('shell');
+    expect(tid.id).toBe(SHELL_ID);
+    expect(tid.toString()).toBe(`shell-${SHELL_ID}`);
   });
 });
