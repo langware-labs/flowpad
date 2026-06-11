@@ -312,6 +312,17 @@ class ScanActionsMixin:
             fork_session = bool(context_data.pop("fork_session", False))
             resume_session_id = context_data.pop("resume_session_id", None)
             additional_dirs: list[str] = list(context_data.pop("additional_dirs", None) or [])
+            # Per-process Flowpad Assistant mount. Set BEFORE the auto-start
+            # below so the driver's --add-dir set includes the assistant skills
+            # on first launch — lets a worker run in the conversation's own
+            # project while still discovering the assistant (no cwd switch to
+            # the @flowpad_assistant system project). None inherits the global
+            # ServiceConfig default.
+            load_flowpad_assistant = context_data.pop("load_flowpad_assistant", None)
+            # Provenance links (string TypeIds) to stamp onto the new process's
+            # shared_context_entities before save — e.g. the anchor FlowMessage
+            # a conversation session is started from.
+            shared_context_entities_raw = context_data.pop("shared_context_entities", None) or []
 
             # Worker selection — accept ``worker_type`` from the AgenticContext
             # so the UI can launch alternate CLI tabs from the same opener flow
@@ -413,9 +424,24 @@ class ScanActionsMixin:
                 project_id=project_id or None,
                 target_typeid_str=target_typeid_str or None,
                 process_type=process_type,
+                load_flowpad_assistant=load_flowpad_assistant,
             )
             if resume_session_id and not fork_session:
                 process.session_id = resume_session_id
+            # Stamp provenance links before save so they ride the same write.
+            # Invalid / unparseable typeids are skipped — a bad provenance hint
+            # must never block a launch.
+            if shared_context_entities_raw:
+                from flow_sdk.api.api_types.type_id import TypeId as _TypeId
+
+                tids = []
+                for raw in shared_context_entities_raw:
+                    try:
+                        tids.append(raw if isinstance(raw, _TypeId) else _TypeId(str(raw)))
+                    except Exception:
+                        logging.debug(f"createProcess: skipping unparseable shared_context_entity {raw!r}")
+                if tids:
+                    process.add_shared_context_entities(*tids)
             await process.save(owner)
 
             if result_data and isinstance(result_data, dict):

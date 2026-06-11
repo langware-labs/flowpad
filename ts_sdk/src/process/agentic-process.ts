@@ -357,6 +357,53 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   }
 
   /**
+   * Launch a visible agentic worker in an explicit project workdir — the
+   * single seam for "start a session for *this* thing in *its* project".
+   *
+   * Unlike {@link openTab} (which falls back to the global `dataContext.project`
+   * and never touches the assistant flag), `launch` runs in the caller's
+   * `workdir` and can mount the Flowpad Assistant skills via the per-process
+   * `load_flowpad_assistant` flag — so a conversation session runs in the
+   * conversation's OWN project while still discovering the assistant, instead of
+   * switching the cwd to the `@flowpad_assistant` system project.
+   *
+   * The first prompt rides the prompt queue (`launchPrompt`), enqueued
+   * server-side BEFORE the auto-start: the fresh spawn pops the head as its
+   * launch instruction (deterministic, no post-spawn stdin race). The assistant
+   * flag and provenance links are applied on the same createProcess round-trip,
+   * before the worker boots, so the driver's `--add-dir` set is correct on the
+   * first launch.
+   *
+   * @returns The launched AgenticProcess (terminal dock already opened).
+   */
+  static async launch(opts: {
+    workerType: 'claude_code' | 'codex' | 'copilot';
+    workdir: string;
+    projectId?: string | null;
+    /** First prompt — placed on the queue, popped as the launch instruction. */
+    launchPrompt?: string;
+    /** Mount the Flowpad Assistant skills/agents for this worker. */
+    enableAssistant?: boolean;
+    /** String TypeIds stamped onto the process's `shared_context_entities`. */
+    sharedContextEntities?: string[];
+  }): Promise<AgenticProcess> {
+    const computeNode = dataContext.computeNode;
+    if (!computeNode) throw new Error('[AgenticProcess.launch] No local compute node');
+    const process = await computeNode.createProcess(
+      {
+        workdir: opts.workdir,
+        ...(opts.projectId ? { projectId: opts.projectId } : {}),
+        workerType: opts.workerType,
+        ...(opts.enableAssistant ? { loadFlowpadAssistant: true } : {}),
+        ...(opts.sharedContextEntities?.length ? { sharedContextEntities: opts.sharedContextEntities } : {}),
+      },
+      { visible: true, watchProcess: false, ...(opts.launchPrompt ? { launchPrompt: opts.launchPrompt } : {}) },
+    );
+    process.openTerminalDock();
+    return process;
+  }
+
+  /**
    * Create and activate an AgenticProcess in one call.
    *
    * Replaces the manual `createProcess -> start/watch` pattern.
