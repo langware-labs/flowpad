@@ -9,8 +9,10 @@ import { readFileSync } from 'fs';
 import { resolve } from 'path';
 import { describe, expect, it } from 'vitest';
 
+// The self-heal lives in the strip controller extracted from TabbedTerminal
+// (tab-management.md Part 3 §6) — read the real source.
 const src = readFileSync(
-  resolve(__dirname, '../../src/components/terminal/TabbedTerminal.tsx'),
+  resolve(__dirname, '../../src/tabs/useTerminalStripController.tsx'),
   'utf-8',
 );
 

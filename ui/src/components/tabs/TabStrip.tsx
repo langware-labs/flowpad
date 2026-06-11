@@ -50,6 +50,9 @@ export interface TabStripItem {
   testId?: string;
   /** Value for the data-provider attribute on the icon wrapper (test hook). */
   dataAttributes?: Record<string, string>;
+  /** Extra per-chip context-menu entries (e.g. the transient preview tab's
+   *  "Keep as tab" promotion — tab-management.md Part 3 §5). */
+  contextMenuItems?: TabStripContextMenuItem[];
 }
 
 export interface TabStripContextMenuItem {
@@ -81,6 +84,14 @@ export interface TabStripProps {
   trailing?: React.ReactNode;
   /** Hide the aggregated close-all badge button. */
   hideCloseAllButton?: boolean;
+  /** Global-section items (entity tabs with projectId == null) rendered AFTER
+   *  a visual divider with a "Global" checkbox (Part 3 §6). Pass `undefined`
+   *  to omit the section entirely (the default for embedded strips). */
+  globalItems?: TabStripItem[];
+  /** Whether the global section is expanded (state lifted to the owner,
+   *  persisted in localStorage by the owner). */
+  showGlobalSection?: boolean;
+  onToggleShowGlobalSection?: (show: boolean) => void;
   testId?: string;
 }
 
@@ -97,8 +108,16 @@ export const TabStrip: React.FC<TabStripProps> = ({
   leading,
   trailing,
   hideCloseAllButton,
+  globalItems,
+  showGlobalSection,
+  onToggleShowGlobalSection,
   testId = 'terminal-tab-bar',
 }) => {
+  // Visible chip universe: main items + (expanded) global-section items.
+  // Scroll-into-view, the close-all badge and "Close All" operate over it;
+  // close-others / close-right stay scoped to the section a chip lives in.
+  const visibleGlobalItems = globalItems !== undefined && showGlobalSection ? globalItems : [];
+  const allVisibleItems = visibleGlobalItems.length > 0 ? items.concat(visibleGlobalItems) : items;
   const tabContainerRef = useRef<HTMLDivElement>(null);
   const tabRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [hasTabOverflow, setHasTabOverflow] = useState(false);
@@ -134,7 +153,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
   // only because the strip is still short; when the rest of the items land,
   // the chip gets pushed off-screen. ResizeObserver re-evaluates on either
   // layout shift — the scroll is a no-op once the chip is genuinely visible.
-  const hasActiveItem = items.some((i) => i.key === activeKey);
+  const hasActiveItem = allVisibleItems.some((i) => i.key === activeKey);
   const lastScrolledKeyRef = useRef<string | null>(null);
   useEffect(() => {
     if (!activeKey || !hasActiveItem) return;
@@ -145,7 +164,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
         scrollSelectedTabIntoView(activeKey, isFirstScrollForKey ? 'auto' : 'smooth');
       });
     });
-  }, [activeKey, hasActiveItem, scrollSelectedTabIntoView, items.length]);
+  }, [activeKey, hasActiveItem, scrollSelectedTabIntoView, allVisibleItems.length]);
 
   useEffect(() => {
     const container = tabContainerRef.current;
@@ -195,7 +214,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
       container.removeEventListener('scroll', handleScroll);
       window.removeEventListener('resize', updateScrollState);
     };
-  }, [items, updateScrollState]);
+  }, [items, visibleGlobalItems.length, updateScrollState]);
 
   // Rename editing — the strip owns the input UI; the owner owns validation
   // and the save (entity rename / PTY `/rename` are kind strategies).
@@ -243,6 +262,169 @@ export const TabStrip: React.FC<TabStripProps> = ({
     else keys.forEach((k) => onClose(k));
   };
 
+  // One chip — shared by the main row and the global section. `list` scopes
+  // the close-others / close-right context-menu actions to the chip's section.
+  const renderChip = (item: TabStripItem, index: number, list: TabStripItem[]) => {
+    const { key } = item;
+    const isActive = activeKey === key;
+    const isDisabled = !!item.isDisabled;
+    const isPending = !!item.isPending && !isActive;
+
+    const tabContent = (
+      <div
+        ref={(node) => {
+          tabRefs.current[key] = node;
+        }}
+        className={`group flex shrink-0 select-none items-center gap-2 rounded-t border-b-2 px-3 py-1.5 transition-colors ${
+          isDisabled
+            ? 'cursor-not-allowed border-transparent bg-muted/30 text-muted-foreground/50'
+            : isActive
+              ? 'cursor-pointer border-primary bg-background text-foreground'
+              : 'cursor-pointer border-transparent bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground'
+        } ${isPending ? 'animate-pending-glow rounded-md' : ''}`}
+        onClick={() => {
+          if (isDisabled) return;
+          onSelect(key);
+        }}
+        data-testid={item.testId}
+        data-terminal-target={key}
+        {...(item.dataAttributes ?? {})}
+      >
+        {item.icon}
+        {item.badge}
+        {editingKey === key ? (
+          <input
+            ref={renameInputRef}
+            type="text"
+            value={editingName}
+            onChange={handleNameChange}
+            onBlur={handleNameBlur}
+            onKeyDown={handleNameKeyDown}
+            className="min-w-[80px] rounded border border-border bg-background px-1 py-0 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
+            autoFocus
+            onFocus={(e) => {
+              if (shouldSelectRenameInputRef.current) {
+                e.currentTarget.setSelectionRange(0, e.currentTarget.value.length);
+              }
+            }}
+            onClick={(e) => e.stopPropagation()}
+          />
+        ) : (
+          <span
+            className="text-sm font-medium"
+            onDoubleClick={(e) => {
+              if (!item.renameable) return;
+              e.stopPropagation();
+              startRename(key, item.title);
+            }}
+          >
+            {item.title}
+          </span>
+        )}
+
+        {onPopout && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onPopout(key);
+            }}
+            disabled={isDisabled}
+            className="rounded p-0.5 opacity-0 transition-opacity hover:bg-muted-foreground/20 group-hover:opacity-100"
+            aria-label="Open in external browser"
+            title="Open in external browser"
+            data-testid={`tab-open-external-${item.dataAttributes?.['data-indicator-key'] ?? key}`}
+          >
+            <ExternalLink className="h-3 w-3" />
+          </button>
+        )}
+
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onClose(key);
+          }}
+          disabled={isDisabled}
+          className="rounded p-0.5 opacity-0 transition-opacity hover:bg-destructive/20 group-hover:opacity-100"
+          aria-label="Close tab"
+        >
+          <X className="h-3 w-3" />
+        </button>
+      </div>
+    );
+
+    return (
+      <ContextMenu key={key}>
+        <TooltipProvider delayDuration={600}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <ContextMenuTrigger asChild>{tabContent}</ContextMenuTrigger>
+            </TooltipTrigger>
+            {item.tooltip ? (
+              <TooltipContent side="bottom" className="border bg-popover p-2.5 text-popover-foreground shadow-md">
+                {item.tooltip}
+              </TooltipContent>
+            ) : isDisabled && item.statusReason ? (
+              <TooltipContent side="bottom">{item.statusReason}</TooltipContent>
+            ) : null}
+          </Tooltip>
+        </TooltipProvider>
+        <ContextMenuContent>
+          {item.renameable && (
+            <>
+              <ContextMenuItem onSelect={() => startRename(key, item.title)}>Rename</ContextMenuItem>
+              <ContextMenuSeparator />
+            </>
+          )}
+          {item.contextMenuItems && item.contextMenuItems.length > 0 && (
+            <>
+              {item.contextMenuItems.map((entry) => (
+                <ContextMenuItem key={entry.label} onSelect={entry.onSelect}>
+                  {entry.label}
+                  {entry.shortcut && (
+                    <span className="ml-auto pl-4 text-xs text-muted-foreground">{entry.shortcut}</span>
+                  )}
+                </ContextMenuItem>
+              ))}
+              <ContextMenuSeparator />
+            </>
+          )}
+          {newTabMenuItems && newTabMenuItems.length > 0 && (
+            <>
+              {newTabMenuItems.map((entry) => (
+                <ContextMenuItem key={entry.label} onSelect={entry.onSelect}>
+                  {entry.label}
+                  {entry.shortcut && (
+                    <span className="ml-auto pl-4 text-xs text-muted-foreground">{entry.shortcut}</span>
+                  )}
+                </ContextMenuItem>
+              ))}
+              <ContextMenuSeparator />
+            </>
+          )}
+          <ContextMenuItem onSelect={() => onClose(key)}>
+            Close{' '}
+            {closeShortcutLabel && (
+              <span className="ml-auto pl-4 text-xs text-muted-foreground">{closeShortcutLabel}</span>
+            )}
+          </ContextMenuItem>
+          <ContextMenuItem onSelect={() => closeMany(allVisibleItems.map((i) => i.key))}>Close All</ContextMenuItem>
+          <ContextMenuItem
+            onSelect={() => closeMany(list.filter((i) => i.key !== key).map((i) => i.key))}
+            disabled={list.length <= 1}
+          >
+            Close All But This
+          </ContextMenuItem>
+          <ContextMenuItem
+            onSelect={() => closeMany(list.slice(index + 1).map((i) => i.key))}
+            disabled={index >= list.length - 1}
+          >
+            Close to the Right
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
+    );
+  };
+
   return (
     <div className="flex items-center border-b bg-muted" data-testid={testId}>
       {leading}
@@ -269,153 +451,29 @@ export const TabStrip: React.FC<TabStripProps> = ({
         className="scrollbar-hide flex min-w-0 flex-1 items-center gap-1 overflow-x-auto py-1 pl-2 pr-0"
         style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
       >
-        {items.map((item, index) => {
-          const { key } = item;
-          const isActive = activeKey === key;
-          const isDisabled = !!item.isDisabled;
-          const isPending = !!item.isPending && !isActive;
+        {items.map((item, index) => renderChip(item, index, items))}
 
-          const tabContent = (
-            <div
-              ref={(node) => {
-                tabRefs.current[key] = node;
-              }}
-              className={`group flex shrink-0 select-none items-center gap-2 rounded-t border-b-2 px-3 py-1.5 transition-colors ${
-                isDisabled
-                  ? 'cursor-not-allowed border-transparent bg-muted/30 text-muted-foreground/50'
-                  : isActive
-                    ? 'cursor-pointer border-primary bg-background text-foreground'
-                    : 'cursor-pointer border-transparent bg-muted/50 text-muted-foreground hover:bg-muted hover:text-foreground'
-              } ${isPending ? 'animate-pending-glow rounded-md' : ''}`}
-              onClick={() => {
-                if (isDisabled) return;
-                onSelect(key);
-              }}
-              data-testid={item.testId}
-              data-terminal-target={key}
-              {...(item.dataAttributes ?? {})}
-            >
-              {item.icon}
-              {item.badge}
-              {editingKey === key ? (
-                <input
-                  ref={renameInputRef}
-                  type="text"
-                  value={editingName}
-                  onChange={handleNameChange}
-                  onBlur={handleNameBlur}
-                  onKeyDown={handleNameKeyDown}
-                  className="min-w-[80px] rounded border border-border bg-background px-1 py-0 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
-                  autoFocus
-                  onFocus={(e) => {
-                    if (shouldSelectRenameInputRef.current) {
-                      e.currentTarget.setSelectionRange(0, e.currentTarget.value.length);
-                    }
-                  }}
-                  onClick={(e) => e.stopPropagation()}
-                />
-              ) : (
-                <span
-                  className="text-sm font-medium"
-                  onDoubleClick={(e) => {
-                    if (!item.renameable) return;
-                    e.stopPropagation();
-                    startRename(key, item.title);
-                  }}
-                >
-                  {item.title}
-                </span>
-              )}
-
-              {onPopout && (
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onPopout(key);
-                  }}
-                  disabled={isDisabled}
-                  className="rounded p-0.5 opacity-0 transition-opacity hover:bg-muted-foreground/20 group-hover:opacity-100"
-                  aria-label="Open in external browser"
-                  title="Open in external browser"
-                  data-testid={`tab-open-external-${item.dataAttributes?.['data-indicator-key'] ?? key}`}
-                >
-                  <ExternalLink className="h-3 w-3" />
-                </button>
-              )}
-
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onClose(key);
-                }}
-                disabled={isDisabled}
-                className="rounded p-0.5 opacity-0 transition-opacity hover:bg-destructive/20 group-hover:opacity-100"
-                aria-label="Close tab"
-              >
-                <X className="h-3 w-3" />
-              </button>
-            </div>
-          );
-
-          return (
-            <ContextMenu key={key}>
-              <TooltipProvider delayDuration={600}>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <ContextMenuTrigger asChild>{tabContent}</ContextMenuTrigger>
-                  </TooltipTrigger>
-                  {item.tooltip ? (
-                    <TooltipContent side="bottom" className="border bg-popover p-2.5 text-popover-foreground shadow-md">
-                      {item.tooltip}
-                    </TooltipContent>
-                  ) : isDisabled && item.statusReason ? (
-                    <TooltipContent side="bottom">{item.statusReason}</TooltipContent>
-                  ) : null}
-                </Tooltip>
-              </TooltipProvider>
-              <ContextMenuContent>
-                {item.renameable && (
-                  <>
-                    <ContextMenuItem onSelect={() => startRename(key, item.title)}>Rename</ContextMenuItem>
-                    <ContextMenuSeparator />
-                  </>
-                )}
-                {newTabMenuItems && newTabMenuItems.length > 0 && (
-                  <>
-                    {newTabMenuItems.map((entry) => (
-                      <ContextMenuItem key={entry.label} onSelect={entry.onSelect}>
-                        {entry.label}
-                        {entry.shortcut && (
-                          <span className="ml-auto pl-4 text-xs text-muted-foreground">{entry.shortcut}</span>
-                        )}
-                      </ContextMenuItem>
-                    ))}
-                    <ContextMenuSeparator />
-                  </>
-                )}
-                <ContextMenuItem onSelect={() => onClose(key)}>
-                  Close{' '}
-                  {closeShortcutLabel && (
-                    <span className="ml-auto pl-4 text-xs text-muted-foreground">{closeShortcutLabel}</span>
-                  )}
-                </ContextMenuItem>
-                <ContextMenuItem onSelect={() => closeMany(items.map((i) => i.key))}>Close All</ContextMenuItem>
-                <ContextMenuItem
-                  onSelect={() => closeMany(items.filter((i) => i.key !== key).map((i) => i.key))}
-                  disabled={items.length <= 1}
-                >
-                  Close All But This
-                </ContextMenuItem>
-                <ContextMenuItem
-                  onSelect={() => closeMany(items.slice(index + 1).map((i) => i.key))}
-                  disabled={index >= items.length - 1}
-                >
-                  Close to the Right
-                </ContextMenuItem>
-              </ContextMenuContent>
-            </ContextMenu>
-          );
-        })}
+        {/* Global section (Part 3 §6): divider + "Global" checkbox, then the
+            projectless entity tabs when expanded. Only rendered when the
+            owner opts in via `globalItems`. */}
+        {globalItems !== undefined && (
+          <div
+            className="ml-1 flex shrink-0 items-center gap-1.5 self-stretch border-l border-border pl-2 pr-1"
+            data-testid="tab-strip-global-divider"
+          >
+            <label className="flex cursor-pointer select-none items-center gap-1 text-[11px] text-muted-foreground">
+              <input
+                type="checkbox"
+                className="h-3 w-3 accent-primary"
+                checked={!!showGlobalSection}
+                onChange={(e) => onToggleShowGlobalSection?.(e.target.checked)}
+                data-testid="tab-strip-global-toggle"
+              />
+              Global
+            </label>
+          </div>
+        )}
+        {visibleGlobalItems.map((item, index) => renderChip(item, index, visibleGlobalItems))}
 
         {/* Trailing toolbar flows after the last tab but sticks to the right
             edge when tabs overflow. Placement is unconditional, so it does
@@ -440,7 +498,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
 
       {/* Close All button — shown when 2+ tabs are open. Tab count badge
           hints at the destructive scope before clicking. */}
-      {!hideCloseAllButton && items.length >= 2 && (
+      {!hideCloseAllButton && allVisibleItems.length >= 2 && (
         <TooltipProvider delayDuration={600}>
           <Tooltip>
             <TooltipTrigger asChild>
@@ -448,17 +506,17 @@ export const TabStrip: React.FC<TabStripProps> = ({
                 variant="outline"
                 size="sm"
                 className="mx-1.5 h-6 shrink-0 gap-1.5 rounded-md border-border bg-background px-2 text-foreground shadow-sm hover:border-destructive/60 hover:bg-destructive/10 hover:text-destructive"
-                onClick={() => closeMany(items.map((i) => i.key))}
-                aria-label={`Close all ${items.length} tabs`}
+                onClick={() => closeMany(allVisibleItems.map((i) => i.key))}
+                aria-label={`Close all ${allVisibleItems.length} tabs`}
                 data-testid="close-all-tabs-button"
               >
                 <X className="h-3.5 w-3.5" />
                 <span className="inline-flex h-4 min-w-[1.125rem] items-center justify-center rounded-full bg-foreground/10 px-1 text-[10px] font-semibold tabular-nums leading-none text-foreground">
-                  {items.length}
+                  {allVisibleItems.length}
                 </span>
               </Button>
             </TooltipTrigger>
-            <TooltipContent side="bottom">Close all {items.length} tabs</TooltipContent>
+            <TooltipContent side="bottom">Close all {allVisibleItems.length} tabs</TooltipContent>
           </Tooltip>
         </TooltipProvider>
       )}
