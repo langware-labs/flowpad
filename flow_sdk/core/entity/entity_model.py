@@ -160,12 +160,10 @@ class Entity(DBEntity):
     @classmethod
     def _last_active_at_epoch_ms(cls, value):
         """Legacy rows stored ISO strings; the field is epoch-ms. Parse
-        tolerantly so no data migration is needed."""
+        tolerantly (via ``_as_datetime``) so no data migration is needed."""
         if isinstance(value, str):
-            try:
-                return int(datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp() * 1000)
-            except ValueError:
-                return None
+            dt = cls._as_datetime(value)
+            return int(dt.timestamp() * 1000) if dt else None
         return value
 
     # Locally-authoritative fields a hub refresh must NEVER overwrite. The hub
@@ -2409,8 +2407,9 @@ async def _http_activate(self: Entity):
     this fire-and-forget on tab activation. Never touches ``tabbed``:
     membership promotion is explicit-only (``tabs/open``)."""
     from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
+    from flow_sdk.utils.serialization import now_epoch_ms  # noqa: PLC0415
 
-    self.last_active_at = int(datetime.now(timezone.utc).timestamp() * 1000)
+    self.last_active_at = now_epoch_ms()
     await self.save()
     return ApiSuccessResponse(data={"last_active_at": self.last_active_at})
 

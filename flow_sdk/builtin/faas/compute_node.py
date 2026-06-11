@@ -6,6 +6,7 @@ import platform
 import sys
 import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
 from typing import Any, AsyncIterator, Literal, overload
@@ -45,6 +46,11 @@ _COMPUTE_ACTIVITIES: dict[str, "Any"] = {}
 # Part 3 §4) beyond the two terminal kinds. Membership is the base-Entity
 # ``tabbed`` flag; close on these is clear-membership (the entity survives).
 ONBOARDED_TAB_TYPES = ("markdown", "skill", "workflow")
+
+# The two terminal tab kinds: close is a full teardown (``_terminal_close``),
+# not clear-membership, and target parsing for the legacy terminals/* shim is
+# restricted to these.
+TERMINAL_TAB_TYPES = frozenset({"shell", "agentic_process"})
 
 
 class ComputeNode(PtyActionsMixin, FsRecordsActionsMixin, OpsActionsMixin, ScanActionsMixin, AnalyticsActionsMixin, DesktopActionsMixin, Entity):
@@ -548,11 +554,10 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         pure_shell_dicts = [s.model_dump(mode="json") for s in pure_shells]
         process_dicts = [p.model_dump(mode="json") for p in member_processes]
 
-        from datetime import datetime as _dt, timezone as _tz
         return ApiSuccessResponse(data={
             "pure_shells": pure_shell_dicts,
             "visible_processes": process_dicts,
-            "checked_at": _dt.now(tz=_tz.utc).isoformat(),
+            "checked_at": datetime.now(tz=timezone.utc).isoformat(),
         })
 
     async def _tab_membership(self) -> tuple[list, list]:
@@ -621,27 +626,32 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             [{"kind": "shell", "entity": s.model_dump(mode="json")} for s in pure_shells]
             + [{"kind": "agentic_process", "entity": p.model_dump(mode="json")} for p in member_processes]
         )
-        # Onboarded entity kinds: membership is the base-Entity ``tabbed``
-        # flag — no terminal plumbing. v1 mirrors the existing get_all pattern
-        # above; a cross-type SQL ``tabbed`` predicate is explicitly out of
-        # scope (Part 3 §1, U4). Types missing from the SchemaRegistry (e.g.
-        # pytest envs without register_all) are skipped.
+        tabs.extend(
+            {"kind": kind, "entity": e.model_dump(mode="json")}
+            for kind, e in await self._onboarded_tabbed_rows()
+        )
+        return ApiSuccessResponse(data={
+            "tabs": tabs,
+            "checked_at": datetime.now(tz=timezone.utc).isoformat(),
+        })
+
+    async def _onboarded_tabbed_rows(self) -> list[tuple[str, Any]]:
+        """``(kind, entity)`` for every ``tabbed`` row of the onboarded entity
+        kinds (membership is the base-Entity ``tabbed`` flag — no terminal
+        plumbing). v1 mirrors the per-type get_all pattern of
+        ``_tab_membership``; a cross-type SQL ``tabbed`` predicate is
+        explicitly out of scope (Part 3 §1, U4). Types missing from the
+        SchemaRegistry (e.g. pytest envs without register_all) are skipped."""
         from flow_sdk.fs_store.schema_registry import SchemaRegistry
+
+        rows: list[tuple[str, Any]] = []
         for tab_type in ONBOARDED_TAB_TYPES:
             entity_cls = SchemaRegistry.get_entity_cls(tab_type)
             if entity_cls is None:
                 continue
             entities = await entity_cls.get_all()
-            tabs.extend(
-                {"kind": tab_type, "entity": e.model_dump(mode="json")}
-                for e in entities
-                if getattr(e, "tabbed", False)
-            )
-        from datetime import datetime as _dt, timezone as _tz
-        return ApiSuccessResponse(data={
-            "tabs": tabs,
-            "checked_at": _dt.now(tz=_tz.utc).isoformat(),
-        })
+            rows.extend((tab_type, e) for e in entities if getattr(e, "tabbed", False))
+        return rows
 
     def _parse_any_target(self, raw: Any) -> TypeId | None:
         """Parse a tab target of ANY entity type (``type-id`` or ``type:id``).
@@ -663,28 +673,40 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
             return None
 
     async def _tabs_next_order(self) -> int:
-        """Next strip slot: max tab_order over current members + 1 (never 0 —
-        0 means unassigned on the base-Entity field)."""
-        pure_shells, member_processes = await self._tab_membership()
-        orders = [getattr(e, "tab_order", 0) for e in (*pure_shells, *member_processes)]
+        """Next strip slot: max tab_order over current tab rows + 1 (never 0 —
+        0 means unassigned on the base-Entity field). Plain reads only — NOT
+        ``_tab_membership``, whose reap pass is a lifecycle side effect that
+        slot allocation must never trigger."""
+        from flow_sdk.builtin.shell import Shell as ShellEntity
+        from flow_sdk.builtin.agentic_process import AgenticProcess
+
+        shells = await ShellEntity.get_all()
+        processes = await AgenticProcess.get_all()
+        rows = [
+            *shells,
+            *(p for p in processes if getattr(p, "tabbed", False) or getattr(p, "visible", False)),
+            *(e for _, e in await self._onboarded_tabbed_rows()),
+        ]
+        orders = [getattr(e, "tab_order", 0) for e in rows]
         return (max(orders) + 1) if orders else 1
 
-    async def _tabs_open(self, body: dict) -> ApiResponse:
-        """Batched membership promotion: ``tabbed=true`` (+ a strip slot when
-        unassigned) for each target of any entity type. Symmetric with
-        ``tabs/close``; the only write path that materializes a member tab
-        (preview-tab promotion, Part 3 §5)."""
+    async def _resolve_tab_targets(
+        self, targets: list, divert_types: frozenset[str] = frozenset()
+    ) -> tuple[list[tuple[str, Any]], list[str], list[str], list[str]]:
+        """Shared parse/dedupe/resolve step for ``tabs/open`` / ``tabs/close``:
+        each raw target is parsed (``_parse_any_target``), deduped on its
+        canonical ``type-id`` form, and resolved to its entity. Returns
+        ``(resolved, diverted, missing, invalid)`` where ``resolved`` is
+        ``(canonical, entity)`` pairs and ``diverted`` collects canonicals
+        whose type is in ``divert_types`` (left unresolved for kind-specific
+        handling — e.g. the terminal teardown path of ``tabs/close``)."""
         from flow_sdk.fs_store.schema_registry import SchemaRegistry
 
-        targets = body.get("targets") if isinstance(body, dict) else None
-        if not isinstance(targets, list):
-            return ApiFailResponse(message="tabs/open requires body: { targets: string[] }", status_code=400)
-
-        accepted: list[str] = []
+        resolved: list[tuple[str, Any]] = []
+        diverted: list[str] = []
         missing: list[str] = []
         invalid: list[str] = []
         seen: set[str] = set()
-        next_order: int | None = None
 
         for raw in targets:
             typeid = self._parse_any_target(raw)
@@ -696,12 +718,33 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                 continue
             seen.add(canonical)
 
+            if typeid.type in divert_types:
+                diverted.append(canonical)
+                continue
+
             entity_cls = SchemaRegistry.get_entity_cls(typeid.type)
             entity = await entity_cls.get_by_id(typeid.id) if entity_cls else None
             if not entity:
                 missing.append(canonical)
                 continue
+            resolved.append((canonical, entity))
 
+        return resolved, diverted, missing, invalid
+
+    async def _tabs_open(self, body: dict) -> ApiResponse:
+        """Batched membership promotion: ``tabbed=true`` (+ a strip slot when
+        unassigned) for each target of any entity type. Symmetric with
+        ``tabs/close``; the only write path that materializes a member tab
+        (preview-tab promotion, Part 3 §5)."""
+        targets = body.get("targets") if isinstance(body, dict) else None
+        if not isinstance(targets, list):
+            return ApiFailResponse(message="tabs/open requires body: { targets: string[] }", status_code=400)
+
+        resolved, _, missing, invalid = await self._resolve_tab_targets(targets)
+        accepted: list[str] = []
+        next_order: int | None = None
+
+        for canonical, entity in resolved:
             changed = False
             if not getattr(entity, "tabbed", False):
                 entity.tabbed = True
@@ -728,37 +771,15 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         the proven ``_terminal_close``); any other entity type is a
         clear-membership close — ``tabbed=false`` (non-null: it broadcasts),
         the entity survives."""
-        from flow_sdk.fs_store.schema_registry import SchemaRegistry
-
         targets = body.get("targets") if isinstance(body, dict) else None
         if not isinstance(targets, list):
             return ApiFailResponse(message="tabs/close requires body: { targets: string[] }", status_code=400)
 
-        terminal_targets: list[str] = []
+        resolved, terminal_targets, missing, invalid = await self._resolve_tab_targets(
+            targets, divert_types=TERMINAL_TAB_TYPES
+        )
         accepted: list[str] = []
-        missing: list[str] = []
-        invalid: list[str] = []
-        seen: set[str] = set()
-
-        for raw in targets:
-            typeid = self._parse_any_target(raw)
-            if not typeid:
-                invalid.append(str(raw))
-                continue
-            canonical = str(typeid)
-            if canonical in seen:
-                continue
-            seen.add(canonical)
-
-            if typeid.type in {"shell", "agentic_process"}:
-                terminal_targets.append(canonical)
-                continue
-
-            entity_cls = SchemaRegistry.get_entity_cls(typeid.type)
-            entity = await entity_cls.get_by_id(typeid.id) if entity_cls else None
-            if not entity:
-                missing.append(canonical)
-                continue
+        for canonical, entity in resolved:
             if getattr(entity, "tabbed", False):
                 entity.tabbed = False
                 await entity.save()
@@ -778,25 +799,10 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
         })
 
     def _parse_terminal_target(self, raw: Any) -> tuple[str, str] | None:
-        if not isinstance(raw, str):
-            return None
-        target = raw.strip()
-        if not target:
-            return None
-        if ":" in target:
-            entity_type, entity_id = target.split(":", 1)
-            if entity_type not in {"shell", "agentic_process"} or not entity_id:
-                return None
-            try:
-                TypeId(type=entity_type, id=entity_id)
-            except Exception:
-                return None
-            return entity_type, entity_id
-        try:
-            typeid = TypeId(target)
-        except Exception:
-            return None
-        if typeid.type not in {"shell", "agentic_process"} or not typeid.id:
+        """``_parse_any_target`` restricted to the terminal tab kinds (the
+        legacy terminals/* shim only accepts shell / agentic_process)."""
+        typeid = self._parse_any_target(raw)
+        if typeid is None or typeid.type not in TERMINAL_TAB_TYPES:
             return None
         return typeid.type, typeid.id
 
@@ -1240,8 +1246,6 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
     async def _apply_cloud_results(self, results: list) -> None:
         """Apply cloud search results to local records (mark ignored / save fix suggestions)."""
-        from datetime import datetime, timezone
-
         from flow_sdk.fs_store.operations.claude_error import ErrorStatus, Fix, get_by_fingerprint
 
         if not results:
