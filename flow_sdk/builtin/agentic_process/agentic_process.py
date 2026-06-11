@@ -416,10 +416,17 @@ class AgenticProcess(Entity):
     )
     shell_id: str | None = APIField(default=None)
     sidecar_shell_id: str | None = APIField(default=None)
-    visible: bool = APIField(default=False, description="Whether this process is visible in the tabs view")
-    last_active_at: str | None = APIField(
-        default=None, description="ISO timestamp of the tab's last activation (resolver recency seed)"
+    visible: bool = APIField(
+        default=False,
+        description=(
+            "DEPRECATED one-release alias of base-Entity ``tabbed`` "
+            "(tab-management.md Part 3 §4). Kept in lock-step with ``tabbed`` "
+            "by ``__setattr__`` + ``_sync_visible_tabbed_alias`` so old "
+            "clients and the legacy terminals/* shim stay coherent. New code "
+            "must read/write ``tabbed``."
+        ),
     )
+    # last_active_at moved to base Entity (epoch-ms, tab-management.md Part 3).
     auto_rename: bool = APIField(
         default=True,
         description=(
@@ -575,6 +582,26 @@ class AgenticProcess(Entity):
                 )
                 return
         super().__setattr__(key, value)
+        # ``visible`` is a one-release deprecated alias of base-Entity
+        # ``tabbed`` (tab-management.md Part 3 §4): a write to either keeps
+        # both in step so membership broadcasts carry both fields during the
+        # alias window.
+        if key == "visible" and self.__dict__.get("tabbed") != bool(value):
+            super().__setattr__("tabbed", bool(value))
+        elif key == "tabbed" and self.__dict__.get("visible") != bool(value):
+            super().__setattr__("visible", bool(value))
+
+    @model_validator(mode="after")
+    def _sync_visible_tabbed_alias(self) -> "AgenticProcess":
+        """Reconcile the ``visible``↔``tabbed`` alias on load/construction.
+        Legacy rows carry only ``visible``; True on either side wins (a
+        member stays a member). Post-construction writes stay in step via
+        ``__setattr__``."""
+        if self.visible != self.tabbed:
+            merged = bool(self.visible or self.tabbed)
+            object.__setattr__(self, "visible", merged)
+            object.__setattr__(self, "tabbed", merged)
+        return self
 
     @model_validator(mode="after")
     def _bubble_process_type_from_context_data(self) -> "AgenticProcess":
@@ -743,9 +770,10 @@ class AgenticProcess(Entity):
         stale_shell_id = shell.id if shell is not None else self.shell_id
         if shell is not None:
             logger.warning("AgenticProcess %s: discarding stale shell %s (%s)", self.id, shell.id, reason)
-            context = dict(self.context_data or {})
-            context["_prev_tab_order"] = shell.tab_order
-            self.context_data = context
+            if not self.tab_order and shell.tab_order:
+                # One-time adoption: the AP owns its tab_order (base Entity)
+                # across shell-transport swaps — no context_data carry-over.
+                self.tab_order = shell.tab_order
             try:
                 await shell.terminate_worker()
             except Exception as exc:
@@ -1113,8 +1141,10 @@ class AgenticProcess(Entity):
             from flow_sdk.builtin.shell import Shell
 
             shell = await Shell.get_by_id(self.shell_id)
-            if shell:
-                self.context_data = {**self.context_data, "_prev_tab_order": shell.tab_order}
+            if shell and not self.tab_order and shell.tab_order:
+                # One-time adoption: the AP owns its tab_order (base Entity)
+                # across worker restarts — no context_data carry-over.
+                self.tab_order = shell.tab_order
 
             # Set flag so the PTY exit callback knows to preserve shell_id.
             # Clear sidecar but NOT shell_id — shell entity stays alive for restart.
@@ -4017,8 +4047,16 @@ class AgenticProcess(Entity):
                     await shell.save()
                 return shell
 
-        prev = self.context_data.pop("_prev_tab_order", None)
-        tab_order = prev if prev is not None else await Shell.next_tab_order()
+        # The AP owns its tab_order (base Entity): claim a slot once, then
+        # every replacement shell inherits it — the tab stays put across
+        # transport swaps with no carry-over state. Legacy rows that predate
+        # AP ownership may still hold a slot in context_data; adopt it once.
+        if not self.tab_order:
+            legacy_prev = (self.context_data or {}).get("_prev_tab_order")
+            self.tab_order = legacy_prev if legacy_prev else await Shell.next_tab_order()
+        if isinstance(self.context_data, dict) and "_prev_tab_order" in self.context_data:
+            self.context_data = {k: v for k, v in self.context_data.items() if k != "_prev_tab_order"}
+        tab_order = self.tab_order
 
         is_resume = self._is_exist_claude_resume_session(self.session_id) if self.session_id else False
         # Fork is Claude-only; CodexCliOptions doesn't expose ``fork_session_id``.
