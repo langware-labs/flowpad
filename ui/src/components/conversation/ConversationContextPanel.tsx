@@ -11,7 +11,6 @@ import {
   Task,
   TypeId,
 } from '@sdk';
-import { ClaudeCliOptions } from '@sdk/cli_workers/claude-cli';
 import { useEntitiesQuery, useEntity, useProject } from '@sdk/react/hooks';
 import { attachmentDataString, type Attachment } from '@sdk/entities/flow-message';
 import {
@@ -22,7 +21,6 @@ import {
   Eye,
   Lock,
   Paperclip,
-  PlayCircle,
   Plus,
   Users,
   type LucideIcon,
@@ -31,6 +29,7 @@ import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
 import { notify } from '@src/notifications';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { workerIcon, workerLabel } from '@src/components/lens-viewer/shared/transcript-features/transcript-utils';
 import { resolveWorkdir } from './apply-project-choice';
 import { localAttachmentUrl, editorPathForLocalFile } from './attachment-url';
 import { ICON_BY_TYPE, buildDockPointer } from './EntityChip';
@@ -82,6 +81,13 @@ interface ConversationContextPanelProps {
 function humanType(type: string): string {
   return type.charAt(0).toUpperCase() + type.slice(1).replace(/_/g, ' ');
 }
+
+type WorkerType = 'claude_code' | 'codex' | 'copilot';
+
+/** The CLI harnesses a conversation session can launch — drives the worker
+ *  buttons in the Private Context "+" menu. Glyph + label come from the shared
+ *  worker-vendor helpers (transcript-utils) so they match every other surface. */
+const LAUNCHABLE_WORKERS: WorkerType[] = ['claude_code', 'codex', 'copilot'];
 
 /** Canonical dock pointer for an entity TypeId — delegates to the single
  *  EntityChip dispatch (``buildDockPointer``). Asset types navigate by TypeId
@@ -210,9 +216,18 @@ export function ConversationContextPanel({
   const { privateTasks, privateProcesses } = useMemo(() => {
     const taskByKey = new Map<string, { task: Task; origins: string[] }>();
     const procByKey = new Map<string, { proc: AgenticProcess; origins: string[] }>();
-    for (const fm of orderedMessages) {
-      if (!fm.id) continue;
-      for (const tid of fm.sharedContextEntities ?? []) {
+    // Aggregate over every message's context bucket PLUS the conversation's own
+    // (workers launched from the panel are linked onto the conversation, not a
+    // message — see startSession). `origin` is the source id used for the
+    // bubble-highlight; conversation-sourced entries have none (empty origins).
+    const sources: { id: string | null; tids: readonly TypeId[] }[] = orderedMessages
+      .filter((fm) => fm.id)
+      .map((fm) => ({ id: fm.id as string, tids: fm.sharedContextEntities ?? [] }));
+    if (conversation) {
+      sources.push({ id: null, tids: conversation.sharedContextEntities ?? [] });
+    }
+    for (const { id: originId, tids } of sources) {
+      for (const tid of tids) {
         const key = tid.toString();
         if (tid.type === Task.type) {
           const cached = dataManager.getByTypeIdFromCache<Task>(tid);
@@ -222,7 +237,7 @@ export function ConversationContextPanel({
             entry = { task: cached, origins: [] };
             taskByKey.set(key, entry);
           }
-          if (!entry.origins.includes(fm.id)) entry.origins.push(fm.id);
+          if (originId && !entry.origins.includes(originId)) entry.origins.push(originId);
         } else if (tid.type === AgenticProcess.type) {
           const cached = dataManager.getByTypeIdFromCache<AgenticProcess>(tid);
           if (!cached) continue;
@@ -231,7 +246,7 @@ export function ConversationContextPanel({
             entry = { proc: cached, origins: [] };
             procByKey.set(key, entry);
           }
-          if (!entry.origins.includes(fm.id)) entry.origins.push(fm.id);
+          if (originId && !entry.origins.includes(originId)) entry.origins.push(originId);
         }
       }
     }
@@ -244,7 +259,7 @@ export function ConversationContextPanel({
       originMessageIds: origins,
     }));
     return { privateTasks: tasksOut, privateProcesses: procsOut };
-  }, [orderedMessages]);
+  }, [orderedMessages, conversation]);
   // Loaded becomes a trivial constant under the FM-anchored model: the FM
   // entity has already loaded by the time we get here (it's what the panel
   // is rendering). The "Start session" gate just checks the transcript flag.
@@ -283,9 +298,12 @@ export function ConversationContextPanel({
   //     rectangular button — only the injected instruction differs.
   const [starting, setStarting] = useState(false);
   const startSession = useCallback(
-    async (buildInstruction: () => Promise<string>) => {
-      if (!anchorMessageId || !task || starting) return;
-      const workdir = await resolveWorkdir(task.project_id);
+    async (workerType: WorkerType, buildInstruction: () => Promise<string>) => {
+      if (!conversation || starting) return;
+      // The conversation owns the project (conversation.project_id). No task,
+      // no my_process_id — a worker starts on the conversation's project and is
+      // linked back via the generic shared-context interface.
+      const workdir = await resolveWorkdir(conversation.project_id);
       if (!workdir) {
         notify.warning({ title: 'Map this conversation to a local project first.' });
         return;
@@ -293,17 +311,30 @@ export function ConversationContextPanel({
       setStarting(true);
       try {
         const instruction = await buildInstruction();
-        const fmTypeIdString = new TypeId(FlowMessage.type, anchorMessageId).toString();
-        const cliConfig = new ClaudeCliOptions({ permission_mode: 'bypassPermissions' });
-        const proc = await new AgenticProcess({
-          cli_config: cliConfig.toJson(),
-          context_data: { project_id: task.project_id ?? undefined },
+        const convTypeIdString = conversation.id
+          ? new TypeId(Conversation.type, conversation.id).toString()
+          : undefined;
+        // Run in the conversation's OWN project (workdir) with the Flowpad
+        // Assistant mounted — not the @flowpad_assistant system project — and
+        // route the first prompt through the queue (launch pops the head).
+        const proc = await AgenticProcess.launch({
+          workerType,
           workdir,
-          visible: true,
-          shared_context_entities: [fmTypeIdString],
-        }).save();
-        await proc.start({ instruction });
-        proc.openTerminalDock();
+          projectId: conversation.project_id ?? undefined,
+          launchPrompt: instruction,
+          enableAssistant: true,
+          sharedContextEntities: convTypeIdString ? [convTypeIdString] : undefined,
+        });
+        // Save the worker into the conversation's context (generic shared-context
+        // interface) so it surfaces in the recent-processes list and is the
+        // target for per-message append. No dedicated process-pointer field.
+        if (proc.id) {
+          try {
+            await conversation.shareContextEntities(new TypeId(AgenticProcess.type, proc.id));
+          } catch (linkErr) {
+            console.error('[ContextPanel] failed to link process to conversation', linkErr);
+          }
+        }
       } catch (err) {
         console.error('[ContextPanel] start session failed', err);
         notify.error({ title: 'Failed to start session' });
@@ -311,15 +342,18 @@ export function ConversationContextPanel({
         setStarting(false);
       }
     },
-    [anchorMessageId, task, starting],
+    [conversation, starting],
   );
 
-  const handleStartAssistance = useCallback(() => {
-    const run = () =>
-      startSession(() => Promise.resolve(buildAssistancePrompt(sharedTypeIds, privateTypeIds)));
-    if (ensureMapped) ensureMapped(run);
-    else void run();
-  }, [startSession, sharedTypeIds, privateTypeIds, ensureMapped]);
+  const handleStartAssistance = useCallback(
+    (workerType: WorkerType) => {
+      const run = () =>
+        startSession(workerType, () => Promise.resolve(buildAssistancePrompt(sharedTypeIds, privateTypeIds)));
+      if (ensureMapped) ensureMapped(run);
+      else void run();
+    },
+    [startSession, sharedTypeIds, privateTypeIds, ensureMapped],
+  );
 
   // Pull the bundle for the message that contributed an entity attachment. One
   // bundle materializes every attachment, so the originating bubble AND every
@@ -368,7 +402,7 @@ export function ConversationContextPanel({
         selectedSet={selectedSet}
         selectedEntityKey={entityKey}
         onSelectEntity={onSelectEntity}
-        onStartAssistance={task && showStartSession ? handleStartAssistance : undefined}
+        onStartAssistance={showStartSession ? handleStartAssistance : undefined}
         starting={starting}
       />
     </div>
@@ -716,9 +750,10 @@ interface PrivateContextSectionProps {
   selectedSet: ReadonlySet<string>;
   selectedEntityKey: string | null;
   onSelectEntity?: (entityKey: string, messageIds: string[]) => void;
-  /** Wired to the Session entry in the + menu. Undefined when no task is
-   *  mapped or a PTY session already exists in the conversation. */
-  onStartAssistance?: () => void;
+  /** Wired to the worker-launch entries in the + menu — launches a session in
+   *  the conversation's project with the chosen harness. Undefined when no task
+   *  is mapped or a PTY session already exists in the conversation. */
+  onStartAssistance?: (workerType: WorkerType) => void;
   starting: boolean;
 }
 
@@ -740,10 +775,10 @@ function PrivateContextSection({
   const [adding, setAdding] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
-  const handleStartSessionFromMenu = () => {
+  const handleLaunchWorker = (workerType: WorkerType) => {
     if (!onStartAssistance) return;
     setMenuOpen(false);
-    onStartAssistance();
+    onStartAssistance(workerType);
   };
 
   // Create a fresh Spec linked back to this FlowMessage. The same pattern the
@@ -986,18 +1021,23 @@ function PrivateContextSection({
           </button>
           {menuOpen && (
             <div className="absolute top-full left-0 right-0 z-10 mt-1 rounded-md border border-border bg-popover p-1 text-xs shadow-md">
-              {onStartAssistance && (
-                <button
-                  type="button"
-                  onClick={handleStartSessionFromMenu}
-                  disabled={starting}
-                  className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground transition-colors hover:bg-muted disabled:opacity-50"
-                  data-testid="private-context-add-session"
-                >
-                  <PlayCircle className="h-3 w-3 text-muted-foreground" />
-                  Session
-                </button>
-              )}
+              {onStartAssistance &&
+                LAUNCHABLE_WORKERS.map((workerType) => {
+                  const Icon = workerIcon(workerType);
+                  return (
+                    <button
+                      key={workerType}
+                      type="button"
+                      onClick={() => handleLaunchWorker(workerType)}
+                      disabled={starting}
+                      className="flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-foreground transition-colors hover:bg-muted disabled:opacity-50"
+                      data-testid={`private-context-launch-${workerType}`}
+                    >
+                      <Icon className="h-3 w-3" />
+                      Session — {workerLabel(workerType)}
+                    </button>
+                  );
+                })}
               <button
                 type="button"
                 onClick={() => void handleAddSpec()}

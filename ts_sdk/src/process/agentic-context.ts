@@ -73,6 +73,18 @@ export interface AgenticContext {
   /** Extra directories to expose to Claude via --add-dir */
   additionalDirs?: string[];
 
+  /** Mount the Flowpad Assistant skills/agents for this worker (sets the
+   * per-process `load_flowpad_assistant` flag BEFORE the auto-start, so the
+   * driver's `--add-dir` set includes the assistant). Lets a worker run in the
+   * conversation's *own* project while still discovering the assistant skills —
+   * no need to switch the cwd to the `@flowpad_assistant` system project. */
+  loadFlowpadAssistant?: boolean;
+
+  /** Provenance links stamped onto the new process's `shared_context_entities`
+   * (string TypeIds) before save — e.g. the anchor FlowMessage a conversation
+   * session is started from. */
+  sharedContextEntities?: string[];
+
   /** VFS path the process is keyed to. Either an entity TypeId ("type-id") for entity-scoped processes, or "<typeid>/<sub_path>" for surface-scoped processes (e.g. a per-doc process keyed on the file path). */
   targetVfsPath?: string;
 
@@ -147,6 +159,8 @@ export function serializeAgenticContext(ctx: AgenticContext): Record<string, unk
     debug: ctx.debug,
     worktree: ctx.worktree,
     additional_dirs: ctx.additionalDirs ?? [],
+    load_flowpad_assistant: ctx.loadFlowpadAssistant,
+    shared_context_entities: ctx.sharedContextEntities,
     target_typeid_str: ctx.targetVfsPath,
     output_format: ctx.outputFormat,
     worker_type: ctx.workerType,
