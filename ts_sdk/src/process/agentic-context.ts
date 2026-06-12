@@ -6,7 +6,7 @@
  * field managed internally by the backend process runtime.
  */
 
-import type { ProcessType } from './process-types';
+import type { ProcessKind } from './process-types';
 
 /**
  * Permission mode for instruction execution
@@ -99,7 +99,7 @@ export interface AgenticContext {
   workerType?: 'claude_code' | 'codex' | 'copilot';
 
   /** Discriminates how this process is being used (chat vs execution). */
-  processType?: ProcessType;
+  processType?: ProcessKind;
 }
 
 /**

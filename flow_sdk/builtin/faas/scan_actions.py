@@ -265,7 +265,7 @@ class ScanActionsMixin:
         from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeCliOptions
         from flow_sdk.builtin.agentic_process.cli_drivers.codex import CodexCliOptions
         from flow_sdk.builtin.agentic_process.cli_drivers.copilot import CopilotCliOptions
-        from flow_sdk.flowpad_types.enums import ProcessType, WorkerType
+        from flow_sdk.flowpad_types.enums import ProcessKind, WorkerType
 
         try:
             request_info = get_current_request_info()
@@ -302,10 +302,10 @@ class ScanActionsMixin:
             # leaving it nested in `context_data.process_type` makes the chat
             # toolbar's history dropdown show empty even when sessions exist.
             process_type_raw = context_data.pop("process_type", None)
-            process_type: ProcessType | None = None
+            process_type: ProcessKind | None = None
             if process_type_raw:
                 try:
-                    process_type = ProcessType(process_type_raw)
+                    process_type = ProcessKind(process_type_raw)
                 except (ValueError, TypeError):
                     process_type = None
 
@@ -443,6 +443,16 @@ class ScanActionsMixin:
                 if tids:
                     process.add_shared_context_entities(*tids)
             await process.save(owner)
+
+            # ANALYSIS kind: the new process is a child of the entity it
+            # analyzes (target_typeid_str) and each joins the other's private
+            # context. Best-effort — a missing/surface-scoped target must
+            # never block the launch.
+            if process_type == ProcessKind.ANALYSIS:
+                try:
+                    await process.pair_analysis_context(owner)
+                except Exception:
+                    logging.exception(f"createProcess: analysis pairing failed for {process.id}")
 
             if result_data and isinstance(result_data, dict):
                 try:

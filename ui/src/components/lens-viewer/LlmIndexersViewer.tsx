@@ -14,7 +14,7 @@ import { ListTree, Play, FileText, Loader2, RefreshCw } from 'lucide-react';
 import {
   AgenticProcess,
   MarkdownIndex,
-  ProcessType,
+  ProcessKind,
   QueryRequest,
   dataContext,
 } from '@sdk';
@@ -123,7 +123,7 @@ export function LlmIndexersViewer() {
         workdir,
         visible: false,
         target_typeid_str: index.typeId.toString(),
-        process_type: ProcessType.Execution,
+        process_type: ProcessKind.Execution,
       }).save([index.typeId]);
       void process.prompt(instruction);
       notify.success({

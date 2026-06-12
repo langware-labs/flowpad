@@ -6,14 +6,15 @@ from a worker session transcript. The full trace JSON lives in the entity's
 row carries only the small summary fields the UI needs to answer "what
 happened, did it go well" instantly (verdict banner, counts, cost).
 
-``trace`` is a blob field: it ferries the payload through the create POST into
-``default_body_fn`` (which materializes trace.json) and is never expanded on
-GET — viewers stream the file via FSRef instead.
+``trace`` is a create-time ferry (db-excluded): it carries the payload through
+the create POST into ``default_body_fn`` (which materializes trace.json) and is
+never persisted or returned on GET — viewers stream the file via FSRef instead.
 """
 
+import json
 from typing import Optional
 
-from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.api_field import APIField, NoDBAPIField
 from flow_sdk.core import Entity
 from flow_sdk.schema.types import EntityType
 
@@ -31,5 +32,27 @@ class AgentTrace(Entity):
     divergence_count: int = APIField(0)
     lane_count: int = APIField(1, description="Root lane + subagent lanes")
     asset_ref: Optional[str] = APIField(None)
-    # JSON text (blob storage is string-only); default_body_fn parses it.
-    trace: Optional[str] = APIField(None, blob=True)
+    # Create-time ferry only: JSON text consumed by default_body_fn (which
+    # materializes trace.json at asset_ref). Never persisted to DB/blob —
+    # viewers stream the file, GETs stay summary-sized.
+    trace: Optional[str] = NoDBAPIField(default=None)
+
+    @classmethod
+    def from_trace(cls, trace: dict, *, name: str | None = None) -> "AgentTrace":
+        """Build the entity from a trace JSON dict — the single authority for
+        the trace→summary-fields mapping (used by the workers agent-trace
+        route; anything else that materializes a record goes through here)."""
+        summary = trace.get("summary") or {}
+        return cls(
+            name=name or trace.get("name") or f"trace-{(trace.get('session_id') or '')[:8]}",
+            session_id=trace.get("session_id") or "",
+            worker_type=trace.get("worker_type") or "claude",
+            verdict=summary.get("verdict"),
+            verdict_reason=summary.get("verdict_reason"),
+            duration_ms=summary.get("duration_ms"),
+            cost_usd=summary.get("cost_usd"),
+            issue_count=summary.get("issue_count") or 0,
+            divergence_count=summary.get("divergence_count") or 0,
+            lane_count=summary.get("lane_count") or 1,
+            trace=json.dumps(trace),
+        )
