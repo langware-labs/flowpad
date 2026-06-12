@@ -62,18 +62,13 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.timeout(30)]
 
 
 def _stash_credentials(hub_login_payload: dict) -> str:
-    """Persist the hub JWT in the (monkey-patched) keyring slot so the
-    in-process action handler picks it up via ``hub_get``."""
-    from flow_sdk.cli.auth.credentials import UserHubCredentials, save_credentials
+    """Establish the full local login state so the in-process action handler
+    sees a logged-in user (token via sodot + user record via set_user). The
+    conversation-list action gates its hub catch-up on ``hub_auth_available()``
+    → ``is_logged_in()`` → the user record, so the token alone is not enough."""
+    from tests.hub_tests._local_login import login_as
 
-    api_key = hub_login_payload.get("api_key") or hub_login_payload["token"]
-    save_credentials(
-        UserHubCredentials(
-            api_key=api_key,
-            user=hub_login_payload.get("user") or {},
-        )
-    )
-    return api_key
+    return login_as(hub_login_payload)
 
 
 async def _hub_create_conversation(
@@ -349,15 +344,14 @@ async def test_invitations_through_same_pipeline(hub_base_url, hub_login_payload
     # exercises (alice.share(recipients=[bob])), just with the roles flipped so
     # the invitation is addressed to us (alice). We restore alice's creds
     # before driving handle_conversation_list.
-    from flow_sdk.cli.auth.credentials import UserHubCredentials, save_credentials
+    from tests.hub_tests._local_login import login_as
     async with httpx.AsyncClient(timeout=5.0) as h:
         r = await h.post(f"{hub_base_url}/api/v1/login",
                          json={"email": sender_email, "password": sender_pw})
         if r.status_code != 200:
             pytest.skip(f"sender (bob) hub login failed: {r.status_code} {r.text[:200]}")
         sender_data = r.json()["data"]
-    sender_key = sender_data.get("api_key") or sender_data["token"]
-    save_credentials(UserHubCredentials(api_key=sender_key, user=sender_data.get("user") or {}))
+    sender_key = login_as(sender_data)
 
     conv = Conversation(title=f"inv-{uuid.uuid4()}")
     await conv.share(recipients=[recipient_email])

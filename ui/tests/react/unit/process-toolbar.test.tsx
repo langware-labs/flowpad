@@ -1,7 +1,8 @@
 import { AgenticProcess, TypeId } from '@sdk';
 import { render, fireEvent } from '@testing-library/react';
 import React from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { setViewMode, ViewMode } from '@src/contexts/view-mode-context';
 import { nextTerminalName } from '@src/components/terminal/rename-rules';
 import type { TraceFilters, ColVisibility } from '@src/components/terminal/interactive-terminal/InteractiveTerminal';
 import { ProcessToolbar } from '@src/components/terminal/interactive-terminal/ProcessToolbar';
@@ -42,6 +43,14 @@ const defaultColVis: ColVisibility = { trace: true, time: true, annotations: tru
 describe('ProcessToolbar "Open terminal" button', () => {
   beforeEach(() => {
     mockOpenNewShell.mockClear();
+    // The nav-out buttons (Open Terminal, Fork, …) live in the Advanced
+    // toolbar; the default Standard skin shows only Share + Bookmark. Opt the
+    // toolbar into Advanced so the Open Terminal button is present to click.
+    setViewMode(ViewMode.Advanced);
+  });
+
+  afterEach(() => {
+    setViewMode(ViewMode.Standard);
   });
 
   it('opens a new terminal with cwd when workdir is set', () => {

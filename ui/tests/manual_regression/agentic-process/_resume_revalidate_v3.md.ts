@@ -6,7 +6,7 @@ import { test, expect } from '@playwright/test';
 // routePlainShellPointer / cachedEntitiesByType pipeline to surface processes
 // reliably on cold navigation.
 test.skip('revalidate post #31: resume claude session — diagnostics', async ({ page }) => {
-  test.setTimeout(180_000);
+  test.setTimeout(60_000);
   await page.addInitScript(() => {
     localStorage.setItem('llm-setup-modal-seen', 'true');
     localStorage.setItem('flowpad-index-approved', 'true');
@@ -50,7 +50,7 @@ test.skip('revalidate post #31: resume claude session — diagnostics', async ({
   // Diagnostic 2: backend AP (probe to confirm project_id rebinding)
   const apFromBackend = await page.evaluate(async (id) => {
     try {
-      const r = await fetch(`http://localhost:9008/api/v1/graph/compute_node/@local/agentic_process/${id}`);
+      const r = await fetch(`/api/v1/graph/compute_node/@local/agentic_process/${id}`);
       const j = await r.json();
       const d = j?.data || {};
       return {

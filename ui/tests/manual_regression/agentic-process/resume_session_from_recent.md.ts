@@ -32,7 +32,7 @@ async function countProcesses(page: import('@playwright/test').Page): Promise<nu
 
 test.describe('resume session from recent', () => {
   test('test 1: clicking a recent session opens a live AgenticProcess (one per session)', async ({ page }) => {
-    test.setTimeout(150_000);
+    test.setTimeout(60_000);
     await dismissSetupModal(page);
 
     // Precondition: at least one worker-history entry from ~/.claude.

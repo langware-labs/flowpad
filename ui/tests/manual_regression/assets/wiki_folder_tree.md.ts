@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { apiBase } from '../_shared/api';
 
 async function dismissSetupModal(page: import('@playwright/test').Page) {
   await page.addInitScript(() => {
@@ -38,7 +39,7 @@ test.describe('Wiki folder tree (asset browseable tree)', () => {
     }
 
     // Probe the backend for markdown vaults to decide what to assert.
-    const apiUrl = process.env.API_URL || 'http://localhost:9008';
+    const apiUrl = apiBase();
     const typesRes = await request.get(`${apiUrl}/api/v1/assets/types`).catch(() => null);
     let hasVaults = false;
     if (typesRes && typesRes.ok()) {
@@ -84,7 +85,7 @@ test.describe('Wiki folder tree (asset browseable tree)', () => {
       await chevron.click();
     }
 
-    const apiUrl = process.env.API_URL || 'http://localhost:9008';
+    const apiUrl = apiBase();
     const typesRes = await request.get(`${apiUrl}/api/v1/assets/types`).catch(() => null);
     let hasVaults = false;
     if (typesRes && typesRes.ok()) {

@@ -34,10 +34,8 @@ pytestmark = pytest.mark.timeout(30)  # do not increase timeout without approval
 
 
 def _login(hub_login_payload):
-    from flow_sdk.cli.auth.credentials import UserHubCredentials, save_credentials
-    api_key = hub_login_payload.get("api_key") or hub_login_payload["token"]
-    save_credentials(UserHubCredentials(api_key=api_key, user=hub_login_payload.get("user") or {}))
-    return api_key
+    from tests.hub_tests._local_login import login_as
+    return login_as(hub_login_payload)
 
 
 @pytest.mark.asyncio

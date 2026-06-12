@@ -2,6 +2,7 @@
 id: 273cd1d7-93e9-58d3-bcad-24b592465dd2
 ---
 
+- PRECONDITION: switch the app to Advanced view (footer view pill or `window.setView('advanced')` / localStorage `viewMode=advanced`) — the process toolbar (Restart / Open Terminal / Fork / Worktree / Session Info / Transcript) and side-ribbon panels only exist in Advanced view; the default Standard view shows the simple-chat header without them
 test 1: Git status button appears in agentic process terminal ribbon
 - navigate to {APP_URL}/dock/shell/new_terminal
 - click the "Start Claude" button if on a plain shell to create an agentic process

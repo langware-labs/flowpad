@@ -1,6 +1,8 @@
 import { expect, test, type APIRequestContext } from '@playwright/test';
 
-const API = process.env.API_URL || 'http://localhost:6002';
+import { apiBase } from '../_shared/api';
+
+const API = apiBase();
 
 async function bootstrapData(request: APIRequestContext) {
   const res = await request.get(`${API}/api/v1/graph/bootstrap`);

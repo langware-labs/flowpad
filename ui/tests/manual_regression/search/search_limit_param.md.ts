@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { apiBase } from '../_shared/api';
 
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
@@ -7,7 +8,7 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('Search limit parameter constrains result count', async ({ page }) => {
-  const apiUrl = process.env.API_URL || 'http://localhost:9008';
+  const apiUrl = apiBase();
 
   // Request with limit=1
   const response = await page.request.get(`${apiUrl}/api/v1/search?q=test&limit=1`);

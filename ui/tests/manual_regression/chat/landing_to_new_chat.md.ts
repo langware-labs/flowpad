@@ -9,7 +9,7 @@ test.describe('Landing to New Chat', () => {
   });
 
   test('start new session from landing page navigates to shell terminal', async ({ page }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(60_000);
 
     // Step 1: navigate to landing page and validate it
     await gotoLanding(page);

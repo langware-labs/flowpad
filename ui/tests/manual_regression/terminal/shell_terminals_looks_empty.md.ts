@@ -15,7 +15,7 @@ test.describe('Shell terminals looks empty', () => {
   });
 
   test('test 1: terminals show content after Home -> Shell round-trip', async ({ page }) => {
-    test.setTimeout(150_000);
+    test.setTimeout(60_000);
 
     // Step 1: navigate to app (shell), opening the default terminal.
     await gotoShell(page);

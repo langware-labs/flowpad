@@ -10,6 +10,10 @@ export async function dismissSetupModal(page: Page) {
     // Also prevent WelcomeModal (search index never-indexed prompt) from
     // appearing on /dock/home — it blocks the bookmark column.
     localStorage.setItem('flowpad-index-approved', 'true');
+    // Terminal scenarios assert the xterm surface, the side ribbon, and the
+    // full ProcessToolbar — all Advanced-view surfaces. The default Standard
+    // view overlays the Claude pane with the simple chat instead.
+    localStorage.setItem('viewMode', 'advanced');
   });
 }
 

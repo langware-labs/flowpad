@@ -30,9 +30,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test, expect } from '@playwright/test';
 import { dismissSetupModal, startClaudeSession } from './helpers';
+import { apiOrigin } from '../_shared/api';
 
-const APP_URL = process.env.APP_URL ?? 'http://localhost:4098';
-const API_URL = process.env.API_URL ?? 'http://localhost:9008';
+const API_URL = apiOrigin();
 // repo root of this checkout (ui/tests/manual_regression/terminal → 4 levels up).
 // These .md.ts run as ESM ("type":"module"), so __dirname is undefined —
 // derive it from import.meta.url.
@@ -113,7 +113,7 @@ test.describe('Git Status Panel', () => {
   // test 1: Git button appears in agentic process terminal ribbon
   // ---------------------------------------------------------------------------
   test('git status button appears in agentic process terminal ribbon', async ({ page }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(60_000);
 
     await gotoAgenticProcess(page);
 
@@ -134,7 +134,7 @@ test.describe('Git Status Panel', () => {
   // test 2: Git panel opens as a tab in the side window
   // ---------------------------------------------------------------------------
   test('git panel opens as a tab in the side window when git button is clicked', async ({ page }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(60_000);
 
     await gotoAgenticProcess(page);
 
@@ -167,7 +167,7 @@ test.describe('Git Status Panel', () => {
   // test 3: Git panel header shows branch name and ahead/behind indicators
   // ---------------------------------------------------------------------------
   test('git panel header shows branch name', async ({ page }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(60_000);
 
     await gotoAgenticProcess(page);
 
@@ -198,7 +198,7 @@ test.describe('Git Status Panel', () => {
   // test 4: Git panel shows changed files with status badges and line counts
   // ---------------------------------------------------------------------------
   test('git panel shows file list with status badges and line counts', async ({ page }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(60_000);
 
     await gotoAgenticProcess(page);
 
@@ -239,7 +239,7 @@ test.describe('Git Status Panel', () => {
   // test 5: Git tab closes via × in the tab strip
   // ---------------------------------------------------------------------------
   test('git tab closes via the × close button in the tab strip', async ({ page }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(60_000);
 
     await gotoAgenticProcess(page);
 
@@ -260,7 +260,7 @@ test.describe('Git Status Panel', () => {
   // test 6: Multiple tabs coexist in the same side window
   // ---------------------------------------------------------------------------
   test('git and prompts tabs coexist and can be switched between', async ({ page }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(60_000);
 
     await gotoAgenticProcess(page);
 
@@ -303,7 +303,7 @@ test.describe('Git Status Panel', () => {
   // test 8: Git button is absent for plain shell terminals (no agentic process)
   // ---------------------------------------------------------------------------
   test('git button is absent in plain shell terminal (no agentic process)', async ({ page }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(60_000);
 
     await page.goto('/dock/shell/new_terminal');
     const skip = page.getByRole('button', { name: 'Skip' });

@@ -7,7 +7,7 @@ import { dismissSetupModal, gotoLanding, submitFromLanding } from './helpers';
 
 test.describe('home prompt navigates to shell', () => {
   test('test 1: submit from home → shell session view', async ({ page }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(60_000);
     await dismissSetupModal(page);
     await gotoLanding(page);
 
