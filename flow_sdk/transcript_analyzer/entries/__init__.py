@@ -9,6 +9,7 @@ from .file_write import FileWriteEntry
 from .meta import MetaEntry
 from .search import SearchEntry
 from .shell_command import ShellCommandEntry
+from .skill_call import SkillCallEntry, SkillInvocationKind
 from .summary import SummaryEntry
 from .system import SystemEntry
 from .todo_update import TodoUpdateEntry
@@ -29,6 +30,8 @@ __all__ = [
     "MetaEntry",
     "SearchEntry",
     "ShellCommandEntry",
+    "SkillCallEntry",
+    "SkillInvocationKind",
     "SummaryEntry",
     "SystemEntry",
     "CodexUsageEntry",

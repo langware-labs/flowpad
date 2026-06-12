@@ -26,6 +26,10 @@ class EntryKind(str, Enum):
     FILE_EDIT = "file_edit"
     FILE_READ = "file_read"
     SHELL_COMMAND = "shell_command"
+    # A skill invocation, normalized across workers: Claude/Copilot emit a
+    # native ``Skill`` tool-use; Codex loads a skill by reading its
+    # ``SKILL.md``. See ``SkillCallEntry``.
+    SKILL_CALL = "skill_call"
     SEARCH = "search"
     WEB_FETCH = "web_fetch"
     TODO_UPDATE = "todo_update"
