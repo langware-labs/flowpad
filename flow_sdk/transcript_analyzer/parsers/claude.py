@@ -26,6 +26,7 @@ from ..entries import (
     MetaEntry,
     SearchEntry,
     ShellCommandEntry,
+    SkillCallEntry,
     SummaryEntry,
     SystemEntry,
     TodoUpdateEntry,
@@ -37,7 +38,6 @@ from ..entries import (
     WebFetchEntry,
 )
 from ..entry import TranscriptEntry
-
 
 # Per-type uid fallback — mirrors `uid_mapping` ClassVar in
 # ``flow_sdk/fs_records/claude/transcript_records/*``. Lines with no
@@ -306,6 +306,12 @@ class ClaudeParser:
         }
         ti = tool_input if isinstance(tool_input, dict) else {}
 
+        if tool_name == "Skill":
+            return SkillCallEntry(
+                skill_name=str(ti.get("skill") or ti.get("name") or ti.get("command") or ""),
+                tool_input=ti,
+                **common,
+            )
         if tool_name == "ExitPlanMode":
             return ExitPlanModeEntry(tool_input=ti, **common)
         if tool_name == "Write":

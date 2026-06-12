@@ -41,6 +41,7 @@ from ..entries import (
     FileWriteEntry,
     MetaEntry,
     SkillCallEntry,
+    SkillInvocationKind,
     SummaryEntry,
     SystemEntry,
     ToolResultEntry,
@@ -63,11 +64,17 @@ _SKILL_MD_RE = re.compile(r"/skills/([^/\s\"']+)/SKILL\.md\b")
 
 
 def _skill_name_from_command(command: object) -> str | None:
-    """Skill name if ``command`` loads a ``…/skills/<name>/SKILL.md``, else None."""
-    if command is None:
-        return None
-    text = command if isinstance(command, str) else json.dumps(command, default=str)
-    match = _SKILL_MD_RE.search(text)
+    """Skill name if ``command`` loads a ``…/skills/<name>/SKILL.md``, else None.
+
+    Accepts a raw command string or a function_call ``arguments`` dict whose
+    shell command lives under ``command``/``cmd`` — pulling just that field
+    avoids serializing unrelated tool args for every non-shell call.
+    """
+    if isinstance(command, dict):
+        command = command.get("command") or command.get("cmd") or ""
+    if not isinstance(command, str):
+        command = json.dumps(command, default=str) if command else ""
+    match = _SKILL_MD_RE.search(command)
     return match.group(1) if match else None
 
 
@@ -503,7 +510,7 @@ class _CodexParserBase:
             if skill_name:
                 entries.append(SkillCallEntry(
                     skill_name=skill_name,
-                    invocation_kind="file_load",
+                    invocation_kind=SkillInvocationKind.FILE_LOAD,
                     tool_name="shell",
                     tool_use_id=f"{tool_use_id}:skill",
                     tool_input={"command": cmd},
@@ -554,7 +561,7 @@ class _CodexParserBase:
             if skill_name:
                 out.append(SkillCallEntry(
                     skill_name=skill_name,
-                    invocation_kind="file_load",
+                    invocation_kind=SkillInvocationKind.FILE_LOAD,
                     tool_name=tool_name or "shell",
                     tool_use_id=f"{tool_use_id}:skill",
                     tool_input=tool_input if isinstance(tool_input, dict) else {},
