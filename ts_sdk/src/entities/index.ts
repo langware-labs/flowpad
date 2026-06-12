@@ -49,6 +49,7 @@ export * from './web-domain';
 export * from './workflow';
 export * from './skill';
 export * from './whiteboard';
+export * from './agent-trace';
 export * from './markdown';
 export * from './markdown-index';
 export * from './plan';
