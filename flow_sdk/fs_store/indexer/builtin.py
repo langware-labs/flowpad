@@ -63,6 +63,7 @@ def build_default_indexer() -> FSIndexer:
     from flow_sdk.fs_store.indexer.functions.prompt import prompt_project_fn
     from flow_sdk.fs_store.indexer.functions.skill import skill_fn
     from flow_sdk.fs_store.indexer.functions.whiteboard import whiteboard_fn
+    from flow_sdk.fs_store.indexer.functions.agent_trace import agent_trace_fn
     from flow_sdk.fs_store.indexer.functions.agent import agent_fn
     from flow_sdk.fs_store.indexer.functions.workflow import (
         workflow_fn, workflow_frontmatter_fn,
@@ -112,6 +113,7 @@ def build_default_indexer() -> FSIndexer:
     idx.add_function(RecordType.USER_HOME_FOLDER, claude_rules_fn, RecordType.CLAUDE_RULES)
     idx.add_function(RecordType.USER_HOME_FOLDER, skill_fn, RecordType.SKILL)
     idx.add_function(RecordType.USER_HOME_FOLDER, whiteboard_fn, RecordType.WHITEBOARD)
+    idx.add_function(RecordType.USER_HOME_FOLDER, agent_trace_fn, RecordType.AGENT_TRACE)
     idx.add_function(RecordType.USER_HOME_FOLDER, agent_fn, RecordType.AGENT)
     idx.add_function(RecordType.USER_HOME_FOLDER, workflow_fn, RecordType.WORKFLOW)
     idx.add_function(RecordType.USER_HOME_FOLDER, command_fn, RecordType.COMMAND)
@@ -146,6 +148,7 @@ def build_default_indexer() -> FSIndexer:
     idx.add_function(RecordType.REAL_PROJECT_CWD, prompt_project_fn, RecordType.PROMPT)
     idx.add_function(RecordType.REAL_PROJECT_CWD, skill_fn, RecordType.SKILL)
     idx.add_function(RecordType.REAL_PROJECT_CWD, whiteboard_fn, RecordType.WHITEBOARD)
+    idx.add_function(RecordType.REAL_PROJECT_CWD, agent_trace_fn, RecordType.AGENT_TRACE)
     idx.add_function(RecordType.REAL_PROJECT_CWD, agent_fn, RecordType.AGENT)
     idx.add_function(RecordType.REAL_PROJECT_CWD, workflow_fn, RecordType.WORKFLOW)
     idx.add_function(RecordType.REAL_PROJECT_CWD, project_folder_walker_fn, RecordType.FOLDER)
