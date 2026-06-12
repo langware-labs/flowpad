@@ -26,7 +26,7 @@ import { InstructionFile } from '../models/workflow/InstructionFile';
 import { ViewType } from '../utils/ui/view-types';
 import { VFSPath } from '../utils/vfs-path';
 import { AgenticContext, IAgenticProcessOptions, ISpawnWorkerOptions, PermissionMode } from './agentic-context';
-import type { ProcessType } from './process-types';
+import type { ProcessKind } from './process-types';
 import { ProcessIconKey, ProcessStatus, WorkerStatus, isWorkerRunning, isWorkerTerminal } from './agentic-types';
 import type {
   TranscriptFormat as TranscriptFormatType,
@@ -153,7 +153,7 @@ export interface IAgenticProcess extends IEntity {
   /** CLI worker vendor (e.g. 'claude', 'codex'). Drives icon selection. */
   worker_type?: string | null;
   /** Discriminates how this process is being used (chat vs execution). */
-  process_type?: ProcessType | null;
+  process_type?: ProcessKind | null;
   /** Shell entity ID linked to this process */
   shell_id?: string | null;
   /** DEPRECATED one-release alias of base-Entity `tabbed` (kept in lock-step server-side). */
@@ -724,7 +724,7 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   worker_type?: string | null;
 
   /** Discriminates how this process is being used (chat vs execution). */
-  process_type?: ProcessType | null;
+  process_type?: ProcessKind | null;
 
   /** Shell entity ID linked to this process */
   shell_id?: string | null;

@@ -27,30 +27,32 @@ Read `instructions-file` for accumulated learnings before starting; append new l
 
 ## Environment
 
-**Never hardcode port numbers.** Source `.env.local` first:
+**Never hardcode port numbers, and never expect the caller to hand you a URL.** As a spawned worker you inherit `FLOW_INSTANCE` — resolve the backend that spawned you from its `server.json`:
 
 ```bash
-set -a; source .env.local; set +a
-API_URL="http://localhost:${LOCAL_SERVER_PORT}"
+API_URL="http://localhost:$(jq -r .port ~/.flow/instances/${FLOW_INSTANCE:-prod}/server.json)"
+OUT="${OUT:-/tmp/agent-trace}"   # .flow/skills/agent-trace/_results when run inside the flowpad repo
 ```
 
-All scratch files go in the output dir: `.flow/skills/agent-trace/_results/`.
+If `server.json` is missing, that instance's backend isn't running — stop and report, don't guess ports.
 
 ## Procedure
 
 ### 1. Synthesize the skeleton
 
 ```bash
-uv run python -m flow_sdk.transcript_analyzer.synthesizers.agent_trace <SESSION_ID> \
-  --worker claude --out .flow/skills/agent-trace/_results/<SESSION_ID>.skeleton.json
+mkdir -p "$OUT"
+curl -sf "$API_URL/api/v1/workers/claude/<SESSION_ID>/trace-skeleton" \
+  | jq '.skeleton' > "$OUT/<SESSION_ID>.skeleton.json"
+jq '.summary' "$OUT/<SESSION_ID>.skeleton.json"
 ```
 
-It prints lane/tool-call/issue counts and writes the skeleton. `source_path` inside the skeleton is the root transcript JSONL; subagent transcripts live at `<dir>/<session_id>/subagents/agent-*.jsonl`.
+The backend runs the deterministic synthesizer server-side — works from any workdir, no repo venv needed. `source_path` inside the skeleton is the root transcript JSONL; subagent transcripts live at `<dir>/<session_id>/subagents/agent-*.jsonl`.
 
 Large team sessions produce skeletons of several MB — do NOT read the whole file. Use `jq` to pull what you need:
 
 ```bash
-J=.flow/skills/agent-trace/_results/<SESSION_ID>.skeleton.json
+J="$OUT/<SESSION_ID>.skeleton.json"
 jq '.summary' $J
 jq '[.lanes[] | {id, agent_type, description, segments: (.segments|length)}]' $J
 jq '[.markers[] | select(.severity=="attention")]' $J
@@ -70,7 +72,7 @@ For each attention segment / marker cluster, read the relevant transcript span t
 
 ### 3. Annotate
 
-Write `.flow/skills/agent-trace/_results/<SESSION_ID>.annotations.json`:
+Write `$OUT/<SESSION_ID>.annotations.json`:
 
 ```json
 {
@@ -86,24 +88,17 @@ Write `.flow/skills/agent-trace/_results/<SESSION_ID>.annotations.json`:
 
 Timestamps must be copied verbatim from skeleton entries (ISO-8601 Z) so markers land on the timeline.
 
-### 4. Merge and create the record
+### 4. Create the record
+
+One call: the server re-synthesizes the skeleton, merges your annotations, and creates a **new** AgentTrace record (analyses are history — reruns add entries, never overwrite):
 
 ```bash
-uv run python -m flow_sdk.transcript_analyzer.synthesizers.agent_trace \
-  --merge $J .flow/skills/agent-trace/_results/<SESSION_ID>.annotations.json \
-  --out .flow/skills/agent-trace/_results/<SESSION_ID>.trace.json
-
-jq -n --slurpfile t .flow/skills/agent-trace/_results/<SESSION_ID>.trace.json \
-  '$t[0] | {name, session_id, worker_type, verdict: .summary.verdict,
-            verdict_reason: .summary.verdict_reason, duration_ms: .summary.duration_ms,
-            cost_usd: .summary.cost_usd, issue_count: .summary.issue_count,
-            divergence_count: .summary.divergence_count, lane_count: .summary.lane_count,
-            trace: (. | tostring)}' > .flow/skills/agent-trace/_results/<SESSION_ID>.payload.json
-
-curl -sf -X POST "$API_URL/api/v1/graph/agent_trace" \
-  -H 'Content-Type: application/json' \
-  -d @.flow/skills/agent-trace/_results/<SESSION_ID>.payload.json
+jq -n --slurpfile a "$OUT/<SESSION_ID>.annotations.json" '{annotations: $a[0]}' \
+  | curl -sf -X POST "$API_URL/api/v1/workers/claude/<SESSION_ID>/agent-trace" \
+      -H 'Content-Type: application/json' -d @-
 ```
+
+Response: `{ok, id, asset_ref, summary}`.
 
 ### 5. Verify
 

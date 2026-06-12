@@ -3,7 +3,7 @@ import { EntityExecutionPanel } from '@src/components/entity-execution-panel';
 import { useEntityByPath } from '@src/hooks/use-entity-by-path';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { Agent, AgenticProcess, FSRef, ProcessType } from '@sdk';
+import { Agent, AgenticProcess, FSRef, ProcessKind } from '@sdk';
 import { useCallback } from 'react';
 
 interface AgentAssetEditorProps {
@@ -70,7 +70,7 @@ export function AgentAssetEditor({ fsRef, agent: providedAgent }: AgentAssetEdit
         <div className="h-[300px] flex-shrink-0 border-t" data-testid="agent-execution">
           <EntityExecutionPanel
             target={agentExecutionTarget}
-            processType={ProcessType.Execution}
+            processType={ProcessKind.Execution}
             onProcessCreated={loadAgent}
             headerLabel="Agent execution"
             className="h-full"

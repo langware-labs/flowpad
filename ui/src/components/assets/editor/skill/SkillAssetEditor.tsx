@@ -3,7 +3,7 @@ import { EntityExecutionPanel } from '@src/components/entity-execution-panel';
 import { useEntityByPath } from '@src/hooks/use-entity-by-path';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { AgenticProcess, FSRef, ProcessType, Skill } from '@sdk';
+import { AgenticProcess, FSRef, ProcessKind, Skill } from '@sdk';
 import { useCallback } from 'react';
 
 interface SkillAssetEditorProps {
@@ -62,7 +62,7 @@ export function SkillAssetEditor({ fsRef, skill: providedSkill }: SkillAssetEdit
         <div className="h-[300px] flex-shrink-0 border-t" data-testid="skill-execution">
           <EntityExecutionPanel
             target={skillExecutionTarget}
-            processType={ProcessType.Execution}
+            processType={ProcessKind.Execution}
             onProcessCreated={loadSkill}
             headerLabel="Skill execution"
             className="h-full"

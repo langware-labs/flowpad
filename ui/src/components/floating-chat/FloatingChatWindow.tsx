@@ -1,6 +1,6 @@
 import { Button } from '@src/components/ui/button';
 import { EntityExecutionPanel } from '@src/components/entity-execution-panel';
-import { ProcessType } from '@sdk';
+import { ProcessKind } from '@sdk';
 import { X } from 'lucide-react';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
@@ -316,7 +316,7 @@ export function FloatingChatWindow() {
         {target ? (
           <EntityExecutionPanel
             target={target}
-            processType={ProcessType.Chat}
+            processType={ProcessKind.Chat}
             className="h-full"
             emptyStateText="Ask the Flowpad Assistant anything."
             newSessionLabel="New chat"

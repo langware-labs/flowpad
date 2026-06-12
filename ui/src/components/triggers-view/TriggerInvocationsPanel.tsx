@@ -5,7 +5,7 @@ import { cn } from '@src/lib/utils';
 import { useTriggerLog } from '@src/hooks/useTriggerLog';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { StatusIndicator } from '@src/components/agentic-progress/shared/status-indicator';
-import { AgenticProcess, ProcessType, Trigger, TypeId, type ITrigger, type ProcessStatus } from '@sdk';
+import { AgenticProcess, ProcessKind, Trigger, TypeId, type ITrigger, type ProcessStatus } from '@sdk';
 import { useProcessesForTarget } from '@src/components/entity-execution-panel';
 import { ExternalLink } from 'lucide-react';
 import { useMemo } from 'react';
@@ -98,7 +98,7 @@ export function TriggerInvocationsPanel({ trigger }: Props) {
   );
   const { processes } = useProcessesForTarget(targetStr, {
     enabled: !!trigger?.id,
-    processType: ProcessType.Execution,
+    processType: ProcessKind.Execution,
   });
 
   const processById = useMemo(() => {
