@@ -7,7 +7,7 @@ test.describe('Terminal PTY Output Clean', () => {
   });
 
   test('no duplicated lines or escape sequence artifacts in terminal output', async ({ page }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(60_000);
 
     // Step 1: navigate to a fresh terminal
     await gotoShell(page);

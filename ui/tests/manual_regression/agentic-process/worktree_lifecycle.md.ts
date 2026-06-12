@@ -41,7 +41,7 @@ test.describe('worktree lifecycle', () => {
   test.afterEach(() => { cleanGit(PROJECT_DIR); });
 
   test('test 1: OpenInWorktree spawns a worktree sibling; CommitMerge appears in it', async ({ page }) => {
-    test.setTimeout(150_000);
+    test.setTimeout(60_000);
     cleanGit(PROJECT_DIR);
     gitInitWithCommit(PROJECT_DIR);
 
@@ -82,7 +82,7 @@ test.describe('worktree lifecycle', () => {
   });
 
   test('test 2: OpenInWorktree disabled when the workdir has no commits', async ({ page }) => {
-    test.setTimeout(150_000);
+    test.setTimeout(60_000);
     cleanGit(PROJECT_DIR);
     gitInitNoCommit(PROJECT_DIR);
 

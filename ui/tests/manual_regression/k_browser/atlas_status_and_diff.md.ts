@@ -1,10 +1,11 @@
 import { expect, test, type Page } from '@playwright/test';
 import * as fs from 'fs';
+import { apiBase } from '../_shared/api';
 
 // Knowledge Atlas — index status, real-fs change detection, line diffs.
 // Structural-only flow (native scan/stamp, no LLM) — never gated on API keys.
 
-const API = process.env.API_URL || 'http://localhost:9008';
+const API = apiBase();
 // Unique per run: stamped baselines live in the instance data dir keyed by the
 // vault PATH, so reusing a fixed path would leak the previous run's baseline
 // into T1's "everything unindexed" assertion.
@@ -49,7 +50,7 @@ async function rescan(page: Page) {
 
 test.describe('Knowledge Atlas — status + real-fs change detection + diff', () => {
   test('T1–T5: seed → stamp → mutate fs → detect → diff → re-stamp clears', async ({ page, request }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(60_000);
     seedVault();
 
     try {

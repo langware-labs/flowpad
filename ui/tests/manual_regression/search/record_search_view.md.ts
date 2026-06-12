@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { apiBase } from '../_shared/api';
 
 async function dismissSetupModal(page: import('@playwright/test').Page) {
   await page.addInitScript(() => {
@@ -40,7 +41,7 @@ test.describe('Record Search View (/dock/search)', () => {
 
   // ── Test 4: Backend search API returns a valid JSON response ───────────────
   test('Backend search API returns a valid JSON response', async ({ page }) => {
-    const apiUrl = process.env.API_URL || 'http://localhost:9008';
+    const apiUrl = apiBase();
     const response = await page.request.get(`${apiUrl}/api/v1/search?q=test&limit=5`);
     expect(response.status()).toBe(200);
     const body = await response.json();

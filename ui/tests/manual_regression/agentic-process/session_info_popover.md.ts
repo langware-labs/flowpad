@@ -28,7 +28,7 @@ test.use({ permissions: ['clipboard-read', 'clipboard-write'] });
 
 test.describe('session info popover', () => {
   test('test 1: Info popover gated on hasSession; shows all expected rows', async ({ page }) => {
-    test.setTimeout(150_000);
+    test.setTimeout(60_000);
     await dismissSetupModal(page);
     await gotoNewShell(page);
 
@@ -55,7 +55,7 @@ test.describe('session info popover', () => {
   });
 
   test('test 2: clicking a CopyRow shows transient "Copied!" confirmation', async ({ page }) => {
-    test.setTimeout(150_000);
+    test.setTimeout(60_000);
     await dismissSetupModal(page);
     await gotoNewShell(page);
     await startClaude(page);
@@ -72,7 +72,7 @@ test.describe('session info popover', () => {
   });
 
   test('test 3: Command row reflects CLI flags (--chrome appears after toggle)', async ({ page }) => {
-    test.setTimeout(150_000);
+    test.setTimeout(60_000);
     await dismissSetupModal(page);
     await gotoNewShell(page);
     await startClaude(page);

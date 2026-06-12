@@ -7,10 +7,11 @@
  * "Scheduled" row. Steps 1-4 (API) are the binding pass criteria; step 5 (UI)
  * is soft. Schedule triggers MUST be created with project_id.
  */
-import { test, expect, request as pwRequest, type APIRequestContext } from '@playwright/test';
+import { test, expect, type APIRequestContext } from '@playwright/test';
 import { dismissSetupModal, gotoTriggers } from './helpers';
+import { apiBase, apiContext } from '../_shared/api';
 
-const API = process.env.QA_API_URL || 'http://localhost:6003';
+const API = apiBase();
 
 function targetQuery(tid: string): string {
   // QueryFilter.match on target_typeid_str === "trigger-<tid>"
@@ -28,9 +29,9 @@ async function processesForTrigger(rq: APIRequestContext, tid: string): Promise<
 }
 
 test('trigger fire attaches process via target_typeid_str + panel shows invocation', async ({ page }) => {
-  test.setTimeout(90_000);
+  test.setTimeout(60_000);
   await dismissSetupModal(page);
-  const rq = await pwRequest.newContext();
+  const rq = await apiContext();
 
   const boot = (await (await rq.get(`${API}/api/v1/graph/bootstrap`)).json()).data;
   const projectId = typeof boot.default_project === 'string' ? boot.default_project : boot.default_project?.id;

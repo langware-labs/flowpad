@@ -65,6 +65,23 @@ export async function pollUntil<T>(
   throw new Error(`pollUntil(${label}) timed out after ${timeoutMs}ms`);
 }
 
+
+/** Pick the pending invitation that targets `convId` from an invitation list.
+ *  Matches the EMBEDDED conversation id (the hub stamps `target_url_path`
+ *  null but embeds `conversation`) or a persisted `target_url_path`. NO
+ *  newest-unaccepted fallback — on a shared hub, stale/concurrent invitations
+ *  to the same recipient make recency pick the wrong conversation. */
+export function pickPendingInvitation(all: any[], convId: string): any | null {
+  return (
+    all.find(
+      (inv) =>
+        !inv.accepted &&
+        ((inv.conversation?.id ?? inv.conversation_id) === convId ||
+          (inv.target_url_path || '').includes(convId)),
+    ) ?? null
+  );
+}
+
 // Bob waits for alice to publish the conv id. Returns the conv id string.
 export async function readRendezvous(timeoutMs: number): Promise<string> {
   return pollUntil(

@@ -90,7 +90,11 @@ function assertTableShape(table: IndexProgressTable, jobName: 'scan' | 'index') 
   expect(typeof table.done).toBe('number');
   expect(typeof table.total).toBe('number');
   expect(table.current === null || typeof table.current === 'string').toBe(true);
-  expect(table.text === null || table.text === 'complete').toBe(true);
+  // `text` is a phase marker: null mid-run, a phase label while a long
+  // sub-phase runs (e.g. "sweeping" for the orphan sweep), or "complete" on
+  // the terminal snapshot. The terminal "complete" contract is asserted on
+  // `final` per test, below.
+  expect(table.text === null || typeof table.text === 'string').toBe(true);
   expect(typeof table.ts).toBe('string');
 
   for (const row of table.rows) {
@@ -159,13 +163,22 @@ describe('progress_report fast tests', () => {
     );
 
     expect(tables.length).toBeGreaterThan(0);
-    for (const table of tables) {
+    // An aggregate index drives the SAME activity through two phases:
+    // discovery forwards the inner scan's per-type snapshots (job_name
+    // 'scan') so the UI renders the by-type table immediately, then the
+    // per-record index loop emits 'index' snapshots. Assert the index-phase
+    // shape on the index-labelled events (mirrors the Python sibling's
+    // job_name filter); the forwarded scan snapshots are a valid earlier
+    // phase, not a violation.
+    const indexTables = tables.filter((t) => t.job_name === 'index');
+    expect(indexTables.length).toBeGreaterThan(0);
+    for (const table of indexTables) {
       assertTableShape(table, 'index');
       for (const row of table.rows) {
         expect(row.done).toBeLessThanOrEqual(row.total);
       }
     }
-    const final = tables[tables.length - 1];
+    const final = indexTables[indexTables.length - 1];
     expect(final.text).toBe('complete');
     expect(final.current).toBeNull();
   }, 30000);
@@ -207,8 +220,13 @@ describe('progress_report fast tests', () => {
     expect(final.text).toBe('complete');
     const skill = findRow(final, 'skill');
     expect(skill).toBeDefined();
+    // Scan is a discovery walk: the row's `done` ticks up as files are found,
+    // but `total` is not known up front and is NOT backfilled at completion
+    // (it stays 0 — same contract as the aggregate-scan test above and the
+    // Python sibling, which asserts only done >= created). `done === total`
+    // is an index-phase invariant (asserted in the per-type index test
+    // below), not a scan one.
     expect(skill!.done).toBeGreaterThanOrEqual(3);
-    expect(skill!.done).toBe(skill!.total);
   }, 30000);
 
   it('per-type index (?type=skill) completes the skill row', async () => {

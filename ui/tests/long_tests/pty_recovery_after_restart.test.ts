@@ -74,6 +74,14 @@ describe('PTY survives a backend restart (recovery watchdog)', () => {
     }
     const { sdk } = inst;
 
+    // OS-level status snapshot. The frontend SDK no longer probes os-status
+    // (recovery is fully backend-owned — see agentic-process.ts header), so
+    // read it straight off the still-live per-process `os-status` action,
+    // exactly as the pty-stream reads below do. Payload shape:
+    // { ready, worker_alive, has_attachable_pty, worker_pid, shell_id, ... }.
+    const osStatus = (proc: any) =>
+      sdk.apiClient.get<any>(`${sdk.GRAPH_API_PREFIX}/${sdk.AgenticProcess.type}/${proc.id}/os-status`);
+
     // observe the distinct `recovered` event (persists across reconnect)
     const recovered: Array<{ process_id?: string }> = [];
     sdk.connectionManager.on('on_recovered', (msg: any) => recovered.push(msg));
@@ -90,8 +98,8 @@ describe('PTY survives a backend restart (recovery watchdog)', () => {
           ...(workerType === 'claude' ? {} : { worker_type: workerType }),
         }).save([]);
         await proc.start({ visible: true });
-        await until(async () => (await proc.getOsStatus()).ready === true, `${workerType} ready`);
-        const os = await proc.getOsStatus();
+        await until(async () => (await osStatus(proc)).ready === true, `${workerType} ready`);
+        const os = await osStatus(proc);
         // Wait for the worker's banner to flush to the .pty so there is real
         // scrollback to track across the restart (ready ≠ output-flushed).
         await until(
@@ -127,8 +135,8 @@ describe('PTY survives a backend restart (recovery watchdog)', () => {
       );
       // Poll os-status — a recovered worker (esp. claude --resume + MCP init)
       // may take a moment to become psutil-alive after the event.
-      await until(async () => (await s.proc.getOsStatus()).ready === true, `${s.workerType} ready after restart`);
-      const after = await s.proc.getOsStatus();
+      await until(async () => (await osStatus(s.proc)).ready === true, `${s.workerType} ready after restart`);
+      const after = await osStatus(s.proc);
       expect(after.worker_alive, `${s.workerType} worker alive after restart`).toBe(true);
       expect(after.has_attachable_pty, `${s.workerType} attachable PTY after restart`).toBe(true);
       expect(after.worker_pid, `${s.workerType} worker PID is fresh`).not.toBe(s.oldWorkerPid);

@@ -2,6 +2,7 @@
 id: 6db114ca-da89-5322-9491-4406f7e4bbc2
 ---
 
+- PRECONDITION: switch the app to Advanced view (footer view pill or `window.setView('advanced')` / localStorage `viewMode=advanced`) — the process toolbar (Restart / Open Terminal / Fork / Worktree / Session Info / Transcript) and side-ribbon panels only exist in Advanced view; the default Standard view shows the simple-chat header without them
 test 1: Session Info popover opens only when a session exists and shows all expected rows
 - navigate to {APP_URL}/dock/shell/new_terminal
 - wait for the plain shell tab; do NOT click Start Claude
