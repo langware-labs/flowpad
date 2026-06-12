@@ -1831,12 +1831,26 @@ async def _materialize_invitation(
         return None, None
     inv_id = hub_inv["id"]
     existing_inv = await LocalInvitation.get_one({"id": inv_id})
+    # Persist the invitation→conversation linkage. The hub stamps
+    # ``target_url_path`` null but embeds the target ``conversation``; without
+    # writing the linkage here the local Invitation row is unmatchable to its
+    # conversation (receivers polling "the invitation for conv X" can only
+    # guess by recency, which breaks the moment stale invitations exist).
+    from flow_sdk.builtin.invitation import conversation_target_path  # noqa: PLC0415
+
+    _embedded = hub_inv.get("conversation")
+    _target_path = hub_inv.get("target_url_path") or (
+        conversation_target_path(_embedded["id"])
+        if isinstance(_embedded, dict) and _embedded.get("id")
+        else None
+    )
     inv_fields = {
         "id": inv_id,
         "recipient_email": hub_inv.get("recipient_email") or "",
         "accepted": bool(hub_inv.get("accepted") or False),
         "sent": bool(hub_inv.get("sent") or False),
         "message": hub_inv.get("message"),
+        "target_url_path": _target_path,
         "remote": True,
     }
     if existing_inv:
@@ -1844,6 +1858,8 @@ async def _materialize_invitation(
         existing_inv.accepted = inv_fields["accepted"]
         existing_inv.sent = inv_fields["sent"]
         existing_inv.message = inv_fields["message"]
+        if _target_path:
+            existing_inv.target_url_path = _target_path
         existing_inv.remote = True
         local_inv = await existing_inv.save(someone_typeid)
     else:

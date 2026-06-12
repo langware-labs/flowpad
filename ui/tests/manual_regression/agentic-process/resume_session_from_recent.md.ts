@@ -57,7 +57,9 @@ test.describe('resume session from recent', () => {
     const before = await countProcesses(page);
 
     // Click the first recent session row (compact mode → opens the session).
-    await rows.first().locator('button').first().click();
+    // Rows now carry a leading multi-select Radix checkbox, which renders as
+    // <button role="checkbox"> — exclude it or the click selects instead of opening.
+    await rows.first().locator('button:not([role="checkbox"])').first().click();
 
     // Lands on the agentic_process terminal view for the resumed session.
     await page.waitForURL(/\/dock\/shell\/agentic_process-[\w-]+/, { timeout: 30_000 });

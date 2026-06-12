@@ -52,6 +52,28 @@ PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT = "Please run the following prompt:"
 
 
 
+def _fm_response_fields(fm: "FlowMessage", conv: "Conversation") -> dict:
+    """The add_message response payload for a FlowMessage.
+
+    The SDK constructs a FlowMessage straight from this data, and the base
+    entity MINTS A RANDOM id when none is present (APIEntity:
+    ``this.id = entityJson.id || uuidv4()``) — silently detaching the client
+    object from the real row. Always carry the FM's own fields; ``model_dump``
+    handles enum/Attachment serialization uniformly.
+    """
+    dumped = fm.model_dump(mode="json")
+    return {
+        "id": fm.id,
+        "body_status": dumped.get("body_status"),
+        "sender_id": dumped.get("sender_id"),
+        "sender_name": dumped.get("sender_name"),
+        "attachment": dumped.get("attachment") or [],
+        "conversation_id": conv.id,
+        "message_count": conv.message_count,
+        "flow_message_id": fm.id,
+    }
+
+
 def _build_reply_flow_message(
     *,
     conv_id: str,
@@ -572,7 +594,12 @@ async def _try_send_reply_via_hub(
     conv_after = await Conversation.get_one({"id": conv_id})
     message_count = conv_after.message_count if conv_after else 0
     _notify_ui_conversation_updated(conv_id, "", hub_fm_id)
+    # Spread the hub-confirmed FlowMessage fields into the response — see
+    # _fm_response_fields for why the id must be carried (SDK mints a random
+    # one otherwise).
     return ApiSuccessResponse(data={
+        **fm_payload,
+        "id": hub_fm_id,
         "task_id": "",
         "conversation_id": conv_id,
         "message_count": message_count,
@@ -616,7 +643,10 @@ async def handle_add_message(body: dict, someone_typeid: str) -> ApiResponse:
     Task is attached via context_entities, not a separate code path.
     """
     conversation_id = (body.get("conversation_id") or "").strip()
-    message = (body.get("message") or "").strip()
+    # ``text`` is the field the SDK's ``Conversation.addMessage(text)`` sends;
+    # accept it as an alias for ``message`` so the canonical SDK path works
+    # without callers having to hand-roll a raw ``{message}`` body.
+    message = (body.get("message") or body.get("text") or "").strip()
     is_draft = bool(body.get("is_draft"))
     prompt_text_preview = (body.get("prompt_text") or "").strip()
     prompt_files_preview = body.get("prompt_files") or []
@@ -694,6 +724,14 @@ async def handle_add_message(body: dict, someone_typeid: str) -> ApiResponse:
     if not isinstance(prompt_files, list):
         prompt_files = [prompt_files]
 
+    # Direct Attachment dicts from the SDK's ``addMessage(text, {attachment})``.
+    # These must ride the HTTP slow path (conv.add_message forwards them; the
+    # WS bridge body is text-only), so the hub sees the body and stamps
+    # body_status=UPLOADING instead of NA.
+    raw_attachments = body.get("attachment") or []
+    if not isinstance(raw_attachments, list):
+        raw_attachments = [raw_attachments]
+
     # Text-only WS fast path. The hub handles fan-out + delivery receipts, then
     # we materialize the hub-confirmed FM locally for the sender's UI.
     if (
@@ -702,6 +740,7 @@ async def handle_add_message(body: dict, someone_typeid: str) -> ApiResponse:
         and not prompt_text
         and not prompt_files
         and not asset_references
+        and not raw_attachments
     ):
         hub_response = await _try_send_reply_via_hub(
             conv_id=conv.id,
@@ -721,6 +760,18 @@ async def handle_add_message(body: dict, someone_typeid: str) -> ApiResponse:
         is_draft=is_draft,
         shared_context_entities=shared_context_entities,
     )
+
+    if raw_attachments:
+        # Direct Attachment dicts ({attachment_type, data}) from the SDK —
+        # adopt them onto the FM so the hub push (conv.add_message) forwards
+        # them and ``has_body()`` reflects the real payload.
+        from flow_sdk.builtin.flow_message import Attachment  # noqa: PLC0415
+
+        _atts = list(reply_fm.attachment or [])
+        for _a in raw_attachments:
+            if isinstance(_a, dict) and _a.get("attachment_type") and _a.get("data") is not None:
+                _atts.append(Attachment(attachment_type=_a["attachment_type"], data=_a["data"]))
+        reply_fm.attachment = _atts
 
     if uploaded_files:
         await _attach_uploaded_files(reply_fm, uploaded_files)
@@ -747,22 +798,15 @@ async def handle_add_message(body: dict, someone_typeid: str) -> ApiResponse:
     if is_draft:
         # Local-only draft: skip jsonl append and hub push.
         # The UI surfaces the draft via an entity query on (conversation_id, is_draft=true).
-        return ApiSuccessResponse(data={
-            "conversation_id": conv.id,
-            "message_count": conv.message_count,
-            "flow_message_id": reply_fm.id,
-            "is_draft": True,
-        })
+        return ApiSuccessResponse(
+            data={**_fm_response_fields(reply_fm, conv), "is_draft": True}
+        )
 
     conv = await _finalize_message_dispatch(
         conv, reply_fm, context_typeids, someone_typeid, is_remote_send=is_remote_send,
     )
 
-    return ApiSuccessResponse(data={
-        "conversation_id": conv.id,
-        "message_count": conv.message_count,
-        "flow_message_id": reply_fm.id,
-    })
+    return ApiSuccessResponse(data=_fm_response_fields(reply_fm, conv))
 
 
 def _copy_clone_storage(src_fm: "FlowMessage", clone_fm: "FlowMessage") -> None:

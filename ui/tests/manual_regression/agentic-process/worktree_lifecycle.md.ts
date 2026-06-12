@@ -73,7 +73,9 @@ test.describe('worktree lifecycle', () => {
     await expect(pop).toBeVisible({ timeout: 10_000 });
     const worktreeRow = pop.getByText(/^Worktree$/).locator('xpath=..');
     await expect(worktreeRow.getByText('enabled')).toBeVisible();
-    const cmdRow = pop.getByText(/^Command$/).locator('xpath=..').locator('button[title="Click to copy"]');
+    // CopyRow redesign: value lives in the flex-1 mono span (copy is a
+    // separate aria-labelled icon button), not a "Click to copy" button.
+    const cmdRow = pop.getByText(/^Command$/).locator('xpath=..').locator('span.flex-1');
     await expect(cmdRow).toContainText('--worktree');
     await page.keyboard.press('Escape');
 

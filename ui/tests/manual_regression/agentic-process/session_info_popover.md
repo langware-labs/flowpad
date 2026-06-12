@@ -15,11 +15,11 @@ test 1: Session Info popover opens only when a session exists and shows all expe
     Session ID, PTY ID, Permission, Chrome, Debug, Worktree, Model, Command
 - close the popover (click outside)
 
-test 2: CopyRow click copies the value and shows transient "Copied!" confirmation
+test 2: CopyRow copy button copies the value and shows a transient check-icon confirmation
 - continue from test 1 (popover has been opened at least once)
 - open the Info popover
 - click the Session ID row
-- validate the row text flips to "Copied!" (green) then back to the value within ~1.5s
+- validate the row's copy button (aria-label "Copy <label>") swaps its icon to a green check, then back to the copy icon within ~1.5s (the value text itself never changes — CopyRow redesign)
 - read the clipboard (e.g. via navigator.clipboard.readText when permitted) and validate it matches the session UUID
 - repeat for the PTY ID row and validate clipboard matches the PTY UUID
 

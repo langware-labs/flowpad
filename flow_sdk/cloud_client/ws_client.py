@@ -164,6 +164,25 @@ async def connect_hub_websocket(
             proxy=None,
             ssl=ssl_context,
         ) as websocket:
+            # The hub accepts the WS upgrade FIRST, then either sends a
+            # ``ws_ready_msg`` greeting (auth OK) or closes 1008 (auth rejected) —
+            # accepting first lets it deliver a close frame instead of a bare
+            # HTTP 403. Read that opening frame here so an auth rejection surfaces
+            # for EVERY caller, including liveness probes that open-then-close
+            # without reading. On rejection, mirror the reader loop's
+            # ``_handle_closed_connection``: invalidate login + raise. The greeting
+            # is consumed here; all consumers ignore/skip it.
+            try:
+                await asyncio.wait_for(websocket.recv(), timeout=open_timeout)
+            except asyncio.TimeoutError:
+                pass  # no greeting within the window (older hub) — proceed
+            except (ConnectionClosedError, ConnectionClosed) as exc:
+                if getattr(exc, "code", None) in AUTH_WS_CLOSE_CODES:
+                    creds = load_credentials()
+                    reason = "expired" if (creds and creds.is_expired(EXPIRY_LEEWAY_SECONDS)) else "rejected"
+                    await invalidate_hub_login(reason)
+                    raise HubWebSocketAuthError("hub websocket auth rejected") from exc
+                raise
             yield websocket
     except (InvalidStatus, InvalidHandshake) as exc:
         await _handle_ws_auth_exception(exc)
@@ -525,6 +544,8 @@ class HubWebSocketManager:
         try:
             async with connect_hub_websocket(config or self.config, connection_id=str(uuid.uuid4())) as websocket:
                 await websocket.send(APIMessage(direct_resource_type="user").model_dump_json())
+                # The hub's opening ``ws_ready_msg`` greeting is consumed by
+                # ``connect_hub_websocket`` — the next frame is the reply.
                 raw_message = await asyncio.wait_for(websocket.recv(), timeout=HUB_WS_VERIFY_TIMEOUT_SECONDS)
         except HubWebSocketAuthError:
             await self._set_state(HubConnectionStatus.AUTH_REJECTED, connected=False, verified=False, error="Hub WebSocket authentication failed.")

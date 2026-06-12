@@ -1,7 +1,7 @@
 """Type metadata for PROMPT (docs/prompt-library.md)."""
 from typing import Optional
 
-from flow_sdk.schema.type_info import TypeMetadata
+from flow_sdk.schema.type_info import TypeMetadata, render_entity_frontmatter
 from flow_sdk.schema.type_info.base_meta import BaseMeta
 from flow_sdk.schema.types import EntityType
 from flow_sdk.fs_store.indexer.functions.prompt import (
@@ -26,9 +26,7 @@ def _prompt_default_body(entity) -> str:
     the body is the prompt text. ``_render_frontmatter`` yaml-quotes emoji
     icon values safely.
     """
-    from flow_sdk.fs_store.indexer._frontmatter import _render_frontmatter  # noqa: PLC0415
-
-    fields = {"id": entity.id, "name": getattr(entity, "name", "") or ""}
+    fields = {"name": getattr(entity, "name", "") or ""}
     for key in ("icon", "color", "group_id"):
         value = getattr(entity, key, None)
         if value:
@@ -42,7 +40,7 @@ def _prompt_default_body(entity) -> str:
     if last_used_at:
         fields["last_used_at"] = last_used_at
     text = (getattr(entity, "text", None) or "").strip()
-    return _render_frontmatter(fields) + "\n\n" + text + ("\n" if text else "")
+    return render_entity_frontmatter(entity, fields) + "\n\n" + text + ("\n" if text else "")
 
 
 PROMPT = TypeMetadata(

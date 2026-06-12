@@ -1,6 +1,6 @@
 import { useCallback, useRef } from 'react';
 import { ViewType } from '@sdk';
-import { terminalTargetKey, type TerminalTab } from '@src/tabs/useTabs';
+import { terminalTargetKey, type TerminalTab, terminalDockPointer } from '@src/tabs/useTabs';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
 
@@ -26,8 +26,7 @@ export function useStandardTabNav() {
   const onTabClick = useCallback(
     (_targetKey: string, session: TerminalTab) => {
       touchMru(terminalTargetKey(session));
-      const pointer = session.agenticProcess?.terminalDockPointer ?? session.shell?.dockPointer;
-      if (pointer) navigation.openDock(pointer);
+      navigation.openDock(terminalDockPointer(session));
     },
     [navigation, touchMru],
   );
@@ -55,8 +54,7 @@ export function useStandardTabNav() {
   const onTabOpen = useCallback(
     (session: TerminalTab) => {
       touchMru(terminalTargetKey(session));
-      const pointer = session.agenticProcess?.terminalDockPointer ?? session.shell?.dockPointer;
-      if (pointer) navigation.openDock(pointer);
+      navigation.openDock(terminalDockPointer(session));
     },
     [navigation, touchMru],
   );

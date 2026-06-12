@@ -1,4 +1,3 @@
-import { ContextEntitiesEnum, dataContext, Project } from '@sdk';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { CodexIcon } from '@src/components/icons/CodexIcon';
 import { CopilotIcon } from '@src/components/icons/CopilotIcon';
@@ -6,9 +5,10 @@ import { canonicalPath, projectListToSelectorItems, ProjectSelector } from '@src
 import { Button } from '@src/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
 import { useAllProjects } from '@src/hooks/use-all-projects';
-import { useTerminalProjectBuckets, type TerminalProjectBucket } from '@src/tabs/useTabs';
+import { terminalDockPointer, useTerminalProjectBuckets, type TerminalProjectBucket } from '@src/tabs/useTabs';
 import { ChevronLeft, History, Layers, Loader2, RotateCcw } from 'lucide-react';
 import React, { useMemo, useState } from 'react';
 
@@ -149,6 +149,7 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
   // clicked icon on the action strip.
   const [pickerWorker, setPickerWorker] = useState<PickerWorker | null>(null);
   const [recoveringId, setRecoveringId] = useState<string | null>(null);
+  const { navigation } = useDockNavigation();
   const { buckets } = useTerminalProjectBuckets();
 
   const sorted = useMemo(() => [...buckets].sort(compareBuckets), [buckets]);
@@ -200,10 +201,15 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
     );
   }
 
-  const switchToProject = async (project: Project) => {
+  // URL-first (see CLAUDE.md): selecting a project NAVIGATES to its first tab
+  // (by tab_order); the shell-dock loader then writes project context. No
+  // dataContext writes from this click path — that inversion left the URL on
+  // the previous project's tab and the strip scoped to the new one.
+  const switchToBucket = (bucket: TerminalProjectBucket) => {
     setOpen(false);
-    await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, project.typeId);
-    dataContext.setWorkdir(project.fs_storage_mount_path ?? null);
+    const first = [...bucket.tabs].sort((a, b) => (a.tabOrder ?? 0) - (b.tabOrder ?? 0))[0];
+    if (!first) return;
+    navigation.openDock(terminalDockPointer(first));
   };
 
   const handleRecover = async (bucket: TerminalProjectBucket) => {
@@ -220,7 +226,7 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
         });
         return;
       }
-      await switchToProject(recovered);
+      switchToBucket(bucket);
     } finally {
       setRecoveringId(null);
     }
@@ -228,7 +234,7 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
 
   const handleSelect = async (bucket: TerminalProjectBucket) => {
     if (bucket.state === 'live' && bucket.project) {
-      await switchToProject(bucket.project);
+      switchToBucket(bucket);
       return;
     }
     if (bucket.state === 'missing') {
