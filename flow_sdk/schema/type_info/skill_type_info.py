@@ -1,5 +1,5 @@
 """Type metadata for SKILL."""
-from flow_sdk.schema.type_info import TypeMetadata
+from flow_sdk.schema.type_info import TypeMetadata, render_entity_frontmatter
 from flow_sdk.schema.types import EntityType
 from flow_sdk.fs_store.indexer.functions.skill import (
     extract_skill,
@@ -16,11 +16,9 @@ def _skill_default_body(entity) -> str:
     without it, create leaves a dangling folder pointer the editor reports as
     "file not found".
     """
-    from flow_sdk.fs_store.indexer._frontmatter import _render_frontmatter  # noqa: PLC0415
-
     name = (getattr(entity, "name", None) or "Untitled Skill").strip()
     desc = (getattr(entity, "description", None) or "").strip()
-    return _render_frontmatter({"name": name, "description": desc}) + f"\n\n# {name}\n\n{desc}\n"
+    return render_entity_frontmatter(entity, {"name": name, "description": desc}) + f"\n\n# {name}\n\n{desc}\n"
 
 
 SKILL = TypeMetadata(

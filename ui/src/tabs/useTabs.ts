@@ -8,6 +8,7 @@ import {
   Shell,
   ShellStatus,
   TypeId,
+  ViewType,
 } from '@sdk';
 import { subscribeToEntityOps } from '@sdk/react/hooks';
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
@@ -228,10 +229,17 @@ export function terminalProcessId(tab: TerminalTab): string | null {
 /**
  * The pointer terminal surfaces navigate to: the live PTY route. Prefers the
  * AgenticProcess's ``terminalDockPointer`` (its default ``dockPointer`` is the
- * read-only lens/transcript) over the plain shell pointer.
+ * read-only lens/transcript) over the plain shell pointer. Falls back to a
+ * pointer built from the tab's canonical targetTypeId (shell-<id> /
+ * agentic_process-<id> — which IS the shell-route pointer segment) so an
+ * unhydrated tab still navigates instead of silently no-opping.
  */
-export function terminalDockPointer(tab: TerminalTab): DockPointerData | null {
-  return tab.agenticProcess?.terminalDockPointer ?? tab.shell?.dockPointer ?? null;
+export function terminalDockPointer(tab: TerminalTab): DockPointerData {
+  return (
+    tab.agenticProcess?.terminalDockPointer ??
+    tab.shell?.dockPointer ??
+    new DockPointerData(ViewType.SHELL, tab.targetTypeId.toString())
+  );
 }
 
 // ─── Module-level shared state ──────────────────────────────────────────────

@@ -257,3 +257,38 @@ export async function clickTab(page: Page, tabName: string) {
   await tab.click();
   await page.waitForTimeout(500);
 }
+
+/** The ACTIVE terminal panel — multiple panels (one per open tab) stack in the DOM. */
+export function activePanel(page: Page) {
+  return page.locator('[data-testid="terminal-panel"][data-active="true"]');
+}
+
+/**
+ * The side window container, scoped to the active panel: every open tab keeps
+ * its terminal panel mounted, each with its own side-window container — an
+ * unscoped locator resolves to 2+ elements and trips strict mode.
+ */
+export function getSideWindow(page: Page) {
+  return activePanel(page).locator('.w-80.flex-col.border-l');
+}
+
+/**
+ * Idempotently OPEN a side tab via its ribbon button. Ribbon buttons TOGGLE:
+ * with a reused process, a tab left open by an earlier test would be CLOSED
+ * by a blind click — check the tab strip first.
+ */
+export async function ensureSideTabOpen(page: Page, buttonIndex: number, tabLabel: string) {
+  const tabStrip = getSideWindow(page).locator('.border-b').first();
+  const already = await tabStrip.getByText(tabLabel, { exact: true }).isVisible({ timeout: 1_000 }).catch(() => false);
+  if (!already) await activePanel(page).locator('.border-t .ml-auto button').nth(buttonIndex).click();
+  await tabStrip.getByText(tabLabel, { exact: true }).waitFor({ state: 'visible', timeout: 5_000 });
+}
+
+/** Idempotently CLOSE a side tab (via its × button) so toggle tests start closed. */
+export async function ensureSideTabClosed(page: Page, tabLabel: string) {
+  const closeBtn = activePanel(page).locator(`button[aria-label="Close ${tabLabel}"]`);
+  if (await closeBtn.isVisible({ timeout: 1_000 }).catch(() => false)) {
+    await closeBtn.click();
+    await closeBtn.waitFor({ state: 'detached', timeout: 5_000 }).catch(() => {});
+  }
+}

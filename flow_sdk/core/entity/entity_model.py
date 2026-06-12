@@ -864,17 +864,9 @@ class Entity(DBEntity):
             await entity._fts_upsert(type_name, content)
         return record
 
-    async def _resolve_scope_root(self) -> "Path | None":
-        """Resolve filesystem scope root from request_context.
-
-        Project context (POST /api/v1/graph/project/<id>/<type>) →
-        ``project.fs_storage_mount_path``. Otherwise → per-instance user_home.
-
-        Single source of truth for scope, called once per save(); per-type
-        ``store()`` overrides must not duplicate this logic.
-        """
-        from pathlib import Path
-        from flow_sdk.instance_settings import get_instance_settings
+    async def _resolve_scope_project(self) -> "Entity | None":
+        """Return the project entity when the request is project-scoped
+        (POST /api/v1/graph/project/<id>/<type>), else None."""
         from flow_sdk.request_context.methods import get_current_request_info
         request_info = get_current_request_info()
         if (
@@ -883,12 +875,27 @@ class Entity(DBEntity):
             and request_info.target_entity_typeid.type == "project"
         ):
             try:
-                proj = await request_info.get_target_entity()
+                return await request_info.get_target_entity()
             except Exception:
-                proj = None
-            mount = getattr(proj, "fs_storage_mount_path", None) if proj is not None else None
-            if mount:
-                return Path(mount)
+                return None
+        return None
+
+    async def _resolve_scope_root(self, scope_project: "Entity | None" = None) -> "Path | None":
+        """Resolve filesystem scope root from request_context.
+
+        Project context (POST /api/v1/graph/project/<id>/<type>) →
+        ``project.fs_storage_mount_path``. Otherwise → per-instance user_home.
+
+        Single source of truth for scope, called once per save(); per-type
+        ``store()`` overrides must not duplicate this logic. ``scope_project``
+        carries a project the caller already resolved (avoids re-resolving).
+        """
+        from pathlib import Path
+        from flow_sdk.instance_settings import get_instance_settings
+        proj = scope_project or await self._resolve_scope_project()
+        mount = getattr(proj, "fs_storage_mount_path", None) if proj is not None else None
+        if mount:
+            return Path(mount)
         return get_instance_settings().user_home
 
     async def check_and_refresh_record(self) -> bool:
@@ -1650,13 +1657,24 @@ class Entity(DBEntity):
         land under (e.g. pin-prompt targets a process but scopes the Prompt
         to its project).
         """
+        # Project-scoped create/save: stamp project_id so the entity is
+        # visible in project-scoped surfaces immediately, not only after the
+        # next indexer walk re-derives it from the asset path. Generic: any
+        # entity with a project_id field saved under a project scope. The
+        # resolved project is threaded into _resolve_scope_root below so the
+        # (memoization-missing) failure edge never re-queries per save.
+        scope_proj = None
+        if hasattr(self, "project_id") and not getattr(self, "project_id", None):
+            scope_proj = await self._resolve_scope_project()
+            if scope_proj is not None:
+                self.project_id = scope_proj.id
         if getattr(self, "asset_ref", None):
             return  # Already set (entity update or explicit caller-set path).
         type_name = self.get_type()
         info = SchemaRegistry.get(type_name)
         if info is None or info.main_subdir is None:
             return
-        scope_root = scope_root or await self._resolve_scope_root()
+        scope_root = scope_root or await self._resolve_scope_root(scope_proj)
         if scope_root is None:
             return
         # Transient FSRecord just to compute the asset_ref convention.

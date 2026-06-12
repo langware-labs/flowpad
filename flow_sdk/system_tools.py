@@ -6,6 +6,7 @@ The desktop_db action and any other caller should import from here — not dupli
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import platform
@@ -346,8 +347,15 @@ async def clear_all_data() -> ClearAllResult:
     # 1. Backup first
     backup = await backup_db()
 
-    # 2. Clear the scan index (FTS + index logs + RecordErrors)
-    await clear_index()
+    # 2. Clear the scan index (FTS + index logs + RecordErrors). Best-effort:
+    # this queries the entity DB, and factory reset is exactly the operation
+    # that must still work when that DB is broken (e.g. schema-less after an
+    # interrupted clear). Its DB-row deletes are redundant with the wipe
+    # below, but the on-disk index_log.jsonl cleanup is not — keep the call.
+    try:
+        await clear_index()
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"clear_all_data: clear_index failed (continuing with wipe): {e}")
 
     # 3. Drop in-memory caches
     from flow_sdk.core.cache.entity_cache import entity_cache, uname_cache  # noqa: PLC0415
@@ -371,46 +379,84 @@ async def clear_all_data() -> ClearAllResult:
         db_lifecycle_guard,
         get_db_driver,
         LazyDBDriver,
+        remove_db_sidecars,
     )
     from flow_sdk.db.db_entity import DBEntity  # noqa: PLC0415
     from flow_sdk.db.db_relationship import DBRelationship  # noqa: PLC0415
 
-    # Serialize the entire close→unlink→init→repoint→bootstrap block against
-    # any overlapping lifecycle swap AND against fresh-session opens so no two
-    # engines can straddle the unlink. The guard also flags this coroutine so
-    # the nested session opens below (init_db / bootstrap rebuild) bypass the
-    # same non-reentrant lock instead of self-deadlocking.
-    async with db_lifecycle_guard():
-        # Close the SQLiteDriver's own engine before wiping the file
-        sqlite_driver = _driver_instances.get("sqlite")
-        if sqlite_driver is not None:
-            await sqlite_driver.close()
+    async def _wipe_and_reinit() -> None:
+        # Serialize the entire close→unlink→init→repoint→bootstrap block against
+        # any overlapping lifecycle swap AND against fresh-session opens so no two
+        # engines can straddle the unlink. The guard also flags this coroutine so
+        # the nested session opens below (init_db / bootstrap rebuild) bypass the
+        # same non-reentrant lock instead of self-deadlocking.
+        async with db_lifecycle_guard():
+            # Close the SQLiteDriver's own engine before wiping the file
+            sqlite_driver = _driver_instances.get("sqlite")
+            if sqlite_driver is not None:
+                await sqlite_driver.close()
 
-        await close_db()
-        db_path.unlink()
-        logger.info(f"Database file deleted: {db_path}")
-        await init_db()
+            await close_db()
+            db_path.unlink()
+            remove_db_sidecars(db_path)
+            logger.info(f"Database file deleted: {db_path}")
+            await init_db()
 
-        # DBEntity._db / DBRelationship._db are LazyDBDriver descriptors that
-        # snapshot the active driver on first access. After ``init_db`` builds
-        # a fresh driver, point both class-level caches at it so reads/writes
-        # go through the new instance — otherwise we read from a closed driver
-        # whose connections were torn down above (silent split-brain).
-        new_driver = get_db_driver()
-        DBEntity._db = new_driver
-        DBRelationship._db = new_driver
+            # DBEntity._db / DBRelationship._db are LazyDBDriver descriptors that
+            # snapshot the active driver on first access. After ``init_db`` builds
+            # a fresh driver, point both class-level caches at it so reads/writes
+            # go through the new instance — otherwise we read from a closed driver
+            # whose connections were torn down above (silent split-brain).
+            new_driver = get_db_driver()
+            DBEntity._db = new_driver
+            DBRelationship._db = new_driver
 
-        # Invalidate the bootstrap cache and immediately rebuild the @local
-        # entities. Without the rebuild, subsequent requests addressed via
-        # `/compute_node/@local/...` cannot resolve `@local` (it has just been
-        # wiped) and the request middleware returns "Invalid request" until the
-        # client happens to call /bootstrap again.
-        from flow_sdk.server.routes.bootstrap import (  # noqa: PLC0415
-            bootstrap,
-            invalidate_bootstrap_cache,
-        )
-        invalidate_bootstrap_cache()
-        await bootstrap()
+            # Invalidate the bootstrap cache and immediately rebuild the @local
+            # entities. Without the rebuild, subsequent requests addressed via
+            # `/compute_node/@local/...` cannot resolve `@local` (it has just been
+            # wiped) and the request middleware returns "Invalid request" until the
+            # client happens to call /bootstrap again.
+            from flow_sdk.server.routes.bootstrap import (  # noqa: PLC0415
+                bootstrap,
+                invalidate_bootstrap_cache,
+            )
+            invalidate_bootstrap_cache()
+            await bootstrap()
+
+        # Re-seed the system projects (e.g. @flowpad_assistant). These are seeded
+        # only by the startup-index path — the bootstrap() route handler above
+        # rebuilds @local but NOT the system projects, so without this a factory
+        # reset silently loses them until the process restarts (same class of bug
+        # as the Capability._seeded_once reset above). Their absence makes the FE
+        # assistant resolver log "Invalid entity type or ID" console errors on every
+        # page load. Non-fatal — mirror startup's best-effort handling.
+        try:
+            from flow_sdk.server.routes.bootstrap import (  # noqa: PLC0415
+                _ensure_system_projects,
+                _index_system_project_markdowns,
+                get_or_create_local_user,
+            )
+
+            _user = await get_or_create_local_user()
+            _system_projects = await _ensure_system_projects(desktop_user=_user)
+            # Mirror the startup-index path: seed THEN index the system markdown so
+            # the assistant docs are searchable/browsable after a reset, not just
+            # present as empty project rows.
+            try:
+                await _index_system_project_markdowns(_system_projects)
+            except Exception as e:  # noqa: BLE001
+                logger.warning(f"clear_all_data: failed to index system markdowns (non-fatal): {e}")
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"clear_all_data: failed to re-seed system projects (non-fatal): {e}")
+
+    # The triggering HTTP request can be CANCELLED at any await (ASGI client
+    # disconnect — e.g. the test runner being killed mid-clear). Without a
+    # shield, the cancellation can land between ``db_path.unlink()`` and
+    # ``init_db()`` completing, leaving a schema-less DB file that fails
+    # EVERY query ("no such table: entities") until a process restart.
+    # Shield the destructive section so once started it always runs to
+    # completion, regardless of the caller's fate.
+    await asyncio.shield(_wipe_and_reinit())
 
     return ClearAllResult(
         backup_path=backup.backup_path,
@@ -466,25 +512,33 @@ async def restore(backup_path: str) -> RestoreResult:
 
     from flow_sdk.core.cache.entity_cache import entity_cache, uname_cache  # noqa: PLC0415
     from flow_sdk.db.database import close_db, init_db  # noqa: PLC0415
-    from flow_sdk.db.drivers.db_driver import db_lifecycle_guard  # noqa: PLC0415
+    from flow_sdk.db.drivers.db_driver import db_lifecycle_guard, remove_db_sidecars  # noqa: PLC0415
 
     # Same dispose→swap-file→reinit shape as clear_all_data — serialize it
     # under the shared lifecycle lock so a restore can't straddle a concurrent
     # clear/path-switch (or a fresh session open) and leave an engine bound to
     # the just-overwritten file. The guard flags this coroutine so the nested
     # init_db / clear_index session opens bypass the non-reentrant lock.
-    async with db_lifecycle_guard():
-        await close_db()
-        shutil.copy2(src, db_path)
-        logger.info(f"Database restored from: {src}")
+    async def _swap_and_reinit() -> None:
+        async with db_lifecycle_guard():
+            await close_db()
+            shutil.copy2(src, db_path)
+            # The copied file pairs with the OLD inode's sidecars — same
+            # "locking protocol" hazard as clear_all_data's unlink path.
+            remove_db_sidecars(db_path)
+            logger.info(f"Database restored from: {src}")
 
-        entity_cache.clear()
-        uname_cache.clear()
+            entity_cache.clear()
+            uname_cache.clear()
 
-        await init_db()
+            await init_db()
 
-        # Clear index — it no longer reflects the restored DB
-        await clear_index()
+            # Clear index — it no longer reflects the restored DB
+            await clear_index()
+
+    # Same cancellation exposure as clear_all_data: a client disconnect
+    # mid-swap must not strand a half-restored DB. Run to completion.
+    await asyncio.shield(_swap_and_reinit())
 
     return RestoreResult(message=f"Database restored from {src.name}. Index cleared.")
 

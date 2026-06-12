@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 from typing import Any
 
-
 # Cap on file-write content stored on FileWriteEntry. Bounds the JSON
 # payload the server ships to the client and the heap footprint of the
 # parsed transcript. Full content is recoverable from disk via the file_path.

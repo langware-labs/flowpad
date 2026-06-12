@@ -3,18 +3,27 @@
  * Source: session_info_popover.md
  *
  * The popover (SessionInfoPopover in ProcessToolbar.tsx) renders only when
- * hasSession is true. Each row is a flex div: <span>{label}</span>
- * <button title="Click to copy">{value}</button>. Clicking the value button
- * flips it to "Copied!" for ~1.5s. The Command row reflects current CLI flags.
+ * hasSession is true. Each CopyRow is a flex div: <span>{label}</span>
+ * <span>{value}</span> <button aria-label="Copy {label}">. Clicking the copy
+ * button swaps its icon to a green check for ~1.5s (no "Copied!" text since
+ * the CopyRow redesign). The Command row reflects current CLI flags.
  */
 import { test, expect, type Page } from '@playwright/test';
 import { dismissSetupModal, gotoNewShell, startClaude, processIdFromUrl, waitForRunningSession, apiBase, activePanel, sessionPopover } from './_ap_helpers';
 
 const popover = sessionPopover;
 
-// The row div = the parent of the label span. Value button is inside it.
-function rowValueButton(page: Page, label: RegExp) {
-  return popover(page).getByText(label).locator('xpath=..').locator('button[title="Click to copy"]');
+// The row div = the parent of the label span (CopyRow's .group flex).
+function row(page: Page, label: RegExp) {
+  return popover(page).getByText(label).locator('xpath=..');
+}
+// Value lives in the flex-1 mono span (no longer a button).
+function rowValue(page: Page, label: RegExp) {
+  return row(page, label).locator('span.flex-1');
+}
+// Per-row copy button: aria-label="Copy <label>"; confirmation = check icon.
+function rowCopyButton(page: Page, label: RegExp) {
+  return row(page, label).locator('button[aria-label^="Copy"]');
 }
 
 async function openInfo(page: Page) {
@@ -63,12 +72,12 @@ test.describe('session info popover', () => {
     await waitForRunningSession(page, apiBase(), pid);
 
     await openInfo(page);
-    const sessionIdBtn = rowValueButton(page, /Session ID$/);
-    await sessionIdBtn.click();
-    // Transient confirmation in the same button.
-    await expect(sessionIdBtn.getByText('Copied!')).toBeVisible({ timeout: 2_000 });
-    // Reverts to the value within ~1.5s.
-    await expect(sessionIdBtn.getByText('Copied!')).toHaveCount(0, { timeout: 3_000 });
+    const copyBtn = rowCopyButton(page, /Session ID$/);
+    await copyBtn.click();
+    // Transient confirmation: the copy icon swaps to a green check for ~1.5s.
+    await expect(copyBtn.locator('svg.lucide-check')).toBeVisible({ timeout: 2_000 });
+    // Reverts to the copy icon.
+    await expect(copyBtn.locator('svg.lucide-check')).toHaveCount(0, { timeout: 3_000 });
   });
 
   test('test 3: Command row reflects CLI flags (--chrome appears after toggle)', async ({ page }) => {
@@ -80,7 +89,7 @@ test.describe('session info popover', () => {
     await waitForRunningSession(page, apiBase(), pid);
 
     await openInfo(page);
-    const cmd = rowValueButton(page, /^Command$/);
+    const cmd = rowValue(page, /^Command$/);
     await expect(cmd).toContainText('claude');
     await expect(cmd).toContainText('--resume');
     await expect(cmd).not.toContainText('--chrome');
@@ -93,7 +102,7 @@ test.describe('session info popover', () => {
     await page.keyboard.press('Escape');
 
     await openInfo(page);
-    await expect(rowValueButton(page, /^Command$/)).toContainText('--chrome', { timeout: 10_000 });
-    await expect(rowValueButton(page, /^Chrome$/)).toHaveText('enabled');
+    await expect(rowValue(page, /^Command$/)).toContainText('--chrome', { timeout: 10_000 });
+    await expect(rowValue(page, /^Chrome$/)).toHaveText('enabled');
   });
 });
