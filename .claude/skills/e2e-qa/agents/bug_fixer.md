@@ -86,7 +86,7 @@ Please review and approve or reject.",
 
 - If **approved**: proceed to [Completion](#completion)
 - If **rejected**: read the rejection reason carefully, revise the fix, resubmit (max 3 iterations)
-- After 3 rejections: SendMessage the manager with the impasse — both positions, the evidence, and your recommendation. This is a flag criterion: the manager marks the scenario `flagged` and you claim the next Fix task. Do not keep iterating and do not wait for a human.
+- After 3 rejections: SendMessage the manager with the impasse — both positions, the evidence, and your recommendation. This is a flag criterion: the manager marks the scenario `flagged` and you claim the next Fix task immediately. That escalation message is your handoff; do not wait for the manager's reply. Move to the next Fix task in TaskList while the manager processes the flag.
 
 ---
 

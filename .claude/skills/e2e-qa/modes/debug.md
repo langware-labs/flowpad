@@ -18,6 +18,7 @@ Full bug lifecycle for a specific failing scenario. Runs sequentially per issue.
 **C. Debugger does RCA:**
 - Spawn test_debugger to claim the "Debug:" task
 - Debugger writes to `debug_log.md`, sends RCA + evidence to bug_fixer via SendMessage
+- If debugger task returns FAIL or no verdict: manager immediately reads debug_log.md, confirms evidence, and either attempts inline RCA or flags the scenario with the partial evidence — delegated task failures never end silently
 - Create task: `TaskCreate(subject="Fix: <scenario>", description=<RCA + evidence from debugger>)`
 
 **D. Fixer ↔ Debugger iterate:**

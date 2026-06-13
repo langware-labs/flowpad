@@ -33,6 +33,7 @@ Simple execution — no debug lifecycle unless failures occur.
 8. **Handle failures**:
    - **First-time failure** (no entry in `debug_log.md` for this scenario): spawn test_debugger + bug_fixer in parallel; also spawn testing_analysis_expert to check coverage
    - **Persistent failure** (entry exists in `debug_log.md`): spawn test_debugger + bug_fixer only
+   - If debugger or fixer task returns FAIL: manager immediately reads their evidence and acts — attempt fix inline, escalate to the other, or flag; delegated task failures never end silently
    - After fix: create re-run task for tester (max 2 retries). After the 2nd failed retry, mark the scenario `flagged` per SKILL.md "Autonomous Run Policy" and move on — never stall the run waiting for guidance.
 9. **Aggregate**: Read all JSON result files. Build cycle report conforming to `schemas/cycle-report.schema.json`.
 10. **Generate HTML**: Read `templates/report.html`, inject cycle report data at `<!-- REPORT_DATA -->`, write to results directory. Open the report in the default browser (`open <path>` on macOS, `xdg-open <path>` on Linux) — do not start an HTTP server.

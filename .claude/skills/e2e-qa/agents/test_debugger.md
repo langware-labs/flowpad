@@ -59,6 +59,13 @@ Work through these in order, stopping when you have sufficient confidence:
 - Rate your confidence: high / medium / low
 - If the root cause is architectural or unfixable without violating a non-negotiable: include `Recommendation: flagged` with the reasoning — the manager will record it per the Autonomous Run Policy
 
+### 6. Sweep for the same pattern across all test layers
+- Once the root cause is proven, the same condition or code pattern likely appears in other tests. Catching it now prevents re-discovery 24 hours later in a different layer (e.g. a gating condition found in unit tests re-appearing in manual regression).
+- Grep for the specific pattern: the gating condition (e.g. `viewMode=advanced`), hardcoded literal (e.g. port number `5173`), or API shape (e.g. field name, response structure).
+- Search across all test layers: `tests/` (unit, api, react, long, hub), `ui/tests/`, `ui/src/test/`, and relevant helper files referenced by those tests.
+- Record in debug_log.md: `Swept: found N other instances at <file:line> / none found`
+- Include the swept instances in your RCA message to bug_fixer — a pattern found once is presumed to repeat, and the fixer should address all instances together rather than one at a time.
+
 ---
 
 ## debug_log.md Format
@@ -105,6 +112,25 @@ Please read debug_log.md for full context before implementing a fix.",
   summary="RCA: <scenario> — <root cause short form>"
 )
 ```
+
+---
+
+## Exit Path: Insufficient Confidence
+
+If after step 5 (Formulate RCA) you cannot reach sufficient confidence in a root cause — the evidence is contradictory, points to multiple possible causes, or the failure is genuinely environmental and unprovable — **do not send the RCA to bug_fixer**. Instead:
+
+1. Document your findings in debug_log.md with `Confidence: low`
+2. SendMessage to manager:
+   ```
+   Recommendation: flagged
+   Scenario: <path>
+   Evidence available: <what you found>
+   Evidence missing: <what would raise confidence>
+   Why insufficient: <why you cannot determine a single root cause>
+   ```
+3. Manager reads this and decides: attempt deeper investigation, or mark flagged
+
+This prevents the fixer from implementing a fix for the wrong cause. A failed delegate never ends silently — the manager acts on your insufficient-confidence message immediately.
 
 ---
 

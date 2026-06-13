@@ -173,6 +173,15 @@ Every decision is made from the documented defaults in this skill. When somethin
 
 "No questions" is about not WAITING on humans; it never licenses grinding through anomalies. The circuit breaker (see above) is part of this policy: repeated same-class anomalies stop forward execution for a self-directed meta-RCA — still autonomous, still no questions.
 
+### User Decree Enforcement
+
+When the user issues a decree mid-run — a config change, a policy like a timeout cut, a ban on hardcoded values — apply it mechanically to **ALL affected files and configs BEFORE the next run starts**. Do not narrate the decree and then continue; that pattern lets the violation repeat. Instead:
+
+1. **Identify all affected files.** For a timeout cut: grep across all `.ts` / `.py` test files for the old timeout and count matches. For a ban: grep for the pattern and list occurrences.
+2. **Apply the change uniformly.** Edit every file. Do not cherry-pick or rationalize partial application.
+3. **Verify the application took.** Grep again and report the count of changed occurrences to confirm the old pattern is gone.
+4. **Only then narrate** the change and resume the next run — the decree is not enforced until the grep count proves it.
+
 ### `flagged` — definition
 
 > Flagged means this test exposes a significant gap, hence senior dev review is required to decide on next step.
