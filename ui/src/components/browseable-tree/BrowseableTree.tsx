@@ -179,6 +179,12 @@ function BrowseableRow({ node, level, tree, activePointer, onNavigate, dragData,
   );
 
   const canAcceptDrop = !!(dragData && node.onDrop && (!node.canDrop || node.canDrop(dragData)));
+  // Keep count badges clear of the absolutely-positioned compact toolbar
+  // (h-5/w-5 buttons + gap-0.5 + px-0.5 + right-1).
+  const toolbarSpace =
+    node.toolbar && node.toolbar.length > 0
+      ? node.toolbar.length * 22 + 6
+      : 0;
 
   const handleDragStart = useCallback(
     (e: React.DragEvent) => {
@@ -252,7 +258,10 @@ function BrowseableRow({ node, level, tree, activePointer, onNavigate, dragData,
           void handleDrop(e);
         }}
       >
-        <div className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
+        <div
+          className="flex min-w-0 flex-1 items-center gap-1 overflow-hidden"
+          style={toolbarSpace ? { paddingRight: toolbarSpace } : undefined}
+        >
           {hasChildrenHint ? (
             <button
               type="button"
@@ -284,7 +293,7 @@ function BrowseableRow({ node, level, tree, activePointer, onNavigate, dragData,
         </div>
 
         {node.toolbar && node.toolbar.length > 0 && (
-          <div className="absolute right-1 top-1/2 z-10 flex -translate-y-1/2 items-center gap-0.5 rounded-md bg-background/80 px-0.5 opacity-0 shadow-sm backdrop-blur group-hover:opacity-100">
+          <div className="pointer-events-none absolute right-1 top-1/2 z-10 flex -translate-y-1/2 items-center gap-0.5 rounded-md bg-background/80 px-0.5 opacity-0 shadow-sm backdrop-blur group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
             {node.toolbar.map((a) => (
               <ToolbarButton key={a.id} action={a} compact />
             ))}
