@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -33,12 +34,19 @@ def _flow_records_norm_prefixes() -> tuple[str, ...]:
     from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
     home_str = str(get_instance_settings().user_home)
     # Internal record folders (incl. the dev_records variant) are never user
-    # projects — they must not surface in the project picker.
-    return (
-        home_str + "/.flow/records/",
-        home_str + "/.flow/dev_records/",
-        home_str + "/flow/records/",
-        home_str + "/flow/dev_records/",
+    # projects — they must not surface in the project picker. Run each prefix
+    # through os.path.normpath + os.sep so it uses the SAME separators as the
+    # `normalized` cwd it's compared against in _is_valid_cwd; otherwise on
+    # Windows the prefix mixes "\" (from home_str) and "/" (literals) and the
+    # startswith() never matches, so the exclusion silently does nothing.
+    return tuple(
+        os.path.normpath(home_str + sub) + os.sep
+        for sub in (
+            "/.flow/records",
+            "/.flow/dev_records",
+            "/flow/records",
+            "/flow/dev_records",
+        )
     )
 
 def _decode_claude_encoded(d: Path) -> str | None:
@@ -51,11 +59,24 @@ def _decode_claude_encoded(d: Path) -> str | None:
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
+# Windows drive-rooted prefix, e.g. "C:/" or "C:\\". canonical_posix_path()
+# emits forward-slash drive paths ("C:/Users/foo") while decode_claude_project_dir
+# emits backslash ones ("C:\\Users\\foo"); both reach this gate, so accept either
+# separator. Without this, a bare startswith("/") check drops every Windows
+# project cwd and the project list comes back empty.
+_WIN_DRIVE_ROOT_RE = re.compile(r"^[A-Za-z]:[/\\]")
+
+
 def _is_valid_cwd(cwd: str) -> bool:
     """Reject system/temp paths and internal record folders."""
-    if not cwd or not cwd.startswith("/"):
+    if not cwd:
         return False
-    if cwd == "/":
+    # Accept POSIX-rooted ("/foo") and Windows drive-rooted ("C:/foo") absolute
+    # paths; reject anything else (relative / garbage).
+    if not cwd.startswith("/") and not _WIN_DRIVE_ROOT_RE.match(cwd):
+        return False
+    # Reject bare filesystem roots ("/" and "C:/").
+    if cwd == "/" or _WIN_DRIVE_ROOT_RE.fullmatch(cwd):
         return False
     if is_temp_path(cwd):
         return False
