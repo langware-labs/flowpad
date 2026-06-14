@@ -30,6 +30,7 @@ import flow_sdk.fs_store.indexer.functions.workflow  # noqa: F401
 # Operations modules — register types that have no walker but are CRUD-able.
 import flow_sdk.fs_store.operations.claude_debug_log  # noqa: F401
 import flow_sdk.fs_store.operations.claude_error  # noqa: F401
+import flow_sdk.fs_store.operations.cli_log  # noqa: F401
 
 # Entity modules — trigger Entity.__init_subclass__ → SchemaRegistry merge of entity_cls.
 import flow_sdk.builtin.agent  # noqa: F401
