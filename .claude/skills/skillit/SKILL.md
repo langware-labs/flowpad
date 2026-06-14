@@ -1,6 +1,11 @@
 ---
+id: 9ad58753-7eb4-501a-a8d2-65001e264330
 name: skillit
-description: Skill quality lens — review a skill against skill-writing best practices, or correct a skill given a list of issues observed while running it. Use whenever the user asks to review, audit, lint, fix, or improve a SKILL.md / skill folder, says "skillit <path>", or reports that a skill misbehaved during a run and wants it corrected.
+description: Skill quality lens — review a skill against skill-writing best practices,
+  or correct a skill given a list of issues observed while running it. Use whenever
+  the user asks to review, audit, lint, fix, or improve a SKILL.md / skill folder,
+  says "skillit <path>", or reports that a skill misbehaved during a run and wants
+  it corrected.
 tags:
 - skills
 - review

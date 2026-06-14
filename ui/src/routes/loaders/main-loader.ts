@@ -28,6 +28,7 @@ import { loadConversationRoute } from './load-conversation';
 import { loadAssetRoute } from './load-asset';
 import { loadTasksRoute } from './load-tasks';
 import { describeProcessStartError } from './load-process';
+import { markPerfT0, perfLog } from './_perf';
 
 // Re-export kept for existing consumers (unit tests import from here).
 export { describeProcessStartError };
@@ -68,16 +69,18 @@ function getDockViewType(args: LoaderArgs): ViewType | undefined {
   return v as ViewType;
 }
 
-function _perfLog(label: string) {
-  const t0 = (window as Record<string, unknown>).__shellNavT0 as number | undefined;
-  if (t0 !== undefined) console.log(`[PERF] +${(performance.now() - t0).toFixed(0)}ms ${label}`);
-}
-
 export async function loadAgentApp(args: LoaderArgs) {
   const { params } = args;
   const requestUrl = new URL(args.request.url);
+  // Stamp the per-nav perf clock at EVERY loader entry — not just click-nav.
+  // The `[PERF]` breakdown (perfTime/perfLog/PtyConnection.attach) is gated on
+  // `__shellNavT0`, previously stamped only by the strip/sidebar click
+  // handlers. Revalidation-driven runs (URL search/path change, no click) left
+  // it stale/unset, so the slow re-runs printed only TimeIt's opaque total with
+  // no per-step attribution. Stamping here makes every loader run self-timing.
+  markPerfT0();
   const t = new TimeIt(`loadAgentApp(${params['*'] || params.viewType || '/'})`);
-  _perfLog(`loadAgentApp start (${params['*'] || params.viewType || '?'})`);
+  perfLog(`loadAgentApp start (${params['*'] || params.viewType || '?'})`);
 
   // React Router 6.4 runs root and child route loaders **in parallel** by
   // default — the root `loadRoot()` does NOT serialize child loaders behind
