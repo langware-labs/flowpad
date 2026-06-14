@@ -115,6 +115,106 @@ async def test_handle_invitation_accept_302_to_flow_message_runs_cleanup(monkeyp
 
 
 @pytest.mark.asyncio
+async def test_learn_address_book_accepts_hub_member_keys(monkeypatch):
+    """Hub rosters may use user_email/user_name; contacts use email/name."""
+    from flow_sdk.app.actions import flow_message_action
+
+    calls = []
+
+    async def fake_get_or_create(email, name=None):
+        calls.append((email, name))
+
+    monkeypatch.setattr(
+        flow_message_action.User,
+        "get_or_create_by_email",
+        fake_get_or_create,
+    )
+
+    await flow_message_action._learn_address_book([
+        {"user_email": "alice@example.com", "user_name": "Alice"},
+        {"email": "bob@example.com", "name": "Bob"},
+        {"user_id": "no-email", "user_name": "No Email"},
+    ])
+
+    assert calls == [
+        ("alice@example.com", "Alice"),
+        ("bob@example.com", "Bob"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_handle_invitation_accept_learns_conversation_participants(monkeypatch):
+    """Accepting a conversation invitation learns every roster email as a contact."""
+    import flow_sdk.utils.hub as hub_utils
+    from flow_sdk.app.actions import flow_message_action
+    from flow_sdk.builtin.conversation import Conversation
+    from flow_sdk.builtin.invitation import Invitation
+
+    monkeypatch.setattr(hub_utils, "hub_base_url", lambda: "https://hub.test")
+    monkeypatch.setattr(flow_message_action, "hub_base_url", lambda: "https://hub.test", raising=False)
+
+    conv_id = "11111111-1111-4111-8111-111111111111"
+    embedded_participants = [
+        {"user_id": "alice-id", "user_email": "alice@example.com", "user_name": "Alice"},
+    ]
+    authoritative_members = [
+        {"user_id": "alice-id", "user_email": "alice@example.com", "user_name": "Alice"},
+        {"user_id": "bob-id", "email": "bob@example.com", "name": "Bob"},
+    ]
+
+    accept_resp = MagicMock(spec=httpx.Response)
+    accept_resp.status_code = 200
+    accept_resp.headers = {}
+    accept_resp.text = '{"data": "conversation-11111111-1111-4111-8111-111111111111"}'
+    accept_resp.json.return_value = {"data": f"conversation-{conv_id}"}
+
+    accept_client = MagicMock()
+    accept_client.request = AsyncMock(return_value=accept_resp)
+    accept_client.__aenter__ = AsyncMock(return_value=accept_client)
+    accept_client.__aexit__ = AsyncMock(return_value=False)
+
+    conversation_client = MagicMock()
+    conversation_client.post = AsyncMock(return_value={})
+    conversation_client.get = AsyncMock(side_effect=[
+        {
+            "id": conv_id,
+            "title": "accepted",
+            "participants": embedded_participants,
+        },
+        authoritative_members,
+    ])
+    conversation_client.__aenter__ = AsyncMock(return_value=conversation_client)
+    conversation_client.__aexit__ = AsyncMock(return_value=False)
+
+    learned = AsyncMock()
+    monkeypatch.setattr(flow_message_action, "_learn_address_book", learned)
+    monkeypatch.setattr(flow_message_action, "_upsert_hub_conversation_metadata", AsyncMock())
+    monkeypatch.setattr(flow_message_action, "_sync_conversation_messages", AsyncMock())
+    monkeypatch.setattr(
+        "flow_sdk.cli.auth.credentials.load_credentials",
+        lambda: MagicMock(api_key="test-key"),
+    )
+
+    async def fake_get_one(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(Invitation, "get_one", fake_get_one)
+    monkeypatch.setattr(Conversation, "get_one", fake_get_one)
+
+    with patch("flow_sdk.cloud_client.FlowpadClient", return_value=accept_client), \
+            patch("flow_sdk.cloud_client.client.FlowpadClient", return_value=conversation_client):
+        result = await flow_message_action.handle_invitation_accept(
+            {"invitation_id": "deadbeef-dead-beef-dead-beefdeadbeef"},
+            someone_typeid="user-1",
+        )
+
+    assert getattr(result, "status", None) != "fail"
+    assert result.data.get("conversation_id") == conv_id
+    learned.assert_any_await(authoritative_members)
+    conversation_client.get.assert_any_await(f"/graph/conversation/{conv_id}/members")
+
+
+@pytest.mark.asyncio
 async def test_handle_invitation_accept_non_2xx_non_302_returns_failure(monkeypatch):
     """A 500 (or other non-success, non-302) still surfaces as ApiFailResponse."""
     from flow_sdk.app.actions import flow_message_action

@@ -12,12 +12,13 @@ import re
 import tempfile
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from flow_sdk._compat import UTC
 from flow_sdk.actions.action_registry import action
 from flow_sdk.builtin.conversation import Conversation
-from flow_sdk.builtin.flow_message import AttachmentType, DeliveryStatus, FlowMessage, FlowMessageKind
+from flow_sdk.builtin.flow_message import AttachmentType, BodyStatus, DeliveryStatus, FlowMessage, FlowMessageKind
+from flow_sdk.builtin.flow_message_bundle import FlowMessageExistsError
 from flow_sdk.builtin.task import Task
 from flow_sdk.builtin.user import User
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
@@ -31,7 +32,6 @@ from flow_sdk.fs_store.operations.conversation import (
     write_pointers,
 )
 from flow_sdk.fs_store.pointer import Pointer
-from flow_sdk.builtin.flow_message_bundle import FlowMessageExistsError
 from flow_sdk.fs_store.record_types import RecordType
 from flow_sdk.fs_store.type_id import TypeId
 from flow_sdk.instance_settings import get_instance_settings
@@ -41,28 +41,61 @@ from flow_sdk.utils.hub import hub_base_url, hub_get, hub_post
 
 logger = logging.getLogger(__name__)
 
+if TYPE_CHECKING:
+    from flow_sdk.builtin.invitation import Invitation
+
 
 def _meaningful_name(title: str) -> str:
     name = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
     return name[:60] or "untitled"
 
 
-def _participant_label(participant: dict) -> str:
+def _participant_value(participant: dict, *keys: str) -> Optional[str]:
     if not isinstance(participant, dict):
-        return "unknown"
-    return participant.get("name") or participant.get("email") or "unknown"
+        return None
+    for key in keys:
+        value = participant.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
 
 
-async def _learn_address_book(participants: list[dict]) -> None:
+def _normalize_participants(participants: list[dict]) -> list[dict]:
+    normalized: list[dict] = []
     for participant in participants or []:
         if not isinstance(participant, dict):
             continue
-        email = participant.get("email")
-        if not isinstance(email, str) or not email.strip():
+        item = dict(participant)
+        email = _participant_value(participant, "email", "user_email")
+        name = _participant_value(participant, "name", "user_name")
+        picture = _participant_value(participant, "picture", "user_picture")
+        if email and not item.get("email"):
+            item["email"] = email
+        if name and not item.get("name"):
+            item["name"] = name
+        if picture and not item.get("picture"):
+            item["picture"] = picture
+        normalized.append(item)
+    return normalized
+
+
+def _participant_label(participant: dict) -> str:
+    if not isinstance(participant, dict):
+        return "unknown"
+    return (
+        _participant_value(participant, "name", "user_name")
+        or _participant_value(participant, "email", "user_email")
+        or "unknown"
+    )
+
+
+async def _learn_address_book(participants: list[dict]) -> None:
+    for participant in _normalize_participants(participants):
+        email = _participant_value(participant, "email")
+        if not email:
             continue
-        name = participant.get("name")
-        name = name.strip() if isinstance(name, str) and name.strip() else None
-        await User.get_or_create_by_email(email.strip(), name=name)
+        name = _participant_value(participant, "name")
+        await User.get_or_create_by_email(email, name=name)
 
 
 async def handle_upload_flow_message(file, overwrite: bool) -> ApiResponse:
@@ -1080,6 +1113,7 @@ async def _hub_action(method: str, path: str, body: Optional[dict] = None, timeo
     ``notification_action._hub_knows_conversation``."""
     try:
         import httpx  # noqa: PLC0415
+
         from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
         from flow_sdk.cloud_client.client import ApiConfig  # noqa: PLC0415
 
@@ -1315,8 +1349,8 @@ async def _download_and_unpack_bundle(
     ``on_progress`` — optional async callback fired as download bytes land;
     when set the hub GET is streamed instead of buffered whole.
     """
-    from flow_sdk.builtin.flow_message import BodyStatus
     from flow_sdk.builtin.flow_message_bundle import FlowMessageExistsError, unpack_bundle
+
     if body_status is not None:
         bs = body_status.value if isinstance(body_status, BodyStatus) else body_status
         if bs != BodyStatus.READY.value:
@@ -2380,7 +2414,11 @@ async def _upsert_hub_conversation_metadata(
         for k in ("title", "participants", "remote_project_id", "remote_project_name",
                   "shared_context_entities"):
             if hub_conv.get(k) is not None:
-                payload[k] = hub_conv[k]
+                payload[k] = (
+                    _normalize_participants(hub_conv[k])
+                    if k == "participants" and isinstance(hub_conv[k], list)
+                    else hub_conv[k]
+                )
         # Hub owner field ``initiated_by`` mirrors locally as ``created_by``.
         # When the hub carries no owner (share-created conversations), fall
         # back to the neutral 'system' sentinel — NEVER the local user. A
@@ -2411,6 +2449,8 @@ async def _upsert_hub_conversation_metadata(
     changed = False
     for k in ("title", "participants", "remote_project_id", "remote_project_name"):
         v = hub_conv.get(k)
+        if k == "participants" and isinstance(v, list):
+            v = _normalize_participants(v)
         if v is not None and getattr(existing, k, None) != v:
             setattr(existing, k, v)
             changed = True
@@ -2912,7 +2952,6 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
     # bridge's async ``_handle_conversation_op`` materialization.
     if linked_conv_id:
         try:
-            from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
             from flow_sdk.cli.auth.credentials import load_credentials  # noqa: PLC0415
             from flow_sdk.cloud_client.client import ApiConfig, FlowpadClient  # noqa: PLC0415
 
@@ -2922,13 +2961,26 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
                     await client.post(f"/graph/conversation/{linked_conv_id}/join", {})
                     hub_conv = await client.get(f"/graph/conversation/{linked_conv_id}")
                 if isinstance(hub_conv, dict) and hub_conv.get("id"):
-                    existing = await Conversation.get_one({"id": linked_conv_id})
-                    if existing is None:
-                        await Conversation.model_validate({
-                            "id": linked_conv_id,
-                            "title": hub_conv.get("title"),
-                            "remote": True,
-                        }).save(someone_typeid)
+                    participants = hub_conv.get("participants")
+                    try:
+                        async with FlowpadClient(ApiConfig.from_env(), api_key=creds.api_key) as client:
+                            members = await client.get(f"/graph/conversation/{linked_conv_id}/members")
+                        if isinstance(members, dict):
+                            for key in ("data", "members", "items", "results"):
+                                if isinstance(members.get(key), list):
+                                    members = members[key]
+                                    break
+                        if isinstance(members, list) and (members or not isinstance(participants, list)):
+                            hub_conv = {**hub_conv, "participants": members}
+                            participants = members
+                    except Exception as roster_err:  # noqa: BLE001
+                        logger.debug(
+                            "[invitation-accept] members lookup failed for conv=%s: %s",
+                            linked_conv_id[:8], roster_err,
+                        )
+                    if isinstance(participants, list):
+                        await _learn_address_book(participants)
+                    await _upsert_hub_conversation_metadata(hub_conv, someone_typeid)
                 # Pull the inviter's pre-accept messages — the hub WS only
                 # fanouts from join-time forward, so without this the first
                 # message stays invisible until a manual refresh.
@@ -2983,6 +3035,13 @@ async def handle_invitation_accept(body: dict, someone_typeid: str) -> ApiRespon
             from flow_sdk.builtin.conversation import Conversation  # noqa: PLC0415
             conv_final = await Conversation.get_one({"id": linked_conv_id})
             if conv_final is not None:
+                try:
+                    await _learn_address_book(conv_final.participants or [])
+                except Exception as learn_err:  # noqa: BLE001
+                    logger.debug(
+                        "[invitation-accept] final contact learn failed for conv=%s: %s",
+                        linked_conv_id[:8], learn_err,
+                    )
                 await conv_final.notify_updated()
         except Exception as e:
             logger.debug("[invitation-accept] post-accept conv notify failed: %s", e)
