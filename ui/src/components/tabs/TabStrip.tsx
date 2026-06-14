@@ -323,7 +323,7 @@ export const TabStrip: React.FC<TabStripProps> = ({
           />
         ) : (
           <span
-            className="text-sm font-medium"
+            className="max-w-[160px] truncate text-sm font-medium"
             onDoubleClick={(e) => {
               if (!item.renameable) return;
               e.stopPropagation();
@@ -377,6 +377,8 @@ export const TabStrip: React.FC<TabStripProps> = ({
               </TooltipContent>
             ) : isDisabled && item.statusReason ? (
               <TooltipContent side="bottom">{item.statusReason}</TooltipContent>
+            ) : item.title ? (
+              <TooltipContent side="bottom">{item.title}</TooltipContent>
             ) : null}
           </Tooltip>
         </TooltipProvider>

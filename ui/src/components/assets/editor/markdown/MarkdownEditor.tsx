@@ -587,7 +587,7 @@ function EditorHeader({ fileName, dirPath, dirty, viewMode, onViewModeChange, on
     <div className="flex h-[52px] flex-shrink-0 items-center gap-2 border-b px-3">
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline gap-0.5 truncate">
-          <span className="text-sm font-medium">{fileName}</span>
+          <span className="truncate text-sm font-medium" title={fileName}>{fileName}</span>
           {dirty && <span className="text-sm text-amber-500">*</span>}
         </div>
         <div className="flex min-w-0 items-center gap-1">
