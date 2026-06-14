@@ -190,23 +190,35 @@ it must behave **"as if it were truly production"** (same hardened-runtime launc
 
 ## What "patch desktop" means (canonical definition)
 
-"Patch desktop" is **prod parity from the published release**, never a dev-checkout build:
+**"Patch desktop" is ALWAYS two halves, from ONE source, never mix-and-match:**
 
-1. **Source = the latest release branch published on PyPI.** Fetch `origin/release/v0.2` and
-   verify its tip's `_version.py` equals the live PyPI latest
-   (`curl -fsS https://pypi.org/pypi/flowpad/json` → `info.version`). Both halves come from
-   that tip: the **backend wheel** (Local Deployment in [`pypi-deploy.md`](./pypi-deploy.md),
-   built in a worktree of the tip) and the **shell's `main.js`**
-   (`git show origin/release/v0.2:electron/main.js` — NOT the working tree; a checkout
-   `main.js` can carry unreleased features the served release UI has no counterpart for).
-2. **Versions prove the build.** The backend installs as `<latest>+local<count>` (next free
-   count — never reuse a deployed label). The patched app is stamped `<latest>-patch<count>`
-   (e.g. `0.2.52-patch1`) — the **release** version plus a patch counter, not the Electron
-   bundle's own base version, so About/logs tell you at a glance which release the machine
-   runs. The patch counter restarts at 1 when `<latest>` moves; never reuse a deployed number.
+1. **The SDK / backend local deployment** — build the wheel (`build_ui.py` → `uv build`) and
+   `uv tool install --force --python 3.13` it, so the server on **9007** is your code
+   (Local Deployment in [`pypi-deploy.md`](./pypi-deploy.md)). This is **not optional** — a
+   shell-only asar patch leaves the backend + served UI stale and the two halves drift
+   (observed 2026-06-14: backend at `0.2.53+local`, shell still `0.2.52-patch1`, tabs broken).
+2. **The Electron shell asar patch** — transplant `main.js`, repack, rewrite the integrity
+   hash, ad-hoc re-sign (the rest of this doc).
 
-Deviating from either rule (building from the dev branch, shipping the working-tree
-`main.js`) is a different operation — say so explicitly and stamp accordingly.
+Both halves MUST come from the **same source**, and the versions prove it:
+
+* **Default source = the latest release published on PyPI.** Fetch `origin/release/v0.2`,
+  verify its tip's `_version.py` equals the live PyPI latest
+  (`curl -fsS https://pypi.org/pypi/flowpad/json` → `info.version`); take the wheel from a
+  worktree of that tip and `main.js` via `git show origin/release/v0.2:electron/main.js`.
+  Backend installs as `<latest>+local<count>`, shell stamps `<latest>-patch<count>`
+  (the *release* version + counter, not the Electron bundle base, so About/logs name the
+  release at a glance). Counters take the next free number; restart `-patch` at 1 when
+  `<latest>` moves; never reuse a deployed label.
+* **Building from the dev branch is a legitimate variant** when you want the in-flight work
+  (e.g. a feature not yet released) — both halves still come from that one branch
+  (`flow_sdk/_version.py` is `X.Y.Z`, stamp `X.Y.Z+local<count>` / `X.Y.Z-patch<count>`).
+  Say which source you used; the rule is *no mixing*, not *release-only*.
+
+> **Build OOM (large bundles):** `vite build` can exhaust node's default heap on big bundles
+> (seen on 0.2.53). It's a real resource need, not a flake — run the UI build with
+> `NODE_OPTIONS="--max-old-space-size=8192"`. Concurrent `instance_ctl` dev servers eat
+> headroom; this is the clean fix, not killing their processes.
 
 > **Which app is "the patched version"? (resolving the ambiguity.)** macOS TCC
 > **App-Management** blocks editing `/Applications/Flowpad.app` from the terminal, so the
