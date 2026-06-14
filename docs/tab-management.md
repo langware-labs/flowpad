@@ -4,6 +4,88 @@ id: 4123bb18-2066-5923-9cd7-fc2417b2b880
 
 # Tab Management
 
+> **Part 0 below is the AS-BUILT system. Parts 1–3 are the historical design
+> record (the journey to it) — where they describe a single transient slot, a
+> base-Entity `tabbed` membership flag, or `tabs/open` promotion for content
+> surfaces, Part 0 supersedes them.**
+
+# Part 0 — As-built: the `Tab` entity
+
+**Every tab in the content-panel strip — terminals and content alike — is a
+first-class `Tab` entity** (`flow_sdk/builtin/tab.py`, DB-only, the `File`
+pattern). There is ONE membership system. The old split (a `tabbed` flag for
+terminals, a single transient slot for content) is gone.
+
+**The `Tab` entity.** Keyed by a hash of the DockPointer:
+`Tab.id = uuid5("tab:" + pointer)` where `pointer == DockPointer.tabHash`
+(`viewType|sub`, excluding layout and transient options — so `/win` and `/dock`
+of one surface are ONE tab). Canonicalization lives ONLY in
+`DockPointer.tabHash` (and its inverse `DockPointer.fromTabHash`); the backend
+stores the string verbatim, so there is no cross-language canonicalizer to keep
+in agreement. Fields: `pointer`, `target_type`/`target_id` (denormalized off the
+pointer for reverse lookup), `visible` (membership — non-null so a close
+broadcasts), `name` (initial label / user rename), `tab_order`,
+`last_active_at`, `project_id`.
+
+**The flow (URL-first, non-negotiable).**
+
+```
+click → navigation.openDock(pointer)            # click handlers do ONLY this
+      → react-router loader runs
+      → ensureTabForCurrentDock(dock)            # the loader is the single writer
+           → Tab.ensureFor(tabHash, {name: dataManager.getTabName(dock)})
+             (get-or-create, visible=true) → activate()
+      → strip's useEntitiesQuery(Tab, visible:true) picks it up → chip renders
+```
+
+- **open** → `Tab.ensureFor` upserts a visible row (dedup by `pointer`). The
+  **initial name** is `dataManager.getTabName(dock)` — entity name / vfs
+  basename / wiki keyword — set ONCE at creation (reuse never overwrites it, so a
+  rename survives re-navigation).
+- **close** → `Tab.close()` (`visible=false` — soft; the row survives and the
+  change broadcasts) + teardown dispatched by `target_type`
+  (`<entity>.teardown_for_tab()`; a no-op for target-less surfaces). Terminal
+  close-all stays one batched `tabs/close` POST (PTY/worker teardown; race-lock).
+- **list** → the strip runs ONE `useEntitiesQuery(Tab, visible:true)`:
+  - **terminal-target rows** (`shell`/`agentic_process`) → `useTerminalTabs`
+    resolves each to its live entity and builds a `TerminalTab` the controller
+    renders (full PTY/openers/rename). Membership = the Tab row; status-reactive
+    filters (dead shell, background-owned shell, deleted target) drop ghosts
+    client-side.
+  - **content rows** (assets/markdown/skill/…) → chips partitioned project vs
+    global (`project_id == null`); entity-backed resolve icon/name from the live
+    target, target-less use `VIEWER_REGISTRY`.
+- **active** → URL-first: the Tab whose `pointer == currentDock.tabHash` is
+  active. NEVER a `Tab` field (a synced active flag would yank focus).
+- **rename** → `Tab.rename(name)` sets the label, then reflects onto the target
+  via the `entity_event("tab-renamed")` bus — `Shell`/`AgenticProcess` subscribe
+  (`on_event`) to mirror the name + send the PTY `/rename`.
+- **delete** → a generic hook in `Entity.delete()` soft-closes any Tab pointing
+  at the deleted target (orphan cleanup; covers every entity type).
+
+**Why this fixed the reported bug.** Content surfaces used to fall into the
+*single* transient slot, which any navigation emptied — so opening Terminals
+evicted Assets. Now every opened surface is its own visible `Tab` row, so they
+coexist.
+
+**Deleted by this work:** the transient slot (`transientForDock` /
+`unified-strip-model.ts`); `tabs/open`; the base-Entity `tabbed` flag +
+`Shell.tabbed` + the AP `visible`↔`tabbed` alias; `compute_node`'s
+`_tab_membership` / `_tabs_list` / `_terminal_list` / the `terminals/list`+`close`
+shim / the `active-terminals` tombstone; and the FE terminal-fetch machinery
+(`fetchActiveTerminals` / `useProjectTerminals` / `useAllTerminals` /
+`mergePreservingOrder` / `useEntityTabs`). KEPT: `tabs/close` (batched terminal
+teardown), `terminals/get_by_worker_id`, AP `visible` as a plain non-membership
+field.
+
+**Tests:** `tests/unit/test_tab_entity.py` (CRUD, soft-close, teardown dispatch,
+rename reflection, orphan cleanup, the `visible=false` wire rule),
+`tests/unit/test_tabs_api.py` (`tabs/close` teardown), `ui/tests/unit/tab-hash.test.ts`
+(identity), `ui/tests/unit/tab-name.test.ts` (`getTabName`), and the live matrix
+`ui/tests/manual_regression/tab_management/`.
+
+---
+
 Architecture and roadmap for Flowpad's tab system: how terminal/process tabs
 work today, the unified `resolveActive` model that fixes them, and the future
 plan where **every screen is a tab and every dock pointer is a potential tab**.

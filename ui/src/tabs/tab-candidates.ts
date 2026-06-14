@@ -13,9 +13,10 @@ import { resolveActive, type TabCandidate } from './tab-model';
 import { consumePendingIntent, peekPendingIntent } from './pending-intent';
 
 /** Epoch ms of a session's last activation (recency seed), or null.
- *  Prefers the AgenticProcess (the tab's identity entity) over its transport shell. */
+ *  Prefers the backing `Tab` row's `last_active_at` (server-stamped by the
+ *  generic `activate` action on every navigation), falling back to the entity. */
 export function sessionLastActiveMs(session: TerminalTab): number | null {
-  const raw = session.agenticProcess?.last_active_at ?? session.shell?.last_active_at;
+  const raw = session.lastActiveAt ?? session.agenticProcess?.last_active_at ?? session.shell?.last_active_at;
   // Wire is epoch-ms (base-Entity field, Part 3 §4); legacy rows may still
   // deliver an ISO string during the transition window. Tolerate both.
   if (typeof raw === 'number') return Number.isFinite(raw) ? raw : null;

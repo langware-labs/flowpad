@@ -52,7 +52,7 @@ import {
   terminalDockPointer,
   terminalProcessId,
   terminalTargetKey,
-  useProjectTerminals,
+  useTerminalTabs,
   type TerminalTab,
 } from '@src/tabs/useTabs';
 import { useContext } from '@src/hooks/useContext';
@@ -270,7 +270,20 @@ export function useTerminalStripController({
   // CollaborationSpace strips that pin to a different project; otherwise the
   // hook defaults to ``dataContext.project?.id``.
   const tabsProjectId = spawnProjectId ?? contextProject?.id ?? null;
-  const { data: projectTabs, pushTerminal, updateTerminal, refresh: refreshTabs } = useProjectTerminals(spawnProjectId);
+  // Label for the project chip. Only sourced from the dataContext project when
+  // the strip isn't pinned to a different (spawn) project; the spawn case falls
+  // back to the chip's open-bucket name so it still labels correctly.
+  const currentProjectName = spawnProjectId
+    ? null
+    : (contextProject?.getDisplayName() ?? contextProject?.name ?? null);
+  // Terminal rows now come from the `Tab` entity (useTerminalTabs), not the old
+  // tabs/list fetch. New tabs appear via the loader materializing their Tab on
+  // navigation; close/rename flow through the entity (teardown→orphan-cleanup /
+  // shell.name fallback), so the optimistic mutators are no-ops.
+  const projectTabs = useTerminalTabs(spawnProjectId);
+  const pushTerminal = useCallback((_tab: TerminalTab) => {}, []);
+  const updateTerminal = useCallback((_target: TerminalTab | TypeId | string, _patch: Partial<TerminalTab>) => {}, []);
+  const refreshTabs = useCallback(async () => {}, []);
   const visibleSessions = useMemo(() => {
     if (collaborationRoomId == null) return projectTabs;
     return projectTabs.filter((t) => t.shell?.collaboration_room_id === collaborationRoomId);
@@ -596,11 +609,15 @@ export function useTerminalStripController({
   const closeTabs = useCallback(
     async (tabs: TerminalTab[]): Promise<void> => {
       const keys = tabs.map(terminalTargetKey);
+      // ONE batched request for N targets (never a per-tab fan-out — locked by
+      // terminal-close-all-race.test.ts): the backend tears down the PTY/worker
+      // for each, and the orphan-Tab cleanup hides their Tab rows. The live Tab
+      // query drops the rows; onTabClose runs the MRU / navigate-off-active.
       const result = await closeTerminalTargets(keys);
       if (result.invalid.length > 0 || result.missing.length > 0) {
         console.warn('[TabbedTerminal] Some terminal close targets were not accepted:', result);
       }
-      if (result.accepted.length > 0) onTabClose?.(result.accepted);
+      onTabClose?.(result.accepted.length > 0 ? result.accepted : keys);
     },
     [onTabClose],
   );
@@ -975,11 +992,12 @@ export function useTerminalStripController({
     () => (
       <ProjectsCounterChip
         currentProjectId={tabsProjectId}
+        currentProjectName={currentProjectName}
         onLaunchProjectPath={handleLaunchProjectPath}
         onOpenHistory={() => setHistoryModalOpen(true)}
       />
     ),
-    [tabsProjectId, handleLaunchProjectPath],
+    [tabsProjectId, currentProjectName, handleLaunchProjectPath],
   );
 
   const modals = (

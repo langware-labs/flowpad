@@ -161,6 +161,9 @@ class EntityType(StrEnum):
     GIT_BRANCH = "git_branch"
     # A file on disk outside the record store (DB-only; SemanticLock targets).
     FILE = "file"
+    # A content-panel tab — DB-only placement record keyed by a DockPointer
+    # hash (docs/tab-management.md). Minted on demand (Tab.ensure_for).
+    TAB = "tab"
     # Entity types that previously had no enum member (string-literal `type`).
     ARTIFACT_RELATION = "artifact_relation"
     FS_ITEM = "fs_item"

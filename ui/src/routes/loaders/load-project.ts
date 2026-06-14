@@ -17,7 +17,7 @@ import {
   type Shell,
   TypeId,
 } from '@sdk';
-import { fetchActiveTerminals } from '@src/tabs/useTabs';
+import { getTerminalTabsSnapshot } from '@src/tabs/useTabs';
 import { notify } from '@src/notifications';
 import { DockPointer } from '@src/navigation';
 import { redirect } from 'react-router';
@@ -132,7 +132,7 @@ export async function loadProjectRoute(pointer: string | undefined): Promise<voi
     // No tab in the URL. If the room already has visible tabs, redirect
     // into the previously-active / first one so the xterm pane isn't blank.
     if (roomId) {
-      const allTabs = await fetchActiveTerminals();
+      const allTabs = await getTerminalTabsSnapshot();
       const tabs = allTabs.filter((t) => t.shell?.collaboration_room_id === roomId);
       const tab = resolveNextTab(tabs);
       if (tab) {

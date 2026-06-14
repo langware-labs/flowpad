@@ -45,7 +45,7 @@ import { notify } from '@src/notifications';
 import {
   terminalTargetKey,
   terminalTransportShellId,
-  useAllTerminals,
+  useTerminalTabs,
 } from '@src/tabs/useTabs';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -88,7 +88,7 @@ export function ContentPanel() {
   // Sync flow focus and URL dock state to viewer store
   useActiveViewer(flow);
 
-  const { data: terminalTabs } = useAllTerminals();
+  const terminalTabs = useTerminalTabs();
   const terminalsLoading = false;
   const { onTabClick, onTabClose, onTabOpen } = useStandardTabNav();
 

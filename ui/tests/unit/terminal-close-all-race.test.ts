@@ -21,11 +21,12 @@ const standardTabNavSource = readFileSync(
 );
 
 describe('terminal close-all backend contract', () => {
-  it('lists tabs through the unified tabs/list action', () => {
-    expect(activeTerminalsSource).toContain("new ActionInfo('tabs', 'compute_node', computeNodeId, 'GET')");
-    expect(activeTerminalsSource).toContain("action.subpath = 'list'");
+  it('lists terminals from the Tab entity (not the old tabs/list fetch)', () => {
+    // Membership is now a visible `Tab` row resolved to its live entity.
+    expect(activeTerminalsSource).toContain('useTerminalTabs');
+    expect(activeTerminalsSource).toContain('match: { visible: true }');
+    expect(activeTerminalsSource).not.toContain("action.subpath = 'list'");
     expect(activeTerminalsSource).not.toContain('active-terminals');
-    expect(activeTerminalsSource).not.toContain('closedTerminalKeys');
   });
 
   it('closes batches with one tabs/close request and no per-tab entity close loop', () => {

@@ -22,8 +22,8 @@
 
 import { AgenticProcess, Shell, TypeId } from '@sdk';
 import {
-  closeTerminalTargets,
-  fetchActiveTerminals,
+  closeTerminalTab,
+  getTerminalTabsSnapshot,
   terminalProcessId,
   terminalTransportShellId,
 } from '@src/tabs/useTabs';
@@ -144,7 +144,7 @@ async function buildShellCleanup(e: ShellLoadError): Promise<CleanupRecord> {
     case 'start_failed': {
       // Best-effort close so the user isn't stuck with a zombie row
       // (mirrors the pre-refactor behaviour at routePlainShellPointer:272-273).
-      await closeTerminalTargets([new TypeId(Shell.type, e.shellId)]).catch(() => {});
+      await closeTerminalTab(new TypeId(Shell.type, e.shellId)).catch(() => {});
       const desc = describeProcessStartError(e.cause ?? e);
       return {
         kind: 'shell_start_failed',
@@ -164,7 +164,7 @@ export async function loadNextProcess(
   const cleaned: CleanupRecord[] = [];
   const tried = new Set(options.excludeIds ?? []);
 
-  const allTabs = await fetchActiveTerminals();
+  const allTabs = await getTerminalTabsSnapshot();
   const projectId = options.projectId ?? null;
   const tabs = projectId == null
     ? allTabs

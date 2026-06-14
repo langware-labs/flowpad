@@ -829,6 +829,37 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
+   * Canonical tab identity for this pointer — the single knob that decides
+   * which pointers collapse to the SAME content-panel Tab (docs/tab-management.md).
+   *
+   * Identity is ``viewType`` + ``pointer`` ONLY. ``layout`` is excluded on
+   * purpose: a ``/win/`` popout and the ``/dock/`` view of the same content are
+   * the same Tab (placement is per-client URL state, not tab identity). Transient
+   * ``options`` (slot, query params) are excluded too — by default a viewType's
+   * sub-state shares one tab (e.g. all settings sub-paths → one "Settings" tab).
+   * This string is the natural key the backend stores verbatim as ``Tab.pointer``;
+   * canonicalization lives here and NOWHERE else, so there is no cross-language
+   * canonicalizer to keep in agreement.
+   */
+  get tabHash(): string {
+    return `${this.viewType ?? ''}|${this.pointer ?? ''}`;
+  }
+
+  /** Reverse of `tabHash` — reconstruct the navigable DockPointer from a stored
+   *  `Tab.pointer` (`viewType|sub`). Null when the viewType is invalid. The
+   *  format lives here (with `tabHash`) so callers never hand-split the string. */
+  static fromTabHash(hash: string): DockPointer | null {
+    const i = hash.indexOf('|');
+    const viewType = i >= 0 ? hash.slice(0, i) : hash;
+    const sub = i >= 0 ? hash.slice(i + 1) : '';
+    try {
+      return DockPointer.fromUrl(viewType, sub || undefined);
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Convert to URL segments (for building URLs)
    */
   toUrlSegments(): { viewType: ViewType; pointer?: string; layout: Layout } {

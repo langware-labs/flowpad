@@ -108,14 +108,8 @@ class Shell(Entity):
             "get-by-id (no reverse scan over processes)."
         ),
     )
-    # tab_order / last_active_at moved to base Entity (tab-management.md Part 3).
-    tabbed: bool = APIField(
-        default=True,
-        description=(
-            "Default-True override of the base-Entity membership flag: every "
-            "live pure shell is a strip tab without any call-site write."
-        ),
-    )
+    # tab_order / last_active_at are base-Entity fields. Strip membership is the
+    # `Tab` entity now (docs/tab-management.md) — no per-shell `tabbed` flag.
     created_at: str | None = APIField(default=None, description="ISO creation timestamp")
     error_message: str | None = APIField(default=None, description="Error message when status=error")
     worker_pid: int | None = APIField(default=None, description="OS PID of the running worker process")
@@ -900,3 +894,24 @@ class Shell(Entity):
             return ApiFailResponse(message="vars is required")
         await self.set_env(**vars_dict)
         return ApiSuccessResponse(data={"vars": list(vars_dict.keys())})
+
+    # ── Tab integration (docs/tab-management.md) ──────────────────────────────
+    async def teardown_for_tab(self) -> None:
+        """``Tab.close`` dispatch hook: closing a shell tab is a full PTY
+        teardown (today's terminal-close semantics), so delegate to ``close``."""
+        await self.close()
+
+    async def _on_tab_renamed(self, payload: dict) -> dict:
+        """``tab-renamed`` event reflection: mirror the new tab name onto this
+        shell and pin it (``auto_rename=False`` stops PTY OSC titles from
+        overwriting a user-chosen name). The FE also sends the PTY ``/rename``."""
+        new_name = (payload or {}).get("name")
+        if new_name and self.name != new_name:
+            self.name = new_name
+            self.auto_rename = False
+            await self.save()
+        return {"name": self.name}
+
+
+# Register on the owning subclass so the handler doesn't leak to siblings.
+Shell.on_event("tab-renamed")(Shell._on_tab_renamed)
