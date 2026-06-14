@@ -1,3 +1,5 @@
+import { Project } from '@sdk';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { CodexIcon } from '@src/components/icons/CodexIcon';
 import { CopilotIcon } from '@src/components/icons/CopilotIcon';
@@ -9,7 +11,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
 import { useAllProjects } from '@src/hooks/use-all-projects';
 import { terminalDockPointer, useTerminalProjectBuckets, type TerminalProjectBucket } from '@src/tabs/useTabs';
-import { ChevronLeft, FolderGit2, History, Layers, Loader2, RotateCcw } from 'lucide-react';
+import { ChevronLeft, History, Layers, Loader2, RotateCcw } from 'lucide-react';
 import React, { useMemo, useState } from 'react';
 
 /** Agentic worker kinds offered by the picker's worker toolbar. */
@@ -219,6 +221,10 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
       : 'border-border bg-background hover:bg-accent hover:text-accent-foreground'
   } ${isChipDisabled ? 'cursor-default opacity-50 hover:bg-primary/5' : ''}`;
 
+  // Per-type icon from the backend TypeInfo registry (CLAUDE.md: never hardcode
+  // a glyph for an entity type) — the same project icon every other surface shows.
+  const ProjectIcon = iconForType(Project.type);
+
   // Shared trigger content: the project-name label (when known) followed by the
   // open-projects / terminals counts. The name is the hero (primary glyph,
   // foreground weight); the counts ride along muted and divided off.
@@ -226,7 +232,7 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
     <>
       {hasProject ? (
         <>
-          <FolderGit2 className="h-3 w-3 shrink-0 text-primary" />
+          <ProjectIcon className="h-3 w-3 shrink-0 text-primary" />
           <span className="max-w-[9rem] truncate">{projectName}</span>
           <span aria-hidden className="mx-0.5 h-3 w-px shrink-0 bg-border" />
         </>
