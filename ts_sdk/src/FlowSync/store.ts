@@ -729,9 +729,14 @@ export class DataManager<T extends Manageable> extends EventEmitter {
   public getTabName(dock: { viewType?: string; pointer?: string } | null | undefined): string | null {
     const pointer = dock?.pointer ?? '';
     if (!pointer) return null;
-    const nameFromTypeId = (raw: string): string | null => {
+    // Resolve a cached entity's name by typeid — either a raw `<type>-<id>`
+    // string, or a (viewType, bare-id) pair when the dock's type lives in the
+    // viewType segment (e.g. /dock/conversation/<uuid>).
+    const nameFromCache = (typeOrRaw: string | undefined, id?: string): string | null => {
+      if (!typeOrRaw) return null;
       try {
-        const ent = this.getByTypeIdFromCache(new TypeId(raw)) as { name?: string | null } | null;
+        const tid = id !== undefined ? new TypeId(typeOrRaw, id) : new TypeId(typeOrRaw);
+        const ent = this.getByTypeIdFromCache(tid) as { name?: string | null } | null;
         return ent?.name ?? null;
       } catch {
         return null;
@@ -739,12 +744,13 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     };
     const lastSegment = (path: string): string | null =>
       decodeURIComponent(path).split('/').filter(Boolean).pop() ?? null;
-    // 1. entity — asset-editor typeid form, or a bare `<type>-<id>` pointer.
+    // 1. entity — asset-editor typeid form, a bare `<type>-<id>` pointer, or a
+    //    bare entity id whose type is carried by the dock's viewType.
     if (pointer.includes('/typeid/')) {
-      const n = nameFromTypeId(pointer.split('/typeid/').pop() ?? '');
+      const n = nameFromCache(pointer.split('/typeid/').pop() ?? '');
       if (n) return n;
     } else if (!pointer.includes('/')) {
-      const n = nameFromTypeId(pointer);
+      const n = nameFromCache(pointer) ?? nameFromCache(dock?.viewType, pointer);
       if (n) return n;
     }
     // 2. vfs — basename of the path.

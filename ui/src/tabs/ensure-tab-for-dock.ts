@@ -15,12 +15,20 @@ export function targetForDock(dock: DockPointer): { targetType: string | null; t
   const pointer = dock.pointer;
   if (pointer) {
     const candidate = pointer.includes('/typeid/') ? pointer.split('/typeid/').pop() ?? '' : pointer;
-    try {
-      const tid = new TypeId(candidate);
-      return { targetType: tid.type, targetId: tid.id };
-    } catch {
-      /* not a typeid-bearing pointer — target-less surface */
-    }
+    // Two shapes carry an entity: the type lives IN the pointer (`<type>-<id>`
+    // / `…/typeid/<type>-<id>`), or — for a bare-id pointer — in the dock's
+    // viewType segment (e.g. /dock/conversation/<uuid>). Try the pointer first,
+    // then fold viewType + pointer. Both reject (target-less) on non-entities.
+    const tryTypeId = (type: string, id?: string): TypeId | null => {
+      try {
+        return id !== undefined ? new TypeId(type, id) : new TypeId(type);
+      } catch {
+        return null;
+      }
+    };
+    const tid =
+      tryTypeId(candidate) ?? (dock.viewType && !pointer.includes('/') ? tryTypeId(dock.viewType, pointer) : null);
+    if (tid) return { targetType: tid.type, targetId: tid.id };
   }
   return { targetType: null, targetId: null };
 }
