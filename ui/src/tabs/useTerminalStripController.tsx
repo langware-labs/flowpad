@@ -60,6 +60,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Cloud, Container, FolderGit2, History, SquareTerminal } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { allowRename, shouldAutoSavePtyTitle } from '@src/components/terminal/rename-rules';
+import { resolveProcessDisplayName } from '@src/components/terminal/process-display-name';
 import { HistoryModal } from '@src/components/terminal/HistoryModal';
 import { ProjectsCounterChip, type ProjectWorkerType } from '@src/components/terminal/ProjectsCounterChip';
 import { AskInstallOneOfDialog } from '@src/components/terminal/openers/AskInstallOneOfDialog';
@@ -137,8 +138,18 @@ const ProcessInfoTooltip: React.FC<{ process: AgenticProcess; statusReason?: str
   const workerSessionId = process.session_id ?? null;
   const lastStatusChangedAt = useLastStatusChange(process.id ?? null);
 
+  // Full (untruncated) entity name as the tooltip heading — same resolution as
+  // the header, but without the 30-char instruction clip the header applies for fit.
+  const displayName = useMemo(
+    () => resolveProcessDisplayName(process),
+    [process.context_data, process.name, process.instruction_content],
+  );
+
   return (
     <div className="min-w-[220px] space-y-1.5">
+      <p className="text-xs font-semibold text-foreground" data-testid="tab-tooltip-name">
+        {displayName}
+      </p>
       {statusReason && <p className="text-[11px] text-amber-500">{statusReason}</p>}
       <div className="flex items-center gap-2">
         <span
