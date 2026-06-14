@@ -1,6 +1,6 @@
 import { ChevronRight, FileText, Folder } from 'lucide-react';
 import { useMemo, useEffect, useState } from 'react';
-import { apiClient, Markdown, Project, TypeId } from '@sdk';
+import { apiClient, dataManager, Markdown, Project, TypeId } from '@sdk';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { useQuery } from '@tanstack/react-query';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -155,7 +155,9 @@ export function DocsCategory({ projectId, onOpenTab }: Props) {
       const records = await apiClient.get<Partial<Markdown>[]>(
         '/graph/markdown?include_system=true&limit=5000',
       );
-      return (records ?? []).map((row) => new Markdown(row));
+      // Hydrate via the cache-deduping path; `new Markdown(row)` self-registers
+      // in the dataManager store and collides on every refetch (see use-entity-by-path).
+      return (records ?? []).map((row) => dataManager.updateEntityFromJson<Markdown>(row));
     },
     staleTime: 30_000,
   });

@@ -695,7 +695,13 @@ export class DataManager<T extends Manageable> extends EventEmitter {
   public register_new_entity(typeId: TypeId, entity: any) {
     const ref = this.getRef(typeId);
     if (ref.entity && ref.entity !== entity) {
-      console.warn(`Entity ${typeId.toString()} already registered with different entity`, new Error().stack);
+      // NB: do NOT pass `new Error().stack` here. Building the stack string is
+      // synchronous and surprisingly expensive; in a re-registration storm
+      // (the symptom this whole warn exists to catch) it ran hundreds of times
+      // during app init, blocking the main thread long enough to starve the
+      // FlowSync WS `open` callback past loadShellRoute's 5s connect fence.
+      // console.warn already attaches a stack in the devtools console.
+      console.warn(`Entity ${typeId.toString()} already registered with different entity`);
     }
     ref.entity = entity;
     ref.status = EntityStatus.READY;
@@ -825,7 +831,17 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       }
       if (ref.status === EntityStatus.ERROR) {
         ref.entityPendingPromises.forEach((p) => {
-          p.reject(ref.error);
+          // A 404 ("entity is gone") is resolved as null on the direct path
+          // (see getByTypeId), but a concurrent waiter that parked while the
+          // fetch was in-flight must get the SAME treatment. Rejecting here —
+          // with ``ref.error`` that the 404 path never set — surfaced as a
+          // thrown ``null`` in useEntity ("Error fetching entity by type ID:
+          // <typeId> null"). Resolve notFound waiters with null instead.
+          if (ref.notFound) {
+            p.resolve(null);
+          } else {
+            p.reject(ref.error);
+          }
         });
         ref.entityPendingPromises = [];
       }
@@ -904,6 +920,11 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     }
     if (ref?.status === EntityStatus.FETCHING) {
       const entity = await this.waitForTypeId(typeId);
+      // The in-flight fetch we waited on may have resolved to a 404. Honor the
+      // negative cache instead of falling through to a redundant re-fetch.
+      if (ref.notFound) {
+        return null;
+      }
       if (entity && entity.isExpanded(requiredExpansions)) {
         return entity as U;
       }
