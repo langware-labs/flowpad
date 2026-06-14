@@ -22,6 +22,7 @@ import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
+import { activeStripKey } from '@src/tabs/active-strip-key';
 import { type TerminalTab } from '@src/tabs/useTabs';
 import { useTerminalStripController } from '@src/tabs/useTerminalStripController';
 import { ViewType, VIEWER_REGISTRY } from '@src/types/ViewType';
@@ -154,15 +155,11 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ onTabClick, on
   );
   const globalItems = useMemo(() => globalContentTabs.map(contentTabItem), [globalContentTabs]);
 
-  // Active highlight derives ONLY from the URL: a content Tab is active when its
-  // pointer equals the current dock's tabHash; else the controller's
-  // URL-derived terminal key.
+  // Active highlight derives ONLY from the URL (see active-strip-key): terminal
+  // docks resolve via the controller; every content dock is active by its own
+  // tabHash and never inherits the controller's MRU terminal key.
   const dockHash = currentDock?.tabHash ?? '';
-  const activeKey = !currentDock
-    ? ''
-    : contentByKey.has(dockHash)
-      ? dockHash
-      : controller.activeTargetKey;
+  const activeKey = activeStripKey(currentDock, controller.activeTargetKey);
 
   // Navigate to a content Tab (the strip's only job for content keys); returns
   // false when the key isn't a content Tab so the caller can fall back to the
