@@ -388,3 +388,13 @@ Package `flowpad 0.2.8` is pip-installed but its console_script entry isn't on P
 
 ### Reporting rule (user-set 2026-06-12): Playwright >1m = TIMEOUT
 Any Playwright test whose duration exceeds 60s is reported as **timeout** — a separate bucket from pass/fail — regardless of its assertion outcome. Timeout configs must never be raised to accommodate. Aggregators classify `duration > 60_000ms` as `timeout`.
+
+### 2026-06-14 — Index/Search/Assets 20-scenario run (oss :4098/:9008)
+- **Search/index API responses are enveloped `{status,data}`** — unwrap `.data` before reading `results`/`total`/`per_type`. A top-level `results` check FALSE-FAILS every search scenario (hit this first run). `data` keys: `results, query, total, indexer_ready`.
+- **App DOM: `document.body.innerText` returns 0** on these routes (layout/empty-text); use `document.querySelector('#root').textContent` for content assertions. `#root` text ~1000 chars even when the list is empty.
+- **Asset count badges** now come from `index-status.per_type[].entity_count` (one request), NOT per-type `/search?limit=1`. Asserting "no per-type probe storm" = filter network for `search?record_type=<non-markdown>&...limit=1` and expect 0 (markdown keeps its own folder-badge probe).
+- **NEW BUG (flagged): tab-dedup 422 NUL byte.** Every assets/editor/search nav fires `GET /graph/tab?...operands[1]=<viewType>\x00<pointer>:0` → 422. The tab natural key (`DockPointer.tabHash`, used at `ui/src/tabs/ensure-tab-for-dock.ts:37`) joins viewType+pointer with a literal NUL — fine in-memory, illegal in a URL query operand. Surfaces on EVERY dock nav; non-fatal but pollutes console and defeats server-side tab dedup. `tabHash` has no getter in current source (drift) — locate its real definition before fixing.
+- **worker-history latency scales with limit** (`limit*4+50` candidate over-fetch × full-transcript parse). Fix on disk (`include_content=False` in worker_history.py + codex_sessions.py) but needs a backend restart to take effect; pre-fix it's ~3.5s@limit=5, ~6.6s@limit=30.
+
+## Testing Environment
+- 2026-06-14: frontend http://localhost:4098 (vite HMR, live source), backend http://localhost:9008 (FLOW_INSTANCE=oss). Both reachable (bootstrap 200). Validated via debugMCP (Chrome) + curl. Data state: markdown=285, project=78 indexed; other asset types 0. Backend was NOT restarted during the run (worker-history perf fix on disk only).
