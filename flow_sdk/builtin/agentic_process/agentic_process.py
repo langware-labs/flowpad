@@ -421,11 +421,9 @@ class AgenticProcess(Entity):
     visible: bool = APIField(
         default=False,
         description=(
-            "DEPRECATED one-release alias of base-Entity ``tabbed`` "
-            "(tab-management.md Part 3 §4). Kept in lock-step with ``tabbed`` "
-            "by ``__setattr__`` + ``_sync_visible_tabbed_alias`` so old "
-            "clients and the legacy terminals/* shim stay coherent. New code "
-            "must read/write ``tabbed``."
+            "Whether this process is shown as a terminal tab. Set on open "
+            "(True) / close (False). No longer a membership flag — the strip's "
+            "membership is the ``Tab`` entity (docs/tab-management.md)."
         ),
     )
     # last_active_at moved to base Entity (epoch-ms, tab-management.md Part 3).
@@ -584,26 +582,6 @@ class AgenticProcess(Entity):
                 )
                 return
         super().__setattr__(key, value)
-        # ``visible`` is a one-release deprecated alias of base-Entity
-        # ``tabbed`` (tab-management.md Part 3 §4): a write to either keeps
-        # both in step so membership broadcasts carry both fields during the
-        # alias window.
-        if key == "visible" and self.__dict__.get("tabbed") != bool(value):
-            super().__setattr__("tabbed", bool(value))
-        elif key == "tabbed" and self.__dict__.get("visible") != bool(value):
-            super().__setattr__("visible", bool(value))
-
-    @model_validator(mode="after")
-    def _sync_visible_tabbed_alias(self) -> "AgenticProcess":
-        """Reconcile the ``visible``↔``tabbed`` alias on load/construction.
-        Legacy rows carry only ``visible``; True on either side wins (a
-        member stays a member). Post-construction writes stay in step via
-        ``__setattr__``."""
-        if self.visible != self.tabbed:
-            merged = bool(self.visible or self.tabbed)
-            object.__setattr__(self, "visible", merged)
-            object.__setattr__(self, "tabbed", merged)
-        return self
 
     @model_validator(mode="after")
     def _bubble_process_type_from_context_data(self) -> "AgenticProcess":
@@ -3603,6 +3581,22 @@ class AgenticProcess(Entity):
 
     # ── Close ─────────────────────────────────────────────────────────────────
 
+    # ── Tab integration (docs/tab-management.md) ──────────────────────────────
+    async def teardown_for_tab(self) -> None:
+        """``Tab.close`` dispatch hook: closing a process tab tears down the
+        worker + linked shell (today's terminal-close semantics)."""
+        await self.close()
+
+    async def _on_tab_renamed(self, payload: dict) -> dict:
+        """``tab-renamed`` reflection: mirror the new tab name and pin it
+        (``auto_rename=False``) so the worker title can't overwrite it."""
+        new_name = (payload or {}).get("name")
+        if new_name and self.name != new_name:
+            self.name = new_name
+            self.auto_rename = False
+            await self.save()
+        return {"name": self.name}
+
     async def close(self) -> bool:
         """Terminate this process and close its linked shell entity.
 
@@ -4252,3 +4246,8 @@ class AgenticProcess(Entity):
             asyncio.run_coroutine_threadsafe(_update_state(), main_loop)
 
         return _on_pty_exit
+
+
+# Register on the owning subclass so the handler doesn't leak to siblings
+# (docs/tab-management.md — generic Tab.rename reflects onto subscribers).
+AgenticProcess.on_event("tab-renamed")(AgenticProcess._on_tab_renamed)

@@ -126,16 +126,9 @@ class Entity(DBEntity):
             "grouping survives an index rebuild."
         ),
     )
-    tabbed: bool = APIField(
-        default=False,
-        description=(
-            "Tab-strip membership (docs/tab-management.md Part 3 §4). True "
-            "while this entity is a member tab. Non-null by design: removal "
-            "must broadcast as ``tabbed=false`` — the wire encoder strips "
-            "nulled fields (exclude_none) and the receiver merge never clears "
-            "absent keys, so a null signal cannot propagate cross-client."
-        ),
-    )
+    # Tab-strip membership is no longer a base-Entity flag — it is the `Tab`
+    # entity (docs/tab-management.md). `tab_order`/`last_active_at` remain
+    # generic (used by the Tab entity + the `activate` action).
     tab_order: int = APIField(
         default=0,
         persist=Persist.FALSE,
@@ -1719,6 +1712,25 @@ class Entity(DBEntity):
                 self.type, self.id, wiki_exc,
             )
 
+        # Soft-close any content Tab pointing at this entity (denormalized
+        # target_id) so a deleted target can't leave an orphan chip in the strip
+        # (docs/tab-management.md). Generic — one chokepoint covers every type.
+        # Best-effort; the Tab type may be absent (e.g. a pytest env without
+        # register_all), so a failure here must never block the delete.
+        if self.type != "tab":  # don't recurse on a Tab deleting itself
+            try:
+                from flow_sdk.builtin.tab import Tab
+                orphans = await Tab.get_all({"target_type": self.type, "target_id": str(self.id)})
+                for tab in orphans:
+                    if getattr(tab, "visible", False):
+                        await tab.close()
+            except Exception as tab_exc:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "Tab orphan-cleanup failed for %s:%s — %s",
+                    self.type, self.id, tab_exc,
+                )
+
         # Call parent delete
         return await super().delete()
 
@@ -2422,7 +2434,7 @@ _action_registry.register(
 async def _http_activate(self: Entity):
     """Stamp ``last_active_at = now`` (server clock, epoch-ms) — the tab
     resolver's recency seed (docs/tab-management.md Part 3 §4). Loaders call
-    this fire-and-forget on tab activation. Never touches ``tabbed``:
+    this fire-and-forget on tab activation. Never touches membership:
     membership promotion is explicit-only (``tabs/open``)."""
     from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
     from flow_sdk.utils.serialization import now_epoch_ms  # noqa: PLC0415

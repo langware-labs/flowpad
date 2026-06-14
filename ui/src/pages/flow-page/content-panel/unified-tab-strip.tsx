@@ -1,37 +1,30 @@
 /**
- * UnifiedTabStrip — the content-panel header strip that replaces the viewer
- * tab chips (docs/tab-management.md Part 3 §6). One row composing, in order:
+ * UnifiedTabStrip — the content-panel header strip (docs/tab-management.md).
+ * One row composing, in order:
  *
- *   1. terminal tabs (useTerminalStripController — same items, openers,
- *      counter chip and strategies as the embedded TabbedTerminal strip)
- *   2. entity member tabs for the current project (useEntityTabs)
- *   3. ONE transient preview chip for the current dock when it matches no
- *      member (Part 3 §5; "Keep as tab" is the only promotion path)
- *   4. the global section (projectId == null) after a quiet divider —
- *      always visible (the toggle checkbox was removed as confusing)
+ *   1. terminal tabs (useTerminalStripController — shell / agentic_process;
+ *      a terminal tab IS its live entity, so membership is status-derived and
+ *      rendered with full PTY/openers/rename by the controller)
+ *   2. content tabs — EVERY other opened dock (assets, markdown, skill,
+ *      workflow, settings, search, diff, …) materialized as a `Tab` entity by
+ *      the route loader. These are the single content-tab system: they replace
+ *      both the old `tabbed`-flag entity members AND the single transient slot.
+ *   3. the global section (Tab.project_id == null) after a quiet divider.
  *
  * URL-first (non-negotiable): clicks only call navigation.*; the active chip
- * derives from currentDock; loaders remain the only context writers.
+ * derives from currentDock; the loader is the single writer that materializes
+ * the Tab (see ensure-tab-for-dock).
  */
-import { dataManager, TypeId } from '@sdk';
+import { dataManager, QueryFilter, QueryRequest, Tab, TypeId } from '@sdk';
+import { useEntitiesQuery } from '@sdk/react/hooks';
 import { type TabStripItem, TabStrip } from '@src/components/tabs/TabStrip';
 import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import {
-  closeTabTargets,
-  openTabTargets,
-  useEntityTabs,
-  type EntityTabRow,
-  type TerminalTab,
-} from '@src/tabs/useTabs';
-import {
-  dockTargetTypeIdKey,
-  partitionEntityRows,
-  transientForDock,
-} from '@src/tabs/unified-strip-model';
+import { type TerminalTab } from '@src/tabs/useTabs';
 import { useTerminalStripController } from '@src/tabs/useTerminalStripController';
+import { ViewType, VIEWER_REGISTRY } from '@src/types/ViewType';
 import { FileText } from 'lucide-react';
 import React, { useCallback, useMemo } from 'react';
 
@@ -42,19 +35,60 @@ export interface UnifiedTabStripProps {
   onTabOpen?: (session: TerminalTab) => void;
 }
 
-function entityRowItem(row: EntityTabRow): TabStripItem {
-  // Per-type icon strictly from the backend type registry (CLAUDE.md rule);
-  // iconForType falls back to the generic document glyph for unknown types.
-  const Icon = iconForType(row.kind);
+// Targets owned by the terminal section (1): their Tab rows (if any) must not
+// also render as content chips — the controller renders them richly. The bare
+// `shell` surface is the terminal section's too.
+const TERMINAL_TARGET_TYPES = new Set(['shell', 'agentic_process']);
+
+/** Split a Tab.pointer (== DockPointer.tabHash, `viewType|sub`) into parts. */
+function splitTabPointer(pointer: string): { viewType: string; sub: string } {
+  const i = pointer.indexOf('|');
+  return i >= 0
+    ? { viewType: pointer.slice(0, i), sub: pointer.slice(i + 1) }
+    : { viewType: pointer, sub: '' };
+}
+
+/** The DockPointer a content Tab navigates to (URL-first reconstruction). */
+function dockPointerForTab(pointer: string): DockPointer | null {
+  return DockPointer.fromTabHash(pointer);
+}
+
+/** Chip descriptor for a content Tab — entity-backed Tabs resolve their icon
+ *  and name from the live target entity (per-type icon via the backend
+ *  TypeInfo registry, CLAUDE.md rule); target-less surfaces use the viewType
+ *  registry. ``Tab.name`` (a user rename) always wins. */
+function contentTabItem(tab: Tab): TabStripItem {
+  const { viewType } = splitTabPointer(tab.pointer ?? '');
+  const meta = VIEWER_REGISTRY[viewType as ViewType];
+  const key = tab.pointer ?? tab.id;
+  const testId = `tab-content-${key}`;
+  if (tab.target_type && tab.target_id) {
+    const Icon = iconForType(tab.target_type);
+    let entityName: string | null = null;
+    try {
+      const cached = dataManager.getByTypeIdFromCache(new TypeId(tab.target_type, tab.target_id)) as
+        | { name?: string | null }
+        | null;
+      entityName = cached?.name ?? null;
+    } catch {
+      /* unresolved target — fall back below */
+    }
+    return {
+      key,
+      title: tab.name ?? entityName ?? meta?.title ?? viewType,
+      icon: <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-label={`${tab.target_type} tab`} />,
+      renameable: true,
+      testId,
+      dataAttributes: { 'data-tab-kind': tab.target_type },
+    };
+  }
+  const Icon = (meta?.iconName && lucideByName(meta.iconName)) || FileText;
   return {
-    key: row.key,
-    title: row.name ?? row.key,
-    icon: <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-label={`${row.kind} tab`} />,
-    // v1: entity tabs are not renamed from the strip (rename via the entity
-    // editor save can come later — Part 3 §3 gates rename on targetEntity).
+    key,
+    title: tab.name ?? meta?.title ?? viewType,
+    icon: <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />,
     renameable: false,
-    testId: `tab-entity-${row.key}`,
-    dataAttributes: { 'data-tab-kind': row.kind },
+    testId,
   };
 }
 
@@ -66,154 +100,145 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ onTabClick, on
     onTabClose,
     onTabOpen,
   });
-  const entityRows = useEntityTabs();
-  const { projectRows, globalRows } = partitionEntityRows(entityRows, controller.tabsProjectId);
 
-  // VISIBLE members only (project section + global section). The strip's
-  // invariant is "the current view always has a chip": a member tab filtered
-  // out by the project scope must still get the transient preview chip when
-  // its URL is open — counting ALL members here left cross-project member
-  // docs with no chip at all (found live, 2026-06-11).
-  const memberKeySet = useMemo(
-    () => new Set([...projectRows, ...globalRows].map((r) => r.key)),
-    [projectRows, globalRows],
+  // The single content-tab source: every visible Tab whose surface isn't owned
+  // by the terminal section. Live + cross-client via the entity query.
+  const visibleTabsQuery = useMemo(
+    () =>
+      new QueryRequest({
+        type: Tab.type,
+        scope: [],
+        name: 'unifiedStrip:visibleTabs',
+        query: new QueryFilter({ match: { visible: true } }),
+      }),
+    [],
   );
+  const { data: visibleTabs } = useEntitiesQuery<Tab>(visibleTabsQuery);
+
+  const contentTabs = useMemo(
+    () =>
+      (visibleTabs ?? []).filter((t) => {
+        if (TERMINAL_TARGET_TYPES.has(t.target_type ?? '')) return false;
+        // The terminal section owns the bare `shell` surface too.
+        return splitTabPointer(t.pointer ?? '').viewType !== ViewType.SHELL;
+      }),
+    [visibleTabs],
+  );
+
+  // Project / global partition (Part 3 §6): project_id == null → global section.
+  const projectId = controller.tabsProjectId;
+  const { projectContentTabs, globalContentTabs } = useMemo(() => {
+    const project: Tab[] = [];
+    const global: Tab[] = [];
+    for (const t of contentTabs) {
+      if ((t.project_id ?? null) === null) global.push(t);
+      else if (projectId == null || t.project_id === projectId) project.push(t);
+    }
+    return { projectContentTabs: project, globalContentTabs: global };
+  }, [contentTabs, projectId]);
+
+  const contentByKey = useMemo(() => {
+    const m = new Map<string, Tab>();
+    for (const t of contentTabs) m.set(t.pointer ?? t.id, t);
+    return m;
+  }, [contentTabs]);
+
   const terminalKeySet = useMemo(
     () => new Set(controller.stripItems.map((i) => i.key)),
     [controller.stripItems],
   );
 
-  // Transient preview slot (Part 3 §5). Browsing creates no membership; the
-  // ONLY `tabs/open` call in this file is the explicit "Keep as tab" action.
-  const transient = transientForDock(currentDock, {
-    isMemberKey: (key) => memberKeySet.has(key),
-    entityNameForTypeId: (key) => {
-      try {
-        const cached = dataManager.getByTypeIdFromCache(new TypeId(key)) as { name?: string | null } | null;
-        return cached?.name ?? null;
-      } catch {
-        return null;
-      }
-    },
-  });
-
-  const transientItem: TabStripItem | null = useMemo(() => {
-    if (!transient) return null;
-    const Icon = (transient.iconName && lucideByName(transient.iconName)) || FileText;
-    return {
-      key: transient.key,
-      title: transient.title,
-      icon: <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />,
-      renameable: false,
-      testId: 'tab-transient',
-      contextMenuItems: transient.promotableTypeIdKey
-        ? [
-            {
-              label: 'Keep as tab',
-              onSelect: () => {
-                void openTabTargets([transient.promotableTypeIdKey!]);
-              },
-            },
-          ]
-        : undefined,
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [transient?.key, transient?.title, transient?.iconName, transient?.promotableTypeIdKey]);
-
   const items: TabStripItem[] = useMemo(
-    () => [
-      ...controller.stripItems,
-      ...projectRows.map(entityRowItem),
-      ...(transientItem ? [transientItem] : []),
-    ],
-    [controller.stripItems, projectRows, transientItem],
+    () => [...controller.stripItems, ...projectContentTabs.map(contentTabItem)],
+    [controller.stripItems, projectContentTabs],
   );
-  const globalItems = useMemo(() => globalRows.map(entityRowItem), [globalRows]);
+  const globalItems = useMemo(() => globalContentTabs.map(contentTabItem), [globalContentTabs]);
 
-  // Active highlight derives ONLY from the URL: a dock-less URL highlights
-  // nothing; the transient chip IS the current URL when present; an entity
-  // member highlights when the URL's asset pointer resolves to its typeid;
-  // ViewType.SHELL delegates to the controller's URL-derived terminal key.
-  const dockKey = dockTargetTypeIdKey(currentDock);
+  // Active highlight derives ONLY from the URL: a content Tab is active when its
+  // pointer equals the current dock's tabHash; else the controller's
+  // URL-derived terminal key.
+  const dockHash = currentDock?.tabHash ?? '';
   const activeKey = !currentDock
     ? ''
-    : transientItem
-      ? transientItem.key
-      : dockKey && memberKeySet.has(dockKey)
-        ? dockKey
-        : controller.activeTargetKey;
+    : contentByKey.has(dockHash)
+      ? dockHash
+      : controller.activeTargetKey;
 
-  const entityRowByKey = useCallback(
-    (key: string) => entityRows.find((r) => r.key === key) ?? null,
-    [entityRows],
+  // Navigate to a content Tab (the strip's only job for content keys); returns
+  // false when the key isn't a content Tab so the caller can fall back to the
+  // terminal controller.
+  const openContent = useCallback(
+    (key: string, inWindow: boolean): boolean => {
+      const content = contentByKey.get(key);
+      if (!content) return false;
+      const pointer = dockPointerForTab(content.pointer ?? '');
+      if (pointer) {
+        if (inWindow) navigation.openDockInWindow(pointer);
+        else navigation.openDock(pointer);
+      }
+      return true;
+    },
+    [contentByKey, navigation],
   );
 
   const handleSelect = useCallback(
     (key: string) => {
-      if (terminalKeySet.has(key)) {
-        controller.handleSelect(key);
-        return;
-      }
-      const row = entityRowByKey(key);
-      if (row) navigation.openDock(DockPointer.forAssetEditorByTypeId(row.kind, row.typeId));
-      // Transient chip: it IS the current URL — nothing to do.
+      if (!openContent(key, false)) controller.handleSelect(key);
     },
-    [terminalKeySet, controller, entityRowByKey, navigation],
-  );
-
-  /** Member close (one batched POST); navigation fallback for terminal kinds. */
-  const closeMembers = useCallback(
-    async (keys: string[]) => {
-      const result = await closeTabTargets(keys);
-      if (result.invalid.length > 0 || result.missing.length > 0) {
-        console.warn('[UnifiedTabStrip] Some close targets were not accepted:', result);
-      }
-      const acceptedTerminals = result.accepted.filter((k) => terminalKeySet.has(k));
-      if (acceptedTerminals.length > 0) onTabClose?.(acceptedTerminals);
-    },
-    [terminalKeySet, onTabClose],
+    [openContent, controller],
   );
 
   const handleClose = useCallback(
     (key: string) => {
-      if (transientItem && key === transientItem.key) {
-        // Transient close = dismiss: navigate away, nothing persisted (§3).
-        navigation.closeDock();
+      const content = contentByKey.get(key);
+      if (content) {
+        if (key === dockHash) navigation.closeDock();
+        void content.closeTab();
         return;
       }
-      void closeMembers([key]);
+      // Terminal close: delegate to the controller (PTY/worker teardown + MRU).
+      controller.handleCloseTab(key);
     },
-    [transientItem, navigation, closeMembers],
+    [contentByKey, dockHash, navigation, controller],
   );
 
   const handleCloseMany = useCallback(
     (keys: string[]) => {
-      // ONE batched POST for all member keys (the backend dispatches per-kind
-      // semantics); the transient slot dismisses locally.
-      const memberKeys = keys.filter((k) => !transientItem || k !== transientItem.key);
-      if (memberKeys.length > 0) void closeMembers(memberKeys);
-      if (transientItem && keys.includes(transientItem.key)) navigation.closeDock();
+      const terminalKeys: string[] = [];
+      for (const k of keys) {
+        const content = contentByKey.get(k);
+        if (content) {
+          if (k === dockHash) navigation.closeDock();
+          void content.closeTab();
+        } else {
+          terminalKeys.push(k);
+        }
+      }
+      if (terminalKeys.length > 0) controller.handleCloseMany(terminalKeys);
     },
-    [transientItem, closeMembers, navigation],
+    [contentByKey, dockHash, navigation, controller],
   );
 
   const handlePopout = useCallback(
     (key: string) => {
-      if (terminalKeySet.has(key)) {
-        controller.handleOpenExternalTab(key);
-        return;
-      }
-      // Non-terminal popouts also open the chrome-less win/ focus window
-      // (Part 3 §7); no origin detach — only the terminal popout hands its
-      // active view off (§8), entity/transient chips stay where they are.
-      if (transientItem && key === transientItem.key) {
-        if (currentDock) navigation.openDockInWindow(currentDock);
-        return;
-      }
-      const row = entityRowByKey(key);
-      if (row) navigation.openDockInWindow(DockPointer.forAssetEditorByTypeId(row.kind, row.typeId));
+      if (openContent(key, true)) return;
+      if (terminalKeySet.has(key)) controller.handleOpenExternalTab(key);
     },
-    [terminalKeySet, controller, transientItem, currentDock, navigation, entityRowByKey],
+    [openContent, terminalKeySet, controller],
+  );
+
+  const handleRename = useCallback(
+    (key: string, newName: string) => {
+      const content = contentByKey.get(key);
+      if (content) {
+        // Tab.name is the generic source of truth (backend reflects to target).
+        void content.rename(newName);
+        return;
+      }
+      // Terminal rename: the controller owns shell/AP name + PTY /rename.
+      controller.handleRenameCommit(key, newName);
+    },
+    [contentByKey, controller],
   );
 
   return (
@@ -224,7 +249,7 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ onTabClick, on
         onSelect={handleSelect}
         onClose={handleClose}
         onCloseMany={handleCloseMany}
-        onRename={controller.handleRenameCommit}
+        onRename={handleRename}
         onPopout={handlePopout}
         newTabMenuItems={controller.newTabMenuItems}
         closeShortcutLabel={controller.closeShortcutLabel}

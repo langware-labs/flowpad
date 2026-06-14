@@ -173,4 +173,9 @@ try:
 except ImportError as e:
     print(f"[WARN] Failed to import File: {e}")
 
+try:
+    from flow_sdk.builtin.tab import Tab  # noqa: F401
+except ImportError as e:
+    print(f"[WARN] Failed to import Tab: {e}")
+
 __all__ = []

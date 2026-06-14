@@ -42,11 +42,6 @@ from flow_sdk.builtin.faas.analytics import AnalyticsActionsMixin
 # Prevents duplicate concurrent scan/index jobs on the same compute node.
 _COMPUTE_ACTIVITIES: dict[str, "Any"] = {}
 
-# Entity kinds onboarded into the unified ``tabs/list`` (tab-management.md
-# Part 3 §4) beyond the two terminal kinds. Membership is the base-Entity
-# ``tabbed`` flag; close on these is clear-membership (the entity survives).
-ONBOARDED_TAB_TYPES = ("markdown", "skill", "workflow")
-
 # The two terminal tab kinds: close is a full teardown (``_terminal_close``),
 # not clear-membership, and target parsing for the legacy terminals/* shim is
 # restricted to these.
@@ -477,332 +472,59 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
     @action.get(action_name="list-shells")
     async def _list_shells(self): return await self._pty_list_shells()
 
-    @action.all(action_name="terminals", methods=["get", "post"])
-    async def _terminals(self, background_tasks: BackgroundTasks) -> ApiResponse:
-        """LEGACY SHIM (tab-management.md Part 3 §4): kept one release for the
-        pre-cutover frontend; delegates to the same internals as ``tabs``.
-        Deleted together with the ``visible`` alias at FE cutover end."""
+    @action.get(action_name="terminals")
+    async def _terminals(self) -> ApiResponse:
+        """``terminals/get_by_worker_id/<id>`` — resolve an AgenticProcess by its
+        worker id (``AgenticProcess.getByWorkerId``). The legacy
+        ``terminals/list``/``close`` shim was deleted at the Tab cutover; the
+        strip lists from the ``Tab`` entity and closes via ``tabs/close``."""
         request_info = get_current_request_info()
         sub_path = (request_info.sub_path or "").strip("/").lower() if request_info else ""
-        if sub_path == "list":
-            if request_info and not request_info.is_get:
-                return ApiFailResponse(message="terminals/list requires GET", status_code=405)
-            return await self._terminal_list()
-        if sub_path == "close":
-            if request_info and not request_info.is_post:
-                return ApiFailResponse(message="terminals/close requires POST", status_code=405)
-            body = await request_info.get_post_data() if request_info else {}
-            return await self._terminal_close(body, background_tasks)
         if sub_path.startswith("get_by_worker_id/"):
-            if request_info and not request_info.is_get:
-                return ApiFailResponse(message="terminals/get_by_worker_id requires GET", status_code=405)
             worker_id = sub_path[len("get_by_worker_id/"):]
             if not worker_id:
                 return ApiFailResponse(message="worker id required", status_code=400)
             return await self._scan_get_by_worker_id(worker_id)
         return ApiFailResponse(message=f"unknown terminals sub-path: {sub_path!r}", status_code=400)
 
-    @action.all(action_name="tabs", methods=["get", "post"])
+    @action.post(action_name="tabs")
     async def _tabs(self, background_tasks: BackgroundTasks) -> ApiResponse:
-        """Generic tab-membership API (tab-management.md Part 3 §4):
-        ``tabs/list`` (unified descriptors), ``tabs/open`` (batched
-        ``tabbed=true`` promotion), ``tabs/close`` (batched ``tabbed=false``
-        with per-type effect: shells/processes also tear down)."""
+        """``tabs/close`` — batched terminal-tab teardown (PTY/worker). Listing is
+        now the ``Tab`` entity query (frontend); content tabs close via
+        ``Tab.close``."""
         request_info = get_current_request_info()
         sub_path = (request_info.sub_path or "").strip("/").lower() if request_info else ""
-        if sub_path == "list":
-            if request_info and not request_info.is_get:
-                return ApiFailResponse(message="tabs/list requires GET", status_code=405)
-            return await self._tabs_list()
-        if sub_path in {"open", "close"}:
-            if request_info and not request_info.is_post:
-                return ApiFailResponse(message=f"tabs/{sub_path} requires POST", status_code=405)
+        if sub_path == "close":
             body = await request_info.get_post_data() if request_info else {}
-            if sub_path == "open":
-                return await self._tabs_open(body)
             return await self._tabs_close(body, background_tasks)
         return ApiFailResponse(message=f"unknown tabs sub-path: {sub_path!r}", status_code=400)
 
-    @action.get(action_name="active-terminals")
-    async def _active_terminals_removed(self) -> ApiResponse:
-        """410 tombstone. Replaced by ``terminals/list`` in a27c4ab. Kept so
-        any stale callers get a clear hard-migration signal instead of a
-        silent 200 with empty data."""
-        return ApiFailResponse(message="active-terminals was removed; use terminals/list", status_code=410)
-
-    async def _terminal_list(self) -> ApiResponse:
-        """Single source of truth for the tab strip.
-
-        Returns two flat, non-overlapping lists. The frontend renders both,
-        with no join: each "AI worker" tab comes from ``visible_processes``
-        and each "plain terminal" tab comes from ``pure_shells``.
-
-        Wire shape: ``{pure_shells, visible_processes, checked_at}``.
-          - ``pure_shells``: Shell entity dicts that are NOT background plumbing
-            for any AgenticProcess. A shell is "pure" iff no AgenticProcess
-            (visible or not) owns it via ``shell_id`` / ``sidecar_shell_id`` and
-            it does not point back to a process via ``agentic_process_id``. This
-            deliberately drops both visible-process-owned shells (they show up
-            via the process row) and invisible-process-owned orphans.
-          - ``visible_processes``: AgenticProcess entity dicts with
-            ``visible == true``. After ``createProcess`` becomes atomic, every
-            visible process has a populated ``shell_id``.
-        """
-        pure_shells, member_processes = await self._tab_membership()
-
-        # Build response with full entity dicts for cache write-through.
-        pure_shell_dicts = [s.model_dump(mode="json") for s in pure_shells]
-        process_dicts = [p.model_dump(mode="json") for p in member_processes]
-
-        return ApiSuccessResponse(data={
-            "pure_shells": pure_shell_dicts,
-            "visible_processes": process_dicts,
-            "checked_at": datetime.now(tz=timezone.utc).isoformat(),
-        })
-
-    async def _tab_membership(self) -> tuple[list, list]:
-        """Strip membership truth shared by ``terminals/list`` (legacy shape)
-        and ``tabs/list`` (unified shape): ``(pure_shells, member_processes)``.
-        v1 fans out over Shell + AgenticProcess (tab-management.md Part 3,
-        D-D); further kinds onboard here without endpoint changes."""
-        from flow_sdk.builtin.shell import Shell as ShellEntity
-        from flow_sdk.builtin.agentic_process import AgenticProcess
-
-        # 1. Fetch
-        all_shells = await ShellEntity.get_all()
-        # Reap pass also covers non-member STOPPING rows so they can recover
-        # and re-appear when the user opens them. The membership filter is
-        # applied below for what we *return*, not for what we *reap*.
-        all_processes = await AgenticProcess.get_all()
-
-        # 2. Reap stuck STOPPING — fan out, processes are independent (each owns
-        # its own shell + save lock), so concurrent reap is safe.
-        reap_results = await asyncio.gather(
-            *(proc.reap_if_orphaned() for proc in all_processes),
-            return_exceptions=True,
-        )
-        reaped_any = any(r is True for r in reap_results)
-
-        # 3. Refetch if we reaped, then narrow to members. ``tabbed`` is the
-        # membership signal; ``visible`` is its one-release deprecated alias
-        # (kept in lock-step on the entity, read OR-wise here for safety).
-        if reaped_any:
-            all_processes = await AgenticProcess.get_all()
-        member_processes = [
-            p for p in all_processes
-            if getattr(p, "tabbed", False) or getattr(p, "visible", False)
-        ]
-
-        # 4. Drop background shells: any shell owned by an AgenticProcess
-        # (regardless of membership, and via either forward or reverse link)
-        # is plumbing for that process and is represented by the process row
-        # instead. Sidecars are already a subset of "owned by a process" but
-        # we keep the explicit set for readability and to honor the
-        # unconditional sidecar exclusion.
-        owned_shell_ids = {p.shell_id for p in all_processes if getattr(p, "shell_id", None)}
-        sidecar_ids = {p.sidecar_shell_id for p in all_processes if getattr(p, "sidecar_shell_id", None)}
-        reverse_owned_shell_ids = {s.id for s in all_shells if getattr(s, "agentic_process_id", None)}
-        excluded_shell_ids = owned_shell_ids | sidecar_ids | reverse_owned_shell_ids
-
-        from flow_sdk.builtin.shell import ShellStatus
-        terminal_shell_states = {
-            ShellStatus.CLOSING.value,
-            ShellStatus.CLOSED.value,
-            ShellStatus.ERROR.value,
-        }
-        pure_shells = [
-            s for s in all_shells
-            if s.status not in terminal_shell_states
-            and s.id not in excluded_shell_ids
-            and getattr(s, "tabbed", True)
-        ]
-        return pure_shells, member_processes
-
-    async def _tabs_list(self) -> ApiResponse:
-        """Unified tab descriptors: ``{tabs: [{kind, entity}], checked_at}``.
-        Same membership truth as the legacy ``terminals/list``."""
-        pure_shells, member_processes = await self._tab_membership()
-        tabs = (
-            [{"kind": "shell", "entity": s.model_dump(mode="json")} for s in pure_shells]
-            + [{"kind": "agentic_process", "entity": p.model_dump(mode="json")} for p in member_processes]
-        )
-        tabs.extend(
-            {"kind": kind, "entity": e.model_dump(mode="json")}
-            for kind, e in await self._onboarded_tabbed_rows()
-        )
-        return ApiSuccessResponse(data={
-            "tabs": tabs,
-            "checked_at": datetime.now(tz=timezone.utc).isoformat(),
-        })
-
-    async def _onboarded_tabbed_rows(self) -> list[tuple[str, Any]]:
-        """``(kind, entity)`` for every ``tabbed`` row of the onboarded entity
-        kinds (membership is the base-Entity ``tabbed`` flag — no terminal
-        plumbing). v1 mirrors the per-type get_all pattern of
-        ``_tab_membership``; a cross-type SQL ``tabbed`` predicate is
-        explicitly out of scope (Part 3 §1, U4). Types missing from the
-        SchemaRegistry (e.g. pytest envs without register_all) are skipped."""
-        from flow_sdk.fs_store.schema_registry import SchemaRegistry
-
-        rows: list[tuple[str, Any]] = []
-        for tab_type in ONBOARDED_TAB_TYPES:
-            entity_cls = SchemaRegistry.get_entity_cls(tab_type)
-            if entity_cls is None:
-                continue
-            entities = await entity_cls.get_all()
-            rows.extend((tab_type, e) for e in entities if getattr(e, "tabbed", False))
-        return rows
-
-    def _parse_any_target(self, raw: Any) -> TypeId | None:
-        """Parse a tab target of ANY entity type (``type-id`` or ``type:id``).
-        The terminal-only restriction lives in ``_parse_terminal_target``."""
-        if not isinstance(raw, str):
-            return None
-        target = raw.strip()
-        if not target:
-            return None
-        try:
-            if ":" in target:
-                entity_type, entity_id = target.split(":", 1)
-                if not entity_type or not entity_id:
-                    return None
-                return TypeId(type=entity_type, id=entity_id)
-            typeid = TypeId(target)
-            return typeid if typeid.type and typeid.id else None
-        except Exception:
-            return None
-
-    async def _tabs_next_order(self) -> int:
-        """Next strip slot: max tab_order over current tab rows + 1 (never 0 —
-        0 means unassigned on the base-Entity field). Plain reads only — NOT
-        ``_tab_membership``, whose reap pass is a lifecycle side effect that
-        slot allocation must never trigger."""
-        from flow_sdk.builtin.shell import Shell as ShellEntity
-        from flow_sdk.builtin.agentic_process import AgenticProcess
-
-        shells = await ShellEntity.get_all()
-        processes = await AgenticProcess.get_all()
-        rows = [
-            *shells,
-            *(p for p in processes if getattr(p, "tabbed", False) or getattr(p, "visible", False)),
-            *(e for _, e in await self._onboarded_tabbed_rows()),
-        ]
-        orders = [getattr(e, "tab_order", 0) for e in rows]
-        return (max(orders) + 1) if orders else 1
-
-    async def _resolve_tab_targets(
-        self, targets: list, divert_types: frozenset[str] = frozenset()
-    ) -> tuple[list[tuple[str, Any]], list[str], list[str], list[str]]:
-        """Shared parse/dedupe/resolve step for ``tabs/open`` / ``tabs/close``:
-        each raw target is parsed (``_parse_any_target``), deduped on its
-        canonical ``type-id`` form, and resolved to its entity. Returns
-        ``(resolved, diverted, missing, invalid)`` where ``resolved`` is
-        ``(canonical, entity)`` pairs and ``diverted`` collects canonicals
-        whose type is in ``divert_types`` (left unresolved for kind-specific
-        handling — e.g. the terminal teardown path of ``tabs/close``)."""
-        from flow_sdk.fs_store.schema_registry import SchemaRegistry
-
-        resolved: list[tuple[str, Any]] = []
-        diverted: list[str] = []
-        missing: list[str] = []
-        invalid: list[str] = []
-        seen: set[str] = set()
-
-        for raw in targets:
-            typeid = self._parse_any_target(raw)
-            if not typeid:
-                invalid.append(str(raw))
-                continue
-            canonical = str(typeid)
-            if canonical in seen:
-                continue
-            seen.add(canonical)
-
-            if typeid.type in divert_types:
-                diverted.append(canonical)
-                continue
-
-            entity_cls = SchemaRegistry.get_entity_cls(typeid.type)
-            entity = await entity_cls.get_by_id(typeid.id) if entity_cls else None
-            if not entity:
-                missing.append(canonical)
-                continue
-            resolved.append((canonical, entity))
-
-        return resolved, diverted, missing, invalid
-
-    async def _tabs_open(self, body: dict) -> ApiResponse:
-        """Batched membership promotion: ``tabbed=true`` (+ a strip slot when
-        unassigned) for each target of any entity type. Symmetric with
-        ``tabs/close``; the only write path that materializes a member tab
-        (preview-tab promotion, Part 3 §5)."""
-        targets = body.get("targets") if isinstance(body, dict) else None
-        if not isinstance(targets, list):
-            return ApiFailResponse(message="tabs/open requires body: { targets: string[] }", status_code=400)
-
-        resolved, _, missing, invalid = await self._resolve_tab_targets(targets)
-        accepted: list[str] = []
-        next_order: int | None = None
-
-        for canonical, entity in resolved:
-            changed = False
-            if not getattr(entity, "tabbed", False):
-                entity.tabbed = True
-                changed = True
-            if not getattr(entity, "tab_order", 0):
-                if next_order is None:
-                    next_order = await self._tabs_next_order()
-                entity.tab_order = next_order
-                next_order += 1
-                changed = True
-            if changed:
-                await entity.save()
-            accepted.append(canonical)
-
-        return ApiSuccessResponse(data={
-            "accepted": accepted,
-            "missing": missing,
-            "invalid": invalid,
-        })
-
     async def _tabs_close(self, body: dict, background_tasks: BackgroundTasks) -> ApiResponse:
-        """Batched close with per-type effect (Part 3 §3): shell /
-        agentic_process targets get the full terminal teardown (delegated to
-        the proven ``_terminal_close``); any other entity type is a
-        clear-membership close — ``tabbed=false`` (non-null: it broadcasts),
-        the entity survives."""
+        """Close terminal tabs (shell / agentic_process) — the full PTY/worker
+        teardown, delegated to the proven ``_terminal_close``. Content tabs
+        (assets, markdown, settings, …) are first-class ``Tab`` entities and
+        close via ``Tab.close`` (``visible=false`` + per-target teardown), not
+        through this endpoint."""
         targets = body.get("targets") if isinstance(body, dict) else None
         if not isinstance(targets, list):
             return ApiFailResponse(message="tabs/close requires body: { targets: string[] }", status_code=400)
-
-        resolved, terminal_targets, missing, invalid = await self._resolve_tab_targets(
-            targets, divert_types=TERMINAL_TAB_TYPES
-        )
-        accepted: list[str] = []
-        for canonical, entity in resolved:
-            if getattr(entity, "tabbed", False):
-                entity.tabbed = False
-                await entity.save()
-            accepted.append(canonical)
-
-        if terminal_targets:
-            terminal_res = await self._terminal_close({"targets": terminal_targets}, background_tasks)
-            tdata = terminal_res.data if hasattr(terminal_res, "data") else {}
-            accepted.extend(tdata.get("accepted", []))
-            missing.extend(tdata.get("missing", []))
-            invalid.extend(tdata.get("invalid", []))
-
-        return ApiSuccessResponse(data={
-            "accepted": accepted,
-            "missing": missing,
-            "invalid": invalid,
-        })
+        return await self._terminal_close({"targets": targets}, background_tasks)
 
     def _parse_terminal_target(self, raw: Any) -> tuple[str, str] | None:
-        """``_parse_any_target`` restricted to the terminal tab kinds (the
-        legacy terminals/* shim only accepts shell / agentic_process)."""
-        typeid = self._parse_any_target(raw)
-        if typeid is None or typeid.type not in TERMINAL_TAB_TYPES:
+        """Parse a tab target (``type-id`` or ``type:id``) restricted to the
+        terminal tab kinds (shell / agentic_process)."""
+        if not isinstance(raw, str) or not raw.strip():
+            return None
+        target = raw.strip()
+        try:
+            if ":" in target:
+                entity_type, entity_id = target.split(":", 1)
+                typeid = TypeId(type=entity_type, id=entity_id) if entity_type and entity_id else None
+            else:
+                typeid = TypeId(target)
+        except Exception:
+            return None
+        if typeid is None or not typeid.type or not typeid.id or typeid.type not in TERMINAL_TAB_TYPES:
             return None
         return typeid.type, typeid.id
 

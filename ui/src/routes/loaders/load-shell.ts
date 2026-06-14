@@ -30,7 +30,7 @@ import {
   systemTools,
   TypeId,
 } from '@sdk';
-import { closeTerminalTargets } from '@src/tabs/useTabs';
+import { closeTerminalTab } from '@src/tabs/useTabs';
 import { showCleanupModal } from '@src/components/recovery/cleanup-modal';
 import { notify } from '@src/notifications';
 import { buildShellRedirectUrl, DockPointer } from '@src/navigation';
@@ -360,7 +360,7 @@ async function buildShellCleanupForRoute(e: ShellLoadError): Promise<CleanupReco
     case 'error_status':
       return { kind: 'shell_error_status', shellId: e.shellId, title: 'Shell unavailable', description: e.errorMessage ?? 'Shell error' };
     case 'start_failed': {
-      await closeTerminalTargets([new TypeId(Shell.type, e.shellId)]).catch(() => {});
+      await closeTerminalTab(new TypeId(Shell.type, e.shellId)).catch(() => {});
       const desc = describeProcessStartError(e.cause ?? e);
       return { kind: 'shell_start_failed', shellId: e.shellId, title: desc.title, description: desc.description };
     }
