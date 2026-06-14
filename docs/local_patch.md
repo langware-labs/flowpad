@@ -190,15 +190,28 @@ it must behave **"as if it were truly production"** (same hardened-runtime launc
 
 ## What "patch desktop" means (canonical definition)
 
-**"Patch desktop" is ALWAYS two halves, from ONE source, never mix-and-match:**
+**"Patch desktop" is two halves, from ONE source, never mix-and-match. The SDK half always
+runs; the shell half runs ONLY when `electron/` actually changed:**
 
-1. **The SDK / backend local deployment** — build the wheel (`build_ui.py` → `uv build`) and
-   `uv tool install --force --python 3.13` it, so the server on **9007** is your code
-   (Local Deployment in [`pypi-deploy.md`](./pypi-deploy.md)). This is **not optional** — a
-   shell-only asar patch leaves the backend + served UI stale and the two halves drift
-   (observed 2026-06-14: backend at `0.2.53+local`, shell still `0.2.52-patch1`, tabs broken).
-2. **The Electron shell asar patch** — transplant `main.js`, repack, rewrite the integrity
-   hash, ad-hoc re-sign (the rest of this doc).
+1. **The SDK / backend local deployment — ALWAYS.** Build the wheel (`build_ui.py` →
+   `uv build`) and `uv tool install --force --python 3.13` it, so the server on **9007** is
+   your code (Local Deployment in [`pypi-deploy.md`](./pypi-deploy.md)). This is **not
+   optional** — a shell-only asar patch leaves the backend + served UI stale and the two
+   halves drift (observed 2026-06-14: backend at `0.2.53+local`, shell still `0.2.52-patch1`,
+   tabs broken). After installing, **restart the app** (quit → `open`) so the shell respawns
+   the new backend and serves the rebuilt UI — even when the shell asar itself is untouched.
+2. **The Electron shell asar patch — ONLY IF `electron/` CHANGED.** The asar repack + integrity
+   rewrite + ad-hoc re-sign is the expensive half; skip it entirely when `main.js` (etc.) is
+   byte-identical to what's already in the deployed `~/Flowpad-patched.app` asar. Gate it:
+   ```bash
+   git show HEAD:electron/main.js > /tmp/main_head.js
+   node -e 'const a=require("./electron/node_modules/@electron/asar"),fs=require("fs");
+     const inAsar=a.extractFile(process.env.HOME+"/Flowpad-patched.app/Contents/Resources/app.asar","main.js");
+     process.exit(Buffer.compare(inAsar,fs.readFileSync("/tmp/main_head.js"))?1:0)' \
+     && echo "unchanged — SKIP repack" || echo "changed — repack (steps below)"
+   ```
+   When skipped, the shell keeps its existing `-patch<count>` stamp (no bump — nothing in the
+   bundle changed); only bump `-patch<count>` on an actual repack.
 
 Both halves MUST come from the **same source**, and the versions prove it:
 
