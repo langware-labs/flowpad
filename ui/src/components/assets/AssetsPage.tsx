@@ -30,7 +30,7 @@ import { DEFAULT_ASSET_FILTER } from './assetFilter';
 import { applyScopeToParams, defaultScopeFilter } from '@src/lib/scope-filter';
 import type { ScopeFilter } from '@src/lib/scope-filter';
 import { useSearchScopeToggle } from '@src/hooks/use-global-search-scope';
-import { useIndexStatus } from '@src/hooks/use-index-status';
+import { useIndexStatus, typeCountsFromPerType } from '@src/hooks/use-index-status';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
 import { ScopeFilterIconBar } from '@src/components/scope-filter/ScopeFilterIconBar';
 import { ViewType } from '@src/types/ViewType';
@@ -38,7 +38,7 @@ import { AssetListView } from './AssetListView';
 import { MarkdownIndexPanel } from './MarkdownIndexPanel';
 import { BrowseableTree } from '@src/components/browseable-tree';
 import { refreshNode } from '@src/components/browseable-tree/refresh-store';
-import { assetTypeRoot } from '@src/components/browseable-tree/adapters/assetTypeRoot';
+import { assetTypeRoot, AssetTypeCountsContext } from '@src/components/browseable-tree/adapters/assetTypeRoot';
 import {
   markdownFolderNodeId,
   markdownFolderRoot,
@@ -352,6 +352,16 @@ export function AssetsPage() {
   const neverIndexed = projIdx?.never_indexed ?? false;
   const changesPending = projIdx?.stale ?? false;
   const lastIndexedAt = projIdx?.last_indexed_at ?? null;
+
+  // Per-type counts for the sidebar badges, sourced from the single scoped
+  // `index-status` response instead of one `/search?limit=1` probe per type
+  // row (that N+1 dominated the asset list page's request count). Scoped to the
+  // active filter so the badges track the scope/project picker.
+  const { state: countsIdxState } = useIndexStatus(effectiveFilter.scope);
+  const typeCounts = useMemo(
+    () => typeCountsFromPerType(countsIdxState.phase === 'ready' ? countsIdxState.status.per_type : []),
+    [countsIdxState],
+  );
 
   useEffect(() => { setSelectedResultIndex(-1); }, [searchQuery]);
 
@@ -825,12 +835,14 @@ export function AssetsPage() {
               />
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto">
-              <BrowseableTree
-                roots={wikiRoots}
-                activePointer={treeActivePointer}
-                isLoading={typesLoading && wikiRoots.length === 0}
-                onNavigate={navigateAsset}
-              />
+              <AssetTypeCountsContext.Provider value={typeCounts}>
+                <BrowseableTree
+                  roots={wikiRoots}
+                  activePointer={treeActivePointer}
+                  isLoading={typesLoading && wikiRoots.length === 0}
+                  onNavigate={navigateAsset}
+                />
+              </AssetTypeCountsContext.Provider>
             </div>
           </div>
         </div>
