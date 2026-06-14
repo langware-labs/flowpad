@@ -37,7 +37,7 @@ import { PaneSelectorBar } from './PaneSelectorBar';
 import { PaneView } from './PaneView';
 import { ProcessToolbar } from './ProcessToolbar';
 import { SimpleChatPane } from './SimpleChatPane';
-import { useIsAdvanced } from '@src/components/view-mode';
+import { useChatUiMode } from '@src/contexts/chat-ui-mode-context';
 import { PtySyncProvider, usePtySyncSession } from './PtySyncContext';
 import { TerminalRuntimeErrorBanner } from './TerminalRuntimeErrorBanner';
 import {
@@ -183,11 +183,13 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const process = propProcess ?? contextProcess ?? undefined;
   const { navigation, currentDock } = useDockNavigation();
   const { resolvedTheme } = useTheme();
-  // View-mode skin: Standard overlays the xterm area with the simple chat
-  // pane (same session, same PTY — see SimpleChatPane). Embedded terminals
-  // keep the full layout, mirroring the ProcessToolbar decision.
-  const isAdvanced = useIsAdvanced();
-  const showSimpleChat = !isAdvanced && !embedded && !!process;
+  // Chat-UI mode: the experimental SimpleChatPane overlays the xterm area
+  // (same session, same PTY — see SimpleChatPane). The terminal is the default
+  // for every process; the chat view is opt-in via the debug menu only, since
+  // it is not stable enough for users yet. Embedded terminals keep the full
+  // layout, mirroring the ProcessToolbar decision.
+  const chatUiMode = useChatUiMode();
+  const showSimpleChat = chatUiMode && !embedded && !!process;
   const [searchParams] = useSearchParams();
   const targetTimestamp = searchParams.get('t') ?? undefined;
 
