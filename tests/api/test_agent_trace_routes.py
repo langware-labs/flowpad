@@ -61,6 +61,9 @@ async def test_trace_skeleton_route(client, session_on_disk):
     assert skeleton["session_id"] == SID
     assert skeleton["summary"]["lane_count"] == 1
     assert skeleton["lanes"][0]["segments"][0]["label"] == "do the thing"
+    # Schema v2: the call-stack tree is part of the report.
+    assert skeleton["version"] == 2
+    assert skeleton["call_tree"]["kind"] == "session"
 
 
 async def test_trace_skeleton_unknown_session(client, session_on_disk):

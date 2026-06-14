@@ -85,7 +85,7 @@ def test_segments_cut_at_prompts_and_calls_collected(claude_home):
     ])
     trace = synthesize_agent_trace(SID)
 
-    assert trace["version"] == 1
+    assert trace["version"] == 2
     assert trace["session_id"] == SID
     assert trace["summary"]["lane_count"] == 1
     root = trace["lanes"][0]
@@ -192,3 +192,139 @@ def test_merge_annotations_recounts_and_appends_skill_markers(claude_home):
     assert trace["annotations"]["notes"] == ["skill x: instruction y unclear"]
     # The skeleton is not mutated.
     assert skeleton["summary"]["verdict"] is None
+
+
+def _skill(uuid: str, ts: str, tuid: str, name: str) -> dict:
+    return _tool_use(uuid, ts, tuid, "Skill", {"skill": name})
+
+
+def _compact(uuid: str, ts: str, text: str) -> dict:
+    return {
+        "type": "user", "uuid": uuid, "sessionId": SID, "timestamp": ts,
+        "isCompactSummary": True,
+        "message": {"role": "user", "content": [{"type": "text", "text": text}]},
+    }
+
+
+def test_call_tree_nests_skills_subagents_and_compaction(claude_home):
+    sub_lines = [
+        _user("su1", "2026-06-12T10:02:00Z", "subtask"),
+        _tool_use("sa1", "2026-06-12T10:02:10Z", "stu1", "Bash", {"command": "ls"}),
+    ]
+    _write_session(
+        claude_home,
+        [
+            _user("u1", "2026-06-12T10:00:00Z", "go"),
+            _skill("a0", "2026-06-12T10:00:05Z", "sk1", "e2e-qa"),
+            _tool_use("a1", "2026-06-12T10:00:10Z", "tu1", "Bash", {"command": "echo hi"}),
+            _tool_result("r1", "2026-06-12T10:00:11Z", "tu1", "hi"),
+            _tool_use("a2", "2026-06-12T10:01:00Z", "spawn1", "Task",
+                      {"subagent_type": "Explore", "description": "look", "prompt": "p"}),
+            _compact("c1", "2026-06-12T10:03:00Z", "/compact summary so far"),
+        ],
+        subagents={"agent-x1": ({"agentType": "Explore", "description": "look",
+                                 "toolUseId": "spawn1"}, sub_lines)},
+    )
+    trace = synthesize_agent_trace(SID)
+    tree = trace["call_tree"]
+
+    assert tree["kind"] == "session"
+    assert tree["context_policy"] == "preserve"
+    # The skill frame contains the tool leaf, the subagent, and compaction.
+    skill = next(c for c in tree["children"] if c["kind"] == "skill")
+    assert skill["callable"] == "e2e-qa"
+    assert skill["context_policy"] == "preserve"
+    kinds = [c["kind"] for c in skill["children"]]
+    assert "tool" in kinds and "subagent" in kinds and "compaction" in kinds
+    sub = next(c for c in skill["children"] if c["kind"] == "subagent")
+    assert sub["context_policy"] == "isolate"
+    assert sub["callable"] == "Explore"
+    assert sub["entry_id"] == "a2"  # linked to the spawn entry
+    compaction = next(c for c in skill["children"] if c["kind"] == "compaction")
+    assert compaction["context_policy"] == "compact"
+
+
+def test_call_tree_rolls_up_cost_and_issues(claude_home):
+    # A failing command under the skill -> issue marker -> rolls into the skill
+    # and session frame; total cost = self + children.
+    lines = [_user("u1", "2026-06-12T10:00:00Z", "build"),
+             _skill("a0", "2026-06-12T10:00:02Z", "sk1", "fixer")]
+    for i in range(STUCK_REPEAT_THRESHOLD):
+        tuid = f"tu{i}"
+        lines.append(_tool_use(f"a{i}", f"2026-06-12T10:00:{10+i:02d}Z", tuid, "Bash",
+                               {"command": "make"}))
+        lines.append(_tool_result(f"r{i}", f"2026-06-12T10:00:{11+i:02d}Z", tuid,
+                                  "boom", is_error=True))
+    _write_session(claude_home, lines)
+    tree = synthesize_agent_trace(SID)["call_tree"]
+
+    skill = next(c for c in tree["children"] if c["kind"] == "skill")
+    # Issues (3 failures + 1 stuck) roll up into the skill and the session.
+    assert skill["issue_count"] >= STUCK_REPEAT_THRESHOLD
+    assert tree["issue_count"] == skill["issue_count"] + sum(
+        c["issue_count"] for c in tree["children"] if c is not skill
+    )
+    assert tree["worst_severity"] == "attention"
+    # total = self + sum(child totals) at the root.
+    assert tree["total_cost_usd"] == round(
+        tree["self_cost_usd"] + sum(c["total_cost_usd"] for c in tree["children"]), 6
+    )
+    # Efficiency ratios present when there's cost/duration.
+    assert "issues_per_usd" in skill and "issues_per_min" in skill
+
+
+def test_compaction_entry_parsed(claude_home):
+    _write_session(claude_home, [
+        _user("u1", "2026-06-12T10:00:00Z", "go"),
+        _compact("c1", "2026-06-12T10:01:00Z", "ran /compact now"),
+    ])
+    from flow_sdk.transcript_analyzer import AgentTranscriptFile, EntryKind
+    from flow_sdk.transcript_analyzer.resolver import resolve_session_jsonl
+    path = resolve_session_jsonl("claude", SID)
+    t = AgentTranscriptFile("claude", path)
+    comps = [e for e in t.entries if e.kind is EntryKind.COMPACTION]
+    assert len(comps) == 1
+    assert comps[0].trigger == "manual"
+
+
+def test_skills_nest_within_a_turn_but_siblings_across_turns(claude_home):
+    # skill1 calls skill2 in the SAME turn -> skill2 nests under skill1.
+    # A new user prompt then loads skill3 -> sibling at lane level.
+    _write_session(claude_home, [
+        _user("u1", "2026-06-12T10:00:00Z", "do it"),
+        _skill("a1", "2026-06-12T10:00:05Z", "s1", "skill1"),
+        _skill("a2", "2026-06-12T10:00:10Z", "s2", "skill2"),
+        _tool_use("a3", "2026-06-12T10:00:15Z", "t1", "Bash", {"command": "x"}),
+        _user("u2", "2026-06-12T10:05:00Z", "next"),
+        _skill("a4", "2026-06-12T10:05:05Z", "s3", "skill3"),
+    ])
+    tree = synthesize_agent_trace(SID)["call_tree"]
+
+    skills_at_root = [c for c in tree["children"] if c["kind"] == "skill"]
+    names = sorted(c["callable"] for c in skills_at_root)
+    assert names == ["skill1", "skill3"]  # skill2 is NOT at root
+    skill1 = next(c for c in skills_at_root if c["callable"] == "skill1")
+    nested = [c for c in skill1["children"] if c["kind"] == "skill"]
+    assert [c["callable"] for c in nested] == ["skill2"]  # nested under skill1
+
+
+def test_tool_calls_are_aggregated_not_enumerated(claude_home):
+    lines = [_user("u1", "2026-06-12T10:00:00Z", "go")]
+    for i in range(5):
+        lines.append(_tool_use(f"a{i}", f"2026-06-12T10:00:{10+i:02d}Z", f"t{i}", "Bash",
+                               {"command": f"echo {i}"}))
+    for i in range(3):
+        lines.append(_tool_use(f"b{i}", f"2026-06-12T10:01:{10+i:02d}Z", f"r{i}", "Read",
+                               {"file_path": f"/f{i}"}))
+    _write_session(claude_home, lines)
+    tree = synthesize_agent_trace(SID)["call_tree"]
+
+    tool_rows = [c for c in tree["children"] if c["kind"] == "tool"]
+    by_name = {c["callable"]: c for c in tool_rows}
+    # One aggregated row per tool name — NOT 8 individual rows.
+    assert set(by_name) == {"Bash", "Read"}
+    assert by_name["Bash"]["tool_call_count"] == 5
+    assert by_name["Bash"]["label"] == "Bash ×5"
+    assert by_name["Read"]["tool_call_count"] == 3
+    # Session still counts all 8 tool calls.
+    assert tree["tool_call_count"] == 8

@@ -1,7 +1,16 @@
 import { useMemo } from 'react';
 import { cn } from '@src/lib/utils';
-import type { AgentTraceDoc, TraceEvent, TraceGoal, TraceMarker, TraceSegment, TraceToolCall } from './trace-types';
+import type {
+  AgentTraceDoc,
+  CallFrame,
+  TraceEvent,
+  TraceGoal,
+  TraceMarker,
+  TraceSegment,
+  TraceToolCall,
+} from './trace-types';
 import { tsMs } from './trace-types';
+import { fmtDuration } from './format';
 
 const MIN_NEARBY_WINDOW_MS = 30_000;
 const MAX_CALLS_SHOWN = 12;
@@ -21,6 +30,8 @@ interface TraceDetailPanelProps {
   cursorMs: number;
   /** Lane to detail; null = root lane. */
   selectedLaneId: string | null;
+  /** When a call-tree frame is picked, show its frame-scoped detail on top. */
+  selectedFrame?: CallFrame | null;
 }
 
 function activeSegment(segments: TraceSegment[], cursorMs: number): TraceSegment | null {
@@ -48,7 +59,12 @@ function severityText(severity: string): string {
  * annotations, the active segment of the selected lane with the tool calls
  * around the cursor, and any markers within ±30s.
  */
-export function TraceDetailPanel({ doc, cursorMs, selectedLaneId }: TraceDetailPanelProps) {
+export function TraceDetailPanel({
+  doc,
+  cursorMs,
+  selectedLaneId,
+  selectedFrame,
+}: TraceDetailPanelProps) {
   const laneId = selectedLaneId ?? 'root';
   const lane = doc.lanes.find((l) => l.id === laneId) ?? doc.lanes[0];
 
@@ -100,6 +116,8 @@ export function TraceDetailPanel({ doc, cursorMs, selectedLaneId }: TraceDetailP
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-3" data-testid="trace-detail-panel">
+      {selectedFrame && <FrameDetail frame={selectedFrame} />}
+
       {activeGoals.length > 0 && (
         <div className="space-y-0.5">
           {activeGoals.map((g, i) => (
@@ -206,6 +224,47 @@ function CallLine({ call }: { call: TraceToolCall }) {
       <span className="truncate text-muted-foreground">{call.preview}</span>
       {call.exit_code != null && call.exit_code !== 0 && (
         <span className="flex-shrink-0 text-red-500">exit {call.exit_code}</span>
+      )}
+    </div>
+  );
+}
+
+/** Frame-scoped header shown when a call-tree frame is selected. Summarizes the
+ * frame's policies, rolled-up totals, and its immediate children. */
+function FrameDetail({ frame }: { frame: CallFrame }) {
+  return (
+    <div className="rounded-md border bg-muted/30 p-2" data-testid="frame-detail">
+      <div className="flex items-baseline gap-2">
+        <span className="text-sm font-semibold">{frame.callable}</span>
+        <span className="text-[10px] uppercase tracking-wide text-muted-foreground">{frame.kind}</span>
+        {[frame.context_policy, frame.control_policy, frame.state_scope].map((p) => (
+          <span key={p} className="rounded bg-background px-1 text-[10px] text-muted-foreground">
+            {p}
+          </span>
+        ))}
+        {frame.mcp && <span className="text-[10px] text-teal-500">mcp</span>}
+      </div>
+      <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+        <span>{fmtDuration(frame.total_duration_ms)}</span>
+        {frame.total_cost_usd > 0 && <span>${frame.total_cost_usd.toFixed(2)}</span>}
+        <span className={frame.issue_count > 0 ? 'text-red-500' : ''}>{frame.issue_count} issues</span>
+        <span>{frame.tool_call_count} tool calls</span>
+        {frame.issues_per_usd != null && <span>{frame.issues_per_usd}/$</span>}
+        {frame.issues_per_min != null && <span>{frame.issues_per_min}/min</span>}
+      </div>
+      {frame.children.length > 0 && (
+        <div className="mt-1.5 space-y-0.5 border-t pt-1 font-mono text-[11px]">
+          {frame.children.slice(0, 20).map((c) => (
+            <div key={c.id} className="flex items-baseline gap-1.5 truncate">
+              <span className={cn('flex-shrink-0', severityText(c.worst_severity))}>{c.kind}</span>
+              <span className="truncate text-muted-foreground">{c.callable}</span>
+              {c.total_cost_usd > 0 && (
+                <span className="flex-shrink-0 text-muted-foreground">${c.total_cost_usd.toFixed(2)}</span>
+              )}
+              {c.issue_count > 0 && <span className="flex-shrink-0 text-red-500">⚠{c.issue_count}</span>}
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );

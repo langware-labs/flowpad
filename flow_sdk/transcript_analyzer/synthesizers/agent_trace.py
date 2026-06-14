@@ -41,8 +41,10 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
+from ..callable_taxonomy import classify_callable
 from ..entries import (
     AgentSpawnEntry,
+    CompactionEntry,
     ShellCommandEntry,
     SkillCallEntry,
     ToolResultEntry,
@@ -51,8 +53,31 @@ from ..entries import (
 )
 from ..entry import EntryKind, TranscriptEntry
 from ..resolver import resolve_session_jsonl
-from ..severity import SeverityTier
+from ..severity import SEVERITY_RANK, SeverityTier
 from ..transcript import AgentTranscriptFile
+
+# Leaf operation kinds in the call tree (no nested context — pure syscalls).
+_LEAF_KINDS = frozenset({
+    EntryKind.TOOL_USE,
+    EntryKind.SHELL_COMMAND,
+    EntryKind.FILE_READ,
+    EntryKind.FILE_WRITE,
+    EntryKind.FILE_EDIT,
+    EntryKind.SEARCH,
+    EntryKind.WEB_FETCH,
+    EntryKind.TODO_UPDATE,
+    EntryKind.COMPACTION,
+})
+
+def _worst(a: str, b: str) -> str:
+    # SeverityTier is a str-Enum, so SEVERITY_RANK (keyed by the enum) resolves
+    # plain "attention"/"notable"/"info" strings too.
+    return a if SEVERITY_RANK.get(a, 0) >= SEVERITY_RANK.get(b, 0) else b
+
+
+def _span_ms(start: str | None, end: str | None) -> int:
+    a, b = _ts_ms(start or ""), _ts_ms(end or "")
+    return (b - a) if (a is not None and b is not None and b >= a) else 0
 
 # A wall-clock gap inside a turn longer than this cuts a new segment. Gaps at
 # a prompt boundary are the human away — never a stuck signal (see _segments).
@@ -79,6 +104,10 @@ _CALL_KINDS = frozenset({
 })
 
 _INTERRUPT_PREFIX = "[Request interrupted"
+# Claude injects a synthetic user message carrying the skill's SKILL.md when a
+# skill is invoked — it's a "user" line but NOT a human turn, so it must not cut
+# a segment or reset the call-tree skill stack (else nested skills look sibling).
+_SKILL_INJECTION_PREFIX = "Base directory for this skill:"
 
 
 def _ts_ms(ts: str) -> int | None:
@@ -151,7 +180,11 @@ def _is_prompt(e: TranscriptEntry) -> bool:
     if not isinstance(e, UserMessageEntry) or e.is_sidechain:
         return False
     text = (e.text or "").strip()
-    return bool(text) and not text.startswith(_INTERRUPT_PREFIX)
+    if not text or text.startswith(_INTERRUPT_PREFIX):
+        return False
+    if text.startswith(_SKILL_INJECTION_PREFIX):
+        return False  # skill-injection message, not a human turn
+    return True
 
 
 def _segments(lane_id: str, entries: list[TranscriptEntry], transcript: AgentTranscriptFile) -> list[dict]:
@@ -322,6 +355,263 @@ def _subagent_files(jsonl_path: Path, session_id: str) -> list[tuple[Path, dict]
     return out
 
 
+_CONTAINER_KINDS = frozenset({"session", "skill", "subagent"})
+
+
+def _make_frame(
+    fid: str,
+    kind: str,
+    callable_name: str,
+    lane_id: str,
+    *,
+    label: str | None = None,
+    entry_id: str | None = None,
+    policy_kind: str | None = None,
+    tool_name: str | None = None,
+    start_ts: str | None = None,
+    end_ts: str | None = None,
+    self_cost_usd: float = 0.0,
+    self_duration_ms: int = 0,
+    total_duration_ms: int | None = None,
+    tool_call_count: int = 0,
+    issue_count: int = 0,
+    worst_severity: str = "info",
+) -> dict:
+    """One frame-dict shape for every call-tree node (session/skill/subagent/
+    tool/compaction). ``policy_kind`` overrides the kind used for taxonomy
+    classification (skill frames classify as ``skill_call``); ``tool_name``
+    feeds the MCP flag. ``total_duration_ms`` defaults to the start→end span."""
+    return {
+        "id": fid,
+        "kind": kind,
+        "callable": callable_name,
+        "label": callable_name if label is None else label,
+        "lane_id": lane_id,
+        "entry_id": entry_id,
+        **classify_callable(policy_kind or kind, tool_name),
+        "start_ts": start_ts,
+        "end_ts": end_ts,
+        "self_cost_usd": self_cost_usd,
+        "total_cost_usd": 0.0,
+        "self_duration_ms": self_duration_ms,
+        "total_duration_ms": _span_ms(start_ts, end_ts) if total_duration_ms is None else total_duration_ms,
+        "tool_call_count": tool_call_count,
+        "issue_count": issue_count,
+        "worst_severity": worst_severity,
+        "children": [],
+    }
+
+
+def _compaction_frame(e: TranscriptEntry, lane_id: str, new_id) -> dict:
+    """A context-reset checkpoint — kept as its own row (structurally
+    significant), not aggregated with tool calls."""
+    dur = getattr(e, "duration_ms", None) or 0
+    return _make_frame(
+        new_id(lane_id), "compaction", "compaction", lane_id,
+        label=_clip(_call_preview(e) or "compaction", _LABEL_CHARS),
+        entry_id=e.id, start_ts=e.timestamp, end_ts=e.timestamp,
+        self_duration_ms=dur, total_duration_ms=dur,
+    )
+
+
+def _build_call_tree(
+    lanes: list[dict],
+    entries_by_lane: dict,
+    transcripts_by_lane: dict,
+    markers: list[dict],
+) -> dict:
+    """Build the nested call stack — **big items only**.
+
+    Container frames: session → skill → subagent. Skills NEST within a turn
+    (a skill load opens a frame under the currently-active skill; a user prompt
+    closes the skill stack back to the lane), so ``skill1`` calling ``skill2``
+    in one turn shows ``skill2`` nested under ``skill1``. Subagent spawns nest
+    their whole lane. Individual tool calls are NOT enumerated — they're
+    aggregated into one ``tool`` row per tool name (``Bash ×312``) under their
+    container; compaction stays an individual checkpoint row. Cost is attributed
+    to the deepest active skill over time; markers/efficiency roll up.
+    """
+    child_by_spawn = {
+        l["spawn_tool_use_id"]: l for l in lanes if l.get("spawn_tool_use_id")
+    }
+    markers_by_lane: dict[str, list[dict]] = {}
+    for m in markers:
+        markers_by_lane.setdefault(m["lane_id"], []).append(m)
+
+    counter = {"n": 0}
+
+    def new_id(lane_id: str) -> str:
+        counter["n"] += 1
+        return f"{lane_id}#f{counter['n']}"
+
+    def finalize_container(frame: dict, self_cnt: int, self_worst: str) -> None:
+        children = frame["children"]
+        frame["total_cost_usd"] = round(
+            frame["self_cost_usd"] + sum(c["total_cost_usd"] for c in children), 6
+        )
+        frame["total_duration_ms"] = frame["total_duration_ms"] or _span_ms(
+            frame["start_ts"], frame["end_ts"]
+        )
+        frame["tool_call_count"] = sum(c["tool_call_count"] for c in children)
+        # Issues roll up from MARKERS (canonical, attributed to the deepest
+        # active frame) + nested container children only — tool-group rows carry
+        # their own attention badge but don't double-count (their failures are
+        # already issue markers).
+        frame["issue_count"] = self_cnt + sum(
+            c["issue_count"] for c in children if c["kind"] in _CONTAINER_KINDS
+        )
+        worst = self_worst
+        for c in children:
+            worst = _worst(worst, c["worst_severity"])
+        frame["worst_severity"] = worst
+        cost, dur, ic = frame["total_cost_usd"], frame["total_duration_ms"], frame["issue_count"]
+        frame["issues_per_usd"] = round(ic / cost, 3) if cost and cost > 0 else None
+        mins = (dur or 0) / 60000.0
+        frame["issues_per_min"] = round(ic / mins, 3) if mins > 0 else None
+
+    def flush_tool_groups(frame: dict, groups: dict, lane_id: str) -> None:
+        """Append one aggregated ``tool`` row per tool name to ``frame``."""
+        for name, g in sorted(groups.items(), key=lambda kv: -kv[1]["count"]):
+            frame["children"].append(_make_frame(
+                new_id(lane_id), "tool", name, lane_id,
+                label=f"{name} ×{g['count']}", entry_id=g["first_id"], tool_name=name,
+                start_ts=g["first_ts"], end_ts=g["last_ts"],
+                self_duration_ms=g["dur"], total_duration_ms=g["dur"],
+                tool_call_count=g["count"], issue_count=g["attention"], worst_severity=g["worst"],
+            ))
+
+    def build_lane_frame(lane: dict, kind: str) -> dict:
+        lane_id = lane["id"]
+        transcript = transcripts_by_lane.get(lane_id)
+        entries = entries_by_lane.get(lane_id, [])
+        lane_start, lane_end = lane.get("start_ts"), lane.get("end_ts")
+        error_ids = _error_result_ids(entries)
+        callable_name = (
+            (lane.get("description") or "session")
+            if kind == "session"
+            else (lane.get("agent_type") or lane_id)
+        )
+        frame = _make_frame(
+            new_id(lane_id), kind, callable_name, lane_id,
+            label=_clip(lane.get("description") or callable_name, _LABEL_CHARS),
+            start_ts=lane_start, end_ts=lane_end,
+        )
+
+        skill_stack: list[dict] = []
+        all_skills: list[dict] = []
+        # Per-container tool-group accumulators, keyed by frame id.
+        tool_groups: dict[str, dict] = {frame["id"]: {}}
+        # Cost segments: (start_ts, end_ts, frame_or_lane) for the deepest active
+        # skill over time. Boundaries: skill load, turn (user prompt) reset.
+        cost_segs: list[tuple] = []
+        seg_start = lane_start
+        active = frame  # lane frame when no skill open
+
+        def container() -> dict:
+            return skill_stack[-1] if skill_stack else frame
+
+        def close_seg(at_ts: str | None) -> None:
+            nonlocal seg_start
+            if seg_start and at_ts:
+                cost_segs.append((seg_start, at_ts, active))
+            seg_start = at_ts
+
+        def accumulate_tool(e: TranscriptEntry) -> None:
+            cont = container()
+            groups = tool_groups.setdefault(cont["id"], {})
+            name = getattr(e, "tool_name", "") or e.kind.value
+            g = groups.get(name)
+            sev = _entry_severity(e, error_ids)
+            dur = getattr(e, "duration_ms", None) or 0
+            if g is None:
+                groups[name] = {
+                    "count": 1, "dur": dur, "first_ts": e.timestamp, "last_ts": e.timestamp,
+                    "first_id": e.id, "attention": 1 if sev == "attention" else 0, "worst": sev,
+                }
+            else:
+                g["count"] += 1
+                g["dur"] += dur
+                g["last_ts"] = e.timestamp
+                if sev == "attention":
+                    g["attention"] += 1
+                g["worst"] = _worst(g["worst"], sev)
+
+        for e in entries:
+            if _is_prompt(e):
+                # Turn boundary — close cost segment, reset the skill stack.
+                close_seg(e.timestamp)
+                skill_stack = []
+                active = frame
+            elif isinstance(e, SkillCallEntry):
+                close_seg(e.timestamp)
+                sk = _make_frame(
+                    new_id(lane_id), "skill", e.skill_name, lane_id,
+                    label=_clip(f"skill: {e.skill_name}", _LABEL_CHARS),
+                    entry_id=e.id, policy_kind="skill_call",
+                    start_ts=e.timestamp, end_ts=lane_end, total_duration_ms=0,
+                )
+                container()["children"].append(sk)  # nest under active skill
+                skill_stack.append(sk)
+                all_skills.append(sk)
+                tool_groups.setdefault(sk["id"], {})
+                active = sk
+            elif isinstance(e, AgentSpawnEntry):
+                child_lane = child_by_spawn.get(e.tool_use_id)
+                if child_lane is not None:
+                    sub = build_lane_frame(child_lane, "subagent")
+                    sub["entry_id"] = e.id
+                    container()["children"].append(sub)
+                else:
+                    accumulate_tool(e)
+            elif isinstance(e, CompactionEntry):
+                container()["children"].append(_compaction_frame(e, lane_id, new_id))
+            elif e.kind in _LEAF_KINDS:
+                accumulate_tool(e)
+
+        close_seg(lane_end)
+
+        # Segments tile [lane_start, lane_end] contiguously; attribute cost AND
+        # markers to the deepest active frame at each point (no double-count
+        # across nested skill windows).
+        for s, en, fr in cost_segs:
+            if transcript and s and en:
+                fr["self_cost_usd"] = round(fr["self_cost_usd"] + transcript.cost_in_span(s, en), 6)
+
+        self_sev_by_frame: dict[str, list[str]] = {}
+        for m in markers_by_lane.get(lane_id, []):
+            if m["kind"] not in ("issue", "stuck", "divergence"):
+                continue
+            ts = m["ts"]
+            for s, en, fr in cost_segs:
+                if s and en and s <= ts <= en:
+                    self_sev_by_frame.setdefault(fr["id"], []).append(m["severity"])
+                    break
+
+        def self_stats(fid: str) -> tuple[int, str]:
+            sevs = self_sev_by_frame.get(fid, [])
+            worst = "info"
+            for sv in sevs:
+                worst = _worst(worst, sv)
+            return len(sevs), worst
+
+        # Flush aggregated tool rows, set skill durations.
+        for sk in all_skills:
+            flush_tool_groups(sk, tool_groups.get(sk["id"], {}), lane_id)
+            sk["total_duration_ms"] = _span_ms(sk["start_ts"], sk["end_ts"])
+        flush_tool_groups(frame, tool_groups.get(frame["id"], {}), lane_id)
+
+        # Finalize skills deepest-first so parent rollups see child totals.
+        for sk in reversed(all_skills):
+            finalize_container(sk, *self_stats(sk["id"]))
+        finalize_container(frame, *self_stats(frame["id"]))
+        return frame
+
+    root_lane = next((l for l in lanes if l["kind"] == "root"), lanes[0] if lanes else None)
+    if root_lane is None:
+        return {}
+    return build_lane_frame(root_lane, "session")
+
+
 def synthesize_agent_trace(session_id: str, worker_type: str = "claude") -> dict:
     path = resolve_session_jsonl(worker_type, session_id)
     transcript = AgentTranscriptFile(worker_type, path, session_id=session_id)
@@ -330,12 +620,18 @@ def synthesize_agent_trace(session_id: str, worker_type: str = "claude") -> dict
     lanes: list[dict] = []
     events: list[dict] = []
     markers: list[dict] = []
+    # Per-lane entries + transcripts so the call tree can attribute cost/markers
+    # against the exact transcript each frame draws from.
+    entries_by_lane: dict[str, list] = {}
+    transcripts_by_lane: dict[str, AgentTranscriptFile] = {}
     total_cost = transcript.cost()
 
     lane, ev, mk = _lane_dict("root", "root", transcript, root_entries)
     lanes.append(lane)
     events.extend(ev)
     markers.extend(mk)
+    entries_by_lane["root"] = root_entries
+    transcripts_by_lane["root"] = transcript
 
     spawns_by_tuid = {
         e.tool_use_id: e
@@ -358,13 +654,16 @@ def synthesize_agent_trace(session_id: str, worker_type: str = "claude") -> dict
         lanes.append(lane)
         events.extend(ev)
         markers.extend(mk)
+        entries_by_lane[lane_id] = list(sub.entries)
+        transcripts_by_lane[lane_id] = sub
         total_cost += sub.cost()
 
     all_ms = [m for lane in lanes for m in (_ts_ms(lane["start_ts"] or ""), _ts_ms(lane["end_ts"] or "")) if m]
     tool_call_count = sum(len(s["tool_calls"]) for lane in lanes for s in lane["segments"])
+    call_tree = _build_call_tree(lanes, entries_by_lane, transcripts_by_lane, markers)
 
     return {
-        "version": 1,
+        "version": 2,
         "id": None,  # adopted/minted at entity create / first index
         "name": f"trace-{(transcript.session_id or session_id)[:8]}",
         "session_id": transcript.session_id or session_id,
@@ -381,6 +680,7 @@ def synthesize_agent_trace(session_id: str, worker_type: str = "claude") -> dict
             "tool_call_count": tool_call_count,
         },
         "lanes": lanes,
+        "call_tree": call_tree,
         "events": sorted(events, key=lambda e: e["ts"] or ""),
         "markers": sorted(markers, key=lambda m: m["ts"] or ""),
         "annotations": {"goals": [], "divergences": [], "verdict": None, "notes": []},
