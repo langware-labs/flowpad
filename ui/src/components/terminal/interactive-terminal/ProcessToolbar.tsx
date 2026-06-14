@@ -36,6 +36,7 @@ import { PTYViewer } from './pty-viewer';
 import { PTYEventsViewer } from './pty-events-viewer';
 import { CommandStatusViewer } from './command-status-viewer';
 import type { ColVisibility, TraceFilters } from './InteractiveTerminal';
+import { setChatUiMode, useChatUiMode } from '@src/contexts/chat-ui-mode-context';
 
 interface ProcessToolbarProps {
   process: AgenticProcess;
@@ -56,6 +57,7 @@ interface ProcessToolbarProps {
 export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, colVis, onColVisChange, sessionStartTime, lastMessageTime, embedded, onClose, shell }: ProcessToolbarProps) {
   const handleInjectPrompt = useCallback((text: string) => void shell?.sendInput(text + '\r'), [shell]);
   const { navigation } = useDockNavigation();
+  const chatUiMode = useChatUiMode();
   const [showPtyViewer, setShowPtyViewer] = useState(false);
   const [showPtyEventsViewer, setShowPtyEventsViewer] = useState(false);
   const [showCommandStatus, setShowCommandStatus] = useState(false);
@@ -304,6 +306,21 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
             <DropdownMenuItem onSelect={() => setShowCommandStatus(true)}>
               <span className="text-amber-400 text-xs font-medium">Command Status</span>
             </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="text-xs text-muted-foreground">Chat mode</DropdownMenuLabel>
+            {/* Experimental simple-chat view. Terminal is the default for every
+                process; the chat ("ui") view is not stable enough for users, so
+                this debug-menu toggle is the ONLY way to reach it. */}
+            <DropdownMenuCheckboxItem
+              checked={chatUiMode}
+              onSelect={(e) => e.preventDefault()}
+              onCheckedChange={(v) => setChatUiMode(v)}
+            >
+              <span className="text-xs">
+                <span className="font-medium text-amber-400">Chat UI (experimental)</span>
+                <span className="ml-1 text-muted-foreground">— {chatUiMode ? 'ui' : 'terminal'} mode</span>
+              </span>
+            </DropdownMenuCheckboxItem>
           </DropdownMenuContent>
         </DropdownMenu>
     </>
