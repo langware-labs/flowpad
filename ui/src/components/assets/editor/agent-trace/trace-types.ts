@@ -81,6 +81,33 @@ export interface TraceSummary {
   tool_call_count: number;
 }
 
+/** A node in the call-stack tree (schema v2). See
+ * flow_sdk/transcript_analyzer/synthesizers/agent_trace.py `_build_call_tree`. */
+export interface CallFrame {
+  id: string;
+  kind: 'session' | 'skill' | 'subagent' | 'tool' | 'compaction';
+  callable: string;
+  label: string;
+  lane_id: string;
+  entry_id?: string | null;
+  context_policy: string;
+  control_policy: string;
+  state_scope: string;
+  mcp: boolean;
+  start_ts?: string | null;
+  end_ts?: string | null;
+  self_cost_usd: number;
+  total_cost_usd: number;
+  self_duration_ms: number;
+  total_duration_ms: number;
+  tool_call_count: number;
+  issue_count: number;
+  worst_severity: string;
+  issues_per_usd?: number | null;
+  issues_per_min?: number | null;
+  children: CallFrame[];
+}
+
 export interface AgentTraceDoc {
   version: number;
   id?: string | null;
@@ -90,6 +117,7 @@ export interface AgentTraceDoc {
   generated_at: string;
   summary: TraceSummary;
   lanes: TraceLane[];
+  call_tree?: CallFrame; // v2+; absent on older records
   events: TraceEvent[];
   markers: TraceMarker[];
   annotations: TraceAnnotations;

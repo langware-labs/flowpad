@@ -2,12 +2,15 @@ import { useMemo, useState } from 'react';
 import { AgentTrace, FSRef } from '@sdk';
 import { Loader2 } from 'lucide-react';
 import { AssetEditorHeader } from '@src/components/assets/editor/AssetEditorHeader';
+import { Tabs, TabsList, TabsTrigger, TabsContent } from '@src/components/ui/tabs';
 import { formatDuration } from '@src/components/lens-viewer/shared/format-utils';
 import { cn } from '@src/lib/utils';
+import { CallTreeView } from './CallTreeView';
 import { TraceDetailPanel } from './TraceDetailPanel';
 import { TraceTimeline } from './TraceTimeline';
-import { tsMs } from './trace-types';
+import { tsMs, type CallFrame } from './trace-types';
 import { useAgentTraceDoc } from './useAgentTraceDoc';
+import { useAgentTraceTab } from './use-agent-trace-tab';
 
 interface AgentTraceAssetEditorProps {
   fsRef: FSRef;
@@ -36,6 +39,8 @@ export function AgentTraceAssetEditor({ fsRef, trace }: AgentTraceAssetEditorPro
   const { doc, error, loading } = useAgentTraceDoc(fsRef);
   const [cursorMs, setCursorMs] = useState<number | null>(null);
   const [selectedLaneId, setSelectedLaneId] = useState<string | null>(null);
+  const [selectedFrame, setSelectedFrame] = useState<CallFrame | null>(null);
+  const [tab, setTab] = useAgentTraceTab();
 
   const startMs = useMemo(() => {
     if (!doc) return null;
@@ -43,6 +48,22 @@ export function AgentTraceAssetEditor({ fsRef, trace }: AgentTraceAssetEditorPro
     return stamps.length ? Math.min(...stamps) : null;
   }, [doc]);
   const effectiveCursor = cursorMs ?? startMs;
+
+  // Click a call-tree frame → seek the timeline to it, highlight its lane, and
+  // open the Details tab scoped to that frame.
+  const handleSelectFrame = (frame: CallFrame) => {
+    setSelectedFrame(frame);
+    setSelectedLaneId(frame.lane_id);
+    const ms = tsMs(frame.start_ts);
+    if (ms !== null) setCursorMs(ms);
+    setTab('details');
+  };
+
+  // Scrubbing the timeline returns to time-based detail (unpins the frame).
+  const handleCursorChange = (ms: number) => {
+    setCursorMs(ms);
+    setSelectedFrame(null);
+  };
 
   const fileName = fsRef.path.split('/').pop() ?? 'trace.json';
   const dirPath = fsRef.path.slice(0, -fileName.length - 1);
@@ -77,11 +98,47 @@ export function AgentTraceAssetEditor({ fsRef, trace }: AgentTraceAssetEditorPro
         </div>
       ) : (
         <>
-          <TraceDetailPanel doc={doc} cursorMs={effectiveCursor} selectedLaneId={selectedLaneId} />
+          <Tabs
+            value={tab}
+            onValueChange={(v) => setTab(v as 'stack' | 'details')}
+            className="flex min-h-0 flex-1 flex-col"
+          >
+            <TabsList className="mx-3 mt-2 h-8 self-start">
+              <TabsTrigger value="stack" className="py-0.5 text-xs">
+                Transcript call stack
+              </TabsTrigger>
+              <TabsTrigger value="details" className="py-0.5 text-xs">
+                Details
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent
+              value="stack"
+              forceMount
+              className="mt-1 flex min-h-0 flex-1 flex-col data-[state=inactive]:hidden"
+            >
+              <CallTreeView
+                doc={doc}
+                selectedFrameId={selectedFrame?.id ?? null}
+                onSelectFrame={handleSelectFrame}
+              />
+            </TabsContent>
+            <TabsContent
+              value="details"
+              forceMount
+              className="mt-1 flex min-h-0 flex-1 flex-col data-[state=inactive]:hidden"
+            >
+              <TraceDetailPanel
+                doc={doc}
+                cursorMs={effectiveCursor}
+                selectedLaneId={selectedLaneId}
+                selectedFrame={selectedFrame}
+              />
+            </TabsContent>
+          </Tabs>
           <TraceTimeline
             doc={doc}
             cursorMs={effectiveCursor}
-            onCursorChange={setCursorMs}
+            onCursorChange={handleCursorChange}
             selectedLaneId={selectedLaneId}
             onSelectLane={setSelectedLaneId}
           />

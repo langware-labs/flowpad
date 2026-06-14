@@ -2,6 +2,7 @@
 
 from .agent_spawn import AgentSpawnEntry
 from .assistant_message import AssistantMessageEntry
+from .compaction import CompactionEntry
 from .exit_plan_mode import ExitPlanModeEntry
 from .file_edit import FileEditEntry
 from .file_read import FileReadEntry
@@ -23,6 +24,7 @@ from .web_fetch import WebFetchEntry
 __all__ = [
     "AgentSpawnEntry",
     "AssistantMessageEntry",
+    "CompactionEntry",
     "ExitPlanModeEntry",
     "FileEditEntry",
     "FileReadEntry",

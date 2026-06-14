@@ -36,13 +36,13 @@ from flow_sdk._compat import StrEnum
 from ..entries import (
     AssistantMessageEntry,
     CodexUsageEntry,
+    CompactionEntry,
     ExitPlanModeEntry,
     FileEditEntry,
     FileWriteEntry,
     MetaEntry,
     SkillCallEntry,
     SkillInvocationKind,
-    SummaryEntry,
     SystemEntry,
     ToolResultEntry,
     ToolUseEntry,
@@ -483,7 +483,7 @@ class _CodexParserBase:
                 text = json.dumps(payload, sort_keys=True)
             except (TypeError, ValueError):
                 text = str(payload)
-        return [SummaryEntry(summary_text=text, **base)]
+        return [CompactionEntry(trigger="auto", summary_preview=text[:500], **base)]
 
     # ── stream-event item.completed ─────────────────────────────────────────
 

@@ -19,6 +19,7 @@ from .._helpers import (
 from ..entries import (
     AgentSpawnEntry,
     AssistantMessageEntry,
+    CompactionEntry,
     ExitPlanModeEntry,
     FileEditEntry,
     FileReadEntry,
@@ -112,6 +113,18 @@ class ClaudeParser:
             parent_id=str(raw.get("parentUuid") or "") or None,
             is_sidechain=bool(raw.get("isSidechain", False)),
         )
+
+        # Compaction boundary — the summary that survives a context reset.
+        # Claude flags it with ``isCompactSummary`` (on a user/assistant line);
+        # a manual ``/compact`` slash command is the trigger vs auto.
+        if raw.get("isCompactSummary"):
+            message = raw.get("message") or {}
+            text = extract_text(message.get("content") or [])
+            return [CompactionEntry(
+                trigger="manual" if "/compact" in text else "auto",
+                summary_preview=text[:500],
+                **base,
+            )]
 
         if rtype == "assistant":
             return self._parse_assistant(raw, base)
