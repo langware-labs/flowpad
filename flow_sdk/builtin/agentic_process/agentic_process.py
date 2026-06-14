@@ -3623,6 +3623,17 @@ class AgenticProcess(Entity):
             self.sidecar_shell_id = None
             self.status = ProcessStatus.STOPPED.value
             await self.save()
+
+            # Soft-close this process's terminal Tab(s). close() is a full
+            # teardown but does NOT delete the AgenticProcess row (it persists
+            # as ``stopped``), so the generic delete → orphan-Tab cleanup in
+            # Entity.delete never fires and the chip would linger. Hide the Tab
+            # directly (membership-only — teardown is already happening here).
+            try:
+                from flow_sdk.builtin.tab import hide_tabs_for_target
+                await hide_tabs_for_target(self.type, str(self.id))
+            except Exception as tab_exc:
+                logger.warning(f"AgenticProcess {self.id}: tab hide on close failed: {tab_exc}")
             return True
 
         except Exception as e:

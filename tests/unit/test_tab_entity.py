@@ -156,6 +156,36 @@ async def test_deleting_target_soft_closes_its_tabs() -> None:
 
 
 @pytest.mark.asyncio
+async def test_agentic_process_close_hides_its_terminal_tab() -> None:
+    # Regression: clicking close on an agentic_process terminal tab leaves the
+    # chip on screen. AgenticProcess.close() stops the worker and deletes the
+    # linked shell, but does NOT delete the process row (it persists as
+    # ``stopped``). The Tab is keyed to the AGENTIC_PROCESS (target_type/id), so
+    # the generic Entity.delete → orphan-Tab cleanup never fires for it — and
+    # nothing else hides it, so it stays visible=true and the chip lingers.
+    from flow_sdk.builtin.agentic_process import AgenticProcess
+
+    ap = AgenticProcess(id=str(uuid.uuid4()), worker_type="claude_code")
+    await ap.save()
+    tab = await ensure_tab(
+        f"shell/agentic_process-{ap.id}",
+        target_type=AgenticProcess.get_type(),
+        target_id=ap.id,
+    )
+    assert tab.visible is True
+
+    await ap.close()
+
+    # The process row persists (close is a stop, not a delete) — so hiding the
+    # Tab can't rely on delete-cleanup; close() must soft-close it directly.
+    assert await AgenticProcess.get_one({"id": ap.id}) is not None
+    reloaded = await Tab.get_one({"id": tab.id})
+    assert reloaded is not None and reloaded.visible is False, (
+        "closing the process must soft-close its terminal Tab"
+    )
+
+
+@pytest.mark.asyncio
 async def test_rename_reflects_onto_subscribed_target() -> None:
     probe = _TabTargetProbe(id=str(uuid.uuid4()))
     await probe.save()

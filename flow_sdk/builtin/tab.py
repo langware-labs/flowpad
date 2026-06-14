@@ -165,6 +165,28 @@ async def ensure_tab(
     return tab
 
 
+async def hide_tabs_for_target(target_type: str, target_id: str) -> None:
+    """Membership-only soft-close of every visible Tab denormalized onto a
+    target entity (``target_type`` + ``target_id``): flip ``visible=False`` and
+    save, WITHOUT dispatching ``Tab.close``'s per-target-type teardown.
+
+    Use this from a target's OWN lifecycle teardown that does not delete the
+    entity — e.g. ``AgenticProcess.close`` stops the worker but the process row
+    persists as ``stopped``, so the generic delete → orphan-Tab cleanup in
+    ``Entity.delete`` never fires and the chip would linger. Teardown is already
+    underway at the call site, so routing through ``Tab.close`` here would
+    re-enter that teardown — hence the direct flag flip.
+    """
+    try:
+        tabs = await Tab.get_all({"target_type": target_type, "target_id": str(target_id)})
+    except Exception:
+        return
+    for tab in tabs:
+        if getattr(tab, "visible", False):
+            tab.visible = False
+            await tab.save()
+
+
 async def _http_close(self: Tab):
     """HTTP wrapper for ``Tab.close`` — POST /graph/tab/<id>/close. Keeps the
     method itself a clean, console-testable ``async`` returning None."""
