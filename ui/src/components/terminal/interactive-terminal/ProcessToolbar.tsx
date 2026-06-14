@@ -37,6 +37,7 @@ import { PTYEventsViewer } from './pty-events-viewer';
 import { CommandStatusViewer } from './command-status-viewer';
 import type { ColVisibility, TraceFilters } from './InteractiveTerminal';
 import { setChatUiMode, useChatUiMode } from '@src/contexts/chat-ui-mode-context';
+import { resolveProcessDisplayName } from '@src/components/terminal/process-display-name';
 
 interface ProcessToolbarProps {
   process: AgenticProcess;
@@ -154,18 +155,10 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
   const anyTimeFieldActive = traceFilters.time || traceFilters.index || traceFilters.line || traceFilters.absLine || traceFilters.debugTime || traceFilters.refTime;
   const anyColActive = !colVis.trace || !colVis.time || !colVis.annotations || anyTimeFieldActive;
 
-  const processDisplayName = useMemo(() => {
-    const cd = process.context_data as Record<string, unknown> | undefined;
-    const dn = cd && typeof cd.display_name === 'string' ? cd.display_name.trim() : '';
-    if (dn) return dn;
-    const name = (process as { name?: string | null }).name;
-    if (typeof name === 'string' && name.trim().length > 0) return name.trim();
-    if (process.instruction_content) {
-      const trimmed = process.instruction_content.replace(/<!--.*?-->/g, '').trim();
-      if (trimmed.length > 0) return trimmed.substring(0, 30);
-    }
-    return 'Session';
-  }, [process.context_data, process.name, process.instruction_content]);
+  const processDisplayName = useMemo(
+    () => resolveProcessDisplayName(process, 30),
+    [process.context_data, process.name, process.instruction_content],
+  );
 
   const setTrace = (key: keyof TraceFilters) => (val: boolean) =>
     onTraceFiltersChange({ ...traceFilters, [key]: val });
@@ -358,15 +351,25 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
         </Tooltip>
   );
 
-  // Primary CTAs — Share + Bookmark (favorite). Download lives in the right
-  // toolbar (downloadSlot), not here.
+  // Primary CTAs — entity name + Share + Bookmark (favorite). The name sits
+  // left of Share (truncated for header fit; full name lives in the tab
+  // tooltip). Download lives in the right toolbar (downloadSlot), not here.
   const centerSlot = !embedded && (
-    <EntityActionsToolbar
-      typeId={process.typeId}
-      favoriteTitle={processDisplayName}
-      favoriteIcon="agentic_process"
-      variant="prominent"
-    />
+    <div className="flex min-w-0 items-center gap-2">
+      <span
+        className="max-w-[240px] truncate text-xs font-medium text-foreground"
+        title={processDisplayName}
+        data-testid="process-header-name"
+      >
+        {processDisplayName}
+      </span>
+      <EntityActionsToolbar
+        typeId={process.typeId}
+        favoriteTitle={processDisplayName}
+        favoriteIcon="agentic_process"
+        variant="prominent"
+      />
+    </div>
   );
 
   const downloadSlot = !embedded && (
