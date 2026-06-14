@@ -1,3 +1,7 @@
+---
+id: 8a4d3fa0-e3f3-570c-a26b-f44e06817e9a
+---
+
 # World Cup Winner and Score Predictor Prototype
 
 This example is a research-grade starting point for a World Cup predictor that learns which sources are accurate overall and which sources are especially good for specific teams.
