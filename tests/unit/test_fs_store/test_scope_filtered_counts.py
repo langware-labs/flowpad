@@ -107,6 +107,56 @@ async def test_count_entities_both_returns_user_plus_project(tmp_path: Path) -> 
     assert await driver.count_entities_by_type("markdown", scope=sf) == 3
 
 
+async def _insert_system_markdown(driver, *, row_id: str, project_id: str) -> None:
+    """Insert a single `scope='system'` markdown row carrying a project id —
+    mirrors how SYSTEM_ROOT rows (Flowpad Assistant) are stamped."""
+    async with driver._session_ctx() as session:
+        await session.execute(
+            text("INSERT INTO entities (id, type, data) VALUES (:id, :type, :data)"),
+            {
+                "id": row_id,
+                "type": "markdown",
+                "data": json.dumps(
+                    {"id": row_id, "type": "markdown", "scope": "system", "project_id": project_id}
+                ),
+            },
+        )
+
+
+@pytest.mark.asyncio
+async def test_count_system_visible_only_when_its_project_selected(tmp_path: Path) -> None:
+    """A `scope='system'` row counts iff its project is explicitly in scope —
+    not under user-only, not under a different project, but yes when selected."""
+    pid_a, _ = await _seed_scoped_markdowns(tmp_path)
+    driver = get_db_driver()
+    await _insert_system_markdown(driver, row_id="sys-md-1", project_id="sys-P")
+
+    # Selected → visible (the 1 system row).
+    sf_sys = ScopeFilter(user=False, projects=("sys-P",))
+    assert await driver.count_entities_by_type("markdown", scope=sf_sys) == 1
+
+    # A different project → system row excluded (only projA's own row).
+    sf_a = ScopeFilter(user=False, projects=(pid_a,))
+    assert await driver.count_entities_by_type("markdown", scope=sf_a) == 1
+
+    # User-only → system row excluded (the 2 user rows).
+    sf_user = ScopeFilter(user=True, projects=())
+    assert await driver.count_entities_by_type("markdown", scope=sf_user) == 2
+
+    # Unscoped → everything, including the system row (4 seeded + 1 system).
+    assert await driver.count_entities_by_type("markdown") == 5
+
+
+@pytest.mark.asyncio
+async def test_count_system_matches_record_project_alias(tmp_path: Path) -> None:
+    """System rows resolve through `record_projects` the same as project rows."""
+    await _seed_scoped_markdowns(tmp_path)
+    driver = get_db_driver()
+    await _insert_system_markdown(driver, row_id="sys-md-2", project_id="sys-P")
+    sf = ScopeFilter(user=False, projects=("entity-sys-P",), record_projects=("sys-P",))
+    assert await driver.count_entities_by_type("markdown", scope=sf) == 1
+
+
 @pytest.mark.asyncio
 async def test_delete_entities_scoped_leaves_other_scope_untouched(tmp_path: Path) -> None:
     pid_a, pid_b = await _seed_scoped_markdowns(tmp_path)
