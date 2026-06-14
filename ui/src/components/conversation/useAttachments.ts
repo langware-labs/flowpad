@@ -32,6 +32,13 @@ export interface AttachmentView {
   localPath: string | null;
 }
 
+export interface AttachmentTypeChipView {
+  key: string;
+  type: string;
+  label: string;
+  count: number;
+}
+
 export interface UseAttachments {
   /** FILE attachments (the conversation.jsonl transcript is filtered out). */
   items: AttachmentView[];
@@ -55,6 +62,8 @@ export interface UseAttachments {
   assetCount: number;
   /** Human labels for the Download button tooltip: entity typeids + filenames. */
   assetLabels: string[];
+  /** Compact type chips rendered on the pre-download button. */
+  assetTypeChips: AttachmentTypeChipView[];
   /** Live upload/download progress for this message, or null when idle. */
   progress: FlowMessageProgress | null;
   /** Most recent per-message download error, or null. */
@@ -116,6 +125,26 @@ function buildItems(fm: FlowMessage | null | undefined, messageId: string): Atta
   });
 }
 
+function typeLabel(type: string): string {
+  return type
+    .split('_')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ') || 'Asset';
+}
+
+function buildAssetTypeChips(entities: TypeId[], items: AttachmentView[]): AttachmentTypeChipView[] {
+  const counts = new Map<string, number>();
+  for (const entity of entities) counts.set(entity.type, (counts.get(entity.type) ?? 0) + 1);
+  if (items.length > 0) counts.set('file', (counts.get('file') ?? 0) + items.length);
+  return Array.from(counts.entries()).map(([type, count]) => ({
+    key: type,
+    type,
+    label: typeLabel(type),
+    count,
+  }));
+}
+
 /**
  * The single conversation-attachment surface. Owns the index (what each
  * attachment looks like + whether it has a live URL), the live progress/error
@@ -139,6 +168,7 @@ export function useAttachments(fm: FlowMessage | null | undefined, messageId: st
   // (entity typeids + file names) so the user sees what a pull will fetch.
   const assetLabels = [...entities.map((t) => `${t.type}-${t.id}`), ...items.map((i) => i.filename)];
   const assetCount = assetLabels.length;
+  const assetTypeChips = buildAssetTypeChips(entities, items);
 
   const download = useCallback(async () => {
     if (!fm || downloading) return;
@@ -163,6 +193,7 @@ export function useAttachments(fm: FlowMessage | null | undefined, messageId: st
     hasPrompt,
     assetCount,
     assetLabels,
+    assetTypeChips,
     progress,
     error,
     dismissError: dismiss,
