@@ -1,5 +1,4 @@
-import { APIEntity, FSRef, apiClient, systemTools } from '@sdk';
-import { EntityFactory } from '@sdk/schema/factory';
+import { APIEntity, FSRef, apiClient, dataManager, systemTools } from '@sdk';
 import { useEntityOps } from '@sdk/react/hooks';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useMemo } from 'react';
@@ -122,7 +121,15 @@ export function useEntityByPath<T extends APIEntity<T>>(
       for (const row of rows ?? []) {
         if (!row.type) row.type = type;
         try {
-          const inst = EntityFactory.createEntity(row as never) as T | undefined;
+          // Hydrate through the cache-deduping path, NOT `new <Ctor>()` /
+          // `EntityFactory.createEntity` directly. The APIEntity constructor
+          // registers itself into the dataManager store as a side effect, so
+          // building a fresh instance for an id already cached (every refetch,
+          // or another hook holding the same row) collides in
+          // `register_new_entity` ("already registered with different entity").
+          // `updateEntityFromJson` reuses the canonical cached instance on a
+          // hit and only constructs+registers on a true miss.
+          const inst = dataManager.updateEntityFromJson<T>(row as never) as T | undefined;
           if (inst) out.push(inst);
         } catch (e) {
           // Per-row isolation: one unhydratable row (e.g. a non-conforming id
@@ -174,7 +181,7 @@ export function useEntityByPath<T extends APIEntity<T>>(
         if (!row) return NOT_FOUND;
         const rowWithType = row as Record<string, unknown> & { type?: string };
         if (!rowWithType.type) rowWithType.type = type;
-        const inst = EntityFactory.createEntity(rowWithType as never) as T | undefined;
+        const inst = dataManager.updateEntityFromJson<T>(rowWithType as never) as T | undefined;
         return inst ?? NOT_FOUND;
       } catch (err: unknown) {
         // apiClient (axios) throws AxiosError; status lives at error.response.status.
