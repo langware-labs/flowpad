@@ -1,4 +1,23 @@
 import type { ConversationParticipant } from '@sdk';
+import type { ContactKey } from '@src/hooks/use-contact-permissions';
+
+/** Identity passed to {@link ContactPermissionsDialog} — a permissions key plus
+ *  a display name. */
+export type ContactIdentity = ContactKey & { name?: string | null };
+
+/** Build a permissions contact from a participant/member row, or `null` when it
+ *  has neither a user id nor an email (nothing to key permissions on). Accepts
+ *  any row carrying the three snake_case fields, so both the conversation
+ *  participant list and the member roster share one implementation. */
+export function contactFromParticipant(
+  row: { user_id?: string | null; email?: string | null; name?: string | null },
+): ContactIdentity | null {
+  const userId = row.user_id?.trim() || null;
+  const email = row.email?.trim() || null;
+  const name = row.name?.trim() || null;
+  if (!userId && !email) return null;
+  return { userId, email, name };
+}
 
 export function participantLabel(participant: ConversationParticipant | null | undefined): string {
   return participant?.name?.trim() || participant?.email?.trim() || 'unknown';
