@@ -581,6 +581,13 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                 proc.status = ProcessStatus.STOPPING.value
                 proc.visible = False
                 await proc.save()
+                # Strip membership is the Tab entity (visible=true), not
+                # AgenticProcess.visible. The stopped AP row persists, so the
+                # delete→orphan-Tab cleanup never fires; hide the backing Tab
+                # now (synchronously) or the chip lingers if the background
+                # teardown is slow or fails.
+                from flow_sdk.builtin.tab import hide_tabs_for_target
+                await hide_tabs_for_target("agentic_process", entity_id)
                 if shell_id:
                     await self._mark_shell_closing(shell_id)
                 accepted.append(canonical)
