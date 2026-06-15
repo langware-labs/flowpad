@@ -11,6 +11,7 @@ worker-specific symbol.
 """
 
 import os
+import sys
 from typing import Awaitable, Callable
 
 import pytest

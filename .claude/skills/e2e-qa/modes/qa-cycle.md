@@ -4,6 +4,13 @@ When invoked with `run qa cycle` / `full qa` / `qa cycle`:
 
 Runs all test suites in sequence across 11 phases. **You never advance to the next phase unless the current phase achieves a clear pass.** All failures in a phase must be debugged and fixed — or flagged — before moving on.
 
+**Step 0.0 — TOTAL MACHINE OWNERSHIP, ZERO MID-CYCLE QUESTIONS (non-negotiable).** During a full QA cycle the entire machine and the dev environment belong to the cycle. You do **whatever it takes to make every phase produce a verdict, and you NEVER stop to ask the user mid-cycle** — not about load, not about killing/relaunching instances or backends, and **not about destructive backend operations**. Specifically and explicitly authorized, standing, no confirmation ever:
+- **Clear / wipe / re-index the main `$LOCAL_SERVER_PORT` (:9008) database** as Phases 10/11 require. The clear endpoint backs up first (`backup_path` in the response) and re-indexes; that backup IS the safety net. Treat `:9008` as a disposable QA backend for the duration of the cycle. Do NOT ask "this will wipe real data?" — clear it, verify bootstrap re-populated, proceed.
+- **Kill and relaunch** any flow instance, backend, frontend, hub, or orphaned worker to reduce load or get a healthy service (see Step 0.4). Preserve only the main `:9008` backend, its vite, the hub, and your own session.
+- **Restart the main backend / hub / named instances** between phases as needed.
+
+The Autonomous Run Policy already forbids mid-cycle questions; this restates it because the destructive-DB and machine-reclaim cases are where the instinct to ask creeps back. There is no one to answer; asking stalls the cycle. The ONLY permitted question is job-type clarification at invocation, before any work starts. Everything else is decide-or-flag, and "make it pass" beats "ask whether I may." If an operation genuinely cannot proceed (e.g. required billable API key absent), flag it and move on — never ask.
+
 **Step 0 — verify and re-arm the watchdog loop.** Before every phase work session (including immediately after a session interruption, idle gap, /login recovery, or context reset), verify the cycle watchdog is still armed. Start it via the Skill tool if it is not running:
 
 ```
@@ -11,6 +18,26 @@ Skill(skill="loop", args='30m "Do not stop until all passed or flagged. flagged 
 ```
 
 The loop keeps the cycle driving forward unattended; it naturally ends when the QA Cycle Summary is printed (every test passed or flagged). The loop never overrides the circuit breaker (see SKILL.md, Run Integrity): on repeated same-class anomalies, a loop tick performs the meta-RCA instead of more forward grinding. **An unwatched cycle silently stops being a cycle,** so verify and re-arm at every session resume — the watchdog's presence tells you unattended progress is still happening.
+
+**Step 0.4 — you own the whole machine; reclaim it on extreme load.** During a full QA cycle the host is allocated entirely to the cycle. **Before Phase 1, and again whenever the 1-minute load average climbs above the core count (`sysctl -n hw.ncpu`), reclaim the machine by eliminating accumulated instances** — they are the dominant, illegitimate load source and they manufacture false timeouts in the timing-sensitive phases (3, 7, 10). Real-Claude long tests cannot get a valid timing verdict on a saturated host, and raising their caps is forbidden — so fix the load, not the cap.
+
+Cleanup, in order (preserve the main dev backend on `$LOCAL_SERVER_PORT`, its vite on `$VITE_PORT`, the hub on `:8093`, and your own session):
+
+```bash
+set -a; source .env.local; set +a
+MAIN_BE=$(lsof -ti :${LOCAL_SERVER_PORT} -sTCP:LISTEN); MAIN_FE=$(lsof -ti :${VITE_PORT} -sTCP:LISTEN); HUB=$(lsof -ti :8093 -sTCP:LISTEN)
+# 1) kill every named instance_ctl instance (hub phases relaunch dev-1/dev-2 fresh)
+for n in $(scripts/instance_ctl.sh list 2>/dev/null | awk '/backend/{print $1}'); do scripts/instance_ctl.sh kill "$n"; done
+# 2) kill stale/orphaned flow_sdk.server.run backends (multi-day, ppid=1) EXCEPT the main one
+for p in $(pgrep -f "flow_sdk.server.run"); do [ "$p" != "$MAIN_BE" ] && ! ps -o ppid= -p "$p" | grep -qw "$MAIN_BE" && kill "$p" 2>/dev/null; done
+# 3) reap orphaned real-Claude workers whose backend is gone (ppid=1 only — never the main backend's children mid-test)
+for p in $(pgrep -f "claude --dangerously-skip-permissions"); do [ "$(ps -o ppid= -p $p|tr -d ' ')" = "1" ] && kill "$p" 2>/dev/null; done
+# 4) verify the main backend survived and re-index is healthy
+curl -s "http://localhost:${LOCAL_SERVER_PORT}/api/v1/graph/bootstrap" | grep -q '"projects"' && echo "main backend OK" || echo "MAIN BACKEND DOWN — restart before proceeding"
+uptime
+```
+
+Never kill the user's GUI apps (browser, IDE) blindly — eliminate *flow/claude instances and orphaned backends* first; those are almost always the real load floor (accumulated from past QA/hub runs that never cleaned up). Only if instances are gone and load is still extreme do you investigate app-level load, and then you report it rather than killing GUI apps with possible unsaved work. **Run this cleanup as a circuit-breaker response too:** when a timing phase trips repeated environmental timeouts, the first remedy is reclaim-the-machine, then re-run — not a flag.
 
 **Step 0.5 — create the cycle-state file and record every test verdict.** Create `<output-dir>/<timestamp>/cycle-state.md` (phase, per-item dispositions, owners, instance locks, pending validations) and update it at every milestone — see SKILL.md "Durable cycle state". **Critically: before anything else starts (before the next phase work begins), every test attempt must end by recording its verdict** — either the test passed/failed outcome, or an explicit "no verdict: <reason>" — in cycle-state.md. An attempt without a recorded verdict is indistinguishable from an attempt that never ran, leaving the cycle's history incomplete and resumption ambiguous.
 
