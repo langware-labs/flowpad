@@ -302,16 +302,18 @@ export const closeTerminalTargets = closeTabTargets;
 
 export type BucketState = 'loading' | 'live' | 'missing';
 
-export interface TerminalProjectBucket {
+export interface TabProjectBucket {
   /** Stable bucket identity. For stranded buckets this is still the dangling
-   *  Shell.project_id — the row exists, the Project entity just doesn't. */
+   *  project_id — the row exists, the Project entity just doesn't. */
   projectId: string;
   /** Resolved Project entity. Non-null iff ``state === 'live'``. */
   project: Project | null;
   /** 'loading' = cache miss, fetch in flight or pending; 'live' = entity
    *  resolved; 'missing' = backend confirmed 404 (stranded). */
   state: BucketState;
-  tabs: TerminalTab[];
+  /** Number of open (visible) tabs the project owns — across ALL kinds
+   *  (terminal, agent, markdown, skill, …), the count badge in the chip. */
+  tabCount: number;
   /** Resurrect the Project from a tab's workdir + rebind every dependent's
    *  project_id (server-side, via compute_node/recover-orphaned-project).
    *  Resolves to the recovered Project, or null on failure. Only meaningful
@@ -319,12 +321,8 @@ export interface TerminalProjectBucket {
   recover: () => Promise<Project | null>;
 }
 
-export interface UseTerminalProjectBucketsResult {
-  buckets: TerminalProjectBucket[];
-}
-
-function bucketProjectId(tab: TerminalTab): string | null {
-  return tab.projectId ?? tab.shell?.project_id ?? tab.agenticProcess?.project_id ?? null;
+export interface UseTabProjectBucketsResult {
+  buckets: TabProjectBucket[];
 }
 
 /**
@@ -332,6 +330,12 @@ function bucketProjectId(tab: TerminalTab): string | null {
  * Project entity. Single owner of the "which projects own which tabs" question
  * — consumers (e.g. ProjectsCounterChip) render rows straight from this hook
  * without doing their own bucketing or dangling-FK fallback.
+ *
+ * Membership is KIND-AGNOSTIC: every visible `Tab` counts, not just terminal /
+ * agent tabs. A project whose only open tab is a markdown/skill/doc still gets a
+ * bucket — that is the fix for "the project menu shows the wrong number of
+ * projects" (it used to bucket terminal-target tabs only, so content-only
+ * projects vanished from the list).
  *
  * Three bucket states:
  *   - ``loading``: cache miss, resolution in flight. Chip shows a placeholder.
@@ -341,26 +345,23 @@ function bucketProjectId(tab: TerminalTab): string | null {
  * Recovery is explicit — the hook does not auto-recover on mount (would re-enter
  * the auto-action antipattern called out in feedback memory).
  */
-export function useTerminalProjectBuckets(): UseTerminalProjectBucketsResult {
-  // The project-menu chip shows ONE row per project that owns active tabs, so it
-  // must bucket the UNSCOPED visible-tabs list. Going through `useTerminalTabs()`
-  // would default the scope to `dataContext.project?.id` and `buildTerminalRows`
-  // would filter out every other project's tabs — collapsing the chip to a single
-  // bucket. Build rows with an explicit `null` project so all projects survive.
+export function useTabProjectBuckets(): UseTabProjectBucketsResult {
+  // The project-menu chip shows ONE row per project that owns an open tab, so it
+  // buckets the UNSCOPED visible-tabs list directly off the `Tab` entities — any
+  // `target_type`, never via `buildTerminalRows` (which drops content tabs and
+  // scopes to the current project). Global tabs (`project_id == null`) are not a
+  // project and never create a bucket.
   const { data: allTabs } = useEntitiesQuery<Tab>(VISIBLE_TABS_QUERY);
-  const tabs = useMemo(() => buildTerminalRows(allTabs ?? [], null), [allTabs]);
 
   const grouped = useMemo(() => {
-    const byProject = new Map<string, TerminalTab[]>();
-    for (const tab of tabs) {
-      const pid = bucketProjectId(tab);
+    const counts = new Map<string, number>();
+    for (const tab of allTabs ?? []) {
+      const pid = tab.project_id ?? null;
       if (!pid) continue;
-      const bucket = byProject.get(pid);
-      if (bucket) bucket.push(tab);
-      else byProject.set(pid, [tab]);
+      counts.set(pid, (counts.get(pid) ?? 0) + 1);
     }
-    return Array.from(byProject.entries());
-  }, [tabs]);
+    return Array.from(counts.entries());
+  }, [allTabs]);
 
   // Resolution status per project_id. Seeded from the cache so projects already
   // hydrated by other paths skip the loading flash.
@@ -403,8 +404,8 @@ export function useTerminalProjectBuckets(): UseTerminalProjectBucketsResult {
     };
   }, [grouped, status]);
 
-  const buckets = useMemo<TerminalProjectBucket[]>(() => {
-    return grouped.map(([projectId, bucketTabs]) => {
+  const buckets = useMemo<TabProjectBucket[]>(() => {
+    return grouped.map(([projectId, tabCount]) => {
       const cached = Project.getByIdFromCache<Project>(projectId) ?? null;
       const resolved = status.get(projectId);
       const state: BucketState = cached
@@ -430,7 +431,7 @@ export function useTerminalProjectBuckets(): UseTerminalProjectBucketsResult {
         });
         return recovered;
       };
-      return { projectId, project, state, tabs: bucketTabs, recover };
+      return { projectId, project, state, tabCount, recover };
     });
   }, [grouped, status]);
 

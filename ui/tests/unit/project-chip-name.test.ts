@@ -6,16 +6,16 @@
  */
 import { describe, expect, it } from 'vitest';
 import { resolveProjectChipName } from '@src/components/terminal/ProjectsCounterChip';
-import type { TerminalProjectBucket } from '@src/tabs/useTabs';
+import type { TabProjectBucket } from '@src/tabs/useTabs';
 
 // Minimal bucket shapes — resolveProjectChipName only reads projectId + project.
-const bucket = (projectId: string, name: string | null): TerminalProjectBucket =>
+const bucket = (projectId: string, name: string | null): TabProjectBucket =>
   ({
     projectId,
     project: name === null ? null : ({ getDisplayName: () => name, name } as any),
-    tabs: [],
+    tabCount: 0,
     state: 'live',
-  } as unknown as TerminalProjectBucket);
+  } as unknown as TabProjectBucket);
 
 describe('resolveProjectChipName', () => {
   it('prefers the explicit current-project name', () => {

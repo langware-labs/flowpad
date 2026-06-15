@@ -1,25 +1,21 @@
 /**
- * RCA capture (test mode): the project-menu chip (ProjectsCounterChip) shows
- * ONE chip even when terminal tabs span TWO different projects.
+ * Behavioural lock for the project-menu chip (ProjectsCounterChip): it shows one
+ * row per project that owns an open tab, across ALL tab kinds.
  *
- * Proven root cause this session:
- *   `useTerminalProjectBuckets()` (useTabs.ts) — the "which projects own which
- *   tabs" owner the chip renders from — sources its tabs via `useTerminalTabs()`
- *   called with NO argument. `useTerminalTabs(undefined)` defaults its scope to
- *   `dataContext.project?.id` (useTabs.ts:213) and `buildTerminalRows` then
- *   FILTERS the rows to that one project (useTabs.ts:202). So a tab belonging to
- *   any other project is dropped before bucketing → only the current project
- *   ever produces a bucket → exactly one chip.
+ * Two regressions this guards:
+ *   1. (historical) the chip collapsed to ONE bucket because the source was
+ *      scoped to the current project — fixed by bucketing the UNSCOPED list.
+ *   2. (this change) the chip counted only TERMINAL/agent tabs, so a project
+ *      whose only open tab is content (markdown/skill/doc) vanished from the
+ *      list — fixed by bucketing the raw `Tab` entities by `project_id`,
+ *      independent of `target_type`. Global tabs (`project_id == null`) create
+ *      no bucket.
  *
- * This test drives the REAL derivation (useTerminalProjectBuckets →
- * useTerminaltabs → buildTerminalRows → bucketing). The only stand-ins are the
- * HTTP boundary (`apiClient.get`, same as skills-category-reactivity.test.tsx)
- * and the ambient current-project selection (`dataContext.project`) — neither is
- * the logic under test; they establish the input + precondition.
- *
- * Expected behaviour: two tabs on two projects ⇒ TWO buckets ⇒ two chips.
- * Against current code this FAILS with buckets.length === 1 (the bug). It passes
- * once the bucket hook buckets the UNSCOPED tab list.
+ * This test drives the REAL derivation (`useTabProjectBuckets` over the live
+ * visible-tabs query). The only stand-ins are the HTTP boundary (`apiClient.get`,
+ * same as skills-category-reactivity.test.tsx) and the ambient current-project
+ * selection (`dataContext.project`) — neither is the logic under test; they
+ * establish the input + precondition.
  */
 import { ContextEntitiesEnum, dataContext, dataManager, Project, TypeId } from '@sdk';
 import apiClient from '@sdk/client';
@@ -28,26 +24,29 @@ import { renderHook, waitFor } from '@testing-library/react';
 import React from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { useTerminalProjectBuckets } from '@src/tabs/useTabs';
+import { useTabProjectBuckets } from '@src/tabs/useTabs';
 
 const PROJECT_A = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const PROJECT_B = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
-const SHELL_A = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+const PROJECT_C = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+const SHELL_A = 'c1111111-cccc-4ccc-8ccc-cccccccccccc';
 const SHELL_B = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+const DOC_C = 'd1111111-dddd-4ddd-8ddd-dddddddddddd';
 const TAB_A = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
 const TAB_B = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
+const TAB_C = 'f1111111-ffff-4fff-8fff-ffffffffffff';
 
-/** A visible, shell-target Tab row as the backend would serialize it. */
-function tabRow(id: string, shellId: string, projectId: string) {
+/** A visible Tab row as the backend would serialize it, for any target type. */
+function tabRow(id: string, targetType: string, targetId: string, projectId: string | null) {
   return {
     type: 'tab',
     id,
-    target_type: 'shell',
-    target_id: shellId,
+    target_type: targetType,
+    target_id: targetId,
     project_id: projectId,
     visible: true,
     tab_order: 0,
-    icon_key: 'shell',
+    icon_key: targetType,
   };
 }
 
@@ -70,12 +69,22 @@ describe('ProjectsCounterChip buckets — one chip per project across all projec
     dataManager.updateEntityFromJson<Project>(
       new Project({ id: PROJECT_B, name: 'Project B' }) as never,
     );
+    dataManager.updateEntityFromJson<Project>(
+      new Project({ id: PROJECT_C, name: 'Project C' }) as never,
+    );
 
-    // HTTP boundary: the visible-tabs query returns two tabs on two projects.
+    // HTTP boundary: the visible-tabs query returns three tabs across three
+    // projects — two terminal tabs AND one CONTENT (markdown) tab whose project
+    // (C) has no terminal at all. A global tab (project_id null) must be ignored.
     // Any other GET (entity loads/expansions) resolves to an empty list.
     vi.spyOn(apiClient, 'get').mockImplementation(async (endpoint: string) => {
       if (endpoint.includes('/tab')) {
-        return [tabRow(TAB_A, SHELL_A, PROJECT_A), tabRow(TAB_B, SHELL_B, PROJECT_B)] as never;
+        return [
+          tabRow(TAB_A, 'shell', SHELL_A, PROJECT_A),
+          tabRow(TAB_B, 'shell', SHELL_B, PROJECT_B),
+          tabRow(TAB_C, 'markdown', DOC_C, PROJECT_C),
+          tabRow('a0000000-0000-4000-8000-000000000000', 'settings', 'settings', null),
+        ] as never;
       }
       return [] as never;
     });
@@ -98,15 +107,19 @@ describe('ProjectsCounterChip buckets — one chip per project across all projec
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   );
 
-  it('produces one bucket per project when tabs span two projects', async () => {
-    const { result } = renderHook(() => useTerminalProjectBuckets(), { wrapper: Wrapper });
+  it('produces one bucket per project across all tab kinds (terminal + content), ignoring global tabs', async () => {
+    const { result } = renderHook(() => useTabProjectBuckets(), { wrapper: Wrapper });
 
-    // Let the visible-tabs query resolve and the buckets settle.
+    // Let the visible-tabs query resolve and the buckets settle. Project C is
+    // present even though its only open tab is a markdown (content) tab — the
+    // bug fix. The global (project_id null) tab creates no bucket.
     await waitFor(() => {
       const ids = result.current.buckets.map((b) => b.projectId).sort();
-      expect(ids).toEqual([PROJECT_A, PROJECT_B].sort());
+      expect(ids).toEqual([PROJECT_A, PROJECT_B, PROJECT_C].sort());
     });
 
-    expect(result.current.buckets).toHaveLength(2);
+    expect(result.current.buckets).toHaveLength(3);
+    const byId = new Map(result.current.buckets.map((b) => [b.projectId, b]));
+    expect(byId.get(PROJECT_C)?.tabCount).toBe(1);
   });
 });
