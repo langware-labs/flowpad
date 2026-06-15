@@ -31,7 +31,8 @@ import { applyScopeToParams, assetScopeBucket, defaultScopeFilter, unionAssetBuc
 import type { AssetScopeBucket, ScopeFilter } from '@src/lib/scope-filter';
 import { useEntity } from '@sdk/react/hooks';
 import { useSearchScopeToggle } from '@src/hooks/use-global-search-scope';
-import { useIndexStatus, typeCountsFromPerType } from '@src/hooks/use-index-status';
+import { useIndexStatus } from '@src/hooks/use-index-status';
+import { useAssetStats } from '@src/hooks/use-asset-stats';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
 import { ScopeFilterIconBar } from '@src/components/scope-filter/ScopeFilterIconBar';
 import { ViewType } from '@src/types/ViewType';
@@ -395,13 +396,13 @@ export function AssetsPage() {
   const lastIndexedAt = projIdx?.last_indexed_at ?? null;
 
   // Per-type counts for the sidebar badges, sourced from the single scoped
-  // `index-status` response instead of one `/search?limit=1` probe per type
-  // row (that N+1 dominated the asset list page's request count). Scoped to the
-  // active filter so the badges track the scope/project picker.
-  const { state: countsIdxState } = useIndexStatus(effectiveFilter.scope);
+  // `asset-stats` response (counts only) — one request for every type badge,
+  // scoped to the active filter so they track the scope/project picker, and
+  // reactive: `useAssetStats` invalidates on any asset create/delete data_op.
+  const { stats: assetStats } = useAssetStats(effectiveFilter.scope);
   const typeCounts = useMemo(
-    () => typeCountsFromPerType(countsIdxState.phase === 'ready' ? countsIdxState.status.per_type : []),
-    [countsIdxState],
+    () => new Map(Object.entries(assetStats.per_type)),
+    [assetStats.per_type],
   );
 
   useEffect(() => { setSelectedResultIndex(-1); }, [searchQuery]);
