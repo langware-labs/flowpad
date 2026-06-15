@@ -9,6 +9,7 @@
  */
 import { test, expect } from '@playwright/test';
 import { dismissSetupModal, gotoTriggers, cleanupScheduleTriggers } from './helpers';
+import { apiOrigin } from '../_shared/api';
 
 // SKIPPED: the FlaskConical "Test" button click + invocation surfacing flow
 // doesn't reach a visible "Scheduled" entry within 15s — selectedItem may
@@ -16,7 +17,7 @@ import { dismissSetupModal, gotoTriggers, cleanupScheduleTriggers } from './help
 // invocation list doesn't refresh in playwright. Real e2e fire test —
 // needs trace + selector audit.
 test.skip('schedule trigger test button fires job and shows invocation', async ({ page }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(60_000);
   const errors: string[] = [];
   page.on('console', msg => { if (msg.type() === 'error') errors.push(msg.text()); });
   page.on('pageerror', err => errors.push(err.message));
@@ -27,25 +28,25 @@ test.skip('schedule trigger test button fires job and shows invocation', async (
   // TriggersView filters by t.project_id === project?.id, so a trigger with
   // no project_id is invisible in the UI even though the API returned 200.
   // Fetch the @local project id from bootstrap and pass it explicitly.
-  const triggerId: string = await page.evaluate(async () => {
-    const boot = await fetch('http://localhost:9008/api/v1/graph/bootstrap').then((r) => r.json());
-    const projectId = boot?.data?.default_project?.id ?? null;
-    const res = await fetch('http://localhost:9008/api/v1/graph/trigger', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name: 'test-fire-schedule',
-        trigger_type: 'schedule',
-        expr: '0 9 * * *',
-        sched_trigger_type: 'cron',
-        scope: 'user',
-        enabled: true,
-        project_id: projectId,
-      }),
-    });
-    const json = await res.json();
-    return json?.data?.id as string;
+  // Node-side fetch (apiOrigin): the page is still at about:blank here, so an
+  // in-page relative fetch would have no origin to resolve against.
+  const API = apiOrigin();
+  const boot = await fetch(`${API}/api/v1/graph/bootstrap`).then((r) => r.json());
+  const projectId = boot?.data?.default_project?.id ?? null;
+  const createRes = await fetch(`${API}/api/v1/graph/trigger`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      name: 'test-fire-schedule',
+      trigger_type: 'schedule',
+      expr: '0 9 * * *',
+      sched_trigger_type: 'cron',
+      scope: 'user',
+      enabled: true,
+      project_id: projectId,
+    }),
   });
+  const triggerId: string = (await createRes.json())?.data?.id as string;
   if (!triggerId) throw new Error('Failed to create test schedule trigger');
 
   await gotoTriggers(page);

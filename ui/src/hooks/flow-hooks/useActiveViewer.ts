@@ -17,8 +17,7 @@ import { useViewerStore } from './useViewerStore';
  * @param flow - The flow entity to track
  */
 export function useActiveViewer(flow: Flow | AgenticProcess | null | undefined) {
-  const { currentOverviewTab, setCurrentOverviewTab, setCurrentContext, addTab, setActiveTab, openTabs } =
-    useViewerStore();
+  const { currentOverviewTab, setCurrentOverviewTab, setCurrentContext } = useViewerStore();
   const { navigation, currentDock, isDockUrl } = useDockNavigation();
 
   // Use ref to track current flow and prevent unnecessary re-subscriptions
@@ -85,11 +84,12 @@ export function useActiveViewer(flow: Flow | AgenticProcess | null | undefined) 
 
   // Sync URL dock state to viewer store (URL-first architecture)
   useEffect(() => {
-    // If URL has no dock, switch to overview tab and clear context
+    // If URL has no dock, clear the viewing context but KEEP the last
+    // overview tab — hard-nulling it here (the old `:92` behavior) blanked
+    // the overview panel on every dock-less URL. The overview axis resolves
+    // from what's already in the store (tab-management.md Part 3 U1).
     if (!isDockUrl || !currentDock) {
-      setActiveTab('overview');
       setCurrentContext(null);
-      setCurrentOverviewTab(null);
       return;
     }
 
@@ -127,22 +127,10 @@ export function useActiveViewer(flow: Flow | AgenticProcess | null | undefined) 
       setCurrentContext(null);
     }
 
-    // Handle dock with viewType (pointer is optional for tabs)
-    if (currentDock.viewType) {
-      const viewType = currentDock.viewType;
-
-      // Check if tab already exists
-      const existingTab = openTabs.find((tab) => tab.type === viewType);
-
-      if (!existingTab) {
-        // Add new tab if it doesn't exist
-        addTab(viewType, false, true); // pinned=false, setActive=true
-      } else {
-        // Set as current tab if it exists
-        setActiveTab(viewType);
-      }
-    }
+    // The header-chip feeding (addTab/setActiveTab) that used to live here is
+    // gone — the unified TabStrip replaced the viewer tab header (Part 3 U1);
+    // the content panel derives its current tab from the URL directly.
     // Handle other dock types (fs, etc.) here in the future
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentDock, isDockUrl, addTab, setActiveTab, setCurrentContext, setCurrentOverviewTab]); // URL drives state, not vice versa. Don't include openTabs/activeTab to avoid race conditions
+  }, [currentDock, isDockUrl, setCurrentContext, setCurrentOverviewTab]); // URL drives state, not vice versa.
 }

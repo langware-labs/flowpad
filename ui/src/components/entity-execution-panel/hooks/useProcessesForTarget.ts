@@ -1,4 +1,4 @@
-import { AgenticProcess, ProcessType, QueryFilter, QueryRequest } from '@sdk';
+import { AgenticProcess, ProcessKind, QueryFilter, QueryRequest } from '@sdk';
 import { useEntitiesQuery } from '@sdk/react/hooks';
 import { useMemo } from 'react';
 
@@ -17,7 +17,7 @@ import { useMemo } from 'react';
  */
 export function useProcessesForTarget(
   targetVfsPath: string | null | undefined,
-  options?: { enabled?: boolean; processType?: ProcessType },
+  options?: { enabled?: boolean; processType?: ProcessKind },
 ) {
   const key = targetVfsPath || '';
   const processType = options?.processType;

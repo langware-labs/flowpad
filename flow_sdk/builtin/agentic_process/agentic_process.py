@@ -13,7 +13,7 @@ import asyncio
 import json
 import logging
 import time
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from functools import cached_property
@@ -26,32 +26,33 @@ from pydantic import SerializationInfo, model_serializer, model_validator
 from flow_sdk._compat import StrEnum
 from flow_sdk.api.api_types.api_field import APIField
 from flow_sdk.api.api_types.type_id import TypeId
-from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.builtin.agentic_process.cli_drivers import (
     AgenticContext as _AgenticContext,
+)
+from flow_sdk.builtin.agentic_process.cli_drivers import (
     AgenticProcessContextKey,
     WorkerCLIOptions,
     WorkerDriver,
     get_driver,
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.claude import ClaudeCliOptions
+from flow_sdk.builtin.agentic_process.status_predicates import is_process_startable, is_ready_for_input
+from flow_sdk.builtin.process_lifecycle import ProcessStatus
+from flow_sdk.builtin.worker_status import WorkerStatus
+from flow_sdk.builtin.worker_status import is_terminal as is_worker_terminal
 from flow_sdk.core import Entity, action
 from flow_sdk.core.flow.streaming.response_handler import StreamingResponseHandler
-from flow_sdk.flowpad_types.enums import ProcessType, WorkerType
-from flow_sdk.builtin.worker_status import WorkerStatus, is_terminal as is_worker_terminal
-from flow_sdk.builtin.process_lifecycle import ProcessStatus
+from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
+from flow_sdk.flowpad_types.enums import ProcessKind, WorkerType
 from flow_sdk.fs_store.fs_ref import FSRef
-from flow_sdk.builtin.agentic_process.status_predicates import is_ready_for_input, is_process_startable
 from flow_sdk.fs_store.indexer.functions.claude_sessions import get_claude_session
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.agentic_process.prompt_queue import PromptQueue
-    from flow_sdk.builtin.faas.compute_node import ComputeNode
     from flow_sdk.builtin.shell import Shell
     from flow_sdk.transcript_analyzer import AgentTranscriptFile
-    from flow_sdk.transcript_analyzer.entries.tool_use import ToolUseEntry
 
 logger = logging.getLogger(__name__)
 
@@ -289,9 +290,10 @@ async def _index_additional_dir(path: str) -> None:
     """
     try:
         from pathlib import Path as _Path
+
         from flow_sdk.fs_store.fs_ref import FSRef
-        from flow_sdk.fs_store.record_types import RecordType
         from flow_sdk.fs_store.indexer import IndexerOptions, get_shared_indexer
+        from flow_sdk.fs_store.record_types import RecordType
 
         p = _Path(path)
         if not p.is_dir():
@@ -416,10 +418,15 @@ class AgenticProcess(Entity):
     )
     shell_id: str | None = APIField(default=None)
     sidecar_shell_id: str | None = APIField(default=None)
-    visible: bool = APIField(default=False, description="Whether this process is visible in the tabs view")
-    last_active_at: str | None = APIField(
-        default=None, description="ISO timestamp of the tab's last activation (resolver recency seed)"
+    visible: bool = APIField(
+        default=False,
+        description=(
+            "Whether this process is shown as a terminal tab. Set on open "
+            "(True) / close (False). No longer a membership flag — the strip's "
+            "membership is the ``Tab`` entity (docs/tab-management.md)."
+        ),
     )
+    # last_active_at moved to base Entity (epoch-ms, tab-management.md Part 3).
     auto_rename: bool = APIField(
         default=True,
         description=(
@@ -427,7 +434,7 @@ class AgenticProcess(Entity):
             "Cleared the first time the user manually renames this tab in the UI."
         ),
     )
-    process_type: ProcessType | None = APIField(
+    process_type: ProcessKind | None = APIField(
         default=None,
         description=(
             "Discriminator for how this process is used. CHAT = conversational "
@@ -592,7 +599,7 @@ class AgenticProcess(Entity):
             nested = self.context_data.get("process_type")
             if nested:
                 try:
-                    self.process_type = ProcessType(nested)
+                    self.process_type = ProcessKind(nested)
                 except (ValueError, TypeError):
                     pass
         return self
@@ -720,6 +727,13 @@ class AgenticProcess(Entity):
             cn = await ComputeNode.get_by_uname("local")
         return cn
 
+    def _adopt_shell_tab_order(self, shell: "Shell | None") -> None:
+        """One-time adoption: the AP owns its tab_order (base Entity) across
+        shell-transport swaps / worker restarts — no context_data carry-over.
+        No-op once the AP holds a slot or when the shell has none."""
+        if shell is not None and not self.tab_order and shell.tab_order:
+            self.tab_order = shell.tab_order
+
     async def _drop_stale_shell(
         self,
         shell: "Shell | None",
@@ -743,9 +757,7 @@ class AgenticProcess(Entity):
         stale_shell_id = shell.id if shell is not None else self.shell_id
         if shell is not None:
             logger.warning("AgenticProcess %s: discarding stale shell %s (%s)", self.id, shell.id, reason)
-            context = dict(self.context_data or {})
-            context["_prev_tab_order"] = shell.tab_order
-            self.context_data = context
+            self._adopt_shell_tab_order(shell)
             try:
                 await shell.terminate_worker()
             except Exception as exc:
@@ -1113,8 +1125,7 @@ class AgenticProcess(Entity):
             from flow_sdk.builtin.shell import Shell
 
             shell = await Shell.get_by_id(self.shell_id)
-            if shell:
-                self.context_data = {**self.context_data, "_prev_tab_order": shell.tab_order}
+            self._adopt_shell_tab_order(shell)
 
             # Set flag so the PTY exit callback knows to preserve shell_id.
             # Clear sidecar but NOT shell_id — shell entity stays alive for restart.
@@ -1309,6 +1320,39 @@ class AgenticProcess(Entity):
         except Exception as e:
             logger.exception("AgenticProcess %s recover_project_action error: %s", self.id, e)
             return ApiFailResponse(message=str(e))
+
+    async def pair_analysis_context(self, owner=None) -> bool:
+        """Pair an ANALYSIS-kind process with the entity it analyzes.
+
+        The analyzed entity is whatever ``target_typeid_str`` points at
+        (normally the analyzed AgenticProcess). Pairing means: this process
+        becomes the target's child (``parent_type_id``) and each carries the
+        other in its private context. No-op (False) when the target is not an
+        entity-form typeid (surface-scoped targets like
+        ``claude_session/<sid>``) or cannot be loaded — a missing target must
+        never block a launch.
+        """
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+        from flow_sdk.fs_store.type_id import TypeId as _TypeId  # noqa: PLC0415
+
+        if not self.target_typeid_str:
+            return False
+        try:
+            tid = _TypeId(self.target_typeid_str)
+        except Exception:
+            return False
+        cls = SchemaRegistry.get_entity_cls(tid.type)
+        if cls is None or not tid.id:
+            return False
+        target = await cls.get_by_id(tid.id)
+        if target is None:
+            return False
+        self.parent_type_id = str(tid)
+        self.add_private_context_entities(tid)
+        await self.save(owner)
+        target.add_private_context_entities(self.typeid)
+        await target.save(owner)
+        return True
 
     @action.post(action_name="fork")
     async def fork_action(self) -> ApiSuccessResponse | ApiFailResponse:
@@ -1612,6 +1656,8 @@ class AgenticProcess(Entity):
         """
         from flow_sdk.builtin.worker_status import (
             WorkerStatus as _WS,
+        )
+        from flow_sdk.builtin.worker_status import (
             _has_pending_tool_use,
             _last_assistant_stop_reason,
             _last_user_is_tool_result,
@@ -1781,9 +1827,11 @@ class AgenticProcess(Entity):
     # POST /agentic_process/<id>/prompt
     #   body: { "message": "<text>" }
     # Response: chunked XML stream of FlowData elements (same wire format as
-    # the legacy /completion). Admitted only for print-mode (visible=False)
-    # processes that are ready-for-input. PTY/interactive processes reject
-    # with 409 — they use the terminal tab UX.
+    # the legacy /completion). One endpoint, two transports keyed off
+    # ``visible`` (the tabs/chat unification): ``visible=False`` streams a
+    # print-mode worker's stdout; ``visible=True`` streams the PTY session
+    # transcript (``_run_pty_prompt``) so the same chat surface drives the
+    # interactive terminal tab. Both return 200.
     #
     # The driver-specific stream worker runs one print-mode turn; its events
     # map to FlowData and land on the shared
@@ -2152,7 +2200,11 @@ class AgenticProcess(Entity):
                             # turn-end signal, so surface it as the same frame.
                             from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
                                 FlowData as _FD,
+                            )
+                            from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
                                 FlowDataType as _FDT,
+                            )
+                            from flow_sdk.external_apis.llm.llm_drivers.flow_data import (
                                 FlowElementType as _FET,
                             )
                             await handler.on_flow_data(_FD(
@@ -2501,7 +2553,7 @@ class AgenticProcess(Entity):
         Merges the agent spec into cli_config.agents_json so it survives across
         HTTP requests without relying on in-memory state.
         """
-        from flow_sdk.fs_store.operations.agent import extract_agent_from_path, agent_to_cli_json  # noqa: PLC0415
+        from flow_sdk.fs_store.operations.agent import agent_to_cli_json, extract_agent_from_path  # noqa: PLC0415
         if not asset_ref:
             return ApiFailResponse(message="asset_ref is required")
         abs_path = Path("/" + asset_ref.lstrip("/"))
@@ -2518,12 +2570,14 @@ class AgenticProcess(Entity):
 
     @action.post(action_name="load-embedded-skill")
     async def load_embedded_skill_action(self, asset_ref: str = "") -> "ApiSuccessResponse | ApiFailResponse":
-        """Symlink a skill folder into this process's assets dir.
+        """Make a skill folder discoverable to this process's worker.
 
-        Skills are directory-discovered by Claude Code at startup, not a CLI
-        input. We symlink the live source folder under
-        ``<assets_dir>/.claude/skills/<name>/`` so edits to the original SKILL.md
-        flow through to the next chat without re-materialization.
+        Skills are directory-discovered by the worker at startup, not a CLI
+        input. We symlink the live source folder into the worker's skills root
+        (``_skills_root``) — ``<assets_dir>/.claude/skills/<name>/`` for
+        Claude/Copilot, ``$CODEX_HOME/skills/<name>/`` for Codex — so edits to
+        the original SKILL.md flow through to the next chat without
+        re-materialization. Backs the TS ``AgenticProcess.loadEmbeddedSkill``.
         """
         import shutil
         if not asset_ref:
@@ -2536,7 +2590,7 @@ class AgenticProcess(Entity):
         try:
             assets_dir = await self._assets_dir_path()
             assets_dir.mkdir(parents=True, exist_ok=True)
-            skills_root = assets_dir / ".claude" / "skills"
+            skills_root = self._skills_root(assets_dir)
             skills_root.mkdir(parents=True, exist_ok=True)
             link = skills_root / skill_dir.name
             # Refresh: a stale symlink, prior copy, or regular file all get replaced.
@@ -2552,6 +2606,30 @@ class AgenticProcess(Entity):
             logger.exception("load_embedded_skill failed for %s", asset_ref)
             return ApiFailResponse(message=str(exc))
 
+    @staticmethod
+    def _skill_source_folder(skill: "Any") -> str | None:
+        """Resolve a skill's source folder from a path, FSRef, or entity/record."""
+        if isinstance(skill, str):
+            return skill or None
+        asset_ref = getattr(skill, "asset_ref", None)
+        if isinstance(asset_ref, str):
+            return asset_ref or None
+        inner = getattr(asset_ref, "_path", None) or getattr(asset_ref, "path", None)
+        return str(inner) if inner else (str(skill.record_dir) if getattr(skill, "record_dir", None) else None)
+
+    async def load_skill(self, skill: "Any") -> "ApiSuccessResponse | ApiFailResponse":
+        """Load a skill so this process's worker discovers it — worker-aware.
+
+        ``skill`` may be a ``Skill`` entity (``Skill.from_fs_ref(folder)``), an
+        FSRecord, or the skill folder path. Resolves it to its source folder and
+        materializes it into the right location for the process's worker (see
+        ``_skills_root``). The Python counterpart of TS ``loadEmbeddedSkill``.
+        """
+        source = self._skill_source_folder(skill)
+        if not source:
+            return ApiFailResponse(message="Could not resolve skill source folder")
+        return await self.load_embedded_skill_action(asset_ref=source)
+
     def load_embedded_agent(self, agent: "Any") -> None:
         """Embed an agent into this process so it is registered via --agents at launch.
 
@@ -2559,8 +2637,8 @@ class AgenticProcess(Entity):
         Adds the agent's name to the persisted embedded_agent_ids list and stores
         the agent object in the in-memory _embedded_agents list.
         """
-        from flow_sdk.fs_store.operations.agent import load_agent as _load_agent  # noqa: PLC0415
         from flow_sdk.fs_store.fs_record import FSRecord  # noqa: PLC0415
+        from flow_sdk.fs_store.operations.agent import load_agent as _load_agent  # noqa: PLC0415
         from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
         _agents: list = object.__getattribute__(self, "__dict__").setdefault("_embedded_agents", [])
         if isinstance(agent, str):
@@ -2615,6 +2693,15 @@ class AgenticProcess(Entity):
             current.append(target)
             self.additional_dirs = current
 
+    def _skills_root(self, assets_dir: "Path") -> "Path":
+        """Directory a skill folder is laid into so THIS process's worker finds it.
+
+        The vendor difference (Claude/Copilot read a mounted ``.claude/skills``;
+        Codex reads ``$CODEX_HOME/skills``) lives behind ``WorkerDriver.skills_root``
+        — the orchestrator never branches on the worker.
+        """
+        return self.driver.skills_root(self, assets_dir)
+
     async def _materialize_entity(self, ref: TypeId, assets_dir: "Path") -> str | None:
         """Copy the referenced entity's files under ``assets_dir/.claude/<type>/…``.
 
@@ -2622,8 +2709,10 @@ class AgenticProcess(Entity):
         type is unsupported for embedding. Raises for resolution / IO failures.
         """
         import shutil
-        from flow_sdk.fs_store.operations.agent import get_agent, load_agent as _load_agent  # noqa: PLC0415
-        from flow_sdk.fs_store.operations.skill import get_skill, copy_skill_to
+
+        from flow_sdk.fs_store.operations.agent import get_agent  # noqa: PLC0415
+        from flow_sdk.fs_store.operations.agent import load_agent as _load_agent
+        from flow_sdk.fs_store.operations.skill import copy_skill_to, get_skill
 
         if ref.type == "agent":
             # Resolve by id (uuid5-derived from the .md path) first, then fall back
@@ -2644,7 +2733,7 @@ class AgenticProcess(Entity):
             skill = get_skill(ref.id)
             if skill is None:
                 raise FileNotFoundError(f"Skill not found: {ref.id}")
-            target_root = assets_dir / ".claude" / "skills"
+            target_root = self._skills_root(assets_dir)
             copy_skill_to(skill, target_root)
             return skill.name or ref.id
 
@@ -2653,7 +2742,9 @@ class AgenticProcess(Entity):
     async def _unmaterialize_entity(self, ref: TypeId, assets_dir: "Path") -> None:
         """Best-effort removal of the files laid down by _materialize_entity."""
         import shutil
-        from flow_sdk.fs_store.operations.agent import get_agent, load_agent as _load_agent  # noqa: PLC0415
+
+        from flow_sdk.fs_store.operations.agent import get_agent  # noqa: PLC0415
+        from flow_sdk.fs_store.operations.agent import load_agent as _load_agent
         from flow_sdk.fs_store.operations.skill import get_skill
 
         if ref.type == "agent":
@@ -2665,7 +2756,7 @@ class AgenticProcess(Entity):
         elif ref.type == "skill":
             skill = get_skill(ref.id)
             name = skill.name if skill else ref.id
-            target = assets_dir / ".claude" / "skills" / name
+            target = self._skills_root(assets_dir) / name
             if target.exists():
                 shutil.rmtree(target)
 
@@ -2897,7 +2988,8 @@ class AgenticProcess(Entity):
         """
         try:
             if ref.type == "agent":
-                from flow_sdk.fs_store.operations.agent import get_agent, load_agent as _load_agent  # noqa: PLC0415
+                from flow_sdk.fs_store.operations.agent import get_agent  # noqa: PLC0415
+                from flow_sdk.fs_store.operations.agent import load_agent as _load_agent
                 rec = get_agent(ref.id) or _load_agent(ref.id)
                 if rec is None:
                     return None
@@ -2909,7 +3001,7 @@ class AgenticProcess(Entity):
                 if rec is None:
                     return None
                 name = rec.name or ref.id
-                return assets_dir / ".claude" / "skills" / name
+                return self._skills_root(assets_dir) / name
         except Exception:
             return None
         return None
@@ -3489,6 +3581,22 @@ class AgenticProcess(Entity):
 
     # ── Close ─────────────────────────────────────────────────────────────────
 
+    # ── Tab integration (docs/tab-management.md) ──────────────────────────────
+    async def teardown_for_tab(self) -> None:
+        """``Tab.close`` dispatch hook: closing a process tab tears down the
+        worker + linked shell (today's terminal-close semantics)."""
+        await self.close()
+
+    async def _on_tab_renamed(self, payload: dict) -> dict:
+        """``tab-renamed`` reflection: mirror the new tab name and pin it
+        (``auto_rename=False``) so the worker title can't overwrite it."""
+        new_name = (payload or {}).get("name")
+        if new_name and self.name != new_name:
+            self.name = new_name
+            self.auto_rename = False
+            await self.save()
+        return {"name": self.name}
+
     async def close(self) -> bool:
         """Terminate this process and close its linked shell entity.
 
@@ -3515,6 +3623,17 @@ class AgenticProcess(Entity):
             self.sidecar_shell_id = None
             self.status = ProcessStatus.STOPPED.value
             await self.save()
+
+            # Soft-close this process's terminal Tab(s). close() is a full
+            # teardown but does NOT delete the AgenticProcess row (it persists
+            # as ``stopped``), so the generic delete → orphan-Tab cleanup in
+            # Entity.delete never fires and the chip would linger. Hide the Tab
+            # directly (membership-only — teardown is already happening here).
+            try:
+                from flow_sdk.builtin.tab import hide_tabs_for_target
+                await hide_tabs_for_target(self.type, str(self.id))
+            except Exception as tab_exc:
+                logger.warning(f"AgenticProcess {self.id}: tab hide on close failed: {tab_exc}")
             return True
 
         except Exception as e:
@@ -4017,8 +4136,16 @@ class AgenticProcess(Entity):
                     await shell.save()
                 return shell
 
-        prev = self.context_data.pop("_prev_tab_order", None)
-        tab_order = prev if prev is not None else await Shell.next_tab_order()
+        # The AP owns its tab_order (base Entity): claim a slot once, then
+        # every replacement shell inherits it — the tab stays put across
+        # transport swaps with no carry-over state. Legacy rows that predate
+        # AP ownership may still hold a slot in context_data; adopt it once.
+        if not self.tab_order:
+            legacy_prev = (self.context_data or {}).get("_prev_tab_order")
+            self.tab_order = legacy_prev if legacy_prev else await Shell.next_tab_order()
+        if isinstance(self.context_data, dict) and "_prev_tab_order" in self.context_data:
+            self.context_data = {k: v for k, v in self.context_data.items() if k != "_prev_tab_order"}
+        tab_order = self.tab_order
 
         is_resume = self._is_exist_claude_resume_session(self.session_id) if self.session_id else False
         # Fork is Claude-only; CodexCliOptions doesn't expose ``fork_session_id``.
@@ -4130,3 +4257,8 @@ class AgenticProcess(Entity):
             asyncio.run_coroutine_threadsafe(_update_state(), main_loop)
 
         return _on_pty_exit
+
+
+# Register on the owning subclass so the handler doesn't leak to siblings
+# (docs/tab-management.md — generic Tab.rename reflects onto subscribers).
+AgenticProcess.on_event("tab-renamed")(AgenticProcess._on_tab_renamed)

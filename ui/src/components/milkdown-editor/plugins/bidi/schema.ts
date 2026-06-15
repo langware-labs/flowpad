@@ -102,8 +102,16 @@ export const bidiParagraphSchema = paragraphSchema.extendSchema((prev) => (ctx) 
           // Fall through to the original commonmark path — byte-identical
           // output for the default case is required (no HTML wrapper, no
           // stray whitespace introduced by this plugin).
-          const view = ctx.get(editorViewCtx);
-          const isLastBlock = view.state?.doc.lastChild === node;
+          //
+          // `editorViewCtx` is only present once the view is attached.
+          // Serialization can run before mount / after teardown (e.g. an init
+          // or unmount-time getMarkdown), and `ctx.get` THROWS when the slice
+          // isn't injected — "Context editorView not found", once per paragraph,
+          // flooding the console with uncaught MilkdownErrors. Guard with
+          // `isInjected`: with no live view, treat the node as not-last (the
+          // empty-paragraph `<br />` heuristic only matters in the live editor).
+          const view = ctx.isInjected(editorViewCtx) ? ctx.get(editorViewCtx) : null;
+          const isLastBlock = view ? view.state?.doc.lastChild === node : false;
           state.openNode('paragraph');
           if ((!node.content || node.content.size === 0) && !isLastBlock) {
             state.addNode('html', undefined, '<br />');

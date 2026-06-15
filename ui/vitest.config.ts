@@ -36,6 +36,31 @@ export default defineConfig({
         test: {
           name: 'hub',
           include: ['tests/hub/**/*.test.{ts,tsx}'],
+          // Two-PROCESS protocol tests: each is one half of a concurrent pair
+          // (alice ↔ bob via a rendezvous file) and can never pass in a
+          // sequential single-process run — alice waits for a bob that hasn't
+          // started. Run them via scripts/run_hub_paired.sh, which launches
+          // both halves concurrently against their own backends.
+          exclude: [
+            '**/node_modules/**',
+            '**/matrix.alice.test.ts',
+            '**/matrix.bob.test.ts',
+            '**/conversation_messages.test.ts',
+            '**/conversation_messages.bob.test.ts',
+          ],
+        },
+      },
+      {
+        extends: './tests/hub/vitest.config.ts',
+        test: {
+          name: 'hub-paired',
+          // The two-process pair halves (see the hub project's exclude note).
+          include: [
+            'tests/hub/matrix.alice.test.ts',
+            'tests/hub/matrix.bob.test.ts',
+            'tests/hub/conversation_messages.test.ts',
+            'tests/hub/conversation_messages.bob.test.ts',
+          ],
         },
       },
     ],

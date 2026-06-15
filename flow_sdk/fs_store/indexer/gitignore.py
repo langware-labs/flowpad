@@ -60,21 +60,23 @@ def load_gitignore_stack(root: Path) -> GitignoreStack:
     """
     stack: GitignoreStack = []
     gi = root / ".gitignore"
-    if gi.is_file():
-        try:
+    # The is_file() stat itself can raise (e.g. PermissionError inside an
+    # unreadable mount) — one bad directory must skip, never abort the walk.
+    try:
+        if gi.is_file():
             lines = gi.read_text(encoding="utf-8", errors="replace").splitlines()
             stack.append((root, GitIgnoreSpec.from_lines(lines)))
-        except OSError:
-            pass
+    except OSError:
+        pass
     return stack
 
 
 def push_gitignore(stack: GitignoreStack, dir_path: Path) -> int:
     """If ``dir_path`` has a ``.gitignore``, push onto stack. Return pushes (0 or 1)."""
     gi = dir_path / ".gitignore"
-    if not gi.is_file():
-        return 0
     try:
+        if not gi.is_file():
+            return 0
         lines = gi.read_text(encoding="utf-8", errors="replace").splitlines()
         stack.append((dir_path, GitIgnoreSpec.from_lines(lines)))
         return 1

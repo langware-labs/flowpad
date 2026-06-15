@@ -17,7 +17,7 @@ import {
   type Shell,
   TypeId,
 } from '@sdk';
-import { fetchActiveTerminals } from '@src/hooks/useActiveTerminals';
+import { getTerminalTabsSnapshot } from '@src/tabs/useTabs';
 import { notify } from '@src/notifications';
 import { DockPointer } from '@src/navigation';
 import { redirect } from 'react-router';
@@ -29,7 +29,8 @@ function notifyProcessStartError(error: unknown): void {
   const { title, description } = describeProcessStartError(error);
   notify.error({ title, message: description });
 }
-import { loadShell, resolveDefaultTab, ShellLoadError } from './load-shell';
+import { resolveNextTab } from '@src/tabs/tab-candidates';
+import { loadShell, ShellLoadError } from './load-shell';
 import { loadConversation } from './load-conversation';
 
 function recoveryUrl(projectId: string, roomId: string | null): string {
@@ -63,7 +64,7 @@ export async function loadProject(projectId: string): Promise<Project> {
 
 /**
  * After the shell is loaded, stamp it with the owning room id so the
- * room-scoped `useActiveTerminals` filter picks it up. `loadProcess`
+ * room-scoped tabs-store filter picks it up. `loadProcess`
  * creates a fresh Shell on reload (old PTY gone), so we can't rely on the
  * tag being persisted at tab-creation time.
  */
@@ -131,9 +132,9 @@ export async function loadProjectRoute(pointer: string | undefined): Promise<voi
     // No tab in the URL. If the room already has visible tabs, redirect
     // into the previously-active / first one so the xterm pane isn't blank.
     if (roomId) {
-      const allTabs = await fetchActiveTerminals();
+      const allTabs = await getTerminalTabsSnapshot();
       const tabs = allTabs.filter((t) => t.shell?.collaboration_room_id === roomId);
-      const tab = resolveDefaultTab(tabs);
+      const tab = resolveNextTab(tabs);
       if (tab) {
         const pointer = (tab.agenticProcess ?? tab.shell!).dockPointer.pointer;
         // eslint-disable-next-line @typescript-eslint/only-throw-error

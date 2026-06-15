@@ -7,7 +7,7 @@ test.describe('Terminal Tab Rename', () => {
   });
 
   test('double-click to rename a terminal tab', async ({ page }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(60_000);
 
     // Step 1: navigate to shell (creates a new shell and navigates to it)
     await gotoShell(page);

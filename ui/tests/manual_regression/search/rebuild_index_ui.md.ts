@@ -1,6 +1,8 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 
-const API = process.env.API_URL || 'http://localhost:6002';
+import { apiBase } from '../_shared/api';
+
+const API = apiBase();
 
 // Poll the backend's authoritative activity-status until the indexer is idle
 // (data === null). Bounded so it never silently rides past the per-test cap.
@@ -37,6 +39,9 @@ async function openSearch(page: Page) {
   await page.addInitScript(() => {
     localStorage.setItem('llm-setup-modal-seen', 'true');
     localStorage.setItem('flowpad-index-approved', '1');
+    // The footer indexing indicator (footer-indexing-indicator) is wrapped in
+    // <AdvancedOnly> — it does not exist in the default Standard view.
+    localStorage.setItem('viewMode', 'advanced');
   });
   await page.goto('/dock/search');
   await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});

@@ -301,3 +301,6 @@ flow_sdk/server/static/
 # internal artifacts — never track
 .flow/skills/agentic-qa/debug_log.md
 /private/
+
+# agent-trace skill scratch (skeletons, annotations, payloads — regenerable)
+.flow/skills/agent-trace/_results/

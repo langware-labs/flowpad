@@ -11,6 +11,13 @@ class WorkerType(str, Enum):
     COPILOT = "copilot"
     SIMPLE = "simple"
     MOCK = "mock"
+    # Config-owning agents that aren't executors FlowPad spawns, but DO own MCP
+    # server config files the indexer reads. Used as the source-agent tag on
+    # MCP_SERVER records (see fs_store/indexer/functions/mcp_server.py).
+    CURSOR = "cursor"
+    WINDSURF = "windsurf"
+    VSCODE = "vscode"
+    CLAUDE_DESKTOP = "claude_desktop"
 
 
 class WorkerTaskStatus(str, Enum):

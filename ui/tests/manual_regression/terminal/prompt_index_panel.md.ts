@@ -24,7 +24,7 @@
  * Tests 5–9, 11–12 require live Claude data or visual inspection.
  */
 import { test, expect } from '@playwright/test';
-import { dismissSetupModal, startClaudeSession } from './helpers';
+import { activePanel, dismissSetupModal, ensureSideTabClosed, ensureSideTabOpen, getSideWindow, startClaudeSession } from './helpers';
 
 /**
  * Cache the agentic process URL after the first successful navigation.
@@ -38,8 +38,8 @@ let cachedAgenticUrl: string | null = null;
  * Navigate to a shell and ensure we end up on an agentic process URL.
  */
 async function gotoAgenticProcess(page: import('@playwright/test').Page) {
-  const activePanel = page.locator('[data-testid="terminal-panel"][data-active="true"]');
-  const ribbon = activePanel.locator('.border-t .ml-auto');
+  const panel = activePanel(page);
+  const ribbon = panel.locator('.border-t .ml-auto');
 
   // Fast path: reuse the URL from the first successful navigation in this run.
   if (cachedAgenticUrl) {
@@ -66,15 +66,14 @@ async function gotoAgenticProcess(page: import('@playwright/test').Page) {
   // Wait for the ribbon to be visible (can take >8s on a fresh process).
   await expect(ribbon).toBeVisible({ timeout: 60_000 });
 
+  // The ribbon/toolbar re-renders continuously while the worker initializes
+  // (status updates via useSyncExternalStore) — a click issued mid-churn keeps
+  // re-resolving a detaching button and can retry until the test cap. Let it
+  // settle before callers drive the buttons (same settle as _ap_helpers).
+  await page.waitForTimeout(3_000);
+
   // Cache URL for subsequent tests in this run.
   cachedAgenticUrl = page.url();
-}
-
-/**
- * Get the side window container (w-80 flex-col border-l).
- */
-function getSideWindow(page: import('@playwright/test').Page) {
-  return page.locator('.w-80.flex-col.border-l');
 }
 
 test.describe('Prompt Index Panel', () => {
@@ -86,22 +85,22 @@ test.describe('Prompt Index Panel', () => {
   // test 1: Prompt icon appears in agentic process terminal ribbon
   // ---------------------------------------------------------------------------
   test('prompt index icon appears in agentic process terminal ribbon', async ({ page }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(60_000);
 
     await gotoAgenticProcess(page);
 
     // Validate ribbon is visible — check the ml-auto button container
     // (text=/running|idle/i is unreliable: may match a visibility:hidden tooltip element)
-    const activePanel = page.locator('[data-testid="terminal-panel"][data-active="true"]');
-    const mlAuto = activePanel.locator('.border-t .ml-auto');
+    const panel = activePanel(page);
+    const mlAuto = panel.locator('.border-t .ml-auto');
     await expect(mlAuto).toBeVisible({ timeout: 15_000 });
 
     // Prompts button is at index 2 in .ml-auto:
     // Context(0), Git(1), Prompts(2), Files(3), Dir(4)
     await expect(mlAuto.locator('button').nth(2)).toBeVisible({ timeout: 15_000 });
 
-    // Validate all 5 buttons are present
-    await expect(mlAuto.locator('button')).toHaveCount(5, { timeout: 5_000 });
+    // Validate all 7 buttons are present (6 ribbon side-tabs incl. Queue + Prompt Library; 55a71046)
+    await expect(mlAuto.locator('button')).toHaveCount(7, { timeout: 5_000 });
 
     // Files button should also be visible (index 3)
     await expect(mlAuto.locator('button').nth(3)).toBeVisible({ timeout: 5_000 });
@@ -111,13 +110,13 @@ test.describe('Prompt Index Panel', () => {
   // test 2: Prompt panel opens as a tab in the side window
   // ---------------------------------------------------------------------------
   test('prompt panel opens as a tab in the side window', async ({ page }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(60_000);
 
     await gotoAgenticProcess(page);
 
     // Click the Prompts button (index 2 in .ml-auto)
-    const activePanel = page.locator('[data-testid="terminal-panel"][data-active="true"]');
-    await activePanel.locator('.border-t .ml-auto button').nth(2).click();
+    const panel = activePanel(page);
+    await ensureSideTabOpen(page, 2, 'Prompts');
 
     // Side window should appear
     const sideWindow = getSideWindow(page);
@@ -126,7 +125,7 @@ test.describe('Prompt Index Panel', () => {
     // Tab strip shows "Prompts" tab with × close button
     const tabStrip = sideWindow.locator('.border-b').first();
     await expect(tabStrip.getByText('Prompts')).toBeVisible({ timeout: 5_000 });
-    await expect(page.locator('button[aria-label="Close Prompts"]')).toBeVisible({ timeout: 5_000 });
+    await expect(activePanel(page).locator('button[aria-label="Close Prompts"]')).toBeVisible({ timeout: 5_000 });
 
     // Inner panel header shows "Prompts (" with NO close button
     const panelHeader = sideWindow.locator('.flex-1').getByText(/Prompts \(/);
@@ -146,19 +145,19 @@ test.describe('Prompt Index Panel', () => {
   // test 3: Prompt tab closes via × in the tab strip
   // ---------------------------------------------------------------------------
   test('prompt tab closes via the × close button in the tab strip', async ({ page }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(60_000);
 
     await gotoAgenticProcess(page);
 
     // Open the panel
-    const activePanel = page.locator('[data-testid="terminal-panel"][data-active="true"]');
-    await activePanel.locator('.border-t .ml-auto button').nth(2).click();
+    const panel = activePanel(page);
+    await ensureSideTabOpen(page, 2, 'Prompts');
 
     const sideWindow = getSideWindow(page);
     await expect(sideWindow).toBeVisible({ timeout: 5_000 });
 
     // Close via tab strip ×
-    await page.locator('button[aria-label="Close Prompts"]').click();
+    await activePanel(page).locator('button[aria-label="Close Prompts"]').click();
 
     // Side window should disappear (no tabs remain)
     await expect(sideWindow).not.toBeVisible({ timeout: 5_000 });
@@ -168,12 +167,13 @@ test.describe('Prompt Index Panel', () => {
   // test 4: Clicking ribbon button when Prompts is already active does NOT close the panel
   // ---------------------------------------------------------------------------
   test('clicking ribbon button toggles the Prompts tab — second click closes it', async ({ page }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(60_000);
 
     await gotoAgenticProcess(page);
 
-    const activePanel = page.locator('[data-testid="terminal-panel"][data-active="true"]');
-    const promptsBtn = activePanel.locator('.border-t .ml-auto button').nth(2);
+    const panel = activePanel(page);
+    await ensureSideTabClosed(page, 'Prompts');
+    const promptsBtn = panel.locator('.border-t .ml-auto button').nth(2);
 
     // First click — opens
     await promptsBtn.click();
@@ -189,7 +189,7 @@ test.describe('Prompt Index Panel', () => {
     await expect(sideWindow).toBeVisible({ timeout: 5_000 });
 
     // Close via tab strip × to clean up
-    await page.locator('button[aria-label="Close Prompts"]').click();
+    await activePanel(page).locator('button[aria-label="Close Prompts"]').click();
     await expect(sideWindow).not.toBeVisible({ timeout: 5_000 });
   });
 
@@ -197,7 +197,7 @@ test.describe('Prompt Index Panel', () => {
   // test 10: Prompt icon is absent for plain shell terminals (no process)
   // ---------------------------------------------------------------------------
   test('prompt icon is absent in plain shell terminal (no agentic process)', async ({ page }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(60_000);
 
     await page.goto('/dock/shell/new_terminal');
     const skip = page.getByRole('button', { name: 'Skip' });
@@ -214,8 +214,8 @@ test.describe('Prompt Index Panel', () => {
     await page.waitForTimeout(2_000);
 
     // On plain shell: ribbon (.border-t .ml-auto) must not be visible
-    const activePanel = page.locator('[data-testid="terminal-panel"][data-active="true"]');
-    const mlAuto = activePanel.locator('.border-t .ml-auto');
+    const panel = activePanel(page);
+    const mlAuto = panel.locator('.border-t .ml-auto');
     await expect(mlAuto).not.toBeVisible({ timeout: 3_000 });
   });
 
@@ -223,12 +223,12 @@ test.describe('Prompt Index Panel', () => {
   // test 12: Multiple panels are tabs in the same side window (not side-by-side)
   // ---------------------------------------------------------------------------
   test('Files and Prompts panels coexist as tabs in the same side window', async ({ page }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(60_000);
 
     await gotoAgenticProcess(page);
 
-    const activePanel = page.locator('[data-testid="terminal-panel"][data-active="true"]');
-    const mlAuto = activePanel.locator('.border-t .ml-auto');
+    const panel = activePanel(page);
+    const mlAuto = panel.locator('.border-t .ml-auto');
 
     // Open Files (index 3)
     await mlAuto.locator('button').nth(3).click();
@@ -256,9 +256,9 @@ test.describe('Prompt Index Panel', () => {
     // in the URL (?sideWindows=…), so each Close navigates; fire them back-to-back
     // and the second close closes over the stale pre-nav list (last-writer-wins
     // leaves one tab open). Wait for the first tab to drop before the second click.
-    await page.locator('button[aria-label="Close Files"]').click();
+    await activePanel(page).locator('button[aria-label="Close Files"]').click();
     await expect(tabStrip.getByText('Files', { exact: true })).not.toBeVisible({ timeout: 3_000 });
-    await page.locator('button[aria-label="Close Prompts"]').click();
+    await activePanel(page).locator('button[aria-label="Close Prompts"]').click();
     await expect(sideWindow).not.toBeVisible({ timeout: 5_000 });
   });
 });

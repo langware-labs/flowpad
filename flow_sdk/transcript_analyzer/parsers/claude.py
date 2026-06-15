@@ -19,6 +19,7 @@ from .._helpers import (
 from ..entries import (
     AgentSpawnEntry,
     AssistantMessageEntry,
+    CompactionEntry,
     ExitPlanModeEntry,
     FileEditEntry,
     FileReadEntry,
@@ -26,6 +27,7 @@ from ..entries import (
     MetaEntry,
     SearchEntry,
     ShellCommandEntry,
+    SkillCallEntry,
     SummaryEntry,
     SystemEntry,
     TodoUpdateEntry,
@@ -37,7 +39,6 @@ from ..entries import (
     WebFetchEntry,
 )
 from ..entry import TranscriptEntry
-
 
 # Per-type uid fallback — mirrors `uid_mapping` ClassVar in
 # ``flow_sdk/fs_records/claude/transcript_records/*``. Lines with no
@@ -112,6 +113,18 @@ class ClaudeParser:
             parent_id=str(raw.get("parentUuid") or "") or None,
             is_sidechain=bool(raw.get("isSidechain", False)),
         )
+
+        # Compaction boundary — the summary that survives a context reset.
+        # Claude flags it with ``isCompactSummary`` (on a user/assistant line);
+        # a manual ``/compact`` slash command is the trigger vs auto.
+        if raw.get("isCompactSummary"):
+            message = raw.get("message") or {}
+            text = extract_text(message.get("content") or [])
+            return [CompactionEntry(
+                trigger="manual" if "/compact" in text else "auto",
+                summary_preview=text[:500],
+                **base,
+            )]
 
         if rtype == "assistant":
             return self._parse_assistant(raw, base)
@@ -306,6 +319,12 @@ class ClaudeParser:
         }
         ti = tool_input if isinstance(tool_input, dict) else {}
 
+        if tool_name == "Skill":
+            return SkillCallEntry(
+                skill_name=str(ti.get("skill") or ti.get("name") or ti.get("command") or ""),
+                tool_input=ti,
+                **common,
+            )
         if tool_name == "ExitPlanMode":
             return ExitPlanModeEntry(tool_input=ti, **common)
         if tool_name == "Write":

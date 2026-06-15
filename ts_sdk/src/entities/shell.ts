@@ -56,11 +56,10 @@ export interface IShell extends IEntity {
    *  at shell creation; lets a bare-shell URL resolve its owner by get-by-id.
    *  NB: distinct from the OS PID (which the PTY layer writes as `process_id`). */
   agentic_process_id?: string | null;
-  tab_order?: number;
+  /** tab_order / last_active_at come from IEntity (base-Entity fields). */
   auto_rename?: boolean;
   claude_session_id?: string | null;
   created_at?: string | null;
-  last_active_at?: string | null;
   env?: Record<string, string> | null;
 }
 
@@ -86,11 +85,14 @@ export class Shell extends APIEntity<Shell> implements IShell {
   project_id: string | null = null;
   collaboration_room_id: string | null = null;
   agentic_process_id: string | null = null;
+  /** Every live pure shell is a strip tab (backend default-True override). */
+  tabbed: boolean = true;
   tab_order: number = 0;
   auto_rename: boolean = true;
   claude_session_id: string | null = null;
   created_at: string | null = null;
-  last_active_at: string | null = null;
+  /** Epoch-ms (base-Entity field); legacy rows may deliver an ISO string. */
+  last_active_at: number | string | null = null;
   error_message: string | null = null;
 
   /**

@@ -7,7 +7,7 @@ test.describe('Send Multiple Messages', () => {
   });
 
   test('Multiple shell commands can be typed without crashing the terminal', async ({ page }) => {
-    test.setTimeout(150_000);
+    test.setTimeout(60_000);
 
     const errors: string[] = [];
     page.on('console', (msg) => {

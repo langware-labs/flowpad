@@ -11,7 +11,7 @@ import { useProcessesForTarget } from '@src/components/entity-execution-panel';
 import { useEntityByPath } from '@src/hooks/use-entity-by-path';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { DockPointer } from '@src/navigation/DockPointer';
-import { dataContext, FrontMatterFsRef, ProcessType } from '@sdk';
+import { dataContext, FrontMatterFsRef, ProcessKind } from '@sdk';
 import type { APIEntity, FSRef } from '@sdk';
 import { History } from 'lucide-react';
 
@@ -66,7 +66,7 @@ export function PlainMarkdownAssetEditor({ fsRef, assetType }: PlainMarkdownAsse
 
   const { processes: pastRunProcesses } = useProcessesForTarget(chatTarget ?? '', {
     enabled: !!chatTarget,
-    processType: ProcessType.Execution,
+    processType: ProcessKind.Execution,
   });
 
   const runHistory = useMemo<ProcessEntry[]>(() => {

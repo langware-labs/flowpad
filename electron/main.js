@@ -310,8 +310,21 @@ function createWindow() {
     mainWindow.show();
   });
 
-  // Open external links in the system browser instead of the Electron window
+  // Open external links in the system browser instead of the Electron window.
+  // Carve-out (docs/tab-management.md Part 3 §7): same-origin `/win/` focus
+  // windows (navigation.openDockInWindow) are legit in-app destinations —
+  // allow them so Electron opens an in-app BrowserWindow. No teardown
+  // handlers on those windows: close relies on disconnect-driven PTY detach.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith(BACKEND_URL)) {
+      try {
+        if (new URL(url).pathname.includes('/win/')) {
+          return { action: 'allow' };
+        }
+      } catch {
+        // Unparseable URL — fall through to the deny path below.
+      }
+    }
     if (/^https?:\/\//.test(url)) {
       require('electron').shell.openExternal(url);
     }
@@ -319,7 +332,9 @@ function createWindow() {
   });
 
   mainWindow.webContents.on('will-navigate', (event, url) => {
-    // Allow navigation to the backend (same-origin), block everything else
+    // Allow navigation to the backend (same-origin), block everything else.
+    // Same-origin /win/ URLs are covered by this allow — they are in-app
+    // destinations, consistent with the window-open carve-out above.
     if (!url.startsWith(BACKEND_URL)) {
       event.preventDefault();
       if (/^https?:\/\//.test(url)) {

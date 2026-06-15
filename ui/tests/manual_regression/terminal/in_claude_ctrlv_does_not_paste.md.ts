@@ -10,7 +10,7 @@ test.describe('Ctrl+V in Claude terminal', () => {
   });
 
   test('Ctrl+V in Claude terminal input does not paste OS clipboard (FLOWPAD-1618)', async ({ page }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(60_000);
 
     // Navigate to shell first
     await gotoShell(page);

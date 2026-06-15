@@ -10,9 +10,10 @@
  * Two independent browser CONTEXTS (separate WS connections) on the same backend
  * are the proper "two clients". A conversation is seeded via the entity API.
  */
-import { test, expect, request as pwRequest, type Page } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
+import { apiBase, apiContext } from '../_shared/api';
 
-const API = process.env.QA_API_URL || 'http://localhost:6003';
+const API = apiBase();
 const titleSel = '[data-testid="conversation-title"]';
 const inputSel = '[data-testid="conversation-title-input"]';
 
@@ -28,10 +29,10 @@ async function openConversation(page: Page, convId: string) {
 }
 
 test('test 1-3: rename in one client live-updates the other client', async ({ browser }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(60_000);
 
   // Seed a conversation via the entity API.
-  const rq = await pwRequest.newContext();
+  const rq = await apiContext();
   const seedTitle = `qa-rename-seed-${Date.now()}`;
   const created = await (await rq.post(`${API}/api/v1/graph/conversation`, { data: { title: seedTitle } })).json();
   expect(created.status).toBe('SUCCESS');
@@ -50,7 +51,9 @@ test('test 1-3: rename in one client live-updates the other client', async ({ br
     // with the rename tooltip and the seeded title.
     await openConversation(tab1, convId);
     await openConversation(tab2, convId);
-    await expect(tab1.locator(titleSel)).toHaveAttribute('title', 'Click to rename');
+    // The header title span tooltips the FULL title (d86c9bae made the route
+    // header the editable title; the old "Click to rename" tooltip is gone).
+    await expect(tab1.locator(titleSel)).toHaveAttribute('title', seedTitle);
     await expect(tab1.locator(titleSel)).toContainText(seedTitle);
     await expect(tab2.locator(titleSel)).toContainText(seedTitle);
 

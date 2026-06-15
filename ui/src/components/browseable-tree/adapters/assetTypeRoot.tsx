@@ -166,50 +166,21 @@ function basename(p: string): string {
 }
 
 /**
- * Count badge rendered to the right of a type row. Uses the same /search
- * endpoint with limit=1 so we get `total` without full results. The active
- * filter is serialized so the badge tracks the scope/project picker.
+ * Per-type entity counts, keyed by `type_name`, supplied by the asset page from
+ * the single `index-status` response it already fetches — so the sidebar renders
+ * N type badges from one request instead of one `/search?limit=1` probe per row
+ * (the N+1 that dominated the list page's request count). `null` (no provider)
+ * simply renders no badges.
  */
-function AssetTypeCountBadge({
-  typeName,
-  filter,
-  refreshKey,
-}: {
-  typeName: string;
-  filter: AssetFilter;
-  refreshKey?: number;
-}) {
-  const [total, setTotal] = React.useState<number | null>(null);
-  // Stable key so the effect re-runs only when the filter shape changes.
-  const filterKey = React.useMemo(() => {
-    const p = new URLSearchParams();
-    applyFilterToParams(p, filter);
-    return p.toString();
-  }, [filter]);
-  React.useEffect(() => {
-    let cancelled = false;
-    const params = new URLSearchParams();
-    params.set('record_type', typeName);
-    params.set('offset', '0');
-    params.set('limit', '1');
-    applyFilterToParams(params, filter);
-    apiClient
-      .get(`/search?${params.toString()}`)
-      .then((d: unknown) => {
-        if (cancelled) return;
-        const data = d as { total?: number } | null;
-        setTotal(data?.total ?? 0);
-      })
-      .catch(() => {
-        if (!cancelled) setTotal(0);
-      });
-    return () => {
-      cancelled = true;
-    };
-    // filterKey captures the relevant filter shape; filter is referenced inside.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [typeName, filterKey, refreshKey]);
-  if (total === null || total === 0) return null;
+export const AssetTypeCountsContext = React.createContext<Map<string, number> | null>(null);
+
+/**
+ * Count badge rendered to the right of a type row — a pure render of the count
+ * from `AssetTypeCountsContext`. Renders nothing when the count is 0 or absent.
+ */
+export function AssetTypeCountBadge({ typeName }: { typeName: string }) {
+  const total = React.useContext(AssetTypeCountsContext)?.get(typeName) ?? 0;
+  if (total === 0) return null;
   return (
     <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
       {total > 999 ? '999+' : total}
@@ -278,7 +249,7 @@ export function assetTypeRoot(type: AssetTypeInfo, deps: AssetTypeRootDeps): Bro
     kind: 'root',
     label: type.label,
     icon: resolveAssetIcon(type.icon),
-    badge: <AssetTypeCountBadge typeName={type.type_name} filter={filter} />,
+    badge: <AssetTypeCountBadge typeName={type.type_name} />,
     hasChildren: true,
     pointer: DockPointer.forAssetList(type.type_name),
     toolbar: buildRootToolbar(type, deps),
@@ -290,7 +261,17 @@ export function assetTypeRoot(type: AssetTypeInfo, deps: AssetTypeRootDeps): Bro
     },
     pathFor: async (p) => {
       const parsed = parseAssetPointer(p.pointer);
-      if (parsed.mode === 'list' || parsed.mode === null) {
+      if (parsed.mode === 'list') {
+        // The type's own list view (`list/<type>`) is the active pointer: the
+        // right panel already fetches and shows this type's entities (paginated).
+        // Returning an empty chain skips auto-expanding this root, which would
+        // otherwise bulk-fetch up to `childrenPageSize` (200) of the SAME
+        // entities into the sidebar — a duplicate `/search` for data already on
+        // screen. The root still highlights via `ownsPointer`/active-pointer
+        // match, and the user can expand it manually to load children on demand.
+        return [];
+      }
+      if (parsed.mode === null) {
         return [root];
       }
       if (!parsed.vfsPath) return [root];

@@ -1,7 +1,9 @@
 import { expect, test, type APIRequestContext } from '@playwright/test';
 
 // API base for this instance (frontend is baseURL on VITE_PORT; backend on :6002).
-const API = process.env.API_URL || 'http://localhost:6002';
+import { apiBase } from '../_shared/api';
+
+const API = apiBase();
 
 async function createWhiteboard(request: APIRequestContext, name: string, description = '') {
   const res = await request.post(`${API}/api/v1/graph/whiteboard`, { data: { name, description } });
