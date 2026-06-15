@@ -6,8 +6,13 @@ it the normal way — ``dataManager.callAction(new ActionInfo('diagnose', null, 
 'POST'))`` → ``/api/v1/graph/diagnose``. It runs ``_run_diagnose`` (the exact CLI
 runner) headless and streams the worker's narration as SSE, so the modal shows the
 same ``▸ …`` narration the CLI prints. An empty message means a full diagnostic
-sweep, identical to pressing Enter at the CLI prompt. The skill records the diagnosis
-(and a Feed entry only for real issues) itself — this action adds no diagnosis logic.
+sweep, identical to pressing Enter at the CLI prompt.
+
+It runs the runner with ``create_feed_entry=False``: unlike the CLI, the UI does NOT
+post a Home-Feed card. The diagnosis (and, for a real issue, its support
+Conversation/FlowMessage) is still recorded by ``report.py``; the modal surfaces it
+directly — a "View diagnosis" popup with the same report buttons — using the
+``diagnosis_id`` / ``conversation_id`` carried on the stream's ``done`` event.
 """
 from __future__ import annotations
 
@@ -25,32 +30,6 @@ from flow_sdk.request_context.methods import get_current_request_info
 logger = logging.getLogger(__name__)
 
 
-async def _broadcast_feed_entry_created(feed_entry_id: str) -> None:
-    """Make the diagnosis Feed entry appear live, without a manual refresh.
-
-    The FeedEntry is created by the skill's ``report.py``, which runs in a separate
-    worker subprocess and writes straight to the DB — so the in-process WS broadcast
-    that ``Entity.save`` normally fires never reached connected clients, and the Home
-    Feed only picked it up on a manual refetch. This action runs INSIDE the server
-    process, so once the entry is committed we load it and emit the exact same
-    ``create`` notification a normal in-process save would: the Feed's type-level
-    watch re-queries and the card shows up reactively.
-    """
-    try:
-        from flow_sdk.api.api_types.messages import DataOpMessage, OperationType
-        from flow_sdk.builtin.feed_entry import FeedEntry
-        from flow_sdk.core.network.resource_tracker import handle_entity_op
-
-        entry = await FeedEntry.get_by_id(feed_entry_id)
-        if entry is None:
-            return
-        await handle_entity_op(
-            DataOpMessage(data=entry, op=OperationType.CREATE, to_entity=entry.typeid)
-        )
-    except Exception as e:
-        logger.warning("diagnose: failed to broadcast feed entry %s: %s", feed_entry_id, e)
-
-
 @action.post(action_name="diagnose", types=None)
 async def diagnose() -> StreamingResponse:
     request_info = get_current_request_info()
@@ -58,25 +37,23 @@ async def diagnose() -> StreamingResponse:
     message = (body.get("message") or "").strip() if isinstance(body, dict) else ""
 
     queue: asyncio.Queue = asyncio.Queue()
-    new_feed_entry_id: str | None = None
 
     def emit(event: dict | None) -> None:
         # _run_diagnose runs on this same event loop, so a non-blocking put is safe.
-        nonlocal new_feed_entry_id
-        if event is not None and event.get("type") == "done":
-            new_feed_entry_id = event.get("feed_entry_id")
         queue.put_nowait(event)
 
     async def _run() -> None:
         try:
-            await _run_diagnose(message, DEFAULT_TRANSCRIPT_TIMEOUT_S, emit=emit)
-            # The entry was written out-of-process by report.py; rebroadcast its
-            # creation in-process so the Home Feed updates without a refresh.
-            if new_feed_entry_id:
-                await _broadcast_feed_entry_created(new_feed_entry_id)
+            # UI surface: no Home-Feed card — the modal surfaces the diagnosis itself.
+            await _run_diagnose(
+                message, DEFAULT_TRANSCRIPT_TIMEOUT_S, emit=emit, create_feed_entry=False
+            )
         except Exception as e:  # surface the failure into the stream, never 500 silently
             emit({"type": "error", "text": f"diagnose error: {e}"})
-            emit({"type": "done", "ok": False, "diagnosis_id": None, "feed_posted": False, "feed_entry_id": None})
+            emit({
+                "type": "done", "ok": False, "diagnosis_id": None, "conversation_id": None,
+                "flow_message_id": None, "feed_posted": False, "feed_entry_id": None,
+            })
         finally:
             emit(None)  # sentinel: end of stream
 

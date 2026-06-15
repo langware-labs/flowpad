@@ -462,19 +462,20 @@ The script is the SDK, **not** an HTTP API — it opens the local instance DB it
 when the backend is DOWN. Run the reporter that ships **next to this SKILL.md** (`report.py` in this
 skill directory); do **not** hand-build any entities and do **not** import from `flow_sdk`.
 
-You do not decide whether to post a Feed entry — **`report.py` decides that from `--status`**. You
-just always run it with the right status:
+You do not decide what gets surfaced — **`report.py` decides that from `--status`**. You just always
+run it with the right status:
 
-1. It **always** creates a `flowpad_diagnosis` record from your `title / symptoms / rca / fix`.
-2. If you found an issue (`--status` is `fixed`, `needs_action`, or `unrecognized`) it also posts the
-   diagnosis to the Home Feed (hidden support Conversation + summary `flow_message` with the diagnosis
-   attached + a `message_suggest` `feed_entry`) so the user can send it to support in one click.
+1. It **always** creates a `flowpad_diagnosis` record from your `title / symptoms / rca / fix / summary`.
+2. If you found an issue (`--status` is `fixed`, `needs_action`, or `unrecognized`) it also creates the
+   support artifact the report buttons act on: a hidden support Conversation + a summary `flow_message`
+   with the diagnosis attached.
 3. If the sweep was clean (`--status ok`) or the only findings are benign (`--status informational`),
-   it records the diagnosis for history but creates **no** Feed entry. **Use `--status ok` for a
-   healthy result — and still run the script.**
+   it records the diagnosis for history only. **Use `--status ok` for a healthy result — and still run
+   the script.**
 
-(The `flow diagnose` runner cross-links the diagnosis to this process for you afterwards — do **not**
-attempt the cross-link yourself.)
+(Surfacing the diagnosis to the user — the CLI's Home-Feed card, or the UI's "View diagnosis" popup —
+is handled by the `flow diagnose` runner afterwards, not by you. The runner also cross-links the
+diagnosis to this process for you — do **not** attempt the cross-link yourself.)
 
 ```bash
 uv run python "<this skill dir>/report.py" \
@@ -490,7 +491,7 @@ uv run python "<this skill dir>/report.py" \
 
 `<this skill dir>` is the folder this SKILL.md is in — the same path you were given to read it from.
 Use `--status ok` when everything is healthy and no issue was found. It prints a JSON line including
-`diagnosis_id` (and the Feed ids when a Feed entry was posted).
+`diagnosis_id` (and the support `conversation_id` / `flow_message_id` when an issue was found).
 
 Do not end your turn before the reporter script has printed its JSON. Do **not** fail the whole run if
 this step errors; the console report from Step 6 still stands.
@@ -498,7 +499,7 @@ this step errors; the console report from Step 6 still stands.
 ## Reference Files
 
 - [Full known-issue catalog with detection commands](references/catalog.md)
-- `report.py` — the SDK-direct reporter this skill runs in Step 7 (Conversation + FlowMessage + FeedEntry).
+- `report.py` — the SDK-direct reporter this skill runs in Step 7 (flowpad_diagnosis record + support Conversation + FlowMessage).
 
 ## Examples
 

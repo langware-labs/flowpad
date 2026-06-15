@@ -313,7 +313,9 @@ export function MessageBubble({
               );
             }
             return (
-              <div className={`text-sm ${isBot ? 'italic text-foreground/70' : 'text-foreground/90'}`}>
+              <div
+                className={`whitespace-pre-wrap break-words text-sm ${isBot ? 'italic text-foreground/70' : 'text-foreground/90'}`}
+              >
                 {message.content}
               </div>
             );

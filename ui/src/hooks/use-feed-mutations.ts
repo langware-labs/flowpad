@@ -1,4 +1,4 @@
-import { Conversation, FeedEntry, sendToExistingConversation } from '@sdk';
+import { FeedEntry, sendDiagnosisReport } from '@sdk';
 import { useCallback } from 'react';
 
 interface UseFeedMutationsOptions {
@@ -30,21 +30,17 @@ export function useFeedMutations({ refetch }: UseFeedMutationsOptions) {
 
   const reportIssue = useCallback(
     async (entry: FeedEntry, conversationId: string) => {
-      await sendToExistingConversation(conversationId, {
-        text: entry.messageSuggest?.message_text ?? '',
+      // Shared send path: post the report into the conversation and un-hide it so
+      // it surfaces in the Recent strip (same helper the diagnose modal uses).
+      // Pass the support FlowMessage id so the full, formatted report body is sent
+      // (the bare `message_text` summary is only the no-message fallback).
+      await sendDiagnosisReport(conversationId, {
+        flowMessageId: entry.messageSuggest?.flow_message_id,
+        fallbackText: entry.messageSuggest?.message_text ?? '',
       });
+      // Then dismiss the Feed entry — only after the send succeeds.
       entry.feed_status = 'dismissed';
-      // Un-hide the conversation so it shows in the Recent strip — the send
-      // itself doesn't clear dismissed_at. Skipped if the fetch comes back
-      // empty; independent of the entry save, so the two run in parallel.
-      const unhide = async () => {
-        const conv = await Conversation.getById<Conversation>(conversationId);
-        if (!conv) return;
-        conv.dismissed_at = null;
-        conv.updated_date = new Date().toISOString();
-        await conv.save([]);
-      };
-      await Promise.all([entry.save([]), unhide()]);
+      await entry.save([]);
       await refetch();
     },
     [refetch],

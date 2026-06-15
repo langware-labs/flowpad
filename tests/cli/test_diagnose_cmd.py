@@ -216,7 +216,7 @@ async def test_run_diagnose_exits_when_recorded_even_if_stream_never_ends():
                     "content": [
                         {
                             "type": "tool_result",
-                            "content": '{"diagnosis_id": "d1", "feed_entry_id": null, "feed_posted": false}',
+                            "content": '{"diagnosis_id": "d1", "conversation_id": null, "flow_message_id": null, "has_issue": false}',
                         }
                     ],
                 }
@@ -353,7 +353,7 @@ async def test_run_diagnose_waits_for_slow_but_alive_worker():
                     "content": [
                         {
                             "type": "tool_result",
-                            "content": '{"diagnosis_id": "d1", "feed_entry_id": null, "feed_posted": false}',
+                            "content": '{"diagnosis_id": "d1", "conversation_id": null, "flow_message_id": null, "has_issue": false}',
                         }
                     ],
                 }
