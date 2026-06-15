@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import inspect
 import os
+from contextlib import contextmanager
 from contextvars import ContextVar
 
 DEFAULT_BROWSE_LIMIT = 20
@@ -57,6 +58,34 @@ EntityType = TypeVar("EntityType", bound="Entity")
 # rewritten. Override-agnostic: every ``save()`` override funnels through the
 # base ``save()`` which reads this, so no per-type signature change is needed.
 _SUPPRESS_STORE: "ContextVar[bool]" = ContextVar("_suppress_store", default=False)
+
+# When set, the DB driver treats the write as a PURE REFLECTION of a hub-origin
+# row: ``apply_create_fields`` / ``apply_update_fields`` preserve ``created_by``,
+# ``updated_by``, ``created_date`` and ``updated_date`` VERBATIM from the payload
+# — including ``None`` — instead of substituting the local request user (or the
+# ``system`` sentinel). This is the single sanctioned way to materialize a remote
+# conversation/message without the receiver fabricating attribution onto it.
+# Intent-scoped (the reflecting write opts in), NOT keyed on ``record.remote`` —
+# so sender-side flip-to-remote and local mutations of remote rows (mark_received,
+# body_downloaded, …) keep normal stamping. Read by the driver via a function-local
+# import to avoid an import cycle.
+_REMOTE_REFLECTION: "ContextVar[bool]" = ContextVar("_remote_reflection", default=False)
+
+
+@contextmanager
+def remote_reflection():
+    """Mark the enclosed save(s) as a verbatim reflection of hub-origin rows.
+
+    Inside this block the DB driver preserves the wire ``created_by`` /
+    ``updated_by`` / timestamps as-is (``None`` stays ``None``) rather than
+    stamping the local request user. Use ONLY around materialize/upsert saves
+    of remote conversations and flow messages.
+    """
+    token = _REMOTE_REFLECTION.set(True)
+    try:
+        yield
+    finally:
+        _REMOTE_REFLECTION.reset(token)
 
 
 @dataclass
