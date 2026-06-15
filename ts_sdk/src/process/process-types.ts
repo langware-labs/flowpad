@@ -8,11 +8,15 @@
  * - Analysis: child process that analyzes another process's worker session
  *   (agent-trace); paired with the analyzed process (parent + mutual private
  *   context).
+ * - Conversation: the single live worker session that owns a Conversation; the
+ *   conversation header's Open button targets it, and its absence is what
+ *   surfaces the launch toolbar.
  */
 export const ProcessKind = {
   Chat: 'chat',
   Execution: 'execution',
   Analysis: 'analysis',
+  Conversation: 'conversation',
 } as const;
 
 export type ProcessKind = (typeof ProcessKind)[keyof typeof ProcessKind];

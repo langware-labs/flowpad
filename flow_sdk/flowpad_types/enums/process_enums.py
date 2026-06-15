@@ -11,11 +11,15 @@ class ProcessKind(str, Enum):
     - ANALYSIS: child process that analyzes another process's worker session
       (agent-trace). Paired with the analyzed process: parent_type_id points at
       it and each is in the other's private context.
+    - CONVERSATION: the single live worker session that owns a Conversation;
+      the conversation header's Open button targets it, and its absence is what
+      surfaces the launch toolbar.
     """
 
     CHAT = "chat"
     EXECUTION = "execution"
     ANALYSIS = "analysis"
+    CONVERSATION = "conversation"
 
 # Deprecated alias — renamed to ProcessKind (2026-06-12). Remove after one release.
 ProcessType = ProcessKind
