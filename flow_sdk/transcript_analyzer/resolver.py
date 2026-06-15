@@ -37,17 +37,33 @@ class TranscriptNotFoundError(LookupError):
 def resolve_session_jsonl(worker_type: str, session_id: str) -> Path:
     """Return the absolute Path to the JSONL file for this session.
 
+    Tries the worker's local CLI dir first; if that misses, falls back to the
+    instance's received-transcripts store (a session shared from another
+    machine never ran here, so the CLI dir is empty — the transcript rode in
+    with the share). Worker-generic across claude/codex/copilot.
+
     Raises ``TranscriptNotFoundError`` when no match is found, ``ValueError``
     on unsupported worker types.
     """
     wt = worker_type.lower().strip()
-    if wt == "claude":
-        return _resolve_claude(session_id)
-    if wt == "codex":
-        return _resolve_codex(session_id)
-    if wt == "copilot":
-        return _resolve_copilot(session_id)
-    raise ValueError(f"Unsupported worker_type: {worker_type!r}")
+    _resolvers = {
+        "claude": _resolve_claude,
+        "codex": _resolve_codex,
+        "copilot": _resolve_copilot,
+    }
+    resolver = _resolvers.get(wt)
+    if resolver is None:
+        raise ValueError(f"Unsupported worker_type: {worker_type!r}")
+    try:
+        return resolver(session_id)
+    except TranscriptNotFoundError:
+        # Cross-machine share fallback: the transcript was materialized under
+        # the instance's received-transcripts store on unpack. See
+        # ``flow_message_bundle._materialize_received_transcripts``.
+        received = _received_transcript(wt, session_id)
+        if received is not None:
+            return received
+        raise
 
 
 def _resolve_claude(session_id: str) -> Path:
@@ -96,3 +112,39 @@ def _resolve_copilot(session_id: str) -> Path:
             f"No copilot events JSONL found for session_id={session_id}"
         )
     return path
+
+
+# ---------------------------------------------------------------------------
+# Received (shared) transcripts — sessions that arrived via a shared message
+# rather than a local CLI run. Worker-uniform store so the by-session-id open
+# path works on a machine that never ran the session.
+# ---------------------------------------------------------------------------
+
+
+def _received_transcripts_dir() -> Path | None:
+    """``<instance_dir>/received_transcripts`` — instance-local store for
+    transcripts that arrived via a shared message. ``None`` when the instance
+    dir can't be resolved (e.g. an out-of-server context); callers treat that
+    as a miss."""
+    try:
+        from flow_sdk.instance_settings import get_instance_settings
+        return get_instance_settings().instance_dir / "received_transcripts"
+    except Exception:
+        return None
+
+
+def received_transcript_dest(worker_type: str, session_id: str) -> Path | None:
+    """Canonical path for a received (shared) transcript:
+    ``<instance_dir>/received_transcripts/<worker>/<session_id>.jsonl``.
+
+    The layout is worker-uniform — the parser keys off ``worker_type``, not the
+    filename, so one shape serves every worker. ``None`` when no instance dir
+    is available. The single source of truth for the path, shared by the
+    unpack writer and the resolver fallback."""
+    base = _received_transcripts_dir()
+    return None if base is None else base / worker_type / f"{session_id}.jsonl"
+
+
+def _received_transcript(worker_type: str, session_id: str) -> Path | None:
+    dest = received_transcript_dest(worker_type, session_id)
+    return dest if (dest is not None and dest.exists()) else None
