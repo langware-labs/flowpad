@@ -10,6 +10,7 @@ export const CapabilityKinds = {
   Harness: 'harness',
   ClaudeCode: 'harness.claude.cli',
   Codex: 'harness.codex.cli',
+  Copilot: 'harness.copilot.cli',
   ChromeAuthenticated: 'browsing.chrome.authenticated',
 } as const;
 
@@ -20,4 +21,5 @@ export type CapabilityKindValue = (typeof CapabilityKinds)[CapabilityKindKey];
 export const HARNESS_CAPABILITY_KINDS: readonly string[] = [
   CapabilityKinds.ClaudeCode,
   CapabilityKinds.Codex,
+  CapabilityKinds.Copilot,
 ];

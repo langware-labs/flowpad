@@ -11,7 +11,7 @@ import { gotoShell, addTerminalTab } from '../terminal/helpers';
 
 test.describe('switch between sessions', () => {
   test('test 1: switching between two terminal tabs flips the active tab, no console errors', async ({ page }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(60_000);
     const consoleErrors: string[] = [];
     page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });
 

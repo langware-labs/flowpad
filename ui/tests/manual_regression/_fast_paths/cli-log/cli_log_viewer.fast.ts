@@ -11,8 +11,11 @@
  * Exit 0 = pass, non-zero = fail (run full path)
  */
 
-const APP_URL = process.env.APP_URL || "http://localhost:4097";
-const API_URL = process.env.API_URL || "http://localhost:9007";
+import { apiOrigin } from "../../_shared/api";
+
+// Frontend origin: explicit APP_URL override, else the Vite dev-server port.
+const APP_URL = process.env.APP_URL || `http://localhost:${process.env.VITE_PORT || "4097"}`;
+const API_URL = apiOrigin();
 
 interface BootstrapEntity {
   type?: string;

@@ -43,6 +43,7 @@ try:
 except ImportError:
     import tomli as _tomllib  # type: ignore[import-not-found,no-redef]
 
+from flow_sdk.flowpad_types.enums.worker_enums import WorkerType
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.fs_store.fs_ref import FSRef
 from flow_sdk.fs_store.indexer.index_function import IndexerOptions
@@ -51,6 +52,79 @@ from flow_sdk.fs_store.source_file_records import (
     _escape_json_pointer,
     _unescape_json_pointer,
 )
+
+
+# ── Source mapping: every system's MCP config files ───────────────────────────
+#
+# Each row is (relative path parts under the root, top-level servers key,
+# format, owning agent). The key differs per agent — VS Code uses ``servers``;
+# Codex uses TOML ``mcp_servers``; everyone else uses ``mcpServers``. The agent
+# becomes the record's ``worker_type`` (the config owner, not necessarily an
+# executor FlowPad spawns). All three Claude Desktop OS paths are listed
+# unconditionally — non-matching ones simply fail ``is_file()``, so no
+# ``sys.platform`` branching is needed.
+
+# Cloud connectors managed by claude.ai are recorded under this top-level key in
+# ``~/.claude.json`` — a list of display names only (no command/url/auth).
+CLOUD_CONNECTORS_KEY = "claudeAiMcpEverConnected"
+
+# Sources valid under BOTH the user home and a project root (per-scope copies
+# of the same agent config — e.g. global ~/.codex/config.toml and project
+# .codex/config.toml). Listed once, spread into both tables below.
+_SHARED_SOURCES: list[tuple[tuple[str, ...], str, str, WorkerType]] = [
+    ((".codex", "config.toml"), "mcp_servers", "toml", WorkerType.CODEX),
+    ((".vscode", "mcp.json"), "servers", "json", WorkerType.VSCODE),
+    ((".cursor", "mcp.json"), "mcpServers", "json", WorkerType.CURSOR),
+]
+
+_HOME_SOURCES: list[tuple[tuple[str, ...], str, str, WorkerType]] = [
+    *_SHARED_SOURCES,
+    ((".claude.json",), "mcpServers", "json", WorkerType.CLAUDE_CODE),
+    ((".claude", "mcp.json"), "mcpServers", "json", WorkerType.CLAUDE_CODE),
+    ((".claude", ".mcp.json"), "mcpServers", "json", WorkerType.CLAUDE_CODE),
+    # Claude Desktop — mac / win (%APPDATA%) / linux.
+    (("Library", "Application Support", "Claude", "claude_desktop_config.json"),
+     "mcpServers", "json", WorkerType.CLAUDE_DESKTOP),
+    (("AppData", "Roaming", "Claude", "claude_desktop_config.json"),
+     "mcpServers", "json", WorkerType.CLAUDE_DESKTOP),
+    ((".config", "Claude", "claude_desktop_config.json"),
+     "mcpServers", "json", WorkerType.CLAUDE_DESKTOP),
+    ((".copilot", "mcp-config.json"), "mcpServers", "json", WorkerType.COPILOT),
+    ((".codeium", "windsurf", "mcp_config.json"), "mcpServers", "json", WorkerType.WINDSURF),
+]
+
+_PROJECT_SOURCES: list[tuple[tuple[str, ...], str, str, WorkerType]] = [
+    *_SHARED_SOURCES,
+    ((".mcp.json",), "mcpServers", "json", WorkerType.CLAUDE_CODE),
+    (("mcp.json",), "mcpServers", "json", WorkerType.CLAUDE_CODE),
+    ((".claude", "mcp.json"), "mcpServers", "json", WorkerType.CLAUDE_CODE),
+    ((".claude", ".mcp.json"), "mcpServers", "json", WorkerType.CLAUDE_CODE),
+]
+
+# Path-parts suffix → (servers_key, worker_type), longest suffix wins. Built
+# once from the union of both tables (duplicate shared rows collapse here).
+_SOURCE_BY_SUFFIX: dict[tuple[str, ...], tuple[str, WorkerType]] = {
+    rel: (key, worker) for rel, key, _fmt, worker in (*_HOME_SOURCES, *_PROJECT_SOURCES)
+}
+
+
+def _resolve_source(path: Path) -> tuple[str, WorkerType]:
+    """Return ``(servers_key, worker_type)`` for a config file from its path.
+
+    Pure path inspection — the single source of truth shared by stage 2 and
+    ``extract_mcp_server`` (mirrors how ``claude_hook.py`` re-derives scope and
+    ``transcript_streamer`` derives worker_type from path shape). Matches the
+    longest path-parts suffix; falls back to the Claude Code default.
+    """
+    parts = path.parts
+    best: tuple[int, str, WorkerType] | None = None
+    for rel, (key, worker) in _SOURCE_BY_SUFFIX.items():
+        if len(parts) >= len(rel) and tuple(parts[-len(rel):]) == rel:
+            if best is None or len(rel) > best[0]:
+                best = (len(rel), key, worker)
+    if best is not None:
+        return best[1], best[2]
+    return "mcpServers", WorkerType.CLAUDE_CODE
 
 
 # ── Format-aware config loading ───────────────────────────────────────────────
@@ -84,23 +158,22 @@ def mcp_source_files_fn(
     """Enumerate MCP config files under each root.
 
     Register on USER_HOME_FOLDER, REAL_PROJECT_CWD, CWD_ROOT → MCP_SERVER_SOURCE.
-    The legacy ``~/.claude.json`` (which may carry a top-level ``mcpServers``
-    block *and* nested per-project local-scope blocks) is included so
-    user-level servers survive; ``.codex/config.toml`` covers Codex.
+    The candidate set is the declarative source table for the root's kind —
+    ``_HOME_SOURCES`` for the user home (Claude/Codex/Copilot/Cursor/Windsurf/
+    VS Code/Claude Desktop, incl. the cloud-connector-carrying ``~/.claude.json``)
+    and ``_PROJECT_SOURCES`` for project roots.
     """
     out: list[FSRef] = []
     seen: set[str] = set()
     for node in nodes:
         root = Path(node.path)
-        candidates = [
-            root / ".mcp.json",
-            root / "mcp.json",
-            root / ".claude" / "mcp.json",
-            root / ".claude" / ".mcp.json",
-            root / ".claude.json",
-            root / ".codex" / "config.toml",
-        ]
-        for candidate in candidates:
+        table = (
+            _HOME_SOURCES
+            if node.record_type == RecordType.USER_HOME_FOLDER
+            else _PROJECT_SOURCES
+        )
+        for rel, _key, _fmt, _worker in table:
+            candidate = root.joinpath(*rel)
             if not candidate.is_file():
                 continue
             key = str(candidate.resolve())
@@ -129,29 +202,44 @@ def _iter_block(servers, prefix: str, scope: str | None) -> Iterator[tuple[str, 
             yield f"{prefix}/{_escape_json_pointer(name)}", scope
 
 
-def _iter_servers_in_file(path: Path) -> Iterator[tuple[str, str | None]]:
+def _iter_servers_in_file(path: Path, data: dict) -> Iterator[tuple[str, str | None]]:
     """Yield ``(RFC-6901 pointer, scope_override)`` for every server in *path*.
 
     scope_override is None when the FSRef should inherit the root's ambient
     scope (user under ``~``, project under project roots) and ``"local"`` for
     the nested per-project blocks of ``~/.claude.json``.
     """
-    data = _load_config(path)
-    if data is None:
+    key, _worker = _resolve_source(path)
+    yield from _iter_block(data.get(key), f"/{_escape_json_pointer(key)}", None)
+    # Claude *local* scope — ``~/.claude.json`` nests per-project servers under
+    # projects["<abs cwd>"].mcpServers (the default `claude mcp add`). Only the
+    # mcpServers-keyed Claude config carries this nested shape.
+    if key == "mcpServers":
+        projects = data.get("projects")
+        if isinstance(projects, dict):
+            for proj_path, proj_body in projects.items():
+                if not isinstance(proj_body, dict):
+                    continue
+                prefix = f"/projects/{_escape_json_pointer(str(proj_path))}/mcpServers"
+                yield from _iter_block(proj_body.get("mcpServers"), prefix, "local")
+
+
+def _iter_cloud_connectors(path: Path, data: dict) -> Iterator[tuple[str, str | None]]:
+    """Yield ``(pointer, scope)`` for claude.ai cloud connectors in ``.claude.json``.
+
+    ``claudeAiMcpEverConnected`` is a flat list of connector display names (no
+    command/url/auth on disk — those live in the cloud). Each becomes a
+    name-only stub record at user scope under a synthetic pointer so it
+    round-trips through ``extract``.
+    """
+    if path.name != ".claude.json":
         return
-    # Claude shape (camelCase) — user/project scope, inherited from the root.
-    yield from _iter_block(data.get("mcpServers"), "/mcpServers", None)
-    # Codex shape (snake_case TOML tables) — global config under ~/.codex.
-    yield from _iter_block(data.get("mcp_servers"), "/mcp_servers", None)
-    # Claude *local* scope — ``~/.claude.json`` nests per-project servers
-    # under projects["<abs cwd>"].mcpServers (the default `claude mcp add`).
-    projects = data.get("projects")
-    if isinstance(projects, dict):
-        for proj_path, proj_body in projects.items():
-            if not isinstance(proj_body, dict):
-                continue
-            prefix = f"/projects/{_escape_json_pointer(str(proj_path))}/mcpServers"
-            yield from _iter_block(proj_body.get("mcpServers"), prefix, "local")
+    names = data.get(CLOUD_CONNECTORS_KEY)
+    if not isinstance(names, list):
+        return
+    for name in names:
+        if isinstance(name, str) and name:
+            yield f"/{CLOUD_CONNECTORS_KEY}/{_escape_json_pointer(name)}", "user"
 
 
 def mcp_servers_in_file_fn(
@@ -166,7 +254,13 @@ def mcp_servers_in_file_fn(
     for node in nodes:
         if node.record_type != RecordType.MCP_SERVER_SOURCE:
             continue
-        for json_path, scope in _iter_servers_in_file(Path(node.path)):
+        path = Path(node.path)
+        data = _load_config(path)
+        if data is None:
+            continue
+        # Parse once, feed both iterators (the file's servers + any cloud stubs).
+        entries = [*_iter_servers_in_file(path, data), *_iter_cloud_connectors(path, data)]
+        for json_path, scope in entries:
             out.append(
                 FSRef(
                     node.path,
@@ -191,12 +285,23 @@ def _pointer_parts(json_path: str) -> list[str]:
 
 
 def _read_server_fragment(path: Path, json_path: str) -> tuple[str, dict] | None:
-    """Resolve an arbitrary-depth pointer into ``(server_name, server_body)``."""
+    """Resolve an arbitrary-depth pointer into ``(server_name, server_body)``.
+
+    Cloud connectors (``/claudeAiMcpEverConnected/<name>``) are name-only — they
+    have no body on disk — so they resolve to ``(name, {})`` after confirming the
+    name is still present in the live list (fail-soft if removed between scan
+    and parse).
+    """
     parts = _pointer_parts(json_path)
     if len(parts) < 2:
         return None
     data = _load_config(path)
     if data is None:
+        return None
+    if parts[0] == CLOUD_CONNECTORS_KEY:
+        names = data.get(CLOUD_CONNECTORS_KEY)
+        if isinstance(names, list) and parts[1] in names:
+            return parts[1], {}
         return None
     body: object = data
     for key in parts:
@@ -220,7 +325,10 @@ def _record_id(source_file: str, json_path: str) -> str:
     walked the file.
     """
     parts = _pointer_parts(json_path)
-    if len(parts) == 2:
+    # Cloud-connector stubs are 2-segment too, but must NOT collapse to the
+    # legacy ``<file>:<name>`` shape — that would collide with a real top-level
+    # server of the same name in the same file. Key them on the full pointer.
+    if len(parts) == 2 and parts[0] != CLOUD_CONNECTORS_KEY:
         return f"{source_file}:{parts[-1]}"
     return f"{source_file}:{json_path}"
 
@@ -260,10 +368,20 @@ def extract_mcp_server(ref: FSRef) -> list[FSRecord]:
     parts = _pointer_parts(json_path)
     project_path = parts[1] if ref.scope == "local" and len(parts) == 4 else ""
 
+    # Owning agent (config source) + local vs remote. worker_type is derived
+    # from the file path; connector_type is "remote" for claude.ai cloud
+    # connectors and for url-only (no command) servers, "local" otherwise.
+    _, worker_type = _resolve_source(path)
+    is_cloud = bool(parts) and parts[0] == CLOUD_CONNECTORS_KEY
+    connector_type = "remote" if (is_cloud or (url and not command)) else "local"
+
     # FTS only indexes title/content/description — surface the launch line so
-    # search matches by command / package / url.
+    # search matches by command / package / url. Cloud stubs have no launch
+    # line; fall back to the agent + connector kind so they stay searchable.
     launch = [command, *[str(a) for a in args]] if command else [url]
     description = " ".join(x for x in launch if x).strip()
+    if not description:
+        description = f"{worker_type.value} {connector_type} connector"
 
     rec = FSRecord(
         type=RecordType.MCP_SERVER,
@@ -281,6 +399,8 @@ def extract_mcp_server(ref: FSRef) -> list[FSRecord]:
         env=body.get("env", {}) or {},
         url=url,
         transport=transport,
+        worker_type=worker_type.value,
+        connector_type=connector_type,
         description=description,
     )
     object.__setattr__(rec, "_asset_ref", FSRef(path, read_only=True, json_path=ref.json_path))

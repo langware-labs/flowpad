@@ -55,6 +55,54 @@ export function scopeFilterEqual(a: ScopeFilter, b: ScopeFilter): boolean {
   return ap.every((v, i) => v === bp[i]);
 }
 
+/**
+ * Scopes that are matched by `project_id` (carry a project). Mirrors the
+ * backend `PROJECT_LIKE_SCOPES` (flow_sdk/server/search_filters.py) — keep in
+ * sync. System rows carry the system project's id, so they're surfaced by
+ * selecting that project, exactly like ordinary project rows.
+ */
+export const PROJECT_LIKE_SCOPES = ['project', 'system'] as const;
+
+/**
+ * The scope "bucket" an opened asset belongs to: its project (project- or
+ * system-scoped) or the user scope. Derived from the asset's `scope`/
+ * `project_id`; `null` when the asset has no resolvable bucket.
+ */
+export type AssetScopeBucket = { projectId: string } | { user: true } | null;
+
+/**
+ * Resolve an asset's scope bucket from its `scope`/`project_id` fields. Used to
+ * union the open asset's own scope into a side-menu filter (see
+ * `unionAssetBucket`). Returns `null` when the asset has no resolvable bucket.
+ */
+export function assetScopeBucket(
+  asset: { scope?: string | null; project_id?: string | null } | null | undefined,
+): AssetScopeBucket {
+  const scope = asset?.scope ?? '';
+  const projectId = asset?.project_id ?? null;
+  if (scope === 'user') return { user: true };
+  if (projectId && (PROJECT_LIKE_SCOPES as readonly string[]).includes(scope)) {
+    return { projectId };
+  }
+  return null;
+}
+
+/**
+ * Union an opened asset's bucket onto a base ScopeFilter so the asset's own
+ * type/count shows up in the side menu while you're viewing it. Returns the
+ * base unchanged (same reference) when there's nothing to add — when `all` is
+ * set (already shows everything), the bucket is empty, or the bucket is already
+ * represented. Recompute per open; do not accumulate buckets across opens.
+ */
+export function unionAssetBucket(base: ScopeFilter, bucket: AssetScopeBucket): ScopeFilter {
+  if (!bucket || base.all) return base;
+  if ('user' in bucket) {
+    return base.user ? base : { ...base, user: true };
+  }
+  if (base.projects.includes(bucket.projectId)) return base;
+  return { ...base, projects: [...base.projects, bucket.projectId] };
+}
+
 /** Stable key for React-Query and cache invalidation. */
 export function scopeFilterKey(sf: ScopeFilter): string {
   if (sf.all) return 'all';

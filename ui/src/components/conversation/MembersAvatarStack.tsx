@@ -5,13 +5,17 @@ import { Avatar, AvatarFallback } from '@src/components/ui/avatar';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { useMembers } from '@src/hooks/use-members';
 import { useLocalUser } from './useLocalUser';
+import { ContactPermissionsDialog } from './ContactPermissionsDialog';
 import {
   assignableRoles,
   canInviteMembers,
+  contactFromParticipant,
   participantInitials,
+  participantIsUser,
   participantLabel,
   participantRank,
   participantRoleLabel,
+  type ContactIdentity,
 } from './participant-display';
 
 const MAX_INLINE_AVATARS = 4;
@@ -40,6 +44,7 @@ export function MembersAvatarStack({ typeId }: MembersAvatarStackProps) {
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [removingId, setRemovingId] = useState<string | null>(null);
   const [changingId, setChangingId] = useState<string | null>(null);
+  const [permissionsContact, setPermissionsContact] = useState<ContactIdentity | null>(null);
 
   // My roster row drives every affordance gate: rank for the role selector
   // (mirrors the hub's ``can_assign`` ceiling), owner for remove, admin+ for
@@ -117,6 +122,7 @@ export function MembersAvatarStack({ typeId }: MembersAvatarStackProps) {
   };
 
   return (
+    <>
     <Popover open={open} onOpenChange={handleOpenChange}>
       <PopoverTrigger asChild>
         <button
@@ -160,17 +166,40 @@ export function MembersAvatarStack({ typeId }: MembersAvatarStackProps) {
             // strictly below my rank, only on members strictly below my rank,
             // never my own row / the owner. Empty = render the static label.
             const roles = assignableRoles(me, p);
-            return (
-              <li
-                key={p.user_id || p.email || i}
-                className="flex items-center gap-2 text-xs"
-              >
+            const contact = participantIsUser(p, localUser) ? null : contactFromParticipant(p);
+            const identity = (
+              <>
                 <Avatar className="h-6 w-6">
                   <AvatarFallback className="text-[10px]">
                     {participantInitials(p)}
                   </AvatarFallback>
                 </Avatar>
                 <span className="flex-1 truncate">{participantLabel(p)}</span>
+              </>
+            );
+            return (
+              <li
+                key={p.user_id || p.email || i}
+                className="flex items-center gap-2 text-xs"
+              >
+                {contact ? (
+                  <button
+                    type="button"
+                    className="flex min-w-0 flex-1 items-center gap-2 rounded px-1 py-0.5 text-left transition-colors hover:bg-muted"
+                    onClick={() => {
+                      setPermissionsContact(contact);
+                      setOpen(false);
+                    }}
+                    aria-label={`Open permissions for ${participantLabel(p)}`}
+                    data-testid={`member-contact-${p.user_id || p.email || i}`}
+                  >
+                    {identity}
+                  </button>
+                ) : (
+                  <div className="flex min-w-0 flex-1 items-center gap-2 px-1 py-0.5">
+                    {identity}
+                  </div>
+                )}
                 {roles.length > 0 ? (
                   <select
                     aria-label={`Change role of ${participantLabel(p)}`}
@@ -261,5 +290,13 @@ export function MembersAvatarStack({ typeId }: MembersAvatarStackProps) {
         )}
       </PopoverContent>
     </Popover>
+    {permissionsContact && (
+      <ContactPermissionsDialog
+        open
+        onClose={() => setPermissionsContact(null)}
+        contact={permissionsContact}
+      />
+    )}
+    </>
   );
 }

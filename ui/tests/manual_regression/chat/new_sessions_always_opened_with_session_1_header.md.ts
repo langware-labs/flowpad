@@ -19,7 +19,7 @@ async function tabNames(page: import('@playwright/test').Page): Promise<string[]
 
 test.describe('incremented tab names', () => {
   test('test 1: second terminal tab name increments (distinct from the first)', async ({ page }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(60_000);
     await dismissSetupModal(page);
     await gotoShell(page);
 

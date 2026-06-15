@@ -18,15 +18,14 @@ from typing import TYPE_CHECKING
 from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
     AgenticContext,
     AgenticProcessContextKey,
-    WorkerDriver,
     WorkerCLIOptions,
     restart_payload_from_cli_options,
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.cli import CodexCliOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.session_history import (
     codex_transcript_path_for_process,
-    find_latest_codex_session_jsonl,
     find_codex_session_jsonl,
+    find_latest_codex_session_jsonl,
     load_session_history as _codex_load_session_history,
     load_transcript_history as _codex_load_transcript_history,
     read_codex_rollout_meta,
@@ -35,8 +34,8 @@ from flow_sdk.builtin.agentic_process.cli_drivers.codex.status import codex_tail
 from flow_sdk.builtin.agentic_process.cli_drivers.codex.stream_worker import (
     CodexCLIStreamWorker,
 )
-from flow_sdk.flowpad_types.enums import WorkerType
 from flow_sdk.builtin.worker_status import WorkerStatus
+from flow_sdk.flowpad_types.enums import WorkerType
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
 from flow_sdk.transcript_analyzer import (
     TranscriptDescriptor,
@@ -218,6 +217,13 @@ class CodexDriver:
     def transcript_path(self, process: "AgenticProcess") -> Path | None:
         descriptor = self.transcript_descriptor(process)
         return descriptor.path if descriptor else None
+
+    def skills_root(self, process: "AgenticProcess", assets_dir: Path) -> Path:
+        """Codex discovers skills only from ``$CODEX_HOME/skills`` (a global,
+        non-per-process location), not from a mounted ``--add-dir``."""
+        from flow_sdk.instance_settings import get_instance_settings
+
+        return get_instance_settings().codex_home / "skills"
 
     def _process_local_descriptor(self, process: "AgenticProcess") -> TranscriptDescriptor | None:
         """Process-local JSONL the headless codex worker tee'd."""

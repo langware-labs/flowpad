@@ -1,4 +1,4 @@
-import { apiClient, Project, Skill, TypeId } from '@sdk';
+import { apiClient, dataManager, Project, Skill, TypeId } from '@sdk';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -41,7 +41,9 @@ export function SkillsCategory({ projectId, onOpenTab }: Props) {
     queryKey: ['skills-include-system'],
     queryFn: async () => {
       const rows = await apiClient.get<Partial<Skill>[]>('/graph/skill?include_system=true');
-      return (rows ?? []).map((row) => new Skill(row));
+      // Hydrate via the cache-deduping path; `new Skill(row)` self-registers in
+      // the dataManager store and collides on every refetch (see use-entity-by-path).
+      return (rows ?? []).map((row) => dataManager.updateEntityFromJson<Skill>(row));
     },
     staleTime: 30_000,
   });

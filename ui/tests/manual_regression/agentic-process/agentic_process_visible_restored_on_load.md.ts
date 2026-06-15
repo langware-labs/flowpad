@@ -24,7 +24,7 @@ async function dismissSetupModal(page: import('@playwright/test').Page) {
 // to /dock/shell/agentic_process-Y on a fresh navigation regardless of the
 // PATCH visible=false push. (Fix per Debug #17.)
 test('agentic process with visible=false is recovered when navigating to shell URL', async ({ page }) => {
-  test.setTimeout(150_000);
+  test.setTimeout(60_000);
   const errors: string[] = [];
   page.on('console', msg => { if (msg.type() === 'error') errors.push(msg.text()); });
   page.on('pageerror', err => errors.push(err.message));
@@ -51,7 +51,7 @@ test('agentic process with visible=false is recovered when navigating to shell U
   // Step 3: fetch the process's own shell_id
   const shellId = await page.evaluate(
     async ({ id }) => {
-      const res = await fetch(`http://localhost:9008/api/v1/graph/agentic_process/${id}`);
+      const res = await fetch(`/api/v1/graph/agentic_process/${id}`);
       const json = await res.json();
       return json?.data?.shell_id as string | null;
     },
@@ -62,7 +62,7 @@ test('agentic process with visible=false is recovered when navigating to shell U
   // Step 4: set visible=false via API (simulates the bug scenario)
   const patchRes = await page.evaluate(
     async ({ id }) => {
-      const res = await fetch(`http://localhost:9008/api/v1/graph/agentic_process/${id}`, {
+      const res = await fetch(`/api/v1/graph/agentic_process/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ visible: false }),
@@ -87,7 +87,11 @@ test('agentic process with visible=false is recovered when navigating to shell U
     .waitFor({ state: 'attached', timeout: 10_000 });
 
   const criticalErrors = errors.filter(e =>
-    !e.includes('favicon') && !e.includes('ResizeObserver') && !e.includes('net::ERR_'),
+    !e.includes('favicon') && !e.includes('ResizeObserver') && !e.includes('net::ERR_')
+    // In-flight use-claude-projects fetch aborted by the full-page navigation
+    // in this scenario ("Failed to list projects: TypeError: Failed to fetch")
+    // — ambient nav noise, not a recovery regression.
+    && !e.includes('Failed to list projects'),
   );
   expect(criticalErrors).toHaveLength(0);
 });

@@ -26,7 +26,7 @@ import { InstructionFile } from '../models/workflow/InstructionFile';
 import { ViewType } from '../utils/ui/view-types';
 import { VFSPath } from '../utils/vfs-path';
 import { AgenticContext, IAgenticProcessOptions, ISpawnWorkerOptions, PermissionMode } from './agentic-context';
-import type { ProcessType } from './process-types';
+import type { ProcessKind } from './process-types';
 import { ProcessIconKey, ProcessStatus, WorkerStatus, isWorkerRunning, isWorkerTerminal } from './agentic-types';
 import type {
   TranscriptFormat as TranscriptFormatType,
@@ -153,13 +153,12 @@ export interface IAgenticProcess extends IEntity {
   /** CLI worker vendor (e.g. 'claude', 'codex'). Drives icon selection. */
   worker_type?: string | null;
   /** Discriminates how this process is being used (chat vs execution). */
-  process_type?: ProcessType | null;
+  process_type?: ProcessKind | null;
   /** Shell entity ID linked to this process */
   shell_id?: string | null;
-  /** Whether this process is visible in the tabs view */
+  /** DEPRECATED one-release alias of base-Entity `tabbed` (kept in lock-step server-side). */
   visible?: boolean;
-  /** ISO timestamp of the tab's last activation. Resolver recency seed (Bug 1). */
-  last_active_at?: string | null;
+  /** tabbed / tab_order / last_active_at come from IEntity (base-Entity fields). */
   /** Sidecar plain shell PTY session ID */
   sidecar_shell_id?: string | null;
   /** True when PTY OSC title escapes may update `name`. Cleared the first time the user manually renames this tab. */
@@ -352,6 +351,53 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
         workerType,
       },
       { visible: true, watchProcess: false, ...(prompt ? { launchPrompt: prompt } : {}) },
+    );
+    process.openTerminalDock();
+    return process;
+  }
+
+  /**
+   * Launch a visible agentic worker in an explicit project workdir — the
+   * single seam for "start a session for *this* thing in *its* project".
+   *
+   * Unlike {@link openTab} (which falls back to the global `dataContext.project`
+   * and never touches the assistant flag), `launch` runs in the caller's
+   * `workdir` and can mount the Flowpad Assistant skills via the per-process
+   * `load_flowpad_assistant` flag — so a conversation session runs in the
+   * conversation's OWN project while still discovering the assistant, instead of
+   * switching the cwd to the `@flowpad_assistant` system project.
+   *
+   * The first prompt rides the prompt queue (`launchPrompt`), enqueued
+   * server-side BEFORE the auto-start: the fresh spawn pops the head as its
+   * launch instruction (deterministic, no post-spawn stdin race). The assistant
+   * flag and provenance links are applied on the same createProcess round-trip,
+   * before the worker boots, so the driver's `--add-dir` set is correct on the
+   * first launch.
+   *
+   * @returns The launched AgenticProcess (terminal dock already opened).
+   */
+  static async launch(opts: {
+    workerType: 'claude_code' | 'codex' | 'copilot';
+    workdir: string;
+    projectId?: string | null;
+    /** First prompt — placed on the queue, popped as the launch instruction. */
+    launchPrompt?: string;
+    /** Mount the Flowpad Assistant skills/agents for this worker. */
+    enableAssistant?: boolean;
+    /** String TypeIds stamped onto the process's `shared_context_entities`. */
+    sharedContextEntities?: string[];
+  }): Promise<AgenticProcess> {
+    const computeNode = dataContext.computeNode;
+    if (!computeNode) throw new Error('[AgenticProcess.launch] No local compute node');
+    const process = await computeNode.createProcess(
+      {
+        workdir: opts.workdir,
+        ...(opts.projectId ? { projectId: opts.projectId } : {}),
+        workerType: opts.workerType,
+        ...(opts.enableAssistant ? { loadFlowpadAssistant: true } : {}),
+        ...(opts.sharedContextEntities?.length ? { sharedContextEntities: opts.sharedContextEntities } : {}),
+      },
+      { visible: true, watchProcess: false, ...(opts.launchPrompt ? { launchPrompt: opts.launchPrompt } : {}) },
     );
     process.openTerminalDock();
     return process;
@@ -678,13 +724,22 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
   worker_type?: string | null;
 
   /** Discriminates how this process is being used (chat vs execution). */
-  process_type?: ProcessType | null;
+  process_type?: ProcessKind | null;
 
   /** Shell entity ID linked to this process */
   shell_id?: string | null;
 
-  /** Whether this process is visible in the tabs view */
+  /** DEPRECATED one-release alias of base-Entity `tabbed` (kept in lock-step server-side). */
   visible?: boolean;
+
+  /** Tab-strip membership (base-Entity field; see IEntity.tabbed). */
+  tabbed?: boolean;
+
+  /** Strip ordering among member tabs (base-Entity field; 0 = unassigned). */
+  tab_order?: number;
+
+  /** Epoch-ms of last tab activation (base-Entity field; legacy ISO tolerated). */
+  last_active_at?: number | string | null;
 
   /** Sidecar plain shell PTY session ID */
   sidecar_shell_id?: string | null;
@@ -1090,6 +1145,9 @@ export class AgenticProcess extends APIEntity<AgenticProcess> implements IAgenti
     this.process_type = entity.process_type ?? null;
     this.shell_id = entity.shell_id;
     this.visible = entity.visible;
+    this.tabbed = entity.tabbed ?? entity.visible ?? false;
+    this.tab_order = entity.tab_order ?? 0;
+    this.last_active_at = entity.last_active_at ?? null;
     this.sidecar_shell_id = entity.sidecar_shell_id;
     this.auto_rename = entity.auto_rename ?? true;
     this.project_id = entity.project_id ?? null;

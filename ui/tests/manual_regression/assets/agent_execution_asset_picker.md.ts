@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
-const API = process.env.API_URL || 'http://localhost:6002';
+import { ensureAgentAndSkill } from './_seed';
 
 async function dismissModals(page: Page) {
   await page.addInitScript(() => {
@@ -22,6 +22,9 @@ async function dismissWelcomeIfShown(page: Page) {
 // Manager popover from the execution-settings gear. Leaves the popover open.
 async function openAgentAssetPopover(page: Page) {
   await dismissModals(page);
+  // Post-clear DBs have zero agents/skills (no auto-indexing by design) — the
+  // level-2 tree row below would never exist. Self-seed via scoped create.
+  await ensureAgentAndSkill(page);
   await page.goto('/dock/assets/list/agent');
   await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
   await dismissWelcomeIfShown(page);

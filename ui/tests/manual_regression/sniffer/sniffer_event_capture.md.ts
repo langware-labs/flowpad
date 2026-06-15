@@ -1,6 +1,8 @@
 import { expect, test, type APIRequestContext } from '@playwright/test';
 
-const API = process.env.API_URL || 'http://localhost:6002';
+import { apiBase } from '../_shared/api';
+
+const API = apiBase();
 
 // Sniffer is OPT-IN, default OFF. With the instance gate off there is no
 // sniffer_hook and therefore no event-capture surface — correct app behavior,

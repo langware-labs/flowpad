@@ -35,20 +35,14 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_share_in_cloud(hub_base_url, hub_login_payload, isolated_hub_keyring):
-    # Stash the JWT into the (monkey-patched) keyring slot the share() helper
-    # reads from. The autouse `isolated_hub_keyring` fixture redirects the
-    # keyring backend to an in-memory dict so this doesn't touch the macOS
+    # Establish the full local login state (token + user record) the share()
+    # helper reads from. The autouse `isolated_hub_keyring` fixture redirects
+    # the keyring backend to an in-memory dict so this doesn't touch the macOS
     # keychain.
-    from flow_sdk.cli.auth.credentials import UserHubCredentials, save_credentials
+    from tests.hub_tests._local_login import login_as
     from flow_sdk.builtin.conversation import Conversation
 
-    api_key = hub_login_payload.get("api_key") or hub_login_payload["token"]
-    save_credentials(
-        UserHubCredentials(
-            api_key=api_key,
-            user=hub_login_payload.get("user") or {},
-        )
-    )
+    api_key = login_as(hub_login_payload)
 
     # Standard entity construction. id is auto-allocated by the base Entity
     # default factory; we don't need save() because we're calling share()

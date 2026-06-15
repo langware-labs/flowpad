@@ -14,7 +14,7 @@ test 1: Navigate back to home from active chat
 - wait for DONE status
 - validate user message and AI response appear
 - click home button (first button in sidebar nav)
-- validate URL changed to /
+- validate URL changed to /dock/home
 - validate landing page heading "Hey" is visible
 - validate landing page input "What would you like to work on?" is visible
 - validate skills list is visible

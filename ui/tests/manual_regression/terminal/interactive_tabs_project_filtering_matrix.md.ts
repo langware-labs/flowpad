@@ -7,17 +7,21 @@
  * marks [skip:harness]/[skip:platform] (11, 31, 33, 34, 38) are test.skip with
  * the matrix's documented rationale; everything else is automated headlessly.
  *
- * One test('...') per matrix `test N:` line. baseURL comes from VITE_PORT;
- * the API base comes from QA_API_URL (default 6003 = qa-2 backend).
+ * One test('...') per matrix `test N:` line. baseURL comes from VITE_PORT.
+ * API requests go to the frontend origin and ride the Vite `/api` proxy, so
+ * they always reach the SAME backend the UI under test is wired to.
+ * QA_API_URL overrides with an explicit backend; never hardcode a port.
  */
 import { test, expect, request as pwRequest, type APIRequestContext, type Page } from '@playwright/test';
 import { dismissSetupModal } from './helpers';
 
-const API = process.env.QA_API_URL || 'http://localhost:6003';
+const API = process.env.QA_API_URL || '';
 const tabSel = '[data-testid^="tab-shell-"]';
 
 async function api(): Promise<APIRequestContext> {
-  return pwRequest.newContext();
+  return pwRequest.newContext({
+    baseURL: API || `http://localhost:${process.env.VITE_PORT || '4097'}`,
+  });
 }
 
 async function bootstrapIds(rq: APIRequestContext): Promise<{ projectId: string; cn: string }> {

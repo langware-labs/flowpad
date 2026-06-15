@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+from ..formats import TranscriptFormat
 from .base import Parser
 from .claude import ClaudeParser
 from .codex import CodexParser, CodexRolloutParser, CodexStreamParser
 from .copilot import CopilotEventsParser, CopilotParser, CopilotStreamParser
-from ..formats import TranscriptFormat
 
 _REGISTRY: dict[str, type[Parser]] = {
     "claude": ClaudeParser,

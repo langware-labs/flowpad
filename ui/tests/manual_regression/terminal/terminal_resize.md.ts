@@ -7,7 +7,7 @@ test.describe('Terminal Resize', () => {
   });
 
   test('terminal resizes when browser window resizes', async ({ page }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(60_000);
 
     // Step 1: navigate to shell
     await gotoShell(page);

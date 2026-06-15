@@ -7,9 +7,10 @@
  * the space is reached by direct navigation. The seeded hello-flowpad doc is
  * reachable as a markdown asset (indexed + searchable).
  */
-import { test, expect, request as pwRequest } from '@playwright/test';
+import { test, expect } from '@playwright/test';
+import { apiBase, apiContext } from '../_shared/api';
 
-const API = process.env.QA_API_URL || 'http://localhost:6003';
+const API = apiBase();
 
 test.describe('Flowpad Assistant project space', () => {
   test.beforeEach(async ({ page }) => {
@@ -36,7 +37,7 @@ test.describe('Flowpad Assistant project space', () => {
 
   test('test 2: The seeded hello-flowpad doc is indexed and searchable', async () => {
     test.setTimeout(60_000);
-    const rq = await pwRequest.newContext();
+    const rq = await apiContext();
     // Index markdown, then search (include_system to reach the seeded system doc).
     // The seeded hello-flowpad doc is only searchable AFTER an index pass, and
     // the index POST returns before the FTS commit settles, so re-issue the

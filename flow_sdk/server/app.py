@@ -57,6 +57,7 @@ from .routes import (
     favorites_router,
     hooks_router,
     markdown_index_router,
+    capabilities_router,
     navigate_router,
     project_router,
     pty_stream_router,
@@ -127,8 +128,14 @@ async def _on_server_startup():
         import asyncio as _asyncio_disc
 
         from flow_sdk.core.capabilities.discovery import run_discovery
+        from flow_sdk.core.capabilities.mcp import reconcile_mcp_capabilities
 
         _asyncio_disc.create_task(run_discovery(), name="capability-discovery")
+        # Mint MCP-server capabilities (<service>.mcp.<worker_type>) from the
+        # indexed records so they exist after boot.
+        _asyncio_disc.create_task(
+            reconcile_mcp_capabilities(), name="mcp-capability-reconcile"
+        )
         print("  Capability discovery: started (background)")
     except Exception as _e:  # noqa: BLE001
         print(f"  Capability discovery: failed to start ({_e})")
@@ -436,6 +443,7 @@ server.add_router(markdown_index_router, prefix="/api/v1")
 server.add_router(pty_stream_router, prefix="/api/v1")
 server.add_router(docs_graph_router)
 server.add_router(semantic_checker_router)
+server.add_router(capabilities_router)
 
 server.on_startup(_on_server_startup)
 server.on_shutdown(_shutdown_extras)

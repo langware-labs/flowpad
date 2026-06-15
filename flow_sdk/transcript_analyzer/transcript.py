@@ -10,10 +10,7 @@ from typing import TYPE_CHECKING, Iterator
 
 from .entries import (
     AssistantMessageEntry,
-    ExitPlanModeEntry,
-    FileEditEntry,
     FileReadEntry,
-    FileWriteEntry,
     MetaEntry,
     ShellCommandEntry,
     ToolResultEntry,
@@ -283,6 +280,11 @@ class AgentTranscriptFile:
                 kept.append(e)
                 continue
             output = e.tool_output or ""
+            # Preserve the result's error flag on the surviving call entry —
+            # modern Claude Bash results carry no exitCode, only the block's
+            # is_error, so dropping the row would lose the failure signal.
+            if e.is_error and not getattr(target, "is_error", False):
+                target.is_error = True
             if isinstance(target, ShellCommandEntry):
                 if target.exit_code is None and e.exit_code is not None:
                     target.exit_code = e.exit_code

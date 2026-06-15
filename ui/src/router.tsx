@@ -11,6 +11,7 @@ import { SessionsView } from '@src/components/sessions-view/sessions-view';
 import { BASE_PATH } from '@src/constants/basePath';
 import AgentRedirect from '@src/pages/agent-redirect';
 import FlowPage from '@src/pages/flow-page/flow-page';
+import FocusLayout from '@src/pages/flow-page/FocusLayout';
 import KeychainApproval from '@src/pages/keychain-approval';
 import LandingPage from '@src/pages/landing-page/landing-page';
 import NotFound from '@src/pages/NotFound';
@@ -62,7 +63,9 @@ function shouldRevalidateDockShell({
   defaultShouldRevalidate,
 }: ShouldRevalidateFunctionArgs): boolean {
   if (
-    /\/dock\/shell(?:\/|$)/.test(nextUrl.pathname) &&
+    // win/ mirrors dock/ (tab-management.md Part 3 §7): same loaders, so the
+    // shell-route revalidation rule applies to both layout keywords.
+    /\/(?:dock|win)\/shell(?:\/|$)/.test(nextUrl.pathname) &&
     (currentUrl.pathname !== nextUrl.pathname || currentUrl.search !== nextUrl.search)
   ) {
     return true;
@@ -94,6 +97,14 @@ export const router = createBrowserRouter(
         <Route path=":viewType" element={<FlowPage />} />
         <Route path=":viewType/*" element={<FlowPage />} />
       </Route>
+      {/* win/ focus-window routes (tab-management.md Part 3 §7): mirror the
+          dock routes — same loaders — but render the chrome-less FocusLayout
+          so the routed view content is the entire window. */}
+      <Route path="win" element={<AgentLayout />} loader={loadAgentApp} shouldRevalidate={shouldRevalidateDockShell}>
+        <Route index element={<Navigate to="/" replace />} />
+        <Route path=":viewType" element={<FocusLayout />} />
+        <Route path=":viewType/*" element={<FocusLayout />} />
+      </Route>
       <Route
         path="agent/:agentId"
         element={<AgentLayout />}
@@ -105,6 +116,9 @@ export const router = createBrowserRouter(
         {/* Dock routes WITHOUT processId - for agent-level views (skills, settings, etc.) */}
         <Route path="dock/:viewType" element={<FlowPage />} />
         <Route path="dock/:viewType/*" element={<FlowPage />} />
+        {/* win/ focus-window mirrors (Part 3 §7) — same loaders, chrome-less host */}
+        <Route path="win/:viewType" element={<FocusLayout />} />
+        <Route path="win/:viewType/*" element={<FocusLayout />} />
         {/* ✅ Validate ONLY the /dock/:viewType route */}
         <Route path="flow/:processId/dock/:viewType" element={<FlowPage />} />
         {/* Leave pointer route untouched (no validation) - use wildcard for multi-segment paths */}
@@ -112,6 +126,9 @@ export const router = createBrowserRouter(
         {/* Dev layout routes (parallel to dock routes) */}
         <Route path="flow/:processId/dev/:viewType" element={<FlowPage />} />
         <Route path="flow/:processId/dev/:viewType/*" element={<FlowPage />} />
+        {/* win/ focus-window mirrors for the combined namespace (Part 3 §7) */}
+        <Route path="flow/:processId/win/:viewType" element={<FocusLayout />} />
+        <Route path="flow/:processId/win/:viewType/*" element={<FocusLayout />} />
         {/* Keep the general flow route as-is */}
         <Route path="flow/:processId" element={<FlowPage />} loader={loadAgentApp} />
       </Route>

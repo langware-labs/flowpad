@@ -290,3 +290,82 @@ def test_update_plan_does_not_become_plan(tmp_path):
     assert any(isinstance(e, ToolUseEntry) and e.tool_name == "update_plan" for e in t.entries)
     # ...but is NOT considered the plan.
     assert t.latest_plan is None
+
+
+# ── usage billing semantics (validated vs real rollouts + OpenAI cumulative
+#    counters, 2026-06-12) ─────────────────────────────────────────────────────
+
+
+def _token_count_line(ts, *, in_t, cached, out_t, tot_in, tot_cached, tot_out):
+    return {
+        "timestamp": ts, "type": "event_msg",
+        "payload": {"type": "token_count", "info": {
+            "last_token_usage": {
+                "input_tokens": in_t, "cached_input_tokens": cached,
+                "output_tokens": out_t, "reasoning_output_tokens": out_t // 2,
+            },
+            "total_token_usage": {
+                "input_tokens": tot_in, "cached_input_tokens": tot_cached,
+                "output_tokens": tot_out,
+            },
+        }},
+    }
+
+
+def _write_jsonl(tmp_path, name, lines):
+    import json as _json
+    path = tmp_path / name
+    path.write_text("\n".join(_json.dumps(l) for l in lines) + "\n", encoding="utf-8")
+    return path
+
+
+def _usage_totals(t):
+    out = {"input": 0, "output": 0, "cache_read": 0}
+    for e in t.usage:
+        if e.io == "output":
+            out["output"] += e.count
+        elif e.cache == "read":
+            out["cache_read"] += e.count
+        else:
+            out["input"] += e.count
+    return out
+
+
+def test_codex_usage_bills_cumulative_increments_with_non_overlapping_dims(tmp_path):
+    """input INCLUDES cached, output INCLUDES reasoning — dims must not overlap;
+    billing follows the cumulative counter, not the per-turn block."""
+    path = _write_jsonl(tmp_path, "rollout.jsonl", [
+        {"timestamp": "t0", "type": "session_meta", "payload": {"id": "s1"}},
+        _token_count_line("t1", in_t=1000, cached=800, out_t=50,
+                          tot_in=1000, tot_cached=800, tot_out=50),
+        _token_count_line("t2", in_t=2000, cached=1900, out_t=70,
+                          tot_in=3000, tot_cached=2700, tot_out=120),
+    ])
+    totals = _usage_totals(AgentTranscriptFile("codex", path))
+    # Uncached input = total input − cached; reasoning never billed separately.
+    assert totals == {"input": 300, "cache_read": 2700, "output": 120}
+
+
+def test_codex_duplicate_token_count_events_billed_once(tmp_path):
+    """Old-format rollouts write each token_count event twice."""
+    line = _token_count_line("t1", in_t=1000, cached=800, out_t=50,
+                             tot_in=1000, tot_cached=800, tot_out=50)
+    path = _write_jsonl(tmp_path, "rollout.jsonl", [
+        {"timestamp": "t0", "type": "session_meta", "payload": {"id": "s1"}},
+        line, line,
+    ])
+    totals = _usage_totals(AgentTranscriptFile("codex", path))
+    assert totals == {"input": 200, "cache_read": 800, "output": 50}
+
+
+def test_codex_cumulative_reset_treated_as_fresh_counter(tmp_path):
+    """A cumulative drop (compaction/new task) bills the new total as delta."""
+    path = _write_jsonl(tmp_path, "rollout.jsonl", [
+        {"timestamp": "t0", "type": "session_meta", "payload": {"id": "s1"}},
+        _token_count_line("t1", in_t=1000, cached=0, out_t=10,
+                          tot_in=1000, tot_cached=0, tot_out=10),
+        _token_count_line("t2", in_t=400, cached=0, out_t=5,
+                          tot_in=400, tot_cached=0, tot_out=5),  # reset
+    ])
+    totals = _usage_totals(AgentTranscriptFile("codex", path))
+    assert totals == {"input": 1400, "cache_read": 0, "output": 15}

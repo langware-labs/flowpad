@@ -10,13 +10,14 @@
  * The observable corollary: send is gated on a non-empty target, so an enabled
  * textarea also proves target resolved.
  */
-import { test, expect, request as pwRequest, type Page } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import { dismissSetupModal } from './helpers';
+import { apiBase, apiContext } from '../_shared/api';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 
-const API = process.env.QA_API_URL || 'http://localhost:6003';
+const API = apiBase();
 const PANEL = '[data-testid="entity-execution-panel"]';
 const TEXTAREA = 'textarea[placeholder="Ask about this doc…"]';
 
@@ -138,7 +139,7 @@ test.describe('doc-chat per type', () => {
     // Materialize the agent/skill fixtures BEFORE indexing so the index pass
     // below mints their entities and asset_ref → TypeId resolution works.
     writeFixtures();
-    const rq = await pwRequest.newContext();
+    const rq = await apiContext();
     const boot = (await (await rq.get(`${API}/api/v1/graph/bootstrap`)).json()).data;
     const cn = boot.default_compute_node;
     CN_TYPEID = `compute_node-${typeof cn === 'string' ? cn : cn.id}`;
@@ -150,14 +151,14 @@ test.describe('doc-chat per type', () => {
   });
 
   test.afterAll(async () => {
-    const rq = await pwRequest.newContext();
+    const rq = await apiContext();
     await purgeFixture(rq, 'agent', FIXTURE_AGENT, AGENT_MD);
     await purgeFixture(rq, 'skill', FIXTURE_SKILL, SKILL_DIR);
     await rq.dispose();
   });
 
   test('test 1: panel mounts on every doc-type with an asset_ref-resolved target', async ({ page }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(60_000);
     await dismissSetupModal(page);
 
     for (const { type, editor, machinePath } of DOCS) {
@@ -186,7 +187,7 @@ test.describe('doc-chat per type', () => {
   });
 
   test('test 4: target changes when switching between doc-type editors (in-app nav)', async ({ page }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(60_000);
     await dismissSetupModal(page);
 
     // skill → agent editor: the target string must change type.

@@ -6,12 +6,13 @@
  * return 200 + SUCCESS (no 500 TypeError around WorkflowRecord.__init__), and
  * GET must echo the entity with asset_ref exposed (null acceptable). Pure API.
  */
-import { test, expect, request as pwRequest } from '@playwright/test';
+import { test, expect } from '@playwright/test';
+import { apiBase, apiContext } from '../_shared/api';
 
-const API = process.env.QA_API_URL || 'http://localhost:6003';
+const API = apiBase();
 
 test('Workflow entity create smoke (no WorkflowRecord file_path 500)', async () => {
-  const rq = await pwRequest.newContext();
+  const rq = await apiContext();
 
   // 1. Server reachable.
   const boot = await rq.get(`${API}/api/v1/graph/bootstrap`);

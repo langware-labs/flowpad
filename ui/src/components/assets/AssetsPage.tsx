@@ -1,7 +1,7 @@
 import { AssetEditorRouter, hasEditor } from '@src/components/assets/editor/AssetEditorRouter';
 import { WikiResolveView } from '@src/components/assets/editor/WikiResolveView';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
-import { AssetMode, AssetRoutingMethod, DEFAULT_WIKI_SPACE } from '@src/navigation/asset-doc-types';
+import { AssetEditor, AssetMode, AssetRoutingMethod, DEFAULT_WIKI_SPACE } from '@src/navigation/asset-doc-types';
 import { InputDialog } from '@src/components/ui/input-dialog';
 import { Button } from '@src/components/ui/button';
 import { getDescriptor } from '@src/components/quick-create';
@@ -27,10 +27,11 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tool
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AssetFilter } from './assetFilter';
 import { DEFAULT_ASSET_FILTER } from './assetFilter';
-import { applyScopeToParams, defaultScopeFilter } from '@src/lib/scope-filter';
-import type { ScopeFilter } from '@src/lib/scope-filter';
+import { applyScopeToParams, assetScopeBucket, defaultScopeFilter, unionAssetBucket } from '@src/lib/scope-filter';
+import type { AssetScopeBucket, ScopeFilter } from '@src/lib/scope-filter';
+import { useEntity } from '@sdk/react/hooks';
 import { useSearchScopeToggle } from '@src/hooks/use-global-search-scope';
-import { useIndexStatus } from '@src/hooks/use-index-status';
+import { useIndexStatus, typeCountsFromPerType } from '@src/hooks/use-index-status';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
 import { ScopeFilterIconBar } from '@src/components/scope-filter/ScopeFilterIconBar';
 import { ViewType } from '@src/types/ViewType';
@@ -38,7 +39,7 @@ import { AssetListView } from './AssetListView';
 import { MarkdownIndexPanel } from './MarkdownIndexPanel';
 import { BrowseableTree } from '@src/components/browseable-tree';
 import { refreshNode } from '@src/components/browseable-tree/refresh-store';
-import { assetTypeRoot } from '@src/components/browseable-tree/adapters/assetTypeRoot';
+import { assetTypeRoot, AssetTypeCountsContext } from '@src/components/browseable-tree/adapters/assetTypeRoot';
 import {
   markdownFolderNodeId,
   markdownFolderRoot,
@@ -324,7 +325,43 @@ export function AssetsPage() {
     }
     seededProjectRef.current = urlProjectId;
   }, [urlProjectId]);
-  const effectiveFilter = assetFilter;
+
+  // --- Side menu follows the open asset ---------------------------------
+  // The asset open in the editor may live in a different project (or in the
+  // user/system scope) than the side-menu's current scope, in which case its
+  // type would show 0 count and an empty list. Union the open asset's own
+  // scope bucket onto the filter so it stays visible while you view it. The
+  // union is derived (recomputed per open, never accumulated); a manual scope
+  // change suppresses it for that one asset (see handleScopeChange).
+  const openAssetTypeId = useMemo<TypeId | null>(() => {
+    if (!effectivePointer.startsWith('editor/')) return null;
+    try {
+      const p = AssetDocPointer.parse(effectivePointer);
+      if (p.editor !== AssetEditor.CODE && p.method === AssetRoutingMethod.TYPEID) {
+        return new TypeId(p.value);
+      }
+    } catch {
+      // not an editor/typeid pointer — nothing to union
+    }
+    return null;
+  }, [effectivePointer]);
+  const openAssetId = openAssetTypeId?.toString() ?? null;
+  const { data: openAsset } = useEntity(openAssetTypeId);
+  const openAssetBucket = useMemo<AssetScopeBucket>(
+    () => assetScopeBucket(openAsset as { scope?: string | null; project_id?: string | null } | null),
+    [openAsset],
+  );
+  // Manual scope edits suppress the auto-union for the *current* asset only;
+  // opening a different asset re-enables it (the guard is keyed to the id).
+  const [suppressedAssetId, setSuppressedAssetId] = useState<string | null>(null);
+
+  const effectiveFilter = useMemo<AssetFilter>(() => {
+    if (!openAssetBucket || openAssetId === suppressedAssetId) {
+      return assetFilter;
+    }
+    const scope = unionAssetBucket(assetFilter.scope, openAssetBucket);
+    return scope === assetFilter.scope ? assetFilter : { ...assetFilter, scope };
+  }, [assetFilter, openAssetBucket, openAssetId, suppressedAssetId]);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchFilters, setSearchFilters] = useState<SearchFilters>({});
   const [selectedResultIndex, setSelectedResultIndex] = useState(-1);
@@ -352,6 +389,16 @@ export function AssetsPage() {
   const neverIndexed = projIdx?.never_indexed ?? false;
   const changesPending = projIdx?.stale ?? false;
   const lastIndexedAt = projIdx?.last_indexed_at ?? null;
+
+  // Per-type counts for the sidebar badges, sourced from the single scoped
+  // `index-status` response instead of one `/search?limit=1` probe per type
+  // row (that N+1 dominated the asset list page's request count). Scoped to the
+  // active filter so the badges track the scope/project picker.
+  const { state: countsIdxState } = useIndexStatus(effectiveFilter.scope);
+  const typeCounts = useMemo(
+    () => typeCountsFromPerType(countsIdxState.phase === 'ready' ? countsIdxState.status.per_type : []),
+    [countsIdxState],
+  );
 
   useEffect(() => { setSelectedResultIndex(-1); }, [searchQuery]);
 
@@ -435,7 +482,10 @@ export function AssetsPage() {
 
   const handleScopeChange = useCallback((scope: ScopeFilter) => {
     setAssetFilter(prev => ({ ...prev, scope }));
-  }, []);
+    // The user took control of the scope — stop auto-unioning the open asset's
+    // bucket for this asset (rule honored only until they open a different one).
+    setSuppressedAssetId(openAssetId);
+  }, [openAssetId]);
 
   // Asset-shaped pointers (`forAssetEditor`, `forAssetFolder`, `forAssetList`)
   // open at `/dock/assets/<sub>`. Under `/dock/project/<id>` we must rebase
@@ -825,12 +875,14 @@ export function AssetsPage() {
               />
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto">
-              <BrowseableTree
-                roots={wikiRoots}
-                activePointer={treeActivePointer}
-                isLoading={typesLoading && wikiRoots.length === 0}
-                onNavigate={navigateAsset}
-              />
+              <AssetTypeCountsContext.Provider value={typeCounts}>
+                <BrowseableTree
+                  roots={wikiRoots}
+                  activePointer={treeActivePointer}
+                  isLoading={typesLoading && wikiRoots.length === 0}
+                  onNavigate={navigateAsset}
+                />
+              </AssetTypeCountsContext.Provider>
             </div>
           </div>
         </div>

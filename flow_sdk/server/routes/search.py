@@ -15,6 +15,7 @@ from flow_sdk.server.search_filters import (
     apply_scope_filter,
     apply_system_filter,
     apply_tag_filter,
+    scope_record_project_ids,
 )
 
 logger = logging.getLogger(__name__)
@@ -112,6 +113,9 @@ async def search_records(
     # Resolve project *uname* tokens (e.g. ``@flowpad_assistant``) to entity
     # ids so the scope match stays symmetric with how records are stamped.
     scope_filter = await resolve_project_scope(scope_filter)
+    # Projects explicitly in scope — system entities of these projects stay in
+    # the list (the count clause already counts them), keeping list/count in sync.
+    scoped_pids = scope_record_project_ids(scope_filter) if scope_filter else ()
 
     tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
 
@@ -151,7 +155,7 @@ async def search_records(
 
         all_entities = apply_scope_filter(all_entities, scope_filter)
         all_entities = apply_folder_filter(all_entities, parent_path, vault_root)
-        all_entities = apply_system_filter(all_entities, include_system)
+        all_entities = apply_system_filter(all_entities, include_system, scoped_pids)
         all_entities = apply_tag_filter(all_entities, tag_list)
 
         total_count = len(all_entities)
@@ -197,7 +201,7 @@ async def search_records(
 
     entities = apply_scope_filter(entities, scope_filter)
     entities = apply_folder_filter(entities, parent_path, vault_root)
-    entities = apply_system_filter(entities, include_system)
+    entities = apply_system_filter(entities, include_system, scoped_pids)
     entities = apply_tag_filter(entities, tag_list)
 
     total_count = len(entities)

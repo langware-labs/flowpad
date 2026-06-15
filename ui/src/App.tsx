@@ -40,6 +40,7 @@ const queryClient = new QueryClient({
 const CapabilityWarmup = () => {
   useCapability(CapabilityKinds.ClaudeCode);
   useCapability(CapabilityKinds.Codex);
+  useCapability(CapabilityKinds.Copilot);
   return null;
 };
 

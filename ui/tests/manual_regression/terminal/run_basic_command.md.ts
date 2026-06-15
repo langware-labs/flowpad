@@ -7,7 +7,7 @@ test.describe('Run Basic Command', () => {
   });
 
   test('type a command and validate output', async ({ page }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(60_000);
 
     // Step 1: navigate to shell
     await gotoShell(page);

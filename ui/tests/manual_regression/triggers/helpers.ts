@@ -14,12 +14,6 @@ export async function dismissSetupModal(page: Page) {
 }
 
 /**
- * Hardcoded `http://localhost:9008` here is replaced with the env-driven URL
- * to keep API calls aligned with the actual backend port (`.env.local` →
- * `LOCAL_SERVER_PORT=9008` in this dev environment).
- */
-
-/**
  * Navigate to the Triggers view and wait for the trigger list to appear.
  */
 export async function gotoTriggers(page: Page) {
@@ -40,7 +34,8 @@ export async function gotoTriggers(page: Page) {
 export async function cleanupScheduleTriggers(page: Page, triggerIds: string[]) {
   for (const id of triggerIds) {
     await page.evaluate(async (triggerId) => {
-      await fetch(`http://localhost:9008/api/v1/graph/trigger/${triggerId}`, {
+      // Relative URL: same-origin in-page fetch, proxied by Vite to the app's backend.
+      await fetch(`/api/v1/graph/trigger/${triggerId}`, {
         method: 'DELETE',
       });
     }, id);

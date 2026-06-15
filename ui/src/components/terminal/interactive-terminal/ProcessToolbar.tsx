@@ -36,6 +36,8 @@ import { PTYViewer } from './pty-viewer';
 import { PTYEventsViewer } from './pty-events-viewer';
 import { CommandStatusViewer } from './command-status-viewer';
 import type { ColVisibility, TraceFilters } from './InteractiveTerminal';
+import { setChatUiMode, useChatUiMode } from '@src/contexts/chat-ui-mode-context';
+import { resolveProcessDisplayName } from '@src/components/terminal/process-display-name';
 
 interface ProcessToolbarProps {
   process: AgenticProcess;
@@ -56,6 +58,7 @@ interface ProcessToolbarProps {
 export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, colVis, onColVisChange, sessionStartTime, lastMessageTime, embedded, onClose, shell }: ProcessToolbarProps) {
   const handleInjectPrompt = useCallback((text: string) => void shell?.sendInput(text + '\r'), [shell]);
   const { navigation } = useDockNavigation();
+  const chatUiMode = useChatUiMode();
   const [showPtyViewer, setShowPtyViewer] = useState(false);
   const [showPtyEventsViewer, setShowPtyEventsViewer] = useState(false);
   const [showCommandStatus, setShowCommandStatus] = useState(false);
@@ -152,18 +155,10 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
   const anyTimeFieldActive = traceFilters.time || traceFilters.index || traceFilters.line || traceFilters.absLine || traceFilters.debugTime || traceFilters.refTime;
   const anyColActive = !colVis.trace || !colVis.time || !colVis.annotations || anyTimeFieldActive;
 
-  const processDisplayName = useMemo(() => {
-    const cd = process.context_data as Record<string, unknown> | undefined;
-    const dn = cd && typeof cd.display_name === 'string' ? cd.display_name.trim() : '';
-    if (dn) return dn;
-    const name = (process as { name?: string | null }).name;
-    if (typeof name === 'string' && name.trim().length > 0) return name.trim();
-    if (process.instruction_content) {
-      const trimmed = process.instruction_content.replace(/<!--.*?-->/g, '').trim();
-      if (trimmed.length > 0) return trimmed.substring(0, 30);
-    }
-    return 'Session';
-  }, [process.context_data, process.name, process.instruction_content]);
+  const processDisplayName = useMemo(
+    () => resolveProcessDisplayName(process, 30),
+    [process.context_data, process.name, process.instruction_content],
+  );
 
   const setTrace = (key: keyof TraceFilters) => (val: boolean) =>
     onTraceFiltersChange({ ...traceFilters, [key]: val });
@@ -304,6 +299,21 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
             <DropdownMenuItem onSelect={() => setShowCommandStatus(true)}>
               <span className="text-amber-400 text-xs font-medium">Command Status</span>
             </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="text-xs text-muted-foreground">Chat mode</DropdownMenuLabel>
+            {/* Experimental simple-chat view. Terminal is the default for every
+                process; the chat ("ui") view is not stable enough for users, so
+                this debug-menu toggle is the ONLY way to reach it. */}
+            <DropdownMenuCheckboxItem
+              checked={chatUiMode}
+              onSelect={(e) => e.preventDefault()}
+              onCheckedChange={(v) => setChatUiMode(v)}
+            >
+              <span className="text-xs">
+                <span className="font-medium text-amber-400">Chat UI (experimental)</span>
+                <span className="ml-1 text-muted-foreground">— {chatUiMode ? 'ui' : 'terminal'} mode</span>
+              </span>
+            </DropdownMenuCheckboxItem>
           </DropdownMenuContent>
         </DropdownMenu>
     </>
@@ -341,15 +351,25 @@ export function ProcessToolbar({ process, traceFilters, onTraceFiltersChange, co
         </Tooltip>
   );
 
-  // Primary CTAs — Share + Bookmark (favorite). Download lives in the right
-  // toolbar (downloadSlot), not here.
+  // Primary CTAs — entity name + Share + Bookmark (favorite). The name sits
+  // left of Share (truncated for header fit; full name lives in the tab
+  // tooltip). Download lives in the right toolbar (downloadSlot), not here.
   const centerSlot = !embedded && (
-    <EntityActionsToolbar
-      typeId={process.typeId}
-      favoriteTitle={processDisplayName}
-      favoriteIcon="agentic_process"
-      variant="prominent"
-    />
+    <div className="flex min-w-0 items-center gap-2">
+      <span
+        className="max-w-[240px] truncate text-xs font-medium text-foreground"
+        title={processDisplayName}
+        data-testid="process-header-name"
+      >
+        {processDisplayName}
+      </span>
+      <EntityActionsToolbar
+        typeId={process.typeId}
+        favoriteTitle={processDisplayName}
+        favoriteIcon="agentic_process"
+        variant="prominent"
+      />
+    </div>
   );
 
   const downloadSlot = !embedded && (

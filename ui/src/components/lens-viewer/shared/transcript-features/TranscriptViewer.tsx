@@ -19,6 +19,7 @@ import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useTranscript, type WorkerType } from '@src/hooks/use-transcript';
 
 import { ViewModeToggle } from '../ViewModeToggle';
+import { AnalysisSidePanel, AnalysisToolbarButtons, useAnalysisControls } from './AnalysisControls';
 import { useTranscriptMode } from '../use-transcript-mode';
 import { ChatEntryItem } from './ChatEntryItem';
 import { TranscriptEntryItem } from './TranscriptEntryItem';
@@ -123,6 +124,10 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
     }
     return null;
   }, [entries]);
+
+  // Analysis controls (AgentTrace): Run / Analyzing / Open+Rerun / Refresh.
+  // Freshness compares the newest trace against the last entry timestamp.
+  const analysisControls = useAnalysisControls(sessionId, transcriptEndTs);
 
   // Resolve a copyable path string. When opened by session_id only, fall back
   // to the parsed transcript's path (server populates it on the response).
@@ -462,7 +467,8 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
   );
 
   return (
-    <div className="flex h-full flex-col bg-background">
+    <div className="flex h-full bg-background">
+    <div className="flex h-full min-w-0 flex-1 flex-col">
       {/* Top bar */}
       <div className="flex shrink-0 items-center gap-2 border-b border-border bg-card px-3 py-2">
         <ViewModeToggle mode={viewMode} onChange={switchMode} />
@@ -512,6 +518,7 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
 
         {sessionId && (
           <div className="flex items-center gap-1" data-testid="transcript-viewer-toolbar">
+            <AnalysisToolbarButtons controls={analysisControls} />
             <button
               type="button"
               onClick={handleOpenInTerminal}
@@ -663,6 +670,8 @@ export function TranscriptViewer({ workerType, path, sessionId: sessionIdProp, s
       )}
 
       {infoDialog}
+    </div>
+    <AnalysisSidePanel controls={analysisControls} />
     </div>
   );
 }

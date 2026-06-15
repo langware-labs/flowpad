@@ -149,6 +149,23 @@ class FsRecordsActionsMixin:
             return None
         return tuple(roots)
 
+    async def _scoped_roots_from_query_params(self, qp, *, create_missing: bool = False):
+        """Resolve indexer roots from the ``?user=&projects=`` wire params.
+
+        Absent params → an explicit "everything known" filter
+        (``get_all_scope_filter``) so the walk fans out via
+        ``_resolve_scoped_roots`` rather than silent expander discovery. Returns
+        the scoped roots, or an ``ApiFailResponse`` the caller forwards as-is.
+        """
+        from flow_sdk.fs_store.operations.all_projects import get_all_scope_filter  # noqa: PLC0415
+        from flow_sdk.server.search_filters import ScopeFilter, resolve_project_scope  # noqa: PLC0415
+
+        if qp.get("user") is not None or qp.get("projects") is not None:
+            scope_filter = await resolve_project_scope(ScopeFilter.from_query_params(qp))
+        else:
+            scope_filter = await get_all_scope_filter(create_missing=create_missing)
+        return await self._resolve_scoped_roots(scope_filter)
+
     @staticmethod
     async def _resolve_asset_ref(ent) -> str:
         """Resolve the on-disk asset_ref for an entity, with a record-level fallback."""
@@ -350,6 +367,27 @@ class FsRecordsActionsMixin:
             return gen_id_fn(ref) or None
         except Exception:
             return None
+
+    async def _handle_fs_records_mcp_reconcile(self, request_info) -> ApiResponse:
+        """GET /fs-records/mcp-reconcile[?use_cli=true] — index vs disk vs CLI.
+
+        Read-only diff of the indexed/disk MCP servers against the live
+        ``claude mcp list`` output (when ``use_cli=true``). The CLI leg is the
+        only view that reflects remote/cloud-connector live state. The CLI call
+        lives in ``mcp_reconcile`` (an on-demand action), never the indexer.
+        """
+        import flow_sdk.fs_store.indexer.registrations  # noqa: F401 — auto-register types
+        from flow_sdk.builtin.faas.mcp_reconcile import reconcile_mcp_servers  # noqa: PLC0415
+
+        qp = request_info.request.query_params
+        use_cli = str(qp.get("use_cli", "")).strip().lower() in ("1", "true", "yes")
+
+        scoped_roots = await self._scoped_roots_from_query_params(qp)
+        if isinstance(scoped_roots, ApiFailResponse):
+            return scoped_roots
+
+        data = await reconcile_mcp_servers(scoped_roots, use_cli=use_cli)
+        return ApiSuccessResponse(data=data)
 
     async def _handle_fs_records_scan(self, request_info) -> ApiResponse:
         """Scan fs_records for stats.
@@ -962,6 +1000,16 @@ class FsRecordsActionsMixin:
             type_name=filter_type or None,
         )
 
+        # Indexing refreshes the MCP-server capability list: an MCP added/removed
+        # in any agent's config becomes a <service>.mcp.<worker_type> capability
+        # (or is pruned). Fire-and-forget — never block the index response.
+        if not filter_type or filter_type == "mcp_server":
+            try:
+                from flow_sdk.core.capabilities.mcp import reconcile_mcp_capabilities  # noqa: PLC0415
+                asyncio.create_task(reconcile_mcp_capabilities())
+            except Exception as e:
+                logging.debug(f"[fs-records] mcp capability reconcile skipped: {e}")
+
         # Stamp the project's own index sentinel after a project-scoped run, so
         # the project page reads "last indexed" / "changes pending" off the
         # project record itself (the project IS a record). Single chokepoint —
@@ -1295,6 +1343,10 @@ class FsRecordsActionsMixin:
         # Semantic search: GET /fs-records/search?q=...
         if segments and segments[0] == "search" and method == "get":
             return await self._handle_fs_records_search(request_info)
+
+        # MCP reconcile: GET /fs-records/mcp-reconcile[?use_cli=true]
+        if segments and segments[0] == "mcp-reconcile" and method == "get":
+            return await self._handle_fs_records_mcp_reconcile(request_info)
 
         # Scan stats: GET /fs-records/scan or /fs-records/scan?type=X
         if segments and segments[0] == "scan" and method == "get":

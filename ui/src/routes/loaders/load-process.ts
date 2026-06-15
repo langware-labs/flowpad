@@ -16,7 +16,6 @@ import {
   TypeId,
 } from '@sdk';
 import { estimateCols, estimateRows } from '@src/components/terminal/interactive-terminal/terminalConfig';
-import { ensureTerminalsFetched } from '@src/hooks/useActiveTerminals';
 import { bumpLastActive } from '@src/tabs/last-active';
 import { perfLog, perfTime } from './_perf';
 import { loadProject } from './load-project';
@@ -206,18 +205,17 @@ export async function loadProcess(
     throw new ProcessLoadError('shell_entity_missing', processId, process.shell_id ?? null);
   }
 
-  // Populate the strip from the server (idempotent — no-op after the first
-  // call in this session) so TabbedTerminal mounts with the full list, sorted
-  // by server `tab_order`. The previous approach pushed a single optimistic
-  // row before the fetch, which trapped that row at index 0 on hard refresh
-  // (the merge's preserve-order branch keyed off `prev.length === 0`). Doing
-  // the fetch here closes the self-heal race without seeding the order.
-  await perfTime('ensureTerminalsFetched', () => ensureTerminalsFetched());
+  // The strip self-populates from the live `Tab` entity query (useTerminalTabs);
+  // the loader's `ensureTabForCurrentDock` already materialized this process's
+  // Tab. No imperative strip fetch needed.
 
   await perfTime('dataContext sync setters (shellId/target/workdir)', async () => {
     dataContext.setActiveShellId(shell!.id);
     dataContext.setActiveTerminalTargetTypeId(new TypeId(AgenticProcess.type, processId));
     bumpLastActive(process); // recency seed on the process (tab identity) — Bug 1
+    // Fire-and-forget server stamp (Part 3 §4 D-A): never awaited — loaders
+    // must stay fast; the in-cache bump above is the synchronous seed.
+    void process.activate().catch(() => {});
     dataContext.setWorkdir(
       process!.workdir ?? shell!.workdir ?? dataContext.project?.fs_storage_mount_path ?? null,
     );

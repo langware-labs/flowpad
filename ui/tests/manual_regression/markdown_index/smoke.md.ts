@@ -1,7 +1,9 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import * as fs from 'fs';
 
-const API = process.env.API_URL || 'http://localhost:6002';
+import { apiBase } from '../_shared/api';
+
+const API = apiBase();
 const TMP_DOCS = process.env.TMP_DOCS || '/tmp/mdindex_smoke_docs';
 
 // Whether the backend has an Anthropic key — the cold/incremental rebuild steps

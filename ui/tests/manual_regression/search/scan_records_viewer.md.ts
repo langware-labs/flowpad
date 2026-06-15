@@ -1,30 +1,7 @@
 import { expect, test } from '@playwright/test';
-import * as fs from 'fs';
-import * as path from 'path';
-import { fileURLToPath } from 'url';
+import { apiBase } from '../_shared/api';
 
-function resolveApiUrl(): string {
-  if (process.env.API_URL) return process.env.API_URL;
-  const candidates: string[] = [];
-  try { candidates.push(path.resolve(path.dirname(fileURLToPath(new URL(import.meta.url))), '../../../.env.local')); } catch (_) {}
-  try { candidates.push(path.resolve(process.cwd(), '.env.local')); } catch (_) {}
-  for (const envPath of candidates) {
-    try {
-      if (fs.existsSync(envPath)) {
-        for (const line of fs.readFileSync(envPath, 'utf-8').split('\n')) {
-          const eq = line.indexOf('=');
-          if (eq < 1) continue;
-          if (line.slice(0, eq).trim() === 'LOCAL_SERVER_PORT') {
-            return `http://localhost:${line.slice(eq + 1).trim()}`;
-          }
-        }
-      }
-    } catch (_) { /* ignore */ }
-  }
-  return 'http://localhost:9008';
-}
-
-const API_URL = resolveApiUrl();
+const API_URL = apiBase();
 const CN_FS_BASE = `${API_URL}/api/v1/graph/compute_node/@local/fs-records`;
 const LENS_PATH = '/dock/lens/fs-records/scan/';
 
@@ -71,7 +48,7 @@ test.describe('FsRecordsScannerViewer (/dock/lens/fs-records/scan)', () => {
   // even with 120s timeout. The viewer's per-type loop or its post-scan state
   // update isn't surfacing under playwright. Needs headed-mode trace.
   test.skip('Per-type rows render with count/size/status columns after initial scan', async ({ page }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(60_000);
     await dismissSetupModal(page);
     await page.goto(LENS_PATH);
     await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
@@ -95,7 +72,7 @@ test.describe('FsRecordsScannerViewer (/dock/lens/fs-records/scan)', () => {
   // SKIPPED: same root cause as Test 2 — scan UI flow doesn't settle under
   // playwright. Tracking with the per-type-rows test.
   test.skip('Clicking "Rescan" triggers a fresh scan and refreshes totals', async ({ page }) => {
-    test.setTimeout(300_000);
+    test.setTimeout(60_000);
     await dismissSetupModal(page);
     await page.goto(LENS_PATH);
     await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});
@@ -118,7 +95,7 @@ test.describe('FsRecordsScannerViewer (/dock/lens/fs-records/scan)', () => {
   // SKIPPED: same root cause as Test 2 — scan UI flow doesn't settle under
   // playwright. Tracking with the per-type-rows test.
   test.skip('Clicking "Index All" runs per-type indexing via POST /fs-records/index', async ({ page }) => {
-    test.setTimeout(300_000);
+    test.setTimeout(60_000);
     await dismissSetupModal(page);
     await page.goto(LENS_PATH);
     await page.waitForLoadState('networkidle', { timeout: 20_000 }).catch(() => {});

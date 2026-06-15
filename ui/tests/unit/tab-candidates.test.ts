@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { AgenticProcess, Shell, TypeId } from '@sdk';
-import { type TerminalTab } from '@src/hooks/useActiveTerminals';
+import { type TerminalTab } from '@src/tabs/useTabs';
 import { buildTabCandidates, sessionLastActiveMs } from '@src/tabs/tab-candidates';
 import { resolveActive } from '@src/tabs/tab-model';
 import { procTab, shellTab, uid } from '../utils/terminal-tab-fixtures';

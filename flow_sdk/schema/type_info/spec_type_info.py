@@ -1,7 +1,7 @@
 """Type metadata for SPEC."""
 from typing import Optional
 
-from flow_sdk.schema.type_info import TypeMetadata
+from flow_sdk.schema.type_info import TypeMetadata, render_entity_frontmatter
 from flow_sdk.schema.type_info.base_meta import BaseMeta
 from flow_sdk.schema.types import EntityType
 from flow_sdk.fs_store.indexer.functions.spec import (
@@ -23,16 +23,13 @@ def _spec_default_body(entity) -> str:
     is ``content`` (which ``extract_spec`` stores frontmatter-free, so the
     round-trip is stable — no frontmatter accumulation).
     """
-    from flow_sdk.fs_store.indexer._frontmatter import _render_frontmatter  # noqa: PLC0415
-
     title = (getattr(entity, "title", None) or getattr(entity, "name", None) or "").strip()
     fields = {
-        "id": entity.id,
         "title": title,
         "spec_type": getattr(entity, "spec_type", None) or "plan",
     }
     body = (getattr(entity, "content", None) or "").strip()
-    return _render_frontmatter(fields) + "\n\n" + body + ("\n" if body else "")
+    return render_entity_frontmatter(entity, fields) + "\n\n" + body + ("\n" if body else "")
 
 
 SPEC = TypeMetadata(

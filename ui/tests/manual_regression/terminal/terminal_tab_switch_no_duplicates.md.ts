@@ -7,7 +7,7 @@ test.describe('Terminal Tab Switch – No Content Duplication', () => {
   });
 
   test('switching tabs does not duplicate terminal content', async ({ page }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(60_000);
 
     // Step 1: Open a fresh terminal
     await gotoShell(page);

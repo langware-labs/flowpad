@@ -30,6 +30,18 @@ export interface UseIndexStatusResult {
   refresh: () => void;
 }
 
+/**
+ * Pure projection: per-type index rows → `Map<type_name, entity_count>`.
+ * Lets the asset sidebar source every type's count badge from the single
+ * `index-status` response (one request) instead of one `/search?limit=1` probe
+ * per type row. Dependency-free so it's unit-testable in isolation.
+ */
+export function typeCountsFromPerType(perType: IndexStatusPerType[] | undefined): Map<string, number> {
+  const m = new Map<string, number>();
+  for (const pt of perType ?? []) m.set(pt.type_name, pt.entity_count);
+  return m;
+}
+
 const EMPTY_STATUS: IndexStatus = {
   never_indexed: false,
   last_indexed_at: null,

@@ -86,6 +86,21 @@ export interface IEntity extends Partial<IResource> {
    */
   shared_context_entity_data?: Record<string, Record<string, unknown>>;
   private_context_entity_data?: Record<string, Record<string, unknown>>;
+  /**
+   * Tab-strip membership (docs/tab-management.md Part 3 §4). Non-null by
+   * design: removal broadcasts as ``tabbed=false`` — the wire encoder strips
+   * nulled fields, so a null signal can never propagate. Mutate via the
+   * compute-node ``tabs/open`` / ``tabs/close`` actions, never directly.
+   */
+  tabbed?: boolean;
+  /** Strip ordering among member tabs (0 = unassigned). DB-only server-side. */
+  tab_order?: number;
+  /**
+   * Epoch-ms of this tab's last activation — stamped SERVER-SIDE by the
+   * generic ``activate`` action; resolver recency seed only. Legacy rows may
+   * still deliver an ISO string during the transition window.
+   */
+  last_active_at?: number | string | null;
 }
 
 export const defaultEntityType = 'entity_base';

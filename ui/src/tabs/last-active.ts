@@ -11,7 +11,9 @@
  * across clients — is the follow-up (see plan §2b).
  */
 export function bumpLastActive(
-  entity: { last_active_at?: string | null } | null | undefined,
+  entity: { last_active_at?: number | string | null } | null | undefined,
 ): void {
-  if (entity) entity.last_active_at = new Date().toISOString();
+  // Epoch-ms to match the base-Entity field (Part 3 §4); the candidate
+  // adapter tolerates legacy ISO strings from un-refreshed cache entries.
+  if (entity) entity.last_active_at = Date.now();
 }

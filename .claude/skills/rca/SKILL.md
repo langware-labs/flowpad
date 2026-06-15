@@ -1,11 +1,8 @@
 ---
-id: ccaf9012-abc8-4413-9c81-38d5d31018d3
-name: rca
-description: Root Cause Analyzer — prove the real cause of a failure by finding its on/off switch, then optionally capture it as a fast failing test
-tags:
-- debugging
-- rca
-- testing
+id: "ccaf9012-abc8-4413-9c81-38d5d31018d3"
+name: "rca"
+description: "Root Cause Analyzer — prove the real cause of a failure by finding its on/off switch, then optionally capture it as a fast failing test"
+tags: ""
 ---
 
 # RCA — Root Cause Analyzer
@@ -15,8 +12,9 @@ Find why something fails, **prove it**, and stop. No guessing, no estimating, no
 
 ## Modes (from the skill arg)
 
-- no arg / `default` → **RCA mode**
-- `test` → **Test mode** — assumes a root cause is already proven this session. If none is,
+* no arg / `default` → **RCA mode**
+
+* `test` → **Test mode** — assumes a root cause is already proven this session. If none is,
   run RCA mode first, or ask the user to point at the known cause.
 
 ## RCA mode — find the on/off switch
@@ -29,9 +27,11 @@ Find why something fails, **prove it**, and stop. No guessing, no estimating, no
 4. **Fastest credible path to cause** — but the cause is not accepted until proven.
 5. **Proof = the on/off switch.** Name the single lever — a flag, variable, code line, config,
    input, or memory — such that:
-   - changing it makes the bug **disappear**, and
-   - reverting it makes the bug **come back**.
-   Demonstrate *both* directions. One direction is a coincidence; both is a root cause.
+
+   * changing it makes the bug **disappear**, and
+
+   * reverting it makes the bug **come back**.
+     Demonstrate *both* directions. One direction is a coincidence; both is a root cause.
 6. **Report inline and stop.** State: the symptom, the proven root cause, the exact switch, and
    the before/after observation for each direction. No file or memory artifact.
 
@@ -41,13 +41,35 @@ hides the bug instead of finding its switch.
 
 ## Test mode — capture the bug
 
-1. **Precondition:** a proven root cause exists. The test must **fail in exactly the way the bug
-   manifests** (same assertion / error), and pass once the fix flips the switch.
-2. **Delegate the test mechanics to the `funit` skill.** Defer to its rules — fast pytest
-   (Entity / Record / pure function) or python API; vitest unit-only or vitest API for frontend;
-   no mocks without approval; flag any test over 1s and get approval; TDD-approve the interface
-   before writing.
-3. **rca's only addition:** the test must reproduce *this specific failure*, written at the
-   **narrowest layer that still reproduces it** — prefer unit over API over anything heavier.
-   If the bug genuinely needs a slower or more complex (e.g. e2e) test, **alert the user and get
-   explicit approval before writing it.**
+**Run autonomously. Do NOT ask the user anything — no interface approval, no "is this OK?",
+no clarifying questions, no progress check-ins.** Just write the test, run it, and come back
+**only** when you have hit one of the three terminal outcomes below. The user invoked test mode
+*because* a root cause is already proven this session — act on it.
+
+1. **Precondition:** a proven root cause exists this session. If none is proven, that is the
+   `IMPOSSIBLE` outcome (see below) — return immediately; do not start an RCA and do not ask the
+   user to point at one.
+2. **Write it at the narrowest layer that still reproduces** — prefer unit over API over anything
+   heavier. The test must **fail in exactly the way the bug manifests** (same assertion / error)
+   and pass once the fix flips the proven switch.
+3. **Use** **`funit`** **for the mechanics, but its interaction gates do NOT apply here** — this
+   mode overrides funit's "TDD-approve the interface", "flag >1s", and "ask before mocking" steps.
+   Still honor funit's *craft* rules (fast pytest / vitest, real entities, no mocks of the logic
+   under test, minimal elegant interface). Pick the interface yourself and write it.
+4. **Run the test and confirm it fails for the right reason** (the bug's assertion/error, not an
+   import/setup error). Do not edit timeouts/retries/sleeps to make anything pass — that is the
+   banned symptom-masking move.
+
+**Return with exactly one terminal outcome — and nothing in between:**
+
+* **`FOUND`** — a failing test exists that reproduces the bug for the right reason. Report its
+  path, the test name, and the failing assertion/error output. (Do not implement the fix unless
+  separately asked.)
+* **`NOT FOUND`** — you wrote a faithful test at the narrowest reproducing layer and it
+  **passes**, i.e. the code does not actually exhibit the bug there. Report the test, that it
+  passes, and what that implies (the proven switch may not manifest at this layer, or the bug is
+  elsewhere).
+* **`IMPOSSIBLE`** — no proven root cause exists this session, or the bug genuinely cannot be
+  captured without a slower/heavier (e.g. e2e) harness than is warranted. Report why, and what
+  layer it *would* take.
+

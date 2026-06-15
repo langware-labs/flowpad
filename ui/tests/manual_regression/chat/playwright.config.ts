@@ -12,7 +12,7 @@ import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
   testDir: '.',
   testMatch: '*.md.ts',
-  timeout: 120_000,
+  timeout: 60_000,
   expect: { timeout: 15_000 },
   fullyParallel: false,
   retries: 0,

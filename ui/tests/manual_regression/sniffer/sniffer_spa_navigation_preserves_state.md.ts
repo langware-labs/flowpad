@@ -1,6 +1,8 @@
 import { expect, test, type APIRequestContext } from '@playwright/test';
 
-const API = process.env.API_URL || 'http://localhost:6002';
+import { apiBase } from '../_shared/api';
+
+const API = apiBase();
 
 async function snifferHook(request: APIRequestContext) {
   const res = await request.get(`${API}/api/v1/graph/bootstrap`);
@@ -33,10 +35,10 @@ test.describe('Sniffer — default-off survives SPA navigation', () => {
 
     // No SNIFFER-RELATED console errors during navigation. Ignore ambient noise
     // unrelated to the sniffer: resource 404s and in-flight use-claude-projects
-    // fetches aborted by the route transition ("Failed to list Claude projects:
-    // TypeError: Failed to fetch") — neither is a sniffer regression.
+    // fetches aborted by the full-page route transition ("Failed to list
+    // projects: TypeError: Failed to fetch") — neither is a sniffer regression.
     const real = errors.filter(
-      (e) => !/Failed to load resource/.test(e) && !/Failed to list Claude projects/.test(e),
+      (e) => !/Failed to load resource/.test(e) && !/Failed to list projects/.test(e),
     );
     expect(real, `sniffer-related console errors during SPA nav: ${real.join('\n')}`).toHaveLength(0);
   });

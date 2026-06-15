@@ -2,6 +2,7 @@
 id: b2a56d34-91ea-5380-9530-c6ded72bd167
 ---
 
+- PRECONDITION: switch the app to Advanced view (footer view pill or `window.setView('advanced')` / localStorage `viewMode=advanced`) — the process toolbar (Restart / Open Terminal / Fork / Worktree / Session Info / Transcript) and side-ribbon panels only exist in Advanced view; the default Standard view shows the simple-chat header without them
 test 1: Fork button is disabled before the first assistant turn
 - navigate to {APP_URL}/dock/shell/new_terminal
 - wait for the plain shell tab
