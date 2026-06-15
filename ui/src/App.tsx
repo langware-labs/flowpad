@@ -1,7 +1,8 @@
 import '@src/styles/highlightjs.css';
 import { trackEvent } from '@src/utils/analytics';
-import { CapabilityKinds, config, navigator } from '@sdk';
-import { useAuth, useCapability, useGlobalEvents } from '@sdk/react/hooks';
+import { config, navigator } from '@sdk';
+import { useAuth, useGlobalEvents } from '@sdk/react/hooks';
+import { HarnessCapabilitiesProvider } from '@src/contexts/HarnessCapabilitiesContext';
 import { TooltipProvider } from '@src/components/ui/tooltip';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { NotificationOutlet, NotificationCommandBridge, initNotificationIngest } from '@src/notifications';
@@ -33,16 +34,10 @@ const queryClient = new QueryClient({
 // service-unavailable / network / config errors before any React tree mounts,
 // so a parallel inline error UI here is no longer needed.
 
-// Warm the capability cache at startup so harness consumers (interactive tab
-// openers, capability badges) render from a settled snapshot instead of each
-// triggering its own first check. Module-level so AppContent re-renders don't
-// remount it.
-const CapabilityWarmup = () => {
-  useCapability(CapabilityKinds.ClaudeCode);
-  useCapability(CapabilityKinds.Codex);
-  useCapability(CapabilityKinds.Copilot);
-  return null;
-};
+// The harness capability triple (Claude/Codex/Copilot) is owned by
+// `HarnessCapabilitiesProvider` below: it subscribes once, warms the cache at
+// startup, and every consumer (terminal strips, openers) reads the shared
+// snapshots via `useHarnessCapabilities` instead of re-subscribing.
 
 // Component that handles auth logic
 const AppContent = ({ children }: { children: React.ReactNode }) => {
@@ -94,14 +89,15 @@ const AppContent = ({ children }: { children: React.ReactNode }) => {
         <Spotlight />
         <ActivityProgressModalRoot />
         <GlobalEvents />
-        <CapabilityWarmup />
         <GitHubDeviceFlowModal />
         <MigrateLegacyKeychain />
-        <SnifferProvider>
-          <FloatingChatProvider>
-            {children}
-          </FloatingChatProvider>
-        </SnifferProvider>
+        <HarnessCapabilitiesProvider>
+          <SnifferProvider>
+            <FloatingChatProvider>
+              {children}
+            </FloatingChatProvider>
+          </SnifferProvider>
+        </HarnessCapabilitiesProvider>
       </TooltipProvider>
     </QueryClientProvider>
   );
