@@ -141,6 +141,15 @@ If a test fails on time, the production code is too slow or stalls — that's th
 * **Validators must agree at v4/v5.** The frontend `ts_sdk/src/models/TypeId.ts` regex (`…-[45]xxx-…`) and the hub `flowpad/hub/api/identifier.py` must accept exactly v4/v5. A mismatch (e.g. a stricter frontend) means a backend-minted id can poison entity resolution — see the v7 incident where one fixture's v7 frontmatter id broke `useEntityByPath`'s whole bulk list.
 
 
+## Backend URLs in the frontend (non-negotiable)
+
+**Application code never touches a backend URL.** No `__API_URL__`, no `config.SERVER_URL`, no hand-built `http://localhost:…` strings in components, hooks, or prompts. The ONLY consumer of the API base URL is the SDK config bootstrap (`ts_sdk/src/config/load_config.ts`). Everything above it goes through the two sanctioned channels:
+
+1. **`dataManager`** (entities, queries, actions via `ActionInfo`) — the default for anything entity-shaped.
+2. **`apiClient`** (`import apiClient from '@sdk/client'`) — the worst-case escape hatch for non-entity REST routes; it carries the base URL, auth, and the `{status,data}` envelope unwrapping. Pass it a **path** (`/api/v1/...`), never a full URL.
+
+If a backend route can't be called through `apiClient` because it doesn't return the standard `ApiResponse` envelope, fix the route to return the envelope — don't fall back to `fetch`. Workers/skills resolve their own backend via the pinned `FLOW_INSTANCE` (`~/.flow/instances/<name>/server.json`), never via a URL baked into a prompt or file.
+
 ## Type icons (non-negotiable)
 
 **Every per-type icon in the UI comes from the backend type registry (`TypeInfo.icon`) — never hardcode a glyph for an entity type at a call site.** Resolve it at render time via `iconForType(type)` (`ui/src/components/graph-view/icons/iconRegistry.ts`), which reads the bootstrap-loaded SchemaRegistry and falls back to a generic document glyph for unknown/icon-less types. If a type's icon is wrong or missing, fix its `TypeInfo` (`flow_sdk/schema/type_info/<type>_*info.py`) so every surface picks it up — don't patch the one component.

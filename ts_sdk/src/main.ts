@@ -13,6 +13,7 @@ import { navigator } from './services/navigationService';
 import * as Sentry from '@sentry/browser';
 import { ContextEntitiesEnum } from './FlowSync/context';
 import { getContextEntityFromLocalStorage, setContextEntityToLocalStorage } from './FlowSync/context-local-storage';
+import { capabilityManager } from './capabilities';
 import { cloudManager } from './services/cloud_login';
 import { ConnectionManager } from './websocket';
 
@@ -45,6 +46,10 @@ export async function initSdk(params?: { agentId?: string; setupWorkspace?: bool
       // Seed cloudManager from bootstrap; it owns isLoggedIn / currentUser / cloudUrl
       // and listens to oauth WS events for the lifetime of the app.
       void cloudManager.bootstrap(bootstrapInfo.desktop_info);
+
+      // Seed the capabilities summary so the Capabilities view paints without a
+      // second round-trip (it can still refresh via getSummary(true)).
+      capabilityManager.setSummary(bootstrapInfo.capabilities_summary);
 
       // Load the type registry (TypeInfo + schema) into the SchemaRegistry
       // (pass empty array if null to prevent re-fetching)

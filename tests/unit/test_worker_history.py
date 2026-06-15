@@ -165,7 +165,9 @@ def test_collect_claude_skips_scratch_encoded_dirs(monkeypatch, tmp_path):
             return object.__getattribute__(self, name)
 
         @classmethod
-        def from_jsonl(cls, path: Path):
+        def from_jsonl(cls, path: Path, *, include_content: bool = True):
+            # Mirror the real extractor signature: worker-history calls it with
+            # include_content=False to skip the full-transcript parse.
             import json as _json
             raw = _json.loads(path.read_text().splitlines()[0])
             return cls(raw["sessionId"], raw.get("cwd"))

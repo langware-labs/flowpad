@@ -13,7 +13,7 @@ from __future__ import annotations
 import logging
 from pathlib import Path
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from flow_sdk.transcript_analyzer.entries import MetaEntry
@@ -99,6 +99,72 @@ async def get_transcript(worker_type: str, path: str = ""):
         "header": _build_header(transcript),
         "entries": [entry.to_dict() for entry in transcript.entries],
     }
+
+
+@router.get("/api/v1/workers/{worker_type}/{session_id}/trace-skeleton")
+async def get_trace_skeleton(worker_type: str, session_id: str):
+    """Deterministic AgentTrace skeleton for a session (lanes/segments/markers).
+
+    Server-side twin of ``python -m flow_sdk.transcript_analyzer.synthesizers.
+    agent_trace`` so the agent-trace skill works from any workdir (no repo
+    venv needed). Synthesis runs in a thread — team sessions parse 80+ files.
+    """
+    import asyncio
+
+    from flow_sdk.transcript_analyzer.synthesizers.agent_trace import synthesize_agent_trace
+
+    if worker_type not in _SUPPORTED_WORKERS:
+        return _error(400, "INVALID_ARG", f"Unsupported worker_type: {worker_type!r}")
+    try:
+        skeleton = await asyncio.to_thread(synthesize_agent_trace, session_id, worker_type)
+    except TranscriptNotFoundError as exc:
+        return _error(404, "NOT_FOUND", str(exc))
+    except ValueError as exc:
+        return _error(400, "INVALID_ARG", str(exc))
+    return {"ok": True, "skeleton": skeleton}
+
+
+@router.post("/api/v1/workers/{worker_type}/{session_id}/agent-trace")
+async def create_agent_trace(worker_type: str, session_id: str, request: Request):
+    """Create an AgentTrace record for a session from skill annotations.
+
+    Body: ``{"annotations": {...}}`` (the agent-trace skill's judgment layer —
+    goals/divergences/issues/verdict). The server re-synthesizes the skeleton,
+    merges, and creates a NEW AgentTrace entity every call (analyses are
+    history, never overwritten); names are ``trace-<sid8>-<utc compact>``.
+    """
+    import asyncio
+    from datetime import datetime, timezone
+
+    from flow_sdk.builtin.agent_trace import AgentTrace
+    from flow_sdk.transcript_analyzer.synthesizers.agent_trace import (
+        merge_annotations,
+        synthesize_agent_trace,
+    )
+
+    if worker_type not in _SUPPORTED_WORKERS:
+        return _error(400, "INVALID_ARG", f"Unsupported worker_type: {worker_type!r}")
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    annotations = (body or {}).get("annotations") or {}
+    if not isinstance(annotations, dict):
+        return _error(400, "INVALID_ARG", "annotations must be an object")
+
+    try:
+        skeleton = await asyncio.to_thread(synthesize_agent_trace, session_id, worker_type)
+    except TranscriptNotFoundError as exc:
+        return _error(404, "NOT_FOUND", str(exc))
+    except ValueError as exc:
+        return _error(400, "INVALID_ARG", str(exc))
+
+    trace = merge_annotations(skeleton, annotations)
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+    trace["name"] = f"trace-{session_id[:8]}-{stamp}"
+    entity = AgentTrace.from_trace(trace)
+    await entity.save()
+    return {"ok": True, "id": entity.id, "asset_ref": entity.asset_ref, "summary": trace["summary"]}
 
 
 @router.get("/api/v1/workers/{worker_type}/{session_id}/transcript")

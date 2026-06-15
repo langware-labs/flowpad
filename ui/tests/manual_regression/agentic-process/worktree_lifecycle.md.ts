@@ -41,7 +41,7 @@ test.describe('worktree lifecycle', () => {
   test.afterEach(() => { cleanGit(PROJECT_DIR); });
 
   test('test 1: OpenInWorktree spawns a worktree sibling; CommitMerge appears in it', async ({ page }) => {
-    test.setTimeout(150_000);
+    test.setTimeout(60_000);
     cleanGit(PROJECT_DIR);
     gitInitWithCommit(PROJECT_DIR);
 
@@ -73,7 +73,9 @@ test.describe('worktree lifecycle', () => {
     await expect(pop).toBeVisible({ timeout: 10_000 });
     const worktreeRow = pop.getByText(/^Worktree$/).locator('xpath=..');
     await expect(worktreeRow.getByText('enabled')).toBeVisible();
-    const cmdRow = pop.getByText(/^Command$/).locator('xpath=..').locator('button[title="Click to copy"]');
+    // CopyRow redesign: value lives in the flex-1 mono span (copy is a
+    // separate aria-labelled icon button), not a "Click to copy" button.
+    const cmdRow = pop.getByText(/^Command$/).locator('xpath=..').locator('span.flex-1');
     await expect(cmdRow).toContainText('--worktree');
     await page.keyboard.press('Escape');
 
@@ -82,7 +84,7 @@ test.describe('worktree lifecycle', () => {
   });
 
   test('test 2: OpenInWorktree disabled when the workdir has no commits', async ({ page }) => {
-    test.setTimeout(150_000);
+    test.setTimeout(60_000);
     cleanGit(PROJECT_DIR);
     gitInitNoCommit(PROJECT_DIR);
 

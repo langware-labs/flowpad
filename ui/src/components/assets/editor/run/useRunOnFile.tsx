@@ -2,7 +2,7 @@ import { useCallback, useState, type ReactNode } from 'react';
 import {
   AgenticProcess,
   ComputeNode,
-  ProcessType,
+  ProcessKind,
   type AssetDescriptor,
 } from '@sdk';
 import { enableMcp, isMcpAvailable } from '@src/components/assets/utils';
@@ -81,7 +81,7 @@ export function useRunOnFile({
         workdir: project?.fs_storage_mount_path ?? undefined,
         projectId: project?.id,
         targetVfsPath,
-        processType: ProcessType.Execution,
+        processType: ProcessKind.Execution,
         outputFormat: 'stream-json',
         permissionMode: 'bypassPermissions',
       });

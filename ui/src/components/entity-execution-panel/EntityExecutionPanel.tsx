@@ -4,7 +4,7 @@ import {
   FlowElementTypes,
   isBusy,
   isWorkerRunning,
-  ProcessType,
+  ProcessKind,
   type StatusBearingProcess,
   TypeId,
   type FlowData,
@@ -57,7 +57,7 @@ interface EntityExecutionPanelProps {
    * same target don't see each other's history) and the lazy `createProcess`
    * call (so newly-spawned processes get tagged correctly).
    */
-  processType: ProcessType;
+  processType: ProcessKind;
   className?: string;
   /**
    * Invoked once, right after the backing `AgenticProcess` is created and before
@@ -116,6 +116,14 @@ interface EntityExecutionPanelProps {
    *   stream closes on transcript inactivity.
    */
   transport?: 'print' | 'pty-poll';
+  /**
+   * Imperative prompt injection from the host surface (e.g. the transcript
+   * toolbar's Run/Rerun/Refresh-analysis buttons). When `nonce` changes the
+   * panel sends `text` exactly as if the user typed it. `newSession: true`
+   * bypasses the current process so the send lazy-creates a fresh one — one
+   * process per run, so each run is its own history entry.
+   */
+  autoPrompt?: { text: string; nonce: number; newSession?: boolean } | null;
 }
 
 /**
@@ -150,6 +158,7 @@ export function EntityExecutionPanel({
   defaultProjectId,
   defaultWorkdir,
   transport = 'print',
+  autoPrompt,
 }: EntityExecutionPanelProps) {
   const targetStr = target ?? '';
 
@@ -301,11 +310,11 @@ export function EntityExecutionPanel({
     }
   }, [activeProcess]);
 
-  const handleSend = useCallback(async (text: string) => {
+  const handleSend = useCallback(async (text: string, opts?: { forceNewProcess?: boolean }) => {
     if (!targetStr || sending) return;
     setSending(true);
     try {
-      let proc = activeProcess;
+      let proc = opts?.forceNewProcess ? null : activeProcess;
       const isPtyPoll = transport === 'pty-poll';
 
       // Lazy-create on first send.
@@ -351,6 +360,17 @@ export function EntityExecutionPanel({
       setSending(false);
     }
   }, [activeProcess, sending, targetStr, effectiveProjectId, effectiveWorkdir, onProcessCreated, pendingProjectId, pendingAttachedRefs, processType, transport]);
+
+  // Host-injected prompt (Run/Rerun/Refresh analysis). Nonce-gated so the
+  // same object can sit in props without re-firing on unrelated renders.
+  const lastAutoNonceRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!autoPrompt || autoPrompt.nonce === lastAutoNonceRef.current) return;
+    lastAutoNonceRef.current = autoPrompt.nonce;
+    if (autoPrompt.newSession) startNewSession();
+    void handleSend(autoPrompt.text, { forceNewProcess: autoPrompt.newSession });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoPrompt?.nonce]);
 
   const scrollRef = useRef<AutoScrollContainerHandle>(null);
   useEffect(() => {

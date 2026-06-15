@@ -129,9 +129,12 @@ def _assert_table_shape(attrs: dict, job_name: str) -> None:
     # `current` is a string or null
     current = attrs.get("current")
     assert current is None or isinstance(current, str)
-    # `text` is null or "complete"
+    # `text` is a phase marker: null mid-run, a phase label while a long
+    # sub-phase runs (e.g. "sweeping" for the orphan sweep), or "complete"
+    # on the terminal snapshot. Any non-complete string is a valid in-flight
+    # phase; the terminal "complete" contract is asserted on final, below.
     text = attrs.get("text")
-    assert text is None or text == "complete"
+    assert text is None or isinstance(text, str)
     # Per-row shape
     for row in attrs["rows"]:
         assert isinstance(row.get("type_name"), str)

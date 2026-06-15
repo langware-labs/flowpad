@@ -7,7 +7,7 @@ test.describe('Navigate to Shell', () => {
   });
 
   test('open the shell view and validate terminal loads', async ({ page }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(60_000);
 
     // Step 1: navigate to shell (creates a new terminal via /dock/shell/new_terminal)
     await gotoShell(page);

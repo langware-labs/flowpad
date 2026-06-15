@@ -7,7 +7,7 @@ import { dismissSetupModal } from './helpers';
 
 test.describe('explorer — no 404', () => {
   test('test 1: opening the file explorer produces no 404 console errors', async ({ page }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(60_000);
     const consoleErrors: string[] = [];
     page.on('console', (m) => { if (m.type() === 'error') consoleErrors.push(m.text()); });
 

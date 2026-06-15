@@ -2,7 +2,9 @@ import { expect, test, type APIRequestContext, type Page } from '@playwright/tes
 import * as fs from 'fs';
 import * as os from 'os';
 
-const API = process.env.API_URL || 'http://localhost:6002';
+import { apiBase } from '../_shared/api';
+
+const API = apiBase();
 // User-scope whiteboards live under the home dir's .claude/whiteboards/.
 const USER_WHITEBOARDS = `${os.homedir()}/.claude/whiteboards/`;
 
@@ -68,7 +70,7 @@ test.describe('Whiteboard — Scope (Sc1–Sc2)', () => {
   });
 
   test('Sc2: user + project scopes coexist with distinct paths', async ({ page, request }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(60_000);
     await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
     const { id: projectId, mount } = await pickProject(request);
 

@@ -79,6 +79,12 @@ describe(`hub: alice + bob ping-pong loop to ${STOP_AT}`, () => {
         // twice and confuses the symmetric counter.
         if (seen.has(n)) return;
         seen.add(n);
+        // Sender-echo awareness: the SDK delivers alice's OWN sends back on
+        // this tap too (the local materialize CREATE the UI renders own
+        // messages from). Alice's numbers are odd — react only to bob's
+        // evens, otherwise each echo forks a parallel counter chain. The "0"
+        // handshake is the ready-gate's job, not the counter's.
+        if (n % 2 !== 0 || n === 0) return;
         log.push({ who: 'alice', kind: 'rx', n, t: Date.now() - tStart });
         if (n >= STOP_AT) {
           off();

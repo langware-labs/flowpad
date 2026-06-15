@@ -33,6 +33,33 @@ The current built-in leaf capabilities are:
 - `harness.codex.cli`
 - `browsing.chrome.authenticated`
 
+## MCP-server capabilities (dynamic)
+
+Every indexed MCP server is also exposed as a capability under the kind
+`<service>.mcp.<worker_type>`, for example `gmail.mcp.claude_code`. The kind is
+**service-first** so the same prefix matching resolves a query at any level:
+
+```ts
+useCapability('gmail');                 // any worker that has a Gmail MCP
+useCapability('gmail.mcp');             // same — all gmail.mcp.* leaves
+useCapability('gmail.mcp.claude_code'); // exact leaf
+```
+
+`<service>` is a best-effort normalization of the server's name (vendor prefix
+stripped, lowercased, non-alphanumerics dropped — `claude.ai Gmail` → `gmail`).
+`<worker_type>` is the owning agent (the `worker_type` on the MCP_SERVER
+record). Servers that normalize to the same `(service, worker_type)` merge into
+one capability.
+
+Unlike the static leaves above, these are **derived from indexed records**, so
+they're managed by `reconcile_mcp_capabilities` (`flow_sdk/core/capabilities/mcp.py`)
+rather than `get_default_capability_specs`. Reconcile registers a runner +
+upserts a system `Capability` row per kind, and prunes kinds whose backing
+config disappeared. It runs at server start, after every MCP index (indexing
+refreshes the capability list), and on a manual `check` of an MCP kind. For
+these capabilities `check` = configured (a record exists), `test` validates,
+and `install` is a no-op (MCP servers are configured, not installed).
+
 ## Backend Contract
 
 The backend capability infrastructure lives under `flow_sdk/core/capabilities`.

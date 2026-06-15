@@ -14,7 +14,7 @@ export { useProcessExecution } from './useProcessExecution';
 export { useProcessStateField } from './useProcessStateField';
 export { useProcessStream } from './useProcessStream';
 export { useCurrentArtifacts } from './useCurrentArtifacts';
-export { useViewerStore, type TabItem, type TabTypeWithoutOverview } from './useViewerStore';
+export { useViewerStore } from './useViewerStore';
 
 // Export hooks - Domain-specific (migrated from micro-app)
 export { useStateChatOptions } from './useStateChatOptions';

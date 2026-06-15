@@ -78,6 +78,10 @@ class BootstrapInfo(BaseModel):
     env: Optional[EnvInfo] = None
     desktop_info: Optional[LmInfo] = None
     harness_state: Optional[Dict[str, Any]] = None
+    # All capabilities + how to access each, grouped by intent (see
+    # core/capabilities/summary.py). Seeds the FE CapabilityManager so the
+    # Capabilities view paints without a second round-trip.
+    capabilities_summary: Optional[Dict[str, Any]] = None
     sniffer_hook: Optional[Dict[str, Any]] = None
     scan_info: Optional[Dict[str, Any]] = None
     records_root: Optional[str] = None

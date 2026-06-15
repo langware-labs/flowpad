@@ -285,7 +285,11 @@ def _collect_claude_entries_sync(
 
     for mtime, jsonl_path in candidates:
         try:
-            session = extract_claude_session_from_path(jsonl_path)
+            # include_content=False: worker-history reads only envelope + lazy
+            # stats and never touches `session.content`, so skip the full
+            # per-file transcript parse (worker_summary_log) that otherwise
+            # dominates this endpoint's latency across all candidates.
+            session = extract_claude_session_from_path(jsonl_path, include_content=False)
             ensure_claude_session_stats(session)  # populate message_count, last_user_message, git_branch, etc.
         except Exception as e:
             logger.debug("[worker_history] from_jsonl failed for %s: %s", jsonl_path, e)
@@ -376,7 +380,9 @@ def _collect_codex_entries_sync(
 
     for mtime, jsonl_path in candidates:
         try:
-            session = extract_codex_session_from_path(jsonl_path)
+            # include_content=False: see the Claude branch above — worker-history
+            # never reads `session.content`, so skip the full-transcript parse.
+            session = extract_codex_session_from_path(jsonl_path, include_content=False)
             ensure_codex_session_stats(session)  # populate message_count, last_user_message, etc.
         except Exception as e:
             logger.debug("[worker_history] codex from_jsonl failed for %s: %s", jsonl_path, e)

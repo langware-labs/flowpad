@@ -13,6 +13,26 @@ def now_iso() -> str:
 
 
 class CapabilityKind(StrEnum):
+    """Static capability kinds.
+
+    Kind grammar — the ontology rule every capability (static OR the dynamic
+    ``<service>.mcp.<worker_type>`` MCP kinds) obeys:
+
+      **segment-1 is the intent handle** a consumer asks for; deeper segments
+      are the concrete provider/variant.
+
+    ``useCapability('harness')`` / ``useCapability('gmail')`` /
+    ``useCapability('browsing')`` all resolve their leaves via
+    ``capability_kind_matches`` (segment-1 prefix). So the first segment is the
+    *role you want* (a harness, gmail, browsing), and the tail names the
+    provider. The tail ORDER is intentionally not unified across families
+    (``harness.<tool>.cli`` puts the tool second; ``<service>.mcp.<worker>``
+    puts the worker last) — that asymmetry is cosmetic because resolution only
+    ever keys on segment-1. Kinds are persisted (entity ids are
+    ``mint_uuid(kind)``, plus user-set ``reference_kind``), so do NOT rename
+    them without a migration.
+    """
+
     HARNESS = "harness"
     CLAUDE_CLI = "harness.claude.cli"
     CODEX_CLI = "harness.codex.cli"
@@ -26,6 +46,18 @@ def capability_kind_matches(query_kind: str, capability_kind: str) -> bool:
     return candidate == query or candidate.startswith(f"{query}.")
 
 
+# Infix segment for MCP-server capabilities: ``<service>.mcp.<worker_type>``
+# (e.g. ``gmail.mcp.claude_code``). Service-first so a prefix query on the
+# service (``gmail`` / ``gmail.mcp``) resolves via ``capability_kind_matches``.
+MCP_CAPABILITY_INFIX = "mcp"
+
+
+def is_mcp_capability_kind(kind: str) -> bool:
+    """True for ``<service>.mcp.<worker_type>`` kinds (second segment == ``mcp``)."""
+    parts = kind.strip().lower().split(".")
+    return len(parts) >= 3 and parts[1] == MCP_CAPABILITY_INFIX
+
+
 class CapabilitySpec(BaseModel):
     name: str
     kind: str
@@ -37,6 +69,12 @@ class CapabilitySpec(BaseModel):
     # serialized as an FSRef dict). None → no typed value (pure status).
     value_type: str | None = None
     dependent_capability_kinds: list[str] = Field(default_factory=list)
+    # Whether FlowPad can actually USE this capability once available. True for
+    # everything FlowPad runs (harness CLIs, browsing, MCP for executor worker
+    # types). False for MCP servers configured for agents FlowPad never spawns
+    # (cursor/windsurf/vscode/claude_desktop) — they stay visible/honest in the
+    # summary but never claim FlowPad can launch them.
+    runnable: bool = True
     # CapabilityReference: this capability is a pointer — check/install/test
     # resolve the referenced kind in turn. Seed default only; the live value
     # is the entity row's ``reference_kind`` (user-switchable in the UI).

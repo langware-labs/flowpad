@@ -7,7 +7,7 @@ test.describe('Terminal Persistence on Tab Switch', () => {
   });
 
   test('terminal state persists when switching views', async ({ page }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(60_000);
 
     // Step 1: navigate to shell — creates a fresh session at /dock/shell/shell-<uuid>
     await gotoShell(page);

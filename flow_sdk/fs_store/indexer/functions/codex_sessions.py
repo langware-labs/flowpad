@@ -125,7 +125,7 @@ def extract_codex_session(ref: FSRef) -> list[FSRecord]:
     return [extract_codex_session_from_path(ref._path)]
 
 
-def extract_codex_session_from_path(path: str | Path) -> FSRecord:
+def extract_codex_session_from_path(path: str | Path, *, include_content: bool = True) -> FSRecord:
     """Build a Record from a rollout JSONL path.
 
     Envelope fields (session_id / cwd / version / originator) are read from the
@@ -134,6 +134,12 @@ def extract_codex_session_from_path(path: str | Path) -> FSRecord:
     gated by the indexer's skip-fresh check, so it only runs when the rollout
     has changed. Stats are not populated here — call
     ``ensure_codex_session_stats(rec)`` to lazy-load them.
+
+    Listing callers that hit many rollouts per request (e.g. worker history)
+    must pass ``include_content=False`` — they have no skip-fresh gate, and the
+    full ``worker_summary_log`` parse per file starves the server (the parsed
+    ``content`` is unused by those callers). Mirrors
+    ``extract_claude_session_from_path``.
 
     Replaces ``CodexSessionRecord.from_jsonl``.
     """
@@ -161,9 +167,13 @@ def extract_codex_session_from_path(path: str | Path) -> FSRecord:
     except OSError:
         pass
 
-    # Extractive transcript text for full-text search (worker-generic).
-    from flow_sdk.transcript_analyzer import worker_summary_log  # noqa: PLC0415
-    content = worker_summary_log(p, "codex")
+    # Extractive transcript text for full-text search (worker-generic). Skipped
+    # for listing callers (include_content=False) — the full-transcript parse is
+    # the dominant cost and they don't read `content`.
+    content = ""
+    if include_content:
+        from flow_sdk.transcript_analyzer import worker_summary_log  # noqa: PLC0415
+        content = worker_summary_log(p, "codex")
 
     rec = FSRecord(
         type=RecordType.CODEX_SESSION,

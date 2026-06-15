@@ -31,6 +31,7 @@ from .markdown_index import router as markdown_index_router
 from .docs_graph import router as docs_graph_router
 from .semantic_checker import router as semantic_checker_router
 from .pty_stream import router as pty_stream_router
+from .capabilities import router as capabilities_router
 
 __all__ = [
     "bootstrap_router",
@@ -64,4 +65,5 @@ __all__ = [
     "docs_graph_router",
     "semantic_checker_router",
     "pty_stream_router",
+    "capabilities_router",
 ]

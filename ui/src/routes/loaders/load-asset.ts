@@ -2,6 +2,8 @@
  * Asset dock loader for
  *   /dock/assets/editor/<editor>/<method>/<value>
  *   /dock/assets/wiki/<space>/<name>
+ *   /dock/assets/list/<typeName>            (browser view — no-op here)
+ *   /dock/assets/folder/<typeName>/<id>/... (browser view — no-op here)
  *
  * URL-first asset resolution: parse the pointer, resolve the backing entity by
  * its routing method, and write it into context (warm the cache + set the active
@@ -12,7 +14,7 @@
  */
 import { TypeId, apiClient, dataContext, dataManager } from '@sdk';
 import { AssetDocPointer } from '@src/navigation/AssetDocPointer';
-import { AssetEditor, AssetMode, AssetRoutingMethod } from '@src/navigation/asset-doc-types';
+import { AssetEditor, AssetMode, AssetRoutingMethod, isBrowseListPointer } from '@src/navigation/asset-doc-types';
 
 interface WikiResolveResult {
   type: string;
@@ -42,6 +44,13 @@ async function ensureInContext(typeId: TypeId): Promise<void> {
 
 export async function loadAssetRoute(pointer: string | undefined): Promise<void> {
   if (!pointer) return; // assets list / no editor open — nothing to resolve.
+
+  // `list/<typeName>` and `folder/<...>` are multi-entity browser views (the
+  // Skills list, a markdown folder), not single editor targets. They have no
+  // backing entity to warm into context — the view resolves its own contents —
+  // so short-circuit before parsing rather than letting AssetDocPointer.parse
+  // throw `unknown mode "list"` / `unknown mode "folder"`.
+  if (isBrowseListPointer(pointer)) return;
 
   let ptr: AssetDocPointer;
   try {
