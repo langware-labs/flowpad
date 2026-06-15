@@ -41,7 +41,16 @@ export { DOCK_KEYWORD, VIEW_SLOTS } from '../types/ViewType';
 export type { ViewSlot } from '../types/ViewType';
 
 // Utilities (for advanced use cases)
-export { buildDockUrl, parseBasePath, parseDockUrl, parseQueryParams, stripDockPortion } from './url-builder';
+export {
+  buildDockUrl,
+  buildShellRedirectUrl,
+  detectLayout,
+  parseBasePath,
+  parseDockUrl,
+  parseQueryParams,
+  preserveWindowLayout,
+  stripDockPortion,
+} from './url-builder';
 export type { ParsedBasePath, ParsedDockUrl } from './url-builder';
 export { isValidView, isValidViewSlot } from './validators';
 

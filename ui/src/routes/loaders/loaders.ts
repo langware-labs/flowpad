@@ -8,10 +8,11 @@ import {
   navigator,
   TypeId,
 } from '@sdk';
-import { DockPointer, buildDockUrl } from '@src/navigation';
+import { DockPointer, buildDockUrl, detectLayout } from '@src/navigation';
 
 type LoaderArgs = {
   params: { agentId?: string; processId?: string };
+  request?: { url: string };
 };
 
 export async function loadFlowFromParams(args: LoaderArgs): Promise<Flow> {
@@ -67,11 +68,16 @@ export function getBrokenViewUrl(args: LoaderArgs): string {
   // Build the current URL path with agent and flow IDs
   const currentUrl = `/agent/${agentId}/flow/${processId}`;
 
+  // Preserve the request's layout (Part 3 §7): a broken view inside a win/
+  // focus window must redirect back into win/, not into full-app chrome.
+  const requestPath = args.request ? new URL(args.request.url).pathname : currentUrl;
+
   const redirectUrl = buildDockUrl(
     currentUrl,
     defaultViewType,
     defaultPointerValue,
     Object.fromEntries(searchParams.entries()),
+    detectLayout(requestPath),
   );
   return redirectUrl;
 }

@@ -16,6 +16,13 @@ const tabbedTerminalPath = resolve(
 );
 const tabbedTerminalSource = readFileSync(tabbedTerminalPath, 'utf-8');
 
+// Creation flows and opener descriptors moved into the strip controller
+// extracted from TabbedTerminal (tab-management.md Part 3 §6).
+const stripControllerSource = readFileSync(
+  resolve(__dirname, '../../src/tabs/useTerminalStripController.tsx'),
+  'utf-8',
+);
+
 // Opener-button rendering moved to the TerminalOpenerToolbar sibling module;
 // match against its source so the contract stays intact after the refactor.
 const openerToolbarPath = resolve(
@@ -27,14 +34,14 @@ const openerToolbarSource = readFileSync(openerToolbarPath, 'utf-8');
 describe('TabbedTerminal – tab switching contract (FLOWPAD-1645)', () => {
   it('renders a plain terminal button in the tab-end toolbar', () => {
     expect(openerToolbarSource).toContain("'open-terminal-tab-button'");
-    expect(tabbedTerminalSource).toContain('navigation.openNewShell');
+    expect(stripControllerSource).toContain('navigation.openNewShell');
   });
 
   it('locks tab creation buttons while a tab is being created', () => {
     expect(tabbedTerminalSource).toContain('disabled={isTabCreationPending}');
     // Pending state drives an inline spinner (pendingInline) for each opener.
-    expect(tabbedTerminalSource).toContain('pendingInline: isClaudeCreationPending');
-    expect(tabbedTerminalSource).toContain('pendingInline: isTerminalCreationPending');
+    expect(stripControllerSource).toContain('pendingInline: isClaudeCreationPending');
+    expect(stripControllerSource).toContain('pendingInline: isTerminalCreationPending');
     expect(tabbedTerminalSource).toContain('Loader2 className="h-4 w-4 animate-spin"');
   });
 

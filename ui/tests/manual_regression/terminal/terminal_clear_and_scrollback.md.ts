@@ -7,7 +7,7 @@ test.describe('Terminal Clear and Scrollback', () => {
   });
 
   test('clear command clears screen and terminal remains functional', async ({ page }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(60_000);
 
     // Step 1: navigate to shell
     await gotoShell(page);

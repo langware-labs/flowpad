@@ -454,6 +454,30 @@ export class DataManager<T extends Manageable> extends EventEmitter {
           });
         }
       }
+    } else if (op === 'update') {
+      // An update can move an entity OUT of (or INTO) a match-filtered live
+      // query — e.g. a Tab whose `visible` flips false on close must drop out of
+      // the `visible:true` strip query. `create`/`delete` already maintain
+      // membership; updates did not, so a soft-closed entity lingered in stale
+      // results until some unrelated refetch happened to re-run the query (the
+      // intermittent "tab won't close" symptom). Reconcile per query: drop rows
+      // that no longer match (local splice, no network); refetch only when a row
+      // newly matches so the server still applies scope.
+      const watchedQueries = this.watchedQueries.getWatchCallbacksByType(typeId.type);
+      for (const watchedQuery of watchedQueries) {
+        if (!watchedQuery.results) continue;
+        const matches = !watchedQuery.request.query || watchedQuery.request.query.validate(data);
+        const index = watchedQuery.results.findIndex((entity: any) => entity.typeId.equals(typeId));
+        const inResults = index !== -1;
+        if (!matches && inResults) {
+          watchedQuery.results.splice(index, 1);
+          watchedQuery.notifyCallbacks();
+        } else if (matches && !inResults) {
+          void this._query(watchedQuery.request).then((queryResult) => {
+            watchedQuery.updateResults(queryResult);
+          });
+        }
+      }
     }
 
     switch (op) {
@@ -672,7 +696,13 @@ export class DataManager<T extends Manageable> extends EventEmitter {
   public register_new_entity(typeId: TypeId, entity: any) {
     const ref = this.getRef(typeId);
     if (ref.entity && ref.entity !== entity) {
-      console.warn(`Entity ${typeId.toString()} already registered with different entity`, new Error().stack);
+      // NB: do NOT pass `new Error().stack` here. Building the stack string is
+      // synchronous and surprisingly expensive; in a re-registration storm
+      // (the symptom this whole warn exists to catch) it ran hundreds of times
+      // during app init, blocking the main thread long enough to starve the
+      // FlowSync WS `open` callback past loadShellRoute's 5s connect fence.
+      // console.warn already attaches a stack in the devtools console.
+      console.warn(`Entity ${typeId.toString()} already registered with different entity`);
     }
     ref.entity = entity;
     ref.status = EntityStatus.READY;
@@ -689,6 +719,56 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     const ref = this.entities.get(typeId);
     if (ref && ref.entity) {
       return ref.entity as U;
+    }
+    return null;
+  }
+
+  /**
+   * Distinguished initial name for a tab opening on a DockPointer (called ONCE
+   * at Tab creation; docs/tab-management.md). Resolves, in order:
+   *   - entity pointer (`…/typeid/<type>-<id>` or a bare `<type>-<id>`) → the
+   *     entity's `name` from cache;
+   *   - vfs pointer (`…/vfs/<path>`) → the file/folder basename;
+   *   - wiki pointer (`wiki/<space>/<name>`) → the keyword.
+   * Returns null when nothing distinguished resolves (the chip then falls back
+   * to the ViewType title).
+   */
+  public getTabName(dock: { viewType?: string; pointer?: string } | null | undefined): string | null {
+    const pointer = dock?.pointer ?? '';
+    if (!pointer) return null;
+    // Resolve a cached entity's name by typeid — either a raw `<type>-<id>`
+    // string, or a (viewType, bare-id) pair when the dock's type lives in the
+    // viewType segment (e.g. /dock/conversation/<uuid>).
+    const nameFromCache = (typeOrRaw: string | undefined, id?: string): string | null => {
+      if (!typeOrRaw) return null;
+      try {
+        const tid = id !== undefined ? new TypeId(typeOrRaw, id) : new TypeId(typeOrRaw);
+        const ent = this.getByTypeIdFromCache(tid) as { name?: string | null } | null;
+        return ent?.name ?? null;
+      } catch {
+        return null;
+      }
+    };
+    const lastSegment = (path: string): string | null =>
+      decodeURIComponent(path).split('/').filter(Boolean).pop() ?? null;
+    // 1. entity — asset-editor typeid form, a bare `<type>-<id>` pointer, or a
+    //    bare entity id whose type is carried by the dock's viewType.
+    if (pointer.includes('/typeid/')) {
+      const n = nameFromCache(pointer.split('/typeid/').pop() ?? '');
+      if (n) return n;
+    } else if (!pointer.includes('/')) {
+      const n = nameFromCache(pointer) ?? nameFromCache(dock?.viewType, pointer);
+      if (n) return n;
+    }
+    // 2. vfs — basename of the path.
+    if (pointer.includes('/vfs/')) {
+      const base = lastSegment(pointer.split('/vfs/').pop() ?? '');
+      if (base) return base;
+    }
+    // 3. wiki — the keyword (last path segment).
+    if (dock?.viewType === 'wiki' || pointer.startsWith('wiki/')) {
+      const kw = lastSegment(pointer.replace(/^wiki\//, ''));
+      if (kw) return kw;
     }
     return null;
   }
@@ -752,7 +832,17 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       }
       if (ref.status === EntityStatus.ERROR) {
         ref.entityPendingPromises.forEach((p) => {
-          p.reject(ref.error);
+          // A 404 ("entity is gone") is resolved as null on the direct path
+          // (see getByTypeId), but a concurrent waiter that parked while the
+          // fetch was in-flight must get the SAME treatment. Rejecting here —
+          // with ``ref.error`` that the 404 path never set — surfaced as a
+          // thrown ``null`` in useEntity ("Error fetching entity by type ID:
+          // <typeId> null"). Resolve notFound waiters with null instead.
+          if (ref.notFound) {
+            p.resolve(null);
+          } else {
+            p.reject(ref.error);
+          }
         });
         ref.entityPendingPromises = [];
       }
@@ -831,6 +921,11 @@ export class DataManager<T extends Manageable> extends EventEmitter {
     }
     if (ref?.status === EntityStatus.FETCHING) {
       const entity = await this.waitForTypeId(typeId);
+      // The in-flight fetch we waited on may have resolved to a 404. Honor the
+      // negative cache instead of falling through to a redundant re-fetch.
+      if (ref.notFound) {
+        return null;
+      }
       if (entity && entity.isExpanded(requiredExpansions)) {
         return entity as U;
       }

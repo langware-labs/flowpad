@@ -31,7 +31,7 @@ import { Invitation } from '@sdk/entities/invitation';
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
 import { apiTestSetup, getTestSignupInfo } from '../utils/test-utils';
-import { pollUntil, probeHub, probeLocalBackendLoggedIn, readRendezvous } from './_matrix';
+import { pickPendingInvitation, pollUntil, probeHub, probeLocalBackendLoggedIn, readRendezvous } from './_matrix';
 
 let skipReason: string | null = null;
 let bobEmail: string | null = null;
@@ -76,20 +76,7 @@ async function findPendingInvitation(convId: string): Promise<Invitation | null>
   // Now query bob's (freshly-synced) invitation entities.
   const all = await Invitation.query<Invitation>({ query: {} }, true);
 
-  // Prefer an exact match: unaccepted invitation whose target points at our
-  // conversation. Fall back to the most-recent unaccepted invitation
-  // addressed to bob (covers hubs that don't stamp target_url_path).
-  const exact = all.find(
-    (inv) => !inv.accepted && (inv.target_url_path || '').includes(convId),
-  );
-  if (exact) return exact;
-
-  const mine = all
-    .filter((inv) => !inv.accepted && inv.recipient_email === bobEmail)
-    .sort((a, b) =>
-      String(b.created_date ?? '').localeCompare(String(a.created_date ?? '')),
-    );
-  return mine[0] ?? null;
+  return pickPendingInvitation(all, convId);
 }
 
 describe('hub: matrix two-process — BOB', () => {

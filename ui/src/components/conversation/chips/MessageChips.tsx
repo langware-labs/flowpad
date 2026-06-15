@@ -1,39 +1,23 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Download, Loader2 } from 'lucide-react';
-import { AgenticProcess } from '@sdk';
+import { AgenticProcess, Conversation, TypeId } from '@sdk';
 import { ActionInfo } from '@sdk/models/ActionInfo';
-import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
-import { CodexIcon } from '@src/components/icons/CodexIcon';
-import { CopilotIcon } from '@src/components/icons/CopilotIcon';
+import { useEntity } from '@sdk/react/hooks';
+import { workerIcon } from '@src/components/lens-viewer/shared/transcript-features/transcript-utils';
 import { FavoriteStar } from '@src/components/favorites/FavoriteStar';
-import { useFlowpadAssistantProject } from '@src/components/floating-chat/useFlowpadAssistantProject';
+import { AdvancedOnly } from '@src/components/view-mode';
+import { InputDialog } from '@src/components/ui/input-dialog';
 import { useChipsExclude } from './ChipsExcludeContext';
 import { ChipKey } from './keys';
-import type { ComponentType } from 'react';
 
 interface MessageChipsProps {
   flowMessageId?: string;
-  /** Parent conversation id — needed to seed the assistant launch prompt. When
-   *  omitted the launch buttons are hidden (download still renders). */
+  /** Parent conversation id — the conversation's context is where the current
+   *  worker is found (the most-recently-linked AgenticProcess). */
   conversationId?: string;
   /** Message body — its first 10 words become the favorite / task title. */
   messageText?: string;
 }
-
-type WorkerType = 'claude_code' | 'codex' | 'copilot';
-
-interface Harness {
-  workerType: WorkerType;
-  name: string;
-  Icon: ComponentType<{ className?: string }>;
-  iconClassName?: string;
-}
-
-const HARNESSES: Harness[] = [
-  { workerType: 'claude_code', name: 'claude', Icon: ClaudeIcon, iconClassName: 'text-orange-500' },
-  { workerType: 'codex', name: 'codex', Icon: CodexIcon },
-  { workerType: 'copilot', name: 'copilot', Icon: CopilotIcon, iconClassName: 'text-sky-500' },
-];
 
 function localDownloadUrl(messageId: string): string {
   return new ActionInfo('create-and-download-local-flowmsg', 'flow_message', messageId, 'GET').fullActionUrl;
@@ -47,41 +31,60 @@ function firstWords(text: string | undefined, n: number): string {
 }
 
 /**
- * Per-message chip row. Left group: download + launch toolbar (Claude / Codex)
- * that spawns an AgenticProcess in the ``@flowpad_assistant`` project pre-seeded
- * with a "load this message" prompt. Right group (``ml-auto``): favorite star,
- * titled from the message's first 10 words.
+ * Per-message chip row. Left group: download + (advanced view only) a single
+ * "append to the conversation's current worker" button showing that worker's
+ * harness icon. Clicking opens a one-line modal whose text is appended to the
+ * process's prompt queue as ``Re message <id>:\n<line>``. Right group
+ * (``ml-auto``): favorite star, titled from the message's first 10 words.
+ *
+ * There is intentionally no per-message *launch* button — a worker is launched
+ * once per conversation from the Private Context panel (in the conversation's
+ * own project); per-message actions feed that existing worker via its queue.
  *
  * Anything already rendered by a higher-level chip row (Task or Conversation)
  * is suppressed via ``ChipsExcludeContext``.
  */
 export function MessageChips({ flowMessageId, conversationId, messageText }: MessageChipsProps) {
   const exclude = useChipsExclude();
-  const { project: assistantProject } = useFlowpadAssistantProject();
-  const [pending, setPending] = useState<WorkerType | null>(null);
+  const [pending, setPending] = useState(false);
+  const [dialogOpen, setDialogOpen] = useState(false);
+
+  // Skin-layer rule (docs/viewmodes.md): hooks run unconditionally; the
+  // AdvancedOnly wrapper below only gates visibility, never the data flow.
+  // The conversation's current worker = the most-recently-linked AgenticProcess
+  // in its shared context (where startSession publishes launched workers).
+  const convTypeId = useMemo(
+    () => (conversationId ? new TypeId(Conversation.type, conversationId) : null),
+    [conversationId],
+  );
+  const { data: conversation } = useEntity<Conversation>(convTypeId);
+  const processTypeId = useMemo(() => {
+    const procs = (conversation?.sharedContextEntities ?? []).filter((t) => t.type === AgenticProcess.type);
+    return procs.length ? procs[procs.length - 1] : null;
+  }, [conversation]);
+  const { data: currentProcess } = useEntity<AgenticProcess>(processTypeId);
 
   const title = firstWords(messageText, 10) || `Message ${flowMessageId?.slice(0, 8) ?? ''}`.trim();
 
-  const handleLaunch = useCallback(
-    async (workerType: WorkerType) => {
-      if (pending || !flowMessageId || !conversationId) return;
-      setPending(workerType);
+  const handleAppend = useCallback(
+    async (line: string) => {
+      const trimmed = line.trim();
+      if (pending || !flowMessageId || !currentProcess) return;
+      setPending(true);
       try {
-        const prompt =
-          `Use the flowpad-assistance skill and load conversation ${conversationId}, ` +
-          `message: ${flowMessageId}`;
-        await AgenticProcess.openTab(workerType, prompt, assistantProject);
+        await currentProcess.enqueue(`Re message ${flowMessageId}:\n${trimmed}`, 'ui');
       } catch (err) {
-        console.error('[MessageChips] launch failed', err);
+        console.error('[MessageChips] enqueue failed', err);
       } finally {
-        setPending(null);
+        setPending(false);
       }
     },
-    [pending, flowMessageId, conversationId, assistantProject],
+    [pending, flowMessageId, currentProcess],
   );
 
   if (!flowMessageId) return null;
   const showDownload = !exclude.has(ChipKey.download(flowMessageId));
+  const Icon = workerIcon(currentProcess?.worker_type ?? undefined);
 
   return (
     <>
@@ -96,28 +99,21 @@ export function MessageChips({ flowMessageId, conversationId, messageText }: Mes
             <Download className="h-3 w-3" />
           </a>
         )}
-        {conversationId &&
-          HARNESSES.map(({ workerType, name, Icon, iconClassName }) => {
-            const isPending = pending === workerType;
-            return (
-              <button
-                key={workerType}
-                type="button"
-                onClick={() => void handleLaunch(workerType)}
-                disabled={pending !== null}
-                title={`Open this message in ${name}`}
-                aria-label={`Open this message in ${name}`}
-                data-testid={`message-launch-${name}`}
-                className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground opacity-60 transition-opacity hover:opacity-100 disabled:cursor-not-allowed"
-              >
-                {isPending ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                ) : (
-                  <Icon className={`h-3 w-3 ${iconClassName ?? ''}`} />
-                )}
-              </button>
-            );
-          })}
+        {currentProcess && (
+          <AdvancedOnly reserve={false}>
+            <button
+              type="button"
+              onClick={() => setDialogOpen(true)}
+              disabled={pending}
+              title={`Add a note to the running session about this message`}
+              aria-label="Add a note to the running session about this message"
+              data-testid="message-append-current"
+              className="flex h-5 w-5 items-center justify-center rounded text-muted-foreground opacity-60 transition-opacity hover:opacity-100 disabled:cursor-not-allowed"
+            >
+              {pending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Icon className="h-3 w-3" />}
+            </button>
+          </AdvancedOnly>
+        )}
       </span>
       <span className="ml-auto flex items-center gap-0.5">
         <FavoriteStar
@@ -128,6 +124,15 @@ export function MessageChips({ flowMessageId, conversationId, messageText }: Mes
           className="h-5 w-5 p-0 opacity-60 transition-opacity hover:opacity-100"
         />
       </span>
+      <InputDialog
+        open={dialogOpen}
+        onOpenChange={setDialogOpen}
+        title="Add to the running session"
+        description="Appended to the current worker's prompt queue, tagged with this message."
+        placeholder="What should the worker do with this message?"
+        confirmLabel="Add to queue"
+        onConfirm={(value) => void handleAppend(value)}
+      />
     </>
   );
 }

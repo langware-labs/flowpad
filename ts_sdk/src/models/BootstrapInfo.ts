@@ -3,6 +3,7 @@ import { TypeInfo } from '../FlowSync/schema';
 import { ComputeNode } from '../entities/compute_node';
 import { AgentHook } from '../entities/agent-hook';
 import { WebDomain } from '../entities/web-domain';
+import { CapabilitiesSummary } from '../capabilities/CapabilityManager';
 
 /**
  * Environment information returned in bootstrap
@@ -121,6 +122,8 @@ export interface BootstrapInfo {
   env?: EnvInfo;
   desktop_info?: LmInfo;
   harness_state?: HarnessBootstrapState;
+  /** All capabilities + how to access each, grouped by intent (see CapabilityManager). */
+  capabilities_summary?: CapabilitiesSummary;
   sniffer_hook?: AgentHook;
   scan_info?: ScanInfo;
   records_root?: string;

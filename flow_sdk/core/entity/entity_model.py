@@ -34,11 +34,11 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-from pydantic import Field, SerializationInfo, SerializeAsAny, TypeAdapter, ValidationError, computed_field, model_serializer
+from pydantic import Field, SerializationInfo, SerializeAsAny, TypeAdapter, ValidationError, computed_field, field_validator, model_serializer
 
 from flow_sdk.config import StorageProvider
 from flow_sdk.flowpad_types.enums import AuthRole, ExpansionType
-from flow_sdk.api.api_types.api_field import APIField
+from flow_sdk.api.api_types.api_field import APIField, Persist
 from flow_sdk.db.drivers.db_base_record import BuiltinEntityType, TypeId
 from flow_sdk.db.drivers.query import ExpressionNode, OrderType, QueryFilter, QueryOp
 from flow_sdk.fs_store.schema_registry import SchemaRegistry
@@ -126,6 +126,38 @@ class Entity(DBEntity):
             "grouping survives an index rebuild."
         ),
     )
+    # Tab-strip membership is no longer a base-Entity flag — it is the `Tab`
+    # entity (docs/tab-management.md). `tab_order`/`last_active_at` remain
+    # generic (used by the Tab entity + the `activate` action).
+    tab_order: int = APIField(
+        default=0,
+        persist=Persist.FALSE,
+        description=(
+            "Strip ordering among member tabs (0 = unassigned). DB-only "
+            "(Persist.FALSE) — intentionally does not survive a "
+            "rebuild-from-disk (tab-management.md Part 1, decision 3)."
+        ),
+    )
+    last_active_at: int | None = APIField(
+        default=None,
+        description=(
+            "Epoch-ms of this tab's last activation, stamped SERVER-SIDE by "
+            "the generic ``activate`` action (authoritative clock). Resolver "
+            "recency seed only (resolveActive case 3) — never read to "
+            "highlight the active tab; the URL is active truth. ISO-string "
+            "values from legacy rows are parsed tolerantly on load."
+        ),
+    )
+
+    @field_validator("last_active_at", mode="before")
+    @classmethod
+    def _last_active_at_epoch_ms(cls, value):
+        """Legacy rows stored ISO strings; the field is epoch-ms. Parse
+        tolerantly (via ``_as_datetime``) so no data migration is needed."""
+        if isinstance(value, str):
+            dt = cls._as_datetime(value)
+            return int(dt.timestamp() * 1000) if dt else None
+        return value
 
     # Locally-authoritative fields a hub refresh must NEVER overwrite. The hub
     # is the source of truth for *content*; these describe the local copy's own
@@ -825,17 +857,9 @@ class Entity(DBEntity):
             await entity._fts_upsert(type_name, content)
         return record
 
-    async def _resolve_scope_root(self) -> "Path | None":
-        """Resolve filesystem scope root from request_context.
-
-        Project context (POST /api/v1/graph/project/<id>/<type>) →
-        ``project.fs_storage_mount_path``. Otherwise → per-instance user_home.
-
-        Single source of truth for scope, called once per save(); per-type
-        ``store()`` overrides must not duplicate this logic.
-        """
-        from pathlib import Path
-        from flow_sdk.instance_settings import get_instance_settings
+    async def _resolve_scope_project(self) -> "Entity | None":
+        """Return the project entity when the request is project-scoped
+        (POST /api/v1/graph/project/<id>/<type>), else None."""
         from flow_sdk.request_context.methods import get_current_request_info
         request_info = get_current_request_info()
         if (
@@ -844,12 +868,27 @@ class Entity(DBEntity):
             and request_info.target_entity_typeid.type == "project"
         ):
             try:
-                proj = await request_info.get_target_entity()
+                return await request_info.get_target_entity()
             except Exception:
-                proj = None
-            mount = getattr(proj, "fs_storage_mount_path", None) if proj is not None else None
-            if mount:
-                return Path(mount)
+                return None
+        return None
+
+    async def _resolve_scope_root(self, scope_project: "Entity | None" = None) -> "Path | None":
+        """Resolve filesystem scope root from request_context.
+
+        Project context (POST /api/v1/graph/project/<id>/<type>) →
+        ``project.fs_storage_mount_path``. Otherwise → per-instance user_home.
+
+        Single source of truth for scope, called once per save(); per-type
+        ``store()`` overrides must not duplicate this logic. ``scope_project``
+        carries a project the caller already resolved (avoids re-resolving).
+        """
+        from pathlib import Path
+        from flow_sdk.instance_settings import get_instance_settings
+        proj = scope_project or await self._resolve_scope_project()
+        mount = getattr(proj, "fs_storage_mount_path", None) if proj is not None else None
+        if mount:
+            return Path(mount)
         return get_instance_settings().user_home
 
     async def check_and_refresh_record(self) -> bool:
@@ -1514,9 +1553,16 @@ class Entity(DBEntity):
     @staticmethod
     def _as_datetime(value: Any) -> Optional[datetime]:
         """Coerce a stored/serialized timestamp to a ``datetime`` for compare.
-        Returns ``None`` when the value is absent or unparseable."""
+        Accepts datetimes, ISO strings, and epoch-ms numbers (the
+        ``last_active_at`` wire format). Returns ``None`` when the value is
+        absent or unparseable."""
         if value is None or isinstance(value, datetime):
             return value
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            try:
+                return datetime.fromtimestamp(value / 1000, tz=timezone.utc)
+            except (ValueError, OSError, OverflowError):
+                return None
         try:
             return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
         except (ValueError, TypeError):
@@ -1604,13 +1650,24 @@ class Entity(DBEntity):
         land under (e.g. pin-prompt targets a process but scopes the Prompt
         to its project).
         """
+        # Project-scoped create/save: stamp project_id so the entity is
+        # visible in project-scoped surfaces immediately, not only after the
+        # next indexer walk re-derives it from the asset path. Generic: any
+        # entity with a project_id field saved under a project scope. The
+        # resolved project is threaded into _resolve_scope_root below so the
+        # (memoization-missing) failure edge never re-queries per save.
+        scope_proj = None
+        if hasattr(self, "project_id") and not getattr(self, "project_id", None):
+            scope_proj = await self._resolve_scope_project()
+            if scope_proj is not None:
+                self.project_id = scope_proj.id
         if getattr(self, "asset_ref", None):
             return  # Already set (entity update or explicit caller-set path).
         type_name = self.get_type()
         info = SchemaRegistry.get(type_name)
         if info is None or info.main_subdir is None:
             return
-        scope_root = scope_root or await self._resolve_scope_root()
+        scope_root = scope_root or await self._resolve_scope_root(scope_proj)
         if scope_root is None:
             return
         # Transient FSRecord just to compute the asset_ref convention.
@@ -1654,6 +1711,25 @@ class Entity(DBEntity):
                 "wiki.delete_for_id failed for %s:%s — %s",
                 self.type, self.id, wiki_exc,
             )
+
+        # Soft-close any content Tab pointing at this entity (denormalized
+        # target_id) so a deleted target can't leave an orphan chip in the strip
+        # (docs/tab-management.md). Generic — one chokepoint covers every type.
+        # Best-effort; the Tab type may be absent (e.g. a pytest env without
+        # register_all), so a failure here must never block the delete.
+        if self.type != "tab":  # don't recurse on a Tab deleting itself
+            try:
+                from flow_sdk.builtin.tab import Tab
+                orphans = await Tab.get_all({"target_type": self.type, "target_id": str(self.id)})
+                for tab in orphans:
+                    if getattr(tab, "visible", False):
+                        await tab.close()
+            except Exception as tab_exc:
+                import logging
+                logging.getLogger(__name__).warning(
+                    "Tab orphan-cleanup failed for %s:%s — %s",
+                    self.type, self.id, tab_exc,
+                )
 
         # Call parent delete
         return await super().delete()
@@ -2350,6 +2426,28 @@ _action_registry.register(
     action_name="semantic-waive",
     function_name="semantic_waive",
     handler=_http_semantic_waive,
+    methods="post",
+    types="all",
+)
+
+
+async def _http_activate(self: Entity):
+    """Stamp ``last_active_at = now`` (server clock, epoch-ms) — the tab
+    resolver's recency seed (docs/tab-management.md Part 3 §4). Loaders call
+    this fire-and-forget on tab activation. Never touches membership:
+    membership promotion is explicit-only (``tabs/open``)."""
+    from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
+    from flow_sdk.utils.serialization import now_epoch_ms  # noqa: PLC0415
+
+    self.last_active_at = now_epoch_ms()
+    await self.save()
+    return ApiSuccessResponse(data={"last_active_at": self.last_active_at})
+
+
+_action_registry.register(
+    action_name="activate",
+    function_name="activate",
+    handler=_http_activate,
     methods="post",
     types="all",
 )

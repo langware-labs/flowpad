@@ -1,4 +1,4 @@
-import { Agent, FSRef, Skill, TypeId, VFSPath, Whiteboard, Workflow } from '@sdk';
+import { Agent, AgentTrace, FSRef, Skill, TypeId, VFSPath, Whiteboard, Workflow } from '@sdk';
 import { useEntity } from '@sdk/react/hooks';
 import { RefreshCw } from 'lucide-react';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
@@ -9,6 +9,7 @@ import { EntityResolutionGate } from './EntityResolutionGate';
 import { PlainMarkdownAssetEditor } from './markdown/PlainMarkdownAssetEditor';
 import { SkillAssetEditor } from './skill/SkillAssetEditor';
 import { AgentAssetEditor } from './agent/AgentAssetEditor';
+import { AgentTraceAssetEditor } from './agent-trace/AgentTraceAssetEditor';
 import { WhiteboardAssetEditor } from './whiteboard/WhiteboardAssetEditor';
 import { WorkflowAssetEditor } from './workflow/WorkflowAssetEditor';
 
@@ -121,6 +122,15 @@ export function AssetEditorRouter({ pointer }: AssetEditorRouterProps) {
           fsRef={fsRef}
           typeLabel="whiteboard"
           render={(whiteboard) => <WhiteboardAssetEditor fsRef={fsRef!} whiteboard={whiteboard} />}
+        />
+      );
+    case AssetEditor.AGENT_TRACE:
+      return (
+        <EntityResolutionGate<AgentTrace>
+          type={AgentTrace.type}
+          fsRef={fsRef}
+          typeLabel="agent trace"
+          render={(trace) => <AgentTraceAssetEditor fsRef={fsRef!} trace={trace} />}
         />
       );
     case AssetEditor.WORKFLOW:

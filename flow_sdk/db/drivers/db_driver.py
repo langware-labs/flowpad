@@ -3,6 +3,7 @@ import warnings
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from datetime import datetime
+from pathlib import Path
 from flow_sdk._compat import UTC
 from typing import AsyncIterator, Callable, Generic, List, Optional, Tuple
 from flow_sdk.settings import is_desktop
@@ -433,6 +434,19 @@ _default_driver = "sqlite"  # Default to SQLite driver
 # created outside the guard blocks; one created inside inherits the bypass.
 _DB_LIFECYCLE_LOCK = asyncio.Lock()
 _lifecycle_in_progress: ContextVar[bool] = ContextVar("db_lifecycle_in_progress", default=False)
+
+
+def remove_db_sidecars(db_path: Path) -> None:
+    """Unlink the SQLite ``-wal``/``-shm`` sidecars alongside ``db_path``.
+
+    Every lifecycle mutator that swaps/unlinks the DB file (clear_all_data,
+    restore, reinit_db) must call this: the sidecars belong to the OLD inode
+    but live at the same path, and a stale ``-shm`` paired with the new file
+    makes the next open fail with ``locking protocol`` (observed under load
+    on back-to-back clears), aborting schema init mid-swap.
+    """
+    for suffix in ("-wal", "-shm"):
+        db_path.with_name(db_path.name + suffix).unlink(missing_ok=True)
 
 
 @asynccontextmanager

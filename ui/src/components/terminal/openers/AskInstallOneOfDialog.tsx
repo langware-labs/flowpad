@@ -28,6 +28,7 @@ interface Props {
 const HOMEPAGE_FALLBACKS: Record<string, string> = {
   [CapabilityKinds.ClaudeCode]: 'https://docs.anthropic.com/en/docs/claude-code/getting-started',
   [CapabilityKinds.Codex]: 'https://openai.com/codex/',
+  [CapabilityKinds.Copilot]: 'https://docs.github.com/en/copilot/concepts/agents/about-copilot-cli',
 };
 
 function CapabilityHarnessRow({

@@ -447,6 +447,15 @@ class WorkerDriver(Protocol):
         given process — or None if no session id is yet assigned."""
         ...
 
+    def skills_root(self, process: "AgenticProcess", assets_dir: Path) -> Path:
+        """Directory a skill folder is laid into so this worker discovers it.
+
+        Claude/Copilot mount the process ``assets_dir`` (``--add-dir``) and read
+        ``.claude/skills`` from it; Codex reads only ``$CODEX_HOME/skills``. The
+        orchestrator routes skill materialization through this seam so it never
+        branches on the vendor."""
+        ...
+
     def tail_status(self, transcript_path: Path) -> "WorkerStatus":
         """Map the tail of the transcript to a WorkerStatus."""
         ...

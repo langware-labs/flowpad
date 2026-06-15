@@ -28,6 +28,16 @@ class MembershipRequest(BaseModel):
     type: str = field(init=False, default="invitation")
 
 
+def conversation_target_path(conversation_id: str) -> str:
+    """Canonical ``target_url_path`` for a conversation-targeted invitation.
+
+    The single place that knows the path shape — producers (invitation
+    materialization) and matchers (receiver-side pickers) reference this
+    instead of hand-building ``/conversation/<id>`` strings.
+    """
+    return f"/conversation/{conversation_id}"
+
+
 class Invitation(Entity):
     type: str = APIField(default=BuiltinEntityType.INVITATION.value)
     recipient_email: str = APIField()

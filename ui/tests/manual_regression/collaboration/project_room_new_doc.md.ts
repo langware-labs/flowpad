@@ -6,9 +6,10 @@
  * creation is exercised via the entity API (POST /api/v1/graph/markdown), the
  * surface the app now uses. The markdown editor opens for an existing doc.
  */
-import { test, expect, request as pwRequest } from '@playwright/test';
+import { test, expect } from '@playwright/test';
+import { apiBase, apiContext } from '../_shared/api';
 
-const API = process.env.QA_API_URL || 'http://localhost:6003';
+const API = apiBase();
 
 test.describe('Project doc creation — entity API', () => {
   test.beforeEach(async ({ page }) => {
@@ -35,7 +36,7 @@ test.describe('Project doc creation — entity API', () => {
 
   test('test 2: Creating a markdown doc via the entity API writes the entity (and is searchable)', async () => {
     test.setTimeout(60_000);
-    const rq = await pwRequest.newContext();
+    const rq = await apiContext();
     const created = await (await rq.post(`${API}/api/v1/graph/markdown`, {
       data: { name: 'regression_new_doc_check', body: '# regression\nnew doc body\n' },
     })).json();
@@ -63,7 +64,7 @@ test.describe('Project doc creation — entity API', () => {
     // navigateToResult only builds a dockPointer when r.asset_ref exists, so a
     // DB-only (un-indexed) row's click is a no-op — index to make the click
     // deterministically navigate.
-    const rq = await pwRequest.newContext();
+    const rq = await apiContext();
     await rq.post(`${API}/api/v1/graph/compute_node/@local/fs-records/index?type=markdown`);
     await rq.dispose();
 

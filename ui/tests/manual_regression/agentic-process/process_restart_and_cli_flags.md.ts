@@ -23,7 +23,7 @@ const cliOptions = (page: Page) => activePanel(page).locator('button[aria-label=
 
 test.describe('process restart and CLI flags', () => {
   test('test 1: Restart button respawns the PTY (clean, no console errors)', async ({ page }) => {
-    test.setTimeout(150_000);
+    test.setTimeout(60_000);
     const errors: string[] = [];
     page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
     page.on('pageerror', e => errors.push(e.message));
@@ -48,7 +48,7 @@ test.describe('process restart and CLI flags', () => {
   });
 
   test('test 2: toggling a CLI flag persists + lights the Restart glow; Restart clears it', async ({ page }) => {
-    test.setTimeout(150_000);
+    test.setTimeout(60_000);
     await dismissSetupModal(page);
     await gotoNewShell(page);
     await startClaude(page);
@@ -80,7 +80,7 @@ test.describe('process restart and CLI flags', () => {
   });
 
   test('test 3: out-of-band entity mutation lights the glow; only a Restart clears it', async ({ page }) => {
-    test.setTimeout(150_000);
+    test.setTimeout(60_000);
     await dismissSetupModal(page);
     await gotoNewShell(page);
     await startClaude(page);
@@ -119,7 +119,7 @@ test.describe('process restart and CLI flags', () => {
   });
 
   test('test 4: ProcessToolbar gating (no toolbar on plain shell; gated buttons once running)', async ({ page }) => {
-    test.setTimeout(150_000);
+    test.setTimeout(60_000);
     await dismissSetupModal(page);
     await gotoNewShell(page);
 

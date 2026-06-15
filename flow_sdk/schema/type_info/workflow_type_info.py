@@ -1,5 +1,5 @@
 """Type metadata for WORKFLOW."""
-from flow_sdk.schema.type_info import TypeMetadata
+from flow_sdk.schema.type_info import TypeMetadata, render_entity_frontmatter
 from flow_sdk.schema.types import EntityType
 from flow_sdk.fs_store.indexer.functions.workflow import (
     extract_workflow,
@@ -15,7 +15,7 @@ def _workflow_default_body(entity) -> str:
     """
     title = (getattr(entity, "name", None) or "Untitled Workflow").strip()
     desc = (getattr(entity, "description", None) or "").strip()
-    return f"---\nname: {title}\n---\n\n# {title}\n\n{desc}\n"
+    return render_entity_frontmatter(entity, {"name": title}) + f"\n\n# {title}\n\n{desc}\n"
 
 
 WORKFLOW = TypeMetadata(

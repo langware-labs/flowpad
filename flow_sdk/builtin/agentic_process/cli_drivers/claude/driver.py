@@ -12,23 +12,21 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
-    AgenticContext,
-    WorkerDriver,
-    WorkerCLIOptions,
-    restart_payload_from_cli_options,
-)
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.cli import ClaudeCliOptions
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.session_history import (
     load_session_history as _claude_load_session_history,
 )
 from flow_sdk.builtin.agentic_process.cli_drivers.claude.stream_worker import (
     ClaudeCLIStreamWorker,
+)
+from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import (
+    AgenticContext,
+    WorkerCLIOptions,
+    restart_payload_from_cli_options,
 )
 from flow_sdk.builtin.worker_status import WorkerStatus, _tail_status
 from flow_sdk.responses.response import ApiFailResponse, ApiSuccessResponse
@@ -297,6 +295,11 @@ class ClaudeDriver:
     def transcript_path(self, process: "AgenticProcess") -> Path | None:
         descriptor = self.transcript_descriptor(process)
         return descriptor.path if descriptor else None
+
+    def skills_root(self, process: "AgenticProcess", assets_dir: Path) -> Path:
+        """Claude discovers skills from ``.claude/skills`` under the mounted
+        assets dir (passed via ``--add-dir``)."""
+        return assets_dir / ".claude" / "skills"
 
     def tail_status(self, transcript_path: Path) -> WorkerStatus:
         """Map the tail of the Claude JSONL to a WorkerStatus."""

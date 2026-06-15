@@ -1,4 +1,67 @@
-import { DOCK_KEYWORD, DEV_KEYWORD, Layout, ViewType } from '@sdk';
+import { DOCK_KEYWORD, DEV_KEYWORD, WIN_KEYWORD, Layout, ViewType } from '@sdk';
+
+/**
+ * The single keyword→Layout table the parse/strip/build helpers below share.
+ * Adding a layout means adding a row here — nothing else in this file
+ * special-cases a keyword.
+ */
+const LAYOUT_KEYWORDS: ReadonlyArray<{ keyword: string; layout: Layout }> = [
+  { keyword: DOCK_KEYWORD, layout: Layout.DOCK },
+  { keyword: DEV_KEYWORD, layout: Layout.DEV },
+  { keyword: WIN_KEYWORD, layout: Layout.WIN },
+];
+
+function keywordForLayout(layout: Layout): string {
+  return LAYOUT_KEYWORDS.find((row) => row.layout === layout)?.keyword ?? DOCK_KEYWORD;
+}
+
+interface LayoutToken {
+  layout: Layout;
+  keyword: string;
+  index: number;
+}
+
+/**
+ * Find the first layout keyword (`/dock/`, `/dev/`, `/win/`) in a path.
+ * First occurrence wins — matching the historical dock-vs-dev tie-break.
+ */
+function findLayoutToken(path: string): LayoutToken | null {
+  let best: LayoutToken | null = null;
+  for (const { keyword, layout } of LAYOUT_KEYWORDS) {
+    const index = path.indexOf(`/${keyword}/`);
+    if (index === -1) continue;
+    if (!best || index < best.index) best = { layout, keyword, index };
+  }
+  return best;
+}
+
+/**
+ * Derive the Layout from a URL path. Paths without a layout keyword default
+ * to DOCK (the layout `buildDockUrl` also defaults to).
+ */
+export function detectLayout(path: string): Layout {
+  return findLayoutToken(path)?.layout ?? Layout.DOCK;
+}
+
+/**
+ * Morph rule (docs/tab-management.md Part 3 §7): navigation initiated from
+ * inside a `win/` focus window preserves the WIN layout so internal
+ * navigation morphs the window and stays chrome-less. Outside a win window
+ * the requested layout passes through unchanged.
+ */
+export function preserveWindowLayout(currentPath: string, layout: Layout): Layout {
+  return detectLayout(currentPath) === Layout.WIN ? Layout.WIN : layout;
+}
+
+/**
+ * Build a /shell redirect URL that preserves the current URL's layout —
+ * loader redirects inside `win/` must not dump the focus window back into
+ * full-app chrome (Part 3 §7). Used by the shell route loader's fallback /
+ * ownership redirects.
+ */
+export function buildShellRedirectUrl(currentPath: string, pointer?: string): string {
+  return buildDockUrl(currentPath, ViewType.SHELL, pointer, undefined, detectLayout(currentPath));
+}
 
 /**
  * Parsed entities from the base path (before dock/dev keyword)
@@ -47,26 +110,19 @@ export function parseBasePath(basePath: string): ParsedBasePath {
  * => { viewType: "skills", layout: "dock" }
  */
 export function parseDockUrl(fullPath: string): ParsedDockUrl | null {
-  const dockIndex = fullPath.indexOf(`/${DOCK_KEYWORD}/`);
-  const devIndex = fullPath.indexOf(`/${DEV_KEYWORD}/`);
+  const token = findLayoutToken(fullPath);
+  if (!token) return null;
 
-  if (dockIndex === -1 && devIndex === -1) return null;
-
-  const isDock = dockIndex !== -1 && (devIndex === -1 || dockIndex < devIndex);
-  const layoutIndex = isDock ? dockIndex : devIndex;
-  const layout = isDock ? Layout.DOCK : Layout.DEV;
-  const keywordLength = isDock ? DOCK_KEYWORD.length : DEV_KEYWORD.length;
-
-  // Parse base path (before dock/dev)
-  const basePath = fullPath.substring(0, layoutIndex);
+  // Parse base path (before the layout keyword)
+  const basePath = fullPath.substring(0, token.index);
   const { agentId, processId } = parseBasePath(basePath);
 
-  // Parse dock portion (after dock/dev keyword)
-  const dockPortion = fullPath.substring(layoutIndex + keywordLength + 2); // +2 for slashes
+  // Parse dock portion (after the layout keyword)
+  const dockPortion = fullPath.substring(token.index + token.keyword.length + 2); // +2 for slashes
   const [viewType, ...pointerParts] = dockPortion.split('/');
   const pointer = pointerParts.length > 0 ? pointerParts.join('/') : undefined;
 
-  return { agentId, processId, viewType: viewType || undefined, pointer, layout };
+  return { agentId, processId, viewType: viewType || undefined, pointer, layout: token.layout };
 }
 
 /**
@@ -79,24 +135,13 @@ export function parseDockUrl(fullPath: string): ParsedDockUrl | null {
  * stripDockPortion("/agent/abc/flow/xyz") => "/agent/abc/flow/xyz"
  */
 export function stripDockPortion(currentPath: string): string {
-  const dockIndex = currentPath.indexOf(`/${DOCK_KEYWORD}/`);
-  const devIndex = currentPath.indexOf(`/${DEV_KEYWORD}/`);
-
-  // Find the first occurrence of either layout keyword
-  let layoutIndex = -1;
-  if (dockIndex > -1 && devIndex > -1) {
-    layoutIndex = Math.min(dockIndex, devIndex);
-  } else if (dockIndex > -1) {
-    layoutIndex = dockIndex;
-  } else if (devIndex > -1) {
-    layoutIndex = devIndex;
+  // Find the first occurrence of any layout keyword (dock/dev/win)
+  const token = findLayoutToken(currentPath);
+  if (token) {
+    return currentPath.substring(0, token.index);
   }
 
-  if (layoutIndex > -1) {
-    return currentPath.substring(0, layoutIndex);
-  }
-
-  // No dock/dev found, return path without trailing slash
+  // No layout keyword found, return path without trailing slash
   return currentPath.replace(/\/$/, '');
 }
 
@@ -117,11 +162,11 @@ export function buildDockUrl(
   queryParams?: Record<string, string | undefined>,
   layout: Layout = Layout.DOCK,
 ): string {
-  // Get base URL (everything before dock/dev)
+  // Get base URL (everything before the layout keyword)
   const base = stripDockPortion(currentUrl);
 
   // Choose layout keyword based on layout parameter
-  const layoutKeyword = layout === Layout.DEV ? DEV_KEYWORD : DOCK_KEYWORD;
+  const layoutKeyword = keywordForLayout(layout);
 
   // Build layout URL with or without pointer
   let layoutBase = `${base}/${layoutKeyword}/${viewType}`;

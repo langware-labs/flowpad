@@ -14,7 +14,7 @@ MCP_SERVER = TypeMetadata(
     # Documented shape for `flow schema info mcp_server`. Search-by-command
     # works via the record's `description` (the FTS-fed launch line); these
     # advertise the structured fields consumers should filter on.
-    index_fields=["command", "url", "scope"],
+    index_fields=["command", "url", "scope", "worker_type", "connector_type"],
     from_disk_fn=extract_mcp_server,
     gen_id_fn=mcp_server_id,
 )

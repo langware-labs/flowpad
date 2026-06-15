@@ -10,12 +10,13 @@
  *   - POST /prompt → 409 (PTY owns the session; prompt requires visible=false).
  *   - DELETE → 200.
  */
-import { test, expect, request as pwRequest } from '@playwright/test';
+import { test, expect } from '@playwright/test';
+import { apiBase, apiContext } from '../_shared/api';
 
-const API = process.env.QA_API_URL || 'http://localhost:6003';
+const API = apiBase();
 
 test('test 1: visible=true createProcess stays on the PTY path; /prompt → 409', async () => {
-  const api = await pwRequest.newContext();
+  const api = await apiContext();
 
   // default @local compute node id from bootstrap.
   const boot = await (await api.get(`${API}/api/v1/graph/bootstrap`)).json();

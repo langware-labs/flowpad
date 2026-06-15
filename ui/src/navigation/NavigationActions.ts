@@ -6,6 +6,7 @@ import {
   DockPointerData,
   FSItem,
   type IDockPointer,
+  Layout,
   QueryRequest,
   Shell,
   TypeId,
@@ -14,7 +15,7 @@ import {
 import { NavigateFunction } from 'react-router';
 import { DockPointer } from './DockPointer';
 import { FileOptions, TabOptions } from './types';
-import { buildDockUrl, stripDockPortion } from './url-builder';
+import { buildDockUrl, preserveWindowLayout, stripDockPortion } from './url-builder';
 
 function toStringRecord(obj?: Record<string, unknown>): Record<string, string> | undefined {
   if (!obj) return undefined;
@@ -86,7 +87,10 @@ export class NavigationActions {
 
     if (pointer === null) {
       if (this.currentDock === null) return; // already not on a dock URL
-      const baseUrl = stripDockPortion(currentPath);
+      // Root-level dock URLs strip to '' — and navigate('') is a react-router
+      // relative no-op, so close-dock silently did nothing outside the
+      // /agent|/flow prefixed namespaces. Normalize to the app root.
+      const baseUrl = stripDockPortion(currentPath) || '/';
       if (currentUrl === baseUrl || pendingDockNavigationUrl === baseUrl) return;
       this.markPendingNavigation(baseUrl);
       void this.navigate(baseUrl);
@@ -108,7 +112,9 @@ export class NavigationActions {
       viewType,
       pointerValue,
       Object.fromEntries(searchParams.entries()),
-      layout,
+      // Morph rule (Part 3 §7): inside a win/ focus window, internal
+      // navigation preserves the WIN layout so the window stays chrome-less.
+      preserveWindowLayout(currentPath, layout),
     );
 
     if (currentUrl === fullUrl || pendingDockNavigationUrl === fullUrl) return;
@@ -166,6 +172,20 @@ export class NavigationActions {
    */
   openInNewBrowserTab(pointer: IDockPointer | DockPointer): void {
     window.open(this.getDockUrl(pointer), '_blank', 'noopener,noreferrer');
+  }
+
+  /**
+   * Open a dock pointer in a chrome-less `win/` focus window
+   * (docs/tab-management.md Part 3 §7): builds the absolute URL with
+   * Layout.WIN and opens it via `window.open(url, '_blank')`. On the web
+   * that's a new browser tab; inside Electron the main process's
+   * setWindowOpenHandler carve-out allows same-origin `/win/` URLs so they
+   * open as in-app BrowserWindows.
+   */
+  openDockInWindow(pointer: IDockPointer | DockPointer): void {
+    const base = pointer instanceof DockPointer ? pointer : new DockPointer(pointer);
+    const winDock = new DockPointer(base.viewType, base.pointer, base.options, Layout.WIN);
+    window.open(this.getDockUrl(winDock), '_blank');
   }
 
   /**
@@ -369,7 +389,7 @@ export class NavigationActions {
         if (!options?.skipNavigate) this.openShellView();
         return null;
       }
-      const { nextTerminalName } = await import('@src/components/terminal/TabbedTerminal');
+      const { nextTerminalName } = await import('@src/components/terminal/rename-rules');
       const shells = await Shell.list(cn.id);
       const name = nextTerminalName(shells.map((s) => ({ name: s.name ?? '' })));
       // For sandbox compute nodes the project's host path is meaningless;

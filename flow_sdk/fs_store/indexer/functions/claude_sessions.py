@@ -137,7 +137,7 @@ def extract_claude_session(ref: FSRef) -> list[FSRecord]:
     """Parse a JSONL session into a Record. Replaces ``ClaudeSessionRecord._from_fsref_sync``."""
     return [extract_claude_session_from_path(ref._path)]
 
-def extract_claude_session_from_path(path: str | Path) -> FSRecord:
+def extract_claude_session_from_path(path: str | Path, *, include_content: bool = True) -> FSRecord:
     """Build a Record from a JSONL transcript path.
 
     Envelope fields are read cheaply: first ``_HEAD_LINES`` lines for
@@ -145,7 +145,10 @@ def extract_claude_session_from_path(path: str | Path) -> FSRecord:
     or custom-title. The searchable ``content`` (extractive transcript text for
     FTS) requires a full-transcript parse via ``worker_summary_log`` — this is
     gated by the indexer's skip-fresh check, so it only runs when the JSONL has
-    changed. Stats are NOT populated here — call
+    changed. Listing callers that hit many transcripts per request (e.g.
+    worker history) must pass ``include_content=False`` — they have no
+    skip-fresh gate, and the full parse per file starves the server.
+    Stats are NOT populated here — call
     ``ensure_claude_session_stats(rec)`` to lazy-load them.
 
     Replaces ``ClaudeSessionRecord.from_jsonl``.
@@ -204,8 +207,10 @@ def extract_claude_session_from_path(path: str | Path) -> FSRecord:
     name = custom_title or slug or session_id
 
     # Extractive transcript text for full-text search (worker-generic).
-    from flow_sdk.transcript_analyzer import worker_summary_log  # noqa: PLC0415
-    content = worker_summary_log(path, "claude")
+    content = ""
+    if include_content:
+        from flow_sdk.transcript_analyzer import worker_summary_log  # noqa: PLC0415
+        content = worker_summary_log(path, "claude")
 
     rec = FSRecord(
         type=RecordType.CLAUDE_SESSION,

@@ -20,7 +20,9 @@
  */
 import { test, expect, request as pwRequest, type APIRequestContext } from '@playwright/test';
 
-const HUB = process.env.QA_HUB_URL || 'http://localhost:8093';
+// Hub origin — REQUIRED. This test intentionally targets a specific two-instance
+// hub rig, so there is no localhost fallback: set QA_HUB_URL explicitly.
+const HUB = process.env.QA_HUB_URL || '';
 const ALICE_EMAIL = process.env.QA_ALICE_EMAIL || 'qa-2@local.test';
 const ALICE_PW = process.env.QA_ALICE_PW || 'qa-2-pw-1234';
 const BOB_EMAIL = process.env.QA_BOB_EMAIL || 'qa-1@local.test';
@@ -46,6 +48,11 @@ test('binding criterion: real alice↔bob conversation through the local hub', a
     !BOB_HUB_ID,
     'two-instance: requires a second cloud-logged-in instance (bob/qa-1). Set QA_BOB_HUB_ID (bob hub user id) to run. The paired qa-tester-1 drives bob on qa-1.',
   );
+  if (!HUB) {
+    throw new Error(
+      'QA_HUB_URL is not set — this two-instance test requires an explicit hub origin (the instance_ctl local hub); there is no localhost fallback.',
+    );
+  }
   test.setTimeout(60_000);
   const rq = await pwRequest.newContext();
 

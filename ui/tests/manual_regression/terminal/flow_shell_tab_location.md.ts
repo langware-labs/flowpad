@@ -16,7 +16,7 @@ test.describe('Flow Shell tab location', () => {
   });
 
   test('test 1: Flow shell remains the first tab after opening terminals and refresh', async ({ page }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(60_000);
 
     // Step 1: navigate to shell (creates the default Flow shell tab).
     await gotoShell(page);

@@ -6,6 +6,7 @@ import platform
 import sys
 import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
 from typing import Any, AsyncIterator, Literal, overload
@@ -40,6 +41,11 @@ from flow_sdk.builtin.faas.analytics import AnalyticsActionsMixin
 # Module-level activity registry: key = "{entity_typeid}:{job_name}"
 # Prevents duplicate concurrent scan/index jobs on the same compute node.
 _COMPUTE_ACTIVITIES: dict[str, "Any"] = {}
+
+# The two terminal tab kinds: close is a full teardown (``_terminal_close``),
+# not clear-membership, and target parsing for the legacy terminals/* shim is
+# restricted to these.
+TERMINAL_TAB_TYPES = frozenset({"shell", "agentic_process"})
 
 
 class ComputeNode(PtyActionsMixin, FsRecordsActionsMixin, OpsActionsMixin, ScanActionsMixin, AnalyticsActionsMixin, DesktopActionsMixin, Entity):
@@ -466,130 +472,59 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
     @action.get(action_name="list-shells")
     async def _list_shells(self): return await self._pty_list_shells()
 
-    @action.all(action_name="terminals", methods=["get", "post"])
-    async def _terminals(self, background_tasks: BackgroundTasks) -> ApiResponse:
+    @action.get(action_name="terminals")
+    async def _terminals(self) -> ApiResponse:
+        """``terminals/get_by_worker_id/<id>`` — resolve an AgenticProcess by its
+        worker id (``AgenticProcess.getByWorkerId``). The legacy
+        ``terminals/list``/``close`` shim was deleted at the Tab cutover; the
+        strip lists from the ``Tab`` entity and closes via ``tabs/close``."""
         request_info = get_current_request_info()
         sub_path = (request_info.sub_path or "").strip("/").lower() if request_info else ""
-        if sub_path == "list":
-            if request_info and not request_info.is_get:
-                return ApiFailResponse(message="terminals/list requires GET", status_code=405)
-            return await self._terminal_list()
-        if sub_path == "close":
-            if request_info and not request_info.is_post:
-                return ApiFailResponse(message="terminals/close requires POST", status_code=405)
-            body = await request_info.get_post_data() if request_info else {}
-            return await self._terminal_close(body, background_tasks)
         if sub_path.startswith("get_by_worker_id/"):
-            if request_info and not request_info.is_get:
-                return ApiFailResponse(message="terminals/get_by_worker_id requires GET", status_code=405)
             worker_id = sub_path[len("get_by_worker_id/"):]
             if not worker_id:
                 return ApiFailResponse(message="worker id required", status_code=400)
             return await self._scan_get_by_worker_id(worker_id)
         return ApiFailResponse(message=f"unknown terminals sub-path: {sub_path!r}", status_code=400)
 
-    @action.get(action_name="active-terminals")
-    async def _active_terminals_removed(self) -> ApiResponse:
-        """410 tombstone. Replaced by ``terminals/list`` in a27c4ab. Kept so
-        any stale callers get a clear hard-migration signal instead of a
-        silent 200 with empty data."""
-        return ApiFailResponse(message="active-terminals was removed; use terminals/list", status_code=410)
+    @action.post(action_name="tabs")
+    async def _tabs(self, background_tasks: BackgroundTasks) -> ApiResponse:
+        """``tabs/close`` — batched terminal-tab teardown (PTY/worker). Listing is
+        now the ``Tab`` entity query (frontend); content tabs close via
+        ``Tab.close``."""
+        request_info = get_current_request_info()
+        sub_path = (request_info.sub_path or "").strip("/").lower() if request_info else ""
+        if sub_path == "close":
+            body = await request_info.get_post_data() if request_info else {}
+            return await self._tabs_close(body, background_tasks)
+        return ApiFailResponse(message=f"unknown tabs sub-path: {sub_path!r}", status_code=400)
 
-    async def _terminal_list(self) -> ApiResponse:
-        """Single source of truth for the tab strip.
-
-        Returns two flat, non-overlapping lists. The frontend renders both,
-        with no join: each "AI worker" tab comes from ``visible_processes``
-        and each "plain terminal" tab comes from ``pure_shells``.
-
-        Wire shape: ``{pure_shells, visible_processes, checked_at}``.
-          - ``pure_shells``: Shell entity dicts that are NOT background plumbing
-            for any AgenticProcess. A shell is "pure" iff no AgenticProcess
-            (visible or not) owns it via ``shell_id`` / ``sidecar_shell_id`` and
-            it does not point back to a process via ``agentic_process_id``. This
-            deliberately drops both visible-process-owned shells (they show up
-            via the process row) and invisible-process-owned orphans.
-          - ``visible_processes``: AgenticProcess entity dicts with
-            ``visible == true``. After ``createProcess`` becomes atomic, every
-            visible process has a populated ``shell_id``.
-        """
-        from flow_sdk.builtin.shell import Shell as ShellEntity
-        from flow_sdk.builtin.agentic_process import AgenticProcess
-
-        # 1. Fetch
-        all_shells = await ShellEntity.get_all()
-        # Reap pass also covers invisible STOPPING rows so they can recover
-        # and re-appear when the user opens them. The visible filter is
-        # applied below for what we *return*, not for what we *reap*.
-        all_processes = await AgenticProcess.get_all()
-
-        # 2. Reap stuck STOPPING — fan out, processes are independent (each owns
-        # its own shell + save lock), so concurrent reap is safe.
-        reap_results = await asyncio.gather(
-            *(proc.reap_if_orphaned() for proc in all_processes),
-            return_exceptions=True,
-        )
-        reaped_any = any(r is True for r in reap_results)
-
-        # 3. Refetch if we reaped, then narrow to visible.
-        if reaped_any:
-            all_processes = await AgenticProcess.get_all()
-        visible_processes = [p for p in all_processes if getattr(p, "visible", False)]
-
-        # 4. Drop background shells: any shell owned by an AgenticProcess
-        # (regardless of visibility, and via either forward or reverse link)
-        # is plumbing for that process and is represented by the process row
-        # instead. Sidecars are already a subset of "owned by a process" but
-        # we keep the explicit set for readability and to honor the
-        # unconditional sidecar exclusion.
-        owned_shell_ids = {p.shell_id for p in all_processes if getattr(p, "shell_id", None)}
-        sidecar_ids = {p.sidecar_shell_id for p in all_processes if getattr(p, "sidecar_shell_id", None)}
-        reverse_owned_shell_ids = {s.id for s in all_shells if getattr(s, "agentic_process_id", None)}
-        excluded_shell_ids = owned_shell_ids | sidecar_ids | reverse_owned_shell_ids
-
-        from flow_sdk.builtin.shell import ShellStatus
-        terminal_shell_states = {
-            ShellStatus.CLOSING.value,
-            ShellStatus.CLOSED.value,
-            ShellStatus.ERROR.value,
-        }
-        pure_shells = [
-            s for s in all_shells
-            if s.status not in terminal_shell_states
-            and s.id not in excluded_shell_ids
-        ]
-
-        # 5. Build response with full entity dicts for cache write-through.
-        pure_shell_dicts = [s.model_dump(mode="json") for s in pure_shells]
-        process_dicts = [p.model_dump(mode="json") for p in visible_processes]
-
-        from datetime import datetime as _dt, timezone as _tz
-        return ApiSuccessResponse(data={
-            "pure_shells": pure_shell_dicts,
-            "visible_processes": process_dicts,
-            "checked_at": _dt.now(tz=_tz.utc).isoformat(),
-        })
+    async def _tabs_close(self, body: dict, background_tasks: BackgroundTasks) -> ApiResponse:
+        """Close terminal tabs (shell / agentic_process) — the full PTY/worker
+        teardown, delegated to the proven ``_terminal_close``. Content tabs
+        (assets, markdown, settings, …) are first-class ``Tab`` entities and
+        close via ``Tab.close`` (``visible=false`` + per-target teardown), not
+        through this endpoint."""
+        targets = body.get("targets") if isinstance(body, dict) else None
+        if not isinstance(targets, list):
+            return ApiFailResponse(message="tabs/close requires body: { targets: string[] }", status_code=400)
+        return await self._terminal_close({"targets": targets}, background_tasks)
 
     def _parse_terminal_target(self, raw: Any) -> tuple[str, str] | None:
-        if not isinstance(raw, str):
+        """Parse a tab target (``type-id`` or ``type:id``) restricted to the
+        terminal tab kinds (shell / agentic_process)."""
+        if not isinstance(raw, str) or not raw.strip():
             return None
         target = raw.strip()
-        if not target:
-            return None
-        if ":" in target:
-            entity_type, entity_id = target.split(":", 1)
-            if entity_type not in {"shell", "agentic_process"} or not entity_id:
-                return None
-            try:
-                TypeId(type=entity_type, id=entity_id)
-            except Exception:
-                return None
-            return entity_type, entity_id
         try:
-            typeid = TypeId(target)
+            if ":" in target:
+                entity_type, entity_id = target.split(":", 1)
+                typeid = TypeId(type=entity_type, id=entity_id) if entity_type and entity_id else None
+            else:
+                typeid = TypeId(target)
         except Exception:
             return None
-        if typeid.type not in {"shell", "agentic_process"} or not typeid.id:
+        if typeid is None or not typeid.type or not typeid.id or typeid.type not in TERMINAL_TAB_TYPES:
             return None
         return typeid.type, typeid.id
 
@@ -646,6 +581,13 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
                 proc.status = ProcessStatus.STOPPING.value
                 proc.visible = False
                 await proc.save()
+                # Strip membership is the Tab entity (visible=true), not
+                # AgenticProcess.visible. The stopped AP row persists, so the
+                # delete→orphan-Tab cleanup never fires; hide the backing Tab
+                # now (synchronously) or the chip lingers if the background
+                # teardown is slow or fails.
+                from flow_sdk.builtin.tab import hide_tabs_for_target
+                await hide_tabs_for_target("agentic_process", entity_id)
                 if shell_id:
                     await self._mark_shell_closing(shell_id)
                 accepted.append(canonical)
@@ -1033,8 +975,6 @@ print(hashlib.sha256("|".join(parts).encode()).hexdigest())
 
     async def _apply_cloud_results(self, results: list) -> None:
         """Apply cloud search results to local records (mark ignored / save fix suggestions)."""
-        from datetime import datetime, timezone
-
         from flow_sdk.fs_store.operations.claude_error import ErrorStatus, Fix, get_by_fingerprint
 
         if not results:

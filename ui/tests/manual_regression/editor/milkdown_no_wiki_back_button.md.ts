@@ -1,4 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
+import { ensureProjectMarkdown } from './_seed';
+
 
 function realConsoleErrors(errors: string[]): string[] {
   return errors.filter(
@@ -14,6 +16,9 @@ function realConsoleErrors(errors: string[]): string[] {
 // Opens the markdown asset list, expands the markdown type + any doc folders,
 // and clicks the first markdown row to open it in the editor.
 async function openFirstMarkdownDoc(page: Page) {
+  // Project-scoped tree on a fresh instance has an empty docs folder — seed
+  // one doc so "the first .md leaf" exists (see _seed.ts).
+  await ensureProjectMarkdown(page.request);
   await page.goto('/dock/assets/list/markdown');
   await page.locator('[data-testid="flow-page"]').waitFor({ state: 'visible', timeout: 30_000 });
   // Markdown leaf rows are role="treeitem" with a "<name>.md" label.
@@ -34,7 +39,7 @@ async function openFirstMarkdownDoc(page: Page) {
 
 test.describe('Markdown editor header has no "Wiki" back button', () => {
   test('header shows mode toggle + no Wiki button and no left-edge back arrow', async ({ page }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(60_000);
     await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
 
     const errors: string[] = [];

@@ -121,10 +121,12 @@ Bare `flow` and the `version` field of `flow upgrade --info` must both read
 When done rehearsing, `git checkout flow_sdk/_version.py` to discard the `+local`
 marker.
 
-> **Patching the Electron desktop shell (not the backend):** the steps above deploy the
-> **backend wheel**. To hot-patch `electron/main.js` (bundled in the installed `Flowpad.app`'s
-> `app.asar`) — incl. the `-patchN` version tag, the macOS App-Management / asar-integrity /
-> ad-hoc-resign gotchas — see
+> **"Patch desktop" (the full prod-parity operation):** the steps above deploy the
+> **backend wheel**. "Patch desktop" means BOTH halves built from the **latest release
+> branch published on PyPI** (never the dev checkout): the backend wheel as
+> `<latest>+local<count>`, and the Electron shell's `main.js` from the release tip stamped
+> `<latest>-patch<count>` — incl. the macOS App-Management / asar-integrity / ad-hoc-resign
+> gotchas — see
 > [`local_patch.md` → Patching the desktop app (Electron shell)](./local_patch.md#patching-the-desktop-app-electron-shell).
 
 ## Known Pitfalls

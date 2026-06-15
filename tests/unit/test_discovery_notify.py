@@ -13,12 +13,15 @@ def _setup_notify_monkeypatch(monkeypatch):
     monkeypatch.setattr(notify, "is_webhook_rate_limited", lambda: False)
     monkeypatch.setattr(notify, "_get_report_urls", lambda: ["http://localhost:9999/hook"])
 
-    def _capture(url: str, data: bytes, log_context: str, wait: bool = False):
-        captured["url"] = url
+    def _capture(urls: list[str], data: bytes, log_context: str, wait: bool = False):
+        captured["url"] = urls[0] if urls else None
         captured["data"] = data
         captured["log_context"] = log_context
 
-    monkeypatch.setattr(notify, "_send_fire_and_forget", _capture)
+    # send_resource_sync dispatches batched through _dispatch_to_urls (one daemon
+    # thread per notification, all URLs in the loop) — patch that seam, not the
+    # now-bypassed per-URL _send_fire_and_forget wrapper.
+    monkeypatch.setattr(notify, "_dispatch_to_urls", _capture)
     return captured
 
 

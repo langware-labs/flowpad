@@ -5,11 +5,12 @@
  * Pure-API: ensure-collaboration-code → join → create room → join room →
  * createProcess → add_process → GET room → negative (missing/bogus id).
  * The graph instance-action router resolves by entity id (not uname). API base
- * from QA_API_URL (default 6003).
+ * from _shared/api (QA_API_URL/API_URL override, else the app's own backend).
  */
-import { test, expect, request as pwRequest, type APIRequestContext } from '@playwright/test';
+import { test, expect, type APIRequestContext } from '@playwright/test';
+import { apiBase, apiContext } from '../_shared/api';
 
-const API = process.env.QA_API_URL || 'http://localhost:6003';
+const API = apiBase();
 
 async function firstId(rq: APIRequestContext, path: string): Promise<string> {
   const d = (await (await rq.get(`${API}/api/v1/graph/${path}`)).json()).data;
@@ -20,7 +21,7 @@ async function firstId(rq: APIRequestContext, path: string): Promise<string> {
 
 test('collaboration_room add_process end-to-end HTTP contract', async () => {
   test.setTimeout(60_000);
-  const rq = await pwRequest.newContext();
+  const rq = await apiContext();
 
   const projId = await firstId(rq, 'project');
   const nodeId = await firstId(rq, 'compute_node');

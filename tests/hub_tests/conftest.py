@@ -84,6 +84,24 @@ def configure_desktop_hub(hub_base_url):
 
 
 @pytest.fixture(autouse=True)
+def _reset_hub_error_reporter():
+    """Reset the module-singleton hub-error rate-limiter between tests.
+
+    ``hub_error_reporter`` rate-limits ``hub_client_error_msg`` broadcasts to
+    MAX_HUB_ERRORS_PER_WINDOW per WINDOW_SECONDS. Its window state is a global
+    singleton — without this reset, hub errors from one test (e.g. an
+    intentionally-unreachable-hub case) fill the window and SUPPRESS the
+    broadcast a later test asserts on. Isolate it like any other shared state."""
+    from flow_sdk.cloud_client.error_reporter import hub_error_reporter
+
+    hub_error_reporter._timestamps.clear()
+    hub_error_reporter._suppressed_in_window = 0
+    yield
+    hub_error_reporter._timestamps.clear()
+    hub_error_reporter._suppressed_in_window = 0
+
+
+@pytest.fixture(autouse=True)
 def isolated_hub_keyring(monkeypatch):
     """Per-test in-memory keyring with isolated per-instance sod state.
 

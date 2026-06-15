@@ -7,7 +7,7 @@ test.describe('Chat Tab Switching', () => {
   });
 
   test('switch between sidebar dock views', async ({ page }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(60_000);
 
     await gotoLanding(page);
     await submitFromLanding(page, 'tab switching test');

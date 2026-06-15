@@ -9,12 +9,13 @@
  * BrowseableTree / search, and /dock/project/<uuid> directly renders the asset
  * browser. Tests assert that actual surface.
  */
-import { test, expect, request as pwRequest } from '@playwright/test';
+import { test, expect } from '@playwright/test';
+import { apiBase, apiContext } from '../_shared/api';
 
-const API = process.env.QA_API_URL || 'http://localhost:6003';
+const API = apiBase();
 
 async function firstProjectId(): Promise<string> {
-  const rq = await pwRequest.newContext();
+  const rq = await apiContext();
   const d = (await (await rq.get(`${API}/api/v1/graph/project`)).json()).data;
   await rq.dispose();
   const id = Array.isArray(d) ? d[0]?.id : d?.id;

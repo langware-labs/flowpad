@@ -22,14 +22,14 @@ test.describe('Return to Home', () => {
 
     // send a message
     await sendInstruction(page, 'Say hello');
-    await expect(page.getByText('Say hello')).toBeVisible();
+    await expect(page.getByText('Say hello', { exact: true }).first()).toBeVisible();
 
     // click home button to navigate back to landing page
     await goHome(page);
 
     // validate landing page is visible
     await expect(page.getByRole('heading', { name: /hey /i })).toBeVisible();
-    expect(page.url()).toMatch(/\/$/);
+    expect(page.url()).toMatch(/\/dock\/home/);
 
     // validate landing page input is ready
     await expect(page.getByRole('textbox', { name: 'What would you like to work on?' })).toBeVisible();

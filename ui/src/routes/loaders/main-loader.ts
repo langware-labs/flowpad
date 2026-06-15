@@ -17,19 +17,21 @@ import {
   TypeId,
 } from '@sdk';
 import { DockPointer } from '@src/navigation';
+import { ensureTabForCurrentDock } from '@src/tabs/ensure-tab-for-dock';
 import { ViewType } from '@src/types/ViewType';
 import { TimeIt } from '@src/utils/timeit';
 import { redirect, type LoaderFunctionArgs as LoaderArgs } from 'react-router';
 import { getBrokenViewUrl, loadFlowFromParams } from './loaders';
-import { loadShellRoute, resolveDefaultTab } from './load-shell';
+import { loadShellRoute } from './load-shell';
 import { loadProject, loadProjectRoute } from './load-project';
 import { loadConversationRoute } from './load-conversation';
 import { loadAssetRoute } from './load-asset';
 import { loadTasksRoute } from './load-tasks';
 import { describeProcessStartError } from './load-process';
+import { markPerfT0, perfLog } from './_perf';
 
-// Re-exports kept for existing consumers (unit tests import from here).
-export { resolveDefaultTab, describeProcessStartError };
+// Re-export kept for existing consumers (unit tests import from here).
+export { describeProcessStartError };
 
 const ALLOWED_VIEWS = new Set(Object.values(ViewType));
 
@@ -67,16 +69,18 @@ function getDockViewType(args: LoaderArgs): ViewType | undefined {
   return v as ViewType;
 }
 
-function _perfLog(label: string) {
-  const t0 = (window as Record<string, unknown>).__shellNavT0 as number | undefined;
-  if (t0 !== undefined) console.log(`[PERF] +${(performance.now() - t0).toFixed(0)}ms ${label}`);
-}
-
 export async function loadAgentApp(args: LoaderArgs) {
   const { params } = args;
   const requestUrl = new URL(args.request.url);
+  // Stamp the per-nav perf clock at EVERY loader entry — not just click-nav.
+  // The `[PERF]` breakdown (perfTime/perfLog/PtyConnection.attach) is gated on
+  // `__shellNavT0`, previously stamped only by the strip/sidebar click
+  // handlers. Revalidation-driven runs (URL search/path change, no click) left
+  // it stale/unset, so the slow re-runs printed only TimeIt's opaque total with
+  // no per-step attribution. Stamping here makes every loader run self-timing.
+  markPerfT0();
   const t = new TimeIt(`loadAgentApp(${params['*'] || params.viewType || '/'})`);
-  _perfLog(`loadAgentApp start (${params['*'] || params.viewType || '?'})`);
+  perfLog(`loadAgentApp start (${params['*'] || params.viewType || '?'})`);
 
   // React Router 6.4 runs root and child route loaders **in parallel** by
   // default — the root `loadRoot()` does NOT serialize child loaders behind
@@ -102,6 +106,18 @@ export async function loadAgentApp(args: LoaderArgs) {
 
   const { processId, viewType } = params;
   const pointer = params['*'] || '';
+
+  // URL-first tab materialization: the loader is the single writer — ensure a
+  // Tab exists for the dock the URL landed on (every view funnels here, before
+  // the per-view branch tree's early returns). Fire-and-forget; click handlers
+  // only navigate. Invalid view types (DockPointer.fromUrl throws) get no tab.
+  if (viewType) {
+    try {
+      ensureTabForCurrentDock(DockPointer.fromUrl(viewType, pointer || undefined, requestUrl.searchParams));
+    } catch {
+      /* not a valid dock view — no tab */
+    }
+  }
 
   if (!processId && !viewType && /^\/dock\/?$/.test(requestUrl.pathname)) {
     // Bare /dock has no child route to render; send it to the app root instead.
@@ -143,7 +159,9 @@ export async function loadAgentApp(args: LoaderArgs) {
     t.time('ensureComputeNode');
 
     if (viewType === ViewType.SHELL) {
-      await loadShellRoute(pointer || undefined);
+      // Pass the request path so shell-loader redirects preserve the layout
+      // keyword — /win/shell fallbacks stay chrome-less (Part 3 §7).
+      await loadShellRoute(pointer || undefined, requestUrl.pathname);
       t.time('loadShellRoute');
     }
 

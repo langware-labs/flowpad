@@ -37,7 +37,7 @@ import { PaneSelectorBar } from './PaneSelectorBar';
 import { PaneView } from './PaneView';
 import { ProcessToolbar } from './ProcessToolbar';
 import { SimpleChatPane } from './SimpleChatPane';
-import { useIsAdvanced } from '@src/components/view-mode';
+import { useChatUiMode } from '@src/contexts/chat-ui-mode-context';
 import { PtySyncProvider, usePtySyncSession } from './PtySyncContext';
 import { TerminalRuntimeErrorBanner } from './TerminalRuntimeErrorBanner';
 import {
@@ -62,6 +62,7 @@ import { getAnchors, useAnnotationGutter } from './use-annotation-gutter';
 import { useTimeGutter } from './use-time-gutter';
 import { useTraceGutter } from './use-trace-gutter';
 import { EntityContextPanel } from '@src/components/entity-context';
+import { imageFilesFromClipboardItems } from '@src/utils/clipboard-image';
 
 export interface TraceFilters {
   events: boolean;
@@ -182,11 +183,13 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
   const process = propProcess ?? contextProcess ?? undefined;
   const { navigation, currentDock } = useDockNavigation();
   const { resolvedTheme } = useTheme();
-  // View-mode skin: Standard overlays the xterm area with the simple chat
-  // pane (same session, same PTY — see SimpleChatPane). Embedded terminals
-  // keep the full layout, mirroring the ProcessToolbar decision.
-  const isAdvanced = useIsAdvanced();
-  const showSimpleChat = !isAdvanced && !embedded && !!process;
+  // Chat-UI mode: the experimental SimpleChatPane overlays the xterm area
+  // (same session, same PTY — see SimpleChatPane). The terminal is the default
+  // for every process; the chat view is opt-in via the debug menu only, since
+  // it is not stable enough for users yet. Embedded terminals keep the full
+  // layout, mirroring the ProcessToolbar decision.
+  const chatUiMode = useChatUiMode();
+  const showSimpleChat = chatUiMode && !embedded && !!process;
   const [searchParams] = useSearchParams();
   const targetTimestamp = searchParams.get('t') ?? undefined;
 
@@ -427,23 +430,18 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       if (!inputDirInfo) return;
       try {
         const items = await navigator.clipboard.read();
-        for (const item of items) {
-          const imageType = item.types.find((t) => t.startsWith('image/'));
-          if (imageType) {
-            const blob = await item.getType(imageType);
-            const ext = imageType.split('/')[1] ?? 'png';
-            const filename = `screenshot-${new Date().toISOString().replace(/[:.]/g, '-')}.${ext}`;
-            const file = new File([blob], filename, { type: imageType });
-            const uploads = await fsStore
-              .getState()
-              .uploadFiles(inputDirInfo.computeNodeTypeId, inputDirInfo.absPath, [file]);
-            await Promise.all(uploads.map((u) => u.waitForCompletion()));
-            const fullPath = `${inputDirInfo.absPath}/${filename}`;
-            await shellRef.current?.sendInput(`\nFile ${filename} is available here: ${fullPath}\n`);
-            openSideTab(SideTabId.Files);
-            return;
-          }
-        }
+        const [file] = await imageFilesFromClipboardItems(items, new Date(), { prefix: 'screenshot' });
+        if (!file) return;
+
+        const uploads = await fsStore
+          .getState()
+          .uploadFiles(inputDirInfo.computeNodeTypeId, inputDirInfo.absPath, [file]);
+        await Promise.all(
+          uploads.map((upload: { waitForCompletion: () => Promise<unknown> }) => upload.waitForCompletion()),
+        );
+        const fullPath = `${inputDirInfo.absPath}/${file.name}`;
+        await shellRef.current?.sendInput(`\nFile ${file.name} is available here: ${fullPath}\n`);
+        openSideTab(SideTabId.Files);
       } catch {
         // clipboard read failed — fall through to default xterm behavior
       }
@@ -1159,7 +1157,9 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       if (syncBuf && terminalRef.current) {
         try {
           terminalRef.current.write(syncBuf);
-        } catch {}
+        } catch {
+          // Best-effort flush during disconnect.
+        }
         syncBuf = '';
         inSync = false;
       }
@@ -1206,7 +1206,9 @@ const InteractiveTerminal: React.FC<InteractiveTerminalProps> = ({
       if (syncBuf && terminalRef.current) {
         try {
           terminalRef.current.write(syncBuf);
-        } catch {}
+        } catch {
+          // Best-effort flush during cleanup.
+        }
         syncBuf = '';
         inSync = false;
       }
