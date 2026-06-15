@@ -34,11 +34,8 @@ from typing import Any
 import typer
 from filelock import FileLock, Timeout
 
-from flow_sdk.agentic_run_consts import (
-    AGENT_WARMUP_INTERVAL_S,
-    AGENT_WARMUP_TICKS,
-    DEFAULT_TRANSCRIPT_TIMEOUT_S,
-)
+from flow_sdk.agentic_run_consts import DEFAULT_TRANSCRIPT_TIMEOUT_S
+from flow_sdk.agentic_warmup import await_worker_started
 
 from . import status as migration_status
 from .status import Decision, MigrationRecord, MigrationStatus
@@ -281,19 +278,15 @@ async def _drive_migration(
 
     await ap.prompt(prompt_text)
 
-    # Wait up to 15s for Claude to write its first transcript line. The
-    # driver pre-assigns ``ap.session_id`` so that alone is unreliable;
-    # transcript-file-exists-with-content is the canonical "started"
-    # signal (see runner_entrypoint.py:72-87).
-    for _ in range(AGENT_WARMUP_TICKS):
-        tp = ap.driver.transcript_path(ap)
-        if tp and tp.exists() and tp.stat().st_size > 0:
-            break
-        await asyncio.sleep(AGENT_WARMUP_INTERVAL_S)
-
-    tp = ap.driver.transcript_path(ap)
-    if not tp or not tp.exists() or tp.stat().st_size == 0:
-        err = "agent never wrote a transcript line within 15s warmup"
+    # Wait for Claude to write its first transcript line. The driver
+    # pre-assigns ``ap.session_id`` so that alone is unreliable;
+    # transcript-file-exists-with-content is the canonical "started" signal
+    # (see runner_entrypoint.py:72-87). ``await_worker_started`` keys the
+    # fast-fail off worker liveness rather than a fixed wall-clock, so a slow
+    # cold-start (e.g. the ``claude`` CLI on Windows) isn't false-failed while a
+    # genuinely dead/never-started worker still fails fast.
+    if not await await_worker_started(ap, transcript_timeout):
+        err = "agent ended without writing a transcript line"
         terminal = record.transition(MigrationStatus.ERROR, error_msg=err)
         migration_status.write(status_dir, terminal)
         typer.echo(f"ERROR: migration {version}: {err}", err=True)

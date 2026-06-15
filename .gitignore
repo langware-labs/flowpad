@@ -304,3 +304,5 @@ flow_sdk/server/static/
 
 # agent-trace skill scratch (skeletons, annotations, payloads — regenerable)
 .flow/skills/agent-trace/_results/
+
+SOC2/

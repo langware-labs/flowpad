@@ -347,7 +347,7 @@ export function ShareToConversationDialog({
 
             <div className="flex flex-col gap-1.5">
               <label className="text-[11px] uppercase tracking-widest text-muted-foreground">
-                Conversations
+                Recent conversations
               </label>
               {!hasContacts ? (
                 <p className="text-xs text-muted-foreground">
