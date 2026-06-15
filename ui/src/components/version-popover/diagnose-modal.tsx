@@ -1,35 +1,53 @@
+import { DiagnosisActionButtons } from '@src/components/diagnose/diagnosis-action-buttons';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Textarea } from '@src/components/ui/textarea';
-import { ActionInfo, dataManager } from '@sdk';
+import { ActionInfo, dataManager, FlowpadDiagnosis, sendDiagnosisReport } from '@sdk';
 import { CheckCircle2, Loader2, Stethoscope, XCircle } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 interface DiagnoseModalProps {
   open: boolean;
   onClose: () => void;
+  /** Open the full-diagnosis popup in place of this one (the "View diagnosis" button). */
+  onViewDiagnosis: (args: { diagnosisId: string; conversationId?: string }) => void;
 }
 
 // Mirrors the event dicts emitted by `_run_diagnose` (flow_sdk/cli/commands/diagnose_cmd.py),
-// forwarded verbatim as SSE by POST /api/v1/diagnose/stream.
+// forwarded verbatim as SSE by POST /api/v1/graph/diagnose.
 type DiagnoseEvent =
   | { type: 'status'; text: string }
   | { type: 'narration'; text: string }
   | { type: 'error'; text: string }
   | { type: 'progress' }
   | { type: 'flush' }
-  | { type: 'done'; ok: boolean; diagnosis_id: string | null; feed_posted: boolean };
+  | {
+      type: 'done';
+      ok: boolean;
+      diagnosis_id: string | null;
+      conversation_id: string | null;
+      flow_message_id: string | null;
+      feed_posted: boolean;
+    };
 
 interface Line {
   kind: 'narration' | 'status' | 'error';
   text: string;
 }
 
-export function DiagnoseModal({ open, onClose }: DiagnoseModalProps) {
+interface DoneState {
+  ok: boolean;
+  diagnosisId: string | null;
+  conversationId: string | null;
+}
+
+export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalProps) {
   const [message, setMessage] = useState('');
   const [started, setStarted] = useState(false);
   const [running, setRunning] = useState(false);
   const [lines, setLines] = useState<Line[]>([]);
-  const [done, setDone] = useState<{ ok: boolean; feed_posted: boolean } | null>(null);
+  const [done, setDone] = useState<DoneState | null>(null);
+  const [reporting, setReporting] = useState(false);
+  const [reportError, setReportError] = useState<string | undefined>(undefined);
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -41,6 +59,8 @@ export function DiagnoseModal({ open, onClose }: DiagnoseModalProps) {
       setRunning(false);
       setLines([]);
       setDone(null);
+      setReporting(false);
+      setReportError(undefined);
     }
   }, [open]);
 
@@ -61,7 +81,7 @@ export function DiagnoseModal({ open, onClose }: DiagnoseModalProps) {
     } else if (ev.type === 'error') {
       setLines((prev) => [...prev, { kind: 'error', text: ev.text.trim() }]);
     } else if (ev.type === 'done') {
-      setDone({ ok: ev.ok, feed_posted: ev.feed_posted });
+      setDone({ ok: ev.ok, diagnosisId: ev.diagnosis_id, conversationId: ev.conversation_id });
     }
     // 'progress' / 'flush' are terminal-only cosmetics; the running spinner covers liveness.
   }, []);
@@ -122,6 +142,28 @@ export function DiagnoseModal({ open, onClose }: DiagnoseModalProps) {
     onClose();
   }, [onClose]);
 
+  // "Report issue" / "Forward" from the finished-diagnose popup: send the diagnosis
+  // summary into the chosen conversation (the same send path the Feed card uses),
+  // then close. The summary is read from the recorded flowpad_diagnosis entity.
+  const handleReport = useCallback(
+    async (conversationId: string) => {
+      if (!done?.diagnosisId) return;
+      setReporting(true);
+      setReportError(undefined);
+      try {
+        const diag = await FlowpadDiagnosis.getById<FlowpadDiagnosis>(done.diagnosisId);
+        const text = diag?.summary || diag?.title || '';
+        await sendDiagnosisReport(conversationId, text);
+        handleClose();
+      } catch (e) {
+        setReportError(e instanceof Error ? e.message : 'Failed to send report');
+      } finally {
+        setReporting(false);
+      }
+    },
+    [done, handleClose],
+  );
+
   return (
     <Dialog open={open} onOpenChange={(o) => !o && handleClose()}>
       <DialogContent className="max-w-lg">
@@ -181,7 +223,7 @@ export function DiagnoseModal({ open, onClose }: DiagnoseModalProps) {
                   {done.ok ? <CheckCircle2 className="h-3.5 w-3.5" /> : <XCircle className="h-3.5 w-3.5" />}
                   <span>
                     {done.ok
-                      ? done.feed_posted
+                      ? done.conversationId
                         ? 'Diagnosis recorded.'
                         : 'Diagnostic complete — no issue found.'
                       : 'Diagnosis was not recorded — try again.'}
@@ -204,8 +246,34 @@ export function DiagnoseModal({ open, onClose }: DiagnoseModalProps) {
             </div>
           )}
 
+          {/* On an issue, the same report buttons as a Feed entry — plus "View diagnosis". */}
+          {done?.ok && done.conversationId && (
+            <DiagnosisActionButtons
+              suggestedConversationId={done.conversationId}
+              busy={reporting}
+              error={reportError}
+              onDismiss={handleClose}
+              onReport={(conversationId) => void handleReport(conversationId)}
+            />
+          )}
+
           {done && (
-            <div className="flex justify-end">
+            <div className="flex justify-end gap-2">
+              {done.ok && done.diagnosisId && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    onViewDiagnosis({
+                      diagnosisId: done.diagnosisId!,
+                      conversationId: done.conversationId ?? undefined,
+                    })
+                  }
+                  className="flex items-center justify-center gap-2 rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium transition-colors hover:bg-muted/50"
+                >
+                  <Stethoscope className="h-3.5 w-3.5" />
+                  View diagnosis
+                </button>
+              )}
               <button
                 type="button"
                 onClick={handleClose}

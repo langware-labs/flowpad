@@ -3,6 +3,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@src/compon
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Button } from '@src/components/ui/button';
 import { DiagnoseModal } from '@src/components/version-popover/diagnose-modal';
+import { DiagnosisReportModal } from '@src/components/version-popover/diagnosis-report-modal';
 import { sdkConfig } from '@sdk/config/index';
 import {
   Check,
@@ -220,6 +221,10 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
   const [electronVersion, setElectronVersion] = useState<string | null>(null);
   const [upgrading, setUpgrading] = useState(false);
   const [diagnoseOpen, setDiagnoseOpen] = useState(false);
+  const [diagReport, setDiagReport] = useState<{
+    diagnosisId: string;
+    conversationId?: string;
+  } | null>(null);
 
   const electronApi = getElectronApi();
   const mode: 'Desktop' | 'Browser' = electronApi ? 'Desktop' : 'Browser';
@@ -484,7 +489,20 @@ export function VersionPopover({ currentVersion }: VersionPopoverProps) {
           </div>
         </div>
       </PopoverContent>
-      <DiagnoseModal open={diagnoseOpen} onClose={() => setDiagnoseOpen(false)} />
+      <DiagnoseModal
+        open={diagnoseOpen}
+        onClose={() => setDiagnoseOpen(false)}
+        onViewDiagnosis={(d) => {
+          setDiagnoseOpen(false);
+          setDiagReport(d);
+        }}
+      />
+      <DiagnosisReportModal
+        open={!!diagReport}
+        diagnosisId={diagReport?.diagnosisId}
+        conversationId={diagReport?.conversationId}
+        onClose={() => setDiagReport(null)}
+      />
     </Popover>
   );
 }

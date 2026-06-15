@@ -38,7 +38,7 @@ def test_reporter_exposes_function_and_cli():
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     assert hasattr(mod, "record_diagnosis")
-    assert hasattr(mod, "create_diagnostic_report")
+    assert hasattr(mod, "create_support_conversation")
     assert hasattr(mod, "_parse_args")
     assert hasattr(mod, "_amain")
     # The CLI contract Step 7 relies on: --title is the required diagnosis field.
