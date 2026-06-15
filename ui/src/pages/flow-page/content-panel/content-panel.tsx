@@ -70,15 +70,24 @@ const DocsGraphView = lazy(() =>
 import { UserDropdown } from './user-dropdown/user-dropdown';
 import { UnifiedTabStrip } from './unified-tab-strip';
 
+// Overview slots that render a real workspace surface (not the Home landing).
+// Every other `currentOverviewTab` value — HOME, CHAT, null, … — falls through
+// to <HomeLanding /> in the overview panel below, so the overview is "home"
+// exactly when its slot is NOT one of these. Keep in sync with the overview
+// TabsContent switch.
+const OVERVIEW_NON_HOME_SLOTS = new Set<ViewType>([
+  ViewType.SHELL,
+  ViewType.EDITOR,
+  ViewType.WEB_APP,
+  ViewType.DIFF,
+  ViewType.MARKDOWN,
+  ViewType.SURVEY,
+  ViewType.SYSTEM_PROFILE,
+]);
+
 export function ContentPanel() {
   // Get navigation instance for URL-first architecture
   const { navigation, currentDock, isDockUrl, windowMode } = useDockNavigation();
-
-  // Chrome-less mode for the `win/` focus-window layout (tab-management.md
-  // Part 3 §7): hides the unified tab strip header (and the logged-out user
-  // header) so the routed view content is the entire window. URL-derived —
-  // FocusLayout reuses this component instead of duplicating the panel switch.
-  const hideChrome = windowMode;
 
   const { user } = useAuth();
 
@@ -203,6 +212,19 @@ export function ContentPanel() {
 
   // Get current tab from URL (URL-first architecture)
   const currentTab = isDockUrl && currentDock?.viewType ? currentDock.viewType : 'overview';
+
+  // Chrome-less mode hides the unified tab strip header (and the logged-out
+  // user header) so the routed view content is the entire window. Two cases,
+  // both URL/state-derived:
+  //   1. the `win/` focus-window layout (tab-management.md Part 3 §7) — the
+  //      FocusLayout reuses this component instead of duplicating the panel.
+  //   2. the Home landing — a full-bleed welcome surface, not a tabbed
+  //      workspace, so the strip must not render over it. Home shows on the
+  //      dedicated HOME dock, or as the overview's default fall-through slot.
+  const isHomeView =
+    currentTab === ViewType.HOME ||
+    (currentTab === 'overview' && !OVERVIEW_NON_HOME_SLOTS.has(currentOverviewTab as ViewType));
+  const hideChrome = windowMode || isHomeView;
 
   // File manager filters
   const [enabledFilters, setEnabledFilters] = useState<FilterName[]>([FilterName.HIDDEN]);
