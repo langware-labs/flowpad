@@ -147,7 +147,7 @@ function parseClaudeQuote(content: string): { prefix: string; quoted: string } |
  * is exactly how newlines got dropped from one branch before.
  */
 function MessageBody({ content, isBot }: { content: string; isBot: boolean }) {
-  const bodyClass = `whitespace-pre-wrap text-sm ${isBot ? 'italic text-foreground/70' : 'text-foreground/90'}`;
+  const bodyClass = `whitespace-pre-wrap break-words text-sm ${isBot ? 'italic text-foreground/70' : 'text-foreground/90'}`;
   const claudeQuote = parseClaudeQuote(content);
   if (claudeQuote) {
     return (

@@ -1,4 +1,4 @@
-import { dataContext, detectLanguage, downloadFile, EditorLanguage, FSItem, fsManager, Shell, TypeId, VFSPath } from '@sdk';
+import { dataContext, detectLanguage, downloadFile, EditorLanguage, FSItem, fsManager, isImagePath, Shell, TypeId, VFSPath } from '@sdk';
 import { TabbedTerminal, useStandardTabNav } from '@src/components/terminal';
 import { Button } from '@src/components/ui/button';
 import { InputDialog } from '@src/components/ui/input-dialog';
@@ -216,8 +216,11 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
   }, [effectiveFilePath, fs]);
 
   // Add streaming content from FSStore to open files list (reacts to content changes)
+  // Images never have text content cached — EditorPane renders them straight from
+  // the download URL — so they get an open-file entry on activePath alone.
   useEffect(() => {
-    if (!activePath || !contentCache) return;
+    if (!activePath) return;
+    if (!contentCache && !isImagePath(activePath)) return;
 
     setOpenFiles((prevFiles) => {
       // Check if file already exists in open files
@@ -225,7 +228,7 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
 
       const fileItem: EditorFile = {
         path: activePath,
-        content: typeof contentCache.content === 'string' ? contentCache.content : undefined,
+        content: typeof contentCache?.content === 'string' ? contentCache.content : undefined,
         language: detectLanguage(activePath),
         type: 'file',
       };
@@ -335,8 +338,9 @@ const CodeEditor: React.FC<CodeEditorProps> = ({ readOnly, activePath }) => {
 
     setActiveTab(pendingOpenFile);
 
-    // Download content if not already cached
-    if (!existingFile?.content) {
+    // Download content if not already cached — but never pull image bytes as
+    // text; EditorPane streams those from the download URL into an <img>.
+    if (!existingFile?.content && !isImagePath(pendingOpenFile)) {
       void downloadFileContent(pendingOpenFile);
     }
   }, [pendingOpenFile, openFiles, createTabInfo, downloadFileContent]);
