@@ -16,6 +16,7 @@ import { User } from '../entities/user';
 import { createCloudLoginFailedWarning } from '../models/UserWarning';
 import type { CloudConnectionStatusMessage, CloudLoginStatusMessage, OAuthMessage } from '../websocket';
 import { OAUTH_PROVIDERS } from './oauth/oauth-service';
+import { privacyManager } from './privacy_mode';
 import { secretApprovalGate } from './secretApprovalGate';
 import { secretsService } from './secrets-service';
 import {
@@ -169,6 +170,13 @@ class CloudManager extends EventEmitter {
   }
 
   async login(): Promise<CloudLoginResult> {
+    // Hard gate: in Local (private) data-privacy mode the cloud is off-limits.
+    // The UI guard + hidden login button handle the user-facing copy; this is
+    // the defensive SDK-side check (the backend 403s independently).
+    if (privacyManager.isLocal) {
+      throw new Error('Login disabled in Local mode');
+    }
+
     if (!(await this._ensureSecretsEnabled())) {
       throw new Error('Login canceled');
     }

@@ -35,7 +35,15 @@ ProgressCallback = Callable[[int, int], Awaitable[None]]
 
 
 def hub_base_url() -> Optional[str]:
-    """Return the hub base URL from config, or None if not configured."""
+    """Return the hub base URL from config, or None if not configured.
+
+    In Local (private) data-privacy mode this always returns ``None`` so every
+    outbound hub call short-circuits exactly as it does when ``FLOWPAD_HUB_URL``
+    is unset — the single chokepoint that guarantees no HTTP reaches the cloud.
+    """
+    from flow_sdk.instance_settings.privacy_mode import is_local_mode
+    if is_local_mode():
+        return None
     from flow_sdk.config import default_service_config
     url = default_service_config.flowpad_hub_url
     return url.rstrip("/") if url else None

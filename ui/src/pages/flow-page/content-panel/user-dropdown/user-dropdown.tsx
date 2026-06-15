@@ -18,6 +18,9 @@ import { trackEvent } from '@src/utils/analytics';
 import { redirectToConsole } from '@src/utils/navigation';
 import { Agent, cloudManager, dataContext, ExpansionRequest, HubConnectionStatus, HubLoginStatus, navigator, Page, PAGE_TYPE, QueryFilter, QueryRequest, TypeId } from '@sdk';
 import { useAuth, useCloudStatus, useConnectionStatus, useContext, useEntitiesQuery, useEntity, useWatch } from '@sdk/react/hooks';
+import { usePrivacyMode } from '@src/hooks/use-privacy-mode';
+import { guardCloudAction } from '@src/services/privacy-guard';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { SerializedElementNode, SerializedLexicalNode, SerializedTextNode } from 'lexical';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams } from 'react-router';
@@ -158,6 +161,12 @@ export function UserDropdown() {
   const { user, currentUser } = useAuth();
   const { isConnected } = useConnectionStatus();
   const { cloudLoginAvailable } = useContext();
+  // In Local (private) data-privacy mode the cloud is off-limits, so no login
+  // affordance is shown at all.
+  const { isLocal } = usePrivacyMode();
+  // App-settings dock viewer — relocated here from the footer (which now hosts
+  // the data-privacy control in place of the old gear).
+  const { navigation } = useDockNavigation();
   const { login, connection, cloudUrl } = useCloudStatus();
   const dotClass = statusDotClass(login.status, connection.status);
   // Logged out of cloud → identity is unknown, so fall back to a neutral
@@ -210,6 +219,9 @@ export function UserDropdown() {
   }, []);
 
   const handleCloudLogin = useCallback(async () => {
+    // Hidden in Local mode (below), but route through the single guard too so
+    // every login entry point shares one defensive seam + standardized notice.
+    if (!guardCloudAction('login')) return;
     try {
       await cloudManager.login();
     } catch (e) {
@@ -390,6 +402,14 @@ export function UserDropdown() {
                   </>
                 )}
                 <DropdownMenuItem
+                  onClick={() => navigation.openSettings()}
+                  className="cursor-pointer"
+                  data-testid="app-settings-button"
+                >
+                  <Settings className="mr-2 h-4 w-4" />
+                  App Settings
+                </DropdownMenuItem>
+                <DropdownMenuItem
                   onClick={() => setIsAccountDialogOpen(true)}
                   className="cursor-pointer"
                   data-testid="agent-page-account-details-button"
@@ -415,7 +435,7 @@ export function UserDropdown() {
                       Logout
                     </DropdownMenuItem>
                   </>
-                ) : (
+                ) : isLocal ? null : (
                   <DropdownMenuItem
                     onClick={() => void handleCloudLogin()}
                     title={cloudManager.cloudUrl ? `Logging in to ${cloudManager.cloudUrl}` : undefined}
@@ -430,7 +450,7 @@ export function UserDropdown() {
               </Tooltip>
             </TooltipProvider>
           </>
-        ) : (
+        ) : isLocal ? null : (
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
