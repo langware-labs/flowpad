@@ -40,6 +40,7 @@ import {
 import { conversationFacets, actionsFor } from '@src/components/conversation/conversation-category';
 import { CategoryChips } from '@src/components/conversation/CategoryChips';
 import { RowActions } from '@src/components/conversation/RowActions';
+import { PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT } from '@src/components/conversation/constants';
 
 type RowDeleteAction =
   | { kind: 'invitation'; invitationId: string; conversationId: string }
@@ -229,14 +230,19 @@ function ConversationListRow({ conv, isFocused, viewMode, searchActive, onArchiv
 
   const senderLabel = participantNames.join(', ');
   const count = pointers.length;
+  // A plain project-scoped conversation has no task, so it has no real subject.
+  // Mirror email clients: label it "(no subject)" rather than the generic word
+  // "Conversation". The snippet (latest message preview) still renders after it.
   const subject = isInvitationRow
     ? 'You’ve been invited to a conversation'
-    : (task?.displayName ?? 'Conversation');
+    : (task?.displayName ?? '(no subject)');
   // ``FlowMessage.text`` is typed string but older rows in the local DB can
   // hold non-string payloads (object-shaped values from earlier schema
   // iterations); ``?.replace`` would TypeError on those. Coerce first.
   const rawText = isInvitationRow ? firstMessage?.text : latestMessage?.text;
-  const snippet = String(rawText ?? '').replace(/\s+/g, ' ').trim();
+  const snippetSource =
+    rawText === PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT ? '' : rawText;
+  const snippet = String(snippetSource ?? '').replace(/\s+/g, ' ').trim();
   const time = formatGmailTime(conv.updated_date);
   const ago = formatTimeAgo(conv.updated_date);
   const isUnread = facets.isUnread;
@@ -373,7 +379,17 @@ export function InboxView() {
   const [rowDelete, setRowDelete] = useState<RowDeleteAction | null>(null);
 
   const request = useMemo(() => new QueryRequest({ type: Conversation.type }), []);
-  const { data: conversations = [], refetch, isLoading } = useEntitiesQuery<Conversation>(request);
+  const { data: conversations = [], refetch, isLoading, isSuccess } = useEntitiesQuery<Conversation>(request);
+
+  // Only the FIRST load gets the full-screen "Loading…" state. Every
+  // ``refetch()`` (mount hub-pull, mark-read, archive, …) flips ``isLoading``
+  // back to true while KEEPING the previous ``data`` — so gating the row list
+  // on raw ``isLoading`` blanks the whole list to the spinner and back on every
+  // refetch, which is the on-open flicker. Once we've loaded successfully once,
+  // a background refetch keeps the existing rows on screen.
+  const hasLoadedOnce = useRef(false);
+  if (isSuccess) hasLoadedOnce.current = true;
+  const initialLoading = isLoading && !hasLoadedOnce.current;
 
   // Text search over message bodies. The substring match runs in the DB —
   // a ``$LIKE`` filter on FlowMessage.text (SQL ``LIKE %needle%``, spans ALL
@@ -908,11 +924,11 @@ export function InboxView() {
             </div>
           ))}
 
-        {!inCommunityView && isLoading && (
+        {!inCommunityView && initialLoading && (
           <div className="flex h-32 items-center justify-center text-sm text-muted-foreground">Loading…</div>
         )}
 
-        {!inCommunityView && !isLoading && visibleCount === 0 && (
+        {!inCommunityView && !initialLoading && visibleCount === 0 && (
           <div className="flex h-48 flex-col items-center justify-center gap-3 text-muted-foreground">
             <span className="text-sm">
               {searchActive ? 'No matching conversations'
@@ -929,7 +945,7 @@ export function InboxView() {
           </div>
         )}
 
-        {!inCommunityView && !isLoading &&
+        {!inCommunityView && !initialLoading &&
           sorted.map((conv) => (
             <ConversationListRow
               key={conv.id ?? ''}

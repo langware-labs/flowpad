@@ -336,6 +336,19 @@ export const detectLanguage = (path: string) => {
 
 export type EditorLanguage = ReturnType<typeof detectLanguage>;
 
+/**
+ * Image file extensions the UI can render inline (as an `<img>`) rather than
+ * decoding the bytes as text. `detectLanguage` returns `plaintext` for these,
+ * so editors/viewers must special-case them via this predicate to avoid
+ * showing raw binary.
+ */
+const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif', 'bmp', 'ico']);
+
+export const isImagePath = (path: string): boolean => {
+  const extension = path.split('.').pop()?.toLowerCase();
+  return !!extension && IMAGE_EXTENSIONS.has(extension);
+};
+
 export const downloadFile = (file: { name: string; content: Blob }) => {
   const url = URL.createObjectURL(file.content);
   const a = document.createElement('a');

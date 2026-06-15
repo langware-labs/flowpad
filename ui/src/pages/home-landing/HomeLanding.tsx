@@ -528,8 +528,12 @@ export function HomeLanding() {
           />
         </div>
 
-        {/* Middle column: Main content + Quick Access */}
-        <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        {/* Middle column: Main content + Quick Access.
+            overflow-y-auto (not -hidden) so a tall section — e.g. an expanded
+            Feed entry — scrolls into view instead of being clipped under the
+            footer; min-h-0 lets it actually shrink to its flex track so the
+            scroll engages. */}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
           {/* Main content area - shrink-0 so it never collapses */}
           <div className="flex shrink-0 flex-col items-center gap-6 pb-6 text-center">
             <h1 className="text-4xl font-bold tracking-tight">

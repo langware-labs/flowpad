@@ -26,3 +26,6 @@ class FlowpadDiagnosis(Entity):
     )
     rca: Optional[str] = APIField(None, description="Root cause found after debugging.")
     fix: Optional[str] = APIField(None, description="What was done to resolve it.")
+    summary: Optional[str] = APIField(
+        None, description="One-paragraph plain-language summary of the diagnosis."
+    )
