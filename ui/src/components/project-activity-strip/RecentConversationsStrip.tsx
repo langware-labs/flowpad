@@ -25,7 +25,7 @@ import { CategoryChips } from '@src/components/conversation/CategoryChips';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { CheckCheck, EyeOff, MailPlus, MessageSquare, Plus, RefreshCw, Upload } from 'lucide-react';
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useIsAdvanced } from '@src/components/view-mode';
 import { formatTimeAgo } from './project-activity-utils';
 
@@ -71,7 +71,14 @@ interface RecentConversationsStripProps {
 
 export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: RecentConversationsStripProps) {
   const { navigation } = useDockNavigation();
-  const { checkLoginAndProceed, showLoginDialog, closeLoginDialog } = useLoginRequired();
+  const {
+    checkLoginAndProceed,
+    showLoginDialog,
+    closeLoginDialog,
+    isPostLogin,
+    pendingAction,
+    clearPending,
+  } = useLoginRequired();
   const isAdvanced = useIsAdvanced();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -125,6 +132,19 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
   const visibleCountActual = liveVisibleCount;
   const visible = sorted.slice(0, visibleCount);
   const hasMore = visibleCountActual > visibleCount;
+
+  // "New conversation" — gated on a cloud session (same as the home landing's
+  // former "Start conversation" CTA, which this footer button replaces). After
+  // a forced login completes, reopen the dialog the user was reaching for.
+  const handleNewConversation = () => {
+    if (!checkLoginAndProceed(ActionType.START_CONVERSATION, undefined, undefined, { forceLogin: true })) return;
+    setNewConvOpen(true);
+  };
+  useEffect(() => {
+    if (!isPostLogin || pendingAction?.action !== ActionType.START_CONVERSATION) return;
+    setNewConvOpen(true);
+    clearPending();
+  }, [clearPending, isPostLogin, pendingAction?.action]);
 
   const handleRefresh = async () => {
     // Refresh pulls from the hub, which requires a cloud session. Gate on
@@ -248,19 +268,10 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
             className="hidden"
             onChange={(e) => void handleFileChange(e)}
           />
-          {/* New conversation / Upload / Dismiss-all are Advanced-view only;
-              Refresh stays in Standard view. */}
+          {/* Upload / Dismiss-all are Advanced-view only; Refresh stays in
+              Standard view. New conversation lives in the footer. */}
           {isAdvanced && (
             <>
-              <button
-                type="button"
-                className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                onClick={() => setNewConvOpen(true)}
-                title="New conversation"
-                data-testid="new-conversation-button"
-              >
-                <Plus className="h-3.5 w-3.5" />
-              </button>
               <button
                 type="button"
                 className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
@@ -336,16 +347,30 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
         )}
       </div>
 
-      {hasMore && (
+      {/* Footer actions — always rendered (even with no conversations) so the
+          bar stays aligned with adjacent columns. */}
+      <div className="flex border-t">
         <button
           type="button"
-          className="border-t px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          onClick={() => navigation.openDock(DockPointer.forInbox())}
-          data-testid="open-all-conversations"
+          className="flex flex-1 items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
+          onClick={handleNewConversation}
+          data-testid="new-conversation-footer-button"
         >
-          Open all ({visibleCountActual})
+          <Plus className="h-3.5 w-3.5" />
+          New
         </button>
-      )}
+        {visibleCountActual > 0 && (
+          <button
+            type="button"
+            className="flex flex-1 items-center justify-center gap-1.5 border-l px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            onClick={() => navigation.openDock(DockPointer.forInbox())}
+            data-testid="open-all-conversations"
+          >
+            <MessageSquare className="h-3.5 w-3.5" />
+            All{hasMore ? ` (${visibleCountActual})` : ''}
+          </button>
+        )}
+      </div>
 
       <NewConversationDialog
         open={newConvOpen}
