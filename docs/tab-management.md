@@ -55,6 +55,14 @@ click → navigation.openDock(pointer)            # click handlers do ONLY this
   - **content rows** (assets/markdown/skill/…) → chips partitioned project vs
     global (`project_id == null`); entity-backed resolve icon/name from the live
     target, target-less use `VIEWER_REGISTRY`.
+  - **project switcher chip** (`ProjectsCounterChip`) → `useTabProjectBuckets`
+    buckets the SAME `visible=true` query by `project_id`, **kind-agnostically**
+    (any `target_type`, terminal AND content) — one row per project that owns ≥1
+    open tab; `project_id == null` (global) tabs are not a project and make no
+    bucket. It must NOT go through `buildTerminalRows` (terminal-only + scoped to
+    the current project) — doing so dropped content-only projects from the count
+    (the "wrong number of projects" bug). Selecting a row is a **current-project
+    switch** (see §6 below / Part 3), not a tab navigation.
 - **active** → URL-first: the Tab whose `pointer == currentDock.tabHash` is
   active. NEVER a `Tab` field (a synced active flag would yank focus).
 - **rename** → `Tab.rename(name)` sets the label, then reflects onto the target
@@ -554,6 +562,14 @@ only write. This guard exists so loaders never become tab-creators.
   and nothing else; active highlight derives from `currentDock`; explicit
   picks pin `pending-intent`; loaders remain the only context writers;
   self-heal resolves-and-navigates via `resolveActive`, never writes state.
+- **Project switcher chip** (`ProjectsCounterChip`): kind-agnostic —
+  `useTabProjectBuckets` lists one row per project with ≥1 open tab of ANY kind
+  (it buckets the raw `Tab` entities by `project_id`, never `buildTerminalRows`).
+  Selecting a row is a **current-project context switch**, identical to the
+  footer: `switchCurrentProject(project)` (`setContextEntityTypeId(CurrentProjectTypeId,…)`
+  + `refreshProject` + `setWorkdir`) — one shared helper, not a tab navigation.
+  The strip re-scopes on the context change and self-heal picks the active tab,
+  so this stays inside the URL-first contract (the click only sets context).
 - The strip is presentation + per-kind **strategy objects** implementing §3;
   generic behaviors (select, scroll, lazy-mount, self-heal, batch close,
   popout) live once in `TabStrip`, extracted from `TabbedTerminal.tsx`.
@@ -626,6 +642,12 @@ origin: on matching key → navigate away via resolveActive
     clock), fire-and-forget from loaders — not an FE field-write.
 13. `last_active_at` normalizes to epoch-ms with ISO tolerance on load.
 14. Characterization tests precede every refactor; timeouts are never raised.
+15. The project switcher chip is **kind-agnostic** (buckets all visible `Tab`s
+    by `project_id`, not terminal-only) and **selecting a project is a
+    current-project context switch** (footer parity via the shared
+    `switchCurrentProject`), not a navigate-to-first-tab. Correction to the
+    earlier terminal-derived chip, which both undercounted projects (content-only
+    projects vanished) and couldn't switch to a tab-less project.
 
 ## 10. Delivery phases
 

@@ -5,12 +5,12 @@ import { CopilotIcon } from '@src/components/icons/CopilotIcon';
 import { getProjectDisplayName } from '@src/hooks/use-claude-projects';
 import { useAllProjects } from '@src/hooks/use-all-projects';
 import {
-  ContextEntitiesEnum,
   dataContext,
   type ProjectListItem,
   Project,
   QueryRequest,
 } from '@sdk';
+import { selectProjectContext } from '@src/components/project-selector';
 import { useProject } from '@sdk/react/hooks';
 import { useDevMode } from '@src/contexts/dev-mode-context';
 import { Button } from '@src/components/ui/button';
@@ -572,9 +572,7 @@ export function OpenProjectComponent({
 
   const setCurrentProjectContext = useCallback(
     async (project: Project) => {
-      await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, project.typeId);
-      await dataContext.refreshProject();
-      dataContext.setWorkdir(project.fs_storage_mount_path ?? null);
+      await selectProjectContext(project);
 
       onProjectChanged?.();
       // Entity stamping (task/conversation/project_id, mapping table writes,
