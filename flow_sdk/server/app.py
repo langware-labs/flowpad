@@ -71,6 +71,7 @@ from .routes import (
     capabilities_router,
     navigate_router,
     project_router,
+    privacy_router,
     pty_stream_router,
     search_router,
     semantic_checker_router,
@@ -440,6 +441,7 @@ async def _shutdown_extras():
 server = FlowServer()
 server.add_router(auth_router)
 server.add_router(cloud_router)
+server.add_router(privacy_router)
 server.add_router(hooks_router)
 server.add_router(chat_router)
 server.add_router(directory_router)

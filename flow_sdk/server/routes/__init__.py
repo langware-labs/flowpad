@@ -5,6 +5,7 @@ from .graph import graph_router
 from .health import health_router
 from .auth import router as auth_router
 from .cloud import router as cloud_router
+from .privacy import router as privacy_router
 from .hooks import router as hooks_router
 from .chat import router as chat_router
 from .directory import router as directory_router
@@ -39,6 +40,7 @@ __all__ = [
     "health_router",
     "auth_router",
     "cloud_router",
+    "privacy_router",
     "hooks_router",
     "chat_router",
     "directory_router",

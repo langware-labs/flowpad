@@ -1676,6 +1676,7 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
         types = build_all_type_payloads()
         _t.time("build_all_type_payloads")
         from flow_sdk.instance_settings import get_instance_settings  # noqa: PLC0415
+        from flow_sdk.instance_settings.privacy_mode import get_privacy_mode  # noqa: PLC0415
         bootstrap_info = BootstrapInfo(
             types=types,
             user=entity_to_dict(user),
@@ -1695,6 +1696,7 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
             scan_info=scan_info,
             sniffer_hook=entity_to_dict(sniffer_hook) if sniffer_hook else None,
             records_root=str(get_instance_settings().records_root),
+            privacy_mode=get_privacy_mode(),
             notice=notice,
         )
 
