@@ -527,6 +527,11 @@ class FSIndexer:
         # busy_timeout/retry change.
         _INDEX_COMMIT_BATCH = 50
         _since_commit = 0
+        # Sentinels to stamp once the current batch COMMITS. write_hash() is a
+        # non-transactional fs write — stamping it before the deferred commit
+        # strands a fresh sentinel over an uncommitted row on a mid-batch crash,
+        # and skip-fresh then trusts it forever. Queue here, stamp post-commit.
+        _pending_hashes: list[FSRecord] = []
         driver = get_db_driver()
 
         async def _flush_fts() -> None:
@@ -536,6 +541,20 @@ class FSIndexer:
             if hasattr(driver, "fts_upsert"):
                 await driver.fts_upsert(fts_batch)
             fts_batch.clear()
+
+        async def _commit_batch() -> None:
+            """Flush FTS, commit, THEN stamp the batch's ``.hash`` sentinels.
+
+            Single home for the write-ahead invariant: a sentinel is written
+            only after its row is durably committed, so a crash before commit
+            leaves no sentinel (skip-fresh re-indexes next run). Every commit
+            site must go through here — never stamp ``_pending_hashes`` ad hoc.
+            """
+            await _flush_fts()
+            await _idx_session.commit()
+            for pr in _pending_hashes:
+                pr.write_hash()
+            _pending_hashes.clear()
 
         # Probe worker — runs in a thread, one call per _PROBE_CHUNK_REFS
         # chunk. Everything here is sync file I/O: gen_id_fn reads (and on
@@ -635,9 +654,11 @@ class FSIndexer:
                             if rec_id:
                                 seen_ids.setdefault(ref.record_type, set()).add(str(rec_id))
                         acc["indexed"] += len(records)
-                        # Stamp the index sentinel only on a successful parse+sync,
-                        # so a failed parse stays index_required and is retried.
-                        probe.write_hash()
+                        # Stamp the sentinel only on a successful parse+sync (a
+                        # failed parse stays index_required and is retried) AND
+                        # only after the row commits — defer to the post-commit
+                        # stamp below so a crash before commit leaves no sentinel.
+                        _pending_hashes.append(probe)
                     except Exception:
                         acc["errors"] += 1
                     acc["duration_ms"] += (time.perf_counter() - t_start) * 1000
@@ -649,13 +670,14 @@ class FSIndexer:
                     # aren't starved (see batch rationale above the loop).
                     _since_commit += 1
                     if _since_commit >= _INDEX_COMMIT_BATCH:
-                        await _flush_fts()
-                        await _idx_session.commit()
+                        await _commit_batch()
                         _since_commit = 0
 
-            # Flush the trailing partial batch (records since the last
-            # bounded-batch commit), still inside the shared session.
-            await _flush_fts()
+            # Commit + stamp the trailing partial batch (records since the last
+            # bounded-batch commit). The commit was implicit on session exit
+            # before; _commit_batch makes it explicit so the trailing batch's
+            # sentinels are stamped under the same write-ahead ordering.
+            await _commit_batch()
 
             # Phase marker before the (potentially long) orphan sweep: without
             # it the last loop snapshot (done==total, no text) is what watchers

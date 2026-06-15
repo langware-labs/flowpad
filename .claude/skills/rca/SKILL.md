@@ -32,8 +32,35 @@ Find why something fails, **prove it**, and stop. No guessing, no estimating, no
 
    * reverting it makes the bug **come back**.
      Demonstrate *both* directions. One direction is a coincidence; both is a root cause.
-6. **Report inline and stop.** State: the symptom, the proven root cause, the exact switch, and
-   the before/after observation for each direction. No file or memory artifact.
+6. **Report inline and stop.** No file or memory artifact. The report is exactly two parts,
+   in this order — nothing else:
+
+   1. **An ASCII flow chart** tracing the logical bug flow top-to-bottom, from the SYMPTOM down
+      through each upstream link to the EXPECTED FIX. One node per causal step; `│ ▼` connectors.
+      Pin the proven on/off switch into the chart (the code line / flag, and the before/after
+      observation that toggled it — e.g. `[proven: force=true → row created → search hits]`).
+   2. **One line** stating the core of the issue *logically* — cause → effect in plain terms,
+      e.g. "the query fails because the process is missing a flag" or "server restarted, so the
+      cached PTY process id is stale." Not a restatement of the symptom; the mechanism.
+
+   Template:
+
+   ```
+   SYMPTOM
+     <what the user observes>
+         │
+         ▼
+     <next upstream link>
+         │
+         ▼
+     <the proven switch>   [proven: <toggle> → bug gone / reverting → bug back]
+         │
+         ▼
+     EXPECTED FIX
+       <the change that removes the cause>
+   ```
+
+   **Core (one-liner):** <logical cause → effect>.
 
 **Never mask the symptom.** A slow / locked / flaky / 5xx failure *is* the bug to root-cause.
 Do not raise or add any timeout, retry, sleep, backoff, or poll budget to ride past it — that
@@ -53,10 +80,20 @@ no clarifying questions, no progress check-ins.** Just write the test, run it, a
    heavier. The test must **fail in exactly the way the bug manifests** (same assertion / error)
    and pass once the fix flips the proven switch.
 3. **Use** **`funit`** **for the mechanics, but its interaction gates do NOT apply here** — this
-   mode overrides funit's "TDD-approve the interface", "flag >1s", and "ask before mocking" steps.
-   Still honor funit's *craft* rules (fast pytest / vitest, real entities, no mocks of the logic
-   under test, minimal elegant interface). Pick the interface yourself and write it.
-4. **Run the test and confirm it fails for the right reason** (the bug's assertion/error, not an
+   mode overrides funit's "TDD-approve the interface" and "flag >1s" steps. Pick the interface
+   yourself and write it. Still honor funit's *craft* rules (fast pytest / vitest, real entities,
+   minimal elegant interface).
+4. **Reproduce the real failure — NEVER mock without explicit user approval, every time.** The
+   test must trigger the bug through the *real* mechanism, not a stand-in for it. No
+   `monkeypatch`/`mock`/stub/fake of the component under test, no hand-forcing the broken state
+   (e.g. deleting the row the bug is supposed to strand), no injected exception standing in for a
+   real fault. If the failure only happens on an abnormal event (crash, restart, commit-failure,
+   disconnect, OOM), reproduce *that event for real* — SIGKILL a real subprocess mid-operation,
+   make the real resource fail (read-only fs, closed connection), drive the real I/O/process
+   lifecycle. A mock proves your model of the bug, not the bug. If a faithful reproduction is
+   genuinely impossible without mocking, that is the `IMPOSSIBLE` outcome — STOP and ask the user
+   for approval to mock before writing it; do not decide unilaterally.
+5. **Run the test and confirm it fails for the right reason** (the bug's assertion/error, not an
    import/setup error). Do not edit timeouts/retries/sleeps to make anything pass — that is the
    banned symptom-masking move.
 
