@@ -1275,15 +1275,24 @@ async def index_system_content() -> None:
         await compute_node._index_system_assets()
     except Exception as e:
         logging.warning(f"[startup-index] Failed to index system assets (non-fatal): {e}")
+    # Seed the one-shot Welcome favorite now that the markdown index has landed.
+    # This used to run inline in the bootstrap request, where it polled the
+    # not-yet-ready index for up to 2.5s — the single biggest cold-bootstrap
+    # cost. Here the Welcome doc is already indexed, so it's a cheap lookup.
+    try:
+        await _ensure_welcome_favorite(user)
+    except Exception as e:
+        logging.warning(f"[startup-index] Failed to seed Welcome favorite (non-fatal): {e}")
 
 
 async def _ensure_welcome_favorite(user: User) -> None:
     """One-shot onboarding: drop a favorite bookmark to the Welcome markdown
     onto the user's home view the first time the server boots.
 
-    Idempotent via ``user.onboarded``. If the Welcome markdown isn't indexed
-    yet (indexer is async), retry a few times; if still not found, leave
-    ``onboarded`` False so the next bootstrap retries.
+    Idempotent via ``user.onboarded``. Runs at the tail of
+    ``index_system_content`` (after the markdown index has landed), so the
+    Welcome doc is a plain lookup — no polling. If it's still not found, leave
+    ``onboarded`` False so the next process restart retries.
     """
     if getattr(user, "onboarded", False):
         return
@@ -1291,16 +1300,11 @@ async def _ensure_welcome_favorite(user: User) -> None:
     from flow_sdk.builtin.bookmark import Bookmark, BookmarkType  # noqa: PLC0415
     from flow_sdk.builtin.claude_memory_entities import Docs  # noqa: PLC0415
 
-    welcome = None
-    for _ in range(5):
-        candidates = await Docs.get_all({"name": "Welcome"})
-        if candidates:
-            welcome = candidates[0]
-            break
-        await asyncio.sleep(0.5)
-    if welcome is None:
-        logging.info("[bootstrap] Welcome markdown not yet indexed; skipping favorite seed for now")
+    candidates = await Docs.get_all({"name": "Welcome"})
+    if not candidates:
+        logging.info("[bootstrap] Welcome markdown not indexed; skipping favorite seed for now")
         return
+    welcome = candidates[0]
 
     favorite = Bookmark(
         bookmark_type=BookmarkType.FAVORITE.value,
@@ -1503,6 +1507,14 @@ _bootstrap_cache: BootstrapInfo | None = None
 _bootstrap_cache_ts: float = 0.0
 _BOOTSTRAP_CACHE_TTL = 30.0  # seconds
 
+# Set once the first full bootstrap has been built+served. Heavy, low-priority
+# background backfills (notably the transcript catch-up walk, which re-parses
+# the entire ~/.claude history on a fresh instance) await this so they don't
+# steal CPU/GIL from the critical cold-start bootstrap request. The desktop
+# app and instance launcher both call bootstrap immediately at startup, so this
+# fires within a few hundred ms; the deferral only reorders background work.
+first_bootstrap_served: asyncio.Event = asyncio.Event()
+
 
 def invalidate_bootstrap_cache() -> None:
     """Reset the bootstrap cache so the next call runs a full bootstrap.
@@ -1586,16 +1598,9 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
         _t.time("get_or_create_local_user")
         project = await get_or_create_local_project(desktop_user=user)
         _t.time("get_or_create_local_project")
-        # System projects + markdown/asset indexing run as a detached
-        # once-per-process task at server startup (``index_system_content``,
-        # spawned from app._on_server_startup) — keep them out of the request
-        # path. The Welcome-favorite seed stays here: it's onboarding-gated
-        # (one-shot per user) and self-skips until the markdown index lands.
-        try:
-            await _ensure_welcome_favorite(user)
-        except Exception as e:
-            logging.warning(f"[bootstrap] Failed to seed Welcome favorite (non-fatal): {e}")
-        _t.time("ensure_welcome_favorite")
+        # System indexing + the one-shot Welcome-favorite seed run in the
+        # detached ``index_system_content`` startup task — kept off the request
+        # path (the seed used to poll the not-yet-ready index here for ~2.5s).
         workspace = await get_or_create_local_workspace(desktop_user=user)
         _t.time("get_or_create_local_workspace")
         compute_node = await get_or_create_local_compute_node(local_project=project, desktop_user=user)
@@ -1629,11 +1634,17 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
         from flow_sdk.core.capabilities.harness_state import compute_harness_state  # noqa: PLC0415
         from flow_sdk.core.capabilities.summary import compute_capabilities_summary  # noqa: PLC0415
         from flow_sdk.system_tools import get_scan_info  # noqa: PLC0415
+        # Harness state + capabilities summary are computed WITHOUT awaiting the
+        # full capability-discovery sweep (~860ms env probe). That sweep already
+        # runs as a detached startup task; the frontend reads harness/capability
+        # state from its own live capabilityManager subscription (REST check +
+        # data_op updates) and self-heals within ~1s. Blocking the cold
+        # bootstrap request on the sweep is what pushed it past the 500ms budget.
         desktop_info, scan_info, harness_state, capabilities_summary = await asyncio.gather(
             get_desktop_info(),
             get_scan_info(),
-            compute_harness_state(),
-            compute_capabilities_summary(),
+            compute_harness_state(wait_for_discovery=False),
+            compute_capabilities_summary(wait_for_discovery=False),
         )
         _t.time("get_desktop_info+get_scan_info+compute_harness_state+capabilities_summary")
 
@@ -1691,5 +1702,7 @@ async def bootstrap() -> ApiSuccessResponse[BootstrapInfo]:
 
         _bootstrap_cache = bootstrap_info
         _bootstrap_cache_ts = time.monotonic()
+        # Release any background backfills that deferred to the first bootstrap.
+        first_bootstrap_served.set()
 
     return ApiSuccessResponse[BootstrapInfo](data=_bootstrap_cache)
