@@ -65,10 +65,12 @@ no clarifying questions, no progress check-ins.** Just write the test, run it, a
 * **`FOUND`** — a failing test exists that reproduces the bug for the right reason. Report its
   path, the test name, and the failing assertion/error output. (Do not implement the fix unless
   separately asked.)
+
 * **`NOT FOUND`** — you wrote a faithful test at the narrowest reproducing layer and it
   **passes**, i.e. the code does not actually exhibit the bug there. Report the test, that it
   passes, and what that implies (the proven switch may not manifest at this layer, or the bug is
   elsewhere).
+
 * **`IMPOSSIBLE`** — no proven root cause exists this session, or the bug genuinely cannot be
   captured without a slower/heavier (e.g. e2e) harness than is warranted. Report why, and what
   layer it *would* take.
