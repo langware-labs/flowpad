@@ -40,6 +40,7 @@ import {
 import { conversationFacets, actionsFor } from '@src/components/conversation/conversation-category';
 import { CategoryChips } from '@src/components/conversation/CategoryChips';
 import { RowActions } from '@src/components/conversation/RowActions';
+import { PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT } from '@src/components/conversation/constants';
 
 type RowDeleteAction =
   | { kind: 'invitation'; invitationId: string; conversationId: string }
@@ -229,14 +230,19 @@ function ConversationListRow({ conv, isFocused, viewMode, searchActive, onArchiv
 
   const senderLabel = participantNames.join(', ');
   const count = pointers.length;
+  // A plain project-scoped conversation has no task, so it has no real subject.
+  // Mirror email clients: label it "(no subject)" rather than the generic word
+  // "Conversation". The snippet (latest message preview) still renders after it.
   const subject = isInvitationRow
     ? 'You’ve been invited to a conversation'
-    : (task?.displayName ?? 'Conversation');
+    : (task?.displayName ?? '(no subject)');
   // ``FlowMessage.text`` is typed string but older rows in the local DB can
   // hold non-string payloads (object-shaped values from earlier schema
   // iterations); ``?.replace`` would TypeError on those. Coerce first.
   const rawText = isInvitationRow ? firstMessage?.text : latestMessage?.text;
-  const snippet = String(rawText ?? '').replace(/\s+/g, ' ').trim();
+  const snippetSource =
+    rawText === PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT ? '' : rawText;
+  const snippet = String(snippetSource ?? '').replace(/\s+/g, ' ').trim();
   const time = formatGmailTime(conv.updated_date);
   const ago = formatTimeAgo(conv.updated_date);
   const isUnread = facets.isUnread;
