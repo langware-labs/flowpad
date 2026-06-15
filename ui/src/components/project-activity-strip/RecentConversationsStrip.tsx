@@ -14,7 +14,7 @@ import {
 import { useAuth } from '@sdk/react/hooks';
 import { uploadFlowMessage, type UploadConflict } from '@sdk/entities/flow-message';
 import { useEntitiesQuery, useEntity } from '@src/hooks/entity-hooks';
-import { useLoginRequired } from '@src/hooks/use-login-required';
+import { useLoginRequired, useResumeAfterLogin } from '@src/hooks/use-login-required';
 import LoginDialog, { ActionType } from '@src/components/login-required-dialog';
 import { NewConversationDialog } from '@src/components/new-conversation-dialog/NewConversationDialog';
 import { deriveConversationTitle } from '@src/components/conversation/conversation-title';
@@ -25,7 +25,7 @@ import { CategoryChips } from '@src/components/conversation/CategoryChips';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { CheckCheck, EyeOff, MailPlus, MessageSquare, Plus, RefreshCw, Upload } from 'lucide-react';
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useIsAdvanced } from '@src/components/view-mode';
 import { formatTimeAgo } from './project-activity-utils';
 
@@ -71,14 +71,7 @@ interface RecentConversationsStripProps {
 
 export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: RecentConversationsStripProps) {
   const { navigation } = useDockNavigation();
-  const {
-    checkLoginAndProceed,
-    showLoginDialog,
-    closeLoginDialog,
-    isPostLogin,
-    pendingAction,
-    clearPending,
-  } = useLoginRequired();
+  const { checkLoginAndProceed, showLoginDialog, closeLoginDialog } = useLoginRequired();
   const isAdvanced = useIsAdvanced();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -140,11 +133,7 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
     if (!checkLoginAndProceed(ActionType.START_CONVERSATION, undefined, undefined, { forceLogin: true })) return;
     setNewConvOpen(true);
   };
-  useEffect(() => {
-    if (!isPostLogin || pendingAction?.action !== ActionType.START_CONVERSATION) return;
-    setNewConvOpen(true);
-    clearPending();
-  }, [clearPending, isPostLogin, pendingAction?.action]);
+  useResumeAfterLogin(ActionType.START_CONVERSATION, () => setNewConvOpen(true));
 
   const handleRefresh = async () => {
     // Refresh pulls from the hub, which requires a cloud session. Gate on
