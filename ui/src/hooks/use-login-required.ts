@@ -1,7 +1,7 @@
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { ICompletionOptions } from '@sdk';
 import { useAuth, useContext as useSdkContext } from '@sdk/react/hooks';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import {
   ActionType,
@@ -100,4 +100,29 @@ export const useLoginRequired = (): UseLoginRequiredReturn => {
     clearPending,
     isPostLogin,
   };
+};
+
+/**
+ * Run `resume(pending)` once when the user returns from login with a pending
+ * action whose `action` is in `actions`, then clear it. Consolidates the
+ * post-login resume effect that consumers used to hand-wire around
+ * `useLoginRequired`'s `isPostLogin` / `pendingAction` / `clearPending`.
+ */
+export const useResumeAfterLogin = (
+  actions: ActionType | ActionType[],
+  resume: (pending: PendingLoginAction) => void,
+): void => {
+  const { isPostLogin, pendingAction, clearPending } = useLoginRequired();
+  // Keep `resume` in a ref so an unstable inline callback doesn't churn the
+  // effect deps; the action guard already makes a re-run a no-op, but the ref
+  // keeps it strictly fire-once per pending action.
+  const resumeRef = useRef(resume);
+  resumeRef.current = resume;
+  useEffect(() => {
+    if (!isPostLogin || !pendingAction) return;
+    const list = Array.isArray(actions) ? actions : [actions];
+    if (!list.includes(pendingAction.action)) return;
+    resumeRef.current(pendingAction);
+    clearPending();
+  }, [isPostLogin, pendingAction, clearPending]); // `actions` read via closure
 };
