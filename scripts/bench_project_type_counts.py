@@ -65,9 +65,13 @@ def populate(con: sqlite3.Connection, n_rows: int, n_projects: int) -> None:
     for i in range(n_rows):
         t = TYPES[i % len(TYPES)]
         bucket = i % 20  # ~85% project-scoped, 10% user, 5% empty-scope.
-        scope, pid = ("project", f"proj-{i % n_projects:04d}") if bucket < 17 \
-            else (("user", None) if bucket < 19 else ("", None))
-        rows.append((f"id-{i}", t, make_data(scope, pid or "", f"{t}-{i}")))
+        if bucket < 17:
+            scope, pid = "project", f"proj-{i % n_projects:04d}"
+        elif bucket < 19:
+            scope, pid = "user", ""
+        else:
+            scope, pid = "", ""
+        rows.append((f"id-{i}", t, make_data(scope, pid, f"{t}-{i}")))
     con.executemany("INSERT INTO entities (id, type, data) VALUES (?,?,?)", rows)
     con.commit()
 
