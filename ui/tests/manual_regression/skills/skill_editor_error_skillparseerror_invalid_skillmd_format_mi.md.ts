@@ -18,7 +18,7 @@ test.describe('Skill editor — no SkillParseError', () => {
   });
 
   test('test 1: Creating and viewing a skill shows no SkillParseError', async ({ page }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(60_000);
 
     const errors: string[] = [];
     page.on('console', (msg) => {

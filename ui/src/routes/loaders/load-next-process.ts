@@ -3,7 +3,8 @@
  *
  * Loop:
  *   1. Pull visible shells + processes, build the tab list.
- *   2. Pick the best candidate via `resolveDefaultTab`.
+ *   2. Pick the best candidate via `resolveNextTab` (the single
+ *      `resolveActive` resolver over the pre-filtered candidates).
  *   3. Try to load it (`loadProcess` for agentic-process tabs, `loadShell`
  *      otherwise).
  *   4. On a typed `ProcessLoadError` / `ShellLoadError`, dispatch the per-kind
@@ -21,13 +22,14 @@
 
 import { AgenticProcess, Shell, TypeId } from '@sdk';
 import {
-  closeTerminalTargets,
-  fetchActiveTerminals,
+  closeTerminalTab,
+  getTerminalTabsSnapshot,
   terminalProcessId,
   terminalTransportShellId,
-} from '@src/hooks/useActiveTerminals';
+} from '@src/tabs/useTabs';
+import { resolveNextTab } from '@src/tabs/tab-candidates';
 import { describeProcessStartError, loadProcess, ProcessLoadError } from './load-process';
-import { loadShell, resolveDefaultTab, ShellLoadError } from './load-shell';
+import { loadShell, ShellLoadError } from './load-shell';
 
 // ── public types ────────────────────────────────────────────────────────────
 
@@ -142,7 +144,7 @@ async function buildShellCleanup(e: ShellLoadError): Promise<CleanupRecord> {
     case 'start_failed': {
       // Best-effort close so the user isn't stuck with a zombie row
       // (mirrors the pre-refactor behaviour at routePlainShellPointer:272-273).
-      await closeTerminalTargets([new TypeId(Shell.type, e.shellId)]).catch(() => {});
+      await closeTerminalTab(new TypeId(Shell.type, e.shellId)).catch(() => {});
       const desc = describeProcessStartError(e.cause ?? e);
       return {
         kind: 'shell_start_failed',
@@ -162,14 +164,14 @@ export async function loadNextProcess(
   const cleaned: CleanupRecord[] = [];
   const tried = new Set(options.excludeIds ?? []);
 
-  const allTabs = await fetchActiveTerminals();
+  const allTabs = await getTerminalTabsSnapshot();
   const projectId = options.projectId ?? null;
   const tabs = projectId == null
     ? allTabs
     : allTabs.filter((t) => t.projectId === projectId);
 
   while (true) {
-    const tab = resolveDefaultTab(tabs, tried);
+    const tab = resolveNextTab(tabs, tried);
     if (!tab) {
       return { loaded: null, cleaned };
     }

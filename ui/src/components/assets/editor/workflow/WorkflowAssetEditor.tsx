@@ -32,7 +32,7 @@ import { useEntityByPath } from '@src/hooks/use-entity-by-path';
 import {
   AgenticProcess,
   FSRef,
-  ProcessType,
+  ProcessKind,
   Workflow,
   dataContext,
 } from '@sdk';
@@ -113,7 +113,7 @@ export function WorkflowAssetEditor({ fsRef, workflow: providedWorkflow }: Workf
   );
   const { processes: pastRunProcesses } = useProcessesForTarget(targetStr, {
     enabled: !!targetStr,
-    processType: ProcessType.Execution,
+    processType: ProcessKind.Execution,
   });
 
   const runHistory = useMemo<ProcessEntry[]>(() => {

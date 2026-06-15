@@ -5,6 +5,7 @@
 export enum Layout {
   DOCK = 'dock',
   DEV = 'dev',
+  WIN = 'win',
 }
 
 /**
@@ -12,6 +13,14 @@ export enum Layout {
  * Not flexible by design for security, validation, and clarity
  */
 export const DEV_KEYWORD = 'dev' as const;
+
+/**
+ * Focus-window layout keyword - appears in URL as /win/...
+ * Mirrors every dock/<viewType>/<pointer> with a chrome-less window variant
+ * (docs/tab-management.md Part 3 §7). Same loaders, same view component;
+ * the tab content is the entire window.
+ */
+export const WIN_KEYWORD = 'win' as const;
 
 /**
  * ViewType enum for content panel views

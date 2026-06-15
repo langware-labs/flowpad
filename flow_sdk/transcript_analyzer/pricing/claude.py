@@ -37,7 +37,10 @@ def _claude_pricing(model: str, base_in: float, base_out: float) -> ModelPricing
     )
 
 
-# Base $/MTok for each tier (Jan 2026, verified against docs.claude.com/pricing).
+# Base $/MTok for each tier (Jun 2026, verified against
+# platform.claude.com/docs/en/about-claude/pricing AND cross-checked against
+# ccusage's per-session report on a real transcript).
+FABLE_5 = _claude_pricing("claude-fable-5", 10.00, 50.00)
 SONNET_4 = _claude_pricing("claude-sonnet-4", 3.00, 15.00)
 OPUS_4 = _claude_pricing("claude-opus-4", 5.00, 25.00)
 HAIKU_4 = _claude_pricing("claude-haiku-4", 1.00, 5.00)
@@ -48,20 +51,31 @@ HAIKU_3 = _claude_pricing("claude-3-haiku", 0.25, 1.25)
 
 # Public registry: keys are exact model strings as emitted on
 # ``message.model`` in Claude Code transcripts. New aliases land here.
+# Bare family keys ("claude-opus-4") act as substring fallbacks in
+# ``pricing_for`` so a new point release (e.g. claude-opus-4-9) resolves to
+# its family table instead of silently falling through to the Sonnet default.
 CLAUDE_PRICING: dict[str, ModelPricing] = {
+    # Fable / Mythos 5 family
+    "claude-fable-5": FABLE_5,
+    "claude-mythos-5": FABLE_5,
+    "claude-mythos-preview": FABLE_5,
     # Sonnet 4 family
     "claude-sonnet-4-6": SONNET_4,
     "claude-sonnet-4-7": SONNET_4,
     "claude-sonnet-4-5": SONNET_4,
     "claude-sonnet-4-5-20250929": SONNET_4,
+    "claude-sonnet-4": SONNET_4,
     # Opus 4 family
-    "claude-opus-4-6": OPUS_4,
+    "claude-opus-4-8": OPUS_4,
     "claude-opus-4-7": OPUS_4,
+    "claude-opus-4-6": OPUS_4,
     "claude-opus-4-5": OPUS_4,
     "claude-opus-4-5-20251101": OPUS_4,
+    "claude-opus-4": OPUS_4,
     # Haiku 4 family
     "claude-haiku-4-5": HAIKU_4,
     "claude-haiku-4-5-20251001": HAIKU_4,
+    "claude-haiku-4": HAIKU_4,
     # Older
     "claude-3-5-sonnet": SONNET_3_5,
     "claude-3-5-sonnet-20241022": SONNET_3_5,

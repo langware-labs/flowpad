@@ -19,7 +19,8 @@ class ShellMeta(BaseMeta):
     pty_pid: Optional[str] = None
     compute_node_uname: Optional[str] = None
     created_at: Optional[str] = None
-    last_active_at: Optional[str] = None
+    # Epoch-ms (base-Entity field); old metadata.json rows hold ISO strings.
+    last_active_at: Optional[int | str] = None
     auto_rename: Optional[bool] = None
 
 

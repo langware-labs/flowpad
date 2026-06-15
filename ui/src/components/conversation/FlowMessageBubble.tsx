@@ -5,17 +5,17 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ITask } from '@sdk/entities/task';
 import type { ConversationMessage, ConversationParticipant } from '@sdk/entities/conversation';
 import { BodyStatus, FlowMessageKind, forwardMessage } from '@sdk/entities/flow-message';
-import { AlertCircle, Download, FileText, Loader2, X } from 'lucide-react';
+import { AlertCircle, Download, File, FileText, Loader2, X } from 'lucide-react';
 import { MessageBubble } from './MessageBubble';
 import { PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT } from './constants';
 import { AttachmentChip, AttachmentChipState } from './AttachmentChip';
-import { ContextEntityChip } from './EntityChip';
+import { ContextEntityChip, iconForEntity } from './EntityChip';
 import { GitRepoChip } from '@src/components/git/GitRepoChip';
 import { useLocalUser } from './useLocalUser';
 import { localBundleUrl } from './flow-message-drafts';
 import { MessageComposer } from './MessageComposer';
 import { participantLabelByUserId, UNRESOLVED_SENDER_LABEL, warnUnresolvedSender } from './participant-display';
-import { useAttachments } from './useAttachments';
+import { useAttachments, type AttachmentTypeChipView } from './useAttachments';
 import { editorPathForLocalFile } from './attachment-url';
 import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
 import { messageForwardShareSource } from '@src/hooks/share-sources';
@@ -29,15 +29,17 @@ import { cn } from '@src/lib/utils';
  *  pulled yet. One click materializes every attachment (files + entities) —
  *  they all ride in one bundle. Badge shows the asset count; the tooltip lists
  *  the typeids + filenames it will fetch. */
-function DownloadAttachmentsButton({
+export function DownloadAttachmentsButton({
   count,
   labels,
+  typeChips,
   uploading,
   downloading,
   onDownload,
 }: {
   count: number;
   labels: string[];
+  typeChips: AttachmentTypeChipView[];
   uploading: boolean;
   downloading: boolean;
   onDownload: () => void;
@@ -72,6 +74,24 @@ function DownloadAttachmentsButton({
           {count} {count === 1 ? 'asset' : 'assets'} attached
         </span>
         <span className="text-[11px] uppercase tracking-wide text-muted-foreground">{sub}</span>
+        {typeChips.length > 0 && (
+          <span className="mt-1 flex flex-wrap gap-1" aria-label="Attached asset types">
+            {typeChips.map((chip) => {
+              const Icon = chip.type === 'file' ? File : iconForEntity(chip.type);
+              return (
+                <span
+                  key={chip.key}
+                  data-testid={`download-asset-type-chip-${chip.type}`}
+                  className="inline-flex h-5 max-w-full items-center gap-1 rounded-full border border-border bg-muted/50 px-2 text-[10px] font-medium leading-none text-muted-foreground"
+                >
+                  <Icon className="h-3 w-3 shrink-0" />
+                  <span className="truncate">{chip.label}</span>
+                  {chip.count > 1 && <span className="tabular-nums">x{chip.count}</span>}
+                </span>
+              );
+            })}
+          </span>
+        )}
       </div>
     </button>
   );
@@ -198,6 +218,7 @@ export function FlowMessageBubble({
     hasPrompt,
     assetCount,
     assetLabels,
+    assetTypeChips,
     progress,
     error: downloadError,
     dismissError: dismissDownloadError,
@@ -492,6 +513,7 @@ export function FlowMessageBubble({
           <DownloadAttachmentsButton
             count={assetCount}
             labels={assetLabels}
+            typeChips={assetTypeChips}
             uploading={bodyStatus === BodyStatus.UPLOADING}
             downloading={downloading}
             onDownload={triggerDownload}

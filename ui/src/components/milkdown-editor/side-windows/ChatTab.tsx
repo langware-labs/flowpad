@@ -1,5 +1,5 @@
 import { EntityExecutionPanel } from '@src/components/entity-execution-panel';
-import { ProcessType, type AgenticProcess } from '@sdk';
+import { ProcessKind, type AgenticProcess } from '@sdk';
 
 interface ChatTabProps {
   /** Serialized entity TypeId (e.g. `"plan-<uuid>"`). Null → chat disabled. */
@@ -14,7 +14,7 @@ export function ChatTab({ target, onChatProcessCreated, cursorLine }: ChatTabPro
   return (
     <EntityExecutionPanel
       target={target}
-      processType={ProcessType.Chat}
+      processType={ProcessKind.Chat}
       onProcessCreated={onChatProcessCreated}
       cursorLine={cursorLine}
       className="h-full"

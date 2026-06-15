@@ -8,12 +8,32 @@ from typing import Any
 from ..entries import (
     AssistantMessageEntry,
     MetaEntry,
+    SkillCallEntry,
     SystemEntry,
     ToolResultEntry,
     ToolUseEntry,
     UserMessageEntry,
 )
 from ..entry import TranscriptEntry
+
+
+def _tool_or_skill_entry(
+    *, tool_name: str, tool_use_id: str, tool_input: dict, **base: Any
+) -> TranscriptEntry:
+    """Copilot's native ``skill`` tool maps onto :class:`SkillCallEntry`;
+    every other tool stays a generic :class:`ToolUseEntry`."""
+    if str(tool_name).lower() == "skill":
+        ti = tool_input if isinstance(tool_input, dict) else {}
+        return SkillCallEntry(
+            skill_name=str(ti.get("skill") or ti.get("name") or ""),
+            tool_name=tool_name,
+            tool_use_id=tool_use_id,
+            tool_input=ti,
+            **base,
+        )
+    return ToolUseEntry(
+        tool_name=tool_name, tool_use_id=tool_use_id, tool_input=tool_input, **base
+    )
 
 
 class CopilotParser:
@@ -122,7 +142,7 @@ class CopilotParser:
                 if call_id:
                     self._tool_names[call_id] = name
                     self._seen_tool_uses.add(call_id)
-                out.append(ToolUseEntry(
+                out.append(_tool_or_skill_entry(
                     tool_name=name,
                     tool_use_id=call_id or f"{base['id']}:tool:{idx}",
                     tool_input=_coerce_arguments(request.get("arguments")),
@@ -150,7 +170,7 @@ class CopilotParser:
             return [MetaEntry(meta_kind="tool.execution_start", payload=data, **base)]
         if call_id:
             self._seen_tool_uses.add(call_id)
-        return [ToolUseEntry(
+        return [_tool_or_skill_entry(
             tool_name=name,
             tool_use_id=call_id or base["id"],
             tool_input=_coerce_arguments(data.get("arguments")),

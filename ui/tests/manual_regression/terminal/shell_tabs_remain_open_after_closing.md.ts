@@ -22,7 +22,7 @@ test.describe('Shell tabs remain open after closing', () => {
   });
 
   test('test 1: 2 additional tabs remain open after closing 3 of 5 and refreshing', async ({ page }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(60_000);
 
     // Step 1: navigate to the app shell tab (default Flow shell).
     await gotoShell(page);

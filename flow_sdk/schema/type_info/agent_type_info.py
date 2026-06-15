@@ -1,5 +1,5 @@
 """Type metadata for AGENT."""
-from flow_sdk.schema.type_info import TypeMetadata
+from flow_sdk.schema.type_info import TypeMetadata, render_entity_frontmatter
 from flow_sdk.schema.types import EntityType
 from flow_sdk.fs_store.indexer.functions.agent import (
     agent_gen_id,
@@ -16,12 +16,10 @@ def _agent_default_body(entity) -> str:
     (name/description) is what ``parse_agent_markdown`` reads back; the body is
     the agent's system prompt.
     """
-    from flow_sdk.fs_store.indexer._frontmatter import _render_frontmatter  # noqa: PLC0415
-
     name = (getattr(entity, "name", None) or "Untitled Agent").strip()
     desc = (getattr(entity, "description", None) or "").strip()
     prompt = (getattr(entity, "prompt", None) or "").strip()
-    return _render_frontmatter({"name": name, "description": desc}) + f"\n\n{prompt}\n"
+    return render_entity_frontmatter(entity, {"name": name, "description": desc}) + f"\n\n{prompt}\n"
 
 
 AGENT = TypeMetadata(

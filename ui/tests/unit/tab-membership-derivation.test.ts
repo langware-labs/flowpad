@@ -1,6 +1,6 @@
 /**
  * Phase-0 characterization: locks the current wire→tab MAPPING in
- * `useActiveTerminals` (`toShellTab` / `toProcessTab`) before the TabManager
+ * the tabs store (now `useTabs`; `toShellTab` / `toProcessTab`) before the TabManager
  * refactor. The server decides MEMBERSHIP (pure_shells ∪ visible_processes,
  * see tests/unit/test_terminal_list_membership.py); the frontend just maps each
  * wire row to a `TerminalTab`. These assertions lock that mapping.
@@ -10,7 +10,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import { AgenticProcess, Shell, ShellStatus, TypeId } from '@sdk';
-import { toProcessTab, toShellTab } from '@src/hooks/useActiveTerminals';
+import { toProcessTab, toShellTab } from '@src/tabs/useTabs';
 
 describe('toShellTab', () => {
   it('maps a running shell wire row to a plain tab', () => {

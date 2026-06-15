@@ -1,11 +1,17 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ProjectsCounterChip } from '@src/components/terminal/ProjectsCounterChip';
-import { useTerminalProjectBuckets, type TerminalProjectBucket } from '@src/hooks/useActiveTerminals';
+import { useTerminalProjectBuckets, type TerminalProjectBucket } from '@src/tabs/useTabs';
 import { useAllProjects } from '@src/hooks/use-all-projects';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-vi.mock('@src/hooks/useActiveTerminals', () => ({
+// ProjectsCounterChip calls useDockNavigation() -> useNavigate(); rendered here
+// without a <Router>, so stub the nav hook (no Router provider in this unit).
+vi.mock('@src/navigation/useDockNavigation', () => ({
+  useDockNavigation: () => ({ navigation: { openDock: vi.fn(), closeDock: vi.fn() }, currentDock: null }),
+}));
+
+vi.mock('@src/tabs/useTabs', () => ({
   useTerminalProjectBuckets: vi.fn(),
 }));
 
@@ -63,7 +69,9 @@ describe('ProjectsCounterChip', () => {
 
     const chip = screen.getByTestId('projects-counter-chip');
     expect(chip.textContent).toContain('2');
-    expect(chip.getAttribute('aria-label')).toBe('2 active projects with 3 terminals');
+    // The chip labels the current project as a prefix segment (added 5937eaa4):
+    // `<projectName> — <count summary>`.
+    expect(chip.getAttribute('aria-label')).toBe('11111111 — 2 active projects with 3 terminals');
   });
 
   it('keeps per-project terminal counts in the popover list', async () => {
@@ -180,7 +188,9 @@ describe('ProjectsCounterChip', () => {
     render(<ProjectsCounterChip currentProjectId={idZebra} />);
     await userEvent.click(screen.getByTestId('projects-counter-chip'));
 
-    const rows = screen
+    // Scope to the popover's rows — the chip TRIGGER button also carries the
+    // current-project label ("zebra…"), which must not pollute the row list.
+    const rows = within(screen.getByTestId('projects-counter-popover'))
       .getAllByRole('button')
       .map((b) => b.textContent ?? '')
       .filter((t) => t.startsWith('alpha') || t.startsWith('zebra'));

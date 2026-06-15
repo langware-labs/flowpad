@@ -1,7 +1,9 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import * as fs from 'fs';
 
-const API = process.env.API_URL || 'http://localhost:6002';
+import { apiBase } from '../_shared/api';
+
+const API = apiBase();
 
 async function createWhiteboard(request: APIRequestContext, name: string) {
   const res = await request.post(`${API}/api/v1/graph/whiteboard`, { data: { name } });
@@ -55,7 +57,7 @@ function fileLabels(boardPath: string): string[] {
 // single-user, there is NO live WS sync between tabs, so it is last-write-wins.
 test.describe('Whiteboard — Multi-tab (X1)', () => {
   test('X1: two tabs on one board — no live sync, last-write-wins', async ({ context, request }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(60_000);
     const { id, assetRef } = await createWhiteboard(request, `x1-${Date.now() % 10000}`);
 
     const tabA = await context.newPage();

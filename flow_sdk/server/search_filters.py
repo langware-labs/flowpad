@@ -17,6 +17,13 @@ SCOPED_RECORD_TYPES: frozenset[str] = frozenset({
     "claude_session", "codex_session", "command", "spec",
 })
 
+# Scopes matched by ``project_id`` (i.e. that carry a project). System rows
+# carry the system project's id, so selecting that project surfaces them just
+# like ordinary project rows. Single source of truth for both the in-memory
+# predicate (``apply_scope_filter``) and the SQL clause (``_scope_sql_clause``)
+# and mirrored by the frontend ``PROJECT_LIKE_SCOPES`` (ui/src/lib/scope-filter.ts).
+PROJECT_LIKE_SCOPES: frozenset[str] = frozenset({"project", "system"})
+
 
 @dataclass(frozen=True)
 class ScopeFilter:
@@ -111,8 +118,10 @@ def apply_scope_filter(entities: list, sf: "ScopeFilter | None") -> list:
     Predicate (uniform across all surfaces — search, fs-records, indexer):
 
       - ``scope == 'user'``    → keep iff ``sf.user``.
-      - ``scope == 'project'`` → keep iff ``project_id`` is in
-        ``sf.projects`` or ``sf.record_projects``.
+      - ``scope in ('project', 'system')`` → keep iff ``project_id`` is in
+        ``sf.projects`` or ``sf.record_projects``. (System rows carry the
+        system project's id, so selecting that project surfaces them; they
+        stay hidden under any other scope.)
       - ``scope == ''``        → keep (unscoped record types like ``project``
         itself live here; they exist outside the user/project axis and the
         filter has nothing to say about them).
@@ -133,7 +142,7 @@ def apply_scope_filter(entities: list, sf: "ScopeFilter | None") -> list:
         s = (getattr(e, "scope", None) or "")
         if s == "user":
             return sf.user
-        if s == "project":
+        if s in PROJECT_LIKE_SCOPES:
             pid = getattr(e, "project_id", None) or ""
             return pid in pid_set
         # Empty scope on a normally-scoped type = drop. Other unscoped types
@@ -304,11 +313,28 @@ def apply_folder_filter(entities: list, parent_path: str | None, vault_root: str
     return filtered
 
 
-def apply_system_filter(entities: list, include_system: bool) -> list:
-    """Drop system-project entities unless the caller opted in."""
+def apply_system_filter(
+    entities: list,
+    include_system: bool,
+    scoped_project_ids: "tuple[str, ...] | set[str] | None" = None,
+) -> list:
+    """Drop system-project entities unless the caller opted in.
+
+    A system entity is *kept* when its project is explicitly in scope
+    (``scoped_project_ids``), so the listing path matches the count path: the
+    scope clause already counts system rows whose ``project_id`` is selected,
+    and this keeps them in the rendered list too. Everything else system-tagged
+    is still dropped unless ``include_system``.
+    """
     if include_system:
         return entities
-    return [e for e in entities if not getattr(e, "system", False)]
+    scoped = set(scoped_project_ids or ())
+    return [
+        e
+        for e in entities
+        if not getattr(e, "system", False)
+        or (getattr(e, "project_id", None) or "") in scoped
+    ]
 
 
 def apply_tag_filter(entities: list, tag_list: list[str]) -> list:

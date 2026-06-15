@@ -5,13 +5,12 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@src/compon
 import { Tooltip, TooltipContent, TooltipTrigger } from '@src/components/ui/tooltip';
 import { cn } from '@src/lib/utils';
 import { ActionInfo, dataManager, Trigger as TriggerEntity, type ITrigger } from '@sdk';
+import apiClient from '@sdk/client';
 import { useEntity } from '@sdk/react/hooks';
 import Editor from '@monaco-editor/react';
 import { ChevronRight, Copy } from 'lucide-react';
 import { useTheme } from 'next-themes';
 import { scopeColor } from './scope-colors';
-
-declare const __API_URL__: string;
 
 interface CallbackInfo {
   name: string;
@@ -215,9 +214,9 @@ function CallbackMeaning({ name }: { name: string }) {
 
   useEffect(() => {
     let cancelled = false;
-    fetch(`${__API_URL__}/api/v1/debug/trigger_callbacks`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
-      .then((data: { callbacks: CallbackInfo[] }) => {
+    apiClient
+      .get<{ callbacks: CallbackInfo[] }>('/api/v1/debug/trigger_callbacks')
+      .then((data) => {
         if (cancelled) return;
         const entry = data.callbacks?.find((c) => c.name === name);
         setMeaning(entry?.meaning ?? null);

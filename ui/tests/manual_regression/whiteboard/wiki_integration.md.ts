@@ -4,7 +4,9 @@ import { execSync } from 'child_process';
 import * as os from 'os';
 import * as path from 'path';
 
-const API = process.env.API_URL || 'http://localhost:6002';
+import { apiBase } from '../_shared/api';
+
+const API = apiBase();
 const DB = path.join(os.homedir(), '.flow/instances/qa-1/flowpad.db');
 
 async function materialize(page: Page, id: string, assetRef: string) {
@@ -31,7 +33,7 @@ async function materialize(page: Page, id: string, assetRef: string) {
 
 test.describe('Whiteboard participates in the wiki graph', () => {
   test('a whiteboard whose WHITE_BOARD.md has a [[wiki-link]] creates a links-table edge', async ({ page, request }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(60_000);
     test.skip(!fs.existsSync(DB), `instance DB not found at ${DB}`);
     await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
 

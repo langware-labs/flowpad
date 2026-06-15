@@ -9,7 +9,7 @@ import { test, expect } from '@playwright/test';
 import { dismissSetupModal } from './helpers';
 
 test('plain shell URL with no linked process loads silently', async ({ page }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(60_000);
   const toasts: string[] = [];
 
   await dismissSetupModal(page);

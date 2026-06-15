@@ -61,6 +61,12 @@ export const FlowElementTypes = {
   // Indexer / FAAS scan progress envelopes (emitted by in_process_activity)
   PROGRESS_REPORT: 'progress_report',
 
+  // FlowMessage body transfer progress (emitted by resource_tracker on the
+  // .flowmsg bundle move; consumed by useFlowMessageProgress). Legitimate
+  // element types — registered here so the parser doesn't warn "unknown".
+  UPLOAD_PROGRESS: 'upload_progress',
+  DOWNLOAD_PROGRESS: 'download_progress',
+
   // Execution tracing / webhooks
   WEBHOOK: 'webhook',
 

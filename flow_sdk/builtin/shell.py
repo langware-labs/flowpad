@@ -26,6 +26,7 @@ from flow_sdk.db.drivers.db_base_record import BuiltinEntityType
 from flow_sdk.fs_store.fs_record import FSRecord
 from flow_sdk.request_context.methods import get_current_request_info
 from flow_sdk.responses.response import ApiFailResponse, ApiResponse, ApiSuccessResponse
+from flow_sdk.utils.serialization import now_epoch_ms
 
 if TYPE_CHECKING:
     from flow_sdk.builtin.agentic_process.cli_drivers.cli_worker_base_driver import WorkerCLIOptions, WorkerExecutionInfo
@@ -107,9 +108,9 @@ class Shell(Entity):
             "get-by-id (no reverse scan over processes)."
         ),
     )
-    tab_order: int = APIField(default=0, persist=Persist.FALSE)
+    # tab_order / last_active_at are base-Entity fields. Strip membership is the
+    # `Tab` entity now (docs/tab-management.md) — no per-shell `tabbed` flag.
     created_at: str | None = APIField(default=None, description="ISO creation timestamp")
-    last_active_at: str | None = APIField(default=None, description="ISO last activity timestamp")
     error_message: str | None = APIField(default=None, description="Error message when status=error")
     worker_pid: int | None = APIField(default=None, description="OS PID of the running worker process")
     worker_name: str | None = APIField(default=None, description="Worker executable name, e.g. 'claude'")
@@ -438,7 +439,7 @@ class Shell(Entity):
 
         self.status = "running"
         self.pty_pid = self.id
-        self.last_active_at = datetime.now(timezone.utc).isoformat()
+        self.last_active_at = now_epoch_ms()
         self.worker_pid = None
         self.worker_name = None
         await self.save()
@@ -786,10 +787,12 @@ class Shell(Entity):
 
     @classmethod
     async def next_tab_order(cls) -> int:
-        """Return a tab_order value that places a new shell after all existing ones."""
+        """Return a tab_order value that places a new shell after all existing
+        ones. Never returns 0 — 0 means "unassigned" on the base-Entity field
+        (lets AgenticProcess lazily claim its own order in ``_make_shell``)."""
         all_shells = await cls.get_all()
         if not all_shells:
-            return 0
+            return 1
         return max(getattr(s, "tab_order", 0) for s in all_shells) + 1
 
     # ── Record sync ───────────────────────────────────────────────────────────
@@ -891,3 +894,24 @@ class Shell(Entity):
             return ApiFailResponse(message="vars is required")
         await self.set_env(**vars_dict)
         return ApiSuccessResponse(data={"vars": list(vars_dict.keys())})
+
+    # ── Tab integration (docs/tab-management.md) ──────────────────────────────
+    async def teardown_for_tab(self) -> None:
+        """``Tab.close`` dispatch hook: closing a shell tab is a full PTY
+        teardown (today's terminal-close semantics), so delegate to ``close``."""
+        await self.close()
+
+    async def _on_tab_renamed(self, payload: dict) -> dict:
+        """``tab-renamed`` event reflection: mirror the new tab name onto this
+        shell and pin it (``auto_rename=False`` stops PTY OSC titles from
+        overwriting a user-chosen name). The FE also sends the PTY ``/rename``."""
+        new_name = (payload or {}).get("name")
+        if new_name and self.name != new_name:
+            self.name = new_name
+            self.auto_rename = False
+            await self.save()
+        return {"name": self.name}
+
+
+# Register on the owning subclass so the handler doesn't leak to siblings.
+Shell.on_event("tab-renamed")(Shell._on_tab_renamed)

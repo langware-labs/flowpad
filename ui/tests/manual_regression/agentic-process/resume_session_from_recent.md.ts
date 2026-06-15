@@ -32,7 +32,7 @@ async function countProcesses(page: import('@playwright/test').Page): Promise<nu
 
 test.describe('resume session from recent', () => {
   test('test 1: clicking a recent session opens a live AgenticProcess (one per session)', async ({ page }) => {
-    test.setTimeout(150_000);
+    test.setTimeout(60_000);
     await dismissSetupModal(page);
 
     // Precondition: at least one worker-history entry from ~/.claude.
@@ -57,7 +57,9 @@ test.describe('resume session from recent', () => {
     const before = await countProcesses(page);
 
     // Click the first recent session row (compact mode → opens the session).
-    await rows.first().locator('button').first().click();
+    // Rows now carry a leading multi-select Radix checkbox, which renders as
+    // <button role="checkbox"> — exclude it or the click selects instead of opening.
+    await rows.first().locator('button:not([role="checkbox"])').first().click();
 
     // Lands on the agentic_process terminal view for the resumed session.
     await page.waitForURL(/\/dock\/shell\/agentic_process-[\w-]+/, { timeout: 30_000 });

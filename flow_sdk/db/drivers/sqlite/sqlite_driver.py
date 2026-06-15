@@ -738,8 +738,10 @@ class SQLiteDBDriver(DBDriver):
         into a SQL fragment for ANDing into WHERE clauses.
 
         Mirrors ``apply_scope_filter`` exactly:
-          - scope='user'    kept iff sf.user
-          - scope='project' kept iff project_id IN sf.projects/record_projects
+          - scope='user'              kept iff sf.user
+          - scope IN ('project','system') kept iff project_id IN sf.projects/record_projects
+            (system rows carry the system project's id, so selecting that project
+            surfaces them; they stay hidden otherwise)
           - scope is empty/missing → kept only for non-scoped record types
 
         Returns "" when scope is None (caller-side opt-out). Mutates
@@ -747,7 +749,10 @@ class SQLiteDBDriver(DBDriver):
         """
         if scope is None:
             return ""
-        from flow_sdk.server.search_filters import SCOPED_RECORD_TYPES  # noqa: PLC0415
+        from flow_sdk.server.search_filters import (  # noqa: PLC0415
+            PROJECT_LIKE_SCOPES,
+            SCOPED_RECORD_TYPES,
+        )
 
         keep_user = bool(getattr(scope, "user", False))
         entity_projects = tuple(getattr(scope, "projects", ()) or ())
@@ -775,8 +780,13 @@ class SQLiteDBDriver(DBDriver):
                 key = f"__sf_pid_{i}"
                 bindings[key] = pid
                 placeholders.append(f":{key}")
+            scope_placeholders = []
+            for i, scope_val in enumerate(sorted(PROJECT_LIKE_SCOPES)):
+                key = f"__sf_scope_{i}"
+                bindings[key] = scope_val
+                scope_placeholders.append(f":{key}")
             clauses.append(
-                "(json_extract(data, '$.scope') = 'project' AND "
+                f"(json_extract(data, '$.scope') IN ({','.join(scope_placeholders)}) AND "
                 f"json_extract(data, '$.project_id') IN ({','.join(placeholders)}))"
             )
         # Without `user` and without any projects, only non-scoped record

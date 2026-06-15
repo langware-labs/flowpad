@@ -1,5 +1,6 @@
 import asyncio
 import json
+import time
 import uuid
 
 import pytest
@@ -33,8 +34,19 @@ def capture_local_ws(monkeypatch):
 
 
 async def _recv_json(websocket, timeout: float = 10.0) -> dict:
-    raw = await asyncio.wait_for(websocket.recv(), timeout=timeout)
-    return json.loads(raw)
+    """Receive the next JSON frame that is our reply, skipping the hub's
+    opening ``ws_ready_msg`` greeting frame (hub emits it first on every
+    connection — hub commit 696bf45a1)."""
+    deadline = time.monotonic() + timeout
+    while True:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise asyncio.TimeoutError("no reply frame before timeout")
+        raw = await asyncio.wait_for(websocket.recv(), timeout=remaining)
+        parsed = json.loads(raw)
+        if isinstance(parsed, dict) and parsed.get("message_type") == "ws_ready_msg":
+            continue
+        return parsed
 
 
 @pytest.mark.asyncio

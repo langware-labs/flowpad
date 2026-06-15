@@ -7,7 +7,7 @@ test.describe('Multiple Terminal Tabs', () => {
   });
 
   test('create multiple tabs and switch between them', async ({ page }) => {
-    test.setTimeout(200_000);
+    test.setTimeout(60_000);
 
     // Step 1: navigate to shell
     await gotoShell(page);

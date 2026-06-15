@@ -64,17 +64,19 @@ async def debug_trigger_callbacks():
     The triggers UI reads this to surface a human-readable `meaning` for the
     callback wired into a FSOp trigger (e.g. `builtin_transcript_streamer_route`).
 
-    Response shape::
+    Standard ``ApiResponse`` envelope (consumed via the SDK ``apiClient``,
+    which unwraps ``data``)::
 
-        {
-          "callbacks": [
-            {"name": "<registered name>", "meaning": "<docstring-ish>", "is_async": true},
-            ...
-          ],
-          "count": <int>
-        }
+        { "status": "SUCCESS", "data": {
+            "callbacks": [
+              {"name": "<registered name>", "meaning": "<docstring-ish>", "is_async": true},
+              ...
+            ],
+            "count": <int>
+        } }
     """
     from flow_sdk.builtin import trigger_callbacks
+    from flow_sdk.responses.response import ApiSuccessResponse
 
     items = trigger_callbacks.list_registered()
-    return JSONResponse(content={"callbacks": items, "count": len(items)})
+    return ApiSuccessResponse(data={"callbacks": items, "count": len(items)})
