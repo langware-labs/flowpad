@@ -209,46 +209,6 @@ async def _create_prompt_annotation(content: str, session_id: str) -> None:
         logger.debug("_create_prompt_annotation failed (non-critical): %s", exc)
 
 
-async def _rebind_process_session(agentic_process_id: str, session_id: str) -> None:
-    """Point an AgenticProcess at the session Claude is actually running.
-
-    Fires on ``SessionStart`` (which Claude emits for startup AND for an
-    in-terminal ``/resume`` / ``/clear`` / post-compact). The process is found
-    by its stable execution-scope id — env-injected at spawn, so it survives a
-    session switch — while ``session_id`` is the session Claude is writing now.
-
-    When a tab is opened on a fresh session id and the user then resumes a
-    different session from inside Claude, the tab would otherwise stay pinned to
-    the throwaway launch id, whose transcript never lands on disk. Anything that
-    references the tab's session (shares, context chips, transcript discovery)
-    then resolves to nothing — the "Claude session unavailable" symptom. Adopt
-    the live id so those resolve to the real on-disk transcript instead.
-
-    No-op when the ids already match (the normal ``startup`` case). Scoped to
-    ``SessionStart`` by the caller so sub-agent/sidechain sessions — which carry
-    their own ``session_id`` but never emit a top-level SessionStart — can't
-    hijack the binding. Non-critical: a failure here only leaves the stale id.
-    """
-    try:
-        from flow_sdk.builtin.agentic_process import AgenticProcess
-
-        proc = await AgenticProcess.get_by_id(agentic_process_id)
-        if proc is None or proc.session_id == session_id:
-            return
-        old = proc.session_id
-        proc.session_id = session_id
-        await proc.save()
-        logger.info(
-            "[session re-bind] agentic_process %s: %s -> %s (SessionStart)",
-            agentic_process_id, old, session_id,
-        )
-    except Exception as exc:
-        logger.warning(
-            "[session re-bind] failed for %s -> %s (non-critical): %s",
-            agentic_process_id, session_id, exc,
-        )
-
-
 def _extract_agentic_process_id(execution_scope: list) -> str | None:
     """Return the first agentic_process ID from execution_scope.
 
@@ -305,15 +265,6 @@ async def handle_agent_hook(webhook_data: AgentHookData) -> ApiSuccessResponse |
     execution_scope = hook_data_dict.get("execution_scope") or raw.get("execution_scope") or []
     cwd = raw.get("cwd")
     agentic_process_id = _extract_agentic_process_id(execution_scope)
-
-    # Re-bind the tab to the session Claude is actually running. On an
-    # in-terminal `/resume` (or `/clear` / post-compact) Claude switches to a
-    # different session_id than the one the tab launched with; without this the
-    # process stays pinned to the throwaway launch id, breaking every reference
-    # to it ("Claude session unavailable"). Routed by the stable execution-scope
-    # id, gated to SessionStart so sidechain/sub-agent sessions can't hijack it.
-    if hook_event_name == HookEventType.SESSION_START and agentic_process_id and hook_session_id:
-        await _rebind_process_session(agentic_process_id, hook_session_id)
 
     if hook_event_name == HookEventType.CWD_CHANGED:
         logger.info(f"[cwd change] to '{cwd}' (session={hook_session_id})")
