@@ -32,7 +32,12 @@ export function useFeedMutations({ refetch }: UseFeedMutationsOptions) {
     async (entry: FeedEntry, conversationId: string) => {
       // Shared send path: post the report into the conversation and un-hide it so
       // it surfaces in the Recent strip (same helper the diagnose modal uses).
-      await sendDiagnosisReport(conversationId, entry.messageSuggest?.message_text ?? '');
+      // Pass the support FlowMessage id so the full, formatted report body is sent
+      // (the bare `message_text` summary is only the no-message fallback).
+      await sendDiagnosisReport(conversationId, {
+        flowMessageId: entry.messageSuggest?.flow_message_id,
+        fallbackText: entry.messageSuggest?.message_text ?? '',
+      });
       // Then dismiss the Feed entry — only after the send succeeds.
       entry.feed_status = 'dismissed';
       await entry.save([]);
