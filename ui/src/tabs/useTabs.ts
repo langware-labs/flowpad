@@ -342,7 +342,13 @@ function bucketProjectId(tab: TerminalTab): string | null {
  * the auto-action antipattern called out in feedback memory).
  */
 export function useTerminalProjectBuckets(): UseTerminalProjectBucketsResult {
-  const tabs = useTerminalTabs();
+  // The project-menu chip shows ONE row per project that owns active tabs, so it
+  // must bucket the UNSCOPED visible-tabs list. Going through `useTerminalTabs()`
+  // would default the scope to `dataContext.project?.id` and `buildTerminalRows`
+  // would filter out every other project's tabs — collapsing the chip to a single
+  // bucket. Build rows with an explicit `null` project so all projects survive.
+  const { data: allTabs } = useEntitiesQuery<Tab>(VISIBLE_TABS_QUERY);
+  const tabs = useMemo(() => buildTerminalRows(allTabs ?? [], null), [allTabs]);
 
   const grouped = useMemo(() => {
     const byProject = new Map<string, TerminalTab[]>();
