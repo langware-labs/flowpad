@@ -4,12 +4,16 @@ When invoked with `run qa cycle` / `full qa` / `qa cycle`:
 
 Runs all test suites in sequence across 11 phases. **You never advance to the next phase unless the current phase achieves a clear pass.** All failures in a phase must be debugged and fixed — or flagged — before moving on.
 
-**Step 0.0 — TOTAL MACHINE OWNERSHIP, ZERO MID-CYCLE QUESTIONS (non-negotiable).** During a full QA cycle the entire machine and the dev environment belong to the cycle. You do **whatever it takes to make every phase produce a verdict, and you NEVER stop to ask the user mid-cycle** — not about load, not about killing/relaunching instances or backends, and **not about destructive backend operations**. Specifically and explicitly authorized, standing, no confirmation ever:
-- **Clear / wipe / re-index the main `$LOCAL_SERVER_PORT` (:9008) database** as Phases 10/11 require. The clear endpoint backs up first (`backup_path` in the response) and re-indexes; that backup IS the safety net. Treat `:9008` as a disposable QA backend for the duration of the cycle. Do NOT ask "this will wipe real data?" — clear it, verify bootstrap re-populated, proceed.
-- **Kill and relaunch** any flow instance, backend, frontend, hub, or orphaned worker to reduce load or get a healthy service (see Step 0.4). Preserve only the main `:9008` backend, its vite, the hub, and your own session.
-- **Restart the main backend / hub / named instances** between phases as needed.
+**Step 0.0 — INSTANCE-LEVEL OWNERSHIP (non-negotiable). You own what you launch — and ONLY what you launch.** The scope of your authority is the test instances the cycle starts via `scripts/instance_ctl.sh launch <name>` (and any backend/frontend/DB the cycle itself spawned). Within that scope you have full freedom, no confirmation needed:
+- **Restart, clear/wipe/re-index the DB, kill, and relaunch instances YOU launched** — freely, as the phases require.
+- **Manage their lifecycle: you MUST kill every instance you launched when you are done with it** (end of the phase that needed it, or end of the cycle). Don't leave instances running — accumulated stale instances are what caused past load problems.
 
-The Autonomous Run Policy already forbids mid-cycle questions; this restates it because the destructive-DB and machine-reclaim cases are where the instinct to ask creeps back. There is no one to answer; asking stalls the cycle. The ONLY permitted question is job-type clarification at invocation, before any work starts. Everything else is decide-or-flag, and "make it pass" beats "ask whether I may." If an operation genuinely cannot proceed (e.g. required billable API key absent), flag it and move on — never ask.
+**This is instance-level ownership, NOT machine-level. You do NOT own the machine.** Anything you did not launch is off-limits to destructive action — never kill, restart, clear, or wipe it without explicit per-action user approval:
+- The user's **main dev backend / frontend** (`$LOCAL_SERVER_PORT` / `$VITE_PORT`) and its database — NEVER clear or wipe it. Phases that need a clean DB (10/11) run against a **dedicated instance you launched**, not the user's backend.
+- The user's **running `claude`/agentic-process sessions, terminals, and any process you didn't spawn** — NEVER kill them, not even to reduce load or "as an RCA experiment." They are live work.
+- **GUI apps** (browser, IDE) and OS daemons — never touch.
+
+Mid-cycle you still don't pause for questions about work *inside your own instances* (decide-or-flag). But a destructive action on anything **outside** the instances you launched is NOT covered by any standing license — it requires explicit approval every time, in every context. A permission granted for one task never extends to a different task, a different resource, or a more destructive action. Reversing a safety decision you already made is a hard STOP, not a judgment call.
 
 **Step 0 — verify and re-arm the watchdog loop.** Before every phase work session (including immediately after a session interruption, idle gap, /login recovery, or context reset), verify the cycle watchdog is still armed. Start it via the Skill tool if it is not running:
 
@@ -19,25 +23,20 @@ Skill(skill="loop", args='30m "Do not stop until all passed or flagged. flagged 
 
 The loop keeps the cycle driving forward unattended; it naturally ends when the QA Cycle Summary is printed (every test passed or flagged). The loop never overrides the circuit breaker (see SKILL.md, Run Integrity): on repeated same-class anomalies, a loop tick performs the meta-RCA instead of more forward grinding. **An unwatched cycle silently stops being a cycle,** so verify and re-arm at every session resume — the watchdog's presence tells you unattended progress is still happening.
 
-**Step 0.4 — you own the whole machine; reclaim it on extreme load.** During a full QA cycle the host is allocated entirely to the cycle. **Before Phase 1, and again whenever the 1-minute load average climbs above the core count (`sysctl -n hw.ncpu`), reclaim the machine by eliminating accumulated instances** — they are the dominant, illegitimate load source and they manufacture false timeouts in the timing-sensitive phases (3, 7, 10). Real-Claude long tests cannot get a valid timing verdict on a saturated host, and raising their caps is forbidden — so fix the load, not the cap.
+**Step 0.4 — run timing-sensitive work on your own instance; clean up the instances you launch.** Timing-sensitive phases (3, 7, 10) need an uncontended backend. The way to get one is to **launch a dedicated instance for the cycle** (`scripts/instance_ctl.sh launch <name>`) and run against it — NOT to "reclaim the machine" by killing things you didn't start.
 
-Cleanup, in order (preserve the main dev backend on `$LOCAL_SERVER_PORT`, its vite on `$VITE_PORT`, the hub on `:8093`, and your own session):
+- **Only ever kill/clear instances YOU launched.** You may freely `kill` + `launch` *your own* instance to recover it, and clear *its* DB. Track which instances the cycle started.
+- **At the end of every phase that launched an instance, and at the end of the cycle, kill the instances you launched** (`scripts/instance_ctl.sh kill <name>`). Leaving them running is what accumulates the stale-instance load that hurts the next run. Lifecycle is your responsibility.
+- **If the host is loaded by things you did NOT launch** — the user's main backend, their live `claude`/agentic sessions, GUI apps, OS daemons — that load is **not yours to kill.** Do not touch it. Record it as a host-load caveat on the affected timing verdicts (or `flag` the phase as host-bound), and proceed. A slow timing verdict caused by the user's own workload is reported honestly, never "fixed" by killing their processes.
 
 ```bash
-set -a; source .env.local; set +a
-MAIN_BE=$(lsof -ti :${LOCAL_SERVER_PORT} -sTCP:LISTEN); MAIN_FE=$(lsof -ti :${VITE_PORT} -sTCP:LISTEN); HUB=$(lsof -ti :8093 -sTCP:LISTEN)
-# 1) kill every named instance_ctl instance (hub phases relaunch dev-1/dev-2 fresh)
-for n in $(scripts/instance_ctl.sh list 2>/dev/null | awk '/backend/{print $1}'); do scripts/instance_ctl.sh kill "$n"; done
-# 2) kill stale/orphaned flow_sdk.server.run backends (multi-day, ppid=1) EXCEPT the main one
-for p in $(pgrep -f "flow_sdk.server.run"); do [ "$p" != "$MAIN_BE" ] && ! ps -o ppid= -p "$p" | grep -qw "$MAIN_BE" && kill "$p" 2>/dev/null; done
-# 3) reap orphaned real-Claude workers whose backend is gone (ppid=1 only — never the main backend's children mid-test)
-for p in $(pgrep -f "claude --dangerously-skip-permissions"); do [ "$(ps -o ppid= -p $p|tr -d ' ')" = "1" ] && kill "$p" 2>/dev/null; done
-# 4) verify the main backend survived and re-index is healthy
-curl -s "http://localhost:${LOCAL_SERVER_PORT}/api/v1/graph/bootstrap" | grep -q '"projects"' && echo "main backend OK" || echo "MAIN BACKEND DOWN — restart before proceeding"
-uptime
+# correct pattern: a dedicated instance you own, cleaned up after
+scripts/instance_ctl.sh launch qa-cycle        # you launched it → you own it
+# ... run the phase against qa-cycle's backend/frontend ...
+scripts/instance_ctl.sh kill qa-cycle          # MUST clean up what you launched
 ```
 
-Never kill the user's GUI apps (browser, IDE) blindly — eliminate *flow/claude instances and orphaned backends* first; those are almost always the real load floor (accumulated from past QA/hub runs that never cleaned up). Only if instances are gone and load is still extreme do you investigate app-level load, and then you report it rather than killing GUI apps with possible unsaved work. **Run this cleanup as a circuit-breaker response too:** when a timing phase trips repeated environmental timeouts, the first remedy is reclaim-the-machine, then re-run — not a flag.
+Never raise a timeout to mask host-load slowness, and never kill a process you didn't launch to remove it. Those are the two banned shortcuts.
 
 **Step 0.5 — create the cycle-state file and record every test verdict.** Create `<output-dir>/<timestamp>/cycle-state.md` (phase, per-item dispositions, owners, instance locks, pending validations) and update it at every milestone — see SKILL.md "Durable cycle state". **Critically: before anything else starts (before the next phase work begins), every test attempt must end by recording its verdict** — either the test passed/failed outcome, or an explicit "no verdict: <reason>" — in cycle-state.md. An attempt without a recorded verdict is indistinguishable from an attempt that never ran, leaving the cycle's history incomplete and resumption ambiguous.
 
