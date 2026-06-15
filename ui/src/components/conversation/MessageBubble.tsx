@@ -140,6 +140,26 @@ function parseClaudeQuote(content: string): { prefix: string; quoted: string } |
   return { prefix: 'Prompt response:', quoted: unescaped };
 }
 
+/**
+ * The message body text. `whitespace-pre-wrap` is the single source of truth for
+ * preserving authored newlines — keeping it here (rather than on each call-site
+ * div) stops the agent-quote and plain-text branches from drifting apart, which
+ * is exactly how newlines got dropped from one branch before.
+ */
+function MessageBody({ content, isBot }: { content: string; isBot: boolean }) {
+  const bodyClass = `whitespace-pre-wrap text-sm ${isBot ? 'italic text-foreground/70' : 'text-foreground/90'}`;
+  const claudeQuote = parseClaudeQuote(content);
+  if (claudeQuote) {
+    return (
+      <div className={bodyClass}>
+        <span className="font-medium text-muted-foreground">{claudeQuote.prefix}</span>{' '}
+        <em className="italic text-foreground/85">&ldquo;{claudeQuote.quoted}&rdquo;</em>
+      </div>
+    );
+  }
+  return <div className={bodyClass}>{content}</div>;
+}
+
 export function MessageBubble({
   message,
   flowMessageId,
@@ -300,24 +320,9 @@ export function MessageBubble({
             messageText={message.content}
           />
         </div>
-        {message.content &&
-          message.content !== PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT &&
-          (() => {
-            const claudeQuote = parseClaudeQuote(message.content);
-            if (claudeQuote) {
-              return (
-                <div className={`text-sm ${isBot ? 'italic text-foreground/70' : 'text-foreground/90'}`}>
-                  <span className="font-medium text-muted-foreground">{claudeQuote.prefix}</span>{' '}
-                  <em className="italic text-foreground/85">&ldquo;{claudeQuote.quoted}&rdquo;</em>
-                </div>
-              );
-            }
-            return (
-              <div className={`text-sm ${isBot ? 'italic text-foreground/70' : 'text-foreground/90'}`}>
-                {message.content}
-              </div>
-            );
-          })()}
+        {message.content && message.content !== PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT && (
+          <MessageBody content={message.content} isBot={isBot} />
+        )}
         {showPromptRow && (
           <AttachmentActionsRow
             actions={actions}
