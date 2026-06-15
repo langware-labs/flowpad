@@ -412,6 +412,18 @@ def _tail_status(path: "str | _Path") -> WorkerStatus:
             return WorkerStatus.WAITING
         if _has_pending_tool_use(chunk):
             return WorkerStatus.TOOL_RUNNING
+        # ``last-prompt`` also rides in as an idle ack *between* tool calls:
+        # the model finished a tool (tool_result landed, so nothing is pending)
+        # and is slowly planning its next call. When the most recent assistant
+        # turn ended with ``stop_reason=tool_use`` the model is still mid-turn —
+        # the trailing ``last-prompt`` is NOT a turn end. Declaring COMPLETE here
+        # cuts ``stream_transcript`` off during a long inter-tool pause (Opus can
+        # take 20-40 s), so the diagnose runner never scrapes the final report
+        # and falsely reports "not recorded". Only a genuine ``end_turn`` is
+        # terminal; otherwise stay WAITING and keep reading. (Mirrors the
+        # ``stop_reason=="end_turn"`` guard on the ``_post_tool_idle`` path.)
+        if _last_assistant_stop_reason(chunk) != "end_turn":
+            return WorkerStatus.WAITING
         return WorkerStatus.COMPLETE
     if last_type == "user" and "interrupted" in _last_user_text(chunk).lower():
         return WorkerStatus.INTERRUPTED
