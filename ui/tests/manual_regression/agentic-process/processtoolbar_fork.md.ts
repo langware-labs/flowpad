@@ -22,7 +22,7 @@ const forkBtn = (page: import('@playwright/test').Page) =>
 
 test.describe('processtoolbar fork', () => {
   test('test 1: Fork disabled before any assistant turn (no transcript)', async ({ page }) => {
-    test.setTimeout(150_000);
+    test.setTimeout(60_000);
     await dismissSetupModal(page);
     await gotoNewShell(page);
 
@@ -44,7 +44,7 @@ test.describe('processtoolbar fork', () => {
   });
 
   test('test 2: Fork enabled after an assistant turn; creates a sibling process', async ({ page }) => {
-    test.setTimeout(150_000);
+    test.setTimeout(60_000);
     const errors: string[] = [];
     page.on('console', m => { if (m.type() === 'error') errors.push(m.text()); });
     page.on('pageerror', e => errors.push(e.message));

@@ -12,7 +12,7 @@ import { test, expect } from '@playwright/test';
 import { dismissSetupModal, gotoTriggers } from './helpers';
 
 test('hook triggers render correctly — no regression after merge', async ({ page }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(60_000);
   const errors: string[] = [];
   page.on('console', msg => { if (msg.type() === 'error') errors.push(msg.text()); });
   page.on('pageerror', err => errors.push(err.message));

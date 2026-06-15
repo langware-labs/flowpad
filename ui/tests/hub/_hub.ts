@@ -15,13 +15,19 @@
 import { promises as fs } from 'node:fs';
 import * as path from 'node:path';
 
-export const HUB_URL =
-  process.env.FLOWPAD_HUB_URL?.replace(/\/$/, '') || 'http://localhost:8093';
+// No hardcoded hub URL — it must come from the environment (FLOWPAD_HUB_URL),
+// the same source the backend/config uses. When unset, HUB_URL is empty and
+// ``hubAvailable()`` skips the suite with a clear reason rather than silently
+// probing a guessed localhost port.
+export const HUB_URL = (process.env.FLOWPAD_HUB_URL ?? '').replace(/\/$/, '');
 
 const REPO_OSS = path.resolve(__dirname, '../../..');
 const REPO_APP = path.resolve(REPO_OSS, '..', 'flowpad-app');
 
 export async function hubAvailable(): Promise<{ ok: boolean; reason?: string }> {
+  if (!HUB_URL) {
+    return { ok: false, reason: 'FLOWPAD_HUB_URL is not set — export it to run hub tests' };
+  }
   try {
     const r = await fetch(`${HUB_URL}/api/v1/health/status`, {
       signal: AbortSignal.timeout(1500),

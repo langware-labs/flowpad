@@ -40,14 +40,13 @@ import { WebappViewer } from '@src/components/webapp-viewer';
 import { WorkflowsPage } from '@src/components/workflows-view/WorkflowsPage';
 import { useActiveViewer } from '@src/hooks/flow-hooks';
 import { useViewerStore } from '@src/hooks/flow-hooks/useViewerStore';
-import { useContentPanelStore } from '@src/hooks/use-content-panel-store';
 import { useEnvVarsStore } from '@src/hooks/use-env-vars-store';
 import { notify } from '@src/notifications';
 import {
   terminalTargetKey,
   terminalTransportShellId,
-  useAllTerminals,
-} from '@src/hooks/useActiveTerminals';
+  useTerminalTabs,
+} from '@src/tabs/useTabs';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { SpecRoute } from '@src/pages/spec/SpecRoute';
@@ -69,10 +68,26 @@ const DocsGraphView = lazy(() =>
   import('@src/components/graph-view/DocsGraphView').then((m) => ({ default: m.DocsGraphView })),
 );
 import { UserDropdown } from './user-dropdown/user-dropdown';
+import { UnifiedTabStrip } from './unified-tab-strip';
+
+// Overview slots that render a real workspace surface (not the Home landing).
+// Every other `currentOverviewTab` value — HOME, CHAT, null, … — falls through
+// to <HomeLanding /> in the overview panel below, so the overview is "home"
+// exactly when its slot is NOT one of these. Keep in sync with the overview
+// TabsContent switch.
+const OVERVIEW_NON_HOME_SLOTS = new Set<ViewType>([
+  ViewType.SHELL,
+  ViewType.EDITOR,
+  ViewType.WEB_APP,
+  ViewType.DIFF,
+  ViewType.MARKDOWN,
+  ViewType.SURVEY,
+  ViewType.SYSTEM_PROFILE,
+]);
 
 export function ContentPanel() {
   // Get navigation instance for URL-first architecture
-  const { navigation, currentDock, isDockUrl } = useDockNavigation();
+  const { navigation, currentDock, isDockUrl, windowMode } = useDockNavigation();
 
   const { user } = useAuth();
 
@@ -82,7 +97,7 @@ export function ContentPanel() {
   // Sync flow focus and URL dock state to viewer store
   useActiveViewer(flow);
 
-  const { data: terminalTabs } = useAllTerminals();
+  const terminalTabs = useTerminalTabs();
   const terminalsLoading = false;
   const { onTabClick, onTabClose, onTabOpen } = useStandardTabNav();
 
@@ -95,8 +110,9 @@ export function ContentPanel() {
     [navigation],
   );
 
-  // State from viewer store (centralized tab and view management)
-  const { currentOverviewTab, currentContext, addTab } = useViewerStore();
+  // State from viewer store (overview-axis only — the header tab membership
+  // moved to the unified TabStrip, tab-management.md Part 3 U1)
+  const { currentOverviewTab, currentContext } = useViewerStore();
 
   // Survey state (shared with chat-panel)
   const { activeSurveyData, onSurveyComplete } = useSurveyStore();
@@ -118,7 +134,6 @@ export function ContentPanel() {
   }, []);
 
   const { setOpenEnvironmentTab } = useEnvVarsStore();
-  const { setAddTab } = useContentPanelStore();
 
   const { sendMessage } = useSendMessageStore();
 
@@ -151,10 +166,6 @@ export function ContentPanel() {
   useEffect(() => {
     setOpenEnvironmentTab(() => navigation.openTab(ViewType.ENVIRONMENT));
   }, [navigation, setOpenEnvironmentTab]);
-
-  useEffect(() => {
-    setAddTab(addTab);
-  }, [addTab, setAddTab]);
 
   // Handle shell routing based on URL pointer
   useEffect(() => {
@@ -202,6 +213,19 @@ export function ContentPanel() {
   // Get current tab from URL (URL-first architecture)
   const currentTab = isDockUrl && currentDock?.viewType ? currentDock.viewType : 'overview';
 
+  // Chrome-less mode hides the unified tab strip header (and the logged-out
+  // user header) so the routed view content is the entire window. Two cases,
+  // both URL/state-derived:
+  //   1. the `win/` focus-window layout (tab-management.md Part 3 §7) — the
+  //      FocusLayout reuses this component instead of duplicating the panel.
+  //   2. the Home landing — a full-bleed welcome surface, not a tabbed
+  //      workspace, so the strip must not render over it. Home shows on the
+  //      dedicated HOME dock, or as the overview's default fall-through slot.
+  const isHomeView =
+    currentTab === ViewType.HOME ||
+    (currentTab === 'overview' && !OVERVIEW_NON_HOME_SLOTS.has(currentOverviewTab as ViewType));
+  const hideChrome = windowMode || isHomeView;
+
   // File manager filters
   const [enabledFilters, setEnabledFilters] = useState<FilterName[]>([FilterName.HIDDEN]);
 
@@ -220,10 +244,19 @@ export function ContentPanel() {
         className="flex h-full w-full flex-col"
       >
         {/* Simple header - show UserDropdown only for non-logged-in users */}
-        {!user && (
+        {!user && !hideChrome && (
           <div className="flex items-center justify-end border-b bg-muted/30 px-3 py-1.5">
             <UserDropdown />
           </div>
+        )}
+
+        {/* Unified tab strip (tab-management.md Part 3 §6): terminal tabs +
+            entity member tabs + the transient preview slot + the global
+            section, replacing the viewer tab header. The TabsContent panels
+            below keep rendering keyed by the URL-derived current ViewType.
+            Hidden in the win/ focus-window layout (§7): no strip, no chrome. */}
+        {!hideChrome && (
+          <UnifiedTabStrip onTabClick={onTabClick} onTabClose={onTabClose} onTabOpen={onTabOpen} />
         )}
 
         <div className="relative min-h-0 flex-1 overflow-hidden">
@@ -236,6 +269,7 @@ export function ContentPanel() {
                 <TabbedTerminal
                   className="h-full"
                   addTabButton
+                  showStrip={false}
                   onTabClick={onTabClick}
                   onTabClose={onTabClose}
                   onTabOpen={onTabOpen}
@@ -275,6 +309,7 @@ export function ContentPanel() {
             <TabbedTerminal
               className="h-full"
               addTabButton
+              showStrip={false}
               onTabClick={onTabClick}
               onTabClose={onTabClose}
               onTabOpen={onTabOpen}

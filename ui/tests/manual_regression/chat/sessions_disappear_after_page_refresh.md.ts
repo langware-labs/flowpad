@@ -8,7 +8,7 @@ import { gotoShell } from '../terminal/helpers';
 
 test.describe('sessions persist across navigation', () => {
   test('test 1: terminal tab survives navigating home and back to shell', async ({ page }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(60_000);
     await dismissSetupModal(page);
     await gotoShell(page);
 

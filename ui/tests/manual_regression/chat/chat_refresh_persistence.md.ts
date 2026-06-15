@@ -8,7 +8,7 @@ test.describe('Chat Refresh Persistence', () => {
   });
 
   test('Shell session tab persists after page refresh', async ({ page }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(60_000);
 
     // Step 1: Navigate to new_terminal and wait for shell to be ready
     await gotoShell(page);

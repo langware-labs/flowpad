@@ -1,8 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { dismissSetupModal, startClaudeSession } from './helpers';
 
-const APP_URL = process.env.APP_URL ?? 'http://localhost:4098';
-
 /**
  * Navigate to an agentic process terminal with worker_session_id set.
  * Creates one via "Start Claude" if needed. Returns the process URL.
@@ -34,7 +32,7 @@ test.describe('terminal_annotation_bookmark', () => {
   });
 
   test('test 2: Annotation gutter is not visible in a plain shell terminal', async ({ page }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(60_000);
 
     await page.goto('/dock/shell/new_terminal');
     await page.waitForURL(/\/dock\/shell\/(shell-)/, { timeout: 60_000 });
@@ -49,7 +47,7 @@ test.describe('terminal_annotation_bookmark', () => {
   });
 
   test('test 3: Annotation gutter is visible for existing agentic process with worker session ID', async ({ page }) => {
-    test.setTimeout(180_000);
+    test.setTimeout(60_000);
 
     await gotoAgenticProcessWithSession(page);
 
@@ -59,7 +57,7 @@ test.describe('terminal_annotation_bookmark', () => {
   });
 
   test('test 4+5: Create bookmark and verify Open Session navigates to correct process', async ({ page }) => {
-    test.setTimeout(240_000);
+    test.setTimeout(60_000);
 
     // Navigate to an agentic process and capture its ID
     const processUrl = await gotoAgenticProcessWithSession(page);

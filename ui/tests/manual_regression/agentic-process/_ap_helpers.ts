@@ -12,6 +12,11 @@ export async function dismissSetupModal(page: Page) {
   await page.addInitScript(() => {
     localStorage.setItem('llm-setup-modal-seen', 'true');
     localStorage.setItem('flowpad-index-approved', 'true');
+    // Every scenario in this category drives the full ProcessToolbar
+    // (Restart, Open Terminal, Fork, Worktree, Session Info, Transcript).
+    // Those controls only exist in the Advanced view header — the default
+    // Standard view renders the simple-chat header without them.
+    localStorage.setItem('viewMode', 'advanced');
   });
 }
 
@@ -89,9 +94,14 @@ export function sessionPopover(page: Page) {
   return page.locator('[data-radix-popper-content-wrapper]').filter({ hasText: 'Session Details' });
 }
 
-/** API base derived from VITE_PORT mapping (frontend 500X → backend 600X-1). */
+/**
+ * API base for in-page fetches. Empty string = relative `/api/...` URLs,
+ * which the Vite dev server proxies to whatever backend the app itself is
+ * wired to — so tests always query the SAME backend as the UI under test.
+ * QA_API_URL remains as an explicit override; never hardcode a port here.
+ */
 export function apiBase(): string {
-  return process.env.QA_API_URL || 'http://localhost:6003';
+  return process.env.QA_API_URL || '';
 }
 
 /** Fetch the agentic_process entity row from the backend. */

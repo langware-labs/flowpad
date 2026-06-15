@@ -1,4 +1,5 @@
-import { ContextEntitiesEnum, dataContext, Project } from '@sdk';
+import { Project } from '@sdk';
+import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { CodexIcon } from '@src/components/icons/CodexIcon';
 import { CopilotIcon } from '@src/components/icons/CopilotIcon';
@@ -6,9 +7,10 @@ import { canonicalPath, projectListToSelectorItems, ProjectSelector } from '@src
 import { Button } from '@src/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@src/components/ui/popover';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
+import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { notify } from '@src/notifications';
 import { useAllProjects } from '@src/hooks/use-all-projects';
-import { useTerminalProjectBuckets, type TerminalProjectBucket } from '@src/hooks/useActiveTerminals';
+import { terminalDockPointer, useTerminalProjectBuckets, type TerminalProjectBucket } from '@src/tabs/useTabs';
 import { ChevronLeft, History, Layers, Loader2, RotateCcw } from 'lucide-react';
 import React, { useMemo, useState } from 'react';
 
@@ -18,6 +20,12 @@ export type ProjectWorkerType = 'claude_code' | 'codex' | 'copilot';
 interface ProjectsCounterChipProps {
   /** Project that the surrounding tab strip is currently scoped to. Used to highlight that row. */
   currentProjectId?: string | null;
+  /**
+   * Display name of the current project, shown as a chip alongside the counts.
+   * Optional: the chip falls back to the matching open bucket's name, so a
+   * project with live terminals still labels itself even without this prop.
+   */
+  currentProjectName?: string | null;
   /**
    * When provided, the action strip below the bucket list carries one icon
    * button per worker type. Clicking a worker opens the embedded picker with
@@ -36,6 +44,23 @@ interface ProjectsCounterChipProps {
 
 function bucketDisplayName(bucket: TerminalProjectBucket): string {
   return bucket.project?.getDisplayName() ?? bucket.project?.name ?? bucket.projectId;
+}
+
+/**
+ * Name shown on the chip's project label. Prefer the explicit current-project
+ * name; otherwise fall back to the matching open bucket's display name so a
+ * project with live terminals still labels itself even without the prop.
+ * Returns null when no project is known (the chip then shows counts only).
+ * Pure + dependency-free so it's unit-testable in isolation.
+ */
+export function resolveProjectChipName(
+  currentProjectName: string | null | undefined,
+  currentProjectId: string | null | undefined,
+  buckets: ReadonlyArray<TerminalProjectBucket>,
+): string | null {
+  if (currentProjectName?.trim()) return currentProjectName.trim();
+  const bucket = currentProjectId ? buckets.find((b) => b.projectId === currentProjectId) : null;
+  return bucket ? bucketDisplayName(bucket) : null;
 }
 
 // Sort: alphabetical by display name, projectId tie-break. Deliberately NOT
@@ -141,6 +166,7 @@ const ProjectPickerPanel: React.FC<{
 
 export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
   currentProjectId,
+  currentProjectName,
   onLaunchProjectPath,
   onOpenHistory,
 }) => {
@@ -149,6 +175,7 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
   // clicked icon on the action strip.
   const [pickerWorker, setPickerWorker] = useState<PickerWorker | null>(null);
   const [recoveringId, setRecoveringId] = useState<string | null>(null);
+  const { navigation } = useDockNavigation();
   const { buckets } = useTerminalProjectBuckets();
 
   const sorted = useMemo(() => [...buckets].sort(compareBuckets), [buckets]);
@@ -159,9 +186,18 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
   // With an action callback the chip stays clickable even with zero buckets —
   // the popover then offers only the action rows.
   const isChipDisabled = isEmpty && !onLaunchProjectPath && !onOpenHistory;
-  const tooltipText = `${projectTotal} active project${projectTotal === 1 ? '' : 's'} with ${terminalTotal} terminal${
+
+  // Name of the current project, shown as a label segment on the chip.
+  const projectName = useMemo(
+    () => resolveProjectChipName(currentProjectName, currentProjectId, buckets),
+    [currentProjectName, currentProjectId, buckets],
+  );
+  const hasProject = !!projectName;
+
+  const countTooltip = `${projectTotal} active project${projectTotal === 1 ? '' : 's'} with ${terminalTotal} terminal${
     terminalTotal === 1 ? '' : 's'
   }`;
+  const tooltipText = hasProject ? `${projectName} — ${countTooltip}` : countTooltip;
 
   // Canonical mount paths of projects already open in the strip — excluded
   // from the picker so it only offers not-yet-open projects.
@@ -174,9 +210,38 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
     [buckets],
   );
 
-  const chipClass = `mx-1 inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-border bg-background px-2 text-xs font-medium tabular-nums hover:bg-accent hover:text-accent-foreground focus:outline-none focus:ring-1 focus:ring-ring ${
-    isChipDisabled ? 'cursor-default opacity-50 hover:bg-background hover:text-foreground' : ''
-  }`;
+  // When the chip carries a project name it reads as the "project context"
+  // pill — a subtle primary tint + accent border sets it apart from the neutral
+  // tab headers next to it, while staying within the design language (same
+  // height, radius, border weight). Without a project it falls back to the
+  // plain neutral chip so a project-less strip isn't washed in accent color.
+  const chipClass = `mx-1 inline-flex h-6 shrink-0 items-center gap-1 rounded-md border px-2 text-xs font-medium tabular-nums focus:outline-none focus:ring-1 focus:ring-ring ${
+    hasProject
+      ? 'border-primary/30 bg-primary/5 text-foreground hover:bg-primary/10'
+      : 'border-border bg-background hover:bg-accent hover:text-accent-foreground'
+  } ${isChipDisabled ? 'cursor-default opacity-50 hover:bg-primary/5' : ''}`;
+
+  // Per-type icon from the backend TypeInfo registry (CLAUDE.md: never hardcode
+  // a glyph for an entity type) — the same project icon every other surface shows.
+  const ProjectIcon = iconForType(Project.type);
+
+  // Shared trigger content: the project-name label (when known) followed by the
+  // open-projects / terminals counts. The name is the hero (primary glyph,
+  // foreground weight); the counts ride along muted and divided off.
+  const triggerContent = (
+    <>
+      {hasProject ? (
+        <>
+          <ProjectIcon className="h-3 w-3 shrink-0 text-primary" />
+          <span className="max-w-[9rem] truncate">{projectName}</span>
+          <span aria-hidden className="mx-0.5 h-3 w-px shrink-0 bg-border" />
+        </>
+      ) : null}
+      <Layers className={`h-3 w-3 shrink-0 ${hasProject ? 'text-muted-foreground' : ''}`} />
+      <span className={hasProject ? 'text-muted-foreground' : undefined}>{projectTotal}</span>
+      <sub className="ml-0.5 text-[9px] leading-none text-muted-foreground">{terminalTotal}</sub>
+    </>
+  );
 
   if (isChipDisabled) {
     return (
@@ -190,8 +255,7 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
               className={chipClass}
               aria-label={tooltipText}
             >
-              <Layers className="h-3 w-3" />
-              {projectTotal}
+              {triggerContent}
             </button>
           </TooltipTrigger>
           <TooltipContent side="bottom">{tooltipText}</TooltipContent>
@@ -200,10 +264,15 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
     );
   }
 
-  const switchToProject = async (project: Project) => {
+  // URL-first (see CLAUDE.md): selecting a project NAVIGATES to its first tab
+  // (by tab_order); the shell-dock loader then writes project context. No
+  // dataContext writes from this click path — that inversion left the URL on
+  // the previous project's tab and the strip scoped to the new one.
+  const switchToBucket = (bucket: TerminalProjectBucket) => {
     setOpen(false);
-    await dataContext.setContextEntityTypeId(ContextEntitiesEnum.CurrentProjectTypeId, project.typeId);
-    dataContext.setWorkdir(project.fs_storage_mount_path ?? null);
+    const first = [...bucket.tabs].sort((a, b) => (a.tabOrder ?? 0) - (b.tabOrder ?? 0))[0];
+    if (!first) return;
+    navigation.openDock(terminalDockPointer(first));
   };
 
   const handleRecover = async (bucket: TerminalProjectBucket) => {
@@ -220,7 +289,7 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
         });
         return;
       }
-      await switchToProject(recovered);
+      switchToBucket(bucket);
     } finally {
       setRecoveringId(null);
     }
@@ -228,7 +297,7 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
 
   const handleSelect = async (bucket: TerminalProjectBucket) => {
     if (bucket.state === 'live' && bucket.project) {
-      await switchToProject(bucket.project);
+      switchToBucket(bucket);
       return;
     }
     if (bucket.state === 'missing') {
@@ -287,9 +356,7 @@ export const ProjectsCounterChip: React.FC<ProjectsCounterChipProps> = ({
           <TooltipTrigger asChild>
             <PopoverTrigger asChild>
               <button type="button" data-testid="projects-counter-chip" className={chipClass} aria-label={tooltipText}>
-                <Layers className="h-3 w-3" />
-                {projectTotal}
-                <sub className="ml-0.5 text-[9px] leading-none text-muted-foreground">{terminalTotal}</sub>
+                {triggerContent}
               </button>
             </PopoverTrigger>
           </TooltipTrigger>

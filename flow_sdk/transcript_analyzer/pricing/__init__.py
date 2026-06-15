@@ -41,6 +41,7 @@ def total_cost_usd(worker: str, jsonl_path) -> float:
     caller decides whether to treat 0 as "not yet billed" vs "free".
     """
     from pathlib import Path
+
     from ..transcript import AgentTranscriptFile
 
     path = Path(jsonl_path)

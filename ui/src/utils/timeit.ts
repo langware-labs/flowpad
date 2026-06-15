@@ -9,6 +9,14 @@
  *   t.time('ensureComputeNode');
  *   t.done(0.5); // logs report only if total > 500ms
  */
+
+/**
+ * Names that have already emitted a slowness note this session. A slow loader
+ * that revalidates on every in-shell nav (e.g. the shell route) would otherwise
+ * log the same note many times back-to-back; we surface each distinct name once.
+ */
+const warnedSlownessNames = new Set<string>();
+
 export class TimeIt {
   private readonly name: string;
   private readonly start: number;
@@ -34,6 +42,10 @@ export class TimeIt {
   done(thresholdSeconds = 0.5): void {
     const totalMs = performance.now() - this.start;
     if (totalMs < thresholdSeconds * 1000) return;
+
+    // One slowness note per name per session — don't spam on repeated slow runs.
+    if (warnedSlownessNames.has(this.name)) return;
+    warnedSlownessNames.add(this.name);
 
     const width = Math.max(...this.steps.map((s) => s.label.length), 20) + 2;
     const sep = '─'.repeat(width + 12);

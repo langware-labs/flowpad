@@ -1,4 +1,4 @@
-import { AgenticProcess, Layout, TypeId, type IDockPointer } from '@sdk';
+import { AgenticProcess, Layout, Shell, TypeId, type IDockPointer } from '@sdk';
 import { VIEW_SLOTS, ViewSlot, ViewType } from '../types/ViewType';
 import { NavigationError, NavigationErrorType } from './NavigationError';
 import { parseQueryParams } from './url-builder';
@@ -31,6 +31,23 @@ export class DockPointer implements IDockPointer {
   /** Extract the entity ID from an agentic_process pointer */
   static extractAgenticProcessId(pointer: string): string {
     return pointer.slice(AgenticProcess.type.length + TypeId.DELIMITER.length);
+  }
+
+  /**
+   * Canonical terminal tab identity (`TerminalTab.targetTypeId`) for a
+   * `/dock/shell` (or `/win/shell`) URL pointer — the single owner of the
+   * shell-pointer → tab-key grammar:
+   *   - `agentic_process-<id>` → TypeId(agentic_process, id)
+   *   - `shell-<id>`           → TypeId(shell, id)
+   *   - bare `<id>` (legacy)   → TypeId(shell, id)
+   */
+  static terminalTargetTypeIdForShellPointer(pointer: string): TypeId {
+    if (DockPointer.isAgenticProcessPointer(pointer)) {
+      return new TypeId(AgenticProcess.type, DockPointer.extractAgenticProcessId(pointer));
+    }
+    const shellPrefix = Shell.type + TypeId.DELIMITER;
+    const shellId = pointer.startsWith(shellPrefix) ? pointer.slice(shellPrefix.length) : pointer;
+    return new TypeId(Shell.type, shellId);
   }
 
   public readonly viewType?: ViewType | undefined;
@@ -809,6 +826,37 @@ export class DockPointer implements IDockPointer {
       this.layout === other.layout &&
       JSON.stringify(this.options) === JSON.stringify(other.options)
     );
+  }
+
+  /**
+   * Canonical tab identity for this pointer — the single knob that decides
+   * which pointers collapse to the SAME content-panel Tab (docs/tab-management.md).
+   *
+   * Identity is ``viewType`` + ``pointer`` ONLY. ``layout`` is excluded on
+   * purpose: a ``/win/`` popout and the ``/dock/`` view of the same content are
+   * the same Tab (placement is per-client URL state, not tab identity). Transient
+   * ``options`` (slot, query params) are excluded too — by default a viewType's
+   * sub-state shares one tab (e.g. all settings sub-paths → one "Settings" tab).
+   * This string is the natural key the backend stores verbatim as ``Tab.pointer``;
+   * canonicalization lives here and NOWHERE else, so there is no cross-language
+   * canonicalizer to keep in agreement.
+   */
+  get tabHash(): string {
+    return `${this.viewType ?? ''}|${this.pointer ?? ''}`;
+  }
+
+  /** Reverse of `tabHash` — reconstruct the navigable DockPointer from a stored
+   *  `Tab.pointer` (`viewType|sub`). Null when the viewType is invalid. The
+   *  format lives here (with `tabHash`) so callers never hand-split the string. */
+  static fromTabHash(hash: string): DockPointer | null {
+    const i = hash.indexOf('|');
+    const viewType = i >= 0 ? hash.slice(0, i) : hash;
+    const sub = i >= 0 ? hash.slice(i + 1) : '';
+    try {
+      return DockPointer.fromUrl(viewType, sub || undefined);
+    } catch {
+      return null;
+    }
   }
 
   /**

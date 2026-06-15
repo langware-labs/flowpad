@@ -10,9 +10,10 @@
  *
  * The editor must NOT show "File is missing".
  */
-import { test, expect, request as pwRequest, type Page } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
+import { apiBase, apiContext } from '../_shared/api';
 
-const API = process.env.QA_API_URL || 'http://localhost:6003';
+const API = apiBase();
 
 async function prep(page: Page) {
   await page.addInitScript(() => {
@@ -22,9 +23,9 @@ async function prep(page: Page) {
 }
 
 test('Workflow Run button: asset_ref + spawned AP target_typeid_str + Runs tab', async ({ page }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(60_000);
   await prep(page);
-  const rq = await pwRequest.newContext();
+  const rq = await apiContext();
 
   // Step 1: create a workflow via the UI.
   await page.goto('/dock/workflows');

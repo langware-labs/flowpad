@@ -38,8 +38,11 @@ export default function FlowPage() {
         {/* Collapsed Icon Sidebar (~50px wide) */}
         <CollapsedSidebar />
 
-        {/* Main Content Area */}
-        <div className="flex flex-1 flex-col">
+        {/* Main Content Area. min-w-0 is load-bearing: without it this
+            flex-row child sizes to max-content and the unified tab strip
+            (dozens of chips) blows the column out to thousands of px,
+            pushing the right arrow / close-all / opener toolbar off-screen. */}
+        <div className="flex min-w-0 flex-1 flex-col">
           {/* Content Panel (full width) */}
           <div className="flex-1 overflow-hidden">
             <ContentPanel />

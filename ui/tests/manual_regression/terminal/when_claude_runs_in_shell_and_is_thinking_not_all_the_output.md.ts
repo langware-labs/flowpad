@@ -7,7 +7,7 @@ test.describe('Terminal output persists after tab switching', () => {
   });
 
   test('Terminal output remains visible after switching tabs while a process runs (FLOWPAD-1617)', async ({ page }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(60_000);
 
     await gotoShell(page);
 

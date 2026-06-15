@@ -2,6 +2,7 @@
 id: ae88605f-7f35-59c9-a9a0-c72f8948cd98
 ---
 
+- PRECONDITION: switch the app to Advanced view (footer view pill or `window.setView('advanced')` / localStorage `viewMode=advanced`) — the process toolbar (Restart / Open Terminal / Fork / Worktree / Session Info / Transcript) and side-ribbon panels only exist in Advanced view; the default Standard view shows the simple-chat header without them
 test 1: Prompt index icon appears in agentic process terminal ribbon
 - navigate to {APP_URL}/dock/shell/new_terminal
 - click the "Start Claude" button to create a new agentic process

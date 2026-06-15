@@ -106,6 +106,20 @@ class TypeMetadata:
         SchemaRegistry.register(self.to_type_info())
 
 
+def render_entity_frontmatter(entity: Any, fields: dict[str, Any]) -> str:
+    """Frontmatter block for a ``default_body_fn`` — ALWAYS stamps ``id`` first.
+
+    Entity-id policy: the backing file must carry the entity's UUID, or the
+    indexer cannot adopt the API-created row (validate-on-adopt rejects the
+    name/stem fallback) and mints a duplicate v5-from-path entity on the next
+    walk. Every md-backed ``default_body_fn`` renders through this single
+    chokepoint so a new type can't re-introduce the omission.
+    """
+    from flow_sdk.fs_store.indexer._frontmatter import _render_frontmatter  # noqa: PLC0415
+
+    return _render_frontmatter({"id": str(entity.id), **fields})
+
+
 def register_all() -> None:
     """Import every ``*_info`` sibling module and register its TypeMetadata."""
     import flow_sdk.schema.type_info as pkg

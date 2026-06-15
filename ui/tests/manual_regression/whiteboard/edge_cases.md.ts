@@ -1,7 +1,9 @@
 import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import * as fs from 'fs';
 
-const API = process.env.API_URL || 'http://localhost:6002';
+import { apiBase } from '../_shared/api';
+
+const API = apiBase();
 
 async function createWhiteboard(request: APIRequestContext, name: string) {
   const res = await request.post(`${API}/api/v1/graph/whiteboard`, { data: { name } });

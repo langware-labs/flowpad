@@ -7,7 +7,7 @@ test.describe('Terminal Scroll Sync', () => {
   });
 
   test('viewportY tracks correctly as terminal scrolls', async ({ page }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(60_000);
 
     await gotoShell(page);
 
@@ -37,7 +37,7 @@ test.describe('Terminal Scroll Sync', () => {
   });
 
   test('resize does not break scroll position or output', async ({ page }) => {
-    test.setTimeout(120_000);
+    test.setTimeout(60_000);
 
     await gotoShell(page);
 

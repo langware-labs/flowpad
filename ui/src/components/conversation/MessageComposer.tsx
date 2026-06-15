@@ -14,6 +14,7 @@ import { PromptComposerDialog, type QueuedPrompt } from './PromptComposerDialog'
 import { AttachmentActionsRow, PromptAttachmentPreview, useAttachmentActions } from './attachment-actions';
 import { useLocalUser } from './useLocalUser';
 import { discardDraftFlowMessage } from './flow-message-drafts';
+import { imageFilesFromClipboardData, isImageFile } from '@src/utils/clipboard-image';
 
 interface AttachedRepo {
   typeId: string;
@@ -48,6 +49,67 @@ function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function PendingFileChip({
+  file,
+  disabled,
+  onRemove,
+}: {
+  file: File;
+  disabled?: boolean;
+  onRemove: () => void;
+}) {
+  const image = isImageFile(file);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!image || typeof URL === 'undefined' || typeof URL.createObjectURL !== 'function') {
+      setPreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file, image]);
+
+  // Image rows show a thumbnail (or a fallback icon while the object URL warms
+  // up); non-image rows show a small inline icon. The name/size and the remove
+  // button are identical for both — only the leading visual and spacing vary.
+  return (
+    <li
+      className={`flex items-center gap-2 rounded border border-input bg-muted/40 text-xs ${
+        image ? 'p-1.5' : 'px-2 py-1'
+      }`}
+    >
+      {image ? (
+        <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded border border-border bg-background">
+          {previewUrl ? (
+            <img src={previewUrl} alt={file.name} className="h-full w-full object-contain" />
+          ) : (
+            <FileIcon className="h-5 w-5 text-muted-foreground" />
+          )}
+        </div>
+      ) : (
+        <FileIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
+      )}
+      <div className={`flex min-w-0 flex-1 ${image ? 'flex-col gap-0.5' : 'items-center gap-2'}`}>
+        <span className="flex-1 truncate text-foreground" title={file.name}>
+          {file.name}
+        </span>
+        <span className="shrink-0 text-muted-foreground">{formatSize(file.size)}</span>
+      </div>
+      <button
+        type="button"
+        onClick={onRemove}
+        disabled={disabled}
+        title="Remove attachment"
+        className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-destructive disabled:pointer-events-none"
+      >
+        <X className="h-3 w-3" />
+      </button>
+    </li>
+  );
 }
 
 /**
@@ -133,7 +195,7 @@ export function MessageComposer({
     handlers: { edit: () => setShowPromptDialog(true) },
   });
 
-  const addFiles = (incoming: FileList | null) => {
+  const addFiles = (incoming: FileList | File[] | null) => {
     if (!incoming) return;
     const tooBig: string[] = [];
     setFiles((prev) => {
@@ -257,6 +319,28 @@ export function MessageComposer({
     if (!isDisabled) addFiles(e.dataTransfer.files);
   };
 
+  const handlePaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    if (isDisabled) return;
+    const pastedImages = imageFilesFromClipboardData(e.clipboardData);
+    if (pastedImages.length === 0) return;
+
+    e.preventDefault();
+    addFiles(pastedImages);
+
+    const pastedText = e.clipboardData.getData('text/plain');
+    if (!pastedText) return;
+
+    const textarea = e.currentTarget;
+    const start = textarea.selectionStart ?? textarea.value.length;
+    const end = textarea.selectionEnd ?? start;
+    const next = `${textarea.value.slice(0, start)}${pastedText}${textarea.value.slice(end)}`;
+    setText(next);
+    requestAnimationFrame(() => {
+      textarea.selectionStart = start + pastedText.length;
+      textarea.selectionEnd = start + pastedText.length;
+    });
+  };
+
   const canSend =
     (!!text.trim() || !!activePrompt || files.length > 0 || assetRefs.length > 0 || repoRefs.length > 0) && !isDisabled;
 
@@ -346,24 +430,12 @@ export function MessageComposer({
       {files.length > 0 && (
         <ul className="space-y-1">
           {files.map((f, i) => (
-            <li
+            <PendingFileChip
               key={`${f.name}-${i}`}
-              className="flex items-center gap-2 rounded border border-input bg-muted/40 px-2 py-1 text-xs"
-            >
-              <FileIcon className="h-3 w-3 shrink-0 text-muted-foreground" />
-              <span className="flex-1 truncate text-foreground" title={f.name}>
-                {f.name}
-              </span>
-              <span className="shrink-0 text-muted-foreground">{formatSize(f.size)}</span>
-              <button
-                type="button"
-                onClick={() => removeFile(i)}
-                disabled={isDisabled}
-                className="shrink-0 rounded p-0.5 text-muted-foreground transition-colors hover:text-destructive disabled:pointer-events-none"
-              >
-                <X className="h-3 w-3" />
-              </button>
-            </li>
+              file={f}
+              disabled={isDisabled}
+              onRemove={() => removeFile(i)}
+            />
           ))}
         </ul>
       )}
@@ -458,6 +530,7 @@ export function MessageComposer({
               value={text}
               onChange={(e) => setText(e.target.value)}
               onKeyDown={handleKeyDown}
+              onPaste={handlePaste}
               placeholder={dragging ? 'Drop files here' : 'Edit your draft…'}
               rows={Math.max(2, Math.min(10, text.split('\n').length + 1))}
               disabled={isDisabled}
@@ -509,6 +582,7 @@ export function MessageComposer({
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
           placeholder={dragging ? 'Drop files here' : 'Reply to sender…'}
           rows={1}
           disabled={isDisabled}

@@ -56,24 +56,19 @@ def _get_report_urls() -> list[str]:
     Webhook POSTs themselves are fire-and-forget; a dead URL is harmless.
     """
     from flow_sdk.discovery.flowpad_discovery import read_all_server_infos
-    return [info.url for info in read_all_server_infos()]
+    # Dedupe: many instance state dirs can point at the SAME port (relaunched
+    # named instances reuse port bands), and each notification spawns one
+    # sender per URL. Without dedupe a message-send fanned out to dozens of
+    # duplicate/dead URLs, and that spawn loop dominated per-message latency.
+    return list(dict.fromkeys(info.url for info in read_all_server_infos()))
 
 
 # ---------------------------------------------------------------------------
 # Low-level transport
 # ---------------------------------------------------------------------------
 
-def _send_fire_and_forget(url: str, data: bytes, log_context: str, wait: bool = False) -> None:
-    """Send HTTP POST in a detached subprocess that survives parent exit.
-
-    Args:
-        url: Target URL for the POST request.
-        data: JSON-encoded bytes to send.
-        log_context: Context string for logging.
-        wait: If True, block until the subprocess finishes (for long-running callers
-              like the MCP server where ordering matters). Defaults to False for
-              hook handlers that must return quickly.
-    """
+def _post_detached(url: str, data: bytes, log_context: str, wait: bool) -> None:
+    """POST via a detached child interpreter (survives parent exit). Blocking."""
     script = (
         "import urllib.request, sys; "
         "req = urllib.request.Request(sys.argv[1], data=sys.stdin.buffer.read(), "
@@ -104,6 +99,43 @@ def _send_fire_and_forget(url: str, data: bytes, log_context: str, wait: bool = 
     except Exception as e:
         logger.debug(f"Failed to dispatch notification: {e}")
         record_webhook_failure()
+
+
+def _dispatch_to_urls(urls: list[str], data: bytes, log_context: str, wait: bool) -> None:
+    """Dispatch one notification to all URLs.
+
+    ``wait=True`` (ordered callers, e.g. the MCP server) posts synchronously.
+    Otherwise the whole URL loop runs on ONE daemon thread: spawning a child
+    interpreter costs ~100-300ms each, and paying that synchronously on the
+    server stalls the asyncio event loop per notification — this dominated
+    per-message latency ("messages are not real-time"). One thread per
+    notification (not per URL) keeps thread count bounded under bursts.
+    """
+    if wait:
+        for url in urls:
+            _post_detached(url, data, log_context, wait=True)
+        return
+    import threading  # noqa: PLC0415
+
+    def _run() -> None:
+        for url in urls:
+            _post_detached(url, data, log_context, wait=False)
+
+    threading.Thread(target=_run, name="notify-dispatch", daemon=True).start()
+
+
+def _send_fire_and_forget(url: str, data: bytes, log_context: str, wait: bool = False) -> None:
+    """Send HTTP POST in a detached subprocess that survives parent exit.
+
+    Args:
+        url: Target URL for the POST request.
+        data: JSON-encoded bytes to send.
+        log_context: Context string for logging.
+        wait: If True, block until the subprocess finishes (for long-running callers
+              like the MCP server where ordering matters). Defaults to False for
+              hook handlers that must return quickly.
+    """
+    _dispatch_to_urls([url], data, log_context, wait)
 
 
 # ---------------------------------------------------------------------------
@@ -218,8 +250,7 @@ def send_resource_sync(
     }
 
     raw = json.dumps(payload).encode("utf-8")
-    for url in urls:
-        _send_fire_and_forget(url, raw, ctx, wait=wait)
+    _dispatch_to_urls(urls, raw, ctx, wait)
     return True
 
 

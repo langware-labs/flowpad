@@ -726,36 +726,48 @@ class LocalComputeProvider(ComputeProvider):
                     else:
                         final_spawn_args = [shell_cmd]
 
-            # Fail fast when the command doesn't exist — generic for every PTY
-            # spawn (worker CLIs and shells alike). Resolve against the PATH
-            # the child will see; ptyprocess/winpty otherwise surface this as
-            # a deep traceback whose message gets swallowed upstream.
-            if final_spawn_args:
-                resolved_cmd = find_command(final_spawn_args[0], env.get("PATH"))
-                if resolved_cmd is None:
-                    raise RuntimeError(f"Command not found: '{final_spawn_args[0]}'")
-                # ptyprocess/winpty resolve argv[0] against the PARENT's
-                # os.environ PATH, not the spawn env's — substitute the
-                # absolute path so the env PATH (e.g. a discovered harness
-                # capability folder) actually takes effect.
-                final_spawn_args = [resolved_cmd, *final_spawn_args[1:]]
-
             # Spawn PTY using ptyprocess/winpty (cross-platform)
             pty_working_dir = working_dir if working_dir else self._node_dirs.get(provider_node_id, self._default_working_dir)
-            # Ensure working directory exists (required on Windows for winpty)
-            os.makedirs(pty_working_dir, exist_ok=True)
 
-            logger.info(
-                f"Spawning PTY (session={session_id}, cwd={pty_working_dir!r}, "
-                f"argv={final_spawn_args!r})"
-            )
-            try:
-                pty_process = PtyProcess.spawn(  # type: ignore[union-attr]
+            # The PATH scan (find_command), the makedirs, and PtyProcess.spawn
+            # (a fork+exec whose cost scales with the parent process image and
+            # the child's own bootstrap — seconds for a Claude worker) are all
+            # blocking. Run them together in ONE worker thread so the event
+            # loop keeps serving every other request while a worker boots.
+            # Spawning on the loop is what froze the whole backend for ~15s on
+            # every "Start Claude".
+            def _resolve_and_spawn() -> Any:
+                nonlocal final_spawn_args
+                # Fail fast when the command doesn't exist — generic for every
+                # PTY spawn (worker CLIs and shells alike). Resolve against the
+                # PATH the child will see; ptyprocess/winpty otherwise surface
+                # this as a deep traceback whose message gets swallowed upstream.
+                if final_spawn_args:
+                    resolved_cmd = find_command(final_spawn_args[0], env.get("PATH"))
+                    if resolved_cmd is None:
+                        raise RuntimeError(f"Command not found: '{final_spawn_args[0]}'")
+                    # ptyprocess/winpty resolve argv[0] against the PARENT's
+                    # os.environ PATH, not the spawn env's — substitute the
+                    # absolute path so the env PATH (e.g. a discovered harness
+                    # capability folder) actually takes effect.
+                    final_spawn_args = [resolved_cmd, *final_spawn_args[1:]]
+
+                # Ensure working directory exists (required on Windows for winpty)
+                os.makedirs(pty_working_dir, exist_ok=True)
+
+                logger.info(
+                    f"Spawning PTY (session={session_id}, cwd={pty_working_dir!r}, "
+                    f"argv={final_spawn_args!r})"
+                )
+                return PtyProcess.spawn(  # type: ignore[union-attr]
                     final_spawn_args,
                     cwd=pty_working_dir,
                     env=env,
                     dimensions=(rows, cols),
                 )
+
+            try:
+                pty_process = await asyncio.to_thread(_resolve_and_spawn)
 
                 pty_session_running = {"value": True}
 

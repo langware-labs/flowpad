@@ -180,6 +180,11 @@ class CopilotDriver:
         descriptor = self.transcript_descriptor(process)
         return descriptor.path if descriptor else None
 
+    def skills_root(self, process: "AgenticProcess", assets_dir: Path) -> Path:
+        """Copilot discovers skills from ``.claude/skills`` under the mounted
+        assets dir (passed via ``--add-dir``)."""
+        return assets_dir / ".claude" / "skills"
+
     def _process_local_descriptor(self, process: "AgenticProcess") -> TranscriptDescriptor | None:
         path = copilot_transcript_path_for_process(process.id)
         if not path.exists():

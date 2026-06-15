@@ -16,7 +16,7 @@ import { dismissSetupModal, gotoNewShell, startClaude, processIdFromUrl, waitFor
 
 test.describe('observability surfaces', () => {
   test('test 1: PTY Viewer opens from Columns & Trace dropdown (no dev gate)', async ({ page }) => {
-    test.setTimeout(150_000);
+    test.setTimeout(60_000);
     await dismissSetupModal(page);
     await gotoNewShell(page);
     await startClaude(page);
@@ -32,7 +32,9 @@ test.describe('observability surfaces', () => {
     // Modal mounts with the "PTY Viewer" title and raw-stream stats.
     const dialog = page.getByRole('dialog').filter({ hasText: 'PTY Viewer' });
     await expect(dialog).toBeVisible({ timeout: 10_000 });
-    await expect(dialog.getByText(/Replay:/)).toBeVisible({ timeout: 15_000 });
+    // Raw-stream stats line. Was "Replay: ..." until the replay buffer was
+    // removed (4466d9bc) — the summary now reports xterm memory chunks.
+    await expect(dialog.getByText(/xterm memory:/)).toBeVisible({ timeout: 15_000 });
 
     // Close (Esc) → modal unmounts, terminal view unaffected.
     await page.keyboard.press('Escape');
@@ -41,7 +43,7 @@ test.describe('observability surfaces', () => {
   });
 
   test('test 2: Open Transcript navigates to the claude transcript lens', async ({ page }) => {
-    test.setTimeout(150_000);
+    test.setTimeout(60_000);
     await dismissSetupModal(page);
     await gotoNewShell(page);
     await startClaude(page);
@@ -73,7 +75,7 @@ test.describe('observability surfaces', () => {
   });
 
   test('test 3: Open Transcript icon is hidden until a session exists', async ({ page }) => {
-    test.setTimeout(150_000);
+    test.setTimeout(60_000);
     await dismissSetupModal(page);
     await gotoNewShell(page);
 

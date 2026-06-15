@@ -13,7 +13,7 @@
 import { useCallback } from 'react';
 import {
   AgenticProcess,
-  ProcessType,
+  ProcessKind,
   Workflow,
   dataContext,
 } from '@sdk';
@@ -49,7 +49,7 @@ export function useSpawnRunner(): UseSpawnRunnerResult {
       workdir,
       visible: false,
       target_typeid_str: workflow.typeId.toString(),
-      process_type: ProcessType.Execution,
+      process_type: ProcessKind.Execution,
     }).save([workflow.typeId]);
 
     // Fire-and-forget — the streaming response is consumed elsewhere.

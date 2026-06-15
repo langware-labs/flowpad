@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
+import { apiBase } from '../_shared/api';
 
-const API = process.env.API_URL || 'http://localhost:6002';
+const API = apiBase();
 
 async function dismissSetupModal(page: Page) {
   await page.addInitScript(() => localStorage.setItem('llm-setup-modal-seen', 'true'));
