@@ -301,3 +301,5 @@ flow_sdk/server/static/
 # internal artifacts — never track
 .flow/skills/agentic-qa/debug_log.md
 /private/
+
+SOC2/
