@@ -420,7 +420,14 @@ def discover_claude_session_paths_iter(limit: int | None = None) -> Iterator[Pat
                 return
 
 def get_claude_session(uid: str, project: str | Path | None = None) -> FSRecord | None:
-    """Find a session by session_id. O(1) when ``project`` is the abs cwd."""
+    """Resolve a session by session_id to its path + envelope. O(1) when ``project`` is the abs cwd.
+
+    This is a path/envelope resolver, never a content reader: it extracts with
+    ``include_content=False`` so it never runs the full ``worker_summary_log``
+    transcript parse. Every caller reads only ``jsonl_path``/``cwd``/existence —
+    none touch ``.content`` — and this method is reached from hot paths (e.g.
+    ``transcript_descriptor``), so it must stay cheap.
+    """
     projects_dir = get_instance_settings().claude_projects_dir
     if not projects_dir.is_dir():
         return None
@@ -431,7 +438,7 @@ def get_claude_session(uid: str, project: str | Path | None = None) -> FSRecord 
         candidate = projects_dir / encoded / fname
         if candidate.exists():
             try:
-                return extract_claude_session_from_path(candidate)
+                return extract_claude_session_from_path(candidate, include_content=False)
             except (json.JSONDecodeError, OSError):
                 return None
 
@@ -441,7 +448,7 @@ def get_claude_session(uid: str, project: str | Path | None = None) -> FSRecord 
         candidate = project_dir / fname
         if candidate.exists():
             try:
-                return extract_claude_session_from_path(candidate)
+                return extract_claude_session_from_path(candidate, include_content=False)
             except (json.JSONDecodeError, OSError):
                 continue
     return None
