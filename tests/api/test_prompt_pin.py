@@ -57,8 +57,9 @@ async def test_pin_creates_prompt_and_cross_links(bootstrapped_client, user, tmp
     assert prompt.text == text
     assert prompt.name == "Fix the auth flow"  # auto-name = first line
     assert prompt.project_id == project_id
-    # Project-scoped backing .md under <project>/prompts/.
-    assert prompt.asset_ref and prompt.asset_ref.startswith(str(tmp_path))
+    # Project-scoped backing .md under <project>/prompts/ (asset_ref is posix-normalized,
+    # so check containment as Path rather than a separator-sensitive string prefix).
+    assert prompt.asset_ref and Path(prompt.asset_ref).is_relative_to(tmp_path)
     assert Path(prompt.asset_ref).is_file()
 
     # Mutual private-context links.

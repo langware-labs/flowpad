@@ -199,5 +199,6 @@ async def test_fire_writes_trigger_log_entry(trigger_log_dir):
     assert log_file.exists()
     content = log_file.read_text()
     assert "log_test" in content
-    assert "/tmp/x" in content
+    # path is logged with OS-native separators (backslash-escaped in JSON on Windows)
+    assert str(Path("/tmp/x")).replace("\\", "\\\\") in content
     assert "modified" in content

@@ -45,7 +45,10 @@ async def test_recover_by_path_phase1_exact_existing_match(bootstrapped_client, 
     recovered = await Project.recover_by_path(str(target))
     assert recovered is not None
     assert recovered.id == proj.id
-    assert recovered.fs_storage_mount_path == str(target)
+    # compare as Path: the stored mount path is posix-normalized, so a raw
+    # string compare differs only by separator on Windows
+    assert recovered.fs_storage_mount_path is not None
+    assert Path(recovered.fs_storage_mount_path) == target
 
 
 @pytest.mark.asyncio

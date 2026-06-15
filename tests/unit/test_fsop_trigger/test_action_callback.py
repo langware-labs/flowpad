@@ -62,7 +62,8 @@ async def test_callback_dispatched_via_registry():
 
     assert received["trigger"] is fake_trigger
     assert len(received["changes"]) == 1
-    assert str(received["changes"][0].path) == "/tmp/x"
+    # compare as Path so the separator is OS-agnostic (WindowsPath("/tmp/x") -> "\\tmp\\x")
+    assert received["changes"][0].path == Path("/tmp/x")
     assert received["changes"][0].change_type == "modified"
 
 

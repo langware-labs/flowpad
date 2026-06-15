@@ -82,7 +82,8 @@ async def test_prompt_project_scoped_create_materializes_md(bootstrapped_client,
     created = resp.json()["data"]
 
     md = tmp_path / "prompts" / "code_review_pass.md"
-    assert created["asset_ref"] == str(md), created
+    # asset_ref is posix-normalized; compare as Path so the separator is OS-agnostic
+    assert Path(created["asset_ref"]) == md, created
     assert md.is_file(), "create must materialize the backing .md"
 
     # what the indexer would read back equals what the API wrote
