@@ -12,6 +12,7 @@ import {
   FolderOpen,
   Link as LinkIcon,
   Loader2,
+  Maximize2,
   MoreVertical,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -39,6 +40,12 @@ function isImage(name: string): boolean {
 
 function isVideo(name: string): boolean {
   return VIDEO_EXTS.has(extOf(name));
+}
+
+// A <source> for a video url, typed by extension when we recognise it.
+function videoSource(url: string, name: string) {
+  const mime = VIDEO_MIME[extOf(name)];
+  return mime ? <source src={url} type={mime} /> : <source src={url} />;
 }
 
 interface FileMeta {
@@ -337,6 +344,38 @@ export function AttachmentChip({
     </div>
   );
 
+  // Fullscreen preview shared by image and video. Backdrop click + Esc close;
+  // clicking the media itself does not (stopPropagation). Media-aware so a video
+  // attachment gets the same expand-to-fullscreen experience as an image.
+  const lightboxNode = lightbox && (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={filename}
+      onClick={() => setLightbox(false)}
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-6 cursor-zoom-out"
+    >
+      {isVideo(filename) ? (
+        <video
+          controls
+          autoPlay
+          playsInline
+          onClick={(e) => e.stopPropagation()}
+          className="max-h-full max-w-full rounded-lg shadow-2xl bg-black cursor-default"
+        >
+          {videoSource(url, filename)}
+        </video>
+      ) : (
+        <img
+          src={url}
+          alt={filename}
+          onClick={(e) => e.stopPropagation()}
+          className="max-h-full max-w-full rounded-lg object-contain shadow-2xl cursor-default"
+        />
+      )}
+    </div>
+  );
+
   if (isImage(filename) && !imgFailed) {
     return (
       <div ref={containerRef} className="group relative inline-block">
@@ -356,28 +395,12 @@ export function AttachmentChip({
           />
         </button>
         {overlay}
-        {lightbox && (
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label={filename}
-            onClick={() => setLightbox(false)}
-            className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 p-6 cursor-zoom-out"
-          >
-            <img
-              src={url}
-              alt={filename}
-              onClick={(e) => e.stopPropagation()}
-              className="max-h-full max-w-full rounded-lg object-contain shadow-2xl cursor-default"
-            />
-          </div>
-        )}
+        {lightboxNode}
       </div>
     );
   }
 
   if (isVideo(filename) && !videoFailed) {
-    const mime = VIDEO_MIME[extOf(filename)];
     return (
       <div ref={containerRef} className="group relative inline-block">
         <div className="block max-w-[360px] overflow-hidden rounded-lg border border-border bg-black" title={filename}>
@@ -388,10 +411,25 @@ export function AttachmentChip({
             onError={() => setVideoFailed(true)}
             className="block max-h-[280px] max-w-full bg-black"
           >
-            {mime ? <source src={url} type={mime} /> : <source src={url} />}
+            {videoSource(url, filename)}
           </video>
         </div>
+        {/* Native controls own clicks on the player body, so expand-to-fullscreen
+            is an explicit affordance rather than a click-anywhere target. */}
+        <button
+          type="button"
+          title="Expand"
+          onClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setLightbox(true);
+          }}
+          className="absolute left-1 top-1 z-10 flex h-6 w-6 items-center justify-center rounded-md border border-border bg-background/95 text-muted-foreground shadow-sm backdrop-blur-sm opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100"
+        >
+          <Maximize2 className="h-3.5 w-3.5" />
+        </button>
         {overlay}
+        {lightboxNode}
       </div>
     );
   }
