@@ -86,9 +86,14 @@ class Conversation(Entity):
     # client payload. See ``ConversationKind``.
     kind: ConversationKind = APIField(default=ConversationKind.DIRECT)
     # Hub-side owner of the conversation (mirrors ``Conversation.initiated_by``
-    # on the hub). Populated by ``_upsert_hub_conversation_metadata`` and used
-    # by ``handle_conversation_delete_archived`` to classify each archived
-    # row as own-delete vs leave vs decline. Always equal to a cloud-user id.
+    # on the hub). Populated VERBATIM by ``_upsert_hub_conversation_metadata``
+    # and used by ``handle_conversation_delete_archived`` to classify each
+    # archived row as own-delete vs leave vs decline. A cloud-user id when the
+    # hub carried an owner — but MAY be null: the hub only stamps
+    # ``initiated_by`` for project-created conversations, so share/diagnostics
+    # convs reflect ``None`` here (the receiver must NOT fabricate a 'system'
+    # sentinel). Ownership for display/authz resolves from the participant
+    # roster's ``owner`` role; all ``created_by ==`` checks are null-safe.
     created_by: Optional[str] = APIField(default=None)
     remote_project_id: Optional[str] = APIField(None)
     remote_project_name: Optional[str] = APIField(None)
