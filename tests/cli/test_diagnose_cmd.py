@@ -138,6 +138,31 @@ def test_extract_report_result_none_when_absent_or_no_id():
 
 
 # --------------------------------------------------------------------------- #
+# _safe_echo — must not crash on a non-UTF-8 console (Windows cp1252)
+# --------------------------------------------------------------------------- #
+
+def test_safe_echo_falls_back_to_ascii_on_unencodable_console(monkeypatch):
+    """A cp1252 console can't encode ▸/✓ and ``typer.echo`` raises
+    UnicodeEncodeError. ``_safe_echo`` must retry with ASCII fallbacks instead of
+    crashing the whole diagnose run."""
+    from flow_sdk.cli.commands import diagnose_cmd
+
+    calls: list[str] = []
+
+    def _fake_echo(message="", nl=True, err=False):
+        calls.append(message)
+        if any(ord(c) > 0x7F for c in message):
+            raise UnicodeEncodeError("charmap", message, 0, 1, "no mapping")
+
+    monkeypatch.setattr(diagnose_cmd.typer, "echo", _fake_echo)
+    diagnose_cmd._safe_echo("  ▸ done ✓")  # must not raise
+
+    assert len(calls) == 2  # first attempt raised, ASCII retry succeeded
+    assert all(ord(c) <= 0x7F for c in calls[1])
+    assert ">" in calls[1] and "v" in calls[1]
+
+
+# --------------------------------------------------------------------------- #
 # _run_diagnose — must not hang when the transcript stream never self-terminates
 # --------------------------------------------------------------------------- #
 
@@ -157,8 +182,8 @@ async def test_run_diagnose_exits_when_recorded_even_if_stream_never_ends():
 
     from flow_sdk.cli.commands import diagnose_cmd
 
-    # _await_warmup() requires a non-empty transcript file to consider the worker
-    # "started"; give the fake worker a real one so warmup passes.
+    # await_worker_started() requires a non-empty transcript file to consider the
+    # worker "started"; give the fake worker a real one so warmup passes.
     _tf = tempfile.NamedTemporaryFile(prefix="diag_warmup_", suffix=".jsonl", delete=False)
     _tf.write(b'{"type":"system"}\n')
     _tf.flush()
@@ -217,3 +242,146 @@ async def test_run_diagnose_exits_when_recorded_even_if_stream_never_ends():
         rc = await asyncio.wait_for(diagnose_cmd._run_diagnose("", 1800.0), timeout=5)
     _tpath.unlink(missing_ok=True)
     assert rc == 0
+
+
+# --------------------------------------------------------------------------- #
+# _await_warmup — liveness-gated start detection (no fixed wall-clock)
+# --------------------------------------------------------------------------- #
+
+@pytest.mark.asyncio
+async def test_run_diagnose_fails_fast_when_worker_dies_without_transcript():
+    """If the worker turn ends (crash / ``claude`` binary unresolved) without
+    ever producing a transcript, diagnose must surface the clear 'failed to
+    start' error and exit 1 — detected via the worker leaving _PROMPT_WORKERS,
+    NOT by waiting out the budget. The 5 s ``wait_for`` is a hang detector."""
+    from pathlib import Path
+
+    from flow_sdk.cli.commands import diagnose_cmd
+
+    class _FakeDriver:
+        def transcript_path(self, _ap):
+            return Path("does-not-exist-never-written.jsonl")
+
+    class _FakeAP:
+        def __init__(self, **_kw):
+            self.id = "dead-worker-id"
+            self.session_id = "fakesess"
+            self.driver = _FakeDriver()
+
+        def enable_assistant(self):
+            pass
+
+        async def prompt(self, _text):
+            # Returns without ever registering in _PROMPT_WORKERS → the turn is
+            # already "ended" from warmup's perspective (the dead/never-started case).
+            return None
+
+        async def stream_transcript(self, timeout=0):
+            if False:  # pragma: no cover - never iterated; warmup fails first
+                yield {}
+
+        @classmethod
+        async def get_by_id(cls, _id):
+            return None
+
+    events: list[dict] = []
+    with (
+        patch("flow_sdk.builtin.agentic_process.AgenticProcess", _FakeAP),
+        patch(
+            "flow_sdk.core.capabilities.discovery.ensure_discovered",
+            new=AsyncMock(return_value=None),
+        ),
+        patch(
+            "flow_sdk.fs_store.schema_registry.SchemaRegistry.get_entity_cls",
+            lambda _t: None,
+        ),
+        patch("flow_sdk.migrations.runner._bootstrap_local", new=AsyncMock(return_value=None)),
+    ):
+        rc = await asyncio.wait_for(
+            diagnose_cmd._run_diagnose("", 1800.0, emit=events.append), timeout=5
+        )
+    assert rc == 1
+    assert any(
+        e.get("type") == "error" and "produced no transcript" in e.get("text", "")
+        for e in events
+    )
+
+
+@pytest.mark.asyncio
+async def test_run_diagnose_waits_for_slow_but_alive_worker():
+    """A registered (alive) worker that is slow to write its first transcript
+    line must NOT be failed — warmup keeps waiting until the line appears, then
+    the run completes normally. Guards the Windows cold-start regression where a
+    fixed 15 s window false-failed a healthy claude."""
+    import tempfile
+    from pathlib import Path
+
+    from flow_sdk.builtin.agentic_process import agentic_process as ap_mod
+    from flow_sdk.cli.commands import diagnose_cmd
+
+    _tf = tempfile.NamedTemporaryFile(prefix="diag_slow_", suffix=".jsonl", delete=False)
+    _tf.close()
+    _tpath = Path(_tf.name)  # exists but EMPTY (size 0) → "not started yet"
+    state = {"checks": 0}
+
+    class _FakeDriver:
+        def transcript_path(self, _ap):
+            # Simulate a slow cold-start: the first couple of warmup polls see an
+            # empty file; only later does claude write its first line.
+            state["checks"] += 1
+            if state["checks"] >= 3:
+                _tpath.write_bytes(b'{"type":"system"}\n')
+            return _tpath
+
+    class _FakeAP:
+        def __init__(self, **_kw):
+            self.id = "slow-worker-id"
+            self.session_id = "fakesess"
+            self.driver = _FakeDriver()
+
+        def enable_assistant(self):
+            pass
+
+        async def prompt(self, _text):
+            return None
+
+        async def stream_transcript(self, timeout=0):
+            yield {"message": {"role": "assistant", "content": [{"type": "text", "text": "working"}]}}
+            yield {
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "content": '{"diagnosis_id": "d1", "feed_entry_id": null, "feed_posted": false}',
+                        }
+                    ],
+                }
+            }
+            await asyncio.sleep(3600)
+
+        @classmethod
+        async def get_by_id(cls, _id):
+            return None
+
+    # Mark the worker alive for the duration of the slow start.
+    ap_mod._PROMPT_WORKERS["slow-worker-id"] = object()
+    try:
+        with (
+            patch("flow_sdk.builtin.agentic_process.AgenticProcess", _FakeAP),
+            patch(
+                "flow_sdk.core.capabilities.discovery.ensure_discovered",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "flow_sdk.fs_store.schema_registry.SchemaRegistry.get_entity_cls",
+                lambda _t: None,
+            ),
+            patch("flow_sdk.migrations.runner._bootstrap_local", new=AsyncMock(return_value=None)),
+        ):
+            rc = await asyncio.wait_for(diagnose_cmd._run_diagnose("", 1800.0), timeout=5)
+    finally:
+        ap_mod._PROMPT_WORKERS.pop("slow-worker-id", None)
+        _tpath.unlink(missing_ok=True)
+    assert rc == 0
+    assert state["checks"] >= 3  # proves warmup waited through the empty-file polls
