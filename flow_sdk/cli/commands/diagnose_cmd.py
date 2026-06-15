@@ -19,11 +19,8 @@ from pathlib import Path
 
 import typer
 
-from flow_sdk.agentic_run_consts import (
-    AGENT_WARMUP_INTERVAL_S,
-    AGENT_WARMUP_TICKS,
-    DEFAULT_TRANSCRIPT_TIMEOUT_S,
-)
+from flow_sdk.agentic_run_consts import DEFAULT_TRANSCRIPT_TIMEOUT_S
+from flow_sdk.agentic_warmup import await_worker_started
 
 
 def _extract_report_result(text: str) -> dict | None:
@@ -54,6 +51,25 @@ def _quiet_logs() -> None:
     logging.disable(logging.WARNING)
 
 
+# Glyph → ASCII fallbacks for consoles whose codepage can't encode the decorative
+# characters (Windows cp1252 has no ▸ / ✓, so ``typer.echo`` raises
+# UnicodeEncodeError on them). Only consulted when a direct echo fails, so UTF-8
+# terminals render the real glyphs unchanged.
+_GLYPH_FALLBACKS = {"▸": ">", "✓": "v", "✗": "x", "·": ".", "…": "...", "—": "-", "–": "-"}
+
+
+def _safe_echo(message: str = "", *, nl: bool = True, err: bool = False) -> None:
+    """``typer.echo`` that degrades gracefully instead of crashing the run on a
+    non-UTF-8 console. The encode error fires before any bytes are written, so the
+    ASCII-fallback retry cannot double-print.
+    """
+    try:
+        typer.echo(message, nl=nl, err=err)
+    except UnicodeEncodeError:
+        safe = "".join(_GLYPH_FALLBACKS.get(c, c) for c in message)
+        typer.echo(safe.encode("ascii", "replace").decode("ascii"), nl=nl, err=err)
+
+
 class _TerminalSink:
     """Default ``emit`` target: renders diagnose events to the terminal exactly as
     `flow diagnose` always has — narration on its own line (``▸ …`` — the valuable
@@ -70,26 +86,26 @@ class _TerminalSink:
 
     def _close_row(self) -> None:
         if self._row_open:
-            typer.echo("")  # terminate the inline progress row
+            _safe_echo("")  # terminate the inline progress row
             self._row_open = False
 
     def __call__(self, event: dict) -> None:
         etype = event.get("type")
         if etype == "narration":
             self._close_row()
-            typer.echo(f"  ▸ {event.get('text', '')}")
+            _safe_echo(f"  ▸ {event.get('text', '')}")
         elif etype == "progress":
             # One inline dot per tool action — a liveness pulse, no detail.
             if not self._row_open:
-                typer.echo("  ", nl=False)
+                _safe_echo("  ", nl=False)
                 self._row_open = True
-            typer.echo("· ", nl=False)
+            _safe_echo("· ", nl=False)
         elif etype == "status":
             self._close_row()
-            typer.echo(event.get("text", ""))
+            _safe_echo(event.get("text", ""))
         elif etype == "error":
             self._close_row()
-            typer.echo(event.get("text", ""), err=True)
+            _safe_echo(event.get("text", ""), err=True)
         elif etype == "flush":
             self._close_row()
         # "done" carries structured fields for the UI; the terminal already printed
@@ -293,29 +309,11 @@ async def _run_diagnose(message: str, transcript_timeout: float, *, emit=None) -
             if shell is not None:
                 await shell.terminate_worker()
 
-    async def _await_warmup() -> bool:
-        """Wait briefly for the worker to write its first transcript line.
-
-        The driver pre-assigns ``ap.session_id`` eagerly, so a non-empty
-        session id is NOT proof the worker started — transcript-file-with-content
-        is the canonical "started" signal (same check the migration runner uses).
-        If it never appears, the worker failed to launch (e.g. the ``claude`` CLI
-        couldn't be resolved), so surface that fast instead of polling
-        ``stream_transcript`` to its full deadline with an opaque TimeoutError.
-        """
-        for _ in range(AGENT_WARMUP_TICKS):
-            tp = ap.driver.transcript_path(ap)
-            if tp and tp.exists() and tp.stat().st_size > 0:
-                return True
-            await asyncio.sleep(AGENT_WARMUP_INTERVAL_S)
-        tp = ap.driver.transcript_path(ap)
-        return bool(tp and tp.exists() and tp.stat().st_size > 0)
-
     try:
         try:
             await ap.prompt(prompt_text)
             emit({"type": "status", "text": f"  Diagnosing (session={(ap.session_id or '')[:8]})…"})
-            if not await _await_warmup():
+            if not await await_worker_started(ap, transcript_timeout):
                 emit({"type": "error", "text": (
                     "  ! The diagnostic agent failed to start — it produced no transcript. "
                     "Check that the `claude` CLI is installed and on your PATH, then re-run "
