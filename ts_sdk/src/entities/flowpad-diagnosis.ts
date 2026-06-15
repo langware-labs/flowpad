@@ -12,6 +12,7 @@ export interface IFlowpadDiagnosis extends IEntity {
   symptoms?: string; // what the user saw / expected (UI, console errors, misbehavior)
   rca?: string; // root cause found after debugging
   fix?: string; // what was done to resolve it
+  summary?: string; // one-paragraph plain-language summary shown to the user
 }
 
 @registerEntity
@@ -24,6 +25,7 @@ export class FlowpadDiagnosis
   symptoms?: string;
   rca?: string;
   fix?: string;
+  summary?: string;
   static type: string = 'flowpad_diagnosis';
 
   constructor(entity: Partial<IFlowpadDiagnosis> = {}) {
@@ -33,5 +35,6 @@ export class FlowpadDiagnosis
     this.symptoms = entity.symptoms;
     this.rca = entity.rca;
     this.fix = entity.fix;
+    this.summary = entity.summary;
   }
 }

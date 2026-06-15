@@ -16,8 +16,8 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { cn } from '@src/lib/utils';
+import { isImagePath } from '@sdk';
 
-const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'avif', 'bmp', 'ico']);
 const VIDEO_EXTS = new Set(['mp4', 'mov', 'm4v', 'webm', 'ogv', 'ogg']);
 const VIDEO_MIME: Record<string, string> = {
   mp4: 'video/mp4',
@@ -31,10 +31,6 @@ const VIDEO_MIME: Record<string, string> = {
 function extOf(name: string): string {
   const dot = name.lastIndexOf('.');
   return dot >= 0 ? name.slice(dot + 1).toLowerCase() : '';
-}
-
-function isImage(name: string): boolean {
-  return IMAGE_EXTS.has(extOf(name));
 }
 
 function isVideo(name: string): boolean {
@@ -337,7 +333,7 @@ export function AttachmentChip({
     </div>
   );
 
-  if (isImage(filename) && !imgFailed) {
+  if (isImagePath(filename) && !imgFailed) {
     return (
       <div ref={containerRef} className="group relative inline-block">
         {/* Primary click previews the image in-app (lightbox), not a browser

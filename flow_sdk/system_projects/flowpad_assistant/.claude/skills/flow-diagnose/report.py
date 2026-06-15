@@ -19,13 +19,18 @@ What it does, all locally (it opens the instance DB itself — works whether or 
 the backend is running, which is the point: ``flow diagnose`` runs precisely when
 the backend may be down):
 
-  1. Always creates a ``flowpad_diagnosis`` record (title / symptoms / rca / fix).
+  1. Always creates a ``flowpad_diagnosis`` record (title / symptoms / rca / fix /
+     summary).
   2. ONLY when an issue was found (``--status`` in ``fixed | needs_action |
-     unrecognized``) it also posts the diagnosis to the Home Feed: a hidden support
-     ``Conversation`` + a summary ``FlowMessage`` (carrying the diagnosis as a
-     ``TYPE_ID`` attachment) + a ``message_suggest`` ``FeedEntry``. For ``ok`` /
-     ``informational`` (everything fine / nothing to act on) the diagnosis is
-     recorded for history but NO Feed entry is created.
+     unrecognized``) it also creates the *support artifact* the report buttons act
+     on: a hidden ``Conversation`` + a summary ``FlowMessage`` (carrying the
+     diagnosis as a ``TYPE_ID`` attachment). For ``ok`` / ``informational``
+     (everything fine / nothing to act on) only the diagnosis record is written.
+
+Posting the diagnosis to the **Home Feed** (a ``message_suggest`` ``FeedEntry``) is
+NOT done here — it is owned by the ``flow diagnose`` CLI runner, which posts it only
+for the CLI surface. The UI surface reuses the same Conversation/FlowMessage to drive
+the report buttons in its own modal, so it deliberately gets no Feed card.
 
 The @local user/project are CREATED if they don't exist yet (idempotent).
 The `flow diagnose` runner cross-links the diagnosis to the calling process itself.
@@ -39,9 +44,10 @@ from flow_sdk._compat import UTC
 
 logger = logging.getLogger(__name__)
 
-# Statuses that mean "an issue was found" → post a Home-Feed entry so the user can
-# review it and send it to support. Everything else (``ok``, ``informational``)
-# records the diagnosis for history but posts no Feed entry — nothing to act on.
+# Statuses that mean "an issue was found" → create the support Conversation +
+# FlowMessage so the user can send the report to support. Everything else (``ok``,
+# ``informational``) records the diagnosis for history but creates no support
+# artifact — nothing to act on.
 _ISSUE_STATUSES = frozenset({"fixed", "needs_action", "unrecognized"})
 
 
@@ -62,7 +68,9 @@ def _format_message(*, summary: str, status: str, details: str, platform: str) -
     return "\n".join(lines)
 
 
-async def _create_diagnosis_record(*, title: str, symptoms: str, rca: str, fix: str) -> str:
+async def _create_diagnosis_record(
+    *, title: str, symptoms: str, rca: str, fix: str, summary: str
+) -> str:
     """Create + persist a ``flowpad_diagnosis`` record; return its id."""
     import flow_sdk.models.entities  # noqa: F401 — registers entity classes
     from flow_sdk.api.api_types.identifier import mint_uuid
@@ -74,14 +82,16 @@ async def _create_diagnosis_record(*, title: str, symptoms: str, rca: str, fix: 
     register_all()
     info = SchemaRegistry.get(EntityType.FLOWPAD_DIAGNOSIS)
     assert info and info.meta_model, f"{EntityType.FLOWPAD_DIAGNOSIS} type is not registered"
-    meta = info.meta_model(name=title, title=title, symptoms=symptoms, rca=rca, fix=fix)
+    meta = info.meta_model(
+        name=title, title=title, symptoms=symptoms, rca=rca, fix=fix, summary=summary
+    )
     rec = FSRecord(EntityType.FLOWPAD_DIAGNOSIS, id=mint_uuid(), **meta.model_dump(exclude_none=True))
     rec.save()
     await rec.sync_to_db()
     return rec.id
 
 
-async def create_diagnostic_report(
+async def create_support_conversation(
     *,
     summary: str,
     status: str = "informational",
@@ -89,17 +99,20 @@ async def create_diagnostic_report(
     platform: str = "",
     attachment_type_id: str | None = None,
 ) -> dict:
-    """Persist a flow-diagnose report as a hidden Conversation + FlowMessage +
-    FeedEntry via the SDK. Returns ``{feed_entry_id, conversation_id,
+    """Persist the diagnosis's *support artifact* — a hidden ``Conversation`` + a
+    summary ``FlowMessage`` — via the SDK. Returns ``{conversation_id,
     flow_message_id}``. Creates the @local user/project if missing, so it always
     records.
+
+    This is what the report buttons (Report issue / Forward) in the Feed card and
+    the UI diagnose modal act on. It does NOT create a Feed ``FeedEntry``: posting
+    the Home-Feed card is the CLI runner's job (CLI surface only).
 
     ``attachment_type_id`` — an optional ``"<type>-<id>"`` TypeId (e.g. a
     ``flowpad_diagnosis-<id>``) attached to the summary message as a ``TYPE_ID``
     attachment, so the support card can carry the structured diagnosis entity.
     """
     from flow_sdk.builtin.conversation import Conversation
-    from flow_sdk.builtin.feed_entry import FeedEntry, FeedKind, FeedStatus, MessageSuggest
     from flow_sdk.builtin.flow_message import Attachment, AttachmentType, FlowMessage
     from flow_sdk.db.database import init_db
     from flow_sdk.fs_store.operations.conversation import (
@@ -160,32 +173,17 @@ async def create_diagnostic_report(
     append_message_pointer(rec, msg.id, datetime.now(UTC).isoformat())
     await project_pointers_to_entity(rec, notify=False)
 
-    # 3) Hide from the strip until "Send to Support". Stamp dismissed_at AFTER the
+    # 3) Hide from the strip until "Report issue". Stamp dismissed_at AFTER the
     #    message so it is newer than the latest message ts (no auto-revive).
     conv = await Conversation.get_one({"id": conv.id})
     conv.dismissed_at = datetime.now(UTC)
     await conv.save(owner)
 
-    # 4) FeedEntry (message_suggest) — what the Home-landing Feed renders.
-    suggest = MessageSuggest(
-        text="An error came up while using Flowpad — here's what the diagnostic found:",
-        conversation_id=conv.id,
-        flow_message_id=msg.id,
-        message_text=(summary or "").strip(),
-    )
-    feed = FeedEntry(
-        kind=FeedKind.MESSAGE_SUGGEST.value,
-        feed_status=FeedStatus.NEW.value,
-        feed_data=suggest.model_dump(),
-    )
-    feed = await feed.save(owner)
-
     logger.info(
-        "[diagnose-report] created feed_entry=%s conversation=%s flow_message=%s",
-        feed.id, conv.id, msg.id,
+        "[diagnose-report] created support conversation=%s flow_message=%s",
+        conv.id, msg.id,
     )
     return {
-        "feed_entry_id": feed.id,
         "conversation_id": conv.id,
         "flow_message_id": msg.id,
     }
@@ -204,37 +202,41 @@ async def record_diagnosis(
 ) -> dict:
     """Record a flow-diagnose result.
 
-    Always creates the ``flowpad_diagnosis`` record. Posts it to the Home Feed
-    ONLY when an issue was found (``status`` in ``_ISSUE_STATUSES``) — when the
-    sweep was clean (``ok`` / ``informational``) the diagnosis is recorded for
-    history but no Feed entry is created. Returns the created ids; the Feed-related
-    ids are ``None`` when no Feed entry was posted.
+    Always creates the ``flowpad_diagnosis`` record. ONLY when an issue was found
+    (``status`` in ``_ISSUE_STATUSES``) it also creates the support artifact
+    (hidden Conversation + summary FlowMessage) the report buttons act on — when
+    the sweep was clean (``ok`` / ``informational``) only the diagnosis record is
+    written. Posting the Home-Feed card is the CLI runner's job, not this script's.
+
+    Returns ``{diagnosis_id, conversation_id, flow_message_id, has_issue}``; the
+    conversation/message ids are ``None`` for a clean sweep. The JSON is composed of
+    UUIDs/booleans only (no free text) so the runner can scrape it safely from the
+    agent's transcript stream.
     """
     from flow_sdk.db.database import init_db
     from flow_sdk.schema.types import EntityType
 
     await init_db()
     diagnosis_id = await _create_diagnosis_record(
-        title=title, symptoms=symptoms, rca=rca, fix=fix
+        title=title, symptoms=symptoms, rca=rca, fix=fix, summary=summary or title
     )
 
     result: dict = {
         "diagnosis_id": diagnosis_id,
-        "feed_entry_id": None,
         "conversation_id": None,
         "flow_message_id": None,
-        "feed_posted": False,
+        "has_issue": False,
     }
     if status in _ISSUE_STATUSES:
-        feed = await create_diagnostic_report(
+        support = await create_support_conversation(
             summary=summary or title,
             status=status,
             details=details,
             platform=platform,
             attachment_type_id=f"{EntityType.FLOWPAD_DIAGNOSIS}-{diagnosis_id}",
         )
-        result.update(feed)
-        result["feed_posted"] = True
+        result.update(support)
+        result["has_issue"] = True
     return result
 
 
