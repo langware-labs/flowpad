@@ -9,7 +9,11 @@ interface DiagnoseModalProps {
   open: boolean;
   onClose: () => void;
   /** Open the full-diagnosis popup in place of this one (the "View diagnosis" button). */
-  onViewDiagnosis: (args: { diagnosisId: string; conversationId?: string }) => void;
+  onViewDiagnosis: (args: {
+    diagnosisId: string;
+    conversationId?: string;
+    flowMessageId?: string;
+  }) => void;
 }
 
 // Mirrors the event dicts emitted by `_run_diagnose` (flow_sdk/cli/commands/diagnose_cmd.py),
@@ -38,6 +42,7 @@ interface DoneState {
   ok: boolean;
   diagnosisId: string | null;
   conversationId: string | null;
+  flowMessageId: string | null;
 }
 
 export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalProps) {
@@ -81,7 +86,12 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
     } else if (ev.type === 'error') {
       setLines((prev) => [...prev, { kind: 'error', text: ev.text.trim() }]);
     } else if (ev.type === 'done') {
-      setDone({ ok: ev.ok, diagnosisId: ev.diagnosis_id, conversationId: ev.conversation_id });
+      setDone({
+        ok: ev.ok,
+        diagnosisId: ev.diagnosis_id,
+        conversationId: ev.conversation_id,
+        flowMessageId: ev.flow_message_id,
+      });
     }
     // 'progress' / 'flush' are terminal-only cosmetics; the running spinner covers liveness.
   }, []);
@@ -142,9 +152,10 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
     onClose();
   }, [onClose]);
 
-  // "Report issue" / "Forward" from the finished-diagnose popup: send the diagnosis
-  // summary into the chosen conversation (the same send path the Feed card uses),
-  // then close. The summary is read from the recorded flowpad_diagnosis entity.
+  // "Report issue" / "Forward" from the finished-diagnose popup: send the full
+  // formatted diagnostic report into the chosen conversation (the same send path
+  // the Feed card uses), then close. The body comes from the recorded support
+  // FlowMessage; the diagnosis summary is only the no-message fallback.
   const handleReport = useCallback(
     async (conversationId: string) => {
       if (!done?.diagnosisId) return;
@@ -152,8 +163,10 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
       setReportError(undefined);
       try {
         const diag = await FlowpadDiagnosis.getById<FlowpadDiagnosis>(done.diagnosisId);
-        const text = diag?.summary || diag?.title || '';
-        await sendDiagnosisReport(conversationId, text);
+        await sendDiagnosisReport(conversationId, {
+          flowMessageId: done.flowMessageId,
+          fallbackText: diag?.summary || diag?.title || '',
+        });
         handleClose();
       } catch (e) {
         setReportError(e instanceof Error ? e.message : 'Failed to send report');
@@ -197,13 +210,13 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
               {lines.map((line, i) => (
                 <div
                   key={i}
-                  className={
+                  className={`whitespace-pre-wrap break-words ${
                     line.kind === 'error'
                       ? 'text-destructive'
                       : line.kind === 'narration'
                         ? 'text-foreground'
                         : 'text-muted-foreground'
-                  }
+                  }`}
                 >
                   {line.kind === 'narration' ? `▸ ${line.text}` : line.text}
                 </div>
@@ -257,15 +270,16 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
             />
           )}
 
-          {done && (
+          {(done || (started && !running)) && (
             <div className="flex justify-end gap-2">
-              {done.ok && done.diagnosisId && (
+              {done?.ok && done.diagnosisId && (
                 <button
                   type="button"
                   onClick={() =>
                     onViewDiagnosis({
                       diagnosisId: done.diagnosisId!,
                       conversationId: done.conversationId ?? undefined,
+                      flowMessageId: done.flowMessageId ?? undefined,
                     })
                   }
                   className="flex items-center justify-center gap-2 rounded-md border border-input bg-background px-3 py-1.5 text-xs font-medium transition-colors hover:bg-muted/50"

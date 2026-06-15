@@ -9,6 +9,8 @@ interface DiagnosisReportModalProps {
   diagnosisId?: string;
   /** The suggested support conversation for the report buttons (present for a real issue). */
   conversationId?: string;
+  /** The recorded support FlowMessage — its text is the full formatted report sent on Forward. */
+  flowMessageId?: string;
   onClose: () => void;
 }
 
@@ -27,6 +29,7 @@ export function DiagnosisReportModal({
   open,
   diagnosisId,
   conversationId,
+  flowMessageId,
   onClose,
 }: DiagnosisReportModalProps) {
   const [diag, setDiag] = useState<FlowpadDiagnosis | null>(null);
@@ -56,7 +59,10 @@ export function DiagnosisReportModal({
       setReporting(true);
       setReportError(undefined);
       try {
-        await sendDiagnosisReport(targetConversationId, diag?.summary || diag?.title || '');
+        await sendDiagnosisReport(targetConversationId, {
+          flowMessageId,
+          fallbackText: diag?.summary || diag?.title || '',
+        });
         onClose();
       } catch (e) {
         setReportError(e instanceof Error ? e.message : 'Failed to send report');
@@ -64,7 +70,7 @@ export function DiagnosisReportModal({
         setReporting(false);
       }
     },
-    [diag, onClose],
+    [diag, flowMessageId, onClose],
   );
 
   const fields: Field[] = [
@@ -99,7 +105,7 @@ export function DiagnosisReportModal({
                     <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
                       {f.label}
                     </p>
-                    <p className="whitespace-pre-wrap text-xs text-foreground">{f.value}</p>
+                    <p className="whitespace-pre-wrap break-words text-xs text-foreground">{f.value}</p>
                   </div>
                 ))}
             </div>

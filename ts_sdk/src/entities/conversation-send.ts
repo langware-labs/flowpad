@@ -4,6 +4,7 @@ import {
   ConversationParticipant,
   createProjectConversation,
 } from './conversation';
+import { FlowMessage } from './flow-message';
 
 /**
  * Unified send payload. ``text`` may be empty when ``assetReferences`` or
@@ -42,15 +43,48 @@ export async function sendToExistingConversation(
   );
 }
 
+/** Source of a flow-diagnose report's body. */
+export interface DiagnosisReportSource {
+  /** The recorded support FlowMessage — its `text` is the full, already-formatted
+   *  diagnostic report (sections + newlines), the single source of truth. */
+  flowMessageId?: string | null;
+  /** Plain summary used only when there's no support FlowMessage to read. */
+  fallbackText?: string;
+}
+
 /**
  * Send a flow-diagnose report into a conversation and un-hide it. Shared by the
  * Home-Feed card's "Report issue" / "Forward" actions and the UI diagnose modal's
- * report buttons — both send the diagnosis summary to a (until-then hidden) support
- * conversation and clear its `dismissed_at` so it surfaces in the Recent strip.
+ * report buttons.
+ *
+ * The body is the recorded support FlowMessage's `text` — the full, nicely
+ * formatted diagnostic report with its section breaks and newlines — NOT the
+ * one-line summary (which rendered as an unreadable wall of text). When the
+ * target *is* the support conversation (the "Report issue" path), that report
+ * message already lives there, so we don't re-send and duplicate it — we just
+ * clear `dismissed_at` so the existing conversation surfaces in the Recent strip.
+ * A "Forward" to a different conversation does send the formatted body across.
+ *
  * Callers do their own follow-up (the Feed dismisses its entry; the modal closes).
  */
-export async function sendDiagnosisReport(conversationId: string, text: string): Promise<void> {
-  await sendToExistingConversation(conversationId, { text });
+export async function sendDiagnosisReport(
+  conversationId: string,
+  source: DiagnosisReportSource,
+): Promise<void> {
+  let text = source.fallbackText ?? '';
+  let sourceConversationId: string | null = null;
+  if (source.flowMessageId) {
+    const msg = await FlowMessage.getById<FlowMessage>(source.flowMessageId);
+    if (msg?.text) {
+      text = msg.text;
+      sourceConversationId = msg.conversation_id ?? null;
+    }
+  }
+  // Only post when forwarding to a *different* conversation — sending the report
+  // back into the conversation that already holds it would just duplicate it.
+  if (text && sourceConversationId !== conversationId) {
+    await sendToExistingConversation(conversationId, { text });
+  }
   const conv = await Conversation.getById<Conversation>(conversationId);
   if (!conv) return;
   conv.dismissed_at = null;
