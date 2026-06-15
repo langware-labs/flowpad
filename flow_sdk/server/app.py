@@ -93,6 +93,28 @@ async def _on_server_startup():
     settings = get_instance_settings()
     print(f"  Database path: {get_database_path()}")
 
+    # RCA probe (sentinel-gated): dump running task stacks whenever the event loop stalls.
+    if os.path.exists("/tmp/LOOPLAG_ON"):
+        import asyncio as _ll_aio, time as _ll_t, logging as _ll_log
+
+        async def _loop_lag_probe():
+            while True:
+                _t = _ll_t.perf_counter()
+                await _ll_aio.sleep(0.1)
+                lag = (_ll_t.perf_counter() - _t - 0.1) * 1000
+                if lag > 400:
+                    tasks = [x for x in _ll_aio.all_tasks() if not x.done()]
+                    _ll_log.warning(f"LOOPLAG {lag:.0f}ms loop-stall; {len(tasks)} tasks")
+                    for x in tasks:
+                        st = x.get_stack(limit=6)
+                        frames = " <- ".join(
+                            f"{fr.f_code.co_name}@{fr.f_code.co_filename.split('/')[-1]}:{fr.f_lineno}"
+                            for fr in reversed(st)
+                        ) if st else "(no py stack — in C/await)"
+                        _ll_log.warning(f"LOOPLAG  task={x.get_name()} :: {frames}")
+
+        _ll_aio.create_task(_loop_lag_probe(), name="rca-loop-lag-probe")
+
     # Development: mirror all logs to a file on disk in addition to the
     # console, so a session can be inspected after the fact. No-op in prod.
     try:

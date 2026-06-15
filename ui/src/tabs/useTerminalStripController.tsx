@@ -31,7 +31,8 @@ import {
   ViewType,
   type ComputeNode,
 } from '@sdk';
-import { useCapability, type UseCapabilityResult } from '@sdk/react/hooks';
+import { type UseCapabilityResult } from '@sdk/react/hooks';
+import { useHarnessCapabilities } from '@src/contexts/HarnessCapabilitiesContext';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
 import { CodexIcon } from '@src/components/icons/CodexIcon';
@@ -321,9 +322,10 @@ export function useTerminalStripController({
   const [resumeByIdOpen, setResumeByIdOpen] = useState(false);
   // Harness capability state (cache warmed at app startup). Drives the "!"
   // sub-icon on the claude/codex openers and the harness-required popup.
-  const claudeCapability = useCapability(CapabilityKinds.ClaudeCode);
-  const codexCapability = useCapability(CapabilityKinds.Codex);
-  const copilotCapability = useCapability(CapabilityKinds.Copilot);
+  // Read from the shared provider rather than re-subscribing per strip — both
+  // terminal strips and the App warmer would otherwise each add a listener for
+  // the same three kinds (see HarnessCapabilitiesContext).
+  const { claude: claudeCapability, codex: codexCapability, copilot: copilotCapability } = useHarnessCapabilities();
   const [installChoiceKinds, setInstallChoiceKinds] = useState<string[] | null>(null);
   // askInstallOneOf — open the harness-required popup for the given capability kinds.
   const askInstallOneOf = useCallback((kinds: string[]) => setInstallChoiceKinds(kinds), []);
