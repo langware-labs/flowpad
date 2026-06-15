@@ -717,6 +717,79 @@ def _rewrite_file_attachments(fm_data: dict, tmp_root: Path, fm_id: str) -> None
 
 
 # ---------------------------------------------------------------------------
+# _materialize_received_transcripts
+# ---------------------------------------------------------------------------
+
+# Worker-session entity types → worker key. A shared session's chip opens its
+# transcript *by session id*, resolved against the local CLI dirs; on a
+# receiver that never ran the session those are empty, so we persist the
+# carried transcript where ``resolve_session_jsonl`` falls back to.
+_WORKER_SESSION_TYPES = {
+    "claude_session": "claude",
+    "codex_session": "codex",
+    "copilot_session": "copilot",
+}
+
+
+def _file_contains(path: Path, needle: str) -> bool:
+    try:
+        return needle in path.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return False
+
+
+def _materialize_received_transcripts(fm_data: dict, tmp_root: Path) -> None:
+    """Persist any carried worker-session transcript into the instance's
+    received-transcripts store, keyed by (worker, session_id).
+
+    The transcript rides in as the share's FILE attachment; copying it to the
+    received store makes the by-session-id transcript chip open on a receiver
+    that never ran the session — exactly as it does on the sender. No-op when
+    the message carries no worker session (the common case) or the sender
+    opted not to attach the transcript. Worker-generic (claude/codex/copilot).
+
+    The FILE is paired to its session by matching the session id inside the
+    file's content: every worker transcript embeds its own session id, so the
+    pairing is unambiguous even when several files ride along.
+    """
+    from flow_sdk.transcript_analyzer.resolver import received_transcript_dest
+
+    atts = fm_data.get("attachment", []) or []
+    sessions: list[tuple[str, str]] = []
+    for att in atts:
+        if not isinstance(att, dict) or att.get("attachment_type") != AttachmentType.TYPE_ID.value:
+            continue
+        tid = TypeId(att.get("data") or "")
+        worker = _WORKER_SESSION_TYPES.get(tid.type)
+        if worker and tid.id:
+            sessions.append((worker, tid.id))
+    if not sessions:
+        return
+
+    file_srcs: list[Path] = []
+    for att in atts:
+        if not isinstance(att, dict) or att.get("attachment_type") != AttachmentType.FILE.value:
+            continue
+        rel = att.get("data") or ""
+        if rel.startswith("attachment/files/"):
+            src = tmp_root / rel
+            if src.exists():
+                file_srcs.append(src)
+    if not file_srcs:
+        return
+
+    for worker, sid in sessions:
+        dest = received_transcript_dest(worker, sid)
+        if dest is None or dest.exists():
+            continue
+        match = next((f for f in file_srcs if _file_contains(f, sid)), None)
+        if match is None:
+            continue
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(match, dest)
+
+
+# ---------------------------------------------------------------------------
 # _merge_conversation_jsonl
 # ---------------------------------------------------------------------------
 
@@ -1087,6 +1160,9 @@ async def unpack_bundle(
         from flow_sdk.app.actions.materialize_flow_message import materialize_flow_message
 
         top_fm_id = msg_data.get("id") or FlowMessage.allocate_id(msg_data)
+        # Persist any carried worker-session transcript BEFORE the rewrite
+        # mutates attachment paths — it reads the FILE sources from tmp_root.
+        _materialize_received_transcripts(msg_data, tmp_root)
         _rewrite_file_attachments(msg_data, tmp_root, top_fm_id)
         msg_data["id"] = top_fm_id
         if not msg_data.get("conversation_id") and conversation_id:
