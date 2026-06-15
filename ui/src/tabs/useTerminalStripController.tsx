@@ -31,7 +31,7 @@ import {
   ViewType,
   type ComputeNode,
 } from '@sdk';
-import { type UseCapabilityResult } from '@sdk/react/hooks';
+import { useEntity, type UseCapabilityResult } from '@sdk/react/hooks';
 import { useHarnessCapabilities } from '@src/contexts/HarnessCapabilitiesContext';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
@@ -50,6 +50,8 @@ import {
 } from '@src/store/pending-actions-store';
 import {
   closeTerminalTargets,
+  renameTerminalTab,
+  syncTerminalTabName,
   terminalDockPointer,
   terminalProcessId,
   terminalTargetKey,
@@ -184,6 +186,33 @@ const InfoRow: React.FC<{ label: string; value: string }> = ({ label, value }) =
   </div>
 );
 
+/**
+ * Tooltip body for a process chip. The strip renders chips from `Tab` rows
+ * alone, so an off-screen chip has no backing entity. This component fetches the
+ * process **on demand** — Radix mounts `TooltipContent`'s children only when the
+ * tooltip opens, so the `getById` fires on hover, never at strip build. Until it
+ * resolves (or if it 404s), a lean header from the Tab label is shown.
+ */
+const LazyProcessTooltip: React.FC<{
+  processId: string;
+  fallbackName: string;
+  statusReason?: string;
+}> = ({ processId, fallbackName, statusReason }) => {
+  // Cache-first hydrate via the standard entity hook — the active tab is already
+  // resident; others fetch on demand. TooltipContent mounts this only when the
+  // tooltip opens, so an off-screen chip never triggers the fetch.
+  const { data: process } = useEntity<AgenticProcess>(new TypeId(AgenticProcess.type, processId));
+  if (process) return <ProcessInfoTooltip process={process} statusReason={statusReason} />;
+  return (
+    <div className="min-w-[180px] space-y-1">
+      <p className="text-xs font-semibold text-foreground" data-testid="tab-tooltip-name">
+        {fallbackName}
+      </p>
+      {statusReason && <p className="text-[11px] text-amber-500">{statusReason}</p>}
+    </div>
+  );
+};
+
 export interface TerminalStripControllerOptions {
   /** Whether to show the "Add Tab" opener toolbar (default: false) */
   addTabButton?: boolean;
@@ -294,7 +323,6 @@ export function useTerminalStripController({
   // shell.name fallback), so the optimistic mutators are no-ops.
   const projectTabs = useTerminalTabs(spawnProjectId);
   const pushTerminal = useCallback((_tab: TerminalTab) => {}, []);
-  const updateTerminal = useCallback((_target: TerminalTab | TypeId | string, _patch: Partial<TerminalTab>) => {}, []);
   const refreshTabs = useCallback(async () => {}, []);
   const visibleSessions = useMemo(() => {
     if (collaborationRoomId == null) return projectTabs;
@@ -690,42 +718,21 @@ export function useTerminalStripController({
     [visibleSessions, navigation, activeTargetKey],
   );
 
-  // Rename commit from TabStrip (input UI lives in the strip; validation and
-  // the entity/PTY save — the terminal rename strategy — live here).
+  // Rename commit from TabStrip. Routed through the Tab (renameTerminalTab) so it
+  // works on any chip without its backing entity in cache — the backend reflects
+  // the name onto the target entity and pins auto_rename. The PTY ``/rename``
+  // hint still fires for the active Claude tab (its shell is hydrated).
   const handleRenameCommit = (targetKey: string, newName: string) => {
     const session = visibleSessions.find((s) => terminalTargetKey(s) === targetKey);
-    if (session?.shell) onTabRename(session, newName);
-  };
-
-  const onTabRename = (
-    session: TerminalTab,
-    newName: string,
-    fromPty = false,
-    processOverride?: AgenticProcess | null,
-  ): void => {
-    // Source of truth: AgenticProcess for process-backed tabs, Shell for pure shells.
-    // Whichever owns the tab owns its name + auto_rename. No cross-entity propagation.
-    const source = session.agenticProcess ?? session.shell;
-    if (!source) return;
+    if (!session) return;
     if (!allowRename(newName)) return;
-    if (fromPty && !shouldAutoSavePtyTitle(session, processOverride)) return;
-    if (fromPty && !source.auto_rename) return; // user already pinned this tab
-    if (source.name === newName) return; // no-op — no flip, no save, no /rename
-
-    const previousName = session.name;
-    updateTerminal(session, { name: newName }); // optimistic; reconciles via WS data_op
-
-    source.name = newName;
-    if (!fromPty) source.auto_rename = false;
-    void source.save().catch((error) => {
-      updateTerminal(session, { name: previousName });
+    if (session.name === newName) return;
+    void renameTerminalTab(session.targetTypeId, newName).catch((error) => {
       console.error('[TabbedTerminal] Failed to rename tab:', terminalTargetKey(session), error);
     });
-
-    // User-initiated rename → tell Claude its own session title so it stops emitting
-    // the old one on the next OSC update. Frontend-only; never on PTY-sourced renames.
+    // Tell Claude its own session title so it stops emitting the old one on the
+    // next OSC update — only meaningful for the active, ready Claude tab.
     if (
-      !fromPty &&
       session.shell &&
       terminalTargetKey(session) === activeTargetKey &&
       contextAgenticProcess &&
@@ -733,6 +740,33 @@ export function useTerminalStripController({
     ) {
       void session.shell.sendInput(`/rename ${newName}\r`);
     }
+  };
+
+  // PTY-originated auto-rename (the panel's OSC title save). User renames go
+  // through handleRenameCommit → renameTerminalTab. This path always runs for a
+  // mounted/active tab, so its entity is hydrated.
+  const onTabRename = (
+    session: TerminalTab,
+    newName: string,
+    fromPty = true,
+    processOverride?: AgenticProcess | null,
+  ): void => {
+    // Source of truth: AgenticProcess for process-backed tabs, Shell for pure shells.
+    const source = session.agenticProcess ?? session.shell;
+    if (!source) return;
+    if (!allowRename(newName)) return;
+    if (fromPty && !shouldAutoSavePtyTitle(session, processOverride)) return;
+    if (fromPty && !source.auto_rename) return; // user already pinned this tab
+    if (source.name === newName) return; // no-op
+
+    source.name = newName;
+    if (!fromPty) source.auto_rename = false;
+    void source.save().catch((error) => {
+      console.error('[TabbedTerminal] Failed to rename tab:', terminalTargetKey(session), error);
+    });
+    // Mirror onto the Tab label (plain save, no auto_rename reset) so the chip —
+    // active or not — shows the auto-renamed title even from the Tab-only query.
+    void syncTerminalTabName(session.targetTypeId, newName).catch(() => {});
   };
 
   // Use Ctrl key on Mac, Win key on Windows, Alt key on Linux
@@ -936,19 +970,16 @@ export function useTerminalStripController({
   // strategy's icon resolution (Part 3 §6), via the PROVIDER_META table.
   const stripItems: TabStripItem[] = useMemo(() => visibleSessions.map((session) => {
     const targetKey = terminalTargetKey(session);
-    const sessionProcess =
-      terminalProcessId(session) && contextAgenticProcess?.id === terminalProcessId(session)
-        ? contextAgenticProcess
-        : session.agenticProcess;
-    const workerType = sessionProcess?.worker_type?.toLowerCase() ?? '';
-    const providerKind: keyof typeof PROVIDER_META =
-      session.targetTypeId.type === Shell.type
-        ? 'shell'
-        : workerType === 'codex'
-          ? 'codex'
-          : workerType === 'copilot'
-            ? 'copilot'
-            : 'claude';
+    // Provider glyph comes from the Tab's denormalized `icon` (set at creation
+    // from worker_type) — no backing entity needed. Validate against the table;
+    // fall back by target type for any legacy/blank value.
+    const providerKind: keyof typeof PROVIDER_META = (
+      session.icon in PROVIDER_META
+        ? (session.icon as keyof typeof PROVIDER_META)
+        : session.targetTypeId.type === Shell.type
+          ? 'shell'
+          : 'claude'
+    );
     const { Icon: ProviderIcon, iconClassName: providerIconClassName, label: providerLabel } =
       PROVIDER_META[providerKind];
     const tabTestId =
@@ -966,23 +997,27 @@ export function useTerminalStripController({
           aria-label={providerLabel}
         />
       ),
-      badge: sessionProcess?.cliOptions?.worktree ? (
+      // Worktree badge is denormalized on the Tab — no cliOptions fetch.
+      badge: session.worktree ? (
         <FolderGit2 className="h-3 w-3 shrink-0 text-amber-500" />
       ) : undefined,
       isDisabled: session.isDisabled,
       statusReason: session.statusReason,
       isPending: sessionProcessId ? pendingProcessIds.has(sessionProcessId) : false,
       renameable: true,
-      tooltip: sessionProcess ? (
-        <ProcessInfoTooltip
-          process={sessionProcess}
+      // Rich tooltip lazy-hydrates the process on hover (TooltipContent mounts
+      // its children only when open), so off-screen chips never fetch an entity.
+      tooltip: sessionProcessId ? (
+        <LazyProcessTooltip
+          processId={sessionProcessId}
+          fallbackName={getDisplayName(session)}
           statusReason={session.isDisabled ? session.statusReason : undefined}
         />
       ) : undefined,
       testId: tabTestId,
       dataAttributes: { 'data-indicator-key': indicatorKey },
     };
-  }), [visibleSessions, pendingProcessIds, contextAgenticProcess]);
+  }), [visibleSessions, pendingProcessIds]);
 
   const handleSelect = useCallback(
     (key: string) => {

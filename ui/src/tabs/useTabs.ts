@@ -14,6 +14,7 @@ import {
   ViewType,
 } from '@sdk';
 import { useEntitiesQuery } from '@sdk/react/hooks';
+import { providerKindForWorkerType } from '@src/tabs/provider-kind';
 import { useEffect, useMemo, useState } from 'react';
 
 /** Discriminator for tab type. */
@@ -30,13 +31,19 @@ export interface TerminalTab {
   /**
    * Current transport shell id. This is not the tab identity for process tabs:
    * AgenticProcess.start/open may replace process.shell_id while the process
-   * tab remains the same targetTypeId.
+   * tab remains the same targetTypeId. Best-effort: '' for an inactive process
+   * tab whose entity isn't in cache (the active tab is always hydrated).
    */
   shellId: string;
   processId: string | null;
   tabOrder: number;
   name: string | null;
   type: TerminalTabType;
+  /** Resolved provider/display kind ('shell'|'claude'|'codex'|'copilot'),
+   *  denormalized on the `Tab` at creation — the chip's icon without an entity. */
+  icon: string;
+  /** Worktree badge flag, denormalized on the `Tab` at creation. */
+  worktree: boolean;
   isDisabled: boolean;
   statusReason: string;
   projectId: string | null;
@@ -48,22 +55,6 @@ export interface TerminalTab {
   /** Recency seed for resolveActive, sourced from the backing `Tab` row
    *  (epoch-ms; null when never activated). Falls back to the entity. */
   lastActiveAt?: number | string | null;
-}
-
-interface WireShell {
-  id: string;
-  name?: string | null;
-  tab_order?: number | null;
-  status?: string | null;
-  project_id?: string | null;
-}
-
-interface WireProcess {
-  id: string;
-  name?: string | null;
-  shell_id?: string | null;
-  project_id?: string | null;
-  status?: string | null;
 }
 
 function shellFromCache(id: string): Shell | undefined {
@@ -79,51 +70,6 @@ function processFromCache(id: string): AgenticProcess | undefined {
       getByIdFromCache: (id: string) => AgenticProcess | null;
     }).getByIdFromCache(id) ?? undefined
   );
-}
-
-// `toShellTab`/`toProcessTab`/`byTabOrder`/`mergePreservingOrder` are exported for
-// Phase-0 characterization tests (behaviour-neutral). The wire→tab mapping and the
-// ordering/merge invariants are locked by `ui/tests/unit/tab-*.test.ts`.
-export function toShellTab(s: WireShell): TerminalTab {
-  const cached = shellFromCache(s.id);
-  const isClosing = s.status === ShellStatus.CLOSING;
-  return {
-    targetTypeId: new TypeId(Shell.type, s.id),
-    shellId: s.id,
-    processId: null,
-    tabOrder: s.tab_order ?? cached?.tab_order ?? 0,
-    // Pure shells own their own name. AgenticProcess-backed tabs use toProcessTab.
-    name: s.name ?? null,
-    type: 'plain',
-    isDisabled: isClosing,
-    statusReason: isClosing ? 'Closing...' : '',
-    projectId: s.project_id ?? cached?.project_id ?? null,
-    projectDisplayName: null,
-    shell: cached,
-  };
-}
-
-export function toProcessTab(p: WireProcess): TerminalTab {
-  const cached = processFromCache(p.id);
-  const linkedShellId = p.shell_id ?? cached?.shell_id ?? '';
-  const linkedShell = linkedShellId ? shellFromCache(linkedShellId) : undefined;
-  const isClosing = linkedShell?.status === ShellStatus.CLOSING;
-  return {
-    targetTypeId: new TypeId(AgenticProcess.type, p.id),
-    shellId: linkedShellId,
-    processId: p.id,
-    tabOrder: linkedShell?.tab_order ?? 0,
-    // Source of truth: AgenticProcess.name. No fallback to shell — keeps the
-    // canonical name on the process even after shell restart/deletion.
-    name: p.name ?? null,
-    type: 'claude',
-    isDisabled: isClosing,
-    statusReason: isClosing ? 'Closing...' : '',
-    projectId: p.project_id ?? cached?.project_id ?? linkedShell?.project_id ?? null,
-    projectDisplayName: null,
-    shell: linkedShell,
-    agenticProcess: cached,
-  };
 }
 
 export function byTabOrder(a: TerminalTab, b: TerminalTab): number {
@@ -165,142 +111,157 @@ export function terminalDockPointer(tab: TerminalTab): DockPointerData {
 }
 
 // ─── Tab-sourced terminal rows (docs/tab-management.md) ─────────────────────
-// Terminal tabs are driven by the `Tab` entity: the route loader materializes a
-// Tab for every opened shell / agentic_process; this hook reads the visible
-// Tabs, keeps the terminal-target rows, resolves each to its live entity, and
-// builds the same `TerminalTab` the controller renders. Membership = a Tab
-// exists; the old `compute_node` `tabs/list` + base-Entity `tabbed` are gone.
+// Terminal tabs are driven entirely by the `Tab` entity: the route loader
+// materializes a Tab for every opened shell / agentic_process and stamps its
+// display primitives (name/icon/worktree) at creation. The strip is ONE live
+// query of `visible=true` Tabs — it never scans all shells/processes. The
+// active tab's full entity is hydrated on demand by the route loader; the cache
+// overlay below opportunistically enriches a row when its entity happens to be
+// resident (e.g. the active tab), but a row renders fully from the Tab alone.
 
 const TERMINAL_TARGET_TYPES = new Set<string>([Shell.type, AgenticProcess.type]);
-const DEAD_SHELL_STATES = new Set<string>([ShellStatus.CLOSING, ShellStatus.CLOSED, ShellStatus.ERROR]);
 
-// Shared query identities (useEntitiesQuery keys by query content, so the strip
-// and this hook share one subscription). The Shell/AgenticProcess queries
-// hydrate the entity cache and make status/name changes reactive.
+// Single shared query (useEntitiesQuery keys by content, so the strip and this
+// hook share one subscription). Liveness is the `visible` flag: the backend
+// orphan-Tab cleanup / hide_tabs_for_target flips it on close/death, so a dead
+// target simply drops out of this result — no all-entities scan needed.
 const VISIBLE_TABS_QUERY = new QueryRequest({
   type: Tab.type,
   scope: [],
   name: 'tabs:visible',
   query: new QueryFilter({ match: { visible: true } }),
 });
-const ALL_SHELLS_QUERY = new QueryRequest({ type: Shell.type, scope: [], name: 'tabs:shells' });
-const ALL_PROCESSES_QUERY = new QueryRequest({ type: AgenticProcess.type, scope: [], name: 'tabs:processes' });
 
-/** Sets of currently-existing terminal entity ids; `null` = "not loaded yet"
- *  (don't apply the existence filter, to avoid a cold-load flicker). */
-interface KnownTerminalIds {
-  shells: Set<string> | null;
-  processes: Set<string> | null;
-}
-
-/** A terminal-target Tab row → TerminalTab, or null when filtered out
- *  (target deleted, background-owned shell, dead shell). */
-function terminalTabFromTab(tab: Tab, known: KnownTerminalIds): TerminalTab | null {
+/** A terminal-target Tab row → TerminalTab. Built from the Tab's denormalized
+ *  fields; when the backing entity is in cache (the active/mounted tab) its live
+ *  name/status/shell_id overlay the static Tab values. Exported for the unit
+ *  tests that lock the Tab→row mapping (ui/tests/unit/tab-*.test.ts). */
+export function terminalTabFromTab(tab: Tab): TerminalTab | null {
   const targetId = tab.target_id ?? '';
   if (!targetId) return null;
-  // tab_order/recency come from the Tab row; everything else from the builder.
-  const withTabFields = (base: TerminalTab): TerminalTab => ({
-    ...base,
-    tabOrder: tab.tab_order ?? base.tabOrder,
-    lastActiveAt: tab.last_active_at,
-  });
+  const projectId = tab.project_id ?? null;
+
   if (tab.target_type === Shell.type) {
-    // The target entity is gone (closed/deleted): drop the ghost row instead of
-    // rendering its raw id. Complements the server-side orphan-Tab cleanup.
-    if (known.shells && !known.shells.has(targetId)) return null;
     const cached = shellFromCache(targetId);
-    // Background shells (owned by an AgenticProcess) are represented by the
-    // process row, never their own — mirrors the backend reverse-owned rule.
-    if (cached?.agentic_process_id) return null;
-    // Dead shells drop out of the strip (status-derived, reactive).
-    if (cached && DEAD_SHELL_STATES.has(cached.status)) return null;
-    // Live shell name wins (terminals auto-rename via PTY title); the Tab's
-    // create-time name is only a fallback before the entity is cached.
-    return withTabFields(
-      toShellTab({
-        id: targetId,
-        name: cached?.name ?? tab.name ?? null,
-        tab_order: tab.tab_order,
-        status: cached?.status,
-        project_id: tab.project_id ?? cached?.project_id ?? null,
-      }),
-    );
+    // Liveness is the `visible` flag (dead targets drop out of the query via the
+    // backend orphan cleanup), so this status overlay is a best-effort "Closing…"
+    // affordance for the cached (active) tab only — undefined status ⇒ enabled.
+    const isClosing = cached?.status === ShellStatus.CLOSING;
+    return {
+      targetTypeId: new TypeId(Shell.type, targetId),
+      shellId: targetId,
+      processId: null,
+      tabOrder: tab.tab_order ?? 0,
+      // Live shell name wins (PTY auto-rename); Tab.name is the create-time label.
+      name: cached?.name ?? tab.name ?? null,
+      type: 'plain',
+      icon: tab.icon_key ?? 'shell',
+      worktree: tab.worktree ?? false,
+      isDisabled: isClosing,
+      statusReason: isClosing ? 'Closing...' : '',
+      projectId,
+      projectDisplayName: null,
+      shell: cached,
+      lastActiveAt: tab.last_active_at,
+    };
   }
   if (tab.target_type === AgenticProcess.type) {
-    if (known.processes && !known.processes.has(targetId)) return null;
     const cached = processFromCache(targetId);
-    return withTabFields(
-      toProcessTab({
-        id: targetId,
-        name: cached?.name ?? tab.name ?? null,
-        project_id: tab.project_id ?? cached?.project_id ?? null,
-      }),
-    );
+    const linkedShellId = cached?.shell_id ?? '';
+    const linkedShell = linkedShellId ? shellFromCache(linkedShellId) : undefined;
+    const isClosing = linkedShell?.status === ShellStatus.CLOSING;
+    return {
+      targetTypeId: new TypeId(AgenticProcess.type, targetId),
+      shellId: linkedShellId,
+      processId: targetId,
+      tabOrder: tab.tab_order ?? 0,
+      // Source of truth: AgenticProcess.name when cached; else the Tab label.
+      name: cached?.name ?? tab.name ?? null,
+      type: 'claude',
+      icon: tab.icon_key ?? providerKindForWorkerType(cached?.worker_type),
+      worktree: tab.worktree ?? false,
+      isDisabled: isClosing,
+      statusReason: isClosing ? 'Closing...' : '',
+      projectId,
+      projectDisplayName: null,
+      shell: linkedShell,
+      agenticProcess: cached,
+      lastActiveAt: tab.last_active_at,
+    };
   }
   return null;
 }
 
-function buildTerminalRows(tabs: Tab[], projectId: string | null, known: KnownTerminalIds): TerminalTab[] {
+export function buildTerminalRows(tabs: Tab[], projectId: string | null): TerminalTab[] {
   const rows: TerminalTab[] = [];
   for (const t of tabs) {
     if (!TERMINAL_TARGET_TYPES.has(t.target_type ?? '')) continue;
-    const row = terminalTabFromTab(t, known);
+    const row = terminalTabFromTab(t);
     if (row) rows.push(row);
   }
   const scoped = projectId == null ? rows : rows.filter((r) => r.projectId === projectId);
   return scoped.sort(byTabOrder);
 }
 
-function knownIds(shells: Shell[] | undefined, processes: AgenticProcess[] | undefined): KnownTerminalIds {
-  return {
-    shells: shells ? new Set(shells.map((s) => s.id)) : null,
-    processes: processes ? new Set(processes.map((p) => p.id)) : null,
-  };
-}
-
 /**
- * Terminal strip rows, sourced from the `Tab` entity. Replaces
- * `useProjectTerminals`. `tab_order`/`last_active_at` come from the Tab (durable
- * per-client order — no `mergePreservingOrder` needed).
+ * Terminal strip rows, sourced from the `Tab` entity alone. `tab_order` /
+ * `last_active_at` / `name` / `icon` / `worktree` come from the Tab (durable
+ * per-client order — no `mergePreservingOrder` needed). One query, no entity scan.
  */
 export function useTerminalTabs(projectId?: string | null): TerminalTab[] {
   const { data: tabs } = useEntitiesQuery<Tab>(VISIBLE_TABS_QUERY);
-  const { data: shells } = useEntitiesQuery<Shell>(ALL_SHELLS_QUERY);
-  const { data: processes } = useEntitiesQuery<AgenticProcess>(ALL_PROCESSES_QUERY);
   const pid = projectId ?? dataContext.project?.id ?? null;
-  return useMemo(
-    () => buildTerminalRows(tabs ?? [], pid, knownIds(shells, processes)),
-    // shells/processes drive re-render on live status/name changes.
-    [tabs, shells, processes, pid],
-  );
+  return useMemo(() => buildTerminalRows(tabs ?? [], pid), [tabs, pid]);
 }
 
 /** Imperative snapshot of terminal rows for route loaders (outside React). */
 export async function getTerminalTabsSnapshot(projectId?: string | null): Promise<TerminalTab[]> {
-  const [tabs, shells, processes] = await Promise.all([
-    Tab.query<Tab>(VISIBLE_TABS_QUERY),
-    Shell.query<Shell>(ALL_SHELLS_QUERY).catch(() => [] as Shell[]),
-    AgenticProcess.query<AgenticProcess>(ALL_PROCESSES_QUERY).catch(() => [] as AgenticProcess[]),
-  ]);
-  return buildTerminalRows(
-    tabs ?? [],
-    projectId ?? dataContext.project?.id ?? null,
-    knownIds(shells, processes),
-  );
+  const tabs = await Tab.query<Tab>(VISIBLE_TABS_QUERY);
+  return buildTerminalRows(tabs ?? [], projectId ?? dataContext.project?.id ?? null);
+}
+
+/** Resolve the visible Tab backing a terminal target TypeId (shell-<id> /
+ *  agentic_process-<id>), or null. */
+async function visibleTabForTarget(target: TypeId | string): Promise<Tab | null> {
+  let targetId = '';
+  try {
+    targetId = new TypeId(typeof target === 'string' ? target : target.toString()).id;
+  } catch {
+    return null;
+  }
+  const visible = await Tab.query<Tab>(VISIBLE_TABS_QUERY);
+  return (visible ?? []).find((t) => t.target_id === targetId) ?? null;
 }
 
 /** Soft-close the terminal tab backing a target TypeId (shell-<id> /
  *  agentic_process-<id>) — locates its visible Tab and closes it. */
 export async function closeTerminalTab(target: TypeId | string): Promise<void> {
-  let targetId = '';
-  try {
-    targetId = new TypeId(typeof target === 'string' ? target : target.toString()).id;
-  } catch {
-    return;
-  }
-  const visible = await Tab.query<Tab>(VISIBLE_TABS_QUERY);
-  const match = (visible ?? []).find((t) => t.target_id === targetId);
+  const match = await visibleTabForTarget(target);
   if (match) await match.closeTab();
+}
+
+/**
+ * User-initiated terminal rename — routed through the `Tab` so it works on any
+ * chip without the backing entity in cache. The backend `rename` action sets
+ * `Tab.name` (fixing the inactive chip label) and reflects onto the target
+ * entity via the `tab-renamed` event (mirrors `name`, pins `auto_rename=false`).
+ */
+export async function renameTerminalTab(target: TypeId | string, name: string): Promise<void> {
+  const tab = await visibleTabForTarget(target);
+  if (tab) await tab.rename(name);
+}
+
+/**
+ * Mirror an entity-originated (PTY auto-title) rename onto the Tab label with a
+ * plain save — NOT the `rename` action, so it never resets `auto_rename`. Keeps
+ * an inactive chip's label correct after the active tab auto-renames.
+ */
+export async function syncTerminalTabName(target: TypeId | string, name: string): Promise<void> {
+  const tab = await visibleTabForTarget(target);
+  if (tab && tab.name !== name) {
+    tab.name = name;
+    await tab.save();
+  }
 }
 
 export interface TerminalCloseResponse {
