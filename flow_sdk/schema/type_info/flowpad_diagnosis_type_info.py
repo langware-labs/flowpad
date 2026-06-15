@@ -41,6 +41,10 @@ class FlowpadDiagnosisMetadata(BaseMeta):
         default=None,
         description="What was done to resolve the issue.",
     )
+    summary: Optional[str] = Field(
+        default=None,
+        description="One-paragraph plain-language summary of the diagnosis, shown to the user.",
+    )
 
 
 FLOWPAD_DIAGNOSIS = TypeMetadata(

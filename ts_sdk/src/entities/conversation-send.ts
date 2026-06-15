@@ -42,6 +42,22 @@ export async function sendToExistingConversation(
   );
 }
 
+/**
+ * Send a flow-diagnose report into a conversation and un-hide it. Shared by the
+ * Home-Feed card's "Report issue" / "Forward" actions and the UI diagnose modal's
+ * report buttons — both send the diagnosis summary to a (until-then hidden) support
+ * conversation and clear its `dismissed_at` so it surfaces in the Recent strip.
+ * Callers do their own follow-up (the Feed dismisses its entry; the modal closes).
+ */
+export async function sendDiagnosisReport(conversationId: string, text: string): Promise<void> {
+  await sendToExistingConversation(conversationId, { text });
+  const conv = await Conversation.getById<Conversation>(conversationId);
+  if (!conv) return;
+  conv.dismissed_at = null;
+  conv.updated_date = new Date().toISOString();
+  await conv.save([]);
+}
+
 export interface CreateAndSendParams {
   /** Required for project-local conversations; null for cross-user bundle. */
   project_id?: string | null;
