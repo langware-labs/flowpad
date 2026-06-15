@@ -11,9 +11,22 @@ id: 684208ee-360e-50e6-a71e-b642ca95ac57
 
 ## Quick Deploy (bump + publish in one shot)
 
+> **Deploy from the release branch.** PyPI is released from the highest
+> `release/vX.Y` branch, and the version bump must land on that same branch so
+> its `flow_sdk/_version.py` always equals the version published to PyPI. Never
+> release from a feature branch or `main` — the bump would diverge and the
+> branch/PyPI versions would drift apart (a real bug we've hit).
+
 ```bash
-# 1. Bump version
-echo '__version__ = "0.1.X"' > flow_sdk/_version.py
+# 0. Check out the highest release/vX.Y branch — the deploy source.
+git fetch origin --prune
+RELEASE_BRANCH=$(git branch -r | grep -oE 'release/v[0-9]+\.[0-9]+' | sort -t. -k2,2n -u | tail -1)
+git checkout "$RELEASE_BRANCH" && git pull --ff-only origin "$RELEASE_BRANCH"
+
+# 1. Bump version — base off the HIGHER of PyPI and the branch's current
+#    version (never go backwards), then increment the patch.
+curl -s https://pypi.org/pypi/flowpad/json | python3 -c "import sys,json; print(json.load(sys.stdin)['info']['version'])"
+echo '__version__ = "0.2.X"' > flow_sdk/_version.py
 
 # 2. Clean old artifacts
 rm -rf dist/ build/ flowpad.egg-info/
@@ -21,11 +34,16 @@ rm -rf dist/ build/ flowpad.egg-info/
 # 3. Build UI assets (required — embeds frontend into wheel)
 python3 build_ui.py
 
-# 4. Build wheel + sdist
-python3 -m build
+# 4. Build wheel + sdist (uv reads the version from _version.py; no `build` module needed)
+uv build
 
 # 5. Publish to PyPI
-python3 -m twine upload dist/flowpad-0.1.X*
+python3 -m twine upload dist/flowpad-0.2.X*
+
+# 6. Commit + push the bump to the release branch so it matches PyPI.
+git add flow_sdk/_version.py
+git commit -m "chore: bump version to 0.2.X for PyPI release"
+git push origin HEAD
 ```
 
 ## Validate Before Publishing
@@ -130,6 +148,28 @@ marker.
 > [`local_patch.md` → Patching the desktop app (Electron shell)](./local_patch.md#patching-the-desktop-app-electron-shell).
 
 ## Known Pitfalls
+
+### Branch version drifts from the published PyPI version
+
+If you deploy from a feature branch (or don't push the bump), the release
+branch's `flow_sdk/_version.py` falls behind what's on PyPI. Always release from
+the highest `release/vX.Y` branch (Quick Deploy step 0) and push the bump back
+to it (step 6) so the two never diverge.
+
+### `No module named build`
+
+`python3 -m build` needs the `build` package, which isn't always installed. Use
+`uv build` instead — it reads the version from `_version.py` and produces the
+same `dist/flowpad-<version>-py3-none-any.whl` + `.tar.gz`.
+
+### `npm: command not found` during `build_ui.py`
+
+`build_ui.py` shells out to `npm`, which isn't on the PATH when node is
+nvm-managed. Put it on the PATH first, e.g.:
+
+```bash
+export PATH="$HOME/.nvm/versions/node/$(ls ~/.nvm/versions/node | tail -1)/bin:$PATH"
+```
 
 ### Server module paths must use `flow_sdk.server.*`
 
