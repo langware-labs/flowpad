@@ -90,6 +90,36 @@ consumer reads this one source and derives its view client-side:
   new-tab menu + the projects chip + modals — no session list, no active-key, no
   close/rename/select handlers.
 
+## The content panel — one main view + tabbed shell
+
+`content-panel.tsx` is two layers, both pure functions of the URL (`currentDock`):
+
+- **the main view** — `renderBody(viewType)` renders the body for ANY dock
+  (`bodyViewType = currentDock?.viewType ?? HOME`). One switch; only the active
+  body is mounted (the old radix `<Tabs>` did not `forceMount`, so this matches it).
+- **the tabbed shell** — unless the surface is full-bleed, `UnifiedTabStrip` renders
+  above the body; the active chip is `currentDock.tabHash`.
+
+Two independent, single-owned bits decide framing, each in the layer that owns it:
+
+| bit | owner | meaning |
+|---|---|---|
+| chip? | `DockPointer.tabHash` (`string \| null`) | does this dock get a strip chip? |
+| takeover? | `VIEWER_REGISTRY[viewType].chrome` (`'fullbleed' \| 'workspace'`) | does it hide the strip and own the panel? |
+
+`hideChrome = windowMode || chrome === 'fullbleed'`. Home = `fullbleed` (no strip,
+no chip); a bare shell = `workspace` + `tabHash === null` (strip stays, no own chip,
+body = launcher); a terminal/doc = `workspace` + a `tabHash` string (strip + chip).
+A full-bleed surface inherently has no chip, so `tabHash` returns null when
+`chrome === 'fullbleed'` — the one rule tying the two bits together (the rest of
+`tabHash`'s null cases are the bare-shell host and a missing viewType).
+
+The viewer-store overview axis is gone: `useViewerStore` is now just
+`currentContext` (a URL→params bag — `codeRef`/port/`checkpointHash` — that the body
+components read); `currentOverviewTab`, `isHomeView`, `OVERVIEW_NON_HOME_SLOTS`, and
+the radix `<Tabs>` ladder are deleted. Agent stream focus is URL-first:
+`useActiveViewer` routes it through `navigation.openDock`, not a store write.
+
 ## The flow (URL-first, non-negotiable)
 
 ```
