@@ -128,18 +128,21 @@ export const TabStrip: React.FC<TabStripProps> = ({
     const tab = tabRefs.current[targetKey];
     if (!container || !tab) return;
 
-    const tabLeft = tab.offsetLeft;
-    const tabRight = tabLeft + tab.offsetWidth;
-    const visibleLeft = container.scrollLeft;
-    const visibleRight = visibleLeft + container.clientWidth;
+    // Measure against the container's viewport rect (not offsetLeft/scrollLeft):
+    // the scroll container is not a positioned offset-parent, so offsetLeft is
+    // not relative to it and the partial-visibility math drifts — a chip clipped
+    // by a pixel then never triggers a scroll. Rect deltas are exact and
+    // scrollBy applies them regardless of offset-parent.
+    const containerRect = container.getBoundingClientRect();
+    const tabRect = tab.getBoundingClientRect();
+    // Breathing room so a selected chip lands fully clear of the edge / overflow
+    // chevron rather than flush against it.
+    const PAD = 8;
 
-    if (tabLeft < visibleLeft) {
-      container.scrollTo({ left: tabLeft, behavior });
-      return;
-    }
-
-    if (tabRight > visibleRight) {
-      container.scrollTo({ left: tabRight - container.clientWidth, behavior });
+    if (tabRect.left < containerRect.left + PAD) {
+      container.scrollBy({ left: tabRect.left - containerRect.left - PAD, behavior });
+    } else if (tabRect.right > containerRect.right - PAD) {
+      container.scrollBy({ left: tabRect.right - containerRect.right + PAD, behavior });
     }
   }, []);
 
