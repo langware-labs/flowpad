@@ -21,6 +21,7 @@ import {
   capabilityManager,
   CapabilityKinds,
   dataContext,
+  dataManager,
   getDisplayStatus,
   HARNESS_CAPABILITY_KINDS,
   isProcessRunning,
@@ -61,7 +62,7 @@ import {
 import { useContext } from '@src/hooks/useContext';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { Cloud, Container, FolderGit2, History, SquareTerminal } from 'lucide-react';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { allowRename, shouldAutoSavePtyTitle } from '@src/components/terminal/rename-rules';
 import { resolveProcessDisplayName } from '@src/components/terminal/process-display-name';
 import { HistoryModal } from '@src/components/terminal/HistoryModal';
@@ -97,6 +98,15 @@ const PROVIDER_META: Record<
 /** Display name for a session chip — entity name, falling back to the target key. */
 function getDisplayName(session: TerminalTab): string {
   return typeof session.name === 'string' && session.name ? session.name : terminalTargetKey(session);
+}
+
+/** Max chars for a tab-chip label — matches the header's 30-char instruction
+ *  clip (`resolveProcessDisplayName(process, 30)`). CSS also truncates by width,
+ *  but an explicit cap keeps the label bounded and gives the same `…` the
+ *  header uses, independent of the chip's rendered width. */
+const TAB_LABEL_MAX = 30;
+function clipTabLabel(name: string): string {
+  return name.length > TAB_LABEL_MAX ? name.slice(0, TAB_LABEL_MAX).trimEnd() + '…' : name;
 }
 
 /** Opener warning for a harness: set when its backend capability check ran and failed. */
@@ -381,6 +391,28 @@ export function useTerminalStripController({
     null;
   const activeTargetTypeId = urlActiveTargetTypeId ?? contextActiveTerminalTargetTypeId ?? fallbackActiveTargetTypeId;
   const activeTargetKey = activeTargetTypeId?.toString() ?? '';
+
+  // The Tab-only strip query (useTerminalTabs) rebuilds on tab-SET changes, not
+  // on a backing entity's `name` field, so an auto-title (PTY OSC → Tab.name)
+  // doesn't reach the chip until a reload. The auto-rename always targets the
+  // ACTIVE tab (it fires from the mounted panel), so we resolve that one chip's
+  // label from its live entity. The backend mutates the entity IN PLACE (no new
+  // ref), so a plain useEntity ref won't re-render — mirror ProcessToolbar and
+  // subscribe to the entity directly, snapshotting the resolved display name so
+  // the store re-renders precisely when the name changes.
+  const activeProcessTypeId = useMemo(
+    () => (activeTargetTypeId?.type === AgenticProcess.type ? activeTargetTypeId : null),
+    [activeTargetTypeId],
+  );
+  const { data: activeProcessEntity } = useEntity<AgenticProcess>(activeProcessTypeId);
+  const activeProcessName = useSyncExternalStore(
+    useCallback(
+      (cb) => (activeProcessTypeId ? dataManager.subscribe(activeProcessTypeId, cb, false) : () => {}),
+      [activeProcessTypeId],
+    ),
+    () => (activeProcessEntity ? resolveProcessDisplayName(activeProcessEntity) : null),
+    () => null,
+  );
   const hasActiveTab = Boolean(
     activeTargetKey && visibleSessions.some((session) => terminalTargetKey(session) === activeTargetKey),
   );
@@ -986,9 +1018,14 @@ export function useTerminalStripController({
       session.targetTypeId.type === Shell.type ? `tab-shell-${session.targetTypeId.id}` : `tab-shell-${targetKey}`;
     const indicatorKey = session.targetTypeId.type === Shell.type ? session.targetTypeId.id : targetKey;
     const sessionProcessId = terminalProcessId(session);
+    // Active chip resolves its label from the live entity (reactive to
+    // auto-title); inactive chips use the durable Tab.name. Both are clipped to
+    // the header's 30-char + '…' budget.
+    const isActiveRow = targetKey === activeTargetKey;
+    const liveName = isActiveRow && activeProcessName ? activeProcessName : getDisplayName(session);
     return {
       key: targetKey,
-      title: getDisplayName(session),
+      title: clipTabLabel(liveName),
       icon: (
         <ProviderIcon
           className={`h-3.5 w-3.5 shrink-0 ${providerIconClassName}`}
@@ -1017,7 +1054,7 @@ export function useTerminalStripController({
       testId: tabTestId,
       dataAttributes: { 'data-indicator-key': indicatorKey },
     };
-  }), [visibleSessions, pendingProcessIds]);
+  }), [visibleSessions, pendingProcessIds, activeTargetKey, activeProcessName]);
 
   const handleSelect = useCallback(
     (key: string) => {
