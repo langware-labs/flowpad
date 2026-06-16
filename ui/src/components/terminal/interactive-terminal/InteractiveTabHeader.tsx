@@ -15,8 +15,10 @@ export interface HeaderSlots {
   debug: ReactNode;
   /** Restart control. */
   restart: ReactNode;
-  /** Center CTA group — Share + Bookmark (favorite). */
-  center: ReactNode;
+  /** Entity title — absolutely centered in the row so it stays put across modes. */
+  title: ReactNode;
+  /** Share + Bookmark (favorite) CTAs — right-aligned. */
+  actions: ReactNode;
   /** Export/download action. */
   download: ReactNode;
   /** Right toolbar (asset manager, commit/merge, terminal, fork, worktree,
@@ -24,26 +26,38 @@ export interface HeaderSlots {
   right: ReactNode;
 }
 
-/** Full toolbar: [debug][restart] — center — [download][right]. */
-export function AdvancedInteractiveTabHeader({ debug, restart, center, download, right }: HeaderSlots) {
+/** Centered title overlay — same placement in both layouts so switching view
+ * modes never shifts the title. pointer-events-none keeps it from eating clicks
+ * on whatever sits beneath it; the title carries a native tooltip only. */
+function CenteredTitle({ title }: Pick<HeaderSlots, 'title'>) {
   return (
-    <div data-testid="process-toolbar" className={ROW}>
-      {debug}
-      {restart}
-      <div className="flex-1" />
-      {center}
-      <div className="flex-1" />
-      {download}
-      {right}
+    <div className="pointer-events-none absolute inset-x-0 flex justify-center">
+      {title}
     </div>
   );
 }
 
-/** Minimal toolbar: only Share + Bookmark, aligned right. */
-export function StandardInteractiveTabHeader({ center }: Pick<HeaderSlots, 'center'>) {
+/** Full toolbar: [debug][restart] — (centered title) — [download][right][actions]. */
+export function AdvancedInteractiveTabHeader({ debug, restart, title, actions, download, right }: HeaderSlots) {
   return (
-    <div data-testid="process-toolbar" className={`${ROW} justify-end`}>
-      {center}
+    <div data-testid="process-toolbar" className={`${ROW} relative`}>
+      {debug}
+      {restart}
+      <CenteredTitle title={title} />
+      <div className="flex-1" />
+      {download}
+      {right}
+      {actions}
+    </div>
+  );
+}
+
+/** Minimal toolbar: centered title with only Share + Bookmark aligned right. */
+export function StandardInteractiveTabHeader({ title, actions }: Pick<HeaderSlots, 'title' | 'actions'>) {
+  return (
+    <div data-testid="process-toolbar" className={`${ROW} relative justify-end`}>
+      <CenteredTitle title={title} />
+      {actions}
     </div>
   );
 }
