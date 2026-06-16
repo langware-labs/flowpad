@@ -53,6 +53,11 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
   const [done, setDone] = useState<DoneState | null>(null);
   const [reporting, setReporting] = useState(false);
   const [reportError, setReportError] = useState<string | undefined>(undefined);
+  // Set when the run finished while the user wasn't watching (app minimized / tab
+  // backgrounded / another window focused): we posted a Home-Feed card instead, so
+  // the modal shows a pointer to it rather than its own report buttons.
+  const [handedToFeed, setHandedToFeed] = useState(false);
+  const feedHandoffRef = useRef(false); // guards the one-shot feed-card post
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -66,6 +71,8 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
       setDone(null);
       setReporting(false);
       setReportError(undefined);
+      setHandedToFeed(false);
+      feedHandoffRef.current = false;
     }
   }, [open]);
 
@@ -92,6 +99,32 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
         conversationId: ev.conversation_id,
         flowMessageId: ev.flow_message_id,
       });
+      // If the diagnosis finished while the user was NOT watching this modal — the
+      // app was minimized, this tab was backgrounded, or another window/app held
+      // focus — the in-modal report buttons were never seen. Ask the backend to post
+      // the Home-Feed card (the one creator, `_post_home_feed_entry`) so Report /
+      // Forward / View-diagnosis stay reachable from the Home Feed. The modal-closed
+      // (stream-disconnected) case is handled inline by the run and never reaches
+      // here, so the two paths can't both fire for one run.
+      const userWatching =
+        document.visibilityState === 'visible' && document.hasFocus();
+      if (
+        ev.ok &&
+        ev.conversation_id &&
+        ev.flow_message_id &&
+        !userWatching &&
+        !feedHandoffRef.current
+      ) {
+        feedHandoffRef.current = true;
+        setHandedToFeed(true);
+        const info = new ActionInfo('diagnose_post_feed', null, null, 'POST');
+        info.bodyParameters = {
+          diagnosis_id: ev.diagnosis_id,
+          conversation_id: ev.conversation_id,
+          flow_message_id: ev.flow_message_id,
+        };
+        void dataManager.callAction(info);
+      }
     }
     // 'progress' / 'flush' are terminal-only cosmetics; the running spinner covers liveness.
   }, []);
@@ -259,16 +292,25 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
             </div>
           )}
 
-          {/* On an issue, the same report buttons as a Feed entry — plus "View diagnosis". */}
-          {done?.ok && done.conversationId && (
-            <DiagnosisActionButtons
-              suggestedConversationId={done.conversationId}
-              busy={reporting}
-              error={reportError}
-              onDismiss={handleClose}
-              onReport={(conversationId) => void handleReport(conversationId)}
-            />
-          )}
+          {/* On an issue, the same report buttons as a Feed entry — plus "View diagnosis".
+              But if the run finished while the user was away, we posted a Home-Feed card
+              instead; point them there rather than showing a second set of buttons. */}
+          {done?.ok &&
+            done.conversationId &&
+            (handedToFeed ? (
+              <p className="text-[11px] text-muted-foreground">
+                You stepped away while this finished, so it was saved to your Home feed — open it
+                there to report or forward it.
+              </p>
+            ) : (
+              <DiagnosisActionButtons
+                suggestedConversationId={done.conversationId}
+                busy={reporting}
+                error={reportError}
+                onDismiss={handleClose}
+                onReport={(conversationId) => void handleReport(conversationId)}
+              />
+            ))}
 
           {(done || (started && !running)) && (
             <div className="flex justify-end gap-2">
