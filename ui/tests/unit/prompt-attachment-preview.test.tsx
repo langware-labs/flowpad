@@ -4,6 +4,7 @@ import { TypeId } from '@sdk';
 import { AttachmentType, type Attachment } from '@sdk/entities/flow-message';
 import { useEntity } from '@sdk/react/hooks';
 import { PromptAttachmentPreview } from '@src/components/conversation/attachment-actions';
+import { isImagePromptFileAttachment } from '@src/components/conversation/attachment-actions/prompt-attachment';
 
 vi.mock('@sdk/react/hooks', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@sdk/react/hooks')>();
@@ -67,32 +68,40 @@ describe('PromptAttachmentPreview', () => {
     expect(container.querySelector('a')).toBeNull();
   });
 
-  it('renders an attached image as a thumbnail picture, not a binary text chip', () => {
+  it('leaves a sent image prompt-file to the attachment chips (not the prompt row)', () => {
+    // On a sent message the image renders as a rich image AttachmentChip (see
+    // useAttachments) — the prompt row must NOT also show it as a name/thumbnail.
     const att: Attachment = {
       attachment_type: AttachmentType.PROMPT,
       data: 'prompt/diagram.png',
       local_path: '/tmp/diagram.png',
     };
     const { container } = render(<PromptAttachmentPreview attachments={[att]} messageId="fm-1" />);
-    const img = screen.getByAltText('diagram.png') as HTMLImageElement;
-    expect(img.tagName).toBe('IMG');
-    expect(img.getAttribute('src')).toBeTruthy();
-    // No download-chip filename text for an image — it shows as a picture.
-    expect(container.querySelector('a[download]')).toBeNull();
+    expect(container.querySelector('img')).toBeNull();
+    expect(screen.queryByText('diagram.png')).toBeNull();
   });
 
-  it('renders text as text and an image as a picture when both are attached', () => {
+  it('shows the typed text in the prompt row and leaves the image to the chips', () => {
     const text: Attachment = { attachment_type: AttachmentType.PROMPT, data: 'run the migration' };
     const image: Attachment = {
       attachment_type: AttachmentType.PROMPT,
       data: 'prompt/screenshot.jpg',
       local_path: '/tmp/screenshot.jpg',
     };
-    render(<PromptAttachmentPreview attachments={[text, image]} messageId="fm-2" />);
+    const { container } = render(<PromptAttachmentPreview attachments={[text, image]} messageId="fm-2" />);
     // Typed prompt stays text on the row…
     expect(screen.getByText(/run the migration/)).toBeTruthy();
-    // …and the image stays an image.
-    expect((screen.getByAltText('screenshot.jpg') as HTMLImageElement).tagName).toBe('IMG');
+    // …and the image is not duplicated here — it's an attachment chip.
+    expect(container.querySelector('img')).toBeNull();
+  });
+
+  it('classifies image prompt-files as chip-renderable, text prompt-files as not', () => {
+    const img: Attachment = { attachment_type: AttachmentType.PROMPT, data: 'prompt/shot.png' };
+    const txt: Attachment = { attachment_type: AttachmentType.PROMPT, data: 'prompt/notes.md' };
+    const inline: Attachment = { attachment_type: AttachmentType.PROMPT, data: 'just text' };
+    expect(isImagePromptFileAttachment(img)).toBe(true);
+    expect(isImagePromptFileAttachment(txt)).toBe(false);
+    expect(isImagePromptFileAttachment(inline)).toBe(false);
   });
 
   it('thumbnails a not-yet-uploaded image in the composer from its backing File', async () => {

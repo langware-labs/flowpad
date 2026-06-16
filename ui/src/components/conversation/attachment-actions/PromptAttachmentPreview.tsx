@@ -82,10 +82,16 @@ export function PromptAttachmentPreview({
   );
   const fileAttachments = useMemo(
     () =>
-      attachments.filter(
-        (a) => a.attachment_type === AttachmentType.PROMPT && attachmentDataString(a).startsWith('prompt/'),
-      ),
-    [attachments],
+      attachments.filter((a) => {
+        if (a.attachment_type !== AttachmentType.PROMPT) return false;
+        if (!attachmentDataString(a).startsWith('prompt/')) return false;
+        // Sent messages render image prompt-files as rich image attachment chips
+        // (see useAttachments); only the composer preview (no messageId) shows
+        // them inline here as a thumbnail.
+        if (messageId && isImagePath(filenameOf(a))) return false;
+        return true;
+      }),
+    [attachments, messageId],
   );
 
   // Entity fallback: fetch the first prompt entity so a message without
