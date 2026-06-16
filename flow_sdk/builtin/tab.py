@@ -51,6 +51,17 @@ class Tab(Entity):
     target_type: str | None = APIField(default=None)
     target_id: str | None = APIField(default=None)
 
+    # Display primitives the strip draws straight off the Tab, so the chip never
+    # has to fetch its backing Shell/AgenticProcess (docs/tab-management.md). Both
+    # are CREATE-only and static for a tab's life:
+    #   ``icon_key`` — resolved provider/display kind ('shell'|'claude'|'codex'|
+    #                  'copilot'), set at creation from the target's worker_type.
+    #                  (Named ``icon_key`` not ``icon`` — the latter is the base
+    #                  Entity's type-icon accessor.)
+    #   ``worktree`` — whether the backing process runs in a git worktree (badge).
+    icon_key: str | None = APIField(default=None)
+    worktree: bool = APIField(default=False)
+
     # Strip ordering (0 = unassigned). DB-only — intentionally does not survive
     # a rebuild-from-disk (tab-management.md Part 1, decision 3).
     tab_order: int = APIField(default=0, persist=Persist.FALSE)
@@ -125,6 +136,8 @@ async def ensure_tab(
     target_id: str | None = None,
     project_id: str | None = None,
     name: str | None = None,
+    icon_key: str | None = None,
+    worktree: bool | None = None,
 ) -> Tab:
     """Deterministic get-or-create for a tab, keyed by the canonical pointer.
 
@@ -147,8 +160,19 @@ async def ensure_tab(
             if val is not None and getattr(existing, attr) != val:
                 setattr(existing, attr, val)
                 dirty = True
-        # ``name`` is a CREATE-only initial label — never overwrite an existing
-        # row's name on reuse, so a user rename survives re-open.
+        # Backfill display primitives ONLY when the row has none — a null name
+        # was never a user rename, and a null icon_key/worktree predates the
+        # field, so filling heals legacy rows on next open without clobbering a
+        # user-chosen name.
+        if not existing.name and name:
+            existing.name = name
+            dirty = True
+        if not existing.icon_key and icon_key:
+            existing.icon_key = icon_key
+            dirty = True
+        if not existing.worktree and worktree:
+            existing.worktree = True
+            dirty = True
         if dirty:
             await existing.save()
         return existing
@@ -159,6 +183,8 @@ async def ensure_tab(
         target_id=target_id,
         project_id=project_id,
         name=name,
+        icon_key=icon_key,
+        worktree=bool(worktree),
         visible=True,
     )
     await tab.save()

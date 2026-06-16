@@ -2,7 +2,7 @@ import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { FileUploadIndicator, FileUploadItem } from '@src/components/file-upload-indicator';
 
 import { useInputHistory } from '@src/hooks/use-input-history';
-import { useLoginRequired } from '@src/hooks/use-login-required';
+import { useLoginRequired, useResumeAfterLogin } from '@src/hooks/use-login-required';
 import { useChatOptions } from '@src/hooks/useChatOptions';
 import { useEditorStore } from '@src/store/use-editor-store';
 import { useSendMessageStore } from '@src/store/use-send-message-store';
@@ -136,9 +136,6 @@ const ChatInput: React.FC<ChatInputProps> = ({
     closeLoginDialog,
     requiresLogin,
     checkLoginAndProceed,
-    pendingAction,
-    clearPending,
-    isPostLogin,
   } = useLoginRequired();
   useColorPalette(siteConfig);
 
@@ -431,30 +428,15 @@ const ChatInput: React.FC<ChatInputProps> = ({
     navigator.navigateToLogin();
   }, []);
 
-  // Handle post-login actions (restore message or auto-send)
-  useEffect(() => {
-    if (!pendingAction || !isPostLogin) return;
-
-    if (pendingAction.action === ActionType.SEND && pendingAction.message) {
-      // Auto-send after login - will be triggered after component is ready
-      // Use a small timeout to ensure the component is fully mounted
-      const timer = setTimeout(() => {
-        if (pendingAction.message) {
-          setMessage(pendingAction.message);
-          clearPending();
-        }
-        // Note: The actual send will happen via form submission or user pressing Enter
-        // We set the message and the user can adjust or send immediately
-      }, 100);
-      return () => clearTimeout(timer);
-    } else if (pendingAction.message) {
-      // For tools/codebase/files actions, just restore the message
-      setMessage(pendingAction.message);
-      clearPending();
-    } else {
-      clearPending();
-    }
-  }, [pendingAction, isPostLogin, clearPending]);
+  // After login, restore the message the user had typed for any gated action
+  // (SEND / TOOLS / CODEBASE / FILES). We only restore — never auto-submit — so
+  // the user can review and send themselves.
+  useResumeAfterLogin(
+    [ActionType.SEND, ActionType.TOOLS, ActionType.CODEBASE, ActionType.FILES],
+    (pending) => {
+      if (pending.message) setMessage(pending.message);
+    },
+  );
 
   const handleCodebaseButtonClick = useCallback(() => {
     // If user is logged in and has a codebase connection, do nothing (button is just for display)

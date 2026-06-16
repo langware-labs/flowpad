@@ -131,6 +131,32 @@ function parseClaudeQuote(content: string): { prefix: string; quoted: string } |
   return { prefix: 'Prompt response:', quoted: unescaped };
 }
 
+/**
+ * The message body text. `whitespace-pre-wrap` is the single source of truth for
+ * preserving authored newlines — keeping it here (rather than on each call-site
+ * div) stops the agent-quote and plain-text branches from drifting apart, which
+ * is exactly how newlines got dropped from one branch before.
+ */
+function MessageBody({ content, isBot }: { content: string; isBot: boolean }) {
+  const bodyClass = `whitespace-pre-wrap break-words text-sm ${isBot ? 'italic text-foreground/70' : 'text-foreground/90'}`;
+  const claudeQuote = parseClaudeQuote(content);
+  if (claudeQuote) {
+    // The executed reply renders as real Markdown (bold, lists, code fences,
+    // tables) via the canonical MarkdownView so it reads "pretty" — not a flat
+    // italic quote. The muted "Prompt response:" label still flags it as an
+    // unedited draft.
+    return (
+      <div className={`text-sm ${isBot ? 'text-foreground/70' : 'text-foreground/90'}`}>
+        <span className="font-medium text-muted-foreground">{claudeQuote.prefix}</span>
+        <div className="mt-1 break-words text-foreground/85">
+          <MarkdownView value={claudeQuote.quoted} compact />
+        </div>
+      </div>
+    );
+  }
+  return <div className={bodyClass}>{content}</div>;
+}
+
 export function MessageBubble({
   message,
   flowMessageId,
@@ -291,32 +317,9 @@ export function MessageBubble({
             messageText={message.content}
           />
         </div>
-        {message.content &&
-          message.content !== PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT &&
-          (() => {
-            const claudeQuote = parseClaudeQuote(message.content);
-            if (claudeQuote) {
-              // The executed reply renders as real Markdown (bold, lists, code
-              // fences, tables) via the canonical MarkdownView so it reads
-              // "pretty" — not a flat italic quote. The muted "Prompt response:"
-              // label still flags it as an unedited draft.
-              return (
-                <div className={`text-sm ${isBot ? 'text-foreground/70' : 'text-foreground/90'}`}>
-                  <span className="font-medium text-muted-foreground">{claudeQuote.prefix}</span>
-                  <div className="mt-1 break-words text-foreground/85">
-                    <MarkdownView value={claudeQuote.quoted} compact />
-                  </div>
-                </div>
-              );
-            }
-            return (
-              <div
-                className={`whitespace-pre-wrap break-words text-sm ${isBot ? 'italic text-foreground/70' : 'text-foreground/90'}`}
-              >
-                {message.content}
-              </div>
-            );
-          })()}
+        {message.content && message.content !== PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT && (
+          <MessageBody content={message.content} isBot={isBot} />
+        )}
         {showPromptRow && (
           <AttachmentActionsRow
             actions={actions}

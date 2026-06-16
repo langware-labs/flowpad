@@ -14,7 +14,7 @@ import {
 import { useAuth } from '@sdk/react/hooks';
 import { uploadFlowMessage, type UploadConflict } from '@sdk/entities/flow-message';
 import { useEntitiesQuery, useEntity } from '@src/hooks/entity-hooks';
-import { useLoginRequired } from '@src/hooks/use-login-required';
+import { useLoginRequired, useResumeAfterLogin } from '@src/hooks/use-login-required';
 import LoginDialog, { ActionType } from '@src/components/login-required-dialog';
 import { NewConversationDialog } from '@src/components/new-conversation-dialog/NewConversationDialog';
 import { deriveConversationTitle } from '@src/components/conversation/conversation-title';
@@ -125,6 +125,15 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
   const visibleCountActual = liveVisibleCount;
   const visible = sorted.slice(0, visibleCount);
   const hasMore = visibleCountActual > visibleCount;
+
+  // "New conversation" — gated on a cloud session (same as the home landing's
+  // former "Start conversation" CTA, which this footer button replaces). After
+  // a forced login completes, reopen the dialog the user was reaching for.
+  const handleNewConversation = () => {
+    if (!checkLoginAndProceed(ActionType.START_CONVERSATION, undefined, undefined, { forceLogin: true })) return;
+    setNewConvOpen(true);
+  };
+  useResumeAfterLogin(ActionType.START_CONVERSATION, () => setNewConvOpen(true));
 
   const handleRefresh = async () => {
     // Refresh pulls from the hub, which requires a cloud session. Gate on
@@ -248,19 +257,10 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
             className="hidden"
             onChange={(e) => void handleFileChange(e)}
           />
-          {/* New conversation / Upload / Dismiss-all are Advanced-view only;
-              Refresh stays in Standard view. */}
+          {/* Upload / Dismiss-all are Advanced-view only; Refresh stays in
+              Standard view. New conversation lives in the footer. */}
           {isAdvanced && (
             <>
-              <button
-                type="button"
-                className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                onClick={() => setNewConvOpen(true)}
-                title="New conversation"
-                data-testid="new-conversation-button"
-              >
-                <Plus className="h-3.5 w-3.5" />
-              </button>
               <button
                 type="button"
                 className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
@@ -336,16 +336,30 @@ export function RecentConversationsStrip({ visibleCount = VISIBLE_COUNT }: Recen
         )}
       </div>
 
-      {hasMore && (
+      {/* Footer actions — always rendered (even with no conversations) so the
+          bar stays aligned with adjacent columns. */}
+      <div className="flex border-t">
         <button
           type="button"
-          className="border-t px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          onClick={() => navigation.openDock(DockPointer.forInbox())}
-          data-testid="open-all-conversations"
+          className="flex flex-1 items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
+          onClick={handleNewConversation}
+          data-testid="new-conversation-footer-button"
         >
-          Open all ({visibleCountActual})
+          <Plus className="h-3.5 w-3.5" />
+          New
         </button>
-      )}
+        {visibleCountActual > 0 && (
+          <button
+            type="button"
+            className="flex flex-1 items-center justify-center gap-1.5 border-l px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            onClick={() => navigation.openDock(DockPointer.forInbox())}
+            data-testid="open-all-conversations"
+          >
+            <MessageSquare className="h-3.5 w-3.5" />
+            All{hasMore ? ` (${visibleCountActual})` : ''}
+          </button>
+        )}
+      </div>
 
       <NewConversationDialog
         open={newConvOpen}

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Boxes, File as FileIcon, GitBranch, MessageSquarePlus, Paperclip, Send, Trash2, X } from 'lucide-react';
+import { Boxes, File as FileIcon, GitBranch, MessageSquarePlus, Paperclip, Send, Smile, Trash2, X } from 'lucide-react';
 import type { AssetDescriptor, FlowMessage } from '@sdk';
 import { sendReply } from '@sdk/entities/notifications';
 import { AttachmentType, type Attachment } from '@sdk/entities/flow-message';
@@ -10,6 +10,7 @@ import { AssetPickerPopover } from '@src/components/asset-manager/AssetPickerPop
 import { MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_LABEL } from './constants';
 import { AssetRefChips } from './AttachMenu';
 import { AttachRepoButton } from './AttachRepoButton';
+import { EmojiPicker } from './EmojiPicker';
 import { PromptComposerDialog, type QueuedPrompt } from './PromptComposerDialog';
 import { AttachmentActionsRow, PromptAttachmentPreview, useAttachmentActions } from './attachment-actions';
 import { useLocalUser } from './useLocalUser';
@@ -144,6 +145,7 @@ export function MessageComposer({
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   const canAddPrompt = !!effectiveConversationId;
   const isBusy = sending || discarding;
@@ -219,6 +221,27 @@ export function MessageComposer({
   };
 
   const removeFile = (index: number) => setFiles((prev) => prev.filter((_, i) => i !== index));
+
+  // Insert the picked emoji at the textarea caret (or append when unfocused),
+  // then restore the caret just after the inserted glyph so the user can keep
+  // typing without re-clicking the field.
+  const insertEmoji = (emoji: string) => {
+    const textarea = textareaRef.current;
+    if (!textarea) {
+      setText((prev) => prev + emoji);
+      return;
+    }
+    const start = textarea.selectionStart ?? text.length;
+    const end = textarea.selectionEnd ?? start;
+    const next = `${text.slice(0, start)}${emoji}${text.slice(end)}`;
+    setText(next);
+    requestAnimationFrame(() => {
+      textarea.focus();
+      const caret = start + emoji.length;
+      textarea.selectionStart = caret;
+      textarea.selectionEnd = caret;
+    });
+  };
 
   const addAssetRef = (d: AssetDescriptor) =>
     setAssetRefs((prev) => (prev.some((a) => a.typeid === d.typeid && a.source === d.source) ? prev : [...prev, d]));
@@ -392,6 +415,21 @@ export function MessageComposer({
         searchPlaceholder="Search assets…"
       />
       <AttachRepoButton disabled={isDisabled} onAttach={addRepo} />
+      <EmojiPicker
+        side="top"
+        onPick={insertEmoji}
+        trigger={
+          <button
+            type="button"
+            disabled={isDisabled}
+            title="Insert emoji"
+            data-testid="insert-emoji-button"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
+          >
+            <Smile className="h-3.5 w-3.5" />
+          </button>
+        }
+      />
     </>
   );
 
@@ -532,6 +570,7 @@ export function MessageComposer({
             )}
           >
             <textarea
+              ref={textareaRef}
               value={text}
               onChange={(e) => setText(e.target.value)}
               onKeyDown={handleKeyDown}
@@ -584,6 +623,7 @@ export function MessageComposer({
       >
         <div className="flex shrink-0 items-center gap-1.5 self-end pb-0.5">{attachButtons}</div>
         <textarea
+          ref={textareaRef}
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={handleKeyDown}

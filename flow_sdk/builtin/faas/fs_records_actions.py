@@ -652,6 +652,20 @@ class FsRecordsActionsMixin:
             "diff_included": do_diff,
         })
 
+    @staticmethod
+    async def _scope_filter_from_query(request_info):
+        """Resolve the unified ScopeFilter from ``?user=&projects=`` query params
+        (None when neither is present). Shared by the index-status and
+        asset-stats handlers so the scope-parsing path is defined once."""
+        from flow_sdk.server.search_filters import ScopeFilter, resolve_project_scope  # noqa: PLC0415
+
+        qp = request_info.request.query_params
+        return await resolve_project_scope(
+            ScopeFilter.from_query_params(qp)
+            if (qp.get("user") is not None or qp.get("projects") is not None)
+            else None
+        )
+
     async def _handle_fs_records_index_status(self, request_info) -> ApiResponse:
         """Return index freshness info.
 
@@ -666,15 +680,8 @@ class FsRecordsActionsMixin:
         from dataclasses import asdict  # noqa: PLC0415
 
         from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
-        from flow_sdk.server.search_filters import ScopeFilter, resolve_project_scope  # noqa: PLC0415
 
-        qp = request_info.request.query_params
-        scope_filter = await resolve_project_scope(
-            ScopeFilter.from_query_params(qp)
-            if (qp.get("user") is not None or qp.get("projects") is not None)
-            else None
-        )
-
+        scope_filter = await self._scope_filter_from_query(request_info)
         status = await SchemaRegistry.get_index_status(scope=scope_filter)
         return ApiSuccessResponse(
             data={
@@ -686,6 +693,23 @@ class FsRecordsActionsMixin:
                 "total_orphans": status.total_orphans,
             }
         )
+
+    async def _handle_fs_records_asset_stats(self, request_info) -> ApiResponse:
+        """Live per-type asset counts for a ScopeFilter — the single source the
+        UI counter surfaces render from.
+
+        GET /fs-records/asset-stats[?user=&projects=]
+
+        Counts only (``{per_type, total}``); freshness/orphans stay on
+        ``index-status``. Same scope-parsing path as that handler.
+        """
+        from dataclasses import asdict  # noqa: PLC0415
+
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry  # noqa: PLC0415
+
+        scope_filter = await self._scope_filter_from_query(request_info)
+        stats = await SchemaRegistry.get_asset_stats(scope=scope_filter)
+        return ApiSuccessResponse(data=asdict(stats))
 
     async def _handle_fs_records_index_clear(self, request_info) -> ApiResponse:
         """Clear all FTS index data and reset index logs.
@@ -1359,6 +1383,10 @@ class FsRecordsActionsMixin:
         # Index status: GET /fs-records/index-status
         if segments and segments[0] == "index-status" and method == "get":
             return await self._handle_fs_records_index_status(request_info)
+
+        # Asset stats: GET /fs-records/asset-stats
+        if segments and segments[0] == "asset-stats" and method == "get":
+            return await self._handle_fs_records_asset_stats(request_info)
 
         # Activity status: GET /fs-records/activity-status
         if segments and segments[0] == "activity-status" and method == "get":

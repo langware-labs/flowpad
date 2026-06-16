@@ -194,8 +194,10 @@ export async function loadNextProcess(
     }
 
     const shellId = terminalTransportShellId(tab);
-    if (!shellId || !tab.shell) {
-      // Defensive: filterTabs shouldn't yield a tab without either entity.
+    if (!shellId) {
+      // A shell tab's transport id is its target id, present without cache;
+      // loadShell hydrates the entity on demand below. Only skip if even the
+      // id is missing (target-less / malformed row).
       tried.add(tab.targetTypeId.toString());
       continue;
     }

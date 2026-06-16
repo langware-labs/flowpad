@@ -15,6 +15,7 @@ import {
 import { useAllProjects } from '@src/hooks/use-all-projects';
 import { notify } from '@src/notifications';
 import { ConversationPanel, EditableConversationTitle } from './ConversationPanel';
+import { ConversationHeaderSession } from './ConversationHeaderSession';
 import { MembersAvatarStack } from './MembersAvatarStack';
 import {
   applyProjectToConversation,
@@ -202,7 +203,12 @@ export function ConversationRoute() {
           <ConversationSetProjectButton conversation={conversation} task={task} />
         )}
       </div>
-      <div className="flex min-w-0 justify-end">
+      <div className="flex min-w-0 items-center justify-end gap-2">
+        {/* Open-the-session / launch-a-worker — the conversation always shows
+            exactly one of the two (never neither). Logged-out skips it. */}
+        {cloudUser && conversation && (
+          <ConversationHeaderSession conversation={conversation} task={task} />
+        )}
         {/* Roster fetch is pointless under the logged-out overlay — skip it. */}
         {cloudUser && convTypeId && <MembersAvatarStack typeId={convTypeId} />}
       </div>
