@@ -1,5 +1,5 @@
 import { AgenticProcess, Layout, Shell, TypeId, type IDockPointer } from '@sdk';
-import { VIEW_SLOTS, ViewSlot, ViewType } from '../types/ViewType';
+import { VIEW_SLOTS, ViewSlot, ViewType, VIEWER_REGISTRY } from '../types/ViewType';
 import { NavigationError, NavigationErrorType } from './NavigationError';
 import { parseQueryParams } from './url-builder';
 import { isValidView } from './validators';
@@ -829,11 +829,18 @@ export class DockPointer implements IDockPointer {
   }
 
   /**
-   * Canonical tab identity for this pointer — the single knob that decides
-   * which pointers collapse to the SAME content-panel Tab (docs/tab-management.md).
+   * Canonical tab identity for this pointer, or **`null` when the surface is not
+   * a tab at all** — the single generic "no tab" signal every consumer honors
+   * (`ensureTabForCurrentDock` skips it; the strip's active-key resolves to no
+   * chip). Two surfaces have no chip: a **full-bleed** view (e.g. `home`, via the
+   * registry `chrome` flag) takes over the panel so there is no strip to sit in;
+   * and a **bare shell** (`/dock/shell` with no session — the terminal HOST whose
+   * sessions are the actual tabs at `/dock/shell/<session>`). Encoding "no tab"
+   * here (not as a special case in each consumer) keeps the whole tab-or-not
+   * decision in the one place that owns tab identity.
    *
-   * Identity is ``viewType`` + ``pointer`` ONLY. ``layout`` is excluded on
-   * purpose: a ``/win/`` popout and the ``/dock/`` view of the same content are
+   * Otherwise identity is ``viewType`` + ``pointer`` ONLY. ``layout`` is excluded
+   * on purpose: a ``/win/`` popout and the ``/dock/`` view of the same content are
    * the same Tab (placement is per-client URL state, not tab identity). Transient
    * ``options`` (slot, query params) are excluded too — by default a viewType's
    * sub-state shares one tab (e.g. all settings sub-paths → one "Settings" tab).
@@ -841,8 +848,13 @@ export class DockPointer implements IDockPointer {
    * canonicalization lives here and NOWHERE else, so there is no cross-language
    * canonicalizer to keep in agreement.
    */
-  get tabHash(): string {
-    return `${this.viewType ?? ''}|${this.pointer ?? ''}`;
+  get tabHash(): string | null {
+    if (!this.viewType) return null;
+    // A full-bleed surface (Home) takes over the panel — no strip, hence no chip.
+    if (VIEWER_REGISTRY[this.viewType]?.chrome === 'fullbleed') return null;
+    // A bare shell is the terminal host; only a session-pointer shell is a tab.
+    if (this.viewType === ViewType.SHELL && !this.pointer) return null;
+    return `${this.viewType}|${this.pointer ?? ''}`;
   }
 
   /** Reverse of `tabHash` — reconstruct the navigable DockPointer from a stored

@@ -70,9 +70,10 @@ export function targetForDock(dock: DockPointer): { targetType: string | null; t
  * so terminals, docs, assets, settings and diffs all become tabs by one rule.
  */
 export function ensureTabForCurrentDock(dock: DockPointer): void {
-  if (!dock.viewType) return;
+  // `tabHash === null` is the single "this dock has no tab" signal (bare shell
+  // host, home, …) — and covers a missing viewType. Don't materialize a Tab.
   const pointerHash = dock.tabHash;
-  if (!pointerHash.trim()) return;
+  if (!pointerHash) return;
   const { targetType, targetId } = targetForDock(dock);
   const { icon, worktree } = terminalDisplayForTarget(targetType, targetId);
   const projectId = dataContext.project?.id ?? null;
