@@ -139,31 +139,48 @@ export class Tab extends APIEntity<Tab> implements ITab {
     return res?.tabs ?? [];
   }
 
-  /**
-   * Soft-close via the backend action (POST /graph/tab/<id>/close): the backend
-   * flips ``visible=false`` and dispatches PTY/worker teardown by target_type.
-   * Teardown is headless-owned, so close must round-trip — never just a local
-   * ``visible=false``.
-   */
-  async closeTab(): Promise<TabRow[]> {
-    const action = new ActionInfo('close', Tab.type, this.id, 'POST');
-    const res = await dataManager.callAction<unknown, { tabs: TabRow[] }>(action);
-    this.visible = false;
+  // Action-by-id helpers — invoke a backend Tab action WITHOUT constructing a
+  // throwaway `new Tab({id})`. The strip renders from plain `TabRow` data (not
+  // entities), so a fresh `Tab` with an already-cached id collides in the entity
+  // store ("already registered with different entity"). These call the action by
+  // id directly and return the canonical list.
+
+  /** POST /graph/tab/<id>/close — soft-close (backend flips visible + dispatches
+   *  target teardown). Returns the updated list. */
+  static async closeById(id: string): Promise<TabRow[]> {
+    const info = new ActionInfo('close', Tab.type, id, 'POST');
+    const res = await dataManager.callAction<unknown, { tabs: TabRow[] }>(info);
     return res?.tabs ?? [];
   }
 
-  /**
-   * Rename via the backend action (POST /graph/tab/<id>/rename {name}). ``Tab.name``
-   * is the generic source of truth; the backend reflects the rename onto the target
-   * entity by calling its generic ``Entity.rename`` (works for ANY backing entity —
-   * conversation/agentic_process/shell/markdown; shell/AP also pin ``auto_rename``).
-   */
-  async rename(name: string): Promise<TabRow[]> {
-    const action = new ActionInfo('rename', Tab.type, this.id, 'POST');
-    action.bodyParameters = { name };
-    const res = await dataManager.callAction<{ name: string }, { tabs: TabRow[] }>(action);
-    this.name = name;
+  /** POST /graph/tab/<id>/rename {name} — the backend reflects onto the backing
+   *  entity via generic `Entity.rename`. Returns the updated list. */
+  static async renameById(id: string, name: string): Promise<TabRow[]> {
+    const info = new ActionInfo('rename', Tab.type, id, 'POST');
+    info.bodyParameters = { name };
+    const res = await dataManager.callAction<{ name: string }, { tabs: TabRow[] }>(info);
     return res?.tabs ?? [];
+  }
+
+  /** POST /graph/tab/<id>/activate — stamp recency (resolver seed for opener /
+   *  close-to-last-active). */
+  static async activateById(id: string): Promise<void> {
+    const info = new ActionInfo('activate', Tab.type, id, 'POST');
+    await dataManager.callAction<undefined, unknown>(info);
+  }
+
+  /** Instance soft-close (also updates the local flag). */
+  async closeTab(): Promise<TabRow[]> {
+    const rows = await Tab.closeById(this.id);
+    this.visible = false;
+    return rows;
+  }
+
+  /** Instance rename (also updates the local name). */
+  async rename(name: string): Promise<TabRow[]> {
+    const rows = await Tab.renameById(this.id, name);
+    this.name = name;
+    return rows;
   }
 
   constructor(entity: Partial<ITab> = {}) {
