@@ -33,11 +33,26 @@ TaskResource = FSRecord  # noqa: F401 — register type
 # ---------------------------------------------------------------------------
 
 @pytest.fixture(autouse=True)
-def isolate_records_root(tmp_path):
+def isolate_records_root(tmp_path, monkeypatch):
+    # Isolate records root AND claude home. The unscoped POST /index walks the
+    # registered claude_* roots; without isolating claude_home it indexes the
+    # developer's real ~/.claude and MATERIALIZES a Project row per real
+    # ~/.claude/projects/<dir> into the shared session DB — those leak forward
+    # and make a later unscoped scan (test_fs_scan_aggregate) walk real trees
+    # and blow its timeout. Pointing FLOWPAD_CLAUDE_HOME at an empty tmp dir
+    # keeps this test hermetic and the session DB clean.
+    from flow_sdk.instance_settings import reset_instance_settings  # noqa: PLC0415
+
+    claude_home = tmp_path / "claude_home"
+    claude_home.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("FLOWPAD_CLAUDE_HOME", str(claude_home))
+    reset_instance_settings()
+
     original = get_default_records_root()
     set_default_records_root(tmp_path)
     yield tmp_path
     set_default_records_root(original)
+    reset_instance_settings()
 
 
 @pytest_asyncio.fixture

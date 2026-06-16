@@ -15,11 +15,25 @@ from flow_sdk.fs_store import get_default_records_root, set_default_records_root
 
 
 @pytest.fixture(autouse=True)
-def isolate_records_root(tmp_path):
+def isolate_records_root(tmp_path, monkeypatch):
+    """Isolate the records root AND the claude home so the aggregate scan is
+    hermetic. Without isolating ``claude_home`` the ``claude_*`` registered
+    types (claude_session/codex_session/claude_memory/…) walk the developer's
+    real ``~/.claude`` — multi-GB on heavy-usage machines — and the cold scan
+    blows the 30s timeout. Pointing FLOWPAD_CLAUDE_HOME at an empty tmp dir
+    makes the test deterministic regardless of host ~/.claude size."""
+    from flow_sdk.instance_settings import reset_instance_settings  # noqa: PLC0415
+
+    claude_home = tmp_path / "claude_home"
+    claude_home.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("FLOWPAD_CLAUDE_HOME", str(claude_home))
+    reset_instance_settings()
+
     original = get_default_records_root()
     set_default_records_root(tmp_path)
     yield tmp_path
     set_default_records_root(original)
+    reset_instance_settings()
 
 
 async def _bootstrap(client):
@@ -45,8 +59,9 @@ async def _create_skill(client, cn_url_base, name: str) -> str:
 async def test_scan_aggregate_structure(bootstrapped_client):
     """Aggregate scan returns valid structure (all registered types, including claude types).
 
-    Timeout is long because some registered types (claude_debug_log etc.) read from
-    the real ~/.claude/ directory — not isolated to tmp_path.
+    The ``isolate_records_root`` fixture points FLOWPAD_CLAUDE_HOME at an empty
+    tmp dir, so the claude_* types walk an empty tree and the scan is hermetic
+    (independent of the host's real ~/.claude size).
     """
     boot = await _bootstrap(bootstrapped_client)
     skill_base = _cn_url(boot, "skill")
