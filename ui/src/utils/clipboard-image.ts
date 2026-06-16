@@ -1,3 +1,5 @@
+import { isImagePath } from '@sdk';
+
 const IMAGE_MIME_EXTENSIONS: Record<string, string> = {
   'image/png': 'png',
   'image/jpeg': 'jpg',
@@ -10,7 +12,6 @@ const IMAGE_MIME_EXTENSIONS: Record<string, string> = {
   'image/x-icon': 'ico',
 };
 
-const IMAGE_EXTENSIONS = new Set(Object.values(IMAGE_MIME_EXTENSIONS));
 const GENERIC_CLIPBOARD_IMAGE_NAMES = new Set(['', 'image', 'image.png', 'image.jpg', 'image.jpeg', 'blob']);
 
 export interface ClipboardImageFilenameOptions {
@@ -44,7 +45,7 @@ function timestampForFilename(now: Date): string {
 }
 
 export function isImageFile(file: Pick<File, 'name' | 'type'>): boolean {
-  return file.type.toLowerCase().startsWith('image/') || IMAGE_EXTENSIONS.has(extensionFromName(file.name));
+  return file.type.toLowerCase().startsWith('image/') || isImagePath(file.name);
 }
 
 export function clipboardImageFilename(
