@@ -166,7 +166,7 @@ export function Feed() {
   if (!newEntries.length) return null;
 
   return (
-    <div className="w-full max-w-3xl flex flex-col gap-2">
+    <div className="w-full max-w-3xl self-center flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto overscroll-contain">
       {newEntries.map((entry) => (
         <FeedEntryCard
           key={entry.id}
