@@ -1118,5 +1118,6 @@ export function useTerminalStripController({
     isTerminalCreationPending,
     handleStartClaude,
     handleStartTerminal,
+    handleOpenHistory: () => setHistoryModalOpen(true),
   };
 }

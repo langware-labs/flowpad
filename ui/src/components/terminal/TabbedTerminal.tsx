@@ -12,7 +12,7 @@ import {
 import {
   useTerminalStripController,
 } from '@src/tabs/useTerminalStripController';
-import { Loader2, SquareTerminal } from 'lucide-react';
+import { History, Loader2, SquareTerminal } from 'lucide-react';
 import React from 'react';
 import InteractiveTerminal from './interactive-terminal';
 import { TerminalRuntimeErrorBanner } from './interactive-terminal/TerminalRuntimeErrorBanner';
@@ -101,6 +101,7 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
     isTerminalCreationPending,
     handleStartClaude,
     handleStartTerminal,
+    handleOpenHistory,
   } = controller;
 
   return (
@@ -169,6 +170,17 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
                     <SquareTerminal className="h-4 w-4" />
                   )}
                   Terminal
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                  onClick={handleOpenHistory}
+                  disabled={isTabCreationPending}
+                  data-testid="open-history-button"
+                >
+                  <History className="h-4 w-4" />
+                  Open from history
                 </Button>
               </div>
             </div>
