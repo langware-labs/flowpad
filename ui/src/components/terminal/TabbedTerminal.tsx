@@ -1,4 +1,4 @@
-import { AgenticProcess, Shell, type TabRow, Tab, TypeId, ViewType } from '@sdk';
+import { AgenticProcess, Shell, type TabRow, Tab, TypeId } from '@sdk';
 import { useEntity } from '@src/hooks/entity-hooks';
 import { useAgentContext } from '@src/components/agent-layout/agent-layout';
 import { ClaudeIcon } from '@src/components/icons/ClaudeIcon';
@@ -104,8 +104,9 @@ const TabbedTerminal: React.FC<TabbedTerminalProps> = ({
   const { currentDock } = useDockNavigation();
   const rows = useTerminalTabRows(scope, spawnProjectId);
 
-  // Active panel = the URL (every row is keyed by its `pointer` == tabHash).
-  const activeKey = currentDock?.viewType === ViewType.SHELL ? (currentDock?.tabHash ?? '') : '';
+  // Active panel = the URL (every row is keyed by its `pointer` == tabHash). A
+  // non-terminal dock's tabHash never matches a terminal row, so no special-case.
+  const activeKey = currentDock?.tabHash ?? '';
 
   // Lazy-mount: mount the active panel on first visit; keep mounted ones warm
   // (the Set never shrinks) so re-activation is instant.
