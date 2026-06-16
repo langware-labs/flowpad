@@ -554,7 +554,7 @@ if _sdk_path and _sdk_path.exists():
 from fastapi import Request as _Request
 from fastapi.responses import HTMLResponse as _HTMLResponse
 
-from .routes.ui import _get_index_candidates
+from .routes.ui import _get_index_candidates, serve_index_html
 
 
 @app.get("/{full_path:path}")
@@ -564,7 +564,9 @@ async def _spa_fallback(request: _Request, full_path: str):
         return _HTMLResponse(content="Not found", status_code=404)
     for candidate in _get_index_candidates():
         if candidate.exists():
-            return _HTMLResponse(content=candidate.read_text())
+            # Inject the runtime API origin so deep links (e.g. /dock/shell/…)
+            # hit the serving backend, not the bundle's baked URL.
+            return serve_index_html(candidate.read_text())
     return _HTMLResponse(content="UI not found", status_code=404)
 
 

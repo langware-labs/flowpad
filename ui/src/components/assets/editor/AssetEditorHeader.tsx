@@ -1,11 +1,14 @@
 import React from 'react';
 import { Download, ExternalLink, FolderOpen, Trash2 } from 'lucide-react';
+import { ProjectNameChip } from '@src/components/assets/ProjectNameChip';
 
 export interface AssetEditorHeaderProps {
   /** Filename or folder name shown on the top line. */
   fileName: string;
   /** Parent directory path shown beneath the name (truncated). */
   dirPath: string;
+  /** Absolute path of the asset; used to resolve the owning project chip. */
+  sourcePath?: string;
   /** Adds a yellow asterisk after the filename for unsaved-changes signal. */
   dirty?: boolean;
   /** "Open externally" — open the asset in the OS default app via fsRef.open(). */
@@ -37,6 +40,7 @@ export interface AssetEditorHeaderProps {
 export function AssetEditorHeader({
   fileName,
   dirPath,
+  sourcePath,
   dirty,
   onOpenExternal,
   onRevealInFinder,
@@ -44,12 +48,14 @@ export function AssetEditorHeader({
   onDelete,
   actions,
 }: AssetEditorHeaderProps) {
+  const resolvedPath = sourcePath ?? (dirPath ? `${dirPath}/${fileName}` : fileName);
   return (
     <div className="flex h-[52px] flex-shrink-0 items-center gap-2 border-b px-3">
       <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-0.5 truncate">
+        <div className="flex items-center gap-1.5 truncate">
           <span className="text-sm font-medium">{fileName}</span>
           {dirty && <span className="text-sm text-amber-500">*</span>}
+          <ProjectNameChip sourcePath={resolvedPath} />
         </div>
         <div className="flex min-w-0 items-center gap-1">
           {dirPath && (
