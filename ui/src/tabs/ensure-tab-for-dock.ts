@@ -1,13 +1,15 @@
 import { AgenticProcess, dataContext, dataManager, Shell, Tab, TypeId } from '@sdk';
+import { type ITab } from '@sdk/entities/tab';
 import type { DockPointer } from '@src/navigation/DockPointer';
 import { providerKindForWorkerType } from '@src/tabs/provider-kind';
+import { applyRows } from '@src/tabs/tab-store';
 
 /**
  * Resolved display primitives for a terminal target, read from the entity the
  * route loader just hydrated into cache. Stamped onto the Tab at creation so the
  * strip draws the chip (provider icon + worktree badge) without ever fetching
  * the backing Shell/AgenticProcess. Static per tab — worker_type/worktree don't
- * change over a tab's life — so these are CREATE-only (see Tab.ensureFor).
+ * change over a tab's life — so these are CREATE-only (see Tab.newTab).
  *
  * ``icon`` mirrors the strip's PROVIDER_META keys exactly: a shell target is
  * `'shell'`; a process is keyed by its lower-cased worker_type
@@ -74,19 +76,26 @@ export function ensureTabForCurrentDock(dock: DockPointer): void {
   if (!pointerHash.trim()) return;
   const { targetType, targetId } = targetForDock(dock);
   const { icon, worktree } = terminalDisplayForTarget(targetType, targetId);
-  void Tab.ensureFor(pointerHash, {
+  const projectId = dataContext.project?.id ?? null;
+  // Backend-owned create: get-or-create + place in the global order (a fresh tab
+  // lands right after the opener = the most-recently-active tab; reopen keeps its
+  // slot). Returns the canonical ordered list → adopt it as the render source.
+  // No `afterTabId` here: the backend resolves the opener from recency, so the
+  // URL-first click path stays "navigate only".
+  void Tab.newTab(pointerHash, {
     targetType,
     targetId,
-    projectId: dataContext.project?.id ?? null,
-    // Distinguished initial name — set ONCE at creation (ensureFor ignores it on
-    // reuse, preserving any rename). entity name / vfs basename / wiki keyword.
+    projectId,
     name: dataManager.getTabName(dock),
-    // Display primitives stamped at creation from the loader-hydrated entity so
-    // the strip renders the chip without fetching the Shell/AgenticProcess.
     iconKey: icon,
     worktree,
   })
-    .then((tab) => tab.activate())
+    .then((rows) => {
+      applyRows(rows, projectId);
+      // Stamp recency so the NEXT open treats THIS tab as the opener.
+      const created = rows.find((r) => r.pointer === pointerHash);
+      if (created) void new Tab({ id: created.id } as Partial<ITab>).activate();
+    })
     .catch(() => {
       /* tab materialization is best-effort; never block or fail navigation */
     });
