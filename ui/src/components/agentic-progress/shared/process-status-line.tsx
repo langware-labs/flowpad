@@ -134,17 +134,28 @@ export function ProcessStatusLine({
     worker === WorkerStatus.COMPLETE ||
     worker === WorkerStatus.INTERRUPTED ||
     worker === WorkerStatus.PENDING_USER;
+  // INACTIVE is a finished/aged turn (PENDING_USER that aged past the 5-min
+  // window, or a stale session). Its worker status was derived from a transcript
+  // that still lives locally, and ``session_id`` is the resumable handle — so
+  // when we still have that session on this machine we can re-open / resume it
+  // in a terminal just like a freshly-done turn.
+  const resumableInactive =
+    worker === WorkerStatus.INACTIVE && !!process.session_id;
   const canResume =
     workerTurnDone ||
+    resumableInactive ||
     (!!process.session_id && (status === ProcessStatus.STOPPED || status === ProcessStatus.FAILED));
   // Interactive (visible=true): the tab already exists, so a click just
   // re-focuses it — allow it whenever the worker is ready OR the turn is done
-  // (incl. PENDING_USER). Without ``|| workerTurnDone`` the icon goes dead once
-  // the user opens the terminal (which flips the process to visible=true) and
-  // the worker settles into PENDING_USER — ``ready`` excludes PENDING_USER, so
-  // returning to the conversation would show a disabled icon for an open tab.
+  // (incl. PENDING_USER, or an INACTIVE turn we still hold the session for).
+  // Without this the icon goes dead once the user opens the terminal (which
+  // flips the process to visible=true) and the worker settles into PENDING_USER
+  // / ages to INACTIVE — ``ready`` excludes both — so returning to the
+  // conversation would show a disabled icon for an open tab.
   const canOpenTerminal =
-    mode === WorkerMode.Interactive ? ready || workerTurnDone : canResume;
+    mode === WorkerMode.Interactive
+      ? ready || workerTurnDone || resumableInactive
+      : canResume;
 
   const iconSpinning = mainConfig.animate === true;
 
