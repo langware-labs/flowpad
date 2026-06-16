@@ -7,7 +7,6 @@ import {
   FlowMessage,
   Invitation,
   QueryRequest,
-  Task,
   TypeId,
   acceptInvitation,
   archiveAllConversations,
@@ -91,10 +90,13 @@ interface ConversationListRowProps {
    *  to the Inbox. */
   onUnarchive: (convId: string) => void;
   onToggleRead: (messageId: string, isRead: boolean) => void;
-  /** Whether this row is currently ticked for a bulk (multi-select) action. */
-  selected: boolean;
-  /** Toggle this row's membership in the multi-select set. */
-  onToggleSelect: (convId: string) => void;
+  /** Whether this row is currently ticked for a bulk (multi-select) action.
+   *  Optional so the row can render standalone (e.g. in tests) without the
+   *  multi-select host wiring. */
+  selected?: boolean;
+  /** Toggle this row's membership in the multi-select set. Optional — see
+   *  ``selected``. */
+  onToggleSelect?: (convId: string) => void;
   /** Caller resolves the appropriate dialog/action mode based on the row's
    *  role + the current cloud user id. */
   onRequestDelete: (action: RowDeleteAction) => void;
@@ -107,13 +109,8 @@ interface ConversationListRowProps {
   refSetter: (el: HTMLDivElement | null) => void;
 }
 
-function ConversationListRow({ conv, isFocused, viewMode, searchActive, onArchive, onUnarchive, onToggleRead, selected, onToggleSelect, onRequestDelete, cloudUserId, onVisibilityChange, refSetter }: ConversationListRowProps) {
+export function ConversationListRow({ conv, isFocused, viewMode, searchActive, onArchive, onUnarchive, onToggleRead, selected, onToggleSelect, onRequestDelete, cloudUserId, onVisibilityChange, refSetter }: ConversationListRowProps) {
   const { navigation } = useDockNavigation();
-  const taskTypeId = useMemo(
-    () => conv.firstContextOfType?.('task') ?? null,
-    [conv],
-  );
-  const { data: task } = useEntity<Task>(taskTypeId);
 
   // For invitation rows the first message IS the only message; for regular
   // rows we want the latest message preview but still need to peek at the
@@ -235,14 +232,16 @@ function ConversationListRow({ conv, isFocused, viewMode, searchActive, onArchiv
 
   const senderLabel = participantNames.join(', ');
   const count = pointers.length;
-  // A plain project-scoped conversation has no task, so it has no task-derived
-  // subject. Prefer the user-set conversation title (NewConversationDialog) when
-  // present; only fall back to the email-style "(no subject)" placeholder when
-  // there's neither a task subject nor a title. The snippet (latest message
-  // preview) still renders after it.
+  // The inbox subject is the conversation's own user-set / hub-synced title
+  // (NewConversationDialog at creation; carried in the bundle on cross-user
+  // send). A task that happens to sit in the conversation's shared context is
+  // there to drive cwd/project_root and the task-gated chips — it is NOT a
+  // title source, so it must not feed the subject. Fall back to the email-style
+  // "(no subject)" placeholder only when there's no title. The snippet (latest
+  // message preview) still renders after it.
   const subject = isInvitationRow
     ? 'You’ve been invited to a conversation'
-    : (task?.displayName ?? (conv.title?.trim() || '(no subject)'));
+    : (conv.title?.trim() || '(no subject)');
   // ``FlowMessage.text`` is typed string but older rows in the local DB can
   // hold non-string payloads (object-shaped values from earlier schema
   // iterations); ``?.replace`` would TypeError on those. Coerce first.
@@ -305,8 +304,8 @@ function ConversationListRow({ conv, isFocused, viewMode, searchActive, onArchiv
         className="flex shrink-0 items-center"
       >
         <Checkbox
-          checked={selected}
-          onCheckedChange={() => convId && onToggleSelect(convId)}
+          checked={!!selected}
+          onCheckedChange={() => convId && onToggleSelect?.(convId)}
           aria-label="Select conversation"
           data-testid="inbox-row-select"
           className="h-3.5 w-3.5 border-muted-foreground/30 opacity-50 transition-opacity hover:opacity-100 data-[state=checked]:border-primary data-[state=checked]:opacity-100"

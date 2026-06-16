@@ -180,7 +180,7 @@ export function ConversationRoute() {
   // states so the back affordance + styling stay in one place. The subject is
   // the conversation's own click-to-rename title (same component as the panel
   // header) — a rename here saves with Hub-Reflect and fans out to every
-  // member. Task displayName is only the fallback for untitled conversations.
+  // member. Untitled conversations fall back to the generic "Conversation".
   const header = (
     <div className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 border-b px-3 py-1.5">
       <div className="flex min-w-0 items-center gap-2">
@@ -194,7 +194,7 @@ export function ConversationRoute() {
         </button>
         <EditableConversationTitle
           conv={conversation ?? null}
-          fallback={task?.displayName ?? 'Conversation'}
+          fallback="Conversation"
           className="min-w-0 flex-1 truncate text-sm font-semibold"
         />
       </div>

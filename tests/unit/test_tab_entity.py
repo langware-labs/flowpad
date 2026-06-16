@@ -26,24 +26,16 @@ pytestmark = pytest.mark.timeout(5)  # do not increase timeout without approval
 
 
 class _TabTargetProbe(Entity):
-    """A target entity that subscribes to tab teardown + rename, to prove the
-    Tab dispatch fires by target_type (no real Shell/PTY needed)."""
+    """A plain target entity (no rename override) — proves Tab.rename reflects
+    onto ANY entity through the generic ``Entity.rename``, and that tab teardown
+    dispatches by target_type (no real Shell/PTY needed)."""
 
     type: str = APIField(default="tab_target_probe")
     torn_down: bool = APIField(default=False)
-    reflected_name: str | None = APIField(default=None)
 
     async def teardown_for_tab(self) -> None:
         self.torn_down = True
         await self.save()
-
-    async def _on_tab_renamed(self, payload: dict) -> dict:
-        self.reflected_name = (payload or {}).get("name")
-        await self.save()
-        return {"name": self.reflected_name}
-
-
-_TabTargetProbe.on_event("tab-renamed")(_TabTargetProbe._on_tab_renamed)
 
 
 def test_visible_false_survives_exclude_none_wire_rule() -> None:
@@ -186,7 +178,9 @@ async def test_agentic_process_close_hides_its_terminal_tab() -> None:
 
 
 @pytest.mark.asyncio
-async def test_rename_reflects_onto_subscribed_target() -> None:
+async def test_rename_reflects_onto_target_generically() -> None:
+    # Tab.rename → target.rename: a plain entity (no override) still mirrors the
+    # new label onto its own ``name`` via the generic Entity.rename.
     probe = _TabTargetProbe(id=str(uuid.uuid4()))
     await probe.save()
     tab = await ensure_tab(
@@ -197,4 +191,4 @@ async def test_rename_reflects_onto_subscribed_target() -> None:
     await tab.rename("my pinned name")
     assert tab.name == "my pinned name"  # Tab.name is the source of truth
     reloaded = await _TabTargetProbe.get_one({"id": probe.id})
-    assert reloaded is not None and reloaded.reflected_name == "my pinned name"
+    assert reloaded is not None and reloaded.name == "my pinned name"

@@ -1,7 +1,6 @@
 import { APIEntity, dataManager, registerEntity } from '../APIEntity';
 import { IEntity } from '../IEntity';
 import { ActionInfo } from '../models';
-import { QueryRequest } from '../FlowSync/query';
 
 /**
  * Tab — the frontend mirror of the DB-only backend ``Tab`` entity
@@ -47,6 +46,32 @@ export interface IEnsureTabOpts {
   worktree?: boolean;
 }
 
+export interface INewTabOpts extends IEnsureTabOpts {
+  /** The opener (current active tab id): a fresh tab lands right after it. */
+  afterTabId?: string | null;
+}
+
+/**
+ * One fully-resolved strip row, as the backend `list`/`new_tab`/`order`/`close`
+ * actions return it (flow_sdk/builtin/tab.py `_serialize_row`). The strip renders
+ * straight off these — order, label, icon and live status are all backend-owned;
+ * the frontend never re-derives order from entities.
+ */
+export interface TabRow {
+  id: string;
+  pointer: string;
+  target_type: string | null;
+  target_id: string | null;
+  project_id: string | null;
+  name: string | null;
+  icon_key: string | null;
+  worktree: boolean;
+  tab_order: number;
+  last_active_at: number | string | null;
+  status: string | null;
+  is_disabled: boolean;
+}
+
 @registerEntity
 export class Tab extends APIEntity<Tab> implements ITab {
   static type: string = 'tab';
@@ -62,77 +87,56 @@ export class Tab extends APIEntity<Tab> implements ITab {
   tab_order: number = 0;
   last_active_at: number | string | null = null;
 
-  /**
-   * Get-or-create the tab for a canonical pointer, and ensure it is visible.
-   *
-   * Dedup is by the ``pointer`` field (queried each call) — not by id-version —
-   * so a reopen reuses the one row and re-shows a soft-closed tab. The denorm
-   * target/project hints are refreshed; ``name`` is never clobbered with null
-   * (a user-pinned rename survives).
-   */
-  static async ensureFor(pointer: string, opts: IEnsureTabOpts = {}): Promise<Tab> {
-    const existing = await Tab.findByPointer(pointer);
-    if (existing) {
-      let dirty = false;
-      if (!existing.visible) {
-        existing.visible = true;
-        dirty = true;
-      }
-      if (opts.targetType != null && existing.target_type !== opts.targetType) {
-        existing.target_type = opts.targetType;
-        dirty = true;
-      }
-      if (opts.targetId != null && existing.target_id !== opts.targetId) {
-        existing.target_id = opts.targetId;
-        dirty = true;
-      }
-      if (opts.projectId != null && existing.project_id !== opts.projectId) {
-        existing.project_id = opts.projectId;
-        dirty = true;
-      }
-      // Backfill display primitives ONLY when the row has none. A null name was
-      // never a user rename, and a null icon_key/worktree predates the field —
-      // so filling them heals legacy rows on their next open while still never
-      // clobbering a user-chosen name. The strip renders from these, so a row
-      // opened once is correctly labelled even with no entity in cache.
-      if (!existing.name && opts.name) {
-        existing.name = opts.name;
-        dirty = true;
-      }
-      if (!existing.icon_key && opts.iconKey) {
-        existing.icon_key = opts.iconKey;
-        dirty = true;
-      }
-      if (!existing.worktree && opts.worktree) {
-        existing.worktree = true;
-        dirty = true;
-      }
-      if (dirty) await existing.save();
-      return existing;
-    }
-    const tab = new Tab({
+  // ── Backend-owned ordered list (the single render source) ───────────────────
+  // These call the collection-level `tab` actions (no entity id) and return the
+  // canonical, project-filtered, ordered rows. The frontend renders them as-is.
+
+  /** GET /graph/tab/list?project=<id> — the deterministic ordered render list for
+   *  one project view (projectless tabs inline). `null` ⇒ no active project. */
+  static async list(projectId: string | null = null): Promise<TabRow[]> {
+    const info = new ActionInfo('list', Tab.type, null, 'GET');
+    info.queryParameters = { project: projectId ?? '' };
+    const res = await dataManager.callAction<undefined, { tabs: TabRow[] }>(info);
+    return res?.tabs ?? [];
+  }
+
+  /** POST /graph/tab/new_tab — loader-driven get-or-create. A fresh tab lands
+   *  right after `opts.afterTabId` (the opener); reopen keeps its slot. Returns
+   *  the updated list. */
+  static async newTab(pointer: string, opts: INewTabOpts = {}): Promise<TabRow[]> {
+    const info = new ActionInfo('new_tab', Tab.type, null, 'POST');
+    info.bodyParameters = {
       pointer,
       target_type: opts.targetType ?? null,
       target_id: opts.targetId ?? null,
       project_id: opts.projectId ?? null,
       name: opts.name ?? null,
-      // icon_key/worktree are CREATE-only display primitives — set once here,
-      // like name; ensureFor never reconciles them on reuse (static per tab).
       icon_key: opts.iconKey ?? null,
       worktree: opts.worktree ?? false,
-      visible: true,
-    } as Partial<ITab>);
-    await tab.save();
-    return tab;
+      after_tab_id: opts.afterTabId ?? null,
+    };
+    const res = await dataManager.callAction<unknown, { tabs: TabRow[] }>(info);
+    return res?.tabs ?? [];
   }
 
-  /** Resolve the (at most one) Tab for a pointer. ``query`` reads the live
-   *  cache before round-tripping, so a just-created row is found locally. */
-  static async findByPointer(pointer: string): Promise<Tab | null> {
-    const rows = await Tab.query<Tab>(
-      new QueryRequest({ type: Tab.type, query: { match: { pointer } } as any }),
-    );
-    return rows[0] ?? null;
+  /** POST /graph/tab/order — drag-drop commit. Splices `reorderId` into the
+   *  drop-gap (after `afterId` / before `beforeId`) within the global order and
+   *  returns the updated project-filtered list. No-op ⇒ unchanged list. */
+  static async reorder(
+    reorderId: string,
+    afterId: string | null,
+    beforeId: string | null,
+    projectId: string | null = null,
+  ): Promise<TabRow[]> {
+    const info = new ActionInfo('order', Tab.type, null, 'POST');
+    info.bodyParameters = {
+      reorder_tab_id: reorderId,
+      after_tab_id: afterId,
+      before_tab_id: beforeId,
+      project: projectId ?? '',
+    };
+    const res = await dataManager.callAction<unknown, { tabs: TabRow[] }>(info);
+    return res?.tabs ?? [];
   }
 
   /**
@@ -141,22 +145,25 @@ export class Tab extends APIEntity<Tab> implements ITab {
    * Teardown is headless-owned, so close must round-trip — never just a local
    * ``visible=false``.
    */
-  async closeTab(): Promise<void> {
+  async closeTab(): Promise<TabRow[]> {
     const action = new ActionInfo('close', Tab.type, this.id, 'POST');
-    await dataManager.callAction<unknown, unknown>(action);
+    const res = await dataManager.callAction<unknown, { tabs: TabRow[] }>(action);
     this.visible = false;
+    return res?.tabs ?? [];
   }
 
   /**
    * Rename via the backend action (POST /graph/tab/<id>/rename {name}). ``Tab.name``
    * is the generic source of truth; the backend reflects the rename onto the target
-   * entity via the ``tab-renamed`` event bus (shell/AP mirror it + send PTY /rename).
+   * entity by calling its generic ``Entity.rename`` (works for ANY backing entity —
+   * conversation/agentic_process/shell/markdown; shell/AP also pin ``auto_rename``).
    */
-  async rename(name: string): Promise<void> {
+  async rename(name: string): Promise<TabRow[]> {
     const action = new ActionInfo('rename', Tab.type, this.id, 'POST');
     action.bodyParameters = { name };
-    await dataManager.callAction<{ name: string }, unknown>(action);
+    const res = await dataManager.callAction<{ name: string }, { tabs: TabRow[] }>(action);
     this.name = name;
+    return res?.tabs ?? [];
   }
 
   constructor(entity: Partial<ITab> = {}) {

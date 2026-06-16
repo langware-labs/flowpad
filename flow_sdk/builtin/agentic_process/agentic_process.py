@@ -3601,15 +3601,14 @@ class AgenticProcess(Entity):
         worker + linked shell (today's terminal-close semantics)."""
         await self.close()
 
-    async def _on_tab_renamed(self, payload: dict) -> dict:
-        """``tab-renamed`` reflection: mirror the new tab name and pin it
-        (``auto_rename=False``) so the worker title can't overwrite it."""
-        new_name = (payload or {}).get("name")
-        if new_name and self.name != new_name:
-            self.name = new_name
+    async def rename(self, name: str) -> None:
+        """Tab-rename reflection (``Tab.rename`` → ``target.rename``): mirror the
+        new name and pin it (``auto_rename=False``) so the worker title can't
+        overwrite it. Extends the generic ``Entity.rename`` with that pin."""
+        if name and self.name != name:
+            self.name = name
             self.auto_rename = False
             await self.save()
-        return {"name": self.name}
 
     async def close(self) -> bool:
         """Terminate this process and close its linked shell entity.
@@ -4271,8 +4270,3 @@ class AgenticProcess(Entity):
             asyncio.run_coroutine_threadsafe(_update_state(), main_loop)
 
         return _on_pty_exit
-
-
-# Register on the owning subclass so the handler doesn't leak to siblings
-# (docs/tab-management.md — generic Tab.rename reflects onto subscribers).
-AgenticProcess.on_event("tab-renamed")(AgenticProcess._on_tab_renamed)

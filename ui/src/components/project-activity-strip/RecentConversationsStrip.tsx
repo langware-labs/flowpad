@@ -472,10 +472,14 @@ function ConversationRow({
   const messageCount = conv.message_count ?? 0;
   const projectLabel = project?.displayName ?? null;
   const taskTitle = task?.title?.trim() || null;
+  // The row label is the conversation's own title (derived via the canonical
+  // helper: conv.title → name → participants). A task in the conversation's
+  // shared context is NOT a title source — it surfaces only as the amber task
+  // chip below. Mirrors the inbox row fix.
   const derivedTitle = deriveConversationTitle(conv);
   const title = isInvitationRow
     ? 'Invitation'
-    : (taskTitle ?? (isTypeId(derivedTitle) ? 'Conversation' : derivedTitle));
+    : (isTypeId(derivedTitle) ? 'Conversation' : derivedTitle);
   const taskFirstWord = taskTitle ? taskTitle.split(/\s+/)[0] : null;
   // Preview text: an invitation preview's body is often just the raw
   // ``conversation-<uuid>`` typeid — never surface that; use a friendly
