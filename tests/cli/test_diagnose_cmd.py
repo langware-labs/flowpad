@@ -434,22 +434,53 @@ async def test_post_home_feed_entry_makes_a_real_card_appear():
     assert entry.feed_data["message_text"] == "Cleared a stale server.lock; the backend starts now."
 
 
+@pytest.mark.asyncio
+async def test_post_home_feed_entry_no_issue_card_has_summary_no_conversation():
+    """The no-issue variant of the creator (posted when the user wasn't watching, so
+    they still get an answer): a `new`/`message_suggest` card carrying the summary as
+    its body, a non-error header, and NO conversation — nothing to report/forward."""
+    from flow_sdk.builtin.feed_entry import FeedEntry, FeedKind, FeedStatus
+    from flow_sdk.cli.commands.diagnose_cmd import _post_home_feed_entry
+
+    await _bootstrap_local_user()
+    fid = await _post_home_feed_entry(summary="All healthy — typing works; nothing to fix.")
+    assert fid
+
+    entry = await FeedEntry.get_by_id(fid)
+    assert entry is not None
+    assert entry.kind == FeedKind.MESSAGE_SUGGEST.value
+    assert entry.feed_status == FeedStatus.NEW.value
+    assert entry.feed_data["message_text"] == "All healthy — typing works; nothing to fix."
+    assert not entry.feed_data.get("conversation_id")  # no issue → no support conversation
+    assert not entry.feed_data.get("flow_message_id")
+    assert "error came up" not in entry.feed_data["text"]  # not the issue header
+
+
 @pytest.mark.parametrize(
-    "label,create_feed_entry,expect_card",
+    "label,create_feed_entry,has_issue,expect_card,expect_conversation",
     [
-        ("cli_always_posts", True, True),               # CLI surface: the card IS the output
-        ("ui_user_not_watching", lambda: True, True),   # UI: modal gone / app hidden → post
-        ("ui_user_watching", lambda: False, False),     # UI: user saw the buttons → no card
+        # CLI (bool True) posts for an issue only; a clean sweep prints to the terminal.
+        ("cli_issue", True, True, True, True),
+        ("cli_no_issue", True, False, False, False),
+        # UI 'user not watching' callable posts for ANY result — issue card or summary card.
+        ("ui_unwatched_issue", lambda h: True, True, True, True),
+        ("ui_unwatched_no_issue", lambda h: True, False, True, False),  # the new behavior
+        # UI 'user watching' callable never posts — the modal shows the result itself.
+        ("ui_watching_issue", lambda h: False, True, False, False),
+        ("ui_watching_no_issue", lambda h: False, False, False, False),
     ],
 )
 @pytest.mark.asyncio
-async def test_feed_card_appears_per_watching_logic(label, create_feed_entry, expect_card):
+async def test_feed_card_appears_per_watching_logic(
+    label, create_feed_entry, has_issue, expect_card, expect_conversation
+):
     """End-to-end at the runner layer: `create_feed_entry` is the on/off switch for
-    whether a real Home-Feed card appears for a recorded issue. Both directions are
-    demonstrated — flip it on (CLI `True`, or the UI 'not watching' callable → True)
-    and a queryable FeedEntry appears; flip it off (UI 'watching' callable → False)
-    and none does. `_post_home_feed_entry` is NOT mocked, so the card's existence is
-    proven by loading it back from the store."""
+    whether a real Home-Feed card appears. Both directions are demonstrated across the
+    matrix — CLI posts for an issue only; the UI 'not watching' callable posts for ANY
+    result (including a no-issue summary card, so a user who walked away still gets an
+    answer); the UI 'watching' callable never posts. `_post_home_feed_entry` is NOT
+    mocked, so the card's existence (and whether it carries a conversation) is proven by
+    loading it back from the store."""
     import tempfile
     import uuid
     from pathlib import Path
@@ -459,11 +490,19 @@ async def test_feed_card_appears_per_watching_logic(label, create_feed_entry, ex
     from flow_sdk.cli.commands import diagnose_cmd
 
     await _bootstrap_local_user()
-    conv_id, msg_id, diag_id = str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4())
-    report_json = (
-        f'{{"diagnosis_id": "{diag_id}", "conversation_id": "{conv_id}", '
-        f'"flow_message_id": "{msg_id}", "has_issue": true}}'
-    )
+    diag_id = str(uuid.uuid4())
+    if has_issue:
+        conv_id, msg_id = str(uuid.uuid4()), str(uuid.uuid4())
+        report_json = (
+            f'{{"diagnosis_id": "{diag_id}", "conversation_id": "{conv_id}", '
+            f'"flow_message_id": "{msg_id}", "has_issue": true}}'
+        )
+    else:
+        conv_id = msg_id = None
+        report_json = (
+            f'{{"diagnosis_id": "{diag_id}", "conversation_id": null, '
+            f'"flow_message_id": null, "has_issue": false}}'
+        )
 
     _tf = tempfile.NamedTemporaryFile(prefix="diag_card_", suffix=".jsonl", delete=False)
     _tf.write(b'{"type":"system"}\n')
@@ -488,8 +527,8 @@ async def test_feed_card_appears_per_watching_logic(label, create_feed_entry, ex
             return None
 
         async def stream_transcript(self, timeout=0):
-            # A real issue: report.py prints conversation + message ids, then the
-            # stream ends cleanly so the feed-decision runs immediately.
+            # report.py prints its result JSON, then the stream ends cleanly so the
+            # feed-decision runs immediately.
             yield {
                 "message": {
                     "role": "user",
@@ -532,7 +571,11 @@ async def test_feed_card_appears_per_watching_logic(label, create_feed_entry, ex
         assert entry is not None, "the posted card must actually exist in the store"
         assert entry.kind == FeedKind.MESSAGE_SUGGEST.value
         assert entry.feed_status == FeedStatus.NEW.value
-        assert entry.feed_data["conversation_id"] == conv_id
-        assert entry.feed_data["flow_message_id"] == msg_id
+        if expect_conversation:
+            assert entry.feed_data["conversation_id"] == conv_id
+            assert entry.feed_data["flow_message_id"] == msg_id
+        else:
+            assert not entry.feed_data.get("conversation_id")  # no-issue summary card
+            assert not entry.feed_data.get("flow_message_id")
     else:
-        assert done["feed_entry_id"] is None, "no card must be posted while the user is watching"
+        assert done["feed_entry_id"] is None, "no card must be posted in this case"

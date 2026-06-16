@@ -35,15 +35,19 @@ class FeedKind(StrEnum):
 class MessageSuggest(BaseModel):
     """Payload (the ``T``) for a FeedEntry of kind ``message_suggest``.
 
-    Carries the user-facing header ``text`` plus a pointer to the (until-then
-    hidden) support ``Conversation`` and its summary ``FlowMessage`` so the Feed
-    card can render the summary without an extra fetch.
+    Carries the user-facing header ``text`` and the diagnosis summary
+    (``message_text``) so the Feed card renders without an extra fetch. For a real
+    *issue* it also points at the (until-then hidden) support ``Conversation`` and
+    its summary ``FlowMessage`` — those drive the Report / Forward actions. A
+    *no-issue* card (posted only when the user wasn't watching the diagnose modal,
+    so they still get the answer) has no conversation: ``conversation_id`` /
+    ``flow_message_id`` are absent and the card shows just the summary + Dismiss.
     """
 
     text: str
-    conversation_id: str
-    flow_message_id: str
     message_text: str
+    conversation_id: Optional[str] = None
+    flow_message_id: Optional[str] = None
 
 
 class FeedEntry(Entity):
