@@ -85,7 +85,7 @@ const ClaudeResumeIcon: React.FC<{ className?: string }> = ({ className }) => (
 /** Vendor metadata per terminal provider kind — the single source for the
  *  strip chips' icon resolution (the terminal strategy's icon override,
  *  Part 3 §6) and the vendor openers' glyph/color. */
-const PROVIDER_META: Record<
+export const PROVIDER_META: Record<
   'claude' | 'codex' | 'copilot' | 'shell',
   { Icon: React.ComponentType<{ className?: string }>; iconClassName: string; label: string }
 > = {
@@ -203,7 +203,7 @@ const InfoRow: React.FC<{ label: string; value: string }> = ({ label, value }) =
  * tooltip opens, so the `getById` fires on hover, never at strip build. Until it
  * resolves (or if it 404s), a lean header from the Tab label is shown.
  */
-const LazyProcessTooltip: React.FC<{
+export const LazyProcessTooltip: React.FC<{
   processId: string;
   fallbackName: string;
   statusReason?: string;

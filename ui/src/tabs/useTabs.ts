@@ -244,7 +244,8 @@ export async function closeTerminalTab(target: TypeId | string): Promise<void> {
  * User-initiated terminal rename — routed through the `Tab` so it works on any
  * chip without the backing entity in cache. The backend `rename` action sets
  * `Tab.name` (fixing the inactive chip label) and reflects onto the target
- * entity via the `tab-renamed` event (mirrors `name`, pins `auto_rename=false`).
+ * entity via the generic `Entity.rename` (mirrors `name`; shell/AP also pin
+ * `auto_rename=false`).
  */
 export async function renameTerminalTab(target: TypeId | string, name: string): Promise<void> {
   const tab = await visibleTabForTarget(target);

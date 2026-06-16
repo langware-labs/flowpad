@@ -354,6 +354,21 @@ class Entity(DBEntity):
             result = await result
         return ApiSuccessResponse(data={"status": "ok", "event": event, "result": result})
 
+    async def rename(self, name: str) -> None:
+        """Adopt ``name`` as this entity's display name and persist.
+
+        This is the generic reflection target for a tab rename: ``Tab.rename``
+        calls ``target.rename(name)`` so the new tab label is mirrored onto the
+        backing entity for ANY type that has one — a conversation, an
+        agentic_process, a shell, a markdown — without the Tab branching on
+        ``target_type`` (slick P6). Subclasses MAY override to add side effects
+        (shell/agentic_process pin ``auto_rename=False`` so a PTY/worker title
+        can't clobber the user-chosen name). Empty/unchanged names are a no-op.
+        """
+        if name and self.name != name:
+            self.name = name
+            await self.save()
+
     @classmethod
     async def search(
         cls,
