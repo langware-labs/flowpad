@@ -69,6 +69,35 @@ def _has_asset_typeid_attachment(attachments: Any) -> bool:
     return False
 
 
+def _has_prompt_attachment(attachments: Any) -> bool:
+    """True iff ``attachments`` includes a runnable prompt — a legacy inline/file
+    PROMPT attachment or a ``prompt-<id>`` TYPE_ID reference.
+
+    Tolerates both the hub wire shape (list of dicts) and the local model shape
+    (list of ``Attachment`` instances) — ``attachment_type`` is a str-Enum that
+    compares equal to its value either way. Single source for the bridge's
+    "is there a prompt to auto-run?" pre-check, shared by the CREATE-time trigger
+    and the body-READY re-trigger.
+    """
+    if not attachments:
+        return False
+    for att in attachments:
+        att_type = (
+            att.get("attachment_type") if isinstance(att, dict)
+            else getattr(att, "attachment_type", None)
+        )
+        if att_type == "prompt":
+            return True
+        if att_type == "type_id":
+            data = (
+                att.get("data") if isinstance(att, dict)
+                else getattr(att, "data", None)
+            )
+            if isinstance(data, str) and data.split("-", 1)[0] == "prompt":
+                return True
+    return False
+
+
 # In-flight bundle pulls keyed by fm_id — guards against the bridge
 # scheduling two concurrent downloads for the same FM (CREATE-with-READY
 # arriving before the UPDATE-to-READY, or two UPDATEs in quick succession).
@@ -477,16 +506,25 @@ class HubWsBridge:
                     # payload so a plain text message never spawns the task (and its
                     # DB fetch). Detached so a slow/failed run never blocks persist
                     # or the auto-ack below; failure-isolated inside the hook.
-                    if any(
-                        isinstance(a, dict) and (
-                            a.get("attachment_type") == "prompt"
-                            or (a.get("attachment_type") == "type_id"
-                                and str(a.get("data") or "").split("-", 1)[0] == "prompt")
-                        )
-                        for a in (payload.get("attachment") or [])
-                    ):
-                        from flow_sdk.app.actions.execute_prompt import process_inbound_message
-                        asyncio.create_task(process_inbound_message(fm_id, conversation_id))
+                    #
+                    # But a body-bearing prompt (image/file attached) must NOT run
+                    # while its body is still UPLOADING on the hub: build_merged_prompt
+                    # downloads the body to resolve each attachment to an absolute
+                    # on-disk path, and download_body refuses until body_status=READY —
+                    # so running now would strand the prompt with an unreadable
+                    # relative VFS path (e.g. ``prompt/image.png``). Defer to the
+                    # body_status→READY UPDATE below, which re-fires this hook; the
+                    # ``prompt_auto_handled`` marker keeps the two trigger points
+                    # idempotent (only one run executes).
+                    if _has_prompt_attachment(payload.get("attachment")):
+                        if payload.get("body_status") == "uploading":
+                            logger.info(
+                                "[bridge] prompt body still uploading — deferring "
+                                "auto-run until READY fm=%s", fm_id,
+                            )
+                        else:
+                            from flow_sdk.app.actions.execute_prompt import process_inbound_message
+                            asyncio.create_task(process_inbound_message(fm_id, conversation_id))
                 except Exception as _err:
                     logger.warning(
                         "[bridge] inbound persist failed fm=%s (non-fatal): %s", fm_id, _err,
@@ -586,6 +624,17 @@ class HubWsBridge:
                     getattr(existing, "attachment", None) or [],
                     body_status=new_body_status,
                 ))
+                # A body-bearing prompt whose auto-run was deferred at CREATE (the
+                # body was still UPLOADING) runs now that body_status=READY —
+                # build_merged_prompt can download the body and resolve every
+                # attachment to an absolute path. Idempotent via prompt_auto_handled
+                # (and re-checked inside the hook: drafts, our own sends, missing
+                # permission all no-op), so this is safe for prompts already run or
+                # never ours to run.
+                conv_id = parent_conv_id or getattr(existing, "conversation_id", None)
+                if conv_id and _has_prompt_attachment(getattr(existing, "attachment", None)):
+                    from flow_sdk.app.actions.execute_prompt import process_inbound_message
+                    asyncio.create_task(process_inbound_message(fm_id, conv_id))
             return
 
         if op == "delete":
