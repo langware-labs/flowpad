@@ -111,6 +111,17 @@ class Tab(Entity):
         if target is not None and callable(teardown):
             await teardown()
 
+    async def set_label(self, name: str) -> None:
+        """Set ONLY the Tab label — no target reflect, no ``auto_rename`` change.
+
+        The PTY auto-title mirror: the active panel already saved the live name onto
+        its Shell/AgenticProcess; this keeps the durable ``Tab.name`` in step so the
+        chip stays right once inactive. Unlike :meth:`rename`, it must NOT touch the
+        target (which would pin ``auto_rename=False`` and stop future auto-titles)."""
+        if name and self.name != name:
+            self.name = name
+            await self.save()
+
     async def rename(self, name: str) -> None:
         """``Tab.name`` is the generic source of truth for the tab label. Set it,
         then reflect onto the backing entity by calling its generic ``rename`` —
@@ -180,7 +191,19 @@ async def ensure_tab(
     ``ensure_file_entity``.
     """
     tid = tab_id_for(pointer)
-    existing = await Tab.get_one({"id": tid})
+    # Reconcile by the natural key (``pointer``), NOT just the derived id. The id
+    # is ``tab_id_for(pointer)`` (uuid5) — a derivation, not the identity. A row
+    # minted under the old client-side scheme carries a random uuid4 id that never
+    # equals ``tab_id_for(pointer)``, so an id-only lookup misses it and mints a
+    # *second* canonical row → two visible chips for one pointer. Query the pointer:
+    # reuse the canonical (``id == tid``) row, and soft-hide any foreign-id strays
+    # sharing that pointer so a pre-existing duplicate self-heals on next open.
+    same_pointer = await Tab.get_all({"pointer": pointer})
+    existing = next((t for t in same_pointer if t.id == tid), None)
+    for stray in same_pointer:
+        if stray.id != tid and stray.visible:
+            stray.visible = False
+            await stray.save()
     if existing is not None:
         dirty = False
         if not existing.visible:
@@ -420,6 +443,30 @@ _action_registry.register(
 )
 
 
+async def _http_list_all(cls):
+    """GET /graph/tab/list_all — EVERY visible Tab (any kind, ALL projects), fully
+    resolved, in global order.
+
+    The project-scoped ``list`` is ``{that project} + projectless`` and ``list(None)``
+    is projectless-only, so neither gives the global picture that the developer
+    sessions view (``/dev``) and the footer projects-chip need. This is the single
+    unscoped projection (via the ``tab`` action, refreshed on the ``tabs_changed``
+    ping) that replaces the old reactive ``tab?visible=true`` entity query."""
+    from flow_sdk.responses.response import ApiSuccessResponse  # noqa: PLC0415
+
+    tabs = await _visible_tabs_sorted()
+    return ApiSuccessResponse(data={"tabs": [await _serialize_row(t) for t in tabs]})
+
+
+_action_registry.register(
+    action_name="list_all",
+    function_name="list_all",
+    handler=_http_list_all,
+    methods="get",
+    types=["tab"],
+)
+
+
 async def _http_order(
     cls,
     reorder_tab_id: str,
@@ -481,6 +528,36 @@ _action_registry.register(
     action_name="rename",
     function_name="rename",
     handler=_http_rename,
+    methods="post",
+    types=["tab"],
+)
+
+
+async def _http_set_name(self: Tab):
+    """POST /graph/tab/<id>/set_name {name} — set ONLY the Tab label, no entity
+    reflect and no ``auto_rename`` change.
+
+    This is the PTY auto-title mirror (OSC title → chip): the active panel already
+    saved the live name onto its Shell/AgenticProcess; this keeps the durable
+    ``Tab.name`` in step so the chip stays correct once it goes inactive. It must
+    NOT route through ``rename`` — that pins ``auto_rename=False`` on the target and
+    would stop all future auto-titles."""
+    from flow_sdk.request_context.methods import get_current_request_info  # noqa: PLC0415
+
+    request_info = get_current_request_info()
+    body = (await request_info.get_post_data() if request_info is not None else {}) or {}
+    name = body.get("name") or ""
+    before = self.name
+    await self.set_label(name)
+    if self.name != before:
+        await broadcast_tabs_changed()
+    return await _list_response(self.project_id)
+
+
+_action_registry.register(
+    action_name="set_name",
+    function_name="set_name",
+    handler=_http_set_name,
     methods="post",
     types=["tab"],
 )

@@ -1,7 +1,7 @@
 import { AgenticProcess, dataContext, dataManager, Shell, Tab, TypeId } from '@sdk';
 import type { DockPointer } from '@src/navigation/DockPointer';
 import { providerKindForWorkerType } from '@src/tabs/provider-kind';
-import { applyRows } from '@src/tabs/tab-store';
+import { refreshAllTabRows } from '@src/tabs/all-tabs-store';
 
 /**
  * Resolved display primitives for a terminal target, read from the entity the
@@ -90,7 +90,7 @@ export function ensureTabForCurrentDock(dock: DockPointer): void {
     worktree,
   })
     .then((rows) => {
-      applyRows(rows, projectId);
+      void refreshAllTabRows();
       // Stamp recency so the NEXT open treats THIS tab as the opener.
       const created = rows.find((r) => r.pointer === pointerHash);
       if (created) void Tab.activateById(created.id);

@@ -24,7 +24,7 @@ import { HomeLanding } from '@src/pages/home-landing';
 import { LiveStatus } from '@src/pages/live-status';
 import { SearchView } from '@src/pages/search-view/SearchView';
 
-import { ConnectionStatus, dataContext, navigator, ShellStatus, type OAuthConnection } from '@sdk';
+import { ConnectionStatus, dataContext, navigator, type OAuthConnection } from '@sdk';
 import { useAuth, useContext } from '@sdk/react/hooks';
 import { AssetsPage } from '@src/components/assets/AssetsPage';
 import { ConnectionsManager } from '@src/components/connections-manager';
@@ -32,7 +32,7 @@ import { CapabilitiesView } from '@src/components/capabilities-view';
 import { ConversationRoute } from '@src/components/conversation';
 import { InboxView } from '@src/components/inbox-view/InboxView';
 import { SurveyView } from '@src/components/survey/SurveyView';
-import { TabbedTerminal, useStandardTabNav } from '@src/components/terminal';
+import { TabbedTerminal } from '@src/components/terminal';
 import { TriggersView } from '@src/components/triggers-view';
 import { Button } from '@src/components/ui/button';
 import { Tabs, TabsContent } from '@src/components/ui/tabs';
@@ -41,12 +41,8 @@ import { WorkflowsPage } from '@src/components/workflows-view/WorkflowsPage';
 import { useActiveViewer } from '@src/hooks/flow-hooks';
 import { useViewerStore } from '@src/hooks/flow-hooks/useViewerStore';
 import { useEnvVarsStore } from '@src/hooks/use-env-vars-store';
-import { notify } from '@src/notifications';
-import {
-  terminalTargetKey,
-  terminalTransportShellId,
-  useTerminalTabs,
-} from '@src/tabs/useTabs';
+import { type TabRow } from '@sdk';
+import { useTerminalTabRows } from '@src/tabs/useTabs';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { SpecRoute } from '@src/pages/spec/SpecRoute';
@@ -97,15 +93,13 @@ export function ContentPanel() {
   // Sync flow focus and URL dock state to viewer store
   useActiveViewer(flow);
 
-  const terminalTabs = useTerminalTabs();
-  const terminalsLoading = false;
-  const { onTabClick, onTabClose, onTabOpen } = useStandardTabNav();
+  const terminalRows = useTerminalTabRows();
 
-  /** Navigate to a terminal tab's shell or agentic process */
-  const navigateToTab = useCallback(
-    (tab: (typeof terminalTabs)[number]) => {
-      const pointer = tab.agenticProcess?.terminalDockPointer ?? tab.shell?.dockPointer;
-      if (pointer) navigation.openDock(pointer);
+  /** Navigate to a terminal tab row by its pointer (tabHash). */
+  const navigateToRow = useCallback(
+    (row: TabRow) => {
+      const dock = DockPointer.fromTabHash(row.pointer);
+      if (dock) navigation.openDock(dock);
     },
     [navigation],
   );
@@ -167,41 +161,17 @@ export function ContentPanel() {
     setOpenEnvironmentTab(() => navigation.openTab(ViewType.ENVIRONMENT));
   }, [navigation, setOpenEnvironmentTab]);
 
-  // Handle shell routing based on URL pointer
+  // When the URL's active terminal is closing (is_disabled), redirect to the
+  // first alive tab. A pointer-less shell URL is loader-owned (the loader
+  // resolves the default target), so we only act when a row matches the URL.
   useEffect(() => {
-    if (currentDock?.viewType !== ViewType.SHELL) return;
-    // Wait until both shells and processes are loaded so navigateToTab
-    // can correctly distinguish plain shells from claude sessions.
-    if (terminalsLoading) return;
-
-    const pointer = currentDock.pointer;
-    // No pointer is loader-owned. Let the route loader resolve the default
-    // shell/process target so we do not race explicit tab navigation.
-    if (!pointer) {
-      return;
+    if (currentDock?.viewType !== ViewType.SHELL || !currentDock.pointer) return;
+    const active = terminalRows.find((r) => r.pointer === currentDock.tabHash);
+    if (active?.is_disabled) {
+      const alive = terminalRows.find((r) => r.pointer !== active.pointer && !r.is_disabled);
+      if (alive) navigateToRow(alive);
     }
-    const targetKey = DockPointer.isAgenticProcessPointer(pointer)
-      ? pointer
-      : pointer.startsWith('shell-')
-        ? pointer
-        : `shell-${pointer}`;
-
-    // Disabled shell -> redirect to first alive tab.
-    // Missing tab here is not enough to conclude disconnection because the
-    // tab query can lag behind the loader/navigation path for a newly opened shell.
-    // Only toast for unexpected disconnections (ERROR status), not for user-initiated
-    // closes (CLOSING status) which are handled by TabbedTerminal's closeShell flow.
-    const tab = terminalTabs.find((t) => terminalTargetKey(t) === targetKey);
-    if (tab?.isDisabled) {
-      const transportShellId = terminalTransportShellId(tab);
-      const shell = transportShellId ? (tab.shell ?? null) : null;
-      if (shell?.status !== ShellStatus.CLOSING) {
-        notify.error({ title: 'Shell is disconnected' });
-      }
-      const aliveTab = terminalTabs.find((t) => terminalTargetKey(t) !== targetKey && !t.isDisabled);
-      if (aliveTab) navigateToTab(aliveTab);
-    }
-  }, [currentDock, navigateToTab, terminalsLoading, terminalTabs]);
+  }, [currentDock, navigateToRow, terminalRows]);
 
   const { editorActivePath, checkpointHash } = useMemo(() => {
     return {
@@ -255,9 +225,7 @@ export function ContentPanel() {
             section, replacing the viewer tab header. The TabsContent panels
             below keep rendering keyed by the URL-derived current ViewType.
             Hidden in the win/ focus-window layout (§7): no strip, no chrome. */}
-        {!hideChrome && (
-          <UnifiedTabStrip onTabClick={onTabClick} onTabClose={onTabClose} onTabOpen={onTabOpen} />
-        )}
+        {!hideChrome && <UnifiedTabStrip />}
 
         <div className="relative min-h-0 flex-1 overflow-hidden">
           <TabsContent
@@ -266,14 +234,7 @@ export function ContentPanel() {
           >
             <div className="min-h-0 flex-1 overflow-auto">
               {currentOverviewTab === ViewType.SHELL ? (
-                <TabbedTerminal
-                  className="h-full"
-                  addTabButton
-                  showStrip={false}
-                  onTabClick={onTabClick}
-                  onTabClose={onTabClose}
-                  onTabOpen={onTabOpen}
-                />
+                <TabbedTerminal className="h-full" />
               ) : currentOverviewTab === ViewType.EDITOR ? (
                 <CodeEditor activePath={editorActivePath} />
               ) : currentOverviewTab === ViewType.WEB_APP ? (
@@ -306,14 +267,7 @@ export function ContentPanel() {
             value={ViewType.SHELL}
             className="absolute inset-0 mt-0 h-full flex-1 animate-fade-in overflow-auto shadow-lg data-[state=inactive]:hidden"
           >
-            <TabbedTerminal
-              className="h-full"
-              addTabButton
-              showStrip={false}
-              onTabClick={onTabClick}
-              onTabClose={onTabClose}
-              onTabOpen={onTabOpen}
-            />
+            <TabbedTerminal className="h-full" />
           </TabsContent>
 
           <TabsContent

@@ -6,91 +6,128 @@ id: 4123bb18-2066-5923-9cd7-fc2417b2b880
 
 > **Part 0 below is the AS-BUILT system. Parts 1–3 are the historical design
 > record (the journey to it) — where they describe a single transient slot, a
-> base-Entity `tabbed` membership flag, or `tabs/open` promotion for content
-> surfaces, Part 0 supersedes them.**
+> base-Entity `tabbed` membership flag, `tabs/open` promotion, a `resolveActive`
+> resolver living in the strip, a reactive `Tab` query, two stores, or a
+> `TerminalTab` view-model, Part 0 supersedes them. Code comments that cite
+> "Part 3 §N" point at the historical design rationale, not the current wiring.**
 
-# Part 0 — As-built: the `Tab` entity
+# Part 0 — As-built: the `Tab` entity + one source
 
 **Every tab in the content-panel strip — terminals and content alike — is a
 first-class `Tab` entity** (`flow_sdk/builtin/tab.py`, DB-only, the `File`
-pattern). There is ONE membership system. The old split (a `tabbed` flag for
-terminals, a single transient slot for content) is gone.
+pattern). There is ONE membership system, ONE backend-authoritative source, ONE
+client store, and ONE strip component.
 
-**The `Tab` entity.** Keyed by a hash of the DockPointer:
-`Tab.id = uuid5("tab:" + pointer)` where `pointer == DockPointer.tabHash`
-(`viewType|sub`, excluding layout and transient options — so `/win` and `/dock`
-of one surface are ONE tab). Canonicalization lives ONLY in
-`DockPointer.tabHash` (and its inverse `DockPointer.fromTabHash`); the backend
-stores the string verbatim, so there is no cross-language canonicalizer to keep
-in agreement. Fields: `pointer`, `target_type`/`target_id` (denormalized off the
-pointer for reverse lookup), `visible` (membership — non-null so a close
-broadcasts), `name` (initial label / user rename), `tab_order`,
-`last_active_at`, `project_id`.
+## The `Tab` entity (backend)
 
-**The flow (URL-first, non-negotiable).**
+Keyed by a hash of the DockPointer: `Tab.id = tab_id_for(pointer) =
+uuid5("tab:" + pointer)` where `pointer == DockPointer.tabHash` (`viewType|sub`,
+excluding layout and transient options — so `/win` and `/dock` of one surface
+are ONE tab). Canonicalization lives ONLY in `DockPointer.tabHash` (and its
+inverse `DockPointer.fromTabHash`); the backend stores the string verbatim, so
+there is no cross-language canonicalizer to keep in agreement. Fields: `pointer`,
+`target_type`/`target_id` (denormalized off the pointer for reverse lookup),
+`visible` (membership — non-null so a close broadcasts), `name` (label),
+`icon_key` + `worktree` (CREATE-only display primitives so a chip draws without
+fetching its backing entity), `tab_order`, `last_active_at`, `project_id`.
+
+**Identity is the `pointer` natural key — dedup reconciles by it, NOT by the
+derived id.** `ensure_tab(pointer, …)` queries `get_all({"pointer": pointer})`,
+reuses the canonical `id == tab_id_for(pointer)` row, and soft-hides any
+foreign-id strays sharing that pointer. (Before this fix, a row minted under the
+old client-side scheme carried a random uuid4 id that an id-only lookup missed →
+a *second* canonical row was minted → two visible chips for one pointer. The
+natural-key reconcile self-heals that on next open.)
+
+## The `tab` actions (the only wire contract)
+
+Collection-level: `list?project=<id>` (the project view = that project +
+projectless tabs, `filter_for_project`), `list_all` (every visible tab, all
+projects — the global source the client store reads), `new_tab` (loader-driven
+get-or-create + global-order placement), `order` (drag-reorder commit).
+By-id: `close` (soft `visible=false` + per-`target_type` teardown via
+`teardown_for_tab`), `rename` (sets `Tab.name` THEN reflects onto the target via
+the generic `Entity.rename`; shell/AP also pin `auto_rename=false`), `set_name`
+(sets ONLY `Tab.name` — the PTY auto-title mirror; never touches the target or
+`auto_rename`, unlike `rename`), `activate` (stamps `last_active_at`, the recency
+seed). Every mutation broadcasts a `tabs_changed` ping. Orphan cleanup:
+`Entity.delete` soft-closes any Tab pointing at a deleted target;
+`AgenticProcess.close` calls `hide_tabs_for_target` (the process row persists as
+`stopped`, so delete-cleanup never fires for it).
+
+## One client store, views derived locally
+
+`ui/src/tabs/all-tabs-store.ts` is the **single store**: it holds the global
+visible-tab list from `Tab.listAll()` and refreshes on the `tabs_changed` ping.
+There is NO reactive entity query and NO second (project-scoped) store. Every
+consumer reads this one source and derives its view client-side:
+
+- **strip** (`UnifiedTabStrip`, `scope='project'|'all'`): `'project'` filters to
+  the active project + projectless (mirroring the backend `filter_for_project`,
+  order preserved); `'all'` is the developer sessions view.
+- **terminal body** (`useTerminalTabRows`): filters to terminal target types.
+- **project switcher chip** (`useTabProjectBuckets`): buckets by `project_id`,
+  **kind-agnostically** (terminal AND content); `project_id == null` tabs are
+  global and make no bucket. One row per project that owns ≥1 open tab.
+
+## The strip + body (frontend)
+
+- **`UnifiedTabStrip`** is the ONE strip, used by every host (content-panel
+  header, `/dev` sessions view at `scope='all'`, ProcessTerminal, claude-terminal).
+  Chips are built generically from `TabRow` by `tab-row-item.useTabStripItems`
+  (terminal glyph from `icon_key` + `PROVIDER_META`; content glyph from
+  `iconForType` / the backend TypeInfo registry — never a hardcoded per-call-site
+  glyph). Active = `currentDock.tabHash` (URL-first; never a `Tab` field).
+  Mutations go through the `tab` actions by id (`closeById` / `renameById` /
+  `reorder` / `activateById`). Drag-reorder paints an optimistic
+  `applyPredictedOrder` (the parity-tested `computeReorder`) and commits
+  `Tab.reorder`; the `tabs_changed` refresh adopts the canonical order.
+- **`TabbedTerminal`** is the terminal **body only** — it maps the terminal
+  `TabRow`s and renders one warm-mounted `TerminalPanel` per row; each panel
+  hydrates its OWN live entity (`useEntity`) for the transport `shell_id` + PTY
+  (URL-first corollary: the view attaches on mount, not via a list-wide join).
+  The chrome controller (`useTerminalStripController`) is spawn openers + the
+  new-tab menu + the projects chip + modals — no session list, no active-key, no
+  close/rename/select handlers.
+
+## The flow (URL-first, non-negotiable)
 
 ```
 click → navigation.openDock(pointer)            # click handlers do ONLY this
       → react-router loader runs
       → ensureTabForCurrentDock(dock)            # the loader is the single writer
-           → Tab.ensureFor(tabHash, {name: dataManager.getTabName(dock)})
-             (get-or-create, visible=true) → activate()
-      → strip's useEntitiesQuery(Tab, visible:true) picks it up → chip renders
+           → Tab.newTab(tabHash, {name, icon_key, worktree, …})  (get-or-create)
+           → refreshAllTabRows() + Tab.activateById(id)
+      → all-tabs-store refreshes → strip + body re-render from the one source
 ```
 
-- **open** → `Tab.ensureFor` upserts a visible row (dedup by `pointer`). The
-  **initial name** is `dataManager.getTabName(dock)` — entity name / vfs
-  basename / wiki keyword — set ONCE at creation (reuse never overwrites it, so a
-  rename survives re-navigation).
-- **close** → `Tab.close()` (`visible=false` — soft; the row survives and the
-  change broadcasts) + teardown dispatched by `target_type`
-  (`<entity>.teardown_for_tab()`; a no-op for target-less surfaces). Terminal
-  close-all stays one batched `tabs/close` POST (PTY/worker teardown; race-lock).
-- **list** → the strip runs ONE `useEntitiesQuery(Tab, visible:true)`:
-  - **terminal-target rows** (`shell`/`agentic_process`) → `useTerminalTabs`
-    resolves each to its live entity and builds a `TerminalTab` the controller
-    renders (full PTY/openers/rename). Membership = the Tab row; status-reactive
-    filters (dead shell, background-owned shell, deleted target) drop ghosts
-    client-side.
-  - **content rows** (assets/markdown/skill/…) → chips partitioned project vs
-    global (`project_id == null`); entity-backed resolve icon/name from the live
-    target, target-less use `VIEWER_REGISTRY`.
-  - **project switcher chip** (`ProjectsCounterChip`) → `useTabProjectBuckets`
-    buckets the SAME `visible=true` query by `project_id`, **kind-agnostically**
-    (any `target_type`, terminal AND content) — one row per project that owns ≥1
-    open tab; `project_id == null` (global) tabs are not a project and make no
-    bucket. It must NOT go through `buildTerminalRows` (terminal-only + scoped to
-    the current project) — doing so dropped content-only projects from the count
-    (the "wrong number of projects" bug). Selecting a row is a **current-project
-    switch** (see §6 below / Part 3), not a tab navigation.
-- **active** → URL-first: the Tab whose `pointer == currentDock.tabHash` is
-  active. NEVER a `Tab` field (a synced active flag would yank focus).
-- **rename** → `Tab.rename(name)` sets the label, then reflects onto the target
-  via the `entity_event("tab-renamed")` bus — `Shell`/`AgenticProcess` subscribe
-  (`on_event`) to mirror the name + send the PTY `/rename`.
-- **delete** → a generic hook in `Entity.delete()` soft-closes any Tab pointing
-  at the deleted target (orphan cleanup; covers every entity type).
+Default-tab pick (pointer-less `/dock/shell`, recovery): the loaders read a
+`Tab.listAll()` snapshot and choose via `resolveNextTabRow` (the pure
+`resolveActive` precedence — pending intent → recency `last_active_at` →
+`tab_order`). Recency lives on the Tab (stamped by `activate`), so the loaders no
+longer stamp entities. Close/rename/sync for a target (loaders, notifications,
+PTY auto-title) resolve the Tab row by `target_id` then call the by-id action
+(`closeById` / `renameById` / `setNameById`).
 
-**Why this fixed the reported bug.** Content surfaces used to fall into the
-*single* transient slot, which any navigation emptied — so opening Terminals
-evicted Assets. Now every opened surface is its own visible `Tab` row, so they
-coexist.
+## Deleted by the cutover
 
-**Deleted by this work:** the transient slot (`transientForDock` /
-`unified-strip-model.ts`); `tabs/open`; the base-Entity `tabbed` flag +
-`Shell.tabbed` + the AP `visible`↔`tabbed` alias; `compute_node`'s
-`_tab_membership` / `_tabs_list` / `_terminal_list` / the `terminals/list`+`close`
-shim / the `active-terminals` tombstone; and the FE terminal-fetch machinery
-(`fetchActiveTerminals` / `useProjectTerminals` / `useAllTerminals` /
-`mergePreservingOrder` / `useEntityTabs`). KEPT: `tabs/close` (batched terminal
-teardown), `terminals/get_by_worker_id`, AP `visible` as a plain non-membership
-field.
+The `TerminalTab` view-model and its projection (`useTerminalTabs` /
+`terminalTabFromTab` / `buildTerminalRows`); the reactive `tab?visible=true`
+entity query (`useEntitiesQuery`); the scoped `tab-store` (one store now); the
+strip-side resolver machine (`active-strip-key`, `last-active`,
+`useStandardTabNav`); and the `compute_node` `tabs/close` batch action (close is
+`Tab.close` by id). The 1160-line strip controller shrank to chrome.
 
-**Tests:** `tests/unit/test_tab_entity.py` (CRUD, soft-close, teardown dispatch,
-rename reflection, orphan cleanup, the `visible=false` wire rule),
-`tests/unit/test_tabs_api.py` (`tabs/close` teardown), `ui/tests/unit/tab-hash.test.ts`
-(identity), `ui/tests/unit/tab-name.test.ts` (`getTabName`), and the live matrix
-`ui/tests/manual_regression/tab_management/`.
+## Tests
+
+`tests/unit/test_tab_entity.py` (dedup-by-`pointer` heal, `list_all` global vs
+scoped, `set_label` vs `rename`, soft-close, teardown dispatch, rename
+reflection, orphan cleanup, the `visible=false` wire rule);
+`ui/tests/unit/all-tabs-store.test.ts` (drag data-path), `resolve-next-tab.test.ts`
+(`resolveNextTabRow` precedence), `tab-project-filter.test.ts`
+(`terminalRowsForScope`), `tab-hash.test.ts` (identity), `tab-name.test.ts`,
+`terminal-tab-switch.test.ts` (warm-mount), and the live browser matrix (§11,
+historical) re-validated end-to-end.
 
 ---
 

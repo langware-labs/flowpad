@@ -1,83 +1,56 @@
 /**
- * Adapter between the terminal strip (`TerminalTab`) and the pure resolver
- * (`TabCandidate`). Kept separate from the SDK-pure `tab-model.ts` because it
- * depends on the strip's `TerminalTab` shape.
+ * Loader-side default-tab pick over backend `TabRow`s (the one source). Maps rows
+ * to the pure `resolveActive` resolver (`tab-model.ts`) and returns the chosen row.
+ * Recency comes from `TabRow.last_active_at` (server-stamped by the `activate`
+ * action on select), so there is no per-entity recency seed to maintain.
  */
-import {
-  type TerminalTab,
-  terminalProcessId,
-  terminalTargetKey,
-  terminalTransportShellId,
-} from '@src/tabs/useTabs';
-import { resolveActive, type TabCandidate } from './tab-model';
+import { AgenticProcess, type TabRow } from '@sdk';
+import { resolveActive } from './tab-model';
 import { consumePendingIntent, peekPendingIntent } from './pending-intent';
 
-/** Epoch ms of a session's last activation (recency seed), or null.
- *  Prefers the backing `Tab` row's `last_active_at` (server-stamped by the
- *  generic `activate` action on every navigation), falling back to the entity. */
-export function sessionLastActiveMs(session: TerminalTab): number | null {
-  const raw = session.lastActiveAt ?? session.agenticProcess?.last_active_at ?? session.shell?.last_active_at;
-  // Wire is epoch-ms (base-Entity field, Part 3 §4); legacy rows may still
-  // deliver an ISO string during the transition window. Tolerate both.
+/** The canonical terminal target key for a row — `shell-<id>` / `agentic_process-<id>`
+ *  (the TypeId string), which is also the format a footer-chip click pins as its
+ *  pending intent and the format loaders put in their `excludeIds` set. */
+export function rowTargetKey(row: TabRow): string {
+  return `${row.target_type}-${row.target_id}`;
+}
+
+/** Epoch ms of a row's last activation (recency seed), or null. Wire is epoch-ms;
+ *  tolerate a legacy ISO string during the transition. */
+function rowLastActiveMs(row: TabRow): number | null {
+  const raw = row.last_active_at;
   if (typeof raw === 'number') return Number.isFinite(raw) ? raw : null;
   if (typeof raw !== 'string') return null;
   const t = Date.parse(raw);
   return Number.isNaN(t) ? null : t;
 }
 
-/** Map the strip's sessions to resolver candidates. The candidate `key` is the
- *  canonical `terminalTargetKey` — the SAME key format a footer-chip click pins
- *  as its pending intent (`agentic_process-<id>`), which is what lets
- *  `resolveActive` case 2 match a cross-project chip click (Bug 2). */
-export function buildTabCandidates(sessions: TerminalTab[]): TabCandidate[] {
-  return sessions.map((s) => ({
-    key: terminalTargetKey(s),
-    lastActiveAt: sessionLastActiveMs(s),
-    tabOrder: s.tabOrder,
-  }));
-}
-
 /**
- * Loader-side default-tab pick — the single `resolveActive` resolver applied
- * to a pre-filtered TerminalTab list (docs/tab-management.md Part 1 §5,
- * Phase 3: retires `resolveDefaultTab`).
+ * Pick the best terminal tab to make active from a pre-filtered row list, via the
+ * single `resolveActive` precedence (intent → recency → tab_order; `urlActiveKey`
+ * is null — loaders run this only when the URL has no concrete target).
  *
- * Eligibility (filtered BEFORE resolving, preserving the old exclusions):
- * not disabled, and none of the tab's ids — target TypeId string, target id,
- * transport shell id, owning-process id — is in `excludeIds`. `excludeIds`
- * is one set because process ids and shell ids are both UUIDs and don't
- * collide.
- *
- * Precedence is `resolveActive`'s (intent → recency → tabOrder; `urlActiveKey`
- * is null — loaders only run this when the URL has no concrete target). The
- * old explicit previous-target / previous-shell tiers
- * (`dataContext.activeTerminalTargetTypeId` / `activeShellId`) are gone
- * INTENTIONALLY: every loader load stamps the entity via `bumpLastActive` +
- * server-side `activate`, so the previously-active tab is exactly the
- * recency-tier winner — one resolver, one rule. A pending intent that decided
- * the pick is consumed.
+ * Eligibility: not disabled, has a target, and none of the row's ids (its target
+ * key or bare target id) is in `excludeIds` (one set — process and shell ids are
+ * both UUIDs and don't collide). A pending intent that decided the pick is consumed.
  */
-export function resolveNextTab(
-  tabs: TerminalTab[],
-  excludeIds: Set<string> = new Set(),
-): TerminalTab | null {
-  const isPickable = (tab: TerminalTab) => {
-    if (tab.isDisabled) return false;
-    if (excludeIds.has(tab.targetTypeId.toString())) return false;
-    if (excludeIds.has(tab.targetTypeId.id)) return false;
-    const shellId = terminalTransportShellId(tab);
-    if (shellId && excludeIds.has(shellId)) return false;
-    const processId = terminalProcessId(tab);
-    if (processId && excludeIds.has(processId)) return false;
+export function resolveNextTabRow(rows: TabRow[], excludeIds: Set<string> = new Set()): TabRow | null {
+  const eligible = rows.filter((r) => {
+    if (r.is_disabled || !r.target_id) return false;
+    if (excludeIds.has(rowTargetKey(r)) || excludeIds.has(r.target_id)) return false;
     return true;
-  };
-  const eligible = tabs.filter(isPickable);
+  });
   const { activeKey, consumedPendingIntent } = resolveActive({
-    candidates: buildTabCandidates(eligible),
+    candidates: eligible.map((r) => ({ key: rowTargetKey(r), lastActiveAt: rowLastActiveMs(r), tabOrder: r.tab_order })),
     urlActiveKey: null,
     pendingIntentKey: peekPendingIntent(),
   });
   if (consumedPendingIntent) consumePendingIntent();
   if (!activeKey) return null;
-  return eligible.find((t) => terminalTargetKey(t) === activeKey) ?? null;
+  return eligible.find((r) => rowTargetKey(r) === activeKey) ?? null;
+}
+
+/** Whether a terminal row is backed by an AgenticProcess (vs a plain shell). */
+export function rowIsProcess(row: TabRow): boolean {
+  return row.target_type === AgenticProcess.type;
 }

@@ -54,18 +54,21 @@ describe('TabbedTerminal – tab switching contract (FLOWPAD-1645)', () => {
   });
 
   it('uses CSS visibility to hide inactive terminals (not display:none, so xterm gets real dimensions)', () => {
-    const renderingBlock = tabbedTerminalSource.slice(tabbedTerminalSource.indexOf('data-testid="terminal-panels"'));
-
-    // visibility:hidden keeps inactive terminals in layout so xterm canvas
-    // can initialize with real dimensions — display:none would break this.
-    expect(renderingBlock).toContain("visibility: 'hidden'");
+    // visibility:hidden keeps inactive terminals in layout so xterm canvas can
+    // initialize with real dimensions — display:none would break this. (The
+    // per-panel style lives in the TerminalPanel subcomponent.)
+    expect(tabbedTerminalSource).toContain("visibility: 'hidden'");
+    expect(tabbedTerminalSource).not.toContain('display: none');
   });
 
   it('passes active prop to terminal components', () => {
     expect(tabbedTerminalSource).toContain('active={isActive}');
   });
 
-  it('keeps all terminals mounted (comment documents intent)', () => {
-    expect(tabbedTerminalSource).toContain('Keep all terminals mounted');
+  it('keeps mounted terminals warm (lazy-mount set never shrinks)', () => {
+    // Once mounted, a panel stays mounted (the `mounted` set only grows), so
+    // re-activation is instant and PTY/canvas state is preserved.
+    expect(tabbedTerminalSource).toContain('keep mounted ones');
+    expect(tabbedTerminalSource).toContain('mounted.has(row.pointer)');
   });
 });
