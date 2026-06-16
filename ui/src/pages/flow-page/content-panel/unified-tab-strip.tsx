@@ -16,7 +16,6 @@
  * menu, spawn modals, and the close-shortcut label.
  */
 import { type TabRow, Tab } from '@sdk';
-import { type ITab } from '@sdk/entities/tab';
 import { TabStrip } from '@src/components/tabs/TabStrip';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
@@ -46,12 +45,6 @@ function lastActiveExcept(rows: TabRow[], excludeId: string): TabRow | null {
     }
   }
   return best;
-}
-
-/** Close one Tab by id via the backend action (teardown is target-owned). */
-async function closeRow(id: string): Promise<TabRow[]> {
-  const tab = new Tab({ id } as Partial<ITab>);
-  return tab.closeTab();
 }
 
 export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ onTabClick, onTabClose, onTabOpen }) => {
@@ -98,7 +91,7 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ onTabClick, on
         if (next) navigateTo(next.pointer, false);
         else navigation.closeDock();
       }
-      void closeRow(row.id).then((updated) => applyRows(updated, projectId));
+      void Tab.closeById(row.id).then((updated) => applyRows(updated, projectId));
     },
     [rowByKey, activeKey, rows, navigateTo, navigation, projectId],
   );
@@ -115,7 +108,7 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ onTabClick, on
       }
       // Close concurrently (each is an independent soft-close), then reconcile
       // once from the backend — the per-close returned lists are interim.
-      void Promise.all(closing.map((r) => closeRow(r.id)))
+      void Promise.all(closing.map((r) => Tab.closeById(r.id)))
         .then(() => refresh(projectId))
         .catch(() => void refresh(projectId));
     },
@@ -126,8 +119,7 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ onTabClick, on
     (key: string, newName: string) => {
       const row = rowByKey.get(key);
       if (!row) return;
-      const tab = new Tab({ id: row.id } as Partial<ITab>);
-      void tab.rename(newName).then((updated) => applyRows(updated, projectId));
+      void Tab.renameById(row.id, newName).then((updated) => applyRows(updated, projectId));
     },
     [rowByKey, projectId],
   );

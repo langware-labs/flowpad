@@ -1,5 +1,4 @@
 import { AgenticProcess, dataContext, dataManager, Shell, Tab, TypeId } from '@sdk';
-import { type ITab } from '@sdk/entities/tab';
 import type { DockPointer } from '@src/navigation/DockPointer';
 import { providerKindForWorkerType } from '@src/tabs/provider-kind';
 import { applyRows } from '@src/tabs/tab-store';
@@ -94,7 +93,7 @@ export function ensureTabForCurrentDock(dock: DockPointer): void {
       applyRows(rows, projectId);
       // Stamp recency so the NEXT open treats THIS tab as the opener.
       const created = rows.find((r) => r.pointer === pointerHash);
-      if (created) void new Tab({ id: created.id } as Partial<ITab>).activate();
+      if (created) void Tab.activateById(created.id);
     })
     .catch(() => {
       /* tab materialization is best-effort; never block or fail navigation */
