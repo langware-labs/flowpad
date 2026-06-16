@@ -1,35 +1,34 @@
 /**
  * UnifiedTabStrip — the content-panel header strip (docs/tab-management.md).
  *
- * ONE ordered list, backend-owned. The strip renders exactly the rows the
- * backend returns (`useTabRows` → `Tab.list`), in global order, filtered to the
- * active project + projectless tabs (inline — no separate section/divider). The
- * frontend decides NOTHING about order; a drag posts `Tab.reorder` and re-renders
- * the returned list (with an optimistic predict for instant drop-feel).
+ * ONE ordered list, backend-owned. The strip renders exactly the rows the `tab`
+ * action returns, in global order, read from the single `all-tabs-store`.
+ * `scope='project'` (default) shows the active project + projectless tabs (the
+ * backend `filter_for_project` rule, applied client-side); `scope='all'` shows
+ * every project's tabs (the developer sessions view). There is no reactive entity
+ * query and no second store.
  *
  * URL-first (non-negotiable): a chip click only calls `navigation.*`; the active
  * chip is `currentDock.tabHash`; the loader is the single writer that materializes
- * the Tab (ensure-tab-for-dock → `Tab.newTab`). Every chip — terminal or content —
- * is keyed by its `pointer` (== tabHash), so there is no kind-branching here.
+ * the Tab. Every chip — terminal or content — is keyed by its `pointer`
+ * (== tabHash), so there is no kind-branching here.
  *
- * The controller is kept ONLY as chrome: leading/trailing toolbars, the new-tab
- * menu, spawn modals, and the close-shortcut label.
+ * The controller is kept ONLY for the surrounding controls: leading/trailing
+ * toolbars, the new-tab menu, spawn modals, and the close-shortcut label.
  */
 import { type TabRow, Tab } from '@sdk';
 import { TabStrip } from '@src/components/tabs/TabStrip';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useTabStripItems } from '@src/tabs/tab-row-item';
-import { applyPredictedOrder, applyRows, refresh, useTabRows } from '@src/tabs/tab-store';
-import { type TerminalTab } from '@src/tabs/useTabs';
+import { applyPredictedOrder, refreshAllTabRows, useAllTabRows } from '@src/tabs/all-tabs-store';
 import { useTerminalStripController } from '@src/tabs/useTerminalStripController';
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo } from 'react';
 
 export interface UnifiedTabStripProps {
-  /** Standard terminal navigation handlers (useStandardTabNav). */
-  onTabClick?: (targetKey: string, session: TerminalTab) => void;
-  onTabClose?: (targetKey: string | string[]) => void;
-  onTabOpen?: (session: TerminalTab) => void;
+  /** `'project'` (default) shows the active project + projectless tabs; `'all'`
+   *  shows every project's tabs (the developer sessions view). */
+  scope?: 'project' | 'all';
 }
 
 /** Most-recently-active remaining row (close→navigate target), excluding `exclude`. */
@@ -47,17 +46,22 @@ function lastActiveExcept(rows: TabRow[], excludeId: string): TabRow | null {
   return best;
 }
 
-export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ onTabClick, onTabClose, onTabOpen }) => {
+export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'project' }) => {
   const { navigation, currentDock } = useDockNavigation();
-  const controller = useTerminalStripController({
-    addTabButton: true,
-    onTabClick,
-    onTabClose,
-    onTabOpen,
-  });
+  const controller = useTerminalStripController({ addTabButton: true });
 
   const projectId = controller.tabsProjectId ?? null;
-  const rows = useTabRows(projectId);
+  // One source: the global `tab` list, filtered to the strip's scope. `'project'`
+  // = the active project + projectless tabs (the backend `filter_for_project`
+  // rule), in the backend's global order (preserved by the filter).
+  const allRows = useAllTabRows();
+  const rows = useMemo(
+    () =>
+      scope === 'all'
+        ? allRows
+        : allRows.filter((r) => r.project_id === projectId || r.project_id == null),
+    [allRows, scope, projectId],
+  );
   const items = useTabStripItems(rows);
   const rowByKey = useMemo(() => {
     const m = new Map<string, TabRow>();
@@ -85,15 +89,14 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ onTabClick, on
     (key: string) => {
       const row = rowByKey.get(key);
       if (!row) return;
-      // Closing the active tab moves focus to the most-recently-active survivor.
       if (key === activeKey) {
         const next = lastActiveExcept(rows, row.id);
         if (next) navigateTo(next.pointer, false);
         else navigation.closeDock();
       }
-      void Tab.closeById(row.id).then((updated) => applyRows(updated, projectId));
+      void Tab.closeById(row.id).then(() => refreshAllTabRows());
     },
-    [rowByKey, activeKey, rows, navigateTo, navigation, projectId],
+    [rowByKey, activeKey, rows, navigateTo, navigation],
   );
 
   const handleCloseMany = useCallback(
@@ -106,34 +109,27 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ onTabClick, on
         if (next) navigateTo(next.pointer, false);
         else navigation.closeDock();
       }
-      // Close concurrently (each is an independent soft-close), then reconcile
-      // once from the backend — the per-close returned lists are interim.
-      void Promise.all(closing.map((r) => Tab.closeById(r.id)))
-        .then(() => refresh(projectId))
-        .catch(() => void refresh(projectId));
+      void Promise.all(closing.map((r) => Tab.closeById(r.id))).finally(() => void refreshAllTabRows());
     },
-    [rowByKey, activeKey, rows, navigateTo, navigation, projectId],
+    [rowByKey, activeKey, rows, navigateTo, navigation],
   );
 
   const handleRename = useCallback(
     (key: string, newName: string) => {
       const row = rowByKey.get(key);
       if (!row) return;
-      void Tab.renameById(row.id, newName).then((updated) => applyRows(updated, projectId));
+      void Tab.renameById(row.id, newName).then(() => refreshAllTabRows());
     },
-    [rowByKey, projectId],
+    [rowByKey],
   );
 
-  // Drag-reorder: preview optimistically (predict mirrors the backend algebra),
-  // commit posts Tab.reorder and adopts the canonical returned list; a cancel
-  // restores truth. The strip speaks chip keys (pointers); we map them to ids.
+  // Drag-reorder: optimistic predict on the store; commit posts Tab.reorder and a
+  // refresh adopts the canonical order (a cancel just refreshes back to truth).
   const handleReorderPreview = useCallback(
     (reorderKey: string, afterKey: string | null, beforeKey: string | null) => {
       const id = rowByKey.get(reorderKey)?.id;
       if (!id) return;
-      const afterId = afterKey ? rowByKey.get(afterKey)?.id ?? null : null;
-      const beforeId = beforeKey ? rowByKey.get(beforeKey)?.id ?? null : null;
-      applyPredictedOrder(id, afterId, beforeId);
+      applyPredictedOrder(id, afterKey ? rowByKey.get(afterKey)?.id ?? null : null, beforeKey ? rowByKey.get(beforeKey)?.id ?? null : null);
     },
     [rowByKey],
   );
@@ -144,12 +140,41 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ onTabClick, on
       if (!id) return;
       const afterId = afterKey ? rowByKey.get(afterKey)?.id ?? null : null;
       const beforeId = beforeKey ? rowByKey.get(beforeKey)?.id ?? null : null;
-      void Tab.reorder(id, afterId, beforeId, projectId)
-        .then((updated) => applyRows(updated, projectId))
-        .catch(() => void refresh(projectId));
+      void Tab.reorder(id, afterId, beforeId, projectId).finally(() => void refreshAllTabRows());
     },
     [rowByKey, projectId],
   );
+
+  // Keyboard shortcuts (the strip owns them): mod+W close active, mod+T new Claude,
+  // mod+PgUp/PgDn cycle. Mac=Ctrl, Windows=Meta, Linux=Alt.
+  useEffect(() => {
+    const osPlatform: string =
+      (navigator as Navigator & { userAgentData?: { platform: string } }).userAgentData?.platform ?? navigator.userAgent;
+    const modKey = /Mac/i.test(osPlatform) ? 'Ctrl' : /Win/i.test(osPlatform) ? 'Meta' : 'Alt';
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
+      const mod = modKey === 'Ctrl' ? e.ctrlKey : modKey === 'Meta' ? e.metaKey : e.altKey;
+      if (!mod) return;
+      if (e.key === 'w' || e.key === 'W') {
+        if (!activeKey || !rowByKey.has(activeKey)) return;
+        e.preventDefault();
+        handleClose(activeKey);
+      } else if (e.key === 't' || e.key === 'T') {
+        e.preventDefault();
+        void controller.handleStartClaude();
+      } else if (e.key === 'PageUp') {
+        e.preventDefault();
+        const idx = rows.findIndex((r) => (r.pointer || r.id) === activeKey);
+        if (idx > 0) navigateTo(rows[idx - 1].pointer, false);
+      } else if (e.key === 'PageDown') {
+        e.preventDefault();
+        const idx = rows.findIndex((r) => (r.pointer || r.id) === activeKey);
+        if (idx >= 0 && idx < rows.length - 1) navigateTo(rows[idx + 1].pointer, false);
+      }
+    };
+    window.addEventListener('keydown', onKey, { capture: true });
+    return () => window.removeEventListener('keydown', onKey, { capture: true });
+  }, [activeKey, rows, rowByKey, handleClose, navigateTo, controller]);
 
   return (
     <>
@@ -163,7 +188,7 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ onTabClick, on
         onPopout={handlePopout}
         onReorderPreview={handleReorderPreview}
         onReorderCommit={handleReorderCommit}
-        onReorderCancel={() => void refresh(projectId)}
+        onReorderCancel={() => void refreshAllTabRows()}
         newTabMenuItems={controller.newTabMenuItems}
         closeShortcutLabel={controller.closeShortcutLabel}
         leading={controller.leading}

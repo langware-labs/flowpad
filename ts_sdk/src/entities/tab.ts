@@ -119,6 +119,16 @@ export class Tab extends APIEntity<Tab> implements ITab {
     return res?.tabs ?? [];
   }
 
+  /** GET /graph/tab/list_all — EVERY visible Tab (any kind, ALL projects), fully
+   *  resolved, in global order. The single unscoped projection that the developer
+   *  sessions view + footer projects-chip read; replaces the old reactive
+   *  `tab?visible=true` entity query. (Project-scoped views use `list`.) */
+  static async listAll(): Promise<TabRow[]> {
+    const info = new ActionInfo('list_all', Tab.type, null, 'GET');
+    const res = await dataManager.callAction<undefined, { tabs: TabRow[] }>(info);
+    return res?.tabs ?? [];
+  }
+
   /** POST /graph/tab/order — drag-drop commit. Splices `reorderId` into the
    *  drop-gap (after `afterId` / before `beforeId`) within the global order and
    *  returns the updated project-filtered list. No-op ⇒ unchanged list. */
@@ -167,6 +177,18 @@ export class Tab extends APIEntity<Tab> implements ITab {
   static async activateById(id: string): Promise<void> {
     const info = new ActionInfo('activate', Tab.type, id, 'POST');
     await dataManager.callAction<undefined, unknown>(info);
+  }
+
+  /** POST /graph/tab/<id>/set_name {name} — set ONLY the Tab label (no entity
+   *  reflect, no `auto_rename` change). The PTY auto-title mirror: the active panel
+   *  already saved the live name onto its Shell/AgenticProcess; this keeps the
+   *  durable `Tab.name` in step so the chip stays right once inactive. NOT `rename`
+   *  (which would pin `auto_rename=false` and stop future auto-titles). */
+  static async setNameById(id: string, name: string): Promise<TabRow[]> {
+    const info = new ActionInfo('set_name', Tab.type, id, 'POST');
+    info.bodyParameters = { name };
+    const res = await dataManager.callAction<{ name: string }, { tabs: TabRow[] }>(info);
+    return res?.tabs ?? [];
   }
 
   /** Instance soft-close (also updates the local flag). */

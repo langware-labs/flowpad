@@ -23,8 +23,8 @@ const navigationActionsSource = readFileSync(
   resolve(__dirname, '../../src/navigation/NavigationActions.ts'),
   'utf-8',
 );
-const standardTabNavSource = readFileSync(
-  resolve(__dirname, '../../src/components/terminal/useStandardTabNav.ts'),
+const unifiedStripSource = readFileSync(
+  resolve(__dirname, '../../src/pages/flow-page/content-panel/unified-tab-strip.tsx'),
   'utf-8',
 );
 
@@ -56,15 +56,12 @@ describe('closeDock from root-level dock URLs', () => {
   });
 });
 
-describe('useStandardTabNav close navigation', () => {
-  it('only navigates when the closed set includes the URL-active tab', () => {
-    expect(standardTabNavSource).toContain('!closed.has(urlKey)');
-    // The guard derives the active key from the URL (currentDock), never from
-    // local state — URL-first.
-    expect(standardTabNavSource).toContain('currentDock?.viewType === ViewType.SHELL');
-  });
-
-  it('does not navigate unconditionally on empty MRU anymore', () => {
-    expect(standardTabNavSource).not.toContain('const nextId = mruRef.current[0]');
+describe('UnifiedTabStrip close navigation', () => {
+  it('only navigates when the closed tab is the URL-active one', () => {
+    // The strip navigates off a close ONLY for the active chip (`key === activeKey`);
+    // closing a background tab leaves the current view untouched. Active key is
+    // URL-derived (`currentDock.tabHash`) — URL-first.
+    expect(unifiedStripSource).toContain('if (key === activeKey)');
+    expect(unifiedStripSource).toContain("currentDock?.tabHash ?? ''");
   });
 });
