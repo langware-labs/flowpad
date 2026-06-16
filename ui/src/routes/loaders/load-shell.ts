@@ -34,7 +34,6 @@ import { closeTerminalTab } from '@src/tabs/useTabs';
 import { showCleanupModal } from '@src/components/recovery/cleanup-modal';
 import { notify } from '@src/notifications';
 import { buildShellRedirectUrl, DockPointer } from '@src/navigation';
-import { bumpLastActive } from '@src/tabs/last-active';
 import { replace } from 'react-router';
 import { perfLog, perfTime } from './_perf';
 import {
@@ -121,7 +120,6 @@ export async function loadShell(shellId: string): Promise<Shell> {
 
   dataContext.setActiveShellId(shell.id);
   dataContext.setActiveTerminalTargetTypeId(shell.typeId);
-  bumpLastActive(shell); // recency seed for resolveActive (Bug 1)
   // Fire-and-forget server stamp (Part 3 §4 D-A): never awaited — loaders
   // must stay fast; the in-cache bump above is the synchronous seed.
   void shell.activate().catch(() => {});

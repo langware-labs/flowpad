@@ -1,13 +1,16 @@
 /**
- * Tab-store drag data-path: the optimistic predicted order must mirror the
- * backend algebra exactly (so the dropped chip paints in its final place), and
- * the backend's returned list replaces the prediction. A no-op drop leaves the
- * order untouched. The pointer-level drag UI is verified live (jsdom has no real
- * layout for hit-testing); this locks the data flow the drag drives.
+ * all-tabs-store drag data-path: the optimistic predicted order must mirror the
+ * backend algebra exactly (so the dropped chip paints in its final place), and an
+ * adopted list replaces the prediction. A no-op drop leaves the order untouched.
+ * The pointer-level drag UI is verified live (jsdom has no real layout for
+ * hit-testing); this locks the data flow the drag drives.
  */
 import { describe, expect, it } from 'vitest';
 import type { TabRow } from '@sdk';
-import { applyPredictedOrder, applyRows, getTabRowsSnapshot } from '@src/tabs/tab-store';
+import { applyAllTabRows, applyPredictedOrder, getAllTabRowsSnapshot } from '@src/tabs/all-tabs-store';
+
+const applyRows = (rows: TabRow[], _project?: string) => applyAllTabRows(rows);
+const getTabRowsSnapshot = getAllTabRowsSnapshot;
 
 function row(id: string): TabRow {
   return {

@@ -32,6 +32,7 @@ class _TabTargetProbe(Entity):
 
     type: str = APIField(default="tab_target_probe")
     torn_down: bool = APIField(default=False)
+    auto_rename: bool = APIField(default=False)
 
     async def teardown_for_tab(self) -> None:
         self.torn_down = True
@@ -70,6 +71,31 @@ async def test_ensure_tab_creates_then_reuses() -> None:
 
     rows = await Tab.get_all({"pointer": p})
     assert len(rows) == 1, "no duplicate Tab for the same pointer"
+
+
+@pytest.mark.asyncio
+async def test_ensure_tab_heals_foreign_id_duplicate() -> None:
+    # Regression: identity is uuid5(pointer), but a row minted under the old
+    # client-side scheme carries a random uuid4 id for the same pointer. An
+    # id-only dedup misses it and mints a second visible row (two chips, one
+    # pointer). ensure_tab must reconcile by the NATURAL KEY (pointer): reuse the
+    # canonical id==tab_id_for row and soft-hide the foreign-id stray.
+    p = f"shell/agentic_process-{uuid.uuid4()}"
+    stray = Tab(id=str(uuid.uuid4()), pointer=p, visible=True)  # uuid4, not tab_id_for
+    await stray.save()
+    assert uuid.UUID(stray.id).version == 4
+
+    tab = await ensure_tab(p, target_type="agentic_process", target_id="ap-x")
+    assert tab.id == tab_id_for(p), "canonical row is keyed by uuid5(pointer)"
+
+    visible = [t for t in await Tab.get_all({"pointer": p}) if t.visible]
+    assert len(visible) == 1, "exactly one visible row remains for the pointer"
+    assert visible[0].id == tab.id, "the survivor is the canonical row"
+
+    healed_stray = await Tab.get_one({"id": stray.id})
+    assert healed_stray is not None and healed_stray.visible is False, (
+        "the foreign-id stray is soft-hidden, not left as a duplicate chip"
+    )
 
 
 @pytest.mark.asyncio
@@ -175,6 +201,49 @@ async def test_agentic_process_close_hides_its_terminal_tab() -> None:
     assert reloaded is not None and reloaded.visible is False, (
         "closing the process must soft-close its terminal Tab"
     )
+
+
+@pytest.mark.asyncio
+async def test_list_all_spans_all_projects_unlike_scoped_list() -> None:
+    # `list_all` is the GLOBAL projection (every visible tab, all projects) that the
+    # footer chip + sessions view need; the project-scoped `list(pid)` is
+    # `{that project} + projectless`, and `list(None)` is projectless-only.
+    from flow_sdk.builtin.tab import _build_list, _http_list_all
+
+    tag = uuid.uuid4()
+    pa = f"proj-a-{tag}"
+    pb = f"proj-b-{tag}"
+    a = await ensure_tab(f"shell|a#{tag}", target_type="shell", target_id=f"sa-{tag}", project_id=pa)
+    b = await ensure_tab(f"shell|b#{tag}", target_type="shell", target_id=f"sb-{tag}", project_id=pb)
+    free = await ensure_tab(f"dock/settings#{tag}")  # projectless
+
+    res = await _http_list_all(Tab)
+    ids = {r["id"] for r in res.data["tabs"]}
+    assert {a.id, b.id, free.id} <= ids, "list_all spans every project + projectless"
+
+    # The scoped list of project A excludes project B's tab (proves list_all differs).
+    scoped_a = {r["id"] for r in await _build_list(pa)}
+    assert a.id in scoped_a and free.id in scoped_a and b.id not in scoped_a
+
+
+@pytest.mark.asyncio
+async def test_set_label_changes_tab_name_without_touching_target() -> None:
+    # set_label is the PTY auto-title mirror: it updates ONLY Tab.name and must NOT
+    # reflect onto the target or pin auto_rename (which rename does) — else future
+    # auto-titles would stop.
+    probe = _TabTargetProbe(id=str(uuid.uuid4()), name="orig", auto_rename=True)
+    await probe.save()
+    tab = await ensure_tab(
+        f"dock/set-label#{uuid.uuid4()}",
+        target_type=_TabTargetProbe.get_type(),
+        target_id=probe.id,
+    )
+    await tab.set_label("auto-titled")
+    assert tab.name == "auto-titled", "Tab label updated"
+    reloaded = await _TabTargetProbe.get_one({"id": probe.id})
+    assert reloaded is not None
+    assert reloaded.name == "orig", "target entity name is NOT changed by set_label"
+    assert reloaded.auto_rename is True, "set_label must not pin auto_rename off"
 
 
 @pytest.mark.asyncio

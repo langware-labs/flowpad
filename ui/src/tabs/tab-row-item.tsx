@@ -15,7 +15,7 @@ import { iconForType } from '@src/components/graph-view/icons/iconRegistry';
 import { type TabStripItem } from '@src/components/tabs/TabStrip';
 import { lucideByName } from '@src/lib/lucide-by-name';
 import { usePendingSessionIds } from '@src/store/pending-actions-store';
-import { LazyProcessTooltip, PROVIDER_META } from '@src/tabs/useTerminalStripController';
+import { LazyProcessTooltip, PROVIDER_META } from '@src/tabs/provider-meta';
 import { ViewType, VIEWER_REGISTRY } from '@src/types/ViewType';
 import { FileText, FolderGit2 } from 'lucide-react';
 import React, { useMemo } from 'react';
