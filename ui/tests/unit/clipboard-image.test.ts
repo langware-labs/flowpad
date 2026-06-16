@@ -73,6 +73,18 @@ describe('clipboard image helpers', () => {
     expect(isImageFile(text)).toBe(false);
   });
 
+  it('recognizes images by MIME type and by filename extension', () => {
+    // By MIME type even when the name is uninformative.
+    expect(isImageFile(new File(['x'], 'blob', { type: 'image/png' }))).toBe(true);
+    // By extension even when the dropped file has no MIME type — the prompt
+    // composer / attachment pickers must thumbnail these, not show binary.
+    for (const name of ['a.png', 'a.jpg', 'a.jpeg', 'a.gif', 'a.webp', 'a.svg', 'a.avif', 'a.bmp', 'a.ico']) {
+      expect(isImageFile(new File(['x'], name, { type: '' }))).toBe(true);
+    }
+    // Non-images stay non-images.
+    expect(isImageFile(new File(['x'], 'notes.txt', { type: 'text/plain' }))).toBe(false);
+  });
+
   it('extracts image files from async clipboard items with a reusable prefix', async () => {
     const blob = new Blob(['png'], { type: 'image/png' });
     const out = await imageFilesFromClipboardItems(

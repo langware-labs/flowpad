@@ -49,6 +49,18 @@ logger = logging.getLogger(__name__)
 
 PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT = "Please run the following prompt:"
 
+def _prompt_file_is_image_or_binary(filename: str, raw: bytes) -> bool:
+    """True when an uploaded prompt 'file' must be kept as raw bytes rather than
+    minted into a text ``Prompt`` entity — an image (by extension) or any binary
+    blob (NUL bytes). Such files become prompt-file attachments the UI renders
+    inline, never decoded as text."""
+    from flow_sdk.builtin.flow_message import is_image_filename  # noqa: PLC0415
+    from flow_sdk.llm_index.diff import is_binary_bytes  # noqa: PLC0415
+
+    if is_image_filename(filename):
+        return True
+    return is_binary_bytes(bytes(raw))
+
 
 
 
@@ -129,33 +141,59 @@ async def _attach_prompt(
 ) -> None:
     """Attach prompts as library ``Prompt`` entities (TYPE_ID attachments).
 
-    The typed text and each uploaded prompt file's content are minted/reused
-    as real Prompt entities via ``find_or_create_prompt`` (dedup by
+    The typed text and each uploaded *text* prompt file's content are
+    minted/reused as real Prompt entities via ``find_or_create_prompt`` (dedup by
     normalized text within the conversation's project scope) and attached as
     TYPE_ID entries carrying ``proposer_id`` (approval lifecycle) and
     ``prompt_preview`` (inline text so receivers can preview/execute before
-    the body bundle downloads). Prompts thus behave like every other entity
-    attachment — they ride the body bundle (``_pack_prompt_attachment``) and
-    land in the receiver's library. Legacy ``AttachmentType.PROMPT`` messages
+    the body bundle downloads). Image / binary prompt files instead keep their
+    raw bytes — stored under ``prompt/<name>`` and attached as
+    ``AttachmentType.PROMPT`` files so the UI renders them inline as pictures
+    rather than decoding the bytes into a garbage prompt. Prompts thus behave
+    like every other entity attachment — they ride the body bundle
+    (``_pack_prompt_attachment``) and land in the receiver's library. Legacy
+    ``AttachmentType.PROMPT`` messages
     keep working read-side; new sends are entity-backed.
     """
-    from flow_sdk.builtin.flow_message import Attachment, AttachmentType
+    from flow_sdk.builtin.flow_message import PROMPT_FILE_VFS_PREFIX, Attachment, AttachmentType
     from flow_sdk.builtin.prompt import Prompt
     from flow_sdk.builtin.prompt_helpers import find_or_create_prompt
+    from flow_sdk.storage import get_entity_embedded_storage
 
+    new_atts: list = list(reply_fm.attachment or [])
+
+    # Typed text + each *text* prompt file become library Prompt entities; image
+    # / binary files are stored as prompt-file attachments (raw bytes in the
+    # FlowMessage VFS under ``prompt/<name>``) so the UI shows them as pictures
+    # instead of decoding the bytes into a garbage "prompt".
     texts: list[tuple[str, Optional[str]]] = []  # (text, name hint)
     if prompt_text:
         texts.append((prompt_text, None))
+
+    storage = None
     for uf in prompt_files or []:
         if not hasattr(uf, "read"):
             continue
         filename = getattr(uf, "filename", None) or "prompt.txt"
         raw = await uf.read()
-        content = raw.decode("utf-8", errors="replace") if isinstance(raw, (bytes, bytearray)) else str(raw)
+        raw_bytes = bytes(raw) if isinstance(raw, (bytes, bytearray)) else str(raw).encode("utf-8")
+        if _prompt_file_is_image_or_binary(filename, raw_bytes):
+            if storage is None:
+                storage = get_entity_embedded_storage(reply_fm.typeid)
+            vfs_subpath = f"{PROMPT_FILE_VFS_PREFIX}{filename}"
+            local_path = Path(storage.get_storage_path(vfs_subpath))
+            local_path.parent.mkdir(parents=True, exist_ok=True)
+            local_path.write_bytes(raw_bytes)
+            new_atts.append(Attachment(
+                attachment_type=AttachmentType.PROMPT,
+                data=vfs_subpath,
+                proposer_id=proposer_id,
+            ))
+            continue
+        content = raw_bytes.decode("utf-8", errors="replace")
         if content.strip():
             texts.append((content, Path(filename).stem or None))
 
-    new_atts: list = list(reply_fm.attachment or [])
     seen_prompt_ids: set[str] = set()
     for text, name_hint in texts:
         prompt = await find_or_create_prompt(text, project_id=project_id, name=name_hint)

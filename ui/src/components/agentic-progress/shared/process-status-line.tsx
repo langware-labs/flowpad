@@ -12,9 +12,15 @@ import { getStatusLabel, processStatusConfig, workerStatusConfig } from './statu
  *
  * Label rule (so the UI matches the user's intuition about "the run is done"):
  * - If ``workerStatus`` is terminal (``COMPLETE / ERROR / INTERRUPTED /
- *   INACTIVE / API_TIMEOUT``), the *worker* drives the main label — the run is
- *   effectively over regardless of how late the backend transitions the
- *   lifecycle from ``RUNNING`` → ``STOPPED``. No subscript in that case.
+ *   INACTIVE / API_TIMEOUT``) — or ``PENDING_USER``, which means the turn
+ *   ended cleanly and it's now the user's turn — the *worker* drives the main
+ *   label — the run is effectively over regardless of how late the backend
+ *   transitions the lifecycle from ``RUNNING`` → ``STOPPED``. No subscript in
+ *   that case. ``PENDING_USER`` is deliberately excluded from
+ *   ``isWorkerTerminal`` (that set gates the ``is_ready_for_input`` queue
+ *   predicate), but for *display* it is a settled, turn-done state — without
+ *   this the row spins a "Running" lifecycle label for the whole 5-minute
+ *   PENDING_USER window after a headless run finishes.
  * - Otherwise the lifecycle (``processStatusConfig[process.status]``) drives
  *   the main label; ``workerStatus`` is appended as a smaller, worker-coloured
  *   subscript via ``<sub>``, but only when defined, not ``UNKNOWN``, and
@@ -77,14 +83,19 @@ export function ProcessStatusLine({
   const worker = (process.workerStatus ?? process.worker_status) as WorkerStatus | undefined;
   const workerConfig =
     worker && worker !== WorkerStatus.UNKNOWN ? workerStatusConfig[worker] : undefined;
-  const workerTerminal = worker !== undefined && isWorkerTerminal(worker);
+  // "Run is over from the user's POV": worker terminal (COMPLETE / ERROR / …)
+  // OR PENDING_USER (turn ended cleanly, now the user's turn). PENDING_USER is
+  // out of isWorkerTerminal on purpose — that set drives is_ready_for_input —
+  // but for display it's a settled state, so it must promote the same way or
+  // the row keeps spinning "Running" for the 5-min post-completion window.
+  const workerDone =
+    worker !== undefined && (isWorkerTerminal(worker) || worker === WorkerStatus.PENDING_USER);
 
-  // Promote the worker config to the main slot when the worker is terminal
-  // (COMPLETE / ERROR / …) — the run is over from the user's POV even if the
+  // Promote the worker config to the main slot when the run is over even if the
   // lifecycle hasn't transitioned to STOPPED yet. No subscript in that case.
-  const mainConfig = workerTerminal && workerConfig ? workerConfig : procConfig;
+  const mainConfig = workerDone && workerConfig ? workerConfig : procConfig;
   const subConfig =
-    !workerTerminal && workerConfig && workerConfig.label !== procConfig.label
+    !workerDone && workerConfig && workerConfig.label !== procConfig.label
       ? workerConfig
       : undefined;
 
@@ -103,27 +114,48 @@ export function ProcessStatusLine({
   // - Interactive PTY (visible=true): clickable when the worker is ready for
   //   input — clicking just focuses the existing tab.
   // - Headless (visible=false): clickable ONLY when the worker has explicitly
-  //   reported COMPLETE / INTERRUPTED for a real turn, OR the lifecycle
-  //   reached STOPPED / FAILED with a session to resume. We exclude
+  //   reported COMPLETE / INTERRUPTED / PENDING_USER for a real turn, OR the
+  //   lifecycle reached STOPPED / FAILED with a session to resume. We exclude
   //   `WorkerStatus.IDLE` deliberately — the Python side uses IDLE as the
   //   *default* / "never ran" projection (see flow_sdk/.../agentic_process.py
   //   `worker_status` fallback). Treating IDLE as "ready" would enable the
-  //   icon on a brand-new AP that hasn't started its first turn. The rule
-  //   the user sees:
+  //   icon on a brand-new AP that hasn't started its first turn. PENDING_USER
+  //   IS admitted: it's the backend's 5-minute projection of a just-finished
+  //   COMPLETE turn (the worker is alive and resumable, awaiting the next user
+  //   message) — exactly the "open/resume in terminal" case. The rule the user
+  //   sees:
   //     New / IDLE / spinning up / mid-turn → disabled
-  //     Turn finished (COMPLETE)             → enabled
+  //     Turn finished (COMPLETE / PENDING_USER) → enabled
   //     Next turn kicked off                 → disabled (executeInstruction
   //                                             optimistically flips workerStatus
   //                                             to WAITING immediately)
   //     That next turn finishes              → enabled
   const workerTurnDone =
     worker === WorkerStatus.COMPLETE ||
-    worker === WorkerStatus.INTERRUPTED;
+    worker === WorkerStatus.INTERRUPTED ||
+    worker === WorkerStatus.PENDING_USER;
+  // INACTIVE is a finished/aged turn (PENDING_USER that aged past the 5-min
+  // window, or a stale session). Its worker status was derived from a transcript
+  // that still lives locally, and ``session_id`` is the resumable handle — so
+  // when we still have that session on this machine we can re-open / resume it
+  // in a terminal just like a freshly-done turn.
+  const resumableInactive =
+    worker === WorkerStatus.INACTIVE && !!process.session_id;
   const canResume =
     workerTurnDone ||
+    resumableInactive ||
     (!!process.session_id && (status === ProcessStatus.STOPPED || status === ProcessStatus.FAILED));
+  // Interactive (visible=true): the tab already exists, so a click just
+  // re-focuses it — allow it whenever the worker is ready OR the turn is done
+  // (incl. PENDING_USER, or an INACTIVE turn we still hold the session for).
+  // Without this the icon goes dead once the user opens the terminal (which
+  // flips the process to visible=true) and the worker settles into PENDING_USER
+  // / ages to INACTIVE — ``ready`` excludes both — so returning to the
+  // conversation would show a disabled icon for an open tab.
   const canOpenTerminal =
-    mode === WorkerMode.Interactive ? ready : canResume;
+    mode === WorkerMode.Interactive
+      ? ready || workerTurnDone || resumableInactive
+      : canResume;
 
   const iconSpinning = mainConfig.animate === true;
 

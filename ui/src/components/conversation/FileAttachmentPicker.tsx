@@ -1,12 +1,83 @@
-import { useId, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { Paperclip, X, File } from 'lucide-react';
 import { cn } from '@src/lib/utils';
+import { isImageFile } from '@src/utils/clipboard-image';
 import { MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_LABEL } from './constants';
 
 interface FileAttachmentPickerProps {
   files: File[];
   onChange: (files: File[]) => void;
   disabled?: boolean;
+}
+
+function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+/**
+ * One picked-file row. Image files preview as a thumbnail from an object URL
+ * (mirrors the composer's PendingFileChip) so an attached image reads as an
+ * image, not a nameless binary; everything else shows a small file icon.
+ */
+function PickedFileRow({
+  file,
+  disabled,
+  onRemove,
+}: {
+  file: File;
+  disabled?: boolean;
+  onRemove: () => void;
+}) {
+  const image = isImageFile(file);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!image || typeof URL === 'undefined' || typeof URL.createObjectURL !== 'function') {
+      setPreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file, image]);
+
+  return (
+    <li
+      className={cn(
+        'flex items-center gap-2 rounded-md border border-input bg-muted/40 text-xs',
+        image ? 'p-1.5' : 'px-2 py-1',
+      )}
+    >
+      {image ? (
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded border border-border bg-background">
+          {previewUrl ? (
+            <img src={previewUrl} alt={file.name} className="h-full w-full object-contain" />
+          ) : (
+            <File className="h-4 w-4 text-muted-foreground" />
+          )}
+        </div>
+      ) : (
+        <File className="h-3 w-3 shrink-0 text-muted-foreground" />
+      )}
+      <span className="flex-1 truncate text-foreground" title={file.name}>
+        {file.name}
+      </span>
+      <span className="shrink-0 text-muted-foreground">{formatSize(file.size)}</span>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onRemove();
+        }}
+        disabled={disabled}
+        className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-destructive disabled:pointer-events-none"
+      >
+        <X className="h-3 w-3" />
+      </button>
+    </li>
+  );
 }
 
 export function FileAttachmentPicker({ files, onChange, disabled }: FileAttachmentPickerProps) {
@@ -97,33 +168,7 @@ export function FileAttachmentPicker({ files, onChange, disabled }: FileAttachme
       {files.length > 0 && (
         <ul className="space-y-1">
           {files.map((f, i) => (
-            <li
-              key={i}
-              className="flex items-center gap-2 rounded-md border border-input bg-muted/40 px-2 py-1 text-xs"
-            >
-              <File className="h-3 w-3 shrink-0 text-muted-foreground" />
-              <span className="flex-1 truncate text-foreground" title={f.name}>
-                {f.name}
-              </span>
-              <span className="shrink-0 text-muted-foreground">
-                {f.size < 1024
-                  ? `${f.size} B`
-                  : f.size < 1024 * 1024
-                    ? `${(f.size / 1024).toFixed(1)} KB`
-                    : `${(f.size / (1024 * 1024)).toFixed(1)} MB`}
-              </span>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  remove(i);
-                }}
-                disabled={disabled}
-                className="shrink-0 rounded p-0.5 text-muted-foreground hover:text-destructive disabled:pointer-events-none"
-              >
-                <X className="h-3 w-3" />
-              </button>
-            </li>
+            <PickedFileRow key={i} file={f} disabled={disabled} onRemove={() => remove(i)} />
           ))}
         </ul>
       )}

@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react';
 import { FlowMessage, TypeId, type HubClientErrorInfo } from '@sdk';
 import { AttachmentType, BodyStatus, attachmentDataString, type Attachment } from '@sdk/entities/flow-message';
 import { AttachmentChipState } from './AttachmentChip';
-import { isPromptAttachment } from './attachment-actions/prompt-attachment';
+import { isImagePromptFileAttachment, isPromptAttachment } from './attachment-actions/prompt-attachment';
 import { isTranscriptAttachment } from './conversation-context-aggregation';
 import { isDownloadableFileAttachment, localAttachmentUrl } from './attachment-url';
 import { useFlowMessageProgress, type FlowMessageProgress } from './useFlowMessageProgress';
@@ -110,19 +110,24 @@ function stateFor(att: Attachment, bodyStatus: BodyStatus): AttachmentChipState 
 function buildItems(fm: FlowMessage | null | undefined, messageId: string): AttachmentView[] {
   if (!fm) return [];
   const bodyStatus = fm.body_status ?? BodyStatus.NA;
-  return (fm.attachment ?? []).filter(isDownloadableFileAttachment).map((a) => {
-    const d = attachmentDataString(a);
-    const state = stateFor(a, bodyStatus);
-    return {
-      key: d,
-      filename: d.split('/').pop() || d,
-      state,
-      // localAttachmentUrl is itself gated on local_path, so this is null for
-      // every non-Downloaded state — belt-and-suspenders with `state`.
-      url: state === AttachmentChipState.Downloaded ? localAttachmentUrl(messageId, a) : null,
-      localPath: state === AttachmentChipState.Downloaded ? (a.local_path ?? null) : null,
-    };
-  });
+  // FILE attachments plus image prompt-files (a screenshot attached to a
+  // prompt): both are downloadable bytes the recipient should see as a picture,
+  // not a filename. Non-image prompt files stay in the prompt row.
+  return (fm.attachment ?? [])
+    .filter((a) => isDownloadableFileAttachment(a) || isImagePromptFileAttachment(a))
+    .map((a) => {
+      const d = attachmentDataString(a);
+      const state = stateFor(a, bodyStatus);
+      return {
+        key: d,
+        filename: d.split('/').pop() || d,
+        state,
+        // localAttachmentUrl is itself gated on local_path, so this is null for
+        // every non-Downloaded state — belt-and-suspenders with `state`.
+        url: state === AttachmentChipState.Downloaded ? localAttachmentUrl(messageId, a) : null,
+        localPath: state === AttachmentChipState.Downloaded ? (a.local_path ?? null) : null,
+      };
+    });
 }
 
 function typeLabel(type: string): string {

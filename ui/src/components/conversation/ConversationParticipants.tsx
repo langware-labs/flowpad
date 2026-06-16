@@ -12,6 +12,7 @@ import {
   participantRoleLabel,
   type ContactIdentity,
 } from './participant-display';
+import { avatarColorForParticipant } from './avatar-color';
 import { ContactPermissionsDialog } from './ContactPermissionsDialog';
 
 // Show names inline only when the room allows them AND the roster is small
@@ -57,7 +58,9 @@ export function ConversationParticipants({ participants, kind }: ConversationPar
     <span className="flex items-center -space-x-1.5">
       {others.slice(0, MAX_INLINE_AVATARS).map((p, i) => (
         <Avatar key={p.user_id || p.email || i} className="h-4 w-4 ring-1 ring-background">
-          <AvatarFallback className="text-[7px]">{participantInitials(p)}</AvatarFallback>
+          <AvatarFallback className={`text-[7px] text-white ${avatarColorForParticipant(p, false)}`}>
+            {participantInitials(p)}
+          </AvatarFallback>
         </Avatar>
       ))}
       {others.length > MAX_INLINE_AVATARS && (
@@ -101,7 +104,11 @@ export function ConversationParticipants({ participants, kind }: ConversationPar
             const row = (
               <>
                 <Avatar className="h-5 w-5">
-                  <AvatarFallback className="text-[9px]">{participantInitials(p)}</AvatarFallback>
+                  <AvatarFallback
+                    className={`text-[9px] text-white ${avatarColorForParticipant(p, participantIsUser(p, me))}`}
+                  >
+                    {participantInitials(p)}
+                  </AvatarFallback>
                 </Avatar>
                 <span className="flex-1 truncate">{participantName(p)}</span>
                 {role && (
