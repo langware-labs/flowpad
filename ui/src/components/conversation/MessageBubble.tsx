@@ -5,8 +5,10 @@ import type { ConversationMessage } from '@sdk/entities/conversation';
 import type { DeliveryStatus } from '@sdk/entities/flow-message';
 import type { ITask } from '@sdk/entities/task';
 import { MessageChips } from './chips/MessageChips';
+import { MarkdownView } from '@src/components/markdown-view';
 import { AttachmentActionsRow, PromptAttachmentPreview, useAttachmentActions } from './attachment-actions';
 import { useLocalUser } from './useLocalUser';
+import { avatarColorForMessage } from './avatar-color';
 import { PLACEHOLDER_FOR_EMPTY_MESSAGE_WITH_PROMPT } from './constants';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
 import { ConfirmDialog } from '@src/components/ui/confirm-dialog';
@@ -102,17 +104,6 @@ function DeliveryReceipt({ status }: { status: DeliveryStatus | undefined }) {
     );
   }
   return null;
-}
-
-function avatarColor(role: ConversationMessage['role']): string {
-  switch (role) {
-    case 'sender':
-      return 'bg-purple-500';
-    case 'bot':
-      return 'bg-slate-500';
-    default:
-      return 'bg-emerald-500';
-  }
 }
 
 function formatTime(timestamp: string | undefined): string {
@@ -226,7 +217,7 @@ export function MessageBubble({
       data-testid={flowMessageId ? `message-bubble-${flowMessageId}` : undefined}
     >
       <div
-        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white ${avatarColor(message.role)}`}
+        className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold text-white ${avatarColorForMessage(message.role, message.sender_id)}`}
       >
         {initial}
       </div>
@@ -305,10 +296,16 @@ export function MessageBubble({
           (() => {
             const claudeQuote = parseClaudeQuote(message.content);
             if (claudeQuote) {
+              // The executed reply renders as real Markdown (bold, lists, code
+              // fences, tables) via the canonical MarkdownView so it reads
+              // "pretty" — not a flat italic quote. The muted "Prompt response:"
+              // label still flags it as an unedited draft.
               return (
-                <div className={`text-sm ${isBot ? 'italic text-foreground/70' : 'text-foreground/90'}`}>
-                  <span className="font-medium text-muted-foreground">{claudeQuote.prefix}</span>{' '}
-                  <em className="italic text-foreground/85">&ldquo;{claudeQuote.quoted}&rdquo;</em>
+                <div className={`text-sm ${isBot ? 'text-foreground/70' : 'text-foreground/90'}`}>
+                  <span className="font-medium text-muted-foreground">{claudeQuote.prefix}</span>
+                  <div className="mt-1 break-words text-foreground/85">
+                    <MarkdownView value={claudeQuote.quoted} compact />
+                  </div>
                 </div>
               );
             }

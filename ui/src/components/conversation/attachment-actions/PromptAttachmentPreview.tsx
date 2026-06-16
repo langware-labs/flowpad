@@ -7,13 +7,25 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/component
 import { localAttachmentUrl } from '../attachment-url';
 import { isPromptEntityAttachment } from './prompt-attachment';
 
-const TRIM_LIMIT = 90;
+const TRIM_LIMIT = 180;
 const FILENAME_LIMIT = 28;
 
+/**
+ * Length-cap the inline teaser while KEEPING the sender's line breaks — a
+ * suggested prompt typed with newlines reads as multiple lines in the row,
+ * not one collapsed run. Only intra-line runs of spaces/tabs are collapsed;
+ * `\n` is preserved (with 3+ blank lines squeezed to one) so the teaser stays
+ * compact but structurally faithful to what the sender wrote.
+ */
 function truncate(text: string, limit: number): string {
-  const oneLine = text.replace(/\s+/g, ' ').trim();
-  if (oneLine.length <= limit) return oneLine;
-  return oneLine.slice(0, limit - 1).trimEnd() + '…';
+  const collapsed = text
+    .split('\n')
+    .map((ln) => ln.replace(/[ \t]+/g, ' ').trim())
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .replace(/^\n+|\n+$/g, '');
+  if (collapsed.length <= limit) return collapsed;
+  return collapsed.slice(0, limit - 1).trimEnd() + '…';
 }
 
 function truncateMiddle(name: string, limit: number): string {
@@ -213,7 +225,7 @@ export function PromptAttachmentPreview({
           type="button"
           title="Click to view full prompt"
           onClick={() => setDialogOpen(true)}
-          className="min-w-0 max-w-full truncate rounded px-1.5 py-0.5 text-left italic text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
+          className="min-w-0 max-w-full whitespace-pre-wrap break-words rounded px-1.5 py-0.5 text-left italic text-foreground/80 line-clamp-4 transition-colors hover:bg-muted hover:text-foreground"
         >
           “{trimmed}”
         </button>
