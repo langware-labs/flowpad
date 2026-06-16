@@ -1,4 +1,4 @@
-import { type TypeId } from '@sdk';
+import { type TypeId, isImagePath } from '@sdk';
 import { fsStore } from '@sdk';
 import { openExternalFromComputeNode } from '@sdk/entities/compute-node';
 import { ExternalLink, File, RefreshCw, Trash2 } from 'lucide-react';
@@ -13,13 +13,6 @@ import { useFS } from '@src/hooks/useFS';
 interface InputFilesPanelProps {
   computeNodeTypeId: TypeId;
   inputDirAbsPath: string;
-}
-
-const IMAGE_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'ico', 'avif']);
-
-function isImageFile(name: string): boolean {
-  const ext = name.split('.').pop()?.toLowerCase() ?? '';
-  return IMAGE_EXTS.has(ext);
 }
 
 function formatSize(bytes: number): string {
@@ -118,7 +111,7 @@ export const InputFilesPanel: React.FC<InputFilesPanelProps> = ({
             {items.map((item) => {
               const itemPath = `${inputDirAbsPath}/${item.name}`;
               const downloadUrl = fs?.getDownloadUrl(item.vfs_abs_path ?? itemPath);
-              const isImage = isImageFile(item.name);
+              const isImage = isImagePath(item.name);
               const isDeleting = deletingPath === itemPath;
               return (
                 <div
