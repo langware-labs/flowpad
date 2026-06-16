@@ -388,24 +388,84 @@ async def test_run_diagnose_waits_for_slow_but_alive_worker():
 
 
 # --------------------------------------------------------------------------- #
-# create_feed_entry callable — late decision (UI: post a card only if the modal
-# closed before we finished, evaluated at posting time)
+# Home-Feed card appearance — the `create_feed_entry` switch is the on/off lever:
+# CLI always posts; the UI posts only when the user wasn't watching the modal as
+# it finished. Posting funnels through the single creator `_post_home_feed_entry`
+# (NOT mocked here), so these assert a real, queryable card lands in the store.
 # --------------------------------------------------------------------------- #
 
-@pytest.mark.parametrize("want_feed", [True, False])
+async def _bootstrap_local_user():
+    from flow_sdk.server.routes.bootstrap import (
+        get_or_create_local_project,
+        get_or_create_local_user,
+    )
+
+    user = await get_or_create_local_user()
+    await get_or_create_local_project(desktop_user=user)
+
+
 @pytest.mark.asyncio
-async def test_run_diagnose_feed_entry_callable_decides_at_posting_time(want_feed):
-    """``create_feed_entry`` may be a zero-arg callable evaluated when the card would
-    be posted — the UI passes ``lambda: not watching`` so a modal that closed mid-run
-    still gets a Home-Feed card, while an open modal gets none. The callable is honored
-    only when there is a real issue (conversation + message ids present)."""
+async def test_post_home_feed_entry_makes_a_real_card_appear():
+    """The single creator both surfaces use. It mints a queryable `message_suggest` /
+    `new` FeedEntry whose payload carries the support conversation + message + the
+    diagnosis summary — i.e. the card actually APPEARS in the store (this is also the
+    creator the `diagnose_post_feed` action calls for the minimized-app UI path)."""
+    import uuid
+
+    from flow_sdk.builtin.feed_entry import FeedEntry, FeedKind, FeedStatus
+    from flow_sdk.cli.commands.diagnose_cmd import _post_home_feed_entry
+
+    await _bootstrap_local_user()
+    conv_id, msg_id = str(uuid.uuid4()), str(uuid.uuid4())
+
+    fid = await _post_home_feed_entry(
+        conversation_id=conv_id,
+        flow_message_id=msg_id,
+        summary="Cleared a stale server.lock; the backend starts now.",
+    )
+    assert fid
+
+    entry = await FeedEntry.get_by_id(fid)
+    assert entry is not None
+    assert entry.kind == FeedKind.MESSAGE_SUGGEST.value
+    assert entry.feed_status == FeedStatus.NEW.value  # only `new` renders in the Feed
+    assert entry.feed_data["conversation_id"] == conv_id
+    assert entry.feed_data["flow_message_id"] == msg_id
+    assert entry.feed_data["message_text"] == "Cleared a stale server.lock; the backend starts now."
+
+
+@pytest.mark.parametrize(
+    "label,create_feed_entry,expect_card",
+    [
+        ("cli_always_posts", True, True),               # CLI surface: the card IS the output
+        ("ui_user_not_watching", lambda: True, True),   # UI: modal gone / app hidden → post
+        ("ui_user_watching", lambda: False, False),     # UI: user saw the buttons → no card
+    ],
+)
+@pytest.mark.asyncio
+async def test_feed_card_appears_per_watching_logic(label, create_feed_entry, expect_card):
+    """End-to-end at the runner layer: `create_feed_entry` is the on/off switch for
+    whether a real Home-Feed card appears for a recorded issue. Both directions are
+    demonstrated — flip it on (CLI `True`, or the UI 'not watching' callable → True)
+    and a queryable FeedEntry appears; flip it off (UI 'watching' callable → False)
+    and none does. `_post_home_feed_entry` is NOT mocked, so the card's existence is
+    proven by loading it back from the store."""
     import tempfile
+    import uuid
     from pathlib import Path
     from unittest.mock import AsyncMock
 
+    from flow_sdk.builtin.feed_entry import FeedEntry, FeedKind, FeedStatus
     from flow_sdk.cli.commands import diagnose_cmd
 
-    _tf = tempfile.NamedTemporaryFile(prefix="diag_feed_", suffix=".jsonl", delete=False)
+    await _bootstrap_local_user()
+    conv_id, msg_id, diag_id = str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4())
+    report_json = (
+        f'{{"diagnosis_id": "{diag_id}", "conversation_id": "{conv_id}", '
+        f'"flow_message_id": "{msg_id}", "has_issue": true}}'
+    )
+
+    _tf = tempfile.NamedTemporaryFile(prefix="diag_card_", suffix=".jsonl", delete=False)
     _tf.write(b'{"type":"system"}\n')
     _tf.flush()
     _tf.close()
@@ -417,7 +477,7 @@ async def test_run_diagnose_feed_entry_callable_decides_at_posting_time(want_fee
 
     class _FakeAP:
         def __init__(self, **_kw):
-            self.id = "feed-worker-id"
+            self.id = "card-worker-id"
             self.session_id = "fakesess"
             self.driver = _FakeDriver()
 
@@ -429,16 +489,11 @@ async def test_run_diagnose_feed_entry_callable_decides_at_posting_time(want_fee
 
         async def stream_transcript(self, timeout=0):
             # A real issue: report.py prints conversation + message ids, then the
-            # stream ends cleanly (no hang) so the feed-decision runs immediately.
+            # stream ends cleanly so the feed-decision runs immediately.
             yield {
                 "message": {
                     "role": "user",
-                    "content": [
-                        {
-                            "type": "tool_result",
-                            "content": '{"diagnosis_id": "d1", "conversation_id": "c1", "flow_message_id": "m1", "has_issue": true}',
-                        }
-                    ],
+                    "content": [{"type": "tool_result", "content": report_json}],
                 }
             }
 
@@ -446,12 +501,7 @@ async def test_run_diagnose_feed_entry_callable_decides_at_posting_time(want_fee
         async def get_by_id(cls, _id):
             return None
 
-    posted: list[dict] = []
-
-    async def _fake_post(*, conversation_id, flow_message_id, summary):
-        posted.append({"conversation_id": conversation_id, "flow_message_id": flow_message_id})
-        return "feed-1"
-
+    events: list[dict] = []
     with (
         patch("flow_sdk.builtin.agentic_process.AgenticProcess", _FakeAP),
         patch(
@@ -463,21 +513,26 @@ async def test_run_diagnose_feed_entry_callable_decides_at_posting_time(want_fee
             lambda _t: None,
         ),
         patch("flow_sdk.migrations.runner._bootstrap_local", new=AsyncMock(return_value=None)),
-        patch.object(diagnose_cmd, "_post_home_feed_entry", _fake_post),
     ):
-        events: list[dict] = []
         rc = await asyncio.wait_for(
             diagnose_cmd._run_diagnose(
-                "", 1800.0, emit=events.append, create_feed_entry=lambda: want_feed
+                "", 1800.0, emit=events.append, create_feed_entry=create_feed_entry
             ),
             timeout=5,
         )
     _tpath.unlink(missing_ok=True)
 
     assert rc == 0
-    # The card is posted iff the callable said so; the ids come from report.py's JSON.
-    assert (len(posted) == 1) is want_feed
-    if want_feed:
-        assert posted[0] == {"conversation_id": "c1", "flow_message_id": "m1"}
     done = next(e for e in events if e.get("type") == "done")
-    assert done["feed_posted"] is want_feed
+    assert done["feed_posted"] is expect_card
+    if expect_card:
+        fid = done["feed_entry_id"]
+        assert fid, "expected a Home-Feed card to be posted"
+        entry = await FeedEntry.get_by_id(fid)
+        assert entry is not None, "the posted card must actually exist in the store"
+        assert entry.kind == FeedKind.MESSAGE_SUGGEST.value
+        assert entry.feed_status == FeedStatus.NEW.value
+        assert entry.feed_data["conversation_id"] == conv_id
+        assert entry.feed_data["flow_message_id"] == msg_id
+    else:
+        assert done["feed_entry_id"] is None, "no card must be posted while the user is watching"

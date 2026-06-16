@@ -28,8 +28,9 @@ from starlette.responses import StreamingResponse
 
 from flow_sdk.actions.action_registry import action
 from flow_sdk.agentic_run_consts import DEFAULT_TRANSCRIPT_TIMEOUT_S
-from flow_sdk.cli.commands.diagnose_cmd import _run_diagnose
+from flow_sdk.cli.commands.diagnose_cmd import _post_home_feed_entry, _run_diagnose
 from flow_sdk.request_context.methods import get_current_request_info
+from flow_sdk.responses.response import ApiResponse, ApiSuccessResponse
 
 logger = logging.getLogger(__name__)
 
@@ -110,3 +111,40 @@ async def diagnose() -> StreamingResponse:
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@action.post(action_name="diagnose_post_feed", types=None)
+async def diagnose_post_feed() -> ApiResponse:
+    """Post the Home-Feed card for a recorded diagnosis issue — the SAME card the CLI
+    and the modal-closed path create, through the one creator ``_post_home_feed_entry``.
+
+    The UI calls this when the diagnose modal finished while the user wasn't watching
+    (app minimized, tab backgrounded, another window/app focused): the stream stayed
+    connected, so the run didn't post a card itself, yet the in-modal report buttons
+    were never seen. This re-posts that card so they stay reachable from the Home Feed.
+    The complementary modal-closed case is handled inline by the streaming run, so the
+    two never both fire for one run. Body: ``{diagnosis_id?, conversation_id,
+    flow_message_id}`` — the ids the stream's ``done`` event already carried.
+    """
+    request_info = get_current_request_info()
+    body = (await request_info.get_post_data() if request_info else None) or {}
+    conv_id = body.get("conversation_id")
+    msg_id = body.get("flow_message_id")
+    if not conv_id or not msg_id:
+        return ApiSuccessResponse(data={"feed_entry_id": None})
+
+    # message_text is the diagnosis summary — load it the same way the CLI runner does.
+    summary = ""
+    diag_id = body.get("diagnosis_id")
+    if diag_id:
+        from flow_sdk.fs_store.schema_registry import SchemaRegistry
+        from flow_sdk.schema.types import EntityType
+
+        diag_cls = SchemaRegistry.get_entity_cls(EntityType.FLOWPAD_DIAGNOSIS)
+        diag = await diag_cls.get_by_id(diag_id) if diag_cls else None
+        summary = (getattr(diag, "summary", None) or getattr(diag, "title", None) or "") if diag else ""
+
+    feed_entry_id = await _post_home_feed_entry(
+        conversation_id=conv_id, flow_message_id=msg_id, summary=summary
+    )
+    return ApiSuccessResponse(data={"feed_entry_id": feed_entry_id})
