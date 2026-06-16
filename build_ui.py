@@ -35,11 +35,26 @@ def install_ui_deps():
     subprocess.run(["npm", "install"], cwd=UI_DIR, check=True, shell=_IS_WINDOWS)
 
 
-def build_ui(port: int = 9007):
-    """Run `npm run build` in ui/ with VITE_API_URL set."""
-    api_url = f"http://localhost:{port}"
-    print(f"Building UI with API URL: {api_url}")
-    env = {**os.environ, "VITE_API_URL": api_url, "DEPLOY_ENV": "desktop", "IS_PACKAGE": "true"}
+def build_ui():
+    """Run `npm run build` in ui/ for the backend-served bundle.
+
+    We do NOT pin a backend port here. The bundle produced for ``server/static``
+    is served by the backend itself, which injects ``globalThis.__FLOWPAD_API_URL__``
+    = its own origin into ``index.html`` at serve time (see
+    ``flow_sdk/server/routes/ui.py``); the SDK honours that runtime override above
+    the compile-time ``__API_URL__``. So whatever ``__API_URL__`` bakes is only a
+    standalone fallback — it must not pin every install to one port. Setting
+    ``VITE_API_URL`` here (as this used to, to ``http://localhost:9007``) is what
+    baked :9007 into a bundle later served by a :9008 dev backend, so we drop it
+    and let the build default decide the fallback."""
+    print("Building UI (backend injects API origin at serve time)")
+    env = {**os.environ, "DEPLOY_ENV": "desktop", "IS_PACKAGE": "true"}
+    env.pop("VITE_API_URL", None)
+    # The main bundle is large enough to blow node's default old-space heap
+    # (vite build dies with "Reached heap limit / JS heap out of memory").
+    # Give it room unless the caller already tuned NODE_OPTIONS.
+    if "max-old-space-size" not in env.get("NODE_OPTIONS", ""):
+        env["NODE_OPTIONS"] = " ".join(filter(None, [env.get("NODE_OPTIONS", ""), "--max-old-space-size=8192"]))
     subprocess.run(["npm", "run", "build"], cwd=UI_DIR, check=True, env=env, shell=_IS_WINDOWS)
 
 
@@ -88,18 +103,17 @@ def build_skill_uis():
         subprocess.run(["npm", "run", "build"], cwd=ui_dir, check=True, shell=_IS_WINDOWS)
 
 
-def build(port: int = 9007):
+def build():
     """Full pipeline: clean → install → build skill UIs → build main UI → copy."""
     clean_dist()
     install_ui_deps()
     build_skill_uis()
-    build_ui(port)
+    build_ui()
     copy_to_dist()
     print("Build complete.")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Build the Flow UI")
-    parser.add_argument("--port", type=int, default=9007, help="API server port (default: 9007)")
-    args = parser.parse_args()
-    build(port=args.port)
+    # No --port: the backend-served bundle is origin-relative (see build_ui()).
+    argparse.ArgumentParser(description="Build the Flow UI").parse_args()
+    build()
