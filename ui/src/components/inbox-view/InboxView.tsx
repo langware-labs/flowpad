@@ -235,12 +235,14 @@ function ConversationListRow({ conv, isFocused, viewMode, searchActive, onArchiv
 
   const senderLabel = participantNames.join(', ');
   const count = pointers.length;
-  // A plain project-scoped conversation has no task, so it has no real subject.
-  // Mirror email clients: label it "(no subject)" rather than the generic word
-  // "Conversation". The snippet (latest message preview) still renders after it.
+  // A plain project-scoped conversation has no task, so it has no task-derived
+  // subject. Prefer the user-set conversation title (NewConversationDialog) when
+  // present; only fall back to the email-style "(no subject)" placeholder when
+  // there's neither a task subject nor a title. The snippet (latest message
+  // preview) still renders after it.
   const subject = isInvitationRow
     ? 'You’ve been invited to a conversation'
-    : (task?.displayName ?? '(no subject)');
+    : (task?.displayName ?? (conv.title?.trim() || '(no subject)'));
   // ``FlowMessage.text`` is typed string but older rows in the local DB can
   // hold non-string payloads (object-shaped values from earlier schema
   // iterations); ``?.replace`` would TypeError on those. Coerce first.
