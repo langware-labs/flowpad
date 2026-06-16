@@ -152,6 +152,16 @@ class Conversation(Entity):
         if not creds or not creds.api_key:
             raise RuntimeError("Cloud login required")
 
+        # Deliver any messages composed while this conversation was still local
+        # (the conversation just became remote via super().share() above). A
+        # normal conversation is remote before its first message, so every
+        # message reaches the hub at send time; a conversation composed offline
+        # — the flow-diagnose support artifact — wrote its messages locally
+        # while remote=False and they were never pushed. Flush them through the
+        # same send pipeline a normal reply uses, BEFORE inviting, so the
+        # invitation's callback_override and the recipient's first fetch resolve.
+        await self._deliver_pending_messages()
+
         # Post-accept landing: point at the conversation's first FlowMessage on
         # the hub — that URL renders MessageLanding, which hosts the "Open in
         # Flowpad" button. Computed once per share; same value for every
@@ -228,6 +238,49 @@ class Conversation(Entity):
                     logging.warning("[conv.share] link context %s failed (non-fatal): %s", tid, e)
             except Exception as e:  # noqa: BLE001
                 logging.warning("[conv.share] link context entity %r failed (non-fatal): %s", ref, e)
+
+    async def _deliver_pending_messages(self) -> None:
+        """Push messages that were composed before this conversation was remote.
+
+        Reuses the SAME send pipeline a normal reply uses — there is no separate
+        push path. ``_send_conversation_message_header`` is the hub-side create
+        that ``handle_add_message`` calls for every reply; ``_upload_body_and_
+        finalize`` is its body-bundle step. We read the on-disk pointer index
+        (the source of truth, so this works on the transient entity the share
+        action builds) and run each not-yet-remote message through that pipeline.
+        Best-effort per message: a failed push is logged and the row left local,
+        so a later re-share retries it."""
+        from flow_sdk.app.actions.notification_action import (  # noqa: PLC0415
+            _send_conversation_message_header,
+            _upload_body_and_finalize,
+        )
+        from flow_sdk.builtin.flow_message import BodyStatus, FlowMessage  # noqa: PLC0415
+        from flow_sdk.fs_store.operations.conversation import (  # noqa: PLC0415
+            default_jsonl_path,
+            from_jsonl,
+            message_pointers,
+        )
+        from flow_sdk.fs_store.record_types import RecordType  # noqa: PLC0415
+
+        rec = from_jsonl(
+            default_jsonl_path(self.id), parent_id="", record_id=self.id,
+            parent_type=RecordType.PROJECT,
+        )
+        for ptr in message_pointers(rec):
+            fm = await FlowMessage.get_one({"id": ptr.id})
+            if fm is None or getattr(fm, "remote", False):
+                continue  # missing row, or already on the hub — nothing to do
+            # Mirror handle_add_message: a message carrying a body bundle is
+            # announced as UPLOADING so the hub expects the bundle we upload next.
+            if fm.has_body() and fm.body_status != BodyStatus.UPLOADING:
+                fm.body_status = BodyStatus.UPLOADING
+                await fm.save()
+            if not await _send_conversation_message_header(self, fm):
+                continue  # push failed (already logged) — leave local for retry
+            fm.remote = True
+            await fm.save()
+            if fm.body_status == BodyStatus.UPLOADING:
+                await _upload_body_and_finalize(fm, self.id)
 
     def _first_message_landing_path(self) -> Optional[str]:
         """Return ``/flow_message/<id>`` for the earliest FM in this conv, or None.

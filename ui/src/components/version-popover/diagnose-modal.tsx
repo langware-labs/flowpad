@@ -1,13 +1,7 @@
 import { DiagnosisActionButtons } from '@src/components/diagnose/diagnosis-action-buttons';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Textarea } from '@src/components/ui/textarea';
-import {
-  ActionInfo,
-  createDiagnosisFeedEntry,
-  dataManager,
-  FlowpadDiagnosis,
-  sendDiagnosisReport,
-} from '@sdk';
+import { ActionInfo, dataManager, FlowpadDiagnosis, sendDiagnosisReport } from '@sdk';
 import { CheckCircle2, Loader2, Stethoscope, XCircle } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -107,10 +101,11 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
       });
       // If the diagnosis finished while the user was NOT watching this modal — the
       // app was minimized, this tab was backgrounded, or another window/app held
-      // focus — the in-modal report buttons were never seen. Post a Home-Feed card
-      // so Report / Forward / View-diagnosis stay reachable from the Home Feed. The
-      // modal-closed (stream-disconnected) case is the backend's job and never
-      // reaches here, so the two paths can't both fire for one run.
+      // focus — the in-modal report buttons were never seen. Ask the backend to post
+      // the Home-Feed card (the one creator, `_post_home_feed_entry`) so Report /
+      // Forward / View-diagnosis stay reachable from the Home Feed. The modal-closed
+      // (stream-disconnected) case is handled inline by the run and never reaches
+      // here, so the two paths can't both fire for one run.
       const userWatching =
         document.visibilityState === 'visible' && document.hasFocus();
       if (
@@ -122,11 +117,13 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
       ) {
         feedHandoffRef.current = true;
         setHandedToFeed(true);
-        void createDiagnosisFeedEntry({
-          conversationId: ev.conversation_id,
-          flowMessageId: ev.flow_message_id,
-          diagnosisId: ev.diagnosis_id,
-        });
+        const info = new ActionInfo('diagnose_post_feed', null, null, 'POST');
+        info.bodyParameters = {
+          diagnosis_id: ev.diagnosis_id,
+          conversation_id: ev.conversation_id,
+          flow_message_id: ev.flow_message_id,
+        };
+        void dataManager.callAction(info);
       }
     }
     // 'progress' / 'flush' are terminal-only cosmetics; the running spinner covers liveness.
