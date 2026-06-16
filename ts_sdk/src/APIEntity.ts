@@ -1048,15 +1048,35 @@ export class APIEntity<T extends APIEntity<T>> implements IEntity, Manageable {
     return this._private_context_entity_data[key] ?? this._shared_context_entity_data[key];
   }
 
-  // NOTE: ``addContextEntities`` / ``removeContextEntities`` /
-  // ``_normalizeContextEntities`` lived here as FE-side mutation primitives
-  // for the private bucket. They were removed when the FE became
-  // display-only for context: the FE renders whatever the backend ships in
-  // ``private_context_entities`` (a Pydantic computed_field that merges
+  // NOTE: ``addContextEntities`` / ``removeContextEntities`` lived here as
+  // FE-side mutation primitives for the private bucket. They were removed when
+  // the FE became display-only for context: the FE renders whatever the backend
+  // ships in ``private_context_entities`` (a Pydantic computed_field that merges
   // implicit projections + explicit attachments, server-side). To attach
   // something to a private context, use a dedicated backend action and let
   // the WS broadcast deliver the updated array. The FE never combines or
   // mutates context on its own.
+
+  /**
+   * Coerce a single TypeId or a list into a de-duplicated TypeId[]. The only
+   * remaining consumer is the *shared*-bucket publish path
+   * (``shareContextEntities`` / ``unshareContextEntities``), which sends the
+   * targets to a backend action — it does NOT mutate local context. Kept here
+   * (rather than inlined) so both share/unshare normalise identically.
+   */
+  private _normalizeContextEntities(input: TypeId | TypeId[]): TypeId[] {
+    const list = Array.isArray(input) ? input : [input];
+    const seen = new Set<string>();
+    const out: TypeId[] = [];
+    for (const tid of list) {
+      if (!tid) continue;
+      const key = tid.toString();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(tid);
+    }
+    return out;
+  }
 
   private _bucketView(bucket: 'private' | 'shared' | 'both'): TypeId[] {
     if (bucket === 'shared') return this.sharedContextEntities;

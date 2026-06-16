@@ -164,6 +164,16 @@ class IndexStatus:
     total_orphans: int = 0
 
 
+@dataclass
+class AssetStats:
+    """Live per-type asset counts for a ScopeFilter — counts only. Freshness
+    and orphans deliberately live in ``IndexStatus`` / ``get_index_status``;
+    this is the single source the UI counter surfaces render from."""
+
+    per_type: dict[str, int]
+    total: int
+
+
 # ---------------------------------------------------------------------------
 # Hardcoded fallback list so get_default_index_types() works before any
 # Record subclass has registered itself as indexed_by_default.
@@ -783,12 +793,7 @@ class SchemaRegistry:
             type_last = cls.get_last_index_at(type_name)  # JSONL run-history (audit)
             if type_last and (latest_iso is None or type_last > latest_iso):
                 latest_iso = type_last
-            try:
-                count = await driver.count_entities_by_type(type_name, scope=scope)
-            except TypeError:
-                count = await driver.count_entities_by_type(type_name)
-            except Exception:
-                count = 0
+            count = await cls._safe_count(driver, type_name, scope)
             per_type.append(
                 TypeIndexStatus(
                     type_name=type_name,
@@ -821,6 +826,33 @@ class SchemaRegistry:
             per_type=per_type,
             total_orphans=0,
         )
+
+    @staticmethod
+    async def _safe_count(driver, type_name: str, scope: "object | None") -> int:
+        """Per-type live count, tolerant of a driver whose
+        ``count_entities_by_type`` predates the ``scope`` kwarg. Shared by
+        ``get_index_status`` and ``get_asset_stats`` so there is one counting
+        path, not two."""
+        try:
+            return await driver.count_entities_by_type(type_name, scope=scope)
+        except TypeError:
+            return await driver.count_entities_by_type(type_name)
+        except Exception:
+            return 0
+
+    @classmethod
+    async def get_asset_stats(cls, scope: "object | None" = None) -> AssetStats:
+        """Live per-type asset counts for a ScopeFilter, over the registry's
+        default index types (P5 — derived, not hardcoded). Counts only; reuses
+        the same per-type count path as ``get_index_status``."""
+        from flow_sdk.db import get_db_driver  # noqa: PLC0415
+
+        driver = get_db_driver()
+        per_type = {
+            str(type_name): await cls._safe_count(driver, type_name, scope)
+            for type_name in cls.get_default_index_types()
+        }
+        return AssetStats(per_type=per_type, total=sum(per_type.values()))
 
     @staticmethod
     def _single_project_id(scope: "object | None") -> str | None:

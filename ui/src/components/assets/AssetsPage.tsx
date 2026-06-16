@@ -31,7 +31,8 @@ import { applyScopeToParams, assetScopeBucket, defaultScopeFilter, unionAssetBuc
 import type { AssetScopeBucket, ScopeFilter } from '@src/lib/scope-filter';
 import { useEntity } from '@sdk/react/hooks';
 import { useSearchScopeToggle } from '@src/hooks/use-global-search-scope';
-import { useIndexStatus, typeCountsFromPerType } from '@src/hooks/use-index-status';
+import { useIndexStatus } from '@src/hooks/use-index-status';
+import { useAssetStats } from '@src/hooks/use-asset-stats';
 import { formatTimeAgo } from '@src/utils/format-time-ago';
 import { ScopeFilterIconBar } from '@src/components/scope-filter/ScopeFilterIconBar';
 import { ViewType } from '@src/types/ViewType';
@@ -48,6 +49,7 @@ import {
 } from '@src/components/browseable-tree/adapters/markdownFolderRoot';
 import { useAssetTypes, type AssetTypeVault } from '@src/hooks/use-asset-types';
 import { useSystemTools } from '@src/hooks/use-system-tools';
+import { INDEX_BUILD_LABEL, INDEX_PROMPT_DESCRIPTION, INDEX_PROMPT_TITLE } from '@src/components/search-index/index-copy';
 import type { SearchResult } from '@src/hooks/use-asset-search';
 // Side-effect column registrations
 import '@src/components/assets/columns/assetColumns';
@@ -386,18 +388,21 @@ export function AssetsPage() {
     projectSeedScope ?? undefined,
   );
   const projIdx = isProjectView && idxState.phase === 'ready' ? idxState.status : null;
-  const neverIndexed = projIdx?.never_indexed ?? false;
+  // Canonical "nothing indexed yet" signal. `idxState` is already scope-aware
+  // (project-scoped in project view, unscoped in the assets dock), so this one
+  // flag drives both the header CTA and the empty-state prompt.
+  const neverIndexed = idxState.phase === 'ready' && idxState.status.never_indexed;
   const changesPending = projIdx?.stale ?? false;
   const lastIndexedAt = projIdx?.last_indexed_at ?? null;
 
   // Per-type counts for the sidebar badges, sourced from the single scoped
-  // `index-status` response instead of one `/search?limit=1` probe per type
-  // row (that N+1 dominated the asset list page's request count). Scoped to the
-  // active filter so the badges track the scope/project picker.
-  const { state: countsIdxState } = useIndexStatus(effectiveFilter.scope);
+  // `asset-stats` response (counts only) — one request for every type badge,
+  // scoped to the active filter so they track the scope/project picker, and
+  // reactive: `useAssetStats` invalidates on any asset create/delete data_op.
+  const { stats: assetStats } = useAssetStats(effectiveFilter.scope);
   const typeCounts = useMemo(
-    () => typeCountsFromPerType(countsIdxState.phase === 'ready' ? countsIdxState.status.per_type : []),
-    [countsIdxState],
+    () => new Map(Object.entries(assetStats.per_type)),
+    [assetStats.per_type],
   );
 
   useEffect(() => { setSelectedResultIndex(-1); }, [searchQuery]);
@@ -819,7 +824,7 @@ export function AssetsPage() {
               data-testid="index-now-cta"
             >
               <PackageSearch className={`h-4 w-4 ${busy ? 'animate-spin' : ''}`} />
-              Index now
+              {INDEX_BUILD_LABEL}
             </Button>
           ) : (
             <Tooltip>
@@ -939,6 +944,24 @@ export function AssetsPage() {
               onFilterChange={setAssetFilter}
               onProjectFilter={handleProjectFilter}
             />
+          ) : neverIndexed ? (
+            <div className="flex h-full items-center justify-center p-6">
+              <div className="flex max-w-sm flex-col items-center gap-3 text-center">
+                <PackageSearch className="h-8 w-8 text-muted-foreground" />
+                <div className="text-sm font-medium">{INDEX_PROMPT_TITLE}</div>
+                <p className="text-sm text-muted-foreground">{INDEX_PROMPT_DESCRIPTION}</p>
+                <Button
+                  size="sm"
+                  className="mt-1 gap-1.5"
+                  onClick={() => void handleRebuildIndex()}
+                  disabled={busy}
+                  data-testid="empty-state-index-cta"
+                >
+                  <PackageSearch className={`h-4 w-4 ${busy ? 'animate-spin' : ''}`} />
+                  {INDEX_BUILD_LABEL}
+                </Button>
+              </div>
+            </div>
           ) : (
             <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
               Select a type to browse

@@ -1,5 +1,33 @@
-import { dataContext, dataManager, Tab, TypeId } from '@sdk';
+import { AgenticProcess, dataContext, dataManager, Shell, Tab, TypeId } from '@sdk';
 import type { DockPointer } from '@src/navigation/DockPointer';
+import { providerKindForWorkerType } from '@src/tabs/provider-kind';
+
+/**
+ * Resolved display primitives for a terminal target, read from the entity the
+ * route loader just hydrated into cache. Stamped onto the Tab at creation so the
+ * strip draws the chip (provider icon + worktree badge) without ever fetching
+ * the backing Shell/AgenticProcess. Static per tab — worker_type/worktree don't
+ * change over a tab's life — so these are CREATE-only (see Tab.ensureFor).
+ *
+ * ``icon`` mirrors the strip's PROVIDER_META keys exactly: a shell target is
+ * `'shell'`; a process is keyed by its lower-cased worker_type
+ * (`'codex'`/`'copilot'`), defaulting to `'claude'`.
+ */
+function terminalDisplayForTarget(
+  targetType: string | null,
+  targetId: string | null,
+): { icon: string | null; worktree: boolean } {
+  if (!targetType || !targetId) return { icon: null, worktree: false };
+  if (targetType === Shell.type) return { icon: 'shell', worktree: false };
+  if (targetType === AgenticProcess.type) {
+    const process = AgenticProcess.getByIdFromCache<AgenticProcess>(targetId);
+    return {
+      icon: providerKindForWorkerType(process?.worker_type),
+      worktree: Boolean(process?.cliOptions?.worktree),
+    };
+  }
+  return { icon: null, worktree: false };
+}
 
 /**
  * Best-effort denormalized target identity for a dock — the entity this tab
@@ -45,6 +73,7 @@ export function ensureTabForCurrentDock(dock: DockPointer): void {
   const pointerHash = dock.tabHash;
   if (!pointerHash.trim()) return;
   const { targetType, targetId } = targetForDock(dock);
+  const { icon, worktree } = terminalDisplayForTarget(targetType, targetId);
   void Tab.ensureFor(pointerHash, {
     targetType,
     targetId,
@@ -52,6 +81,10 @@ export function ensureTabForCurrentDock(dock: DockPointer): void {
     // Distinguished initial name — set ONCE at creation (ensureFor ignores it on
     // reuse, preserving any rename). entity name / vfs basename / wiki keyword.
     name: dataManager.getTabName(dock),
+    // Display primitives stamped at creation from the loader-hydrated entity so
+    // the strip renders the chip without fetching the Shell/AgenticProcess.
+    iconKey: icon,
+    worktree,
   })
     .then((tab) => tab.activate())
     .catch(() => {

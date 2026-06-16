@@ -1,45 +1,86 @@
 /**
- * Phase-0 characterization: locks the current wire→tab MAPPING in
- * the tabs store (now `useTabs`; `toShellTab` / `toProcessTab`) before the TabManager
- * refactor. The server decides MEMBERSHIP (pure_shells ∪ visible_processes,
- * see tests/unit/test_terminal_list_membership.py); the frontend just maps each
- * wire row to a `TerminalTab`. These assertions lock that mapping.
- *
- * Cache is empty here (random UUIDs never collide with cached entities), so all
- * values derive from the wire row, not from `getByIdFromCache`.
+ * Locks the `Tab` → `TerminalTab` MAPPING (`terminalTabFromTab` in useTabs.ts).
+ * The strip renders from the `Tab` entity ALONE — no Shell/AgenticProcess scan —
+ * so every chip value (name, icon, worktree, ordering, identity) must derive
+ * from the Tab row. The cache is empty here (random UUIDs never collide with a
+ * cached entity), proving a chip renders with zero entity hydration.
  */
 import { describe, expect, it } from 'vitest';
-import { AgenticProcess, Shell, ShellStatus, TypeId } from '@sdk';
-import { toProcessTab, toShellTab } from '@src/tabs/useTabs';
+import { AgenticProcess, Shell, Tab, TypeId } from '@sdk';
+import { terminalTabFromTab } from '@src/tabs/useTabs';
 
-describe('toShellTab', () => {
-  it('maps a running shell wire row to a plain tab', () => {
-    const tab = toShellTab({ id: 'aaaaaaaa-0000-4000-8000-000000000001', status: 'running', tab_order: 2, project_id: 'proj-1', name: 'My Shell' });
-    expect(tab.type).toBe('plain');
-    expect(tab.processId).toBeNull();
-    expect(tab.tabOrder).toBe(2);
-    expect(tab.projectId).toBe('proj-1');
-    expect(tab.name).toBe('My Shell');
-    expect(tab.isDisabled).toBe(false);
-    expect(tab.targetTypeId.toString()).toBe(new TypeId(Shell.type, 'aaaaaaaa-0000-4000-8000-000000000001').toString());
-  });
-
-  it('marks a CLOSING shell as disabled with a "Closing..." reason', () => {
-    const tab = toShellTab({ id: 'aaaaaaaa-0000-4000-8000-000000000002', status: ShellStatus.CLOSING });
-    expect(tab.isDisabled).toBe(true);
-    expect(tab.statusReason).toBe('Closing...');
+describe('terminalTabFromTab — shell target', () => {
+  it('maps a shell Tab row to a plain chip, icon/name/order from the Tab', () => {
+    const row = terminalTabFromTab(
+      new Tab({
+        target_type: Shell.type,
+        target_id: 'aaaaaaaa-0000-4000-8000-000000000001',
+        name: 'My Shell',
+        icon_key: 'shell',
+        tab_order: 2,
+        project_id: 'proj-1',
+        visible: true,
+      }),
+    );
+    expect(row).not.toBeNull();
+    expect(row!.type).toBe('plain');
+    expect(row!.icon).toBe('shell');
+    expect(row!.processId).toBeNull();
+    expect(row!.tabOrder).toBe(2);
+    expect(row!.projectId).toBe('proj-1');
+    expect(row!.name).toBe('My Shell');
+    expect(row!.isDisabled).toBe(false);
+    expect(row!.targetTypeId.toString()).toBe(
+      new TypeId(Shell.type, 'aaaaaaaa-0000-4000-8000-000000000001').toString(),
+    );
   });
 });
 
-describe('toProcessTab', () => {
-  it('maps a visible process wire row to a claude tab keyed by the process id', () => {
-    const tab = toProcessTab({ id: 'bbbbbbbb-0000-4000-8000-000000000001', shell_id: 'cccccccc-0000-4000-8000-000000000001', project_id: 'proj-2', name: 'Agent' });
-    expect(tab.type).toBe('claude');
-    expect(tab.processId).toBe('bbbbbbbb-0000-4000-8000-000000000001');
-    expect(tab.name).toBe('Agent');
-    expect(tab.projectId).toBe('proj-2');
-    // tab identity is the AgenticProcess, NOT its transport shell
-    expect(tab.targetTypeId.toString()).toBe(new TypeId(AgenticProcess.type, 'bbbbbbbb-0000-4000-8000-000000000001').toString());
-    expect(tab.shellId).toBe('cccccccc-0000-4000-8000-000000000001');
+describe('terminalTabFromTab — process target', () => {
+  it('renders a codex chip with worktree badge from the Tab, no entity in cache', () => {
+    const row = terminalTabFromTab(
+      new Tab({
+        target_type: AgenticProcess.type,
+        target_id: 'bbbbbbbb-0000-4000-8000-000000000001',
+        name: 'Agent',
+        icon_key: 'codex',
+        worktree: true,
+        project_id: 'proj-2',
+        visible: true,
+      }),
+    );
+    expect(row).not.toBeNull();
+    expect(row!.type).toBe('claude'); // process-backed discriminator
+    expect(row!.icon).toBe('codex'); // provider glyph from the Tab
+    expect(row!.worktree).toBe(true); // worktree badge from the Tab
+    expect(row!.processId).toBe('bbbbbbbb-0000-4000-8000-000000000001');
+    expect(row!.name).toBe('Agent');
+    expect(row!.projectId).toBe('proj-2');
+    // tab identity is the AgenticProcess, NOT a transport shell
+    expect(row!.targetTypeId.toString()).toBe(
+      new TypeId(AgenticProcess.type, 'bbbbbbbb-0000-4000-8000-000000000001').toString(),
+    );
+    // no cached process → transport shell id is empty (loader hydrates on open)
+    expect(row!.shellId).toBe('');
+  });
+
+  it('defaults icon to claude when the Tab carries none and nothing is cached', () => {
+    const row = terminalTabFromTab(
+      new Tab({
+        target_type: AgenticProcess.type,
+        target_id: 'bbbbbbbb-0000-4000-8000-000000000002',
+        name: 'Legacy',
+        visible: true,
+      }),
+    );
+    expect(row!.icon).toBe('claude');
+    expect(row!.worktree).toBe(false);
+  });
+
+  it('drops a target-less Tab row', () => {
+    const row = terminalTabFromTab(
+      new Tab({ target_type: Shell.type, target_id: null, visible: true }),
+    );
+    expect(row).toBeNull();
   });
 });

@@ -7,11 +7,12 @@ import { StatusBar } from '@src/components/status-bar';
 import { VersionPopover } from '@src/components/version-popover';
 import { AdvancedOnly } from '@src/components/view-mode';
 import { WarningsPopover } from '@src/components/warnings-popover';
+import { PrivacyModePopover } from '@src/components/privacy-mode/privacy-mode-popover';
 import { Agent, ArtifactType, FLOWPAD_ASSISTANT_PROJECT_UNAME, TypeId } from '@sdk';
 import { useCurrentArtifacts, useEntity } from '@sdk/react/hooks';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
-import { BookOpen, Settings } from 'lucide-react';
+import { BookOpen } from 'lucide-react';
 import { useMemo } from 'react';
 import { useParams } from 'react-router';
 import { useContext } from '@sdk/react/hooks';
@@ -72,16 +73,10 @@ export function Footer({ className = '' }: FooterProps) {
       className={`relative z-10 w-full border-t bg-background/95 px-6 py-1 shadow-sm backdrop-blur supports-[backdrop-filter]:bg-background/60 ${className}`}
     >
       <div className="flex items-center justify-between">
-        {/* View toggle + Settings + Warnings icons on the left */}
+        {/* View toggle + Data-privacy mode + Warnings icons on the left */}
         <div className="flex items-center gap-1">
           <ViewToggle />
-          <button
-            onClick={() => navigation.openSettings()}
-            className="flex h-6 w-6 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-            title="Settings"
-          >
-            <Settings className="h-3.5 w-3.5" />
-          </button>
+          <PrivacyModePopover />
           <WarningsPopover />
         </div>
 

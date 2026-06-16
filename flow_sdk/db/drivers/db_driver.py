@@ -100,8 +100,30 @@ class DBDriver(Generic[RecordType]):
     @staticmethod
     def apply_create_fields(record: DBBaseRecord):
         from flow_sdk.request_context.methods import get_current_request_info
+        from flow_sdk.core.entity.entity_model import _REMOTE_REFLECTION
         request_info = get_current_request_info()
         current_time = datetime.now(UTC)
+        # created_through/updated_through are local provenance (not identity) and
+        # identical in both reflection and normal modes — stamp once up front.
+        if request_info and request_info.api_key:
+            api_key_typeid = str(request_info.api_key.typeid)
+            record.created_through = api_key_typeid
+            record.updated_through = api_key_typeid
+        else:
+            record.created_through = None
+            record.updated_through = None
+        # Reflection mode: this write is a verbatim mirror of a hub-origin row.
+        # Preserve created_by / updated_by EXACTLY as the payload carries them —
+        # including ``None`` — and never substitute the local request user or the
+        # ``system`` sentinel. Timestamps are NOT identity: still default a
+        # genuinely-absent date so we never persist a null created/updated_date
+        # (hub rows carry their own dates, so this never overrides the LWW value).
+        if _REMOTE_REFLECTION.get():
+            if record.created_date is None:
+                record.created_date = current_time
+            if record.updated_date is None:
+                record.updated_date = current_time
+            return
         creator_id = None
         if request_info and request_info.user:
             creator_id = request_info.user.id
@@ -119,14 +141,6 @@ class DBDriver(Generic[RecordType]):
         record.updated_by = record.created_by
         if record.updated_date is None:
             record.updated_date = current_time
-        # Set created_through and updated_through if API key is used
-        if request_info and request_info.api_key:
-            api_key_typeid = str(request_info.api_key.typeid)
-            record.created_through = api_key_typeid
-            record.updated_through = api_key_typeid
-        else:
-            record.created_through = None
-            record.updated_through = None
 
     @staticmethod
     def reset_create_fields(record: DBBaseRecord):
@@ -140,8 +154,21 @@ class DBDriver(Generic[RecordType]):
     @staticmethod
     def apply_update_fields(record: DBBaseRecord):
         from flow_sdk.request_context.methods import get_current_request_info
+        from flow_sdk.core.entity.entity_model import _REMOTE_REFLECTION
         request_info = get_current_request_info()
         current_time = datetime.now(UTC)
+        # updated_through is local provenance, identical in both modes — stamp once.
+        if request_info and request_info.api_key:
+            record.updated_through = str(request_info.api_key.typeid)
+        else:
+            record.updated_through = None
+        # Reflection mode: keep updated_by verbatim (the hub's, or None) — never
+        # the local sync user. Default only a genuinely-absent updated_date (hub
+        # rows carry it, so this never overrides the LWW value).
+        if _REMOTE_REFLECTION.get():
+            if record.updated_date is None:
+                record.updated_date = current_time
+            return
         if request_info and request_info.user:
             updater_id = request_info.user.id
         elif request_info and request_info.visitor_typeid:
@@ -155,12 +182,6 @@ class DBDriver(Generic[RecordType]):
         record.updated_by = updater_id
         if record.updated_date is None:
             record.updated_date = current_time
-        # Set updated_through if API key is used
-        if request_info and request_info.api_key:
-            api_key_typeid = str(request_info.api_key.typeid)
-            record.updated_through = api_key_typeid
-        else:
-            record.updated_through = None
 
     @staticmethod
     def reset_update_fields(record: DBBaseRecord):

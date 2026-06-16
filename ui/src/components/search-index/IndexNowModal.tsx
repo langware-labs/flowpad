@@ -10,6 +10,7 @@ import { Button } from '@src/components/ui/button';
 import { useSystemTools } from '@src/hooks/use-system-tools';
 import { useState } from 'react';
 import { ActivityIndicator } from './ActivityIndicator';
+import { INDEX_BUILD_LABEL, INDEX_PROMPT_DESCRIPTION, INDEX_PROMPT_TITLE } from './index-copy';
 
 export interface IndexNowModalProps {
   open: boolean;
@@ -38,11 +39,8 @@ export function IndexNowModal({ open, types, onComplete, onDeny }: IndexNowModal
     <AlertDialog open={open}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>Make your records searchable</AlertDialogTitle>
-          <AlertDialogDescription>
-            Your records haven't been indexed yet. Building the index takes less than a minute and
-            lets you find anything across all your notes, tasks, and sessions.
-          </AlertDialogDescription>
+          <AlertDialogTitle>{INDEX_PROMPT_TITLE}</AlertDialogTitle>
+          <AlertDialogDescription>{INDEX_PROMPT_DESCRIPTION}</AlertDialogDescription>
         </AlertDialogHeader>
 
         {phase === 'indexing' && <ActivityIndicator variant="list" types={types} />}
@@ -52,7 +50,7 @@ export function IndexNowModal({ open, types, onComplete, onDeny }: IndexNowModal
             <Button variant="outline" onClick={handleDeny}>
               Not Now
             </Button>
-            <Button onClick={() => void startIndexing()}>Build Index</Button>
+            <Button onClick={() => void startIndexing()}>{INDEX_BUILD_LABEL}</Button>
           </AlertDialogFooter>
         )}
       </AlertDialogContent>

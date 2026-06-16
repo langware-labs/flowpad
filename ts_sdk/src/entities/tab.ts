@@ -27,6 +27,14 @@ export interface ITab extends IEntity {
   target_id?: string | null;
   /** Visibility = membership. Non-null; a close broadcasts ``visible=false``. */
   visible?: boolean;
+  /**
+   * Display primitives the strip draws straight off the Tab (no Shell/AP fetch).
+   * Both CREATE-only + static: ``icon_key`` is the resolved provider kind
+   * (`shell`/`claude`/`codex`/`copilot`), ``worktree`` drives the badge.
+   * (Named ``icon_key`` not ``icon`` — the base entity owns an ``icon`` getter.)
+   */
+  icon_key?: string | null;
+  worktree?: boolean;
   /** name / project_id / tab_order / last_active_at come from IEntity. */
 }
 
@@ -35,6 +43,8 @@ export interface IEnsureTabOpts {
   targetId?: string | null;
   projectId?: string | null;
   name?: string | null;
+  iconKey?: string | null;
+  worktree?: boolean;
 }
 
 @registerEntity
@@ -45,6 +55,8 @@ export class Tab extends APIEntity<Tab> implements ITab {
   target_type: string | null = null;
   target_id: string | null = null;
   visible: boolean = true;
+  icon_key: string | null = null;
+  worktree: boolean = false;
   name: string | null = null;
   project_id: string | null = null;
   tab_order: number = 0;
@@ -78,8 +90,23 @@ export class Tab extends APIEntity<Tab> implements ITab {
         existing.project_id = opts.projectId;
         dirty = true;
       }
-      // name is a CREATE-only initial label (getTabName) — never overwrite an
-      // existing row's name on reuse, so a user rename survives re-navigation.
+      // Backfill display primitives ONLY when the row has none. A null name was
+      // never a user rename, and a null icon_key/worktree predates the field —
+      // so filling them heals legacy rows on their next open while still never
+      // clobbering a user-chosen name. The strip renders from these, so a row
+      // opened once is correctly labelled even with no entity in cache.
+      if (!existing.name && opts.name) {
+        existing.name = opts.name;
+        dirty = true;
+      }
+      if (!existing.icon_key && opts.iconKey) {
+        existing.icon_key = opts.iconKey;
+        dirty = true;
+      }
+      if (!existing.worktree && opts.worktree) {
+        existing.worktree = true;
+        dirty = true;
+      }
       if (dirty) await existing.save();
       return existing;
     }
@@ -89,6 +116,10 @@ export class Tab extends APIEntity<Tab> implements ITab {
       target_id: opts.targetId ?? null,
       project_id: opts.projectId ?? null,
       name: opts.name ?? null,
+      // icon_key/worktree are CREATE-only display primitives — set once here,
+      // like name; ensureFor never reconciles them on reuse (static per tab).
+      icon_key: opts.iconKey ?? null,
+      worktree: opts.worktree ?? false,
       visible: true,
     } as Partial<ITab>);
     await tab.save();

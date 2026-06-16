@@ -162,18 +162,13 @@ async def test_notify_dispatches_fm_create_then_conversation_update(monkeypatch,
     assert sync_calls[1]["type"] == "conversation"
 
 
-@pytest.mark.asyncio
-@pytest.mark.timeout(30)  # do not increase timeout without approval
-async def test_remote_payload_attributes_created_by_to_sender(monkeypatch, tmp_path):
-    """A hub-origin row is a pure reflection: when the wire payload carries no
-    ``created_by``, it is reconstructed from the SENDER — never left for the
-    driver to stamp with the local request user (the leak that surfaced
-    received messages as authored by the recipient)."""
+async def _materialize_capture_created_by(monkeypatch, tmp_path, payload):
+    """Run materialize_flow_message for a remote payload and return the
+    ``created_by`` the FlowMessage carried into save()."""
     monkeypatch.setattr(
         "flow_sdk.fs_store.record_paths.get_default_records_data_root",
         lambda: tmp_path,
     )
-
     canonical = default_jsonl_path(_CONV_ID)
     canonical.parent.mkdir(parents=True, exist_ok=True)
     canonical.write_text("")
@@ -198,11 +193,38 @@ async def test_remote_payload_attributes_created_by_to_sender(monkeypatch, tmp_p
         patch("flow_sdk.app.actions.materialize_flow_message.send_resource_sync"),
     ):
         await materialize_flow_message(
-            {"id": _FM_ID, "text": "hi", "sender_id": "remote-sender-id"},
+            payload,
             conversation_id=_CONV_ID,
             someone_typeid=None,
             notify=False,
             remote=True,
         )
+    return captured["created_by"]
 
-    assert captured["created_by"] == "remote-sender-id"
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_remote_payload_without_created_by_stays_null(monkeypatch, tmp_path):
+    """A hub-origin row is a pure reflection: when the wire carries no
+    ``created_by`` it stays NULL — the receiver must NOT fabricate it from
+    ``sender_id`` or the 'system' sentinel (and the reflection block stops the
+    driver stamping the local recipient). Display resolves the author from the
+    participant roster instead."""
+    created_by = await _materialize_capture_created_by(
+        monkeypatch, tmp_path,
+        {"id": _FM_ID, "text": "hi", "sender_id": "remote-sender-id"},
+    )
+    assert created_by is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_remote_payload_preserves_hub_created_by_verbatim(monkeypatch, tmp_path):
+    """When the hub DID stamp ``created_by`` (from the sender's auth token), it
+    is carried through verbatim — never overwritten."""
+    created_by = await _materialize_capture_created_by(
+        monkeypatch, tmp_path,
+        {"id": _FM_ID, "text": "hi", "sender_id": "remote-sender-id",
+         "created_by": "hub-stamped-author"},
+    )
+    assert created_by == "hub-stamped-author"

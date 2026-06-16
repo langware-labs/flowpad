@@ -25,18 +25,24 @@ def _is_installed(kind: str) -> bool:
     return value is not None and value.value is not None
 
 
-async def compute_harness_state() -> dict:
+async def compute_harness_state(wait_for_discovery: bool = True) -> dict:
     """Bootstrap harness state: the list of harnesses + the select-dialog flag.
 
     Returns ``{"show_harness_select": bool, "harnesses": [{kind, name,
     installed, homepage_url, is_default}, …]}``. ``show_harness_select`` is true
     when the default harness (the ``harness`` reference's target) is not
     installed — which also covers "nothing installed at all".
+
+    ``wait_for_discovery=False`` (the cold-bootstrap fast path) skips the
+    ~860ms env-probe sweep and reports from what's been discovered so far; the
+    sweep already runs as a startup task and the UI reads harness state from
+    its own live ``capabilityManager`` subscription, not this snapshot.
     """
-    try:
-        await ensure_discovered()
-    except Exception:
-        logger.exception("compute_harness_state: capability discovery failed")
+    if wait_for_discovery:
+        try:
+            await ensure_discovered()
+        except Exception:
+            logger.exception("compute_harness_state: capability discovery failed")
     registry = get_capability_registry()
 
     # Default-harness resolution + availability come from the reference check:

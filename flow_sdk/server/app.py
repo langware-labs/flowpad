@@ -40,6 +40,17 @@ load_actions()
 # Entities self-register via their metaclass on import; this import's side
 # effect is what lands the declarative metadata (icons, etc.).
 import flow_sdk.fs_store.indexer.registrations  # noqa: E402, F401
+
+# Warm the per-type payload list now that every TypeInfo is registered. The
+# ~225ms assembly is static after registration, so building it here — at import,
+# before the server listens — keeps it off the first (cold) bootstrap request.
+# Default args (include_schema=True) match bootstrap's call, so it's a cache hit.
+try:
+    from flow_sdk.core.schema import build_all_type_payloads as _warm_type_payloads
+    _warm_type_payloads()
+except Exception:
+    logging.getLogger(__name__).exception("Failed to warm type payloads at startup")
+
 from flow_sdk.server import FlowServer
 
 from .routes import (
@@ -60,6 +71,7 @@ from .routes import (
     capabilities_router,
     navigate_router,
     project_router,
+    privacy_router,
     pty_stream_router,
     search_router,
     semantic_checker_router,
@@ -269,7 +281,17 @@ async def _transcript_catch_up_walk() -> None:
         import asyncio as _asyncio
 
         from flow_sdk.instance_settings import get_instance_settings
+        from flow_sdk.server.routes.bootstrap import first_bootstrap_served
         from flow_sdk.transcript_streamer import transcript_streamer_registry
+
+        # Defer the historical re-parse until the first bootstrap has been served.
+        # On a fresh instance this walk re-parses the entire ~/.claude history;
+        # its parse threads hold the GIL back-to-back and would otherwise ~3×
+        # the wall time of the concurrent cold-start bootstrap. The walk is
+        # low-priority (it only closes the "modified while offline" gap and
+        # subscribers are idempotent), so letting the critical request finish
+        # first costs nothing functional.
+        await first_bootstrap_served.wait()
 
         settings = get_instance_settings()
         roots = [settings.claude_projects_dir, settings.codex_sessions_dir]
@@ -419,6 +441,7 @@ async def _shutdown_extras():
 server = FlowServer()
 server.add_router(auth_router)
 server.add_router(cloud_router)
+server.add_router(privacy_router)
 server.add_router(hooks_router)
 server.add_router(chat_router)
 server.add_router(directory_router)
