@@ -16,6 +16,7 @@ import logging
 import re
 import sys
 from pathlib import Path
+from typing import Callable
 
 import typer
 
@@ -179,7 +180,11 @@ async def _post_home_feed_entry(*, conversation_id: str, flow_message_id: str, s
 
 
 async def _run_diagnose(
-    message: str, transcript_timeout: float, *, emit=None, create_feed_entry: bool = True
+    message: str,
+    transcript_timeout: float,
+    *,
+    emit=None,
+    create_feed_entry: "bool | Callable[[], bool]" = True,
 ) -> int:
     """Run the flow-diagnose skill headless and stream the worker's narration.
 
@@ -188,12 +193,17 @@ async def _run_diagnose(
     ``_TerminalSink`` so the CLI renders exactly as before; the UI's HTTP endpoint
     passes its own ``emit`` to forward the same events as SSE.
 
-    ``create_feed_entry`` posts the Home-Feed card for a real issue. The CLI passes
-    ``True`` (the Feed card is the CLI's user-facing output); the UI action passes
-    ``False`` — it surfaces the diagnosis in its own modal instead, so no Feed card is
-    created. report.py is identical for both surfaces: it always records the diagnosis
-    and (for an issue) its support Conversation/FlowMessage; only this Feed posting
-    differs, so the split is fully deterministic and never relies on the worker.
+    ``create_feed_entry`` decides whether to post the Home-Feed card for a real issue.
+    It may be a bool or a zero-arg callable evaluated at posting time (so a late
+    decision — e.g. "did the UI modal close before we finished?" — is possible). The
+    CLI passes ``True`` (the Feed card is the CLI's user-facing output). The UI action
+    passes a callable that returns ``True`` only when its modal is already gone: while
+    the modal is open it shows the report buttons itself, so no card is posted; if the
+    user defocused and the popup vanished mid-run, the card is posted so those same
+    buttons stay reachable from the Home Feed. report.py is identical for both
+    surfaces: it always records the diagnosis and (for an issue) its support
+    Conversation/FlowMessage; only this Feed posting differs, so the split is fully
+    deterministic and never relies on the worker.
     """
     if emit is None:
         emit = _TerminalSink()
@@ -394,10 +404,12 @@ async def _run_diagnose(
                         await cross_link_entities(fresh, diag)
             except Exception:
                 pass
-            # CLI surface: post the Home-Feed card for a real issue. The UI surface
-            # (create_feed_entry=False) skips this and shows the diagnosis in its modal.
+            # Post the Home-Feed card for a real issue. The CLI always does (its only
+            # output); the UI does ONLY if its modal closed before we finished (evaluated
+            # now, via the callable), otherwise the modal shows the buttons itself.
+            want_feed = create_feed_entry() if callable(create_feed_entry) else create_feed_entry
             feed_entry_id = None
-            if create_feed_entry and conv_id and msg_id:
+            if want_feed and conv_id and msg_id:
                 summary = (getattr(diag, "summary", None) or getattr(diag, "title", None) or "") if diag else ""
                 feed_entry_id = await _post_home_feed_entry(
                     conversation_id=conv_id, flow_message_id=msg_id, summary=summary

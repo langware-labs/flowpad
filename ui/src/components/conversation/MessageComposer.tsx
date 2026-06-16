@@ -472,7 +472,12 @@ export function MessageComposer({
         <div className="min-w-0 flex-1">
           <AttachmentActionsRow
             actions={composerActions}
-            preview={<PromptAttachmentPreview attachments={queuedPromptAttachments} />}
+            preview={
+              <PromptAttachmentPreview
+                attachments={queuedPromptAttachments}
+                pendingFiles={activePrompt.files}
+              />
+            }
           />
         </div>
         <button
