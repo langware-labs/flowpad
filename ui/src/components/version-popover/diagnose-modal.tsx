@@ -2,7 +2,7 @@ import { DiagnosisActionButtons } from '@src/components/diagnose/diagnosis-actio
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Textarea } from '@src/components/ui/textarea';
 import { ActionInfo, dataManager, FlowpadDiagnosis, sendDiagnosisReport } from '@sdk';
-import { CheckCircle2, Loader2, Stethoscope, XCircle } from 'lucide-react';
+import { CheckCircle2, Info, Loader2, Stethoscope, XCircle } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 interface DiagnoseModalProps {
@@ -276,10 +276,13 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
           )}
 
           {running && (
-            <p className="text-[11px] text-muted-foreground">
-              This runs in the background — feel free to close this and keep working. When it's
-              done, the result (and any actions) will be waiting on your Home feed.
-            </p>
+            <div className="flex items-start gap-2 rounded-md border border-blue-500/40 bg-blue-500/10 px-2.5 py-2 text-[11px] font-medium text-blue-700 dark:border-blue-400/40 dark:text-blue-300">
+              <Info className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>
+                This runs in the background — feel free to close this and keep working. When it's
+                done, the result (and any actions) will be waiting on your Home feed.
+              </span>
+            </div>
           )}
 
           {!started && (
