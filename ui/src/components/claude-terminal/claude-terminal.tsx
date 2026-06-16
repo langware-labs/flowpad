@@ -1,4 +1,5 @@
 import { TabbedTerminal } from '@src/components/terminal';
+import { UnifiedTabStrip } from '@src/pages/flow-page/content-panel/unified-tab-strip';
 import { Button } from '@src/components/ui/button';
 import { ChevronDown, ChevronUp, Maximize2, Minimize2 } from 'lucide-react';
 import { useState } from 'react';
@@ -10,7 +11,6 @@ import { useState } from 'react';
 export function ClaudeTerminal() {
   const [isMinimized, setIsMinimized] = useState(true);
   const [isExpanded, setIsExpanded] = useState(false);
-  const [activeSessionId, setActiveSessionId] = useState<string>('');
 
   const handleToggleMinimize = () => {
     if (isExpanded) {
@@ -61,12 +61,11 @@ export function ClaudeTerminal() {
         </div>
       </div>
       {!isMinimized && (
-        <div className="min-h-0 flex-1 overflow-hidden">
-          <TabbedTerminal
-            className="h-full"
-            activeSessionId={activeSessionId}
-            onActiveSessionChange={setActiveSessionId}
-          />
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+          <UnifiedTabStrip />
+          <div className="min-h-0 flex-1">
+            <TabbedTerminal className="h-full" />
+          </div>
         </div>
       )}
     </div>

@@ -74,6 +74,13 @@ export interface ViewerMeta {
   tabLocation: 'overview' | 'dedicated';
   /** Can this viewer be manually added as a tab? */
   canAddAsTab: boolean;
+  /**
+   * How the content panel frames this surface: `'fullbleed'` takes over the whole
+   * panel (no tab strip) — a landing like Home; `'workspace'` (default when
+   * omitted) renders inside the tabbed workspace (strip + body). This is the one
+   * "is the strip shown?" bit, separate from `DockPointer.tabHash` ("is this a chip?").
+   */
+  chrome?: 'fullbleed' | 'workspace';
 }
 
 export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
@@ -82,6 +89,7 @@ export const VIEWER_REGISTRY: Partial<Record<ViewType, ViewerMeta>> = {
     iconName: 'Home',
     tabLocation: 'dedicated',
     canAddAsTab: true,
+    chrome: 'fullbleed',
   },
   [ViewType.SYSTEM_PROFILE]: {
     title: 'System Profile',

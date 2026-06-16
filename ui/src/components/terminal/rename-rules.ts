@@ -1,6 +1,5 @@
-import type { AgenticProcess, Shell as ShellEntity } from '@sdk';
+import type { AgenticProcess } from '@sdk';
 import { Shell } from '@sdk';
-import type { TerminalTab } from '@src/tabs/useTabs';
 
 const TYPEID_RX = /^[a-z][a-z0-9_-]*-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -35,11 +34,14 @@ function isCopilotProcess(process?: AgenticProcess | null): boolean {
   return process?.worker_type?.trim().toLowerCase() === 'copilot';
 }
 
-/** PTY OSC title auto-save rule: plain shells and Claude processes only
- *  (Codex/Copilot emit unstable titles). Same Fast Refresh rationale as
- *  nextTerminalName for living in this module. */
-export function shouldAutoSavePtyTitle(session: TerminalTab, process?: AgenticProcess | null): boolean {
-  const resolvedProcess = process ?? session.agenticProcess ?? null;
-  if (!resolvedProcess) return session.targetTypeId.type === Shell.type;
-  return !isCodexProcess(resolvedProcess) && !isCopilotProcess(resolvedProcess);
+/** PTY OSC title auto-save rule: a plain shell always auto-titles; a process
+ *  auto-titles unless it is Codex/Copilot (they emit unstable titles). The Tab
+ *  body renders from `TabRow` + the panel's live entity, so the rule keys on the
+ *  target type + that entity, not a `TerminalTab`. */
+export function shouldAutoSaveTitleForTarget(
+  targetType: string | null | undefined,
+  process?: AgenticProcess | null,
+): boolean {
+  if (!process) return targetType === Shell.type;
+  return !isCodexProcess(process) && !isCopilotProcess(process);
 }

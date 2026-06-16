@@ -1,8 +1,7 @@
 import { AgenticProcess, dataContext, dataManager, Shell, Tab, TypeId } from '@sdk';
-import { type ITab } from '@sdk/entities/tab';
 import type { DockPointer } from '@src/navigation/DockPointer';
 import { providerKindForWorkerType } from '@src/tabs/provider-kind';
-import { applyRows } from '@src/tabs/tab-store';
+import { refreshAllTabRows } from '@src/tabs/all-tabs-store';
 
 /**
  * Resolved display primitives for a terminal target, read from the entity the
@@ -71,9 +70,10 @@ export function targetForDock(dock: DockPointer): { targetType: string | null; t
  * so terminals, docs, assets, settings and diffs all become tabs by one rule.
  */
 export function ensureTabForCurrentDock(dock: DockPointer): void {
-  if (!dock.viewType) return;
+  // `tabHash === null` is the single "this dock has no tab" signal (bare shell
+  // host, home, …) — and covers a missing viewType. Don't materialize a Tab.
   const pointerHash = dock.tabHash;
-  if (!pointerHash.trim()) return;
+  if (!pointerHash) return;
   const { targetType, targetId } = targetForDock(dock);
   const { icon, worktree } = terminalDisplayForTarget(targetType, targetId);
   const projectId = dataContext.project?.id ?? null;
@@ -91,10 +91,10 @@ export function ensureTabForCurrentDock(dock: DockPointer): void {
     worktree,
   })
     .then((rows) => {
-      applyRows(rows, projectId);
+      void refreshAllTabRows();
       // Stamp recency so the NEXT open treats THIS tab as the opener.
       const created = rows.find((r) => r.pointer === pointerHash);
-      if (created) void new Tab({ id: created.id } as Partial<ITab>).activate();
+      if (created) void Tab.activateById(created.id);
     })
     .catch(() => {
       /* tab materialization is best-effort; never block or fail navigation */
