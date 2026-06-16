@@ -116,6 +116,20 @@ class BodyNotReadyError(Exception):
 FILE_VFS_PREFIX = "data/"
 PROMPT_FILE_VFS_PREFIX = "prompt/"
 
+# File extensions the UI renders inline as an image (mirrors the frontend's
+# ``isImagePath``). Backend paths that decide "is this attachment a picture?"
+# share this one set so both sides agree on what shows as an image.
+IMAGE_FILE_EXTENSIONS = frozenset(
+    {".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".avif", ".bmp", ".ico"}
+)
+
+
+def is_image_filename(name: str) -> bool:
+    """True when ``name`` ends in an image extension the UI renders inline."""
+    from pathlib import Path  # noqa: PLC0415
+
+    return Path(name).suffix.lower() in IMAGE_FILE_EXTENSIONS
+
 # TYPE_ID attachment types that ride in the body bundle but never materialize a
 # standard local record folder (which is what ``_type_id_record_materialized``
 # probes) — either conversation plumbing (conversation/flow_message/task, the

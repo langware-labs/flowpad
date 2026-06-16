@@ -7,6 +7,8 @@ path that skips the cloud-login gate while still exercising ``_attach_prompt``.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from flow_sdk.builtin.flow_message import AttachmentType, FlowMessage
@@ -15,6 +17,13 @@ from flow_sdk.builtin.prompt import Prompt
 pytestmark = pytest.mark.asyncio
 
 PROMPT_TEXT = "Fix the auth flow\nand add regression tests."
+
+# A tiny but real PNG header — carries NUL bytes, so it is unambiguously binary
+# and would turn into garbage if decoded as UTF-8 text.
+PNG_BYTES = (
+    b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+    b"\x08\x02\x00\x00\x00\x90wS\xde"
+)
 
 
 async def _local_project_id(client) -> str:
@@ -65,6 +74,73 @@ async def test_send_prompt_creates_entity_attachment(bootstrapped_client, user):
     assert prompt.text == PROMPT_TEXT
     assert prompt.name == "Fix the auth flow"  # auto-name = first line
     assert (prompt.use_count or 0) == 0  # sending is not a "use"
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_image_prompt_file_stays_a_picture_not_text(bootstrapped_client, user):
+    """An image attached to a prompt is stored as a prompt-FILE (raw bytes the
+    UI renders inline), never decoded into a garbage text Prompt entity. The
+    typed text still mints its own Prompt — text stays text, image stays image.
+    """
+    client = bootstrapped_client
+    conv_id = await _make_conversation(client)
+
+    resp = await client.post(
+        f"/api/v1/graph/conversation/{conv_id}/add_message",
+        data={"message": "look at this", "prompt_text": "describe the screenshot", "is_draft": "true"},
+        files=[("prompt_files", ("shot.png", PNG_BYTES, "image/png"))],
+    )
+    assert resp.json().get("status") == "SUCCESS", resp.text
+    fm_id = resp.json()["data"]["flow_message_id"]
+    fm = await FlowMessage.get_one({"id": fm_id})
+
+    # The image is a prompt-FILE attachment (raw bytes), not a text Prompt entity.
+    prompt_files = [
+        a for a in (fm.attachment or [])
+        if a.attachment_type == AttachmentType.PROMPT and (a.data or "").startswith("prompt/")
+    ]
+    assert len(prompt_files) == 1
+    assert prompt_files[0].data == "prompt/shot.png"
+    assert prompt_files[0].proposer_id  # rides the same approval lifecycle
+
+    # Bytes were written verbatim to the FlowMessage VFS so the UI streams a picture.
+    from flow_sdk.storage import get_entity_embedded_storage
+    storage = get_entity_embedded_storage(fm.typeid)
+    on_disk = Path(storage.get_storage_path("prompt/shot.png"))
+    assert on_disk.exists()
+    assert on_disk.read_bytes() == PNG_BYTES
+
+    # The typed text still mints exactly one Prompt entity — and the binary image
+    # never leaked into any prompt's text.
+    entity_atts = _prompt_entity_attachments(fm)
+    assert len(entity_atts) == 1
+    assert entity_atts[0].prompt_preview == "describe the screenshot"
+    prompt = await Prompt.get_by_id(entity_atts[0].data.split("-", 1)[1])
+    assert prompt is not None
+    assert "PNG" not in (prompt.text or "")
+
+
+@pytest.mark.timeout(30)  # do not increase timeout without approval
+async def test_image_only_prompt_mints_no_text_entity(bootstrapped_client, user):
+    """An image with no typed text produces a prompt-file attachment and zero
+    text Prompt entities — nothing to decode into binary."""
+    client = bootstrapped_client
+    conv_id = await _make_conversation(client)
+
+    resp = await client.post(
+        f"/api/v1/graph/conversation/{conv_id}/add_message",
+        data={"message": "", "is_draft": "true"},
+        files=[("prompt_files", ("diagram.png", PNG_BYTES, "image/png"))],
+    )
+    assert resp.json().get("status") == "SUCCESS", resp.text
+    fm = await FlowMessage.get_one({"id": resp.json()["data"]["flow_message_id"]})
+
+    prompt_files = [
+        a for a in (fm.attachment or [])
+        if a.attachment_type == AttachmentType.PROMPT and (a.data or "").startswith("prompt/")
+    ]
+    assert len(prompt_files) == 1
+    assert _prompt_entity_attachments(fm) == []
 
 
 @pytest.mark.timeout(30)  # do not increase timeout without approval

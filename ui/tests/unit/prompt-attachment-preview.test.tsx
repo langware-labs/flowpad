@@ -66,4 +66,48 @@ describe('PromptAttachmentPreview', () => {
     expect(screen.getByText('notes.md')).toBeTruthy();
     expect(container.querySelector('a')).toBeNull();
   });
+
+  it('renders an attached image as a thumbnail picture, not a binary text chip', () => {
+    const att: Attachment = {
+      attachment_type: AttachmentType.PROMPT,
+      data: 'prompt/diagram.png',
+      local_path: '/tmp/diagram.png',
+    };
+    const { container } = render(<PromptAttachmentPreview attachments={[att]} messageId="fm-1" />);
+    const img = screen.getByAltText('diagram.png') as HTMLImageElement;
+    expect(img.tagName).toBe('IMG');
+    expect(img.getAttribute('src')).toBeTruthy();
+    // No download-chip filename text for an image — it shows as a picture.
+    expect(container.querySelector('a[download]')).toBeNull();
+  });
+
+  it('renders text as text and an image as a picture when both are attached', () => {
+    const text: Attachment = { attachment_type: AttachmentType.PROMPT, data: 'run the migration' };
+    const image: Attachment = {
+      attachment_type: AttachmentType.PROMPT,
+      data: 'prompt/screenshot.jpg',
+      local_path: '/tmp/screenshot.jpg',
+    };
+    render(<PromptAttachmentPreview attachments={[text, image]} messageId="fm-2" />);
+    // Typed prompt stays text on the row…
+    expect(screen.getByText(/run the migration/)).toBeTruthy();
+    // …and the image stays an image.
+    expect((screen.getByAltText('screenshot.jpg') as HTMLImageElement).tagName).toBe('IMG');
+  });
+
+  it('thumbnails a not-yet-uploaded image in the composer from its backing File', async () => {
+    // jsdom has no object-URL API; install harmless mocks (left in place so the
+    // component's unmount cleanup can still call revokeObjectURL).
+    const createObjectURL = vi.fn(() => 'blob:pasted');
+    (URL as unknown as { createObjectURL: typeof createObjectURL }).createObjectURL = createObjectURL;
+    (URL as unknown as { revokeObjectURL: (u: string) => void }).revokeObjectURL = vi.fn();
+
+    const att: Attachment = { attachment_type: AttachmentType.PROMPT, data: 'prompt/pasted.png' };
+    const file = new File(['png-bytes'], 'pasted.png', { type: 'image/png' });
+    render(<PromptAttachmentPreview attachments={[att]} pendingFiles={[file]} />);
+    // Object URL is minted in an effect, so the thumbnail appears after a tick.
+    const img = (await screen.findByAltText('pasted.png')) as HTMLImageElement;
+    expect(img.tagName).toBe('IMG');
+    expect(createObjectURL).toHaveBeenCalledWith(file);
+  });
 });

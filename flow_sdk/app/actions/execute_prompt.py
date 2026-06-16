@@ -70,6 +70,7 @@ async def build_merged_prompt(fm: "FlowMessage") -> str:
     from flow_sdk.builtin.flow_message import (
         PROMPT_FILE_VFS_PREFIX,
         AttachmentType,
+        is_image_filename,
     )
     from flow_sdk.builtin.prompt import Prompt
 
@@ -100,7 +101,13 @@ async def build_merged_prompt(fm: "FlowMessage") -> str:
         elif a.attachment_type == AttachmentType.PROMPT:
             if data.startswith(PROMPT_FILE_VFS_PREFIX):
                 lp = _resolve_local_path(fm.id, data) or data
-                prompt_file_lines.append(f"Your prompt to execute is here: {lp}")
+                fn = data.split("/")[-1] or data
+                # An image attached to the prompt is context to look at, not the
+                # instruction to run — list it with the other context files.
+                if is_image_filename(fn):
+                    file_lines.append(f"- {fn}: {lp}")
+                else:
+                    prompt_file_lines.append(f"Your prompt to execute is here: {lp}")
             elif data:
                 inline_parts.append(data)
         elif a.attachment_type == AttachmentType.FILE:

@@ -385,3 +385,99 @@ async def test_run_diagnose_waits_for_slow_but_alive_worker():
         _tpath.unlink(missing_ok=True)
     assert rc == 0
     assert state["checks"] >= 3  # proves warmup waited through the empty-file polls
+
+
+# --------------------------------------------------------------------------- #
+# create_feed_entry callable — late decision (UI: post a card only if the modal
+# closed before we finished, evaluated at posting time)
+# --------------------------------------------------------------------------- #
+
+@pytest.mark.parametrize("want_feed", [True, False])
+@pytest.mark.asyncio
+async def test_run_diagnose_feed_entry_callable_decides_at_posting_time(want_feed):
+    """``create_feed_entry`` may be a zero-arg callable evaluated when the card would
+    be posted — the UI passes ``lambda: not watching`` so a modal that closed mid-run
+    still gets a Home-Feed card, while an open modal gets none. The callable is honored
+    only when there is a real issue (conversation + message ids present)."""
+    import tempfile
+    from pathlib import Path
+    from unittest.mock import AsyncMock
+
+    from flow_sdk.cli.commands import diagnose_cmd
+
+    _tf = tempfile.NamedTemporaryFile(prefix="diag_feed_", suffix=".jsonl", delete=False)
+    _tf.write(b'{"type":"system"}\n')
+    _tf.flush()
+    _tf.close()
+    _tpath = Path(_tf.name)
+
+    class _FakeDriver:
+        def transcript_path(self, _ap):
+            return _tpath
+
+    class _FakeAP:
+        def __init__(self, **_kw):
+            self.id = "feed-worker-id"
+            self.session_id = "fakesess"
+            self.driver = _FakeDriver()
+
+        def enable_assistant(self):
+            pass
+
+        async def prompt(self, _text):
+            return None
+
+        async def stream_transcript(self, timeout=0):
+            # A real issue: report.py prints conversation + message ids, then the
+            # stream ends cleanly (no hang) so the feed-decision runs immediately.
+            yield {
+                "message": {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "tool_result",
+                            "content": '{"diagnosis_id": "d1", "conversation_id": "c1", "flow_message_id": "m1", "has_issue": true}',
+                        }
+                    ],
+                }
+            }
+
+        @classmethod
+        async def get_by_id(cls, _id):
+            return None
+
+    posted: list[dict] = []
+
+    async def _fake_post(*, conversation_id, flow_message_id, summary):
+        posted.append({"conversation_id": conversation_id, "flow_message_id": flow_message_id})
+        return "feed-1"
+
+    with (
+        patch("flow_sdk.builtin.agentic_process.AgenticProcess", _FakeAP),
+        patch(
+            "flow_sdk.core.capabilities.discovery.ensure_discovered",
+            new=AsyncMock(return_value=None),
+        ),
+        patch(
+            "flow_sdk.fs_store.schema_registry.SchemaRegistry.get_entity_cls",
+            lambda _t: None,
+        ),
+        patch("flow_sdk.migrations.runner._bootstrap_local", new=AsyncMock(return_value=None)),
+        patch.object(diagnose_cmd, "_post_home_feed_entry", _fake_post),
+    ):
+        events: list[dict] = []
+        rc = await asyncio.wait_for(
+            diagnose_cmd._run_diagnose(
+                "", 1800.0, emit=events.append, create_feed_entry=lambda: want_feed
+            ),
+            timeout=5,
+        )
+    _tpath.unlink(missing_ok=True)
+
+    assert rc == 0
+    # The card is posted iff the callable said so; the ids come from report.py's JSON.
+    assert (len(posted) == 1) is want_feed
+    if want_feed:
+        assert posted[0] == {"conversation_id": "c1", "flow_message_id": "m1"}
+    done = next(e for e in events if e.get("type") == "done")
+    assert done["feed_posted"] is want_feed
