@@ -1,7 +1,13 @@
 import { DiagnosisActionButtons } from '@src/components/diagnose/diagnosis-action-buttons';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@src/components/ui/dialog';
 import { Textarea } from '@src/components/ui/textarea';
-import { ActionInfo, dataManager, FlowpadDiagnosis, sendDiagnosisReport } from '@sdk';
+import {
+  ActionInfo,
+  createDiagnosisFeedEntry,
+  dataManager,
+  FlowpadDiagnosis,
+  sendDiagnosisReport,
+} from '@sdk';
 import { CheckCircle2, Loader2, Stethoscope, XCircle } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -53,6 +59,11 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
   const [done, setDone] = useState<DoneState | null>(null);
   const [reporting, setReporting] = useState(false);
   const [reportError, setReportError] = useState<string | undefined>(undefined);
+  // Set when the run finished while the user wasn't watching (app minimized / tab
+  // backgrounded / another window focused): we posted a Home-Feed card instead, so
+  // the modal shows a pointer to it rather than its own report buttons.
+  const [handedToFeed, setHandedToFeed] = useState(false);
+  const feedHandoffRef = useRef(false); // guards the one-shot feed-card post
   const abortRef = useRef<AbortController | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -66,6 +77,8 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
       setDone(null);
       setReporting(false);
       setReportError(undefined);
+      setHandedToFeed(false);
+      feedHandoffRef.current = false;
     }
   }, [open]);
 
@@ -92,6 +105,29 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
         conversationId: ev.conversation_id,
         flowMessageId: ev.flow_message_id,
       });
+      // If the diagnosis finished while the user was NOT watching this modal — the
+      // app was minimized, this tab was backgrounded, or another window/app held
+      // focus — the in-modal report buttons were never seen. Post a Home-Feed card
+      // so Report / Forward / View-diagnosis stay reachable from the Home Feed. The
+      // modal-closed (stream-disconnected) case is the backend's job and never
+      // reaches here, so the two paths can't both fire for one run.
+      const userWatching =
+        document.visibilityState === 'visible' && document.hasFocus();
+      if (
+        ev.ok &&
+        ev.conversation_id &&
+        ev.flow_message_id &&
+        !userWatching &&
+        !feedHandoffRef.current
+      ) {
+        feedHandoffRef.current = true;
+        setHandedToFeed(true);
+        void createDiagnosisFeedEntry({
+          conversationId: ev.conversation_id,
+          flowMessageId: ev.flow_message_id,
+          diagnosisId: ev.diagnosis_id,
+        });
+      }
     }
     // 'progress' / 'flush' are terminal-only cosmetics; the running spinner covers liveness.
   }, []);
@@ -259,16 +295,25 @@ export function DiagnoseModal({ open, onClose, onViewDiagnosis }: DiagnoseModalP
             </div>
           )}
 
-          {/* On an issue, the same report buttons as a Feed entry — plus "View diagnosis". */}
-          {done?.ok && done.conversationId && (
-            <DiagnosisActionButtons
-              suggestedConversationId={done.conversationId}
-              busy={reporting}
-              error={reportError}
-              onDismiss={handleClose}
-              onReport={(conversationId) => void handleReport(conversationId)}
-            />
-          )}
+          {/* On an issue, the same report buttons as a Feed entry — plus "View diagnosis".
+              But if the run finished while the user was away, we posted a Home-Feed card
+              instead; point them there rather than showing a second set of buttons. */}
+          {done?.ok &&
+            done.conversationId &&
+            (handedToFeed ? (
+              <p className="text-[11px] text-muted-foreground">
+                You stepped away while this finished, so it was saved to your Home feed — open it
+                there to report or forward it.
+              </p>
+            ) : (
+              <DiagnosisActionButtons
+                suggestedConversationId={done.conversationId}
+                busy={reporting}
+                error={reportError}
+                onDismiss={handleClose}
+                onReport={(conversationId) => void handleReport(conversationId)}
+              />
+            ))}
 
           {(done || (started && !running)) && (
             <div className="flex justify-end gap-2">
