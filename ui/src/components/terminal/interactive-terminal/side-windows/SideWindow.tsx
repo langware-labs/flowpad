@@ -1,18 +1,23 @@
 import React, { type ReactNode } from 'react';
 import { X } from 'lucide-react';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
+import { Tooltip, TooltipProvider, TooltipTrigger } from '@src/components/ui/tooltip';
 import { cn } from '@src/lib/utils';
-import { SIDE_TABS, type SideTabId } from './SideWindowTypes';
+import { SideTabTooltipContent } from '../LastPromptTooltip';
+import { SIDE_TABS, SideTabId } from './SideWindowTypes';
 
 interface SideWindowProps {
   tabs: SideTabId[];
   activeTab: SideTabId;
   onSelect: (id: SideTabId) => void;
   onClose: (id: SideTabId) => void;
+  /** Most recent prompt text — shown in the Prompts tab hover card. */
+  lastPromptText?: string | null;
+  /** Total prompt count, shown alongside the last-prompt header. */
+  promptCount?: number;
   children: ReactNode;
 }
 
-export const SideWindow: React.FC<SideWindowProps> = ({ tabs, activeTab, onSelect, onClose, children }) => {
+export const SideWindow: React.FC<SideWindowProps> = ({ tabs, activeTab, onSelect, onClose, lastPromptText = null, promptCount = 0, children }) => {
   return (
     <div className="flex w-80 shrink-0 flex-col border-l bg-background">
       {/* Tab strip */}
@@ -22,6 +27,7 @@ export const SideWindow: React.FC<SideWindowProps> = ({ tabs, activeTab, onSelec
             const descriptor = SIDE_TABS[tabId];
             const Icon = descriptor.icon;
             const isActive = tabId === activeTab;
+            const isPrompts = tabId === SideTabId.Prompts;
             const words = descriptor.label.split(' ');
             const displayLabel = words.length > 2 ? words.slice(0, 2).join(' ') + '…' : descriptor.label;
             const isTruncated = words.length > 2;
@@ -48,9 +54,13 @@ export const SideWindow: React.FC<SideWindowProps> = ({ tabs, activeTab, onSelec
                     </button>
                   </div>
                 </TooltipTrigger>
-                <TooltipContent side="bottom" className="text-xs">
-                  {isTruncated ? descriptor.label : descriptor.description}
-                </TooltipContent>
+                <SideTabTooltipContent
+                  side="bottom"
+                  isPrompts={isPrompts}
+                  lastPromptText={lastPromptText}
+                  promptCount={promptCount}
+                  fallback={isTruncated ? descriptor.label : descriptor.description}
+                />
               </Tooltip>
             );
           })}
