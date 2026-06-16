@@ -121,14 +121,29 @@ FLOW=~/.local/share/uv/tools/flowpad/bin/flow   # or `which flow` for a pip inst
 "$FLOW"                         # → flow 0.2.38+local   (bare flow prints version)
 "$FLOW" stop                    # drop any old server/monitor first
 FLOWPAD_NO_BROWSER=1 "$FLOW" start   # prod → http://127.0.0.1:9007 (no browser, like Electron)
-# wait for health, then check the version the server reports:
-until curl -fsS http://127.0.0.1:9007/api/v1/graph/bootstrap >/dev/null 2>&1; do sleep 1; done
+
+# Wait for health — BOUNDED. A healthy start binds 9007 in a few seconds; if it
+# doesn't, the start FAILED (it didn't just need more time — see the pitfall
+# below), so fail loud and print the server log instead of polling forever.
+for i in $(seq 1 15); do
+  curl -fsS http://127.0.0.1:9007/api/v1/graph/bootstrap >/dev/null 2>&1 && break
+  sleep 1
+done
+if ! curl -fsS http://127.0.0.1:9007/api/v1/graph/bootstrap >/dev/null 2>&1; then
+  echo "FAILED: nothing bound 9007 — start did not come up. Last server log:"
+  tail -20 "$(ls -t ~/.flow/instances/prod/logs/server/*.log | head -1)"
+  exit 1
+fi
+
 "$FLOW" upgrade --info          # JSON status; "version" must read 0.2.38+local
 echo "9007 OK"
 ```
 
 Bare `flow` and the `version` field of `flow upgrade --info` must both read
 `0.2.38+local`, and the server must answer on **9007** (prod port; dev is 9008).
+Note `flow upgrade --info` reports the *installed* binary's version even when no
+server is listening — so it is **not** proof the server came up. The bound-port
+check above is what proves it; don't skip it.
 
 ### 4. Restart the desktop only if it was up at the start
 
@@ -148,6 +163,28 @@ marker.
 > [`local_patch.md` → Patching the desktop app (Electron shell)](./local_patch.md#patching-the-desktop-app-electron-shell).
 
 ## Known Pitfalls
+
+### `flow start` silently no-ops when another instance backend is alive
+
+`flow start` runs a singleton check and **exits without binding 9007** if it
+detects an already-running `flow_sdk.server.run`, logging
+`[singleton] Server already running (pid=…) — exiting`. A repo `.venv` dev
+backend (e.g. the `oss`/`dev` instance on **9008**) trips this, so prod never
+comes up. Worse, `"$FLOW" stop` can report **"Nothing was running"** — it only
+manages the prod server it launched, not that other instance — giving false
+comfort that the port is free.
+
+Symptom: the verify loop never sees 9007 (the old unbounded `until curl …`
+hung forever here). Diagnose, don't widen the wait:
+
+```bash
+tail -5 "$(ls -t ~/.flow/instances/prod/logs/server/*.log | head -1)"  # → the singleton line + offending pid
+lsof -nP -p <pid> -iTCP -sTCP:LISTEN          # confirms it's a *different* instance (9008), not prod
+```
+
+If that process is your own dev instance, stop **that** instance (or run the
+rehearsal on a port it isn't using) — do not just kill an unknown backend, and
+never paper over it by extending the health-wait.
 
 ### Branch version drifts from the published PyPI version
 
