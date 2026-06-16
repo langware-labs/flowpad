@@ -12,6 +12,7 @@ import { downloadFile } from '@sdk/utils/utils';
 import Editor, { type OnMount } from '@monaco-editor/react';
 import { ChevronDown, ChevronRight, Copy, Download, Eye, ExternalLink, FileCode, FilePlus2, GraduationCap, MessageSquareDiff, Pencil, RefreshCw, Trash2 } from 'lucide-react';
 import { showDeleteAssetModal } from '@src/components/assets/delete-asset-modal';
+import { ProjectNameChip } from '@src/components/assets/ProjectNameChip';
 import { ShareButton } from '@src/components/entity-actions/ShareButton';
 import { ShareToConversationDialog } from '@src/components/share-to-conversation/ShareToConversationDialog';
 import { genericEntityShareSource } from '@src/hooks/share-sources';
@@ -321,6 +322,7 @@ function MarkdownEditorContent({
         <EditorHeader
           fileName={fileName}
           dirPath={dirPath}
+          sourcePath={sourcePathStr}
           dirty={false}
           viewMode={viewMode}
           onViewModeChange={setViewMode}
@@ -344,6 +346,7 @@ function MarkdownEditorContent({
         <EditorHeader
           fileName={fileName}
           dirPath={dirPath}
+          sourcePath={sourcePathStr}
           dirty={false}
           viewMode={viewMode}
           onViewModeChange={setViewMode}
@@ -372,6 +375,7 @@ function MarkdownEditorContent({
         <EditorHeader
           fileName={fileName}
           dirPath={dirPath}
+          sourcePath={sourcePathStr}
           dirty={false}
           viewMode={viewMode}
           onViewModeChange={setViewMode}
@@ -406,6 +410,7 @@ function MarkdownEditorContent({
       <EditorHeader
         fileName={fileName}
         dirPath={dirPath}
+        sourcePath={sourcePathStr}
         dirty={dirty}
         viewMode={viewMode}
         onViewModeChange={setViewMode}
@@ -569,6 +574,8 @@ function MonacoMarkdownEditor({
 interface EditorHeaderProps {
   fileName: string;
   dirPath: string;
+  /** Absolute path of the asset; used to resolve the owning project chip. */
+  sourcePath?: string;
   dirty: boolean;
   viewMode: ViewMode;
   onViewModeChange: (mode: ViewMode) => void;
@@ -581,14 +588,15 @@ interface EditorHeaderProps {
   showLearningMode?: boolean;
 }
 
-function EditorHeader({ fileName, dirPath, dirty, viewMode, onViewModeChange, onOpenExternal, onDownload, onDelete, actions, leadingActions, showLearningMode }: EditorHeaderProps) {
+function EditorHeader({ fileName, dirPath, sourcePath, dirty, viewMode, onViewModeChange, onOpenExternal, onDownload, onDelete, actions, leadingActions, showLearningMode }: EditorHeaderProps) {
   const visibleModes = EDITOR_MODES.filter((m) => m !== 'learning' || showLearningMode);
   return (
     <div className="flex h-[52px] flex-shrink-0 items-center gap-2 border-b px-3">
       <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-0.5 truncate">
+        <div className="flex items-center gap-1.5 truncate">
           <span className="truncate text-sm font-medium" title={fileName}>{fileName}</span>
           {dirty && <span className="text-sm text-amber-500">*</span>}
+          {sourcePath && <ProjectNameChip sourcePath={sourcePath} />}
         </div>
         <div className="flex min-w-0 items-center gap-1">
           {dirPath && (
