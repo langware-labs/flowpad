@@ -75,11 +75,19 @@ async def build_merged_prompt(fm: "FlowMessage") -> str:
     from flow_sdk.builtin.prompt import Prompt
 
     # Pull the body bundle once so file-backed attachments resolve to disk.
+    # Best-effort, but NOT silent: a failure here (e.g. body_status still
+    # UPLOADING) is exactly what strands an attachment with an unreadable
+    # relative VFS path, so surface it. The bridge now gates auto-run on
+    # body_status=READY (see hub_bridge ``_handle_flow_message_op``), so this
+    # should only fail on the manual-Execute edge.
     try:
         if fm.has_body():
             await fm.download_body()
-    except Exception:
-        pass  # best-effort — fall back to inline previews / raw paths
+    except Exception as e:  # noqa: BLE001
+        logger.warning(
+            "[execute_prompt] body download failed for fm=%s — attachments may "
+            "not resolve to absolute paths: %s", fm.id, e,
+        )
 
     inline_parts: list[str] = []
     prompt_file_lines: list[str] = []

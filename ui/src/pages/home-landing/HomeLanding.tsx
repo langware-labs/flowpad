@@ -529,13 +529,14 @@ export function HomeLanding() {
         </div>
 
         {/* Middle column: Main content + Quick Access.
-            overflow-y-auto (not -hidden) so a tall section — e.g. an expanded
-            Feed entry — scrolls into view instead of being clipped under the
-            footer; min-h-0 lets it actually shrink to its flex track so the
-            scroll engages. */}
-        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
-          {/* Main content area - shrink-0 so it never collapses */}
-          <div className="flex shrink-0 flex-col items-center gap-6 pb-6 text-center">
+            overflow-hidden so the column itself NEVER scrolls — the only scroll
+            region is the Feed, which is flex-1/min-h-0 and absorbs the leftover
+            column height (see Feed.tsx). The hero (greeting + input) stays
+            pinned on top and Quick Access / notifications sit below the feed;
+            gap-6 keeps the original inter-section spacing. */}
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-6 overflow-hidden">
+          {/* Hero — fixed at the top, never scrolls */}
+          <div className="flex shrink-0 flex-col items-center gap-6 text-center">
             <h1 className="text-4xl font-bold tracking-tight">
               Hey{' '}
               <span className="bg-gradient-to-r from-primary to-primary/70 bg-clip-text text-transparent">{firstName}</span>
@@ -559,9 +560,13 @@ export function HomeLanding() {
                 </button>
               </div>
             </div>
+          </div>
 
-            <Feed />
+          {/* Feed — the single scroll region; grows to fill the leftover height */}
+          <Feed />
 
+          {/* Quick Access — fixed below the feed */}
+          <div className="flex shrink-0 flex-col items-center gap-6 text-center">
             <div className="w-full max-w-3xl">
               <MiniDesktop />
             </div>
@@ -570,7 +575,6 @@ export function HomeLanding() {
               variant="strip"
               className="w-full max-w-3xl flex items-center gap-2 rounded-md border bg-muted/40 px-3 py-1.5 text-xs hover:bg-muted/60 transition-colors text-left"
             />
-
           </div>
 
           {/* Post-scan results panel — shown after scan completes when user hasn't searched yet */}

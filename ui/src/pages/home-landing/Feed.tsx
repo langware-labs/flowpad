@@ -2,7 +2,7 @@ import { FeedEntry, QueryRequest } from '@sdk';
 import { DiagnosisActionButtons } from '@src/components/diagnose/diagnosis-action-buttons';
 import { useEntitiesQuery } from '@src/hooks/entity-hooks';
 import { useFeedMutations } from '@src/hooks/use-feed-mutations';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { ChevronDown, ChevronRight, EyeOff } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 
 /** Format a feed entry's `created_date` (ISO string or Date) as a local date+time (empty if absent). */
@@ -93,13 +93,30 @@ function FeedEntryCard({ entry, busy, error, onDismiss, onReport }: FeedEntryCar
           </div>
         ))}
 
-      <DiagnosisActionButtons
-        suggestedConversationId={suggest?.conversation_id}
-        busy={busy}
-        error={error}
-        onDismiss={() => onDismiss(entry)}
-        onReport={(conversationId) => onReport(entry, conversationId)}
-      />
+      {suggest?.conversation_id ? (
+        // Issue card: full Report / Forward / Dismiss row pointing at the support conversation.
+        <DiagnosisActionButtons
+          suggestedConversationId={suggest.conversation_id}
+          busy={busy}
+          error={error}
+          onDismiss={() => onDismiss(entry)}
+          onReport={(conversationId) => onReport(entry, conversationId)}
+        />
+      ) : (
+        // No-issue card: nothing to report — the summary above is the answer, so just Dismiss.
+        <div className="mt-2 flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            aria-label="Dismiss"
+            title="Dismiss"
+            disabled={busy}
+            onClick={() => onDismiss(entry)}
+            className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+          >
+            <EyeOff className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
@@ -166,7 +183,7 @@ export function Feed() {
   if (!newEntries.length) return null;
 
   return (
-    <div className="w-full max-w-3xl flex flex-col gap-2">
+    <div className="w-full max-w-3xl flex max-h-[60vh] flex-col gap-2 overflow-y-auto overscroll-contain">
       {newEntries.map((entry) => (
         <FeedEntryCard
           key={entry.id}
