@@ -21,7 +21,7 @@ import { TabStrip } from '@src/components/tabs/TabStrip';
 import { DockPointer } from '@src/navigation/DockPointer';
 import { useDockNavigation } from '@src/navigation/useDockNavigation';
 import { useTabStripItems } from '@src/tabs/tab-row-item';
-import { resolveNextTabRow } from '@src/tabs/tab-candidates';
+import { resolveNextTabRow, tabRowInProject } from '@src/tabs/tab-candidates';
 import { applyPredictedOrder, refreshAllTabRows, useAllTabRows } from '@src/tabs/all-tabs-store';
 import { useTerminalStripController } from '@src/tabs/useTerminalStripController';
 import React, { useCallback, useEffect, useMemo } from 'react';
@@ -43,9 +43,7 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
   const allRows = useAllTabRows();
   const rows = useMemo(
     () =>
-      scope === 'all'
-        ? allRows
-        : allRows.filter((r) => r.project_id === projectId || r.project_id == null),
+      scope === 'all' ? allRows : allRows.filter((r) => tabRowInProject(r, projectId)),
     [allRows, scope, projectId],
   );
   const items = useTabStripItems(rows);
@@ -71,35 +69,38 @@ export const UnifiedTabStrip: React.FC<UnifiedTabStripProps> = ({ scope = 'proje
   const handleSelect = useCallback((key: string) => navigateTo(key, false), [navigateTo]);
   const handlePopout = useCallback((key: string) => navigateTo(key, true), [navigateTo]);
 
+  // Where to go when the active tab(s) close: the next tab over the GLOBAL list,
+  // preferring the current project (stay in-project while it has tabs, else skip
+  // to the next tab anywhere — closing a project's last tab must not drop to
+  // Home), or Home when nothing is left. Same precedence the loaders use, so the
+  // close-time pick can't diverge from a fresh navigation's.
+  const navigateAfterClose = useCallback(
+    (closing: TabRow[]) => {
+      const closingIds = new Set(closing.map((r) => r.id));
+      const next = resolveNextTabRow(allRows.filter((r) => !closingIds.has(r.id)), new Set(), projectId);
+      if (next) navigateTo(next.pointer, false);
+      else navigation.closeDock();
+    },
+    [allRows, projectId, navigateTo, navigation],
+  );
+
   const handleClose = useCallback(
     (key: string) => {
       const row = rowByKey.get(key);
       if (!row) return;
-      if (key === activeKey) {
-        // Same precedence the loaders use (intent → recency → tab_order), so the
-        // close-time pick can't diverge from a fresh navigation's pick.
-        const next = resolveNextTabRow(rows, new Set([row.target_id ?? '']));
-        if (next) navigateTo(next.pointer, false);
-        else navigation.closeDock();
-      }
+      if (key === activeKey) navigateAfterClose([row]);
       void Tab.closeById(row.id).then(() => refreshAllTabRows());
     },
-    [rowByKey, activeKey, rows, navigateTo, navigation],
+    [rowByKey, activeKey, navigateAfterClose],
   );
 
   const handleCloseMany = useCallback(
     (keys: string[]) => {
       const closing = keys.map((k) => rowByKey.get(k)).filter((r): r is TabRow => r != null);
-      const closingIds = new Set(closing.map((r) => r.id));
-      if (keys.includes(activeKey)) {
-        const survivors = rows.filter((r) => !closingIds.has(r.id));
-        const next = resolveNextTabRow(survivors);
-        if (next) navigateTo(next.pointer, false);
-        else navigation.closeDock();
-      }
+      if (keys.includes(activeKey)) navigateAfterClose(closing);
       void Promise.all(closing.map((r) => Tab.closeById(r.id))).finally(() => void refreshAllTabRows());
     },
-    [rowByKey, activeKey, rows, navigateTo, navigation],
+    [rowByKey, activeKey, navigateAfterClose],
   );
 
   const handleRename = useCallback(
