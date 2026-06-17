@@ -23,7 +23,13 @@ const VIDEO_EXTS = new Set(['mp4', 'mov', 'm4v', 'webm', 'ogv', 'ogg']);
 const VIDEO_MIME: Record<string, string> = {
   mp4: 'video/mp4',
   m4v: 'video/mp4',
-  mov: 'video/quicktime',
+  // `.mov` is the QuickTime container, but it's ISO-BMFF just like `.mp4` — an
+  // H.264/AAC `.mov` plays in Chrome/Chromium IFF the <source> is labeled
+  // `video/mp4`. `video/quicktime` makes Chrome reject it outright
+  // (`canPlayType('video/quicktime') === ''`), so the preview fell back to a
+  // file icon. (Chrome guidance: never use `type=video/quicktime` for `.mov`.)
+  // HEVC/ProRes `.mov` still can't decode and falls through to the icon.
+  mov: 'video/mp4',
   webm: 'video/webm',
   ogv: 'video/ogg',
   ogg: 'video/ogg',
@@ -39,7 +45,7 @@ function isVideo(name: string): boolean {
 }
 
 // A <source> for a video url, typed by extension when we recognise it.
-function videoSource(url: string, name: string) {
+export function videoSource(url: string, name: string) {
   const mime = VIDEO_MIME[extOf(name)];
   return mime ? <source src={url} type={mime} /> : <source src={url} />;
 }

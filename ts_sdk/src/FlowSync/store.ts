@@ -742,8 +742,14 @@ export class DataManager<T extends Manageable> extends EventEmitter {
       if (!typeOrRaw) return null;
       try {
         const tid = id !== undefined ? new TypeId(typeOrRaw, id) : new TypeId(typeOrRaw);
-        const ent = this.getByTypeIdFromCache(tid) as { name?: string | null } | null;
-        return ent?.name ?? null;
+        // Prefer the entity's canonical display label (e.g. a Conversation
+        // surfaces its `title` via getDisplayName), falling back to the raw
+        // `name` — both for entities with no display override and for plain
+        // cached rows that have no `displayName` getter.
+        const ent = this.getByTypeIdFromCache(tid) as
+          | { displayName?: string | null; name?: string | null }
+          | null;
+        return (ent?.displayName ?? ent?.name) ?? null;
       } catch {
         return null;
       }
