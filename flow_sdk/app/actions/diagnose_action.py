@@ -63,9 +63,12 @@ async def diagnose() -> StreamingResponse:
                 message,
                 DEFAULT_TRANSCRIPT_TIMEOUT_S,
                 emit=emit,
-                # Post a Home-Feed card ONLY if the modal is already gone by the time
-                # the diagnosis is recorded — otherwise the modal surfaces it itself.
-                create_feed_entry=lambda: not watching["v"],
+                # Post a Home-Feed card ONLY if the modal is already gone by the time the
+                # diagnosis is recorded — otherwise the modal surfaces it itself. When it
+                # IS gone, post for any result (has_issue ignored): an issue card with the
+                # report buttons, or a no-issue card carrying the summary, so a user who
+                # walked away still gets the answer.
+                create_feed_entry=lambda has_issue: not watching["v"],
             )
         except Exception as e:  # surface the failure into the stream, never 500 silently
             emit({"type": "error", "text": f"diagnose error: {e}"})
@@ -120,22 +123,25 @@ async def diagnose_post_feed() -> ApiResponse:
 
     The UI calls this when the diagnose modal finished while the user wasn't watching
     (app minimized, tab backgrounded, another window/app focused): the stream stayed
-    connected, so the run didn't post a card itself, yet the in-modal report buttons
-    were never seen. This re-posts that card so they stay reachable from the Home Feed.
-    The complementary modal-closed case is handled inline by the streaming run, so the
-    two never both fire for one run. Body: ``{diagnosis_id?, conversation_id,
-    flow_message_id}`` — the ids the stream's ``done`` event already carried.
+    connected, so the run didn't post a card itself, yet the result was never seen. This
+    posts the card so the answer reaches the Home Feed — an issue card with the report
+    buttons (``conversation_id`` + ``flow_message_id`` given) or, for a clean result, a
+    no-issue card carrying the summary. The complementary modal-closed case is handled
+    inline by the streaming run, so the two never both fire for one run. Body:
+    ``{diagnosis_id, conversation_id?, flow_message_id?}`` — the ids the stream's
+    ``done`` event carried (conversation/message only exist for an issue).
     """
     request_info = get_current_request_info()
     body = (await request_info.get_post_data() if request_info else None) or {}
     conv_id = body.get("conversation_id")
     msg_id = body.get("flow_message_id")
-    if not conv_id or not msg_id:
+    diag_id = body.get("diagnosis_id")
+    # Need either a diagnosis (to read its summary) or a support conversation to post.
+    if not diag_id and not (conv_id and msg_id):
         return ApiSuccessResponse(data={"feed_entry_id": None})
 
     # message_text is the diagnosis summary — load it the same way the CLI runner does.
     summary = ""
-    diag_id = body.get("diagnosis_id")
     if diag_id:
         from flow_sdk.fs_store.schema_registry import SchemaRegistry
         from flow_sdk.schema.types import EntityType
@@ -145,6 +151,6 @@ async def diagnose_post_feed() -> ApiResponse:
         summary = (getattr(diag, "summary", None) or getattr(diag, "title", None) or "") if diag else ""
 
     feed_entry_id = await _post_home_feed_entry(
-        conversation_id=conv_id, flow_message_id=msg_id, summary=summary
+        summary=summary, conversation_id=conv_id, flow_message_id=msg_id
     )
     return ApiSuccessResponse(data={"feed_entry_id": feed_entry_id})
